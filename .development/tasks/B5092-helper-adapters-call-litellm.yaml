@@ -1,14 +1,14 @@
 id: B5092
 title: Oracle helper adapters call LiteLLM
 description: >-
-  Five oracle helper adapters in tools/oracle/helpers are Python written for the oracle and never import litellm:
-  b3973.py (Opik, from B3973), codex_history_tools.py (B2410), file_type_records.py (B1128), model_fields.py (B205)
-  and price_fields.py (B204). Their cases compare betterlite with that Python and prove nothing about LiteLLM, so
-  .ast-grep/rules/helper-imports-litellm.yml lists them under ignores. This task rewrites b3973.py,
-  codex_history_tools.py and file_type_records.py to import litellm and call the LiteLLM functions their cases are
-  about, fixes the native code where LiteLLM answers differently, and deletes the model_fields and price_fields
-  operations, since LiteLLM has no function that does what they test. Behavior that leaves the oracle moves to named
-  Rust unit tests next to the native code. Then the five files come off the ignores list.
+  Four oracle helper adapters in tools/oracle/helpers are Python written for the oracle and never import litellm:
+  codex_history_tools.py (B2410), file_type_records.py (B1128), model_fields.py (B205) and price_fields.py (B204).
+  Their cases compare betterlite with that Python and prove nothing about LiteLLM, so
+  .ast-grep/rules/helper-imports-litellm.yml lists them under ignores. This task rewrites codex_history_tools.py and
+  file_type_records.py to import litellm and call the LiteLLM functions their cases are about, and deletes the
+  model_fields and price_fields operations, since LiteLLM has no function that does what they test. Behavior that
+  leaves the oracle moves to named Rust unit tests next to the native code. Then the four files come off the ignores
+  list. The fifth listed adapter, b3973.py, moves in B5093.
 
 
   Rules for every rewritten adapter. Each keeps its operation name and, where it can, its input shape. The Python
@@ -16,122 +16,9 @@ description: >-
   lists. B5091 lands first, so a helper comparison skips the error class, the error message and warning messages,
   and compares ok, the value and the error's status, type, param and code. dispatch.py sets all four to null for a
   Python exception, so every native helper error here keeps them null too. The Rust modules
-  tools/oracle/src/helpers/logging/b3973.rs, core_ops/codex_history_tools.rs and openai/file_type_records.rs call the
-  native function that matches the LiteLLM function the Python side calls, and decode their input into typed structs
-  or an enum tagged on the function or operation field instead of reading serde_json::Value by hand.
-
-
-  Opik uuid (function uuid, case uuid7-generation.yaml, input unchanged). Python calls create_uuid7 from
-  litellm.integrations.opik.utils, parses the text with uuid.UUID and returns {version, variant, canonical}: the
-  version number, bytes[8] >> 6, and whether str() of the parsed UUID equals the text create_uuid7 returned. Rust
-  does the same with betterlite_logging::opik::uuid7::create_uuid7, Uuid::get_version_num, as_bytes()[8] >> 6 and
-  the hyphenated text. Both sides answer {version: 7, variant: 2, canonical: true}.
-
-
-  Opik config (function config). The input becomes {environment, config_file, lookups} where environment maps env
-  names to values, config_file is the text of an Opik config file or absent, and each lookup is {key, user, default}
-  with user and default optional. The answer is {values: [...]}, one entry per lookup in order, null when nothing
-  answers. Python makes a tempfile.TemporaryDirectory, writes config_file into a file there with
-  write_text(encoding="utf-8", newline="") when it is given, patches litellm.integrations.opik.utils.CONFIG_FILE_PATH_DEFAULT
-  to that file (to a path in the same folder that does not exist when config_file is absent), and inside
-  unittest.mock.patch.dict(os.environ, environment, clear=True) calls get_opik_config_variable(key, user, default) for
-  each lookup. LiteLLM returns the user value when it is not None, then the env var OPIK_ plus the key in upper case,
-  then the key from the file's opik section, then the default. It reads and parses the file only when the user value
-  and the env var are both None, and does it again on every such lookup, so a broken file fails only a lookup that
-  reaches it. The file holds nothing but the case's own text, so the oracle cache key still covers everything the
-  helper reads.
-
-
-  Native config changes in crates/betterlite-logging/src/opik/config.rs. get_config_variable becomes
-  get_config_variable(key, user_value, environment, config_file: Option<&str>, default_value) -> Result<Option<String>,
-  ConfigFileError>. It keeps the order above, parses config_file only when the user value and the env var give
-  nothing, and looks the key up exactly as given: the parser lowercases keys, so an upper-case key never matches the
-  file. read_config_section moves to a new module crates/betterlite-logging/src/opik/config_file.rs (add pub mod
-  config_file; to opik.rs) as read_config_section(contents: &str) -> Result<BTreeMap<String, String>,
-  ConfigFileError>, and reads text the way CPython 3.13's configparser.ConfigParser() with its defaults reads a file.
-  ConfigFileError is a thiserror enum in that module with one variant per failure below, and its messages name the
-  section, the option or the line number and never a value, since the file holds API keys. If config_file.rs grows
-  past 300 lines, put interpolation in config_file/interpolate.rs.
-
-
-  The parser rules, from CPython 3.13 configparser. Lines end at \n, \r\n or a lone \r. A line whose stripped text
-  starts with # or ; is a comment: it is skipped, adds nothing to a value and changes no state. There are no inline
-  comments, so a # or ; inside a value stays. An empty line adds an empty line to the current option's value. A line
-  indented deeper than the line that started the current option continues that value with its stripped text, and
-  this is decided before the header check, so a deeper-indented [x] is value text. Otherwise a line whose stripped
-  text starts with [ and has a ] after at least one more character is a section header: the name is the text between
-  the first [ and the last ], case-sensitive, and text after that ] is ignored. A line before any header fails at
-  once. [DEFAULT] may appear more than once, and any other section that appears twice fails at once. Any other line is an option: the key is the text
-  before the first = or :, right-trimmed and lowercased, and the value is the rest, stripped. A line with no = or :
-  and a line with an empty key fail once the whole text is read. A key repeated in one section fails at once, and
-  that counts the blocks of a repeated [DEFAULT] as one section. A value's lines join with \n and trailing
-  whitespace is trimmed. Then every section other than DEFAULT takes DEFAULT's options under its own and each value
-  is interpolated. %% becomes %. %(name)s becomes the merged value of the lowercased name, interpolated again when
-  that value holds a %, and nesting deeper than 10 fails. A missing name fails, and any other % fails, a trailing %
-  or %(name) without s included. LiteLLM builds every section's items before it picks opik, so a bad % in any
-  section, or in DEFAULT when some section exists, fails the read, while a file that has only DEFAULT reads as empty.
-  read_config_section returns the section named exactly opik with DEFAULT merged in, or an empty map.
-
-
-  Opik usage. LiteLLM's create_usage_object reads a Usage object, and Usage turns an absent or null prompt_tokens,
-  completion_tokens or total_tokens into 0 and does not compute the total. So the span's usage always has all three
-  keys. Change create_usage_object in config.rs so each of the three keys is present, with 0 for an absent or null
-  count and the given value otherwise.
-
-
-  Opik metadata (function metadata). The input becomes {litellm_metadata, standard_logging_metadata} and the answer
-  {metadata}. Python calls extract_opik_metadata from litellm.integrations.opik.opik_payload_builder.extractors, and
-  Rust calls betterlite_logging::opik::metadata::extract_opik_metadata. metadata-merging.yaml carries the three
-  sources the old case merged by hand: litellm_metadata {opik: {project_name: request, tags: [r]}} and
-  standard_logging_metadata {user_api_key_auth_metadata: {opik: {project_name: auth, auth_only: a}},
-  requester_metadata: {opik: {project_name: requester}}}. The new metadata-missing-sections.yaml sends
-  litellm_metadata {} and standard_logging_metadata {user_api_key_auth_metadata: null, requester_metadata: {opik:
-  null}}, and both sides answer {metadata: {}}.
-
-
-  Opik payload (function payload). The input becomes {project_name, trace_id, parent_span_id, response, input, output,
-  metadata, tags, provider, cost}. Python builds usage with create_usage_object(Usage(**response["usage"])) from
-  litellm.types.utils, calls build_span_payload from litellm.integrations.opik.opik_payload_builder.payload_builders
-  with start 2026-01-01T00:00:00Z and end 2026-01-01T00:00:01Z as UTC datetimes, passes [dataclasses.asdict(span)]
-  through get_traces_and_spans_from_payload, takes the one span and drops id, start_time and end_time. Rust calls
-  betterlite_logging::opik::payload::build_span_payload with the same window and drops the same three keys. The id is
-  random, and timestamp fraction digits are not in the contract. payload-construction.yaml sends project_name p,
-  trace_id trace, parent_span_id parent, response {model: test-model, object: chat.completion, created: 42, usage:
-  {prompt_tokens: 3, completion_tokens: null}}, input {q: 1}, output {a: 2}, metadata {k: v}, tags [t], provider
-  openai and cost 0.5, and the span's usage is {completion_tokens: 0, prompt_tokens: 3, total_tokens: 0}.
-
-
-  Opik config cases, all with ASCII text and \n line ends. config-resolution.yaml becomes environment
-  {OPIK_URL_OVERRIDE: env, OPIK_WORKSPACE: ""}, config_file "[opik]\nurl_override = file\nproject_name = team\n" and
-  lookups for: url_override with user "user" (user wins), url_override (env wins), workspace with default "d" (the
-  empty env value wins), project_name with default "d" (the file), api_key with default "d" (the default) and api_key
-  (null). New config-file-ini-forms.yaml has a [DEFAULT] section with project_name = base, an [OPIK] section that is
-  ignored, and an [opik] section with URL_OVERRIDE: https://host/api, api_key = first followed by a comment line and
-  an indented second line, note = 100%% %(project_name)s, and comment lines starting with # and ;. Its lookups
-  url_override, api_key, note, project_name and URL_OVERRIDE answer https://host/api, "first\nsecond", "100% base",
-  base and null. New config-file-duplicate-key.yaml has url_override = a and URL_OVERRIDE = b in [opik] and fails. New
-  config-file-bad-percent.yaml has [other] with broken = 50% plus a valid [opik], and a lookup that reaches the file
-  fails. New config-file-unread-when-answered.yaml sends the same broken file with every lookup answered by a user
-  value or an env var, and succeeds.
-
-
-  Opik native tests. In crates/betterlite-logging/src/opik/tests/config.rs (opik_config_tests),
-  config_priority_and_partial_usage gives way to config_priority_reads_the_file_last (user, env, file, default and
-  none, with the file given as text), usage_object_fills_missing_counts_with_zero (absent, null and present counts)
-  and config_lookup_skips_a_bad_file_when_answered (a broken file and a lookup the user value or env var answers is
-  Ok). The two parser tests there import read_config_section from config_file and take its Result. Add
-  crates/betterlite-logging/src/opik/tests/config_file.rs, mounted in src/opik/tests.rs as #[path =
-  "tests/config_file.rs"] mod opik_config_file_tests;, with tests whose names start with config_file_ for a line before
-  any header, a line without = or :, an empty key, a repeated section, a key repeated across two [DEFAULT] blocks,
-  nesting past 10, a missing name, a trailing %, a bad % only in DEFAULT with and without another section, a header
-  with text after its ], a deeper-indented [x] that continues a value, a lone \r line end, and an upper-case section
-  name that is not opik. Each failure test also checks that the error text holds no value from the file. Add a
-  cargo-fuzz target crates/betterlite-logging/fuzz/fuzz_targets/opik_config_file.rs that passes valid UTF-8 input to
-  read_config_section, its [[bin]] entry in crates/betterlite-logging/fuzz/Cargo.toml next to otlp_decode, a committed
-  corpus under crates/betterlite-logging/fuzz/corpus/opik_config_file with one file per rule above, and an rstest
-  config_file_replays_the_corpus in tests/config_file.rs that reads every corpus file with
-  #[files("fuzz/corpus/opik_config_file/*")] and runs it through read_config_section. In tests/payload.rs,
-  span_payload_links_trace_and_strips_nulls now expects all three usage keys.
+  tools/oracle/src/helpers/core_ops/codex_history_tools.rs and openai/file_type_records.rs call the native function
+  that matches the LiteLLM function the Python side calls, and decode their input into typed structs or an enum
+  tagged on the function or operation field instead of reading serde_json::Value by hand.
 
 
   Codex history (operation codex_history_tools). Python imports normalize_codex_input_items and drop_unsupported_tools
@@ -203,9 +90,9 @@ description: >-
   docs/deviations/B204.yaml, entry 1's why drops the clause about the Python adapter.
 
 
-  The rule. Take the five files off the ignores list of .ast-grep/rules/helper-imports-litellm.yml so only
-  tools/oracle/helpers/dispatch.py stays, and change the note to say that dispatch.py routes requests and is exempt.
-  ast-grep scan of tools/oracle/helpers with that rule must find nothing. Run ruff and basedpyright on the helpers.
+  The rule. Take the four files off the ignores list of .ast-grep/rules/helper-imports-litellm.yml so only
+  tools/oracle/helpers/dispatch.py and tools/oracle/helpers/b3973.py stay. The note stays as it is. ast-grep scan of
+  tools/oracle/helpers with that rule must find nothing. Run ruff and basedpyright on the helpers.
 
 
   dispatch.py and models.rs are shared registry files that worker.md says a helper task leaves alone. This task is
@@ -213,21 +100,18 @@ description: >-
 scope:
   paths:
   - .ast-grep/rules/helper-imports-litellm.yml
-  - tools/oracle/helpers/b3973.py
   - tools/oracle/helpers/codex_history_tools.py
   - tools/oracle/helpers/file_type_records.py
   - tools/oracle/helpers/model_fields.py
   - tools/oracle/helpers/price_fields.py
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/src/helpers/models.rs
-  - tools/oracle/src/helpers/logging/b3973.rs
   - tools/oracle/src/helpers/core_ops/codex_history_tools.rs
   - tools/oracle/src/helpers/openai/file_type_records.rs
   - tools/oracle/src/helpers/models/model_fields.rs
   - tools/oracle/src/helpers/models/model_fields/**
   - tools/oracle/src/helpers/models/price_fields.rs
   - tools/oracle/src/helpers/models/price_fields/**
-  - tools/oracle/cases/opik/**
   - tools/oracle/cases/helpers/codex-history-tools/**
   - tools/oracle/cases/helpers/file-type-records/**
   - tools/oracle/cases/helpers/model-fields/**
@@ -235,30 +119,11 @@ scope:
   - tools/oracle/cases/helpers/providers/model-metadata-projection/**
   - tools/oracle/fuzz/corpus/helper_case/model_fields-*.yaml
   - tools/oracle/fuzz/corpus/helper_case/price_fields-*.yaml
-  - crates/betterlite-logging/src/opik.rs
-  - crates/betterlite-logging/src/opik/**
   - crates/betterlite-models/src/entry/tests.rs
   - crates/betterlite-models/src/price_fields/tests.rs
   - docs/deviations/B204.yaml
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opik/utils.py#L7-L81
-  why: >-
-    CONFIG_FILE_PATH_DEFAULT (L7), create_uuid7 (L10-L35), _read_opik_config_file builds items() for every section of
-    a default ConfigParser and keeps opik (L38-L49), and get_opik_config_variable reads user, env, file, default and
-    parses the file only when the first two are None (L57-L81).
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opik/utils.py#L84-L118
-  why: create_usage_object reads a Usage object (L84-L93) and get_traces_and_spans_from_payload drops null fields from a span (L101-L118).
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1874-L1960
-  why: Usage.__init__ turns None counts into 0 with `or 0` and does not compute total_tokens (L1955-L1957).
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opik/opik_payload_builder/api.py#L96-L97
-  why: build_opik_payload passes the response's usage through create_usage_object, the path the payload case follows.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opik/opik_payload_builder/payload_builders.py#L41-L83
-  why: build_span_payload, its name f"{model}_{object}_{created}" and its UTC times with a Z suffix.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opik/opik_payload_builder/types.py#L23-L42
-  why: SpanPayload, the fields the payload case compares.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opik/opik_payload_builder/extractors.py#L38-L72
-  why: extract_opik_metadata merges auth, request and requester opik metadata and treats null sections as empty.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/responses/codex_compat.py#L57-L154
   why: normalize_codex_input_items (L114-L134), its item rewrites (L57-L111) and drop_unsupported_tools (L137-L154).
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/additional_tools.py#L21-L60
@@ -275,19 +140,11 @@ references:
   why: _finalize_model_cost_map pops the fallback_generalizations block and passes its rules on untyped, so the removed fallback-generalizations case has no LiteLLM typed parse to compare.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L236-L277
   why: The rule functions the catalog-generalizations cases already call.
-- url: https://github.com/python/cpython/blob/3.13/Lib/configparser.py
-  why: >-
-    The parser to match: _read_inner, _handle_continuation_line, _handle_header, _handle_option,
-    _join_multiline_values, BasicInterpolation._interpolate_some and items(). The oracle runs LiteLLM on Python 3.13.
-- url: https://docs.python.org/3.13/library/configparser.html
-  why: The documented defaults of ConfigParser() (delimiters, comment prefixes, strict, empty lines in values, interpolation).
-- url: https://rust-fuzz.github.io/book/cargo-fuzz.html
-  why: Layout of a cargo-fuzz target and its corpus folder; the new opik_config_file target follows it.
 dod:
 - text: >-
-    b3973.py, codex_history_tools.py and file_type_records.py import litellm and call the LiteLLM functions named in
-    the description, the five files are off the rule's ignores list, the note names only dispatch.py, ast-grep finds
-    nothing, and ruff and basedpyright pass on the helpers.
+    codex_history_tools.py and file_type_records.py import litellm and call the LiteLLM functions named in the
+    description, the four files are off the rule's ignores list, ast-grep finds nothing, and ruff and basedpyright
+    pass on the helpers.
   proof:
   - helper-imports
   - helper-python
@@ -296,20 +153,6 @@ dod:
     no seed and no case folder.
   proof:
   - removed-operations
-- text: >-
-    get_config_variable takes the config file text, answers user, env, file, default in that order, parses the file
-    only when user and env give nothing, and create_usage_object always returns the three counts with 0 for an absent
-    or null one.
-  proof:
-  - opik-config
-- text: >-
-    read_config_section follows CPython 3.13 configparser defaults for comments, continuations, headers, DEFAULT,
-    delimiters, lowercased keys, duplicates and interpolation, and its errors never carry a value.
-  proof:
-  - config-file-tests
-- text: The Opik config parser has a cargo-fuzz target with a committed corpus, and a normal test replays every corpus file.
-  proof:
-  - config-file-corpus
 - text: >-
     The behavior the deleted operations tested lives in named native tests: five price_case_ tests in
     price_fields/tests.rs and reasoning_levels_keep_values in entry/tests.rs.
@@ -322,9 +165,9 @@ checks:
   optional: [mutants]
   commands:
   - id: helper-imports
-    why: a moved adapter is still on the ignores list, the note still names it, or an adapter does not import litellm
+    why: a moved adapter is still on the ignores list, or an adapter does not import litellm
     run: |-
-      test "$(grep -c '^  - tools/oracle/helpers/[a-z0-9_]*\.py$' .ast-grep/rules/helper-imports-litellm.yml)" = 1 && grep -qx '  - tools/oracle/helpers/dispatch.py' .ast-grep/rules/helper-imports-litellm.yml && ! grep -qE 'predate|b3973|codex_history_tools|file_type_records|model_fields|price_fields' .ast-grep/rules/helper-imports-litellm.yml && ast-grep scan --rule .ast-grep/rules/helper-imports-litellm.yml tools/oracle/helpers
+      test "$(grep -c '^  - tools/oracle/helpers/[a-z0-9_]*\.py$' .ast-grep/rules/helper-imports-litellm.yml)" = 2 && grep -qx '  - tools/oracle/helpers/dispatch.py' .ast-grep/rules/helper-imports-litellm.yml && grep -qx '  - tools/oracle/helpers/b3973.py' .ast-grep/rules/helper-imports-litellm.yml && ! grep -qE 'codex_history_tools|file_type_records|model_fields|price_fields' .ast-grep/rules/helper-imports-litellm.yml && ast-grep scan --rule .ast-grep/rules/helper-imports-litellm.yml tools/oracle/helpers
   - id: helper-python
     why: the rewritten adapters fail ruff or basedpyright
     run: |-
@@ -333,29 +176,10 @@ checks:
     why: a piece of the model_fields or price_fields operation is still there
     run: |-
       ! grep -qE '"(model_fields|price_fields)"' tools/oracle/helpers/dispatch.py tools/oracle/src/helpers/models.rs && test ! -e tools/oracle/helpers/model_fields.py && test ! -e tools/oracle/helpers/price_fields.py && test ! -e tools/oracle/src/helpers/models/model_fields.rs && test ! -e tools/oracle/src/helpers/models/model_fields && test ! -e tools/oracle/src/helpers/models/price_fields.rs && test ! -e tools/oracle/src/helpers/models/price_fields && test ! -e tools/oracle/cases/helpers/model-fields && test ! -e tools/oracle/cases/helpers/price-fields && test -z "$(ls tools/oracle/fuzz/corpus/helper_case | grep -E '^(model|price)_fields-')"
-  - id: opik-config
-    why: the config lookup order, the lazy file read or the zero-filled usage counts are wrong or untested
-    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'binary(opik) & test(/^opik_config_tests::(config_priority_reads_the_file_last|usage_object_fills_missing_counts_with_zero|config_lookup_skips_a_bad_file_when_answered)$/)'
-  - id: config-file-tests
-    why: the config file parser reads a form differently from CPython configparser, or an error shows a value
-    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E '(binary(opik) & test(/^opik_config_file_tests::config_file_/)) - test(/config_file_replays_the_corpus/)'
-  - id: config-file-corpus
-    why: the fuzz target or its corpus is missing, or no test replays the corpus
-    run: |-
-      test -f crates/betterlite-logging/fuzz/fuzz_targets/opik_config_file.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-logging/fuzz/corpus/opik_config_file)" && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'binary(opik) & test(/config_file_replays_the_corpus/)'
   - id: model-tests
     why: a case removed from the oracle has no native test in its place
     run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^price_fields::tests::price_case_/) | test(/^entry::tests::reasoning_levels_keep_values$/)'
 oracle_cases:
-- tools/oracle/cases/opik/uuid7-generation.yaml
-- tools/oracle/cases/opik/config-resolution.yaml
-- tools/oracle/cases/opik/config-file-ini-forms.yaml
-- tools/oracle/cases/opik/config-file-duplicate-key.yaml
-- tools/oracle/cases/opik/config-file-bad-percent.yaml
-- tools/oracle/cases/opik/config-file-unread-when-answered.yaml
-- tools/oracle/cases/opik/metadata-merging.yaml
-- tools/oracle/cases/opik/metadata-missing-sections.yaml
-- tools/oracle/cases/opik/payload-construction.yaml
 - tools/oracle/cases/helpers/codex-history-tools/additional-tools.yaml
 - tools/oracle/cases/helpers/codex-history-tools/additional-tools-malformed.yaml
 - tools/oracle/cases/helpers/codex-history-tools/agent-history.yaml
@@ -371,28 +195,17 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/model-metadata-projection/metadata-reasoning-levels.yaml
 deviations: []
 out_of_scope:
-- OpikLogger and build_opik_payload end to end, callback delivery and the client choice; B3974 owns them.
-- A response without a usage object; LiteLLM raises AttributeError there, so no case sends one.
-- The warning for a tags header in opik/metadata.rs; this task does not touch the header path.
+- b3973.py, its Rust module and the Opik cases; B5093 moves them onto LiteLLM and takes b3973.py off the list.
+- The rule's note; B5093 rewrites it once dispatch.py is the only file left.
 - Python habits in the native codex code (the text 0 and text [] fallbacks, ensure_ascii arguments); the native tests keep them as they are.
 - get_supported_regions and region filtering; B2225 owns them.
-- HTTP cases for Opik, codex or file uploads.
+- HTTP cases for codex or file uploads.
 - Any other helper operation, and every dispatch.py or models.rs line besides the two removed operations.
 pitfalls:
-- The Python config adapter writes only the case's config_file text into its temp file, so the oracle cache key stays valid; never let it read the real ~/.opik.config.
-- Create the TemporaryDirectory before patch.dict(os.environ, environment, clear=True), since tempfile reads TMPDIR from the environment.
-- Parse the file lazily on the native side too; config-file-unread-when-answered fails if the parser runs before the user value and env var are checked.
-- Interpolate every section, not just opik; config-file-bad-percent puts its bad % in another section.
-- Section names are case-sensitive while option keys are lowercased, so [OPIK] is a different section and URL_OVERRIDE in the file is url_override.
-- A deeper-indented line continues the current value before any header check, and a comment line between value lines adds nothing to the value.
-- Keep config text in the cases ASCII with \n line ends; the lone \r and other line ends go in native tests.
-- ConfigFileError messages must never carry a value from the file, since the file holds API keys.
-- Usage turns a null count into 0 and does not add up total_tokens, so total_tokens stays 0 when only the other two are given.
 - Compare function_call arguments parsed on both sides, never as text.
 - models.rs line 17 also registers model_metadata_projection; remove only the model_fields pair.
 - B5091 edits tools/oracle/cases/helpers/model-fields/documentation-entry.yaml before this task deletes the folder; delete it anyway.
-- B3974 calls get_config_variable later, so keep its new signature and error type plain and documented in the module.
 review_level: standard
 budget:
-  max_changed_lines: 2400
+  max_changed_lines: 1600
   max_new_expects: 0
