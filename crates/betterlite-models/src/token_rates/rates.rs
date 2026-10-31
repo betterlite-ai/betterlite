@@ -1,7 +1,7 @@
 use rust_decimal::Decimal;
 
 use super::{ModelInfo, TokenRateError};
-use crate::price_fields::decimal_lexeme::parse_decimal_lexeme;
+use crate::price_fields::decimal_lexeme::{DecimalLexemeError, parse_decimal_lexeme};
 use crate::tiered_pricing::Scalar;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -79,16 +79,22 @@ pub(super) fn decimal_value(
     };
     match scalar {
         Scalar::Bool(flag) => Ok(Some(Decimal::from(u8::from(*flag)))),
-        Scalar::Number(number) => {
-            parse_decimal_lexeme(&number.to_string())
-                .map(Some)
-                .map_err(|source| TokenRateError::Rate {
-                    key: key.to_owned(),
-                    source,
-                })
-        }
+        Scalar::Number(number) => wrap_rate(key, parse_decimal_lexeme(&number.to_string())),
         Scalar::Text(text) => parse_text_rate(key, text.trim(), default),
         Scalar::Null | Scalar::Array(_) | Scalar::Object(_) => Ok(default),
+    }
+}
+
+fn wrap_rate(
+    key: &str,
+    parsed: Result<Decimal, DecimalLexemeError>,
+) -> Result<Option<Decimal>, TokenRateError> {
+    match parsed {
+        Ok(value) => Ok(Some(value)),
+        Err(source) => Err(TokenRateError::Rate {
+            key: key.to_owned(),
+            source,
+        }),
     }
 }
 
@@ -106,12 +112,7 @@ pub(super) fn parse_text_rate(
         );
         return Ok(default);
     }
-    parse_decimal_lexeme(&text.replace('_', ""))
-        .map(Some)
-        .map_err(|source| TokenRateError::Rate {
-            key: key.to_owned(),
-            source,
-        })
+    wrap_rate(key, parse_decimal_lexeme(&text.replace('_', "")))
 }
 
 pub(super) fn cost_per_unit(

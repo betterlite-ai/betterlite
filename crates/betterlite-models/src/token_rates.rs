@@ -47,14 +47,15 @@ pub struct BatchCostRates {
 
 // A tier's Option<Scalar> fields can't tell an absent key from an explicit JSON null, so this carries that distinction instead, one struct per tier in `tiered_pricing`.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-#[expect(
-    clippy::struct_excessive_bools,
-    reason = "three independent key-presence flags, one per tier field LiteLLM keys on"
-)]
 pub struct TierKeyPresence {
     pub input: bool,
-    pub output: bool,
-    pub output_reasoning: bool,
+    pub output: OutputKeyPresence,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct OutputKeyPresence {
+    pub present: bool,
+    pub reasoning: bool,
 }
 
 pub struct ModelPricing<'pricing> {

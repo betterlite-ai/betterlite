@@ -1,7 +1,8 @@
 use betterlite_models::off_peak::schema::OffPeakBlockEntry;
 use betterlite_models::tiered_pricing::Tier;
 use betterlite_models::token_rates::{
-    self, ModelInfo, ModelPricing, RequestContext, TierKeyPresence, TokenRateError, Usage,
+    self, ModelInfo, ModelPricing, OutputKeyPresence, RequestContext, TierKeyPresence,
+    TokenRateError, Usage,
 };
 use chrono::{DateTime, Utc};
 use jiff::tz::TimeZoneDatabase;
@@ -50,29 +51,28 @@ pub(crate) enum Input {
     Deployment { model_info: Option<ModelInfo> },
 }
 
-impl From<TokenRateError> for Box<crate::helpers::HelperError> {
-    fn from(error: TokenRateError) -> Self {
+impl From<String> for Box<crate::helpers::HelperError> {
+    fn from(message: String) -> Self {
         Self::new(crate::helpers::HelperError {
             class: "TokenRateError".to_owned(),
             status: None,
             error_type: Some(None),
             param: Some(None),
             code: Some(None),
-            message: error.to_string(),
+            message,
         })
+    }
+}
+
+impl From<TokenRateError> for Box<crate::helpers::HelperError> {
+    fn from(error: TokenRateError) -> Self {
+        Self::from(error.to_string())
     }
 }
 
 impl From<serde_json::Error> for Box<crate::helpers::HelperError> {
     fn from(error: serde_json::Error) -> Self {
-        Self::new(crate::helpers::HelperError {
-            class: "TokenRateError".to_owned(),
-            status: None,
-            error_type: Some(None),
-            param: Some(None),
-            code: Some(None),
-            message: error.to_string(),
-        })
+        Self::from(error.to_string())
     }
 }
 
@@ -84,8 +84,10 @@ fn run_base(fields: &BaseInput) -> crate::helpers::HelperResult {
         let tier: Tier = serde_json::from_value(serde_json::Value::Object(raw.clone()))?;
         presence.push(TierKeyPresence {
             input: raw.contains_key("input_cost_per_token"),
-            output: raw.contains_key("output_cost_per_token"),
-            output_reasoning: raw.contains_key("output_cost_per_reasoning_token"),
+            output: OutputKeyPresence {
+                present: raw.contains_key("output_cost_per_token"),
+                reasoning: raw.contains_key("output_cost_per_reasoning_token"),
+            },
         });
         tiers.push(tier);
     }

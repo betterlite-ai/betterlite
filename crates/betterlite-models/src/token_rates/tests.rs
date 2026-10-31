@@ -205,8 +205,7 @@ fn tiered_table_output_falls_back_to_model_output_rate() {
         .expect("a fixture tier parses");
     let presence = TierKeyPresence {
         input: true,
-        output: false,
-        output_reasoning: false,
+        output: OutputKeyPresence::default(),
     };
     let pricing = ModelPricing {
         model: &prices,
@@ -229,8 +228,7 @@ fn tiered_one_hour_zero_falls_back_to_cache_creation() {
     .expect("a fixture tier parses");
     let presence = TierKeyPresence {
         input: true,
-        output: false,
-        output_reasoning: false,
+        output: OutputKeyPresence::default(),
     };
     let pricing = ModelPricing {
         model: &prices,
@@ -251,8 +249,10 @@ fn priced_tier_requires_an_input_rate_key() {
         .expect("a fixture tier parses");
     let presence = TierKeyPresence {
         input: false,
-        output: true,
-        output_reasoning: false,
+        output: OutputKeyPresence {
+            present: true,
+            reasoning: false,
+        },
     };
     let pricing = ModelPricing {
         model: &prices,
@@ -273,8 +273,7 @@ fn tiered_rates_apply_an_open_off_peak_window() {
         .expect("a fixture tier parses");
     let presence = TierKeyPresence {
         input: true,
-        output: false,
-        output_reasoning: false,
+        output: OutputKeyPresence::default(),
     };
     let off_peak_block: OffPeakBlock =
         serde_json::from_str(r#"{"hours_utc":"00:00-00:00","input_cost_per_token":"0.02"}"#)
@@ -298,8 +297,7 @@ fn null_input_key_still_bills_the_tier() {
         .expect("a fixture tier parses");
     let presence = TierKeyPresence {
         input: true,
-        output: false,
-        output_reasoning: false,
+        output: OutputKeyPresence::default(),
     };
     let pricing = ModelPricing {
         model: &prices,

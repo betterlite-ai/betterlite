@@ -44,7 +44,7 @@ fn tiered_rates(
 ) -> Result<EffectiveRates, TokenRateError> {
     let model = pricing.model;
     let input = tiered_pricing::tier_rate(tier.input_token.as_ref(), None)?;
-    let output = if presence.output {
+    let output = if presence.output.present {
         tiered_pricing::tier_rate(tier.output_token.as_ref(), None)?
     } else {
         cost_per_unit(model, "output_cost_per_token", Some(Decimal::ZERO))?.unwrap_or(Decimal::ZERO)
@@ -120,7 +120,7 @@ fn tiered_reasoning_rate(
     tier: &Tier,
     presence: TierKeyPresence,
 ) -> Result<Option<Decimal>, TokenRateError> {
-    if !presence.output_reasoning && !presence.output {
+    if !presence.output.reasoning && !presence.output.present {
         return Ok(None);
     }
     Ok(Some(tiered_pricing::tier_rate(
