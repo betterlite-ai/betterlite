@@ -78,6 +78,7 @@ impl Entropy for FixedEntropy {
 struct ScriptedHttp {
     response: HttpResponse,
     requests: Arc<Mutex<Vec<RecordedRequest>>>,
+    clock_advance: Option<(Arc<AtomicI64>, i64)>,
 }
 
 #[derive(Clone)]
@@ -102,7 +103,14 @@ impl ScriptedHttp {
         Self {
             response,
             requests: Arc::new(Mutex::new(Vec::new())),
+            clock_advance: None,
         }
+    }
+
+    // Bumps a shared wall-clock counter as a side effect of answering, so a test can tell whether a caller sampled the clock before or after this transport's call.
+    fn with_clock_advance(mut self, clock: Arc<AtomicI64>, advance_by: i64) -> Self {
+        self.clock_advance = Some((clock, advance_by));
+        self
     }
 
     fn requests(&self) -> Vec<RecordedRequest> {
@@ -116,6 +124,9 @@ impl ScriptedHttp {
         timeout_seconds: u64,
         follow_redirects: bool,
     ) -> Result<HttpResponse, PkceFailure> {
+        if let Some((clock, advance_by)) = &self.clock_advance {
+            clock.fetch_add(*advance_by, Ordering::SeqCst);
+        }
         self.requests
             .lock()
             .map_err(|_poisoned| PkceFailure::Protocol("request recorder was poisoned".to_owned()))?
@@ -142,30 +153,6 @@ impl Http for ScriptedHttp {
         follow_redirects: bool,
     ) -> Result<HttpResponse, PkceFailure> {
         self.record(url, body, timeout_seconds, follow_redirects)
-    }
-}
-
-// Bumps a shared wall-clock counter as a side effect of answering, so a test can tell whether a caller sampled the clock before or after this transport's call.
-struct AdvancingHttp {
-    response: HttpResponse,
-    clock: Arc<AtomicI64>,
-    advance_by: i64,
-}
-
-impl Http for AdvancingHttp {
-    fn get(&self, _url: &str, _timeout_seconds: u64) -> Result<HttpResponse, PkceFailure> {
-        Ok(self.response.clone())
-    }
-
-    fn post(
-        &self,
-        _url: &str,
-        _body: HttpBody,
-        _timeout_seconds: u64,
-        _follow_redirects: bool,
-    ) -> Result<HttpResponse, PkceFailure> {
-        self.clock.fetch_add(self.advance_by, Ordering::SeqCst);
-        Ok(self.response.clone())
     }
 }
 
@@ -542,16 +529,12 @@ fn token_requests_capture_expiry() {
 #[test]
 fn expires_at_samples_wall_clock_after_the_response_arrives() {
     let clock = Arc::new(AtomicI64::new(100));
-    let http = AdvancingHttp {
-        response: HttpResponse {
-            status: 200,
-            headers: Vec::new(),
-            body: br#"{"access_token":"access","expires_in":30,"refresh_token":"refresh"}"#
-                .to_vec(),
-        },
-        clock: Arc::clone(&clock),
-        advance_by: 20,
-    };
+    let http = ScriptedHttp::new(HttpResponse {
+        status: 200,
+        headers: Vec::new(),
+        body: br#"{"access_token":"access","expires_in":30,"refresh_token":"refresh"}"#.to_vec(),
+    })
+    .with_clock_advance(Arc::clone(&clock), 20);
     let wall_clock = SharedWallClock(Arc::clone(&clock));
     let credential = redeem_code(&contract(), &redemption(), &http, &wall_clock).expect("token");
     // The clock only reaches 120 once `post` returns; sampling before the call would yield 130.
