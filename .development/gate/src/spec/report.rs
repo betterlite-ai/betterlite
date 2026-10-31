@@ -11,7 +11,10 @@ pub(crate) struct Report {
     #[schemars(description = "The task id, for example B004.")]
     pub(crate) task: String,
     pub(crate) status: ReportStatus,
-    #[schemars(description = "What changed, in two to four plain sentences.")]
+    #[schemars(
+        regex(pattern = ".{40,}"),
+        description = "What changed, in two to four plain sentences, at least 40 characters."
+    )]
     pub(crate) summary: String,
     #[schemars(
         description = "Empty when done. When blocked: what is needed, where, and the evidence."

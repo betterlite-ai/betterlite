@@ -10,6 +10,7 @@ mod deviations;
 mod dispatch;
 mod error;
 mod facts;
+mod gate_lock;
 mod git;
 mod hook;
 mod ids;

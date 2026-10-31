@@ -106,7 +106,7 @@ pub(crate) struct Role {
     pub(crate) instructions: String,
     #[schemars(
         length(min = 1),
-        description = "Rungs tried in order. The dispatcher climbs to the next rung when a rung's attempts run out, and skips a rung whose vendor is at its usage limit."
+        description = "Rungs tried in order. A worker climbs to the next rung when a rung's attempts run out. While a worker rung's vendor is at its usage limit, its tries go to the first later rung on another vendor and the rung keeps its own attempts; with no such rung the dispatch stops and keeps its progress. A reviewer skips a rung whose vendor is at its usage limit."
     )]
     pub(crate) ladder: Vec<Rung>,
 }
@@ -135,7 +135,7 @@ pub(crate) struct Policy {
     pub(crate) review_by_other_vendor: bool,
     #[schemars(
         range(min = 1),
-        description = "Worker attempts across the whole ladder. A run that hits a usage limit doesn't count, so skipped rungs leave their attempts to the rungs after them."
+        description = "Worker attempts across the whole ladder, tries lent to a later rung included. A run that hits a usage limit doesn't count."
     )]
     pub(crate) max_worker_attempts: u32,
     #[schemars(

@@ -39,8 +39,9 @@
       "$ref": "#/$defs/ReportStatus"
     },
     "summary": {
-      "description": "What changed, in two to four plain sentences.",
-      "type": "string"
+      "description": "What changed, in two to four plain sentences, at least 40 characters.",
+      "type": "string",
+      "pattern": ".{40,}"
     },
     "task": {
       "description": "The task id, for example B004.",

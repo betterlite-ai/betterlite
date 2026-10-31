@@ -11,7 +11,7 @@ use crate::yaml::read_yaml;
 
 const ENTRY: &str = r#"{"behavior":"each chunk keeps the id of the first chunk","litellm":"https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L100","code":"crates/betterlite-openai/src/stream.rs:40","test":"chunks_keep_the_first_id"}"#;
 
-const DONE: &str = r#"{"task":"B005","status":"done","summary":"Streams chat completions.","blocker":"","owned":[{"behavior":"each chunk keeps the id of the first chunk","litellm":"https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L100","code":"crates/betterlite-openai/src/stream.rs:40","test":"chunks_keep_the_first_id"}],"prior_art":[{"need":"parse server-sent events split across reads","options":[{"name":"eventsource-stream","link":"https://docs.rs/eventsource-stream","verdict":"chosen","why":"buffers partial events"},{"name":"hand-written split","link":"https://html.spec.whatwg.org/multipage/server-sent-events.html","verdict":"rejected","why":"breaks on events split across reads"}]}],"deviations":[],"notes":[]}"#;
+const DONE: &str = r#"{"task":"B005","status":"done","summary":"Streams chat completions as server-sent events.","blocker":"","owned":[{"behavior":"each chunk keeps the id of the first chunk","litellm":"https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L100","code":"crates/betterlite-openai/src/stream.rs:40","test":"chunks_keep_the_first_id"}],"prior_art":[{"need":"parse server-sent events split across reads","options":[{"name":"eventsource-stream","link":"https://docs.rs/eventsource-stream","verdict":"chosen","why":"buffers partial events"},{"name":"hand-written split","link":"https://html.spec.whatwg.org/multipage/server-sent-events.html","verdict":"rejected","why":"breaks on events split across reads"}]}],"deviations":[],"notes":[]}"#;
 
 fn added(names: &[&str]) -> BTreeSet<String> {
     names.iter().map(|name| (*name).to_owned()).collect()
@@ -125,6 +125,22 @@ fn an_owned_behavior_names_its_test() {
         ),
         [
             "owned 'each chunk keeps the id of the first chunk' needs an https link to the LiteLLM line, the code that does it and the test that proves it"
+        ]
+    );
+}
+
+#[test]
+fn a_done_report_with_a_placeholder_summary_fails() {
+    let placeholder = DONE.replace("Streams chat completions as server-sent events.", "test");
+    let report: Report = parse_answer(&placeholder, "test").unwrap();
+    assert_eq!(
+        report_problems(
+            &report,
+            &task("B005-chat-streaming.yaml"),
+            &added(&["eventsource-stream"])
+        ),
+        [
+            "a done report needs a summary of at least 40 characters and an empty blocker; a blocked report needs a blocker"
         ]
     );
 }

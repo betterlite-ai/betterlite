@@ -47,11 +47,11 @@ The Claude sandbox mounts /dev/null over dotfiles in your worktree (.bashrc, .ba
 
 ## Final answer
 
-Your final answer is one JSON object that matches .development/schema/report.schema.json, and nothing else. Every field is required; use an empty string or list when there is nothing to say. The report covers the whole branch, not only your attempt: keep every prior_art entry and deviation from earlier attempts that still holds.
+Your final answer is one JSON object that matches .development/schema/report.schema.json, and nothing else. Give it once, after `cargo gate run <ID>` passes or when you are blocked, and never as a test or a draft: a Claude run ends at its first final answer, before the hook can send it back. Every field is required; use an empty string or list when there is nothing to say. The report covers the whole branch, not only your attempt: keep every prior_art entry and deviation from earlier attempts that still holds.
 
 - task is the task id.
 - status is done or blocked.
-- summary says what changed, in two to four plain sentences.
+- summary says what changed in two to four plain sentences, at least 40 characters.
 - blocker is empty when done.
 - owned has one entry per behavior a user can observe in the LiteLLM code your references own: the behavior, an https link to the LiteLLM line, where your code does it as path:line, and the test or oracle case that proves it. Fill it by walking the referenced code line by line before you stop. A behavior you can't place is a gap the review will find, so build it first. A deviation is listed too, with the test that proves it; behavior another task owns goes in notes with that task's id. The gate rejects a done report with an empty owned list when the task links LiteLLM code.
 - prior_art has one entry per problem you solved by picking an existing solution or deliberately writing your own. Each entry compares at least two options with https links and marks exactly one chosen. Every option needs its own https link and why, also one you write by hand: link the LiteLLM code it ports or the std or crate docs it builds on, or the gate rejects the report. Every crate the branch adds to a Cargo.toml must be a chosen option here, named exactly as the crate (serde_repr, not serde_repr::Serialize_repr), or the gate fails.

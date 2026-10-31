@@ -48,10 +48,19 @@ fn review_text(attempt: &Attempt<'_>, worker_runner: &Runner) -> Result<String, 
                     reason: "the reviewer ended without an answer".to_owned(),
                 });
             }
+            Run::TimedOut => {
+                return Err(GateError::Dispatch {
+                    task: brief.task.id.clone(),
+                    reason: format!(
+                        "the reviewer hit its {} minute timeout before its answer",
+                        rung.timeout_minutes
+                    ),
+                });
+            }
             Run::Limited => {}
         }
     }
-    Err(GateError::Dispatch {
+    Err(GateError::UsageLimit {
         task: brief.task.id.clone(),
         reason: "every runner on the reviewer ladder is at its usage limit".to_owned(),
     })

@@ -45,7 +45,7 @@ roles:
         model: sonnet
         effort: high
         attempts: 3
-        timeout_minutes: 120
+        timeout_minutes: 180
   reviewer:
     instructions: roles/reviewer.md
     ladder:

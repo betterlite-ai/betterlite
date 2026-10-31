@@ -197,6 +197,36 @@ fn apply_step(
     Ok(ControlFlow::Continue(()))
 }
 
+struct Pick<'agents> {
+    runner: &'agents Runner,
+    rung: &'agents Rung,
+    counted: bool,
+}
+
+fn other_vendor_rungs<'agents>(
+    agents: &'agents Agents,
+    places: &Places<'_>,
+    current: usize,
+    runner: &Runner,
+) -> Result<Vec<(&'agents Runner, &'agents Rung)>, GateError> {
+    let mut found = Vec::new();
+    for rung in agents
+        .roles
+        .worker
+        .ladder
+        .iter()
+        .skip(current.saturating_add(1))
+    {
+        let other = find_runner(agents, &rung.runner)?;
+        if other.vendor != runner.vendor
+            && !vendor::limited(places.git_common_dir, agents, &other.vendor)?
+        {
+            found.push((other, rung));
+        }
+    }
+    Ok(found)
+}
+
 fn overflow_rung<'agents>(
     agents: &'agents Agents,
     places: &Places<'_>,
@@ -208,17 +238,7 @@ fn overflow_rung<'agents>(
     if !agents.policy.overflow || vendor::seat_free(git, agents, own, Seat::Worker)? {
         return Ok(None);
     }
-    for rung in agents
-        .roles
-        .worker
-        .ladder
-        .iter()
-        .skip(current.saturating_add(1))
-    {
-        let other = find_runner(agents, &rung.runner)?;
-        if other.vendor == runner.vendor || vendor::limited(git, agents, &other.vendor)? {
-            continue;
-        }
+    for (other, rung) in other_vendor_rungs(agents, places, current, runner)? {
         let account = vendor::find_vendor(agents, &other.vendor)?;
         if vendor::seat_free(git, agents, account, Seat::Worker)? {
             return Ok(Some((other, rung)));
@@ -227,21 +247,43 @@ fn overflow_rung<'agents>(
     Ok(None)
 }
 
-fn climb_rung(
-    agents: &Agents,
+fn pick_rung<'agents>(
+    agents: &'agents Agents,
+    places: &Places<'_>,
+    current: usize,
+    rung: &'agents Rung,
+) -> Result<Option<Pick<'agents>>, GateError> {
+    let own = find_runner(agents, &rung.runner)?;
+    if vendor::limited(places.git_common_dir, agents, &own.vendor)? {
+        // the try goes to a later rung of another vendor, so this rung keeps its attempts for when its vendor is back
+        let later = other_vendor_rungs(agents, places, current, own)?;
+        return Ok(later.first().map(|&(runner, lent)| Pick {
+            runner,
+            rung: lent,
+            counted: false,
+        }));
+    }
+    let (runner, chosen) = overflow_rung(agents, places, current, own)?.unwrap_or((own, rung));
+    Ok(Some(Pick {
+        runner,
+        rung: chosen,
+        counted: true,
+    }))
+}
+
+fn climb_rung<'agents>(
+    agents: &'agents Agents,
     brief: &Brief<'_>,
     places: &Places<'_>,
-    rung: &Rung,
+    rung: &'agents Rung,
     progress: &mut Progress,
 ) -> Result<Option<Vec<String>>, GateError> {
-    let runner = find_runner(agents, &rung.runner)?;
+    progress.limited = false;
     while progress.rung_used < rung.attempts && progress.used < agents.policy.max_worker_attempts {
-        if vendor::limited(places.git_common_dir, agents, &runner.vendor)? {
+        let Some(pick) = pick_rung(agents, places, progress.rung, rung)? else {
             progress.limited = true;
             return Ok(None);
-        }
-        let overflow = overflow_rung(agents, places, progress.rung, runner)?;
-        let (try_runner, try_rung) = overflow.unwrap_or((runner, rung));
+        };
         progress.save(places.journal)?;
         progress.number = progress.number.saturating_add(1);
         let current = Attempt {
@@ -251,19 +293,16 @@ fn climb_rung(
             number: progress.number,
             earlier: progress.earlier.as_ref(),
         };
-        let outcome = attempt::attempt_once(&current, try_runner, try_rung, &progress.feedback)?;
+        let outcome = attempt::attempt_once(&current, pick.runner, pick.rung, &progress.feedback)?;
         let removed = attempt::remove_extra_targets(places.worktree)?;
+        // a run that hit a usage limit marked its vendor, so the next pick goes around it
         let Some(step) = outcome else {
-            // the overflow vendor is marked now, so the next try waits for this rung's own vendor
-            if overflow.is_some() {
-                continue;
-            }
-            progress.limited = true;
-            return Ok(None);
+            continue;
         };
-        progress.rung_used = progress.rung_used.saturating_add(1);
+        if pick.counted {
+            progress.rung_used = progress.rung_used.saturating_add(1);
+        }
         progress.used = progress.used.saturating_add(1);
-        progress.limited = false;
         let flow = apply_step(agents, brief, progress, step)?;
         progress.feedback.extend(removed);
         if let ControlFlow::Break(lines) = flow {
@@ -284,15 +323,24 @@ fn run_ladder(
         if let Some(lines) = climb_rung(agents, brief, places, rung, &mut progress)? {
             return Ok(lines);
         }
+        if progress.limited {
+            progress.save(places.journal)?;
+            let reason = format!(
+                "every runner left on the worker ladder is at its usage limit; last feedback: {}",
+                progress.feedback.join("; ")
+            );
+            return Err(GateError::UsageLimit {
+                task: brief.task.id.clone(),
+                reason,
+            });
+        }
         progress.rung = progress.rung.saturating_add(1);
         progress.rung_used = 0;
     }
-    let ending = if progress.limited {
-        "every runner left on the worker ladder is at its usage limit"
-    } else {
-        "the worker ladder ran out of attempts"
-    };
-    let reason = format!("{ending}; last feedback: {}", progress.feedback.join("; "));
+    let reason = format!(
+        "the worker ladder ran out of attempts; last feedback: {}",
+        progress.feedback.join("; ")
+    );
     Err(GateError::Dispatch {
         task: brief.task.id.clone(),
         reason,
@@ -342,6 +390,6 @@ pub(crate) fn dispatch(
         writable: &writable,
     };
     let outcome = run_ladder(&agents, &brief, &places, notes);
-    progress::clear(&journal)?;
+    progress::finish(&journal, &outcome)?;
     outcome
 }

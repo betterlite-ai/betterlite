@@ -4,13 +4,15 @@ use std::fs::{self, File};
 use std::path::Path;
 
 use crate::dispatch::attempt::remove_extra_targets;
-use crate::dispatch::progress::{Progress, clear};
+use crate::dispatch::progress::{Progress, finish};
 use crate::dispatch::prompt::Brief;
 use crate::dispatch::review::reviewer_rungs;
 use crate::dispatch::vendor::mark;
 use crate::dispatch::{
-    EarlierReview, Places, climb_rung, find_runner, note_blocked, overflow_rung, run_ladder,
+    EarlierReview, Places, climb_rung, find_runner, note_blocked, overflow_rung, pick_rung,
+    run_ladder,
 };
+use crate::error::GateError;
 use crate::spec::agents::Agents;
 use crate::spec::task::{ReviewLevel, Task};
 use crate::yaml::read_yaml;
@@ -68,12 +70,19 @@ fn without_a_saved_progress_the_notes_start_the_feedback() {
 }
 
 #[test]
-fn clearing_removes_the_saved_progress_and_needs_none() {
+fn finishing_removes_the_saved_progress_unless_a_usage_limit_stopped_the_dispatch() {
     let folder = tempfile::tempdir().unwrap();
+    let saved = folder.path().join("progress.json");
     progress().save(folder.path()).unwrap();
-    clear(folder.path()).unwrap();
-    assert!(!folder.path().join("progress.json").exists());
-    clear(folder.path()).unwrap();
+    let limited = Err(GateError::UsageLimit {
+        task: "B000".to_owned(),
+        reason: "every runner left on the worker ladder is at its usage limit".to_owned(),
+    });
+    finish(folder.path(), &limited).unwrap();
+    assert!(saved.exists());
+    finish(folder.path(), &Ok(Vec::new())).unwrap();
+    assert!(!saved.exists());
+    finish(folder.path(), &Ok(Vec::new())).unwrap();
 }
 
 #[test]
@@ -181,7 +190,7 @@ fn a_blocked_report_after_another_outcome_starts_the_count_over() {
 }
 
 #[test]
-fn a_rung_whose_vendor_is_at_its_limit_is_skipped_without_a_run() {
+fn a_rung_pauses_without_a_run_while_every_vendor_it_can_use_is_at_its_limit() {
     let (agents, task) = fixtures();
     let brief = Brief {
         task: &task,
@@ -196,6 +205,7 @@ fn a_rung_whose_vendor_is_at_its_limit_is_skipped_without_a_run() {
         "ERROR: You've hit your usage limit.",
     )
     .unwrap();
+    mark(folder.path(), "anthropic", "You've hit your limit").unwrap();
     let places = Places {
         worktree: folder.path(),
         journal: folder.path(),
@@ -209,6 +219,87 @@ fn a_rung_whose_vendor_is_at_its_limit_is_skipped_without_a_run() {
     assert_eq!(lines, None);
     assert!(progress.limited);
     assert_eq!((progress.number, progress.used), (0, 0));
+}
+
+#[test]
+fn a_limited_rung_lends_its_try_to_a_later_rung_and_keeps_its_attempts() {
+    let (agents, _) = fixtures();
+    let folder = tempfile::tempdir().unwrap();
+    let places = Places {
+        worktree: folder.path(),
+        journal: folder.path(),
+        git_common_dir: folder.path(),
+        home: folder.path(),
+        writable: &[],
+    };
+    let ladder = &agents.roles.worker.ladder;
+    let own = pick_rung(&agents, &places, 0, &ladder[0]).unwrap().unwrap();
+    assert_eq!(
+        (own.rung.model.as_str(), own.counted),
+        ("gpt-reserve", true)
+    );
+    mark(
+        folder.path(),
+        "openai",
+        "ERROR: You've hit your usage limit.",
+    )
+    .unwrap();
+    let borrowed = pick_rung(&agents, &places, 0, &ladder[0]).unwrap().unwrap();
+    assert_eq!(
+        (
+            borrowed.runner.id.as_str(),
+            borrowed.rung.model.as_str(),
+            borrowed.counted
+        ),
+        ("claude-worker", "sonnet", false)
+    );
+    let last = ladder.len() - 1;
+    mark(folder.path(), "anthropic", "You've hit your limit").unwrap();
+    assert!(
+        pick_rung(&agents, &places, last, &ladder[last])
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[test]
+fn a_dispatch_stopped_by_a_usage_limit_keeps_its_progress() {
+    let (agents, task) = fixtures();
+    let brief = Brief {
+        task: &task,
+        file: "tasks/B000-workspace.yaml",
+        branch: "task/B000-workspace",
+        base: "abc123",
+    };
+    let folder = tempfile::tempdir().unwrap();
+    mark(
+        folder.path(),
+        "openai",
+        "ERROR: You've hit your usage limit.",
+    )
+    .unwrap();
+    mark(folder.path(), "anthropic", "You've hit your limit").unwrap();
+    let places = Places {
+        worktree: folder.path(),
+        journal: folder.path(),
+        git_common_dir: folder.path(),
+        home: folder.path(),
+        writable: &[],
+    };
+    let mut saved = progress();
+    saved.feedback = vec!["the saved findings".to_owned()];
+    saved.number = 2;
+    saved.used = 2;
+    saved.rung = 1;
+    saved.rung_used = 1;
+    saved.save(folder.path()).unwrap();
+    let error = run_ladder(&agents, &brief, &places, Vec::new()).unwrap_err();
+    assert!(matches!(error, GateError::UsageLimit { .. }));
+    assert!(error.to_string().contains(
+        "every runner left on the worker ladder is at its usage limit; last feedback: the saved findings"
+    ));
+    saved.limited = true;
+    assert_eq!(Progress::load(folder.path(), Vec::new()).unwrap(), saved);
 }
 
 #[test]
