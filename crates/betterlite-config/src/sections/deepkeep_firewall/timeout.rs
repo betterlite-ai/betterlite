@@ -18,7 +18,7 @@ enum Seconds {
 pub(super) struct Timeout(pub(super) Duration);
 
 #[derive(Debug, Error)]
-pub(super) enum Error {
+pub(super) enum TimeoutError {
     #[error("timeout must be numeric")]
     Number {
         #[source]
@@ -38,7 +38,7 @@ impl Default for Timeout {
 }
 
 impl TryFrom<Seconds> for Timeout {
-    type Error = Error;
+    type Error = TimeoutError;
 
     fn try_from(value: Seconds) -> Result<Self, Self::Error> {
         let seconds = match value {
@@ -47,12 +47,12 @@ impl TryFrom<Seconds> for Timeout {
             Seconds::Text(text) => text
                 .trim()
                 .parse::<f64>()
-                .map_err(|source| Error::Number { source })?,
+                .map_err(|source| TimeoutError::Number { source })?,
             Seconds::Number(number) => number,
             Seconds::Boolean(boolean) => f64::from(u8::from(boolean)),
         };
-        let duration =
-            Duration::try_from_secs_f64(seconds).map_err(|source| Error::Duration { source })?;
+        let duration = Duration::try_from_secs_f64(seconds)
+            .map_err(|source| TimeoutError::Duration { source })?;
         Ok(Self(duration))
     }
 }

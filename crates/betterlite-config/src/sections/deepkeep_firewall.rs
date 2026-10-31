@@ -54,19 +54,19 @@ pub enum UnreachableFallback {
 }
 
 #[derive(Debug, Error)]
-pub enum Error {
+pub enum FallbackError {
     #[error("invalid unreachable_fallback: {value}; expected fail_open or fail_closed")]
     Fallback { value: String },
 }
 
 impl TryFrom<String> for UnreachableFallback {
-    type Error = Error;
+    type Error = FallbackError;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         match value.to_lowercase().as_str() {
             "fail_closed" => Ok(Self::FailClosed),
             "fail_open" => Ok(Self::FailOpen),
-            _ => Err(Error::Fallback { value }),
+            _ => Err(FallbackError::Fallback { value }),
         }
     }
 }

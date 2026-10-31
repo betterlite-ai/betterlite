@@ -153,8 +153,8 @@ fn deepkeep_config_top_level_fallback(#[case] fallback: &str) {
 #[case::integer("5", 5000)]
 #[case::fraction("0.125", 125)]
 #[case::numeric_string("'2.5'", 2500)]
-#[case::null("null", 600000)]
-#[case::empty("''", 600000)]
+#[case::null("null", 600_000)]
+#[case::empty("''", 600_000)]
 #[case::zero("0", 0)]
 #[case::boolean("true", 1000)]
 fn deepkeep_config_accepts_timeout_seconds(#[case] timeout: &str, #[case] milliseconds: u64) {
@@ -200,11 +200,11 @@ fn deepkeep_config_rejects_invalid_parameters(#[case] parameter: &str) {
     let source = format!(
         "guardrails:\n  - guardrail_name: firewall\n    litellm_params:\n      guardrail: deepkeep\n      api_key: key\n      api_base: https://deepkeep.test\n      deepkeep_firewall_id: fixed\n      {parameter}\n"
     );
-    assert!(
-        ConfigLoader {
-            lookup: BTreeMap::new()
-        }
-        .load(&source)
-        .is_err()
-    );
+    let error = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(&source)
+    .expect_err("invalid parameter");
+    let (field, _value) = parameter.split_once(':').expect("parameter name");
+    assert!(error.to_string().contains(field));
 }
