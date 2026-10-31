@@ -2,6 +2,8 @@
 
 use std::collections::BTreeMap;
 
+use rstest::rstest;
+
 use super::{coerce_bool, coerce_float, coerce_int};
 use crate::redis_connection_settings::model::scalars::{
     BoolOrText, FloatOrText, IntOrText, PassthroughValue,
@@ -170,4 +172,33 @@ fn redis_coerce_preserves_untyped_signature_parameters() {
     let expected = options.clone();
     coerce_options(Target::Direct, ClientKind::Sync, &mut options);
     assert_eq!(options, expected);
+}
+
+#[rstest]
+#[case::health_interval("health_check_interval", "30", 30)]
+#[case::read_size("socket_read_size", "32768", 0x8000)]
+fn redis_coerce_signature_integers(#[case] name: &str, #[case] text: &str, #[case] expected: i64) {
+    let mut value = PassthroughValue::Text(text.to_owned());
+    assert!(super::coerce_passthrough(name, &mut value, Target::Direct));
+    assert_eq!(
+        value,
+        PassthroughValue::Number(serde_json::Number::from(expected))
+    );
+}
+
+#[rstest]
+#[case::direct_integer(Target::Direct, "reinitialize_steps", "5")]
+#[case::url_integer(Target::Url, "cluster_error_retry_attempts", "10")]
+#[case::sentinel_integer(Target::Sentinel, "reinitialize_steps", "5")]
+#[case::direct_boolean(Target::Direct, "require_full_coverage", "yes")]
+#[case::url_boolean(Target::Url, "read_from_replicas", "false")]
+#[case::sentinel_boolean(Target::Sentinel, "dynamic_startup_nodes", "true")]
+fn redis_coerce_leaves_cluster_options_untyped_elsewhere(
+    #[case] target: Target,
+    #[case] name: &str,
+    #[case] text: &str,
+) {
+    let mut value = PassthroughValue::Text(text.to_owned());
+    assert!(super::coerce_passthrough(name, &mut value, target));
+    assert_eq!(value, PassthroughValue::Text(text.to_owned()));
 }
