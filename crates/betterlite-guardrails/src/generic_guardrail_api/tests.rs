@@ -2,8 +2,10 @@
 
 use std::collections::BTreeMap;
 use std::future::IntoFuture as _;
+use std::sync::{Arc, Mutex};
 
 use axum::Router;
+use axum::body::Bytes;
 use axum::routing::post;
 use reqwest::StatusCode;
 use reqwest::header::{CONTENT_TYPE, HeaderName};
@@ -201,6 +203,50 @@ fn generic_guardrail_merge_provider_params_sends_an_empty_object_when_nothing_is
             .as_object()
             .expect("object")
             .is_empty()
+    );
+}
+#[derive(serde::Deserialize)]
+struct CapturedProviderParams {
+    #[serde(rename = "additional_provider_specific_params")]
+    provider_params: BTreeMap<String, GuardrailExtraValue>,
+}
+
+#[tokio::test]
+async fn generic_guardrail_apply_guardrail_with_original_merges_configured_provider_params() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}{}", listener.local_addr().unwrap(), DEFAULT_PATH);
+    let mut instance = api(GenericGuardrailAPISettings::from_optional(None), &base);
+    instance.provider_params = BTreeMap::from([(
+        "custom_threshold".to_owned(),
+        GuardrailExtraValue::Text("strict".to_owned()),
+    )]);
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    let captured_for_handler = Arc::clone(&captured);
+    let answer = move |body: Bytes| {
+        let captured_for_body = Arc::clone(&captured_for_handler);
+        async move {
+            *captured_for_body.lock().unwrap() = body.to_vec();
+            "{}".to_owned()
+        }
+    };
+    let router = Router::new().route(DEFAULT_PATH, post(answer));
+    let mut server = JoinSet::new();
+    server.spawn(axum::serve(listener, router).into_future());
+    let request = base_request();
+    let original = base_request();
+    instance
+        .apply_guardrail_with_original(&request, &original)
+        .await
+        .expect("success");
+    let body = captured.lock().unwrap().clone();
+    let captured_params: CapturedProviderParams =
+        serde_json::from_slice(&body).expect("captured payload is valid JSON");
+    assert_eq!(
+        captured_params.provider_params,
+        BTreeMap::from([(
+            "custom_threshold".to_owned(),
+            GuardrailExtraValue::Text("strict".to_owned())
+        )])
     );
 }
 #[test]

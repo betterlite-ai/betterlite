@@ -91,8 +91,9 @@ impl GenericGuardrailAPI {
         &self,
         request: GenericGuardrailAPIRequest,
     ) -> Result<GenericGuardrailAPIResponse, GenericGuardrailAPIError> {
-        let merged = self.merge_provider_params(request);
-        self.apply_guardrail_with_original(&merged, &merged).await
+        let original = request.clone();
+        self.apply_guardrail_with_original(&request, &original)
+            .await
     }
 
     fn merge_provider_params(
@@ -114,9 +115,10 @@ impl GenericGuardrailAPI {
         request: &GenericGuardrailAPIRequest,
         original: &GenericGuardrailAPIRequest,
     ) -> Result<GenericGuardrailAPIResponse, GenericGuardrailAPIError> {
+        let merged = self.merge_provider_params(request.clone());
         let fallback = passthrough_response(original);
-        match self.call_api(request).await {
-            Ok(response) => enforce_response(response, original, request),
+        match self.call_api(&merged).await {
+            Ok(response) => enforce_response(response, original, &merged),
             Err(error) => self.handle_error(error, fallback),
         }
     }
