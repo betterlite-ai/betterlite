@@ -347,7 +347,7 @@ const STAGE_TICKS = [1, 5, 15, 60, 240, 1440, 4320, 10080];
 const DAY_STEPS = [86400, 172800, 604800, 1209600, 2419200];
 const HOUR_STEPS = [3600, 10800, 21600, 43200, ...DAY_STEPS];
 const STAGES = [
-  { key: "build", label: "Build", about: "First commit to pull request opened", color: "--c1" },
+  { key: "build", label: "Build", about: "First commit to pull request opened, including gate runs, review and fix rounds, usage-limit pauses and the wait for the architect to push", color: "--c1" },
   { key: "checks", label: "Checks", about: "Opened to added to the merge queue", color: "--c2" },
   { key: "queue", label: "Queue", about: "Added to the merge queue to merged", color: "--c3" },
 ];
