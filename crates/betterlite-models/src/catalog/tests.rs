@@ -2,7 +2,8 @@
 
 use super::{
     BundledCatalog, CatalogError, MAX_CATALOG_ALIASES, MAX_CATALOG_BYTES, MAX_CATALOG_DEPTH,
-    MAX_CATALOG_ENTRIES, MAX_CATALOG_WARNINGS, ModelCatalog, UnknownFields,
+    MAX_CATALOG_ENTRIES, MAX_CATALOG_WARNING_BYTES, MAX_CATALOG_WARNINGS, ModelCatalog,
+    UnknownFields,
 };
 use crate::metadata::identity::Mode;
 use rstest::rstest;
@@ -275,6 +276,16 @@ fn repeated_long_alias_collisions_hit_warning_byte_limit() {
 
     let error = ModelCatalog::parse(&bytes, UnknownFields::Reject).unwrap_err();
     assert!(matches!(error, CatalogError::TooManyWarningBytes { .. }));
+}
+
+#[test]
+fn warning_bytes_at_the_limit_still_parses() {
+    let path_len = MAX_CATALOG_WARNING_BYTES - "model.".len();
+    let key = "x".repeat(path_len);
+    let bytes = format!(r#"{{"model":{{"litellm_provider":"openai","{key}":true}}}}"#).into_bytes();
+
+    let catalog = ModelCatalog::parse(&bytes, UnknownFields::Warn).unwrap();
+    assert_eq!(catalog.warnings, [format!("model.{key}")]);
 }
 
 fn check_error(error: &CatalogError, failure: Failure) {
