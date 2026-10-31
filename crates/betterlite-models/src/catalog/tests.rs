@@ -227,6 +227,49 @@ fn model_catalog_tests_behavior(
     }
 }
 
+#[test]
+fn entry_limit_excludes_metadata_sentinels() {
+    let mut bytes = entries(MAX_CATALOG_ENTRIES);
+    let suffix = b",\"sample_spec\":{},\"fallback_generalizations\":{\"rules\":[]}";
+    let last = bytes.len().saturating_sub(1);
+    bytes.splice(last..last, suffix.iter().copied());
+
+    let catalog = ModelCatalog::parse(&bytes, UnknownFields::Reject).unwrap();
+    assert_eq!(catalog.entries.len(), MAX_CATALOG_ENTRIES);
+    assert!(catalog.generalizations.rules.is_empty());
+}
+
+#[test]
+fn generalization_nested_price_unknown_is_checked() {
+    let bytes = br#"{"fallback_generalizations":{"rules":[{"pattern":"^x","model_info":{"off_peak_pricing":{"input_cost_per_token":0.0000001,"new_field":true}}}]}}"#;
+
+    let rejected = ModelCatalog::parse(bytes, UnknownFields::Reject).unwrap_err();
+    assert!(matches!(&rejected, CatalogError::UnknownPriceField { .. }));
+    assert!(
+        rejected
+            .to_string()
+            .contains("fallback_generalizations.rules[0].model_info.off_peak_pricing.new_field")
+    );
+
+    let warned = ModelCatalog::parse(bytes, UnknownFields::Warn).unwrap();
+    assert!(warned.warnings.contains(
+        &"fallback_generalizations.rules[0].model_info.off_peak_pricing.new_field".to_owned()
+    ));
+}
+
+#[test]
+fn repeated_long_alias_collisions_hit_warning_byte_limit() {
+    let canonical = "c".repeat(256 * 1024);
+    let aliases = (0..100).map(|_| "\"shared\"").collect::<Vec<_>>().join(",");
+    let bytes = format!(
+        "{{\"{canonical}\":{{\"aliases\":[{aliases}]}},\"other\":{{\"aliases\":[\"shared\"]}}}}"
+    )
+    .into_bytes();
+
+    let error = ModelCatalog::parse(&bytes, UnknownFields::Reject).unwrap_err();
+    assert!(matches!(error, CatalogError::TooManyWarningBytes { .. }));
+}
+
 fn check_error(error: &CatalogError, failure: Failure) {
     match failure {
         Failure::Duplicate => assert!(error.to_string().contains("duplicate")),

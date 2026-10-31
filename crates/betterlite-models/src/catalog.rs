@@ -11,6 +11,7 @@ const MAX_CATALOG_DEPTH: usize = 64;
 const MAX_CATALOG_ENTRIES: usize = 10_000;
 const MAX_CATALOG_ALIASES: usize = 10_000;
 const MAX_CATALOG_WARNINGS: usize = 10_000;
+const MAX_CATALOG_WARNING_BYTES: usize = 1024 * 1024;
 const SAMPLE_SPEC: &str = "sample_spec";
 const FALLBACK_GENERALIZATIONS: &str = "fallback_generalizations";
 #[expect(
@@ -48,6 +49,8 @@ pub enum CatalogError {
     TooManyAliases { limit: usize },
     #[error("model catalog has too many warnings over the {limit} warning limit")]
     TooManyWarnings { limit: usize },
+    #[error("model catalog warnings exceed the {limit} byte limit")]
+    TooManyWarningBytes { limit: usize },
     #[error("model catalog JSON error: {0}")]
     Json(#[from] serde_json::Error),
     #[error("model catalog nesting exceeds {limit}")]
@@ -101,9 +104,13 @@ impl ModelCatalog {
             });
         }
         let raw = decoder::decode(bytes)?;
-        if raw.len() > MAX_CATALOG_ENTRIES {
+        let entry_count = raw
+            .keys()
+            .filter(|name| *name != SAMPLE_SPEC && *name != FALLBACK_GENERALIZATIONS)
+            .count();
+        if entry_count > MAX_CATALOG_ENTRIES {
             return Err(CatalogError::TooManyEntries {
-                count: raw.len(),
+                count: entry_count,
                 limit: MAX_CATALOG_ENTRIES,
             });
         }
