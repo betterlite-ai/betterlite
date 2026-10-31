@@ -110,7 +110,14 @@ fn default_uploads(environment: &dyn EnvironmentLookup) -> usize {
         .filter(|text| !text.contains('.'))
         .and_then(integer_from_text);
     match parsed.map(usize::try_from) {
-        None => DEFAULT_UPLOADS,
+        None if configured.is_none() => DEFAULT_UPLOADS,
+        None => {
+            tracing::warn!(
+                ?configured,
+                "s3 logging: DEFAULT_S3_MAX_CONCURRENT_UPLOADS is not an integer, using 16"
+            );
+            DEFAULT_UPLOADS
+        }
         Some(Ok(limit)) => limit,
         Some(Err(_)) => {
             tracing::warn!(

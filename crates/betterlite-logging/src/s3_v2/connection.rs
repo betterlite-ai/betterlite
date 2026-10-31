@@ -1,6 +1,7 @@
 use crate::s3_transport::option_value::OptionValue;
 use crate::s3_v2::source::Source;
 use secrecy::{ExposeSecret as _, SecretString};
+use std::array;
 use std::collections::BTreeMap;
 
 #[derive(Clone, Debug)]
@@ -37,12 +38,19 @@ where
     Config: Clone + Default,
 {
     let credentials = Credentials::from((source, defaults));
+    let [bucket_name, region_name, api_version, endpoint_url, path] = resolve_strings([
+        (&source.bucket_name, &defaults.bucket_name),
+        (&source.region_name, &defaults.region_name),
+        (&source.api_version, &defaults.api_version),
+        (&source.endpoint_url, &defaults.endpoint_url),
+        (&source.path, &defaults.path),
+    ]);
     Connection {
-        bucket_name: resolve_field(source.bucket_name.as_ref(), defaults.bucket_name.as_ref()),
-        region_name: resolve_field(source.region_name.as_ref(), defaults.region_name.as_ref()),
-        api_version: resolve_field(source.api_version.as_ref(), defaults.api_version.as_ref()),
-        endpoint_url: resolve_field(source.endpoint_url.as_ref(), defaults.endpoint_url.as_ref()),
-        path: resolve_field(source.path.as_ref(), defaults.path.as_ref()),
+        bucket_name,
+        region_name,
+        api_version,
+        endpoint_url,
+        path,
         credentials,
         verify: source.verify.as_ref().or(defaults.verify.as_ref()).cloned(),
         config: source
@@ -69,65 +77,71 @@ where
     Config: Default,
 {
     fn from((source, defaults): (&Source<Config>, &Source<Config>)) -> Self {
+        let [
+            aws_access_key_id,
+            aws_secret_access_key,
+            aws_session_token,
+            aws_web_identity_token,
+        ] = resolve_secrets([
+            (&source.aws_access_key_id, &defaults.aws_access_key_id),
+            (
+                &source.aws_secret_access_key,
+                &defaults.aws_secret_access_key,
+            ),
+            (&source.aws_session_token, &defaults.aws_session_token),
+            (
+                &source.aws_web_identity_token,
+                &defaults.aws_web_identity_token,
+            ),
+        ]);
+        let [
+            aws_session_name,
+            aws_profile_name,
+            aws_role_name,
+            aws_sts_endpoint,
+        ] = resolve_strings([
+            (&source.aws_session_name, &defaults.aws_session_name),
+            (&source.aws_profile_name, &defaults.aws_profile_name),
+            (&source.aws_role_name, &defaults.aws_role_name),
+            (&source.aws_sts_endpoint, &defaults.aws_sts_endpoint),
+        ]);
         Self {
-            aws_access_key_id: resolve_field(
-                source.aws_access_key_id.as_ref(),
-                defaults.aws_access_key_id.as_ref(),
-            ),
-            aws_secret_access_key: resolve_field(
-                source.aws_secret_access_key.as_ref(),
-                defaults.aws_secret_access_key.as_ref(),
-            ),
-            aws_session_token: resolve_field(
-                source.aws_session_token.as_ref(),
-                defaults.aws_session_token.as_ref(),
-            ),
-            aws_session_name: resolve_field(
-                source.aws_session_name.as_ref(),
-                defaults.aws_session_name.as_ref(),
-            ),
-            aws_profile_name: resolve_field(
-                source.aws_profile_name.as_ref(),
-                defaults.aws_profile_name.as_ref(),
-            ),
-            aws_role_name: resolve_field(
-                source.aws_role_name.as_ref(),
-                defaults.aws_role_name.as_ref(),
-            ),
-            aws_web_identity_token: resolve_field(
-                source.aws_web_identity_token.as_ref(),
-                defaults.aws_web_identity_token.as_ref(),
-            ),
-            aws_sts_endpoint: resolve_field(
-                source.aws_sts_endpoint.as_ref(),
-                defaults.aws_sts_endpoint.as_ref(),
-            ),
+            aws_access_key_id,
+            aws_secret_access_key,
+            aws_session_token,
+            aws_session_name,
+            aws_profile_name,
+            aws_role_name,
+            aws_web_identity_token,
+            aws_sts_endpoint,
         }
     }
 }
 
-trait Blank {
-    fn is_blank(&self) -> bool;
+fn resolve_strings<const N: usize>(
+    fields: [(&Option<String>, &Option<String>); N],
+) -> [Option<String>; N] {
+    let mut resolved: [Option<String>; N] = array::from_fn(|_| None);
+    for (slot, (provided, fallback)) in resolved.iter_mut().zip(fields) {
+        *slot = provided
+            .as_ref()
+            .filter(|value| !value.is_empty())
+            .or(fallback.as_ref())
+            .cloned();
+    }
+    resolved
 }
 
-impl Blank for String {
-    fn is_blank(&self) -> bool {
-        self.is_empty()
+fn resolve_secrets<const N: usize>(
+    fields: [(&Option<SecretString>, &Option<SecretString>); N],
+) -> [Option<SecretString>; N] {
+    let mut resolved: [Option<SecretString>; N] = array::from_fn(|_| None);
+    for (slot, (provided, fallback)) in resolved.iter_mut().zip(fields) {
+        *slot = provided
+            .as_ref()
+            .filter(|value| !value.expose_secret().is_empty())
+            .or(fallback.as_ref())
+            .cloned();
     }
-}
-
-impl Blank for SecretString {
-    fn is_blank(&self) -> bool {
-        self.expose_secret().is_empty()
-    }
-}
-
-fn resolve_field<Value>(source: Option<&Value>, fallback: Option<&Value>) -> Option<Value>
-where
-    Value: Blank + Clone,
-{
-    match source {
-        Some(value) if !value.is_blank() => Some(value.clone()),
-        _ => fallback.cloned(),
-    }
+    resolved
 }
