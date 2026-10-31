@@ -6,8 +6,10 @@ from unittest import mock
 
 import httpx
 from litellm.litellm_core_utils.get_blog_posts import GetBlogPosts
+from litellm.litellm_core_utils.get_blog_posts import get_blog_posts as public_get_blog_posts
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
+BLOG_POSTS_TTL_SECONDS = 3600
 
 
 class WarningCapture(logging.Filter):
@@ -21,7 +23,9 @@ class WarningCapture(logging.Filter):
         return True
 
 
-def responder_for(response: Json, url: str) -> Callable[..., httpx.Response]:
+def responder_for(
+    response: Json, url: str, requests: list[Json] | None = None
+) -> Callable[..., httpx.Response]:
     if not isinstance(response, dict):
         raise ValueError("response must be an object")
     if response.get("error", False):
@@ -35,6 +39,10 @@ def responder_for(response: Json, url: str) -> Callable[..., httpx.Response]:
         raise ValueError("response.status must be an int and response.text must be a string")
 
     def build_response(*_args: object, **_kwargs: object) -> httpx.Response:
+        if requests is not None:
+            requests.append(
+                {"url": url, "timeout": cast(Json, _kwargs.get("timeout"))}
+            )
         return httpx.Response(status_code=status, text=text, request=httpx.Request("GET", url))
 
     return build_response
@@ -50,7 +58,8 @@ def fetch_rss_feed(input_value: dict[str, Json]) -> Json:
     response = input_value["response"]
     if not isinstance(url, str) or not isinstance(timeout, int):
         raise ValueError("url must be a string and timeout must be an int")
-    with mock.patch.object(httpx, "get", side_effect=responder_for(response, url)):
+    requests: list[Json] = []
+    with mock.patch.object(httpx, "get", side_effect=responder_for(response, url, requests)):
         return GetBlogPosts.fetch_rss_feed(url, timeout=timeout)
 
 
@@ -64,8 +73,6 @@ def parse_rss_to_posts(input_value: dict[str, Json]) -> Json:
 
 def validate_blog_posts(input_value: dict[str, Json]) -> Json:
     posts = input_value["posts"]
-    if not isinstance(posts, list):
-        raise ValueError("posts must be a list")
     capture = WarningCapture()
     logger = logging.getLogger("LiteLLM")
     logger.filters.insert(0, capture)
@@ -104,10 +111,66 @@ def get_blog_posts(input_value: dict[str, Json]) -> Json:
             mock.patch.object(time, "time", return_value=float(now)),
             mock.patch.object(httpx, "get", side_effect=responder_for(response, url)),
         ):
-            posts = GetBlogPosts.get_blog_posts(url=url)
+            posts = public_get_blog_posts(url=url)
     finally:
         logger.removeFilter(capture)
     return {"posts": cast(list[Json], posts), "warnings": capture.warnings}
+
+
+def get_blog_posts_sequence(input_value: dict[str, Json]) -> Json:
+    calls = input_value["calls"]
+    if not isinstance(calls, list):
+        raise ValueError("calls must be a list")
+    requests: list[Json] = []
+    snapshots: list[Json] = []
+    results: list[Json] = []
+    fetch_count = 0
+    GetBlogPosts._cached_posts = None  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+    GetBlogPosts._last_fetch_time = 0.0  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+    for call in calls:
+        if not isinstance(call, dict):
+            raise ValueError("each call must be an object")
+        url = call["url"]
+        now = call["now"]
+        response = call.get("response", {})
+        local_only = call.get("local_only", False)
+        if not isinstance(url, str) or not isinstance(now, int | float):
+            raise ValueError("call url and now have invalid types")
+        if not isinstance(local_only, bool):
+            raise ValueError("call local_only must be a bool")
+        cached = GetBlogPosts._cached_posts  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+        last_fetch = GetBlogPosts._last_fetch_time  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+        cache_hit = (
+            not local_only
+            and cached is not None
+            and float(now) - last_fetch < BLOG_POSTS_TTL_SECONDS
+        )
+        capture = WarningCapture()
+        logger = logging.getLogger("LiteLLM")
+        logger.filters.insert(0, capture)
+        try:
+            with (
+                mock.patch.object(time, "time", return_value=float(now)),
+                mock.patch.object(httpx, "get", side_effect=responder_for(response, url, requests)),
+            ):
+                posts = public_get_blog_posts(url=url)
+        finally:
+            logger.removeFilter(capture)
+        if not cache_hit and not local_only:
+            fetch_count += 1
+        results.append({"posts": cast(list[Json], posts), "warnings": capture.warnings})
+        snapshots.append(
+            {
+                "cached_posts": GetBlogPosts._cached_posts,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+                "last_fetch_time": GetBlogPosts._last_fetch_time,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+            }
+        )
+    return {
+        "results": results,
+        "snapshots": snapshots,
+        "fetch_count": fetch_count,
+        "requests": requests,
+    }
 
 
 def run(input_value: dict[str, Json]) -> Json:
@@ -122,4 +185,6 @@ def run(input_value: dict[str, Json]) -> Json:
         return validate_blog_posts(input_value)
     if function == "get_blog_posts":
         return get_blog_posts(input_value)
+    if function == "get_blog_posts_sequence":
+        return get_blog_posts_sequence(input_value)
     raise ValueError(f"unknown blog_feed function: {function}")

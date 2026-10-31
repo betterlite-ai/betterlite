@@ -47,6 +47,9 @@ struct Fields {
 }
 
 fn format_fields(fields: Fields) -> Option<String> {
+    if !(1..=9999).contains(&fields.year) {
+        return None;
+    }
     NaiveTime::from_hms_opt(fields.hour, fields.minute, fields.second)?;
     let date = NaiveDate::from_ymd_opt(fields.year, fields.month, fields.day)?;
     Some(date.format("%Y-%m-%d").to_string())
@@ -71,6 +74,9 @@ fn parsed_fields(raw: &str) -> Option<Fields> {
     reorder_year_time_zone(&mut yy, &mut tm, &mut tz)?;
     strip_trailing_comma(&mut tm);
     let (hour, minute, second) = split_time(&tm)?;
+    if !valid_timezone(&tz) {
+        return None;
+    }
     let year = normalize_year(yy.parse().ok()?)?;
     let day = dd.parse().ok()?;
     Some(Fields {
@@ -81,6 +87,22 @@ fn parsed_fields(raw: &str) -> Option<Fields> {
         minute,
         second,
     })
+}
+
+fn valid_timezone(timezone: &str) -> bool {
+    let Some(sign) = timezone.as_bytes().first() else {
+        return true;
+    };
+    if *sign != b'+' && *sign != b'-' {
+        return true;
+    }
+    let digits = timezone.get(1..).unwrap_or_default();
+    if digits.len() != 4 || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return false;
+    }
+    let hours = digits.get(..2).and_then(|value| value.parse::<u32>().ok());
+    let minutes = digits.get(2..).and_then(|value| value.parse::<u32>().ok());
+    hours.is_some_and(|value| value < 24) && minutes.is_some_and(|value| value < 60)
 }
 
 fn strip_trailing_comma(token: &mut String) {

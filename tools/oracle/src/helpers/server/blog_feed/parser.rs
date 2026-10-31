@@ -26,6 +26,8 @@ pub(super) enum ParseFailure {
     MissingChannel,
     #[error("RSS feed has an element that is never closed")]
     UnclosedElement,
+    #[error("RSS XML has content outside its single root element")]
+    OutsideRoot,
 }
 
 const TITLE: &str = "title";
@@ -76,6 +78,7 @@ struct ActiveField {
     tag: String,
     depth: usize,
     text: String,
+    saw_child: bool,
 }
 
 struct Collector {
@@ -83,54 +86,85 @@ struct Collector {
     max_posts: usize,
     channel_seen: bool,
     channel_depth: Option<usize>,
+    channel_open: bool,
     item: Option<(usize, Item)>,
     active_field: Option<ActiveField>,
     depth: usize,
+    root_count: usize,
+    root_closed: bool,
+    default_namespace: Vec<bool>,
 }
 
 impl Collector {
-    fn open(&mut self, name: &str) {
+    fn open(&mut self, name: &str, qualified: bool, default_namespace: bool) {
+        if self.depth == 0 {
+            if self.root_count > 0 {
+                self.root_count = self.root_count.saturating_add(1);
+                return;
+            }
+            self.root_count = 1;
+            self.root_closed = false;
+        }
         self.depth = self.depth.saturating_add(1);
+        self.default_namespace.push(default_namespace);
+        if let Some(active) = &mut self.active_field {
+            if self.depth > active.depth {
+                active.saw_child = true;
+            }
+        }
         // Mirrors `root.find("channel")`: only a direct child of the document root counts.
-        if name == CHANNEL && self.depth == 2 && self.channel_depth.is_none() {
+        if !qualified && name == CHANNEL && self.depth == 2 && self.channel_depth.is_none() {
             self.channel_depth = Some(self.depth);
             self.channel_seen = true;
+            self.channel_open = true;
         }
         // Mirrors `channel.findall("item")`: only direct children of channel count.
         let is_direct_channel_child = self
             .channel_depth
-            .is_some_and(|depth| self.depth == depth.saturating_add(1));
-        if name == ITEM && is_direct_channel_child && self.item.is_none() {
+            .is_some_and(|depth| self.channel_open && self.depth == depth.saturating_add(1));
+        if !qualified && name == ITEM && is_direct_channel_child && self.item.is_none() {
             self.item = Some((self.depth, Item::default()));
             return;
         }
         if let Some((item_depth, _)) = &self.item {
-            let is_field = matches!(name, TITLE | LINK | DESCRIPTION | PUB_DATE);
+            let is_field = !qualified && matches!(name, TITLE | LINK | DESCRIPTION | PUB_DATE);
             if is_field && self.depth == item_depth.saturating_add(1) && self.active_field.is_none()
             {
                 self.active_field = Some(ActiveField {
                     tag: name.to_owned(),
                     depth: self.depth,
                     text: String::new(),
+                    saw_child: false,
                 });
             }
         }
     }
 
-    fn push_text(&mut self, value: &str) {
+    fn push_text(&mut self, value: &str) -> Result<(), ParseFailure> {
+        if self.depth == 0 && !value.trim().is_empty() {
+            return Err(ParseFailure::OutsideRoot);
+        }
         let Some(active) = &mut self.active_field else {
-            return;
+            return Ok(());
         };
-        if self.depth == active.depth {
+        if self.depth == active.depth && !active.saw_child {
             active.text.push_str(value);
         }
+        Ok(())
     }
 
-    fn close(&mut self, name: &str) {
-        self.close_active_field(name);
-        self.close_item(name);
-        self.close_channel(name);
+    fn close(&mut self, name: &str, qualified: bool) {
+        if !qualified {
+            self.close_active_field(name);
+            self.close_item(name);
+            self.close_channel(name);
+        }
         self.depth = self.depth.saturating_sub(1);
+        let _ = self.default_namespace.pop();
+        if self.depth == 0 {
+            self.root_closed = true;
+        }
+        let _ = qualified;
     }
 
     fn close_active_field(&mut self, name: &str) {
@@ -171,12 +205,12 @@ impl Collector {
 
     fn close_channel(&mut self, name: &str) {
         if self.channel_depth == Some(self.depth) && name == CHANNEL {
-            self.channel_depth = None;
+            self.channel_open = false;
         }
     }
 
     fn finish(self) -> Result<Vec<BlogPost>, ParseFailure> {
-        if self.depth != 0 {
+        if self.depth != 0 || self.root_count != 1 || !self.root_closed {
             return Err(ParseFailure::UnclosedElement);
         }
         if self.channel_seen {
@@ -193,14 +227,19 @@ pub(super) fn parse_rss_to_posts(
     max_posts: usize,
 ) -> Result<Vec<BlogPost>, ParseFailure> {
     let mut reader = Reader::from_str(xml);
+    reader.config_mut().check_end_names = true;
     let mut collector = Collector {
         posts: Vec::new(),
         max_posts,
         channel_seen: false,
         channel_depth: None,
+        channel_open: false,
         item: None,
         active_field: None,
         depth: 0,
+        root_count: 0,
+        root_closed: false,
+        default_namespace: vec![false],
     };
     run_events(&mut reader, &mut collector)?;
     collector.finish()
@@ -210,35 +249,59 @@ fn run_events(reader: &mut Reader<&[u8]>, collector: &mut Collector) -> Result<(
     loop {
         match reader.read_event().map_err(ParseFailure::Xml)? {
             Event::Start(tag) => {
-                collector.open(&String::from_utf8_lossy(tag.name().as_ref()));
+                let (qualified, default_namespace) = tag_info(collector, &tag)?;
+                collector.open(
+                    &String::from_utf8_lossy(tag.name().as_ref()),
+                    qualified,
+                    default_namespace,
+                );
             }
             Event::End(tag) => {
-                collector.close(&String::from_utf8_lossy(tag.name().as_ref()));
+                let name = String::from_utf8_lossy(tag.name().as_ref());
+                let qualified = name.contains(':')
+                    || collector.default_namespace.last().copied().unwrap_or(false);
+                collector.close(&name, qualified);
             }
             Event::Empty(tag) => {
                 let name = String::from_utf8_lossy(tag.name().as_ref()).into_owned();
-                collector.open(&name);
-                collector.close(&name);
+                let (qualified, default_namespace) = tag_info(collector, &tag)?;
+                collector.open(&name, qualified, default_namespace);
+                collector.close(&name, qualified);
             }
             Event::Text(text) => {
                 let decoded = text.decode().map_err(ParseFailure::Decode)?;
                 let value = unescape(decoded.as_ref()).map_err(ParseFailure::Escape)?;
-                collector.push_text(&value);
+                collector.push_text(&value)?;
             }
             Event::CData(text) => {
                 let decoded = text.decode().map_err(ParseFailure::Decode)?;
-                collector.push_text(&decoded);
+                collector.push_text(&decoded)?;
             }
             Event::GeneralRef(reference) => {
                 let decoded = reference.decode().map_err(ParseFailure::Decode)?;
                 let wrapped = format!("&{decoded};");
                 let value = unescape(&wrapped).map_err(ParseFailure::Escape)?;
-                collector.push_text(&value);
+                collector.push_text(&value)?;
             }
             Event::Eof => return Ok(()),
             Event::Decl(_) | Event::PI(_) | Event::DocType(_) | Event::Comment(_) => {}
         }
     }
+}
+
+fn tag_info(
+    collector: &Collector,
+    tag: &quick_xml::events::BytesStart<'_>,
+) -> Result<(bool, bool), ParseFailure> {
+    let inherited = collector.default_namespace.last().copied().unwrap_or(false);
+    let declaration = tag
+        .try_get_attribute(b"xmlns")
+        .map_err(|error| ParseFailure::Xml(error.into()))?;
+    let default_namespace = declaration
+        .as_ref()
+        .map_or(inherited, |attribute| !attribute.value.is_empty());
+    let qualified = tag.name().as_ref().contains(&b':') || default_namespace;
+    Ok((qualified, default_namespace))
 }
 
 #[path = "parser/tests.rs"]

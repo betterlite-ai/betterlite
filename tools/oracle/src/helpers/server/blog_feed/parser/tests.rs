@@ -1,6 +1,8 @@
 #![cfg(test)]
 
 use super::{BlogPost, ParseFailure, parse_rss_to_posts};
+use std::fs;
+use std::path::Path;
 
 fn post(title: &str, description: &str, date: &str, url: &str) -> BlogPost {
     BlogPost {
@@ -51,6 +53,48 @@ fn nested_elements_do_not_count_as_direct_children() {
         <link>https://outer</link></item></channel></rss>";
     let posts = parse_rss_to_posts(xml, 1).unwrap();
     assert_eq!(posts, vec![post("Outer", "", "", "https://outer")]);
+}
+
+#[test]
+fn nested_child_tail_matches_element_text() {
+    let xml = "<rss><channel><item><title>A<b>B</b>C</title>\
+        <link>https://outer</link></item></channel></rss>";
+    let posts = parse_rss_to_posts(xml, 1).unwrap();
+    assert_eq!(posts, vec![post("A", "", "", "https://outer")]);
+}
+
+#[test]
+fn first_empty_channel_stops_channel_selection() {
+    let xml = "<rss><channel/></rss><rss><channel><item><title>Later</title>\
+        <link>https://later</link></item></channel></rss>";
+    assert!(parse_rss_to_posts(xml, 1).is_err());
+}
+
+#[test]
+fn namespace_qualified_channel_is_not_selected() {
+    let error = parse_rss_to_posts("<rss xmlns=\"urn:rss\"><channel/></rss>", 1).unwrap_err();
+    assert!(matches!(error, ParseFailure::MissingChannel));
+}
+
+#[test]
+fn malformed_document_boundaries_are_rejected() {
+    assert!(parse_rss_to_posts("<rss><channel/></rss>tail", 1).is_err());
+    assert!(parse_rss_to_posts("<rss><channel/></rss><extra/>", 1).is_err());
+    assert!(parse_rss_to_posts("<rss><channel a='unterminated'/></rss>", 1).is_err());
+}
+
+#[test]
+fn replays_xml_fuzz_corpus() {
+    replay_xml_fuzz_corpus();
+}
+
+fn replay_xml_fuzz_corpus() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/blog_feed");
+    let entries = fs::read_dir(corpus).unwrap();
+    for entry in entries {
+        let xml = fs::read_to_string(entry.unwrap().path()).unwrap();
+        let _ = parse_rss_to_posts(&xml, 1);
+    }
 }
 
 #[test]

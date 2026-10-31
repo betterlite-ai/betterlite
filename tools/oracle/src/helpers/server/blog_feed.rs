@@ -46,9 +46,23 @@ pub(crate) enum Input {
         last_fetch_time: f64,
         response: MockResponse,
     },
+    GetBlogPostsSequence {
+        calls: Vec<GetBlogPostsCall>,
+    },
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct GetBlogPostsCall {
+    url: String,
+    now: f64,
+    #[serde(default)]
+    local_only: bool,
+    #[serde(default)]
+    response: MockResponse,
+}
+
+#[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct MockResponse {
     status: u16,
@@ -106,7 +120,8 @@ const fn parse_failure_class(error: &parser::ParseFailure) -> &'static str {
         parser::ParseFailure::Xml(_)
         | parser::ParseFailure::Decode(_)
         | parser::ParseFailure::Escape(_)
-        | parser::ParseFailure::UnclosedElement => "ParseError",
+        | parser::ParseFailure::UnclosedElement
+        | parser::ParseFailure::OutsideRoot => "ParseError",
     }
 }
 
@@ -156,6 +171,39 @@ impl Helper for Op {
                     get_blog_posts(&mut cache, url, *now, *local_only, response);
                 serde_json::to_value(json!({ "posts": posts, "warnings": warnings }))
                     .map_err(|error| serialization_error(&error))?
+            }
+            Input::GetBlogPostsSequence { calls } => {
+                let mut cache = Cache {
+                    posts: None,
+                    last_fetch_time: 0.0,
+                };
+                let mut results = Vec::new();
+                let mut snapshots = Vec::new();
+                let mut fetch_count = 0_u64;
+                let mut requests = Vec::new();
+                for call in calls {
+                    let cache_hit = !call.local_only
+                        && cache.posts.is_some()
+                        && call.now < cache.last_fetch_time.mul_add(1.0, BLOG_POSTS_TTL_SECONDS);
+                    let (posts, warnings) = get_blog_posts(
+                        &mut cache,
+                        &call.url,
+                        call.now,
+                        call.local_only,
+                        &call.response,
+                    );
+                    if !cache_hit && !call.local_only {
+                        fetch_count = fetch_count.saturating_add(1);
+                        requests
+                            .push(json!({ "url": call.url.clone(), "timeout": default_timeout() }));
+                    }
+                    results.push(json!({ "posts": posts, "warnings": warnings }));
+                    snapshots.push(json!({
+                        "cached_posts": cache.posts.clone(),
+                        "last_fetch_time": cache.last_fetch_time,
+                    }));
+                }
+                json!({ "results": results, "snapshots": snapshots, "fetch_count": fetch_count, "requests": requests })
             }
         };
         Ok(value)
