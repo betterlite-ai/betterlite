@@ -268,3 +268,20 @@ fn rejects_margin_total_add_overflow() {
         }
     );
 }
+
+#[test]
+fn overflow_errors_from_different_operations_are_distinct() {
+    let discount_error = apply_cost_discount(
+        Decimal::MAX,
+        Some("provider"),
+        &map(CostAdjustmentValue::Number(serde_json::Number::from(2_i32))),
+    )
+    .unwrap_err();
+    let margin_error = apply_cost_margin(
+        Decimal::MAX,
+        Some("provider"),
+        &map(CostAdjustmentValue::Number(serde_json::Number::from(2_i32))),
+    )
+    .unwrap_err();
+    assert_ne!(discount_error, margin_error);
+}
