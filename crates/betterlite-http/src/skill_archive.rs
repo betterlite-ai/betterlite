@@ -66,7 +66,8 @@ fn flattened_members(uploaded: &mut ZipArchive<Cursor<&[u8]>>) -> Option<Vec<(St
     if entries.is_empty() {
         return None;
     }
-    let prefix = common_root_prefix(entries.iter().map(|(path, _)| path.as_str()));
+    let path_list: Vec<&str> = entries.iter().map(|(path, _)| path.as_str()).collect();
+    let prefix = common_root_prefix(&path_list);
     let mut names = BTreeSet::new();
     let mut flattened = Vec::with_capacity(entries.len());
     for (path, data) in entries {
@@ -105,8 +106,7 @@ fn normalize_path(raw_path: &str) -> Option<String> {
     Some(parts.join("/"))
 }
 
-fn common_root_prefix<'path>(path_iter: impl Iterator<Item = &'path str>) -> String {
-    let path_list: Vec<&str> = path_iter.collect();
+fn common_root_prefix(path_list: &[&str]) -> String {
     let Some(first) = path_list.first() else {
         return String::new();
     };
