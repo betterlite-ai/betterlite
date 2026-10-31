@@ -52,12 +52,12 @@ async fn investigate_candidates_runs_concurrently_and_reports_progress() {
         progress,
         coverage: Coverage::default(),
     };
-    let results = investigate_candidates(context).await.unwrap();
-    assert_eq!(results.len(), 2);
-    assert!(
-        results
-            .iter()
-            .all(|investigation| investigation.finding.is_none())
-    );
+    let mut investigations = investigate_candidates(context).unwrap();
+    let first_result = investigations.next().await.unwrap().unwrap();
+    assert!(first_result.finding.is_none());
+    assert_eq!(progress_calls.lock().unwrap().len(), 1);
+    let second_result = investigations.next().await.unwrap().unwrap();
+    assert!(second_result.finding.is_none());
+    assert!(investigations.next().await.is_none());
     assert_progress(&progress_calls.lock().unwrap());
 }
