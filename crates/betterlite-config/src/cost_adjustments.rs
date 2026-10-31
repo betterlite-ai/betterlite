@@ -31,15 +31,24 @@ pub enum AdjustmentField {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiscountEntry {
     Percent(Decimal),
+    Invalid,
     Unsupported,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MarginFieldEntry {
+    Absent,
+    Number(Decimal),
+    Invalid,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MarginEntry {
     Percent(Decimal),
+    Invalid,
     Split {
-        percentage: Option<Decimal>,
-        fixed_amount: Option<Decimal>,
+        percentage: MarginFieldEntry,
+        fixed_amount: MarginFieldEntry,
     },
     Unsupported,
 }
@@ -74,84 +83,69 @@ impl Section for Raw {
         Ok(Settings {
             cost_discount_config: resolve_discount_config(
                 self.litellm_settings.cost_discount_config,
-            )?,
-            cost_margin_config: resolve_margin_config(self.litellm_settings.cost_margin_config)?,
+            ),
+            cost_margin_config: resolve_margin_config(self.litellm_settings.cost_margin_config),
         })
     }
 }
 
-pub fn resolve_discount_config(
-    config: CostAdjustmentMap,
-) -> Result<BTreeMap<String, DiscountEntry>, ConfigError> {
+#[must_use]
+pub fn resolve_discount_config(config: CostAdjustmentMap) -> BTreeMap<String, DiscountEntry> {
     let mut resolved = BTreeMap::new();
     for (provider, value) in config {
-        resolved.insert(provider, discount_entry(&value)?);
+        resolved.insert(provider, discount_entry(&value));
     }
-    Ok(resolved)
+    resolved
 }
 
-pub fn resolve_margin_config(
-    config: CostAdjustmentMap,
-) -> Result<BTreeMap<String, MarginEntry>, ConfigError> {
+#[must_use]
+pub fn resolve_margin_config(config: CostAdjustmentMap) -> BTreeMap<String, MarginEntry> {
     let mut resolved = BTreeMap::new();
     for (provider, value) in config {
-        resolved.insert(provider, margin_entry(&value)?);
+        resolved.insert(provider, margin_entry(&value));
     }
-    Ok(resolved)
+    resolved
 }
 
-fn discount_entry(value: &CostAdjustmentValue) -> Result<DiscountEntry, ConfigError> {
+fn margin_entry(value: &CostAdjustmentValue) -> MarginEntry {
     match value {
-        CostAdjustmentValue::Number(number) => {
-            let field = AdjustmentField::DiscountPercent;
-            parse_decimal_lexeme(&number.to_string())
-                .map_err(|source| ConfigError::InvalidCostAdjustmentNumber { field, source })
-                .map(DiscountEntry::Percent)
-        }
+        CostAdjustmentValue::Number(number) => parse_decimal_lexeme(&number.to_string())
+            .map_or(MarginEntry::Invalid, MarginEntry::Percent),
+        CostAdjustmentValue::Object(entries) => MarginEntry::Split {
+            percentage: margin_field(entries, AdjustmentField::Percentage),
+            fixed_amount: margin_field(entries, AdjustmentField::FixedAmount),
+        },
         CostAdjustmentValue::Null
         | CostAdjustmentValue::Boolean(_)
         | CostAdjustmentValue::Text(_)
-        | CostAdjustmentValue::Object(_)
-        | CostAdjustmentValue::Array(_) => Ok(DiscountEntry::Unsupported),
+        | CostAdjustmentValue::Array(_) => MarginEntry::Unsupported,
     }
 }
 
-fn margin_entry(value: &CostAdjustmentValue) -> Result<MarginEntry, ConfigError> {
-    match value {
-        CostAdjustmentValue::Number(number) => {
-            let field = AdjustmentField::MarginPercent;
-            parse_decimal_lexeme(&number.to_string())
-                .map_err(|source| ConfigError::InvalidCostAdjustmentNumber { field, source })
-                .map(MarginEntry::Percent)
-        }
-        CostAdjustmentValue::Object(entries) => Ok(MarginEntry::Split {
-            percentage: margin_field(entries, AdjustmentField::Percentage)?,
-            fixed_amount: margin_field(entries, AdjustmentField::FixedAmount)?,
-        }),
-        CostAdjustmentValue::Null
-        | CostAdjustmentValue::Boolean(_)
-        | CostAdjustmentValue::Text(_)
-        | CostAdjustmentValue::Array(_) => Ok(MarginEntry::Unsupported),
+// a discount entry reads the same scalar shape as a margin entry, so delegate and collapse margin's split shape into unsupported
+fn discount_entry(value: &CostAdjustmentValue) -> DiscountEntry {
+    match margin_entry(value) {
+        MarginEntry::Percent(percent) => DiscountEntry::Percent(percent),
+        MarginEntry::Invalid => DiscountEntry::Invalid,
+        MarginEntry::Split { .. } | MarginEntry::Unsupported => DiscountEntry::Unsupported,
     }
 }
 
 fn margin_field(
     entries: &BTreeMap<String, CostAdjustmentValue>,
     field: AdjustmentField,
-) -> Result<Option<Decimal>, ConfigError> {
+) -> MarginFieldEntry {
     match entries.get(field.to_string().as_str()) {
-        None | Some(CostAdjustmentValue::Boolean(_)) => Ok(None),
+        None | Some(CostAdjustmentValue::Boolean(_)) => MarginFieldEntry::Absent,
         Some(CostAdjustmentValue::Number(number)) => parse_decimal_lexeme(&number.to_string())
-            .map_err(|source| ConfigError::InvalidCostAdjustmentNumber { field, source })
-            .map(Some),
+            .map_or(MarginFieldEntry::Invalid, MarginFieldEntry::Number),
         Some(CostAdjustmentValue::Text(text)) => parse_decimal_lexeme(text.trim())
-            .map_err(|source| ConfigError::InvalidCostAdjustmentNumber { field, source })
-            .map(Some),
+            .map_or(MarginFieldEntry::Invalid, MarginFieldEntry::Number),
         Some(
             CostAdjustmentValue::Null
             | CostAdjustmentValue::Object(_)
             | CostAdjustmentValue::Array(_),
-        ) => Err(ConfigError::UnsupportedCostAdjustmentShape { field }),
+        ) => MarginFieldEntry::Invalid,
     }
 }
 
