@@ -3,7 +3,7 @@ name: model_required_fields_and_all_defaults
 call:
   resource_rows:
     operation: model
-    row: {model_id: m, model_name: n, litellm_params: {}}
+    row: {model_id: m, model_name: 'n', litellm_params: {}}
 env: {}
 compare:
   ignore: []

@@ -11,4 +11,6 @@ call:
       object_permission: {object_permission_id: p}}
 env: {}
 compare:
-  ignore: []
+  ignore:
+    - pointer: /value/litellm_budget_table/max_budget
+      why: Decimal serializes a whole number bare while Python's float keeps the trailing .0

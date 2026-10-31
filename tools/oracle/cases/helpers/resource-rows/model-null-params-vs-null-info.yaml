@@ -3,7 +3,7 @@ name: model_null_params_vs_null_info
 call:
   resource_rows:
     operation: model
-    row: {model_id: m, model_name: n, litellm_params: {}, model_info: 'null'}
+    row: {model_id: m, model_name: 'n', litellm_params: {}, model_info: 'null'}
 env: {}
 compare:
   ignore: []

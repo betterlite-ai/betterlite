@@ -3,7 +3,7 @@ name: resource-rows-default
 call:
   resource_rows:
     operation: access_group
-    row: {access_group_id: g, access_group_name: n}
+    row: {access_group_id: g, access_group_name: 'n'}
 env: {}
 compare:
   ignore: []

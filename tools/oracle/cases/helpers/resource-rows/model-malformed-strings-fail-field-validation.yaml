@@ -3,7 +3,7 @@ name: model_malformed_strings_fail_field_validation
 call:
   resource_rows:
     operation: model
-    row: {model_id: m, model_name: n, litellm_params: '{not json'}
+    row: {model_id: m, model_name: 'n', litellm_params: '{not json'}
 env: {}
 compare:
   ignore:

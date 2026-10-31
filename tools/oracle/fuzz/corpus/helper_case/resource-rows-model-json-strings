@@ -3,7 +3,7 @@ name: resource-rows-model-json-strings
 call:
   resource_rows:
     operation: model
-    row: {model_id: m, model_name: n, litellm_params: '{"api_key":"k"}', model_info: '{"team_id":"t"}'}
+    row: {model_id: m, model_name: 'n', litellm_params: '{"api_key":"k"}', model_info: '{"team_id":"t"}'}
 env: {}
 compare:
   ignore: []
