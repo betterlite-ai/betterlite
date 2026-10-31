@@ -3,58 +3,26 @@ use std::collections::BTreeMap;
 use crate::cisco_conversation::Fields;
 use crate::cisco_conversation::json::Json;
 
-const DECISION_FIELDS: &[&str] = &[
-    "action",
-    "allowed",
-    "blocked",
-    "safe",
-    "is_safe",
-    "decision",
-    "verdict",
-    "status",
-    "score",
-    "risk_score",
-    "confidence",
-    "categories",
-    "classifications",
-    "violations",
-    "threats",
-    "policies",
-    "reason",
-    "rules",
-    "sanitized_text",
-    "sanitizedText",
-    "sanitized_payload",
-];
-
-#[must_use]
-pub fn has_decision_fields(payload: &Json) -> bool {
-    let Json::Object(fields) = payload else {
-        return false;
-    };
-    DECISION_FIELDS
-        .iter()
-        .any(|field| fields.contains_key(*field))
-}
+pub mod decision;
 
 #[must_use]
 pub fn unwrap_verdict_envelope(response: &Json) -> Json {
     let Json::Object(fields) = response else {
         return Json::Object(Fields::new());
     };
-    if has_decision_fields(response) {
+    if decision::has_decision_fields(response) {
         return response.clone();
     }
     for key in ["result", "data", "inspection", "ai_defense", "aiDefense"] {
         let value = Json::field(fields, key);
-        if has_decision_fields(&value) {
+        if decision::has_decision_fields(&value) {
             return value;
         }
     }
     if let Json::Object(result) = Json::field(fields, "result") {
         for key in ["data", "inspection", "ai_defense", "aiDefense"] {
             let value = Json::field(&result, key);
-            if has_decision_fields(&value) {
+            if decision::has_decision_fields(&value) {
                 return value;
             }
         }

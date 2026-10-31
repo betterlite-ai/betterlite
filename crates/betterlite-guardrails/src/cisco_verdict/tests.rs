@@ -5,14 +5,15 @@ use crate::cisco_verdict::Action;
 
 #[test]
 fn cisco_verdict_unwraps_nested_result() {
-    let value = super::unwrap_verdict_envelope(&Json::parse(r#"{"result":{"action":"allow"}}"#));
-    assert!(super::has_decision_fields(&value));
+    let value = super::unwrap_verdict_envelope(&Json::parse(r#"{"result": {"action": "allow"}}"#));
+    assert!(super::decision::has_decision_fields(&value));
 }
 
 #[test]
 fn cisco_verdict_ignores_empty_nested_match() {
-    let value =
-        super::unwrap_verdict_envelope(&Json::parse(r#"{"result":{},"data":{"action":"allow"}}"#));
+    let value = super::unwrap_verdict_envelope(&Json::parse(
+        r#"{"result": {}, "data": {"action": "allow"}}"#,
+    ));
     assert_eq!(
         super::normalize_action(&value_action(&value)),
         Action::Allow
@@ -40,16 +41,16 @@ fn cisco_verdict_normalizes_actions() {
 
 #[test]
 fn cisco_verdict_ignores_data_nested_sanitized_text() {
-    let value = Json::parse(r#"{"data":{"sanitizedText":"clean","error":{"code":1}}}"#);
+    let value = Json::parse(r#"{"data": {"sanitizedText": "clean", "error": {"code": 1}}}"#);
     assert_eq!(super::extract_sanitized_text(&value), None);
     assert!(super::extract_jsonrpc_error(&value).is_none());
-    let error = Json::parse(r#"{"result":{"error":{"code":2}}}"#);
+    let error = Json::parse(r#"{"result": {"error": {"code": 2}}}"#);
     assert!(super::extract_jsonrpc_error(&error).is_some());
 }
 
 #[test]
 fn cisco_verdict_extracts_sanitized_text_from_result() {
-    let value = Json::parse(r#"{"result":{"sanitizedText":"clean"}}"#);
+    let value = Json::parse(r#"{"result": {"sanitizedText": "clean"}}"#);
     assert_eq!(
         super::extract_sanitized_text(&value).as_deref(),
         Some("clean")
@@ -58,13 +59,13 @@ fn cisco_verdict_extracts_sanitized_text_from_result() {
 
 #[test]
 fn cisco_verdict_ignores_direct_arguments_outside_payload() {
-    let value = Json::parse(r#"{"arguments":{"q":"x"}}"#);
+    let value = Json::parse(r#"{"arguments": {"q": "x"}}"#);
     assert!(super::extract_mcp_args(&value).is_none());
 }
 
 #[test]
 fn cisco_verdict_counts_only_string_entities() {
-    let rules = Json::parse(r#"[{"entity_types":["PII",3,null]},{"entity_types":["PII"]}]"#);
+    let rules = Json::parse(r#"[{"entity_types": ["PII", 3, null]}, {"entity_types": ["PII"]}]"#);
     let counts = super::extract_masked_entity_count(&rules).expect("counts");
     assert_eq!(counts.get("PII"), Some(&2));
     assert_eq!(counts.len(), 1);
