@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::error::Error as _;
 use std::fs;
 
 use secrecy::ExposeSecret as _;
@@ -231,7 +232,7 @@ fn claude_code_parsing_reports_mistyped_events(#[case] source: &str, #[case] kin
     let line = serde_json::from_str(source).unwrap();
     assert!(super::stream::transform(&line, &mut state).is_empty());
     assert_eq!(state.parse_errors.len(), 1);
-    assert!(std::error::Error::source(state.parse_errors[0].as_ref()).is_some());
+    assert!(state.parse_errors[0].source().is_some());
     let error = ClaudeCodeHarnessConfig
         .transform_turn_response(&context, &state, 0, &[])
         .unwrap_err();
