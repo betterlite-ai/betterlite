@@ -471,6 +471,15 @@ fn call_transformation_no_tool_openai() {
 }
 
 #[test]
+fn call_transformation_choices_null_openai() {
+    let response: Response = serde_json::from_str(r#"{"choices":null}"#).unwrap();
+    let (found, calls) =
+        WebSearchTransformation::transform_request(&response, false, "openai").unwrap();
+    assert!(!found);
+    assert!(calls.is_empty());
+}
+
+#[test]
 fn call_transformation_no_tool_responses() {
     let response: Response = serde_json::from_str(r#"{"output":[{"type":"function_call","name":"web_search"},{"type":"web_search_preview_2025"},{"type":"web_search_20250305"}]}"#).unwrap();
     let (found, calls) =

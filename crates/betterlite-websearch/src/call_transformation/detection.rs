@@ -39,6 +39,7 @@ fn response_blocks(response: &Response, format: ResponseFormat) -> (CallKind, &[
         ResponseFormat::OpenAi => {
             let blocks = response
                 .choices
+                .0
                 .first()
                 .and_then(|choice| choice.message.as_ref())
                 .map_or(&[][..], |message| message.tool_calls.0.as_slice());

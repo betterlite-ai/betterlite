@@ -41,9 +41,17 @@ pub struct Response {
     #[serde(default)]
     pub content: Blocks,
     #[serde(default)]
-    pub choices: Vec<Choice>,
+    pub choices: Choices,
     #[serde(default)]
     pub output: Blocks,
+}
+#[derive(Debug, Default, Deserialize)]
+#[serde(from = "Box<RawValue>")]
+pub struct Choices(pub Vec<Choice>);
+impl From<Box<RawValue>> for Choices {
+    fn from(raw: Box<RawValue>) -> Self {
+        Self(serde_json::from_str(raw.get()).unwrap_or_default())
+    }
 }
 #[derive(Debug, Default, Deserialize)]
 #[serde(from = "Box<RawValue>")]
