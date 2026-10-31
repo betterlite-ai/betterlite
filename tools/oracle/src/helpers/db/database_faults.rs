@@ -90,14 +90,15 @@ struct EngineDiagnostics {
 
 impl From<&DbError> for Output {
     fn from(error: &DbError) -> Self {
+        let (connection, infrastructure, prisma) = database_faults::classify(error.error_type);
         Self {
             availability: Availability {
-                connection: database_faults::is_database_connection_error(error.error_type),
-                infrastructure: database_faults::is_database_infrastructure(error.error_type),
+                connection,
+                infrastructure,
             },
             data: DataClasses {
                 data: error.error_type == ErrorType::Data,
-                prisma: database_faults::is_prisma_error(error.error_type),
+                prisma,
             },
             transport: TransportClasses {
                 transport: database_faults::is_transport_error(error),
