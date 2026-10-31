@@ -98,6 +98,20 @@ fn redaction_masks_the_sentinel_password_too() {
 }
 
 #[test]
+fn redaction_strips_the_password_out_of_a_url() {
+    let settings = RedisConnectionSettings {
+        url: Some(SecretString::from(
+            "redis://user:hunter2@cache.internal:6379/0".to_owned(),
+        )),
+        ..blank_settings()
+    };
+    let rows = redacted_config_rows(&settings);
+    assert!(rows.iter().all(|row| !row.value.contains("hunter2")));
+    let value = row_value(&rows, "url").expect("url row exists");
+    assert!(!value.contains("user"));
+}
+
+#[test]
 fn redaction_leaves_a_non_sensitive_field_unmasked() {
     let settings = RedisConnectionSettings {
         host: Some("cache.internal".to_owned()),

@@ -17,4 +17,6 @@ pub enum FactoryError {
         #[source]
         source: ParseIntError,
     },
+    #[error("'reinitialize_steps' must be a whole number between 0 and 4294967295, got {value}")]
+    InvalidReinitializeSteps { value: String },
 }

@@ -22,7 +22,7 @@ pub fn build_client(
         settings.host.as_deref(),
     )?;
     match target {
-        Target::Cluster => Ok(RedisClient::Cluster(cluster::build(settings, kind))),
+        Target::Cluster => cluster::build(settings, kind).map(RedisClient::Cluster),
         Target::Url => url::build(settings).map(RedisClient::Url),
         Target::Sentinel => sentinel::build(settings).map(RedisClient::Sentinel),
         Target::Direct => Ok(RedisClient::Direct(ConnectionFields::from(settings))),

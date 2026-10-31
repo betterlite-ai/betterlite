@@ -18,3 +18,12 @@ fn sentinel_requires_nodes_and_service_name_names_both_fields() {
     assert!(error.to_string().contains("sentinel_nodes"));
     assert!(error.to_string().contains("service_name"));
 }
+
+#[test]
+fn invalid_reinitialize_steps_names_the_key_and_the_value() {
+    let error = FactoryError::InvalidReinitializeSteps {
+        value: "-1".to_owned(),
+    };
+    assert!(error.to_string().contains("reinitialize_steps"));
+    assert!(error.to_string().contains("-1"));
+}

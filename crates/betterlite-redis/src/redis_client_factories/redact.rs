@@ -6,6 +6,7 @@ use betterlite_redact::structured::SensitiveDataMasker;
 
 use crate::redis_connection_settings::model::scalars::PassthroughValue;
 use crate::redis_connection_settings::model::settings::RedisConnectionSettings;
+use crate::redis_connection_settings::url_parts::strip_userinfo;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigRow {
@@ -116,10 +117,9 @@ fn push_secret_entries(
     ));
     entries.push((
         "url".to_owned(),
-        settings
-            .url
-            .as_ref()
-            .map(|value| value.expose_secret().to_owned()),
+        settings.url.as_ref().map(|value| {
+            strip_userinfo(value.expose_secret()).unwrap_or_else(|_| "<redis url>".to_owned())
+        }),
     ));
     entries.push((
         "credential_provider".to_owned(),
