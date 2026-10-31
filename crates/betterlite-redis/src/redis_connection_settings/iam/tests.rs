@@ -157,6 +157,26 @@ fn explicit_fields_outrank_environment_fallbacks() {
 }
 
 #[test]
+fn aws_iam_settings_resolve_from_the_environment_when_explicit_fields_are_absent() {
+    let mut overrides = blank_overrides();
+    overrides.aws_iam_auth = Some(BoolOrText::Bool(true));
+    let mut settings = blank_settings();
+    settings.ssl = Some(true);
+
+    let mut env = BTreeMap::new();
+    env.insert("REDIS_AWS_IAM_USER_NAME".to_owned(), "env-user".to_owned());
+    env.insert(
+        "REDIS_AWS_IAM_CACHE_NAME".to_owned(),
+        "env-cache".to_owned(),
+    );
+    env.insert("REDIS_AWS_IAM_REGION".to_owned(), "env-region".to_owned());
+
+    apply_iam_precedence(&overrides, &mut settings, &env)
+        .expect("every required aws iam setting is present through the environment");
+    assert!(settings.credential_provider);
+}
+
+#[test]
 fn password_round_trips_through_expose_secret_when_aws_iam_does_not_apply() {
     let overrides = blank_overrides();
     let mut settings = blank_settings();

@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use secrecy::{ExposeSecret, SecretString};
 
 use super::resolve_overrides_os_environ;
-use crate::redis_connection_settings::model::scalars::{IntOrText, PassthroughValue};
+use crate::redis_connection_settings::model::scalars::{FloatOrText, IntOrText, PassthroughValue};
 use crate::redis_connection_settings::model::settings::RedisOverrides;
 
 fn env_with(name: &str, value: &str) -> BTreeMap<String, String> {
@@ -140,6 +140,21 @@ fn an_int_field_resolves_through_the_reference() {
 
     let resolved = resolve_overrides_os_environ(overrides, &env);
     assert_eq!(resolved.port, Some(IntOrText::Text("6380".to_owned())));
+}
+
+#[test]
+fn a_float_field_resolves_through_the_reference() {
+    let overrides = RedisOverrides {
+        socket_timeout: Some(FloatOrText::Text("os.environ/MY_SOCKET_TIMEOUT".to_owned())),
+        ..blank_overrides()
+    };
+    let env = env_with("MY_SOCKET_TIMEOUT", "2.5");
+
+    let resolved = resolve_overrides_os_environ(overrides, &env);
+    assert_eq!(
+        resolved.socket_timeout,
+        Some(FloatOrText::Text("2.5".to_owned()))
+    );
 }
 
 #[test]

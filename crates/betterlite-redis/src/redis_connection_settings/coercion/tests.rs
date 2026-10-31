@@ -106,6 +106,12 @@ fn coerce_numbers_accept_whitespace_and_digit_separators() {
 }
 
 #[test]
+fn coerce_numbers_reject_a_leading_or_trailing_underscore() {
+    assert_eq!(coerce_int(Some(IntOrText::Text("_123".to_owned()))), None);
+    assert_eq!(coerce_int(Some(IntOrText::Text("123_".to_owned()))), None);
+}
+
+#[test]
 fn coerce_signature_boolean_names() {
     let mut passthrough = BTreeMap::from([
         (
