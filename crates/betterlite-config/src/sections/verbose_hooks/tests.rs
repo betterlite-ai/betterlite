@@ -9,7 +9,6 @@ use crate::loader::ConfigLoader;
 #[rstest]
 #[case::loads_set_verbose("litellm_settings:\n  set_verbose: true\n", BTreeMap::new(), true)]
 #[case::default("{}\n", BTreeMap::new(), false)]
-#[case::environment("{}\n", BTreeMap::from([(String::from("LITELLM_SET_VERBOSE"), String::from("true"))]), true)]
 fn verbose_hooks_config_cases(
     #[case] source: &str,
     #[case] lookup: BTreeMap<String, String>,

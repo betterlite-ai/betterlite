@@ -12,7 +12,8 @@ pub struct Raw {
 
 #[derive(Debug, Default, serde::Deserialize)]
 pub struct Global {
-    pub set_verbose: Option<bool>,
+    #[serde(default)]
+    pub set_verbose: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -23,15 +24,12 @@ pub struct Settings {
 impl Section for Raw {
     type Settings = Settings;
 
-    fn convert<L>(self, lookup: &L) -> Result<Settings, ConfigError>
+    fn convert<L>(self, _lookup: &L) -> Result<Settings, ConfigError>
     where
         L: EnvironmentLookup,
     {
-        let set_verbose = self.litellm_settings.set_verbose.unwrap_or_else(|| {
-            lookup
-                .lookup("LITELLM_SET_VERBOSE")
-                .is_some_and(|value| value.eq_ignore_ascii_case("true"))
-        });
-        Ok(Settings { set_verbose })
+        Ok(Settings {
+            set_verbose: self.litellm_settings.set_verbose,
+        })
     }
 }
