@@ -106,17 +106,20 @@ pub struct Configured {
     pub integration_type: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum InspectionType {
     Chat,
     Mcp,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum FlaggedAction {
     Block,
     Monitor,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum FallbackAction {
     Allow,
     Block,
@@ -131,9 +134,7 @@ impl Section for Raw {
     {
         let mut guardrails = Vec::new();
         for (index, entry) in self.guardrails.into_iter().enumerate() {
-            if ["cisco_ai_defense", "cisco-ai-defense"]
-                .contains(&entry.litellm_params.guardrail.as_str())
-            {
+            if entry.litellm_params.guardrail == "cisco_ai_defense" {
                 guardrails.push(entry.resolve(index, lookup)?);
             }
         }

@@ -266,3 +266,169 @@ fn cisco_config_defaults_invalid_on_flagged_action() {
         .expect("an invalid on_flagged_action must warn and default, not fail config loading");
     assert_eq!(configured.on_flagged_action, super::FlaggedAction::Block);
 }
+
+#[test]
+fn cisco_config_defaults_invalid_inspection_type_and_fallback() {
+    let entry = super::Entry {
+        guardrail_name: Some("cisco".to_owned()),
+        litellm_params: super::Parameters {
+            guardrail: "cisco_ai_defense".to_owned(),
+            api_key: None,
+            api_base: None,
+            inspection_type: Some("websocket".to_owned()),
+            inspect_path: None,
+            enabled_rules: None,
+            on_flagged_action: None,
+            fallback_on_error: Some("retry".to_owned()),
+            timeout: None,
+            integration_profile_id: None,
+            integration_profile_version: None,
+            integration_tenant_id: None,
+            integration_type: None,
+        },
+    };
+    let configured = entry
+        .resolve(
+            0,
+            &BTreeMap::from([(
+                String::from("CISCO_AI_DEFENSE_API_KEY"),
+                String::from("secret"),
+            )]),
+        )
+        .expect("invalid inspection_type and fallback_on_error must warn and default");
+    assert_eq!(configured.inspection_type, super::InspectionType::Chat);
+    assert_eq!(configured.fallback_on_error, super::FallbackAction::Block);
+}
+
+#[test]
+fn cisco_config_trims_trailing_slash_from_api_base() {
+    let (raw, _ignored) = parse_view::<super::Raw>(
+        "guardrails:\n  - guardrail_name: cisco\n    litellm_params:\n      guardrail: cisco_ai_defense\n      api_key: test-key\n      api_base: https://eu.api.inspect.aidefense.security.cisco.com/\n",
+    )
+    .expect("Cisco section YAML must parse");
+    let settings = raw
+        .convert(&BTreeMap::new())
+        .expect("Cisco configuration must load through the public loader");
+    let configured = settings.guardrails.first().expect("Cisco settings");
+    assert_eq!(
+        configured.api_base,
+        "https://eu.api.inspect.aidefense.security.cisco.com"
+    );
+}
+
+#[test]
+fn cisco_config_empty_api_base_falls_back_to_env_then_default() {
+    let with_env = ConfigLoader {
+        lookup: BTreeMap::from([
+            ("CISCO_AI_DEFENSE_API_KEY".to_owned(), "test-key".to_owned()),
+            (
+                "CISCO_AI_DEFENSE_API_BASE".to_owned(),
+                "https://env.example.test".to_owned(),
+            ),
+        ]),
+    };
+    let config = with_env
+        .load("guardrails:\n  - guardrail_name: cisco\n    litellm_params:\n      guardrail: cisco_ai_defense\n      api_base: \"\"\n")
+        .expect("an empty configured api_base must fall through to the env var");
+    let configured = config
+        .sections
+        .cisco_verdict_contracts
+        .guardrails
+        .first()
+        .unwrap();
+    assert_eq!(configured.api_base, "https://env.example.test");
+
+    let without_env = ConfigLoader {
+        lookup: BTreeMap::from([
+            ("CISCO_AI_DEFENSE_API_KEY".to_owned(), "test-key".to_owned()),
+            ("CISCO_AI_DEFENSE_API_BASE".to_owned(), String::new()),
+        ]),
+    };
+    let fallback_config = without_env
+        .load("guardrails:\n  - guardrail_name: cisco\n    litellm_params:\n      guardrail: cisco_ai_defense\n      api_base: \"\"\n")
+        .expect("an empty configured api_base and empty env var must fall through to the default");
+    let fallback_configured = fallback_config
+        .sections
+        .cisco_verdict_contracts
+        .guardrails
+        .first()
+        .unwrap();
+    assert_eq!(
+        fallback_configured.api_base,
+        "https://us.api.inspect.aidefense.security.cisco.com"
+    );
+}
+
+#[test]
+fn cisco_config_prefixes_inspect_path_without_leading_slash() {
+    let (raw, _ignored) = parse_view::<super::Raw>(
+        "guardrails:\n  - guardrail_name: cisco\n    litellm_params:\n      guardrail: cisco_ai_defense\n      api_key: test-key\n      inspect_path: api/v1/inspect/chat\n",
+    )
+    .expect("Cisco section YAML must parse");
+    let settings = raw
+        .convert(&BTreeMap::new())
+        .expect("Cisco configuration must load through the public loader");
+    let configured = settings.guardrails.first().expect("Cisco settings");
+    assert_eq!(configured.inspect_path, "/api/v1/inspect/chat");
+}
+
+#[test]
+fn cisco_config_empty_inspect_path_falls_back_to_inspection_default() {
+    let (raw, _ignored) = parse_view::<super::Raw>(
+        "guardrails:\n  - guardrail_name: cisco\n    litellm_params:\n      guardrail: cisco_ai_defense\n      api_key: test-key\n      inspection_type: mcp\n      inspect_path: \"\"\n",
+    )
+    .expect("Cisco section YAML must parse");
+    let settings = raw
+        .convert(&BTreeMap::new())
+        .expect("Cisco configuration must load through the public loader");
+    let configured = settings.guardrails.first().expect("Cisco settings");
+    assert_eq!(configured.inspect_path, "/api/v1/inspect/mcp");
+}
+
+#[test]
+fn cisco_config_invalid_env_timeout_warns_and_defaults() {
+    let log = tempfile::NamedTempFile::new().unwrap();
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_writer(Arc::new(log.reopen().unwrap()))
+        .finish();
+    let loader = ConfigLoader {
+        lookup: BTreeMap::from([
+            ("CISCO_AI_DEFENSE_API_KEY".to_owned(), "test-key".to_owned()),
+            (
+                "CISCO_AI_DEFENSE_TIMEOUT".to_owned(),
+                "not-a-number".to_owned(),
+            ),
+        ]),
+    };
+    let config = with_default(subscriber, || {
+        loader.load(
+            "guardrails:\n  - guardrail_name: cisco\n    litellm_params:\n      guardrail: cisco_ai_defense\n",
+        )
+    })
+    .expect("an invalid env timeout must warn and default, not fail config loading");
+    let configured = config
+        .sections
+        .cisco_verdict_contracts
+        .guardrails
+        .first()
+        .unwrap();
+    assert_eq!(configured.timeout.to_bits(), 10.0_f64.to_bits());
+    let output = fs::read_to_string(log.path()).unwrap();
+    assert!(output.contains("WARN"), "{output}");
+    assert!(output.contains("timeout"), "{output}");
+    assert!(!output.contains("not-a-number"), "{output}");
+}
+
+#[test]
+fn cisco_config_skips_hyphenated_guardrail_alias() {
+    let (raw, _ignored) = parse_view::<super::Raw>(
+        "guardrails:\n  - guardrail_name: cisco\n    litellm_params:\n      guardrail: cisco-ai-defense\n      api_key: test-key\n",
+    )
+    .expect("Cisco section YAML must parse");
+    let settings = raw
+        .convert(&BTreeMap::new())
+        .expect("Cisco configuration must load through the public loader");
+    assert!(settings.guardrails.is_empty());
+}
