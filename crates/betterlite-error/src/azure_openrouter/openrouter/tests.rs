@@ -31,6 +31,35 @@ fn family_of(class: &ErrorClass) -> &'static str {
     }
 }
 
+// every family status_classification can reach wraps an ErrorContext, directly or inside its details struct
+fn message_of(class: &ErrorClass) -> &str {
+    match class {
+        ErrorClass::Authentication(context)
+        | ErrorClass::NotFound(context)
+        | ErrorClass::PermissionDenied(context)
+        | ErrorClass::BadRequest(context)
+        | ErrorClass::UnprocessableEntity(context)
+        | ErrorClass::ContextWindowExceeded(context)
+        | ErrorClass::ContentPolicyViolation(context)
+        | ErrorClass::ServiceUnavailable(context)
+        | ErrorClass::BadGateway(context)
+        | ErrorClass::InternalServer(context)
+        | ErrorClass::ApiConnection(context)
+        | ErrorClass::ApiResponseValidation(context)
+        | ErrorClass::UnsupportedParams(context)
+        | ErrorClass::Unclassified(context) => &context.message,
+        ErrorClass::Timeout(details) => &details.context.message,
+        ErrorClass::RateLimit(details) => &details.context.message,
+        ErrorClass::Api(details) => &details.context.message,
+        ErrorClass::BudgetExceeded(_)
+        | ErrorClass::JsonSchemaValidation(_)
+        | ErrorClass::GuardrailRaised(_)
+        | ErrorClass::MidStreamFallback(_) => {
+            panic!("openrouter classification never produces this family")
+        }
+    }
+}
+
 fn input(status_code: Option<u16>, status_code_is_synthesized: bool) -> OpenrouterExceptionInput {
     OpenrouterExceptionInput {
         model: "openrouter/some-model".to_owned(),
@@ -80,4 +109,28 @@ fn no_502_branch_falls_back_to_api() {
 fn status_code_present_but_synthesized_still_routes_connection() {
     let class = map_openrouter_exception(&input(Some(429), true));
     assert!(matches!(class, ErrorClass::ApiConnection(_)));
+}
+
+#[rstest]
+#[case::status_400_label(400, "OpenRouterException - boom")]
+#[case::status_401_label(401, "AuthenticationError: OpenRouterException - boom")]
+#[case::status_404_label(404, "NotFoundError: OpenRouterException - boom")]
+#[case::status_408_label(408, "Timeout Error: OpenRouterException - boom")]
+#[case::status_422_label(422, "BadRequestError: OpenRouterException - boom")]
+#[case::status_429_label(429, "RateLimitError: OpenRouterException - boom")]
+#[case::status_503_label(503, "ServiceUnavailableError: OpenRouterException - boom")]
+#[case::status_504_label(504, "Timeout Error: OpenRouterException - boom")]
+#[case::status_other_label(418, "APIError: OpenRouterException - boom")]
+fn status_classification_renders_the_matching_label(#[case] status: u16, #[case] expected: &str) {
+    let class = map_openrouter_exception(&input(Some(status), false));
+    assert_eq!(message_of(&class), expected);
+}
+
+#[test]
+fn no_status_code_message_names_the_exception_provider() {
+    let class = map_openrouter_exception(&input(None, false));
+    assert_eq!(
+        message_of(&class),
+        "APIConnectionError: OpenRouterException - boom"
+    );
 }
