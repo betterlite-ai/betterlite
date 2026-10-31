@@ -1,0 +1,5 @@
+kind: helper
+name: extract-sanitized-mcp-arguments-payload
+call: {b3758: {function: extract_sanitized_mcp_arguments, response: {sanitized_payload: {arguments: {q: x}}}}}
+env: {}
+compare: {ignore: []}

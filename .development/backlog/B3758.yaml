@@ -1,7 +1,7 @@
 id: B3758
 milestone: M6 guardrails
 title: Cisco verdict decoding and configuration contracts
-status: todo
+status: done
 depends_on:
   - B3756
 file: tasks/B3758-cisco-verdict-contracts.yaml
@@ -10,7 +10,7 @@ covers:
   - "litellm/types/proxy/guardrails/guardrail_hooks/cisco_ai_defense.py"
 parent: B107
 split_from: B107
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 382

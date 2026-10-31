@@ -19,6 +19,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "migration_json"
+path = "fuzz_targets/migration_json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "budget_permission_rows"
 path = "fuzz_targets/budget_permission_rows.rs"
 test = false
@@ -33,8 +40,8 @@ doc = false
 bench = false
 
 [[bin]]
-name = "mcp_stored_contract"
-path = "fuzz_targets/mcp_stored_contract.rs"
+name = "identity_rows"
+path = "fuzz_targets/identity_rows.rs"
 test = false
 doc = false
 bench = false

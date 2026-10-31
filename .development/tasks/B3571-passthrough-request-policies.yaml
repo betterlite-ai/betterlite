@@ -136,7 +136,7 @@ checks:
       run: test -f tools/oracle/litellm/probes/passthrough_request_policies.py && test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/litellm/probes/passthrough_request_policies.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
     - id: config-load-test
       why: Configuration test loading pass_through_request_timeout must pass
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::passthrough_request_policies::)'
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::passthrough_request_policies::/)'
     - id: config-corpus
       why: new task-specific parser seeds, operation/key or replay are missing
       run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/passthrough-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/passthrough-invalid.yaml && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml | grep -Fq "/passthrough-" && grep -Fq 'pass_through_request_timeout' crates/betterlite-config/fuzz/corpus/config_yaml/passthrough-valid.yaml && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'

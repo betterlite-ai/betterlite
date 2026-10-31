@@ -1,0 +1,9 @@
+kind: helper
+name: availability-empty
+call:
+  b4502:
+    availability:
+      scope: {team_id: team-1, api_key_hash: hash-1, all_teams: false}
+      rows: []
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,10 @@
+kind: helper
+name: settings-url
+call:
+  b4321:
+    function: resolve_redis_kwargs
+    environment: {}
+    overrides:
+      url: redis://cache.internal:6379/0
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,11 @@
+kind: helper
+name: nested_membership_and_permission
+call:
+  identity_rows:
+    operation: user
+    row: {user_id: u, object_permission: {object_permission_id: p}, organization_memberships: [{user_id: u, organization_id: o, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z'}]}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/organization_memberships/0/spend
+      why: OrganizationMembership is owned by B2310 and still serializes spend as Decimal text, not float like Pydantic's model

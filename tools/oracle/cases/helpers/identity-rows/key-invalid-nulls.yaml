@@ -1,0 +1,11 @@
+kind: helper
+name: key_nonnullable_nulls_fail
+call:
+  identity_rows:
+    operation: key
+    row: {spend: null}
+env: {}
+compare:
+  ignore:
+    - pointer: /error/message
+      why: Native typed validation uses its own error wording

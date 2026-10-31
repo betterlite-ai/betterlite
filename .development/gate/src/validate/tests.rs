@@ -3,7 +3,9 @@
 use std::path::Path;
 
 use crate::ids::{check_id_problem, task_id_problem};
+use crate::spec::agents::Agents;
 use crate::spec::task::Task;
+use crate::validate::agents::runner_problems;
 use crate::validate::command_args::argument_problems;
 use crate::validate::needs::needed_paths;
 use crate::validate::task::{banned_tooling, outside_scope_roots};
@@ -107,6 +109,21 @@ fn check_commands_pass_nextest_and_grep_arguments_they_accept() {
 }
 
 #[test]
+fn check_commands_pass_filtersets_nextest_can_parse() {
+    let good = "cargo nextest run -p a --filterset='test(/^a::/) - test(/replays_the_/)'";
+    assert!(argument_problems(good).is_empty(), "{good}");
+    assert_eq!(
+        argument_problems(
+            "cargo nextest run -p a -E 'test(/^a::)' && cargo nextest run -p a -E='test(/^a(?!b)/)'"
+        ),
+        vec![
+            "passes the filterset test(/^a::) that cargo nextest can't parse (expected close regex)",
+            "passes the filterset test(/^a(?!b)/) that cargo nextest can't parse (invalid regex: look-around, including look-ahead and look-behind, is not supported)",
+        ]
+    );
+}
+
+#[test]
 fn scope_paths_stay_under_the_scope_roots_or_existing_root_entries() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let roots = ["crates".to_owned(), "tools".to_owned()];
@@ -143,4 +160,26 @@ fn needed_paths_come_from_oracle_cases_and_test_flags() {
         "tools/oracle/cases/passthrough/endpoint-type-vertex.yaml".to_owned(),
         false
     )));
+}
+
+#[test]
+fn only_resume_arguments_name_the_session() {
+    let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let mut agents: Agents = read_yaml(&folder.join("agents.yaml")).unwrap();
+    let runner = &mut agents.runners[0];
+    runner.args.push("{session}".to_owned());
+    runner.resume = Some(vec!["--resume".to_owned()]);
+    assert_eq!(
+        runner_problems(runner),
+        vec![
+            format!(
+                "agents.yaml: {} uses {{session}} in args; only resume has a session",
+                runner.id
+            ),
+            format!(
+                "agents.yaml: {} has resume arguments without {{session}}",
+                runner.id
+            ),
+        ]
+    );
 }

@@ -1,0 +1,1 @@
+{"kind":"helper","name":"b4740_deadline_expiration","call":{"b4740":{"operation":"pagination","client_ms":60000,"listing_ms":30000,"pages":[{"tools":[{"name":"one","inputSchema":{}}],"nextCursor":"next","delay_ms":40000},{"tools":[{"name":"two","inputSchema":{}}],"nextCursor":null,"delay_ms":40000}]}},"env":{},"compare":{"ignore":[]}}
