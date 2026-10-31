@@ -26,7 +26,9 @@ where
         port: resolve_textual(overrides.port, env),
         db: resolve_textual(overrides.db, env),
         username: resolve_string(overrides.username, env),
-        password: resolve_secret(overrides.password, env),
+        password: overrides
+            .password
+            .map(|value| value.and_then(|secret| resolve_secret(Some(secret), env))),
         url: overrides.url.map(|inner| resolve_secret(inner, env)),
         ssl: resolve_textual(overrides.ssl, env),
         socket_timeout: resolve_textual(overrides.socket_timeout, env),

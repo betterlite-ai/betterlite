@@ -1,12 +1,12 @@
 mod tests;
 
-use secrecy::ExposeSecret;
+use secrecy::{ExposeSecret, SecretString};
 
 use super::coercion::coerce_bool;
 use super::environment::EnvironmentLookup;
 use super::error::RedisSettingsError;
 use super::model::scalars::{BoolOrText, PassthroughValue};
-use super::model::settings::{RedisConnectionSettings, RedisOverrides};
+use super::model::settings::{CredentialProviderSettings, RedisConnectionSettings, RedisOverrides};
 use super::url_parts::uses_tls;
 
 // litellm._redis._get_redis_client_logic resolves GCP IAM, then Azure AD, then AWS ElastiCache IAM, each only when a higher-precedence provider did not already resolve and the caller did not already set an explicit credential_provider.
@@ -44,6 +44,7 @@ where
     .or_else(|| env.lookup("REDIS_AZURE_AD_TOKEN"));
     let azure_ad_enabled = azure_ad_token.is_some_and(|token| token.eq_ignore_ascii_case("true"));
     if azure_ad_enabled {
+        apply_azure(overrides, settings, env);
         return Ok(());
     }
 
@@ -64,18 +65,50 @@ fn apply_gcp<E>(overrides: &RedisOverrides, settings: &mut RedisConnectionSettin
 where
     E: EnvironmentLookup,
 {
+    let service_account = resolve_string(
+        overrides.gcp_service_account.as_deref(),
+        env,
+        "REDIS_GCP_SERVICE_ACCOUNT",
+    );
     let ssl_ca_certs = resolve_string(
         overrides.gcp_ssl_ca_certs.as_deref(),
         env,
         "REDIS_GCP_SSL_CA_CERTS",
     );
-    if let Some(resolved) = ssl_ca_certs
+    if let Some(resolved) = ssl_ca_certs.as_ref()
         && settings.ssl == Some(true)
     {
-        settings
-            .passthrough
-            .insert("ssl_ca_certs".to_owned(), PassthroughValue::Text(resolved));
+        settings.passthrough.insert(
+            "ssl_ca_certs".to_owned(),
+            PassthroughValue::Text(resolved.clone()),
+        );
     }
+    settings.credential_provider = true;
+    settings.credential_provider_settings =
+        service_account.map(|service_account| CredentialProviderSettings::Gcp {
+            service_account,
+            ssl_ca_certs,
+        });
+}
+
+fn apply_azure<E>(overrides: &RedisOverrides, settings: &mut RedisConnectionSettings, env: &E)
+where
+    E: EnvironmentLookup,
+{
+    settings.credential_provider = true;
+    settings.credential_provider_settings = Some(CredentialProviderSettings::Azure {
+        client_id: resolve_string(overrides.azure_client_id.as_deref(), env, "AZURE_CLIENT_ID"),
+        tenant_id: resolve_string(overrides.azure_tenant_id.as_deref(), env, "AZURE_TENANT_ID"),
+        client_secret: resolve_string(
+            overrides
+                .azure_client_secret
+                .as_ref()
+                .map(ExposeSecret::expose_secret),
+            env,
+            "AZURE_CLIENT_SECRET",
+        )
+        .map(SecretString::from),
+    });
 }
 
 fn apply_aws<E>(
@@ -128,6 +161,33 @@ where
     }
 
     settings.credential_provider = true;
+    let Some(user_name) = user_name else {
+        return Err(RedisSettingsError::AwsIamMissingSettings {
+            missing: vec!["aws_iam_user_name".to_owned()],
+        });
+    };
+    let Some(cache_name) = cache_name else {
+        return Err(RedisSettingsError::AwsIamMissingSettings {
+            missing: vec!["aws_iam_cache_name".to_owned()],
+        });
+    };
+    let Some(region) = region else {
+        return Err(RedisSettingsError::AwsIamMissingSettings {
+            missing: vec!["aws_iam_region".to_owned()],
+        });
+    };
+    settings.credential_provider_settings = Some(CredentialProviderSettings::Aws {
+        user_name,
+        cache_name,
+        region,
+        serverless: coerce_bool(
+            overrides
+                .aws_iam_serverless
+                .clone()
+                .or_else(|| env.lookup("REDIS_AWS_IAM_SERVERLESS").map(BoolOrText::Text)),
+        )
+        .unwrap_or(false),
+    });
     Ok(())
 }
 

@@ -81,7 +81,7 @@ impl Helper for Op {
             "health_check_interval": settings.health_check_interval,
             "credential_provider": settings.credential_provider,
             "startup_nodes": settings.startup_nodes,
-            "sentinel_nodes": settings.sentinel_nodes,
+            "sentinel_nodes": settings.sentinel_nodes.map(|nodes| nodes.into_iter().map(|(host, port)| json!([host, port])).collect::<Vec<_>>()),
             "sentinel_password": settings.sentinel_password.as_ref().map(ExposeSecret::expose_secret),
             "service_name": settings.service_name,
             "ssl_password": settings.ssl_password.as_ref().map(ExposeSecret::expose_secret),

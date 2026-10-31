@@ -8,8 +8,10 @@ use rstest::rstest;
 use secrecy::{ExposeSecret, SecretString};
 
 use super::resolve_redis_kwargs;
-use crate::redis_connection_settings::model::nodes::{ClusterNodeConfig, NodesInput};
-use crate::redis_connection_settings::model::scalars::{BoolOrText, PassthroughValue};
+use crate::redis_connection_settings::model::nodes::{
+    ClusterNodeConfig, NodesInput, SentinelNodeInput,
+};
+use crate::redis_connection_settings::model::scalars::{BoolOrText, IntOrText, PassthroughValue};
 use crate::redis_connection_settings::model::settings::{
     ClientKind, RedisConnectionSettings, RedisOverrides,
 };
@@ -279,6 +281,7 @@ fn redis_tls_does_not_treat_an_empty_startup_list_as_cluster_mode() {
         max_connections: None,
         health_check_interval: None,
         credential_provider: false,
+        credential_provider_settings: None,
         startup_nodes: Some(Vec::new()),
         sentinel_nodes: None,
         sentinel_password: None,
@@ -409,7 +412,10 @@ fn redis_precedence_an_explicit_null_url_does_not_fall_back_to_the_environment()
 #[test]
 fn redis_precedence_an_empty_sentinel_password_falls_back_to_the_environment() {
     let overrides = RedisOverrides {
-        sentinel_nodes: Some(NodesInput::Nodes(vec![("sentinel".to_owned(), 26379)])),
+        sentinel_nodes: Some(NodesInput::Nodes(vec![SentinelNodeInput::Tuple((
+            "sentinel".to_owned(),
+            IntOrText::Int(26379),
+        ))])),
         sentinel_password: Some(SecretString::from(String::new())),
         service_name: Some(String::new()),
         ..blank_overrides()

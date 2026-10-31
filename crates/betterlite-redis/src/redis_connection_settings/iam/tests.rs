@@ -78,11 +78,11 @@ fn aws_iam_with_tls_and_every_setting_enables_the_credential_provider() {
     overrides.aws_iam_cache_name = Some("my-cache".to_owned());
     overrides.aws_iam_region = Some("us-east-1".to_owned());
     overrides.username = Some("explicit-user".to_owned());
-    overrides.password = Some(SecretString::from("explicit-password".to_owned()));
+    overrides.password = Some(Some(SecretString::from("explicit-password".to_owned())));
     let mut settings = blank_settings();
     settings.ssl = Some(true);
     settings.username = overrides.username.clone();
-    settings.password = overrides.password.clone();
+    settings.password = overrides.password.clone().flatten();
 
     apply_iam_precedence(&overrides, &mut settings, &BTreeMap::new())
         .expect("every required aws iam setting is present");

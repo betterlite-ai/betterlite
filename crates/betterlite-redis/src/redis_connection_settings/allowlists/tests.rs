@@ -77,6 +77,29 @@ fn direct_target_rejects_an_unrecognized_option() {
     assert!(error.to_string().contains("not_a_real_option"));
 }
 
+#[test]
+fn direct_allowlist_matches_the_selected_client_constructor() {
+    let mut sync = passthrough_with(&["auto_close_connection_pool"]);
+    filter_passthrough_for_target(Target::Direct, ClientKind::Sync, &mut sync)
+        .expect("sync Redis declares auto_close_connection_pool");
+
+    let mut async_client = passthrough_with(&["auto_close_connection_pool"]);
+    assert!(
+        filter_passthrough_for_target(Target::Direct, ClientKind::Async, &mut async_client)
+            .is_err()
+    );
+
+    let mut asynchronous_ocsp = passthrough_with(&["ssl_validate_ocsp"]);
+    filter_passthrough_for_target(Target::Direct, ClientKind::Async, &mut asynchronous_ocsp)
+        .expect("async Redis declares ssl_validate_ocsp");
+
+    let mut synchronous_ocsp = passthrough_with(&["ssl_validate_ocsp"]);
+    assert!(
+        filter_passthrough_for_target(Target::Direct, ClientKind::Sync, &mut synchronous_ocsp)
+            .is_err()
+    );
+}
+
 #[rstest]
 #[case::url(Target::Url)]
 #[case::cluster(Target::Cluster)]

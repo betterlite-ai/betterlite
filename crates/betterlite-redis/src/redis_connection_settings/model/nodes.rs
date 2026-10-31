@@ -2,10 +2,25 @@ mod tests;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+use super::scalars::IntOrText;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ClusterNodeConfig {
     pub host: String,
     pub port: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct ClusterNodeInput {
+    pub host: String,
+    pub port: IntOrText,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(untagged)]
+pub enum SentinelNodeInput {
+    Object { host: String, port: IntOrText },
+    Tuple((String, IntOrText)),
 }
 
 // A caller may hold a parsed node list already; the environment only ever offers JSON text.
@@ -26,5 +41,5 @@ impl<T> NodesInput<T> {
     }
 }
 
-pub type StartupNodesInput = NodesInput<ClusterNodeConfig>;
-pub type SentinelNodesInput = NodesInput<(String, i64)>;
+pub type StartupNodesInput = NodesInput<ClusterNodeInput>;
+pub type SentinelNodesInput = NodesInput<SentinelNodeInput>;

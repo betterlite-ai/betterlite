@@ -84,16 +84,20 @@ fn an_unresolved_reference_clears_the_field() {
 #[test]
 fn a_secret_field_resolves_through_the_reference_too() {
     let overrides = RedisOverrides {
-        password: Some(SecretString::from(
+        password: Some(Some(SecretString::from(
             "os.environ/MY_REDIS_PASSWORD".to_owned(),
-        )),
+        ))),
         ..blank_overrides()
     };
     let env = env_with("MY_REDIS_PASSWORD", "s3cret");
 
     let resolved = resolve_overrides_os_environ(overrides, &env);
     assert_eq!(
-        resolved.password.as_ref().map(ExposeSecret::expose_secret),
+        resolved
+            .password
+            .as_ref()
+            .and_then(Option::as_ref)
+            .map(ExposeSecret::expose_secret),
         Some("s3cret")
     );
 }

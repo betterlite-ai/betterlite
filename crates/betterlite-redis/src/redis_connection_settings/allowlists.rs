@@ -6,7 +6,7 @@ use super::model::scalars::PassthroughValue;
 use super::model::settings::{ClientKind, Target};
 
 // Direct clients accept client and connection settings through Redis.__init__. gcp_*, azure_*, aws_iam_* and ssl_password are no longer listed: RedisOverrides now models them as dedicated fields (see resolve::iam and model::settings), so they never reach `passthrough`.
-const DIRECT_KWARGS: &[&str] = &[
+const DIRECT_COMMON_KWARGS: &[&str] = &[
     "encoding",
     "encoding_errors",
     "socket_read_size",
@@ -20,7 +20,6 @@ const DIRECT_KWARGS: &[&str] = &[
     "protocol",
     "socket_keepalive_options",
     "single_connection_client",
-    "auto_close_connection_pool",
     "ssl",
     "ssl_cert_reqs",
     "ssl_keyfile",
@@ -31,7 +30,6 @@ const DIRECT_KWARGS: &[&str] = &[
     "ssl_ca_certs",
     "ssl_ca_path",
     "ssl_ca_data",
-    "ssl_validate_ocsp",
     "ssl_validate_ocsp_stapled",
     "ssl_ocsp_context",
     "ssl_ocsp_expected_cert",
@@ -40,6 +38,9 @@ const DIRECT_KWARGS: &[&str] = &[
     "legacy_responses",
     "redis_connect_func",
 ];
+
+const DIRECT_SYNC_ONLY: &[&str] = &["auto_close_connection_pool"];
+const DIRECT_ASYNC_ONLY: &[&str] = &["ssl_validate_ocsp"];
 
 // from_url forwards only Connection parameters; rediss selects SSLConnection itself.
 const URL_CONNECTION_KWARGS: &[&str] = &[
@@ -132,16 +133,21 @@ pub fn filter_passthrough_for_target(
 ) -> Result<(), super::error::RedisSettingsError> {
     match target {
         Target::Direct => {
-            if let Some(name) = passthrough
-                .keys()
-                .find(|name| !DIRECT_KWARGS.contains(&name.as_str()))
-            {
+            let client_kwargs = if client == ClientKind::Sync {
+                DIRECT_SYNC_ONLY
+            } else {
+                DIRECT_ASYNC_ONLY
+            };
+            if let Some(name) = passthrough.keys().find(|name| {
+                !DIRECT_COMMON_KWARGS.contains(&name.as_str())
+                    && !client_kwargs.contains(&name.as_str())
+            }) {
                 return Err(super::error::RedisSettingsError::UnknownOption { name: name.clone() });
             }
             Ok(())
         }
         Target::Sentinel => {
-            passthrough.retain(|name, _| DIRECT_KWARGS.contains(&name.as_str()));
+            passthrough.retain(|name, _| DIRECT_COMMON_KWARGS.contains(&name.as_str()));
             Ok(())
         }
         Target::Url => {

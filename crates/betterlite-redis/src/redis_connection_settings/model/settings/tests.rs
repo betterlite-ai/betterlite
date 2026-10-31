@@ -21,6 +21,7 @@ fn blank_settings() -> RedisConnectionSettings {
         max_connections: None,
         health_check_interval: None,
         credential_provider: false,
+        credential_provider_settings: None,
         startup_nodes: None,
         sentinel_nodes: None,
         sentinel_password: None,

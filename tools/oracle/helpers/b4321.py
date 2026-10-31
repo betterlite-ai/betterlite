@@ -39,6 +39,8 @@ def _kwargs_from_overrides(overrides: dict[str, Json]) -> dict[str, object]:
     # **env_overrides and overrides whatever REDIS_URL supplied, where an omitted key does not.
     if "url" in overrides and overrides["url"] is None:
         kwargs["url"] = None
+    if "password" in overrides and overrides["password"] is None:
+        kwargs["password"] = None
     if kwargs.get("credential_provider") is True:
         kwargs["credential_provider"] = object()
     passthrough = overrides.get("passthrough") or {}

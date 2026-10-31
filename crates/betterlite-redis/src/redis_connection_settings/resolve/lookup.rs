@@ -37,6 +37,7 @@ const ENV_PASSTHROUGH_KWARGS: &[&str] = &[
     "SSL_OCSP_EXPECTED_CERT",
     "SSL_MIN_VERSION",
     "SSL_CIPHERS",
+    "UNIX_SOCKET_PATH",
     "LEGACY_RESPONSES",
     "SOCKET_TYPE",
     "CLUSTER_ERROR_RETRY_ATTEMPTS",
@@ -74,11 +75,9 @@ where
     T: DeserializeOwned,
     F: FnOnce(serde_json::Error) -> RedisSettingsError,
 {
-    let input = overrides.filter(NodesInput::is_truthy).or_else(|| {
-        env_text
-            .filter(|text| !text.is_empty())
-            .map(NodesInput::Text)
-    });
+    let input = overrides
+        .filter(NodesInput::is_truthy)
+        .or_else(|| env_text.map(NodesInput::Text));
     match input {
         None => Ok(None),
         Some(NodesInput::Nodes(nodes)) => Ok(Some(nodes)),

@@ -22,6 +22,26 @@ pub enum Target {
     Sentinel,
 }
 
+#[derive(Debug, Clone)]
+pub enum CredentialProviderSettings {
+    Explicit,
+    Gcp {
+        service_account: String,
+        ssl_ca_certs: Option<String>,
+    },
+    Azure {
+        client_id: Option<String>,
+        tenant_id: Option<String>,
+        client_secret: Option<SecretString>,
+    },
+    Aws {
+        user_name: String,
+        cache_name: String,
+        region: String,
+        serverless: bool,
+    },
+}
+
 // Mirrors litellm._redis._get_redis_client_logic's **env_overrides; numeric and boolean fields also accept a digit string, since Helm and env vars stringify everything.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
@@ -30,7 +50,11 @@ pub struct RedisOverrides {
     pub port: Option<IntOrText>,
     pub db: Option<IntOrText>,
     pub username: Option<String>,
-    pub password: Option<SecretString>,
+    #[serde(
+        default,
+        deserialize_with = "serde_with::rust::double_option::deserialize"
+    )]
+    pub password: Option<Option<SecretString>>,
     // litellm's `{**environment_kwargs, **env_overrides}` merge lets an explicit `url: null` overwrite an environment-sourced url, so the outer Option here must track whether the key was present at all, not just whether it held a value.
     #[serde(
         default,
@@ -80,6 +104,7 @@ pub struct RedisConnectionSettings {
     pub max_connections: Option<i64>,
     pub health_check_interval: Option<i64>,
     pub credential_provider: bool,
+    pub credential_provider_settings: Option<CredentialProviderSettings>,
     pub startup_nodes: Option<Vec<ClusterNodeConfig>>,
     pub sentinel_nodes: Option<Vec<(String, i64)>>,
     pub sentinel_password: Option<SecretString>,
