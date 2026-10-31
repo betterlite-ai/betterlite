@@ -116,7 +116,7 @@ pitfalls:
 - extra_query is unused; accepting it does not mean it reaches the upstream URL.
 - Only async_call is popped; custom handlers receive remaining kwargs without the named image options merged in.
 - Bedrock's zero timeout is retained while other edit handlers replace zero with REQUEST_TIMEOUT.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 1

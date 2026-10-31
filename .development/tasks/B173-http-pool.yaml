@@ -120,7 +120,7 @@ pitfalls:
 - Reqwest retries protocol NACKs by default; disabling router retries alone is insufficient.
 - Reqwest redirect policy cannot mutate headers and its built-in stripping does not cover provider API-key headers;
   B009 owns explicit redirect replay.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

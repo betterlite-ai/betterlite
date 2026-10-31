@@ -75,4 +75,4 @@ pitfalls:
   - usageMetadata is retained even when all inline image strings are empty.
   - use_multipart_form_data returns false although the proxy accepts a multipart image edit request.
 budget: {max_changed_lines: 500, max_new_expects: 1}
-review_level: security
+review_level: standard

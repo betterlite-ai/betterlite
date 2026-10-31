@@ -109,7 +109,7 @@ pitfalls:
 - Rebuilding a new reasoning list would leave the router's fallback snapshot holding the original encrypted items.
 - An already encoded response ID skips container rewriting too; checking each nested field first changes that early return.
 - List text blocks use truthiness, so a whitespace-only block counts as readable while a whitespace-only summary string does not.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 1

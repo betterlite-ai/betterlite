@@ -1,7 +1,9 @@
 #![cfg(test)]
 
 use crate::builtins::expect_budget;
+use crate::builtins::file_size::size_problem;
 use crate::builtins::globs::glob_set;
+use crate::spec::catalog::FileSize;
 
 #[test]
 fn a_single_star_stays_inside_one_directory() {
@@ -36,4 +38,27 @@ fn the_expect_budget_counts_inner_and_outer_attributes() {
     ];
     assert!(expect_budget::check(2, &lines).is_empty());
     assert_eq!(expect_budget::check(1, &lines).len(), 3);
+}
+
+#[test]
+fn module_declaration_lines_do_not_count_toward_the_file_size() {
+    let settings = FileSize {
+        roots: vec!["crates".to_owned()],
+        src_max_lines: 2,
+        test_max_lines: 4,
+    };
+    let declarations = "pub mod alpha;\nmod beta;\npub mod gamma;\nuse std::fmt;\nfn run() {}\n";
+    assert_eq!(
+        size_problem("crates/probe/src/sections.rs", declarations, &settings),
+        None
+    );
+    let code = "use std::fmt;\nmod inline {}\nfn run() {}\n";
+    assert_eq!(
+        size_problem("crates/probe/src/lib.rs", code, &settings).as_deref(),
+        Some("crates/probe/src/lib.rs has 3 lines, limit is 2; split it along a real boundary")
+    );
+    assert_eq!(
+        size_problem("crates/probe/src/tests.rs", code, &settings),
+        None
+    );
 }

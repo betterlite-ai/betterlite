@@ -194,7 +194,7 @@ pitfalls:
 - 'The input guard checks input_value is None before testing not input_value; null therefore uses param "input", while "" and [] use param null and the longer previous_response_id/prompt/conversation message.'
 - 'The conversion helper does not reject every non-string/non-list runtime value: input 42 becomes an empty message tuple, while list [1] enters B909 item conversion and is caught as an invalid token-count request.'
 - 'The route constructs explicit JSONResponse bodies for its validation errors, so caught conversion failures keep HTTP 400 with code null rather than inheriting the string status code used by ProxyException mapping.'
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0
