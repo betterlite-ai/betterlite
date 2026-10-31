@@ -132,11 +132,48 @@ fn splitter_recursion_falls_back_to_the_narrower_separator() {
 }
 
 #[test]
-fn splitter_force_split_strides_through_text_with_no_usable_separator() {
-    let splitter = RecursiveCharacterTextSplitter::new(4, 1, Some(vec![String::new()]))
-        .expect("valid configuration");
+fn splitter_force_split_strides_with_overlap_when_no_separator_matches() {
+    let splitter =
+        RecursiveCharacterTextSplitter::new(4, 1, Some(vec!["Q".to_owned(), "Z".to_owned()]))
+            .expect("valid configuration");
     let chunks = splitter.split_text("abcdefgh");
-    assert!(chunks.iter().all(|chunk| chunk.chars().count() <= 4));
+    assert_eq!(
+        chunks,
+        vec!["abcd".to_owned(), "defg".to_owned(), "gh".to_owned()]
+    );
+}
+
+#[test]
+fn splitter_force_split_stops_exactly_at_the_end_of_the_text() {
+    let splitter =
+        RecursiveCharacterTextSplitter::new(4, 1, Some(vec!["Q".to_owned(), "Z".to_owned()]))
+            .expect("valid configuration");
+    let chunks = splitter.split_text("abcdefg");
+    assert_eq!(chunks, vec!["abcd".to_owned(), "defg".to_owned()]);
+}
+
+#[test]
+fn assemble_chunks_sends_a_split_at_the_chunk_size_boundary_to_force_split() {
+    let splitter = RecursiveCharacterTextSplitter::new(4, 0, Some(vec!["|".to_owned()]))
+        .expect("valid configuration");
+    let chunks = splitter.split_text("abcd|efgh");
+    assert_eq!(chunks, vec!["abcd".to_owned(), "efgh".to_owned()]);
+}
+
+#[test]
+fn assemble_chunks_flushes_pending_good_splits_before_force_splitting_an_oversized_one() {
+    let splitter = RecursiveCharacterTextSplitter::new(5, 0, Some(vec!["|".to_owned()]))
+        .expect("valid configuration");
+    let chunks = splitter.split_text("ab|verylongpiece");
+    assert_eq!(
+        chunks,
+        vec![
+            "ab".to_owned(),
+            "veryl".to_owned(),
+            "ongpi".to_owned(),
+            "ece".to_owned(),
+        ]
+    );
 }
 
 #[test]
