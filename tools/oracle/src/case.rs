@@ -12,6 +12,8 @@ use serde_json::Value;
 use crate::multipart_oracle::error::MultipartError;
 use crate::multipart_oracle::request::{answer_body, request_body};
 
+mod config_inspection;
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Case {
@@ -239,7 +241,7 @@ pub(crate) fn validate(path: &Path, case: &Case) -> Result<(), OracleError> {
     if case.native_feature_eligibility && case.env.contains_key("PYTHONPATH") {
         return Err(invalid("env cannot set PYTHONPATH on an eligible case"));
     }
-    if config_requests_license(path, &case.config)? {
+    if config_inspection::requests_license(path, &case.config)? {
         return Err(invalid(
             "config cannot set general_settings.litellm_license or environment_variables.LITELLM_LICENSE",
         ));
@@ -261,24 +263,6 @@ pub(crate) fn validate(path: &Path, case: &Case) -> Result<(), OracleError> {
     // the request body decodes here once so a bad specification stops the run before any gateway starts
     request_body(&case.request.body, case.request.body_kind).map_err(OracleError::Multipart)?;
     validate_ignores(path, &case.compare.ignore)
-}
-
-// a self-describing Value tolerates a non-mapping config but still surfaces a duplicate key as a parse error
-fn config_requests_license(path: &Path, config: &str) -> Result<bool, OracleError> {
-    let parsed: Value =
-        serde_saphyr::from_str(config).map_err(|source| OracleError::CaseParse {
-            path: path.to_owned(),
-            source: Box::new(source),
-        })?;
-    let general_settings_license = parsed
-        .get("general_settings")
-        .and_then(Value::as_object)
-        .is_some_and(|settings| settings.contains_key("litellm_license"));
-    let environment_variable_license = parsed
-        .get("environment_variables")
-        .and_then(Value::as_object)
-        .is_some_and(|variables| variables.contains_key("LITELLM_LICENSE"));
-    Ok(general_settings_license || environment_variable_license)
 }
 
 fn validate_ignores(path: &Path, ignores: &[Ignore]) -> Result<(), OracleError> {
