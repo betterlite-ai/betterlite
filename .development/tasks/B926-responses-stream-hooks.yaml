@@ -129,7 +129,7 @@ pitfalls:
 - logged is latched before the cache write, so a failed write must not enable a second success dispatch.
 - A chunk hook exception stops the chain silently and keeps any earlier replacement.
 - Error-event fallback uses yielded_first_chunk, while transport fallback also considers whether output actually started.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 1

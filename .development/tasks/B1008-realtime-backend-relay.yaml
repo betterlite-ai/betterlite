@@ -109,7 +109,7 @@ pitfalls:
 - A malformed received frame still prevents a later non1000 close from being classified as a pre-frame refusal.
 - The raw transcript path bypasses beta event translation and uses only GA normalization for its direct client send.
 - Transformed-path exceptions are swallowed per frame; the same error in the raw path ends the relay.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

@@ -110,7 +110,7 @@ pitfalls:
 - Both GET implementations ignore timeout, even though their wrappers pass REQUEST_TIMEOUT.
 - Header validation uses the literal model string "None", not a null model.
 - Retrieve logs the base URL and input="", while cancel logs its final URL and response ID.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

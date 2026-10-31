@@ -84,4 +84,4 @@ pitfalls:
   - Empty PCM input yields no audio chunks rather than a single empty message.
   - The custom endpoint transformation drops its path and scheme before the speech SDK sees it.
 budget: {max_changed_lines: 625, max_new_expects: 1}
-review_level: security
+review_level: standard

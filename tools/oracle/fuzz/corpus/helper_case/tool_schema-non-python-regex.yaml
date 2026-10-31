@@ -1,0 +1,8 @@
+kind: helper
+name: tool-schema-non-python-regex
+call:
+  tool_schema:
+    mode: drop_non_python_regex_patterns
+    schema: {type: object, pattern: '\\p{Cc}', properties: {safe: {type: string, pattern: '^[a-z]+$'}}}
+env: {}
+compare: {ignore: []}

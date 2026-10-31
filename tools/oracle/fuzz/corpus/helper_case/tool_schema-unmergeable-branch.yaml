@@ -1,0 +1,8 @@
+kind: helper
+name: tool-schema-unmergeable-branch
+call:
+  tool_schema:
+    mode: flatten_top_level
+    schema: {oneOf: [{type: string}, {type: object, properties: {a: {type: string}}}]}
+env: {}
+compare: {ignore: []}

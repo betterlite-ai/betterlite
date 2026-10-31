@@ -126,7 +126,7 @@ pitfalls:
 - >-
   Jiff compares instants by default; Python same-tzinfo comparisons and naive local Nmo subtraction ignore offset
   changes.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

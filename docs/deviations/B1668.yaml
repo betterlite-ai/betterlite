@@ -1,0 +1,5 @@
+task: B1668
+deviations:
+  - what: Counter sums outside the native signed range return a typed usage overflow error instead of producing an arbitrary-size Python integer.
+    why: Billing counters require checked bounded arithmetic and may not wrap or silently saturate.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/usage_object_transformation.py#L129-L136

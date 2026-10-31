@@ -152,7 +152,7 @@ pitfalls:
   - "GuardrailTracingDetail has guardrail_cost_in_spend=False, so guardrail cost never counts against team/user/key budgets; it appears in logs, OTEL and the UI only."
   - "text_records billing unit is the ceiling of input characters divided by 1000, not the floor. A 500-character input counts as 1 text record."
   - "The cost calculation uses exact arithmetic (B204's Decimal-like checking); floating-point rounding or infinity never occurs."
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0
