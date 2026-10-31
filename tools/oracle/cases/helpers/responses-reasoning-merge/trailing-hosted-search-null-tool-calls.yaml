@@ -1,0 +1,13 @@
+kind: helper
+name: trailing-hosted-search-null-tool-calls
+call:
+  responses_reasoning_merge:
+    mode: trailing
+    messages:
+      - {role: assistant, content: a, tool_calls: null}
+    new_messages:
+      - {role: assistant, content: b}
+    hosted_search: true
+env: {}
+compare:
+  ignore: []

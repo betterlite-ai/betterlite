@@ -1,0 +1,20 @@
+kind: helper
+name: malformed-sort-key-versus-malformed-tier-price
+call:
+  token_rates:
+    operation: base
+    model_info:
+      input_cost_per_token: "0.000001"
+      input_cost_per_token_above_100_tokens: garbage
+      input_cost_per_token_above_notanumber_tokens: "0.000005"
+    usage:
+      prompt_tokens: 1
+    service_tier: null
+    provider: null
+compare:
+  ignore:
+    - pointer: /error/class
+      why: betterlite raises a typed TokenRateError where LiteLLM's sorted() raises a native ValueError
+    - pointer: /error/message
+      why: betterlite writes its own message
+env: {}

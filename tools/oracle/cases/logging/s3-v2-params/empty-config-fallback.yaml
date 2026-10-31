@@ -1,0 +1,5 @@
+kind: helper
+name: empty-config-fallback
+call: {b3992: {operation: params, global: {s3_config: {}}, constructor: {s3_config: {signature_version: s3v4}}}}
+env: {}
+compare: {ignore: []}

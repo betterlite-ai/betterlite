@@ -1,0 +1,84 @@
+id: B5084
+title: Fetch Hugging Face chat templates like LiteLLM
+description: >-
+  B177 built the prompt factory without LiteLLM's Hugging Face template fetch and recorded that as a deviation in docs/deviations/B177.yaml. Max decided on 2026-10-31 that betterlite downloads from Hugging Face wherever LiteLLM does, so this task adds the fetch and deletes that file. The code goes into B177's files: crates/betterlite-prompts/src/factory.rs and factory/**, with the fetch in a new factory/hub.rs.
+
+
+  The fetch. LiteLLM does not use huggingface_hub here. _get_tokenizer_config GETs "https://huggingface.co/{model}/raw/main/tokenizer_config.json" with LiteLLM's shared client, parses the body as JSON on status 200, answers failure on any other status and lets a transport or JSON error through. _get_chat_template_file tries "chat_template.jinja" then "chat_template.jinja2" under the same path, takes the first 200 body as UTF-8 text and skips any error. Use B173's shared client the way _get_httpx_client and get_async_httpx_client set it up, with the base URL passed to the constructor so tests can use a local server.
+
+
+  Template choice (_fetch_and_extract_template). Look the model up in a cache that starts with LiteLLM's three built-in entries (known_tokenizer_config) and stores every fetched result, failures included. When the config has a chat_template, use it with its bos_token and eos_token through B177's extract_token_value. Otherwise fetch the template file; on success use it, with the tokens from the config when the config fetch worked. Otherwise fail with B177's NoChatTemplate. The cache belongs to the factory's constructor.
+
+
+  Callers. Three places in prompt_factory reach the fetch. The Bedrock llama3 or llama4 instruct branch renders "meta-llama/Meta-Llama-3-8B-Instruct" and lets an error through. The generic "meta-llama/llama-3" or "meta-llama-3" instruct branch renders the same model, and the final generic branch renders the original model name; both fall back to default_pt on any error, as B177 already does. prompt_factory becomes async; nothing outside betterlite-prompts calls it on origin/main.
+
+
+  Tests and oracle. factory::hub::tests::fetch_follows_litellm runs a local server and covers status 200, 404, bad JSON, a transport error, the .jinja then .jinja2 order, bad UTF-8 and the cache with a failure stored. factory::tests::hub_templates_follow_litellm covers the three built-in models, a config with a template, a config without one plus a template file, nothing found, and the three callers. In the oracle adapter's factory mode (tools/oracle/helpers/prompt_factory.py), stop clearing known_tokenizer_config and keep the fetch blocked, so cases still need no network. Keep the case files B177 lists: with the built-in entries back, LiteLLM renders bedrock-missing-local-template-raises.yaml from its Meta-Llama-3 entry, and the name stays so B177's task file keeps pointing at a real case. Add generic-llama3-builtin-template.yaml.
+scope:
+  paths:
+    - crates/betterlite-prompts/src/factory.rs
+    - crates/betterlite-prompts/src/factory/**
+    - crates/betterlite-prompts/Cargo.toml
+    - docs/deviations/B177.yaml
+    - tools/oracle/helpers/prompt_factory.py
+    - tools/oracle/cases/helpers/prompt-template/**
+    - Cargo.toml
+    - Cargo.lock
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/huggingface_template_handler.py#L41-L161
+    why: The config and template file fetches, sync and async, and _extract_token_value.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L452-L611
+    why: _afetch_and_extract_template, _fetch_and_extract_template, ahf_chat_template and hf_chat_template.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L5305-L5369
+    why: The Bedrock llama3 and llama4 branch, the generic llama-3 branch and the final branch with its default_pt fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1475-L1530
+    why: known_tokenizer_config with its three built-in entries.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1713-L1810
+    why: The shared clients the fetch uses.
+dod:
+  - text: The config and template file fetches use LiteLLM's URLs, order, status handling and error handling.
+    proof: [hub-template-fetch]
+  - text: The cache starts with LiteLLM's built-in entries, stores failures, and the three callers render or fall back as LiteLLM does.
+    proof: [hub-template-selection, oracle, helper-python]
+  - text: docs/deviations/B177.yaml is gone.
+    proof: [b177-deviation-removed]
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: hub-template-fetch
+      why: the fetch test is missing or a URL, status or error path differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^factory::hub::tests::fetch_follows_litellm($|::)/)'
+    - id: hub-template-selection
+      why: the selection test is missing or a cached entry, token or caller differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^factory::tests::hub_templates_follow_litellm($|::)/)'
+    - id: b177-deviation-removed
+      why: B177's offline deviation is still listed
+      run: test ! -e docs/deviations/B177.yaml
+    - id: helper-python
+      why: the oracle adapter fails strict Python checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/prompt-template/bedrock-missing-local-template-raises.yaml
+  - tools/oracle/cases/helpers/prompt-template/generic-llama3-builtin-template.yaml
+  - tools/oracle/cases/helpers/prompt-template/generic-missing-local-template-falls-back.yaml
+deviations:
+  - what: The template cache holds at most 1024 fetched models next to the three built-in ones; once full, a new model is fetched on every call and not stored.
+    why: >-
+      LiteLLM's known_tokenizer_config grows with every model name it sees, and the final generic branch fetches for any name a request sends, so its memory has no bound.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L521-L527
+out_of_scope:
+  - Hugging Face tokenizer downloads through huggingface_hub belong to B195, B5085 and B5088; this fetch uses neither the Hub settings nor its cache.
+  - Rendering, the Jinja globals and the byte limits stay as B177 and B215 built them.
+pitfalls:
+  - The URL is always https://huggingface.co with "raw/main", no HF_ENDPOINT, no token and no file cache, so a gated repo answers 401 and counts as a failure.
+  - A failure result is stored and never fetched again in that process, but a transport or JSON error escapes before the store and is fetched again next time.
+  - A config whose chat_template is not a string (some repos hold a list of named templates) is still passed to the renderer, and rendering then fails.
+  - The template file fetch swallows every error, a bad UTF-8 body included, and moves on to the next file name.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

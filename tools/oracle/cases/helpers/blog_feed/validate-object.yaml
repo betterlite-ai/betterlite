@@ -1,0 +1,5 @@
+kind: helper
+name: validate-object
+call: {blog_feed: {function: validate_blog_posts, posts: {title: x}}}
+env: {}
+compare: {ignore: []}

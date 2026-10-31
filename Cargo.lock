@@ -897,8 +897,10 @@ version = "0.1.0"
 dependencies = [
  "betterlite-config",
  "betterlite-openai",
+ "encoding_rs",
  "futures-util",
  "indexmap 2.14.2",
+ "mime",
  "rstest",
  "secrecy",
  "serde",
@@ -951,13 +953,19 @@ name = "betterlite-cli"
 version = "0.1.0"
 dependencies = [
  "apple-native-keyring-store",
+ "base64 0.23.1",
  "betterlite-config",
  "dbus-secret-service-keyring-store",
+ "httparse",
  "keyring-core",
  "rstest",
  "secrecy",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
  "subtle",
  "thiserror",
+ "url",
  "windows-native-keyring-store",
 ]
 
@@ -1058,6 +1066,7 @@ dependencies = [
  "serde_json",
  "serde_with",
  "sha2 0.11.1",
+ "strum",
  "thiserror",
  "tokio",
  "tokio-postgres",
@@ -1118,6 +1127,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "ulid",
  "unicode-normalization",
 ]
@@ -1202,6 +1212,7 @@ version = "0.1.0"
 dependencies = [
  "betterlite-config",
  "betterlite-models",
+ "betterlite-redact",
  "chrono",
  "flate2",
  "hex",
@@ -1215,9 +1226,11 @@ dependencies = [
  "rstest",
  "rust_decimal",
  "ryu",
+ "secrecy",
  "serde",
  "serde-saphyr",
  "serde_json",
+ "serde_with",
  "sha2 0.11.1",
  "strum",
  "thiserror",
@@ -1344,6 +1357,7 @@ dependencies = [
  "hex",
  "indexmap 2.14.2",
  "jiff",
+ "quick-xml 0.42.0",
  "reqwest",
  "rstest",
  "rust_decimal",
@@ -4400,6 +4414,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "quick-xml"
+version = "0.42.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "41b1177fdf999d2321d3fb46ff47159d9c1fb9ad66a4879f8c50a0b504615e9b"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
 name = "quinn"
 version = "0.11.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5994,7 +6017,7 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "futures",
- "quick-xml",
+ "quick-xml 0.41.0",
  "serde",
  "serde_json",
  "url",

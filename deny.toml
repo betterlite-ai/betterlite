@@ -63,6 +63,7 @@ skip = [
   "getrandom@0.3.4",
   "rand@0.9.5",
   "rand_core@0.9.5",
+  "quick-xml@0.41.0",
 ]
 deny = [
   { crate = "openssl", use-instead = "rustls" },
@@ -74,5 +75,6 @@ deny = [
 ]
 
 [sources]
+# quick-xml is sourced from crates.io and covered by the allowed MIT/Apache-2.0 licenses above.
 unknown-registry = "deny"
 unknown-git = "deny"

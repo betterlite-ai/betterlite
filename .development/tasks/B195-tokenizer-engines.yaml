@@ -1,162 +1,249 @@
 id: B195
-title: Offline tokenizer engines and assets
+title: Tokenizer engines, bundled assets and Hugging Face tokenizers through hf-hub
 description: >-
-  Create betterlite-tokenizer with injected immutable tokenizer engines and bounded encode/decode/count APIs, loading
-  the pinned bundled assets offline. Cover cl100k_base, o200k_base and p50k_base (cache name ec7223a39ce59f226a68acc30dc1af2788490e15,
-  50280 ranks) plus the Anthropic Hugging Face tokenizer JSON, and expose an internal typed local-bytes constructor
-  for tests; model_info.custom_tokenizer remains unsupported and fails startup until Max decides. Compare kitoken's
-  typed-error Tiktoken/Hugging Face converters with tiktoken-rs and tokenizers; prefer kitoken if its oracle conformance
-  passes, retaining concrete conversion/encode/decode error sources. Do not adopt anyhow or boxed-error APIs, mutate
-  global TIKTOKEN_CACHE_DIR, fetch a model from a request name, or silently fall back when a configured custom asset
-  is invalid. Copy assets byte-for-byte into fixtures, store immutable instances in a bounded constructor-owned
-  cache, cap text/asset bytes and token output, and run CPU-heavy work through a bounded owned blocking facility.
-  Add tokenizer_engine helper cases forcing LiteLLM's Python tokenizer backend, and tokenizer_asset plus tokenizer_input
-  fuzz targets.  Seed B171's shared helper_case corpus with every added operation and replay it through the common
-  typed parser. Resolve CUSTOM_TIKTOKEN_CACHE_DIR through config (default bundled asset directory), without mutating
-  global TIKTOKEN_CACHE_DIR. Resolve TOKEN_COUNTER_MAX_CONCURRENT_COUNTS with default 4 and range 1-256; malformed/out-of-range
-  values warn and use 4. Force LITELLM_RUST=false and call rust_bridge/tokenizer.py _python_encoding/PythonHuggingFaceTokenizer
-  for Python oracle output; tokenizer.py 38-217 is the Rust codec wrapper, not the Python backend. No catalog dependency
-  is needed for named engines. Write the behavior rstest functions tokenizer_engines_tokenizer_engine_tests_behavior in adjacent
-  tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have separate
-  names. The helper operation tokenizer_engine is already registered;
-  each operation has its own Rust and Python adapter file and corpus seed. Budget 250 engine/cache, 100 adapters,
-  220 tests, 100 fuzz/replay and 100 config/wiring (770 total). Own token_counter.py offload limiter helpers 343-361
-  and utils.py backend/selection 2376-2470 only for already packaged engines; undecided remote/custom acquisition
-  is excluded.
+  LiteLLM counts tokens with tiktoken encodings it ships, with the Anthropic tokenizer JSON it ships, and with three tokenizers it downloads from the Hugging Face Hub: Xenova/c4ai-command-r-v01-tokenizer for command-r, hf-internal-testing/llama-tokenizer for llama-2 and replicate models, and Xenova/llama-3-tokenizer for llama-3 (utils.py L2426-L2469). An operator can also name any Hub tokenizer as a custom tokenizer (utils.py L2395-L2400, L2518-L2547). Max decided on 2026-10-31 that betterlite downloads from Hugging Face wherever LiteLLM does, through crates.io libraries, porting only what they lack. This task builds the engines and the selection in crates/betterlite-tokenizer/src/engine.rs and engine/**, and downloads tokenizer.json through the hf-hub crate (=1.0.0) with B5085's settings and the token from B5085 and B5088.
 
 
-  Also own main.py _load_default_encoding L9394-L9397 as the lazy accessor to the packaged default engine; B196
-  owns its caller and one-time cache. The accessor performs no asset acquisition.
+  Engines. Hugging Face tokenizers and anthropic_tokenizer.json load with the tokenizers crate pinned at =0.23.1, the version in LiteLLM's uv.lock, with default-features = false and features = ["onig"], the regex backend of the Python wheel. Keep its http feature off: it pulls hf-hub 0.4.1, a second hf-hub that multiple-versions = "deny" rejects, so the file comes from this task's hf-hub download and loads with Tokenizer::from_bytes. tokenizers::Error is a Box<dyn Error>; Max allowed it on 2026-10-31 as the #[source] of one typed EngineError variant per operation (load, encode, decode), never turned into a string. For the tiktoken encodings compare kitoken and tiktoken-rs and pick the one whose output matches the oracle, with its concrete error as the source of a typed EngineError. Bundle cl100k_base, o200k_base, p50k_base and anthropic_tokenizer.json byte for byte from LiteLLM's tokenizers folder into crates/betterlite-tokenizer/fixtures (default_encoding.py L1-L52); p50k_edit and o200k_harmony reuse those files the way tiktoken's constructors do. r50k_base and gpt2 are not bundled by LiteLLM, so tiktoken fetches them from openaipublic.blob.core.windows.net (read_file_cached): fetch them the same way through B173's client in betterlite-http, with the sha256 check, and keep them in CUSTOM_TIKTOKEN_CACHE_DIR under the sha1 of the URL when that variable is set. Count with disallowed_special empty (utils.py L2472-L2491), decode Hugging Face output with special added tokens stripped (tokenizer.py L378-L388), and run counting through a limiter of TOKEN_COUNTER_MAX_CONCURRENT_COUNTS (token_counter.py L340-L361) on the bounded blocking facility the caller passes in.
+
+
+  Hub download (crates/betterlite-tokenizer/src/engine/hub.rs). Build an HFClient with HFClientBuilder: endpoint and cache_dir from B5085's endpoint and hub_cache, and token only when the B5085 and B5088 lookup returns one. Split the repo id with split_id and call model(owner, name).download_file() with filename "tokenizer.json" and the revision. Log B5085's hf_transfer_deprecated warning once when the first client is built. hf-hub lacks three parts of hf_hub_download, so build them around the call. Offline: when B5085's offline is set, pass local_files_only(true), so only the cache answers. Cache fallback: huggingface_hub falls back to the cached file on every Hub HTTP error except RevisionNotFound and RemoteEntryNotFound, on a connection error, a timeout and a metadata error (file_download.py L1818-L1838), while hf-hub falls back only on transient errors; so after any HFError except RevisionNotFound and EntryNotFound, call again with local_files_only(true) and return that file, or the first error when the cache has none. Timeouts: hf-hub sets none. Bound the time until DownloadEvent::Start (it fires after the HEAD) by B5085's etag_timeout and treat its expiry as a timeout for the fallback. When the first error is a timeout, a connection error or status 408, 429, 500, 502, 503 or 504 and the cache has no file, run the call once more bounded by 60 seconds, as _ETAG_RETRY_TIMEOUT does (file_download.py L1166-L1185). After Start, fail with a typed timeout error when no Progress or AggregateProgress event arrives for download_timeout seconds. The settings, the token lookup and the clock come in through the constructor.
+
+
+  Selection (utils.py L2376-L2469). select(model, custom) returns a huggingface_tokenizer or an openai_tokenizer. With a custom tokenizer (identifier, revision, auth token), download its tokenizer.json with the auth token as an explicit token, keep it in an LRU of the same size as _select_custom_tokenizer_helper's, and let a failure reach the caller. Without one: when litellm_settings.disable_hf_tokenizer_download is true, return cl100k_base. Otherwise pick the kind in LiteLLM's order with B193's catalog lists (cohere_models, anthropic_models), load a Hub kind with revision "main" and the implicit token, build the engine from the downloaded bytes, and cache it per kind for the life of the process. Any failure logs at debug "Error selecting tokenizer: {error}" and returns cl100k_base. Also build main.py L9394-L9397's accessor to the default encoding; B196 owns its caller.
+
+
+  Settings. The config section tokenizer_engines (crates/betterlite-config/src/sections/tokenizer_engines.rs and tokenizer_engines/**) reads litellm_settings.disable_hf_tokenizer_download (bool, default unset), CUSTOM_TIKTOKEN_CACHE_DIR and TOKEN_COUNTER_MAX_CONCURRENT_COUNTS (default 4, range 1 to 256; a bad value logs LiteLLM's warning and uses 4).
+
+
+  Dependency policy. hf-hub and tokenizers add about 115 crates; Max accepted them on 2026-10-31. Scope deny.toml and add only what they need, each with a one-line comment: hf-hub, reqwest-middleware, xet-client and xet-runtime as reqwest wrappers on line 72; skips for base64@0.13.1, darling@0.20.11, darling_core@0.20.11, darling_macro@0.20.11 and core-foundation@0.9.4; one-crate MPL-2.0 license exceptions for colored and option-ext (both reached through xet-runtime); and RUSTSEC-2024-0436 (paste is unmaintained, reached through tokenizers) in the advisories ignore list. Use hf-hub's rustls-tls feature so no OpenSSL enters.
+
+
+  MPL-2.0 notice. Max allowed the two MPL-2.0 crates on 2026-10-31. MPL-2.0 section 3.2(a) asks whoever ships a binary to tell its users where the source of those files is, so add a section to THIRD_PARTY_NOTICES.md below Berri AI's notice that names colored and option-ext, says they are under MPL-2.0 and are used unmodified, and links each one's crates.io page and repository. Never patch, fork or vendor either crate: a changed file of theirs would have to be published under MPL-2.0.
+
+
+  Tests and oracle. engine::tests::engines_follow_litellm covers each bundled encoding, Unicode, whitespace, special tokens, bad ids and the r50k_base fetch against a local server. engine::tests::hub_download_follows_huggingface_hub runs a local Hub on 127.0.0.1 through B5085's endpoint and covers a fresh download, a cached file with the same etag, offline with and without a cached file, a 401, a 404 repo and a 503 with a cached file, a missing revision and a missing file without fallback, a HEAD past etag_timeout, the 60-second retry with no cached file, a stalled body past download_timeout, the token header present and absent, and a custom tokenizer's explicit token. engine::tests::selection_follows_litellm covers every kind, the disable switch, the per-kind cache, a failed download falling back to cl100k_base and a custom tokenizer's failure reaching the caller. engine::tests::limits_hold covers the concurrency limiter and the input and output caps. sections::tokenizer_engines::tests::settings_follow_litellm loads every setting. The helper operation tokenizer_engine is already registered; force LITELLM_RUST=false so the oracle uses _python_encoding and PythonHuggingFaceTokenizer (rust_bridge/tokenizer.py L64-L108), and build Hugging Face cases from tokenizer.json bytes with from_str so no case needs the network.
 scope:
   paths:
-  - Cargo.toml
-  - crates/betterlite-tokenizer/**
-  - crates/betterlite-config/**
-  - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/tokenizer/engine.rs
-  - tools/oracle/src/helpers/tokenizer/engine/**
-  - tools/oracle/helpers/tokenizer_engine.py
-  - tools/oracle/helpers/tokenizer_engine/**
-  - tools/oracle/cases/helpers/tokenizer-engine/**
-  - "tools/oracle/fuzz/corpus/helper_case/tokenizer_engine-*"
+    - crates/betterlite-tokenizer/src/engine.rs
+    - crates/betterlite-tokenizer/src/engine/**
+    - crates/betterlite-tokenizer/Cargo.toml
+    - crates/betterlite-tokenizer/fixtures/**
+    - crates/betterlite-tokenizer/fuzz/**
+    - crates/betterlite-config/src/sections/tokenizer_engines.rs
+    - crates/betterlite-config/src/sections/tokenizer_engines/**
+    - "crates/betterlite-config/fuzz/corpus/config_yaml/tokenizer-engines-*"
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/tokenizer/engine.rs
+    - tools/oracle/src/helpers/tokenizer/engine/**
+    - tools/oracle/helpers/tokenizer_engine.py
+    - tools/oracle/helpers/tokenizer_engine/**
+    - tools/oracle/cases/helpers/tokenizer-engine/**
+    - "tools/oracle/fuzz/corpus/helper_case/tokenizer_engine-*"
+    - deny.toml
+    - THIRD_PARTY_NOTICES.md
+    - Cargo.toml
+    - Cargo.lock
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/tokenizer.py#L38-L217
-  why: Rust-codec OpenAIEncoding interface; do not use this as the Python oracle implementation.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/tokenizer.py#L221-L388
-  why: Hugging Face wrapper and special-token handling.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/default_encoding.py#L1-L52
-  why: Bundled offline cache and explicit custom directory.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2376-L2470
-  why: Tokenizer selection helper.
-- url: https://docs.rs/kitoken/latest/kitoken/convert/index.html
-  why: Existing converters for both asset formats.
-- url: https://docs.rs/kitoken/latest/kitoken/convert/enum.ConversionError.html
-  why: Concrete error sources compatible with repository rules.
-- url: https://docs.rs/tokenizers/latest/tokenizers/tokenizer/type.Error.html
-  why: An erased error boundary must not be adopted without a rules change.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rust_bridge/tokenizer.py#L64-L89
-  why: Python tiktoken and packaged Anthropic backend selection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2376-L2469
+    why: _select_tokenizer, the custom and default helpers, the disable switch, the kind order and _load_huggingface_tokenizer with the three repos.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2472-L2547
+    why: encode, decode, create_pretrained_tokenizer and create_tokenizer.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L1529-L1531
+    why: disable_hf_tokenizer_download, unset by default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/default_encoding.py#L1-L52
+    why: The bundled tiktoken folder, CUSTOM_TIKTOKEN_CACHE_DIR and the cl100k_base load.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rust_bridge/tokenizer.py#L64-L108
+    why: The Python backend the oracle must force, from_str and from_pretrained.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/tokenizer.py#L221-L388
+    why: The Hugging Face wrapper and strip_special_tokens.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L340-L361
+    why: The counting limiter and TOKEN_COUNTER_MAX_CONCURRENT_COUNTS.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L9394-L9397
+    why: The default encoding accessor.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/uv.lock#L9656
+    why: tiktoken 0.12.0.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/uv.lock#L9717-L9721
+    why: tokenizers 0.23.1.
+  - url: https://github.com/openai/tiktoken/blob/0.12.0/tiktoken/load.py#L36-L87
+    why: read_file_cached, the cache key, the hash check and the fetch.
+  - url: https://github.com/openai/tiktoken/blob/0.12.0/tiktoken_ext/openai_public.py#L17-L154
+    why: Every encoding constructor and the files it loads.
+  - url: https://github.com/huggingface/tokenizers/blob/v0.23.1/bindings/python/src/tokenizer.rs#L786-L812
+    why: from_pretrained downloads tokenizer.json through hf_hub_download.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/file_download.py#L1166-L1185
+    why: With no cached file, a retryable metadata error gets one more try with the 60-second _ETAG_RETRY_TIMEOUT.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/file_download.py#L1818-L1838
+    why: Which metadata errors fall back to the cache and which raise.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/file_download.py#L1925-L1960
+    why: The errors raised when the cache has no file.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/utils/_http.py#L451-L456
+    why: The retryable exceptions and status codes.
+  - url: https://docs.rs/hf-hub/1.0.0/hf_hub/
+    why: HFClientBuilder, download_file, local_files_only, split_id, HFError and DownloadEvent.
+  - url: https://docs.rs/tokenizers/0.23.1/tokenizers/tokenizer/struct.Tokenizer.html
+    why: Tokenizer::from_bytes, encode and decode with skip_special_tokens.
+  - url: https://docs.rs/crate/tokenizers/0.23.1/features
+    why: The http feature pulls hf-hub 0.4.1; onig is the default regex backend.
+  - url: https://docs.rs/kitoken/latest/kitoken/convert/index.html
+    why: kitoken's tiktoken converter with typed errors, one of the two tiktoken candidates.
 dod:
-- text: Encode/decode/count outputs match Python for every bundled vocabulary, Unicode, whitespace, special tokens
-    and malformed IDs.
-  proof:
-  - oracle
-  - helper-python
-- text: All four tokenizer assets match their pinned checksums and startup/counting succeeds with network disabled.
-  proof:
-  - tokenizer-assets
-  - tokenizer-engine-tests
-- text: Custom invalid assets fail explicitly; concurrency, input/output caps and bounded CPU offload prevent unbounded
-    allocations or runtime blocking.
-  proof:
-  - tokenizer-engine-tests
-- text: Asset/input/config parsers have nonempty corpus replay.
-  proof:
-  - tokenizer-asset-corpus
-  - tokenizer-input-corpus
-  - config-yaml-corpus
-- text: Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
-  proof:
-  - helper-case-corpus
+  - text: Encode, decode and count match Python for every bundled encoding and for Hugging Face tokenizers built from bytes, with Unicode, whitespace, special tokens and bad ids.
+    proof: [engines, oracle, helper-python]
+  - text: Hub tokenizers download through hf-hub with B5085's endpoint, cache and token, and fall back to the cache, answer offline, time out and retry where huggingface_hub does.
+    proof: [hub-download]
+  - text: Selection picks the same tokenizer as LiteLLM for every kind, honors the disable switch, and falls back to cl100k_base where LiteLLM does.
+    proof: [selection]
+  - text: The bundled assets match their pinned checksums.
+    proof: [tokenizer-assets]
+  - text: The limiter, input and output caps hold.
+    proof: [limits]
+  - text: The three settings load as LiteLLM reads them.
+    proof: [tokenizer-settings, config-yaml-corpus]
+  - text: The asset and input parsers and every added helper operation have committed corpora that replay.
+    proof: [tokenizer-asset-corpus, tokenizer-input-corpus, helper-case-corpus]
+  - text: THIRD_PARTY_NOTICES.md names colored and option-ext as MPL-2.0 with links to their source, and Berri AI's notice stays.
+    proof: [mpl-notice]
 checks:
   optional:
-  - mutants
+    - mutants
   commands:
-  - id: tokenizer-engine-tests
-    why: the required tests fail or the filter selects no tests
-    run: cargo nextest run --locked -p betterlite-tokenizer --no-tests=fail -E 'test(/::tokenizer_engines_tokenizer_engine_tests_behavior($|::)/)
-      - test(/replays_the_/)'
-  - id: tokenizer-asset-corpus
-    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-tokenizer/fuzz/corpus/tokenizer_asset)"
-      && test -f crates/betterlite-tokenizer/fuzz/fuzz_targets/tokenizer_asset.rs && test -n "$(ls -A crates/betterlite-tokenizer/fuzz/corpus/tokenizer_asset)"
-      && cargo nextest run --locked -p betterlite-tokenizer --no-tests=fail -E 'test(replays_the_tokenizer_asset_corpus)'
-  - id: tokenizer-input-corpus
-    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-tokenizer/fuzz/corpus/tokenizer_input)"
-      && test -f crates/betterlite-tokenizer/fuzz/fuzz_targets/tokenizer_input.rs && test -n "$(ls -A crates/betterlite-tokenizer/fuzz/corpus/tokenizer_input)"
-      && cargo nextest run --locked -p betterlite-tokenizer --no-tests=fail -E 'test(replays_the_tokenizer_input_corpus)'
-  - id: config-yaml-corpus
-    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml)"
-      && grep -rlq 'CUSTOM_TIKTOKEN_CACHE_DIR' crates/betterlite-config/fuzz/corpus/config_yaml && grep -rlq 'TOKEN_COUNTER_MAX_CONCURRENT_COUNTS'
-      crates/betterlite-config/fuzz/corpus/config_yaml && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
-      && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)" && cargo nextest run --locked -p betterlite-config
-      --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-  - id: helper-python
-    why: the oracle adapters fail strict Python checks
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: tokenizer-assets
-    why: a bundled tokenizer asset differs from the pinned source
-    run: 'cd crates/betterlite-tokenizer/fixtures && sha256sum --check --quiet <<''SUMS''
+    - id: engines
+      why: the engine test is missing or an encoding differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-tokenizer --no-tests=fail -E 'test(/^engine::tests::engines_follow_litellm($|::)/)'
+    - id: selection
+      why: the selection test is missing or a kind, download, cache or fallback differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-tokenizer --no-tests=fail -E 'test(/^engine::tests::selection_follows_litellm($|::)/)'
+    - id: hub-download
+      why: the hub download test is missing or a URL, token, cache fallback, offline answer, timeout or retry differs from huggingface_hub
+      run: cargo nextest run --locked -p betterlite-tokenizer --no-tests=fail -E 'test(/^engine::tests::hub_download_follows_huggingface_hub($|::)/)'
+    - id: limits
+      why: the limits test is missing or a cap or the limiter does not hold
+      run: cargo nextest run --locked -p betterlite-tokenizer --no-tests=fail -E 'test(/^engine::tests::limits_hold($|::)/)'
+    - id: mpl-notice
+      why: THIRD_PARTY_NOTICES.md does not tell users where the MPL-2.0 sources of colored and option-ext are, or lost Berri AI's notice
+      run: >-
+        grep -q 'Copyright (c) 2023 Berri AI' THIRD_PARTY_NOTICES.md
+        && grep -q 'MPL-2.0' THIRD_PARTY_NOTICES.md
+        && grep -q 'https://crates.io/crates/colored' THIRD_PARTY_NOTICES.md
+        && grep -q 'https://crates.io/crates/option-ext' THIRD_PARTY_NOTICES.md
+    - id: tokenizer-settings
+      why: the settings test is missing or a setting loads differently from LiteLLM
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::tokenizer_engines::tests::settings_follow_litellm($|::)/)'
+    - id: tokenizer-assets
+      why: a bundled tokenizer asset differs from the pinned source
+      run: 'cd crates/betterlite-tokenizer/fixtures && sha256sum --check --quiet <<''SUMS''
 
-      223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7  9b5ad71b2ce5302211f9c61530b329a4922fc6a4
+        223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7  9b5ad71b2ce5302211f9c61530b329a4922fc6a4
 
-      446a9538cb6c348e3516120d7c08b09f57c36495e2acfffe59a5bf8b0cfb1a2d  fb374d419588a4632f3f557e76b4b70aebbca790
+        446a9538cb6c348e3516120d7c08b09f57c36495e2acfffe59a5bf8b0cfb1a2d  fb374d419588a4632f3f557e76b4b70aebbca790
 
-      94b5ca7dff4d00767bc256fdd1b27e5b17361d7b8a5f968547f9f23eb70d2069  ec7223a39ce59f226a68acc30dc1af2788490e15
+        94b5ca7dff4d00767bc256fdd1b27e5b17361d7b8a5f968547f9f23eb70d2069  ec7223a39ce59f226a68acc30dc1af2788490e15
 
-      c241737df24b4e7f7c9af4fdcee29a0ca903dcb288a8b753bc346a3092911767  anthropic_tokenizer.json
+        c241737df24b4e7f7c9af4fdcee29a0ca903dcb288a8b753bc346a3092911767  anthropic_tokenizer.json
 
-      SUMS'
-  - id: helper-case-corpus
-    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/tokenizer_engine-*")"
-      && grep -lq 'tokenizer_engine' tools/oracle/fuzz/corpus/helper_case/tokenizer_engine-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
-      && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
-      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+        SUMS'
+    - id: tokenizer-asset-corpus
+      why: the fuzz target or a new corpus file is missing, or the replay fails
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-tokenizer/fuzz/corpus/tokenizer_asset)"
+        && test -f crates/betterlite-tokenizer/fuzz/fuzz_targets/tokenizer_asset.rs
+        && cargo nextest run --locked -p betterlite-tokenizer --no-tests=fail -E 'test(/^engine::tests::replays_the_tokenizer_asset_corpus($|::)/)'
+    - id: tokenizer-input-corpus
+      why: the fuzz target or a new corpus file is missing, or the replay fails
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-tokenizer/fuzz/corpus/tokenizer_input)"
+        && test -f crates/betterlite-tokenizer/fuzz/fuzz_targets/tokenizer_input.rs
+        && cargo nextest run --locked -p betterlite-tokenizer --no-tests=fail -E 'test(/^engine::tests::replays_the_tokenizer_input_corpus($|::)/)'
+    - id: config-yaml-corpus
+      why: the config corpus lacks a tokenizer-engines seed with the new key, or the replay fails
+      run: >-
+        git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml | grep -Fq "/tokenizer-engines-"
+        && grep -rlq 'disable_hf_tokenizer_download' crates/betterlite-config/fuzz/corpus/config_yaml
+        && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: helper-python
+      why: the oracle adapter fails strict Python checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: a tokenizer_engine seed is missing or the helper corpus replay fails
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/tokenizer_engine-*")"
+        && grep -lq 'tokenizer_engine' tools/oracle/fuzz/corpus/helper_case/tokenizer_engine-*
+        && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+        && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
-- tools/oracle/cases/helpers/tokenizer-engine/cl100k.yaml
-- tools/oracle/cases/helpers/tokenizer-engine/o200k.yaml
-- tools/oracle/cases/helpers/tokenizer-engine/p50k.yaml
-- tools/oracle/cases/helpers/tokenizer-engine/anthropic.yaml
-- tools/oracle/cases/helpers/tokenizer-engine/unicode-whitespace.yaml
-- tools/oracle/cases/helpers/tokenizer-engine/special-tokens.yaml
-- tools/oracle/cases/helpers/tokenizer-engine/decode-bytes.yaml
-- tools/oracle/cases/helpers/tokenizer-engine/invalid-id.yaml
-- tools/oracle/cases/helpers/tokenizer-engine/custom-local.yaml
+  - tools/oracle/cases/helpers/tokenizer-engine/cl100k.yaml
+  - tools/oracle/cases/helpers/tokenizer-engine/o200k.yaml
+  - tools/oracle/cases/helpers/tokenizer-engine/p50k.yaml
+  - tools/oracle/cases/helpers/tokenizer-engine/anthropic.yaml
+  - tools/oracle/cases/helpers/tokenizer-engine/unicode-whitespace.yaml
+  - tools/oracle/cases/helpers/tokenizer-engine/special-tokens.yaml
+  - tools/oracle/cases/helpers/tokenizer-engine/decode-bytes.yaml
+  - tools/oracle/cases/helpers/tokenizer-engine/invalid-id.yaml
+  - tools/oracle/cases/helpers/tokenizer-engine/custom-local.yaml
 deviations:
-- what: Tokenizer assets are local or bundled only; request/model names never trigger Hugging Face downloads. Unavailable
-    optional Hugging Face tokenizers follow disable_hf_tokenizer_download=true and use the existing OpenAI tokenizer
-    selection. model_info.custom_tokenizer fails configuration loading with the typed unsupported-setting error;
-    no provider request is sent.
-  why: Keep offline behavior while Max decides whether to bundle additional pinned Hugging Face assets or support
-    validated downloads.
-  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2376-L2470
+  - what: When CUSTOM_TIKTOKEN_CACHE_DIR is unset, a fetched r50k_base or gpt2 file stays in memory for the life of the process, where tiktoken writes it into the tokenizers folder inside LiteLLM's installed package.
+    why: >-
+      betterlite's bundled assets are compiled into the binary, so there is no package folder to write into. The fetch, the URL and the hash check are the same; only the copy on disk is missing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/default_encoding.py#L20-L30
+  - what: Hub requests send hf-hub's user agent, "hf-hub/1.0.0" with HF_HUB_USER_AGENT_ORIGIN appended when set, where huggingface_hub sends its own name, version and Python details.
+    why: >-
+      Sending another library's name and Python version from a Rust binary would misreport the client to the Hub. The URLs, headers that carry meaning and the token are the same.
+    link: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/utils/_headers.py#L157-L203
+  - what: When the token lookup finds no token, hf-hub runs its own lookup, so an HF_TOKEN made only of whitespace is sent as written and a missing HF_TOKEN_PATH file falls through to {HF_HOME}/token, where huggingface_hub sends no token.
+    why: >-
+      HFClientBuilder has no way to say "no token"; without one it calls its own resolve_token. Both cases need a broken setup to reach. Max decided on 2026-10-31 not to ask hf-hub upstream for such an option for now.
+    link: https://docs.rs/hf-hub/1.0.0/hf_hub/struct.HFClientBuilder.html
+  - what: HF_HUB_DISABLE_XET is not read. A file the Hub serves through Xet downloads through hf-xet even when the variable is set.
+    why: >-
+      hf-hub always uses hf-xet when the HEAD answer carries X-Xet-Hash and has no switch to turn it off. The bytes and the cache path are the same.
+    link: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/constants.py#L343
+  - what: HF_HUB_DISABLE_SYMLINKS and HF_HUB_DISABLE_SYMLINKS_WARNING are not read. The cache always links snapshot files to blobs.
+    why: >-
+      hf-hub has no switch for copies. betterlite ships for Linux and macOS, where symlinks work and huggingface_hub links too unless told otherwise.
+    link: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/constants.py#L277-L281
+  - what: An HF_ENDPOINT mirror that answers the metadata request with an absolute redirect fails the metadata step and falls back to the cache, where huggingface_hub follows a redirect to the same host or a Hub host.
+    why: >-
+      hf-hub's metadata request follows only relative redirects. The Hub itself redirects relatively, so only such a mirror sees it.
+    link: https://github.com/huggingface/hf-hub/issues/163
+  - what: A proxy failure falls back to the cache, where huggingface_hub raises ProxyError.
+    why: >-
+      hf-hub reports a proxy failure as a connection error and the two cannot be told apart.
+    link: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/file_download.py#L1818-L1820
+  - what: hf-hub retries a request up to 5 times with backoff on 408, 429, 500, 502, 503, 504 and connection errors before the cache fallback, where huggingface_hub's first metadata request tries once.
+    why: >-
+      hf-hub's retry is the same list huggingface_hub uses on its second try. The etag_timeout bound still holds, so a user sees the same fallback, only after more tries.
+    link: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/utils/_http.py#L451-L456
+  - what: A custom tokenizer's failed download reaches the caller with hf-hub's error text, where huggingface_hub raises its own exception message.
+    why: >-
+      The text comes from a different library. The failure and when it happens are the same.
+    link: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/file_download.py#L1925-L1960
 out_of_scope:
-- Message/tool/image accounting is B196-B197.
-- Python mutable tokenizer methods and SDK pretrained-download convenience are B166.
-- Automatic family selection requiring the three missing HF repositories stays blocked by the open decision; supplied
-  local bytes are an internal API only, not a new configuration key.
+  - Hub settings and the token lookup belong to B5085, OIDC and OAuth refresh to B5088. The requests, the cache layout, locks, retries and Xet are hf-hub's.
+  - HUGGINGFACE_CO_STAGING is read by B5085; this task only uses the endpoint and token path it gives.
+  - Message, tool and image accounting belongs to B196 and B197; the encoding name for a model (token_counter.py L663-L690) belongs to B259.
+  - The /utils/token_counter handler that reads model_info.custom_tokenizer (proxy_server.py L14024-L14058) calls this task's select but is not built here; its owner is still open.
+  - Python's mutable tokenizer methods and the SDK pretrained-download helpers belong to B166.
+  - LiteLLM's optional Rust codec (tokenizer.py L38-L217, LITELLM_RUST) is not ported; the Python backend is the reference.
+  - Progress bars, telemetry and HF_XET_HIGH_PERFORMANCE tuning are not built.
 pitfalls:
-- 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/tokenizer_engine-<case>.yaml. The rest of that folder belongs to other tasks.'
-- 'The oracle helper for this task is pre-registered as tokenizer_engine in the tokenizer group. Replace the stub Op in tools/oracle/src/helpers/tokenizer/engine.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/tokenizer_engine.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
-- The oracle must force the Python backend and use the same vocabulary bytes, not LiteLLM's optional Rust implementation.
-- A library's default model-name lookup may differ from LiteLLM's normalization even when its BPE is correct.
-- Concrete source errors are required; converting a boxed tokenizer error to a string is not a compliant fallback.
-review_level: standard
+  - _select_tokenizer_helper checks `disable_hf_tokenizer_download is True`, so only true turns downloads off; false and unset both download.
+  - The kind order is cohere, anthropic, llama-2 or replicate, llama-3, so "replicate/meta/llama-3-70b" gets the llama-2 tokenizer.
+  - The cohere check reads the model name as given, while the llama checks lowercase it.
+  - lru_cache never caches an exception, so a failed Hub download is tried again on the next call; cache only successes.
+  - A failed default selection falls back to cl100k_base with a debug log and never reaches the client; only a custom tokenizer's failure does.
+  - huggingface_hub raises RepositoryNotFound, gated and 401 errors as they are when the cache has no file, and wraps the rest in LocalEntryNotFoundError; keep that split in the typed error.
+  - Without a token hf-hub reads HF_TOKEN and {HF_HOME}/token from the process env, so the hub test sets HF_HOME to a temp folder and checks that HF_TOKEN is unset before it asserts no Authorization header.
+  - The xet crates turn on reqwest's default features (system-proxy, charset, http2) for the whole workspace; check that betterlite-http's clients keep the proxy settings they set.
+  - tokenizers with onig builds C code through onig_sys and cc; keep esaxx_fast and progressbar off.
+  - Name every corpus seed tools/oracle/fuzz/corpus/helper_case/tokenizer_engine-<case>.yaml; the rest of that folder belongs to other tasks.
+  - The oracle helper is pre-registered as tokenizer_engine in the tokenizer group; replace the stub Op in tools/oracle/src/helpers/tokenizer/engine.rs and write run in tools/oracle/helpers/tokenizer_engine.py, and leave the registry files alone.
+  - A library's own model-name lookup can differ from LiteLLM's selection even when its BPE is right, so select by LiteLLM's rules only.
+review_level: security
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

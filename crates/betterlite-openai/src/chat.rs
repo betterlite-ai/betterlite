@@ -1,3 +1,4 @@
+pub mod content;
 pub mod deployment;
 pub mod execution;
 pub mod provider_error;

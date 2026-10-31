@@ -1,0 +1,8 @@
+task: B721
+deviations:
+  - what: Outer stored-resource JSON and decoded model JSON strings over 1048576 bytes or depth 64 fail with a typed decode-limit error.
+    why: Bound both external-data layers; native_resource_row_limits and native_nested_model_json_limits cover the difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/model.py#L30-L44
+  - what: Organization/project spend outside Decimal's finite range fails row decoding rather than remaining a Python float.
+    why: The checked money-is-decimal boundary cannot silently map invalid spend to zero; resource_money_nonfinite_and_overflow_rejected proves this behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/project.py#L25-L26

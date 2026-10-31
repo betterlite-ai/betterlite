@@ -1,0 +1,12 @@
+kind: helper
+name: azure-openrouter-errors-azure-status
+call:
+  azure_openrouter_errors:
+    provider: azure
+    model: gpt-4
+    custom_llm_provider: azure
+    error_str: deployment is throttling requests
+    exception_provider: Azure
+    status_code: 429
+env: {}
+compare: {ignore: []}

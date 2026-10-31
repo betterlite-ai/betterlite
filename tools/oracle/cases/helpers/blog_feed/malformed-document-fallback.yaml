@@ -1,0 +1,6 @@
+kind: helper
+name: malformed-document-fallback
+call:
+  blog_feed: {function: get_blog_posts, url: https://example.test/feed, now: 100, response: {status: 200, text: '<rss><channel/></rss>tail'}}
+env: {}
+compare: {ignore: [{pointer: /value/warnings/0/message, why: "betterlite writes its own parse-failure message"}]}

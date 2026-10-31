@@ -1,7 +1,7 @@
 id: B4264
 milestone: M8 platform
 title: Blog feed cache and bundled fallback
-status: todo
+status: done
 depends_on: []
 file: tasks/B4264-blog-feed.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/litellm_core_utils/get_blog_posts.py"
 parent: B124
 split_from: B124
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 409

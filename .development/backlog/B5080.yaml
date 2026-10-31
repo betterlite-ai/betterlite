@@ -1,0 +1,13 @@
+id: B5080
+milestone: M0 foundation
+title: Keep raw config secrets in SecretString
+status: todo
+depends_on: [B002, B4320, B2487]
+file: tasks/B5080-raw-config-secrets.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

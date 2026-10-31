@@ -1,0 +1,12 @@
+kind: helper
+name: reasoning-attribute-missing-content
+call:
+  responses_reasoning_merge:
+    mode: reasoning
+    record_kind: attribute
+    messages:
+      - {role: assistant, reasoning_content: a}
+      - {role: assistant, content: answer, reasoning_content: null, thinking_blocks: null}
+env: {}
+compare:
+  ignore: []

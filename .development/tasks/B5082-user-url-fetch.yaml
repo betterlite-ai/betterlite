@@ -1,0 +1,144 @@
+id: B5082
+title: SSRF-checked fetch of user-supplied URLs
+description: >-
+  LiteLLM downloads URLs that arrive in requests (image and file URLs, RAG file_url, guardrail http_request, PointFive presigned URLs) through safe_get and async_safe_get in litellm/litellm_core_utils/url_utils.py. Each hop resolves the host, refuses private and cloud-internal addresses unless the admin allowlisted the host, pins plain HTTP to the checked IP and follows redirects by hand. Build the same thing in a new betterlite-http module, crates/betterlite-http/src/user_url.rs and user_url/**, so B5083 (media), B227 (Bedrock images) and the other callers can fetch user URLs the way LiteLLM does. This replaces B009's old "user-URL downloads are unavailable" plan (Max, 2026-10-31).
+
+
+  Settings. Add the config section user_url_policy (crates/betterlite-config/src/sections/user_url_policy.rs and user_url_policy/**). LiteLLM keeps two module globals, user_url_validation (default True) and user_url_allowed_hosts (default []), at litellm/__init__.py L330-331. litellm_settings sets them raw through the generic setattr branch (proxy_server.py L6620-6628), and the fetch code reads user_url_validation by Python truthiness, so false, null, 0, "" and an empty list or mapping turn validation off and any other value, the string "false" included, keeps it on. general_settings is applied after that through _apply_ssrf_general_settings (L4847-4858, called at L6879): user_url_allowed_hosts replaces the list whenever the key is present (null means an empty list), and user_url_validation goes through _normalize_user_url_validation (L4839-4844): null changes nothing, a string goes through str_to_bool (strip, lowercase, "true" or "false", anything else changes nothing) and any other value through Python bool(). os.environ/ references resolve the way the rest of the config does. The section exposes the final flag and host list as config.sections.user_url_policy.
+
+
+  validate_url(url) returns the URL to connect to and the Host header, or an SSRF error with LiteLLM's exact text. Split the URL with the rules of Python's urllib.parse.urlparse, not WHATWG: the scheme must be http or https ("URL scheme '{scheme}' is not allowed"), the hostname is lowercased and must be non-empty ("URL has no hostname"), and the effective port is the explicit port or 443 for https and 80 otherwise. The Host header is the hostname, bracketed when it holds ":", plus ":{port}" only when the port differs from the scheme default. Resolve the hostname with the system getaddrinfo (port, IPPROTO_TCP, any family); a resolver error gives "DNS resolution failed for '{host}': {error}" and an empty answer "No addresses found for '{host}'". Unless the host is allowlisted, every resolved address is checked and the first blocked one fails with "URL targets a blocked address ({ip}). If this is a legitimate internal service, add the host to `user_url_allowed_hosts` in litellm_settings." For https with ssl_verify not false (B172's setting), return the URL unchanged. Otherwise rebuild it with the first resolved address as host (bracketed for IPv6), the explicit port only if the URL had one, and the original path, params and query, dropping the fragment and any userinfo.
+
+
+  An address is blocked when it doesn't parse, or when, after unwrapping an IPv4-mapped IPv6 address, it is not global by the tables of Python 3.13's ipaddress module (the Python the oracle runs) or is multicast, or falls in 168.63.129.16/32 or 192.0.0.0/24. The allowlist matches when "{host}" or "{host}:{port}" (IPv6 bracketed) equals an entry lowercased with trailing dots stripped; empty entries are skipped. An allowlisted host is still resolved and still pinned for plain HTTP; only the address check is skipped.
+
+
+  fetch (safe_get and async_safe_get, one async function here) takes a client from B173, the URL and the caller's headers. When validation is off it sends one GET that follows redirects the way httpx does (at most 20) with no checks. When it is on, it loops at most 10 times: validate_url, GET the returned URL with the caller's headers plus Host set to the returned header and redirects off, return the response when its status is not 3xx, and otherwise join the Location header against the URL before rewriting the way httpx.URL.join does (Python's urllib.parse.urljoin over the httpx-normalized URLs). The returned response is B173's streamed response with its body unread, so each caller sets its own size limit. An empty or missing Location on a 3xx fails with "Redirect response has no Location header", and a tenth 3xx fails with "Too many redirects". Errors keep two kinds apart, because callers answer them differently: SSRF errors with the texts above, and URL parse errors (an unclosed IPv6 bracket, a port that isn't a number or is out of range) that LiteLLM raises as a plain ValueError.
+
+
+  Tests. user_url::tests::validate_url_matches_litellm covers schemes, no host, Host header forms, https kept, http and ssl_verify-off rewrite, userinfo, fragment and allowlist forms. user_url::tests::blocked_addresses_follow_python_313 walks the IPv4 and IPv6 tables, both exception networks, IPv4-mapped addresses and multicast. user_url::tests::redirect_hops_are_validated and user_url::tests::unvalidated_fetch_follows_redirects run against a local server on 127.0.0.1 with 127.0.0.1 allowlisted. sections::user_url_policy::tests::settings_follow_litellm_precedence loads both settings from litellm_settings and general_settings. Add a cargo-fuzz target user_url over the URL splitter with a committed corpus. The skeleton gives this task the helper operation b5082. Its input is either `{call: validate_url, url, user_url_allowed_hosts, ssl_verify}`, where the Python side sets litellm.user_url_allowed_hosts and litellm.ssl_verify for the call and restores them after, or `{call: blocked_ip, addresses: [...]}`, which returns one _is_blocked_ip boolean per address.
+scope:
+  paths:
+    - crates/betterlite-http/src/user_url.rs
+    - crates/betterlite-http/src/user_url/**
+    - crates/betterlite-http/Cargo.toml
+    - crates/betterlite-http/fuzz/Cargo.toml
+    - crates/betterlite-http/fuzz/fuzz_targets/user_url.rs
+    - crates/betterlite-http/fuzz/corpus/user_url/**
+    - crates/betterlite-config/src/sections/user_url_policy.rs
+    - crates/betterlite-config/src/sections/user_url_policy/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/user-url-*
+    - tools/oracle/cases/helpers/user-url/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L33-L93
+    why: The fetch client and header type views, the two exception networks, the allowed schemes and SSRFError as a ValueError.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L131-L157
+    why: _is_blocked_ip, _normalize_host and _default_port_for_scheme.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L242-L280
+    why: _format_host_header, _sockaddr_host and _is_host_allowlisted.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L283-L364
+    why: validate_url with every error text, the https keep and the http rewrite.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L408-L487
+    why: The 10-hop limit, _extract_redirect_url, safe_get and async_safe_get with the validation-off branch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L327-L332
+    why: Defaults of ssl_verify, user_url_validation and user_url_allowed_hosts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6620-L6628
+    why: litellm_settings keys without their own branch are set raw on the litellm module.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4839-L4858
+    why: _normalize_user_url_validation and _apply_ssrf_general_settings, applied from general_settings at L6878-6879.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/main.py#L115-L136
+    why: str_to_bool for a string general_settings.user_url_validation.
+  - url: https://github.com/encode/httpx/blob/0.28.1/httpx/_status_codes.py#L59-L64
+    why: In the httpx the oracle locks (0.28.1), every 3xx status is a redirect, Location or not.
+  - url: https://github.com/encode/httpx/blob/0.28.1/httpx/_urls.py#L354-L366
+    why: URL.join is urllib.parse.urljoin over the normalized base and Location.
+  - url: https://github.com/encode/httpx/blob/0.28.1/httpx/_config.py#L248
+    why: DEFAULT_MAX_REDIRECTS is 20 for the validation-off fetch.
+  - url: https://github.com/python/cpython/blob/3.13/Lib/ipaddress.py
+    why: The IPv4 and IPv6 private network tables, their exceptions and is_global as the oracle's Python 3.13 computes them.
+  - url: https://docs.python.org/3.13/library/urllib.parse.html#urllib.parse.urlparse
+    why: The URL split rules for scheme, hostname, port and params.
+dod:
+  - text: validate_url returns the same URL and Host header as LiteLLM and fails with the same texts for schemes, missing hosts and blocked addresses, with allowlisted hosts skipping only the address check.
+    proof: [validate-url, oracle, helper-python]
+  - text: The blocked-address check follows Python 3.13's is_global tables, multicast, IPv4-mapped unwrapping and the two exception networks.
+    proof: [blocked-addresses, oracle, helper-python]
+  - text: With validation on, every redirect hop is validated, relative Locations join against the pre-rewrite URL, caller headers keep their values with Host set, and the 10-hop and missing-Location texts match.
+    proof: [redirect-hops]
+  - text: With validation off, the fetch is one GET that follows up to 20 redirects without any address check.
+    proof: [unvalidated-fetch]
+  - text: user_url_validation and user_url_allowed_hosts load from litellm_settings by Python truthiness and are overridden from general_settings the way _apply_ssrf_general_settings does it.
+    proof: [policy-settings, config-yaml-corpus]
+  - text: The URL splitter has a cargo-fuzz target with a committed corpus that replays.
+    proof: [user-url-corpus]
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: validate-url
+      why: the validate_url tests are missing or a URL, Host header or text differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^user_url::tests::validate_url_matches_litellm($|::)/)'
+    - id: blocked-addresses
+      why: the blocked-address table tests are missing or an address is judged differently from Python 3.13
+      run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^user_url::tests::blocked_addresses_follow_python_313($|::)/)'
+    - id: redirect-hops
+      why: the validated redirect loop tests are missing or a hop is followed differently from safe_get
+      run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^user_url::tests::redirect_hops_are_validated($|::)/)'
+    - id: unvalidated-fetch
+      why: the validation-off fetch test is missing or the fetch still checks addresses
+      run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^user_url::tests::unvalidated_fetch_follows_redirects($|::)/)'
+    - id: policy-settings
+      why: the settings precedence tests are missing or a value loads differently from LiteLLM
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::user_url_policy::tests::settings_follow_litellm_precedence($|::)/)'
+    - id: config-yaml-corpus
+      why: the config seed for the new keys is missing or the config corpus no longer replays
+      run: >-
+        git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml | grep -Fq "/user-url-"
+        && grep -rlq 'user_url_allowed_hosts' crates/betterlite-config/fuzz/corpus/config_yaml && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: user-url-corpus
+      why: the fuzz target or its committed corpus is missing, or the replay fails
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-http/fuzz/corpus/user_url)"
+        && test -f crates/betterlite-http/fuzz/fuzz_targets/user_url.rs && cargo nextest run --locked -p betterlite-http
+        --no-tests=fail -E 'test(replays_the_user_url_corpus)'
+    - id: helper-python
+      why: the oracle adapter fails strict Python checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/user-url/bad-scheme.yaml
+  - tools/oracle/cases/helpers/user-url/no-hostname.yaml
+  - tools/oracle/cases/helpers/user-url/loopback-blocked.yaml
+  - tools/oracle/cases/helpers/user-url/decimal-loopback-blocked.yaml
+  - tools/oracle/cases/helpers/user-url/mapped-loopback-blocked.yaml
+  - tools/oracle/cases/helpers/user-url/azure-wire-server-blocked.yaml
+  - tools/oracle/cases/helpers/user-url/documentation-ipv6-blocked.yaml
+  - tools/oracle/cases/helpers/user-url/public-https-kept.yaml
+  - tools/oracle/cases/helpers/user-url/public-http-rewritten.yaml
+  - tools/oracle/cases/helpers/user-url/https-without-verify-rewritten.yaml
+  - tools/oracle/cases/helpers/user-url/allowlisted-private-host.yaml
+  - tools/oracle/cases/helpers/user-url/allowlisted-host-with-port.yaml
+  - tools/oracle/cases/helpers/user-url/allowlist-port-mismatch.yaml
+  - tools/oracle/cases/helpers/user-url/blocked-address-table.yaml
+deviations: []
+out_of_scope:
+  - B009 owns the destination allowlist helpers in url_utils.py (L159-239), assert_same_origin (L367-405) and the general_settings.provider_url_destination_allowed_hosts override in _apply_ssrf_general_settings; B171 owned encode_url_path_segment and encode_url_path_segments (L96-127).
+  - Re-applying these settings from the database overlay (ProxyConfig._apply_ssrf_settings, proxy_server.py L7997-7998) and from /config/field/update (update_config_general_settings, L18264-18368) belongs to the tasks that build those paths under B124.
+  - The query string of the outgoing GET is B173's transport contract (HTTPHandler.extract_query_params plus the httpx query rebuild) and its recorded deviation; pass the URL to the client unchanged.
+  - Callers (B5083 media download, B227 Bedrock images, B3451 RAG upload, B3801 guardrail http_request, B3073 PointFive delivery) choose their own client, timeout and size limits.
+pitfalls:
+  - Rust's Ipv4Addr::is_private covers only RFC 1918 and is_global is unstable, so write the Python 3.13 tables out, including 100.64.0.0/10 (neither private nor global), the 192.0.0.9 and 192.0.0.10 exceptions and 3fff::/20.
+  - Unwrap only ::ffff:a.b.c.d (Ipv6Addr::to_ipv4_mapped); to_ipv4 also unwraps the deprecated ::a.b.c.d form, which Python leaves as IPv6 and blocks.
+  - Pass the hostname as urlparse gives it to getaddrinfo and never pre-parse it as an IP, since 2130706433 and 0x7f.1 resolve to 127.0.0.1 through inet_aton and the error must name 127.0.0.1.
+  - Use the system resolver with the same hints LiteLLM passes (any family, IPPROTO_TCP), so the first address, the one plain HTTP is pinned to, comes out in the same order.
+  - In tests and cases use 127.0.0.1 literals, never localhost, because localhost may resolve to ::1 first and miss a listener bound to 127.0.0.1.
+  - An allowlist entry "example.com" matches every port, while "example.com:8443" matches only that port; the default port counts, so "example.com:443" matches https://example.com/.
+  - The https branch returns the URL as given, userinfo and fragment included; only the rewrite path drops them.
+  - The Location join must follow urllib.parse.urljoin like httpx.URL.join, not the url crate's WHATWG join, which treats backslashes, "..", and some scheme-relative forms differently.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

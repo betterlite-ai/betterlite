@@ -1,0 +1,5 @@
+kind: helper
+name: message-content-null-removal-seed
+call: {message_content: {operation: extract_search_results_text, search_results: null}}
+env: {}
+compare: {ignore: []}

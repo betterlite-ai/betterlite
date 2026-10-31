@@ -1,0 +1,14 @@
+kind: helper
+name: pre-call-pass-through
+call:
+  b3767:
+    apply:
+      settings: {api_key: key, api_base: "https://deepkeep.test", deepkeep_firewall_id: fixed}
+      inputs: {texts: [hello], model: gpt-4}
+      input_type: request
+      answer: {status: 200, headers: {}, body: {}}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/model
+      why: "LiteLLM's _build_return_inputs never echoes model back; betterlite's Inputs carries it through for internal callers"
