@@ -107,6 +107,21 @@ fn check_commands_pass_nextest_and_grep_arguments_they_accept() {
 }
 
 #[test]
+fn check_commands_pass_filtersets_nextest_can_parse() {
+    let good = "cargo nextest run -p a --filterset='test(/^a::/) - test(/replays_the_/)'";
+    assert!(argument_problems(good).is_empty(), "{good}");
+    assert_eq!(
+        argument_problems(
+            "cargo nextest run -p a -E 'test(/^a::)' && cargo nextest run -p a -E='test(/^a(?!b)/)'"
+        ),
+        vec![
+            "passes the filterset test(/^a::) that cargo nextest can't parse (expected close regex)",
+            "passes the filterset test(/^a(?!b)/) that cargo nextest can't parse (invalid regex: look-around, including look-ahead and look-behind, is not supported)",
+        ]
+    );
+}
+
+#[test]
 fn scope_paths_stay_under_the_scope_roots_or_existing_root_entries() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let roots = ["crates".to_owned(), "tools".to_owned()];

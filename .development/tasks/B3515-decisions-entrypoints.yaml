@@ -147,13 +147,13 @@ checks:
       run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^systemone_entrypoint::/)'
     - id: async-tests
       why: async entrypoint tests must pass
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^decisions_entrypoint::async/ | /^systemone_entrypoint::async/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^decisions_entrypoint::async/) | test(/^systemone_entrypoint::async/)'
     - id: sync-tests
       why: sync entrypoint tests must pass
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^decisions_entrypoint::sync/ | /^systemone_entrypoint::sync/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^decisions_entrypoint::sync/) | test(/^systemone_entrypoint::sync/)'
     - id: signature-tests
       why: entrypoint function signatures and decorator application must match spec
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^decisions_entrypoint::signature/ | /^systemone_entrypoint::signature/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^decisions_entrypoint::signature/) | test(/^systemone_entrypoint::signature/)'
 
 oracle_cases: []
 
