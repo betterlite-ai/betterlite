@@ -2,6 +2,7 @@
 
 use super::{ConfigMap, IncludeError, LoadError, load_file, read_config, resolve_includes};
 use crate::loader::ConfigLoader;
+use crate::sections::Section as _;
 use serde_json::json;
 use std::collections::BTreeMap;
 use std::fs;
@@ -18,6 +19,14 @@ fn loader() -> ConfigLoader<BTreeMap<String, String>> {
     ConfigLoader {
         lookup: BTreeMap::new(),
     }
+}
+
+#[test]
+fn converts_the_registered_section() {
+    let settings = super::Raw { _marker: None }
+        .convert(&BTreeMap::new())
+        .unwrap();
+    assert!(settings.converted);
 }
 
 #[test]

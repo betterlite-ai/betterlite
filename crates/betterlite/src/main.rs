@@ -1,5 +1,4 @@
 use betterlite_config::loader::{ConfigError, ConfigLoader};
-use betterlite_config::sections::includes::{LoadError, load_file};
 use betterlite_config::types::Config;
 use betterlite_server::server::chat_setup::chat_executor;
 use betterlite_server::server::run;
@@ -88,6 +87,8 @@ fn process_environment() -> BTreeMap<String, String> {
     environment
 }
 fn load_config(location: &Path, environment: BTreeMap<String, String>) -> Option<Config> {
+    use betterlite_config::sections::includes::{LoadError, load_file};
+
     let loader = ConfigLoader {
         lookup: environment,
     };

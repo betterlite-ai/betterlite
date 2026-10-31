@@ -20,7 +20,9 @@ pub struct Raw {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct Settings;
+pub struct Settings {
+    pub converted: bool,
+}
 
 impl Section for Raw {
     type Settings = Settings;
@@ -29,7 +31,7 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        Ok(Settings)
+        Ok(Settings { converted: true })
     }
 }
 
