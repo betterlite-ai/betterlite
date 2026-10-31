@@ -4,6 +4,7 @@ use betterlite_models::catalog::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json, value::RawValue};
+use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{io, sync::Arc};
 
@@ -63,7 +64,12 @@ fn bundled_failure() -> Value {
     };
     let first = loader.get();
     let cached = Arc::ptr_eq(&first, &loader.get());
-    json!({"catalog": first.lookup, "count": first.entries.len(), "warnings": first.warnings,
+    let catalog: BTreeMap<&str, &str> = first
+        .lookup
+        .iter()
+        .map(|(key, canonical)| (key.as_str(), canonical.as_ref()))
+        .collect();
+    json!({"catalog": catalog, "count": first.entries.len(), "warnings": first.warnings,
         "cached": cached, "reads": reads.load(Ordering::SeqCst)})
 }
 
