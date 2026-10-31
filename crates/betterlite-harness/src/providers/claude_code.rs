@@ -1,11 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::context::{GatewayTarget, SessionContext};
 use crate::errors::HarnessError;
 use crate::events::Event;
 use crate::options::ClaudeCodeOptions;
+use crate::payloads::python_json::python_json_text;
 use crate::sandbox::Sandbox;
 use crate::transformation::{
     BaseCLIHarnessConfig, BaseHarnessConfig, HarnessSessionSetup, HarnessTurnRequest,
@@ -51,7 +52,7 @@ fn session_env(
         "CLAUDE_CONFIG_DIR".to_owned(),
         SecretString::from(private_dir.to_owned()),
     );
-    if let Some(model_name) = model {
+    if let Some(model_name) = model.filter(|name| !name.is_empty()) {
         env.insert(
             "ANTHROPIC_MODEL".to_owned(),
             SecretString::from(model_name.to_owned()),
@@ -73,7 +74,7 @@ fn turn_argv<S>(
     if !options.config.is_empty() {
         argv.extend([
             "--settings".to_owned(),
-            serde_json::to_string(&options.config)
+            python_json_text(&options.config)
                 .map_err(|source| HarnessError::StateEncode { source })?,
         ]);
     }
@@ -91,7 +92,7 @@ fn turn_argv<S>(
     if !disallowed.is_empty() {
         argv.extend(["--disallowedTools".to_owned(), disallowed.join(",")]);
     }
-    if let Some(session_id) = native_session_id {
+    if let Some(session_id) = native_session_id.filter(|id| !id.is_empty()) {
         argv.extend(["--resume".to_owned(), session_id.to_owned()]);
     }
     Ok(argv)
@@ -148,11 +149,8 @@ impl BaseCLIHarnessConfig for ClaudeCodeHarnessConfig {
             .settings
             .gateway
             .as_ref()
-            .ok_or(HarnessError::OptionsMismatch {
-                given: "SessionSettings.gateway",
-                harness: Harness::ClaudeCode,
-                expected: "a configured session model endpoint",
-            })?;
+            .filter(|gateway| !gateway.api_key.expose_secret().is_empty())
+            .ok_or(HarnessError::ClaudeCodeEndpoint)?;
         let options = self.get_options(context)?;
         config::validate_options(&options)?;
         let env = session_env(
@@ -190,7 +188,12 @@ impl BaseCLIHarnessConfig for ClaudeCodeHarnessConfig {
             "--permission-mode".to_owned(),
             config::permission_mode(context.settings.permissions).to_owned(),
         ]);
-        if let Some(model) = context.settings.model.as_ref() {
+        if let Some(model) = context
+            .settings
+            .model
+            .as_ref()
+            .filter(|name| !name.is_empty())
+        {
             argv.extend(["--model".to_owned(), model.clone()]);
         }
         argv.extend(["--setting-sources".to_owned(), "user".to_owned()]);

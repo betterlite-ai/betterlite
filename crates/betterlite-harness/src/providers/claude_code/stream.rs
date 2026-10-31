@@ -174,6 +174,7 @@ pub(super) fn turn_error(
         .clone()
         .filter(|text| !text.is_empty())
         .or_else(|| (!state.errors.is_empty()).then(|| state.errors.join("; ")))
+        .filter(|reason| !reason.is_empty())
         .unwrap_or_else(|| {
             if state.result_seen {
                 "unknown error".to_owned()

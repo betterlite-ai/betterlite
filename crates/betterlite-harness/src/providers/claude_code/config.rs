@@ -4,7 +4,7 @@ use crate::errors::HarnessError;
 use crate::options::ClaudeCodeOptions;
 use crate::payloads::native_tool_names as shared_native_tool_names;
 use crate::payloads::python_json::python_json_text;
-use crate::types::{Harness, JsonObject, PermissionMode};
+use crate::types::{JsonObject, PermissionMode};
 
 pub(super) const CLAUDE_BINARY: &str = "claude";
 pub(super) const BASE_COMMAND: [&str; 6] = [
@@ -70,7 +70,7 @@ pub(super) const NORMALIZED_TO_NATIVE: [(&str, &[&str]); 8] = [
 pub(super) fn validate_options(options: &ClaudeCodeOptions) -> Result<(), HarnessError> {
     let mut env_conflicts = MANAGED_ENV_KEYS
         .iter()
-        .filter(|key| options.env.contains_key(*key))
+        .filter(|key| options.env.contains_key(**key))
         .copied()
         .collect::<Vec<_>>();
     if !env_conflicts.is_empty() {
@@ -79,13 +79,12 @@ pub(super) fn validate_options(options: &ClaudeCodeOptions) -> Result<(), Harnes
             keys: env_conflicts.join(", "),
         });
     }
-    let config_conflicts = MANAGED_CONFIG_KEYS
+    let mut config_conflicts = MANAGED_CONFIG_KEYS
         .iter()
         .filter(|key| options.config.contains_key(**key))
         .copied()
         .collect::<Vec<_>>();
     if !config_conflicts.is_empty() {
-        let mut config_conflicts = config_conflicts;
         config_conflicts.sort_unstable();
         return Err(HarnessError::ClaudeCodeManagedConfig {
             keys: config_conflicts.join(", "),

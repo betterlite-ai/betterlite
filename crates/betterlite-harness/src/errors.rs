@@ -71,4 +71,6 @@ pub enum HarnessError {
     ClaudeCodeManagedConfig { keys: String },
     #[error("ClaudeCodeOptions.env may not set {keys}; LiteLLM manages it")]
     ClaudeCodeManagedEnv { keys: String },
+    #[error("Claude Code needs the session model endpoint")]
+    ClaudeCodeEndpoint,
 }

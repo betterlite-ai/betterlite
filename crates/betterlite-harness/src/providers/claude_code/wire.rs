@@ -5,6 +5,9 @@ use std::collections::BTreeMap;
 use crate::payloads::python_json::python_json_text;
 use crate::types::JsonObject;
 
+#[path = "tool_json.rs"]
+mod tool_json;
+
 pub(super) const SYNTHETIC_MODEL: &str = "<synthetic>";
 
 #[derive(Deserialize)]
@@ -119,7 +122,7 @@ pub(super) fn stringify_tool_output(content: &WireValue) -> String {
             .collect::<Vec<_>>()
             .join("\n"),
         WireValue::Bool(_) | WireValue::Number(_) | WireValue::Object(_) => {
-            python_json_text(content).unwrap_or_default()
+            tool_json::encode(content)
         }
     }
 }
@@ -136,7 +139,7 @@ fn stringify_tool_output_block(block: &WireValue) -> String {
             _ => String::new(),
         };
     }
-    python_json_text(block).unwrap_or_default()
+    tool_json::encode(block)
 }
 
 pub(super) fn block(value: &WireValue) -> Option<Block> {
