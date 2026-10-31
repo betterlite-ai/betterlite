@@ -75,36 +75,24 @@ fn empty_provider_does_not_select_discount() {
 }
 
 #[test]
-fn boolean_config_values_convert_to_one_or_zero() {
+fn boolean_config_values_are_inert() {
     let discount = apply_cost_discount(
         Decimal::ONE,
         Some("provider"),
         &map(CostAdjustmentValue::Boolean(true)),
     )
     .unwrap();
-    assert_eq!(discount.discount_percent, Decimal::ONE);
-    assert_eq!(discount.final_cost, Decimal::ZERO);
+    assert_eq!(discount.discount_percent, Decimal::ZERO);
+    assert_eq!(discount.final_cost, Decimal::ONE);
 
     let margin = apply_cost_margin(
         Decimal::ONE,
         Some("provider"),
-        &map(CostAdjustmentValue::Boolean(false)),
+        &map(CostAdjustmentValue::Boolean(true)),
     )
     .unwrap();
     assert_eq!(margin.margin_percent, Decimal::ZERO);
     assert_eq!(margin.final_cost, Decimal::ONE);
-
-    let margin_object = apply_cost_margin(
-        Decimal::ONE,
-        Some("provider"),
-        &map(CostAdjustmentValue::Object(BTreeMap::from([(
-            "fixed_amount".to_owned(),
-            CostAdjustmentValue::Boolean(true),
-        )]))),
-    )
-    .unwrap();
-    assert_eq!(margin_object.fixed_amount, Decimal::ONE);
-    assert_eq!(margin_object.final_cost, Decimal::new(2, 0));
 }
 
 #[test]

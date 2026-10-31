@@ -9,3 +9,6 @@ deviations:
   - what: A margin percentage or fixed_amount field holding non-numeric text is treated as zero instead of raising the uncaught ValueError Python's float() produces for that text.
     why: float() on a dict value is reachable with any configured string, and a caller passing a typo'd or malformed margin value has no way to catch that crash; treating it as absent keeps the request billable instead of failing it outright.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1198-L1204
+  - what: Boolean adjustment entries remain unsupported and unapplied instead of becoming numeric 1.0/0.0 values.
+    why: B1649 requires unsupported legacy variants to remain explicit unapplied entries, while Python's bool subclass behavior is not a supported configuration shape.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1194-L1197

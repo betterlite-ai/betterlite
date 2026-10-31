@@ -82,10 +82,6 @@ pub fn apply_cost_discount(
     })
 }
 
-const fn boolean_decimal(flag: bool) -> Decimal {
-    if flag { Decimal::ONE } else { Decimal::ZERO }
-}
-
 fn discount_values(
     base_cost: Decimal,
     discount_percent: Decimal,
@@ -145,7 +141,7 @@ pub fn apply_cost_margin(
 
 fn margin_components(value: &CostAdjustmentValue) -> Result<(Decimal, Decimal), AdjustmentError> {
     match value {
-        CostAdjustmentValue::Number(_) | CostAdjustmentValue::Boolean(_) => Ok((
+        CostAdjustmentValue::Number(_) => Ok((
             scalar_decimal(value, "margin_percent")?.unwrap_or(Decimal::ZERO),
             Decimal::ZERO,
         )),
@@ -167,8 +163,8 @@ fn scalar_decimal(
         CostAdjustmentValue::Number(number) => parse_decimal_lexeme(&number.to_string())
             .map(Some)
             .map_err(|source| AdjustmentError::InvalidNumericText { field, source }),
-        CostAdjustmentValue::Boolean(flag) => Ok(Some(boolean_decimal(*flag))),
         CostAdjustmentValue::Null
+        | CostAdjustmentValue::Boolean(_)
         | CostAdjustmentValue::Text(_)
         | CostAdjustmentValue::Object(_)
         | CostAdjustmentValue::Array(_) => Ok(None),
