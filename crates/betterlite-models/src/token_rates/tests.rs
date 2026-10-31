@@ -47,12 +47,12 @@ fn batch_families_are_independent() {
 fn component_only_multiplies_positive_usage() {
     let prices = model(json!({"input_cost_per_token": "0.2"}));
     assert_eq!(
-        calculate_cost_component(&prices, "input_cost_per_token", Some(Decimal::from(-1))),
-        Ok(Decimal::ZERO)
+        calculate_cost_component(&prices, "input_cost_per_token", Some(Decimal::from(-1))).unwrap(),
+        Decimal::ZERO
     );
     assert_eq!(
-        calculate_cost_component(&prices, "input_cost_per_token", Some(Decimal::from(3))),
-        Ok(Decimal::new(6, 1))
+        calculate_cost_component(&prices, "input_cost_per_token", Some(Decimal::from(3))).unwrap(),
+        Decimal::new(6, 1)
     );
 }
 
