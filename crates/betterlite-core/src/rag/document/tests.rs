@@ -289,6 +289,13 @@ fn pdf_returns_none_for_empty_input() {
     assert_eq!(extract_text_from_pdf(&[]), None);
 }
 
+#[test]
+fn pdf_extracts_a_page_within_the_decompressed_size_limit() {
+    let large_text = "A".repeat(5_000_000);
+    let pdf = minimal_pdf(&large_text);
+    assert_eq!(extract_text_from_pdf(&pdf), Some(large_text));
+}
+
 #[rstest]
 #[case::openai("openai")]
 #[case::bedrock("bedrock")]

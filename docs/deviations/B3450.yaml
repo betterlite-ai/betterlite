@@ -9,3 +9,9 @@ deviations:
   - what: extract_text_from_pdf returns None on a missing library or extraction failure without logging. LiteLLM logs at debug level on ImportError or extraction failure before returning None.
     why: The ingestion pipeline decides whether a missing PDF library is recoverable (OCR can fill in) or a pipeline failure. betterlite surfaces None and lets the caller's logging layer report it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/file_parsers/pdf_parser.py#L10-L68
+  - what: extract_text_from_pdf reads pages through the native lopdf crate instead of trying pypdf and falling back to PyPDF2. It still joins non-empty pages with "\n\n" and returns None on any failure, matching the Python fallback's text_parts assembly.
+    why: betterlite ships no Python interpreter, so neither pypdf nor PyPDF2 is reachable at runtime. lopdf reads the same page content and text operators natively, with no subprocess or embedded interpreter.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/file_parsers/pdf_parser.py#L10-L68
+  - what: extract_text_from_pdf bounds each page's decompressed content to 64 MiB through lopdf's LoadOptions::with_max_decompressed_size, returning None for a page that would exceed it. LiteLLM's pypdf path carries no such bound.
+    why: The gateway accepts PDF bytes from a client request; lopdf exposes the decompression-bomb guard directly, so bounding the work costs one constant and no extra dependency.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/file_parsers/pdf_parser.py#L10-L68
