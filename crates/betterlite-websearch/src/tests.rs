@@ -351,6 +351,20 @@ fn call_transformation_arguments_normalize_decimal_zero_by_value() {
 }
 
 #[test]
+fn call_transformation_arguments_keep_string_encoded_empty_array() {
+    let response = r#"{"choices": [{"message": {"tool_calls": [
+        {"id": "call-1", "type": "function", "function": {"name": "litellm_web_search", "arguments": "[]"}}
+    ]}}]}"#;
+    let (_, calls) = WebSearchTransformation::transform_request(
+        &serde_json::from_str::<Response>(response).unwrap(),
+        false,
+        "openai",
+    )
+    .unwrap();
+    assert_eq!(serde_json::to_string(&calls[0].input).unwrap(), "[]");
+}
+
+#[test]
 fn call_transformation_arguments_byte_limit_rejects_oversized_encoded_string() {
     let value = "x".repeat(1_100_000);
     let inner = serde_json::to_string(&value).unwrap();

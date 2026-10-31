@@ -59,7 +59,7 @@ pub(super) fn normalize(raw: &Arguments, responses: bool) -> Input {
             tracing::warn!("Cannot parse search function arguments");
             Input::default()
         });
-        return normalize_input(input, &text, responses);
+        return input;
     }
     serde_json::from_str::<Input>(value.get()).map_or_else(
         |_| Input::default(),
