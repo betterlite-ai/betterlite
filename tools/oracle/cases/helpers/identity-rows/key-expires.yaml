@@ -1,0 +1,9 @@
+kind: helper
+name: key_expires_string_stays_string
+call:
+  identity_rows:
+    operation: key
+    row: {expires: '2027-01-01'}
+env: {}
+compare:
+  ignore: []

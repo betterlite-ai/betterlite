@@ -817,13 +817,18 @@ version = "0.1.0"
 dependencies = [
  "betterlite-config",
  "betterlite-server",
+ "chrono",
  "clap",
  "rand 0.10.3",
+ "rstest",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "uuid",
+ "whoami",
 ]
 
 [[package]]
@@ -844,6 +849,7 @@ dependencies = [
  "betterlite-error",
  "betterlite-logging",
  "betterlite-models",
+ "betterlite-prompts",
  "hex",
  "indexmap 2.14.2",
  "rstest",
@@ -1044,6 +1050,7 @@ dependencies = [
  "chrono",
  "clap",
  "deadpool-postgres",
+ "futures-util",
  "hex",
  "percent-encoding",
  "regex",
@@ -1057,6 +1064,8 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-postgres",
+ "tracing",
+ "tracing-subscriber",
  "unicode-general-category",
  "unicode-normalization",
  "uuid",
@@ -1101,6 +1110,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "betterlite-config",
+ "fancy-regex",
  "indexmap 2.14.2",
  "regex",
  "reqwest",
@@ -1119,6 +1129,7 @@ dependencies = [
 name = "betterlite-harness"
 version = "0.1.0"
 dependencies = [
+ "async-stream",
  "futures-core",
  "futures-util",
  "hex",
@@ -1135,6 +1146,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tracing",
  "uuid",
  "which",
 ]
@@ -1169,6 +1181,7 @@ dependencies = [
 name = "betterlite-lens"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
  "chrono",
  "garde",
  "hex",
@@ -1214,6 +1227,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "unicode-properties",
+ "uuid",
 ]
 
 [[package]]
