@@ -161,7 +161,7 @@ fn run_active(set_verbose: &Payload, logger_debug_enabled: bool) -> crate::helpe
         FixtureConsole { fails: false },
         set_verbose,
     )?;
-    Ok(json!({ "active": hooks.is_active() }))
+    Ok(json!({ "logs": [], "console": [], "active": hooks.is_active() }))
 }
 
 pub(crate) struct Op;

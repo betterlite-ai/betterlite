@@ -1,8 +1,8 @@
-import builtins
+import contextlib
 import json
 import logging
 from collections.abc import Callable
-from typing import Literal, TypeAlias, cast
+from typing import TypeAlias, cast
 from unittest import mock
 
 import litellm
@@ -13,10 +13,8 @@ from litellm.utils import _print_verbose_is_active  # pyright: ignore[reportPriv
 from litellm.utils import print_verbose as raw_utils_print_verbose  # pyright: ignore[reportUnknownVariableType]
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
-LogLevel: TypeAlias = Literal["DEBUG", "INFO", "ERROR"]
-UtilsPrintVerbose: TypeAlias = Callable[[object, bool, LogLevel], None]
 main_print_verbose = cast(Callable[[object], None], raw_main_print_verbose)
-utils_print_verbose = cast(UtilsPrintVerbose, raw_utils_print_verbose)
+utils_print_verbose = cast(Callable[..., None], raw_utils_print_verbose)
 
 
 class Capture(logging.Handler):
@@ -34,15 +32,18 @@ def payload(value: Json) -> object:
     return value
 
 
+def fail(*_args: object, **_kwargs: object) -> None:
+    raise RuntimeError("fixture logger failure")
+
+
 def run(input_value: dict[str, Json]) -> Json:
     function = input_value["function"]
     capture = Capture()
     previous_handlers = verbose_logger.handlers
     previous_level = verbose_logger.level
     printed: list[Json] = []
-    sinks = cast(dict[str, Json], input_value.get("sinks") or {})
-    logger_fails = sinks.get("logger") is True
-    console_fails = sinks.get("console") is True
+    logger_fails = input_value.get("logger_fails") is True
+    console_fails = input_value.get("console_fails") is True
 
     def print_capture(value: object) -> None:
         if console_fails:
@@ -51,23 +52,24 @@ def run(input_value: dict[str, Json]) -> Json:
 
     verbose_logger.handlers = [capture]
     verbose_logger.setLevel(logging.DEBUG)
+    litellm.set_verbose = input_value["set_verbose"]  # pyright: ignore[reportPrivateImportUsage, reportAttributeAccessIssue]
     try:
-        with mock.patch.object(builtins, "print", print_capture):
+        with contextlib.ExitStack() as stack:
+            if logger_fails:
+                stack.enter_context(mock.patch.object(verbose_logger, "debug", fail))
+                stack.enter_context(mock.patch.object(verbose_logger, "info", fail))
+                stack.enter_context(mock.patch.object(verbose_logger, "error", fail))
+            stack.enter_context(mock.patch("builtins.print", print_capture))
             if function == "main":
-                litellm.set_verbose = input_value["set_verbose"] is True  # pyright: ignore[reportPrivateImportUsage]
-                if not logger_fails:
-                    main_print_verbose(payload(input_value["payload"]))
+                main_print_verbose(payload(input_value["payload"]))
             elif function == "utils":
-                litellm.set_verbose = input_value["set_verbose"] is True  # pyright: ignore[reportPrivateImportUsage]
-                log_level = cast(LogLevel, input_value["log_level"])
-                if not logger_fails or log_level not in {"DEBUG", "INFO", "ERROR"}:
-                    utils_print_verbose(
-                        payload(input_value["payload"]),
-                        input_value["logger_only"] is True,
-                        log_level,
-                    )
+                kwargs: dict[str, object] = {}
+                if "log_level" in input_value:
+                    kwargs["log_level"] = input_value["log_level"]
+                if "logger_only" in input_value:
+                    kwargs["logger_only"] = input_value["logger_only"]
+                utils_print_verbose(payload(input_value["payload"]), **kwargs)
             elif function == "active":
-                litellm.set_verbose = input_value["set_verbose"] is True  # pyright: ignore[reportPrivateImportUsage]
                 enabled = input_value["logger_debug_enabled"] is True
                 with mock.patch.object(verbose_logger, "isEnabledFor", return_value=enabled):
                     active = _print_verbose_is_active()
