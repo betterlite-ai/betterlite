@@ -1,10 +1,9 @@
 mod tests;
 
-use std::collections::BTreeMap;
 use std::iter::once;
 
 use super::model::scalars::{BoolOrText, CoercionKind, FloatOrText, IntOrText, PassthroughValue};
-use super::model::settings::{ClientKind, Target};
+use super::model::settings::Target;
 
 // Python's int()/float() accept a single underscore between two digits as a grouping separator (PEP 515) and reject every other placement, including doubled underscores such as "6__380". Stripping every underscore unconditionally would instead accept that input.
 fn strip_grouping_underscores(text: &str) -> Option<String> {
@@ -27,7 +26,7 @@ fn strip_grouping_underscores(text: &str) -> Option<String> {
 #[must_use]
 pub fn coerce_int(value: Option<IntOrText>) -> Option<i64> {
     match value? {
-        IntOrText::Int(parsed) => Some(parsed),
+        IntOrText::Value(parsed) => Some(parsed),
         IntOrText::Text(text) => strip_grouping_underscores(text.trim())?.parse().ok(),
     }
 }
@@ -35,7 +34,7 @@ pub fn coerce_int(value: Option<IntOrText>) -> Option<i64> {
 #[must_use]
 pub fn coerce_float(value: Option<FloatOrText>) -> Option<f64> {
     match value? {
-        FloatOrText::Float(parsed) => Some(parsed),
+        FloatOrText::Value(parsed) => Some(parsed),
         FloatOrText::Text(text) => strip_grouping_underscores(text.trim())?.parse().ok(),
     }
 }
@@ -44,7 +43,7 @@ pub fn coerce_float(value: Option<FloatOrText>) -> Option<f64> {
 #[must_use]
 pub fn coerce_bool(value: Option<BoolOrText>) -> Option<bool> {
     match value? {
-        BoolOrText::Bool(parsed) => Some(parsed),
+        BoolOrText::Value(parsed) => Some(parsed),
         BoolOrText::Text(text) => {
             Some(matches!(text.to_lowercase().as_str(), "true" | "1" | "yes"))
         }
@@ -52,24 +51,14 @@ pub fn coerce_bool(value: Option<BoolOrText>) -> Option<bool> {
 }
 
 // A failed int()/float() conversion deletes the key outright in litellm; bool never fails.
-pub fn coerce_passthrough(
-    target: Target,
-    _client: ClientKind,
-    passthrough: &mut BTreeMap<String, PassthroughValue>,
-) {
-    for (name, kind) in coercion_table(target) {
-        let Some(PassthroughValue::Text(text)) = passthrough.get(*name) else {
-            continue;
-        };
-        match coerce_passthrough_value(*kind, text) {
-            Some(coerced) => {
-                passthrough.insert((*name).to_owned(), coerced);
-            }
-            None => {
-                passthrough.remove(*name);
-            }
-        }
-    }
+pub fn coerce_passthrough(name: &str, value: &mut PassthroughValue, target: Target) -> bool {
+    let (Some(kind), PassthroughValue::Text(text)) = (coercion_kind(name, target), &*value) else {
+        return true;
+    };
+    coerce_passthrough_value(kind, text).is_some_and(|coerced| {
+        *value = coerced;
+        true
+    })
 }
 
 fn coerce_passthrough_value(kind: CoercionKind, text: &str) -> Option<PassthroughValue> {
@@ -78,12 +67,6 @@ fn coerce_passthrough_value(kind: CoercionKind, text: &str) -> Option<Passthroug
             .parse::<i64>()
             .ok()
             .map(|parsed| PassthroughValue::Number(serde_json::Number::from(parsed))),
-        CoercionKind::Float => serde_json::Number::from_f64(
-            strip_grouping_underscores(text.trim())?
-                .parse::<f64>()
-                .ok()?,
-        )
-        .map(PassthroughValue::Number),
         CoercionKind::Bool => Some(PassthroughValue::Bool(matches!(
             text.to_lowercase().as_str(),
             "true" | "1" | "yes"
@@ -91,39 +74,24 @@ fn coerce_passthrough_value(kind: CoercionKind, text: &str) -> Option<Passthroug
     }
 }
 
-// This table mirrors the bool/int/float defaults in the pinned redis.Redis, Connection and RedisCluster signatures.
-const fn coercion_table(target: Target) -> &'static [(&'static str, CoercionKind)] {
-    const CLIENT: &[(&str, CoercionKind)] = &[
-        ("retry_on_timeout", CoercionKind::Bool),
-        ("single_connection_client", CoercionKind::Bool),
-        ("decode_responses", CoercionKind::Bool),
-        ("health_check_interval", CoercionKind::Int),
-        ("socket_read_size", CoercionKind::Int),
-        ("legacy_responses", CoercionKind::Bool),
-        ("ssl_check_hostname", CoercionKind::Bool),
-        ("ssl_validate_ocsp", CoercionKind::Bool),
-        ("ssl_validate_ocsp_stapled", CoercionKind::Bool),
-    ];
-    // litellm's coercion_client is (redis.Redis, redis.RedisCluster, async_redis.RedisCluster) for a Cluster target, so Cluster coercion unions Redis.__init__'s signature (CLIENT) with both RedisCluster constructors' signature instead of using RedisCluster's alone.
-    const CLUSTER: &[(&str, CoercionKind)] = &[
-        ("retry_on_timeout", CoercionKind::Bool),
-        ("single_connection_client", CoercionKind::Bool),
-        ("decode_responses", CoercionKind::Bool),
-        ("health_check_interval", CoercionKind::Int),
-        ("socket_read_size", CoercionKind::Int),
-        ("legacy_responses", CoercionKind::Bool),
-        ("ssl_check_hostname", CoercionKind::Bool),
-        ("ssl_validate_ocsp", CoercionKind::Bool),
-        ("ssl_validate_ocsp_stapled", CoercionKind::Bool),
-        ("cluster_error_retry_attempts", CoercionKind::Int),
-        ("reinitialize_steps", CoercionKind::Int),
-        ("connection_error_retry_attempts", CoercionKind::Int),
-        ("require_full_coverage", CoercionKind::Bool),
-        ("read_from_replicas", CoercionKind::Bool),
-        ("dynamic_startup_nodes", CoercionKind::Bool),
-    ];
-    match target {
-        Target::Cluster => CLUSTER,
-        Target::Direct | Target::Url | Target::Sentinel => CLIENT,
+fn coercion_kind(name: &str, target: Target) -> Option<CoercionKind> {
+    match name {
+        "retry_on_timeout"
+        | "single_connection_client"
+        | "decode_responses"
+        | "legacy_responses"
+        | "ssl_check_hostname"
+        | "ssl_validate_ocsp"
+        | "ssl_validate_ocsp_stapled" => Some(CoercionKind::Bool),
+        "health_check_interval" | "socket_read_size" => Some(CoercionKind::Int),
+        "cluster_error_retry_attempts" | "reinitialize_steps" if target == Target::Cluster => {
+            Some(CoercionKind::Int)
+        }
+        "require_full_coverage" | "read_from_replicas" | "dynamic_startup_nodes"
+            if target == Target::Cluster =>
+        {
+            Some(CoercionKind::Bool)
+        }
+        _ => None,
     }
 }

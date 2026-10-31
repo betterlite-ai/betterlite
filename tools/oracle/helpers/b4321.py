@@ -65,28 +65,12 @@ def resolve_redis_kwargs(environment: dict[str, Json], overrides: dict[str, Json
     with mock.patch.dict(os.environ, variables, clear=True):
         result = _get_redis_client_logic(**kwargs)
     known = {*_OWN_FIELDS, "redis_connect_func"}
-    payload: dict[str, object] = {
-        "host": result.get("host"),
-        "port": result.get("port"),
-        "db": result.get("db"),
-        "username": result.get("username"),
-        "password": result.get("password"),
-        "url": result.get("url"),
-        "ssl": result.get("ssl"),
-        "socket_timeout": result.get("socket_timeout"),
-        "socket_connect_timeout": result.get("socket_connect_timeout"),
-        "socket_keepalive": result.get("socket_keepalive"),
-        "max_connections": result.get("max_connections"),
-        "health_check_interval": result.get("health_check_interval"),
-        "credential_provider": result.get("credential_provider") is not None,
-        "startup_nodes": result.get("startup_nodes"),
-        "sentinel_nodes": result.get("sentinel_nodes"),
-        "sentinel_password": result.get("sentinel_password"),
-        "service_name": result.get("service_name"),
-        "ssl_password": result.get("ssl_password"),
-        "passthrough": {name: value for name, value in result.items() if name not in known},
-        "uses_tls": _uses_tls(result),
-    }
+    payload: dict[str, object] = {name: result.get(name) for name in _OWN_FIELDS}
+    payload.update(
+        credential_provider=result.get("credential_provider") is not None,
+        passthrough={name: value for name, value in result.items() if name not in known},
+        uses_tls=_uses_tls(result),
+    )
     return cast(Json, payload)
 
 

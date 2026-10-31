@@ -22,14 +22,13 @@ where
         return Ok(());
     }
 
-    let gcp_active = resolve_string(
+    let service_account = resolve_string(
         overrides.gcp_service_account.as_deref(),
         env,
         "REDIS_GCP_SERVICE_ACCOUNT",
-    )
-    .is_some();
-    if gcp_active {
-        apply_gcp(overrides, settings, env);
+    );
+    if let Some(account) = service_account {
+        apply_gcp(account, overrides, settings, env);
         return Ok(());
     }
 
@@ -44,7 +43,7 @@ where
     .or_else(|| env.lookup("REDIS_AZURE_AD_TOKEN"));
     let azure_ad_enabled = azure_ad_token.is_some_and(|token| token.eq_ignore_ascii_case("true"));
     if azure_ad_enabled {
-        apply_azure(overrides, settings, env);
+        settings.credential_provider_settings = Some(azure_provider(overrides, env));
         return Ok(());
     }
 
@@ -61,15 +60,14 @@ where
     Ok(())
 }
 
-fn apply_gcp<E>(overrides: &RedisOverrides, settings: &mut RedisConnectionSettings, env: &E)
-where
+fn apply_gcp<E>(
+    service_account: String,
+    overrides: &RedisOverrides,
+    settings: &mut RedisConnectionSettings,
+    env: &E,
+) where
     E: EnvironmentLookup,
 {
-    let service_account = resolve_string(
-        overrides.gcp_service_account.as_deref(),
-        env,
-        "REDIS_GCP_SERVICE_ACCOUNT",
-    );
     let ssl_ca_certs = resolve_string(
         overrides.gcp_ssl_ca_certs.as_deref(),
         env,
@@ -83,22 +81,13 @@ where
             PassthroughValue::Text(resolved.clone()),
         );
     }
-    let provider = service_account.map(|service_account| CredentialProviderSettings::Gcp {
+    settings.credential_provider_settings = Some(CredentialProviderSettings::Gcp {
         service_account,
         ssl_ca_certs,
     });
-    set_provider(settings, provider);
 }
 
-fn apply_azure<E>(overrides: &RedisOverrides, settings: &mut RedisConnectionSettings, env: &E)
-where
-    E: EnvironmentLookup,
-{
-    let provider = azure_provider(overrides, env);
-    set_provider(settings, provider);
-}
-
-fn azure_provider<E>(overrides: &RedisOverrides, env: &E) -> Option<CredentialProviderSettings>
+fn azure_provider<E>(overrides: &RedisOverrides, env: &E) -> CredentialProviderSettings
 where
     E: EnvironmentLookup,
 {
@@ -113,19 +102,11 @@ where
         "AZURE_CLIENT_SECRET",
     )
     .map(SecretString::from);
-    Some(CredentialProviderSettings::Azure {
+    CredentialProviderSettings::Azure {
         client_id,
         tenant_id,
         client_secret,
-    })
-}
-
-fn set_provider(
-    settings: &mut RedisConnectionSettings,
-    provider: Option<CredentialProviderSettings>,
-) {
-    settings.credential_provider = true;
-    settings.credential_provider_settings = provider;
+    }
 }
 
 fn apply_aws<E>(
@@ -136,67 +117,49 @@ fn apply_aws<E>(
 where
     E: EnvironmentLookup,
 {
-    let tls = uses_tls(
+    if !uses_tls(
         settings.startup_nodes.is_some(),
         settings.ssl,
         settings.url.as_ref().map(ExposeSecret::expose_secret),
-    );
-    if !tls {
+    ) {
         return Err(RedisSettingsError::AwsIamRequiresTls);
     }
 
-    let user_name = resolve_string(
-        overrides.aws_iam_user_name.as_deref(),
-        env,
-        "REDIS_AWS_IAM_USER_NAME",
-    );
-    let cache_name = resolve_string(
-        overrides.aws_iam_cache_name.as_deref(),
-        env,
-        "REDIS_AWS_IAM_CACHE_NAME",
-    );
-    let region = resolve_string(
-        overrides.aws_iam_region.as_deref(),
-        env,
-        "REDIS_AWS_IAM_REGION",
-    )
-    .or_else(|| env.lookup("AWS_REGION"))
-    .or_else(|| env.lookup("AWS_DEFAULT_REGION"));
-
-    let mut missing = Vec::new();
-    if user_name.is_none() {
-        missing.push("aws_iam_user_name".to_owned());
-    }
-    if cache_name.is_none() {
-        missing.push("aws_iam_cache_name".to_owned());
-    }
-    if region.is_none() {
-        missing.push("aws_iam_region".to_owned());
-    }
-    if !missing.is_empty() {
-        return Err(RedisSettingsError::AwsIamMissingSettings { missing });
-    }
-
+    settings.credential_provider_settings = Some(aws_provider(overrides, env)?);
     settings.credential_provider = true;
-    let Some(user_name) = user_name else {
-        return Err(RedisSettingsError::AwsIamMissingSettings {
-            missing: vec!["aws_iam_user_name".to_owned()],
-        });
-    };
-    let Some(cache_name) = cache_name else {
-        return Err(RedisSettingsError::AwsIamMissingSettings {
-            missing: vec!["aws_iam_cache_name".to_owned()],
-        });
-    };
-    let Some(region) = region else {
-        return Err(RedisSettingsError::AwsIamMissingSettings {
-            missing: vec!["aws_iam_region".to_owned()],
-        });
-    };
-    settings.credential_provider_settings = Some(CredentialProviderSettings::Aws {
-        user_name,
-        cache_name,
-        region,
+    Ok(())
+}
+
+fn aws_provider<E>(
+    overrides: &RedisOverrides,
+    env: &E,
+) -> Result<CredentialProviderSettings, RedisSettingsError>
+where
+    E: EnvironmentLookup,
+{
+    let fields = [
+        (
+            "REDIS_AWS_IAM_USER_NAME",
+            overrides.aws_iam_user_name.as_deref(),
+        ),
+        (
+            "REDIS_AWS_IAM_CACHE_NAME",
+            overrides.aws_iam_cache_name.as_deref(),
+        ),
+        ("REDIS_AWS_IAM_REGION", overrides.aws_iam_region.as_deref()),
+    ];
+    let [user_name, cache_name, configured_region] =
+        fields.map(|(name, explicit)| resolve_string(explicit, env, name));
+    let region = configured_region
+        .or_else(|| env.lookup("AWS_REGION"))
+        .or_else(|| env.lookup("AWS_DEFAULT_REGION"));
+
+    let (user, cache, location) =
+        required_aws_fields(user_name.as_ref(), cache_name.as_ref(), region.as_ref())?;
+    Ok(CredentialProviderSettings::Aws {
+        user_name: user,
+        cache_name: cache,
+        region: location,
         serverless: coerce_bool(
             overrides
                 .aws_iam_serverless
@@ -204,8 +167,7 @@ where
                 .or_else(|| env.lookup("REDIS_AWS_IAM_SERVERLESS").map(BoolOrText::Text)),
         )
         .unwrap_or(false),
-    });
-    Ok(())
+    })
 }
 
 fn resolve_string<E>(explicit: Option<&str>, env: &E, var: &str) -> Option<String>
@@ -216,4 +178,24 @@ where
         return Some(text.to_owned());
     }
     env.lookup(var).filter(|text| !text.is_empty())
+}
+
+fn required_aws_fields(
+    user_name: Option<&String>,
+    cache_name: Option<&String>,
+    region: Option<&String>,
+) -> Result<(String, String, String), RedisSettingsError> {
+    let (Some(user), Some(cache), Some(location)) = (user_name, cache_name, region) else {
+        let missing = [
+            ("aws_iam_user_name", &user_name),
+            ("aws_iam_cache_name", &cache_name),
+            ("aws_iam_region", &region),
+        ]
+        .into_iter()
+        .filter(|(_, value)| value.is_none())
+        .map(|(name, _)| name.to_owned())
+        .collect();
+        return Err(RedisSettingsError::AwsIamMissingSettings { missing });
+    };
+    Ok((user.clone(), cache.clone(), location.clone()))
 }

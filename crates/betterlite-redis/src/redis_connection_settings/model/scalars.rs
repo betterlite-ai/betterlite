@@ -5,24 +5,14 @@ use serde::{Deserialize, Serialize};
 // Helm `--set` and environment variables stringify everything, so a redis-py int/float/bool field can arrive as its real type or a digit string.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(untagged)]
-pub enum IntOrText {
-    Int(i64),
+pub enum Scalar<T> {
+    Value(T),
     Text(String),
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-#[serde(untagged)]
-pub enum FloatOrText {
-    Float(f64),
-    Text(String),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(untagged)]
-pub enum BoolOrText {
-    Bool(bool),
-    Text(String),
-}
+pub type IntOrText = Scalar<i64>;
+pub type FloatOrText = Scalar<f64>;
+pub type BoolOrText = Scalar<bool>;
 
 // serde_json::Value is disallowed, so a passthrough option that litellm forwards as a dict or list (socket_keepalive_options, retry_on_error) gets its own typed collection variant instead of rejecting deserialization outright.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -46,6 +36,5 @@ pub enum PassthroughScalar {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CoercionKind {
     Int,
-    Float,
     Bool,
 }

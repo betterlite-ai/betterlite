@@ -11,11 +11,11 @@ fn startup_nodes_text_is_falsy_when_empty() {
 
 #[test]
 fn startup_nodes_list_is_falsy_when_empty() {
-    assert!(!StartupNodesInput::Nodes(Vec::new()).is_truthy());
+    assert!(!StartupNodesInput::Value(Vec::new()).is_truthy());
     assert!(
-        StartupNodesInput::Nodes(vec![ClusterNodeInput {
+        StartupNodesInput::Value(vec![ClusterNodeInput {
             host: "a".to_owned(),
-            port: IntOrText::Int(7000),
+            port: IntOrText::Value(7000),
         }])
         .is_truthy()
     );
@@ -23,11 +23,11 @@ fn startup_nodes_list_is_falsy_when_empty() {
 
 #[test]
 fn sentinel_nodes_list_is_falsy_when_empty() {
-    assert!(!SentinelNodesInput::Nodes(Vec::new()).is_truthy());
+    assert!(!SentinelNodesInput::Value(Vec::new()).is_truthy());
     assert!(
-        SentinelNodesInput::Nodes(vec![SentinelNodeInput::Tuple((
+        SentinelNodesInput::Value(vec![SentinelNodeInput::Tuple((
             "a".to_owned(),
-            IntOrText::Int(26379),
+            IntOrText::Value(26379),
         ))])
         .is_truthy()
     );
@@ -38,12 +38,12 @@ fn node_ports_accept_quoted_json_numbers() {
     let startup: StartupNodesInput = serde_json::from_str(r#"[{"host":"cache","port":"7000"}]"#)
         .expect("quoted cluster ports are accepted");
     assert!(
-        matches!(startup, StartupNodesInput::Nodes(nodes) if nodes.first().is_some_and(|node| matches!(&node.port, IntOrText::Text(port) if port == "7000")))
+        matches!(startup, StartupNodesInput::Value(nodes) if nodes.first().is_some_and(|node| matches!(&node.port, IntOrText::Text(port) if port == "7000")))
     );
 
     let sentinel: SentinelNodesInput = serde_json::from_str(r#"[["sentinel","26379"]]"#)
         .expect("quoted sentinel ports are accepted");
     assert!(
-        matches!(sentinel, SentinelNodesInput::Nodes(nodes) if nodes.first().is_some_and(|node| matches!(node, SentinelNodeInput::Tuple((_, IntOrText::Text(port))) if port == "26379")))
+        matches!(sentinel, SentinelNodesInput::Value(nodes) if nodes.first().is_some_and(|node| matches!(node, SentinelNodeInput::Tuple((_, IntOrText::Text(port))) if port == "26379")))
     );
 }

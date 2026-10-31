@@ -77,26 +77,32 @@ fn direct_target_rejects_an_unrecognized_option() {
     assert!(error.to_string().contains("not_a_real_option"));
 }
 
-#[test]
-fn direct_allowlist_matches_the_selected_client_constructor() {
-    let mut sync = passthrough_with(&["auto_close_connection_pool"]);
-    filter_passthrough_for_target(Target::Direct, ClientKind::Sync, &mut sync)
-        .expect("sync Redis declares auto_close_connection_pool");
-
-    let mut async_client = passthrough_with(&["auto_close_connection_pool"]);
-    assert!(
-        filter_passthrough_for_target(Target::Direct, ClientKind::Async, &mut async_client)
-            .is_err()
-    );
-
-    let mut asynchronous_ocsp = passthrough_with(&["ssl_validate_ocsp"]);
-    filter_passthrough_for_target(Target::Direct, ClientKind::Async, &mut asynchronous_ocsp)
-        .expect("async Redis declares ssl_validate_ocsp");
-
-    let mut synchronous_ocsp = passthrough_with(&["ssl_validate_ocsp"]);
-    assert!(
-        filter_passthrough_for_target(Target::Direct, ClientKind::Sync, &mut synchronous_ocsp)
-            .is_err()
+#[rstest]
+#[case::sync_ocsp(Target::Direct, ClientKind::Sync, "ssl_validate_ocsp", true)]
+#[case::async_ocsp(Target::Direct, ClientKind::Async, "ssl_validate_ocsp", false)]
+#[case::sync_pool(Target::Direct, ClientKind::Sync, "auto_close_connection_pool", false)]
+#[case::async_pool(Target::Direct, ClientKind::Async, "auto_close_connection_pool", true)]
+#[case::sync_stapled(Target::Direct, ClientKind::Sync, "ssl_validate_ocsp_stapled", true)]
+#[case::async_stapled(Target::Direct, ClientKind::Async, "ssl_validate_ocsp_stapled", false)]
+#[case::sync_context(Target::Direct, ClientKind::Sync, "ssl_ocsp_context", true)]
+#[case::async_context(Target::Direct, ClientKind::Async, "ssl_ocsp_context", false)]
+#[case::sync_cert(Target::Direct, ClientKind::Sync, "ssl_ocsp_expected_cert", true)]
+#[case::async_cert(Target::Direct, ClientKind::Async, "ssl_ocsp_expected_cert", false)]
+#[case::sync_packer(Target::Url, ClientKind::Sync, "command_packer", true)]
+#[case::async_packer(Target::Url, ClientKind::Async, "command_packer", false)]
+#[case::sync_encoder(Target::Url, ClientKind::Sync, "encoder_class", false)]
+#[case::async_encoder(Target::Url, ClientKind::Async, "encoder_class", true)]
+fn redis_target_resolution_client_allowlist(
+    #[case] target: Target,
+    #[case] client: ClientKind,
+    #[case] name: &str,
+    #[case] accepted: bool,
+) {
+    let mut options = passthrough_with(&[name]);
+    assert_eq!(
+        filter_passthrough_for_target(target, client, &mut options).is_ok()
+            && options.contains_key(name),
+        accepted
     );
 }
 

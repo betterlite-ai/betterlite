@@ -131,7 +131,7 @@ fn redis_precedence_uses_environment_nodes_for_an_empty_override() {
 fn redis_precedence_uses_environment_nodes_for_an_empty_list_override() {
     let overrides = RedisOverrides {
         host: Some("cache.internal".to_owned()),
-        startup_nodes: Some(NodesInput::Nodes(Vec::new())),
+        startup_nodes: Some(NodesInput::Value(Vec::new())),
         ..blank_overrides()
     };
     let environment = env(&[("REDIS_CLUSTER_NODES", r#"[{"host":"a","port":7000}]"#)]);
@@ -249,7 +249,7 @@ fn redis_tls_is_false_end_to_end_for_a_plain_redis_url() {
 #[test]
 fn redis_tls_uses_the_url_when_startup_nodes_are_empty() {
     let overrides = RedisOverrides {
-        startup_nodes: Some(NodesInput::Nodes(Vec::new())),
+        startup_nodes: Some(NodesInput::Value(Vec::new())),
         url: Some(Some(SecretString::from("rediss://cache.internal:6379"))),
         ..blank_overrides()
     };
@@ -321,9 +321,9 @@ fn redis_ssl_reads_false_from_the_environment() {
 #[test]
 fn redis_precedence_ignores_the_environment_url_once_startup_nodes_are_configured() {
     let overrides = RedisOverrides {
-        startup_nodes: Some(NodesInput::Nodes(vec![ClusterNodeInput {
+        startup_nodes: Some(NodesInput::Value(vec![ClusterNodeInput {
             host: "a".to_owned(),
-            port: IntOrText::Int(7000),
+            port: IntOrText::Value(7000),
         }])),
         ..blank_overrides()
     };
@@ -336,7 +336,7 @@ fn redis_precedence_ignores_the_environment_url_once_startup_nodes_are_configure
 #[test]
 fn redis_precedence_ignores_the_environment_url_for_an_empty_explicit_target() {
     let overrides = RedisOverrides {
-        startup_nodes: Some(NodesInput::Nodes(Vec::new())),
+        startup_nodes: Some(NodesInput::Value(Vec::new())),
         ..blank_overrides()
     };
     let env = env(&[("REDIS_URL", "redis://from-environment:6379")]);
@@ -360,7 +360,7 @@ fn cluster_startup_nodes_parse_from_environment_json() {
 fn redis_credential_aws_iam_without_tls_is_rejected_end_to_end() {
     let overrides = RedisOverrides {
         host: Some("cache.internal".to_owned()),
-        aws_iam_auth: Some(BoolOrText::Bool(true)),
+        aws_iam_auth: Some(BoolOrText::Value(true)),
         ..blank_overrides()
     };
     let error = resolve_redis_kwargs(overrides, ClientKind::Sync, &env(&[]))
@@ -373,7 +373,7 @@ fn redis_credential_gcp_outranks_aws_end_to_end() {
     let overrides = RedisOverrides {
         host: Some("cache.internal".to_owned()),
         gcp_service_account: Some("svc@project.iam.gserviceaccount.com".to_owned()),
-        aws_iam_auth: Some(BoolOrText::Bool(true)),
+        aws_iam_auth: Some(BoolOrText::Value(true)),
         ..blank_overrides()
     };
     let settings = resolve_redis_kwargs(overrides, ClientKind::Sync, &env(&[]))
@@ -412,9 +412,9 @@ fn redis_precedence_an_explicit_null_url_does_not_fall_back_to_the_environment()
 #[test]
 fn redis_precedence_an_empty_sentinel_password_falls_back_to_the_environment() {
     let overrides = RedisOverrides {
-        sentinel_nodes: Some(NodesInput::Nodes(vec![SentinelNodeInput::Tuple((
+        sentinel_nodes: Some(NodesInput::Value(vec![SentinelNodeInput::Tuple((
             "sentinel".to_owned(),
-            IntOrText::Int(26379),
+            IntOrText::Value(26379),
         ))])),
         sentinel_password: Some(SecretString::from(String::new())),
         service_name: Some(String::new()),
@@ -443,4 +443,71 @@ fn replays_the_redis_settings_corpus(#[files("fuzz/corpus/redis_settings/*")] pa
         return;
     };
     drop(resolve_redis_kwargs(overrides, ClientKind::Sync, &env(&[])));
+}
+
+#[test]
+fn redis_precedence_null_password_suppresses_environment_password() {
+    let overrides: RedisOverrides =
+        serde_json::from_str(r#"{"host":"cache","password":null}"#).unwrap();
+    let environment = env(&[("REDIS_PASSWORD", "inherited")]);
+    let settings = resolve_redis_kwargs(overrides, ClientKind::Sync, &environment).unwrap();
+    assert!(settings.password.is_none());
+}
+
+#[test]
+fn redis_credential_provider_removes_conflicting_callback() {
+    let overrides: RedisOverrides = serde_json::from_str(r#"{"host":"cache","credential_provider":true,"username":"user","password":"secret","redis_connect_func":"callback"}"#).unwrap();
+    let settings = resolve_redis_kwargs(overrides, ClientKind::Sync, &env(&[])).unwrap();
+    assert!(settings.password.is_none());
+    assert!(settings.username.is_none());
+    assert!(!settings.passthrough.contains_key("redis_connect_func"));
+}
+
+#[test]
+fn redis_target_resolution_reads_unix_socket_environment() {
+    let environment = env(&[
+        ("REDIS_HOST", "cache"),
+        ("REDIS_UNIX_SOCKET_PATH", "/run/redis.sock"),
+    ]);
+    let settings =
+        resolve_redis_kwargs(RedisOverrides::default(), ClientKind::Sync, &environment).unwrap();
+    assert_eq!(
+        settings.passthrough["unix_socket_path"],
+        PassthroughValue::Text("/run/redis.sock".to_owned())
+    );
+}
+
+#[rstest]
+#[case::cluster("REDIS_CLUSTER_NODES")]
+#[case::sentinel("REDIS_SENTINEL_NODES")]
+fn redis_target_resolution_rejects_empty_environment_nodes(#[case] key: &str) {
+    let environment = env(&[("REDIS_HOST", "cache"), (key, "")]);
+    resolve_redis_kwargs(RedisOverrides::default(), ClientKind::Sync, &environment).unwrap_err();
+}
+
+#[rstest]
+#[case::cluster(r#"{"startup_nodes":[{"host":"cache","port":"7000"}]}"#, true)]
+#[case::sentinel_tuple(r#"{"sentinel_nodes":[["cache","7000"]]}"#, false)]
+#[case::sentinel_object(r#"{"sentinel_nodes":[{"host":"cache","port":"7000"}]}"#, false)]
+fn redis_target_resolution_normalizes_node_ports(#[case] json: &str, #[case] cluster: bool) {
+    let overrides: RedisOverrides = serde_json::from_str(json).unwrap();
+    let settings = resolve_redis_kwargs(overrides, ClientKind::Sync, &env(&[])).unwrap();
+    if cluster {
+        let nodes = settings.startup_nodes.unwrap();
+        assert_eq!(nodes[0].host, "cache");
+        assert_eq!(nodes[0].port, 7000);
+    } else {
+        assert_eq!(
+            settings.sentinel_nodes.unwrap(),
+            vec![("cache".to_owned(), 7000)]
+        );
+    }
+}
+
+#[rstest]
+#[case::cluster(r#"{"startup_nodes":[{"host":"cache","port":"bad"}]}"#)]
+#[case::sentinel(r#"{"sentinel_nodes":[["cache","bad"]]}"#)]
+fn redis_target_resolution_rejects_invalid_node_ports(#[case] json: &str) {
+    let overrides: RedisOverrides = serde_json::from_str(json).unwrap();
+    resolve_redis_kwargs(overrides, ClientKind::Sync, &env(&[])).unwrap_err();
 }

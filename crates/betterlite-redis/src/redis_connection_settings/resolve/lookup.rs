@@ -1,52 +1,13 @@
 use std::collections::BTreeMap;
 
-use serde::de::DeserializeOwned;
+use serde::de::{DeserializeOwned, Error as _};
 
+use super::super::allowlists::{DIRECT_COMMON, DIRECT_SYNC_ONLY};
 use super::super::coercion::{coerce_bool, coerce_float, coerce_int};
 use super::super::environment::EnvironmentLookup;
 use super::super::error::RedisSettingsError;
-use super::super::model::nodes::NodesInput;
-use super::super::model::scalars::{BoolOrText, FloatOrText, IntOrText, PassthroughValue};
-
-// gcp_*, azure_*, aws_iam_* and ssl_password are resolved as dedicated RedisOverrides fields (see iam::apply_iam_precedence and resolve::merge_settings) instead of through this generic REDIS_{NAME} passthrough fallback, so they are no longer listed here.
-const ENV_PASSTHROUGH_KWARGS: &[&str] = &[
-    "ENCODING",
-    "ENCODING_ERRORS",
-    "SOCKET_READ_SIZE",
-    "DECODE_RESPONSES",
-    "RETRY_ON_TIMEOUT",
-    "RETRY_ON_ERROR",
-    "CLIENT_NAME",
-    "LIB_NAME",
-    "LIB_VERSION",
-    "PROTOCOL",
-    "SOCKET_KEEPALIVE_OPTIONS",
-    "SINGLE_CONNECTION_CLIENT",
-    "AUTO_CLOSE_CONNECTION_POOL",
-    "SSL_CERT_REQS",
-    "SSL_KEYFILE",
-    "SSL_CERTFILE",
-    "SSL_INCLUDE_VERIFY_FLAGS",
-    "SSL_EXCLUDE_VERIFY_FLAGS",
-    "SSL_CHECK_HOSTNAME",
-    "SSL_CA_CERTS",
-    "SSL_CA_PATH",
-    "SSL_CA_DATA",
-    "SSL_VALIDATE_OCSP",
-    "SSL_VALIDATE_OCSP_STAPLED",
-    "SSL_OCSP_EXPECTED_CERT",
-    "SSL_MIN_VERSION",
-    "SSL_CIPHERS",
-    "UNIX_SOCKET_PATH",
-    "LEGACY_RESPONSES",
-    "SOCKET_TYPE",
-    "CLUSTER_ERROR_RETRY_ATTEMPTS",
-    "REQUIRE_FULL_COVERAGE",
-    "REINITIALIZE_STEPS",
-    "READ_FROM_REPLICAS",
-    "DYNAMIC_STARTUP_NODES",
-    "CONNECTION_ERROR_RETRY_ATTEMPTS",
-];
+use super::super::model::nodes::{NodeInput, NodesInput};
+use super::super::model::scalars::{PassthroughValue, Scalar};
 
 pub(super) fn resolve_passthrough<E>(
     mut passthrough: BTreeMap<String, PassthroughValue>,
@@ -55,11 +16,11 @@ pub(super) fn resolve_passthrough<E>(
 where
     E: EnvironmentLookup,
 {
-    for suffix in ENV_PASSTHROUGH_KWARGS {
-        let name = format!("REDIS_{suffix}");
+    for option in DIRECT_COMMON.iter().chain(DIRECT_SYNC_ONLY) {
+        let name = format!("REDIS_{}", option.to_uppercase());
         if let Some(value) = env.lookup(&name) {
             passthrough
-                .entry(suffix.to_lowercase())
+                .entry((*option).to_owned())
                 .or_insert(PassthroughValue::Text(value));
         }
     }
@@ -70,74 +31,58 @@ pub(super) fn resolve_nodes<T, F>(
     overrides: Option<NodesInput<T>>,
     env_text: Option<String>,
     on_error: F,
-) -> Result<Option<Vec<T>>, RedisSettingsError>
+) -> Result<Option<Vec<T::Resolved>>, RedisSettingsError>
 where
-    T: DeserializeOwned,
-    F: FnOnce(serde_json::Error) -> RedisSettingsError,
+    T: DeserializeOwned + NodeInput,
+    F: Fn(serde_json::Error) -> RedisSettingsError,
 {
     let input = overrides
         .filter(NodesInput::is_truthy)
         .or_else(|| env_text.map(NodesInput::Text));
-    match input {
-        None => Ok(None),
-        Some(NodesInput::Nodes(nodes)) => Ok(Some(nodes)),
-        Some(NodesInput::Text(text)) => serde_json::from_str(&text).map(Some).map_err(on_error),
-    }
+    let parsed = match input {
+        None => return Ok(None),
+        Some(NodesInput::Value(nodes)) => nodes,
+        Some(NodesInput::Text(text)) => serde_json::from_str(&text).map_err(&on_error)?,
+    };
+    parsed
+        .into_iter()
+        .map(|node| {
+            let (host, raw_port) = node.into_parts();
+            let port = coerce_int(Some(raw_port))
+                .ok_or_else(|| on_error(serde_json::Error::custom("invalid node port")))?;
+            Ok(T::from_parts(host, port))
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(Some)
 }
 
-// IntOrText, FloatOrText and BoolOrText each resolve the same way: an explicit override wins, otherwise the matching REDIS_{var} text falls back, and the result coerces to the scalar redis-py expects.
-pub(super) trait EnvScalar: Sized {
-    type Coerced;
-
-    fn from_text(text: String) -> Self;
-    fn coerce(value: Option<Self>) -> Option<Self::Coerced>;
+pub(super) trait Coerce: Sized {
+    fn coerce(value: Option<Scalar<Self>>) -> Option<Self>;
 }
 
-impl EnvScalar for IntOrText {
-    type Coerced = i64;
-
-    fn from_text(text: String) -> Self {
-        Self::Text(text)
-    }
-
-    fn coerce(value: Option<Self>) -> Option<Self::Coerced> {
+impl Coerce for i64 {
+    fn coerce(value: Option<Scalar<Self>>) -> Option<Self> {
         coerce_int(value)
     }
 }
 
-impl EnvScalar for FloatOrText {
-    type Coerced = f64;
-
-    fn from_text(text: String) -> Self {
-        Self::Text(text)
-    }
-
-    fn coerce(value: Option<Self>) -> Option<Self::Coerced> {
+impl Coerce for f64 {
+    fn coerce(value: Option<Scalar<Self>>) -> Option<Self> {
         coerce_float(value)
     }
 }
 
-impl EnvScalar for BoolOrText {
-    type Coerced = bool;
-
-    fn from_text(text: String) -> Self {
-        Self::Text(text)
-    }
-
-    fn coerce(value: Option<Self>) -> Option<Self::Coerced> {
+impl Coerce for bool {
+    fn coerce(value: Option<Scalar<Self>>) -> Option<Self> {
         coerce_bool(value)
     }
 }
 
-pub(super) fn resolve_scalar<T, E>(
-    override_value: Option<T>,
-    env: &E,
-    var: &str,
-) -> Option<T::Coerced>
+pub(super) fn resolve_scalar<T, E>(value: Option<Scalar<T>>, env: &E, var: &str) -> Option<T>
 where
-    T: EnvScalar,
+    T: Coerce,
     E: EnvironmentLookup,
 {
-    let raw = override_value.or_else(|| env.lookup(var).map(T::from_text));
+    let raw = value.or_else(|| env.lookup(var).map(Scalar::Text));
     T::coerce(raw)
 }

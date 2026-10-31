@@ -3,8 +3,7 @@ mod tests;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::environment::EnvironmentLookup;
-use super::model::nodes::NodesInput;
-use super::model::scalars::{BoolOrText, FloatOrText, IntOrText, PassthroughValue};
+use super::model::scalars::{PassthroughValue, Scalar};
 use super::model::settings::RedisOverrides;
 
 const PREFIX: &str = "os.environ/";
@@ -26,9 +25,7 @@ where
         port: resolve_textual(overrides.port, env),
         db: resolve_textual(overrides.db, env),
         username: resolve_string(overrides.username, env),
-        password: overrides
-            .password
-            .map(|value| value.and_then(|secret| resolve_secret(Some(secret), env))),
+        password: overrides.password.map(|value| resolve_secret(value, env)),
         url: overrides.url.map(|inner| resolve_secret(inner, env)),
         ssl: resolve_textual(overrides.ssl, env),
         socket_timeout: resolve_textual(overrides.socket_timeout, env),
@@ -89,50 +86,11 @@ trait TextVariant: Sized {
     fn from_text(text: String) -> Self;
 }
 
-impl TextVariant for IntOrText {
+impl<T> TextVariant for Scalar<T> {
     fn into_text(self) -> Result<String, Self> {
         match self {
             Self::Text(text) => Ok(text),
-            other @ Self::Int(_) => Err(other),
-        }
-    }
-
-    fn from_text(text: String) -> Self {
-        Self::Text(text)
-    }
-}
-
-impl TextVariant for FloatOrText {
-    fn into_text(self) -> Result<String, Self> {
-        match self {
-            Self::Text(text) => Ok(text),
-            other @ Self::Float(_) => Err(other),
-        }
-    }
-
-    fn from_text(text: String) -> Self {
-        Self::Text(text)
-    }
-}
-
-impl TextVariant for BoolOrText {
-    fn into_text(self) -> Result<String, Self> {
-        match self {
-            Self::Text(text) => Ok(text),
-            other @ Self::Bool(_) => Err(other),
-        }
-    }
-
-    fn from_text(text: String) -> Self {
-        Self::Text(text)
-    }
-}
-
-impl<T> TextVariant for NodesInput<T> {
-    fn into_text(self) -> Result<String, Self> {
-        match self {
-            Self::Text(text) => Ok(text),
-            other @ Self::Nodes(_) => Err(other),
+            other @ Self::Value(_) => Err(other),
         }
     }
 

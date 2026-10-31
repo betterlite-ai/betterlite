@@ -2,7 +2,7 @@ mod tests;
 
 use serde::{Deserialize, Serialize};
 
-use super::scalars::IntOrText;
+use super::scalars::{IntOrText, Scalar};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ClusterNodeConfig {
@@ -23,19 +23,13 @@ pub enum SentinelNodeInput {
     Tuple((String, IntOrText)),
 }
 
-// A caller may hold a parsed node list already; the environment only ever offers JSON text.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(untagged)]
-pub enum NodesInput<T> {
-    Nodes(Vec<T>),
-    Text(String),
-}
+pub type NodesInput<T> = Scalar<Vec<T>>;
 
-impl<T> NodesInput<T> {
+impl<T> Scalar<Vec<T>> {
     #[must_use]
     pub const fn is_truthy(&self) -> bool {
         match self {
-            Self::Nodes(nodes) => !nodes.is_empty(),
+            Self::Value(nodes) => !nodes.is_empty(),
             Self::Text(text) => !text.is_empty(),
         }
     }
@@ -43,3 +37,35 @@ impl<T> NodesInput<T> {
 
 pub type StartupNodesInput = NodesInput<ClusterNodeInput>;
 pub type SentinelNodesInput = NodesInput<SentinelNodeInput>;
+
+pub trait NodeInput {
+    type Resolved;
+    fn into_parts(self) -> (String, IntOrText);
+    fn from_parts(host: String, port: i64) -> Self::Resolved;
+}
+
+impl NodeInput for ClusterNodeInput {
+    type Resolved = ClusterNodeConfig;
+
+    fn into_parts(self) -> (String, IntOrText) {
+        (self.host, self.port)
+    }
+
+    fn from_parts(host: String, port: i64) -> Self::Resolved {
+        ClusterNodeConfig { host, port }
+    }
+}
+
+impl NodeInput for SentinelNodeInput {
+    type Resolved = (String, i64);
+
+    fn into_parts(self) -> (String, IntOrText) {
+        match self {
+            Self::Object { host, port } | Self::Tuple((host, port)) => (host, port),
+        }
+    }
+
+    fn from_parts(host: String, port: i64) -> Self::Resolved {
+        (host, port)
+    }
+}

@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use super::{coerce_bool, coerce_float, coerce_int, coerce_passthrough};
+use super::{coerce_bool, coerce_float, coerce_int};
 use crate::redis_connection_settings::model::scalars::{
     BoolOrText, FloatOrText, IntOrText, PassthroughValue,
 };
@@ -23,7 +23,7 @@ fn coerce_int_drops_an_unparsable_string() {
 
 #[test]
 fn coerce_int_passes_through_an_already_typed_value() {
-    assert_eq!(coerce_int(Some(IntOrText::Int(7))), Some(7));
+    assert_eq!(coerce_int(Some(IntOrText::Value(7))), Some(7));
 }
 
 #[test]
@@ -61,7 +61,7 @@ fn coerce_passthrough_drops_a_failed_int_conversion() {
         "cluster_error_retry_attempts".to_owned(),
         PassthroughValue::Text("three".to_owned()),
     );
-    coerce_passthrough(Target::Cluster, ClientKind::Sync, &mut passthrough);
+    coerce_options(Target::Cluster, ClientKind::Sync, &mut passthrough);
     assert!(!passthrough.contains_key("cluster_error_retry_attempts"));
 }
 
@@ -72,7 +72,7 @@ fn coerce_passthrough_coerces_a_recognized_bool_name() {
         "require_full_coverage".to_owned(),
         PassthroughValue::Text("yes".to_owned()),
     );
-    coerce_passthrough(Target::Cluster, ClientKind::Sync, &mut passthrough);
+    coerce_options(Target::Cluster, ClientKind::Sync, &mut passthrough);
     assert_eq!(
         passthrough.get("require_full_coverage"),
         Some(&PassthroughValue::Bool(true))
@@ -86,7 +86,7 @@ fn coerce_passthrough_leaves_an_unrecognized_name_untouched() {
         "some_unmodeled_kwarg".to_owned(),
         PassthroughValue::Text("3".to_owned()),
     );
-    coerce_passthrough(Target::Direct, ClientKind::Sync, &mut passthrough);
+    coerce_options(Target::Direct, ClientKind::Sync, &mut passthrough);
     assert_eq!(
         passthrough.get("some_unmodeled_kwarg"),
         Some(&PassthroughValue::Text("3".to_owned()))
@@ -123,7 +123,7 @@ fn coerce_signature_boolean_names() {
             PassthroughValue::Text("true".to_owned()),
         ),
     ]);
-    coerce_passthrough(Target::Direct, ClientKind::Sync, &mut passthrough);
+    coerce_options(Target::Direct, ClientKind::Sync, &mut passthrough);
     assert_eq!(
         passthrough["retry_on_timeout"],
         PassthroughValue::Bool(false)
@@ -132,4 +132,42 @@ fn coerce_signature_boolean_names() {
         passthrough["single_connection_client"],
         PassthroughValue::Bool(true)
     );
+}
+
+fn coerce_options(
+    target: Target,
+    _client: ClientKind,
+    options: &mut BTreeMap<String, PassthroughValue>,
+) {
+    options.retain(|name, value| super::coerce_passthrough(name, value, target));
+}
+
+#[test]
+fn redis_coerce_rejects_doubled_underscores() {
+    assert_eq!(coerce_int(Some(IntOrText::Text("6__380".to_owned()))), None);
+    assert_eq!(
+        coerce_float(Some(FloatOrText::Text("1__5.0".to_owned()))),
+        None
+    );
+}
+
+#[test]
+fn redis_coerce_preserves_untyped_signature_parameters() {
+    let mut options = BTreeMap::from([
+        (
+            "protocol".to_owned(),
+            PassthroughValue::Text("bogus".to_owned()),
+        ),
+        (
+            "socket_type".to_owned(),
+            PassthroughValue::Text("1".to_owned()),
+        ),
+        (
+            "auto_close_connection_pool".to_owned(),
+            PassthroughValue::Text("false".to_owned()),
+        ),
+    ]);
+    let expected = options.clone();
+    coerce_options(Target::Direct, ClientKind::Sync, &mut options);
+    assert_eq!(options, expected);
 }

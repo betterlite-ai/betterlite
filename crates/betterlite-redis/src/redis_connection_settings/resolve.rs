@@ -5,13 +5,11 @@ use secrecy::{ExposeSecret, SecretString};
 
 use self::lookup::{resolve_nodes, resolve_passthrough, resolve_scalar};
 use super::allowlists::filter_passthrough_for_target;
-use super::coercion::coerce_int;
 use super::coercion::coerce_passthrough;
 use super::environment::EnvironmentLookup;
 use super::error::RedisSettingsError;
 use super::iam::apply_iam_precedence;
-use super::model::nodes::{ClusterNodeConfig, SentinelNodeInput};
-use super::model::scalars::IntOrText;
+use super::model::nodes::ClusterNodeConfig;
 use super::model::settings::{
     ClientKind, CredentialProviderSettings, RedisConnectionSettings, RedisOverrides, Target,
 };
@@ -34,38 +32,12 @@ where
         resolved_overrides.startup_nodes.clone(),
         env.lookup("REDIS_CLUSTER_NODES"),
         |source| RedisSettingsError::InvalidClusterNodesJson { source },
-    )?
-    .map(|nodes| {
-        nodes
-            .into_iter()
-            .map(|node| {
-                let port = normalize_cluster_port(node.port)?;
-                Ok(ClusterNodeConfig {
-                    host: node.host,
-                    port,
-                })
-            })
-            .collect::<Result<Vec<_>, RedisSettingsError>>()
-    })
-    .transpose()?;
+    )?;
     let sentinel_nodes = resolve_nodes(
         resolved_overrides.sentinel_nodes.clone(),
         env.lookup("REDIS_SENTINEL_NODES"),
         |source| RedisSettingsError::InvalidSentinelNodesJson { source },
-    )?
-    .map(|nodes| {
-        nodes
-            .into_iter()
-            .map(|node| {
-                let (host, port) = match node {
-                    SentinelNodeInput::Object { host, port } => (host, port),
-                    SentinelNodeInput::Tuple((host, port)) => (host, port),
-                };
-                Ok((host, normalize_sentinel_port(port)?))
-            })
-            .collect::<Result<Vec<_>, RedisSettingsError>>()
-    })
-    .transpose()?;
+    )?;
     let mut settings = merge_settings(
         resolved_overrides.clone(),
         env,
@@ -88,25 +60,11 @@ where
         settings.db = None;
         settings.password = None;
     }
-    coerce_passthrough(target, client, &mut settings.passthrough);
+    settings
+        .passthrough
+        .retain(|name, value| coerce_passthrough(name, value, target));
     filter_passthrough_for_target(target, client, &mut settings.passthrough)?;
     Ok(settings)
-}
-
-fn normalize_cluster_port(port: IntOrText) -> Result<i64, RedisSettingsError> {
-    match coerce_int(Some(port)) {
-        Some(port) => Ok(port),
-        None => serde_json::from_str::<i64>("null")
-            .map_err(|source| RedisSettingsError::InvalidClusterNodesJson { source }),
-    }
-}
-
-fn normalize_sentinel_port(port: IntOrText) -> Result<i64, RedisSettingsError> {
-    match coerce_int(Some(port)) {
-        Some(port) => Ok(port),
-        None => serde_json::from_str::<i64>("null")
-            .map_err(|source| RedisSettingsError::InvalidSentinelNodesJson { source }),
-    }
 }
 
 fn merge_settings<E>(
@@ -120,13 +78,6 @@ where
 {
     let url = resolve_url(&overrides, env);
     let secrets = resolve_secret_fields(&overrides, env);
-    let password = overrides.password.clone().flatten().or_else(|| {
-        if overrides.password.is_some() {
-            None
-        } else {
-            env.lookup("REDIS_PASSWORD").map(SecretString::from)
-        }
-    });
     RedisConnectionSettings {
         host: overrides.host.or_else(|| env.lookup("REDIS_HOST")),
         port: resolve_scalar(overrides.port, env, "REDIS_PORT"),
@@ -135,7 +86,9 @@ where
             .username
             .clone()
             .or_else(|| env.lookup("REDIS_USERNAME")),
-        password,
+        password: overrides
+            .password
+            .unwrap_or_else(|| env.lookup("REDIS_PASSWORD").map(SecretString::from)),
         url,
         ssl: resolve_scalar(overrides.ssl, env, "REDIS_SSL"),
         socket_timeout: resolve_scalar(overrides.socket_timeout, env, "REDIS_SOCKET_TIMEOUT"),
