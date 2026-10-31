@@ -92,7 +92,7 @@ pitfalls:
 - tool_resources never reaches either thread-create provider method.
 - Thread async flags accept nonboolean values without the validation performed by assistant-definition wrappers.
 - A provider null result is returned as null by these wrappers.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

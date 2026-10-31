@@ -79,4 +79,4 @@ pitfalls:
   - An interactions response selects its last audio item, while predict inspects its first prediction only.
   - Resolving an interactions URL uses global even when a different Vertex location was configured.
 budget: {max_changed_lines: 625, max_new_expects: 1}
-review_level: security
+review_level: standard

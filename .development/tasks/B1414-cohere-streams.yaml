@@ -95,4 +95,4 @@ pitfalls:
   - V2 message-end reads event, while content-delta reads type, so changing them to one discriminator changes accepted input.
   - The first tool delta's name is not nested under a function object.
 budget: {max_changed_lines: 725, max_new_expects: 0}
-review_level: security
+review_level: standard

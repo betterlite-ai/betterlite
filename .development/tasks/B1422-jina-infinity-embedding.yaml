@@ -101,4 +101,4 @@ pitfalls:
   - Infinity embedding usage can have prompt_tokens different from total_tokens without reconciliation.
   - Jina's optional input field loses to the normalized input assigned afterward.
 budget: {max_changed_lines: 800, max_new_expects: 0}
-review_level: security
+review_level: standard

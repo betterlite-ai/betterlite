@@ -115,4 +115,4 @@ pitfalls:
   - semantic_vad with create_response=false must not be omitted by the semantic-VAD shortcut.
   - session.created copies only a string systemInstruction, although setup normally stores it as a content object.
 budget: {max_changed_lines: 800, max_new_expects: 1}
-review_level: security
+review_level: standard

@@ -21,3 +21,10 @@ doc = false
 bench = false
 
 [workspace]
+
+[[bin]]
+name = "envelope"
+path = "fuzz_targets/envelope.rs"
+test = false
+doc = false
+bench = false

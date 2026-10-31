@@ -95,4 +95,4 @@ pitfalls:
   - Passing passthrough=1 must not activate the source's is True branch.
   - 'A custom_id already ending in #0/2 must be escaped before a real fan-out suffix is appended.'
 budget: {max_changed_lines: 725, max_new_expects: 1}
-review_level: security
+review_level: standard

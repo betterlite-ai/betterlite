@@ -1,0 +1,5 @@
+task: B4651
+deviations:
+  - what: The vault is built as part of B1600's symmetric encryption; this task uses it without rebuilding it.
+    why: B1600 owns encrypt_value and decrypt_value in encrypt_decrypt_utils.py.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L167-L212

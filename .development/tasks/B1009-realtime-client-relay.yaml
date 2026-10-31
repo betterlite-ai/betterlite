@@ -114,7 +114,7 @@ pitfalls:
 - The blocked-text flag drops a response.create; it does not rewrite that response's instructions despite the source comment.
 - Catching TypeError alongside JSONDecodeError would accidentally keep sessions alive that the pinned client loop ends.
 - _close_client wraps send and close in one try, so a failed error-event send skips close here.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

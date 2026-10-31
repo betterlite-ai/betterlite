@@ -4,7 +4,8 @@ vendors:
     limit_markers: ["You've hit your usage limit"]
     max_parallel: 12
   - id: anthropic
-    limit_markers: ["You've hit your"]
+    limit_markers: ["You've hit your", "Not logged in", "Can't reach the API server"]
+    max_parallel: 12
 runners:
   - id: codex-worker
     vendor: openai
@@ -89,6 +90,7 @@ policy:
   max_worker_attempts: 6
   limit_retry_minutes: 30
   max_parallel: 8
+  overflow: true
   max_review_rounds: 3
   max_blocked_reports: 2
   max_hook_blocks: 6

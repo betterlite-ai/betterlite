@@ -107,4 +107,4 @@ pitfalls:
   - Baseten removes every baseten/ occurrence before checking the eight-character deployment id.
   - Cerebras copies a supported null option while Featherless discards the same null except for max_completion_tokens.
 budget: {max_changed_lines: 750, max_new_expects: 0}
-review_level: security
+review_level: standard

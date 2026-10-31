@@ -79,7 +79,7 @@ pitfalls:
   - response_format=url still produces a base64 response from the binary body.
   - An empty key passes validate_environment when invoked directly, because the check is api_key is None.
   - A trailing slash on api_base is preserved before /image/v1/enhance is appended.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0
