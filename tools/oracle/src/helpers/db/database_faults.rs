@@ -68,7 +68,7 @@ impl From<&DbError> for Output {
         Self {
             connection: database_faults::is_database_connection_error(error_type),
             infrastructure: database_faults::is_infrastructure_error(error_type),
-            data: database_faults::is_prisma_data_error(error_type),
+            data: error_type == ErrorType::Data,
             prisma: database_faults::is_prisma_error(error_type),
             transport: database_faults::is_database_transport_error(error),
             sqlstate: database_faults::postgres_sqlstate(error),

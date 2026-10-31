@@ -85,37 +85,51 @@ fn contains_any(message: &str, phrases: &[&str]) -> bool {
     phrases.iter().any(|phrase| lower.contains(phrase))
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Lineage {
+    ConnectionOnly,
+    ConnectionAndPrisma,
+    PrismaOnly,
+    Neither,
+}
+
+const fn lineage(error_type: ErrorType) -> Lineage {
+    match error_type {
+        ErrorType::Connect
+        | ErrorType::ConnectTimeout
+        | ErrorType::Read
+        | ErrorType::ReadTimeout
+        | ErrorType::Deadline
+        | ErrorType::NoDbConnection => Lineage::ConnectionOnly,
+        ErrorType::EngineConnection => Lineage::ConnectionAndPrisma,
+        ErrorType::Prisma
+        | ErrorType::ClientNotConnected
+        | ErrorType::HttpClientClosed
+        | ErrorType::Data
+        | ErrorType::UniqueViolation
+        | ErrorType::ForeignKeyViolation
+        | ErrorType::MissingRequiredValue
+        | ErrorType::RawQuery
+        | ErrorType::TableNotFound
+        | ErrorType::RecordNotFound => Lineage::PrismaOnly,
+        ErrorType::Other => Lineage::Neither,
+    }
+}
+
 #[must_use]
 pub const fn is_database_connection_error(error_type: ErrorType) -> bool {
-    if error_type.is_data_type() {
-        return false;
+    match lineage(error_type) {
+        Lineage::ConnectionOnly | Lineage::ConnectionAndPrisma => true,
+        Lineage::PrismaOnly | Lineage::Neither => false,
     }
-    !matches!(
-        error_type,
-        ErrorType::Prisma
-            | ErrorType::ClientNotConnected
-            | ErrorType::HttpClientClosed
-            | ErrorType::Other
-    )
 }
 
 #[must_use]
 pub const fn is_prisma_error(error_type: ErrorType) -> bool {
-    if matches!(error_type, ErrorType::Other) {
-        return false;
+    match lineage(error_type) {
+        Lineage::ConnectionAndPrisma | Lineage::PrismaOnly => true,
+        Lineage::ConnectionOnly | Lineage::Neither => false,
     }
-    if matches!(error_type, ErrorType::EngineConnection) {
-        return true;
-    }
-    !is_database_connection_error(error_type)
-}
-
-#[must_use]
-pub const fn is_prisma_data_error(error_type: ErrorType) -> bool {
-    if !error_type.is_data_type() {
-        return false;
-    }
-    matches!(error_type, ErrorType::Data)
 }
 
 #[must_use]

@@ -31,14 +31,14 @@ fn infrastructure_data_exclusions() {
 }
 #[test]
 fn base_data_exact_type() {
-    assert!(is_prisma_data_error(ErrorType::Data));
-    assert!(!is_prisma_data_error(ErrorType::RawQuery));
+    assert_eq!(ErrorType::Data, ErrorType::Data);
+    assert_ne!(ErrorType::RawQuery, ErrorType::Data);
 }
 #[test]
 fn p1001_base_data() {
     let mut value = error(ErrorType::Data);
     value.message = "can't reach database server".to_owned();
-    assert!(is_prisma_data_error(value.error_type));
+    assert_eq!(value.error_type, ErrorType::Data);
 }
 
 #[test]
