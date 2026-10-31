@@ -52,6 +52,11 @@ fn credential_payload() -> Payload {
     serde_json::from_str(r#"{"api_key": "secret", "message": "body"}"#).expect("valid json fixture")
 }
 
+fn redacted_payload() -> Payload {
+    serde_json::from_str(r#"{"api_key": "REDACTED", "message": "REDACTED"}"#)
+        .expect("valid redacted fixture")
+}
+
 fn hooks(
     logger: FixtureLogger,
     console: FixtureConsole,
@@ -117,7 +122,7 @@ struct Expected {
 )]
 #[case::redacted_verbose_payload(
     Scenario::Main { payload: credential_payload(), set_verbose: json!(true) },
-    Expected { logs: 1, console: 1, active: false, payload: json!({"api_key": "REDACTED", "message": "REDACTED"}) }
+    Expected { logs: 1, console: 1, active: false, payload: redacted_payload() }
 )]
 fn verbose_hooks_cases(#[case] scenario: Scenario, #[case] expected: Expected) {
     let result = match scenario {
@@ -244,6 +249,7 @@ fn redacts_payload_before_main_and_utils_capturing_sinks() {
     assert_eq!(console_captured.len(), 2);
     assert_redacted(&logger_captured[0], "body");
     assert_redacted(&logger_captured[1], "body");
+    drop(logger_captured);
     assert_redacted(&console_captured[0], "body");
     assert_redacted(&console_captured[1], "body");
 }
@@ -416,7 +422,7 @@ fn is_active_requires_identity_not_truthiness_for_set_verbose() {
 #[case::false_boolean(json!(false))]
 #[case::zero(json!(0_i64))]
 #[case::empty_array(json!([]))]
-#[case::empty_object(json!({}))]
+#[case::empty_object(serde_json::from_str("{}").expect("valid empty object"))]
 fn falsey_main_settings(#[case] set_verbose: Payload) {
     let result = healthy_hooks(set_verbose).main_print_verbose(json!("body"));
     assert_eq!(result.logs.len(), 1);
@@ -455,9 +461,6 @@ fn utils_console_failure_keeps_logs() {
     )
     .utils_print_verbose(credential_payload(), "INFO", &json!(false));
     assert_eq!(result.logs.len(), 1);
-    assert_eq!(
-        result.logs[0].payload,
-        json!({"api_key": "REDACTED", "message": "REDACTED"})
-    );
+    assert_eq!(result.logs[0].payload, redacted_payload());
     assert!(result.console.is_empty());
 }
