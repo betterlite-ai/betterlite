@@ -4,10 +4,40 @@ use serde::{Deserialize, Serialize};
 pub(crate) struct Op;
 
 #[derive(Deserialize)]
+pub(crate) struct RawDbError {
+    error_type: ErrorType,
+    #[serde(default)]
+    message: String,
+    #[serde(default)]
+    code: Option<String>,
+    #[serde(default)]
+    meta_code: Option<serde_json::Value>,
+    #[serde(default)]
+    traceback_modules: Vec<String>,
+}
+
+impl From<&RawDbError> for DbError {
+    fn from(raw: &RawDbError) -> Self {
+        Self {
+            error_type: raw.error_type,
+            message: raw.message.clone(),
+            code: raw.code.clone(),
+            meta_code: raw
+                .meta_code
+                .as_ref()
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned),
+            traceback_modules: raw.traceback_modules.clone(),
+            cause: None,
+        }
+    }
+}
+
+#[derive(Deserialize)]
 #[serde(untagged)]
 pub(crate) enum Input {
-    Classification { error: DbError },
-    Matrix { errors: Vec<DbError> },
+    Classification { error: RawDbError },
+    Matrix { errors: Vec<RawDbError> },
     Retry { scenarios: Vec<retry::Script> },
 }
 
@@ -62,12 +92,12 @@ impl From<&DbError> for Output {
     fn from(error: &DbError) -> Self {
         Self {
             availability: Availability {
-                connection: database_faults::is_database_connection_error(error),
-                infrastructure: database_faults::is_database_infrastructure(error),
+                connection: database_faults::is_database_connection_error(error.error_type),
+                infrastructure: database_faults::is_database_infrastructure(error.error_type),
             },
             data: DataClasses {
                 data: error.error_type == ErrorType::Data,
-                prisma: database_faults::is_prisma_error(error),
+                prisma: database_faults::is_prisma_error(error.error_type),
             },
             transport: TransportClasses {
                 transport: database_faults::is_transport_error(error),
@@ -90,10 +120,15 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         let output = match input {
-            Input::Classification { error } => serde_json::to_value(Output::from(error)),
-            Input::Matrix { errors } => {
-                serde_json::to_value(errors.iter().map(Output::from).collect::<Vec<_>>())
+            Input::Classification { error } => {
+                serde_json::to_value(Output::from(&DbError::from(error)))
             }
+            Input::Matrix { errors } => serde_json::to_value(
+                errors
+                    .iter()
+                    .map(|raw| Output::from(&DbError::from(raw)))
+                    .collect::<Vec<_>>(),
+            ),
             Input::Retry { scenarios } => {
                 let reports = scenarios
                     .iter()

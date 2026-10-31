@@ -24,6 +24,11 @@
           "error_type": "data",
           "meta_code": "23505",
           "message": "PostgresError { code: \"40001\""
+        },
+        {
+          "error_type": "data",
+          "meta_code": 123,
+          "message": "PostgresError { code: \"40P01\""
         }
       ]
     }

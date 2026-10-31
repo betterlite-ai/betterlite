@@ -91,6 +91,11 @@
         {
           "error_type": "other",
           "message": "CONNECTION REFUSED"
+        },
+        {
+          "error_type": "other",
+          "message": "engine crashed",
+          "traceback_modules": ["app", "prisma.engine.response"]
         }
       ]
     }

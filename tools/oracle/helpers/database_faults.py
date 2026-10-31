@@ -123,15 +123,25 @@ def _make_error(error: dict[str, Json], types_by_name: dict[str, type[_FakeError
             fake_value.meta = {"code": error["meta_code"]}
         return error_value
     if error.get("traceback_modules"):
-        modules = cast(list[Json], error["traceback_modules"])
-        namespace = {"__name__": cast(str, modules[0]), "message": message}
+        modules = [cast(str, module) for module in cast(list[Json], error["traceback_modules"])]
+        return _traceback_error(modules, message)
+    return Exception(message)
+
+
+def _traceback_error(modules: list[str], message: str) -> Exception:
+    namespace: dict[str, object] = {"__name__": modules[-1], "message": message}
+    function = types.FunctionType(
+        compile("raise Exception(message)", "database_faults", "exec"), namespace
+    )
+    for name in reversed(modules[:-1]):
+        outer_namespace: dict[str, object] = {"__name__": name, "inner": function}
         function = types.FunctionType(
-            compile("raise Exception(message)", "database_faults", "exec"), namespace
+            compile("inner()", "database_faults", "exec"), outer_namespace
         )
-        try:
-            function()
-        except Exception as error_value:  # noqa: BLE001 - the fixture deliberately raises a generic engine error
-            return error_value
+    try:
+        function()
+    except Exception as error_value:  # noqa: BLE001 - the fixture deliberately raises a generic engine error
+        return error_value
     return Exception(message)
 
 
