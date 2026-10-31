@@ -1,0 +1,13 @@
+kind: helper
+name: openai-like-errors-not-found
+call:
+  openai_like_errors:
+    model: command-r
+    custom_llm_provider: my_provider
+    error_str: "no deployment found for this model"
+    status_code: 404
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

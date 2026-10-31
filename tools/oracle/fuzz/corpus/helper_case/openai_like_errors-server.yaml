@@ -1,0 +1,13 @@
+kind: helper
+name: openai-like-errors-server
+call:
+  openai_like_errors:
+    model: command-r
+    custom_llm_provider: my_provider
+    error_str: "internal failure while generating a response"
+    status_code: 500
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

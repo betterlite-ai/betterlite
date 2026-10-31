@@ -1,0 +1,92 @@
+id: no-python-habits
+language: rust
+severity: error
+message: text from an env var or an os.environ/ reference turns into a bool or a number only in the shared parser in betterlite-env, and Python's truthiness, repr and str habits are not ported (docs/compatibility.md)
+note: the files listed after betterlite-env predate this rule; a task that moves a file onto the shared parser or drops its helper takes the file off the list
+ignores:
+  - .development/**
+  - tools/**
+  - "**/tests.rs"
+  - "**/tests/**"
+  - crates/betterlite-env/**
+  - crates/betterlite-a2a/src/agent_card/merge.rs
+  - crates/betterlite-anthropic/src/api/messages_errors/errors.rs
+  - crates/betterlite-anthropic/src/output_schema/notes.rs
+  - crates/betterlite-azure/src/azure_content_policy.rs
+  - crates/betterlite-bedrock/src/image_models/params.rs
+  - crates/betterlite-bedrock/src/image_models/response.rs
+  - crates/betterlite-bedrock/src/image_models/sizing.rs
+  - crates/betterlite-bedrock/src/message_usage.rs
+  - crates/betterlite-cli/src/keyring.rs
+  - crates/betterlite-config/src/proxy.rs
+  - crates/betterlite-config/src/sections/billing_metrics.rs
+  - crates/betterlite-config/src/sections/redis_credentials/provider.rs
+  - crates/betterlite-config/src/sections/redis_credentials.rs
+  - crates/betterlite-config/src/sections/scheduled_job_stagger.rs
+  - crates/betterlite-config/src/sections/settings/settings_resolution.rs
+  - crates/betterlite-context/src/a2a_text.rs
+  - crates/betterlite-context/src/cloud_storage/policy.rs
+  - crates/betterlite-core/src/agents/provider/request_id.rs
+  - crates/betterlite-core/src/api/codex_history_tools.rs
+  - crates/betterlite-core/src/api/responses_input_content.rs
+  - crates/betterlite-db/src/database_url_policy/flag.rs
+  - crates/betterlite-db/src/database_url_policy/python_repr.rs
+  - crates/betterlite-db/src/identity_rows.rs
+  - crates/betterlite-error/src/parse.rs
+  - crates/betterlite-guardrails/src/cisco_conversation/json.rs
+  - crates/betterlite-guardrails/src/generic_guardrail_contracts/headers.rs
+  - crates/betterlite-guardrails/src/mcp_guardrail_translation/fallback_behavior.rs
+  - crates/betterlite-harness/src/payloads/python_json.rs
+  - crates/betterlite-harness/src/providers/codex/stream.rs
+  - crates/betterlite-harness/src/providers/codex/tool_projection.rs
+  - crates/betterlite-harness/src/providers/opencode/wire.rs
+  - crates/betterlite-lens/src/sources/execution_id.rs
+  - crates/betterlite-lens/src/sources/row_decode.rs
+  - crates/betterlite-logging/src/datadog/tagging.rs
+  - crates/betterlite-logging/src/otel/model/vocabulary/span_names.rs
+  - crates/betterlite-logging/src/python_json.rs
+  - crates/betterlite-logging/src/s3_transport/option_value.rs
+  - crates/betterlite-mcp/src/session_tokens.rs
+  - crates/betterlite-models/src/catalog_generalizations/python_text.rs
+  - crates/betterlite-models/src/cost_usage/interactions/modality.rs
+  - crates/betterlite-models/src/tiered_pricing.rs
+  - crates/betterlite-paths/src/paths/segments.rs
+  - crates/betterlite-prompts/src/arguments/json.rs
+  - crates/betterlite-prompts/src/schema/regex_walk.rs
+  - crates/betterlite-prompts/src/schema.rs
+  - crates/betterlite-redact/src/secret/pattern.rs
+  - crates/betterlite-redact/src/sentry/settings.rs
+  - crates/betterlite-redis/src/redis_connection_settings/coercion.rs
+  - crates/betterlite-redis/src/redis_connection_settings/iam.rs
+  - crates/betterlite-redis/src/redis_connection_settings/model/nodes.rs
+  - crates/betterlite-router/src/routing_decision_headers/python_text.rs
+  - crates/betterlite-server/src/model_query.rs
+  - crates/betterlite-server/src/routes/chat/headers.rs
+  - crates/betterlite-server/src/scim_records/lax_bool.rs
+  - crates/betterlite-streaming/src/stream_tool_assembly.rs
+rule:
+  any:
+    - kind: function_item
+      has:
+        field: name
+        regex: (^|_)(truthy|falsy|python|py|lax_bool|str_to_bool)(_|$)|^parse_bool|bool_from_
+    - kind: call_expression
+      all:
+        - has:
+            field: function
+            regex: \.eq_ignore_ascii_case$
+        - has:
+            field: arguments
+            regex: ^\("(true|false|yes|no|on|off|1|0)"\)$
+    - kind: or_pattern
+      regex: '"(true|false|yes|no|on|off)"'
+    - kind: macro_invocation
+      all:
+        - has:
+            field: macro
+            regex: ^matches$
+        - regex: '"(true|false|yes|no|on|off)"\s*\||\|\s*"(true|false|yes|no|on|off)"'
+    - kind: array_expression
+      all:
+        - regex: '"(?i)(yes|on|no|off)"'
+        - regex: '"(?i)(true|false|1|0)"'

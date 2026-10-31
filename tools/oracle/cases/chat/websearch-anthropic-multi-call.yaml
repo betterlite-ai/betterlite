@@ -1,0 +1,39 @@
+{
+  "kind": "helper",
+  "name": "websearch-anthropic-multi-call",
+  "call": {
+    "b4112": {
+      "format": "anthropic",
+      "response": {
+        "content": [
+          {
+            "type": "tool_use",
+            "id": "one",
+            "name": "litellm_web_search",
+            "input": {
+              "query": "rust"
+            }
+          },
+          {
+            "type": "tool_use",
+            "id": "two",
+            "name": "web_search",
+            "input": {
+              "query": "cargo"
+            }
+          }
+        ]
+      },
+      "transform": true,
+      "results": [
+        "one",
+        "two"
+      ],
+      "operation": "detect"
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
