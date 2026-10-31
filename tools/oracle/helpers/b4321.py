@@ -27,6 +27,7 @@ _OWN_FIELDS = (
     "sentinel_nodes",
     "sentinel_password",
     "service_name",
+    "ssl_password",
 )
 
 
@@ -34,6 +35,10 @@ def _kwargs_from_overrides(overrides: dict[str, Json]) -> dict[str, object]:
     kwargs: dict[str, object] = {
         name: overrides[name] for name in _OWN_FIELDS if overrides.get(name) is not None
     }
+    # litellm distinguishes an explicit `url: null` from an omitted url: the key stays in
+    # **env_overrides and overrides whatever REDIS_URL supplied, where an omitted key does not.
+    if "url" in overrides and overrides["url"] is None:
+        kwargs["url"] = None
     if kwargs.get("credential_provider") is True:
         kwargs["credential_provider"] = object()
     passthrough = overrides.get("passthrough") or {}
@@ -76,6 +81,7 @@ def resolve_redis_kwargs(environment: dict[str, Json], overrides: dict[str, Json
         "sentinel_nodes": result.get("sentinel_nodes"),
         "sentinel_password": result.get("sentinel_password"),
         "service_name": result.get("service_name"),
+        "ssl_password": result.get("ssl_password"),
         "passthrough": {name: value for name, value in result.items() if name not in known},
         "uses_tls": _uses_tls(result),
     }

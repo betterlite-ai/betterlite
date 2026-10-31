@@ -84,6 +84,7 @@ impl Helper for Op {
             "sentinel_nodes": settings.sentinel_nodes,
             "sentinel_password": settings.sentinel_password.as_ref().map(ExposeSecret::expose_secret),
             "service_name": settings.service_name,
+            "ssl_password": settings.ssl_password.as_ref().map(ExposeSecret::expose_secret),
             "passthrough": settings.passthrough,
             "uses_tls": uses_tls,
         }))
@@ -95,7 +96,11 @@ impl From<Failure> for Box<HelperError> {
         // Maps each RedisSettingsError variant to the litellm exception class it mirrors (see docs/deviations/B4321.yaml for InvalidUrl).
         let class = match &failure {
             Failure::Settings(error) => match error {
-                betterlite_redis::redis_connection_settings::error::RedisSettingsError::MissingTarget => "ValueError",
+                betterlite_redis::redis_connection_settings::error::RedisSettingsError::MissingTarget
+                | betterlite_redis::redis_connection_settings::error::RedisSettingsError::AwsIamRequiresTls
+                | betterlite_redis::redis_connection_settings::error::RedisSettingsError::AwsIamMissingSettings { .. } => {
+                    "ValueError"
+                }
                 betterlite_redis::redis_connection_settings::error::RedisSettingsError::InvalidClusterNodesJson { .. }
                 | betterlite_redis::redis_connection_settings::error::RedisSettingsError::InvalidSentinelNodesJson { .. } => {
                     "JSONDecodeError"
@@ -103,6 +108,10 @@ impl From<Failure> for Box<HelperError> {
                 betterlite_redis::redis_connection_settings::error::RedisSettingsError::InvalidUrl { .. }
                 | betterlite_redis::redis_connection_settings::error::RedisSettingsError::UrlCannotStripUserinfo => {
                     "RuntimeError"
+                }
+                // Url/Cluster/Sentinel targets silently drop an unrecognized name in litellm; only a bare Direct connection forwards it straight into redis.Redis.__init__, which raises TypeError for an unexpected keyword argument.
+                betterlite_redis::redis_connection_settings::error::RedisSettingsError::UnknownOption { .. } => {
+                    "TypeError"
                 }
             },
         };

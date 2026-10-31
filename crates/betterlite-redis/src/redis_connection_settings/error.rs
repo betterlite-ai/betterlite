@@ -21,4 +21,10 @@ pub enum RedisSettingsError {
     },
     #[error("redis url does not support embedding user info")]
     UrlCannotStripUserinfo,
+    #[error("AWS ElastiCache IAM Redis authentication requires TLS")]
+    AwsIamRequiresTls,
+    #[error("AWS ElastiCache IAM Redis authentication requires: {}", missing.join(", "))]
+    AwsIamMissingSettings { missing: Vec<String> },
+    #[error("redis connection option '{name}' is not recognized")]
+    UnknownOption { name: String },
 }

@@ -31,7 +31,12 @@ pub struct RedisOverrides {
     pub db: Option<IntOrText>,
     pub username: Option<String>,
     pub password: Option<SecretString>,
-    pub url: Option<SecretString>,
+    // litellm's `{**environment_kwargs, **env_overrides}` merge lets an explicit `url: null` overwrite an environment-sourced url, so the outer Option here must track whether the key was present at all, not just whether it held a value.
+    #[serde(
+        default,
+        deserialize_with = "serde_with::rust::double_option::deserialize"
+    )]
+    pub url: Option<Option<SecretString>>,
     pub ssl: Option<BoolOrText>,
     pub socket_timeout: Option<FloatOrText>,
     pub socket_connect_timeout: Option<FloatOrText>,
@@ -43,6 +48,18 @@ pub struct RedisOverrides {
     pub sentinel_nodes: Option<SentinelNodesInput>,
     pub sentinel_password: Option<SecretString>,
     pub service_name: Option<String>,
+    pub ssl_password: Option<SecretString>,
+    pub gcp_service_account: Option<String>,
+    pub gcp_ssl_ca_certs: Option<String>,
+    pub azure_redis_ad_token: Option<SecretString>,
+    pub azure_client_id: Option<String>,
+    pub azure_tenant_id: Option<String>,
+    pub azure_client_secret: Option<SecretString>,
+    pub aws_iam_auth: Option<BoolOrText>,
+    pub aws_iam_user_name: Option<String>,
+    pub aws_iam_cache_name: Option<String>,
+    pub aws_iam_region: Option<String>,
+    pub aws_iam_serverless: Option<BoolOrText>,
     #[serde(flatten)]
     pub passthrough: BTreeMap<String, PassthroughValue>,
 }
@@ -67,5 +84,6 @@ pub struct RedisConnectionSettings {
     pub sentinel_nodes: Option<Vec<(String, i64)>>,
     pub sentinel_password: Option<SecretString>,
     pub service_name: Option<String>,
+    pub ssl_password: Option<SecretString>,
     pub passthrough: BTreeMap<String, PassthroughValue>,
 }

@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 // Helm `--set` and environment variables stringify everything, so a redis-py int/float/bool field can arrive as its real type or a digit string.
@@ -22,10 +24,20 @@ pub enum BoolOrText {
     Text(String),
 }
 
-// serde_json::Value is disallowed; an unmodeled redis-py kwarg is still a string, number or boolean, never nested.
+// serde_json::Value is disallowed, so a passthrough option that litellm forwards as a dict or list (socket_keepalive_options, retry_on_error) gets its own typed collection variant instead of rejecting deserialization outright.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum PassthroughValue {
+    Bool(bool),
+    Number(serde_json::Number),
+    Text(String),
+    List(Vec<PassthroughScalar>),
+    Map(BTreeMap<String, PassthroughScalar>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum PassthroughScalar {
     Bool(bool),
     Number(serde_json::Number),
     Text(String),

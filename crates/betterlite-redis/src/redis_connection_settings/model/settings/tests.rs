@@ -25,6 +25,7 @@ fn blank_settings() -> RedisConnectionSettings {
         sentinel_nodes: None,
         sentinel_password: None,
         service_name: None,
+        ssl_password: None,
         passthrough: BTreeMap::new(),
     }
 }
@@ -44,6 +45,28 @@ fn overrides_deserialize_from_a_sparse_object() {
         .expect("a sparse object deserializes using field defaults");
     assert_eq!(overrides.host, Some("cache.internal".to_owned()));
     assert!(overrides.port.is_none());
+}
+
+#[test]
+fn url_distinguishes_omitted_null_and_present() {
+    let omitted: RedisOverrides =
+        serde_json::from_str(r#"{"host": "cache.internal"}"#).expect("host-only object parses");
+    assert!(omitted.url.is_none());
+
+    let explicit_null: RedisOverrides =
+        serde_json::from_str(r#"{"url": null}"#).expect("explicit null parses");
+    assert!(matches!(explicit_null.url, Some(None)));
+
+    let present: RedisOverrides =
+        serde_json::from_str(r#"{"url": "redis://cache:6379"}"#).expect("a present url parses");
+    assert_eq!(
+        present
+            .url
+            .flatten()
+            .as_ref()
+            .map(ExposeSecret::expose_secret),
+        Some("redis://cache:6379")
+    );
 }
 
 #[test]

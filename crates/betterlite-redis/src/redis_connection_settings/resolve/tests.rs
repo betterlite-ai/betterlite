@@ -9,7 +9,7 @@ use secrecy::{ExposeSecret, SecretString};
 
 use super::resolve_redis_kwargs;
 use crate::redis_connection_settings::model::nodes::{ClusterNodeConfig, NodesInput};
-use crate::redis_connection_settings::model::scalars::PassthroughValue;
+use crate::redis_connection_settings::model::scalars::{BoolOrText, PassthroughValue};
 use crate::redis_connection_settings::model::settings::{
     ClientKind, RedisConnectionSettings, RedisOverrides,
 };
@@ -41,6 +41,18 @@ fn blank_overrides() -> RedisOverrides {
         sentinel_nodes: None,
         sentinel_password: None,
         service_name: None,
+        ssl_password: None,
+        gcp_service_account: None,
+        gcp_ssl_ca_certs: None,
+        azure_redis_ad_token: None,
+        azure_client_id: None,
+        azure_tenant_id: None,
+        azure_client_secret: None,
+        aws_iam_auth: None,
+        aws_iam_user_name: None,
+        aws_iam_cache_name: None,
+        aws_iam_region: None,
+        aws_iam_serverless: None,
         passthrough: BTreeMap::new(),
     }
 }
@@ -180,9 +192,9 @@ fn redis_precedence_falls_back_to_the_environment_url_without_an_explicit_target
 #[test]
 fn redis_credential_provider_strips_userinfo_and_drops_username_and_password() {
     let overrides = RedisOverrides {
-        url: Some(SecretString::from(
+        url: Some(Some(SecretString::from(
             "redis://user:pass@cache.internal:6379/0",
-        )),
+        ))),
         credential_provider: true,
         ..blank_overrides()
     };
@@ -199,7 +211,7 @@ fn redis_credential_provider_strips_userinfo_and_drops_username_and_password() {
 #[test]
 fn redis_tls_is_true_end_to_end_for_a_rediss_url() {
     let overrides = RedisOverrides {
-        url: Some(SecretString::from("rediss://cache.internal:6379")),
+        url: Some(Some(SecretString::from("rediss://cache.internal:6379"))),
         ..blank_overrides()
     };
     let settings =
@@ -217,7 +229,7 @@ fn redis_tls_is_true_end_to_end_for_a_rediss_url() {
 #[test]
 fn redis_tls_is_false_end_to_end_for_a_plain_redis_url() {
     let overrides = RedisOverrides {
-        url: Some(SecretString::from("redis://cache.internal:6379")),
+        url: Some(Some(SecretString::from("redis://cache.internal:6379"))),
         ..blank_overrides()
     };
     let settings =
@@ -236,7 +248,7 @@ fn redis_tls_is_false_end_to_end_for_a_plain_redis_url() {
 fn redis_tls_uses_the_url_when_startup_nodes_are_empty() {
     let overrides = RedisOverrides {
         startup_nodes: Some(NodesInput::Nodes(Vec::new())),
-        url: Some(SecretString::from("rediss://cache.internal:6379")),
+        url: Some(Some(SecretString::from("rediss://cache.internal:6379"))),
         ..blank_overrides()
     };
     let settings =
@@ -271,6 +283,7 @@ fn redis_tls_does_not_treat_an_empty_startup_list_as_cluster_mode() {
         sentinel_nodes: None,
         sentinel_password: None,
         service_name: None,
+        ssl_password: None,
         passthrough: BTreeMap::new(),
     };
     assert!(uses_tls(
@@ -338,6 +351,83 @@ fn cluster_startup_nodes_parse_from_environment_json() {
     let settings = resolve_redis_kwargs(RedisOverrides::default(), ClientKind::Sync, &env)
         .expect("startup_nodes names a target");
     assert_eq!(settings.startup_nodes.map(|nodes| nodes.len()), Some(1));
+}
+
+#[test]
+fn redis_credential_aws_iam_without_tls_is_rejected_end_to_end() {
+    let overrides = RedisOverrides {
+        host: Some("cache.internal".to_owned()),
+        aws_iam_auth: Some(BoolOrText::Bool(true)),
+        ..blank_overrides()
+    };
+    let error = resolve_redis_kwargs(overrides, ClientKind::Sync, &env(&[]))
+        .expect_err("aws iam over a plaintext connection must be rejected");
+    assert!(error.to_string().contains("requires TLS"));
+}
+
+#[test]
+fn redis_credential_gcp_outranks_aws_end_to_end() {
+    let overrides = RedisOverrides {
+        host: Some("cache.internal".to_owned()),
+        gcp_service_account: Some("svc@project.iam.gserviceaccount.com".to_owned()),
+        aws_iam_auth: Some(BoolOrText::Bool(true)),
+        ..blank_overrides()
+    };
+    let settings = resolve_redis_kwargs(overrides, ClientKind::Sync, &env(&[]))
+        .expect("gcp wins, so aws's tls requirement never fires");
+    assert!(!settings.credential_provider);
+}
+
+#[test]
+fn redis_precedence_resolves_an_os_environ_reference_before_target_selection() {
+    let overrides = RedisOverrides {
+        host: Some("os.environ/MY_REDIS_HOST".to_owned()),
+        ..blank_overrides()
+    };
+    let environment = env(&[("MY_REDIS_HOST", "cache.internal")]);
+    let settings = resolve_redis_kwargs(overrides, ClientKind::Sync, &environment)
+        .expect("the resolved host names a target");
+    assert_eq!(settings.host, Some("cache.internal".to_owned()));
+}
+
+#[test]
+fn redis_precedence_an_explicit_null_url_does_not_fall_back_to_the_environment() {
+    let overrides = RedisOverrides {
+        url: Some(None),
+        ..blank_overrides()
+    };
+    let environment = env(&[
+        ("REDIS_URL", "redis://from-environment:6379"),
+        ("REDIS_HOST", "cache.internal"),
+    ]);
+    let settings = resolve_redis_kwargs(overrides, ClientKind::Sync, &environment)
+        .expect("the environment host names a target");
+    assert!(settings.url.is_none());
+    assert_eq!(settings.host, Some("cache.internal".to_owned()));
+}
+
+#[test]
+fn redis_precedence_an_empty_sentinel_password_falls_back_to_the_environment() {
+    let overrides = RedisOverrides {
+        sentinel_nodes: Some(NodesInput::Nodes(vec![("sentinel".to_owned(), 26379)])),
+        sentinel_password: Some(SecretString::from(String::new())),
+        service_name: Some(String::new()),
+        ..blank_overrides()
+    };
+    let environment = env(&[
+        ("REDIS_SENTINEL_PASSWORD", "from-environment"),
+        ("REDIS_SERVICE_NAME", "mymaster"),
+    ]);
+    let settings = resolve_redis_kwargs(overrides, ClientKind::Sync, &environment)
+        .expect("sentinel_nodes names a target");
+    assert_eq!(
+        settings
+            .sentinel_password
+            .as_ref()
+            .map(ExposeSecret::expose_secret),
+        Some("from-environment")
+    );
+    assert_eq!(settings.service_name, Some("mymaster".to_owned()));
 }
 
 #[rstest]

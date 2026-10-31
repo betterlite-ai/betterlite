@@ -7,13 +7,16 @@ use super::allowlists::filter_passthrough_for_target;
 use super::coercion::{coerce_bool, coerce_float, coerce_int, coerce_passthrough};
 use super::environment::EnvironmentLookup;
 use super::error::RedisSettingsError;
+use super::iam::apply_iam_precedence;
 use super::model::nodes::{ClusterNodeConfig, NodesInput};
 use super::model::scalars::{BoolOrText, FloatOrText, IntOrText, PassthroughValue};
 use super::model::settings::{ClientKind, RedisConnectionSettings, RedisOverrides, Target};
+use super::os_environ::resolve_overrides_os_environ;
 use super::target::resolve_target;
 use super::url_parts::strip_userinfo;
 use std::collections::BTreeMap;
 
+// gcp_*, azure_*, aws_iam_* and ssl_password are resolved as dedicated RedisOverrides fields (see iam::apply_iam_precedence and merge_settings) instead of through this generic REDIS_{NAME} passthrough fallback, so they are no longer listed here.
 const ENV_PASSTHROUGH_KWARGS: &[&str] = &[
     "ENCODING",
     "ENCODING_ERRORS",
@@ -37,7 +40,6 @@ const ENV_PASSTHROUGH_KWARGS: &[&str] = &[
     "SSL_CA_CERTS",
     "SSL_CA_PATH",
     "SSL_CA_DATA",
-    "SSL_PASSWORD",
     "SSL_VALIDATE_OCSP",
     "SSL_VALIDATE_OCSP_STAPLED",
     "SSL_OCSP_EXPECTED_CERT",
@@ -51,20 +53,9 @@ const ENV_PASSTHROUGH_KWARGS: &[&str] = &[
     "READ_FROM_REPLICAS",
     "DYNAMIC_STARTUP_NODES",
     "CONNECTION_ERROR_RETRY_ATTEMPTS",
-    "GCP_SERVICE_ACCOUNT",
-    "GCP_SSL_CA_CERTS",
-    "AZURE_REDIS_AD_TOKEN",
-    "AZURE_CLIENT_ID",
-    "AZURE_TENANT_ID",
-    "AZURE_CLIENT_SECRET",
-    "AWS_IAM_AUTH",
-    "AWS_IAM_USER_NAME",
-    "AWS_IAM_CACHE_NAME",
-    "AWS_IAM_REGION",
-    "AWS_IAM_SERVERLESS",
 ];
 
-// Mirrors litellm._redis._get_redis_client_logic: merge, resolve the target, coerce.
+// Mirrors litellm._redis._get_redis_client_logic: resolve os.environ/ references, merge, resolve IAM precedence, resolve the target, coerce.
 pub fn resolve_redis_kwargs<E>(
     overrides: RedisOverrides,
     client: ClientKind,
@@ -73,17 +64,21 @@ pub fn resolve_redis_kwargs<E>(
 where
     E: EnvironmentLookup,
 {
+    let resolved_overrides = resolve_overrides_os_environ(overrides, env);
+
     let startup_nodes = resolve_nodes(
-        overrides.startup_nodes.clone(),
+        resolved_overrides.startup_nodes.clone(),
         env.lookup("REDIS_CLUSTER_NODES"),
         |source| RedisSettingsError::InvalidClusterNodesJson { source },
     )?;
     let sentinel_nodes = resolve_nodes(
-        overrides.sentinel_nodes.clone(),
+        resolved_overrides.sentinel_nodes.clone(),
         env.lookup("REDIS_SENTINEL_NODES"),
         |source| RedisSettingsError::InvalidSentinelNodesJson { source },
     )?;
-    let mut settings = merge_settings(overrides, env, startup_nodes, sentinel_nodes);
+    let mut settings = merge_settings(&resolved_overrides, env, startup_nodes, sentinel_nodes);
+
+    apply_iam_precedence(&resolved_overrides, &mut settings, env)?;
 
     let target = resolve_target(
         settings.startup_nodes.as_deref(),
@@ -99,12 +94,12 @@ where
         settings.password = None;
     }
     coerce_passthrough(target, client, &mut settings.passthrough);
-    filter_passthrough_for_target(target, client, &mut settings.passthrough);
+    filter_passthrough_for_target(target, client, &mut settings.passthrough)?;
     Ok(settings)
 }
 
 fn merge_settings<E>(
-    overrides: RedisOverrides,
+    overrides: &RedisOverrides,
     env: &E,
     startup_nodes: Option<Vec<ClusterNodeConfig>>,
     sentinel_nodes: Option<Vec<(String, i64)>>,
@@ -112,58 +107,133 @@ fn merge_settings<E>(
 where
     E: EnvironmentLookup,
 {
-    let url = resolve_url(&overrides, env);
+    let url = resolve_url(overrides, env);
+    let (
+        socket_timeout,
+        socket_connect_timeout,
+        socket_keepalive,
+        max_connections,
+        health_check_interval,
+    ) = resolve_timing_fields(overrides, env);
+    let (sentinel_password, service_name, ssl_password) = resolve_secret_fields(overrides, env);
     RedisConnectionSettings {
-        host: overrides.host.or_else(|| env.lookup("REDIS_HOST")),
-        port: resolve_int(overrides.port, env, "REDIS_PORT"),
-        db: resolve_int(overrides.db, env, "REDIS_DB"),
-        username: overrides.username.or_else(|| env.lookup("REDIS_USERNAME")),
+        host: overrides.host.clone().or_else(|| env.lookup("REDIS_HOST")),
+        port: resolve_int(overrides.port.clone(), env, "REDIS_PORT"),
+        db: resolve_int(overrides.db.clone(), env, "REDIS_DB"),
+        username: overrides
+            .username
+            .clone()
+            .or_else(|| env.lookup("REDIS_USERNAME")),
         password: overrides
             .password
+            .clone()
             .or_else(|| env.lookup("REDIS_PASSWORD").map(SecretString::from)),
         url,
-        ssl: resolve_bool(overrides.ssl, env, "REDIS_SSL"),
-        socket_timeout: resolve_float(overrides.socket_timeout, env, "REDIS_SOCKET_TIMEOUT"),
-        socket_connect_timeout: resolve_float(
-            overrides.socket_connect_timeout,
-            env,
-            "REDIS_SOCKET_CONNECT_TIMEOUT",
-        ),
-        socket_keepalive: resolve_bool(overrides.socket_keepalive, env, "REDIS_SOCKET_KEEPALIVE"),
-        max_connections: resolve_int(overrides.max_connections, env, "REDIS_MAX_CONNECTIONS"),
-        health_check_interval: resolve_int(
-            overrides.health_check_interval,
-            env,
-            "REDIS_HEALTH_CHECK_INTERVAL",
-        ),
+        ssl: resolve_bool(overrides.ssl.clone(), env, "REDIS_SSL"),
+        socket_timeout,
+        socket_connect_timeout,
+        socket_keepalive,
+        max_connections,
+        health_check_interval,
         credential_provider: overrides.credential_provider,
         startup_nodes,
         sentinel_nodes,
-        sentinel_password: overrides.sentinel_password.or_else(|| {
+        sentinel_password,
+        service_name,
+        ssl_password,
+        passthrough: resolve_passthrough(overrides.passthrough.clone(), env),
+    }
+}
+
+type TimingFields = (
+    Option<f64>,
+    Option<f64>,
+    Option<bool>,
+    Option<i64>,
+    Option<i64>,
+);
+
+fn resolve_timing_fields<E>(overrides: &RedisOverrides, env: &E) -> TimingFields
+where
+    E: EnvironmentLookup,
+{
+    let socket_timeout = resolve_float(
+        overrides.socket_timeout.clone(),
+        env,
+        "REDIS_SOCKET_TIMEOUT",
+    );
+    let socket_connect_timeout = resolve_float(
+        overrides.socket_connect_timeout.clone(),
+        env,
+        "REDIS_SOCKET_CONNECT_TIMEOUT",
+    );
+    let socket_keepalive = resolve_bool(
+        overrides.socket_keepalive.clone(),
+        env,
+        "REDIS_SOCKET_KEEPALIVE",
+    );
+    let max_connections = resolve_int(
+        overrides.max_connections.clone(),
+        env,
+        "REDIS_MAX_CONNECTIONS",
+    );
+    let health_check_interval = resolve_int(
+        overrides.health_check_interval.clone(),
+        env,
+        "REDIS_HEALTH_CHECK_INTERVAL",
+    );
+    (
+        socket_timeout,
+        socket_connect_timeout,
+        socket_keepalive,
+        max_connections,
+        health_check_interval,
+    )
+}
+
+type SecretFields = (Option<SecretString>, Option<String>, Option<SecretString>);
+
+fn resolve_secret_fields<E>(overrides: &RedisOverrides, env: &E) -> SecretFields
+where
+    E: EnvironmentLookup,
+{
+    // litellm's `redis_kwargs.get(key, None) or fallback` treats an explicit empty string the same as an absent field, so sentinel_password and service_name must fall back to the environment even when the caller sent "" rather than omitting the field.
+    let sentinel_password = overrides
+        .sentinel_password
+        .clone()
+        .filter(|secret| !secret.expose_secret().is_empty())
+        .or_else(|| {
             env.lookup("REDIS_SENTINEL_PASSWORD")
                 .map(SecretString::from)
-        }),
-        service_name: overrides
-            .service_name
-            .or_else(|| env.lookup("REDIS_SERVICE_NAME")),
-        passthrough: resolve_passthrough(overrides.passthrough, env),
-    }
+        });
+    let service_name = overrides
+        .service_name
+        .clone()
+        .filter(|text| !text.is_empty())
+        .or_else(|| env.lookup("REDIS_SERVICE_NAME"));
+    let ssl_password = overrides
+        .ssl_password
+        .clone()
+        .or_else(|| env.lookup("REDIS_SSL_PASSWORD").map(SecretString::from));
+    (sentinel_password, service_name, ssl_password)
 }
 
 fn resolve_url<E>(overrides: &RedisOverrides, env: &E) -> Option<SecretString>
 where
     E: EnvironmentLookup,
 {
+    // litellm's `{**environment_kwargs, **env_overrides}` merge lets an explicit `url: null` overwrite an environment-sourced url instead of falling back to REDIS_URL; a present value always wins and an omitted field falls back exactly as before.
+    if let Some(explicit) = overrides.url.clone() {
+        return explicit;
+    }
     let caller_named_a_target = overrides.host.is_some()
         || overrides.startup_nodes.is_some()
         || overrides.sentinel_nodes.is_some();
-    overrides.url.clone().or_else(|| {
-        if caller_named_a_target {
-            None
-        } else {
-            env.lookup("REDIS_URL").map(SecretString::from)
-        }
-    })
+    if caller_named_a_target {
+        None
+    } else {
+        env.lookup("REDIS_URL").map(SecretString::from)
+    }
 }
 
 fn resolve_passthrough<E>(
