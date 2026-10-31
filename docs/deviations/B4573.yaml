@@ -2,7 +2,7 @@ task: B4573
 deviations:
   - what: >-
       error_detail falls back to the raw response body text when error_description, error and
-      detail are all absent or falsy, instead of LiteLLM's Python dict repr of the whole parsed
+      detail are all absent or null, instead of LiteLLM's Python dict repr of the whole parsed
       mapping.
     why: >-
       LiteLLM's _error_detail stringifies the parsed mapping with Python's str() (single-quoted
