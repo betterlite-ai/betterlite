@@ -4,7 +4,25 @@ use indexmap::IndexMap;
 use serde::ser::Error as _;
 use serde_json::value::RawValue;
 
+use super::TransformationError;
 use super::wire::{Arguments, Input};
+
+const MAX_ARGUMENT_DEPTH: usize = 32;
+const MAX_ARGUMENT_NODES: usize = 20_000;
+
+#[derive(Default)]
+pub(super) struct Budget {
+    depth: usize,
+    nodes: usize,
+}
+
+fn bump(counter: &mut usize, limit: usize) -> Result<(), TransformationError> {
+    *counter = counter
+        .checked_add(1)
+        .filter(|&value| value <= limit)
+        .ok_or(TransformationError::ArgumentsTooComplex)?;
+    Ok(())
+}
 
 pub(super) fn normalize(raw: &Arguments, responses: bool) -> Input {
     let Arguments::Present(value) = raw else {
@@ -27,14 +45,16 @@ pub(super) fn normalize(raw: &Arguments, responses: bool) -> Input {
     }
 }
 
-pub(super) fn wire_text(input: &Input) -> Result<String, serde_json::Error> {
+pub(super) fn wire_text(input: &Input) -> Result<String, TransformationError> {
+    let mut budget = Budget::default();
+    bump(&mut budget.nodes, MAX_ARGUMENT_NODES)?;
     match input {
-        Input::Object(fields) => object_text(fields, false),
+        Input::Object(fields) => object_text(fields, false, &mut budget),
         Input::Other(raw) => {
-            if let Ok(text) = serde_json::from_str::<String>(raw.get()) {
-                return Ok(text);
+            if let Ok(text_value) = serde_json::from_str::<String>(raw.get()) {
+                return Ok(text_value);
             }
-            text(raw, true)
+            text(raw, true, &mut budget)
         }
     }
 }
@@ -42,26 +62,47 @@ pub(super) fn wire_text(input: &Input) -> Result<String, serde_json::Error> {
 fn object_text(
     fields: &IndexMap<String, Box<RawValue>>,
     python: bool,
-) -> Result<String, serde_json::Error> {
+    budget: &mut Budget,
+) -> Result<String, TransformationError> {
     let entries = fields
         .iter()
-        .map(|(key, value)| Ok(format!("{}: {}", quote(key, python)?, text(value, python)?)))
-        .collect::<Result<Vec<_>, serde_json::Error>>()?;
+        .map(|(key, value)| {
+            Ok(format!(
+                "{}: {}",
+                quote(key, python)?,
+                text(value, python, budget)?
+            ))
+        })
+        .collect::<Result<Vec<_>, TransformationError>>()?;
     Ok(format!("{{{}}}", entries.join(", ")))
 }
 
-pub(super) fn text(raw: &RawValue, python: bool) -> Result<String, serde_json::Error> {
+pub(super) fn text(
+    raw: &RawValue,
+    python: bool,
+    budget: &mut Budget,
+) -> Result<String, TransformationError> {
+    bump(&mut budget.nodes, MAX_ARGUMENT_NODES)?;
     match raw.get().as_bytes().first() {
-        Some(b'{') => object_text(&serde_json::from_str(raw.get())?, python),
-        Some(b'[') => {
-            let items: Vec<Box<RawValue>> = serde_json::from_str(raw.get())?;
-            let values = items
-                .iter()
-                .map(|item| text(item, python))
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(format!("[{}]", values.join(", ")))
+        Some(b'{') => {
+            bump(&mut budget.depth, MAX_ARGUMENT_DEPTH)?;
+            let fields = serde_json::from_str(raw.get())?;
+            let rendered = object_text(&fields, python, budget);
+            budget.depth = budget.depth.saturating_sub(1);
+            rendered
         }
-        Some(b'"') => quote(&serde_json::from_str::<String>(raw.get())?, python),
+        Some(b'[') => {
+            bump(&mut budget.depth, MAX_ARGUMENT_DEPTH)?;
+            let items: Vec<Box<RawValue>> = serde_json::from_str(raw.get())?;
+            let rendered = items
+                .iter()
+                .map(|item| text(item, python, budget))
+                .collect::<Result<Vec<_>, TransformationError>>()
+                .map(|values| format!("[{}]", values.join(", ")));
+            budget.depth = budget.depth.saturating_sub(1);
+            rendered
+        }
+        Some(b'"') => Ok(quote(&serde_json::from_str::<String>(raw.get())?, python)?),
         Some(b'n') if python => Ok("None".to_owned()),
         Some(b't') if python => Ok("True".to_owned()),
         Some(b'f') if python => Ok("False".to_owned()),

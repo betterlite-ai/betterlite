@@ -3,7 +3,7 @@ use serde::Serialize;
 use serde_json::value::to_raw_value;
 
 use super::TransformationError;
-use super::arguments::{quote, text};
+use super::arguments::{Budget, quote, text};
 use crate::records::{SearchOutcome, WebSearchToolResultErrorCode};
 
 #[derive(Debug, Clone, Copy)]
@@ -100,13 +100,14 @@ pub const fn search_error_code(kind: SearchErrorKind) -> WebSearchToolResultErro
 
 pub fn format_search_response(response: &SearchResponse) -> Result<String, TransformationError> {
     if response.results.is_empty() {
+        let mut budget = Budget::default();
         let mut fields = vec![format!(
             "results=[] object={}",
             quote(&response.object.0, true)?
         )];
         for (key, value) in &response.extra {
             let raw = to_raw_value(value)?;
-            fields.push(format!("{key}={}", text(&raw, true)?));
+            fields.push(format!("{key}={}", text(&raw, true, &mut budget)?));
         }
         return Ok(fields.join(" "));
     }
