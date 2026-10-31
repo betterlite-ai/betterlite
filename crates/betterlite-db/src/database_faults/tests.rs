@@ -29,16 +29,21 @@ fn infrastructure_data_exclusions() {
     assert!(!is_infrastructure_error(ErrorType::UniqueViolation));
     assert!(is_infrastructure_error(ErrorType::Prisma));
 }
-#[test]
-fn base_data_exact_type() {
-    assert_eq!(ErrorType::Data, ErrorType::Data);
-    assert_ne!(ErrorType::RawQuery, ErrorType::Data);
+#[rstest::rstest]
+#[case::base(ErrorType::Data, true)]
+#[case::unique_violation(ErrorType::UniqueViolation, false)]
+#[case::raw_query(ErrorType::RawQuery, false)]
+#[case::prisma(ErrorType::Prisma, false)]
+fn base_data_exact_type(#[case] error_type: ErrorType, #[case] expected: bool) {
+    assert_eq!(is_base_data_error(error_type), expected);
 }
 #[test]
 fn p1001_base_data() {
     let mut value = error(ErrorType::Data);
     value.message = "can't reach database server".to_owned();
-    assert_eq!(value.error_type, ErrorType::Data);
+    assert!(is_base_data_error(value.error_type));
+    assert!(is_database_transport_error(&value));
+    assert!(!is_database_connection_error(value.error_type));
 }
 
 #[test]

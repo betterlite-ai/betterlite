@@ -89,6 +89,7 @@ fn contains_any(message: &str, phrases: &[&str]) -> bool {
 enum Lineage {
     ConnectionOnly,
     ConnectionAndPrisma,
+    PrismaBaseData,
     PrismaOnly,
     Neither,
 }
@@ -102,10 +103,10 @@ const fn lineage(error_type: ErrorType) -> Lineage {
         | ErrorType::Deadline
         | ErrorType::NoDbConnection => Lineage::ConnectionOnly,
         ErrorType::EngineConnection => Lineage::ConnectionAndPrisma,
+        ErrorType::Data => Lineage::PrismaBaseData,
         ErrorType::Prisma
         | ErrorType::ClientNotConnected
         | ErrorType::HttpClientClosed
-        | ErrorType::Data
         | ErrorType::UniqueViolation
         | ErrorType::ForeignKeyViolation
         | ErrorType::MissingRequiredValue
@@ -120,16 +121,33 @@ const fn lineage(error_type: ErrorType) -> Lineage {
 pub const fn is_database_connection_error(error_type: ErrorType) -> bool {
     match lineage(error_type) {
         Lineage::ConnectionOnly | Lineage::ConnectionAndPrisma => true,
-        Lineage::PrismaOnly | Lineage::Neither => false,
+        Lineage::PrismaBaseData | Lineage::PrismaOnly | Lineage::Neither => false,
     }
 }
 
 #[must_use]
 pub const fn is_prisma_error(error_type: ErrorType) -> bool {
     match lineage(error_type) {
-        Lineage::ConnectionAndPrisma | Lineage::PrismaOnly => true,
+        Lineage::ConnectionAndPrisma | Lineage::PrismaBaseData | Lineage::PrismaOnly => true,
         Lineage::ConnectionOnly | Lineage::Neither => false,
     }
+}
+
+const DATA_SUBCLASSES: [ErrorType; 6] = [
+    ErrorType::UniqueViolation,
+    ErrorType::ForeignKeyViolation,
+    ErrorType::MissingRequiredValue,
+    ErrorType::RawQuery,
+    ErrorType::TableNotFound,
+    ErrorType::RecordNotFound,
+];
+
+#[must_use]
+pub fn is_base_data_error(error_type: ErrorType) -> bool {
+    if !error_type.is_data_type() {
+        return false;
+    }
+    !DATA_SUBCLASSES.contains(&error_type)
 }
 
 #[must_use]
