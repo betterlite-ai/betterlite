@@ -67,6 +67,17 @@ fn generic_guardrail_api_config_api_key_is_optional() {
 }
 
 #[test]
+fn generic_guardrail_api_config_keeps_a_configured_non_empty_api_key() {
+    let source = format!("{GENERIC_CONFIG}      api_key: literal-key\n");
+    let settings = resolve(&source, &BTreeMap::new()).unwrap();
+    let configured = settings.guardrails.first().unwrap();
+    assert_eq!(
+        configured.api_key.as_ref().unwrap().expose_secret(),
+        "literal-key"
+    );
+}
+
+#[test]
 fn generic_guardrail_api_config_reads_additional_provider_specific_params() {
     let source = format!(
         "{GENERIC_CONFIG}      additional_provider_specific_params:\n        custom_threshold: 0.8\n        enable_feature: true\n"

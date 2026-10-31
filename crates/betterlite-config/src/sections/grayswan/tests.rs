@@ -113,6 +113,47 @@ fn grayswan_config_defaults_an_unsupported_on_flagged_action_to_monitor() {
 }
 
 #[test]
+fn grayswan_config_resolves_on_flagged_action_monitor_explicitly() {
+    let source = format!("{GRAYSWAN_CONFIG}      on_flagged_action: monitor\n");
+    let settings = resolve(&source, &BTreeMap::new()).unwrap();
+    let configured = settings.guardrails.first().unwrap();
+    assert_eq!(
+        configured.on_flagged_action,
+        super::OnFlaggedAction::Monitor
+    );
+}
+
+#[test]
+fn grayswan_config_resolves_on_flagged_action_passthrough() {
+    let source = format!("{GRAYSWAN_CONFIG}      on_flagged_action: passthrough\n");
+    let settings = resolve(&source, &BTreeMap::new()).unwrap();
+    let configured = settings.guardrails.first().unwrap();
+    assert_eq!(
+        configured.on_flagged_action,
+        super::OnFlaggedAction::Passthrough
+    );
+}
+
+#[test]
+fn grayswan_config_parses_reasoning_mode_off() {
+    let source = format!("{GRAYSWAN_CONFIG}      reasoning_mode: off\n");
+    let settings = resolve(&source, &BTreeMap::new()).unwrap();
+    let configured = settings.guardrails.first().unwrap();
+    assert_eq!(configured.reasoning_mode, Some(super::ReasoningMode::Off));
+}
+
+#[test]
+fn grayswan_config_parses_reasoning_mode_thinking() {
+    let source = format!("{GRAYSWAN_CONFIG}      reasoning_mode: thinking\n");
+    let settings = resolve(&source, &BTreeMap::new()).unwrap();
+    let configured = settings.guardrails.first().unwrap();
+    assert_eq!(
+        configured.reasoning_mode,
+        Some(super::ReasoningMode::Thinking)
+    );
+}
+
+#[test]
 fn grayswan_config_rejects_a_negative_guardrail_timeout() {
     let source = format!("{GRAYSWAN_CONFIG}      guardrail_timeout: -1\n");
     let error = resolve(&source, &BTreeMap::new()).unwrap_err();

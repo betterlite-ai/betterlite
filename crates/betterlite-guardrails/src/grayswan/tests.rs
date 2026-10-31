@@ -814,6 +814,12 @@ fn grayswan_response_defaults_a_null_violation_to_zero() {
 }
 
 #[test]
+fn grayswan_response_parses_an_empty_violation_string_as_zero() {
+    let parsed: GraySwanResponse = serde_json::from_str(r#"{"violation": ""}"#).unwrap();
+    assert!((parsed.violation - 0.0).abs() < f64::EPSILON);
+}
+
+#[test]
 fn grayswan_response_defaults_a_missing_violation_to_zero() {
     let parsed: GraySwanResponse = serde_json::from_str("{}").unwrap();
     assert!((parsed.violation - 0.0).abs() < f64::EPSILON);
