@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::{MergeError, is_falsy, text_block};
+use super::{MergeError, is_empty_value, text_block};
 
 // Assistant content: a string, a list of content blocks kept as-is, or any other JSON value LiteLLM stores unexamined.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -13,11 +13,11 @@ pub enum Content {
 }
 
 impl Content {
-    pub(super) fn is_falsy(&self) -> bool {
+    pub(super) fn is_empty_value(&self) -> bool {
         match self {
             Self::Text(text) => text.is_empty(),
             Self::Blocks(items) => items.is_empty(),
-            Self::Other(value) => is_falsy(value),
+            Self::Other(value) => is_empty_value(value),
         }
     }
 

@@ -3,7 +3,7 @@ use serde_json::{Map, Value};
 use serde_with::rust::double_option;
 
 use super::content::{Content, ReasoningText, ThinkingBlocks};
-use super::{Reasoning, Role, is_falsy};
+use super::{Reasoning, Role, is_empty_value};
 
 // A chat message, dict or attribute shaped, with double_option keeping "missing" distinct from an explicit null.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -46,7 +46,7 @@ impl Reasoning for ChatRecord {
                 .tool_calls
                 .as_ref()
                 .and_then(Option::as_ref)
-                .is_none_or(is_falsy)
+                .is_none_or(is_empty_value)
             && (self.text().is_some() || self.blocks().is_some())
     }
 

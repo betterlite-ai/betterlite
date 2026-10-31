@@ -68,7 +68,7 @@ pub trait Reasoning: Sized {
     fn blank(text: Option<String>, blocks: Option<Vec<Value>>) -> Self;
 }
 
-fn is_falsy(value: &Value) -> bool {
+fn is_empty_value(value: &Value) -> bool {
     match value {
         Value::Null => true,
         Value::Bool(flag) => !flag,

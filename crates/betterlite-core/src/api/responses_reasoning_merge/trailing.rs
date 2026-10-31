@@ -3,7 +3,7 @@ use serde_json::{Map, Value};
 use serde_with::rust::double_option;
 
 use super::content::Content;
-use super::{MergeError, Role, is_falsy};
+use super::{MergeError, Role, is_empty_value};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TrailingRecord {
@@ -58,9 +58,9 @@ const fn tool_calls(record: &TrailingRecord) -> ToolCalls<'_> {
     }
 }
 
-fn is_present_and_truthy(calls: ToolCalls<'_>) -> bool {
+fn has_nonempty_tool_calls(calls: ToolCalls<'_>) -> bool {
     match calls {
-        ToolCalls::Present(value) => !is_falsy(value),
+        ToolCalls::Present(value) => !is_empty_value(value),
         ToolCalls::Absent => false,
     }
 }
@@ -70,13 +70,13 @@ fn is_mergeable_pair(last: &TrailingRecord, new: &TrailingRecord, hosted_search:
     let new_is_assistant = matches!(new.role, Role::Known(super::KnownRole::Assistant));
     last_is_assistant
         && new_is_assistant
-        && (is_present_and_truthy(tool_calls(last)) || hosted_search)
-        && !is_present_and_truthy(tool_calls(new))
+        && (has_nonempty_tool_calls(tool_calls(last)) || hosted_search)
+        && !has_nonempty_tool_calls(tool_calls(new))
 }
 
 fn merged_content(last: &TrailingRecord, new_content: Content) -> Result<Content, MergeError> {
     match last.content.as_ref().and_then(Option::as_ref) {
-        Some(previous) if !previous.is_falsy() => {
+        Some(previous) if !previous.is_empty_value() => {
             let mut blocks = previous.clone().into_blocks()?;
             blocks.extend(new_content.into_blocks()?);
             Ok(Content::Blocks(blocks))
