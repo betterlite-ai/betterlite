@@ -21,6 +21,16 @@ fn baseline_sql_identity() {
 }
 
 #[test]
+fn pinned_bytes_and_checksum() {
+    let upstream = include_bytes!("../../../../../tools/postgres-fixture/fixtures/baseline.sql");
+    assert_eq!(BASELINE_MIGRATION.bytes, upstream);
+    assert_eq!(
+        hex::encode(Sha256::digest(upstream)),
+        BASELINE_MIGRATION.sha256
+    );
+}
+
+#[test]
 fn original_directory_registration() {
     assert_eq!(MIGRATION_CATALOG.files, &[BASELINE_MIGRATION]);
 }
@@ -29,9 +39,15 @@ fn original_directory_registration() {
 fn statement_order_tables_indexes_foreign_keys() {
     let sql = migration_sql();
     let (before_indexes, after_indexes) = sql.split_once("-- CreateIndex").unwrap();
-    let (indexes, _) = after_indexes.split_once("-- AddForeignKey").unwrap();
-    assert!(before_indexes.contains("-- CreateTable"));
-    assert!(!indexes.is_empty());
+    let (indexes, foreign_keys) = after_indexes.split_once("-- AddForeignKey").unwrap();
+    assert_eq!(
+        before_indexes.matches("CREATE TABLE IF NOT EXISTS").count(),
+        17
+    );
+    assert_eq!(indexes.matches("CREATE ").count(), 6);
+    assert_eq!(foreign_keys.matches("ADD CONSTRAINT").count(), 14);
+    assert!(!after_indexes.contains("-- CreateTable"));
+    assert!(!foreign_keys.contains("-- CreateIndex"));
 }
 
 #[test]

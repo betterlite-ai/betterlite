@@ -18,8 +18,8 @@
 #[case::audit_log("LiteLLM_AuditLog")]
 #[tokio::test]
 async fn baseline_catalog_columns(#[case] table: &'static str) {
-    Box::pin(harness2(
-        move |client_candidate, client_upstream| async move {
+    Box::pin(harness(
+        move |[client_candidate, client_upstream]| async move {
             client_candidate
                 .batch_execute(migration_sql())
                 .await

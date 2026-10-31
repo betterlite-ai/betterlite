@@ -1,6 +1,6 @@
 #[tokio::test]
 async fn baseline_defaults() {
-    harness(|client| async move {
+    harness(|[client]| async move {
         client.batch_execute(migration_sql()).await.unwrap();
         let created_at = column(&client, "LiteLLM_BudgetTable", "created_at").await;
         assert_eq!(created_at.default.unwrap(), "CURRENT_TIMESTAMP");
@@ -12,7 +12,7 @@ async fn baseline_defaults() {
 
 #[tokio::test]
 async fn baseline_defaults_budget_nullable_limits_and_required_actors() {
-    harness(|client| async move {
+    harness(|[client]| async move {
         client.batch_execute(migration_sql()).await.unwrap();
         let max_budget = column(&client, "LiteLLM_BudgetTable", "max_budget").await;
         assert_eq!(max_budget.data_type, "double precision");
@@ -28,7 +28,7 @@ async fn baseline_defaults_budget_nullable_limits_and_required_actors() {
 
 #[tokio::test]
 async fn baseline_defaults_credentials_required_values_nullable_info() {
-    harness(|client| async move {
+    harness(|[client]| async move {
         client.batch_execute(migration_sql()).await.unwrap();
         let values = column(&client, "LiteLLM_CredentialsTable", "credential_values").await;
         assert_eq!(values.data_type, "jsonb");
@@ -42,7 +42,7 @@ async fn baseline_defaults_credentials_required_values_nullable_info() {
 
 #[tokio::test]
 async fn baseline_defaults_proxy_model_required_params_nullable_info() {
-    harness(|client| async move {
+    harness(|[client]| async move {
         client.batch_execute(migration_sql()).await.unwrap();
         let params = column(&client, "LiteLLM_ProxyModelTable", "litellm_params").await;
         assert_eq!(params.data_type, "jsonb");
@@ -55,7 +55,7 @@ async fn baseline_defaults_proxy_model_required_params_nullable_info() {
 
 #[tokio::test]
 async fn baseline_defaults_organization_json_spend_and_nullable_models() {
-    harness(|client| async move {
+    harness(|[client]| async move {
         client.batch_execute(migration_sql()).await.unwrap();
         let models = column(&client, "LiteLLM_OrganizationTable", "models").await;
         assert_eq!(models.data_type, "ARRAY");
@@ -70,7 +70,7 @@ async fn baseline_defaults_organization_json_spend_and_nullable_models() {
 
 #[tokio::test]
 async fn baseline_defaults_serial_model_id_and_nullable_aliases() {
-    harness(|client| async move {
+    harness(|[client]| async move {
         client.batch_execute(migration_sql()).await.unwrap();
         let id = column(&client, "LiteLLM_ModelTable", "id").await;
         assert_eq!(id.data_type, "integer");
@@ -85,7 +85,7 @@ async fn baseline_defaults_serial_model_id_and_nullable_aliases() {
 
 #[tokio::test]
 async fn baseline_defaults_team_object_roles_false_blocked_and_nullable_arrays() {
-    harness(|client| async move {
+    harness(|[client]| async move {
         client.batch_execute(migration_sql()).await.unwrap();
         let roles = column(&client, "LiteLLM_TeamTable", "members_with_roles").await;
         assert_eq!(roles.data_type, "jsonb");
@@ -104,7 +104,7 @@ async fn baseline_defaults_team_object_roles_false_blocked_and_nullable_arrays()
 
 #[tokio::test]
 async fn baseline_defaults_user_nullable_empty_arrays_and_timestamps() {
-    harness(|client| async move {
+    harness(|[client]| async move {
         client.batch_execute(migration_sql()).await.unwrap();
         let teams = column(&client, "LiteLLM_UserTable", "teams").await;
         assert_eq!(teams.data_type, "ARRAY");
@@ -119,7 +119,7 @@ async fn baseline_defaults_user_nullable_empty_arrays_and_timestamps() {
 
 #[tokio::test]
 async fn baseline_defaults_key_six_objects_false_cooldown_and_nullable_blocked() {
-    harness(|client| async move {
+    harness(|[client]| async move {
         client.batch_execute(migration_sql()).await.unwrap();
         let cooldown = column(&client, "LiteLLM_VerificationToken", "soft_budget_cooldown").await;
         assert_eq!(cooldown.data_type, "boolean");
@@ -158,7 +158,7 @@ async fn baseline_defaults_key_six_objects_false_cooldown_and_nullable_blocked()
 
 #[tokio::test]
 async fn baseline_defaults_end_user_false_blocked() {
-    harness(|client| async move {
+    harness(|[client]| async move {
         client.batch_execute(migration_sql()).await.unwrap();
         let blocked = column(&client, "LiteLLM_EndUserTable", "blocked").await;
         assert_eq!(blocked.data_type, "boolean");
@@ -170,7 +170,7 @@ async fn baseline_defaults_end_user_false_blocked() {
 
 #[tokio::test]
 async fn baseline_defaults_config_nullable_json() {
-    harness(|client| async move {
+    harness(|[client]| async move {
         client.batch_execute(migration_sql()).await.unwrap();
         let value = column(&client, "LiteLLM_Config", "param_value").await;
         assert_eq!(value.data_type, "jsonb");
@@ -181,7 +181,7 @@ async fn baseline_defaults_config_nullable_json() {
 
 #[tokio::test]
 async fn baseline_defaults_spend_log_empty_strings_json_arrays_and_required_times() {
-    harness(|client| async move {
+    harness(|[client]| async move {
         client.batch_execute(migration_sql()).await.unwrap();
         let api_key = column(&client, "LiteLLM_SpendLogs", "api_key").await;
         assert!(!api_key.is_nullable);
@@ -198,7 +198,7 @@ async fn baseline_defaults_spend_log_empty_strings_json_arrays_and_required_time
 
 #[tokio::test]
 async fn baseline_defaults_error_log_text_status_and_required_times() {
-    harness(|client| async move {
+    harness(|[client]| async move {
         client.batch_execute(migration_sql()).await.unwrap();
         let status = column(&client, "LiteLLM_ErrorLogs", "status_code").await;
         assert_eq!(status.data_type, "text");
@@ -213,7 +213,7 @@ async fn baseline_defaults_error_log_text_status_and_required_times() {
 
 #[tokio::test]
 async fn baseline_defaults_notification_required_status_nullable_models() {
-    harness(|client| async move {
+    harness(|[client]| async move {
         client.batch_execute(migration_sql()).await.unwrap();
         let status = column(&client, "LiteLLM_UserNotifications", "status").await;
         assert!(!status.is_nullable);
@@ -226,7 +226,7 @@ async fn baseline_defaults_notification_required_status_nullable_models() {
 
 #[tokio::test]
 async fn baseline_defaults_team_membership_required_spend() {
-    harness(|client| async move {
+    harness(|[client]| async move {
         client.batch_execute(migration_sql()).await.unwrap();
         let spend = column(&client, "LiteLLM_TeamMembership", "spend").await;
         assert!(!spend.is_nullable);
@@ -237,7 +237,7 @@ async fn baseline_defaults_team_membership_required_spend() {
 
 #[tokio::test]
 async fn baseline_defaults_organization_membership_nullable_defaults() {
-    harness(|client| async move {
+    harness(|[client]| async move {
         client.batch_execute(migration_sql()).await.unwrap();
         let spend = column(&client, "LiteLLM_OrganizationMembership", "spend").await;
         assert!(spend.is_nullable);
@@ -251,7 +251,7 @@ async fn baseline_defaults_organization_membership_nullable_defaults() {
 
 #[tokio::test]
 async fn baseline_defaults_invitation_no_timestamp_defaults() {
-    harness(|client| async move {
+    harness(|[client]| async move {
         client.batch_execute(migration_sql()).await.unwrap();
         let expires_at = column(&client, "LiteLLM_InvitationLink", "expires_at").await;
         assert!(!expires_at.is_nullable);
@@ -265,7 +265,7 @@ async fn baseline_defaults_invitation_no_timestamp_defaults() {
 
 #[tokio::test]
 async fn baseline_defaults_audit_empty_actor_defaults() {
-    harness(|client| async move {
+    harness(|[client]| async move {
         client.batch_execute(migration_sql()).await.unwrap();
         let changed_by = column(&client, "LiteLLM_AuditLog", "changed_by").await;
         assert!(!changed_by.is_nullable);

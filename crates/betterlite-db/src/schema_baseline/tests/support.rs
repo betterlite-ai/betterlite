@@ -1,16 +1,19 @@
 use betterlite_postgres_fixture::connection::{PostgresFixture, RandomDatabaseName};
+use betterlite_postgres_fixture::error::FixtureError;
 use betterlite_postgres_fixture::seed::FixtureSeed;
 use clap::Parser;
+use futures_util::future::join_all;
 use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 use std::future::Future;
 use std::str;
 use std::time::Duration;
-use tokio::task::JoinSet;
+use tokio::task::{JoinError, JoinSet};
+use tokio::time::error::Elapsed;
 use tokio::time::timeout;
-use tokio_postgres::Client;
 use tokio_postgres::Row;
 use tokio_postgres::types::ToSql;
+use tokio_postgres::{CancelToken, Client};
 
 fn migration_sql() -> &'static str {
     str::from_utf8(BASELINE_MIGRATION.bytes).unwrap()
@@ -32,11 +35,22 @@ type ConnectionTasks = JoinSet<Result<(), tokio_postgres::Error>>;
 
 const RESET_PUBLIC_SCHEMA_SQL: &str = "DROP SCHEMA public CASCADE; CREATE SCHEMA public;";
 const SETUP_TIMEOUT: Duration = Duration::from_secs(30);
-const HARNESS_SETUP_TIMEOUT: Duration = Duration::from_secs(90);
 const BODY_TIMEOUT: Duration = Duration::from_secs(30);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
 
-async fn provision() -> PostgresFixture {
+#[derive(Debug, thiserror::Error)]
+enum HarnessError {
+    #[error("fixture operation timed out: {0}")]
+    Timeout(#[from] Elapsed),
+    #[error("fixture database operation failed: {0}")]
+    Database(#[from] tokio_postgres::Error),
+    #[error("fixture lifecycle failed: {0}")]
+    Fixture(#[from] FixtureError),
+    #[error("test body failed: {0}")]
+    Body(#[from] JoinError),
+}
+
+async fn provision() -> Result<PostgresFixture, HarnessError> {
     let url = postgres_test_url();
     let mut generator = RandomDatabaseName;
     let mut task = PostgresFixture::provision_with_name_generator(
@@ -44,164 +58,168 @@ async fn provision() -> PostgresFixture {
         &FixtureSeed::default(),
         &mut generator,
     );
-    match timeout(SETUP_TIMEOUT, task.resolve()).await {
-        Ok(Ok(fixture)) => fixture,
-        Ok(Err(error)) => {
-            timeout(SHUTDOWN_TIMEOUT, task.close())
-                .await
-                .unwrap_or_else(|_| panic!("timed out cleaning up fixture provisioning"))
-                .unwrap();
-            panic!("failed to provision fixture: {error}");
-        }
-        Err(_) => {
-            timeout(SHUTDOWN_TIMEOUT, task.close())
-                .await
-                .unwrap_or_else(|_| panic!("timed out cleaning up fixture provisioning"))
-                .unwrap();
-            panic!("timed out provisioning fixture");
+    let result = timeout(SETUP_TIMEOUT, task.resolve())
+        .await
+        .map_err(HarnessError::Timeout)
+        .and_then(|result| result.map_err(HarnessError::Fixture));
+    if result.is_err() {
+        timeout(SHUTDOWN_TIMEOUT, task.close()).await??;
+    }
+    result
+}
+
+async fn provision_all<const N: usize>() -> [PostgresFixture; N] {
+    let mut fixtures = Vec::with_capacity(N);
+    for _ in 0..N {
+        match Box::pin(provision()).await {
+            Ok(fixture) => fixtures.push(fixture),
+            Err(error) => {
+                close_fixtures(fixtures).await;
+                panic!("failed to provision fixture: {error}");
+            }
         }
     }
+    fixtures.try_into().unwrap()
 }
 
 async fn initialize_schema(
     fixture: &PostgresFixture,
     sql: &str,
-) -> Result<(Client, ConnectionTasks), String> {
-    let connected = timeout(
-        SETUP_TIMEOUT,
+    duration: Duration,
+) -> Result<(Client, ConnectionTasks), HarnessError> {
+    let (client, connection) = timeout(
+        duration,
         tokio_postgres::connect(fixture.options.url.expose_secret(), tokio_postgres::NoTls),
     )
-    .await
-    .map_err(|error| format!("timed out connecting to fixture: {error}"))?
-    .map_err(|error| error.to_string())?;
-    let (client, connection) = connected;
+    .await??;
     let mut tasks = JoinSet::new();
     tasks.spawn(connection);
-    match timeout(SETUP_TIMEOUT, client.batch_execute(sql)).await {
-        Ok(Ok(())) => Ok((client, tasks)),
-        Ok(Err(error)) => {
-            drop(client);
-            close_connection_tasks(tasks).await;
-            Err(error.to_string())
-        }
-        Err(_) => {
-            drop(client);
-            close_connection_tasks(tasks).await;
-            Err("timed out initializing fixture schema".to_owned())
-        }
-    }
-}
-
-async fn initialize_or_close(
-    fixture: PostgresFixture,
-    sql: &str,
-) -> (PostgresFixture, Client, ConnectionTasks) {
-    match initialize_schema(&fixture, sql).await {
-        Ok((client, tasks)) => (fixture, client, tasks),
-        Err(err) => {
-            timeout(SHUTDOWN_TIMEOUT, fixture.close_async())
-                .await
-                .unwrap_or_else(|_| panic!("timed out closing failed fixture setup"))
-                .unwrap();
-            panic!("failed to initialize schema: {err}");
-        }
-    }
-}
-
-async fn setup() -> (PostgresFixture, Client, ConnectionTasks) {
-    initialize_or_close(Box::pin(provision()).await, RESET_PUBLIC_SCHEMA_SQL).await
-}
-
-async fn close_fixture(tasks: ConnectionTasks, fixture: PostgresFixture) {
-    close_connection_tasks(tasks).await;
-    timeout(SHUTDOWN_TIMEOUT, fixture.close_async())
+    let result = timeout(duration, client.batch_execute(sql))
         .await
-        .unwrap_or_else(|_| panic!("timed out closing fixture"))
-        .unwrap();
+        .map_err(HarnessError::Timeout)
+        .and_then(|result| result.map_err(HarnessError::Database));
+    match result {
+        Ok(()) => Ok((client, tasks)),
+        Err(error) => {
+            let cancelled = cancel_queries(&[client.cancel_token()]).await;
+            drop(client);
+            let drained = drain_connection(tasks).await;
+            cancelled?;
+            drained?;
+            Err(error)
+        }
+    }
 }
 
-async fn close_connection_tasks(mut tasks: ConnectionTasks) {
-    let drained = timeout(SHUTDOWN_TIMEOUT, async {
-        while tasks.join_next().await.is_some() {}
+async fn initialize_all(
+    fixtures: &[PostgresFixture],
+    connections: &mut Vec<ConnectionTasks>,
+) -> Result<Vec<Client>, HarnessError> {
+    let mut clients = Vec::with_capacity(fixtures.len());
+    for fixture in fixtures {
+        let (client, tasks) =
+            initialize_schema(fixture, RESET_PUBLIC_SCHEMA_SQL, SETUP_TIMEOUT).await?;
+        clients.push(client);
+        connections.push(tasks);
+    }
+    Ok(clients)
+}
+
+async fn cancel_queries(tokens: &[CancelToken]) -> Result<(), HarnessError> {
+    let results = join_all(
+        tokens
+            .iter()
+            .map(|token| timeout(SHUTDOWN_TIMEOUT, token.cancel_query(tokio_postgres::NoTls))),
+    )
+    .await;
+    for result in results {
+        result??;
+    }
+    Ok(())
+}
+
+async fn drain_connection(mut tasks: ConnectionTasks) -> Result<(), HarnessError> {
+    let result = timeout(SHUTDOWN_TIMEOUT, async {
+        while let Some(outcome) = tasks.join_next().await {
+            outcome??;
+        }
+        Ok(())
     })
     .await;
-    if drained.is_err() {
-        tasks.abort_all();
-        let drained_after_abort = timeout(SHUTDOWN_TIMEOUT, async {
-            while tasks.join_next().await.is_some() {}
-        })
-        .await;
-        if drained_after_abort.is_err() {
-            tasks.abort_all();
-        }
+    timeout(SHUTDOWN_TIMEOUT, tasks.shutdown()).await?;
+    result?
+}
+
+async fn close_fixtures(fixtures: Vec<PostgresFixture>) {
+    let outcomes = join_all(
+        fixtures
+            .into_iter()
+            .map(|fixture| async move { timeout(SHUTDOWN_TIMEOUT, fixture.close_async()).await }),
+    )
+    .await;
+    for outcome in outcomes {
+        outcome.unwrap().unwrap();
     }
 }
 
-enum BodyFailure {
-    Panicked,
-    TimedOut,
-}
-
-async fn run_body<Fut>(body: Fut) -> Result<(), BodyFailure>
+async fn run_body<Fut>(body: Fut, duration: Duration) -> Result<(), HarnessError>
 where
     Fut: Future<Output = ()> + Send + 'static,
 {
-    let mut bodies: JoinSet<()> = JoinSet::new();
+    let mut bodies = JoinSet::new();
     bodies.spawn(body);
-    match timeout(BODY_TIMEOUT, bodies.join_next()).await {
-        Ok(Some(Ok(()))) => Ok(()),
-        Ok(Some(Err(error))) if error.is_panic() => {
-            drop(error);
-            Err(BodyFailure::Panicked)
-        }
-        Ok(Some(Err(_))) => panic!("body task was cancelled"),
-        Ok(None) => panic!("body task ended without an outcome"),
-        Err(_) => {
-            bodies.abort_all();
-            let drained_after_abort = timeout(SHUTDOWN_TIMEOUT, async {
-                while bodies.join_next().await.is_some() {}
-            })
-            .await;
-            if drained_after_abort.is_err() {
-                bodies.abort_all();
-            }
-            Err(BodyFailure::TimedOut)
-        }
-    }
+    let result = timeout(duration, bodies.join_next()).await;
+    timeout(SHUTDOWN_TIMEOUT, bodies.shutdown()).await?;
+    result?.unwrap().map_err(HarnessError::Body)
 }
 
-async fn harness<F, Fut>(body: F)
+async fn harness_on<const N: usize, F, Fut>(
+    fixtures: [PostgresFixture; N],
+    body: F,
+    duration: Duration,
+) -> Result<(), HarnessError>
 where
-    F: FnOnce(Client) -> Fut + Send + 'static,
+    F: FnOnce([Client; N]) -> Fut + Send + 'static,
     Fut: Future<Output = ()> + Send + 'static,
 {
-    let (fixture, client, tasks) = Box::pin(timeout(HARNESS_SETUP_TIMEOUT, setup()))
+    let mut connections = Vec::with_capacity(N);
+    let mut tokens = Vec::with_capacity(N);
+    let outcome = match initialize_all(&fixtures, &mut connections).await {
+        Ok(clients) => {
+            tokens.extend(clients.iter().map(Client::cancel_token));
+            Box::pin(run_body(
+                async move {
+                    body(clients.try_into().unwrap()).await;
+                },
+                duration,
+            ))
+            .await
+        }
+        Err(error) => Err(error),
+    };
+    let cancelled = if outcome.is_err() {
+        cancel_queries(&tokens).await
+    } else {
+        Ok(())
+    };
+    let drained = join_all(connections.into_iter().map(drain_connection)).await;
+    close_fixtures(Vec::from(fixtures)).await;
+    cancelled?;
+    for result in drained {
+        result?;
+    }
+    outcome
+}
+
+async fn harness<const N: usize, F, Fut>(body: F)
+where
+    F: FnOnce([Client; N]) -> Fut + Send + 'static,
+    Fut: Future<Output = ()> + Send + 'static,
+{
+    let fixtures = Box::pin(provision_all()).await;
+    Box::pin(harness_on(fixtures, body, BODY_TIMEOUT))
         .await
-        .unwrap_or_else(|_| panic!("timed out setting up fixture"));
-    let outcome = Box::pin(run_body(body(client))).await;
-    close_fixture(tasks, fixture).await;
-    if let Err(error) = outcome {
-        match error {
-            BodyFailure::Panicked => panic!("schema-baseline test body panicked"),
-            BodyFailure::TimedOut => panic!("timed out running schema-baseline test"),
-        }
-    }
-}
-
-async fn harness2<F, Fut>(body: F)
-where
-    F: FnOnce(Client, Client) -> Fut + Send + 'static,
-    Fut: Future<Output = ()> + Send + 'static,
-{
-    harness(move |client_a| nested_harness(client_a, body)).await;
-}
-
-async fn nested_harness<F, Fut>(client_a: Client, body: F)
-where
-    F: FnOnce(Client, Client) -> Fut + Send + 'static,
-    Fut: Future<Output = ()> + Send + 'static,
-{
-    harness(move |client_b| body(client_a, client_b)).await;
+        .unwrap();
 }
 
 async fn exec(client: &Client, sql: &str) {

@@ -167,7 +167,7 @@ struct FkCase {
 })]
 #[tokio::test]
 async fn baseline_foreign_keys(#[case] case: FkCase) {
-    harness(move |client| async move {
+    harness(move |[client]| async move {
         client.batch_execute(migration_sql()).await.unwrap();
         client.batch_execute(case.setup_sql).await.unwrap();
         assert_rule(&client, case.conname, case.delete_rule).await;

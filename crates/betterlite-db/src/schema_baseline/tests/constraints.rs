@@ -1,6 +1,6 @@
 #[tokio::test]
 async fn baseline_constraints_credential_name_unique() {
-    harness(|client| async move {
+    harness(|[client]| async move {
         client.batch_execute(migration_sql()).await.unwrap();
         exec(
             &client,
@@ -22,7 +22,7 @@ async fn baseline_constraints_credential_name_unique() {
 
 #[tokio::test]
 async fn baseline_constraints_team_model_unique_nulls() {
-    harness(|client| async move {
+    harness(|[client]| async move {
         client.batch_execute(migration_sql()).await.unwrap();
         exec(
             &client,
@@ -59,7 +59,7 @@ async fn baseline_constraints_team_model_unique_nulls() {
 
 #[tokio::test]
 async fn baseline_constraints_sso_id_unique_nulls() {
-    harness(|client| async move {
+    harness(|[client]| async move {
         client.batch_execute(migration_sql()).await.unwrap();
         exec(
             &client,
@@ -91,7 +91,7 @@ async fn baseline_constraints_sso_id_unique_nulls() {
 
 #[tokio::test]
 async fn baseline_constraints_spend_time_and_end_user_indexes() {
-    harness(|client| async move {
+    harness(|[client]| async move {
         client.batch_execute(migration_sql()).await.unwrap();
         let start_time = index_facts(&client, "LiteLLM_SpendLogs_startTime_idx").await;
         assert_eq!(start_time.columns, vec!["startTime"]);
@@ -105,7 +105,7 @@ async fn baseline_constraints_spend_time_and_end_user_indexes() {
 
 #[tokio::test]
 async fn baseline_constraints_redundant_membership_unique_index() {
-    harness(|client| async move {
+    harness(|[client]| async move {
         client.batch_execute(migration_sql()).await.unwrap();
         let redundant = index_facts(
             &client,

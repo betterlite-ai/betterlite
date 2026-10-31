@@ -1,6 +1,6 @@
 #[tokio::test]
 async fn baseline_reapply() {
-    harness(|client| async move {
+    harness(|[client]| async move {
         client.batch_execute(migration_sql()).await.unwrap();
         client.batch_execute(migration_sql()).await.unwrap();
     })
@@ -9,7 +9,7 @@ async fn baseline_reapply() {
 
 #[tokio::test]
 async fn baseline_reapply_rows_preserved() {
-    harness(|client| async move {
+    harness(|[client]| async move {
         client.batch_execute(migration_sql()).await.unwrap();
         insert_budget(&client, "b1").await;
         exec(
@@ -17,11 +17,10 @@ async fn baseline_reapply_rows_preserved() {
             r#"INSERT INTO "LiteLLM_CredentialsTable" (credential_id, credential_name, credential_values, created_by, updated_by) VALUES ('c1', 'n', '{"api_key":"sk-raw-secret"}', 't', 't')"#,
         )
         .await;
-        exec(
-            &client,
-            r#"INSERT INTO "LiteLLM_UserTable" (user_id, password) VALUES ('u1', 'raw-password')"#,
-        )
-        .await;
+        client.batch_execute(
+            r#"INSERT INTO "LiteLLM_UserTable" (user_id, password) VALUES ('u1', 'raw-password');
+            INSERT INTO "LiteLLM_VerificationToken" (token) VALUES ('raw-token');"#,
+        ).await.unwrap();
         client.batch_execute(migration_sql()).await.unwrap();
         let budget_count = scalar_i64(
             &client,
@@ -41,13 +40,15 @@ async fn baseline_reapply_rows_preserved() {
         )
         .await;
         assert_eq!(password, "raw-password");
+        let token = scalar_text(&client, r#"SELECT token FROM "LiteLLM_VerificationToken""#).await;
+        assert_eq!(token, "raw-token");
     })
     .await;
 }
 
 #[tokio::test]
 async fn baseline_reapply_drifted_existing_table_not_repaired() {
-    harness(|client| async move {
+    harness(|[client]| async move {
         client
             .batch_execute(
                 r#"CREATE TABLE IF NOT EXISTS "LiteLLM_BudgetTable" ("budget_id" TEXT NOT NULL, CONSTRAINT "LiteLLM_BudgetTable_pkey" PRIMARY KEY ("budget_id"));"#,
@@ -70,7 +71,7 @@ async fn baseline_reapply_drifted_existing_table_not_repaired() {
 
 #[tokio::test]
 async fn baseline_reapply_foreign_key_name_in_other_schema_suppresses_creation() {
-    harness(|client| async move {
+    harness(|[client]| async move {
         client
             .batch_execute(
                 r#"CREATE SCHEMA other_schema;
@@ -95,7 +96,7 @@ async fn baseline_reapply_foreign_key_name_in_other_schema_suppresses_creation()
 
 #[tokio::test]
 async fn baseline_reapply_independent_databases_do_not_collide() {
-    Box::pin(harness2(|client_a, client_b| async move {
+    Box::pin(harness(|[client_a, client_b]| async move {
         client_a.batch_execute(migration_sql()).await.unwrap();
         client_a
             .batch_execute(
