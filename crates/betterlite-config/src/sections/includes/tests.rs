@@ -114,6 +114,26 @@ fn fallback_uses_file_next_to_root() {
 }
 
 #[test]
+fn declaring_relative_file_is_used_when_root_file_is_missing() {
+    let directory = tempdir().unwrap();
+    let nested = directory.path().join("nested");
+    fs::create_dir_all(&nested).unwrap();
+    let root = directory.path().join("config.yaml");
+    let child = nested.join("child.yaml");
+    fs::write(&root, "include: [nested/child.yaml]\n").unwrap();
+    fs::write(&child, "include: [models.yaml]\n").unwrap();
+    fs::write(
+        nested.join("models.yaml"),
+        "model_list:\n  - model_name: declaring-only-model\n    litellm_params:\n      model: gpt-4\n",
+    )
+    .unwrap();
+
+    let config = load_file(&loader(), &root).unwrap();
+
+    assert_eq!(config.model_list[0].model_name, "declaring-only-model");
+}
+
+#[test]
 fn declaring_relative_file_wins_conflict() {
     let directory = tempdir().unwrap();
     let nested = directory.path().join("nested");
@@ -147,6 +167,18 @@ fn cycles_skip_already_loaded_files() {
     let child = directory.path().join("child.yaml");
     fs::write(&root, "include: [child.yaml]\nmodel_list: []\n").unwrap();
     fs::write(&child, "include: [root.yaml]\nmodel_list: []\n").unwrap();
+
+    let config = load_file(&loader(), &root).unwrap();
+    assert!(config.model_list.is_empty());
+}
+
+#[test]
+fn cycles_skip_normalized_aliases_of_loaded_files() {
+    let directory = tempdir().unwrap();
+    let root = directory.path().join("root.yaml");
+    let child = directory.path().join("child.yaml");
+    fs::write(&root, "include: [child.yaml]\nmodel_list: []\n").unwrap();
+    fs::write(&child, "include: [./nested/../root.yaml]\nmodel_list: []\n").unwrap();
 
     let config = load_file(&loader(), &root).unwrap();
     assert!(config.model_list.is_empty());

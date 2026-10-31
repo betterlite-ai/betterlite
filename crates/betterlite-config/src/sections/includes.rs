@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::env;
 use std::fs;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use crate::loader::{ConfigError, ConfigLoader, EnvironmentLookup};
 use crate::sections::Section;
@@ -96,24 +96,43 @@ pub fn resolve_includes(config: ConfigMap, path: &Path) -> Result<ConfigMap, Inc
 }
 
 fn absolute_path(path: &Path) -> Result<PathBuf, IncludeError> {
-    if path.is_absolute() {
-        Ok(path.to_path_buf())
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
     } else {
         env::current_dir()
             .map(|directory| directory.join(path))
             .map_err(|source| IncludeError::Read {
                 path: path.to_path_buf(),
                 source,
-            })
+            })?
+    };
+    Ok(normalize_path(&absolute))
+}
+
+fn normalize_path(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            Component::Prefix(_) | Component::RootDir | Component::Normal(_) => {
+                normalized.push(component.as_os_str());
+            }
+        }
     }
+    normalized
 }
 
 fn resolve_include_file_path(entry: &str, declared_in: &Path, root: &Path) -> PathBuf {
-    let declared_relative = declared_in
-        .parent()
-        .unwrap_or_else(|| Path::new(""))
-        .join(entry);
-    let root_relative = root.parent().unwrap_or_else(|| Path::new("")).join(entry);
+    let declared_relative = normalize_path(
+        &declared_in
+            .parent()
+            .unwrap_or_else(|| Path::new(""))
+            .join(entry),
+    );
+    let root_relative = normalize_path(&root.parent().unwrap_or_else(|| Path::new("")).join(entry));
     if root_relative == declared_relative || !root_relative.exists() {
         return declared_relative;
     }
