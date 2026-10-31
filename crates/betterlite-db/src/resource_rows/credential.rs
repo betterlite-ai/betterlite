@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::{ResourceRowsError, convert, is_truthy};
+use super::{ResourceRowsError, convert, json_value_is_set};
 use crate::budget_permission_rows::JsonData;
 use crate::identity_rows::Payload;
 
@@ -40,9 +40,11 @@ impl TryFrom<JsonData> for CreateCredentialItem {
         let JsonData::Object(object) = &value else {
             return Err(Self::Error::NotAnObject);
         };
-        let values_truthy = object.get("credential_values").is_some_and(is_truthy);
-        let model_id_truthy = object.get("model_id").is_some_and(is_truthy);
-        if !values_truthy && !model_id_truthy {
+        let values_set = object
+            .get("credential_values")
+            .is_some_and(json_value_is_set);
+        let model_id_set = object.get("model_id").is_some_and(json_value_is_set);
+        if !values_set && !model_id_set {
             return Err(Self::Error::CredentialValueRequired);
         }
         Ok(Self {

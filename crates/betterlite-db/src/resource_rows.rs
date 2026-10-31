@@ -86,7 +86,7 @@ where
     serde_json::from_str(&text).map_err(ResourceRowsError::Json)
 }
 
-pub(crate) fn is_truthy(input: &JsonData) -> bool {
+pub(crate) fn json_value_is_set(input: &JsonData) -> bool {
     match input {
         JsonData::Null => false,
         JsonData::Bool(flag) => *flag,

@@ -513,62 +513,19 @@ async fn seed_resource_rows(client: &tokio_postgres::Client) {
         .unwrap();
 }
 
-async fn row_json(client: &tokio_postgres::Client, query: &str) -> String {
-    client.query_one(query, &[]).await.unwrap().get(0)
+async fn row_as<T>(client: &tokio_postgres::Client, query: &str) -> T
+where
+    T: DeserializeOwned,
+{
+    let text: String = client.query_one(query, &[]).await.unwrap().get(0);
+    serde_json::from_str(&text).unwrap()
 }
 
-async fn assert_credential_raw_storage(client: &tokio_postgres::Client) {
-    let text = row_json(
-        client,
-        r#"SELECT row_to_json(credential)::TEXT FROM "LiteLLM_CredentialsTable" credential WHERE credential_id = 'cr'"#,
-    )
-    .await;
-    let credential: CredentialItem = serde_json::from_str(&text).unwrap();
-    assert_eq!(
-        credential.credential_values.0.get("api_key"),
-        Some(&super::JsonData::String("ENC:abc==".to_owned()))
-    );
-}
-
-async fn assert_model_raw_storage(client: &tokio_postgres::Client) {
-    let text = row_json(
-        client,
-        r#"SELECT row_to_json(model)::TEXT FROM "LiteLLM_ProxyModelTable" model WHERE model_id = 'm'"#,
-    )
-    .await;
-    let model: ProxyModelTable = serde_json::from_str(&text).unwrap();
-    assert_eq!(
-        model.fields.litellm_params.0.get("api_key"),
-        Some(&super::JsonData::String("ENC:xyz==".to_owned()))
-    );
-}
-
-async fn assert_organization_raw_storage(client: &tokio_postgres::Client) {
-    let text = row_json(
-        client,
-        r#"SELECT row_to_json(organization)::TEXT FROM "LiteLLM_OrganizationTable" organization WHERE organization_id = 'o'"#,
-    )
-    .await;
-    let organization: OrganizationTable = serde_json::from_str(&text).unwrap();
-    assert_eq!(organization.budget_id, "b");
-    assert_eq!(organization.spend, Decimal::ZERO);
-}
-
-async fn assert_config_raw_storage(client: &tokio_postgres::Client) {
-    let text = row_json(
-        client,
-        r#"SELECT row_to_json(config)::TEXT FROM "LiteLLM_Config" config WHERE param_name = 'p'"#,
-    )
-    .await;
-    let config: ConfigRow = serde_json::from_str(&text).unwrap();
-    assert_eq!(
-        config.param_value.0.get("k"),
-        Some(&super::JsonData::String("v".to_owned()))
-    );
-}
-
-#[tokio::test]
-async fn postgres_resource_rows_keep_raw_storage() {
+async fn connect_seeded_resource_rows() -> (
+    tokio_postgres::Client,
+    JoinSet<Result<(), tokio_postgres::Error>>,
+    PostgresFixture,
+) {
     let url = postgres_test_url();
     let fixture = PostgresFixture::provision_schema(url.as_ref())
         .resolve()
@@ -587,10 +544,50 @@ async fn postgres_resource_rows_keep_raw_storage() {
         .await
         .unwrap();
     seed_resource_rows(&client).await;
-    assert_credential_raw_storage(&client).await;
-    assert_model_raw_storage(&client).await;
-    assert_organization_raw_storage(&client).await;
-    assert_config_raw_storage(&client).await;
+    (client, tasks, fixture)
+}
+
+async fn assert_resource_rows_raw_storage(client: &tokio_postgres::Client) {
+    let credential: CredentialItem = row_as(
+        client,
+        r#"SELECT row_to_json(credential)::TEXT FROM "LiteLLM_CredentialsTable" credential WHERE credential_id = 'cr'"#,
+    )
+    .await;
+    assert_eq!(
+        credential.credential_values.0.get("api_key"),
+        Some(&super::JsonData::String("ENC:abc==".to_owned()))
+    );
+    let model: ProxyModelTable = row_as(
+        client,
+        r#"SELECT row_to_json(model)::TEXT FROM "LiteLLM_ProxyModelTable" model WHERE model_id = 'm'"#,
+    )
+    .await;
+    assert_eq!(
+        model.fields.litellm_params.0.get("api_key"),
+        Some(&super::JsonData::String("ENC:xyz==".to_owned()))
+    );
+    let organization: OrganizationTable = row_as(
+        client,
+        r#"SELECT row_to_json(organization)::TEXT FROM "LiteLLM_OrganizationTable" organization WHERE organization_id = 'o'"#,
+    )
+    .await;
+    assert_eq!(organization.budget_id, "b");
+    assert_eq!(organization.spend, Decimal::ZERO);
+    let config: ConfigRow = row_as(
+        client,
+        r#"SELECT row_to_json(config)::TEXT FROM "LiteLLM_Config" config WHERE param_name = 'p'"#,
+    )
+    .await;
+    assert_eq!(
+        config.param_value.0.get("k"),
+        Some(&super::JsonData::String("v".to_owned()))
+    );
+}
+
+#[tokio::test]
+async fn postgres_resource_rows_keep_raw_storage() {
+    let (client, mut tasks, fixture) = connect_seeded_resource_rows().await;
+    assert_resource_rows_raw_storage(&client).await;
     drop(client);
     tasks.join_next().await.unwrap().unwrap().unwrap();
     fixture.close_async().await.unwrap();
