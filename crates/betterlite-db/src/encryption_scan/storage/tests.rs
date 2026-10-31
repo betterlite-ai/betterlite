@@ -10,6 +10,44 @@ use deadpool_postgres::{Client, Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
 use std::time::Duration;
 use tokio_postgres::NoTls;
+use tracing::Subscriber;
+use tracing::field::{Field, Visit};
+use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
+
+#[derive(Clone, Default)]
+struct CapturedLogs(std::sync::Arc<std::sync::Mutex<Vec<String>>>);
+
+struct EventFields(String);
+
+impl Visit for EventFields {
+    fn record_str(&mut self, field: &Field, value: &str) {
+        self.0.push_str(field.name());
+        self.0.push('=');
+        self.0.push_str(value);
+        self.0.push(' ');
+    }
+
+    fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+        self.0.push_str(field.name());
+        self.0.push('=');
+        self.0.push_str(&format!("{value:?}"));
+        self.0.push(' ');
+    }
+}
+
+impl<Inner: Subscriber> Layer<Inner> for CapturedLogs {
+    fn on_event(&self, event: &tracing::Event<'_>, _context: Context<'_, Inner>) {
+        let mut fields = EventFields(String::new());
+        event.record(&mut fields);
+        self.0.lock().unwrap().push(fields.0);
+    }
+}
+
+fn captured_logs() -> (CapturedLogs, tracing::Dispatch) {
+    let logs = CapturedLogs::default();
+    let subscriber = tracing_subscriber::registry().with(logs.clone());
+    (logs, tracing::Dispatch::new(subscriber))
+}
 
 #[derive(Parser)]
 struct Environment {
@@ -89,6 +127,8 @@ async fn unavailable_tables_do_not_stop_later_scans() {
         CREATE VIEW "LiteLLM_CredentialsTable" AS SELECT (1 / 0)::text AS credential_values;
         INSERT INTO "LiteLLM_Config" (param_name, param_value) VALUES ('environment_variables', '{"key":"v2:gcm:last"}');
     "#).await.unwrap();
+    let (logs, dispatch) = captured_logs();
+    let _guard = tracing::dispatcher::set_default(&dispatch);
     let report = scan_covered_tables(&**client, &cipher(), Duration::from_secs(10))
         .await
         .unwrap();
@@ -101,6 +141,9 @@ async fn unavailable_tables_do_not_stop_later_scans() {
             .all(|location| location.scanned == 0)
     );
     assert_eq!(report.locations.last().unwrap().already_v2, 1);
+    let logs = logs.0.lock().unwrap().join(" ");
+    assert!(logs.contains("42P01"));
+    assert!(logs.contains("22012"));
     drop(client);
     pool.close();
     fixture.close_async().await.unwrap();
@@ -123,6 +166,8 @@ async fn unavailable_table_recovers_inside_a_transaction() {
         .start()
         .await
         .unwrap();
+    let (logs, dispatch) = captured_logs();
+    let _guard = tracing::dispatcher::set_default(&dispatch);
     let report = scan_covered_tables(&*transaction, &cipher(), Duration::from_secs(10))
         .await
         .unwrap();
@@ -136,6 +181,8 @@ async fn unavailable_table_recovers_inside_a_transaction() {
         ),
         (2, 1, 1)
     );
+    let logs = logs.0.lock().unwrap().join(" ");
+    assert!(logs.contains("42P01"));
     drop(client);
     pool.close();
     fixture.close_async().await.unwrap();

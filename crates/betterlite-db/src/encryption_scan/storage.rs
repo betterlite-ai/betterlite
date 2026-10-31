@@ -40,7 +40,7 @@ where
         undecryptable: 0,
         legacy: 0,
     };
-    let Some(rows) = read_table_rows(client, spec).await? else {
+    let Some(rows) = read_table_rows(client, spec).await else {
         return Ok(report);
     };
     let empty = report.clone();
@@ -61,14 +61,17 @@ async fn recover_unavailable_location<C>(client: &C, location: &str, source: &to
 where
     C: GenericClient + Sync,
 {
-    tracing::debug!(location, error = %source, "scan: location unavailable");
+    let sqlstate = source
+        .code()
+        .map_or("none", tokio_postgres::error::SqlState::code);
+    tracing::debug!(location, sqlstate, "scan: location unavailable");
     drop(client.execute(RECOVER_SAVEPOINT, &[]).await);
 }
 
 async fn read_table_rows<C>(
     client: &C,
     spec: &CoveredTableSpec,
-) -> Result<Option<tokio_postgres::RowStream>, ScanError>
+) -> Option<tokio_postgres::RowStream>
 where
     C: GenericClient + Sync,
 {
@@ -85,10 +88,10 @@ where
     }
     drop(client.execute(MARK_SAVEPOINT, &[]).await);
     match client.query_raw(&sql, iter::empty::<&str>()).await {
-        Ok(rows) => Ok(Some(rows)),
+        Ok(rows) => Some(rows),
         Err(source) => {
             recover_unavailable_location(client, spec.location, &source).await;
-            Ok(None)
+            None
         }
     }
 }
