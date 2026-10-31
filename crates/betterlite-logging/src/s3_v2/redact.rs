@@ -24,10 +24,12 @@ struct Payload {
     extra: Extra,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, strum::EnumIs)]
 #[serde(untagged)]
 enum NullableField<Value> {
+    #[strum(disabled)]
     Null(()),
+    #[strum(disabled)]
     Value(Value),
     Missing,
 }
@@ -35,13 +37,6 @@ enum NullableField<Value> {
 impl<Value> Default for NullableField<Value> {
     fn default() -> Self {
         Self::Missing
-    }
-}
-
-impl<Value> NullableField<Value> {
-    fn is_missing(&self) -> bool {
-        let missing = matches!(self, Self::Missing);
-        missing
     }
 }
 
@@ -63,8 +58,8 @@ enum MessageEntry {
 struct Message {
     #[serde(flatten)]
     extra: Extra,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    content: Option<ContentField>,
+    #[serde(default, skip_serializing_if = "NullableField::is_missing")]
+    content: NullableField<ContentField>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -83,8 +78,12 @@ enum ContentPart {
 
 #[derive(Deserialize, Serialize)]
 struct ContentObject {
-    #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
-    kind: Option<Json>,
+    #[serde(
+        rename = "type",
+        default,
+        skip_serializing_if = "NullableField::is_missing"
+    )]
+    kind: NullableField<Json>,
     #[serde(default, skip_serializing_if = "NullableField::is_missing")]
     file: NullableField<Json>,
     #[serde(flatten)]
@@ -164,11 +163,13 @@ fn strip_message(message: Message, pattern: &Regex, max_depth: i64) -> Message {
         .map(|(key, value)| (key, redact_json(&value, pattern, 0, max_depth)))
         .collect();
     let content = match message.content {
-        None => ContentField::Other(redact_json(&Json::Null, pattern, 0, max_depth)),
-        Some(ContentField::Other(value)) => {
+        NullableField::Missing | NullableField::Null(()) => {
+            ContentField::Other(redact_json(&Json::Null, pattern, 0, max_depth))
+        }
+        NullableField::Value(ContentField::Other(value)) => {
             ContentField::Other(redact_json(&value, pattern, 0, max_depth))
         }
-        Some(ContentField::Parts(parts)) => ContentField::Parts(
+        NullableField::Value(ContentField::Parts(parts)) => ContentField::Parts(
             parts
                 .into_iter()
                 .filter(keep_part)
@@ -178,7 +179,7 @@ fn strip_message(message: Message, pattern: &Regex, max_depth: i64) -> Message {
     };
     Message {
         extra,
-        content: Some(content),
+        content: NullableField::Value(content),
     }
 }
 
@@ -187,7 +188,7 @@ fn keep_part(part: &ContentPart) -> bool {
         ContentPart::Other(_) => true,
         ContentPart::Object(object) => {
             matches!(object.file, NullableField::Missing)
-                && !matches!(&object.kind, Some(Json::Text(text)) if text != "text")
+                && !matches!(&object.kind, NullableField::Value(Json::Text(text)) if text != "text")
         }
     }
 }
@@ -196,9 +197,15 @@ fn redact_part(part: ContentPart, pattern: &Regex, max_depth: i64) -> ContentPar
     match part {
         ContentPart::Other(value) => ContentPart::Other(redact_json(&value, pattern, 0, max_depth)),
         ContentPart::Object(object) => ContentPart::Object(ContentObject {
-            kind: object
-                .kind
-                .map(|value| redact_json(&value, pattern, 1, max_depth)),
+            kind: match object.kind {
+                NullableField::Value(value) => {
+                    NullableField::Value(redact_json(&value, pattern, 1, max_depth))
+                }
+                NullableField::Null(()) => {
+                    NullableField::Value(redact_json(&Json::Null, pattern, 1, max_depth))
+                }
+                NullableField::Missing => NullableField::Missing,
+            },
             file: object.file,
             extra: object
                 .extra
