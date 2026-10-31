@@ -16,4 +16,3 @@ compare:
   ignore:
     - pointer: /meta/location
       why: each run binds its own free port, so the handler's echoed request URL differs between the two processes
-
