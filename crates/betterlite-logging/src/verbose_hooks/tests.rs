@@ -66,6 +66,19 @@ fn logger_failure_suppresses_both_sinks() {
 }
 
 #[test]
+fn logger_only_suppresses_the_console_even_when_verbose_is_set() {
+    let result = VerboseHooks.run(HookInput::Utils {
+        payload: json!("body"),
+        set_verbose: true,
+        log_level: "DEBUG".to_owned(),
+        logger_only: true,
+        sinks: SinkFailures::default(),
+    });
+    assert_eq!(result.logs.len(), 1);
+    assert!(result.console.is_empty());
+}
+
+#[test]
 fn unknown_log_level_skips_the_logger_but_not_the_console() {
     let result = VerboseHooks.run(HookInput::Utils {
         payload: json!("body"),
