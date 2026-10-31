@@ -8,7 +8,7 @@ use strum::EnumString;
 pub const MAX_STORED_BYTES: usize = 0x0010_0000;
 pub const MAX_STORED_DEPTH: usize = 64;
 
-#[derive(Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Serialize, PartialEq)]
 #[serde(untagged)]
 pub enum JsonValue {
     Null,
@@ -284,4 +284,5 @@ pub mod decode;
 pub mod pinned;
 pub mod secret;
 
+mod json_value;
 mod tests;

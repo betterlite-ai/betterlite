@@ -2,8 +2,12 @@
 
 use rstest::rstest;
 use secrecy::ExposeSecret as _;
+use serde::Deserialize as _;
+use serde::de::IgnoredAny;
+use serde::de::value::{F64Deserializer, StringDeserializer};
 use std::collections::BTreeMap;
 use std::fs;
+use std::iter::repeat_n;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -305,6 +309,96 @@ fn mcp_stored_limits_accept_full_nested_input_promptly() {
         serde_json::to_string(&decoded).unwrap(),
         nested.replace(' ', "")
     );
+}
+
+#[test]
+fn mcp_stored_limits_parse_full_nested_pinned_tools_promptly() {
+    let prefix = r#"{"tool":{"input_schema":{"nested":"#;
+    let depth = MAX_STORED_DEPTH - 3;
+    let overhead = prefix.len() + 3 + 2 * depth;
+    let elements = (MAX_STORED_BYTES - overhead).checked_div(2).unwrap();
+    let payload = format!("{}0", "0,".repeat(elements - 1));
+    let flat = format!("{prefix}[{payload}]}}}}}}");
+    let baseline = Instant::now();
+    let flat_tools = parse_pinned_tools(JsonValue::String(flat)).unwrap();
+    let limit = baseline.elapsed() + Duration::from_millis(500);
+    drop(flat_tools);
+    let mut nested = format!(
+        "{prefix}{}{payload}{}}}}}}}",
+        "[".repeat(depth),
+        "]".repeat(depth)
+    );
+    nested.extend(repeat_n(' ', MAX_STORED_BYTES - nested.len()));
+    assert_eq!(nested.len(), MAX_STORED_BYTES);
+    let started = Instant::now();
+    let tools = parse_pinned_tools(JsonValue::String(nested))
+        .unwrap()
+        .unwrap();
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed < limit,
+        "nested pinned tools took {elapsed:?}, limit {limit:?}"
+    );
+    assert_eq!(
+        serde_json::to_string(&tools["tool"].as_ref().input_schema["nested"]).unwrap(),
+        format!("{}{payload}{}", "[".repeat(depth), "]".repeat(depth))
+    );
+}
+
+#[rstest]
+#[case::missing_comma("[1 2]")]
+#[case::bad_literal("[t0]")]
+#[case::trailing_data("{} false")]
+#[case::multiline("{\n\"key\": 1\n\"other\": 2}")]
+fn stored_syntax_errors_keep_cause(#[case] input: &str) {
+    let expected = serde_json::from_str::<IgnoredAny>(input).unwrap_err();
+    let decode::McpStoredDecodeError::Json(actual) =
+        decode_mcp_stored_contract(input.as_bytes()).unwrap_err()
+    else {
+        panic!("expected JSON syntax error");
+    };
+    assert_eq!(actual.to_string(), expected.to_string());
+    assert_eq!(actual.classify(), expected.classify());
+    assert_eq!(
+        (actual.line(), actual.column()),
+        (expected.line(), expected.column())
+    );
+}
+
+#[rstest]
+#[case::null("null")]
+#[case::boolean("true")]
+#[case::signed("-9223372036854775808")]
+#[case::unsigned("18446744073709551615")]
+#[case::float("1.25")]
+#[case::large_integer("18446744073709551616")]
+#[case::precise_decimal("1.234567890123456789")]
+#[case::string(r#""text\\\"\n""#)]
+#[case::array("[null,false,2]")]
+#[case::object(r#"{"key":"value"}"#)]
+fn stored_json_shapes_roundtrip(#[case] input: &str) {
+    let decoded = decode_mcp_stored_contract(input.as_bytes()).unwrap();
+    assert_eq!(serde_json::to_string(&decoded).unwrap(), input);
+}
+
+#[test]
+fn stored_owned_string_roundtrip() {
+    let deserializer = StringDeserializer::<serde_json::Error>::new("owned text".to_owned());
+    let decoded = JsonValue::deserialize(deserializer).unwrap();
+    assert_eq!(decoded, JsonValue::String("owned text".to_owned()));
+}
+
+#[rstest]
+#[case::finite(1.25_f64, Some("1.25"))]
+#[case::nan(f64::NAN, None)]
+#[case::infinite(f64::INFINITY, None)]
+fn stored_float_values(#[case] value: f64, #[case] expected: Option<&str>) {
+    let decoded = JsonValue::deserialize(F64Deserializer::<serde_json::Error>::new(value));
+    if let Some(encoded) = expected {
+        assert_eq!(serde_json::to_string(&decoded.unwrap()).unwrap(), encoded);
+    } else {
+        assert_eq!(decoded.unwrap_err().to_string(), "non-finite JSON number");
+    }
 }
 
 #[rstest]
