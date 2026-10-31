@@ -33,6 +33,20 @@ pub enum DeployError {
         #[source]
         source: Utf8Error,
     },
+    #[error("migration {name} failed and its failure could not be recorded: {ledger}")]
+    MigrationLog {
+        name: String,
+        #[source]
+        source: PostgresError,
+        ledger: PostgresError,
+    },
+    #[error("migration {name} is not valid UTF-8 and its failure could not be recorded: {ledger}")]
+    InvalidSqlLog {
+        name: String,
+        #[source]
+        source: Utf8Error,
+        ledger: PostgresError,
+    },
     #[error("migration deployment deadline elapsed")]
     Deadline(#[source] Elapsed),
 }
@@ -65,7 +79,7 @@ impl MigrationDeploy {
             sleep(Duration::from_millis(10)).await;
         }
         let result = async {
-            let schema = ledger::quote(&self.schema);
+            let schema = format!("\"{}\"", self.schema.replace('"', "\"\""));
             client
                 .query_one("SELECT set_config('search_path', $1, false)", &[&schema])
                 .await?;

@@ -5,6 +5,7 @@ use super::fixtures::{checkpoint, database};
 use std::time::Duration;
 use tokio::fs;
 use tokio::time::{Instant, sleep};
+use tokio_postgres::error::SqlState;
 use uuid::Uuid;
 
 #[tokio::test]
@@ -169,7 +170,7 @@ async fn concurrent_index_outside_transaction() {
     }).await;
 }
 
-use super::catalog::{Migration, MigrationCatalog, migration_files};
+use super::catalog::{CatalogError, MigrationCatalog, migration_files};
 use super::fixtures::CatalogDirectory;
 
 #[tokio::test]
@@ -391,12 +392,93 @@ async fn deadline_releases_session() {
     }).await;
 }
 
-#[test]
-fn catalog_types_are_native() {
-    let catalog: MigrationCatalog = vec![Migration {
-        name: "one".to_owned(),
-        checksum: "a".repeat(64),
-        sql: b"select 1".to_vec(),
-    }];
+#[tokio::test]
+async fn catalog_types_are_native() {
+    let root = CatalogDirectory::create().await;
+    root.write("migrations/one/migration.sql", b"SELECT 1;\r\n")
+        .await;
+    let catalog: MigrationCatalog = migration_files(&root.0).await.unwrap();
+    assert_eq!(catalog.len(), 1);
     assert_eq!(catalog[0].name, "one");
+    assert_eq!(catalog[0].sql, b"SELECT 1;\r\n");
+    assert_eq!(
+        catalog[0].checksum,
+        "d3cd5042f97738960d802ad6b3a548dfa18152215118ba18f04493bc6944b0e4"
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn catalog_invalid_name() {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt as _;
+
+    let root = CatalogDirectory::create().await;
+    let directory = root
+        .0
+        .join("migrations")
+        .join(OsString::from_vec(vec![255]));
+    fs::create_dir(&directory).await.unwrap();
+    fs::write(directory.join("migration.sql"), b"SELECT 1")
+        .await
+        .unwrap();
+    let error = migration_files(&root.0).await.unwrap_err();
+    assert!(
+        matches!(error, CatalogError::Name { path } if path == directory.join("migration.sql"))
+    );
+}
+
+#[rstest::rstest]
+#[case::sql(b"SELECT 1/0", "division by zero")]
+#[case::invalid_utf8(&[255], "invalid utf-8")]
+#[tokio::test]
+async fn log_failure_keeps_cause(#[case] sql: &'static [u8], #[case] message: &'static str) {
+    use std::error::Error as _;
+
+    database(async move |db| {
+        db.sql("CREATE FUNCTION reject_logs() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'logs rejected'; END $$; CREATE TRIGGER reject BEFORE UPDATE ON _prisma_migrations FOR EACH ROW EXECUTE FUNCTION reject_logs()").await;
+        let mut service = db.service(&[("original", "")]);
+        service.catalog[0].sql = sql.to_vec();
+        let error = service.run(db.pool.get().await.unwrap(), Instant::now().checked_add(Duration::from_secs(10)).unwrap()).await.unwrap_err();
+        assert!(error.to_string().contains("original"), "{error:?}");
+        let source = error.source().unwrap();
+        let detail = source.downcast_ref::<tokio_postgres::Error>().and_then(tokio_postgres::Error::as_db_error).map_or_else(|| source.to_string(), |database_error| database_error.message().to_owned());
+        assert!(detail.contains(message), "{error:?}");
+        let (DeployError::MigrationLog { ledger, .. } | DeployError::InvalidSqlLog { ledger, .. }) = error else {
+            panic!("expected both errors, got {error:?}");
+        };
+        assert_eq!(ledger.as_db_error().unwrap().message(), "logs rejected");
+        let rows = db.rows().await;
+        assert!(!rows[0].get::<_, bool>("finished"));
+        assert_eq!(rows[0].get::<_, Option<String>>("logs"), None);
+    }).await;
+}
+
+#[tokio::test]
+async fn rollback_failure_keeps_cause() {
+    database(async |db| {
+        let error = db
+            .run(&[(
+                "disconnected",
+                "SELECT pg_terminate_backend(pg_backend_pid())",
+            )])
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("disconnected"), "{error:?}");
+        let DeployError::MigrationLog {
+            name,
+            source,
+            ledger,
+        } = error
+        else {
+            panic!("expected migration and rollback errors");
+        };
+        assert_eq!(name, "disconnected");
+        assert_eq!(source.code(), Some(&SqlState::ADMIN_SHUTDOWN));
+        assert!(ledger.is_closed());
+        let rows = db.rows().await;
+        assert!(!rows[0].get::<_, bool>("finished"));
+        assert_eq!(rows[0].get::<_, Option<String>>("logs"), None);
+    })
+    .await;
 }

@@ -1,16 +1,11 @@
 use std::collections::HashSet;
 use std::str;
 
-use tokio_postgres::Client;
+use tokio_postgres::{Client, Error as PostgresError};
 use uuid::Uuid;
 
 use super::DeployError;
 use super::catalog::Migration;
-
-pub(super) fn quote(identifier: &str) -> String {
-    let escaped = identifier.replace('"', "\"\"");
-    format!("\"{escaped}\"")
-}
 
 pub(super) async fn prepare(client: &Client, table: &str) -> Result<HashSet<String>, DeployError> {
     client.batch_execute(&format!("CREATE TABLE IF NOT EXISTS {table} (id varchar(36) PRIMARY KEY NOT NULL, checksum varchar(64) NOT NULL, finished_at timestamptz, migration_name varchar(255) NOT NULL, logs text, rolled_back_at timestamptz, started_at timestamptz NOT NULL DEFAULT now(), applied_steps_count integer NOT NULL DEFAULT 0)")).await?;
@@ -58,28 +53,47 @@ async fn execute(
     migration: &Migration,
     id: &str,
 ) -> Result<(), DeployError> {
-    let sql = match str::from_utf8(&migration.sql) {
-        Ok(sql) => sql,
-        Err(source) => {
-            record_failure(client, table, id, &source.to_string()).await?;
-            return Err(DeployError::InvalidSql {
-                name: migration.name.clone(),
-                source,
-            });
-        }
-    };
+    let sql = decode_sql(client, table, migration, id).await?;
     // The simple query protocol preserves explicit transactions and single-statement concurrent DDL.
     if let Err(source) = client.batch_execute(sql).await {
         let message = source
             .as_db_error()
             .map_or_else(|| source.to_string(), ToString::to_string);
-        record_failure(client, table, id, &message).await?;
-        return Err(DeployError::Migration {
-            name: migration.name.clone(),
-            source,
+        let name = migration.name.clone();
+        return Err(match record_failure(client, table, id, &message).await {
+            Ok(()) => DeployError::Migration { name, source },
+            Err(ledger) => DeployError::MigrationLog {
+                name,
+                source,
+                ledger,
+            },
         });
     }
     Ok(())
+}
+
+async fn decode_sql<'migration>(
+    client: &Client,
+    table: &str,
+    migration: &'migration Migration,
+    id: &str,
+) -> Result<&'migration str, DeployError> {
+    match str::from_utf8(&migration.sql) {
+        Ok(sql) => Ok(sql),
+        Err(source) => {
+            let name = migration.name.clone();
+            Err(
+                match record_failure(client, table, id, &source.to_string()).await {
+                    Ok(()) => DeployError::InvalidSql { name, source },
+                    Err(ledger) => DeployError::InvalidSqlLog {
+                        name,
+                        source,
+                        ledger,
+                    },
+                },
+            )
+        }
+    }
 }
 
 async fn record_failure(
@@ -87,7 +101,7 @@ async fn record_failure(
     table: &str,
     id: &str,
     message: &str,
-) -> Result<(), DeployError> {
+) -> Result<(), PostgresError> {
     client.batch_execute("ROLLBACK").await?;
     client
         .execute(

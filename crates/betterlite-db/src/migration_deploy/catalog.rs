@@ -17,6 +17,8 @@ pub type MigrationCatalog = Vec<Migration>;
 
 #[derive(Debug, Error)]
 pub enum CatalogError {
+    #[error("migration directory name is not valid UTF-8: {path}")]
+    Name { path: PathBuf },
     #[error("could not read migration catalog entry {path}")]
     Read {
         path: PathBuf,
@@ -86,9 +88,8 @@ async fn read(path: &Path) -> Result<Migration, CatalogError> {
         .parent()
         .and_then(Path::file_name)
         .and_then(|value| value.to_str())
-        .ok_or_else(|| CatalogError::Read {
+        .ok_or_else(|| CatalogError::Name {
             path: path.to_owned(),
-            source: IoError::new(ErrorKind::InvalidData, "invalid migration name"),
         })?
         .to_owned();
     Ok(Migration {
