@@ -91,6 +91,7 @@ policy:
   limit_retry_minutes: 30
   max_parallel: 8
   overflow: true
+  max_fix_turns: 2
   max_review_rounds: 3
   max_blocked_reports: 2
   max_hook_blocks: 6

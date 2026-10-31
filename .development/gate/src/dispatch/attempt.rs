@@ -64,7 +64,7 @@ fn worker_report(
             )])))
         }
         Ok(report) => Ok(report),
-        Err(error) => Err(Some(Step::Retry(vec![format!(
+        Err(error) => Err(Some(Step::Fix(vec![format!(
             "The final answer did not match the report format: {error}"
         )]))),
     })
@@ -79,12 +79,12 @@ fn failures(
     let verdict = checks::run(worktree, &task, &Selection::default())?;
     let added = added_dependencies(&worktree.root, &resolve_base(&worktree.root)?)?;
     let mut problems = report_problems(report, &task, &added);
-    let logged = deviations::read_log(&worktree.root, task_id)?;
-    problems.extend(deviations::mismatch(
-        &report.deviations,
-        logged.as_ref(),
-        task_id,
-    ));
+    let log = worktree
+        .root
+        .join(format!("docs/deviations/{task_id}.yaml"));
+    if log.exists() {
+        problems.extend(deviations::file_problems(&log, &worktree.backlog));
+    }
     if verdict.passed && problems.is_empty() {
         return Ok(Vec::new());
     }
@@ -168,12 +168,12 @@ pub(crate) fn attempt_once(
     };
     let touched = worker_edits(attempt.places.worktree, start.trim())?;
     if !touched.is_empty() {
-        return Ok(Some(Step::Retry(touched)));
+        return Ok(Some(Step::Fix(touched)));
     }
     let worktree = Development::open(attempt.places.worktree)?;
     let failing = failures(&worktree, &attempt.brief.task.id, &report)?;
     if !failing.is_empty() {
-        return Ok(Some(Step::Retry(failing)));
+        return Ok(Some(Step::Fix(failing)));
     }
     review::review(attempt, runner, &worktree).map(Some)
 }
