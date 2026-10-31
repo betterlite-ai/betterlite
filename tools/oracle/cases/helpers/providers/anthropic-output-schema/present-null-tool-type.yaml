@@ -1,0 +1,5 @@
+kind: helper
+name: present-null-tool-type
+call: {anthropic_output_schema: {function: map_tool, value: {type: null, response_schema: {}}}}
+env: {}
+compare: {ignore: []}
