@@ -182,7 +182,7 @@ impl RecursiveCharacterTextSplitter {
                 .unwrap_or_default()
                 .iter()
                 .collect::<String>();
-            let trimmed = chunk.trim_matches(is_python_whitespace);
+            let trimmed = chunk.trim_matches(is_strip_whitespace);
             if !trimmed.is_empty() {
                 chunks.push(trimmed.to_owned());
             }
@@ -211,7 +211,7 @@ fn select_separator<'sep>(text: &str, separators: &'sep [String]) -> (&'sep str,
 
 fn push_joined(chunks: &mut Vec<String>, current_chunk: &[&str], separator: &str) {
     let joined = current_chunk.join(separator);
-    let trimmed = joined.trim_matches(is_python_whitespace);
+    let trimmed = joined.trim_matches(is_strip_whitespace);
     if !trimmed.is_empty() {
         chunks.push(trimmed.to_owned());
     }
@@ -240,8 +240,8 @@ fn chunk_by_chars(text: &str, chunk_size: usize) -> Vec<String> {
     result
 }
 
-// Python's str.strip() also treats U+001C-U+001F as whitespace; Rust's is_whitespace() does not.
-fn is_python_whitespace(candidate: char) -> bool {
+// str.strip()'s whitespace set also covers U+001C-U+001F; Rust's is_whitespace() does not.
+fn is_strip_whitespace(candidate: char) -> bool {
     if candidate.is_whitespace() {
         true
     } else {
