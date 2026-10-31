@@ -1,0 +1,13 @@
+kind: helper
+name: openai-like-errors-context
+call:
+  openai_like_errors:
+    model: command-r
+    custom_llm_provider: my_provider
+    error_str: "this model's maximum context length is 4096 tokens"
+    status_code: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

@@ -1,0 +1,5 @@
+task: B702
+deviations:
+  - what: The production and pinned fixture omit LiteLLM's final blank line after the final SQL statement.
+    why: Repository whitespace hooks reject blank lines at EOF; SQL statements and behavior are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20250326162113_baseline/migration.sql#L430

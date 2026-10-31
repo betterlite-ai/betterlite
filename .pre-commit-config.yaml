@@ -51,7 +51,7 @@ repos:
         name: ast-grep rules
         entry: ast-grep scan
         language: system
-        types: [rust]
+        types_or: [rust, python]
       - id: typos
         name: typos
         entry: typos

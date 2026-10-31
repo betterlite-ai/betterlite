@@ -1,0 +1,43 @@
+{
+  "kind": "helper",
+  "name": "websearch-openai-unicode",
+  "call": {
+    "b4112": {
+      "format": "openai",
+      "response": {
+        "choices": [
+          {
+            "message": {
+              "tool_calls": [
+                {
+                  "type": "function",
+                  "id": "one",
+                  "function": {
+                    "name": "litellm_web_search",
+                    "arguments": {
+                      "query": "caf\u00e9 \ud83d\udd0e",
+                      "search_queries": [
+                        "a",
+                        "b"
+                      ],
+                      "objective": "find"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "transform": true,
+      "results": [
+        "answer"
+      ],
+      "operation": "detect"
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

@@ -1,0 +1,145 @@
+id: B5091
+title: Helper oracle cases compare the value and the error codes
+description: >-
+  compare_helper in tools/oracle/src/compare.rs serializes the whole HelperOutput from tools/oracle/src/compare/helper.rs
+  and compares every field the case does not list in compare.ignore. That includes HelperError's class (the Python
+  exception class name), HelperError's message and each HelperWarning's message. docs/compatibility.md and rule
+  errors-match-litellm make the message betterlite's own and put an error's HTTP status, type, param and code in the
+  contract, so 54 helper cases each list /error/message or /error/class in compare.ignore by hand, and a new case that
+  forgets the line fails on wording alone. The class is a Python detail with no Rust counterpart: the native side
+  makes it up to match.
+
+
+  Change compare_helper so a helper comparison never looks at /error/class, /error/message or the message of any
+  warning. After the existing ignore checks and compare_effect_secrets, remove /error/class and /error/message from
+  both serialized values, and /warnings/<index>/message for every index of each side's warnings, then compare what
+  is left as today. ok, value, the error's status, type, param and code, each warning's subject and the warnings'
+  count and order, and effects (credentials included) are still compared. HelperOutput, HelperError and HelperWarning
+  keep their fields, so the FAIL output and the artifacts still show the class and both messages. An ignore that
+  names /error/class or /error/message is no longer needed: compare_helper returns a Difference with the message
+  "compare.ignore names a field helper comparisons skip" and that pointer, the same way it reports an ignore that
+  points to no field. Drop both pointers from the known list.
+
+
+  Remove the now redundant /error/class and /error/message entries from the 54 helper cases listed under
+  oracle_cases, and keep every other ignore entry of those cases. A case whose ignore list becomes empty keeps
+  compare: {ignore: []} the way other cases write it. HTTP cases (kind: http) keep their /error/message ignores,
+  since the HTTP comparison does not change.
+
+
+  Add tests to tools/oracle/src/tests.rs, each named with the helper_comparison_ prefix:
+  helper_comparison_skips_error_class_and_message (two failed outputs that differ only in class and message match),
+  helper_comparison_compares_error_codes (an rstest over status, type, param and code: two outputs that differ only in
+  that field do not match, and the Difference pointer names it), helper_comparison_skips_warning_messages (warnings
+  with the same subjects and different messages match, and different subjects do not), and
+  helper_comparison_rejects_skipped_ignores (an ignore of /error/class or of /error/message returns the new
+  Difference). The existing management_oracle tests detects_warning_order and exception_null_and_code_types keep
+  passing unchanged.
+scope:
+  paths:
+  - tools/oracle/src/compare.rs
+  - tools/oracle/src/tests.rs
+  - tools/oracle/cases/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py
+  why: >-
+    LiteLLM's exceptions carry status_code, llm_provider and a message that names the library; clients branch on the
+    status and codes, and the class name is Python's own.
+dod:
+- text: Two helper outputs that differ only in the error's class or message, or only in a warning's message, match.
+  proof:
+  - helper-comparison
+- text: >-
+    Two helper outputs that differ in ok, value, the error's status, type, param or code, a warning's subject, the
+    warnings' order or an effect do not match, and the Difference pointer names that field.
+  proof:
+  - helper-comparison
+- text: A helper case that lists /error/class or /error/message in compare.ignore fails with a Difference that names the pointer.
+  proof:
+  - helper-comparison
+- text: No helper case lists /error/class or /error/message in compare.ignore, and HTTP cases keep theirs.
+  proof:
+  - no-skipped-ignores
+- text: The 54 rewritten helper cases still match LiteLLM.
+  proof:
+  - oracle
+checks:
+  optional: []
+  commands:
+  - id: helper-comparison
+    why: helper comparisons still compare the class or a message, stop comparing a code, or accept an ignore of a skipped field
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/helper_comparison_|detects_warning_order|exception_null_and_code_types/)'
+  - id: no-skipped-ignores
+    why: a helper case still ignores a field the comparison skips, or an HTTP case lost its message ignore
+    run: |-
+      test -z "$(grep -rlE 'pointer: /error/(class|message)' tools/oracle/cases | xargs -r grep -l '^kind: helper')" && grep -q 'pointer: /error/message' tools/oracle/cases/chat/upstream-429.yaml
+oracle_cases:
+- tools/oracle/cases/guardrails/lasso/api-401-invalid-key.yaml
+- tools/oracle/cases/guardrails/lasso/api-429-rate-limit.yaml
+- tools/oracle/cases/guardrails/lasso/api-timeout.yaml
+- tools/oracle/cases/guardrails/lasso/block-action-raises-400.yaml
+- tools/oracle/cases/guardrails/lasso/constructor-missing-api-key.yaml
+- tools/oracle/cases/helpers/budget-permission-rows/full-requires-created-at.yaml
+- tools/oracle/cases/helpers/budget-permission-rows/membership-spend-null.yaml
+- tools/oracle/cases/helpers/budget-permission-rows/strings-not-containers.yaml
+- tools/oracle/cases/helpers/carried-policy-records/agent-response-fields.yaml
+- tools/oracle/cases/helpers/carried-policy-records/identity-provider-and-mode.yaml
+- tools/oracle/cases/helpers/carried-policy-records/kill-switch-url-backslash.yaml
+- tools/oracle/cases/helpers/carried-policy-records/kill-switch-url-bracket-not-leading.yaml
+- tools/oracle/cases/helpers/carried-policy-records/kill-switch-url-bracket-suffix.yaml
+- tools/oracle/cases/helpers/carried-policy-records/kill-switch-url-invalid-ip-literal.yaml
+- tools/oracle/cases/helpers/carried-policy-records/kill-switch-url-nfkc-separator.yaml
+- tools/oracle/cases/helpers/carried-policy-records/kill-switch-url-no-authority.yaml
+- tools/oracle/cases/helpers/carried-policy-records/kill-switch-url-one-slash.yaml
+- tools/oracle/cases/helpers/carried-policy-records/managed-mode-both.yaml
+- tools/oracle/cases/helpers/cost-usage/malformed-modality-entry-is-an-error.yaml
+- tools/oracle/cases/helpers/database-url-policy/nfkc-homoglyph-netloc.yaml
+- tools/oracle/cases/helpers/identity-rows/container-and-scalar-validation.yaml
+- tools/oracle/cases/helpers/identity-rows/key-invalid-nulls.yaml
+- tools/oracle/cases/helpers/identity-rows/scalars.yaml
+- tools/oracle/cases/helpers/identity-rows/user-invalid-null.yaml
+- tools/oracle/cases/helpers/lens-sources/parse-execution-malformed-base64.yaml
+- tools/oracle/cases/helpers/lens-sources/parse-execution-missing-elements.yaml
+- tools/oracle/cases/helpers/lens-state/check-id-empty-context.yaml
+- tools/oracle/cases/helpers/lens-state/check-id-reserved-expected-behavior.yaml
+- tools/oracle/cases/helpers/lens-state/check-id-uniqueness.yaml
+- tools/oracle/cases/helpers/lens-state/metadata-filter-constraints.yaml
+- tools/oracle/cases/helpers/model-fields/documentation-entry.yaml
+- tools/oracle/cases/helpers/openapi-schema-transforms/missing-reference.yaml
+- tools/oracle/cases/helpers/pricing-tier/explicit-null-range-errors-during-sort.yaml
+- tools/oracle/cases/helpers/pricing-tier/sort-errors-before-length-filter.yaml
+- tools/oracle/cases/helpers/pricing-tier/unreadable-upper-is-evaluated-lazily.yaml
+- tools/oracle/cases/helpers/providers/a2a-text/a2a-wrong-shapes.yaml
+- tools/oracle/cases/helpers/providers/anthropic-output-schema/missing-tool-type.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-image-models/stability3-prompt.yaml
+- tools/oracle/cases/helpers/resource-sdk-settings/invalid-timeout.yaml
+- tools/oracle/cases/helpers/scim-record/email-address-literal.yaml
+- tools/oracle/cases/helpers/scim-record/email-consecutive-dots.yaml
+- tools/oracle/cases/helpers/scim-record/email-line-break.yaml
+- tools/oracle/cases/helpers/scim-record/email-quoted-local-part.yaml
+- tools/oracle/cases/helpers/scim-record/email-special-use-domain.yaml
+- tools/oracle/cases/helpers/scim-record/email-tld-must-end-in-a-letter.yaml
+- tools/oracle/cases/helpers/scim-record/invalid-email.yaml
+- tools/oracle/cases/helpers/scim-record/meta-must-be-an-object.yaml
+- tools/oracle/cases/helpers/scim-record/padded-active-is-rejected.yaml
+- tools/oracle/cases/helpers/scim-record/padded-patch-op-is-rejected.yaml
+- tools/oracle/cases/helpers/structured-redaction/ambiguous-json.yaml
+- tools/oracle/cases/helpers/structured-redaction/invalid-redact.yaml
+- tools/oracle/cases/helpers/structured-redaction/malformed-json.yaml
+- tools/oracle/cases/helpers/url-path/dot-segment.yaml
+- tools/oracle/cases/helpers/url-path/empty-segment.yaml
+deviations: []
+out_of_scope:
+- The HTTP and gateway comparisons in compare_responses and compare_provider_requests, and the /error/message ignores of HTTP cases.
+- The helper adapters in tools/oracle/helpers and the native helper code; they keep producing class and message.
+- Which errors a helper raises; this task changes only what the comparison looks at.
+pitfalls:
+- remove_pointer sets an array element to null instead of removing it, so remove each warning's message key by its full pointer and never the warning itself; the warnings' count and order still count.
+- Reject an ignore of /error/class or /error/message before the "points to no field" check; a failed output has both fields, so that check alone would let the ignore pass.
+- The FAIL line and the artifacts serialize HelperOutput, not the trimmed comparison value, so they keep showing class and messages for debugging.
+- Some of the 54 cases list a second ignore next to /error/message; keep that one and its why.
+review_level: standard
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0

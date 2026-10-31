@@ -1,0 +1,5 @@
+kind: helper
+name: unwrap-verdict-result-data
+call: {b3758: {function: unwrap_verdict, response: {result: {data: {action: block}}}}}
+env: {}
+compare: {ignore: []}

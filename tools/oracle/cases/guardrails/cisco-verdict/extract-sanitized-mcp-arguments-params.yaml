@@ -1,0 +1,5 @@
+kind: helper
+name: extract-sanitized-mcp-arguments-params
+call: {b3758: {function: extract_sanitized_mcp_arguments, response: {params: {arguments: {q: x}}}}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,20 @@
+kind: helper
+name: lifecycle_post_call_classification
+call:
+  b3779:
+    lifecycle_post_call_hook:
+      response:
+        choices:
+          - message:
+              role: assistant
+              content: secret
+              tool_calls:
+                - id: call
+                  type: function
+                  function: {name: lookup, arguments: '{"email":"private"}'}
+      masked:
+        - {role: assistant, content: '[MASKED]'}
+        - role: model
+          content: {type: tool_use, id: call, name: lookup, input: '[MASKED EMAIL]'}
+env: {}
+compare: {ignore: []}

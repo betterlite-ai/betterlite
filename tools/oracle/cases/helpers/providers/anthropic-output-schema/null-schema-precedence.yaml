@@ -1,0 +1,5 @@
+kind: helper
+name: null-schema-precedence
+call: {anthropic_output_schema: {function: map_output, value: {response_schema: null, json_schema: {schema: {type: object}}}}}
+env: {}
+compare: {ignore: [{pointer: /value, why: Python None is omitted from the optional helper envelope}]}

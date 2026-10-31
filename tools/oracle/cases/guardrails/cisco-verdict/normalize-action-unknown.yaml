@@ -1,0 +1,5 @@
+kind: helper
+name: normalize-action-unknown
+call: {b3758: {function: normalize_action, action: mystery}}
+env: {}
+compare: {ignore: []}
