@@ -1,4 +1,4 @@
-use url::Url;
+use url::{Host, Url};
 
 use super::{
     DISCOVERY_PATH, HTTP_TIMEOUT_SECONDS, Http,
@@ -72,11 +72,10 @@ pub fn origin(value: &str) -> Option<String> {
     if scheme != "http" && scheme != "https" {
         return None;
     }
-    let host = parsed.host_str()?;
-    let host = if host.contains(':') {
-        format!("[{host}]")
-    } else {
-        host.to_owned()
+    let host = match parsed.host()? {
+        Host::Domain(domain) => domain.to_owned(),
+        Host::Ipv4(address) => address.to_string(),
+        Host::Ipv6(address) => format!("[{address}]"),
     };
     let port = parsed.port_or_known_default()?;
     Some(format!("{scheme}://{host}:{port}"))
