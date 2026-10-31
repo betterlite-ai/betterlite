@@ -3,17 +3,27 @@ use std::time::Duration;
 
 use betterlite_config::sections::deepkeep_firewall::{Configured, UnreachableFallback};
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
-use reqwest::header::{
-    CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue, InvalidHeaderName, InvalidHeaderValue,
-};
+use error::DeepKeepError;
+use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
 use secrecy::ExposeSecret as _;
-use serde::de::Error as _;
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 
+pub mod error;
 mod transport;
 
-pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
+pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
+
+pub const SUPPORTED_EVENT_HOOKS: [CallHook; 3] = [CallHook::Pre, CallHook::Post, CallHook::During];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum CallHook {
+    #[serde(rename = "pre_call")]
+    Pre,
+    #[serde(rename = "post_call")]
+    Post,
+    #[serde(rename = "during_call")]
+    During,
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Inputs {
@@ -75,35 +85,6 @@ pub struct Response {
     pub tool_calls: Option<Vec<GuardrailValue>>,
     pub structured_messages: Option<Vec<GuardrailValue>>,
     pub blocked_reason: Option<String>,
-}
-
-#[derive(Debug, Error)]
-pub enum DeepKeepError {
-    #[error("DeepKeep blocked the request: {reason}")]
-    Blocked { reason: String },
-    #[error("DeepKeep API returned HTTP {status}: {body}")]
-    Api {
-        status: reqwest::StatusCode,
-        body: String,
-    },
-    #[error("DeepKeep response was invalid: {source}")]
-    ResponseJson { source: serde_json::Error },
-    #[error("DeepKeep request failed: {source}")]
-    Request { source: reqwest::Error },
-    #[error("DeepKeep request timed out: {source}")]
-    Timeout { source: reqwest::Error },
-    #[error("DeepKeep request could not be built: {source}")]
-    RequestBuild { source: reqwest::Error },
-    #[error("DeepKeep header {name} is invalid: {source}")]
-    InvalidHeader {
-        name: &'static str,
-        source: InvalidHeaderValue,
-    },
-    #[error("DeepKeep header name {name} is invalid: {source}")]
-    InvalidHeaderName {
-        name: String,
-        source: InvalidHeaderName,
-    },
 }
 
 #[derive(Debug, Clone)]
@@ -243,28 +224,11 @@ impl DeepKeepGuardrail {
         context: RequestContext,
     ) -> Result<Inputs, DeepKeepError> {
         let request = self.build_request(inputs.clone(), context);
-        let (status, body) = match transport::send_request(self, &request).await {
+        let parsed = match transport::send_request(self, &request).await {
             Ok(response) => response,
             Err(error) => return self.recover_from_failure(error, inputs),
         };
-        if !status.is_success() {
-            let transport::Body::Text(body) = body else {
-                return Err(DeepKeepError::ResponseJson {
-                    source: serde_json::Error::custom(
-                        "successful response body used for an error status",
-                    ),
-                });
-            };
-            return self.recover_from_failure(DeepKeepError::Api { status, body }, inputs);
-        }
-        let transport::Body::Json(parsed_response) = body else {
-            return Err(DeepKeepError::ResponseJson {
-                source: serde_json::Error::custom(
-                    "error response body used for a successful status",
-                ),
-            });
-        };
-        Self::build_return_inputs(&inputs, parsed_response)
+        Self::build_return_inputs(&inputs, parsed)
     }
 
     fn recover_from_failure(
@@ -272,31 +236,27 @@ impl DeepKeepGuardrail {
         error: DeepKeepError,
         inputs: Inputs,
     ) -> Result<Inputs, DeepKeepError> {
-        let unreachable = match &error {
-            DeepKeepError::Request { .. } | DeepKeepError::Timeout { .. } => true,
-            DeepKeepError::Api { status, .. } => matches!(
-                *status,
-                reqwest::StatusCode::BAD_GATEWAY
-                    | reqwest::StatusCode::SERVICE_UNAVAILABLE
-                    | reqwest::StatusCode::GATEWAY_TIMEOUT
+        let (unreachable, failure_category, status) = match &error {
+            DeepKeepError::Request { .. } => (true, "request_error", None),
+            DeepKeepError::Timeout { .. } => (true, "timeout", None),
+            DeepKeepError::Api { status, .. } => (
+                matches!(
+                    *status,
+                    reqwest::StatusCode::BAD_GATEWAY
+                        | reqwest::StatusCode::SERVICE_UNAVAILABLE
+                        | reqwest::StatusCode::GATEWAY_TIMEOUT
+                ),
+                "http_status",
+                Some(status.to_string()),
             ),
             DeepKeepError::Blocked { .. }
             | DeepKeepError::ResponseJson { .. }
+            | DeepKeepError::ResponseTooLarge { .. }
             | DeepKeepError::RequestBuild { .. }
             | DeepKeepError::InvalidHeader { .. }
-            | DeepKeepError::InvalidHeaderName { .. } => false,
+            | DeepKeepError::InvalidHeaderName { .. } => (false, "other", None),
         };
         if self.settings.unreachable_fallback == UnreachableFallback::FailOpen && unreachable {
-            let (failure_category, status) = match &error {
-                DeepKeepError::Api { status, .. } => ("http_status", Some(status.to_string())),
-                DeepKeepError::Request { .. } => ("request_error", None),
-                DeepKeepError::Timeout { .. } => ("timeout", None),
-                DeepKeepError::Blocked { .. }
-                | DeepKeepError::ResponseJson { .. }
-                | DeepKeepError::RequestBuild { .. }
-                | DeepKeepError::InvalidHeader { .. }
-                | DeepKeepError::InvalidHeaderName { .. } => ("other", None),
-            };
             tracing::warn!(
                 guardrail_name = %self.settings.guardrail_name,
                 api_base = %self.settings.api_base,

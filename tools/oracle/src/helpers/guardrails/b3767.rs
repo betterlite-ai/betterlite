@@ -5,8 +5,9 @@ use std::time::Duration;
 use betterlite_config::loader::{ConfigError, ConfigLoader};
 use betterlite_config::sections::deepkeep_firewall::Configured;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_guardrails::deepkeep::error::DeepKeepError;
 use betterlite_guardrails::deepkeep::{
-    DeepKeepError, DeepKeepGuardrail, InputType, Inputs, RequestContext,
+    DeepKeepGuardrail, InputType, Inputs, RequestContext, SUPPORTED_EVENT_HOOKS,
 };
 use serde_json::{Value, json};
 
@@ -86,7 +87,10 @@ impl crate::helpers::Helper for Op {
 
 fn construct(settings: &Value) -> HelperResult {
     let configured = configure(settings, BTreeMap::new())?;
-    Ok(json!({"api_base": configured.api_base}))
+    Ok(json!({
+        "api_base": configured.api_base,
+        "supported_event_hooks": SUPPORTED_EVENT_HOOKS,
+    }))
 }
 
 fn apply(args: ApplyArgs<'_>) -> HelperResult {
@@ -210,6 +214,7 @@ fn deepkeep_failure(error: &DeepKeepError) -> Box<HelperError> {
         DeepKeepError::Blocked { .. } => "GuardrailRaisedException",
         DeepKeepError::Api { .. }
         | DeepKeepError::ResponseJson { .. }
+        | DeepKeepError::ResponseTooLarge { .. }
         | DeepKeepError::Request { .. }
         | DeepKeepError::RequestBuild { .. }
         | DeepKeepError::Timeout { .. }

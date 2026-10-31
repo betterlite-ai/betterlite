@@ -26,7 +26,10 @@ def guardrail(settings: dict[str, Json]) -> DeepKeepGuardrail:
 
 def construct(settings: dict[str, Json]) -> Json:
     deepkeep = guardrail(settings)
-    return {"api_base": deepkeep.api_base}
+    return {
+        "api_base": deepkeep.api_base,
+        "supported_event_hooks": cast(Json, deepkeep.supported_event_hooks),
+    }
 
 
 def metadata(request_data: dict[str, Json]) -> Json:

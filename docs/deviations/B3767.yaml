@@ -9,3 +9,9 @@ deviations:
   - what: The Inputs betterlite's apply() returns always carries a model field; LiteLLM's _build_return_inputs never sets one.
     why: betterlite reuses one Inputs type for both directions so internal callers keep the model name without a separate lookup.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/deepkeep/deepkeep.py#L282-L321
+  - what: Successful DeepKeep response bodies over 1 MiB are rejected; oversized error bodies are omitted while their HTTP status is preserved.
+    why: Bound memory use for untrusted upstream responses without changing the status-based fail-open decision.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/deepkeep/deepkeep.py#L401-L402
+  - what: Error bodies and blocked reasons that echo configured credentials are redacted, and JSON parse errors do not expose response data through Display or Debug.
+    why: Upstream failures must not disclose API keys or extra-header secrets; typed parse causes remain available through the error source.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/deepkeep/deepkeep.py#L279-L280

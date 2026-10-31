@@ -1,14 +1,16 @@
-use super::{DeepKeepError, DeepKeepGuardrail, Request, Response};
+use std::iter;
 
-pub(super) enum Body {
-    Json(Response),
-    Text(String),
-}
+use secrecy::ExposeSecret as _;
+
+use super::error::DeepKeepError;
+use super::{DeepKeepGuardrail, Request, Response};
+
+const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 
 pub(super) async fn send_request(
     guardrail: &DeepKeepGuardrail,
     request: &Request,
-) -> Result<(reqwest::StatusCode, Body), DeepKeepError> {
+) -> Result<Response, DeepKeepError> {
     let response = guardrail
         .client
         .post(&guardrail.settings.api_base)
@@ -17,30 +19,60 @@ pub(super) async fn send_request(
         .timeout(guardrail.timeout)
         .send()
         .await
-        .map_err(|source| {
-            if source.is_timeout() {
-                DeepKeepError::Timeout { source }
-            } else if source.is_builder() {
-                DeepKeepError::RequestBuild { source }
-            } else {
-                DeepKeepError::Request { source }
-            }
-        })?;
+        .map_err(request_error)?;
     let status = response.status();
-    let body = if status.is_success() {
-        Body::Json(
-            response
-                .json()
-                .await
-                .map_err(|source| DeepKeepError::Request { source })?,
-        )
-    } else {
-        Body::Text(
-            response
-                .text()
-                .await
-                .map_err(|source| DeepKeepError::Request { source })?,
-        )
+    let body = match read_body(response).await {
+        // Keep the HTTP status authoritative when the error body exceeds the limit.
+        Err(DeepKeepError::ResponseTooLarge { .. }) if !status.is_success() => Vec::new(),
+        result => result?,
     };
-    Ok((status, body))
+    if !status.is_success() {
+        return Err(DeepKeepError::Api {
+            status,
+            body: redact_message(guardrail, &String::from_utf8_lossy(&body)),
+        });
+    }
+    let mut parsed: Response =
+        serde_json::from_slice(&body).map_err(|source| DeepKeepError::ResponseJson { source })?;
+    parsed.blocked_reason = parsed
+        .blocked_reason
+        .map(|reason| redact_message(guardrail, &reason));
+    Ok(parsed)
+}
+
+async fn read_body(mut response: reqwest::Response) -> Result<Vec<u8>, DeepKeepError> {
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(request_error)? {
+        if body.len().saturating_add(chunk.len()) > MAX_RESPONSE_BYTES {
+            return Err(DeepKeepError::ResponseTooLarge {
+                limit: MAX_RESPONSE_BYTES,
+            });
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
+}
+
+fn request_error(source: reqwest::Error) -> DeepKeepError {
+    if source.is_timeout() {
+        DeepKeepError::Timeout { source }
+    } else if source.is_builder() {
+        DeepKeepError::RequestBuild { source }
+    } else {
+        DeepKeepError::Request { source }
+    }
+}
+
+fn redact_message(guardrail: &DeepKeepGuardrail, message: &str) -> String {
+    let contains_secret = iter::once(&guardrail.settings.api_key)
+        .chain(guardrail.settings.extra_headers.values())
+        .any(|secret| {
+            let exposed = secret.expose_secret();
+            !exposed.is_empty() && message.contains(exposed)
+        });
+    if contains_secret {
+        "[REDACTED]".to_owned()
+    } else {
+        message.to_owned()
+    }
 }

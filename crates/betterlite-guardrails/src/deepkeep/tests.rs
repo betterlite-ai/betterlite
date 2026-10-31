@@ -7,7 +7,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::{env, fs, process};
 
-use super::{DeepKeepError, DeepKeepGuardrail, InputType, Inputs, RequestContext, Response};
+use super::error::DeepKeepError;
+use super::{DeepKeepGuardrail, InputType, Inputs, RequestContext, Response};
 use axum::Router;
 use axum::http::StatusCode;
 use axum::routing::post;
@@ -115,6 +116,36 @@ fn deepkeep_guardrail_explicit_hash_wins_over_token() {
 }
 
 #[test]
+fn deepkeep_guardrail_metadata_prefers_litellm_and_filters_nulls() {
+    let data = serde_json::from_str(
+        r#"{
+        "metadata": {"user_api_key_hash":"old", "user_api_key_alias":"old"},
+        "litellm_metadata": {
+            "user_api_key_hash":null, "user_api_key_token":"token",
+            "user_api_key_alias":"alias", "user_api_key_user_id":"user",
+            "user_api_key_user_email":"email", "user_api_key_team_id":"team",
+            "user_api_key_team_alias":"team-alias", "user_api_key_end_user_id":"end-user",
+            "user_api_key_org_id":"org", "unrelated":"ignored"
+        }
+    }"#,
+    )
+    .expect("metadata");
+    let expected = serde_json::from_str(
+        r#"{
+        "user_api_key_hash":"token", "user_api_key_alias":"alias",
+        "user_api_key_user_id":"user", "user_api_key_user_email":"email",
+        "user_api_key_team_id":"team", "user_api_key_team_alias":"team-alias",
+        "user_api_key_end_user_id":"end-user", "user_api_key_org_id":"org"
+    }"#,
+    )
+    .expect("extracted metadata");
+    assert_eq!(
+        DeepKeepGuardrail::extract_user_api_key_metadata(&data),
+        expected
+    );
+}
+
+#[test]
 fn deepkeep_guardrail_request_keeps_fixed_firewall_id() {
     let request = guardrail().build_request(
         inputs(),
@@ -155,6 +186,30 @@ fn deepkeep_guardrail_empty_replacements_are_preserved() {
     assert!(output.texts.is_empty());
     assert!(output.images.expect("images").is_empty());
     assert!(output.tools.expect("tools").is_empty());
+    assert!(output.tool_calls.expect("tool_calls").is_empty());
+    assert!(output.structured_messages.expect("messages").is_empty());
+}
+
+#[test]
+fn deepkeep_guardrail_headers_include_secrets_without_debug_disclosure() {
+    let mut deepkeep = guardrail();
+    deepkeep.settings.api_key = SecretString::from("private-api-key");
+    deepkeep.settings.extra_headers.insert(
+        "Authorization".to_owned(),
+        SecretString::from("Bearer private-extra-header"),
+    );
+    let headers = deepkeep.request_headers().expect("headers");
+    assert_eq!(headers["content-type"], "application/json");
+    assert_eq!(headers["x-api-key"], "private-api-key");
+    assert_eq!(headers["authorization"], "Bearer private-extra-header");
+    assert!(!format!("{headers:?}").contains("private"));
+    deepkeep.settings.extra_headers.insert(
+        "X-API-Key".to_owned(),
+        SecretString::from("private-override"),
+    );
+    let overridden = deepkeep.request_headers().expect("headers");
+    assert_eq!(overridden["x-api-key"], "private-override");
+    assert!(!format!("{overridden:?}").contains("private"));
 }
 
 #[test]
@@ -177,6 +232,11 @@ fn deepkeep_guardrail_loads_from_config() {
         settings.api_base,
         "https://deepkeep.test/v3/openai/beta/litellm_basic_guardrail_api"
     );
+}
+
+#[test]
+fn deepkeep_guardrail_config_default_timeout_matches_http_handler() {
+    assert_eq!(guardrail().timeout, Duration::from_secs(600));
 }
 
 #[test]
@@ -296,27 +356,20 @@ async fn deepkeep_guardrail_fail_open_never_logs_upstream_response_body() {
         .with_max_level(tracing::Level::WARN)
         .with_writer(Arc::new(fs::File::create(&log_path).expect("log file")))
         .finish();
-    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
-    let base = format!("http://{}", listener.local_addr().expect("addr"));
-    let router = Router::new().route(
-        "/v3/openai/beta/litellm_basic_guardrail_api",
-        post(|| async {
-            (
-                StatusCode::BAD_GATEWAY,
-                "upstream failure echoing api_key=super-secret-upstream-token and \
-                    header Authorization: Bearer super-secret-extra-header",
-            )
-        }),
-    );
-    let mut server = JoinSet::new();
-    server.spawn(axum::serve(listener, router).into_future());
+    let (base, mut server) = serve(
+        StatusCode::BAD_GATEWAY,
+        "upstream failure echoing api_key=super-secret-upstream-token and \
+         header Authorization: Bearer super-secret-extra-header"
+            .to_owned(),
+    )
+    .await;
     let mut deepkeep = guardrail();
     deepkeep.settings.api_key = SecretString::from("super-secret-upstream-token");
     deepkeep.settings.extra_headers = BTreeMap::from([(
         "X-API-Key".to_owned(),
         SecretString::from("super-secret-extra-header"),
     )]);
-    deepkeep.settings.api_base = format!("{base}/v3/openai/beta/litellm_basic_guardrail_api");
+    deepkeep.settings.api_base = base;
     deepkeep.settings.unreachable_fallback = UnreachableFallback::FailOpen;
     deepkeep.timeout = Duration::from_secs(5);
     let guard = set_default(subscriber);
@@ -330,6 +383,7 @@ async fn deepkeep_guardrail_fail_open_never_logs_upstream_response_body() {
     assert!(!written.contains("super-secret-upstream-token"));
     assert!(!written.contains("super-secret-extra-header"));
     assert!(!written.contains("Authorization"));
+    server.shutdown().await;
 }
 
 #[test]
@@ -343,4 +397,140 @@ fn deepkeep_guardrail_replays_the_deepkeep_response_corpus() {
         let inputs = serde_json::from_slice::<Inputs>(&bytes);
         response.is_ok() || inputs.is_ok()
     }));
+}
+
+#[rstest]
+#[case::allowed(StatusCode::OK, "{}", "pass")]
+#[case::invalid_json(StatusCode::OK, "not json", "decode")]
+#[case::invalid_shape(StatusCode::OK, r#"{"texts":42}"#, "decode")]
+#[case::bad_request(StatusCode::BAD_REQUEST, "bad request", "api")]
+#[case::unauthorized(StatusCode::UNAUTHORIZED, "unauthorized", "api")]
+#[case::server_error(StatusCode::INTERNAL_SERVER_ERROR, "error", "api")]
+#[case::bad_gateway(StatusCode::BAD_GATEWAY, "unreachable", "pass")]
+#[case::unavailable(StatusCode::SERVICE_UNAVAILABLE, "unreachable", "pass")]
+#[case::gateway_timeout(StatusCode::GATEWAY_TIMEOUT, "unreachable", "pass")]
+#[case::blocked(StatusCode::OK, r#"{"action":"BLOCKED"}"#, "blocked")]
+#[tokio::test]
+async fn deepkeep_guardrail_fail_open_requires_unreachable_service(
+    #[case] status: StatusCode,
+    #[case] body: &'static str,
+    #[case] expected: &str,
+) {
+    let (base, mut server) = serve(status, body.to_owned()).await;
+    let mut deepkeep = guardrail();
+    deepkeep.settings.api_base = base;
+    deepkeep.settings.unreachable_fallback = UnreachableFallback::FailOpen;
+    let actual = match deepkeep.apply(inputs(), context()).await {
+        Ok(output) => {
+            assert_eq!(output, inputs());
+            "pass"
+        }
+        Err(DeepKeepError::ResponseJson { .. }) => "decode",
+        Err(DeepKeepError::Api {
+            status: code,
+            body: details,
+        }) => {
+            assert_eq!(code, status);
+            assert_eq!(details, body);
+            "api"
+        }
+        Err(DeepKeepError::Blocked { .. }) => "blocked",
+        Err(error) => panic!("unexpected error: {error}"),
+    };
+    assert_eq!(actual, expected);
+    server.shutdown().await;
+}
+
+#[rstest]
+#[case::at_limit(StatusCode::OK, 1_048_576, true)]
+#[case::over_limit(StatusCode::OK, 1_048_577, false)]
+#[case::oversized_unreachable(StatusCode::BAD_GATEWAY, 1_048_577, true)]
+#[case::oversized_unauthorized(StatusCode::UNAUTHORIZED, 1_048_577, false)]
+#[tokio::test]
+async fn deepkeep_guardrail_bounds_upstream_responses(
+    #[case] status: StatusCode,
+    #[case] size: usize,
+    #[case] accepted: bool,
+) {
+    let body = format!("{{}}{}", " ".repeat(size.checked_sub(2).unwrap()));
+    let (base, mut server) = serve(status, body).await;
+    let mut deepkeep = guardrail();
+    deepkeep.settings.api_base = base;
+    deepkeep.settings.unreachable_fallback = UnreachableFallback::FailOpen;
+    let result = deepkeep.apply(inputs(), context()).await;
+    assert_eq!(result.is_ok(), accepted);
+    if status == StatusCode::UNAUTHORIZED {
+        assert!(matches!(
+            result,
+            Err(DeepKeepError::Api {
+                status: StatusCode::UNAUTHORIZED,
+                ..
+            })
+        ));
+    }
+    server.shutdown().await;
+}
+
+#[rstest]
+#[case::api_key(StatusCode::UNAUTHORIZED, "invalid secret-api-token", false)]
+#[case::extra_header(
+    StatusCode::UNAUTHORIZED,
+    "Authorization: Bearer secret-header-token",
+    false
+)]
+#[case::invalid_json(StatusCode::OK, r#""secret-api-token""#, false)]
+#[case::blocked_reason(
+    StatusCode::OK,
+    r#"{"action":"BLOCKED","blocked_reason":"secret-api-token"}"#,
+    true
+)]
+#[tokio::test]
+async fn deepkeep_guardrail_errors_redact_echoed_credentials(
+    #[case] status: StatusCode,
+    #[case] body: &str,
+    #[case] blocked: bool,
+) {
+    let (base, mut server) = serve(status, body.to_owned()).await;
+    let mut deepkeep = guardrail();
+    deepkeep.settings.api_base = base;
+    deepkeep.settings.api_key = SecretString::from("secret-api-token");
+    deepkeep.settings.extra_headers.insert(
+        "Authorization".to_owned(),
+        SecretString::from("Bearer secret-header-token"),
+    );
+    let error = deepkeep
+        .apply(inputs(), context())
+        .await
+        .expect_err("unauthorized");
+    if blocked {
+        assert!(matches!(error, DeepKeepError::Blocked { .. }));
+    } else if status.is_success() {
+        assert!(matches!(error, DeepKeepError::ResponseJson { .. }));
+        assert!(std::error::Error::source(&error).is_some());
+    } else {
+        assert!(matches!(
+            error,
+            DeepKeepError::Api {
+                status: StatusCode::UNAUTHORIZED,
+                ..
+            }
+        ));
+    }
+    assert!(!format!("{error} {error:?}").contains("secret-"));
+    server.shutdown().await;
+}
+
+async fn serve(status: StatusCode, body: String) -> (String, JoinSet<std::io::Result<()>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let base = format!("http://{}", listener.local_addr().expect("addr"));
+    let router = Router::new().route(
+        "/",
+        post(move || {
+            let reply = body.clone();
+            async move { (status, reply) }
+        }),
+    );
+    let mut server = JoinSet::new();
+    server.spawn(axum::serve(listener, router).into_future());
+    (base, server)
 }
