@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use serde_json::value::RawValue;
+use serde_json::value::{RawValue, to_raw_value};
 
 use super::CatalogError;
 
@@ -105,41 +105,33 @@ pub(super) fn strip_unknown(input: &RawValue) -> Result<Box<RawValue>, CatalogEr
         fields.insert("search_context_cost_per_query".to_owned(), kept);
     }
     if let Some(value) = fields.get("tiered_pricing") {
-        let kept = strip_tiers(value)?;
+        let kept = strip_array(value, TIER_FIELDS)?;
         fields.insert("tiered_pricing".to_owned(), kept);
     }
-    Ok(serde_json::from_slice(&serde_json::to_vec(&fields)?)?)
+    Ok(to_raw_value(&fields)?)
 }
 
 fn strip_keys(value: &RawValue, known: &[&str]) -> Result<Box<RawValue>, CatalogError> {
-    let fields: BTreeMap<String, Box<RawValue>> = serde_json::from_str(value.get())?;
-    let kept = fields
-        .into_iter()
-        .filter(|(key, _)| known.contains(&key.as_str()))
-        .collect::<BTreeMap<_, _>>();
-    Ok(serde_json::from_slice(&serde_json::to_vec(&kept)?)?)
+    let mut fields: BTreeMap<String, Box<RawValue>> = serde_json::from_str(value.get())?;
+    fields.retain(|key, _| known.contains(&key.as_str()));
+    Ok(to_raw_value(&fields)?)
 }
 
 fn strip_off_peak(value: &RawValue) -> Result<Box<RawValue>, CatalogError> {
-    let mut fields: BTreeMap<String, Box<RawValue>> = serde_json::from_str(value.get())?;
-    fields.retain(|key, _| OFF_PEAK_FIELDS.contains(&key.as_str()));
+    let filtered = strip_keys(value, OFF_PEAK_FIELDS)?;
+    let mut fields: RawObject = serde_json::from_str(filtered.get()).unwrap_or_default();
     if let Some(raw_windows) = fields.get("windows") {
-        let windows: RawArray = serde_json::from_str(raw_windows.get()).unwrap_or_default();
-        let kept = windows
-            .iter()
-            .map(|window| strip_keys(window, PRICE_WINDOW_FIELDS))
-            .collect::<Result<Vec<_>, _>>()?;
-        let windows_raw = serde_json::from_slice(&serde_json::to_vec(&kept)?)?;
+        let windows_raw = strip_array(raw_windows, PRICE_WINDOW_FIELDS)?;
         fields.insert("windows".to_owned(), windows_raw);
     }
-    Ok(serde_json::from_slice(&serde_json::to_vec(&fields)?)?)
+    Ok(to_raw_value(&fields)?)
 }
 
-fn strip_tiers(value: &RawValue) -> Result<Box<RawValue>, CatalogError> {
-    let tiers: RawArray = serde_json::from_str(value.get()).unwrap_or_default();
-    let kept = tiers
-        .iter()
-        .map(|tier| strip_keys(tier, TIER_FIELDS))
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(serde_json::from_slice(&serde_json::to_vec(&kept)?)?)
+fn strip_array(value: &RawValue, known: &[&str]) -> Result<Box<RawValue>, CatalogError> {
+    let items: RawArray = serde_json::from_str(value.get()).unwrap_or_default();
+    let mut kept = Vec::with_capacity(items.len());
+    for item in &items {
+        kept.push(strip_keys(item, known)?);
+    }
+    Ok(to_raw_value(&kept)?)
 }

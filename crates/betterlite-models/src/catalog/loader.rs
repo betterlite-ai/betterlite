@@ -3,7 +3,7 @@ use std::mem;
 use std::sync::Arc;
 
 use indexmap::IndexMap;
-use serde_json::value::RawValue;
+use serde_json::value::{RawValue, to_raw_value};
 
 use super::{
     CatalogEntry, CatalogError, FALLBACK_GENERALIZATIONS, MAX_CATALOG_ALIASES,
@@ -204,30 +204,27 @@ fn parse_prices(
     unknown: UnknownFields,
     warnings: &mut Vec<String>,
 ) -> Result<PriceFields, CatalogError> {
-    match unknown {
-        UnknownFields::Reject => {
-            if let Some(path) = price_unknown::unknown_paths(value).into_iter().next() {
-                return Err(CatalogError::UnknownPriceField {
-                    model: name.to_owned(),
-                    path,
-                });
-            }
-            PriceFields::parse(value).map_err(|source| CatalogError::Prices {
+    let paths = price_unknown::unknown_paths(value);
+    if unknown == UnknownFields::Reject {
+        if let Some(path) = paths.into_iter().next() {
+            return Err(CatalogError::UnknownPriceField {
                 model: name.to_owned(),
-                source,
-            })
+                path,
+            });
         }
-        UnknownFields::Warn => {
-            for path in price_unknown::unknown_paths(value) {
-                push_warning(warnings, || format!("{name}.{path}"))?;
-            }
-            let filtered = price_unknown::strip_unknown(value)?;
-            PriceFields::parse(filtered.as_ref()).map_err(|source| CatalogError::Prices {
-                model: name.to_owned(),
-                source,
-            })
-        }
+        return PriceFields::parse(value).map_err(|source| CatalogError::Prices {
+            model: name.to_owned(),
+            source,
+        });
     }
+    for path in paths {
+        push_warning(warnings, || format!("{name}.{path}"))?;
+    }
+    let filtered = price_unknown::strip_unknown(value)?;
+    PriceFields::parse(filtered.as_ref()).map_err(|source| CatalogError::Prices {
+        model: name.to_owned(),
+        source,
+    })
 }
 
 fn without_aliases(
@@ -238,7 +235,7 @@ fn without_aliases(
         .filter(|(key, _)| key.as_str() != "aliases")
         .map(|(key, value)| (key.clone(), value))
         .collect::<BTreeMap<_, _>>();
-    Ok(serde_json::from_slice(&serde_json::to_vec(&typed_fields)?)?)
+    Ok(to_raw_value(&typed_fields)?)
 }
 
 fn aliases(
