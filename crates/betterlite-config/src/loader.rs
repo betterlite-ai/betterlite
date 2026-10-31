@@ -1,10 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::{ParseFloatError, ParseIntError};
 
+use betterlite_models::price_fields::decimal_lexeme::DecimalLexemeError;
 use secrecy::SecretString;
 use serde::de::DeserializeOwned;
 use thiserror::Error;
 
+use crate::cost_adjustments::AdjustmentField;
 use crate::providers::bedrock::request_policy::metadata_fields;
 use crate::raw::{
     RawConfig, RawDeployment, RawGeneral, RawInfo, RawLiteLlm, RawNumber, RawParams, RawRouter,
@@ -54,6 +56,14 @@ pub enum ConfigError {
     },
     #[error("invalid scalar at {path}")]
     InvalidScalar { path: String, value: bool },
+    #[error("cost adjustment field {field} cannot convert to a number: {source}")]
+    InvalidCostAdjustmentNumber {
+        field: AdjustmentField,
+        #[source]
+        source: DecimalLexemeError,
+    },
+    #[error("cost adjustment field {field} must be a number, not null, a list or an object")]
+    UnsupportedCostAdjustmentShape { field: AdjustmentField },
 }
 pub struct ConfigLoader<L> {
     pub lookup: L,
