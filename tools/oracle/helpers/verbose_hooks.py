@@ -40,8 +40,9 @@ def run(input_value: dict[str, Json]) -> Json:
     previous_handlers = verbose_logger.handlers
     previous_level = verbose_logger.level
     printed: list[Json] = []
-    logger_fails = input_value.get("logger_fails") is True
-    console_fails = input_value.get("console_fails") is True
+    sinks = cast(dict[str, Json], input_value.get("sinks") or {})
+    logger_fails = sinks.get("logger") is True
+    console_fails = sinks.get("console") is True
 
     def print_capture(value: object) -> None:
         if console_fails:
