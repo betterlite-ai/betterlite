@@ -3,6 +3,7 @@ use serde::Deserialize;
 
 use super::Section;
 use crate::loader::{ConfigError, EnvironmentLookup};
+use crate::raw::RawNumber;
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
@@ -24,25 +25,31 @@ struct Parameters {
     api_base: Option<String>,
     inspection_type: Option<String>,
     inspect_path: Option<String>,
-    enabled_rules: Vec<RawRule>,
+    enabled_rules: Option<Vec<RawRule>>,
     on_flagged_action: Option<String>,
     fallback_on_error: Option<String>,
-    timeout: Option<f64>,
+    timeout: Option<RawNumber>,
     integration_profile_id: Option<String>,
     integration_profile_version: Option<String>,
     integration_tenant_id: Option<String>,
     integration_type: Option<String>,
 }
 
+// LiteLLM's CiscoAIDefenseRule accepts a plain rule name string or a dict carrying rule_name, entity_types, rule_id and classification.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 enum RawRule {
+    Entry(RuleEntry),
     Name(String),
-    Entry {
-        rule_name: String,
-        #[serde(default)]
-        entity_types: Vec<String>,
-    },
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct RuleEntry {
+    rule_name: String,
+    entity_types: Option<Vec<String>>,
+    rule_id: Option<String>,
+    classification: Option<String>,
 }
 
 impl RawRule {
@@ -51,13 +58,19 @@ impl RawRule {
             Self::Name(rule_name) => Rule {
                 rule_name,
                 entity_types: Vec::new(),
+                rule_id: None,
+                classification: None,
             },
-            Self::Entry {
+            Self::Entry(RuleEntry {
                 rule_name,
                 entity_types,
-            } => Rule {
+                rule_id,
+                classification,
+            }) => Rule {
                 rule_name,
-                entity_types,
+                entity_types: entity_types.unwrap_or_default(),
+                rule_id,
+                classification,
             },
         }
     }
@@ -67,6 +80,8 @@ impl RawRule {
 pub struct Rule {
     pub rule_name: String,
     pub entity_types: Vec<String>,
+    pub rule_id: Option<String>,
+    pub classification: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
