@@ -2,9 +2,9 @@ kind: helper
 name: combined-percentage-and-fixed
 call:
   cost_adjustments:
-    base_cost: "0.10"
+    base_cost: "1.00"
     provider: provider
-    discount_config: {provider: 0.2}
-    margin_config: {provider: {percentage: "0.1", fixed_amount: "0.001", ignored: 99}}
+    discount_config: {provider: 0.5}
+    margin_config: {provider: {percentage: "0.25", fixed_amount: "0.125", ignored: 99}}
 env: {}
 compare: {ignore: []}
