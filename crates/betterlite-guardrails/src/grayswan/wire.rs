@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
+use std::num::ParseFloatError;
 
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 use crate::generic_guardrail_contracts::{
     GuardrailExtraValue, GuardrailMessage, GuardrailToolParam,
@@ -48,15 +50,78 @@ pub struct GraySwanPayload {
     pub litellm_metadata: Option<GuardrailExtraValue>,
 }
 #[derive(Debug, Clone, Default, Deserialize)]
+#[serde(try_from = "RawGraySwanResponse")]
 pub struct GraySwanResponse {
-    #[serde(default)]
     pub violation: f64,
-    #[serde(default)]
     pub violated_rule_descriptions: Vec<GraySwanViolatedRule>,
-    #[serde(default)]
     pub mutation: Option<bool>,
-    #[serde(default)]
     pub ipi: Option<bool>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct RawGraySwanResponse {
+    violation: Option<ViolationScore>,
+    violated_rule_descriptions: Vec<GraySwanViolatedRule>,
+    mutation: Option<bool>,
+    ipi: Option<bool>,
+}
+
+// LiteLLM treats a null, missing or numeric-string violation score the same as a plain float.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum ViolationScore {
+    PrivateNumber(PrivateNumber),
+    Number(f64),
+    Text(String),
+}
+
+#[derive(Debug, Deserialize)]
+struct PrivateNumber {
+    #[serde(rename = "$serde_json::private::Number")]
+    number: String,
+}
+
+#[derive(Debug, Error)]
+pub enum GraySwanResponseError {
+    #[error("invalid violation score: {text:?}")]
+    InvalidViolation {
+        text: String,
+        #[source]
+        source: ParseFloatError,
+    },
+}
+
+impl TryFrom<RawGraySwanResponse> for GraySwanResponse {
+    type Error = GraySwanResponseError;
+
+    fn try_from(raw: RawGraySwanResponse) -> Result<Self, Self::Error> {
+        let violation = match raw.violation {
+            None => 0.0_f64,
+            Some(ViolationScore::PrivateNumber(wrapped)) => {
+                wrapped.number.parse::<f64>().map_err(|source| {
+                    GraySwanResponseError::InvalidViolation {
+                        text: wrapped.number.clone(),
+                        source,
+                    }
+                })?
+            }
+            Some(ViolationScore::Number(value)) => value,
+            Some(ViolationScore::Text(text)) if text.is_empty() => 0.0_f64,
+            Some(ViolationScore::Text(text)) => text.trim().parse::<f64>().map_err(|source| {
+                GraySwanResponseError::InvalidViolation {
+                    text: text.clone(),
+                    source,
+                }
+            })?,
+        };
+        Ok(Self {
+            violation,
+            violated_rule_descriptions: raw.violated_rule_descriptions,
+            mutation: raw.mutation,
+            ipi: raw.ipi,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -78,6 +143,36 @@ pub struct GraySwanViolatedRuleFields {
     pub extra: BTreeMap<String, GuardrailExtraValue>,
 }
 
+impl GraySwanViolatedRuleFields {
+    #[must_use]
+    pub fn to_fields(&self) -> BTreeMap<String, GuardrailExtraValue> {
+        let mut map = self.extra.clone();
+        if let Some(number) = &self.rule {
+            map.insert("rule".to_owned(), number.to_extra_value());
+        }
+        if let Some(name) = &self.name {
+            map.insert("name".to_owned(), GuardrailExtraValue::Text(name.clone()));
+        }
+        if let Some(description) = &self.description {
+            map.insert(
+                "description".to_owned(),
+                GuardrailExtraValue::Text(description.clone()),
+            );
+        }
+        map
+    }
+}
+
+impl GraySwanViolatedRule {
+    #[must_use]
+    pub fn to_extra_value(&self) -> GuardrailExtraValue {
+        match self {
+            Self::Structured(fields) => GuardrailExtraValue::Object(fields.to_fields()),
+            Self::Plain(value) => value.clone(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum GraySwanRuleNumber {
@@ -91,6 +186,14 @@ impl GraySwanRuleNumber {
         match self {
             Self::Integer(value) => *value != 0,
             Self::Text(value) => !value.is_empty(),
+        }
+    }
+
+    #[must_use]
+    pub fn to_extra_value(&self) -> GuardrailExtraValue {
+        match self {
+            Self::Integer(value) => GuardrailExtraValue::SignedInteger(*value),
+            Self::Text(value) => GuardrailExtraValue::Text(value.clone()),
         }
     }
 }

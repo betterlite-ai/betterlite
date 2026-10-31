@@ -2,6 +2,8 @@ use reqwest::StatusCode;
 use reqwest::header::InvalidHeaderValue;
 use thiserror::Error;
 
+use crate::generic_guardrail_contracts::GuardrailExtraValue;
+
 #[derive(Debug, Error)]
 pub enum GraySwanGuardrailAPIError {
     #[error("the Gray Swan API request timed out")]
@@ -17,7 +19,14 @@ pub enum GraySwanGuardrailAPIError {
     #[error("the Gray Swan API response is not valid JSON")]
     ResponseJson { source: serde_json::Error },
     #[error("Gray Swan flagged content{reason}")]
-    Blocked { reason: String },
+    Blocked {
+        reason: String,
+        violation_location: &'static str,
+        violation: f64,
+        violated_rules: Vec<GuardrailExtraValue>,
+        mutation: Option<bool>,
+        ipi: Option<bool>,
+    },
 }
 impl GraySwanGuardrailAPIError {
     #[must_use]

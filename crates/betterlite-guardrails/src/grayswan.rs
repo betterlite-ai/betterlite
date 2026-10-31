@@ -15,7 +15,10 @@ pub mod wire;
 
 use error::GraySwanGuardrailAPIError;
 use format::{build_messages, format_violation_message};
-use wire::{GraySwanInput, GraySwanPayload, GraySwanResponse, GraySwanResult, GraySwanVerdict};
+use wire::{
+    GraySwanInput, GraySwanPayload, GraySwanResponse, GraySwanResult, GraySwanVerdict,
+    GraySwanViolatedRule,
+};
 
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
@@ -203,13 +206,14 @@ impl GraySwanGuardrail {
         let is_output = input_type == GuardrailInputType::Response;
         let violation_message = format_violation_message(response, is_output);
         match self.settings.on_flagged_action {
-            OnFlaggedAction::Monitor => Ok(GraySwanResult {
-                verdict: GraySwanVerdict::Monitored { violation_message },
-                messages: original,
-            }),
-            OnFlaggedAction::Block => Err(GraySwanGuardrailAPIError::Blocked {
-                reason: format!(": {violation_message}"),
-            }),
+            OnFlaggedAction::Monitor => {
+                tracing::info!("Gray Swan Guardrail: Monitoring mode - allowing flagged content");
+                Ok(GraySwanResult {
+                    verdict: GraySwanVerdict::Monitored { violation_message },
+                    messages: original,
+                })
+            }
+            OnFlaggedAction::Block => Err(blocked_error(response, &violation_message, is_output)),
             OnFlaggedAction::Passthrough if is_output => {
                 let guardrail_message = GuardrailMessage {
                     role: "assistant".to_owned(),
@@ -228,6 +232,25 @@ impl GraySwanGuardrail {
                 messages: original,
             }),
         }
+    }
+}
+fn blocked_error(
+    response: &GraySwanResponse,
+    violation_message: &str,
+    is_output: bool,
+) -> GraySwanGuardrailAPIError {
+    let violated_rules = response
+        .violated_rule_descriptions
+        .iter()
+        .map(GraySwanViolatedRule::to_extra_value)
+        .collect();
+    GraySwanGuardrailAPIError::Blocked {
+        reason: format!(": {violation_message}"),
+        violation_location: if is_output { "output" } else { "input" },
+        violation: response.violation,
+        violated_rules,
+        mutation: response.mutation,
+        ipi: response.ipi,
     }
 }
 fn request_error(source: reqwest::Error) -> GraySwanGuardrailAPIError {

@@ -97,7 +97,7 @@ fn describe_violated_rule(rule: &GraySwanViolatedRule) -> String {
 }
 fn describe_structured_rule(fields: &GraySwanViolatedRuleFields) -> String {
     let Some(name) = fields.name.as_deref().filter(|name| !name.is_empty()) else {
-        return describe_extra_value(&GuardrailExtraValue::Object(fallback_fields(fields)));
+        return describe_extra_value(&GuardrailExtraValue::Object(fields.to_fields()));
     };
     let prefixed_name = fields
         .rule
@@ -121,26 +121,6 @@ fn rule_number_text(number: &GraySwanRuleNumber) -> String {
         GraySwanRuleNumber::Integer(value) => value.to_string(),
         GraySwanRuleNumber::Text(value) => value.clone(),
     }
-}
-fn fallback_fields(fields: &GraySwanViolatedRuleFields) -> BTreeMap<String, GuardrailExtraValue> {
-    let mut map = fields.extra.clone();
-    if let Some(number) = &fields.rule {
-        let value = match number {
-            GraySwanRuleNumber::Integer(integer) => GuardrailExtraValue::SignedInteger(*integer),
-            GraySwanRuleNumber::Text(text) => GuardrailExtraValue::Text(text.clone()),
-        };
-        map.insert("rule".to_owned(), value);
-    }
-    if let Some(name) = &fields.name {
-        map.insert("name".to_owned(), GuardrailExtraValue::Text(name.clone()));
-    }
-    if let Some(description) = &fields.description {
-        map.insert(
-            "description".to_owned(),
-            GuardrailExtraValue::Text(description.clone()),
-        );
-    }
-    map
 }
 fn describe_extra_value(value: &GuardrailExtraValue) -> String {
     match value {

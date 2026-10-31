@@ -1,7 +1,10 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::fs;
 use std::future::IntoFuture as _;
+use std::io::{self, Write};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -14,6 +17,7 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
+use tracing::subscriber::with_default;
 
 use super::wire::{
     GraySwanDynamicParams, GraySwanRuleNumber, GraySwanVerdict, GraySwanViolatedRule,
@@ -206,6 +210,58 @@ fn grayswan_verdict_at_threshold_blocks() {
     drop(result.expect_err("threshold violation"));
 }
 #[test]
+fn grayswan_block_error_preserves_the_detection_fields() {
+    let mut scan_response = response(0.9);
+    scan_response.violated_rule_descriptions = vec![structured_rule(
+        Some(GraySwanRuleNumber::Integer(6)),
+        Some("self_harm"),
+        None,
+    )];
+    scan_response.mutation = Some(true);
+    scan_response.ipi = Some(false);
+    let error = guardrail(OnFlaggedAction::Block)
+        .process_response(&scan_response, GuardrailInputType::Response, vec![])
+        .expect_err("blocked");
+    let GraySwanGuardrailAPIError::Blocked {
+        violation_location,
+        violation,
+        violated_rules,
+        mutation,
+        ipi,
+        ..
+    } = error
+    else {
+        panic!("expected a Blocked error");
+    };
+    assert_eq!(violation_location, "output");
+    assert!((violation - 0.9).abs() < f64::EPSILON);
+    assert_eq!(
+        violated_rules,
+        vec![GuardrailExtraValue::Object(BTreeMap::from([
+            ("rule".to_owned(), GuardrailExtraValue::SignedInteger(6)),
+            (
+                "name".to_owned(),
+                GuardrailExtraValue::Text("self_harm".to_owned())
+            ),
+        ]))]
+    );
+    assert_eq!(mutation, Some(true));
+    assert_eq!(ipi, Some(false));
+}
+#[test]
+fn grayswan_block_error_marks_a_pre_call_violation_as_the_input_location() {
+    let error = guardrail(OnFlaggedAction::Block)
+        .process_response(&response(0.9), GuardrailInputType::Request, vec![])
+        .expect_err("blocked");
+    let GraySwanGuardrailAPIError::Blocked {
+        violation_location, ..
+    } = error
+    else {
+        panic!("expected a Blocked error");
+    };
+    assert_eq!(violation_location, "input");
+}
+#[test]
 fn grayswan_passthrough_replaces_post_call_messages() {
     let guardrail = guardrail(OnFlaggedAction::Passthrough);
     let result = guardrail
@@ -388,6 +444,44 @@ fn grayswan_monitor_verdict_passes_through() {
         .process_response(&response(0.5), GuardrailInputType::Request, Vec::new())
         .expect("monitor action");
     assert!(matches!(result.verdict, GraySwanVerdict::Monitored { .. }));
+}
+
+#[derive(Clone, Default)]
+struct Captured(Arc<Mutex<Vec<u8>>>);
+
+impl Write for Captured {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .map_err(|_poisoned| io::Error::other("poisoned"))?
+            .extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+#[test]
+fn grayswan_monitor_verdict_logs_the_flagged_content() {
+    let captured = Captured::default();
+    let writer = captured.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .with_writer(move || writer.clone())
+        .finish();
+    let result = with_default(subscriber, || {
+        guardrail(OnFlaggedAction::Monitor).process_response(
+            &response(0.5),
+            GuardrailInputType::Request,
+            Vec::new(),
+        )
+    })
+    .expect("monitor action");
+    assert!(matches!(result.verdict, GraySwanVerdict::Monitored { .. }));
+    let output = String::from_utf8(captured.0.lock().unwrap().clone()).unwrap();
+    assert!(output.contains("Monitoring mode - allowing flagged content"));
 }
 
 #[test]
@@ -691,4 +785,56 @@ async fn grayswan_apply_guardrail_sends_tool_calls_and_history_for_a_response() 
         Some(&GuardrailExtraValue::Text("hello".to_owned()))
     );
     assert!(payload.messages[1].extra.contains_key("tool_calls"));
+}
+
+#[test]
+fn grayswan_response_parses_a_numeric_violation_string() {
+    let parsed: GraySwanResponse = serde_json::from_str(r#"{"violation": "0.9"}"#).unwrap();
+    assert!((parsed.violation - 0.9).abs() < f64::EPSILON);
+}
+
+#[test]
+fn grayswan_response_parses_a_plain_numeric_violation() {
+    let bytes = br#"{"violation": 0.9}"#;
+    let parsed: GraySwanResponse = serde_json::from_slice(bytes).unwrap();
+    assert!((parsed.violation - 0.9).abs() < f64::EPSILON);
+}
+
+#[test]
+fn grayswan_response_defaults_a_null_violation_to_zero() {
+    let parsed: GraySwanResponse = serde_json::from_str(r#"{"violation": null}"#).unwrap();
+    assert!((parsed.violation - 0.0).abs() < f64::EPSILON);
+}
+
+#[test]
+fn grayswan_response_defaults_a_missing_violation_to_zero() {
+    let parsed: GraySwanResponse = serde_json::from_str("{}").unwrap();
+    assert!((parsed.violation - 0.0).abs() < f64::EPSILON);
+}
+
+#[test]
+fn grayswan_response_rejects_a_non_numeric_violation_string() {
+    let error = serde_json::from_str::<GraySwanResponse>(r#"{"violation": "not-a-number"}"#)
+        .expect_err("invalid violation text is rejected");
+    assert!(error.to_string().contains("invalid violation score"));
+}
+
+#[test]
+fn grayswan_response_with_a_numeric_string_violation_is_blocked_instead_of_passed_through() {
+    let parsed: GraySwanResponse = serde_json::from_str(r#"{"violation": "0.9"}"#).unwrap();
+    let error = guardrail(OnFlaggedAction::Block)
+        .process_response(&parsed, GuardrailInputType::Request, Vec::new())
+        .expect_err("a normalized violation above the threshold is blocked");
+    assert!(matches!(error, GraySwanGuardrailAPIError::Blocked { .. }));
+}
+
+#[test]
+fn replays_the_grayswan_response_corpus() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/grayswan_response");
+    let paths: Vec<_> = fs::read_dir(corpus).unwrap().collect();
+    assert!(!paths.is_empty());
+    assert!(paths.into_iter().all(|entry| {
+        let bytes = fs::read(entry.unwrap().path()).unwrap();
+        serde_json::from_slice::<GraySwanResponse>(&bytes).is_ok()
+    }));
 }
