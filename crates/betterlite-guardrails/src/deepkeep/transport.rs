@@ -15,6 +15,8 @@ pub(super) async fn send_request(
         .map_err(|source| {
             if source.is_timeout() {
                 DeepKeepError::Timeout { source }
+            } else if source.is_builder() {
+                DeepKeepError::RequestBuild { source }
             } else {
                 DeepKeepError::Request { source }
             }

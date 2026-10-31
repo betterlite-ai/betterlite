@@ -211,6 +211,7 @@ fn deepkeep_failure(error: &DeepKeepError) -> Box<HelperError> {
         DeepKeepError::Api { .. }
         | DeepKeepError::ResponseJson { .. }
         | DeepKeepError::Request { .. }
+        | DeepKeepError::RequestBuild { .. }
         | DeepKeepError::Timeout { .. }
         | DeepKeepError::InvalidHeader { .. }
         | DeepKeepError::InvalidHeaderName { .. } => "DeepKeepGuardrailAPIError",

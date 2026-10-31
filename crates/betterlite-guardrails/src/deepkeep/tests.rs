@@ -1,17 +1,19 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
+use std::{env, fs, process};
 
-use super::{
-    Action, DeepKeepError, DeepKeepGuardrail, InputType, Inputs, RequestContext, Response,
-};
+use super::{DeepKeepError, DeepKeepGuardrail, InputType, Inputs, RequestContext, Response};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::deepkeep_firewall::{Configured, UnreachableFallback};
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use rstest::rstest;
 use secrecy::SecretString;
 use tokio::net::TcpListener;
+use tracing::subscriber::set_default;
 
 fn guardrail() -> DeepKeepGuardrail {
     #[expect(
@@ -136,7 +138,7 @@ fn deepkeep_guardrail_request_keeps_fixed_firewall_id() {
 #[test]
 fn deepkeep_guardrail_empty_replacements_are_preserved() {
     let returned = Response {
-        action: Some(Action::None),
+        action: Some("NONE".to_owned()),
         texts: Some(Vec::new()),
         images: Some(Vec::new()),
         tools: Some(Vec::new()),
@@ -175,7 +177,7 @@ fn deepkeep_guardrail_loads_from_config() {
 #[test]
 fn deepkeep_guardrail_blocked_action_has_default_reason() {
     let returned = Response {
-        action: Some(Action::Blocked),
+        action: Some("BLOCKED".to_owned()),
         texts: None,
         images: None,
         tools: None,
@@ -216,4 +218,78 @@ async fn deepkeep_guardrail_apply_honors_fail_open_when_unreachable(
     } else {
         assert!(matches!(result, Err(DeepKeepError::Request { .. })));
     }
+}
+
+#[test]
+fn deepkeep_guardrail_accepts_non_blocked_action_and_applies_replacement() {
+    let returned = Response {
+        action: Some("ALLOWED".to_owned()),
+        texts: Some(vec!["replacement".to_owned()]),
+        images: None,
+        tools: None,
+        tool_calls: None,
+        structured_messages: None,
+        blocked_reason: None,
+    };
+    let output = DeepKeepGuardrail::build_return_inputs(&inputs(), returned).expect("not blocked");
+    assert_eq!(output.texts, vec!["replacement".to_owned()]);
+}
+
+#[test]
+fn deepkeep_guardrail_inputs_default_texts_for_image_only_input() {
+    let inputs: Inputs =
+        serde_json::from_str(r#"{"images":["image"],"model":null}"#).expect("inputs");
+    assert_eq!(inputs.texts, Vec::<String>::new());
+    assert_eq!(
+        inputs.images,
+        Some(vec![GuardrailValue::Text("image".to_owned())])
+    );
+}
+
+#[tokio::test]
+async fn deepkeep_guardrail_fail_open_never_bypasses_request_build_errors() {
+    let mut deepkeep = guardrail();
+    deepkeep.settings.api_base =
+        "http://127.0.0.1:99999/v3/openai/beta/litellm_basic_guardrail_api".to_owned();
+    deepkeep.settings.unreachable_fallback = UnreachableFallback::FailOpen;
+    let result = deepkeep.apply(inputs(), context()).await;
+    assert!(matches!(result, Err(DeepKeepError::RequestBuild { .. })));
+}
+
+#[tokio::test]
+async fn deepkeep_guardrail_fail_open_logs_a_warning_with_guardrail_identity() {
+    let log_path = env::temp_dir().join(format!("betterlite-deepkeep-fail-open-{}", process::id()));
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::WARN)
+        .with_writer(Arc::new(fs::File::create(&log_path).expect("log file")))
+        .finish();
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let base = format!("http://{}", listener.local_addr().expect("addr"));
+    drop(listener);
+    let mut deepkeep = guardrail();
+    deepkeep.settings.api_base = format!("{base}/v3/openai/beta/litellm_basic_guardrail_api");
+    deepkeep.settings.unreachable_fallback = UnreachableFallback::FailOpen;
+    deepkeep.timeout = Duration::from_millis(100);
+    let guard = set_default(subscriber);
+    let result = deepkeep.apply(inputs(), context()).await;
+    drop(guard);
+    assert_eq!(result.expect("fail-open passthrough"), inputs());
+    let written = fs::read_to_string(&log_path).expect("log contents");
+    fs::remove_file(&log_path).expect("remove log");
+    assert!(written.contains("firewall"));
+    assert!(written.contains("fail_open"));
+    assert!(!written.contains("key"));
+}
+
+#[test]
+fn deepkeep_guardrail_replays_the_deepkeep_response_corpus() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/deepkeep_response");
+    let paths: Vec<_> = fs::read_dir(corpus).unwrap().collect();
+    assert!(!paths.is_empty());
+    assert!(paths.into_iter().all(|entry| {
+        let bytes = fs::read(entry.unwrap().path()).unwrap();
+        let response = serde_json::from_slice::<Response>(&bytes);
+        let inputs = serde_json::from_slice::<Inputs>(&bytes);
+        response.is_ok() || inputs.is_ok()
+    }));
 }
