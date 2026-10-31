@@ -8,14 +8,17 @@ use betterlite_postgres_fixture::connection::PostgresFixture;
 use clap::Parser;
 use deadpool_postgres::{Client, Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
+use std::fmt::{Debug, Write as _};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio_postgres::NoTls;
 use tracing::Subscriber;
+use tracing::dispatcher::set_default;
 use tracing::field::{Field, Visit};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 
 #[derive(Clone, Default)]
-struct CapturedLogs(std::sync::Arc<std::sync::Mutex<Vec<String>>>);
+struct CapturedLogs(Arc<Mutex<Vec<String>>>);
 
 struct EventFields(String);
 
@@ -27,10 +30,10 @@ impl Visit for EventFields {
         self.0.push(' ');
     }
 
-    fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+    fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
         self.0.push_str(field.name());
         self.0.push('=');
-        self.0.push_str(&format!("{value:?}"));
+        write!(self.0, "{value:?}").unwrap();
         self.0.push(' ');
     }
 }
@@ -128,7 +131,7 @@ async fn unavailable_tables_do_not_stop_later_scans() {
         INSERT INTO "LiteLLM_Config" (param_name, param_value) VALUES ('environment_variables', '{"key":"v2:gcm:last"}');
     "#).await.unwrap();
     let (logs, dispatch) = captured_logs();
-    let _guard = tracing::dispatcher::set_default(&dispatch);
+    let _guard = set_default(&dispatch);
     let report = scan_covered_tables(&**client, &cipher(), Duration::from_secs(10))
         .await
         .unwrap();
@@ -141,9 +144,9 @@ async fn unavailable_tables_do_not_stop_later_scans() {
             .all(|location| location.scanned == 0)
     );
     assert_eq!(report.locations.last().unwrap().already_v2, 1);
-    let logs = logs.0.lock().unwrap().join(" ");
-    assert!(logs.contains("42P01"));
-    assert!(logs.contains("22012"));
+    let captured = logs.0.lock().unwrap().join(" ");
+    assert!(captured.contains("42P01"));
+    assert!(captured.contains("22012"));
     drop(client);
     pool.close();
     fixture.close_async().await.unwrap();
@@ -167,7 +170,7 @@ async fn unavailable_table_recovers_inside_a_transaction() {
         .await
         .unwrap();
     let (logs, dispatch) = captured_logs();
-    let _guard = tracing::dispatcher::set_default(&dispatch);
+    let _guard = set_default(&dispatch);
     let report = scan_covered_tables(&*transaction, &cipher(), Duration::from_secs(10))
         .await
         .unwrap();
@@ -181,8 +184,8 @@ async fn unavailable_table_recovers_inside_a_transaction() {
         ),
         (2, 1, 1)
     );
-    let logs = logs.0.lock().unwrap().join(" ");
-    assert!(logs.contains("42P01"));
+    let captured = logs.0.lock().unwrap().join(" ");
+    assert!(captured.contains("42P01"));
     drop(client);
     pool.close();
     fixture.close_async().await.unwrap();
