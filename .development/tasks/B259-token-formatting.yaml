@@ -5,8 +5,8 @@ description: >-
   (663-690), plus every function-definition formatter 954-1051. Use B193 catalog membership and B195 pinned encoding
   names; preserve property order, description lines, required markers, indentation, enum rendering and missing-array-items
   errors. Format OpenAI function, Anthropic input_schema and Gemini declaration shapes without counting them here.
-  Return typed values/errors from bounded input, not a general JSON schema validator. HF acquisition and family
-  fallback remain the open B195 decision and are not extended here. Budget 220 formatting/normalization, 100 adapters,
+  Return typed values/errors from bounded input, not a general JSON schema validator. Hugging Face family selection
+  and the cl100k_base fallback are decided and owned by B195 and are not extended here. Budget 220 formatting/normalization, 100 adapters,
   260 tests, 70 fuzz/replay and 50 wiring (700 total). Add the token_tool_format cargo-fuzz target, call the production
   parser, and commit/replay malformed and boundary seeds. Write the behavior rstest functions token_formatting_behavior_tests_behavior
   in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have

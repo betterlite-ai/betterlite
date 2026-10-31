@@ -1,7 +1,7 @@
 id: B5088
-title: Hugging Face OIDC and OAuth refresh tokens like huggingface_hub
+title: Hugging Face OIDC and OAuth refresh tokens for hf-hub
 description: >-
-  huggingface_hub 1.32.0's get_token runs when LiteLLM passes no token. It tries an OIDC exchange before the env token and refreshes an OAuth token after it reads the token file. B5085 builds the env and file steps in crates/betterlite-http/src/hub_token.rs and hub_token/**; this task adds the other two in the same lookup, in get_token's order, and puts the OIDC and OAuth requests in crates/betterlite-http/src/hub_oauth.rs and hub_oauth/**.
+  huggingface_hub 1.32.0's get_token runs when LiteLLM passes no token, and the hf-hub crate B195 downloads with has no OIDC exchange and no OAuth refresh, so betterlite builds both and hands the result to hf-hub as its token. Max decided on 2026-10-31 to keep both, since LiteLLM loads its default tokenizers with no token. get_token tries an OIDC exchange before the env token and refreshes an OAuth token after it reads the token file. B5085 builds the env and file steps in crates/betterlite-http/src/hub_token.rs and hub_token/**; this task adds the other two in the same lookup, in get_token's order, and puts the OIDC and OAuth requests in crates/betterlite-http/src/hub_oauth.rs and hub_oauth/**.
 
 
   OIDC. When HF_OIDC_RESOURCE is set, get an ID token from HF_OIDC_ID_TOKEN or from GitHub Actions (detect_provider and _get_github_oidc_token with ACTIONS_ID_TOKEN_REQUEST_URL and ACTIONS_ID_TOKEN_REQUEST_TOKEN), exchange it at the Hub (exchange_oidc_token) and cache the result with _get_token_from_oidc's expiry margins. The config section huggingface_oidc (crates/betterlite-config/src/sections/huggingface_oidc.rs and huggingface_oidc/**) reads these env vars and HF_DEVICE_CODE_OAUTH_CLIENT_ID through the config's environment lookup.
@@ -10,7 +10,7 @@ description: >-
   OAuth refresh. After the token file is read, look the token up in the stored_tokens file at B5085's stored_tokens_path. When it carries a refresh token and an expiry, refresh it the way _refresh_oauth_token_if_needed does: the same margins, the same lock file and timeout, the same request, the one-time warning on failure, saving the new token with _save_token and _write_secret's file modes. Parse stored_tokens as configparser does with interpolation off, and give that parser a fuzz target.
 
 
-  Requests go through B5086's HubClient. The cache and the warned flag belong to the lookup's constructor, not to module state.
+  Requests go through B173's pooled client in betterlite-http with B5085's endpoint and download timeout. The cache and the warned flag belong to the lookup's constructor, not to module state.
 
 
   Tests. hub_oauth::tests::oidc_follows_huggingface_hub covers the env ID token, the GitHub Actions request, the exchange, the cache and its margins, and a failed exchange. hub_oauth::tests::oauth_refresh_follows_huggingface_hub covers a fresh token, an expired one that refreshes and is saved, a failed refresh with its one warning, invalid_grant and the lock. hub_oauth::tests::replays_the_stored_tokens_corpus replays the corpus. sections::huggingface_oidc::tests::settings_follow_huggingface_hub loads the env vars and the client id default.
@@ -79,7 +79,7 @@ deviations:
       A request without a timeout can hold the token lookup, and with it every tokenizer download, forever.
     link: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/_oidc.py#L53-L126
 out_of_scope:
-  - The env token, the token file and the paths belong to B5085.
+  - The env token, the token file and the paths belong to B5085. The download that uses the token belongs to B195.
   - The device code login flow and the oidc_login helper are interactive and LiteLLM never calls them.
   - The Google Colab secret lookup only runs inside Colab notebooks and is not built.
 pitfalls:

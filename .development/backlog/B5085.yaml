@@ -1,6 +1,6 @@
 id: B5085
 milestone: M1 openai data plane
-title: Hugging Face Hub settings and token like huggingface_hub
+title: Hugging Face Hub settings and token for hf-hub
 status: todo
 depends_on: [B5090]
 file: tasks/B5085-huggingface-hub-settings.yaml

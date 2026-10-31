@@ -71,7 +71,7 @@ deviations:
       LiteLLM's known_tokenizer_config grows with every model name it sees, and the final generic branch fetches for any name a request sends, so its memory has no bound.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L521-L527
 out_of_scope:
-  - Hugging Face tokenizer downloads through huggingface_hub belong to B195 and B5085 to B5088; this fetch uses neither the Hub settings nor its cache.
+  - Hugging Face tokenizer downloads through huggingface_hub belong to B195, B5085 and B5088; this fetch uses neither the Hub settings nor its cache.
   - Rendering, the Jinja globals and the byte limits stay as B177 and B215 built them.
 pitfalls:
   - The URL is always https://huggingface.co with "raw/main", no HF_ENDPOINT, no token and no file cache, so a gated repo answers 401 and counts as a failure.
