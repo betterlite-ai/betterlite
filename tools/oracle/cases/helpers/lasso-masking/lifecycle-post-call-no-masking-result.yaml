@@ -1,0 +1,17 @@
+kind: helper
+name: lifecycle_post_call_no-masking-result
+call:
+  b3779:
+    lifecycle_post_call_hook:
+      mask: true
+      response:
+        choices:
+          - message:
+              role: assistant
+              content: secret
+              tool_calls:
+                - id: call
+                  type: function
+                  function: {name: lookup, arguments: '{"email":"private"}'}
+env: {}
+compare: {ignore: []}

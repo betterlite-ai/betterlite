@@ -1,0 +1,8 @@
+name: native-feature-general-license-wrong-environment-shape
+config: |
+  general_settings: {litellm_license: value}
+  environment_variables: ''
+env: {}
+request: {method: GET, path: /scim/v2/ServiceProviderConfig, headers: {}, body: null}
+upstream: []
+compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}

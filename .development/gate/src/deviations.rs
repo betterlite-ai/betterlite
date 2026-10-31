@@ -6,7 +6,6 @@ use std::path::Path;
 use crate::error::GateError;
 use crate::spec::backlog::Backlog;
 use crate::spec::deviations::DeviationLog;
-use crate::spec::report::ReportDeviation;
 use crate::yaml::read_yaml;
 
 pub(crate) fn read_log(root: &Path, task_id: &str) -> Result<Option<DeviationLog>, GateError> {
@@ -17,48 +16,7 @@ pub(crate) fn read_log(root: &Path, task_id: &str) -> Result<Option<DeviationLog
     read_yaml(&path).map(Some)
 }
 
-pub(crate) fn mismatch(
-    reported: &[ReportDeviation],
-    logged: Option<&DeviationLog>,
-    task_id: &str,
-) -> Vec<String> {
-    let file = format!("docs/deviations/{task_id}.yaml");
-    let Some(log) = logged else {
-        return if reported.is_empty() {
-            Vec::new()
-        } else {
-            vec![format!(
-                "the report lists {} deviations; write the same entries to {file}",
-                reported.len()
-            )]
-        };
-    };
-    let mut problems = Vec::new();
-    if log.task != task_id {
-        problems.push(format!("{file} names task {}, not {task_id}", log.task));
-    }
-    // workers restate the log in their own words, so only the count and the links must agree
-    if links(reported) != links(&log.deviations) {
-        let [report_side, file_side] = [reported, log.deviations.as_slice()].map(|list| {
-            list.iter()
-                .map(|entry| format!("{} ({})", entry.what, entry.link))
-                .collect::<Vec<String>>()
-                .join(" | ")
-        });
-        problems.push(format!(
-            "the report and {file} list different deviations, by count or link; report: {report_side}; {file}: {file_side}"
-        ));
-    }
-    problems
-}
-
-fn links(list: &[ReportDeviation]) -> Vec<&str> {
-    let mut links: Vec<&str> = list.iter().map(|entry| entry.link.as_str()).collect();
-    links.sort_unstable();
-    links
-}
-
-fn file_problems(path: &Path, backlog: &Backlog) -> Vec<String> {
+pub(crate) fn file_problems(path: &Path, backlog: &Backlog) -> Vec<String> {
     let shown = path.display();
     let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
         return vec![format!("{shown}: the file name is not unicode")];

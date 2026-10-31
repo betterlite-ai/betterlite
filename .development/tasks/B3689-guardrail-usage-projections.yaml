@@ -169,7 +169,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrail_usage_projections::.*field/)'
     - id: guardrail-usage-oracle
       why: The typed operation has no seed, the oracle helper fails or behavior tests are missing
-      run: test -f tools/oracle/helpers/b3689.py && test -f tools/oracle/src/helpers/server/b3689.rs && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^guardrail_usage_projections::|replays_the_helper_case_corpus)' && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/guardrail-usage-projections-*)"
+      run: test -f tools/oracle/helpers/b3689.py && test -f tools/oracle/src/helpers/server/b3689.rs && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^guardrail_usage_projections::|replays_the_helper_case_corpus/)' && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/guardrail-usage-projections-*)"
     - id: guardrail-usage-python
       why: The helper adapter is missing or strict Python checking fails
       run: test -f tools/oracle/helpers/b3689.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json

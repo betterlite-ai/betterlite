@@ -1,14 +1,14 @@
 id: B4321
 milestone: M8 platform
 title: Resolve Redis targets and coerce connection settings
-status: todo
+status: done
 depends_on: [B002, B4320]
 file: tasks/B4321-redis-connection-settings.yaml
 covers:
   - "litellm/_redis.py"
 parent: B126
 split_from: B126
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 385

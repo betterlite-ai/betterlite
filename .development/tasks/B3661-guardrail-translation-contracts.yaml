@@ -113,7 +113,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_translation::.*metadata_merge/)'
     - id: guardrail-provider-oracle
       why: The typed operation has no seed, the oracle helper fails or behavior tests are missing
-      run: test -f tools/oracle/helpers/b3661.py && test -f tools/oracle/src/helpers/guardrails/b3661.rs && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^guardrail_provider_options::|replays_the_helper_case_corpus)' && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/guardrail-provider-options-*)"
+      run: test -f tools/oracle/helpers/b3661.py && test -f tools/oracle/src/helpers/guardrails/b3661.rs && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^guardrail_provider_options::|replays_the_helper_case_corpus/)' && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/guardrail-provider-options-*)"
     - id: guardrail-provider-python
       why: The helper adapter is missing or strict Python checking fails
       run: test -f tools/oracle/helpers/b3661.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json

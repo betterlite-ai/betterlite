@@ -1,0 +1,11 @@
+task: B4502
+deviations:
+  - what: Row types reject unknown fields through serde deny_unknown_fields instead of Pydantic extra="forbid"; unknown-field rejection is equivalent.
+    why: Pydantic is Python-only; Rust's serde provides the same strict validation across both server and worker.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/sources.py#L34-L71
+  - what: Storage is an injected async Rust trait with method signatures rather than a concrete ClickHouseStorage implementation.
+    why: The trait is a port; the concrete storage implementation is a separate outstanding task (G1), not yet assigned.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/sources.py#L26-L31
+  - what: Metadata filtering runs as an iterator filter during execution construction, not as field-level validators.
+    why: Post-deserialization filtering is testable on its own and lets each row keep or drop a key independently of the row's own validity.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/sources.py#L165-L169

@@ -86,7 +86,7 @@ checks:
       run: grep -q "SavedSetup" tools/management-cli/src/agent_setup_profiles.rs && grep -q "normalized_gateway\|normalize_base_url" tools/management-cli/src/agent_setup_profiles.rs && grep -q "valid_key" tools/management-cli/src/agent_setup_profiles.rs && grep -q "valid_model" tools/management-cli/src/agent_setup_profiles.rs && grep -qE "ord.*<=.*32|ord.*==.*127" tools/management-cli/src/agent_setup_profiles.rs
     - id: space-character-threshold
       why: no test validates that api_key rejects space (ord 32) while model accepts it, showing the ord threshold difference
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^agent_setup_profiles.*space_character)' 2>&1 | grep -q "space\|ord.*32"
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^agent_setup_profiles.*space_character/)' 2>&1 | grep -q "space\|ord.*32"
     - id: savedsetup-read
       why: read_saved_setup does not load, validate target/settings_path match, reject Codex without model, or report clear errors
       run: grep -q "read_saved_setup" tools/management-cli/src/agent_setup_profiles.rs && grep -q "model_validate_json\|ValidationError" tools/management-cli/src/agent_setup_profiles.rs && grep -qE "target.*!=|settings_path.*!=|codex.*model.*None" tools/management-cli/src/agent_setup_profiles.rs && grep -q "lite unconfigure.*--forget" tools/management-cli/src/agent_setup_profiles.rs
