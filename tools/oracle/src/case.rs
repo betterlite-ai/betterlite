@@ -12,12 +12,16 @@ use serde_json::Value;
 use crate::multipart_oracle::error::MultipartError;
 use crate::multipart_oracle::request::{answer_body, request_body};
 
+mod config_inspection;
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Case {
     pub(crate) name: String,
     pub(crate) config: String,
     pub(crate) env: BTreeMap<String, String>,
+    #[serde(default)]
+    pub(crate) native_feature_eligibility: bool,
     pub(crate) request: Box<Request>,
     pub(crate) upstream: Vec<UpstreamAnswer>,
     pub(crate) compare: Box<Compare>,
@@ -227,6 +231,20 @@ pub(crate) fn validate(path: &Path, case: &Case) -> Result<(), OracleError> {
     };
     if case.name.is_empty() || case.config.is_empty() || case.request.path.is_empty() {
         return Err(invalid("name, config, and request.path cannot be empty"));
+    }
+    if case.env.contains_key("LITELLM_LICENSE") {
+        return Err(invalid("env cannot set LITELLM_LICENSE"));
+    }
+    if case.env.contains_key("LITELLM_WORKER_STARTUP_HOOKS") {
+        return Err(invalid("env cannot set LITELLM_WORKER_STARTUP_HOOKS"));
+    }
+    if case.native_feature_eligibility && case.env.contains_key("PYTHONPATH") {
+        return Err(invalid("env cannot set PYTHONPATH on an eligible case"));
+    }
+    if config_inspection::requests_license(path, &case.config)? {
+        return Err(invalid(
+            "config cannot set general_settings.litellm_license or environment_variables.LITELLM_LICENSE",
+        ));
     }
     if let Some(database) = &case.database {
         database

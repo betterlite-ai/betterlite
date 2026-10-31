@@ -1,0 +1,5 @@
+kind: helper
+name: mapped-tool-schema
+call: {anthropic_output_schema: {function: map_tool, value: {type: json_schema, response_schema: {type: string, minLength: 1}}}}
+env: {}
+compare: {ignore: []}
