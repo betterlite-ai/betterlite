@@ -57,6 +57,23 @@ fn resolves_multiple_includes_in_order() {
 }
 
 #[test]
+fn merge_extends_lists_and_replaces_other_values() {
+    let base = ConfigMap::from_iter([
+        (String::from("model_list"), json!(["base"])),
+        (String::from("litellm_settings"), json!({"base": true})),
+    ]);
+    let included = ConfigMap::from_iter([
+        (String::from("model_list"), json!(["included"])),
+        (String::from("litellm_settings"), json!({"included": true})),
+    ]);
+
+    let merged = super::merge(base, included);
+
+    assert_eq!(merged["model_list"], json!(["base", "included"]));
+    assert_eq!(merged["litellm_settings"], json!({"included": true}));
+}
+
+#[test]
 fn resolves_includes_declared_by_included_files() {
     let directory = tempdir().unwrap();
     let root = directory.path().join("root.yaml");
