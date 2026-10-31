@@ -504,8 +504,8 @@ async fn seed_resource_rows(client: &tokio_postgres::Client) {
             INSERT INTO "LiteLLM_ProxyModelTable"
                 (model_id, model_name, litellm_params, created_by, updated_by)
                 VALUES ('m', 'gpt', '"{\"api_key\":\"ENC:xyz==\"}"', 'test', 'test');
-            INSERT INTO "LiteLLM_OrganizationTable" (organization_id, organization_alias, budget_id, created_by, updated_by)
-                VALUES ('o', 'org', 'b', 'test', 'test');
+            INSERT INTO "LiteLLM_OrganizationTable" (organization_id, organization_alias, budget_id, models, created_by, updated_by)
+                VALUES ('o', 'org', 'b', ARRAY[]::TEXT[], 'test', 'test');
             INSERT INTO "LiteLLM_Config" (param_name, param_value) VALUES ('p', '{"k":"v"}');
             "#,
         )
