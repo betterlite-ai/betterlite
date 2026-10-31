@@ -1,0 +1,15 @@
+kind: helper
+name: batch-families-cross-different-thresholds
+call:
+  token_rates:
+    operation: batch
+    model_info:
+      input_cost_per_token_batches: "0.000001"
+      input_cost_per_token_above_1k_tokens_batches: "0.000002"
+      output_cost_per_token_batches: "0.000003"
+      output_cost_per_token_above_5k_tokens_batches: "0.000004"
+    usage:
+      prompt_tokens: 2000
+    provider: openai
+compare: {ignore: []}
+env: {}
