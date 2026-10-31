@@ -15,7 +15,7 @@ deadpool-postgres.workspace = true
 hex.workspace = true
 percent-encoding.workspace = true
 regex.workspace = true
-rust_decimal = { workspace = true, features = ["db-tokio-postgres"] }
+rust_decimal = { workspace = true, features = ["db-tokio-postgres", "serde-with-float"] }
 secrecy.workspace = true
 serde.workspace = true
 serde_json = { version = "1.0.145", features = ["raw_value"] }
