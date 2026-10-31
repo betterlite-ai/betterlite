@@ -19,6 +19,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "lens_sources"
+path = "fuzz_targets/lens_sources.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "structured_response"
 path = "fuzz_targets/structured_response.rs"
 test = false
