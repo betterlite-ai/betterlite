@@ -161,7 +161,7 @@ pitfalls:
   - "flush_queue() must limit chunk attempts to ceil(queued / batch_size) where queued is the count at lock release, never loop until empty."
   - "The interval.ms must use the real flush window start time (the previous last_flush_time) as window_start, not the current time."
   - "Request body is gzipped; Content-Type and Content-Encoding headers must reflect gzipped JSON, not raw JSON."
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 1

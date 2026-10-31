@@ -8,6 +8,12 @@ metadata.cargo-fuzz = true
 betterlite-context = { path = ".." }
 libfuzzer-sys = "0.4.9"
 [[bin]]
+name = "cached_json"
+path = "fuzz_targets/cached_json.rs"
+test = false
+doc = false
+bench = false
+[[bin]]
 name = "cloud_object_path"
 path = "fuzz_targets/cloud_object_path.rs"
 test = false

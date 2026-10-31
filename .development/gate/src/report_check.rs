@@ -3,6 +3,7 @@ mod tests;
 use std::collections::BTreeSet;
 
 use crate::spec::report::{OptionVerdict, PriorArt, Report, ReportStatus};
+use crate::spec::task::Task;
 
 fn prior_art_problems(entry: &PriorArt) -> Vec<String> {
     let mut problems = Vec::new();
@@ -25,6 +26,34 @@ fn prior_art_problems(entry: &PriorArt) -> Vec<String> {
         format!(
             "prior_art option '{}' needs an https link and a why",
             option.name
+        )
+    }));
+    problems
+}
+
+fn owned_problems(report: &Report, task: &Task) -> Vec<String> {
+    let mut problems = Vec::new();
+    let owns_litellm = task.references.iter().any(|reference| {
+        reference
+            .url
+            .starts_with("https://github.com/BerriAI/litellm/blob/")
+    });
+    if report.status == ReportStatus::Done && owns_litellm && report.owned.is_empty() {
+        problems.push(
+            "owned lists each behavior a user can observe in the LiteLLM code the references own"
+                .to_owned(),
+        );
+    }
+    let unsupported = report.owned.iter().filter(|item| {
+        item.behavior.trim().is_empty()
+            || !item.litellm.starts_with("https://")
+            || item.code.trim().is_empty()
+            || item.test.trim().is_empty()
+    });
+    problems.extend(unsupported.map(|item| {
+        format!(
+            "owned '{}' needs an https link to the LiteLLM line, the code that does it and the test that proves it",
+            item.behavior
         )
     }));
     problems
@@ -64,10 +93,11 @@ fn shape_problems(report: &Report, task_id: &str) -> Vec<String> {
 
 pub(crate) fn report_problems(
     report: &Report,
-    task_id: &str,
+    task: &Task,
     added_dependencies: &BTreeSet<String>,
 ) -> Vec<String> {
-    let mut problems = shape_problems(report, task_id);
+    let mut problems = shape_problems(report, &task.id);
+    problems.extend(owned_problems(report, task));
     problems.extend(report.prior_art.iter().flat_map(prior_art_problems));
     let chosen: BTreeSet<String> = report
         .prior_art

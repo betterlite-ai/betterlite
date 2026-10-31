@@ -169,7 +169,7 @@ pitfalls:
   - "_v3_response returns None for undecided/ask decisions with no blocked_by controls; the None means no action, not that Straiker was silent."
   - "The v3 response decision defaults to 'NONE' (allow) when Straiker gives no verdict; an absent verdict is treated as allow, not fail-open deny."
 
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

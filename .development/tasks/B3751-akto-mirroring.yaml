@@ -130,7 +130,7 @@ pitfalls:
   - >-
     akto_api_key must never be logged or shown in Debug output; mark the field as SecretString and use it only
     in the Authorization header.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 1

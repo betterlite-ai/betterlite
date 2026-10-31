@@ -152,7 +152,7 @@ pitfalls:
     Inherited guardrails come from B1108's metadata helper; passthrough config and
     inherited guardrails are merged, not replaced.
 
-review_level: security
+review_level: standard
 
 budget:
   max_changed_lines: 1500

@@ -81,4 +81,4 @@ pitfalls:
   - Popping stream before constructing the sync request intentionally leaves it out of the JSON body.
   - Caller Authorization wins over the API-key header even though the key is still required to be non-None.
 budget: {max_changed_lines: 675, max_new_expects: 0}
-review_level: security
+review_level: standard

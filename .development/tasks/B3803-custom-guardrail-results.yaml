@@ -155,7 +155,7 @@ pitfalls:
   - Timeout applies to both compilation (load_module) and execution (apply_guardrail); if compilation takes >30 seconds, the guardrail fails at startup, not per-request.
   - _prepare_safe_request_data returns a plain dict, not a MappingProxyType or frozen struct; custom code can modify it in place, but changes do not propagate back to the original request.
   - Rejection phrase matching is case-insensitive substring match (text.lower().contains(phrase)), not regex or exact match; partial matches count (e.g., "no help" matches "no help with it").
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

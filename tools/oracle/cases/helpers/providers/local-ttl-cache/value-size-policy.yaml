@@ -1,0 +1,8 @@
+kind: helper
+name: value-size-policy
+call:
+  local_ttl_cache:
+    function: value_size_policy
+env: {}
+compare:
+  ignore: []

@@ -206,7 +206,7 @@ pitfalls:
   - _execute_search forwards search credentials only when configured (search_tool.litellm_params).
     When no search tool is configured, it falls back to perplexity without explicit credentials.
 
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

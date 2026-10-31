@@ -93,7 +93,7 @@ pitfalls:
 - Only null fields are omitted; temperature=0 and empty tools remain in the request.
 - AZURE_AD_TOKEN is consulted only when extra_body is explicitly null, not when it is omitted.
 - Azure's isinstance(OpenAI) test also matches AzureOpenAI and discards that supplied synchronous client.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

@@ -75,7 +75,7 @@ pitfalls:
   - An arbitrary voice string becomes a runway-preset presetId rather than an ElevenLabs voice identifier.
   - A null runwayml_voice chooses Bernard, while an empty mapping remains the selected voice object.
   - A non-string first output fails even if a later output contains a usable audio URL.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

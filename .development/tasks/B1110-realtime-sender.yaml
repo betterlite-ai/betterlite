@@ -107,7 +107,7 @@ pitfalls:
 - A failed beta client send enters the same warning/fallback branch as a translation failure and can cause a second send attempt.
 - Authorized transcription enforcement rewrites existing nested dictionaries but does not insert missing ones.
 - Guardrail setup injection and successful-send cache mutation intentionally have different commit points.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

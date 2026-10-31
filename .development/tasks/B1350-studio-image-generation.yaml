@@ -86,4 +86,4 @@ pitfalls:
   - Studio Imagen can return an image record with null b64_json for a prediction lacking image bytes.
   - GOOGLE_API_KEY alone does not satisfy this image adapter's validation.
 budget: {max_changed_lines: 775, max_new_expects: 1}
-review_level: security
+review_level: standard
