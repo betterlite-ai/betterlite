@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::process;
 
 use super::{IdentityEnvironment, SystemIdentityEnvironment, resolve_stagger_identity};
 
@@ -102,4 +103,9 @@ fn falls_back_to_a_resolvable_host_when_nothing_else_is_set() {
     let identity = resolve_stagger_identity(None, &BTreeMap::new(), &SystemIdentityEnvironment);
     assert!(identity.contains(':'));
     assert!(!identity.starts_with(':'));
+}
+
+#[test]
+fn system_identity_environment_reports_this_process_id() {
+    assert_eq!(SystemIdentityEnvironment.process_id(), process::id());
 }
