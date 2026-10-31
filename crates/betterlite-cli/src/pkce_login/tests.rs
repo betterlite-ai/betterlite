@@ -720,7 +720,12 @@ fn expires_in_rejects_whitespace_padded_fractional_string() {
 }
 
 #[test]
-fn expires_in_rejects_huge_exponent_string_without_allocating() {
+fn normalize_integer_digits_rejects_a_decimal_position_past_19_digits() {
+    assert_eq!(wire::normalize_integer_digits("1", 1, 30), None);
+}
+
+#[test]
+fn expires_in_rejects_huge_exponent_string() {
     let body =
         br#"{"access_token":"access","expires_in":"1e2000000000","refresh_token":"refresh"}"#;
     wire::parse_token(body).unwrap_err();
