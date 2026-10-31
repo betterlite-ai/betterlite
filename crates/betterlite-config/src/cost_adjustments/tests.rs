@@ -2,8 +2,11 @@
 
 use std::collections::BTreeMap;
 
-use crate::cost_adjustments::CostAdjustmentValue;
-use crate::loader::ConfigLoader;
+use rstest::rstest;
+use rust_decimal::Decimal;
+
+use crate::cost_adjustments::{DiscountEntry, MarginEntry};
+use crate::loader::{ConfigError, ConfigLoader};
 
 #[test]
 fn loads_cost_adjustments() {
@@ -17,24 +20,19 @@ fn loads_cost_adjustments() {
     let settings = &config.sections.cost_adjustments;
     assert_eq!(
         settings.cost_discount_config["vertex_ai"],
-        CostAdjustmentValue::Number(serde_json::Number::from_f64(0.2).unwrap())
+        DiscountEntry::Percent(Decimal::new(2, 1))
     );
     assert_eq!(
         settings.cost_margin_config["vertex_ai"],
-        CostAdjustmentValue::Null
+        MarginEntry::Unsupported,
+        "a null provider entry stays an explicit unapplied entry instead of falling through to global"
     );
     assert_eq!(
         settings.cost_margin_config["global"],
-        CostAdjustmentValue::Object(BTreeMap::from([
-            (
-                "percentage".to_owned(),
-                CostAdjustmentValue::Text("0.1".to_owned()),
-            ),
-            (
-                "fixed_amount".to_owned(),
-                CostAdjustmentValue::Number(serde_json::Number::from_f64(0.01).unwrap()),
-            ),
-        ]))
+        MarginEntry::Split {
+            percentage: Some(Decimal::new(1, 1)),
+            fixed_amount: Some(Decimal::new(1, 2)),
+        }
     );
     let defaults = ConfigLoader {
         lookup: BTreeMap::<String, String>::new(),
@@ -56,12 +54,12 @@ fn loader_keeps_an_integer_fixed_amount_exact_past_f64_range() {
     )
     .unwrap();
     let settings = &config.sections.cost_adjustments;
-    let CostAdjustmentValue::Object(global) = &settings.cost_margin_config["global"] else {
-        panic!("expected an object");
-    };
     assert_eq!(
-        global["fixed_amount"],
-        CostAdjustmentValue::Number(serde_json::Number::from(0x0020_0000_0000_0001_u64)),
+        settings.cost_margin_config["global"],
+        MarginEntry::Split {
+            percentage: None,
+            fixed_amount: Some(Decimal::from_str_exact("9007199254740993").unwrap()),
+        },
         "an integer lexeme has no decimal point, so the loader keeps every digit past f64's 2^53 bound",
     );
 }
@@ -76,12 +74,159 @@ fn loader_keeps_quoted_text_exact_instead_of_rounding_a_float_lexeme() {
     )
     .unwrap();
     let settings = &config.sections.cost_adjustments;
-    let CostAdjustmentValue::Object(global) = &settings.cost_margin_config["global"] else {
-        panic!("expected an object");
-    };
     assert_eq!(
-        global["fixed_amount"],
-        CostAdjustmentValue::Text("9007199254740993.0".to_owned()),
-        "a quoted lexeme keeps its exact original text instead of rounding through f64",
+        settings.cost_margin_config["global"],
+        MarginEntry::Split {
+            percentage: None,
+            fixed_amount: Some(Decimal::from_str_exact("9007199254740993").unwrap()),
+        },
+        "a quoted lexeme parses to the same exact decimal as the unquoted integer, with no rounding through f64",
     );
+}
+
+#[rstest]
+#[case::text("a", "\"0.2\"")]
+#[case::list("b", "[1]")]
+#[case::object("c", "{x: 1}")]
+#[case::boolean("d", "true")]
+fn discount_text_list_and_object_entries_are_unsupported_instead_of_crashing(
+    #[case] provider: &str,
+    #[case] value: &str,
+) {
+    let config = ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
+    }
+    .load(&format!(
+        "litellm_settings:\n  cost_discount_config:\n    {provider}: {value}\n"
+    ))
+    .unwrap();
+    let settings = &config.sections.cost_adjustments;
+    assert_eq!(
+        settings.cost_discount_config[provider],
+        DiscountEntry::Unsupported
+    );
+}
+
+#[test]
+fn margin_scalar_text_and_boolean_do_not_become_a_percentage() {
+    let config = ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
+    }
+    .load("litellm_settings:\n  cost_margin_config:\n    a: \"0.5\"\n    b: true\n")
+    .unwrap();
+    let settings = &config.sections.cost_adjustments;
+    assert_eq!(settings.cost_margin_config["a"], MarginEntry::Unsupported);
+    assert_eq!(settings.cost_margin_config["b"], MarginEntry::Unsupported);
+}
+
+#[test]
+fn margin_object_field_ignores_a_boolean_value_and_unrelated_keys() {
+    let config = ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
+    }
+    .load("litellm_settings:\n  cost_margin_config:\n    global: {percentage: true, ignored: 99}\n")
+    .unwrap();
+    let settings = &config.sections.cost_adjustments;
+    assert_eq!(
+        settings.cost_margin_config["global"],
+        MarginEntry::Split {
+            percentage: None,
+            fixed_amount: None,
+        }
+    );
+}
+
+#[test]
+fn margin_object_field_trims_whitespace_before_converting() {
+    let config = ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
+    }
+    .load("litellm_settings:\n  cost_margin_config:\n    global: {percentage: ' 0.25 '}\n")
+    .unwrap();
+    let settings = &config.sections.cost_adjustments;
+    assert_eq!(
+        settings.cost_margin_config["global"],
+        MarginEntry::Split {
+            percentage: Some(Decimal::new(25, 2)),
+            fixed_amount: None,
+        }
+    );
+}
+
+#[test]
+fn margin_object_field_rejects_non_numeric_text_instead_of_defaulting_to_zero() {
+    let error = ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
+    }
+    .load("litellm_settings:\n  cost_margin_config:\n    global: {percentage: \"not-a-number\"}\n")
+    .unwrap_err();
+    let ConfigError::InvalidCostAdjustmentNumber { field, .. } = error else {
+        panic!("expected InvalidCostAdjustmentNumber, got {error:?}");
+    };
+    assert_eq!(field.to_string(), "percentage");
+}
+
+#[test]
+fn margin_object_field_rejects_numeric_text_that_overflows_decimal() {
+    let error = ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
+    }
+    .load("litellm_settings:\n  cost_margin_config:\n    global: {fixed_amount: \"1e40\"}\n")
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        ConfigError::InvalidCostAdjustmentNumber { field, .. } if field.to_string() == "fixed_amount"
+    ));
+}
+
+#[test]
+fn margin_scalar_number_rejects_a_lexeme_that_overflows_decimal() {
+    let error = ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
+    }
+    .load("litellm_settings:\n  cost_margin_config:\n    global: 1e40\n")
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        ConfigError::InvalidCostAdjustmentNumber { field, .. } if field.to_string() == "margin_percent"
+    ));
+}
+
+#[test]
+fn margin_object_field_rejects_a_null_value() {
+    let error = ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
+    }
+    .load("litellm_settings:\n  cost_margin_config:\n    global: {fixed_amount: null}\n")
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        ConfigError::UnsupportedCostAdjustmentShape { field } if field.to_string() == "fixed_amount"
+    ));
+}
+
+#[test]
+fn margin_object_field_rejects_a_list_value() {
+    let error = ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
+    }
+    .load("litellm_settings:\n  cost_margin_config:\n    global: {percentage: [1]}\n")
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        ConfigError::UnsupportedCostAdjustmentShape { field } if field.to_string() == "percentage"
+    ));
+}
+
+#[test]
+fn margin_object_field_rejects_a_nested_object_value() {
+    let error = ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
+    }
+    .load("litellm_settings:\n  cost_margin_config:\n    global: {percentage: {x: 1}}\n")
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        ConfigError::UnsupportedCostAdjustmentShape { field } if field.to_string() == "percentage"
+    ));
 }
