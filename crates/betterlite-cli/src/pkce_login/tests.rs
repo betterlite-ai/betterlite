@@ -796,6 +796,38 @@ fn expires_rejects_non_positive_lifetime() {
 }
 
 #[test]
+fn expires_rejects_empty_access_token() {
+    let response = HttpResponse {
+        status: 200,
+        headers: Vec::new(),
+        body: br#"{"access_token":"","expires_in":30,"refresh_token":"refresh"}"#.to_vec(),
+    };
+    redeem_code(
+        &contract(),
+        &redemption(),
+        &ScriptedHttp::new(response),
+        &FixedWallClock(100),
+    )
+    .unwrap_err();
+}
+
+#[test]
+fn expires_rejects_empty_refresh_token() {
+    let response = HttpResponse {
+        status: 200,
+        headers: Vec::new(),
+        body: br#"{"access_token":"access","expires_in":30,"refresh_token":""}"#.to_vec(),
+    };
+    redeem_code(
+        &contract(),
+        &redemption(),
+        &ScriptedHttp::new(response),
+        &FixedWallClock(100),
+    )
+    .unwrap_err();
+}
+
+#[test]
 fn expires_in_accepts_numeric_string() {
     let body = br#"{"access_token":"access","expires_in":"30","refresh_token":"refresh"}"#;
     let token = wire::parse_token(body).expect("token");
