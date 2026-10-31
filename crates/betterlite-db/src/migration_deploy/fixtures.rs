@@ -12,6 +12,7 @@ use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::fs;
+use tokio::sync::Mutex;
 use tokio::task::JoinSet;
 use tokio::time::{Instant, sleep, timeout};
 use tokio_postgres::{NoTls, Row};
@@ -19,6 +20,8 @@ use uuid::Uuid;
 
 use super::catalog::Migration;
 use super::{DeployError, MigrationDeploy};
+
+static DATABASE_TESTS: Mutex<()> = Mutex::const_new(());
 
 #[derive(Parser)]
 struct Environment {
@@ -36,6 +39,7 @@ where
     F: FnOnce(Database) -> Fut + Send + 'static,
     Fut: Future<Output = ()> + Send + 'static,
 {
+    let _guard = DATABASE_TESTS.lock().await;
     let url = Environment::parse_from(["migration-tests"])
         .url
         .map(SecretString::from);

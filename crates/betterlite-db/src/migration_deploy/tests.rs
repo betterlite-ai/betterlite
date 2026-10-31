@@ -4,11 +4,8 @@ use super::DeployError;
 use super::fixtures::{checkpoint, database};
 use std::time::Duration;
 use tokio::fs;
-use tokio::sync::Mutex;
 use tokio::time::Instant;
 use uuid::Uuid;
-
-static ADVISORY_LOCK_TESTS: Mutex<()> = Mutex::const_new(());
 
 #[tokio::test]
 async fn unfinished_row_stops_deploy() {
@@ -302,7 +299,6 @@ async fn lock_released_on_cancel() {
 #[tokio::test]
 async fn prisma_lock_serializes_cutover() {
     database(async |db| {
-        let _guard = ADVISORY_LOCK_TESTS.lock().await;
         db.lock_conflict("SELECT pg_advisory_lock(72707369::bigint)")
             .await;
     })
@@ -312,7 +308,6 @@ async fn prisma_lock_serializes_cutover() {
 #[tokio::test]
 async fn coordinator_transaction_lock_conflict() {
     database(async |db| {
-        let _guard = ADVISORY_LOCK_TESTS.lock().await;
         let blocker = db.pool.get().await.unwrap();
         blocker
             .batch_execute("BEGIN; SELECT pg_advisory_xact_lock(72707369::bigint)")
@@ -339,6 +334,10 @@ async fn coordinator_transaction_lock_conflict() {
             .batch_execute("ROLLBACK; SELECT pg_advisory_unlock_all()")
             .await
             .unwrap();
+        db.wait_for(
+            "SELECT CASE WHEN EXISTS (SELECT 1 FROM pg_locks WHERE locktype='advisory' AND objid=72707369) THEN 0::bigint ELSE 1::bigint END",
+        )
+        .await;
         db.run(&[("locked", "SELECT 1")]).await.unwrap();
     })
     .await;
