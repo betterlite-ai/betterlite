@@ -1,0 +1,16 @@
+kind: helper
+name: document-text-and-tool-input-aggregation
+call:
+  cost_usage:
+    transcription: []
+    interactions:
+      - total_input_tokens: 0
+        total_output_tokens: 0
+        input_tokens_by_modality:
+          - modality: document
+            tokens: 4
+        tool_use_tokens_by_modality:
+          - modality: text
+            tokens: 6
+compare: {ignore: []}
+env: {}

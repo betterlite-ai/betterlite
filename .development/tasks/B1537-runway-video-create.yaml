@@ -88,7 +88,7 @@ pitfalls:
   - An empty promptVideo still selects video_to_video because selection checks nullness rather than truthiness.
   - Exactly 600000 pixels is 720p under Runway's strict area thresholds.
   - A present empty failureCode creates an error object without forcing a failed status.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 1

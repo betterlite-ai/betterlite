@@ -133,7 +133,7 @@ pitfalls:
   - Payload validation happens after the hit is confirmed; a mismatch sets zero similarity and returns None without accessing the cached value.
   - api-key is the exact header name Qdrant expects, not x-api-key or Api-Key; using wrong headers makes auth fail silently.
   - wait=true is a query parameter string, not a JSON field; it gates collection write operations (points endpoint) and is set as a MappingProxyType constant.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

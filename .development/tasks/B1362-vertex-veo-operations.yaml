@@ -97,4 +97,4 @@ pitfalls:
   - Duration zero falls back to the configured eight-second default for usage.
   - Content retrieval rejects GCS-only output even though edit accepts that same GCS reference.
 budget: {max_changed_lines: 800, max_new_expects: 1}
-review_level: security
+review_level: standard

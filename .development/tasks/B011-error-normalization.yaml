@@ -131,7 +131,7 @@ pitfalls:
   The call id belongs beside the error's fields at the helper-defined location, not an invented top-level envelope
   field.
 - A 429 message mentioning a budget can normalize differently from a generic 429.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

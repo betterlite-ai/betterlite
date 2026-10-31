@@ -102,4 +102,4 @@ pitfalls:
   - Empty instruction strings are scanned because the guardrail checks type rather than truthiness.
   - A partial guardrail result leaves the unmatched original request field in place.
 budget: {max_changed_lines: 800, max_new_expects: 0}
-review_level: security
+review_level: standard

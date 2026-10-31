@@ -146,7 +146,7 @@ pitfalls:
   - The deadline context variable is set per-call and not thread-safe across concurrent guardrail executions in the same worker thread context.
   - await_with_timeout creates a new Task in a copied context, so thread-local state changes in _contain are not visible to the caller.
 
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

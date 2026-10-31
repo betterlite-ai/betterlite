@@ -1,0 +1,5 @@
+kind: helper
+name: cost-usage-interactions-seed
+call: {cost_usage: {transcription: [], interactions: [{total_input_tokens: 1, total_output_tokens: 1}]}}
+env: {}
+compare: {ignore: []}

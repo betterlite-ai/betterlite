@@ -114,7 +114,7 @@ pitfalls:
   - The team tag value must pass through the normalizer even when extracted from different metadata keys.
   - Gzip compression is required for upload; the Content-Encoding header must be set when payload is compressed.
 
-review_level: security
+review_level: standard
 
 budget:
   max_changed_lines: 1500
