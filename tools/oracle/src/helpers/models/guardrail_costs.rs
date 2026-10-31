@@ -85,11 +85,8 @@ fn entries_of(information: &GuardrailInformation) -> Vec<&GuardrailInformationEn
 fn rollup_results(
     information: &GuardrailInformation,
 ) -> Result<Vec<Value>, Box<crate::helpers::HelperError>> {
-    let mut results = Vec::new();
-    for entry in entries_of(information) {
-        results.push(rollup_entry_result(entry)?);
-    }
-    Ok(results)
+    let entries = entries_of(information);
+    entries.into_iter().map(rollup_entry_result).collect()
 }
 
 fn rollup_entry_result(

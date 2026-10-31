@@ -4,8 +4,13 @@ use serde::de::IgnoredAny;
 use std::collections::BTreeMap;
 use std::iter::once;
 
-use crate::price_fields::decimal_lexeme::parse_decimal_lexeme;
 use crate::tiered_pricing::Scalar;
+
+use coercion::{
+    CostMagnitude, CounterRate, coerce_bool_like, coerce_lax_magnitude, coerce_nonnegative_counter,
+};
+
+mod coercion;
 
 #[derive(Debug, thiserror::Error)]
 pub enum GuardrailPricingError {
@@ -78,17 +83,17 @@ where
 pub fn guardrail_cost_total(
     cost_by_unit: Option<&BTreeMap<String, Option<Decimal>>>,
 ) -> Result<Decimal, GuardrailPricingError> {
-    let Some(costs) = cost_by_unit else {
-        return Ok(Decimal::ZERO);
-    };
-    costs
-        .values()
+    let mut total = Decimal::ZERO;
+    for cost in cost_by_unit
+        .into_iter()
+        .flat_map(BTreeMap::values)
         .flatten()
-        .try_fold(Decimal::ZERO, |total, cost| {
-            total
-                .checked_add(*cost)
-                .ok_or(GuardrailPricingError::CostOverflow)
-        })
+    {
+        total = total
+            .checked_add(*cost)
+            .ok_or(GuardrailPricingError::CostOverflow)?;
+    }
+    Ok(total)
 }
 
 pub const AZURE_TEXT_RECORD_UNIT: &str = "text_records";
@@ -116,81 +121,6 @@ pub fn azure_prompt_shield_cost(
         .checked_div(Decimal::from(1_000_i64))
         .ok_or(GuardrailPricingError::CostOverflow)?;
     Ok(Some(scaled))
-}
-
-// NonFinite exists because Pydantic accepts inf/nan spellings; billing later treats any NonFinite as zero.
-#[derive(Debug, Clone, Copy)]
-enum CostMagnitude {
-    Finite(Decimal),
-    NonFinite,
-}
-
-fn is_nonfinite_literal(text: &str) -> bool {
-    let body = text.strip_prefix(['+', '-']).unwrap_or(text);
-    body.eq_ignore_ascii_case("inf")
-        || body.eq_ignore_ascii_case("infinity")
-        || body.eq_ignore_ascii_case("nan")
-}
-
-fn coerce_finite_lexeme(lexeme: &str) -> Result<Option<CostMagnitude>, GuardrailPricingError> {
-    match parse_decimal_lexeme(lexeme) {
-        Ok(decimal) => Ok(Some(CostMagnitude::Finite(decimal))),
-        Err(_source) => Err(GuardrailPricingError::CostOverflow),
-    }
-}
-
-fn coerce_lax_magnitude(value: &Scalar) -> Result<Option<CostMagnitude>, GuardrailPricingError> {
-    match value {
-        Scalar::Bool(flag) => Ok(Some(CostMagnitude::Finite(Decimal::from(u8::from(*flag))))),
-        Scalar::Number(number) => coerce_finite_lexeme(&number.to_string()),
-        Scalar::Text(text) => {
-            let trimmed = text.trim();
-            if is_nonfinite_literal(trimmed) {
-                Ok(Some(CostMagnitude::NonFinite))
-            } else if trimmed.parse::<f64>().is_ok() {
-                coerce_finite_lexeme(trimmed)
-            } else {
-                Ok(None)
-            }
-        }
-        Scalar::Null | Scalar::Array(_) | Scalar::Object(_) => Ok(None),
-    }
-}
-
-fn coerce_bool_spelling(spelling: &str) -> Option<bool> {
-    if spelling == "0"
-        || spelling == "f"
-        || spelling == "n"
-        || spelling == "no"
-        || spelling == "off"
-        || spelling == "false"
-    {
-        return Some(false);
-    }
-    if spelling == "1"
-        || spelling == "t"
-        || spelling == "y"
-        || spelling == "on"
-        || spelling == "yes"
-        || spelling == "true"
-    {
-        return Some(true);
-    }
-    None
-}
-
-// Mirrors Pydantic's lax bool validator: a real bool, 0/1, or one of these case-insensitive spellings.
-fn coerce_bool_like(value: &Scalar) -> Option<bool> {
-    match value {
-        Scalar::Bool(flag) => Some(*flag),
-        Scalar::Number(number) => match number.as_f64() {
-            Some(0.0) => Some(false),
-            Some(1.0) => Some(true),
-            _ => None,
-        },
-        Scalar::Text(text) => coerce_bool_spelling(&text.to_ascii_lowercase()),
-        Scalar::Null | Scalar::Array(_) | Scalar::Object(_) => None,
-    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -228,33 +158,67 @@ pub enum GuardrailInformation {
     Entry(GuardrailInformationEntry),
 }
 
+// None means the field is uncoercible, which malforms the whole entry it came from.
+fn parse_in_spend_flag(in_spend: Option<&Scalar>) -> Option<bool> {
+    match in_spend {
+        None | Some(Scalar::Null) => Some(true),
+        Some(value) => coerce_bool_like(value),
+    }
+}
+
+// Absent is a counter or scalar the hook has no price for; Malformed invalidates the whole entry it came from.
+enum FieldOutcome<T> {
+    Malformed,
+    Absent,
+    Present(T),
+}
+
+// Both billing paths share the object-shape and in_spend check; each still reads only its own field, so a forged map cannot change the other's cost.
+fn parse_validated_field<F, T>(
+    raw: &GuardrailInformationEntry,
+    parse_field: F,
+) -> Result<Option<(Option<T>, bool)>, GuardrailPricingError>
+where
+    F: FnOnce(&GuardrailEntryFields) -> Result<FieldOutcome<T>, GuardrailPricingError>,
+{
+    let GuardrailInformationEntry::Object(fields) = raw else {
+        return Ok(None);
+    };
+    let field = match parse_field(fields)? {
+        FieldOutcome::Malformed => return Ok(None),
+        FieldOutcome::Absent => None,
+        FieldOutcome::Present(value) => Some(value),
+    };
+    let Some(in_spend) = parse_in_spend_flag(fields.in_spend.as_ref()) else {
+        return Ok(None);
+    };
+    Ok(Some((field, in_spend)))
+}
+
 struct GuardrailCostEntry {
     cost: Option<CostMagnitude>,
     in_spend: bool,
+}
+
+fn parse_scalar_cost_field(
+    fields: &GuardrailEntryFields,
+) -> Result<FieldOutcome<CostMagnitude>, GuardrailPricingError> {
+    let present = fields
+        .cost
+        .as_ref()
+        .filter(|value| !matches!(value, Scalar::Null));
+    let Some(value) = present else {
+        return Ok(FieldOutcome::Absent);
+    };
+    Ok(coerce_lax_magnitude(value)?.map_or(FieldOutcome::Malformed, FieldOutcome::Present))
 }
 
 // Validated apart from the by-unit path below so a forged guardrail_cost_by_unit map cannot change this entry's scalar cost.
 fn parse_guardrail_cost_entry(
     raw: &GuardrailInformationEntry,
 ) -> Result<Option<GuardrailCostEntry>, GuardrailPricingError> {
-    let GuardrailInformationEntry::Object(fields) = raw else {
-        return Ok(None);
-    };
-    let cost = match &fields.cost {
-        None | Some(Scalar::Null) => None,
-        Some(value) => match coerce_lax_magnitude(value)? {
-            Some(magnitude) => Some(magnitude),
-            None => return Ok(None),
-        },
-    };
-    let in_spend = match &fields.in_spend {
-        None | Some(Scalar::Null) => true,
-        Some(value) => match coerce_bool_like(value) {
-            Some(flag) => flag,
-            None => return Ok(None),
-        },
-    };
-    Ok(Some(GuardrailCostEntry { cost, in_spend }))
+    let parsed = parse_validated_field(raw, parse_scalar_cost_field)?;
+    Ok(parsed.map(|(cost, in_spend)| GuardrailCostEntry { cost, in_spend }))
 }
 
 fn billable_entry_cost(entry: &GuardrailCostEntry) -> Decimal {
@@ -289,78 +253,73 @@ pub fn guardrail_information_cost(
     }
 }
 
-enum CounterRate {
-    Unpriced,
-    Priced(Decimal),
-    Invalid,
-}
-
-// Any single invalid counter invalidates the whole rollup entry rather than only that counter.
-fn coerce_nonnegative_counter(value: &Scalar) -> Result<CounterRate, GuardrailPricingError> {
-    if matches!(value, Scalar::Null) {
-        return Ok(CounterRate::Unpriced);
-    }
-    Ok(match coerce_lax_magnitude(value)? {
-        Some(CostMagnitude::Finite(decimal)) if !decimal.is_sign_negative() => {
-            CounterRate::Priced(decimal)
-        }
-        Some(CostMagnitude::Finite(_) | CostMagnitude::NonFinite) | None => CounterRate::Invalid,
-    })
-}
-
 struct GuardrailCostByUnitEntry {
     cost_by_unit: Option<BTreeMap<String, Option<Decimal>>>,
     in_spend: bool,
+}
+
+// Parses one counter's rate, or signals that the whole map is malformed (distinct from a single unpriced counter).
+enum CounterMapOutcome {
+    Priced(Option<Decimal>),
+    Malformed,
+}
+
+fn coerce_counter_rate(value: &Scalar) -> Result<CounterMapOutcome, GuardrailPricingError> {
+    match coerce_nonnegative_counter(value)? {
+        CounterRate::Unpriced => Ok(CounterMapOutcome::Priced(None)),
+        CounterRate::Priced(decimal) => Ok(CounterMapOutcome::Priced(Some(decimal))),
+        CounterRate::Invalid => Ok(CounterMapOutcome::Malformed),
+    }
+}
+
+fn coerce_counter_map(
+    counters: &BTreeMap<String, Scalar>,
+) -> Result<Option<BTreeMap<String, Option<Decimal>>>, GuardrailPricingError> {
+    let mut parsed = BTreeMap::new();
+    for (counter, value) in counters {
+        match coerce_counter_rate(value)? {
+            CounterMapOutcome::Priced(magnitude) => {
+                parsed.insert(counter.clone(), magnitude);
+            }
+            CounterMapOutcome::Malformed => return Ok(None),
+        }
+    }
+    Ok(Some(parsed))
+}
+
+fn parse_cost_by_unit_field(
+    fields: &GuardrailEntryFields,
+) -> Result<FieldOutcome<BTreeMap<String, Option<Decimal>>>, GuardrailPricingError> {
+    match &fields.by_unit {
+        None | Some(CounterMapField::Null(())) => Ok(FieldOutcome::Absent),
+        Some(CounterMapField::Map(counters)) => Ok(
+            coerce_counter_map(counters)?.map_or(FieldOutcome::Malformed, FieldOutcome::Present)
+        ),
+        Some(CounterMapField::Other(_)) => Ok(FieldOutcome::Malformed),
+    }
 }
 
 // Validated apart from the scalar entry above so a forged per-counter map can never change that entry's real spend.
 fn parse_cost_by_unit_entry(
     raw: &GuardrailInformationEntry,
 ) -> Result<Option<GuardrailCostByUnitEntry>, GuardrailPricingError> {
-    let GuardrailInformationEntry::Object(fields) = raw else {
-        return Ok(None);
-    };
-    let cost_by_unit = match &fields.by_unit {
-        None | Some(CounterMapField::Null(())) => None,
-        Some(CounterMapField::Map(counters)) => {
-            let mut parsed = BTreeMap::new();
-            for (counter, value) in counters {
-                let magnitude = match coerce_nonnegative_counter(value)? {
-                    CounterRate::Unpriced => None,
-                    CounterRate::Priced(decimal) => Some(decimal),
-                    CounterRate::Invalid => return Ok(None),
-                };
-                parsed.insert(counter.clone(), magnitude);
-            }
-            Some(parsed)
-        }
-        Some(CounterMapField::Other(_)) => return Ok(None),
-    };
-    let in_spend = match &fields.in_spend {
-        None | Some(Scalar::Null) => true,
-        Some(value) => match coerce_bool_like(value) {
-            Some(flag) => flag,
-            None => return Ok(None),
-        },
-    };
-    Ok(Some(GuardrailCostByUnitEntry {
-        cost_by_unit,
-        in_spend,
-    }))
+    let parsed = parse_validated_field(raw, parse_cost_by_unit_field)?;
+    Ok(
+        parsed.map(|(cost_by_unit, in_spend)| GuardrailCostByUnitEntry {
+            cost_by_unit,
+            in_spend,
+        }),
+    )
 }
 
 // None covers an unpriced, report-only or malformed entry alike, plus any counter the hook had no price for.
 pub fn billed_guardrail_cost_by_unit(
     raw: &GuardrailInformationEntry,
 ) -> Result<Option<BTreeMap<String, Option<Decimal>>>, GuardrailPricingError> {
-    let Some(entry) = parse_cost_by_unit_entry(raw)? else {
-        return Ok(None);
-    };
-    Ok(if entry.in_spend {
-        entry.cost_by_unit
-    } else {
-        None
-    })
+    let entry = parse_cost_by_unit_entry(raw)?;
+    Ok(entry
+        .filter(|parsed| parsed.in_spend)
+        .and_then(|parsed| parsed.cost_by_unit))
 }
 
 mod tests;
