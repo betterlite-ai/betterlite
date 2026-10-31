@@ -5,53 +5,28 @@ use rstest::rstest;
 use super::body::{AzureErrorDetail, AzureInnerError};
 use super::*;
 
-// mirrors ErrorClass's own #[serde(tag = "family", rename_all = "snake_case")] without touching serde_json::Value
-fn family_of(class: &ErrorClass) -> &'static str {
+// pairs ErrorClass's own #[serde(tag = "family", rename_all = "snake_case")] label with the message each family carries, directly or inside its details struct, without touching serde_json::Value
+fn describe(class: &ErrorClass) -> (&'static str, &str) {
     match class {
-        ErrorClass::Authentication(_) => "authentication",
-        ErrorClass::NotFound(_) => "not_found",
-        ErrorClass::PermissionDenied(_) => "permission_denied",
-        ErrorClass::BadRequest(_) => "bad_request",
-        ErrorClass::UnprocessableEntity(_) => "unprocessable_entity",
-        ErrorClass::Timeout(_) => "timeout",
-        ErrorClass::RateLimit(_) => "rate_limit",
-        ErrorClass::BudgetExceeded(_) => "budget_exceeded",
-        ErrorClass::ContextWindowExceeded(_) => "context_window_exceeded",
-        ErrorClass::ContentPolicyViolation(_) => "content_policy_violation",
-        ErrorClass::ServiceUnavailable(_) => "service_unavailable",
-        ErrorClass::BadGateway(_) => "bad_gateway",
-        ErrorClass::InternalServer(_) => "internal_server",
-        ErrorClass::Api(_) => "api",
-        ErrorClass::ApiConnection(_) => "api_connection",
-        ErrorClass::ApiResponseValidation(_) => "api_response_validation",
-        ErrorClass::JsonSchemaValidation(_) => "json_schema_validation",
-        ErrorClass::UnsupportedParams(_) => "unsupported_params",
-        ErrorClass::GuardrailRaised(_) => "guardrail_raised",
-        ErrorClass::MidStreamFallback(_) => "mid_stream_fallback",
-        ErrorClass::Unclassified(_) => "unclassified",
-    }
-}
-
-// every family status_classification can reach wraps an ErrorContext, directly or inside its details struct
-fn message_of(class: &ErrorClass) -> &str {
-    match class {
-        ErrorClass::Authentication(context)
-        | ErrorClass::NotFound(context)
-        | ErrorClass::PermissionDenied(context)
-        | ErrorClass::BadRequest(context)
-        | ErrorClass::UnprocessableEntity(context)
-        | ErrorClass::ContextWindowExceeded(context)
-        | ErrorClass::ContentPolicyViolation(context)
-        | ErrorClass::ServiceUnavailable(context)
-        | ErrorClass::BadGateway(context)
-        | ErrorClass::InternalServer(context)
-        | ErrorClass::ApiConnection(context)
-        | ErrorClass::ApiResponseValidation(context)
-        | ErrorClass::UnsupportedParams(context)
-        | ErrorClass::Unclassified(context) => &context.message,
-        ErrorClass::Timeout(details) => &details.context.message,
-        ErrorClass::RateLimit(details) => &details.context.message,
-        ErrorClass::Api(details) => &details.context.message,
+        ErrorClass::Authentication(context) => ("authentication", &context.message),
+        ErrorClass::NotFound(context) => ("not_found", &context.message),
+        ErrorClass::PermissionDenied(context) => ("permission_denied", &context.message),
+        ErrorClass::BadRequest(context) => ("bad_request", &context.message),
+        ErrorClass::UnprocessableEntity(context) => ("unprocessable_entity", &context.message),
+        ErrorClass::ContextWindowExceeded(context) => ("context_window_exceeded", &context.message),
+        ErrorClass::ContentPolicyViolation(context) => {
+            ("content_policy_violation", &context.message)
+        }
+        ErrorClass::ServiceUnavailable(context) => ("service_unavailable", &context.message),
+        ErrorClass::BadGateway(context) => ("bad_gateway", &context.message),
+        ErrorClass::InternalServer(context) => ("internal_server", &context.message),
+        ErrorClass::ApiConnection(context) => ("api_connection", &context.message),
+        ErrorClass::ApiResponseValidation(context) => ("api_response_validation", &context.message),
+        ErrorClass::UnsupportedParams(context) => ("unsupported_params", &context.message),
+        ErrorClass::Unclassified(context) => ("unclassified", &context.message),
+        ErrorClass::Timeout(details) => ("timeout", &details.context.message),
+        ErrorClass::RateLimit(details) => ("rate_limit", &details.context.message),
+        ErrorClass::Api(details) => ("api", &details.context.message),
         ErrorClass::BudgetExceeded(_)
         | ErrorClass::JsonSchemaValidation(_)
         | ErrorClass::GuardrailRaised(_)
@@ -114,7 +89,7 @@ fn azure_openrouter_errors_behavior_tests_behavior(
 ) {
     let class = map_azure_exception(&input);
     assert_eq!(
-        family_of(&class),
+        describe(&class).0,
         expected_family,
         "input {input:?} produced {class:?}"
     );
@@ -288,13 +263,13 @@ fn invalid_request_error_text_requires_no_status_or_400() {
 #[case::status_other_label(418, "AzureException APIError - boom")]
 fn status_classification_renders_the_matching_label(#[case] status: u16, #[case] expected: &str) {
     let class = map_azure_exception(&input("boom", Some(status)));
-    assert_eq!(message_of(&class), expected);
+    assert_eq!(describe(&class).1, expected);
 }
 
 #[test]
 fn no_status_code_message_names_the_exception_provider() {
     let class = map_azure_exception(&input("boom", None));
-    assert_eq!(message_of(&class), "Azure APIConnectionError - boom");
+    assert_eq!(describe(&class).1, "Azure APIConnectionError - boom");
 }
 
 #[test]
@@ -303,7 +278,7 @@ fn resolve_message_prefers_the_message_field_over_error_str() {
     request.message = Some("the real message".to_owned());
     let class = map_azure_exception(&request);
     assert_eq!(
-        message_of(&class),
+        describe(&class).1,
         "AzureException AuthenticationError - the real message"
     );
 }
@@ -338,7 +313,7 @@ fn resolve_message_prefers_the_body_message_over_error_str() {
     });
     let class = map_azure_exception(&request);
     assert_eq!(
-        message_of(&class),
+        describe(&class).1,
         "AzureException AuthenticationError - from the body"
     );
 }
