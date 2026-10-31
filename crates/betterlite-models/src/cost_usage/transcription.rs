@@ -109,6 +109,7 @@ pub fn transform_transcription_usage(usage: &TranscriptionUsage) -> Option<CostU
         }),
         completion_details: None,
         cache_read_tokens: None,
+        numeric_extras: std::collections::BTreeMap::new(),
     })
 }
 

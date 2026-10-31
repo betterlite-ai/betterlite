@@ -174,6 +174,7 @@ pub fn transform_interactions_usage(
         ),
         completion_details: build_completion_details(&sums.output, totals.reasoning),
         cache_read_tokens: (sums.total_cached_tokens != 0).then_some(sums.total_cached_tokens),
+        numeric_extras: std::collections::BTreeMap::new(),
     })
 }
 

@@ -1,0 +1,5 @@
+task: B1680
+deviations:
+  - what: Accumulated counters and fractional usage use checked integer and Decimal arithmetic instead of unbounded integers and binary floats.
+    why: A long stream must fail with a typed overflow rather than wrap or silently lose usage precision.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2764-L2815
