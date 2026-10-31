@@ -240,7 +240,7 @@ fn loopback_server_exposes_callback_redirect() {
 fn loopback_wait_surfaces_accept_failure() {
     let listener = FailingListener {
         address: "127.0.0.1:0".parse().expect("address"),
-        attempts: Mutex::new(VecDeque::from([Err(ErrorKind::ConnectionAborted)])),
+        attempts: Mutex::new(VecDeque::from([Err(ErrorKind::PermissionDenied)])),
     };
     let mut server = LoopbackServer::with_listener(listener, "state").expect("bind");
     let error = server
