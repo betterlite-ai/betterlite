@@ -4,6 +4,7 @@ use super::{ConfigMap, IncludeError, LoadError, load_file, read_config, resolve_
 use crate::loader::ConfigLoader;
 use crate::sections::Section as _;
 use crate::sections::settings::settings_rules::JsonValue as Value;
+use rstest::rstest;
 use serde_json::json;
 use std::collections::BTreeMap;
 use std::fs;
@@ -238,4 +239,40 @@ fn load_file_reports_typed_loader_errors_as_a_source() {
     let error = load_file(&loader(), root).unwrap_err();
     assert!(matches!(error, LoadError::Config { .. }));
     assert!(error.to_string().contains("unsupported config keys"));
+}
+
+fn write_include_corpus_candidates(directory: &Path, bytes: &[u8]) {
+    for name in [
+        "child.yaml",
+        "included_models.yaml",
+        "models_file_1.yaml",
+        "models_file_2.yaml",
+        "fallback_models.yaml",
+        "conflict_models.yaml",
+    ] {
+        fs::write(directory.join(name), bytes).unwrap();
+    }
+}
+
+#[rstest]
+#[case::include("config_with_include.yaml")]
+#[case::missing("config_with_missing_include.yaml")]
+#[case::multiple("config_with_multiple_includes.yaml")]
+#[case::fallback("config_include_fallback.yaml")]
+#[case::conflict("config_include_conflict.yaml")]
+#[case::malformed_string("config_include_malformed_string.yaml")]
+#[case::malformed_list("config_include_malformed_list.yaml")]
+#[case::cycle("config_include_cycle.yaml")]
+#[case::included_models("included_models.yaml")]
+#[case::models_one("models_file_1.yaml")]
+#[case::models_two("models_file_2.yaml")]
+#[case::fallback_models("fallback_models.yaml")]
+#[case::conflict_models("conflict_models.yaml")]
+fn replays_the_config_includes_corpus(#[case] corpus_name: &str) {
+    let directory = tempdir().unwrap();
+    let bytes = fs::read(Path::new("fuzz/corpus/config_includes").join(corpus_name)).unwrap();
+    let root = directory.path().join("config.yaml");
+    fs::write(&root, &bytes).unwrap();
+    write_include_corpus_candidates(directory.path(), &bytes);
+    drop(load_file(&loader(), root));
 }

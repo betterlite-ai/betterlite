@@ -87,7 +87,7 @@ fn process_environment() -> BTreeMap<String, String> {
     environment
 }
 fn load_config(location: &Path, environment: BTreeMap<String, String>) -> Option<Config> {
-    use betterlite_config::sections::includes::{LoadError, load_file};
+    use betterlite_config::sections::includes::{IncludeError, LoadError, load_file};
 
     let loader = ConfigLoader {
         lookup: environment,
@@ -99,10 +99,18 @@ fn load_config(location: &Path, environment: BTreeMap<String, String>) -> Option
                 LoadError::Config { source } => {
                     log_config_error(&source, location);
                 }
-                LoadError::Includes { .. } | LoadError::Serialize { .. } => {
+                LoadError::Includes { source } => {
+                    if let IncludeError::Yaml { path, .. } = &source {
+                        tracing::error!(category = "yaml", include = %path.display(), location = %location.display(), "failed to read or resolve configuration");
+                    } else {
+                        tracing::error!(path = %location.display(), error = %source, "failed to read or resolve configuration");
+                    }
+                }
+                LoadError::Serialize { source } => {
                     tracing::error!(
                         path = %location.display(),
-                        "failed to read or resolve configuration"
+                        error = %source,
+                        "failed to serialize resolved configuration"
                     );
                 }
             }
