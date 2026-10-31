@@ -2,6 +2,23 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResponseFormat {
+    Anthropic,
+    OpenAi,
+    Responses,
+}
+impl ResponseFormat {
+    #[must_use]
+    pub fn parse(format: &str) -> Self {
+        match format {
+            "openai" => Self::OpenAi,
+            "responses" => Self::Responses,
+            _ => Self::Anthropic,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged, from = "Box<RawValue>")]
 pub enum Input {
@@ -22,23 +39,24 @@ impl Default for Input {
 #[derive(Debug, Default, Deserialize)]
 pub struct Response {
     #[serde(default)]
-    pub content: Option<Vec<Block>>,
+    pub content: Blocks,
     #[serde(default)]
     pub choices: Option<Vec<Choice>>,
     #[serde(default)]
-    pub output: Items,
+    pub output: Blocks,
 }
 #[derive(Debug, Default, Deserialize)]
 #[serde(from = "Box<RawValue>")]
-pub enum Items {
-    Calls(Vec<Block>),
-    Ignored,
-    #[default]
-    Missing,
-}
-impl From<Box<RawValue>> for Items {
+pub struct Blocks(pub Vec<Block>);
+impl From<Box<RawValue>> for Blocks {
     fn from(raw: Box<RawValue>) -> Self {
-        serde_json::from_str(raw.get()).map_or(Self::Ignored, Self::Calls)
+        let items = serde_json::from_str::<Vec<Box<RawValue>>>(raw.get()).unwrap_or_default();
+        Self(
+            items
+                .iter()
+                .filter_map(|item| serde_json::from_str::<Block>(item.get()).ok())
+                .collect(),
+        )
     }
 }
 #[derive(Debug, Deserialize)]
@@ -47,7 +65,8 @@ pub struct Choice {
 }
 #[derive(Debug, Deserialize)]
 pub struct Message {
-    pub tool_calls: Option<Vec<Block>>,
+    #[serde(default)]
+    pub tool_calls: Blocks,
 }
 #[derive(Debug, Deserialize)]
 pub struct Block {

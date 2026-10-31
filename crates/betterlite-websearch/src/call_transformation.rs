@@ -6,7 +6,7 @@ pub mod wire;
 
 use thiserror::Error;
 
-use wire::{Assistant, Call, Response, Results};
+use wire::{Assistant, Call, Response, ResponseFormat, Results};
 
 #[derive(Debug, Error)]
 pub enum TransformationError {
@@ -14,6 +14,8 @@ pub enum TransformationError {
     Json(#[from] serde_json::Error),
     #[error("search result count {results} is less than call count {calls}")]
     MissingResults { calls: usize, results: usize },
+    #[error("search arguments exceed the nesting or size limit")]
+    ArgumentsTooComplex,
 }
 
 pub struct WebSearchTransformation;
@@ -28,7 +30,7 @@ impl WebSearchTransformation {
             tracing::warn!("Unexpected streaming response; skipping search interception");
             return Ok((false, Vec::new()));
         }
-        let calls = detection::detect(response, format)?;
+        let calls = detection::detect(response, ResponseFormat::parse(format))?;
         Ok((!calls.is_empty(), calls))
     }
 
@@ -43,7 +45,6 @@ impl WebSearchTransformation {
                 results: results.len(),
             });
         }
-        let assistant = messages::assistant(calls, format)?;
-        Ok((assistant, messages::results(calls, results, format)))
+        messages::assistant_and_results(calls, results, ResponseFormat::parse(format))
     }
 }

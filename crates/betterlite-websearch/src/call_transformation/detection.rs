@@ -1,8 +1,13 @@
 use super::TransformationError;
 use super::arguments::{normalize, wire_text};
-use super::wire::{Arguments, Block, Call, CallFunction, CallKind, Input, Items, Response};
+use super::wire::{
+    Arguments, Block, Call, CallFunction, CallKind, Input, Response, ResponseFormat,
+};
 
-pub(super) fn detect(response: &Response, format: &str) -> Result<Vec<Call>, TransformationError> {
+pub(super) fn detect(
+    response: &Response,
+    format: ResponseFormat,
+) -> Result<Vec<Call>, TransformationError> {
     let (kind, blocks) = response_blocks(response, format);
     let mut calls = Vec::new();
     for block in blocks {
@@ -29,29 +34,19 @@ pub(super) fn detect(response: &Response, format: &str) -> Result<Vec<Call>, Tra
     Ok(calls)
 }
 
-fn response_blocks<'response>(
-    response: &'response Response,
-    format: &str,
-) -> (CallKind, &'response [Block]) {
+fn response_blocks(response: &Response, format: ResponseFormat) -> (CallKind, &[Block]) {
     match format {
-        "openai" => {
+        ResponseFormat::OpenAi => {
             let blocks = response
                 .choices
                 .as_deref()
                 .and_then(|choices| choices.first())
                 .and_then(|choice| choice.message.as_ref())
-                .and_then(|message| message.tool_calls.as_deref())
-                .unwrap_or_default();
+                .map_or(&[][..], |message| message.tool_calls.0.as_slice());
             (CallKind::Function, blocks)
         }
-        "responses" => match &response.output {
-            Items::Calls(items) => (CallKind::FunctionCall, items),
-            Items::Ignored | Items::Missing => (CallKind::FunctionCall, &[]),
-        },
-        _ => (
-            CallKind::ToolUse,
-            response.content.as_deref().unwrap_or_default(),
-        ),
+        ResponseFormat::Responses => (CallKind::FunctionCall, response.output.0.as_slice()),
+        ResponseFormat::Anthropic => (CallKind::ToolUse, response.content.0.as_slice()),
     }
 }
 
