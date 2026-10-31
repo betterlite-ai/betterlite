@@ -1,36 +1,8 @@
+use std::sync::Arc;
+
+use betterlite_redact::secret::Redactor;
 use betterlite_redact::structured::{Payload, redact::redact_credentials_in_payload};
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Clone, Copy, Default, Deserialize)]
-pub struct SinkFailures {
-    #[serde(default)]
-    pub logger: bool,
-    #[serde(default)]
-    pub console: bool,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "function", rename_all = "snake_case")]
-pub enum HookInput {
-    Main {
-        payload: Payload,
-        set_verbose: bool,
-        #[serde(default)]
-        sinks: SinkFailures,
-    },
-    Utils {
-        payload: Payload,
-        set_verbose: bool,
-        log_level: String,
-        logger_only: bool,
-        #[serde(default)]
-        sinks: SinkFailures,
-    },
-    Active {
-        set_verbose: bool,
-        logger_debug_enabled: bool,
-    },
-}
+use serde::Serialize;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct LogRecord {
@@ -45,80 +17,122 @@ pub struct HookResult {
     pub active: bool,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-pub struct VerboseHooks;
+pub trait LoggerSink {
+    fn debug(&self, payload: &Payload) -> bool;
+    fn info(&self, payload: &Payload) -> bool;
+    fn error(&self, payload: &Payload) -> bool;
+    fn debug_enabled(&self) -> bool;
+}
 
-impl VerboseHooks {
+pub trait ConsoleSink {
+    fn print(&self, payload: &Payload) -> bool;
+}
+
+pub struct VerboseHooks<L, C> {
+    pub logger: L,
+    pub console: C,
+    pub set_verbose: Payload,
+    pub redactor: Arc<Redactor>,
+}
+
+impl<L: LoggerSink, C: ConsoleSink> VerboseHooks<L, C> {
+    // Both sinks run inside `print_verbose`'s single try, so a logger failure skips the console.
     #[must_use]
-    pub fn run(&self, input: HookInput) -> HookResult {
-        match input {
-            HookInput::Main {
-                payload,
-                set_verbose,
-                sinks,
-            } => Self::emit(payload, Some("DEBUG"), set_verbose, sinks),
-            HookInput::Utils {
-                payload,
-                set_verbose,
-                log_level,
-                logger_only,
-                sinks,
-            } => Self::emit(
-                payload,
-                known_level(&log_level),
-                set_verbose && !logger_only,
-                sinks,
-            ),
-            HookInput::Active {
-                set_verbose,
-                logger_debug_enabled,
-            } => HookResult {
-                logs: Vec::new(),
-                console: Vec::new(),
-                active: set_verbose || logger_debug_enabled,
-            },
-        }
-    }
-
-    fn emit(
-        payload: Payload,
-        level: Option<&str>,
-        console_enabled: bool,
-        sinks: SinkFailures,
-    ) -> HookResult {
-        let redacted = redact(payload);
+    pub fn main_print_verbose(&self, payload: Payload) -> HookResult {
+        let redacted = redact(payload, &self.redactor);
         let mut result = HookResult::default();
-        if let Some(level_name) = level {
-            if sinks.logger {
-                return result;
-            }
-            result.logs.push(LogRecord {
-                level: level_name.to_owned(),
-                payload: redacted.clone(),
-            });
+        if !self.logger.debug(&redacted) {
+            return result;
         }
-        if console_enabled && !sinks.console {
+        result.logs.push(LogRecord {
+            level: "DEBUG".to_owned(),
+            payload: redacted.clone(),
+        });
+        if is_truthy(&self.set_verbose) && self.console.print(&redacted) {
             result.console.push(redacted);
         }
         result
     }
-}
 
-fn known_level(log_level: &str) -> Option<&str> {
-    match log_level {
-        "DEBUG" | "INFO" | "ERROR" => Some(log_level),
-        _ => None,
+    // An unknown log_level logs nothing but still allows the console print.
+    #[must_use]
+    pub fn utils_print_verbose(
+        &self,
+        payload: Payload,
+        log_level: &str,
+        logger_only: &Payload,
+    ) -> HookResult {
+        let redacted = redact(payload, &self.redactor);
+        let mut result = HookResult::default();
+        let logged = match log_level {
+            "DEBUG" => Some(self.logger.debug(&redacted)),
+            "INFO" => Some(self.logger.info(&redacted)),
+            "ERROR" => Some(self.logger.error(&redacted)),
+            _ => None,
+        };
+        if logged == Some(false) {
+            return result;
+        }
+        if logged == Some(true) {
+            result.logs.push(LogRecord {
+                level: log_level.to_owned(),
+                payload: redacted.clone(),
+            });
+        }
+        if is_true(&self.set_verbose) && is_false(logger_only) && self.console.print(&redacted) {
+            result.console.push(redacted);
+        }
+        result
+    }
+
+    #[must_use]
+    pub fn is_active(&self) -> bool {
+        if is_true(&self.set_verbose) {
+            return true;
+        }
+        self.logger.debug_enabled()
     }
 }
 
-fn redact(payload: Payload) -> Payload {
+fn is_truthy(value: &Payload) -> bool {
+    match value {
+        Payload::Null => false,
+        Payload::Bool(flag) => *flag,
+        Payload::Number(number) => number.as_f64().is_none_or(|parsed| parsed != 0.0_f64),
+        Payload::String(text) => !text.is_empty(),
+        Payload::Array(items) => !items.is_empty(),
+        Payload::Object(fields) => !fields.is_empty(),
+    }
+}
+
+const fn is_true(value: &Payload) -> bool {
+    if let Payload::Bool(flag) = value {
+        *flag
+    } else {
+        false
+    }
+}
+
+const fn is_false(value: &Payload) -> bool {
+    if let Payload::Bool(flag) = value {
+        !*flag
+    } else {
+        false
+    }
+}
+
+// Strings and array items carry no key for B187's object masking, so content-scan them too.
+fn redact(payload: Payload, redactor: &Redactor) -> Payload {
     match payload {
         Payload::Object(object) => redact_credentials_in_payload(&object),
-        Payload::Null => Payload::Null,
-        Payload::Bool(value) => Payload::Bool(value),
-        Payload::Number(value) => Payload::Number(value),
-        Payload::String(value) => Payload::String(value),
-        Payload::Array(value) => Payload::Array(value),
+        Payload::Array(items) => Payload::Array(
+            items
+                .into_iter()
+                .map(|item| redact(item, redactor))
+                .collect(),
+        ),
+        Payload::String(text) => Payload::String(redactor.redact_string(&text)),
+        Payload::Null | Payload::Bool(_) | Payload::Number(_) => payload,
     }
 }
 
