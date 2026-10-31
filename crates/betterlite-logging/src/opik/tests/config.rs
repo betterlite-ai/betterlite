@@ -36,11 +36,14 @@ fn config_priority_and_partial_usage() {
 #[test]
 fn config_parser_reads_only_opik_section() {
     let values = read_config_section(
-        "[other]\nurl_override=wrong\n[opik]\nurl_override = file\napi_key=file-key\n",
+        "[other]\nurl_override=wrong\nother_only=value\n[opik]\nurl_override = file\napi_key=file-key\n#hash_line=sneaky\n;semi_line=sneaky2\n",
     );
     assert_eq!(values.get("url_override"), Some(&String::from("file")));
     assert_eq!(values.get("api_key"), Some(&String::from("file-key")));
     assert!(!values.contains_key("missing"));
+    assert!(!values.contains_key("other_only"));
+    assert!(!values.contains_key("#hash_line"));
+    assert!(!values.contains_key(";semi_line"));
 }
 
 #[test]

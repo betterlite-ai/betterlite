@@ -3,8 +3,8 @@
 use std::collections::BTreeMap;
 
 use betterlite_logging::opik::metadata::{
-    apply_proxy_header_overrides, extract_opik_metadata, extract_span_identifiers, extract_tags,
-    normalize_provider_name,
+    apply_proxy_header_overrides, extract_and_build_metadata, extract_opik_metadata,
+    extract_span_identifiers, extract_tags, normalize_provider_name,
 };
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
@@ -51,6 +51,28 @@ fn span_identifiers_accept_dict_and_invalid_values() {
         (None, None)
     );
     assert_eq!(extract_span_identifiers(None), (None, None));
+}
+
+#[test]
+fn empty_header_values_are_skipped() {
+    let (project, tags, thread) = apply_proxy_header_overrides(
+        String::from("p"),
+        vec![],
+        None,
+        &BTreeMap::from([(String::from("opik_project_name"), String::new())]),
+    );
+    assert_eq!(project, "p");
+    assert_eq!(tags, Vec::<Json>::new());
+    assert_eq!(thread, None);
+}
+
+#[test]
+fn metadata_builder_excludes_current_span_data() {
+    let opik_metadata = obj(r#"{"current_span_data": {"trace_id": "t"}, "custom_key": "value"}"#);
+    let empty = IndexMap::new();
+    let metadata = extract_and_build_metadata(&opik_metadata, &empty, &empty, &empty);
+    assert!(!metadata.contains_key("current_span_data"));
+    assert_eq!(metadata.get("custom_key"), Some(&val(r#""value""#)));
 }
 
 #[test]

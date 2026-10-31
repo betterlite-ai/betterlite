@@ -27,7 +27,7 @@ fn empty_content() -> PayloadContent {
 
 fn sample_response() -> IndexMap<String, Json> {
     obj(
-        r#"{"model":"m","object":"chat.completion","created":1,"usage":{"prompt_tokens":1,"completion_tokens":null}}"#,
+        r#"{"model":"m","object":"chat.completion","created":42,"usage":{"prompt_tokens":1,"completion_tokens":null}}"#,
     )
 }
 
@@ -68,6 +68,8 @@ fn span_payload_links_trace_and_strips_nulls() {
     assert_eq!(span["trace_id"], val(r#""trace""#));
     assert!(!span.contains_key("parent_span_id"));
     assert_eq!(span["usage"], val(r#"{"prompt_tokens":1}"#));
+    assert_eq!(span["model"], val(r#""m""#));
+    assert_eq!(span["name"], val(r#""m_chat.completion_42""#));
 }
 
 fn sample_kwargs() -> IndexMap<String, Json> {
