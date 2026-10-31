@@ -55,7 +55,10 @@ fn expand_tool_calls(message: &Message, expanded: &mut Vec<LassoMessage>) {
 
 fn push_tool_use(call: &ToolCall, expanded: &mut Vec<LassoMessage>) {
     let fields = extract_tool_call_fields(call);
-    let (Some(id), Some(name)) = (fields.id, fields.name) else {
+    let (Some(id), Some(name)) = (
+        fields.id.filter(|id| !id.is_empty()),
+        fields.name.filter(|name| !name.is_empty()),
+    ) else {
         return;
     };
     expanded.push(LassoMessage {

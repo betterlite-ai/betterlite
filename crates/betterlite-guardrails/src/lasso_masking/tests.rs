@@ -8,7 +8,6 @@ use super::wire::ToolArguments;
 use crate::bedrock_message_selection::wire::{Content, Role};
 use crate::lasso::wire::MessageType;
 
-use super::apply_response::mask_model_response;
 use super::expand::expand_for_classification;
 use super::lifecycle::{self, Endpoint};
 use super::map_back::map_masked_messages_back;
@@ -74,7 +73,7 @@ fn lasso_masking_behaviors() {
 }
 
 #[test]
-fn lasso_masking_lifecycle() {
+fn lasso_masking_prompt_lifecycle() {
     let original = vec![Message {
         role: Role::User,
         content: Some(Content::Text("secret".to_owned())),
@@ -97,7 +96,6 @@ fn lasso_masking_lifecycle() {
         &original,
         Some("input secret"),
         true,
-        MessageType::Prompt,
         Some(&[
             LassoMessage {
                 role: "user".to_owned(),
@@ -122,7 +120,7 @@ fn response_with_tool_call() -> ModelResponseShape {
                 tool_calls: Some(vec![ToolCall {
                     id: Some("call".to_owned()),
                     function: Some(ToolCallFunction {
-                        name: None,
+                        name: Some("lookup".to_owned()),
                         arguments: Some("{}".to_owned()),
                         extra: BTreeMap::new(),
                     }),
@@ -136,35 +134,41 @@ fn response_with_tool_call() -> ModelResponseShape {
     }
 }
 
-#[test]
-fn lasso_masking_response_rewrites_text_and_tool_arguments() {
+#[rstest::rstest]
+#[case::masking(true, Endpoint::Classifix, "[MASKED]", r#"{"email":"[MASKED EMAIL]"}"#)]
+#[case::classification(false, Endpoint::Classify, "secret", "{}")]
+fn lasso_masking_lifecycle(
+    #[case] mask: bool,
+    #[case] endpoint: Endpoint,
+    #[case] content: &str,
+    #[case] tool_input: &str,
+) {
     let response = response_with_tool_call();
-    let masked = vec![
-        LassoMessage {
-            role: "assistant".to_owned(),
-            content: LassoContent::Text("[MASKED]".to_owned()),
-        },
-        LassoMessage {
-            role: "model".to_owned(),
-            content: LassoContent::ToolUse(ToolUseBlock {
-                kind: "tool_use".to_owned(),
-                id: Some("call".to_owned()),
-                name: None,
-                input: Some(tool_arguments(r#"{"email":"[MASKED EMAIL]"}"#)),
-            }),
-        },
-    ];
+    let masked: Vec<LassoMessage> = serde_json::from_str(r#"[
+        {"role":"assistant","content":"[MASKED]"},
+        {"role":"model","content":{"type":"tool_use","id":"call","name":"lookup","input":{"email":"[MASKED EMAIL]"}}}
+    ]"#).unwrap();
 
-    let updated = mask_model_response(&response, &masked);
+    let original = serde_json::to_value(&response).unwrap();
+    let outcome = lifecycle::post_call(&response, mask, Some(&masked));
+    assert_eq!(outcome.message_type, MessageType::Completion);
+    assert_eq!(outcome.endpoint, endpoint);
+    assert_eq!(outcome.inspected.len(), 2);
+    assert!(matches!(
+        outcome.inspected[1].content,
+        LassoContent::ToolUse(_)
+    ));
+    let updated = outcome.response;
     let message = updated.choices[0].message.as_ref().unwrap();
-    assert_eq!(message.content.as_deref(), Some("[MASKED]"));
+    assert_eq!(message.content.as_deref(), Some(content));
     let arguments = message.tool_calls.as_ref().unwrap()[0]
         .function
         .as_ref()
         .unwrap()
         .arguments
         .as_deref();
-    assert_eq!(arguments, Some(r#"{"email":"[MASKED EMAIL]"}"#));
+    assert_eq!(arguments, Some(tool_input));
+    assert_eq!(serde_json::to_value(&response).unwrap(), original);
 }
 
 #[test]
@@ -202,6 +206,43 @@ fn lasso_masking_text_count_mismatch_skips_rewrite() {
     assert!(
         mapped[2].tool_calls.is_some(),
         "tool_calls still rewrite even when the text rewrite is skipped"
+    );
+}
+
+#[test]
+fn post_call_preserves_choices_and_metadata_on_count_mismatch() {
+    let response: ModelResponseShape = serde_json::from_str(r#"{
+        "id":"response", "choices":[
+            {"index":0,"message":{"role":"assistant","content":"first","reasoning_content":"reasoning"}},
+            {"index":1,"message":{"role":"assistant","content":null,"tool_calls":[
+                {"id":"call","type":"function","function":{"name":"lookup","arguments":"{}"}}
+            ]}},
+            {"index":2,"message":{"role":"assistant","content":"last"}}
+        ]}"#).unwrap();
+    let masked: Vec<LassoMessage> = serde_json::from_str(
+        r#"[
+        {"role":"assistant","content":"too few texts"},
+        {"role":"model","content":{"type":"tool_use","id":"call","name":"lookup","input":"masked"}}
+    ]"#,
+    )
+    .unwrap();
+    let outcome = lifecycle::post_call(&response, true, Some(&masked));
+    assert_eq!(outcome.inspected.len(), 3);
+    let mut expected = serde_json::to_value(&response).unwrap();
+    expected["choices"][1]["message"]["tool_calls"][0]["function"]["arguments"] =
+        serde_json::json!(r#""masked""#);
+    assert_eq!(serde_json::to_value(outcome.response).unwrap(), expected);
+}
+
+#[test]
+fn post_call_without_masked_output_preserves_response() {
+    let response = response_with_tool_call();
+    let outcome = lifecycle::post_call(&response, true, None);
+    assert_eq!(outcome.endpoint, Endpoint::Classifix);
+    assert_eq!(outcome.inspected.len(), 2);
+    assert_eq!(
+        serde_json::to_value(outcome.response).unwrap(),
+        serde_json::to_value(response).unwrap()
     );
 }
 

@@ -1,7 +1,10 @@
+import asyncio
 from collections.abc import Sequence
 from typing import TypeAlias, cast
+from unittest.mock import patch
 
 from litellm import ModelResponse
+from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.guardrails.guardrail_hooks.lakera_ai_v2 import LakeraAIGuardrail  # pyright: ignore[reportMissingTypeStubs]
 from litellm.proxy.guardrails.guardrail_hooks.lasso.lasso import LassoGuardrail  # pyright: ignore[reportMissingTypeStubs]
 from litellm.types.llms.openai import AllMessageValues  # pyright: ignore[reportMissingTypeStubs]
@@ -9,6 +12,49 @@ from litellm.types.proxy.guardrails.guardrail_hooks.lakera_ai_v2 import LakeraAI
 from litellm.types.utils import ChatCompletionMessageCustomToolCall, ChatCompletionMessageToolCall  # pyright: ignore[reportMissingTypeStubs]
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
+
+
+def post_call(fields: dict[str, Json]) -> Json:
+    guardrail = LassoGuardrail(
+        api_key="key",
+        api_base="http://localhost",
+        mask=bool(fields.get("mask", False)),
+        conversation_id="oracle",
+    )
+    response = ModelResponse(**cast(dict[str, Json], fields["response"]))
+    captured: dict[str, Json] = {}
+
+    async def call_api(
+        headers: dict[str, str], payload: dict[str, Json], api_url: str | None = None
+    ) -> dict[str, Json]:
+        del headers
+        captured.update(
+            endpoint="classifix" if api_url else "classify",
+            message_type=payload["messageType"],
+            inspected=payload["messages"],
+        )
+        return {
+            "violations_detected": bool(fields.get("masked")),
+            "messages": fields.get("masked", []),
+        }
+
+    with (
+        patch.object(guardrail, "_call_lasso_api", call_api),
+        patch.object(guardrail, "should_run_guardrail", return_value=True),
+    ):
+        asyncio.run(
+            guardrail.async_post_call_success_hook(  # pyright: ignore[reportUnknownMemberType]
+                data={}, user_api_key_dict=UserAPIKeyAuth(), response=response
+            )
+        )
+    captured["response"] = [
+        {
+            "content": choice.message.content,
+            "tool_calls": [tool_call_arguments(call) for call in (choice.message.tool_calls or [])],
+        }
+        for choice in response.choices
+    ]
+    return captured
 
 
 def tool_call_arguments(
@@ -30,9 +76,13 @@ def run(input_value: dict[str, Json]) -> Json:
         "lifecycle_post_call_hook",
     }
     if operation in expansion_operations:
-        guardrail = LassoGuardrail(api_key="key", api_base="http://localhost")
-        messages = cast(list[dict[str, object]], fields["messages"])
-        return cast(Json, guardrail._expand_messages_for_classification(messages))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+        if operation == "lifecycle_post_call_hook":
+            inspected = post_call(fields)
+        else:
+            guardrail = LassoGuardrail(api_key="key", api_base="http://localhost")
+            messages = cast(list[dict[str, object]], fields["messages"])
+            inspected = cast(Json, guardrail._expand_messages_for_classification(messages))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+        return inspected
     if operation == "map_masked_messages_back":
         guardrail = LassoGuardrail(api_key="key", api_base="http://localhost")
         original = cast(list[dict[str, object]], fields["original"])

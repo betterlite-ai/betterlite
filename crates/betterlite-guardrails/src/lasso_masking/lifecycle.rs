@@ -2,9 +2,10 @@ use crate::bedrock_message_selection::wire::{Content, Role};
 use crate::lasso::wire::MessageType;
 
 use super::map_back::map_masked_messages_back;
-use super::wire::{LassoMessage, Message};
+use super::wire::{LassoMessage, Message, ModelResponseShape};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Endpoint {
     Classify,
     Classifix,
@@ -25,21 +26,16 @@ pub fn run(
     messages: &[Message],
     input: Option<&str>,
     mask: bool,
-    message_type: MessageType,
     masked: Option<&[LassoMessage]>,
 ) -> LifecycleResult {
     let mut inspected = super::expand::expand_for_classification(messages);
     let message_count = inspected.len();
     append_input(&mut inspected, input);
-    let endpoint = if mask && !has_non_string_content(messages) {
-        Endpoint::Classifix
-    } else {
-        Endpoint::Classify
-    };
+    let endpoint = select_endpoint(messages, mask);
     let Some(masked_messages) = masked.filter(|_| endpoint == Endpoint::Classifix) else {
         return LifecycleResult {
             endpoint,
-            message_type,
+            message_type: MessageType::Prompt,
             inspected,
             messages: messages.to_vec(),
             input: input.map(str::to_owned),
@@ -50,7 +46,7 @@ pub fn run(
     let updated_input = masked_input(input_mask);
     LifecycleResult {
         endpoint,
-        message_type,
+        message_type: MessageType::Prompt,
         inspected,
         messages: map_masked_messages_back(messages, message_mask),
         input: input.map(|original| {
@@ -60,6 +56,58 @@ pub fn run(
                 updated_input.join("\n")
             }
         }),
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PostCallResult {
+    pub endpoint: Endpoint,
+    pub message_type: MessageType,
+    pub inspected: Vec<LassoMessage>,
+    pub response: ModelResponseShape,
+}
+
+// The transport owner supplies masked output only after processing a Lasso response with violations.
+#[must_use]
+pub fn post_call(
+    response: &ModelResponseShape,
+    mask: bool,
+    masked: Option<&[LassoMessage]>,
+) -> PostCallResult {
+    let messages: Vec<_> = response
+        .choices
+        .iter()
+        .filter_map(|choice| {
+            choice.message.as_ref().map(|message| Message {
+                role: Role::Assistant,
+                content: message.content.clone().map(Content::Text),
+                tool_calls: message.tool_calls.clone(),
+                tool_call_id: None,
+                extra: BTreeMap::new(),
+            })
+        })
+        .collect();
+    let inspected = super::expand::expand_for_classification(&messages);
+    let endpoint = select_endpoint(&messages, mask);
+    let updated = match masked {
+        Some(output) if endpoint == Endpoint::Classifix && !inspected.is_empty() => {
+            super::apply_response::mask_model_response(response, output)
+        }
+        Some(_) | None => response.clone(),
+    };
+    PostCallResult {
+        endpoint,
+        message_type: MessageType::Completion,
+        inspected,
+        response: updated,
+    }
+}
+
+fn select_endpoint(messages: &[Message], mask: bool) -> Endpoint {
+    if mask && !has_non_string_content(messages) {
+        Endpoint::Classifix
+    } else {
+        Endpoint::Classify
     }
 }
 
@@ -95,3 +143,4 @@ fn has_non_string_content(messages: &[Message]) -> bool {
         message.role != Role::Tool && matches!(message.content, Some(Content::List(_)))
     })
 }
+use std::collections::BTreeMap;

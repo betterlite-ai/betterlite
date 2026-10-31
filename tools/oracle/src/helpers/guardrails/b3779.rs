@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 
 use betterlite_guardrails::lakera_pii::masking as lakera_masking;
 use betterlite_guardrails::lakera_pii::wire::{LakeraResponse, Message as LakeraMessage};
-use betterlite_guardrails::lasso::wire::MessageType;
 use betterlite_guardrails::lasso_masking::wire::{
     LassoMessage, Message as OpenAiMessage, ModelResponseShape, ResponseChoice, ToolCall,
 };
@@ -29,9 +28,9 @@ pub(crate) enum Input {
     },
     #[serde(rename = "lifecycle_post_call_hook")]
     PostCall {
-        messages: Vec<OpenAiMessage>,
+        response: ModelResponseShape,
         #[serde(default)]
-        input: Option<String>,
+        masked: Option<Vec<LassoMessage>>,
         #[serde(default)]
         mask: bool,
     },
@@ -66,17 +65,22 @@ impl crate::helpers::Helper for Op {
                 messages,
                 input: input_text,
                 mask,
-            } => lifecycle_result(messages, input_text.as_deref(), *mask, MessageType::Prompt),
+            } => lifecycle_result(messages, input_text.as_deref(), *mask),
             Input::PostCall {
-                messages,
-                input: input_text,
+                response,
+                masked,
                 mask,
-            } => lifecycle_result(
-                messages,
-                input_text.as_deref(),
-                *mask,
-                MessageType::Completion,
-            ),
+            } => {
+                let result = lifecycle::post_call(response, *mask, masked.as_deref());
+                let choices: Vec<_> = result
+                    .response
+                    .choices
+                    .iter()
+                    .map(choice_projection)
+                    .collect();
+                json!({"endpoint": result.endpoint, "message_type": result.message_type,
+                    "inspected": result.inspected, "response": choices})
+            }
             Input::MapMaskedMessagesBack { original, masked } => {
                 json!(map_back::map_masked_messages_back(original, masked))
             }
@@ -110,13 +114,8 @@ fn blocked_result(response: &LakeraResponse) -> Value {
     json!({"status_code": error.status().as_u16(), "detail": {"error": error.to_string(), "lakera_guardrail_response": error.response()}})
 }
 
-fn lifecycle_result(
-    messages: &[OpenAiMessage],
-    input: Option<&str>,
-    mask: bool,
-    message_type: MessageType,
-) -> Value {
-    let result = lifecycle::run(messages, input, mask, message_type, None);
+fn lifecycle_result(messages: &[OpenAiMessage], input: Option<&str>, mask: bool) -> Value {
+    let result = lifecycle::run(messages, input, mask, None);
     json!(result.inspected)
 }
 
