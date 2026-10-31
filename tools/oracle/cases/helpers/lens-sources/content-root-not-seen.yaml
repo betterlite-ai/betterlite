@@ -1,0 +1,22 @@
+kind: helper
+name: content-root-not-seen
+call:
+  b4502:
+    content:
+      scope: {team_id: team-1, api_key_hash: hash-1, all_teams: false}
+      execution:
+        id: exec-1
+        source: traces
+        trace_id: trace-1
+        team_id: team-1
+        name: run
+        start_time: "2026-01-01T00:00:00Z"
+        span_count: 2
+        root_seen: false
+      cursor: ""
+      offset: 0
+      rows:
+        - {span_id: span-1, parent_span_id: "", name: tool, kind: tool, content: "tool call", truncated: 0}
+        - {span_id: span-2, parent_span_id: span-1, name: tool, kind: tool, content: "tool reply", truncated: 0}
+env: {}
+compare: {ignore: []}

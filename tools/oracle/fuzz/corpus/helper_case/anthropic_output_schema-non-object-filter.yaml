@@ -1,0 +1,5 @@
+kind: helper
+name: non-object-filter
+call: {anthropic_output_schema: {function: filter, schema: [false, {minimum: 1}]}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,9 @@
+kind: helper
+name: opik-payload-construction
+call:
+  b3973:
+    function: payload
+    response: {model: test-model, usage: {prompt_tokens: 3, completion_tokens: null}}
+env: {}
+compare:
+  ignore: []
