@@ -21,7 +21,7 @@ fn rejects_excessive_schema_depth() {
 fn propagates_definition_expansion_budget() {
     let format = ResponseFormat {
         type_name: Field::Missing,
-        json_schema: None,
+        json_schema: Field::Missing,
         response_schema: Field::Value(
             serde_json::from_str(&format!(r#"{{"$defs":{{"Big":{{"description":"{}"}}}},"properties":{{"one":{{"$ref":"Big"}},"two":{{"$ref":"Big"}}}}}}"#, "x".repeat(5_000_000)))
             .unwrap(),

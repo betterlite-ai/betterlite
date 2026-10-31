@@ -10,7 +10,8 @@ pub struct ResponseFormat {
     pub type_name: Field,
     #[serde(default)]
     pub response_schema: Field,
-    pub json_schema: Option<Schema>,
+    #[serde(default)]
+    pub json_schema: Field,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
@@ -19,11 +20,6 @@ pub enum Field {
     Value(Json),
     #[default]
     Missing,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
-pub struct Schema {
-    pub schema: Json,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -39,7 +35,7 @@ pub struct Tool {
 }
 
 pub fn map_output(value: Option<&ResponseFormat>) -> Result<Option<OutputFormat>, SchemaError> {
-    let Some(schema) = schema_from_response(value) else {
+    let Some(schema) = schema_from_response(value)? else {
         return Ok(None);
     };
     check_bounds(schema)?;
@@ -49,13 +45,27 @@ pub fn map_output(value: Option<&ResponseFormat>) -> Result<Option<OutputFormat>
     }))
 }
 
-fn schema_from_response(value: Option<&ResponseFormat>) -> Option<&Json> {
-    let format = value?;
+fn schema_from_response(value: Option<&ResponseFormat>) -> Result<Option<&Json>, SchemaError> {
+    let Some(format) = value else {
+        return Ok(None);
+    };
     let schema = match &format.response_schema {
         Field::Value(schema) => Some(schema),
-        Field::Missing => format.json_schema.as_ref().map(|nested| &nested.schema),
+        Field::Missing => match &format.json_schema {
+            Field::Missing => None,
+            Field::Value(nested) => Some(schema_field(nested)?),
+        },
     };
-    schema.filter(|candidate| !matches!(candidate, Json::Null))
+    Ok(schema.filter(|candidate| !matches!(candidate, Json::Null)))
+}
+
+fn schema_field(nested: &Json) -> Result<&Json, SchemaError> {
+    match nested {
+        Json::Object(fields) => fields
+            .get("schema")
+            .ok_or(SchemaError::Invalid("json_schema")),
+        _ => Err(SchemaError::Invalid("json_schema")),
+    }
 }
 
 fn expand_definitions(schema: Json) -> Result<Json, SchemaError> {
@@ -80,7 +90,7 @@ pub fn map_tool(value: Option<&ResponseFormat>) -> Result<Option<Tool>, SchemaEr
         None => Ok(None),
         Some(Field::Missing) => Err(SchemaError::MissingType),
         Some(Field::Value(Json::Text(kind))) if kind == "text" => Ok(None),
-        Some(Field::Value(_)) => schema_from_response(value)
+        Some(Field::Value(_)) => schema_from_response(value)?
             .map(|schema| json_tool(Some(schema)))
             .transpose(),
     }

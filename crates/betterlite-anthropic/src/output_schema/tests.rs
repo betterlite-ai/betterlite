@@ -181,6 +181,10 @@ fn preserves_unrecognized_shapes(#[case] source: &str) {
     r#"{"type":"json_schema","schema":{}}"#
 )]
 #[case::absent("null", "null")]
+#[case::malformed_json_schema_ignored(
+    r#"{"response_schema":{},"json_schema":42}"#,
+    r#"{"type":"json_schema","schema":{}}"#
+)]
 fn extracts_response_schema(#[case] source: &str, #[case] expected: &str) {
     let value: Option<ResponseFormat> = serde_json::from_str(source).unwrap();
     let original = value.clone();
@@ -199,6 +203,7 @@ fn extracts_response_schema(#[case] source: &str, #[case] expected: &str) {
 #[case::text(r#"{"type":"text","response_schema":{}}"#)]
 #[case::missing_schema(r#"{"type":"json_object"}"#)]
 #[case::null_schema(r#"{"type":"json_schema","response_schema":null}"#)]
+#[case::text_ignores_malformed_json_schema(r#"{"type":"text","json_schema":42}"#)]
 fn returns_no_tool(#[case] source: &str) {
     assert_eq!(evaluate("map_tool", source), Json::Null);
 }
@@ -228,6 +233,21 @@ fn rejects_invalid_schema_shapes(#[case] source: &str) {
     assert!(matches!(
         filter_anthropic_output_schema(serde_json::from_str(source).unwrap()),
         Err(SchemaError::Invalid(_))
+    ));
+}
+
+#[rstest]
+#[case::not_an_object(r#"{"type":"json_schema","json_schema":42}"#)]
+#[case::missing_schema_key(r#"{"type":"json_schema","json_schema":{}}"#)]
+fn malformed_json_schema_surfaces_when_selected(#[case] source: &str) {
+    let value: Option<ResponseFormat> = serde_json::from_str(source).unwrap();
+    assert!(matches!(
+        map_output(value.as_ref()),
+        Err(SchemaError::Invalid("json_schema"))
+    ));
+    assert!(matches!(
+        map_tool(value.as_ref()),
+        Err(SchemaError::Invalid("json_schema"))
     ));
 }
 
