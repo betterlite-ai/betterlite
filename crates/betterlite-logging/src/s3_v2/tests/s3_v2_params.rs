@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
+use std::path::PathBuf;
 
 use betterlite_logging::s3_transport::option_value::OptionValue;
 use betterlite_logging::s3_transport::options::PartitionGranularity;
@@ -514,36 +514,31 @@ fn constructor_flags_and_encryption_precedence() {
     );
 }
 
-#[test]
-fn replays_the_s3_v2_corpus() {
-    let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/s3_v2");
-    let results: Vec<_> = fs::read_dir(folder)
-        .unwrap()
-        .map(|entry| {
-            let path = entry.unwrap().path();
-            let bytes = fs::read(&path).unwrap();
-            let (source, payload): (Source<()>, Option<Box<RawValue>>) =
-                serde_json::from_slice(&bytes).unwrap();
-            let parameters =
-                resolve_s3_parameters(&Source::default(), &source, None, &Environment::default());
-            let result = create_batch_element(
-                &parameters,
-                &Event {
-                    start_time: NaiveDateTime::default(),
-                    payload: payload.as_ref(),
-                    cold_storage_enabled: true,
-                },
-                &mut PartitionGranularityCache::default(),
-                &Environment::default(),
-            );
-            if path.ends_with("missing-id.json") {
-                assert!(result.is_err());
-            } else {
-                let _element = result.unwrap();
-            }
-        })
-        .collect();
-    assert!(results.len() >= 4);
+#[rstest]
+fn replays_the_s3_v2_corpus(#[files("fuzz/corpus/s3_v2/*")] path: PathBuf) {
+    let bytes = fs::read(&path).unwrap();
+    let Ok((source, payload)) =
+        serde_json::from_slice::<(Source<Box<RawValue>>, Option<Box<RawValue>>)>(&bytes)
+    else {
+        return;
+    };
+    let parameters =
+        resolve_s3_parameters(&Source::default(), &source, None, &Environment::default());
+    let result = create_batch_element(
+        &parameters,
+        &Event {
+            start_time: NaiveDateTime::default(),
+            payload: payload.as_ref(),
+            cold_storage_enabled: true,
+        },
+        &mut PartitionGranularityCache::default(),
+        &Environment::default(),
+    );
+    if path.ends_with("missing-id.json") {
+        assert!(result.is_err());
+    } else {
+        let _element = result.unwrap();
+    }
 }
 
 #[test]

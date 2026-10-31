@@ -37,12 +37,12 @@ where
     Config: Clone + Default,
 {
     let credentials = Credentials::from((source, defaults));
-    Connection {
-        bucket_name: text(source.bucket_name.as_ref(), defaults.bucket_name.as_ref()),
-        region_name: text(source.region_name.as_ref(), defaults.region_name.as_ref()),
-        api_version: text(source.api_version.as_ref(), defaults.api_version.as_ref()),
-        endpoint_url: text(source.endpoint_url.as_ref(), defaults.endpoint_url.as_ref()),
-        path: text(source.path.as_ref(), defaults.path.as_ref()),
+    let mut connection = Connection {
+        bucket_name: source.bucket_name.clone(),
+        region_name: source.region_name.clone(),
+        api_version: source.api_version.clone(),
+        endpoint_url: source.endpoint_url.clone(),
+        path: source.path.clone(),
         credentials,
         verify: source.verify.as_ref().or(defaults.verify.as_ref()).cloned(),
         config: source
@@ -61,7 +61,19 @@ where
             .as_ref()
             .or(source.partition_granularity.as_ref())
             .cloned(),
+    };
+    for (field, fallback) in [
+        (&mut connection.bucket_name, defaults.bucket_name.as_ref()),
+        (&mut connection.region_name, defaults.region_name.as_ref()),
+        (&mut connection.api_version, defaults.api_version.as_ref()),
+        (&mut connection.endpoint_url, defaults.endpoint_url.as_ref()),
+        (&mut connection.path, defaults.path.as_ref()),
+    ] {
+        if field.as_deref().is_none_or(str::is_empty) {
+            *field = fallback.cloned();
+        }
     }
+    connection
 }
 
 impl<Config> From<(&Source<Config>, &Source<Config>)> for Credentials
@@ -69,53 +81,77 @@ where
     Config: Default,
 {
     fn from((source, defaults): (&Source<Config>, &Source<Config>)) -> Self {
-        let aws_access_key_id = secret(
-            source.aws_access_key_id.as_ref(),
+        let mut credentials = Self {
+            aws_access_key_id: source.aws_access_key_id.clone(),
+            aws_secret_access_key: source.aws_secret_access_key.clone(),
+            aws_session_token: source.aws_session_token.clone(),
+            aws_session_name: source.aws_session_name.clone(),
+            aws_profile_name: source.aws_profile_name.clone(),
+            aws_role_name: source.aws_role_name.clone(),
+            aws_web_identity_token: source.aws_web_identity_token.clone(),
+            aws_sts_endpoint: source.aws_sts_endpoint.clone(),
+        };
+        apply_secret_fallbacks(&mut credentials, defaults);
+        apply_text_fallbacks(&mut credentials, defaults);
+        credentials
+    }
+}
+
+fn apply_secret_fallbacks<Config>(credentials: &mut Credentials, defaults: &Source<Config>)
+where
+    Config: Default,
+{
+    for (field, fallback) in [
+        (
+            &mut credentials.aws_access_key_id,
             defaults.aws_access_key_id.as_ref(),
-        );
-        Self {
-            aws_access_key_id,
-            aws_secret_access_key: secret(
-                source.aws_secret_access_key.as_ref(),
-                defaults.aws_secret_access_key.as_ref(),
-            ),
-            aws_session_token: secret(
-                source.aws_session_token.as_ref(),
-                defaults.aws_session_token.as_ref(),
-            ),
-            aws_session_name: text(
-                source.aws_session_name.as_ref(),
-                defaults.aws_session_name.as_ref(),
-            ),
-            aws_profile_name: text(
-                source.aws_profile_name.as_ref(),
-                defaults.aws_profile_name.as_ref(),
-            ),
-            aws_role_name: text(
-                source.aws_role_name.as_ref(),
-                defaults.aws_role_name.as_ref(),
-            ),
-            aws_web_identity_token: secret(
-                source.aws_web_identity_token.as_ref(),
-                defaults.aws_web_identity_token.as_ref(),
-            ),
-            aws_sts_endpoint: text(
-                source.aws_sts_endpoint.as_ref(),
-                defaults.aws_sts_endpoint.as_ref(),
-            ),
+        ),
+        (
+            &mut credentials.aws_secret_access_key,
+            defaults.aws_secret_access_key.as_ref(),
+        ),
+        (
+            &mut credentials.aws_session_token,
+            defaults.aws_session_token.as_ref(),
+        ),
+        (
+            &mut credentials.aws_web_identity_token,
+            defaults.aws_web_identity_token.as_ref(),
+        ),
+    ] {
+        if field
+            .as_ref()
+            .is_none_or(|value| value.expose_secret().is_empty())
+        {
+            *field = fallback.cloned();
         }
     }
 }
 
-fn text(configured: Option<&String>, fallback: Option<&String>) -> Option<String> {
-    let nonempty = configured.filter(|value| !value.is_empty());
-    nonempty.or(fallback).cloned()
-}
-
-fn secret(
-    configured: Option<&SecretString>,
-    fallback: Option<&SecretString>,
-) -> Option<SecretString> {
-    let nonempty = configured.filter(|value| !value.expose_secret().is_empty());
-    nonempty.or(fallback).cloned()
+fn apply_text_fallbacks<Config>(credentials: &mut Credentials, defaults: &Source<Config>)
+where
+    Config: Default,
+{
+    for (field, fallback) in [
+        (
+            &mut credentials.aws_session_name,
+            defaults.aws_session_name.as_ref(),
+        ),
+        (
+            &mut credentials.aws_profile_name,
+            defaults.aws_profile_name.as_ref(),
+        ),
+        (
+            &mut credentials.aws_role_name,
+            defaults.aws_role_name.as_ref(),
+        ),
+        (
+            &mut credentials.aws_sts_endpoint,
+            defaults.aws_sts_endpoint.as_ref(),
+        ),
+    ] {
+        if field.as_deref().is_none_or(str::is_empty) {
+            *field = fallback.cloned();
+        }
+    }
 }

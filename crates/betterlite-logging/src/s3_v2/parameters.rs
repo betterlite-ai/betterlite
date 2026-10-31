@@ -35,18 +35,22 @@ where
     S3Parameters {
         features: features::resolve(source, defaults),
         encryption,
-        max_concurrent_uploads: configured_bound(
+        max_concurrent_uploads: resolve_bound(
             Bound::MaxConcurrentUploads,
-            source.max_concurrent_uploads.as_ref(),
-            defaults.max_concurrent_uploads.as_ref(),
+            prefer(
+                source.max_concurrent_uploads.as_ref(),
+                defaults.max_concurrent_uploads.as_ref(),
+            ),
             default_uploads(environment),
         ),
         max_queue_size: resolve_bound(Bound::MaxQueueSize, source.max_queue_size.as_ref(), queue),
         max_retry_age_seconds: retry,
-        max_adaptive_concurrency: configured_bound(
+        max_adaptive_concurrency: resolve_bound(
             Bound::MaxAdaptiveConcurrency,
-            source.max_adaptive_concurrency.as_ref(),
-            defaults.max_adaptive_concurrency.as_ref(),
+            prefer(
+                source.max_adaptive_concurrency.as_ref(),
+                defaults.max_adaptive_concurrency.as_ref(),
+            ),
             default_adaptive_limit(environment),
         ),
         connection,
@@ -78,16 +82,6 @@ fn retry_age(source: &Provided<OptionValue>, defaults: &Provided<OptionValue>) -
     }
 }
 
-fn configured_bound(
-    bound: Bound,
-    source: Option<&OptionValue>,
-    defaults: Option<&OptionValue>,
-    fallback: usize,
-) -> usize {
-    let chosen = prefer(source, defaults);
-    resolve_bound(bound, chosen, fallback)
-}
-
 fn encryption<Config>(
     source: &Source<Config>,
     defaults: &Source<Config>,
@@ -111,10 +105,19 @@ where
 fn default_uploads(environment: &dyn EnvironmentLookup) -> usize {
     const DEFAULT_UPLOADS: usize = 16;
     let configured = environment.lookup("DEFAULT_S3_MAX_CONCURRENT_UPLOADS");
-    configured
+    let parsed = configured
         .as_deref()
         .filter(|text| !text.contains('.'))
-        .and_then(integer_from_text)
-        .and_then(|number| usize::try_from(number).ok())
-        .unwrap_or(DEFAULT_UPLOADS)
+        .and_then(integer_from_text);
+    match parsed.map(usize::try_from) {
+        None => DEFAULT_UPLOADS,
+        Some(Ok(limit)) => limit,
+        Some(Err(_)) => {
+            tracing::warn!(
+                ?configured,
+                "s3 logging: DEFAULT_S3_MAX_CONCURRENT_UPLOADS is negative, using 16"
+            );
+            DEFAULT_UPLOADS
+        }
+    }
 }

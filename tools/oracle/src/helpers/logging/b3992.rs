@@ -67,39 +67,46 @@ impl Helper for Op {
                 start_time,
                 payload,
                 cold_storage,
-            } => {
-                let parameters =
-                    resolve_s3_parameters(&Source::default(), source, None, environment);
-                let element = create_batch_element(
-                    &parameters,
-                    &Event {
-                        start_time: *start_time,
-                        payload: payload.as_ref(),
-                        cold_storage_enabled: *cold_storage,
-                    },
-                    &mut PartitionGranularityCache::default(),
-                    environment,
-                )
-                .map_err(|error| failure(&error))?;
-                Ok(json!({"element":element}))
-            }
+            } => event(
+                source,
+                *start_time,
+                payload.as_ref(),
+                *cold_storage,
+                environment,
+            ),
         }
     }
 }
 
-fn failure<Error>(error: &Error) -> Box<HelperError>
-where
-    Error: std::fmt::Display,
-{
-    let failure = HelperError {
-        class: "S3PayloadError".to_owned(),
-        message: error.to_string(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-    };
-    Box::new(failure)
+fn event(
+    source: &Source<Value>,
+    start_time: NaiveDateTime,
+    payload: Option<&Value>,
+    cold_storage: bool,
+    environment: &BTreeMap<String, String>,
+) -> HelperResult {
+    let parameters = resolve_s3_parameters(&Source::default(), source, None, environment);
+    let element = create_batch_element(
+        &parameters,
+        &Event {
+            start_time,
+            payload,
+            cold_storage_enabled: cold_storage,
+        },
+        &mut PartitionGranularityCache::default(),
+        environment,
+    )
+    .map_err(|error| {
+        Box::new(HelperError {
+            class: "S3PayloadError".to_owned(),
+            message: error.to_string(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+        })
+    })?;
+    Ok(json!({"element":element}))
 }
 
 fn summary(parameters: &S3Parameters<Value>) -> Value {
