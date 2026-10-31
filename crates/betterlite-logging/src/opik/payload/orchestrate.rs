@@ -6,8 +6,15 @@ use indexmap::IndexMap;
 use crate::opik::metadata::{apply_proxy_header_overrides, extract_span_identifiers, extract_tags};
 use crate::opik::uuid7::create_uuid7;
 
-use super::support::{object_field, text_field};
+use super::support::object_field;
 use super::{PayloadContent, PayloadWindow, TraceContext, build_trace_payload};
+
+fn text_field<'source>(source: &'source IndexMap<String, Json>, key: &str) -> Option<&'source str> {
+    match source.get(key)? {
+        Json::Text(value) => Some(value.as_str()),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
+    }
+}
 
 pub(super) struct RequestSections<'request> {
     pub(super) standard: &'request IndexMap<String, Json>,

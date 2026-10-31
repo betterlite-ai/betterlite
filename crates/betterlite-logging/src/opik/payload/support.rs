@@ -115,13 +115,3 @@ pub(super) fn object_field<'source>(
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
     }
 }
-
-pub(super) fn text_field<'source>(
-    source: &'source IndexMap<String, Json>,
-    key: &str,
-) -> Option<&'source str> {
-    match source.get(key)? {
-        Json::Text(value) => Some(value.as_str()),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
-    }
-}
