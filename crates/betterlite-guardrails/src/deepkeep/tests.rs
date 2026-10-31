@@ -174,6 +174,18 @@ fn deepkeep_guardrail_request_keeps_fixed_firewall_id() {
 }
 
 #[test]
+fn deepkeep_guardrail_supports_pre_post_and_during_call_hooks() {
+    assert_eq!(
+        super::SUPPORTED_EVENT_HOOKS,
+        [
+            super::CallHook::Pre,
+            super::CallHook::Post,
+            super::CallHook::During
+        ]
+    );
+}
+
+#[test]
 fn deepkeep_guardrail_empty_replacements_are_preserved() {
     let returned = Response {
         action: Some("NONE".to_owned()),
