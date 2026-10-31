@@ -1,0 +1,13 @@
+id: B5088
+milestone: M1 openai data plane
+title: Hugging Face OIDC and OAuth refresh tokens like huggingface_hub
+status: todo
+depends_on: [B5085, B5086]
+file: tasks/B5088-huggingface-hub-oidc-oauth.yaml
+covers: []
+parent: B013
+split_from: B195
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

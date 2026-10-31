@@ -1,161 +1,171 @@
 id: B195
-title: Offline tokenizer engines and assets
+title: Tokenizer engines, bundled assets and Hugging Face tokenizers
 description: >-
-  Create betterlite-tokenizer with injected immutable tokenizer engines and bounded encode/decode/count APIs, loading
-  the pinned bundled assets offline. Cover cl100k_base, o200k_base and p50k_base (cache name ec7223a39ce59f226a68acc30dc1af2788490e15,
-  50280 ranks) plus the Anthropic Hugging Face tokenizer JSON, and expose an internal typed local-bytes constructor
-  for tests; model_info.custom_tokenizer remains unsupported and fails startup until Max decides. Compare kitoken's
-  typed-error Tiktoken/Hugging Face converters with tiktoken-rs and tokenizers; prefer kitoken if its oracle conformance
-  passes, retaining concrete conversion/encode/decode error sources. Do not adopt anyhow or boxed-error APIs, mutate
-  global TIKTOKEN_CACHE_DIR, fetch a model from a request name, or silently fall back when a configured custom asset
-  is invalid. Copy assets byte-for-byte into fixtures, store immutable instances in a bounded constructor-owned
-  cache, cap text/asset bytes and token output, and run CPU-heavy work through a bounded owned blocking facility.
-  Add tokenizer_engine helper cases forcing LiteLLM's Python tokenizer backend, and tokenizer_asset plus tokenizer_input
-  fuzz targets.  Seed B171's shared helper_case corpus with every added operation and replay it through the common
-  typed parser. Resolve CUSTOM_TIKTOKEN_CACHE_DIR through config (default bundled asset directory), without mutating
-  global TIKTOKEN_CACHE_DIR. Resolve TOKEN_COUNTER_MAX_CONCURRENT_COUNTS with default 4 and range 1-256; malformed/out-of-range
-  values warn and use 4. Force LITELLM_RUST=false and call rust_bridge/tokenizer.py _python_encoding/PythonHuggingFaceTokenizer
-  for Python oracle output; tokenizer.py 38-217 is the Rust codec wrapper, not the Python backend. No catalog dependency
-  is needed for named engines. Write the behavior rstest functions tokenizer_engines_tokenizer_engine_tests_behavior in adjacent
-  tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have separate
-  names. The helper operation tokenizer_engine is already registered;
-  each operation has its own Rust and Python adapter file and corpus seed. Budget 250 engine/cache, 100 adapters,
-  220 tests, 100 fuzz/replay and 100 config/wiring (770 total). Own token_counter.py offload limiter helpers 343-361
-  and utils.py backend/selection 2376-2470 only for already packaged engines; undecided remote/custom acquisition
-  is excluded.
+  LiteLLM counts tokens with tiktoken encodings it ships, with the Anthropic tokenizer JSON it ships, and with three tokenizers it downloads from the Hugging Face Hub: Xenova/c4ai-command-r-v01-tokenizer for command-r, hf-internal-testing/llama-tokenizer for llama-2 and replicate models, and Xenova/llama-3-tokenizer for llama-3 (utils.py L2426-L2469). An operator can also name any Hub tokenizer as a custom tokenizer (utils.py L2395-L2400, L2518-L2547). Max decided on 2026-10-31 that betterlite downloads from Hugging Face wherever LiteLLM does, with no deviation. This task builds the engines and the selection in crates/betterlite-tokenizer/src/engine.rs and engine/**, and downloads through B5087's hf_hub_download with B5085's settings and token, so the URLs, cache folder, retries, failures and fallbacks are huggingface_hub's.
 
 
-  Also own main.py _load_default_encoding L9394-L9397 as the lazy accessor to the packaged default engine; B196
-  owns its caller and one-time cache. The accessor performs no asset acquisition.
+  Engines. Compare kitoken, tiktoken-rs and the tokenizers crate. Prefer kitoken when its output matches the oracle, since the tokenizers crate returns Box<dyn Error> and rules.yaml bans boxed errors; keep the library's concrete error as the source of a typed EngineError. Bundle cl100k_base, o200k_base, p50k_base and anthropic_tokenizer.json byte for byte from LiteLLM's tokenizers folder into crates/betterlite-tokenizer/fixtures (default_encoding.py L1-L52); p50k_edit and o200k_harmony reuse those files the way tiktoken's constructors do. r50k_base and gpt2 are not bundled by LiteLLM, so tiktoken fetches them from openaipublic.blob.core.windows.net (read_file_cached): fetch them the same way through B173's client in betterlite-http, with the sha256 check, and keep them in CUSTOM_TIKTOKEN_CACHE_DIR under the sha1 of the URL when that variable is set. Count with disallowed_special empty (utils.py L2472-L2491), decode Hugging Face output with special added tokens stripped (tokenizer.py L378-L388), and run counting through a limiter of TOKEN_COUNTER_MAX_CONCURRENT_COUNTS (token_counter.py L340-L361) on the bounded blocking facility the caller passes in.
+
+
+  Selection (utils.py L2376-L2469). select(model, custom) returns a huggingface_tokenizer or an openai_tokenizer. With a custom tokenizer (identifier, revision, auth token), download its tokenizer.json through B5087 with the auth token as an explicit token, keep it in an LRU of the same size as _select_custom_tokenizer_helper's, and let a failure reach the caller. Without one: when litellm_settings.disable_hf_tokenizer_download is true, return cl100k_base. Otherwise pick the kind in LiteLLM's order with B193's catalog lists (cohere_models, anthropic_models), load a Hub kind with revision "main" and the implicit token, build the engine from the downloaded bytes, and cache it per kind for the life of the process. Any failure logs at debug "Error selecting tokenizer: {error}" and returns cl100k_base. Also build main.py L9394-L9397's accessor to the default encoding; B196 owns its caller.
+
+
+  Settings. The config section tokenizer_engines (crates/betterlite-config/src/sections/tokenizer_engines.rs and tokenizer_engines/**) reads litellm_settings.disable_hf_tokenizer_download (bool, default unset), CUSTOM_TIKTOKEN_CACHE_DIR and TOKEN_COUNTER_MAX_CONCURRENT_COUNTS (default 4, range 1 to 256; a bad value logs LiteLLM's warning and uses 4).
+
+
+  Tests and oracle. engine::tests::engines_follow_litellm covers each bundled encoding, Unicode, whitespace, special tokens, bad ids and the r50k_base fetch against a local server. engine::tests::selection_follows_litellm runs a local Hub on 127.0.0.1 through B5085's endpoint and covers every kind, the disable switch, the cache, a Hub that is down, offline mode with and without a cached file, and a custom tokenizer with and without a token. engine::tests::limits_hold covers the concurrency limiter and the input and output caps. sections::tokenizer_engines::tests::settings_follow_litellm loads every setting. The helper operation tokenizer_engine is already registered; force LITELLM_RUST=false so the oracle uses _python_encoding and PythonHuggingFaceTokenizer (rust_bridge/tokenizer.py L64-L108), and build Hugging Face cases from tokenizer.json bytes with from_str so no case needs the network.
 scope:
   paths:
-  - Cargo.toml
-  - crates/betterlite-tokenizer/**
-  - crates/betterlite-config/**
-  - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/tokenizer/engine.rs
-  - tools/oracle/src/helpers/tokenizer/engine/**
-  - tools/oracle/helpers/tokenizer_engine.py
-  - tools/oracle/helpers/tokenizer_engine/**
-  - tools/oracle/cases/helpers/tokenizer-engine/**
-  - "tools/oracle/fuzz/corpus/helper_case/tokenizer_engine-*"
+    - crates/betterlite-tokenizer/src/engine.rs
+    - crates/betterlite-tokenizer/src/engine/**
+    - crates/betterlite-tokenizer/Cargo.toml
+    - crates/betterlite-tokenizer/fixtures/**
+    - crates/betterlite-tokenizer/fuzz/**
+    - crates/betterlite-config/src/sections/tokenizer_engines.rs
+    - crates/betterlite-config/src/sections/tokenizer_engines/**
+    - "crates/betterlite-config/fuzz/corpus/config_yaml/tokenizer-engines-*"
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/tokenizer/engine.rs
+    - tools/oracle/src/helpers/tokenizer/engine/**
+    - tools/oracle/helpers/tokenizer_engine.py
+    - tools/oracle/helpers/tokenizer_engine/**
+    - tools/oracle/cases/helpers/tokenizer-engine/**
+    - "tools/oracle/fuzz/corpus/helper_case/tokenizer_engine-*"
+    - Cargo.toml
+    - Cargo.lock
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/tokenizer.py#L38-L217
-  why: Rust-codec OpenAIEncoding interface; do not use this as the Python oracle implementation.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/tokenizer.py#L221-L388
-  why: Hugging Face wrapper and special-token handling.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/default_encoding.py#L1-L52
-  why: Bundled offline cache and explicit custom directory.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2376-L2470
-  why: Tokenizer selection helper.
-- url: https://docs.rs/kitoken/latest/kitoken/convert/index.html
-  why: Existing converters for both asset formats.
-- url: https://docs.rs/kitoken/latest/kitoken/convert/enum.ConversionError.html
-  why: Concrete error sources compatible with repository rules.
-- url: https://docs.rs/tokenizers/latest/tokenizers/tokenizer/type.Error.html
-  why: An erased error boundary must not be adopted without a rules change.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rust_bridge/tokenizer.py#L64-L89
-  why: Python tiktoken and packaged Anthropic backend selection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2376-L2469
+    why: _select_tokenizer, the custom and default helpers, the disable switch, the kind order and _load_huggingface_tokenizer with the three repos.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2472-L2547
+    why: encode, decode, create_pretrained_tokenizer and create_tokenizer.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L1529-L1531
+    why: disable_hf_tokenizer_download, unset by default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/default_encoding.py#L1-L52
+    why: The bundled tiktoken folder, CUSTOM_TIKTOKEN_CACHE_DIR and the cl100k_base load.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rust_bridge/tokenizer.py#L64-L108
+    why: The Python backend the oracle must force, from_str and from_pretrained.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/tokenizer.py#L221-L388
+    why: The Hugging Face wrapper and strip_special_tokens.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L340-L361
+    why: The counting limiter and TOKEN_COUNTER_MAX_CONCURRENT_COUNTS.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L9394-L9397
+    why: The default encoding accessor.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/uv.lock#L9656
+    why: tiktoken 0.12.0.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/uv.lock#L9717-L9721
+    why: tokenizers 0.23.1.
+  - url: https://github.com/openai/tiktoken/blob/0.12.0/tiktoken/load.py#L36-L87
+    why: read_file_cached, the cache key, the hash check and the fetch.
+  - url: https://github.com/openai/tiktoken/blob/0.12.0/tiktoken_ext/openai_public.py#L17-L154
+    why: Every encoding constructor and the files it loads.
+  - url: https://github.com/huggingface/tokenizers/blob/v0.23.1/bindings/python/src/tokenizer.rs#L786-L812
+    why: from_pretrained downloads tokenizer.json through hf_hub_download.
+  - url: https://docs.rs/kitoken/latest/kitoken/convert/index.html
+    why: Converters for both asset formats with typed errors.
 dod:
-- text: Encode/decode/count outputs match Python for every bundled vocabulary, Unicode, whitespace, special tokens
-    and malformed IDs.
-  proof:
-  - oracle
-  - helper-python
-- text: All four tokenizer assets match their pinned checksums and startup/counting succeeds with network disabled.
-  proof:
-  - tokenizer-assets
-  - tokenizer-engine-tests
-- text: Custom invalid assets fail explicitly; concurrency, input/output caps and bounded CPU offload prevent unbounded
-    allocations or runtime blocking.
-  proof:
-  - tokenizer-engine-tests
-- text: Asset/input/config parsers have nonempty corpus replay.
-  proof:
-  - tokenizer-asset-corpus
-  - tokenizer-input-corpus
-  - config-yaml-corpus
-- text: Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
-  proof:
-  - helper-case-corpus
+  - text: Encode, decode and count match Python for every bundled encoding and for Hugging Face tokenizers built from bytes, with Unicode, whitespace, special tokens and bad ids.
+    proof: [engines, oracle, helper-python]
+  - text: Selection picks the same tokenizer as LiteLLM for every kind, downloads Hub tokenizers through B5087, honors the disable switch, and falls back to cl100k_base where LiteLLM does.
+    proof: [selection]
+  - text: The bundled assets match their pinned checksums.
+    proof: [tokenizer-assets]
+  - text: The limiter, input and output caps hold.
+    proof: [limits]
+  - text: The three settings load as LiteLLM reads them.
+    proof: [tokenizer-settings, config-yaml-corpus]
+  - text: The asset and input parsers and every added helper operation have committed corpora that replay.
+    proof: [tokenizer-asset-corpus, tokenizer-input-corpus, helper-case-corpus]
 checks:
   optional:
-  - mutants
+    - mutants
   commands:
-  - id: tokenizer-engine-tests
-    why: the required tests fail or the filter selects no tests
-    run: cargo nextest run --locked -p betterlite-tokenizer --no-tests=fail -E 'test(/::tokenizer_engines_tokenizer_engine_tests_behavior($|::)/)
-      - test(/replays_the_/)'
-  - id: tokenizer-asset-corpus
-    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-tokenizer/fuzz/corpus/tokenizer_asset)"
-      && test -f crates/betterlite-tokenizer/fuzz/fuzz_targets/tokenizer_asset.rs && test -n "$(ls -A crates/betterlite-tokenizer/fuzz/corpus/tokenizer_asset)"
-      && cargo nextest run --locked -p betterlite-tokenizer --no-tests=fail -E 'test(replays_the_tokenizer_asset_corpus)'
-  - id: tokenizer-input-corpus
-    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-tokenizer/fuzz/corpus/tokenizer_input)"
-      && test -f crates/betterlite-tokenizer/fuzz/fuzz_targets/tokenizer_input.rs && test -n "$(ls -A crates/betterlite-tokenizer/fuzz/corpus/tokenizer_input)"
-      && cargo nextest run --locked -p betterlite-tokenizer --no-tests=fail -E 'test(replays_the_tokenizer_input_corpus)'
-  - id: config-yaml-corpus
-    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml)"
-      && grep -rlq 'CUSTOM_TIKTOKEN_CACHE_DIR' crates/betterlite-config/fuzz/corpus/config_yaml && grep -rlq 'TOKEN_COUNTER_MAX_CONCURRENT_COUNTS'
-      crates/betterlite-config/fuzz/corpus/config_yaml && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
-      && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)" && cargo nextest run --locked -p betterlite-config
-      --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-  - id: helper-python
-    why: the oracle adapters fail strict Python checks
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: tokenizer-assets
-    why: a bundled tokenizer asset differs from the pinned source
-    run: 'cd crates/betterlite-tokenizer/fixtures && sha256sum --check --quiet <<''SUMS''
+    - id: engines
+      why: the engine test is missing or an encoding differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-tokenizer --no-tests=fail -E 'test(/^engine::tests::engines_follow_litellm($|::)/)'
+    - id: selection
+      why: the selection test is missing or a kind, download, cache or fallback differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-tokenizer --no-tests=fail -E 'test(/^engine::tests::selection_follows_litellm($|::)/)'
+    - id: limits
+      why: the limits test is missing or a cap or the limiter does not hold
+      run: cargo nextest run --locked -p betterlite-tokenizer --no-tests=fail -E 'test(/^engine::tests::limits_hold($|::)/)'
+    - id: tokenizer-settings
+      why: the settings test is missing or a setting loads differently from LiteLLM
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::tokenizer_engines::tests::settings_follow_litellm($|::)/)'
+    - id: tokenizer-assets
+      why: a bundled tokenizer asset differs from the pinned source
+      run: 'cd crates/betterlite-tokenizer/fixtures && sha256sum --check --quiet <<''SUMS''
 
-      223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7  9b5ad71b2ce5302211f9c61530b329a4922fc6a4
+        223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7  9b5ad71b2ce5302211f9c61530b329a4922fc6a4
 
-      446a9538cb6c348e3516120d7c08b09f57c36495e2acfffe59a5bf8b0cfb1a2d  fb374d419588a4632f3f557e76b4b70aebbca790
+        446a9538cb6c348e3516120d7c08b09f57c36495e2acfffe59a5bf8b0cfb1a2d  fb374d419588a4632f3f557e76b4b70aebbca790
 
-      94b5ca7dff4d00767bc256fdd1b27e5b17361d7b8a5f968547f9f23eb70d2069  ec7223a39ce59f226a68acc30dc1af2788490e15
+        94b5ca7dff4d00767bc256fdd1b27e5b17361d7b8a5f968547f9f23eb70d2069  ec7223a39ce59f226a68acc30dc1af2788490e15
 
-      c241737df24b4e7f7c9af4fdcee29a0ca903dcb288a8b753bc346a3092911767  anthropic_tokenizer.json
+        c241737df24b4e7f7c9af4fdcee29a0ca903dcb288a8b753bc346a3092911767  anthropic_tokenizer.json
 
-      SUMS'
-  - id: helper-case-corpus
-    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/tokenizer_engine-*")"
-      && grep -lq 'tokenizer_engine' tools/oracle/fuzz/corpus/helper_case/tokenizer_engine-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
-      && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
-      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+        SUMS'
+    - id: tokenizer-asset-corpus
+      why: the fuzz target or a new corpus file is missing, or the replay fails
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-tokenizer/fuzz/corpus/tokenizer_asset)"
+        && test -f crates/betterlite-tokenizer/fuzz/fuzz_targets/tokenizer_asset.rs
+        && cargo nextest run --locked -p betterlite-tokenizer --no-tests=fail -E 'test(/^engine::tests::replays_the_tokenizer_asset_corpus($|::)/)'
+    - id: tokenizer-input-corpus
+      why: the fuzz target or a new corpus file is missing, or the replay fails
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-tokenizer/fuzz/corpus/tokenizer_input)"
+        && test -f crates/betterlite-tokenizer/fuzz/fuzz_targets/tokenizer_input.rs
+        && cargo nextest run --locked -p betterlite-tokenizer --no-tests=fail -E 'test(/^engine::tests::replays_the_tokenizer_input_corpus($|::)/)'
+    - id: config-yaml-corpus
+      why: the config corpus lacks a tokenizer-engines seed with the new key, or the replay fails
+      run: >-
+        git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml | grep -Fq "/tokenizer-engines-"
+        && grep -rlq 'disable_hf_tokenizer_download' crates/betterlite-config/fuzz/corpus/config_yaml
+        && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: helper-python
+      why: the oracle adapter fails strict Python checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: a tokenizer_engine seed is missing or the helper corpus replay fails
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/tokenizer_engine-*")"
+        && grep -lq 'tokenizer_engine' tools/oracle/fuzz/corpus/helper_case/tokenizer_engine-*
+        && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+        && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
-- tools/oracle/cases/helpers/tokenizer-engine/cl100k.yaml
-- tools/oracle/cases/helpers/tokenizer-engine/o200k.yaml
-- tools/oracle/cases/helpers/tokenizer-engine/p50k.yaml
-- tools/oracle/cases/helpers/tokenizer-engine/anthropic.yaml
-- tools/oracle/cases/helpers/tokenizer-engine/unicode-whitespace.yaml
-- tools/oracle/cases/helpers/tokenizer-engine/special-tokens.yaml
-- tools/oracle/cases/helpers/tokenizer-engine/decode-bytes.yaml
-- tools/oracle/cases/helpers/tokenizer-engine/invalid-id.yaml
-- tools/oracle/cases/helpers/tokenizer-engine/custom-local.yaml
+  - tools/oracle/cases/helpers/tokenizer-engine/cl100k.yaml
+  - tools/oracle/cases/helpers/tokenizer-engine/o200k.yaml
+  - tools/oracle/cases/helpers/tokenizer-engine/p50k.yaml
+  - tools/oracle/cases/helpers/tokenizer-engine/anthropic.yaml
+  - tools/oracle/cases/helpers/tokenizer-engine/unicode-whitespace.yaml
+  - tools/oracle/cases/helpers/tokenizer-engine/special-tokens.yaml
+  - tools/oracle/cases/helpers/tokenizer-engine/decode-bytes.yaml
+  - tools/oracle/cases/helpers/tokenizer-engine/invalid-id.yaml
+  - tools/oracle/cases/helpers/tokenizer-engine/custom-local.yaml
 deviations:
-- what: Tokenizer assets are local or bundled only; request/model names never trigger Hugging Face downloads. Unavailable
-    optional Hugging Face tokenizers follow disable_hf_tokenizer_download=true and use the existing OpenAI tokenizer
-    selection. model_info.custom_tokenizer fails configuration loading with the typed unsupported-setting error;
-    no provider request is sent.
-  why: Keep offline behavior while Max decides whether to bundle additional pinned Hugging Face assets or support
-    validated downloads.
-  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2376-L2470
+  - what: When CUSTOM_TIKTOKEN_CACHE_DIR is unset, a fetched r50k_base or gpt2 file stays in memory for the life of the process, where tiktoken writes it into the tokenizers folder inside LiteLLM's installed package.
+    why: >-
+      betterlite's bundled assets are compiled into the binary, so there is no package folder to write into. The fetch, the URL and the hash check are the same; only the copy on disk is missing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/default_encoding.py#L20-L30
 out_of_scope:
-- Message/tool/image accounting is B196-B197.
-- Python mutable tokenizer methods and SDK pretrained-download convenience are B166.
-- Automatic family selection requiring the three missing HF repositories stays blocked by the open decision; supplied
-  local bytes are an internal API only, not a new configuration key.
+  - Hub settings, the token, requests, the cache download and OAuth belong to B5085, B5086, B5087 and B5088.
+  - Message, tool and image accounting belongs to B196 and B197; the encoding name for a model (token_counter.py L663-L690) belongs to B259.
+  - The /utils/token_counter handler that reads model_info.custom_tokenizer (proxy_server.py L14024-L14058) calls this task's select but is not built here; its owner is still open.
+  - Python's mutable tokenizer methods and the SDK pretrained-download helpers belong to B166.
+  - LiteLLM's optional Rust codec (tokenizer.py L38-L217, LITELLM_RUST) is not ported; the Python backend is the reference.
 pitfalls:
-- 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/tokenizer_engine-<case>.yaml. The rest of that folder belongs to other tasks.'
-- 'The oracle helper for this task is pre-registered as tokenizer_engine in the tokenizer group. Replace the stub Op in tools/oracle/src/helpers/tokenizer/engine.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/tokenizer_engine.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
-- The oracle must force the Python backend and use the same vocabulary bytes, not LiteLLM's optional Rust implementation.
-- A library's default model-name lookup may differ from LiteLLM's normalization even when its BPE is correct.
-- Concrete source errors are required; converting a boxed tokenizer error to a string is not a compliant fallback.
+  - _select_tokenizer_helper checks `disable_hf_tokenizer_download is True`, so only true turns downloads off; false and unset both download.
+  - The kind order is cohere, anthropic, llama-2 or replicate, llama-3, so "replicate/meta/llama-3-70b" gets the llama-2 tokenizer.
+  - The cohere check reads the model name as given, while the llama checks lowercase it.
+  - lru_cache never caches an exception, so a failed Hub download is tried again on the next call; cache only successes.
+  - A failed default selection falls back to cl100k_base with a debug log and never reaches the client; only a custom tokenizer's failure does.
+  - Name every corpus seed tools/oracle/fuzz/corpus/helper_case/tokenizer_engine-<case>.yaml; the rest of that folder belongs to other tasks.
+  - The oracle helper is pre-registered as tokenizer_engine in the tokenizer group; replace the stub Op in tools/oracle/src/helpers/tokenizer/engine.rs and write run in tools/oracle/helpers/tokenizer_engine.py, and leave the registry files alone.
+  - A library's own model-name lookup can differ from LiteLLM's selection even when its BPE is right, so select by LiteLLM's rules only.
 review_level: standard
 budget:
   max_changed_lines: 1500
