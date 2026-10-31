@@ -95,21 +95,16 @@ async fn acquire_test_file() -> PathBuf {
                 return path;
             }
             Err(error) if error.kind() == ErrorKind::AlreadyExists => {
-                reclaim_stale_test_file(&path).await;
+                if let Ok(owner) = fs::read_to_string(&path).await {
+                    let process_path = PathBuf::from(format!("/proc/{}", owner.trim()));
+                    if !fs::try_exists(process_path).await.unwrap_or(true) {
+                        drop(fs::remove_file(&path).await);
+                    }
+                }
                 sleep(Duration::from_millis(10)).await;
             }
             Err(error) => panic!("could not create migration test lock: {error}"),
         }
-    }
-}
-
-async fn reclaim_stale_test_file(path: &PathBuf) {
-    let Ok(owner) = fs::read_to_string(path).await else {
-        return;
-    };
-    let process_path = PathBuf::from(format!("/proc/{}", owner.trim()));
-    if !fs::try_exists(process_path).await.unwrap_or(true) {
-        drop(fs::remove_file(path).await);
     }
 }
 
