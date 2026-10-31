@@ -36,36 +36,30 @@ fn prompt_details_from_cost(
     }
 }
 
-struct UsageDerivedFromCost {
-    completion_tokens_details: Option<CompletionTokensDetails>,
-    numeric_extras: BTreeMap<String, UsageNumber>,
-}
-
-fn usage_derived_from_cost(value: &CostUsage) -> UsageDerivedFromCost {
-    let completion_tokens_details =
-        value
-            .completion_details
-            .map(|details| CompletionTokensDetails {
-                text_tokens: details.text_tokens,
-                audio_tokens: details.audio_tokens,
-                image_tokens: details.image_tokens,
-                video_tokens: details.video_tokens,
-                reasoning_tokens: details.reasoning_tokens,
-                accepted_prediction_tokens: None,
-                rejected_prediction_tokens: None,
-            });
-    let numeric_extras =
-        map_numeric_extras(&value.numeric_extras, |extra| UsageNumber::Decimal(*extra));
-    UsageDerivedFromCost {
-        completion_tokens_details,
-        numeric_extras,
+impl From<CompletionDetails> for CompletionTokensDetails {
+    fn from(details: CompletionDetails) -> Self {
+        let CompletionDetails {
+            text_tokens,
+            audio_tokens,
+            image_tokens,
+            video_tokens,
+            reasoning_tokens,
+        } = details;
+        Self {
+            text_tokens,
+            audio_tokens,
+            image_tokens,
+            video_tokens,
+            reasoning_tokens,
+            accepted_prediction_tokens: None,
+            rejected_prediction_tokens: None,
+        }
     }
 }
 
 impl From<&CostUsage> for Usage {
     fn from(value: &CostUsage) -> Self {
-        let derived = usage_derived_from_cost(value);
-        Self {
+        let mut usage = Self {
             prompt_tokens: value.prompt_tokens,
             completion_tokens: value.completion_tokens,
             total_tokens: value.total_tokens,
@@ -73,74 +67,62 @@ impl From<&CostUsage> for Usage {
                 value.prompt_details,
                 value.cache_read_tokens,
             ),
-            completion_tokens_details: derived.completion_tokens_details,
-            numeric_extras: derived.numeric_extras,
+            completion_tokens_details: value.completion_details.map(CompletionTokensDetails::from),
+            numeric_extras: BTreeMap::new(),
+        };
+        for (name, extra) in &value.numeric_extras {
+            usage
+                .numeric_extras
+                .insert(name.clone(), UsageNumber::Decimal(*extra));
         }
+        usage
     }
 }
 
-fn prompt_details_to_cost(
-    source: Option<&PromptTokensDetails>,
-) -> (Option<PromptDetails>, Option<i64>) {
-    let prompt_details = source.map(|details| PromptDetails {
-        text_tokens: details.text_tokens,
-        audio_tokens: details.audio_tokens,
-        image_tokens: details.image_tokens,
-        video_tokens: details.video_tokens,
-        web_search_requests: details.web_search_requests,
-    });
-    let cache_read_tokens = source.and_then(|details| details.cached_tokens);
-    (prompt_details, cache_read_tokens)
-}
-
-struct CostDerivedFromUsage {
-    completion_details: Option<CompletionDetails>,
-    numeric_extras: BTreeMap<String, Decimal>,
-}
-
-fn cost_derived_from_usage(value: &Usage) -> CostDerivedFromUsage {
-    let completion_details =
-        value
-            .completion_tokens_details
-            .as_ref()
-            .map(|details| CompletionDetails {
-                text_tokens: details.text_tokens,
-                audio_tokens: details.audio_tokens,
-                image_tokens: details.image_tokens,
-                video_tokens: details.video_tokens,
-                reasoning_tokens: details.reasoning_tokens,
-            });
-    let numeric_extras = map_numeric_extras(&value.numeric_extras, decimal_number);
-    CostDerivedFromUsage {
-        completion_details,
-        numeric_extras,
+impl From<&CompletionTokensDetails> for CompletionDetails {
+    fn from(details: &CompletionTokensDetails) -> Self {
+        Self {
+            text_tokens: details.text_tokens,
+            audio_tokens: details.audio_tokens,
+            image_tokens: details.image_tokens,
+            video_tokens: details.video_tokens,
+            reasoning_tokens: details.reasoning_tokens,
+        }
     }
 }
 
 impl From<&Usage> for CostUsage {
     fn from(value: &Usage) -> Self {
-        let (prompt_details, cache_read_tokens) =
-            prompt_details_to_cost(value.prompt_tokens_details.as_ref());
-        let derived = cost_derived_from_usage(value);
-        Self {
+        let mut cost = Self {
             prompt_tokens: value.prompt_tokens,
             completion_tokens: value.completion_tokens,
             total_tokens: value.total_tokens,
-            prompt_details,
-            completion_details: derived.completion_details,
-            cache_read_tokens,
-            numeric_extras: derived.numeric_extras,
+            prompt_details: None,
+            completion_details: value
+                .completion_tokens_details
+                .as_ref()
+                .map(CompletionDetails::from),
+            cache_read_tokens: None,
+            numeric_extras: decimal_numeric_extras(&value.numeric_extras),
+        };
+        if let Some(details) = value.prompt_tokens_details.as_ref() {
+            cost.prompt_details = Some(PromptDetails {
+                text_tokens: details.text_tokens,
+                audio_tokens: details.audio_tokens,
+                image_tokens: details.image_tokens,
+                video_tokens: details.video_tokens,
+                web_search_requests: details.web_search_requests,
+            });
+            cost.cache_read_tokens = details.cached_tokens;
         }
+        cost
     }
 }
 
-fn map_numeric_extras<T, V, F>(source: &BTreeMap<String, T>, mut convert: F) -> BTreeMap<String, V>
-where
-    F: FnMut(&T) -> V,
-{
+fn decimal_numeric_extras(source: &BTreeMap<String, UsageNumber>) -> BTreeMap<String, Decimal> {
     let mut result = BTreeMap::new();
-    for (name, value) in source {
-        result.insert(name.clone(), convert(value));
+    for (name, extra) in source {
+        result.insert(name.clone(), decimal_number(extra));
     }
     result
 }

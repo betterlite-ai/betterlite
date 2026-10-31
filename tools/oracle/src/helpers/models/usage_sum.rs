@@ -125,21 +125,25 @@ where
     Ok(result)
 }
 
+impl From<String> for Box<HelperError> {
+    fn from(message: String) -> Self {
+        Self::new(HelperError::from(("InvalidInput", message)))
+    }
+}
+
 fn number_from_json(name: &str, raw: &Value) -> Result<UsageNumber, Box<HelperError>> {
     if let Some(integer) = raw.as_i64() {
-        Ok(UsageNumber::Integer(integer))
-    } else if let Some(float) = raw.as_f64() {
-        let decimal = Decimal::try_from(float)
-            .map_err(|error| Box::new(HelperError::from(("InvalidInput", error.to_string()))))?;
-        Ok(UsageNumber::Decimal(decimal))
-    } else if let Some(boolean) = raw.as_bool() {
-        Ok(UsageNumber::Boolean(boolean))
-    } else {
-        Err(Box::new(HelperError::from((
-            "InvalidInput",
-            format!("extra {name} is not numeric"),
-        ))))
+        return Ok(UsageNumber::Integer(integer));
     }
+    if let Some(boolean) = raw.as_bool() {
+        return Ok(UsageNumber::Boolean(boolean));
+    }
+    let Some(float) = raw.as_f64() else {
+        return Err(format!("extra {name} is not numeric").into());
+    };
+    Decimal::try_from(float)
+        .map(UsageNumber::Decimal)
+        .map_err(|error| error.to_string().into())
 }
 
 impl UsageInput {
@@ -258,13 +262,11 @@ fn prompt_details_value(details: &PromptTokensDetails) -> Value {
 
 fn number_value(value: &UsageNumber) -> Result<Value, Box<HelperError>> {
     match value {
-        UsageNumber::Integer(inner) => Ok(json!(inner)),
-        UsageNumber::Decimal(inner) => inner.to_f64().map(|float| json!(float)).ok_or_else(|| {
-            Box::new(HelperError::from((
-                "InvalidInput",
-                format!("decimal extra {inner} has no f64 representation"),
-            )))
-        }),
         UsageNumber::Boolean(inner) => Ok(json!(inner)),
+        UsageNumber::Integer(inner) => Ok(json!(inner)),
+        UsageNumber::Decimal(inner) => inner
+            .to_f64()
+            .map(|float| json!(float))
+            .ok_or_else(|| format!("decimal extra {inner} has no f64 representation").into()),
     }
 }
