@@ -23,9 +23,16 @@ pub trait Trigger: Send + Sync {
     ) -> Option<DateTime<Utc>>;
 }
 
+// APScheduler tells self-anchored jobs apart by whether next_run_time was passed at all, not its value; Unset carries "attribute absent".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NextRunTime {
+    Unset,
+    Explicit(Option<DateTime<Utc>>),
+}
+
 pub struct JobSnapshot {
     pub id: String,
-    pub next_run_time: Option<DateTime<Utc>>,
+    pub next_run_time: NextRunTime,
     pub period_seconds: Option<u32>,
     pub trigger: Box<dyn Trigger>,
 }

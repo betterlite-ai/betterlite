@@ -1,8 +1,8 @@
-use super::{JobSnapshot, window::cron_dedupe_seconds};
+use super::{JobSnapshot, NextRunTime, window::cron_dedupe_seconds};
 
 #[must_use]
 pub fn is_staggerable(job: &JobSnapshot) -> bool {
-    if job.next_run_time.is_some() {
+    if matches!(job.next_run_time, NextRunTime::Explicit(_)) {
         return false;
     }
     if job.period_seconds.is_some() {
