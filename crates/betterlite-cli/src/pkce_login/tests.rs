@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use rstest::rstest;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use std::collections::VecDeque;
 use std::fs;
 use std::io::{ErrorKind, Read as _, Write as _};
@@ -61,7 +61,7 @@ fn redemption() -> RedeemCodeRequest {
 #[test]
 fn pkce_pair_has_64_byte_verifier_and_s256_challenge() {
     let (verifier, challenge) = pkce_pair(&mut FixedEntropy).expect("pair");
-    assert_eq!(verifier.len(), 86);
+    assert_eq!(verifier.expose_secret().len(), 86);
     assert_eq!(challenge, "d-tPkxk37XPMxus_-J6yZXGjoN4TOADR8GPQl-whssA");
 }
 
@@ -123,7 +123,7 @@ fn discover_rejects_unsupported_contract_version() {
         "registration_endpoint": "https://example.test/oauth/register",
         "revocation_endpoint": "https://example.test/oauth/revoke",
         "resource": "https://example.test",
-        "supported_methods": ["S256"]
+        "code_challenge_methods_supported": ["S256"]
     }"#;
     let response = HttpResponse {
         status: 200,
@@ -247,6 +247,27 @@ fn loopback_wait_surfaces_accept_failure() {
         .wait(Duration::from_secs(1), &FixedClock(Instant::now()))
         .unwrap_err();
     assert!(matches!(error, PkceFailure::LoopbackAccept { .. }));
+}
+
+#[test]
+fn loopback_wait_ignores_aborted_accept_before_valid_callback() {
+    let request =
+        b"GET /callback?state=state&code=good HTTP/1.1\r\nHost: localhost\r\n\r\n".to_vec();
+    let listener = FailingListener {
+        address: "127.0.0.1:0".parse().expect("address"),
+        attempts: Mutex::new(VecDeque::from([
+            Err(ErrorKind::ConnectionAborted),
+            Ok(Some(RecordedConnection {
+                reads: VecDeque::from([Ok(request)]),
+                write_result: Ok(()),
+            })),
+        ])),
+    };
+    let mut server = LoopbackServer::with_listener(listener, "state").expect("bind");
+    let outcome = server
+        .wait(Duration::from_secs(1), &FixedClock(Instant::now()))
+        .expect("outcome");
+    assert!(matches!(outcome, CallbackOutcome::Code(_)));
 }
 
 #[test]
@@ -568,7 +589,7 @@ fn revoke_503_is_unavailable() {
     };
     let http = ScriptedHttp::new(response);
     assert!(matches!(
-        revoke_credential(&contract(), "client", "refresh", &http),
+        revoke_credential(&contract(), "client", &SecretString::from("refresh"), &http),
         Err(RevocationUnavailableOrFailure::Unavailable(_))
     ));
     let request = http.requests().pop().expect("revocation request");
@@ -582,7 +603,13 @@ fn revoke_503_is_unavailable() {
 #[case(308)]
 #[case(399)]
 fn revoke_rejects_redirect(#[case] status: u16) {
-    revoke_credential(&contract(), "client", "refresh", &redirect_response(status)).unwrap_err();
+    revoke_credential(
+        &contract(),
+        "client",
+        &SecretString::from("refresh"),
+        &redirect_response(status),
+    )
+    .unwrap_err();
 }
 
 #[test]
@@ -645,6 +672,20 @@ fn expires_in_accepts_integral_float() {
     let body = br#"{"access_token":"access","expires_in":30.0,"refresh_token":"refresh"}"#;
     let token = wire::parse_token(body).expect("token");
     assert_eq!(token.expires_in, 30);
+}
+
+#[test]
+fn expires_in_accepts_exponent_number() {
+    let body = br#"{"access_token":"access","expires_in":3e1,"refresh_token":"refresh"}"#;
+    let token = wire::parse_token(body).expect("token");
+    assert_eq!(token.expires_in, 30);
+}
+
+#[test]
+fn expires_in_accepts_underscore_numeric_string() {
+    let body = br#"{"access_token":"access","expires_in":"3_600","refresh_token":"refresh"}"#;
+    let token = wire::parse_token(body).expect("token");
+    assert_eq!(token.expires_in, 3_600);
 }
 
 #[test]
@@ -759,6 +800,22 @@ fn http_debug_output_never_reveals_response_body_bytes() {
             body.len()
         )
     );
+}
+
+#[test]
+fn http_debug_output_redacts_response_header_values() {
+    let response = HttpResponse {
+        status: 200,
+        headers: vec![(
+            "Set-Cookie".to_owned(),
+            "session=super-secret-cookie".to_owned(),
+        )],
+        body: Vec::new(),
+    };
+    let rendered = format!("{response:?}");
+    assert!(!rendered.contains("super-secret-cookie"));
+    assert!(rendered.contains("Set-Cookie"));
+    assert!(rendered.contains("[REDACTED]"));
 }
 
 #[test]

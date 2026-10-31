@@ -1,4 +1,4 @@
-use std::io::Error;
+use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
 use std::thread::park_timeout;
 use std::time::Duration;
@@ -59,8 +59,11 @@ impl<L: LoopbackListener> LoopbackServer<L> {
             if clock.now() >= deadline {
                 return Err(PkceFailure::CallbackTimeout);
             }
-            if let Some(outcome) = self.accept_request()? {
-                return Ok(outcome);
+            match self.accept_request() {
+                Ok(Some(outcome)) => return Ok(outcome),
+                Ok(None) => {}
+                Err(error) if is_transient_accept_error(&error) => {}
+                Err(error) => return Err(error),
             }
             park_timeout(Duration::from_millis(10));
         }
@@ -117,6 +120,19 @@ impl<L: LoopbackListener> LoopbackServer<L> {
             Some(CallbackOutcome::Code(CallbackCode { code })),
         )
     }
+}
+
+fn is_transient_accept_error(error: &PkceFailure) -> bool {
+    let PkceFailure::LoopbackAccept { source } = error else {
+        return false;
+    };
+    matches!(
+        source.kind(),
+        ErrorKind::ConnectionAborted
+            | ErrorKind::ConnectionReset
+            | ErrorKind::Interrupted
+            | ErrorKind::WouldBlock
+    )
 }
 
 // Re-parses the accumulated buffer after every read, so a request split across several TCP reads parses like one that arrives whole, and drops the connection silently on any error so the wait loop just keeps polling.

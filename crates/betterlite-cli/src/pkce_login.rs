@@ -41,7 +41,14 @@ impl fmt::Debug for HttpResponse {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("HttpResponse")
             .field("status", &self.status)
-            .field("headers", &self.headers)
+            .field(
+                "headers",
+                &self
+                    .headers
+                    .iter()
+                    .map(|(name, _value)| (name, "[REDACTED]"))
+                    .collect::<Vec<_>>(),
+            )
             .field("body", &format_args!("[{} bytes]", self.body.len()))
             .finish()
     }

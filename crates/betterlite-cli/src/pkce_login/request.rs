@@ -1,6 +1,5 @@
-use std::str;
-
 use secrecy::SecretString;
+use std::str;
 use url::Url;
 
 // Bounds how many bytes a connection may send before its request is given up on, so a drip-fed or endless request cannot grow the buffer without limit.
@@ -38,44 +37,40 @@ pub fn parse_request(buffer: &[u8]) -> RequestRead {
     if buffer.len() > MAX_REQUEST_BYTES {
         return RequestRead::TooLarge;
     }
-    let Some(headers_end) = find_end_of_headers(buffer) else {
-        return RequestRead::Incomplete;
-    };
-    let Some(head_bytes) = buffer.get(..headers_end) else {
-        return RequestRead::Malformed;
-    };
-    let Ok(head) = str::from_utf8(head_bytes) else {
-        return RequestRead::Malformed;
-    };
-    let Some(request_line) = head.split("\r\n").next() else {
-        return RequestRead::Malformed;
-    };
-    match parse_request_line(request_line) {
-        Ok(target) => build_callback_query(target),
-        Err(outcome) => outcome,
+    let mut headers = [httparse::EMPTY_HEADER; 32];
+    let mut request = httparse::Request::new(&mut headers);
+    match request.parse(buffer) {
+        Ok(httparse::Status::Partial) => RequestRead::Incomplete,
+        Ok(httparse::Status::Complete(_)) => parse_parsed_request(&request),
+        Err(httparse::Error::TooManyHeaders) => RequestRead::TooLarge,
+        Err(httparse::Error::Version) if is_http_two_request(buffer) => {
+            RequestRead::UnsupportedVersion
+        }
+        Err(_) => RequestRead::Malformed,
     }
 }
 
-// Validates the method and HTTP version on the request line and hands back the target to parse as a URL, so parse_request itself stays short.
-fn parse_request_line(line: &str) -> Result<&str, RequestRead> {
-    let mut tokens = line.split_whitespace();
-    let (Some(method), Some(target), Some(version)) = (tokens.next(), tokens.next(), tokens.next())
+fn is_http_two_request(buffer: &[u8]) -> bool {
+    let Some(text) = str::from_utf8(buffer).ok() else {
+        return false;
+    };
+    text.lines()
+        .next()
+        .is_some_and(|line| line.contains(" HTTP/2."))
+}
+
+fn parse_parsed_request(request: &httparse::Request<'_, '_>) -> RequestRead {
+    let (Some(method), Some(path), Some(version)) = (request.method, request.path, request.version)
     else {
-        return Err(RequestRead::Malformed);
+        return RequestRead::Malformed;
     };
-    if tokens.next().is_some() {
-        return Err(RequestRead::Malformed);
-    }
-    let Some((major, _minor)) = parse_http_version(version) else {
-        return Err(RequestRead::Malformed);
-    };
-    if major >= 2 {
-        return Err(RequestRead::UnsupportedVersion);
+    if version >= 2 {
+        return RequestRead::UnsupportedVersion;
     }
     if method != "GET" {
-        return Err(RequestRead::UnsupportedMethod);
+        return RequestRead::UnsupportedMethod;
     }
-    Ok(target)
+    build_callback_query(path)
 }
 
 fn build_callback_query(target: &str) -> RequestRead {
@@ -89,32 +84,6 @@ fn build_callback_query(target: &str) -> RequestRead {
         description: first_nonempty(&url, "error_description"),
         code: first_nonempty(&url, "code").map(SecretString::from),
     })
-}
-
-// Mirrors Python's BaseHTTPRequestHandler.parse_request: the version token must read "HTTP/<digits>.<digits>", each component no more than 10 digits, so "nonsense" or "HTTP/1.1.1" are rejected rather than silently ignored.
-fn parse_http_version(version: &str) -> Option<(u32, u32)> {
-    let numbers = version.strip_prefix("HTTP/")?;
-    let mut parts = numbers.split('.');
-    let major_text = parts.next()?;
-    let minor_text = parts.next()?;
-    if parts.next().is_some() {
-        return None;
-    }
-    let major = parse_version_component(major_text)?;
-    let minor = parse_version_component(minor_text)?;
-    Some((major, minor))
-}
-
-fn parse_version_component(text: &str) -> Option<u32> {
-    if text.is_empty() || text.len() > 10 || !text.bytes().all(|byte| byte.is_ascii_digit()) {
-        return None;
-    }
-    text.parse::<u32>().ok()
-}
-
-fn find_end_of_headers(buffer: &[u8]) -> Option<usize> {
-    let position = buffer.windows(4).position(|window| window == b"\r\n\r\n")?;
-    position.checked_add(4)
 }
 
 // Replicates Python's parse_qs(keep_blank_values=False) followed by taking the first remaining value for key: a blank value is dropped entirely, so it neither answers the query on its own nor hides a later, nonempty occurrence of the same key.

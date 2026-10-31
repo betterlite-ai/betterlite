@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::iter::repeat_n;
 use std::str;
 
 use secrecy::{ExposeSecret as _, SecretString};
@@ -32,38 +33,86 @@ pub struct TokenResponse {
 #[derive(serde::Deserialize)]
 struct RawTokenResponse {
     access_token: SecretString,
-    expires_in: Box<RawValue>,
+    expires_in: ExpiresIn,
     refresh_token: SecretString,
     user_id: Option<String>,
     team_id: Option<String>,
 }
 
-// LiteLLM's _TokenResponse.expires_in is a plain Pydantic int field. In non-strict (lax) mode that also accepts an integral JSON float (30.0) or a numeric string, whitespace-padded or spelled out with JSON unicode escapes, not only a JSON integer; this reads the field's raw JSON text, decodes it as a JSON string when it is one, and mirrors that coercion while still rejecting non-numeric text, fractional values and anything that overflows i64. No binary float is ever constructed.
-fn parse_expires_in(raw: &RawValue) -> Option<i64> {
-    let text = raw.get();
-    if let Ok(decoded) = serde_json::from_str::<String>(text) {
-        return parse_integral_decimal(decoded.trim());
-    }
-    parse_integral_decimal(text.trim())
+#[derive(serde::Deserialize)]
+#[serde(untagged)]
+enum ExpiresIn {
+    Number(serde_json::Number),
+    Text(String),
 }
 
-// Accepts an optional sign, a run of digits, and an optional ".digits" fraction that must be all zero to stay integral; the sign and digit-count checks reject anything that would overflow or truncate i64.
-fn parse_integral_decimal(text: &str) -> Option<i64> {
-    let (sign, unsigned) = text.strip_prefix('-').map_or_else(
-        || (1_i64, text.strip_prefix('+').unwrap_or(text)),
-        |rest| (-1_i64, rest),
-    );
-    let (whole, fraction) = unsigned.split_once('.').unwrap_or((unsigned, ""));
-    if whole.is_empty() || !whole.bytes().all(|byte| byte.is_ascii_digit()) {
+fn parse_expires_in(value: ExpiresIn) -> Option<i64> {
+    let text = match value {
+        ExpiresIn::Number(number) => number.to_string(),
+        ExpiresIn::Text(text) => text,
+    };
+    parse_integral_number(&text)
+}
+
+// Pydantic accepts integral decimal/exponent forms and underscores in numeric strings; integer arithmetic avoids float rounding at the i64 boundary.
+fn parse_integral_number(text: &str) -> Option<i64> {
+    let normalized_text = text.trim().replace('_', "");
+    let (mantissa, exponent) =
+        if let Some((value, exponent_text)) = normalized_text.split_once(['e', 'E']) {
+            (value, exponent_text.parse::<i32>().ok()?)
+        } else {
+            (normalized_text.as_str(), 0_i32)
+        };
+    let (negative, signed_mantissa) = mantissa
+        .strip_prefix('-')
+        .map_or((false, mantissa), |value| (true, value));
+    let unsigned_mantissa = signed_mantissa.strip_prefix('+').unwrap_or(signed_mantissa);
+    let (whole, fraction) = unsigned_mantissa
+        .split_once('.')
+        .unwrap_or((unsigned_mantissa, ""));
+    if whole.is_empty() && fraction.is_empty()
+        || !whole.bytes().all(|byte| byte.is_ascii_digit())
+        || !fraction.bytes().all(|byte| byte.is_ascii_digit())
+    {
         return None;
     }
-    if !fraction.bytes().all(|byte| byte.is_ascii_digit()) {
-        return None;
-    }
-    if fraction.bytes().any(|byte| byte != b'0') {
-        return None;
-    }
-    whole.parse::<i64>().ok()?.checked_mul(sign)
+    let digits = format!("{whole}{fraction}");
+    let integer_digits = normalize_integer_digits(&digits, whole.len(), exponent)?;
+    let magnitude = integer_digits.trim_start_matches('0');
+    let signed_digits = if negative {
+        format!("-{magnitude}")
+    } else {
+        magnitude.to_owned()
+    };
+    signed_digits.parse::<i64>().ok()
+}
+
+fn normalize_integer_digits(digits: &str, whole_length: usize, exponent: i32) -> Option<String> {
+    let decimal_position = i64::try_from(whole_length)
+        .ok()?
+        .checked_add(i64::from(exponent))?;
+    let integer_digits = if decimal_position <= 0 {
+        if digits.bytes().any(|byte| byte != b'0') {
+            return None;
+        }
+        "0".to_owned()
+    } else {
+        let position = usize::try_from(decimal_position).ok()?;
+        if position < digits.len() {
+            let integer = digits.get(..position)?;
+            let fractional = digits.get(position..)?;
+            if fractional.bytes().any(|byte| byte != b'0') {
+                return None;
+            }
+            integer.to_owned()
+        } else {
+            let mut integer = digits.to_owned();
+            let zeros = position.checked_sub(integer.len())?;
+            integer.extend(repeat_n('0', zeros));
+            integer
+        }
+    };
+    Some(integer_digits)
 }
 
 // Mirrors LiteLLM's _error_detail: the response body parses into an arbitrary JSON object, and the first of error_description, error, detail that is present and truthy under Python's truthiness rules wins, so an empty string or null falls through to the next field instead of winning as a present-but-blank value.
@@ -134,7 +183,7 @@ pub fn parse_token(body: &[u8]) -> Result<TokenResponse, PkceFailure> {
     let raw: RawTokenResponse =
         serde_json::from_slice(body).map_err(|source| PkceFailure::TokenResponse { source })?;
     let invalid = || PkceFailure::Protocol("invalid token response fields".to_owned());
-    let expires_in = parse_expires_in(&raw.expires_in).ok_or_else(invalid)?;
+    let expires_in = parse_expires_in(raw.expires_in).ok_or_else(invalid)?;
     if raw.access_token.expose_secret().is_empty()
         || raw.refresh_token.expose_secret().is_empty()
         || expires_in <= 0
@@ -150,21 +199,27 @@ pub fn parse_token(body: &[u8]) -> Result<TokenResponse, PkceFailure> {
     })
 }
 
-// A macro, not two near-identical functions, carries the one difference between the response bodies: their target type and failure variant.
-macro_rules! parse_body_fn {
-    ($name:ident, $return_ty:ty, $variant:ident) => {
-        pub fn $name(body: &[u8]) -> Result<$return_ty, PkceFailure> {
-            serde_json::from_slice(body).map_err(|source| PkceFailure::$variant { source })
-        }
-    };
+pub fn parse_registered_client(body: &[u8]) -> Result<RegisteredClient, PkceFailure> {
+    let registered: RegisteredClient = serde_json::from_slice(body)
+        .map_err(|source| PkceFailure::RegistrationResponse { source })?;
+    if registered.client_id.is_empty() {
+        return Err(PkceFailure::Protocol(
+            "registration returned an empty client_id".to_owned(),
+        ));
+    }
+    Ok(registered)
 }
 
-parse_body_fn!(
-    parse_registered_client,
-    RegisteredClient,
-    RegistrationResponse
-);
-parse_body_fn!(parse_contract, CliAuthContract, DiscoveryDocument);
+pub fn parse_contract(body: &[u8]) -> Result<CliAuthContract, PkceFailure> {
+    let contract: CliAuthContract =
+        serde_json::from_slice(body).map_err(|source| PkceFailure::DiscoveryDocument { source })?;
+    if contract.contract_version != 1 {
+        return Err(PkceFailure::Protocol(
+            "unsupported discovery contract version".to_owned(),
+        ));
+    }
+    Ok(contract)
+}
 
 pub(super) fn refuse_redirect(
     name: &str,

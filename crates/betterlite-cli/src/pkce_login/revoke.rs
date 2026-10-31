@@ -9,7 +9,7 @@ use super::{
 pub fn revoke_credential<H>(
     contract: &super::models::CliAuthContract,
     client_id: &str,
-    refresh_token: &str,
+    refresh_token: &SecretString,
     http: &H,
 ) -> Result<(), RevocationUnavailableOrFailure>
 where
@@ -19,7 +19,7 @@ where
         .post(
             &contract.revocation_endpoint,
             HttpBody::Form(vec![
-                (String::from("token"), SecretString::from(refresh_token)),
+                (String::from("token"), refresh_token.clone()),
                 (
                     String::from("token_type_hint"),
                     SecretString::from("refresh_token"),

@@ -11,7 +11,7 @@ use super::{
     },
 };
 
-pub fn pkce_pair<E>(entropy: &mut E) -> Result<(String, String), PkceFailure>
+pub fn pkce_pair<E>(entropy: &mut E) -> Result<(SecretString, String), PkceFailure>
 where
     E: Entropy,
 {
@@ -19,7 +19,7 @@ where
     entropy.fill(&mut verifier_bytes)?;
     let verifier = URL_SAFE_NO_PAD.encode(verifier_bytes);
     let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
-    Ok((verifier, challenge))
+    Ok((SecretString::from(verifier), challenge))
 }
 
 #[must_use]
@@ -72,11 +72,6 @@ where
         )));
     }
     let registered = parse_registered_client(&response.body)?;
-    if registered.client_id.is_empty() {
-        return Err(PkceFailure::Protocol(
-            "registration returned an empty client_id".to_owned(),
-        ));
-    }
     Ok(registered.client_id)
 }
 
