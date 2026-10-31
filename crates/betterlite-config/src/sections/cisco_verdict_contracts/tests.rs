@@ -1,10 +1,14 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::fs;
+use std::sync::Arc;
 
+use rstest::rstest;
 use secrecy::ExposeSecret as _;
+use tracing::subscriber::with_default;
 
-use crate::loader::{ConfigLoader, parse_view};
+use crate::loader::{ConfigError, ConfigLoader, parse_view};
 use crate::sections::Section as _;
 
 #[test]
@@ -25,6 +29,23 @@ fn cisco_config_loads_through_loader() {
         .expect("Cisco settings");
     assert_eq!(configured.api_key.expose_secret(), "test-key");
     assert_eq!(configured.inspect_path, "/api/v1/inspect/chat");
+}
+
+#[rstest]
+#[case::unset(None)]
+#[case::empty(Some(""))]
+fn cisco_config_requires_api_key(#[case] value: Option<&str>) {
+    let loader = ConfigLoader {
+        lookup: value
+            .into_iter()
+            .map(|text| ("CISCO_AI_DEFENSE_API_KEY".to_owned(), text.to_owned()))
+            .collect::<BTreeMap<_, _>>(),
+    };
+    let error = loader.load("guardrails:\n  - guardrail_name: cisco\n    litellm_params:\n      guardrail: cisco_ai_defense\n").unwrap_err();
+    assert!(
+        matches!(error, ConfigError::MissingEnvironment { variable, path }
+        if variable == "CISCO_AI_DEFENSE_API_KEY" && path == "guardrails.0.litellm_params.api_key")
+    );
 }
 
 #[test]
@@ -59,6 +80,89 @@ fn cisco_config_loads_secret_and_defaults() {
     assert_eq!(configured.api_key.expose_secret(), "secret");
     assert_eq!(configured.timeout.to_bits(), 10.0_f64.to_bits());
     assert_eq!(configured.inspect_path, "/api/v1/inspect/chat");
+    assert_eq!(
+        configured.api_base,
+        "https://us.api.inspect.aidefense.security.cisco.com"
+    );
+    assert_eq!(configured.inspection_type, super::InspectionType::Chat);
+    assert_eq!(configured.on_flagged_action, super::FlaggedAction::Block);
+    assert_eq!(configured.fallback_on_error, super::FallbackAction::Block);
+    assert!(!format!("{configured:?}").contains("secret"));
+}
+
+#[test]
+fn cisco_config_loads_mcp_and_integration() {
+    let loader = ConfigLoader {
+        lookup: [
+            ("TEST_KEY", "confidential-value"),
+            ("CISCO_AI_DEFENSE_API_BASE", "https://inspect.example.test"),
+            ("CISCO_AI_DEFENSE_INSPECTION_TYPE", "mcp"),
+            ("CISCO_AI_DEFENSE_ON_FLAGGED_ACTION", "monitor"),
+            ("CISCO_AI_DEFENSE_FALLBACK_ON_ERROR", "allow"),
+        ]
+        .into_iter()
+        .map(|(key, value)| (key.to_owned(), value.to_owned()))
+        .collect::<BTreeMap<_, _>>(),
+    };
+    let config = loader.load("guardrails:\n  - guardrail_name: cisco\n    litellm_params:\n      guardrail: cisco_ai_defense\n      api_key: os.environ/TEST_KEY\n      integration_profile_id: profile\n      integration_profile_version: v2\n      integration_tenant_id: tenant\n      integration_type: application\n").unwrap();
+    let configured = config
+        .sections
+        .cisco_verdict_contracts
+        .guardrails
+        .first()
+        .unwrap();
+    assert_eq!(configured.api_key.expose_secret(), "confidential-value");
+    assert_eq!(configured.api_base, "https://inspect.example.test");
+    assert_eq!(configured.inspection_type, super::InspectionType::Mcp);
+    assert_eq!(configured.inspect_path, "/api/v1/inspect/mcp");
+    assert_eq!(configured.on_flagged_action, super::FlaggedAction::Monitor);
+    assert_eq!(configured.fallback_on_error, super::FallbackAction::Allow);
+    assert_eq!(
+        configured.integration_profile_id.as_deref(),
+        Some("profile")
+    );
+    assert_eq!(
+        configured.integration_profile_version.as_deref(),
+        Some("v2")
+    );
+    assert_eq!(configured.integration_tenant_id.as_deref(), Some("tenant"));
+    assert_eq!(configured.integration_type.as_deref(), Some("application"));
+}
+
+#[rstest]
+#[case::below("0", 1.0_f64, true)]
+#[case::minimum("1", 1.0_f64, false)]
+#[case::maximum("60", 60.0_f64, false)]
+#[case::above("61", 60.0_f64, true)]
+fn cisco_config_clamps_with_warning(
+    #[case] input: &str,
+    #[case] expected: f64,
+    #[case] warns: bool,
+) {
+    let log = tempfile::NamedTempFile::new().unwrap();
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_writer(Arc::new(log.reopen().unwrap()))
+        .finish();
+    let loader = ConfigLoader {
+        lookup: BTreeMap::from([
+            ("CISCO_AI_DEFENSE_API_KEY".to_owned(), "test-key".to_owned()),
+            ("CISCO_AI_DEFENSE_TIMEOUT".to_owned(), input.to_owned()),
+        ]),
+    };
+    let config = with_default(subscriber, || loader.load("guardrails:\n  - guardrail_name: cisco\n    litellm_params:\n      guardrail: cisco_ai_defense\n      inspect_path: /custom\n")).unwrap();
+    let configured = config
+        .sections
+        .cisco_verdict_contracts
+        .guardrails
+        .first()
+        .unwrap();
+    assert_eq!(configured.timeout.to_bits(), expected.to_bits());
+    assert_eq!(configured.inspect_path, "/custom");
+    let output = fs::read_to_string(log.path()).unwrap();
+    assert_eq!(output.contains("WARN"), warns, "{output}");
+    assert_eq!(output.contains("clamping"), warns, "{output}");
 }
 
 #[test]

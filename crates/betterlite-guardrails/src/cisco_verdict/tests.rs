@@ -1,7 +1,20 @@
 #![cfg(test)]
 
+use rstest::rstest;
+
 use crate::cisco_conversation::json::Json;
 use crate::cisco_verdict::Action;
+
+#[rstest]
+#[case::null("null", "{}")]
+#[case::array("[]", "{}")]
+#[case::no_decision(r#"{"other":1}"#, r#"{"other":1}"#)]
+fn cisco_verdict_unwrap_fallback(#[case] input: &str, #[case] expected: &str) {
+    let Json::Object(fields) = super::unwrap_verdict_envelope(&Json::parse(input)) else {
+        panic!("unwrapping must return an object");
+    };
+    assert_eq!(serde_json::to_string(&fields).unwrap(), expected);
+}
 
 #[test]
 fn cisco_verdict_unwraps_nested_result() {

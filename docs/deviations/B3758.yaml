@@ -3,3 +3,9 @@ deviations:
   - what: Cisco configuration errors use betterlite's own error wording rather than LiteLLM's exact messages.
     why: The repository's errors-match-litellm rule preserves status and error code while allowing betterlite-specific wording.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L1250-L1273
+  - what: Clamping an out-of-range Cisco timeout emits a warning.
+    why: B3758 explicitly requires a warning; LiteLLM's runtime helper clamps silently. The cisco_config_clamps_with_warning cases verify both bounds.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L268-L283
+  - what: Unsupported fields in Cisco enabled_rules mappings are rejected during configuration loading.
+    why: The no-silent-drops rule and prior review require explicit rejection instead of LiteLLM's silent omission. The cisco_config_rejects_unsupported_rule_fields test verifies this.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L928-L941

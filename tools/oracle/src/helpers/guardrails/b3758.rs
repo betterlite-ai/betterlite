@@ -23,7 +23,7 @@ impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        Ok(outcome(input))
+        Ok(json!({"result": outcome(input)}))
     }
 }
 

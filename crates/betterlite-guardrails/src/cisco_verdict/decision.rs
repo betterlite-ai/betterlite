@@ -4,33 +4,50 @@ use serde::de::IgnoredAny;
 use crate::cisco_conversation::Fields;
 use crate::cisco_conversation::json::Json;
 
-// LiteLLM's `_DECISION_FIELDS` tuple, as a closed struct whose fields only record presence.
+// A null decision value still selects its envelope, so presence cannot use Option.
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 struct Decision {
-    action: Option<IgnoredAny>,
-    allowed: Option<IgnoredAny>,
-    blocked: Option<IgnoredAny>,
-    safe: Option<IgnoredAny>,
-    is_safe: Option<IgnoredAny>,
+    action: Presence,
+    allowed: Presence,
+    blocked: Presence,
+    safe: Presence,
+    is_safe: Presence,
     #[serde(rename = "decision")]
-    outcome: Option<IgnoredAny>,
-    verdict: Option<IgnoredAny>,
-    status: Option<IgnoredAny>,
-    score: Option<IgnoredAny>,
-    risk_score: Option<IgnoredAny>,
-    confidence: Option<IgnoredAny>,
-    categories: Option<IgnoredAny>,
-    classifications: Option<IgnoredAny>,
-    violations: Option<IgnoredAny>,
-    threats: Option<IgnoredAny>,
-    policies: Option<IgnoredAny>,
-    reason: Option<IgnoredAny>,
-    rules: Option<IgnoredAny>,
-    sanitized_text: Option<IgnoredAny>,
+    outcome: Presence,
+    verdict: Presence,
+    status: Presence,
+    score: Presence,
+    risk_score: Presence,
+    confidence: Presence,
+    categories: Presence,
+    classifications: Presence,
+    violations: Presence,
+    threats: Presence,
+    policies: Presence,
+    reason: Presence,
+    rules: Presence,
+    sanitized_text: Presence,
     #[serde(rename = "sanitizedText")]
-    sanitized_text_camel: Option<IgnoredAny>,
-    sanitized_payload: Option<IgnoredAny>,
+    sanitized_text_camel: Presence,
+    sanitized_payload: Presence,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(untagged)]
+enum Presence {
+    Present(IgnoredAny),
+    #[default]
+    Missing,
+}
+
+impl Presence {
+    const fn is_present(&self) -> bool {
+        match self {
+            Self::Present(_) => true,
+            Self::Missing => false,
+        }
+    }
 }
 
 #[must_use]
@@ -48,27 +65,27 @@ fn object_has_decision_fields(fields: &Fields) -> bool {
     let Ok(decision) = serde_json::from_str::<Decision>(&text) else {
         return false;
     };
-    decision.action.is_some()
-        || decision.allowed.is_some()
-        || decision.blocked.is_some()
-        || decision.safe.is_some()
-        || decision.is_safe.is_some()
-        || decision.outcome.is_some()
-        || decision.verdict.is_some()
-        || decision.status.is_some()
-        || decision.score.is_some()
-        || decision.risk_score.is_some()
-        || decision.confidence.is_some()
-        || decision.categories.is_some()
-        || decision.classifications.is_some()
-        || decision.violations.is_some()
-        || decision.threats.is_some()
-        || decision.policies.is_some()
-        || decision.reason.is_some()
-        || decision.rules.is_some()
-        || decision.sanitized_text.is_some()
-        || decision.sanitized_text_camel.is_some()
-        || decision.sanitized_payload.is_some()
+    decision.action.is_present()
+        || decision.allowed.is_present()
+        || decision.blocked.is_present()
+        || decision.safe.is_present()
+        || decision.is_safe.is_present()
+        || decision.outcome.is_present()
+        || decision.verdict.is_present()
+        || decision.status.is_present()
+        || decision.score.is_present()
+        || decision.risk_score.is_present()
+        || decision.confidence.is_present()
+        || decision.categories.is_present()
+        || decision.classifications.is_present()
+        || decision.violations.is_present()
+        || decision.threats.is_present()
+        || decision.policies.is_present()
+        || decision.reason.is_present()
+        || decision.rules.is_present()
+        || decision.sanitized_text.is_present()
+        || decision.sanitized_text_camel.is_present()
+        || decision.sanitized_payload.is_present()
 }
 
 mod tests;

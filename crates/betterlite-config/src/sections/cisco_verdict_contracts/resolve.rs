@@ -65,18 +65,6 @@ where
     let non_empty = configured.filter(|value| !value.expose_secret().is_empty());
     let secret = non_empty
         .unwrap_or_else(|| SecretString::from("os.environ/CISCO_AI_DEFENSE_API_KEY".to_owned()));
-    resolve_secret(secret, &format!("{prefix}.api_key"), lookup)
-}
-
-// Resolves an `os.environ/NAME` indirection without ever copying the secret into a plain String.
-fn resolve_secret<L>(
-    secret: SecretString,
-    path: &str,
-    lookup: &L,
-) -> Result<SecretString, ConfigError>
-where
-    L: EnvironmentLookup,
-{
     let Some(suffix) = secret.expose_secret().strip_prefix("os.environ/") else {
         return Ok(secret);
     };
@@ -84,9 +72,10 @@ where
     lookup
         .lookup(&variable)
         .map(SecretString::from)
+        .filter(|resolved| !resolved.expose_secret().is_empty())
         .ok_or_else(|| ConfigError::MissingEnvironment {
             variable,
-            path: path.to_owned(),
+            path: format!("{prefix}.api_key"),
         })
 }
 
