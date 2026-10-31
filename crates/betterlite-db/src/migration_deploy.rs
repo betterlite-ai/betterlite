@@ -2,7 +2,7 @@ use std::str::Utf8Error;
 
 use deadpool_postgres::Client;
 use thiserror::Error;
-use tokio::time::{Duration, Instant, error::Elapsed, sleep, timeout_at};
+use tokio::time::{Instant, error::Elapsed, timeout_at};
 use tokio_postgres::{Client as PostgresClient, Error as PostgresError};
 use uuid::Uuid;
 
@@ -54,16 +54,9 @@ impl MigrationDeploy {
 
     async fn apply(&self, client: &PostgresClient, deadline: Instant) -> Result<(), DeployError> {
         limit(client, deadline).await?;
-        loop {
-            let acquired: bool = client
-                .query_one("SELECT pg_try_advisory_lock($1)", &[&LOCK_ID])
-                .await?
-                .get(0);
-            if acquired {
-                break;
-            }
-            sleep(Duration::from_millis(10)).await;
-        }
+        client
+            .query_one("SELECT pg_advisory_lock($1)", &[&LOCK_ID])
+            .await?;
         let result = async {
             let schema = ledger::quote(&self.schema);
             client

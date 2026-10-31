@@ -4,8 +4,11 @@ use super::DeployError;
 use super::fixtures::{checkpoint, database};
 use std::time::Duration;
 use tokio::fs;
-use tokio::time::{Instant, sleep};
+use tokio::sync::Mutex;
+use tokio::time::Instant;
 use uuid::Uuid;
+
+static ADVISORY_LOCK_TESTS: Mutex<()> = Mutex::const_new(());
 
 #[tokio::test]
 async fn unfinished_row_stops_deploy() {
@@ -299,6 +302,7 @@ async fn lock_released_on_cancel() {
 #[tokio::test]
 async fn prisma_lock_serializes_cutover() {
     database(async |db| {
+        let _guard = ADVISORY_LOCK_TESTS.lock().await;
         db.lock_conflict("SELECT pg_advisory_lock(72707369::bigint)")
             .await;
     })
@@ -308,25 +312,34 @@ async fn prisma_lock_serializes_cutover() {
 #[tokio::test]
 async fn coordinator_transaction_lock_conflict() {
     database(async |db| {
+        let _guard = ADVISORY_LOCK_TESTS.lock().await;
         let blocker = db.pool.get().await.unwrap();
         blocker
             .batch_execute("BEGIN; SELECT pg_advisory_xact_lock(72707369::bigint)")
             .await
             .unwrap();
         let client = db.pool.get().await.unwrap();
+        let pid: i32 = client
+            .query_one("SELECT pg_backend_pid()", &[])
+            .await
+            .unwrap()
+            .get(0);
         let service = db.service(&[("locked", "SELECT 1")]);
-        let deployment = service.run(
+        let mut deployment = Box::pin(service.run(
             client,
             Instant::now().checked_add(Duration::from_secs(10)).unwrap(),
+        ));
+        let waiting = format!(
+            "SELECT count(*) FROM pg_locks WHERE pid={pid} AND locktype='advisory' AND NOT granted"
         );
-        tokio::pin!(deployment);
-        checkpoint(deployment.as_mut(), sleep(Duration::from_millis(100))).await;
+        checkpoint(deployment.as_mut(), db.wait_for(&waiting)).await;
         assert!(db.rows().await.is_empty());
+        drop(deployment);
         blocker
-            .batch_execute("COMMIT; SELECT pg_advisory_unlock_all()")
+            .batch_execute("ROLLBACK; SELECT pg_advisory_unlock_all()")
             .await
             .unwrap();
-        deployment.await.unwrap();
+        db.run(&[("locked", "SELECT 1")]).await.unwrap();
     })
     .await;
 }
