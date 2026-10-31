@@ -1,38 +1,28 @@
 use std::collections::BTreeMap;
 
-use betterlite_config::cost_adjustments::{CostAdjustmentMap, CostAdjustmentValue};
-use betterlite_models::price_fields::decimal_lexeme::{DecimalLexemeError, parse_decimal_lexeme};
+use betterlite_config::cost_adjustments::{DiscountEntry, MarginEntry};
 use rust_decimal::Decimal;
 use thiserror::Error;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::Display)]
+pub enum AdjustmentOperation {
+    #[strum(serialize = "base * discount")]
+    BaseTimesDiscount,
+    #[strum(serialize = "base - saved")]
+    BaseMinusSaved,
+    #[strum(serialize = "base * percentage")]
+    BaseTimesPercentage,
+    #[strum(serialize = "percentage + fixed")]
+    PercentagePlusFixed,
+    #[strum(serialize = "base + margin")]
+    BasePlusMargin,
+}
+
+#[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
 pub enum AdjustmentError {
     #[error("cost adjustment overflow while calculating {operation}")]
-    Overflow { operation: &'static str },
-    #[error(
-        "cost adjustment field {field} has a numeric-looking value that cannot convert: {source}"
-    )]
-    InvalidNumericText {
-        field: &'static str,
-        #[source]
-        source: DecimalLexemeError,
-    },
+    Overflow { operation: AdjustmentOperation },
 }
-
-impl PartialEq for AdjustmentError {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Overflow { operation: left }, Self::Overflow { operation: right })
-            | (
-                Self::InvalidNumericText { field: left, .. },
-                Self::InvalidNumericText { field: right, .. },
-            ) => left == right,
-            _ => false,
-        }
-    }
-}
-
-impl Eq for AdjustmentError {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DiscountResult {
@@ -49,11 +39,11 @@ pub struct MarginResult {
     pub total_amount: Decimal,
 }
 
-fn config_value<'config>(
+fn selected_entry<'config, T>(
     provider: Option<&str>,
-    config: &'config CostAdjustmentMap,
+    config: &'config BTreeMap<String, T>,
     fallback_key: Option<&str>,
-) -> Option<&'config CostAdjustmentValue> {
+) -> Option<&'config T> {
     let selected = provider
         .filter(|name| !name.is_empty())
         .and_then(|name| config.get(name));
@@ -67,14 +57,23 @@ fn config_value<'config>(
 pub fn apply_cost_discount(
     base_cost: Decimal,
     provider: Option<&str>,
-    config: &CostAdjustmentMap,
+    config: &BTreeMap<String, DiscountEntry>,
 ) -> Result<DiscountResult, AdjustmentError> {
-    let discount_percent = config_value(provider, config, None)
-        .map(|value| scalar_decimal(value, "discount_percent"))
-        .transpose()?
-        .flatten()
-        .unwrap_or(Decimal::ZERO);
-    let (final_cost, saved_amount) = discount_values(base_cost, discount_percent)?;
+    let discount_percent = match selected_entry(provider, config, None) {
+        Some(DiscountEntry::Percent(percent)) => *percent,
+        Some(DiscountEntry::Unsupported) | None => Decimal::ZERO,
+    };
+    let saved_amount =
+        base_cost
+            .checked_mul(discount_percent)
+            .ok_or(AdjustmentError::Overflow {
+                operation: AdjustmentOperation::BaseTimesDiscount,
+            })?;
+    let final_cost = base_cost
+        .checked_sub(saved_amount)
+        .ok_or(AdjustmentError::Overflow {
+            operation: AdjustmentOperation::BaseMinusSaved,
+        })?;
     Ok(DiscountResult {
         final_cost,
         discount_percent,
@@ -82,54 +81,38 @@ pub fn apply_cost_discount(
     })
 }
 
-fn discount_values(
-    base_cost: Decimal,
-    discount_percent: Decimal,
-) -> Result<(Decimal, Decimal), AdjustmentError> {
-    let saved_amount =
-        base_cost
-            .checked_mul(discount_percent)
-            .ok_or(AdjustmentError::Overflow {
-                operation: "base * discount",
-            })?;
-    let final_cost = base_cost
-        .checked_sub(saved_amount)
-        .ok_or(AdjustmentError::Overflow {
-            operation: "base - saved",
-        })?;
-    Ok((final_cost, saved_amount))
-}
-
 pub fn apply_cost_margin(
     base_cost: Decimal,
     provider: Option<&str>,
-    config: &CostAdjustmentMap,
+    config: &BTreeMap<String, MarginEntry>,
 ) -> Result<MarginResult, AdjustmentError> {
-    let Some(value) = config_value(provider, config, Some("global")) else {
-        return Ok(MarginResult {
-            final_cost: base_cost,
-            margin_percent: Decimal::ZERO,
-            fixed_amount: Decimal::ZERO,
-            total_amount: Decimal::ZERO,
-        });
+    let (margin_percent, fixed_amount) = match selected_entry(provider, config, Some("global")) {
+        Some(MarginEntry::Percent(percent)) => (*percent, Decimal::ZERO),
+        Some(MarginEntry::Split {
+            percentage,
+            fixed_amount,
+        }) => (
+            percentage.unwrap_or(Decimal::ZERO),
+            fixed_amount.unwrap_or(Decimal::ZERO),
+        ),
+        Some(MarginEntry::Unsupported) | None => (Decimal::ZERO, Decimal::ZERO),
     };
-    let (margin_percent, fixed_amount) = margin_components(value)?;
     let percentage_amount =
         base_cost
             .checked_mul(margin_percent)
             .ok_or(AdjustmentError::Overflow {
-                operation: "base * percentage",
+                operation: AdjustmentOperation::BaseTimesPercentage,
             })?;
     let total_amount =
         percentage_amount
             .checked_add(fixed_amount)
             .ok_or(AdjustmentError::Overflow {
-                operation: "percentage + fixed",
+                operation: AdjustmentOperation::PercentagePlusFixed,
             })?;
     let final_cost = base_cost
         .checked_add(total_amount)
         .ok_or(AdjustmentError::Overflow {
-            operation: "base + margin",
+            operation: AdjustmentOperation::BasePlusMargin,
         })?;
     Ok(MarginResult {
         final_cost,
@@ -137,63 +120,6 @@ pub fn apply_cost_margin(
         fixed_amount,
         total_amount,
     })
-}
-
-fn margin_components(value: &CostAdjustmentValue) -> Result<(Decimal, Decimal), AdjustmentError> {
-    match value {
-        CostAdjustmentValue::Number(_) => Ok((
-            scalar_decimal(value, "margin_percent")?.unwrap_or(Decimal::ZERO),
-            Decimal::ZERO,
-        )),
-        CostAdjustmentValue::Object(entries) => Ok((
-            object_decimal(entries, "percentage")?,
-            object_decimal(entries, "fixed_amount")?,
-        )),
-        CostAdjustmentValue::Null
-        | CostAdjustmentValue::Boolean(_)
-        | CostAdjustmentValue::Text(_)
-        | CostAdjustmentValue::Array(_) => Ok((Decimal::ZERO, Decimal::ZERO)),
-    }
-}
-
-fn scalar_decimal(
-    value: &CostAdjustmentValue,
-    field: &'static str,
-) -> Result<Option<Decimal>, AdjustmentError> {
-    match value {
-        CostAdjustmentValue::Number(number) => parse_decimal_lexeme(&number.to_string())
-            .map(Some)
-            .map_err(|source| AdjustmentError::InvalidNumericText { field, source }),
-        CostAdjustmentValue::Null
-        | CostAdjustmentValue::Boolean(_)
-        | CostAdjustmentValue::Text(_)
-        | CostAdjustmentValue::Object(_)
-        | CostAdjustmentValue::Array(_) => Ok(None),
-    }
-}
-
-fn object_decimal(
-    entries: &BTreeMap<String, CostAdjustmentValue>,
-    field: &'static str,
-) -> Result<Decimal, AdjustmentError> {
-    let Some(value) = entries.get(field) else {
-        return Ok(Decimal::ZERO);
-    };
-    if let CostAdjustmentValue::Text(text) = value {
-        return text_decimal(text, field);
-    }
-    Ok(scalar_decimal(value, field)?.unwrap_or(Decimal::ZERO))
-}
-
-fn text_decimal(text: &str, field: &'static str) -> Result<Decimal, AdjustmentError> {
-    let trimmed = text.trim();
-    match parse_decimal_lexeme(trimmed) {
-        Ok(decimal) => Ok(decimal),
-        Err(source) if trimmed.parse::<f64>().is_ok() => {
-            Err(AdjustmentError::InvalidNumericText { field, source })
-        }
-        Err(_) => Ok(Decimal::ZERO),
-    }
 }
 
 mod tests;

@@ -2,18 +2,13 @@
 
 use std::collections::BTreeMap;
 
-use betterlite_config::cost_adjustments::CostAdjustmentValue;
-use betterlite_models::price_fields::decimal_lexeme::DecimalLexemeError;
+use betterlite_config::cost_adjustments::{DiscountEntry, MarginEntry};
 use rust_decimal::Decimal;
 
-use super::{AdjustmentError, CostAdjustmentMap, apply_cost_discount, apply_cost_margin};
+use super::{AdjustmentError, AdjustmentOperation, apply_cost_discount, apply_cost_margin};
 
-fn map(value: CostAdjustmentValue) -> CostAdjustmentMap {
-    BTreeMap::from([("provider".to_owned(), value)])
-}
-
-fn number(value: f64) -> CostAdjustmentValue {
-    CostAdjustmentValue::Number(serde_json::Number::from_f64(value).unwrap())
+fn map<T>(provider: &str, value: T) -> BTreeMap<String, T> {
+    BTreeMap::from([(provider.to_owned(), value)])
 }
 
 #[test]
@@ -21,33 +16,33 @@ fn adjustments_preserve_exact_subcent_values() {
     let discount = apply_cost_discount(
         Decimal::new(1, 2),
         Some("provider"),
-        &map(CostAdjustmentValue::Text("0.2".to_owned())),
+        &map("provider", DiscountEntry::Unsupported),
     )
     .unwrap();
     assert_eq!(discount.final_cost, Decimal::new(1, 2));
     let margin = apply_cost_margin(
         Decimal::new(1, 2),
         Some("provider"),
-        &map(CostAdjustmentValue::Object(BTreeMap::from([
-            (
-                "percentage".to_owned(),
-                CostAdjustmentValue::Text("0.1".to_owned()),
-            ),
-            (
-                "fixed_amount".to_owned(),
-                CostAdjustmentValue::Text("0.001".to_owned()),
-            ),
-        ]))),
+        &map(
+            "provider",
+            MarginEntry::Split {
+                percentage: Some(Decimal::new(1, 1)),
+                fixed_amount: Some(Decimal::new(1, 3)),
+            },
+        ),
     )
     .unwrap();
     assert_eq!(margin.final_cost, Decimal::new(12, 3));
 }
 
 #[test]
-fn provider_null_margin_shadows_global() {
+fn provider_unsupported_margin_shadows_global() {
     let config = BTreeMap::from([
-        ("provider".to_owned(), CostAdjustmentValue::Null),
-        ("global".to_owned(), number(0.5)),
+        ("provider".to_owned(), MarginEntry::Unsupported),
+        (
+            "global".to_owned(),
+            MarginEntry::Percent(Decimal::new(5, 1)),
+        ),
     ]);
     assert_eq!(
         apply_cost_margin(Decimal::ONE, Some("provider"), &config)
@@ -59,7 +54,10 @@ fn provider_null_margin_shadows_global() {
 
 #[test]
 fn empty_provider_uses_global_margin() {
-    let config = BTreeMap::from([("global".to_owned(), number(0.5))]);
+    let config = BTreeMap::from([(
+        "global".to_owned(),
+        MarginEntry::Percent(Decimal::new(5, 1)),
+    )]);
     let result = apply_cost_margin(Decimal::ONE, Some(""), &config).unwrap();
     assert_eq!(result.margin_percent, Decimal::new(5, 1));
     assert_eq!(result.final_cost, Decimal::new(15, 1));
@@ -67,7 +65,7 @@ fn empty_provider_uses_global_margin() {
 
 #[test]
 fn empty_provider_does_not_select_discount() {
-    let config = BTreeMap::from([(String::new(), number(0.5))]);
+    let config = BTreeMap::from([(String::new(), DiscountEntry::Percent(Decimal::new(5, 1)))]);
     let result = apply_cost_discount(Decimal::ONE, Some(""), &config).unwrap();
     assert_eq!(result.discount_percent, Decimal::ZERO);
     assert_eq!(result.saved_amount, Decimal::ZERO);
@@ -75,11 +73,11 @@ fn empty_provider_does_not_select_discount() {
 }
 
 #[test]
-fn boolean_config_values_are_inert() {
+fn unsupported_entries_are_inert() {
     let discount = apply_cost_discount(
         Decimal::ONE,
         Some("provider"),
-        &map(CostAdjustmentValue::Boolean(true)),
+        &map("provider", DiscountEntry::Unsupported),
     )
     .unwrap();
     assert_eq!(discount.discount_percent, Decimal::ZERO);
@@ -88,96 +86,22 @@ fn boolean_config_values_are_inert() {
     let margin = apply_cost_margin(
         Decimal::ONE,
         Some("provider"),
-        &map(CostAdjustmentValue::Boolean(true)),
+        &map("provider", MarginEntry::Unsupported),
     )
     .unwrap();
-    assert_eq!(margin.margin_percent, Decimal::ZERO);
-    assert_eq!(margin.final_cost, Decimal::ONE);
-}
-
-#[test]
-fn margin_scalar_string_does_not_become_a_percentage() {
-    let margin = apply_cost_margin(
-        Decimal::ONE,
-        Some("provider"),
-        &map(CostAdjustmentValue::Text("0.5".to_owned())),
-    )
-    .unwrap();
-    assert_eq!(margin.margin_percent, Decimal::ZERO);
-    assert_eq!(margin.final_cost, Decimal::ONE);
-}
-
-#[test]
-fn discount_scalar_string_is_treated_as_absent_instead_of_crashing() {
-    let discount = apply_cost_discount(
-        Decimal::ONE,
-        Some("provider"),
-        &map(CostAdjustmentValue::Text("0.2".to_owned())),
-    )
-    .unwrap();
-    assert_eq!(discount.discount_percent, Decimal::ZERO);
-    assert_eq!(discount.final_cost, Decimal::ONE);
-}
-
-#[test]
-fn margin_object_field_trims_whitespace_before_converting() {
-    let config = map(CostAdjustmentValue::Object(BTreeMap::from([(
-        "percentage".to_owned(),
-        CostAdjustmentValue::Text(" 0.25 ".to_owned()),
-    )])));
-    let margin = apply_cost_margin(Decimal::new(4, 0), Some("provider"), &config).unwrap();
-    assert_eq!(margin.margin_percent, Decimal::new(25, 2));
-    assert_eq!(margin.final_cost, Decimal::new(5, 0));
-}
-
-#[test]
-fn margin_object_field_rejects_numeric_text_that_overflows_decimal() {
-    let config = map(CostAdjustmentValue::Object(BTreeMap::from([(
-        "fixed_amount".to_owned(),
-        CostAdjustmentValue::Text("1e40".to_owned()),
-    )])));
-    let error = apply_cost_margin(Decimal::ONE, Some("provider"), &config).unwrap_err();
-    assert_eq!(
-        error,
-        AdjustmentError::InvalidNumericText {
-            field: "fixed_amount",
-            source: DecimalLexemeError::from(rust_decimal::Error::ExceedsMaximumPossibleValue),
-        }
-    );
-}
-
-#[test]
-fn margin_scalar_number_rejects_a_lexeme_that_overflows_decimal() {
-    let config = map(CostAdjustmentValue::Number(
-        serde_json::Number::from_f64(1e40).unwrap(),
-    ));
-    let error = apply_cost_margin(Decimal::ONE, Some("provider"), &config).unwrap_err();
-    assert_eq!(
-        error,
-        AdjustmentError::InvalidNumericText {
-            field: "margin_percent",
-            source: DecimalLexemeError::from(rust_decimal::Error::ExceedsMaximumPossibleValue),
-        }
-    );
-}
-
-#[test]
-fn margin_object_field_treats_non_numeric_text_as_zero() {
-    let config = map(CostAdjustmentValue::Object(BTreeMap::from([(
-        "percentage".to_owned(),
-        CostAdjustmentValue::Text("not-a-number".to_owned()),
-    )])));
-    let margin = apply_cost_margin(Decimal::ONE, Some("provider"), &config).unwrap();
     assert_eq!(margin.margin_percent, Decimal::ZERO);
     assert_eq!(margin.final_cost, Decimal::ONE);
 }
 
 #[test]
 fn fixed_margin_applies_to_zero_base_cost() {
-    let config = map(CostAdjustmentValue::Object(BTreeMap::from([(
-        "fixed_amount".to_owned(),
-        number(0.01),
-    )])));
+    let config = map(
+        "provider",
+        MarginEntry::Split {
+            percentage: None,
+            fixed_amount: Some(Decimal::new(1, 2)),
+        },
+    );
     let margin = apply_cost_margin(Decimal::ZERO, Some("provider"), &config).unwrap();
     assert_eq!(margin.total_amount, Decimal::new(1, 2));
     assert_eq!(margin.final_cost, Decimal::new(1, 2));
@@ -188,13 +112,13 @@ fn rejects_margin_percentage_overflow() {
     let error = apply_cost_margin(
         Decimal::MAX,
         Some("provider"),
-        &map(CostAdjustmentValue::Number(serde_json::Number::from(2_i32))),
+        &map("provider", MarginEntry::Percent(Decimal::from(2_i32))),
     )
     .unwrap_err();
     assert_eq!(
         error,
         AdjustmentError::Overflow {
-            operation: "base * percentage"
+            operation: AdjustmentOperation::BaseTimesPercentage
         }
     );
 }
@@ -204,13 +128,13 @@ fn rejects_discount_multiply_overflow() {
     let error = apply_cost_discount(
         Decimal::MAX,
         Some("provider"),
-        &map(CostAdjustmentValue::Number(serde_json::Number::from(2_i32))),
+        &map("provider", DiscountEntry::Percent(Decimal::from(2_i32))),
     )
     .unwrap_err();
     assert_eq!(
         error,
         AdjustmentError::Overflow {
-            operation: "base * discount"
+            operation: AdjustmentOperation::BaseTimesDiscount
         }
     );
 }
@@ -220,51 +144,49 @@ fn rejects_discount_subtract_overflow() {
     let error = apply_cost_discount(
         Decimal::MAX,
         Some("provider"),
-        &map(CostAdjustmentValue::Number(serde_json::Number::from(
-            -1_i32,
-        ))),
+        &map("provider", DiscountEntry::Percent(Decimal::from(-1_i32))),
     )
     .unwrap_err();
     assert_eq!(
         error,
         AdjustmentError::Overflow {
-            operation: "base - saved"
+            operation: AdjustmentOperation::BaseMinusSaved
         }
     );
 }
 
 #[test]
 fn rejects_margin_percentage_plus_fixed_overflow() {
-    let config = map(CostAdjustmentValue::Object(BTreeMap::from([
-        (
-            "percentage".to_owned(),
-            CostAdjustmentValue::Number(serde_json::Number::from(1_i32)),
-        ),
-        (
-            "fixed_amount".to_owned(),
-            CostAdjustmentValue::Text(Decimal::MAX.to_string()),
-        ),
-    ])));
+    let config = map(
+        "provider",
+        MarginEntry::Split {
+            percentage: Some(Decimal::from(1_i32)),
+            fixed_amount: Some(Decimal::MAX),
+        },
+    );
     let error = apply_cost_margin(Decimal::MAX, Some("provider"), &config).unwrap_err();
     assert_eq!(
         error,
         AdjustmentError::Overflow {
-            operation: "percentage + fixed"
+            operation: AdjustmentOperation::PercentagePlusFixed
         }
     );
 }
 
 #[test]
 fn rejects_margin_total_add_overflow() {
-    let config = map(CostAdjustmentValue::Object(BTreeMap::from([(
-        "fixed_amount".to_owned(),
-        CostAdjustmentValue::Text(Decimal::MAX.to_string()),
-    )])));
+    let config = map(
+        "provider",
+        MarginEntry::Split {
+            percentage: None,
+            fixed_amount: Some(Decimal::MAX),
+        },
+    );
     let error = apply_cost_margin(Decimal::MAX, Some("provider"), &config).unwrap_err();
     assert_eq!(
         error,
         AdjustmentError::Overflow {
-            operation: "base + margin"
+            operation: AdjustmentOperation::BasePlusMargin
         }
     );
 }
@@ -274,13 +196,13 @@ fn overflow_errors_from_different_operations_are_distinct() {
     let discount_error = apply_cost_discount(
         Decimal::MAX,
         Some("provider"),
-        &map(CostAdjustmentValue::Number(serde_json::Number::from(2_i32))),
+        &map("provider", DiscountEntry::Percent(Decimal::from(2_i32))),
     )
     .unwrap_err();
     let margin_error = apply_cost_margin(
         Decimal::MAX,
         Some("provider"),
-        &map(CostAdjustmentValue::Number(serde_json::Number::from(2_i32))),
+        &map("provider", MarginEntry::Percent(Decimal::from(2_i32))),
     )
     .unwrap_err();
     assert_ne!(discount_error, margin_error);
