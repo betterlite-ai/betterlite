@@ -140,62 +140,42 @@ mod types {
     }
 
     fn assert_bedrock_secrets_expose_their_values(options: &BedrockVectorStoreOptions) {
-        assert_bedrock_auth_secrets_expose_their_values(options);
-        assert_bedrock_federation_secrets_expose_their_values(options);
-    }
-
-    fn assert_bedrock_auth_secrets_expose_their_values(options: &BedrockVectorStoreOptions) {
-        assert_eq!(
-            options
-                .aws_access_key_id
-                .as_ref()
-                .expect("aws_access_key_id was set")
-                .expose_secret(),
-            "AKIA"
-        );
-        assert_eq!(
-            options
-                .aws_secret_access_key
-                .as_ref()
-                .expect("aws_secret_access_key was set")
-                .expose_secret(),
-            "secret"
-        );
-        assert_eq!(
-            options
-                .aws_session_token
-                .as_ref()
-                .expect("aws_session_token was set")
-                .expose_secret(),
-            "session"
-        );
-    }
-
-    fn assert_bedrock_federation_secrets_expose_their_values(options: &BedrockVectorStoreOptions) {
-        assert_eq!(
-            options
-                .aws_web_identity_token
-                .as_ref()
-                .expect("aws_web_identity_token was set")
-                .expose_secret(),
-            "web-token"
-        );
-        assert_eq!(
-            options
-                .aws_sts_endpoint
-                .as_ref()
-                .expect("aws_sts_endpoint was set")
-                .expose_secret(),
-            "https://sts.amazonaws.com"
-        );
-        assert_eq!(
-            options
-                .aws_external_id
-                .as_ref()
-                .expect("aws_external_id was set")
-                .expose_secret(),
-            "external"
-        );
+        let checks: [(&str, Option<&secrecy::SecretString>, &str); 6] = [
+            (
+                "aws_access_key_id",
+                options.aws_access_key_id.as_ref(),
+                "AKIA",
+            ),
+            (
+                "aws_secret_access_key",
+                options.aws_secret_access_key.as_ref(),
+                "secret",
+            ),
+            (
+                "aws_session_token",
+                options.aws_session_token.as_ref(),
+                "session",
+            ),
+            (
+                "aws_web_identity_token",
+                options.aws_web_identity_token.as_ref(),
+                "web-token",
+            ),
+            (
+                "aws_sts_endpoint",
+                options.aws_sts_endpoint.as_ref(),
+                "https://sts.amazonaws.com",
+            ),
+            (
+                "aws_external_id",
+                options.aws_external_id.as_ref(),
+                "external",
+            ),
+        ];
+        for (field_name, secret, expected) in checks {
+            let value = secret.unwrap_or_else(|| panic!("{field_name} was set"));
+            assert_eq!(value.expose_secret(), expected);
+        }
     }
 
     #[test]
