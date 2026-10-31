@@ -32,6 +32,35 @@ fn family_of(class: &ErrorClass) -> &'static str {
     }
 }
 
+// every family status_classification can reach wraps an ErrorContext, directly or inside its details struct
+fn message_of(class: &ErrorClass) -> &str {
+    match class {
+        ErrorClass::Authentication(context)
+        | ErrorClass::NotFound(context)
+        | ErrorClass::PermissionDenied(context)
+        | ErrorClass::BadRequest(context)
+        | ErrorClass::UnprocessableEntity(context)
+        | ErrorClass::ContextWindowExceeded(context)
+        | ErrorClass::ContentPolicyViolation(context)
+        | ErrorClass::ServiceUnavailable(context)
+        | ErrorClass::BadGateway(context)
+        | ErrorClass::InternalServer(context)
+        | ErrorClass::ApiConnection(context)
+        | ErrorClass::ApiResponseValidation(context)
+        | ErrorClass::UnsupportedParams(context)
+        | ErrorClass::Unclassified(context) => &context.message,
+        ErrorClass::Timeout(details) => &details.context.message,
+        ErrorClass::RateLimit(details) => &details.context.message,
+        ErrorClass::Api(details) => &details.context.message,
+        ErrorClass::BudgetExceeded(_)
+        | ErrorClass::JsonSchemaValidation(_)
+        | ErrorClass::GuardrailRaised(_)
+        | ErrorClass::MidStreamFallback(_) => {
+            panic!("azure classification never produces this family")
+        }
+    }
+}
+
 fn input(error_str: &str, status_code: Option<u16>) -> AzureExceptionInput {
     AzureExceptionInput {
         model: "gpt-4".to_owned(),
