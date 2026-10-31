@@ -109,7 +109,7 @@ fn skill_archive_replaces_invalid_frontmatter_utf8() {
         b"---\nname: valid\xFFname\n---\nbody",
     )]))
     .unwrap();
-    assert_eq!(archive.declared_name, Some("valid�name".to_owned()));
+    assert_eq!(archive.declared_name, Some("valid\u{fffd}name".to_owned()));
 }
 
 #[test]
