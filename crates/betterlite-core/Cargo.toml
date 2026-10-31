@@ -9,6 +9,7 @@ publish.workspace = true
 betterlite-auth = { path = "../betterlite-auth" }
 betterlite-config = { path = "../betterlite-config" }
 chrono = { version = "0.4.45", default-features = false, features = ["serde"] }
+lopdf = { version = "0.46.0", default-features = false }
 rust_decimal.workspace = true
 secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true

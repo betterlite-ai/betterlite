@@ -13,6 +13,13 @@ libfuzzer-sys = "0.4.9"
 serde_json = { version = "1.0.154", features = ["arbitrary_precision"] }
 
 [[bin]]
+name = "pdf_extraction"
+path = "fuzz_targets/pdf_extraction.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "proc_statm_meminfo"
 path = "fuzz_targets/proc_statm_meminfo.rs"
 test = false
