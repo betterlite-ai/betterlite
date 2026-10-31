@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use super::decode::{McpStoredDecodeError, decode_mcp_stored_contract};
-use super::{JsonValue, MCPUpstreamProtocol, PinnedMCPTool};
+use super::{JsonValue, MCPUpstreamProtocol, PinnedMCPTool, ToolDefinition};
 
 #[derive(Debug, thiserror::Error)]
 pub enum PinnedError {
@@ -9,6 +9,8 @@ pub enum PinnedError {
     Decode(#[from] McpStoredDecodeError),
     #[error("invalid MCP record")]
     Validation(#[from] serde_json::Error),
+    #[error("invalid pinned tool record")]
+    InvalidToolRecord,
 }
 
 pub fn parse_pinned_tools(
@@ -26,8 +28,37 @@ pub fn parse_pinned_tools(
     if is_falsey(&decoded) {
         return Ok(None);
     }
-    let encoded = serde_json::to_string(&decoded)?;
-    Ok(Some(serde_json::from_str(&encoded)?))
+    let JsonValue::Object(tools) = decoded else {
+        return Err(PinnedError::InvalidToolRecord);
+    };
+    let mut parsed = BTreeMap::new();
+    for (name, record) in tools {
+        parsed.insert(name, PinnedMCPTool(tool_definition_from_json(record)?));
+    }
+    Ok(Some(parsed))
+}
+
+fn tool_definition_from_json(value: JsonValue) -> Result<ToolDefinition, PinnedError> {
+    let JsonValue::Object(mut fields) = value else {
+        return Err(PinnedError::InvalidToolRecord);
+    };
+    let description = match fields.remove("description") {
+        None => String::new(),
+        Some(JsonValue::String(text)) => text,
+        Some(_) => return Err(PinnedError::InvalidToolRecord),
+    };
+    let input_schema = match fields.remove("input_schema") {
+        None => BTreeMap::new(),
+        Some(JsonValue::Object(schema)) => schema,
+        Some(_) => return Err(PinnedError::InvalidToolRecord),
+    };
+    if !fields.is_empty() {
+        return Err(PinnedError::InvalidToolRecord);
+    }
+    Ok(ToolDefinition {
+        description,
+        input_schema,
+    })
 }
 
 pub fn validate_mcp_protocol_metadata(

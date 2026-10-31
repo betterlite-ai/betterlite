@@ -88,7 +88,9 @@ fn parse_tools(value: &Value) -> Result<Value, &'static str> {
     let decoded = decode::decode_mcp_stored_contract(&bytes).map_err(|_| "JSONDecodeError")?;
     let tools = pinned::parse_pinned_tools(decoded).map_err(|error| match error {
         pinned::PinnedError::Decode(_) => "JSONDecodeError",
-        pinned::PinnedError::Validation(_) => "ValidationError",
+        pinned::PinnedError::Validation(_) | pinned::PinnedError::InvalidToolRecord => {
+            "ValidationError"
+        }
     })?;
     serde_json::to_value(tools).map_err(|_| "SerializationError")
 }
