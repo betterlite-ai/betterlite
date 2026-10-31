@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use std::collections::BTreeSet;
 use std::io::{Cursor, Read as _, Write as _};
-use std::str;
 
 use regex::Regex;
 use serde::Deserialize;
@@ -139,7 +138,7 @@ enum FrontmatterField {
 }
 
 fn manifest_frontmatter(manifest: &[u8]) -> (Option<String>, Option<String>) {
-    let text = decode_utf8_replacing(manifest);
+    let text = String::from_utf8_lossy(manifest).into_owned();
     let Ok(pattern) = Regex::new(FRONTMATTER_PATTERN) else {
         return (None, None);
     };
@@ -163,33 +162,6 @@ fn frontmatter_text(field: Option<FrontmatterField>) -> Option<String> {
         FrontmatterField::Text(text) => clean_frontmatter_text(&text),
         FrontmatterField::Other(_) => None,
     }
-}
-
-fn decode_utf8_replacing(input: &[u8]) -> String {
-    let mut remaining = input;
-    let mut output = String::new();
-    while !remaining.is_empty() {
-        match str::from_utf8(remaining) {
-            Ok(valid) => {
-                output.push_str(valid);
-                break;
-            }
-            Err(error) => {
-                let valid_length = error.valid_up_to();
-                if let Some(valid) = remaining.get(..valid_length) {
-                    output.push_str(str::from_utf8(valid).unwrap_or_default());
-                }
-                output.push('\u{FFFD}');
-                let invalid_length = error
-                    .error_len()
-                    .unwrap_or_else(|| remaining.len().saturating_sub(valid_length));
-                remaining = remaining
-                    .get(valid_length.saturating_add(invalid_length)..)
-                    .unwrap_or_default();
-            }
-        }
-    }
-    output
 }
 
 fn clean_frontmatter_text(text: &str) -> Option<String> {

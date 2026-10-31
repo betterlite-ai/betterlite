@@ -103,6 +103,16 @@ fn skill_archive_tolerates_malformed_frontmatter() {
 }
 
 #[test]
+fn skill_archive_replaces_invalid_frontmatter_utf8() {
+    let archive = build_skill_archive(&upload(&[(
+        "SKILL.md",
+        b"---\nname: valid\xFFname\n---\nbody",
+    )]))
+    .unwrap();
+    assert_eq!(archive.declared_name, Some("valid�name".to_owned()));
+}
+
+#[test]
 fn skill_archive_digest_is_reproducible() {
     let first = build_skill_archive(&upload(&[("SKILL.md", b"body")])).unwrap();
     let second = build_skill_archive(&upload(&[("SKILL.md", b"body")])).unwrap();
