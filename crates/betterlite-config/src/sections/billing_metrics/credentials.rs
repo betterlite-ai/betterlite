@@ -12,6 +12,8 @@ const PEM_FILE_MODE: u32 = 0o600;
 
 #[derive(Debug, Error)]
 pub(super) enum CredentialError {
+    #[error("could not create a temporary directory: no candidates were configured")]
+    NoTemporaryDirectory,
     #[error("could not write inline certificate content to disk at {}: {source}", path.display())]
     Write {
         path: PathBuf,
@@ -57,10 +59,7 @@ pub(super) fn resolve_paths(
 
 // Mirrors tempfile.mkdtemp trying every tempfile.gettempdir candidate, not just the first.
 fn create_pem_directory(candidates: &[PathBuf]) -> Result<PathBuf, CredentialError> {
-    let mut last_error = CredentialError::Write {
-        path: PathBuf::new(),
-        source: io::Error::other("no temporary directory candidates were configured"),
-    };
+    let mut last_error = None;
     for candidate in candidates {
         let attempt = tempfile::Builder::new()
             .prefix(PEM_DIRECTORY_PREFIX)
@@ -69,14 +68,14 @@ fn create_pem_directory(candidates: &[PathBuf]) -> Result<PathBuf, CredentialErr
         match attempt {
             Ok(directory) => return Ok(directory.keep()),
             Err(source) => {
-                last_error = CredentialError::Write {
+                last_error = Some(CredentialError::Write {
                     path: candidate.clone(),
                     source,
-                };
+                });
             }
         }
     }
-    Err(last_error)
+    Err(last_error.unwrap_or(CredentialError::NoTemporaryDirectory))
 }
 
 fn credential_path(

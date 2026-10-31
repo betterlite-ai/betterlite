@@ -298,6 +298,15 @@ fn billing_metrics_config_reports_write_failures() {
 }
 
 #[test]
+fn billing_metrics_config_reports_missing_temp_directory_candidates() {
+    let error = super::credentials::resolve_paths(&[], CERT_PEM, KEY_PEM, None).unwrap_err();
+    assert!(matches!(
+        error,
+        super::credentials::CredentialError::NoTemporaryDirectory
+    ));
+}
+
+#[test]
 fn billing_metrics_config_falls_back_when_tmpdir_is_unusable() {
     let directory = tempfile::tempdir().unwrap();
     let blocker = directory.path().join("not-a-directory");
