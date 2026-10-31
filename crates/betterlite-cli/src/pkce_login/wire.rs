@@ -1,3 +1,5 @@
+use std::str;
+
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::{HttpResponse, models::PkceFailure};
@@ -26,12 +28,19 @@ pub(super) struct TokenResponse {
 }
 
 pub(super) fn error_detail(response: &HttpResponse) -> String {
-    let fallback = String::from_utf8_lossy(&response.body);
     let detail = serde_json::from_slice::<ErrorBody>(&response.body)
         .ok()
         .and_then(|body| body.error_description.or(body.error).or(body.detail))
-        .unwrap_or_else(|| fallback.into_owned());
+        .unwrap_or_else(|| response_text(&response.body));
     detail.chars().take(200).collect()
+}
+
+fn response_text(body: &[u8]) -> String {
+    // requests falls back to Latin-1 for an undeclared charset, so an invalid byte still decodes like LiteLLM's.
+    str::from_utf8(body).map_or_else(
+        |_source| body.iter().map(|&byte| char::from(byte)).collect(),
+        str::to_owned,
+    )
 }
 
 #[derive(serde::Deserialize)]
