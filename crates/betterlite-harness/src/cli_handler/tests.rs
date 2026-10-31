@@ -389,7 +389,6 @@ async fn turn_progress_does_not_emit_an_empty_stderr_line_after_eof() {
     process.wait().await.unwrap();
 }
 
-// Fails today: AsyncWriteExt::shutdown() is a no-op on tokio's ChildStdin, see the task report.
 #[tokio::test]
 async fn turn_closes_stdin_before_reading_stdout() {
     let root = tempdir();
@@ -623,7 +622,6 @@ fn take_line_removes_only_one_complete_line() {
     assert_eq!(buffer, b"second");
 }
 
-// Fails today for the same reason as turn_closes_stdin_before_reading_stdout.
 #[tokio::test]
 async fn send_stdin_through_a_real_process_writes_and_closes() {
     let root = tempdir();

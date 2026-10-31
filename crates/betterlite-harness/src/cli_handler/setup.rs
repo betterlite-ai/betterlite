@@ -30,14 +30,6 @@ pub(super) const fn persist_outcome(exit_code: i32) -> PersistOutcome {
     }
 }
 
-pub(super) async fn private_dir_for<S>(sandbox: &S) -> Result<String, HarnessError>
-where
-    S: Sandbox,
-{
-    let private_dir = sandbox.tempdir().await?;
-    Ok(private_dir)
-}
-
 #[must_use]
 pub(super) fn sandbox_path(private_dir: &str, path: &str) -> String {
     if path.starts_with('/') {
