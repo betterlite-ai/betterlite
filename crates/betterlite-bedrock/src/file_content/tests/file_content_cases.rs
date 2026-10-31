@@ -77,20 +77,27 @@ fn failed_binary_reply(#[case] body: Vec<u8>, #[case] message: &str) {
 }
 
 #[rstest]
-fn failed_binary_reply_decodes_declared_charset() {
+#[case::declared_charset(vec![0xE9], "iso-8859-1", "\u{e9}")]
+#[case::iso_8859_1_byte_0x80(vec![0x80], "iso-8859-1", "\u{80}")]
+#[case::ascii_invalid_byte(vec![b'a', 0x80], "us-ascii", "a\u{fffd}")]
+fn failed_binary_reply_decodes_declared_charset(
+    #[case] body: Vec<u8>,
+    #[case] charset: &str,
+    #[case] message: &str,
+) {
     let expected = response_with_headers(
         500,
-        vec![0xE9],
+        body,
         vec![(
             "Content-Type".to_owned(),
-            "text/plain; charset=iso-8859-1".to_owned(),
+            format!("text/plain; charset={charset}"),
         )],
     );
     let outcome = transform_file_response(expected).expect_err("failure");
     let FileContentError::Bedrock { error, .. } = outcome else {
         panic!("expected BedrockError");
     };
-    assert_eq!(error.cause.error.message, "\u{e9}");
+    assert_eq!(error.cause.error.message, message);
 }
 
 #[rstest]
@@ -107,7 +114,7 @@ fn raw_binary_reply_preserves_repeated_headers() {
     assert_eq!(actual.response.headers, expected.headers);
     assert_eq!(
         actual.logging_summary().content_type,
-        Some("application/x-custom".to_owned())
+        Some("application/x-custom, text/plain".to_owned())
     );
 }
 
