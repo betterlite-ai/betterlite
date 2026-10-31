@@ -1,6 +1,11 @@
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+#[error("choices must be a list or null")]
+pub struct ChoicesError(#[source] serde_json::Error);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResponseFormat {
@@ -46,11 +51,19 @@ pub struct Response {
     pub output: Blocks,
 }
 #[derive(Debug, Default, Deserialize)]
-#[serde(from = "Box<RawValue>")]
+#[serde(try_from = "Box<RawValue>")]
 pub struct Choices(pub Vec<Choice>);
-impl From<Box<RawValue>> for Choices {
-    fn from(raw: Box<RawValue>) -> Self {
-        Self(serde_json::from_str(raw.get()).unwrap_or_default())
+impl TryFrom<Box<RawValue>> for Choices {
+    type Error = ChoicesError;
+    fn try_from(raw: Box<RawValue>) -> Result<Self, Self::Error> {
+        if raw.get() == "null" {
+            return Ok(Self(Vec::new()));
+        }
+        let items = serde_json::from_str::<Vec<Box<RawValue>>>(raw.get()).map_err(ChoicesError)?;
+        let choice = items
+            .first()
+            .and_then(|first| serde_json::from_str::<Choice>(first.get()).ok());
+        Ok(Self(choice.into_iter().collect()))
     }
 }
 #[derive(Debug, Default, Deserialize)]

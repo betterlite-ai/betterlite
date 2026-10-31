@@ -479,6 +479,37 @@ fn call_transformation_choices_null_openai() {
     assert!(calls.is_empty());
 }
 
+const VALID_FIRST_CHOICE: &str = concat!(
+    r#"{"message":{"tool_calls":[{"type":"function","function":"#,
+    r#"{"name":"litellm_web_search","arguments":"{}"}}]}}"#
+);
+
+#[test]
+fn call_transformation_choices_second_entry_null_openai() {
+    let body = format!(r#"{{"choices":[{VALID_FIRST_CHOICE},null]}}"#);
+    let response: Response = serde_json::from_str(&body).unwrap();
+    let (found, calls) =
+        WebSearchTransformation::transform_request(&response, false, "openai").unwrap();
+    assert!(found);
+    assert_eq!(calls.len(), 1);
+}
+
+#[test]
+fn call_transformation_choices_second_entry_malformed_openai() {
+    let body = format!(r#"{{"choices":[{VALID_FIRST_CHOICE},{{"message":"not an object"}}]}}"#);
+    let response: Response = serde_json::from_str(&body).unwrap();
+    let (found, calls) =
+        WebSearchTransformation::transform_request(&response, false, "openai").unwrap();
+    assert!(found);
+    assert_eq!(calls.len(), 1);
+}
+
+#[test]
+fn call_transformation_choices_not_a_list_is_error() {
+    let err = serde_json::from_str::<Response>(r#"{"choices":"not-a-list"}"#).unwrap_err();
+    assert!(err.to_string().contains("choices must be a list or null"));
+}
+
 #[test]
 fn call_transformation_no_tool_responses() {
     let response: Response = serde_json::from_str(r#"{"output":[{"type":"function_call","name":"web_search"},{"type":"web_search_preview_2025"},{"type":"web_search_20250305"}]}"#).unwrap();
