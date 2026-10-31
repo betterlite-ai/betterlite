@@ -1116,6 +1116,7 @@ dependencies = [
 name = "betterlite-harness"
 version = "0.1.0"
 dependencies = [
+ "async-stream",
  "futures-core",
  "futures-util",
  "hex",
@@ -1132,6 +1133,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tracing",
  "uuid",
  "which",
 ]
