@@ -1,0 +1,16 @@
+kind: helper
+name: azure-openrouter-errors-azure-body-code
+call:
+  azure_openrouter_errors:
+    provider: azure
+    model: gpt-4
+    custom_llm_provider: azure
+    error_str: generic azure failure
+    exception_provider: Azure
+    status_code: 400
+    body:
+      error:
+        code: content_policy_violation
+        type: invalid_request_error
+env: {}
+compare: {ignore: []}
