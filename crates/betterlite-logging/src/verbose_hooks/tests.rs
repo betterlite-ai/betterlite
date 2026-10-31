@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_redact::structured::Payload;
@@ -154,7 +154,102 @@ fn verbose_hooks_cases(#[case] scenario: Scenario, #[case] expected: Expected) {
 fn redacts_object_credentials_before_any_sink_sees_them() {
     let result = healthy_hooks(json!(true)).main_print_verbose(credential_payload());
     assert_eq!(result.logs[0].payload["api_key"], "REDACTED");
-    assert_eq!(result.console[0]["message"], "body");
+    assert_eq!(result.logs[0].payload["message"], "REDACTED");
+    assert_eq!(result.console[0]["message"], "REDACTED");
+}
+
+#[test]
+fn redacts_strings_nested_in_objects_and_arrays_for_both_sinks() {
+    let payload: Payload = serde_json::from_str(
+        r#"{
+            "detail": "Bearer sk-abcdefghijklmnopqrstuvwxyz",
+            "items": [{"detail": "Bearer sk-zyxwvutsrqponmlkjihgfedcba"}],
+            "message": "private request body"
+        }"#,
+    )
+    .expect("valid nested payload fixture");
+    let result = healthy_hooks(json!(true)).main_print_verbose(payload);
+    assert_redacted(&result.logs[0].payload, "private request body");
+    assert_redacted(&result.console[0], "private request body");
+}
+
+struct CapturingLogger {
+    records: Arc<Mutex<Vec<Payload>>>,
+}
+
+impl LoggerSink for CapturingLogger {
+    fn debug(&self, payload: &Payload) -> bool {
+        self.records
+            .lock()
+            .expect("capture lock is not poisoned")
+            .push(payload.clone());
+        true
+    }
+
+    fn info(&self, payload: &Payload) -> bool {
+        self.debug(payload)
+    }
+
+    fn error(&self, payload: &Payload) -> bool {
+        self.debug(payload)
+    }
+
+    fn debug_enabled(&self) -> bool {
+        false
+    }
+}
+
+struct CapturingConsole {
+    records: Arc<Mutex<Vec<Payload>>>,
+}
+
+impl ConsoleSink for CapturingConsole {
+    fn print(&self, payload: &Payload) -> bool {
+        self.records
+            .lock()
+            .expect("capture lock is not poisoned")
+            .push(payload.clone());
+        true
+    }
+}
+
+#[test]
+fn redacts_payload_before_main_and_utils_capturing_sinks() {
+    let logger_records = Arc::new(Mutex::new(Vec::new()));
+    let console_records = Arc::new(Mutex::new(Vec::new()));
+    let hooks = VerboseHooks {
+        logger: CapturingLogger {
+            records: Arc::clone(&logger_records),
+        },
+        console: CapturingConsole {
+            records: Arc::clone(&console_records),
+        },
+        set_verbose: json!(true),
+        redactor: redactor(),
+    };
+    let payload: Payload = serde_json::from_str(
+        r#"{"detail":"Bearer sk-abcdefghijklmnopqrstuvwxyz","message":"body"}"#,
+    )
+    .expect("valid capture fixture");
+    drop(hooks.main_print_verbose(payload.clone()));
+    drop(hooks.utils_print_verbose(payload, "DEBUG", &json!(false)));
+    let logger_captured = logger_records.lock().expect("capture lock is not poisoned");
+    let console_captured = console_records
+        .lock()
+        .expect("capture lock is not poisoned");
+    assert_eq!(logger_captured.len(), 2);
+    assert_eq!(console_captured.len(), 2);
+    assert_redacted(&logger_captured[0], "body");
+    assert_redacted(&logger_captured[1], "body");
+    assert_redacted(&console_captured[0], "body");
+    assert_redacted(&console_captured[1], "body");
+}
+
+fn assert_redacted(payload: &Payload, body: &str) {
+    let rendered = payload.to_string();
+    assert!(!rendered.contains("abcdefghijklmnopqrstuvwxyz"));
+    assert!(!rendered.contains(body));
+    assert_eq!(payload["message"], "REDACTED");
 }
 
 #[test]

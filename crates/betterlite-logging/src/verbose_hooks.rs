@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use betterlite_redact::secret::Redactor;
-use betterlite_redact::structured::{Payload, redact::redact_credentials_in_payload};
+use betterlite_redact::structured::{Payload, REDACTED, redact::redact_credentials_in_payload};
 use serde::Serialize;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -124,7 +124,18 @@ const fn is_false(value: &Payload) -> bool {
 // Strings and array items carry no key for B187's object masking, so content-scan them too.
 fn redact(payload: Payload, redactor: &Redactor) -> Payload {
     match payload {
-        Payload::Object(object) => redact_credentials_in_payload(&object),
+        Payload::Object(object) => {
+            let masked = redact_credentials_in_payload(&object);
+            let Payload::Object(fields) = masked else {
+                return masked;
+            };
+            Payload::Object(
+                fields
+                    .into_iter()
+                    .map(|(key, value)| (key.clone(), redact_field(value, &key, redactor)))
+                    .collect(),
+            )
+        }
         Payload::Array(items) => Payload::Array(
             items
                 .into_iter()
@@ -133,6 +144,20 @@ fn redact(payload: Payload, redactor: &Redactor) -> Payload {
         ),
         Payload::String(text) => Payload::String(redactor.redact_string(&text)),
         Payload::Null | Payload::Bool(_) | Payload::Number(_) => payload,
+    }
+}
+
+fn redact_field(value: Payload, key: &str, redactor: &Redactor) -> Payload {
+    if matches!(key, "message" | "content" | "prompt" | "text") {
+        return Payload::String(REDACTED.to_owned());
+    }
+    match value {
+        Payload::String(text) => Payload::String(redactor.redact_string(&text)),
+        Payload::Null => Payload::Null,
+        Payload::Bool(flag) => Payload::Bool(flag),
+        Payload::Number(number) => Payload::Number(number),
+        Payload::Array(items) => redact(Payload::Array(items), redactor),
+        Payload::Object(fields) => redact(Payload::Object(fields), redactor),
     }
 }
 
