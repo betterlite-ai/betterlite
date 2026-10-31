@@ -118,7 +118,7 @@ fn string_entries(
     key: &str,
     given: &'static str,
 ) -> Result<Vec<String>, HarnessError> {
-    let Some(value) = config.get(key) else {
+    let Some(value) = config.get(key).filter(|value| !value.is_null()) else {
         return Ok(Vec::new());
     };
     let Some(items) = value.as_array() else {
@@ -159,7 +159,7 @@ fn merged_skills(
     extra: Option<&str>,
 ) -> Result<Option<SkillsConfig>, HarnessError> {
     let skills: JsonObject = match user_config.get("skills") {
-        None => JsonObject::new(),
+        None | Some(serde_json::Value::Null) => JsonObject::new(),
         Some(value) => value
             .as_object()
             .cloned()

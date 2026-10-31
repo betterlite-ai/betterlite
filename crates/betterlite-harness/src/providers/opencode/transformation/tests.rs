@@ -128,6 +128,28 @@ fn opencode_config_preserves_skills_without_paths() {
 }
 
 #[rstest]
+#[case::instructions(r#"{"instructions":null}"#, "instructions")]
+#[case::skill_paths(r#"{"skills":{"paths":null}}"#, "skills")]
+#[case::skills(r#"{"skills":null}"#, "skills")]
+fn opencode_config_preserves_null(#[case] raw: &str, #[case] key: &str) {
+    let user_config: JsonObject = serde_json::from_str(raw).unwrap();
+    let mut inputs = base_config_inputs(&user_config, &[]);
+    let config = super::config::build_opencode_config(&inputs).unwrap();
+    assert_eq!(config.get(key), user_config.get(key));
+    inputs.instructions_path = Some("/private/instructions.md".to_owned());
+    inputs.skills_path = Some("/private/skills".to_owned());
+    let appended = super::config::build_opencode_config(&inputs).unwrap();
+    assert_eq!(
+        appended["instructions"],
+        serde_json::json!(["/private/instructions.md"])
+    );
+    assert_eq!(
+        appended["skills"]["paths"],
+        serde_json::json!(["/private/skills"])
+    );
+}
+
+#[rstest]
 #[case::instructions(
     r#"{"instructions":"AGENTS.md"}"#,
     "OpenCodeOptions.config[instructions]"
@@ -137,6 +159,15 @@ fn opencode_config_preserves_skills_without_paths() {
     "OpenCodeOptions.config[skills.paths]"
 )]
 #[case::skills(r#"{"skills":"skills"}"#, "OpenCodeOptions.config[skills]")]
+#[case::instructions_number(r#"{"instructions":1}"#, "OpenCodeOptions.config[instructions]")]
+#[case::instructions_object(r#"{"instructions":{}}"#, "OpenCodeOptions.config[instructions]")]
+#[case::instructions_bool(r#"{"instructions":false}"#, "OpenCodeOptions.config[instructions]")]
+#[case::paths_number(r#"{"skills":{"paths":1}}"#, "OpenCodeOptions.config[skills.paths]")]
+#[case::paths_object(r#"{"skills":{"paths":{}}}"#, "OpenCodeOptions.config[skills.paths]")]
+#[case::paths_bool(
+    r#"{"skills":{"paths":false}}"#,
+    "OpenCodeOptions.config[skills.paths]"
+)]
 fn opencode_config_rejects_non_list_or_mapping(#[case] raw: &str, #[case] expected: &str) {
     let user_config: JsonObject = serde_json::from_str(raw).unwrap();
     assert!(matches!(
