@@ -59,9 +59,10 @@ fn failures(
     task_id: &str,
     report: &Report,
 ) -> Result<Vec<String>, GateError> {
-    let verdict = checks::run(worktree, &worktree.task(task_id)?, &Selection::default())?;
+    let task = worktree.task(task_id)?;
+    let verdict = checks::run(worktree, &task, &Selection::default())?;
     let added = added_dependencies(&worktree.root, &resolve_base(&worktree.root)?)?;
-    let mut problems = report_problems(report, task_id, &added);
+    let mut problems = report_problems(report, &task, &added);
     let logged = deviations::read_log(&worktree.root, task_id)?;
     problems.extend(deviations::mismatch(
         &report.deviations,
@@ -104,6 +105,38 @@ fn worker_edits(worktree: &Path, start: &str) -> Result<Vec<String>, GateError> 
             )
         })
         .collect())
+}
+
+pub(crate) fn remove_extra_targets(worktree: &Path) -> Result<Vec<String>, GateError> {
+    let target = worktree.join("target");
+    if !target.is_dir() {
+        return Ok(Vec::new());
+    }
+    let entries = fs::read_dir(&target).map_err(|source| GateError::Read {
+        path: target.clone(),
+        source,
+    })?;
+    let mut notes = Vec::new();
+    for found in entries {
+        let entry = found.map_err(|source| GateError::Read {
+            path: target.clone(),
+            source,
+        })?;
+        let path = entry.path();
+        // the coverage check keeps its own target between runs
+        if entry.file_name() == "llvm-cov-target" || !path.join("CACHEDIR.TAG").exists() {
+            continue;
+        }
+        fs::remove_dir_all(&path).map_err(|source| GateError::Write {
+            path: path.clone(),
+            source,
+        })?;
+        notes.push(format!(
+            "The gate deleted target/{}, a second cargo target: never set CARGO_TARGET_DIR or --target-dir, since it builds the whole workspace again from scratch.",
+            entry.file_name().display()
+        ));
+    }
+    Ok(notes)
 }
 
 pub(crate) fn attempt_once(

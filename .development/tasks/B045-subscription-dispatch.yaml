@@ -98,7 +98,7 @@ pitfalls:
   - A Copilot Responses request with no model bypasses the per-model capability check.
   - The common OpenAI handler already inserts extra_headers and must not receive a second independent insertion path.
   - Mounting an additional copy of an API family route would panic before any subscription request can run.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

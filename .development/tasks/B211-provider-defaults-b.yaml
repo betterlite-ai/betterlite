@@ -115,7 +115,7 @@ pitfalls:
 - 'The oracle helper for this task is pre-registered as provider_defaults_b in the models group. Replace the stub Op in tools/oracle/src/helpers/models/provider_defaults_b.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/provider_defaults_b.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
   wording reason.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

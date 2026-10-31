@@ -1,0 +1,15 @@
+kind: helper
+name: malformed-modality-entry-is-an-error
+call:
+  cost_usage:
+    transcription: []
+    interactions:
+      - total_input_tokens: 0
+        total_output_tokens: 0
+        input_tokens_by_modality:
+          - "not an object"
+compare:
+  ignore:
+    - pointer: /error/message
+      why: betterlite writes its own error message
+env: {}

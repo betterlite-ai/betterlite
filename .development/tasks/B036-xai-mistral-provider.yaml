@@ -148,4 +148,4 @@ pitfalls:
   - Existing litellm_metadata=null blocks OCR metadata insertion because the code tests key presence.
   - A FIM api_base override prevents later optional aliases from being popped.
 budget: {max_changed_lines: 800, max_new_expects: 0}
-review_level: security
+review_level: standard

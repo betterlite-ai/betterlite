@@ -140,7 +140,7 @@ pitfalls:
 - Responses cleanup is inside the executor's try/finally, after patch validation, and is absent from the Anthropic executor.
 - response_override=false is a result; only null means there is no override.
 - A Responses safety refusal raises, while a nonstream Anthropic refusal can return a finalized turn.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

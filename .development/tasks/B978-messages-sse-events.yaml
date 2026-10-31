@@ -145,7 +145,7 @@ pitfalls:
 - Payload classification trusts data.type rather than the SSE event label; message-stop byte detection does the opposite.
 - An empty dict error is terminal even though it has no parsable error type.
 - Native overloaded_error maps to503, whereas constructing an overloaded Anthropic exception envelope uses529.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

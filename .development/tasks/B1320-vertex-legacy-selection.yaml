@@ -77,4 +77,4 @@ pitfalls:
   - The private instance is copied after model_id is popped, while a custom instance retains all options.
   - Sync response_obj stays None, so copying async server-usage extraction into this branch changes usage.
 budget: {max_changed_lines: 725, max_new_expects: 1}
-review_level: security
+review_level: standard

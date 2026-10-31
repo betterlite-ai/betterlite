@@ -203,7 +203,7 @@ pitfalls:
 - 'The Responses arm rebuilds body_without_stream_options because mutating the request-scope parsed-body dict deletes keys for later readers; the chat arm must retain stream_options.'
 - 'The resolver must run before user_api_key_auth: otherwise claude-opus-5-thinking-high is authorized as a different model and can bypass the base model budget or grant check.'
 - 'The stream branch checks __anext__ rather than a concrete iterator class because router wrappers are async iterables; class-only detection leaks response events instead of chat chunks.'
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

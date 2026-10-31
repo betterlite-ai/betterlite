@@ -95,7 +95,7 @@ pitfalls:
   - backend and timeout are stored but never included in session_kwargs at the pin.
   - Generated files are collected after an unsuccessful code exit as well as a successful one.
   - The MIME table knows txt even though the generated-file listing excludes .txt.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

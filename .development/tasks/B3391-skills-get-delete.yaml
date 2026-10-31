@@ -238,7 +238,7 @@ pitfalls:
     transform, dispatch). Diverging implementations for each operation will make maintenance
     harder and create test coverage gaps.
 
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

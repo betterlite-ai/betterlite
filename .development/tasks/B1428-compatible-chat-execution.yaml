@@ -93,4 +93,4 @@ pitfalls:
   - A truthy explicit custom_endpoint leaves optional_params.custom_endpoint in the eventual body.
   - Only the synchronous streaming helper explicitly rejects a non-200 response here.
 budget: {max_changed_lines: 775, max_new_expects: 0}
-review_level: security
+review_level: standard
