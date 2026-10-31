@@ -1,8 +1,8 @@
 #![cfg(test)]
 
 use super::{
-    BundledCatalog, CatalogError, MAX_CATALOG_BYTES, MAX_CATALOG_DEPTH, MAX_CATALOG_ENTRIES,
-    ModelCatalog, UnknownFields,
+    BundledCatalog, CatalogError, MAX_CATALOG_ALIASES, MAX_CATALOG_BYTES, MAX_CATALOG_DEPTH,
+    MAX_CATALOG_ENTRIES, MAX_CATALOG_WARNINGS, ModelCatalog, UnknownFields,
 };
 use crate::metadata::identity::Mode;
 use rstest::rstest;
@@ -11,6 +11,8 @@ use std::{
     fs, io,
     sync::atomic::{AtomicUsize, Ordering},
 };
+
+const WARNING_BOUNDARY_ENTRIES: usize = MAX_CATALOG_WARNINGS.div_euclid(2);
 
 #[derive(Clone, Copy, Debug)]
 enum Outcome {
@@ -28,6 +30,12 @@ enum Outcome {
     GeneralizationsEmpty,
     GeneralizationWarnings,
     GeneralizationUnknown,
+    PriceWarn(&'static str),
+    PriceUnknown,
+    NoWarnings,
+    WarningBoundary(usize, usize),
+    WarningOverflow,
+    AliasOverflow,
 }
 
 #[rstest]
@@ -64,6 +72,26 @@ enum Outcome {
 #[case::unterminated(br#"{"model"#.to_vec(), UnknownFields::Warn, Outcome::Invalid)]
 #[case::large_key_array(large_key_array(), UnknownFields::Warn, Outcome::Count(1))]
 #[case::trailing(b"{}x".to_vec(), UnknownFields::Warn, Outcome::Invalid)]
+#[case::price_unknown_warn(br#"{"model":{"litellm_provider":"openai","off_peak_pricing":{"input_cost_per_token":0.0000002,"new_field":true}}}"#.to_vec(), UnknownFields::Warn, Outcome::PriceWarn("model.off_peak_pricing.new_field"))]
+#[case::price_unknown_reject(br#"{"model":{"litellm_provider":"openai","off_peak_pricing":{"input_cost_per_token":0.0000002,"new_field":true}}}"#.to_vec(), UnknownFields::Reject, Outcome::PriceUnknown)]
+#[case::provider_specific_known(br#"{"model":{"litellm_provider":"bedrock","provider_specific_entry":{"bedrock_invocation_schema":{}}}}"#.to_vec(), UnknownFields::Reject, Outcome::Count(1))]
+#[case::aliases_null(br#"{"model":{"litellm_provider":"openai","aliases":null}}"#.to_vec(), UnknownFields::Reject, Outcome::NoWarnings)]
+#[case::warning_boundary(
+    warning_entries(WARNING_BOUNDARY_ENTRIES),
+    UnknownFields::Warn,
+    Outcome::WarningBoundary(WARNING_BOUNDARY_ENTRIES, MAX_CATALOG_WARNINGS)
+)]
+#[case::warning_limit(
+    warning_entries(WARNING_BOUNDARY_ENTRIES + 1),
+    UnknownFields::Warn,
+    Outcome::WarningOverflow
+)]
+#[case::alias_boundary(
+    aliased_model(MAX_CATALOG_ALIASES),
+    UnknownFields::Reject,
+    Outcome::Count(1)
+)]
+#[case::alias_limit(aliased_model(MAX_CATALOG_ALIASES + 1), UnknownFields::Reject, Outcome::AliasOverflow)]
 fn model_catalog_tests_behavior(
     #[case] bytes: Vec<u8>,
     #[case] mode: UnknownFields,
@@ -117,6 +145,55 @@ fn model_catalog_tests_behavior(
             result.unwrap().warnings,
             ["model.metadata.new_note", "model.new_field"]
         ),
+        Outcome::PriceWarn(path) => {
+            let catalog = result.unwrap();
+            assert!(catalog.warnings.contains(&path.to_owned()));
+            assert_eq!(
+                catalog
+                    .lookup("model")
+                    .unwrap()
+                    .prices
+                    .off_peak
+                    .as_ref()
+                    .unwrap()
+                    .input_cost_per_token
+                    .unwrap()
+                    .to_string(),
+                "0.0000002"
+            );
+        }
+        Outcome::PriceUnknown => {
+            assert!(matches!(
+                result.unwrap_err(),
+                CatalogError::UnknownPriceField { .. }
+            ));
+        }
+        Outcome::NoWarnings => {
+            let catalog = result.unwrap();
+            assert!(catalog.warnings.is_empty());
+            assert!(catalog.lookup("model").is_some());
+        }
+        Outcome::WarningBoundary(entries, warnings) => {
+            let catalog = result.unwrap();
+            assert_eq!(catalog.entries.len(), entries);
+            assert_eq!(catalog.warnings.len(), warnings);
+        }
+        Outcome::WarningOverflow => {
+            assert!(matches!(
+                result.unwrap_err(),
+                CatalogError::TooManyWarnings {
+                    limit: MAX_CATALOG_WARNINGS
+                }
+            ));
+        }
+        Outcome::AliasOverflow => {
+            assert!(matches!(
+                result.unwrap_err(),
+                CatalogError::TooManyAliases {
+                    limit: MAX_CATALOG_ALIASES
+                }
+            ));
+        }
         failure @ (Outcome::Duplicate
         | Outcome::TooLarge
         | Outcome::TooDeep
@@ -126,6 +203,10 @@ fn model_catalog_tests_behavior(
     }
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "Only called with the failure Outcome variants listed at its call site; success variants assert at their own case instead."
+)]
 fn check_error(error: &CatalogError, outcome: Outcome) {
     match outcome {
         Outcome::Duplicate => assert!(error.to_string().contains("duplicate")),
@@ -151,16 +232,7 @@ fn check_error(error: &CatalogError, outcome: Outcome) {
         )),
         Outcome::Unknown => assert!(error.to_string().contains("unknown field")),
         Outcome::Invalid => assert!(matches!(error, CatalogError::Json(_))),
-        Outcome::Price
-        | Outcome::Count(_)
-        | Outcome::Warnings
-        | Outcome::Alias(_)
-        | Outcome::Generalizations
-        | Outcome::GeneralizationsEmpty
-        | Outcome::GeneralizationWarnings
-        | Outcome::GeneralizationUnknown => {
-            panic!("expected success")
-        }
+        _ => panic!("expected success"),
     }
 }
 
@@ -193,6 +265,21 @@ fn entries(count: usize) -> Vec<u8> {
 fn nested(depth: usize) -> Vec<u8> {
     let arrays = format!("{}0{}", "[".repeat(depth), "]".repeat(depth));
     format!("{{\"model\":{{\"unknown\":{arrays}}}}}").into_bytes()
+}
+
+fn warning_entries(count: usize) -> Vec<u8> {
+    let values = (0..count)
+        .map(|index| format!("\"model-{index}\":{{\"bad1\":true,\"bad2\":true}}"))
+        .collect::<Vec<_>>();
+    format!("{{{}}}", values.join(",")).into_bytes()
+}
+
+fn aliased_model(count: usize) -> Vec<u8> {
+    let aliases = (0..count)
+        .map(|index| format!("\"a{index}\""))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(r#"{{"model":{{"litellm_provider":"openai","aliases":[{aliases}]}}}}"#).into_bytes()
 }
 
 fn large_key_array() -> Vec<u8> {

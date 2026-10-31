@@ -1,10 +1,12 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use indexmap::IndexMap;
 use serde_json::value::RawValue;
 
 use super::{
-    CatalogEntry, CatalogError, FALLBACK_GENERALIZATIONS, ModelCatalog, SAMPLE_SPEC, UnknownFields,
+    CatalogEntry, CatalogError, FALLBACK_GENERALIZATIONS, MAX_CATALOG_ALIASES,
+    MAX_CATALOG_WARNINGS, ModelCatalog, SAMPLE_SPEC, UnknownFields, price_unknown,
 };
 use crate::catalog_generalizations::{CatalogGeneralizations, decode_generalization_rules};
 use crate::entry::{ModelFieldError, ModelFields};
@@ -15,9 +17,10 @@ pub(super) fn build_catalog(
     unknown: UnknownFields,
 ) -> Result<ModelCatalog, CatalogError> {
     let mut entries = BTreeMap::new();
-    let mut lookup = BTreeMap::new();
+    let mut lookup: BTreeMap<String, Arc<str>> = BTreeMap::new();
     let mut warnings = Vec::new();
-    let (mut generalizations, mut alias_claims) = (CatalogGeneralizations::default(), Vec::new());
+    let mut generalizations = CatalogGeneralizations::default();
+    let mut alias_claims = Vec::new();
     for (name, value) in raw {
         if name == SAMPLE_SPEC {
             continue;
@@ -26,27 +29,18 @@ pub(super) fn build_catalog(
             generalizations = install_generalizations(value.as_ref(), unknown, &mut warnings)?;
             continue;
         }
-        let fields_map: BTreeMap<String, Box<RawValue>> = serde_json::from_str(value.get())?;
-        let typed_value = without_aliases(&fields_map)?;
-        let fields = parse_fields(&name, typed_value.as_ref(), unknown, &mut warnings)?;
-        let prices =
-            PriceFields::parse(typed_value.as_ref()).map_err(|source| CatalogError::Prices {
-                model: name.clone(),
-                source,
-            })?;
-        entries.insert(
-            name.clone(),
-            CatalogEntry {
-                name: name.clone(),
-                fields,
-                prices,
-            },
-        );
-        insert_lookup(&mut lookup, &name, &name, &mut warnings);
-        add_alias_claims(&name, &fields_map, &mut warnings, &mut alias_claims);
+        add_entry(
+            &name,
+            value.as_ref(),
+            unknown,
+            &mut entries,
+            &mut lookup,
+            &mut warnings,
+            &mut alias_claims,
+        )?;
     }
     for (alias, canonical) in alias_claims {
-        insert_lookup(&mut lookup, &alias, &canonical, &mut warnings);
+        insert_lookup(&mut lookup, alias, canonical, &mut warnings)?;
     }
     Ok(ModelCatalog {
         entries,
@@ -56,14 +50,55 @@ pub(super) fn build_catalog(
     })
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Threads the catalog accumulators a single entry updates; splitting them loses the single call site."
+)]
+fn add_entry(
+    name: &str,
+    value: &RawValue,
+    unknown: UnknownFields,
+    entries: &mut BTreeMap<String, CatalogEntry>,
+    lookup: &mut BTreeMap<String, Arc<str>>,
+    warnings: &mut Vec<String>,
+    alias_claims: &mut Vec<(String, Arc<str>)>,
+) -> Result<(), CatalogError> {
+    let fields_map: BTreeMap<String, Box<RawValue>> = serde_json::from_str(value.get())?;
+    let typed_value = without_aliases(&fields_map)?;
+    let fields = parse_fields(name, typed_value.as_ref(), unknown, warnings)?;
+    let prices = parse_prices(name, typed_value.as_ref(), unknown, warnings)?;
+    let canonical: Arc<str> = Arc::from(name);
+    entries.insert(
+        name.to_owned(),
+        CatalogEntry {
+            name: name.to_owned(),
+            fields,
+            prices,
+        },
+    );
+    insert_lookup(lookup, name.to_owned(), Arc::clone(&canonical), warnings)?;
+    add_alias_claims(name, &canonical, &fields_map, warnings, alias_claims)
+}
+
 fn add_alias_claims(
     name: &str,
+    canonical: &Arc<str>,
     fields: &BTreeMap<String, Box<RawValue>>,
     warnings: &mut Vec<String>,
-    claims: &mut Vec<(String, String)>,
-) {
-    let aliases = aliases(name, fields, warnings);
-    claims.extend(aliases.into_iter().map(|alias| (alias, name.to_owned())));
+    claims: &mut Vec<(String, Arc<str>)>,
+) -> Result<(), CatalogError> {
+    let aliases = aliases(name, fields, warnings)?;
+    if claims.len().saturating_add(aliases.len()) > MAX_CATALOG_ALIASES {
+        return Err(CatalogError::TooManyAliases {
+            limit: MAX_CATALOG_ALIASES,
+        });
+    }
+    claims.extend(
+        aliases
+            .into_iter()
+            .map(|alias| (alias, Arc::clone(canonical))),
+    );
+    Ok(())
 }
 
 fn install_generalizations(
@@ -83,7 +118,9 @@ fn install_generalizations(
         validate_model_info(rule, index, unknown, warnings)?;
     }
     let (installed, install_warnings) = CatalogGeneralizations::install(decoded);
-    warnings.extend(install_warnings.into_iter().map(|error| error.to_string()));
+    for warning in install_warnings {
+        push_warning(warnings, || warning.to_string())?;
+    }
     Ok(installed)
 }
 
@@ -127,7 +164,9 @@ fn parse_fields(
                     model: name.to_owned(),
                     source,
                 })?;
-            warnings.extend(paths.into_iter().map(|path| format!("{name}.{path}")));
+            for path in paths {
+                push_warning(warnings, || format!("{name}.{path}"))?;
+            }
             Ok(fields)
         }
     };
@@ -135,6 +174,38 @@ fn parse_fields(
         model: name.to_owned(),
         source,
     })
+}
+
+fn parse_prices(
+    name: &str,
+    value: &RawValue,
+    unknown: UnknownFields,
+    warnings: &mut Vec<String>,
+) -> Result<PriceFields, CatalogError> {
+    match unknown {
+        UnknownFields::Reject => {
+            if let Some(path) = price_unknown::unknown_paths(value).into_iter().next() {
+                return Err(CatalogError::UnknownPriceField {
+                    model: name.to_owned(),
+                    path,
+                });
+            }
+            PriceFields::parse(value).map_err(|source| CatalogError::Prices {
+                model: name.to_owned(),
+                source,
+            })
+        }
+        UnknownFields::Warn => {
+            for path in price_unknown::unknown_paths(value) {
+                push_warning(warnings, || format!("{name}.{path}"))?;
+            }
+            let filtered = price_unknown::strip_unknown(value)?;
+            PriceFields::parse(filtered.as_ref()).map_err(|source| CatalogError::Prices {
+                model: name.to_owned(),
+                source,
+            })
+        }
+    }
 }
 
 fn without_aliases(
@@ -152,30 +223,48 @@ fn aliases(
     model: &str,
     fields: &BTreeMap<String, Box<RawValue>>,
     warnings: &mut Vec<String>,
-) -> Vec<String> {
+) -> Result<Vec<String>, CatalogError> {
     let Some(raw) = fields.get("aliases") else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
+    if raw.get() == "null" {
+        return Ok(Vec::new());
+    }
     match serde_json::from_str::<Vec<String>>(raw.get()) {
-        Ok(values) => values,
+        Ok(values) => Ok(values),
         Err(error) => {
-            warnings.push(format!("{model}.aliases: {error}"));
-            Vec::new()
+            push_warning(warnings, || format!("{model}.aliases: {error}"))?;
+            Ok(Vec::new())
         }
     }
 }
 
 fn insert_lookup(
-    lookup: &mut BTreeMap<String, String>,
-    key: &str,
-    canonical: &str,
+    lookup: &mut BTreeMap<String, Arc<str>>,
+    key: String,
+    canonical: Arc<str>,
     warnings: &mut Vec<String>,
-) {
-    if let Some(previous) = lookup.get(key) {
-        warnings.push(format!(
-            "alias collision for {key}: kept {previous}, ignored {canonical}"
-        ));
+) -> Result<(), CatalogError> {
+    if let Some(existing) = lookup.get(&key) {
+        let kept = Arc::clone(existing);
+        push_warning(warnings, || {
+            format!("alias collision for {key}: kept {kept}, ignored {canonical}")
+        })
     } else {
-        lookup.insert(key.to_owned(), canonical.to_owned());
+        lookup.insert(key, canonical);
+        Ok(())
     }
+}
+
+fn push_warning(
+    warnings: &mut Vec<String>,
+    message: impl FnOnce() -> String,
+) -> Result<(), CatalogError> {
+    if warnings.len() >= MAX_CATALOG_WARNINGS {
+        return Err(CatalogError::TooManyWarnings {
+            limit: MAX_CATALOG_WARNINGS,
+        });
+    }
+    warnings.push(message());
+    Ok(())
 }

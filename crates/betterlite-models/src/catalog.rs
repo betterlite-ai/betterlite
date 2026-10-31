@@ -9,6 +9,8 @@ use crate::price_fields::{PriceFieldError, PriceFields};
 const MAX_CATALOG_BYTES: usize = 16 * 1024 * 1024;
 const MAX_CATALOG_DEPTH: usize = 64;
 const MAX_CATALOG_ENTRIES: usize = 10_000;
+const MAX_CATALOG_ALIASES: usize = 10_000;
+const MAX_CATALOG_WARNINGS: usize = 10_000;
 const SAMPLE_SPEC: &str = "sample_spec";
 const FALLBACK_GENERALIZATIONS: &str = "fallback_generalizations";
 #[expect(
@@ -20,6 +22,7 @@ const BACKUP_ASSET: &[u8] =
 
 mod decoder;
 mod loader;
+mod price_unknown;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CatalogEntry {
@@ -41,6 +44,10 @@ pub enum CatalogError {
     TooLarge { size: usize, limit: usize },
     #[error("model catalog has too many entries: {count} over the {limit} entry limit")]
     TooManyEntries { count: usize, limit: usize },
+    #[error("model catalog has too many aliases over the {limit} alias limit")]
+    TooManyAliases { limit: usize },
+    #[error("model catalog has too many warnings over the {limit} warning limit")]
+    TooManyWarnings { limit: usize },
     #[error("model catalog JSON error: {0}")]
     Json(#[from] serde_json::Error),
     #[error("model catalog nesting exceeds {limit}")]
@@ -57,6 +64,8 @@ pub enum CatalogError {
         model: String,
         source: PriceFieldError,
     },
+    #[error("model catalog price field {model}.{path}: unknown field")]
+    UnknownPriceField { model: String, path: String },
     #[error("model catalog fallback generalizations: {0}")]
     Generalizations(#[from] ModelsError),
 }
@@ -64,7 +73,7 @@ pub enum CatalogError {
 #[derive(Debug, Default)]
 pub struct ModelCatalog {
     pub entries: BTreeMap<String, CatalogEntry>,
-    pub lookup: BTreeMap<String, String>,
+    pub lookup: BTreeMap<String, Arc<str>>,
     pub generalizations: CatalogGeneralizations,
     pub warnings: Vec<String>,
 }
@@ -73,7 +82,7 @@ impl ModelCatalog {
     #[must_use]
     pub fn lookup(&self, name: &str) -> Option<&CatalogEntry> {
         let canonical = self.lookup.get(name)?;
-        self.entries.get(canonical)
+        self.entries.get(canonical.as_ref())
     }
     #[must_use]
     pub fn metadata(&self, name: &str) -> Option<ModelMetadataProjection<'_>> {
