@@ -8,7 +8,10 @@ use betterlite_config::sections::scheduled_job_stagger::Settings;
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 
 use super::{OffsetTrigger, apply_scheduled_job_stagger, offset_for, stagger_trigger};
-use crate::scheduled_job_stagger::{JobScheduler, JobSnapshot, SubmissionListener, Trigger};
+use crate::scheduled_job_stagger::identity::SystemIdentityEnvironment;
+use crate::scheduled_job_stagger::{
+    JobScheduler, JobSnapshot, NextRunTime, SubmissionListener, Trigger,
+};
 
 struct FixedTrigger(DateTime<Utc>);
 
@@ -110,9 +113,9 @@ fn offset_for_is_zero_for_a_non_staggerable_job_without_an_override() {
 }
 
 #[test]
-fn offset_for_ignores_an_override_for_a_non_staggerable_job() {
+fn offset_for_uses_an_override_even_for_a_non_staggerable_job() {
     let mut offsets = BTreeMap::new();
-    offsets.insert("anchored-job".to_owned(), 5_i64);
+    offsets.insert("custom_cron".to_owned(), 12_i64);
     let settings = Settings {
         enabled: true,
         window_seconds: 300,
@@ -120,8 +123,8 @@ fn offset_for_ignores_an_override_for_a_non_staggerable_job() {
         offsets,
     };
     assert_eq!(
-        offset_for("anchored-job", None, false, &settings, "identity"),
-        0
+        offset_for("custom_cron", None, false, &settings, "identity"),
+        12
     );
 }
 
@@ -174,7 +177,7 @@ impl JobScheduler for FakeScheduler {
 fn interval_job(id: &str) -> JobSnapshot {
     JobSnapshot {
         id: id.to_owned(),
-        next_run_time: None,
+        next_run_time: NextRunTime::Unset,
         period_seconds: Some(60),
         trigger: Box::new(NeverFires),
     }
@@ -192,6 +195,7 @@ fn apply_skips_every_job_when_the_scheduler_is_already_running() {
         &Settings::default(),
         Some("identity"),
         &BTreeMap::new(),
+        &SystemIdentityEnvironment,
     );
     assert_eq!(offsets.get("job-a"), Some(&0));
     assert!(scheduler.modified.is_empty());
@@ -215,6 +219,7 @@ fn apply_skips_every_job_when_staggering_is_disabled() {
         &settings,
         Some("identity"),
         &BTreeMap::new(),
+        &SystemIdentityEnvironment,
     );
     assert_eq!(offsets.get("job-a"), Some(&0));
     assert!(scheduler.modified.is_empty());
@@ -240,9 +245,40 @@ fn apply_modifies_every_job_an_override_gives_a_nonzero_offset_to() {
         &settings,
         Some("identity"),
         &BTreeMap::new(),
+        &SystemIdentityEnvironment,
     );
     assert_eq!(offsets.get("job-a"), Some(&5));
     assert_eq!(scheduler.modified, vec!["job-a".to_owned()]);
+}
+
+#[test]
+fn apply_leaves_an_explicitly_paused_job_at_offset_zero() {
+    let settings = Settings {
+        enabled: true,
+        window_seconds: 300,
+        identity: None,
+        offsets: BTreeMap::new(),
+    };
+    let paused_job = JobSnapshot {
+        id: "job-a".to_owned(),
+        next_run_time: NextRunTime::Explicit(None),
+        period_seconds: Some(60),
+        trigger: Box::new(NeverFires),
+    };
+    let mut scheduler = FakeScheduler {
+        running: false,
+        jobs: vec![paused_job],
+        modified: vec![],
+    };
+    let offsets = apply_scheduled_job_stagger(
+        &mut scheduler,
+        &settings,
+        Some("identity"),
+        &BTreeMap::new(),
+        &SystemIdentityEnvironment,
+    );
+    assert_eq!(offsets.get("job-a"), Some(&0));
+    assert!(scheduler.modified.is_empty());
 }
 
 #[test]
@@ -265,6 +301,7 @@ fn apply_does_not_modify_a_job_when_its_offset_is_zero() {
         &settings,
         Some("identity"),
         &BTreeMap::new(),
+        &SystemIdentityEnvironment,
     );
     assert_eq!(offsets.get("job-a"), Some(&0));
     assert!(scheduler.modified.is_empty());

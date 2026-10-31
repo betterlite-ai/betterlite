@@ -5,7 +5,7 @@ use betterlite_config::sections::scheduled_job_stagger::Settings;
 use chrono::{DateTime, TimeDelta, Utc};
 
 use super::clamp::clamped_override;
-use super::identity::resolve_stagger_identity;
+use super::identity::{IdentityEnvironment, resolve_stagger_identity};
 use super::offset::offset_seconds;
 use super::staggerable::is_staggerable;
 use super::window::window_for;
@@ -41,12 +41,12 @@ fn offset_for(
     settings: &Settings,
     identity: &str,
 ) -> u32 {
-    if !staggerable {
-        return 0;
-    }
     if let Some(override_value) = settings.offsets.get(job_id) {
         let non_negative = u32::try_from((*override_value).max(0)).unwrap_or(u32::MAX);
         return clamped_override(job_id, non_negative);
+    }
+    if !staggerable {
+        return 0;
     }
     let window = window_for(job_id, period_seconds, settings.window_seconds);
     offset_seconds(job_id, identity, window)
@@ -85,6 +85,7 @@ pub fn apply_scheduled_job_stagger(
     settings: &Settings,
     identity: Option<&str>,
     environment: &BTreeMap<String, String>,
+    dependencies: &dyn IdentityEnvironment,
 ) -> BTreeMap<String, u32> {
     if scheduler.running() {
         tracing::warn!(
@@ -97,7 +98,7 @@ pub fn apply_scheduled_job_stagger(
         return zeroed_offsets(scheduler);
     }
     let resolved_identity = identity.map_or_else(
-        || resolve_stagger_identity(settings.identity.as_deref(), environment),
+        || resolve_stagger_identity(settings.identity.as_deref(), environment, dependencies),
         ToOwned::to_owned,
     );
     let mut offsets = BTreeMap::new();
