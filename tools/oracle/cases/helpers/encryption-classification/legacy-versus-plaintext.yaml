@@ -1,0 +1,15 @@
+kind: helper
+name: encryption-classification-legacy-versus-plaintext
+call:
+  encryption_classification:
+    salt_key: scan-key
+    values:
+    - AAECAwQFBgcICQoLDA0ODxAREhMUFRYXbRIvLOA7WUwu8UmdnopPhr7H5AqjAg==
+    - ''
+    - ordinary text
+    - 3
+    - false
+env:
+  LITELLM_SALT_KEY: scan-key
+compare:
+  ignore: []

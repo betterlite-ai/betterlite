@@ -1,0 +1,13 @@
+kind: helper
+name: opik-config-resolution
+call:
+  b3973:
+    function: config
+    key: url_override
+    user: user
+    environment: {OPIK_URL_OVERRIDE: env}
+    config: {url_override: file}
+    default: default
+env: {}
+compare:
+  ignore: []

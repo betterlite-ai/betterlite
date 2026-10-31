@@ -1,0 +1,5 @@
+kind: helper
+name: false-constraint-ignored
+call: {anthropic_output_schema: {function: filter, schema: {type: array, uniqueItems: false, minItems: 0, maxItems: null}}}
+env: {}
+compare: {ignore: []}
