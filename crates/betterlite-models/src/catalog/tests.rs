@@ -42,6 +42,7 @@ enum Failure {
     TooMany,
     Invalid,
     Unknown,
+    PriceType,
 }
 
 #[rstest]
@@ -82,6 +83,8 @@ enum Failure {
 #[case::price_unknown_reject(br#"{"model":{"litellm_provider":"openai","off_peak_pricing":{"input_cost_per_token":0.0000002,"new_field":true}}}"#.to_vec(), UnknownFields::Reject, Outcome::PriceUnknown)]
 #[case::provider_specific_known(br#"{"model":{"litellm_provider":"bedrock","provider_specific_entry":{"bedrock_invocation_schema":"titan_v2"}}}"#.to_vec(), UnknownFields::Reject, Outcome::Count(1))]
 #[case::provider_specific_unknown_warn(br#"{"model":{"litellm_provider":"bedrock","provider_specific_entry":{"bedrock_invocation_schema":"titan_v2","new_field":true}}}"#.to_vec(), UnknownFields::Warn, Outcome::PriceFieldWarn("model.provider_specific_entry.new_field"))]
+#[case::provider_specific_null_reject(br#"{"model":{"provider_specific_entry":null}}"#.to_vec(), UnknownFields::Reject, Outcome::Failure(Failure::PriceType))]
+#[case::provider_specific_null_warn(br#"{"model":{"provider_specific_entry":null}}"#.to_vec(), UnknownFields::Warn, Outcome::Failure(Failure::PriceType))]
 #[case::search_context_unknown_warn(br#"{"model":{"litellm_provider":"openai","search_context_cost_per_query":{"search_context_size_low":0.0000001,"new_field":true}}}"#.to_vec(), UnknownFields::Warn, Outcome::PriceFieldWarn("model.search_context_cost_per_query.new_field"))]
 #[case::tiered_pricing_unknown_warn(br#"{"model":{"litellm_provider":"openai","tiered_pricing":[{"input_cost_per_token":0.0000001,"new_field":true}]}}"#.to_vec(), UnknownFields::Warn, Outcome::PriceFieldWarn("model.tiered_pricing[0].new_field"))]
 #[case::tiered_pricing_malformed_warn(br#"{"model":{"tiered_pricing":{}}}"#.to_vec(), UnknownFields::Warn, Outcome::Failure(Failure::Invalid))]
@@ -240,6 +243,7 @@ fn check_error(error: &CatalogError, failure: Failure) {
         )),
         Failure::Unknown => assert!(error.to_string().contains("unknown field")),
         Failure::Invalid => assert!(matches!(error, CatalogError::Json(_))),
+        Failure::PriceType => assert!(matches!(error, CatalogError::Prices { .. })),
     }
 }
 
