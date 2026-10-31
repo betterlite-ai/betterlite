@@ -8,6 +8,7 @@ use rstest::rstest;
 use secrecy::{ExposeSecret, SecretString};
 
 use super::resolve_redis_kwargs;
+use crate::redis_connection_settings::error::RedisSettingsError;
 use crate::redis_connection_settings::model::nodes::{
     ClusterNodeInput, NodesInput, SentinelNodeInput,
 };
@@ -521,6 +522,6 @@ fn redis_target_resolution_rejects_environment_sentinel_objects() {
         .unwrap_err();
     assert!(matches!(
         error,
-        crate::redis_connection_settings::error::RedisSettingsError::InvalidSentinelNodesJson { .. }
+        RedisSettingsError::InvalidSentinelNodesJson { .. }
     ));
 }

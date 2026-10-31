@@ -52,5 +52,5 @@ fn node_ports_accept_quoted_json_numbers() {
 fn redis_target_resolution_rejects_sentinel_objects() {
     let result =
         serde_json::from_str::<SentinelNodesInput>(r#"[{"host":"sentinel","port":26379}]"#);
-    assert!(result.is_err());
+    result.unwrap_err();
 }
