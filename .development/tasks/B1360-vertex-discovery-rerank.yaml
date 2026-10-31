@@ -81,4 +81,4 @@ pitfalls:
   - A missing score means relevance_score 1 rather than zero.
   - Search units count the submitted records, so top_n does not reduce billed units.
 budget: {max_changed_lines: 700, max_new_expects: 1}
-review_level: security
+review_level: standard

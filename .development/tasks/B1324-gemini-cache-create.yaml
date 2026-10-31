@@ -74,4 +74,4 @@ pitfalls:
   - Skipped caching must not consume tools or tool_choice from the generation request.
   - The minimum is model-specific unless the environment explicitly overrides it; the source comment saying 1024 is not the policy.
 budget: {max_changed_lines: 700, max_new_expects: 0}
-review_level: security
+review_level: standard

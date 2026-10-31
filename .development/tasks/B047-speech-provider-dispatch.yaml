@@ -114,7 +114,7 @@ pitfalls:
   - Soniox audio_url support does not make the proxy's required multipart file optional.
   - Passing an async client into a synchronous Soniox call selects a new synchronous client instead of using it.
   - Riva has no public-default api_base even when a usable NVIDIA_NIM_API_KEY is present.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

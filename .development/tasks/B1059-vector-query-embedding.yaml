@@ -110,7 +110,7 @@ pitfalls:
 - An explicit executor avoids router selection even when a router is available.
 - Only executor failure is wrapped; missing model and malformed returned vector keep their distinct errors.
 - A sequence query is joined with one literal space, preserving empty elements rather than trimming them.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

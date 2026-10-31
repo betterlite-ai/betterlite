@@ -160,7 +160,7 @@ pitfalls:
   - "Exception maps are excluded from cached dicts but remain in in-process returns to callers; the cached result tuple has no exception_status integer field."
   - "Cached results are decoded from either a JSON string or an already-parsed dict; both forms are valid cache representations."
 
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

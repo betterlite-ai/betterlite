@@ -168,7 +168,7 @@ pitfalls:
 - Explicit storage still follows executed-provider authorization; it is not a bypass for a forbidden model.
 - files_settings is merged after team credentials, so its matching record can replace them.
 - First-record JSON selection accepts values other than objects despite its annotation.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

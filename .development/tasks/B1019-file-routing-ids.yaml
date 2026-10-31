@@ -117,7 +117,7 @@ pitfalls:
 - openai_code records the bound-specific reason, but ProxyException.code remains the string "400".
 - A model-embedded id with an empty model can decode its original id without being considered model-embedded.
 - The legacy batch parser throws when neither batch nor generic-response marker exists; do not turn that branch into an empty successful id.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

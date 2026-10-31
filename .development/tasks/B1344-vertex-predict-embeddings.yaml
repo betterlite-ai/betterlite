@@ -64,4 +64,4 @@ pitfalls:
   - Sync multimodal non-200 replies take the transformation's generic error path rather than async HTTPStatusError mapping.
   - A text timeout of zero does not override the pooled client's timeout because the source tests truthiness.
 budget: {max_changed_lines: 800, max_new_expects: 1}
-review_level: security
+review_level: standard

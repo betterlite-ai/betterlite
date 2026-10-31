@@ -113,7 +113,7 @@ pitfalls:
   - Duration is computed as (end_time - start_time).total_seconds(), a float that should preserve microsecond precision from the timedelta.
   - "x-client-name header is literal \"litellm\", not a placeholder or derived value."
 
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

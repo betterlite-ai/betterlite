@@ -1,0 +1,12 @@
+kind: helper
+name: columns-and-prefix
+call:
+  request_log_index_catalog:
+    function: columns
+    table: LiteLLM_SpendLogs
+    name: LiteLLM_SpendLogs_api_key_startTime_idx
+    definition: '("api_key", "startTime")'
+    partition: ignored
+env: {}
+compare:
+  ignore: []

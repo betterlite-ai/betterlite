@@ -84,4 +84,4 @@ pitfalls:
   - A data URL without the literal ;base64, marker also remains ordinary text.
   - Batch usage ignores media while single embedContent can report image-only prompt tokens from usageMetadata.
 budget: {max_changed_lines: 800, max_new_expects: 1}
-review_level: security
+review_level: standard

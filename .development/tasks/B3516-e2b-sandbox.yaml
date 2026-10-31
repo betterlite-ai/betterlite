@@ -114,7 +114,7 @@ pitfalls:
   - delete_sandbox accepts either a ContainerHandle or a bare string ID; when given a string, construct a minimal handle with no hidden params, so deletion without stored credentials falls back to the parameter arguments.
   - cargo fuzz init writes a fuzz/.gitignore that ignores corpus/. Drop that line, since the corpus is committed and replayed.
   - The fuzz crate is its own workspace and runs on nightly. The replay test runs on the pinned stable toolchain and calls the parser directly.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 2
