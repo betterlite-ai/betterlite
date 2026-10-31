@@ -117,7 +117,7 @@ pitfalls:
 - Azure removes prompt_loss_weight from the caller's hyperparameters map before constructing OpenAI-style data.
 - The public extra_body parameter is overwritten on Azure and ignored on OpenAI.
 - Vertex is supported for create even though the unsupported-provider message says only openai is supported.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

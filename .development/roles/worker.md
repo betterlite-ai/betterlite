@@ -33,7 +33,7 @@ A task is done when `cargo gate run <ID>` passes and your final answer is a vali
 
 LiteLLM's behavior is the spec; its code isn't. Read it at the pinned commit the task links to, learn what it does, then write it the way the rules say. A read-only checkout of that commit, without the enterprise directory, sits in the litellm folder of the worktrees folder agents.yaml names: ../litellm from a task worktree. Grep it there instead of fetching GitHub. A Python class shape ported into Rust is a defect even when it works.
 
-The references mark the LiteLLM code the task owns, and rule owned-behavior-is-built applies: behavior there that the task text skips is still yours. Build it with a named case and say so in notes. When it won't fit the budget, answer blocked with the list.
+The references mark the LiteLLM code the task owns, and rule owned-behavior-is-built applies: behavior there that the task text skips is still yours. Build it with a named case, list it in owned and say in notes that the task text missed it. When it won't fit the budget, answer blocked with the list.
 
 The oracle in tools/oracle (from B001) runs LiteLLM next to betterlite on the same request. When the task text and the oracle disagree, believe the oracle and say so in a note. When LiteLLM itself is wrong, rule owned-behavior-is-built draws the line: copy what a working LiteLLM setup can rely on, and fix a bug none can rely on without asking. List each fix as a deviation with a link to the LiteLLM line, and prove it with a Rust test, since an oracle case on that input can't match. When you can't tell which side a bug is on, copy LiteLLM and say so in a note.
 
@@ -43,7 +43,7 @@ Everything in LiteLLM's enterprise directory and in the litellm_enterprise packa
 
 When the task cannot be finished inside its scope and budgets, stop and answer with status blocked. The blocker says what you need, where, and the evidence (command, output, file and line). Typical blockers are a file outside scope, a check that can't pass without a protected file, the task text contradicting the oracle, a budget the work can't fit, and a tool missing or at the wrong version. Describe it and stop. The decision belongs to the architect.
 
-The Claude sandbox mounts /dev/null over dotfiles in your worktree (.bashrc, .bash_profile, .profile, .zshrc, .zprofile, .gitconfig, .gitmodules, .mcp.json, .ripgreprc, .idea, .vscode and .claude/commands). .gitignore lists them, so committed, scope, hooks, diff-budget and mutants skip them. If a check still fails only on those paths inside the sandbox, that alone is not a blocker: the dispatcher runs the gate again outside the sandbox. Report done when every other check passes, and say in notes which checks failed only on those paths.
+The Claude sandbox mounts /dev/null over dotfiles in your worktree (.bashrc, .bash_profile, .profile, .zshrc, .zprofile, .gitconfig, .gitmodules, .mcp.json, .ripgreprc, .idea, .vscode and .claude/commands). .gitignore lists them, so committed, scope, hooks and diff-budget skip them. If a check still fails only on those paths inside the sandbox, that alone is not a blocker: the dispatcher runs the gate again outside the sandbox. Report done when every other check passes, and say in notes which checks failed only on those paths.
 
 ## Final answer
 
@@ -53,6 +53,7 @@ Your final answer is one JSON object that matches .development/schema/report.sch
 - status is done or blocked.
 - summary says what changed, in two to four plain sentences.
 - blocker is empty when done.
+- owned has one entry per behavior a user can observe in the LiteLLM code your references own: the behavior, an https link to the LiteLLM line, where your code does it as path:line, and the test or oracle case that proves it. Fill it by walking the referenced code line by line before you stop. A behavior you can't place is a gap the review will find, so build it first. A deviation is listed too, with the test that proves it; behavior another task owns goes in notes with that task's id. The gate rejects a done report with an empty owned list when the task links LiteLLM code.
 - prior_art has one entry per problem you solved by picking an existing solution or deliberately writing your own. Each entry compares at least two options with https links and marks exactly one chosen. Every option needs its own https link and why, also one you write by hand: link the LiteLLM code it ports or the std or crate docs it builds on, or the gate rejects the report. Every crate the branch adds to a Cargo.toml must be a chosen option here, named exactly as the crate (serde_repr, not serde_repr::Serialize_repr), or the gate fails.
 - deviations lists every place betterlite now differs from LiteLLM, with why and a link when there is one. Write the same entries to docs/deviations/<ID>.yaml (`task: <ID>` and a `deviations` list of what, why and link); the scope check always allows that one file, and the dispatcher checks that the file and the report list the same number of deviations with the same links.
 - notes holds facts the architect needs and nothing else.

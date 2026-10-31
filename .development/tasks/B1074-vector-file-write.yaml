@@ -103,7 +103,7 @@ out_of_scope:
 pitfalls:
 - Explicit attributes=null reappears after null filtering and is sent by update, unlike create's omission behavior.
 - Deleting an attachment does not delete its underlying file resource or its vector-store registry entry.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

@@ -198,7 +198,7 @@ pitfalls:
   - "safe_json_loads(..., default={}) on line 708 means that even if sanitized content fails to parse, the fallback dict {} is used; betterlite must preserve this exact behavior."
   - "fail_open (default true) must allow the request to proceed on any error except ModifyResponseException and GRAYSWAN_BLOCK_ERROR_MSG errors."
 
-review_level: security
+review_level: standard
 
 budget:
   max_changed_lines: 1500

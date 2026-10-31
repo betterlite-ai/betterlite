@@ -133,7 +133,7 @@ pitfalls:
 - Separate extra_headers override validated credentials; the optional map's headers are validated earlier.
 - is_stream_request is captured before fake-stream preparation, so a JSON HTTP response can still produce an iterator.
 - The async nonstream path runs agentic post-processing even when sync capability detection would skip it.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

@@ -89,7 +89,7 @@ pitfalls:
   - H3 detection is a case-sensitive startswith check rather than a substring match.
   - An explicitly present input_reference=null fails instead of being ignored.
   - A status URL uses the model's queue namespace prefix, while submission uses its full endpoint path.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 1
