@@ -10,10 +10,18 @@ cargo-fuzz = true
 [dependencies]
 betterlite-config = { path = ".." }
 libfuzzer-sys = "0.4.9"
+tempfile = "3.27.0"
 
 [[bin]]
 name = "config_yaml"
 path = "fuzz_targets/config_yaml.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "config_includes"
+path = "fuzz_targets/config_includes.rs"
 test = false
 doc = false
 bench = false

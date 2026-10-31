@@ -1,0 +1,9 @@
+kind: helper
+name: end_user_null_spend_and_typed_budget
+call:
+  identity_rows:
+    operation: end_user
+    row: {user_id: u, blocked: true, spend: null, litellm_budget_table: {budget_id: b}, object_permission: {object_permission_id: p}}
+env: {}
+compare:
+  ignore: []
