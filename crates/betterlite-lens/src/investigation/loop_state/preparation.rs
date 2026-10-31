@@ -28,7 +28,10 @@ pub(super) fn prepare(
         .cloned()
         .collect();
     let observation_batches = partition_items(&observations, json_size, 16_000)?;
-    let supporting = page(&observation_batches, state.observation_page);
+    let supporting = observation_batches
+        .get(state.observation_page)
+        .cloned()
+        .unwrap_or_default();
     let cited: Vec<(String, String)> = supporting
         .iter()
         .flat_map(|item| item.evidence.iter())
@@ -43,7 +46,10 @@ pub(super) fn prepare(
         supporting,
         total_observations: observations.len(),
         observation_pages: observation_batches.len(),
-        catalog: page(&catalog_batches, state.catalog_page),
+        catalog: catalog_batches
+            .get(state.catalog_page)
+            .cloned()
+            .unwrap_or_default(),
         catalog_pages: catalog_batches.len(),
         evidence,
         all_spans,
@@ -56,14 +62,6 @@ where
 {
     let encoded = serde_json::to_vec(value);
     encoded.map_or(usize::MAX, |bytes| bytes.len())
-}
-
-fn page<T>(batches: &[Vec<T>], index: usize) -> Vec<T>
-where
-    T: Clone,
-{
-    let selected = batches.get(index).cloned();
-    selected.unwrap_or_default()
 }
 
 fn catalog(candidate: &Candidate, examined: &[Examined], relevant: &[&Examined]) -> Vec<Examined> {

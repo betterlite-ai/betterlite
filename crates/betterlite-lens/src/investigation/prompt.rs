@@ -105,6 +105,12 @@ struct Schema {
     max_items: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     default: Option<SchemaDefault>,
+    #[serde(
+        rename = "additionalProperties",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    additional_properties: Option<bool>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -138,7 +144,16 @@ const TASK_INSTRUCTIONS: &str = "Investigate this candidate, including counterex
     reasons: do not open a new finding for behavior already dismissed as expected. Return \
     action='submit' with a finding only when the evidence supports it, with at least one \
     supporting quote; mark quotes from runs that show the opposite behavior as \
-    counterexample so they are not mistaken for affected runs. An empty or missing answer \
+    counterexample so they are not mistaken for affected runs. Never put internal run \
+    aliases in prose; the evidence links identify the runs. Write for a busy person in \
+    plain English: a concrete title of at most 12 words, a description of at most 60 \
+    words saying what happened and why it matters, any uncertainty or counterexample in \
+    limitation at most 40 words instead of in the description, and a suggestion naming one \
+    action in at most 25 words or left empty when no action is needed. Copy supported \
+    quotes exactly rather than paraphrasing them. Successful recovery or resisted \
+    instructions are kind='pattern' with low priority, not an issue to resolve, and never \
+    imply a successful defense when the intended target was not tested; state only what \
+    was observed and note that limit in limitation. An empty or missing answer \
     is an observability gap, not proof the task failed: when a check concerns missing or \
     incomplete logging, the gap itself can be a supported finding, so state the gap and \
     its consequence without claiming the task failed. Only report a completed task as \
@@ -150,38 +165,21 @@ const TASK_INSTRUCTIONS: &str = "Investigate this candidate, including counterex
     decide from the available evidence: submit or inconclusive, never request another \
     read. Return action='inconclusive' otherwise.";
 
-fn candidate_prompt(candidate: &Candidate) -> CandidatePrompt<'_> {
-    let existing_finding_id = &candidate.existing_finding_id;
-    CandidatePrompt {
-        check_id: &candidate.check_id,
-        kind: candidate.kind,
-        title: &candidate.title,
-        hypothesis: &candidate.hypothesis,
-        existing_finding_id,
-    }
-}
-
 fn payload<'context>(
     context: &'context Context<'context>,
 ) -> Result<Prompt<'context>, AnalysisError> {
-    let candidate = candidate_prompt(context.candidate);
-    let workflow_outlines = context.catalog.iter().map(outline).collect();
-    let catalog = context
-        .catalog
-        .iter()
-        .map(|item| item.execution.clone())
-        .collect();
-    let existing_findings = context
-        .feedback
-        .get(context.feedback_page)
-        .cloned()
-        .unwrap_or_default();
     let response_schema = response_schema(context.must_decide)?;
     Ok(Prompt {
         task: TASK_INSTRUCTIONS,
         context: &context.claim.job.settings.context,
         checks: context.claim.job.settings.analysis_checks(),
-        candidate,
+        candidate: CandidatePrompt {
+            check_id: &context.candidate.check_id,
+            kind: context.candidate.kind,
+            title: &context.candidate.title,
+            hypothesis: &context.candidate.hypothesis,
+            existing_finding_id: &context.candidate.existing_finding_id,
+        },
         candidate_run_count: context.candidate.execution_ids.len(),
         supporting_observations: context.supporting,
         total_supporting_observations: context.total_observations,
@@ -189,12 +187,20 @@ fn payload<'context>(
         observation_pages: context.observation_pages,
         catalog_page: context.catalog_page,
         catalog_pages: context.catalog_pages,
-        workflow_outlines,
+        workflow_outlines: context.catalog.iter().map(outline).collect(),
         completed_read_count: context.completed_read_count,
         last_completed_read: context.last_read,
-        catalog,
+        catalog: context
+            .catalog
+            .iter()
+            .map(|item| item.execution.clone())
+            .collect(),
         existing_findings_fields: ["id", "check_id", "title", "status", "reason"],
-        existing_findings,
+        existing_findings: context
+            .feedback
+            .get(context.feedback_page)
+            .cloned()
+            .unwrap_or_default(),
         feedback_page: context.feedback_page,
         feedback_pages: context.feedback.len(),
         evidence: context.evidence,
