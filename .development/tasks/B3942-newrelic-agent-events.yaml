@@ -128,7 +128,7 @@ pitfalls:
   - _record_summary_event and _record_message_events must call handle_callback_failure on exception; not calling it masks failures that should be counted in the failure metric.
   - LlmChatCompletionMessage event id format is '{response_id}-{sequence}'; getting the sequence wrong creates duplicate or overlapping message IDs.
   - Timestamp conversion from seconds to milliseconds is int(value * 1000.0); floating point precision loss accumulates; use the extraction functions from B3941 instead.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

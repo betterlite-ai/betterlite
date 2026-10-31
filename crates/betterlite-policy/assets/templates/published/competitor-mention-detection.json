@@ -1,0 +1,116 @@
+{
+  "id": "competitor-mention-detection",
+  "title": "Competitor Mention Detection",
+  "description": "Automatically detects and blocks AI from recommending or promoting competitor brands. Uses LLM-powered discovery to identify your top competitors, then monitors both inputs and outputs for competitor mentions, referrals, and comparisons that could divert business.",
+  "icon": "ShieldExclamationIcon",
+  "iconColor": "text-orange-500",
+  "iconBg": "bg-orange-50",
+  "guardrails": [
+    "competitor-input-blocker",
+    "competitor-output-blocker",
+    "competitor-recommendation-input-filter",
+    "competitor-recommendation-output-filter",
+    "competitor-comparison-input-filter",
+    "competitor-comparison-output-filter"
+  ],
+  "complexity": "Medium",
+  "parameters": [
+    {
+      "name": "brand_name",
+      "label": "Your Brand Name",
+      "type": "text",
+      "required": true,
+      "placeholder": "e.g. Acme Airlines"
+    }
+  ],
+  "llm_enrichment": {
+    "parameter": "brand_name",
+    "prompt": "List the top 30 direct competitors of {{brand_name}} in the same industry. Return ONLY company/brand names, one per line, no numbering, no explanations.",
+    "result_key": "competitors"
+  },
+  "guardrailDefinitions": [
+    {
+      "guardrail_name": "competitor-input-blocker",
+      "litellm_params": {
+        "guardrail": "litellm_content_filter",
+        "mode": "pre_call",
+        "blocked_words": "{{competitors_blocked_words}}"
+      },
+      "guardrail_info": {
+        "description": "Blocks user inputs that mention competitor brands (pre_call)"
+      }
+    },
+    {
+      "guardrail_name": "competitor-output-blocker",
+      "litellm_params": {
+        "guardrail": "litellm_content_filter",
+        "mode": "post_call",
+        "blocked_words": "{{competitors_blocked_words}}"
+      },
+      "guardrail_info": {
+        "description": "Blocks AI outputs that mention competitor brands (post_call)"
+      }
+    },
+    {
+      "guardrail_name": "competitor-recommendation-input-filter",
+      "litellm_params": {
+        "guardrail": "litellm_content_filter",
+        "mode": "pre_call",
+        "blocked_words": "{{competitor_recommendation_words}}"
+      },
+      "guardrail_info": {
+        "description": "Blocks user requests asking to recommend competitors (pre_call)"
+      }
+    },
+    {
+      "guardrail_name": "competitor-recommendation-output-filter",
+      "litellm_params": {
+        "guardrail": "litellm_content_filter",
+        "mode": "post_call",
+        "blocked_words": "{{competitor_recommendation_words}}"
+      },
+      "guardrail_info": {
+        "description": "Blocks AI from recommending or suggesting competitor services (post_call)"
+      }
+    },
+    {
+      "guardrail_name": "competitor-comparison-input-filter",
+      "litellm_params": {
+        "guardrail": "litellm_content_filter",
+        "mode": "pre_call",
+        "blocked_words": "{{competitor_comparison_words}}"
+      },
+      "guardrail_info": {
+        "description": "Blocks user inputs requesting unfavorable brand comparisons (pre_call)"
+      }
+    },
+    {
+      "guardrail_name": "competitor-comparison-output-filter",
+      "litellm_params": {
+        "guardrail": "litellm_content_filter",
+        "mode": "post_call",
+        "blocked_words": "{{competitor_comparison_words}}"
+      },
+      "guardrail_info": {
+        "description": "Blocks AI outputs with unfavorable brand comparisons (post_call)"
+      }
+    }
+  ],
+  "templateData": {
+    "policy_name": "competitor-mention-detection",
+    "description": "Detects and blocks competitor mentions in both inputs and outputs. Uses LLM-powered competitor discovery based on your brand name.",
+    "guardrails_add": [
+      "competitor-input-blocker",
+      "competitor-output-blocker",
+      "competitor-recommendation-input-filter",
+      "competitor-recommendation-output-filter",
+      "competitor-comparison-input-filter",
+      "competitor-comparison-output-filter"
+    ],
+    "guardrails_remove": []
+  },
+  "tags": [
+    "Brand Protection"
+  ],
+  "estimated_latency_ms": 1
+}

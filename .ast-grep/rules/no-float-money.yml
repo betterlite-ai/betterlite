@@ -1,0 +1,15 @@
+id: no-float-money
+language: rust
+severity: error
+message: a float sum of costs drifts; a cost, price, spend or budget field is rust_decimal::Decimal from the moment it is read
+ignores:
+  - .development/**
+rule:
+  kind: field_declaration
+  all:
+    - has:
+        field: name
+        regex: (?i)(cost|price|spend|budget)
+    - has:
+        field: type
+        regex: \bf(32|64)\b

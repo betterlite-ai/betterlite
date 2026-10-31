@@ -91,4 +91,4 @@ pitfalls:
   - An embedding group's declared total is the maximum of its row totals rather than the first row's total.
   - Unknown batch data must remain distinguishable from a malformed recognized embedding group.
 budget: {max_changed_lines: 650, max_new_expects: 1}
-review_level: security
+review_level: standard

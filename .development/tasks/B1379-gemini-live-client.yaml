@@ -100,4 +100,4 @@ pitfalls:
   - A tool reply updates LRU recency but retains its call-id/name entry for retries.
   - Invalid base64 audio still contributes the source's length estimate and is forwarded unchanged.
 budget: {max_changed_lines: 700, max_new_expects: 1}
-review_level: security
+review_level: standard

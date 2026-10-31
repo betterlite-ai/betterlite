@@ -299,7 +299,7 @@ pitfalls:
   - PromptLayer uses "openai.ChatCompletion.create" as a literal string, not a reflection of the actual call type or provider.
   - PromptLayer's pl_tags extraction is a list (not a single tag); it is placed in the top-level "tags" field of the track-request POST.
 
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

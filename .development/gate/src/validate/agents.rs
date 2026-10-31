@@ -98,6 +98,12 @@ fn vendor_entry_problems(vendor: &Vendor) -> Vec<String> {
             vendor.id
         ));
     }
+    if vendor.max_writers == Some(0) {
+        problems.push(format!(
+            "agents.yaml: vendor {} needs a max_writers above 0",
+            vendor.id
+        ));
+    }
     problems
 }
 
