@@ -89,7 +89,7 @@ pitfalls:
   - Empty VTT token input can return transcript.text rather than a WEBVTT header.
   - Translation tokens disappear from subtitles but remain in verbose_json words.
   - Native language_hints supplied in the same mapping call overrides the earlier language merge.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 1

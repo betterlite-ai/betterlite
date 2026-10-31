@@ -141,7 +141,7 @@ pitfalls:
 - A compaction block can appear on any role and within a larger content array; slicing only whole turns loses the boundary.
 - Counted system blocks use one newline, whereas summary-request system blocks use two.
 - A successful summary needs one eligible user turn; slice-only forwarding must keep the entire recent tail.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

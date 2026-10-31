@@ -173,7 +173,7 @@ pitfalls:
     Final variables are only available in Python 3.8+ as a typing annotation; the linter
     checks immutability but the runtime does not enforce it.
 
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

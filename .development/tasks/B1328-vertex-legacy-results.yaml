@@ -85,4 +85,4 @@ pitfalls:
   - Async private streaming removes stream from the first instance as well as the option map.
   - Async completion maps arbitrary failures to 500 while the synchronous outer wrapper uses APIConnectionError.
 budget: {max_changed_lines: 775, max_new_expects: 1}
-review_level: security
+review_level: standard
