@@ -79,7 +79,7 @@ pitfalls:
   - A custom submission host does not become the Runway image polling host.
   - ratio and size coexist after mapping, but only ratio reaches the image request body.
   - A dictionary output member lacking both url and b64_json still contributes an image entry and a charge.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

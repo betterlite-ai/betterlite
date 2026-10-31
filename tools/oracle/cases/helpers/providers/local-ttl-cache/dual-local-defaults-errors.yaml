@@ -1,0 +1,8 @@
+kind: helper
+name: dual-local-defaults-errors
+call:
+  local_ttl_cache:
+    function: dual_local_defaults_errors
+env: {}
+compare:
+  ignore: []

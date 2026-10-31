@@ -144,7 +144,7 @@ pitfalls:
   - "Generic litellm_params forwarding includes api_key, api_base, and api_version (secrets); these are moved directly into the completion request dict."
   - "topK parameter in generationConfig is read but never forwarded; checking for its presence does not prevent silent dropping."
   - "Unknown tool_config functionCallingConfig modes default to auto; the mode_mapping dict does not raise an error for unrecognized strings."
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 2

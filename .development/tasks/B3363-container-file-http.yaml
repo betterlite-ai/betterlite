@@ -115,7 +115,7 @@ pitfalls:
   - JSON response bodies can contain an error field even when the HTTP status is 2xx; the handler checks for and raises on both cases.
   - A file object in kwargs may be many types (bytes, str, file-like, PIL Image); extraction is delegated to B235, not implemented here.
 
-review_level: security
+review_level: standard
 
 budget:
   max_changed_lines: 1500

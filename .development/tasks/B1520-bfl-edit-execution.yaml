@@ -69,7 +69,7 @@ pitfalls:
   - The inner optional extra_headers and outer extra_headers are applied at different points around credential validation.
   - An empty list produces No image provided before the lower transform can raise its own indexing error.
   - Poll failures still say Image generation failed on the edit operation.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

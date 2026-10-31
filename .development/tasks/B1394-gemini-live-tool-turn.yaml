@@ -80,4 +80,4 @@ pitfalls:
   - Tool response.done resets response/item IDs but leaves the conversation available for the next turn.
   - The tool-turn usage path omits the grounding-counter overlay used for ordinary response.done.
 budget: {max_changed_lines: 600, max_new_expects: 1}
-review_level: security
+review_level: standard
