@@ -95,6 +95,63 @@ fn skill_archive_rejects_one_byte_over_the_max_unpacked_bytes() {
 }
 
 #[test]
+fn skill_archive_rejects_duplicate_flattened_names() {
+    assert!(
+        build_skill_archive(&upload(&[
+            ("skill/SKILL.md", b"body"),
+            ("skill/a.txt", b"first"),
+            ("skill//a.txt", b"second"),
+        ]))
+        .is_none()
+    );
+}
+
+#[test]
+fn skill_archive_rejects_uploads_with_no_common_root() {
+    assert!(
+        build_skill_archive(&upload(&[
+            ("folderA/SKILL.md", b"body"),
+            ("folderB/other.txt", b"data"),
+        ]))
+        .is_none()
+    );
+}
+
+#[test]
+fn skill_archive_accepts_exactly_the_max_entries() {
+    let names: Vec<String> = (0_u32..999).map(|index| format!("x{index}.txt")).collect();
+    let mut members = vec![("SKILL.md", b"body".as_slice())];
+    members.extend(names.iter().map(|name| (name.as_str(), b"a".as_slice())));
+    assert!(build_skill_archive(&upload(&members)).is_some());
+}
+
+#[test]
+fn skill_archive_rejects_one_entry_over_the_max_entries() {
+    let names: Vec<String> = (0_u32..1000).map(|index| format!("x{index}.txt")).collect();
+    let mut members = vec![("SKILL.md", b"body".as_slice())];
+    members.extend(names.iter().map(|name| (name.as_str(), b"a".as_slice())));
+    assert!(build_skill_archive(&upload(&members)).is_none());
+}
+
+#[test]
+fn skill_archive_rejects_a_zip_with_a_crc_mismatch() {
+    let mut output = Cursor::new(Vec::new());
+    let mut writer = ZipWriter::new(&mut output);
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    writer.start_file("SKILL.md", options).unwrap();
+    writer.write_all(b"corrupt-me").unwrap();
+    writer.finish().unwrap();
+    let mut bytes = output.into_inner();
+    let marker = b"corrupt-me";
+    let position = bytes
+        .windows(marker.len())
+        .position(|window| window == marker)
+        .unwrap();
+    bytes[position] ^= 0xFF;
+    assert!(build_skill_archive(&bytes).is_none());
+}
+
+#[test]
 fn skill_archive_tolerates_malformed_frontmatter() {
     let archive =
         build_skill_archive(&upload(&[("SKILL.md", b"---\nname: [\n---\nbody")])).unwrap();
