@@ -32,23 +32,36 @@ pub struct ProxyModelTable {
     pub fields: ModelFields,
 }
 
-// A string that fails json.loads keeps its original text, so the named field fails type validation instead of being replaced.
-fn decode_json_string_field(object: &mut BTreeMap<String, JsonData>, field: &str) {
+// A string that fails to parse as JSON is left alone, so field validation rejects it later.
+fn decode_json_string_field(
+    object: &mut BTreeMap<String, JsonData>,
+    field: &str,
+) -> Result<(), ResourceRowsError> {
     let Some(JsonData::String(text)) = object.get(field) else {
-        return;
+        return Ok(());
     };
-    if let Ok(parsed) = serde_json::from_str::<JsonData>(text) {
-        object.insert(field.to_owned(), parsed);
+    match super::parse_data(text.as_bytes()) {
+        Ok(parsed) => {
+            object.insert(field.to_owned(), parsed);
+        }
+        Err(ResourceRowsError::Json(_)) => {}
+        Err(other) => return Err(other),
     }
+    Ok(())
+}
+
+pub(crate) fn decode_nested_json_fields(value: &mut JsonData) -> Result<(), ResourceRowsError> {
+    if let JsonData::Object(object) = value {
+        decode_json_string_field(object, "litellm_params")?;
+        decode_json_string_field(object, "model_info")?;
+    }
+    Ok(())
 }
 
 impl TryFrom<JsonData> for ProxyModelTable {
     type Error = ResourceRowsError;
     fn try_from(mut value: JsonData) -> Result<Self, Self::Error> {
-        if let JsonData::Object(object) = &mut value {
-            decode_json_string_field(object, "litellm_params");
-            decode_json_string_field(object, "model_info");
-        }
+        decode_nested_json_fields(&mut value)?;
         Ok(Self {
             fields: convert(&value)?,
         })

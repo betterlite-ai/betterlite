@@ -9,12 +9,17 @@ use super::model::ProxyModelTable;
 use super::organization::OrganizationTable;
 use super::project::ProjectTable;
 use super::{ResourceRowsError, decode_resource_rows};
+use crate::budget_permission_rows::{
+    LiteLLMBudgetTable, LiteLLMObjectPermissionTable, PermissionList,
+};
+use crate::identity_rows::Payload;
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use clap::Parser;
 use rstest::rstest;
 use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::de::DeserializeOwned;
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 use tokio::task::JoinSet;
@@ -93,6 +98,14 @@ fn access_group_all_fields_and_null_lists() {
     assert_eq!(row.assigned_key_ids, vec!["k".to_owned()]);
     assert_eq!(row.created_by.as_deref(), Some("c"));
     assert_eq!(row.updated_by.as_deref(), Some("u"));
+    assert_eq!(
+        row.created_at.unwrap().utc().to_rfc3339(),
+        "2026-01-01T00:00:00+00:00"
+    );
+    assert_eq!(
+        row.updated_at.unwrap().utc().to_rfc3339(),
+        "2026-01-02T00:00:00+00:00"
+    );
     invalid::<AccessGroupTable>(
         r#"{"access_group_id":"g","access_group_name":"n","access_model_names":null}"#,
     );
@@ -137,7 +150,7 @@ fn credential_base_and_item_required_fields() {
     let item = parse::<CredentialItem>(
         r#"{"credential_name":"c","credential_info":{},"credential_values":{}}"#,
     );
-    assert_eq!(item.base.credential_name, "c");
+    assert_eq!(item.fields.base.credential_name, "c");
     invalid::<CredentialItem>(r#"{"credential_name":"c","credential_info":{}}"#);
 }
 
@@ -193,12 +206,12 @@ fn credential_update_empty_and_null_allowed() {
     let row = parse::<UpdateCredentialItem>(
         r#"{"credential_name":"c","credential_info":{},"credential_values":null,"model_id":null}"#,
     );
-    assert_eq!(row.credential_values, None);
-    assert_eq!(row.model_id, None);
+    assert_eq!(row.fields.credential_values, None);
+    assert_eq!(row.fields.model_id, None);
     let empty = parse::<UpdateCredentialItem>(
         r#"{"credential_name":"c","credential_info":{},"credential_values":{}}"#,
     );
-    assert!(empty.credential_values.is_some());
+    assert!(empty.fields.credential_values.is_some());
     parse::<UpdateCredentialItem>(r#"{"credential_name":"c","credential_info":{}}"#);
 }
 
@@ -213,6 +226,44 @@ fn credential_payload_is_unmodified() {
     assert!(dumped.get("unknown").is_none());
     let error = invalid::<CredentialItem>(r#"{"credential_name":"c"}"#);
     assert!(!error.contains("ENC:abc"));
+}
+
+#[test]
+fn credential_values_wrong_shape_never_leaks_secret() {
+    let item_text =
+        r#"{"credential_name":"c","credential_info":{},"credential_values":"sk-live-abc123"}"#;
+    let item_error = CredentialItem::try_from(parse::<super::JsonData>(item_text)).unwrap_err();
+    assert!(matches!(
+        item_error,
+        ResourceRowsError::FieldShape {
+            field: "credential_values",
+            ..
+        }
+    ));
+    assert!(!format!("{item_error:?}").contains("sk-live-abc123"));
+
+    let update_error =
+        UpdateCredentialItem::try_from(parse::<super::JsonData>(item_text)).unwrap_err();
+    assert!(matches!(
+        update_error,
+        ResourceRowsError::FieldShape {
+            field: "credential_values",
+            ..
+        }
+    ));
+    assert!(!format!("{update_error:?}").contains("sk-live-abc123"));
+
+    let create_text = r#"{"credential_name":"c","credential_info":{},"credential_values":"sk-live-abc123","model_id":"m"}"#;
+    let create_error =
+        CreateCredentialItem::try_from(parse::<super::JsonData>(create_text)).unwrap_err();
+    assert!(matches!(
+        create_error,
+        ResourceRowsError::FieldShape {
+            field: "credential_values",
+            ..
+        }
+    ));
+    assert!(!format!("{create_error:?}").contains("sk-live-abc123"));
 }
 
 #[test]
@@ -303,9 +354,26 @@ fn organization_all_fields_nested_users() {
         "object_permission":{"object_permission_id":"p"}}"#,
     );
     assert_eq!(row.organization_id.as_deref(), Some("o"));
+    assert_eq!(row.organization_alias.as_deref(), Some("a"));
+    assert_eq!(row.budget_id, "b");
     assert_eq!(row.spend, Decimal::new(125, 1));
+    assert_eq!(
+        row.metadata.unwrap().0.get("k"),
+        Some(&super::JsonData::String("v".to_owned()))
+    );
     assert_eq!(row.models, vec!["gpt".to_owned()]);
-    assert_eq!(row.users.unwrap().len(), 1);
+    assert_eq!(
+        row.model_spend.0.unwrap().0.get("gpt"),
+        Some(&super::JsonData::Number(
+            serde_json::Number::from_f64(1.0).unwrap()
+        ))
+    );
+    assert_eq!(row.created_by, "c");
+    assert_eq!(row.updated_by, "u");
+    assert_eq!(row.object_permission_id.as_deref(), Some("p"));
+    let users = row.users.unwrap();
+    assert_eq!(users.len(), 1);
+    assert_eq!(users[0].user_id, "u1");
     assert_eq!(
         row.litellm_budget_table.unwrap().budget_id.as_deref(),
         Some("b")
@@ -353,6 +421,82 @@ fn project_required_id_and_all_defaults() {
     invalid::<ProjectTable>("{}");
 }
 
+fn expected_project_budget_table() -> LiteLLMBudgetTable {
+    LiteLLMBudgetTable {
+        budget_id: Some("b".to_owned()),
+        soft_budget: None,
+        max_budget: Some(Decimal::from(10_i32)),
+        max_parallel_requests: None,
+        tpm_limit: None,
+        rpm_limit: None,
+        tpd_limit: None,
+        model_max_budget: None,
+        budget_duration: None,
+        allowed_models: None,
+        temp_budget_increase: None,
+        temp_budget_expiry: None,
+    }
+}
+
+fn expected_project_object_permission() -> LiteLLMObjectPermissionTable {
+    let empty = PermissionList(Some(Vec::new()));
+    LiteLLMObjectPermissionTable {
+        object_permission_id: "op".to_owned(),
+        mcp_servers: empty.clone(),
+        mcp_access_groups: empty.clone(),
+        mcp_tool_permissions: None,
+        vector_stores: empty.clone(),
+        agents: empty.clone(),
+        agent_access_groups: empty.clone(),
+        models: empty.clone(),
+        mcp_toolsets: None,
+        blocked_tools: empty.clone(),
+        search_tools: empty,
+        mcp_tool_search_enabled: None,
+        skills: None,
+    }
+}
+
+fn single_entry_payload(key: &str, value: super::JsonData) -> Payload {
+    Payload(BTreeMap::from([(key.to_owned(), value)]))
+}
+
+fn expected_project_table() -> ProjectTable {
+    ProjectTable {
+        project_id: "p".to_owned(),
+        project_alias: Some("a".to_owned()),
+        description: Some("d".to_owned()),
+        team_id: Some("t".to_owned()),
+        budget_id: Some("b".to_owned()),
+        metadata: Some(single_entry_payload(
+            "k",
+            super::JsonData::String("v".to_owned()),
+        )),
+        models: vec!["gpt".to_owned()],
+        spend: Decimal::new(35, 1),
+        model_spend: Some(single_entry_payload(
+            "gpt",
+            super::JsonData::Number(serde_json::Number::from_f64(1.0).unwrap()),
+        )),
+        model_rpm_limit: Some(single_entry_payload(
+            "gpt",
+            super::JsonData::Number(serde_json::Number::from(10_i64)),
+        )),
+        model_tpm_limit: Some(single_entry_payload(
+            "gpt",
+            super::JsonData::Number(serde_json::Number::from(100_i64)),
+        )),
+        blocked: true,
+        object_permission_id: Some("op".to_owned()),
+        created_by: Some("c".to_owned()),
+        updated_by: Some("u".to_owned()),
+        created_at: Some(serde_json::from_str(r#""2026-01-01T00:00:00Z""#).unwrap()),
+        updated_at: Some(serde_json::from_str(r#""2026-01-02T00:00:00Z""#).unwrap()),
+        litellm_budget_table: Some(expected_project_budget_table()),
+        object_permission: Some(expected_project_object_permission()),
+    }
+}
+
 #[test]
 fn project_all_fields_nested_budget_and_permissions() {
     let row = project(
@@ -364,17 +508,7 @@ fn project_all_fields_nested_budget_and_permissions() {
         "litellm_budget_table":{"budget_id":"b","max_budget":10},
         "object_permission":{"object_permission_id":"op"}}"#,
     );
-    assert_eq!(row.spend, Decimal::new(35, 1));
-    assert!(row.blocked);
-    assert_eq!(row.models, vec!["gpt".to_owned()]);
-    assert!(row.model_spend.is_some());
-    assert!(row.model_rpm_limit.is_some());
-    assert!(row.model_tpm_limit.is_some());
-    assert_eq!(
-        row.litellm_budget_table.unwrap().budget_id.as_deref(),
-        Some("b")
-    );
-    assert_eq!(row.object_permission.unwrap().object_permission_id, "op");
+    assert_eq!(row, expected_project_table());
 }
 
 #[test]
@@ -482,9 +616,29 @@ fn native_nested_model_json_limits() {
     let over_envelope = format!(
         r#"{{"kind":"model","row":{{"model_id":"m","model_name":"n","litellm_params":{over_limit}}}}}"#
     );
-    // The nested TryFrom wraps TooDeep as a Json error carrying the same message.
-    let error = decode_resource_rows(over_envelope.as_bytes()).unwrap_err();
-    assert!(format!("{error:?}").contains("exceeds JSON depth 64"));
+    assert!(matches!(
+        decode_resource_rows(over_envelope.as_bytes()),
+        Err(ResourceRowsError::TooDeep)
+    ));
+    // 200 levels is past serde_json's own 128-level recursion limit, so only the iterative scan catches it.
+    let past_serde_limit = serde_json::to_string(&nested_object(200)).unwrap();
+    let past_serde_envelope = format!(
+        r#"{{"kind":"model","row":{{"model_id":"m","model_name":"n","litellm_params":{past_serde_limit}}}}}"#
+    );
+    assert!(matches!(
+        decode_resource_rows(past_serde_envelope.as_bytes()),
+        Err(ResourceRowsError::TooDeep)
+    ));
+}
+
+#[test]
+fn native_credential_create_guard_preserved() {
+    let envelope =
+        br#"{"kind":"credential_create","row":{"credential_name":"c","credential_info":{}}}"#;
+    assert!(matches!(
+        decode_resource_rows(envelope),
+        Err(ResourceRowsError::CredentialValueRequired)
+    ));
 }
 
 #[rstest]
@@ -554,7 +708,7 @@ async fn assert_resource_rows_raw_storage(client: &tokio_postgres::Client) {
     )
     .await;
     assert_eq!(
-        credential.credential_values.0.get("api_key"),
+        credential.fields.credential_values.0.get("api_key"),
         Some(&super::JsonData::String("ENC:abc==".to_owned()))
     );
     let model: ProxyModelTable = row_as(

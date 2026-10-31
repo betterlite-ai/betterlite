@@ -11,10 +11,27 @@ pub struct CredentialBase {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CredentialItem {
+pub struct CredentialItemFields {
     #[serde(flatten)]
     pub base: CredentialBase,
     pub credential_values: Payload,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "JsonData")]
+pub struct CredentialItem {
+    #[serde(flatten)]
+    pub fields: CredentialItemFields,
+}
+
+impl TryFrom<JsonData> for CredentialItem {
+    type Error = ResourceRowsError;
+    fn try_from(value: JsonData) -> Result<Self, Self::Error> {
+        check_value_shape(&value)?;
+        Ok(Self {
+            fields: convert(&value)?,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -34,19 +51,25 @@ pub struct CreateCredentialItem {
     pub fields: CreateCredentialItemFields,
 }
 
+pub(crate) fn check_create_guard(value: &JsonData) -> Result<(), ResourceRowsError> {
+    let JsonData::Object(object) = value else {
+        return Err(ResourceRowsError::NotAnObject);
+    };
+    let has_value = ["credential_values", "model_id"]
+        .into_iter()
+        .any(|field| object.get(field).is_some_and(json_value_is_set));
+    if has_value {
+        Ok(())
+    } else {
+        Err(ResourceRowsError::CredentialValueRequired)
+    }
+}
+
 impl TryFrom<JsonData> for CreateCredentialItem {
     type Error = ResourceRowsError;
     fn try_from(value: JsonData) -> Result<Self, Self::Error> {
-        let JsonData::Object(object) = &value else {
-            return Err(Self::Error::NotAnObject);
-        };
-        let values_set = object
-            .get("credential_values")
-            .is_some_and(json_value_is_set);
-        let model_id_set = object.get("model_id").is_some_and(json_value_is_set);
-        if !values_set && !model_id_set {
-            return Err(Self::Error::CredentialValueRequired);
-        }
+        check_create_guard(&value)?;
+        check_value_shape(&value)?;
         Ok(Self {
             fields: convert(&value)?,
         })
@@ -54,11 +77,51 @@ impl TryFrom<JsonData> for CreateCredentialItem {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct UpdateCredentialItem {
+pub struct UpdateCredentialItemFields {
     pub credential_name: String,
     pub credential_info: Payload,
     #[serde(default)]
     pub credential_values: Option<Payload>,
     #[serde(default)]
     pub model_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "JsonData")]
+pub struct UpdateCredentialItem {
+    #[serde(flatten)]
+    pub fields: UpdateCredentialItemFields,
+}
+
+impl TryFrom<JsonData> for UpdateCredentialItem {
+    type Error = ResourceRowsError;
+    fn try_from(value: JsonData) -> Result<Self, Self::Error> {
+        check_value_shape(&value)?;
+        Ok(Self {
+            fields: convert(&value)?,
+        })
+    }
+}
+
+// credential_values holds a secret, so a shape mismatch here never carries the raw value.
+pub(crate) fn check_value_shape(value: &JsonData) -> Result<(), ResourceRowsError> {
+    let JsonData::Object(object) = value else {
+        return Ok(());
+    };
+    let Some(field_value) = object.get("credential_values") else {
+        return Ok(());
+    };
+    if matches!(field_value, JsonData::Null | JsonData::Object(_)) {
+        return Ok(());
+    }
+    let text = serde_json::to_string(field_value).map_err(ResourceRowsError::Json)?;
+    match serde_json::from_str::<Payload>(&text) {
+        Ok(_) => Ok(()),
+        Err(error) => Err(ResourceRowsError::FieldShape {
+            field: "credential_values",
+            category: error.classify(),
+            line: error.line(),
+            column: error.column(),
+        }),
+    }
 }

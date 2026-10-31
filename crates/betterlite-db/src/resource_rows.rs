@@ -15,6 +15,7 @@ use organization::OrganizationTable;
 use project::ProjectTable;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use serde_json::error::Category;
 
 use crate::budget_permission_rows::JsonData;
 
@@ -35,6 +36,13 @@ pub enum ResourceRowsError {
     NotAnObject,
     #[error("Either credential_values or model_id must be set")]
     CredentialValueRequired,
+    #[error("field {field} has the wrong shape ({category:?} at line {line} column {column})")]
+    FieldShape {
+        field: &'static str,
+        category: Category,
+        line: usize,
+        column: usize,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,7 +70,38 @@ pub enum ResourceRow {
 
 pub fn decode_resource_rows(bytes: &[u8]) -> Result<ResourceRow, ResourceRowsError> {
     let value = parse_data(bytes)?;
+    validate_nested(&value)?;
     convert(&value)
+}
+
+fn validate_nested(value: &JsonData) -> Result<(), ResourceRowsError> {
+    let JsonData::Object(envelope) = value else {
+        return Ok(());
+    };
+    let (Some(JsonData::String(kind)), Some(row)) = (envelope.get("kind"), envelope.get("row"))
+    else {
+        return Ok(());
+    };
+    match kind.as_str() {
+        "model" => {
+            let mut nested = row.clone();
+            model::decode_nested_json_fields(&mut nested)?;
+            let text = serde_json::to_string(&nested).map_err(ResourceRowsError::Json)?;
+            if text.len() > MAX_ROW_BYTES {
+                return Err(ResourceRowsError::TooLarge { len: text.len() });
+            }
+            check_depth(&text)?;
+        }
+        "credential_create" => {
+            credential::check_create_guard(row)?;
+            credential::check_value_shape(row)?;
+        }
+        "credential_item" | "credential_update" => {
+            credential::check_value_shape(row)?;
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 pub(crate) fn parse_data(bytes: &[u8]) -> Result<JsonData, ResourceRowsError> {
