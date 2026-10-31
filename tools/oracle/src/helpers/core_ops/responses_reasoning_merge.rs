@@ -101,10 +101,7 @@ fn merge_reasoning_records(
     let merged = merge_reasoning(&mut records);
     let values: Vec<Value> = merged
         .iter()
-        .map(|record| {
-            let (Record::Dict(inner) | Record::Attribute(inner)) = record;
-            serde_json::to_value(inner)
-        })
+        .map(serialize_record)
         .collect::<Result<_, serde_json::Error>>()
         .map_err(|error| {
             Box::new(crate::helpers::HelperError {
@@ -117,6 +114,19 @@ fn merge_reasoning_records(
             })
         })?;
     Ok(Value::Array(values))
+}
+
+fn serialize_record(record: &Record) -> Result<Value, serde_json::Error> {
+    match record {
+        Record::Dict(inner) => serde_json::to_value(inner),
+        Record::Attribute(inner) => {
+            let mut value = serde_json::to_value(inner)?;
+            if let Value::Object(object) = &mut value {
+                object.entry("content").or_insert(Value::Null);
+            }
+            Ok(value)
+        }
+    }
 }
 
 impl crate::helpers::Helper for Op {
