@@ -1,0 +1,5 @@
+kind: helper
+name: oneof-to-anyof
+call: {anthropic_output_schema: {function: filter, schema: {oneOf: [{type: string}], anyOf: [{type: number}], properties: {child: {oneOf: [{type: boolean}]}}}}}
+env: {}
+compare: {ignore: []}
