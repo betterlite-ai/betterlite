@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use super::content::{Content, ReasoningText};
+use super::content::{Content, ReasoningText, ThinkingBlocks};
 use super::record::{ChatRecord, Record};
 use super::trailing::merge_trailing;
 use super::*;
@@ -146,7 +146,7 @@ fn reasoning_boundaries_typed_records() {
         role: Role::Assistant,
         content: None,
         reasoning_content: None,
-        thinking_blocks: Some(Some(vec![str_val("B")])),
+        thinking_blocks: Some(Some(ThinkingBlocks::List(vec![str_val("B")]))),
         tool_calls: None,
         extra: Map::new(),
     });
@@ -169,7 +169,7 @@ fn reasoning_merges_into_typed_target() {
         role: Role::Assistant,
         content: None,
         reasoning_content: Some(Some(ReasoningText::Text("a".to_owned()))),
-        thinking_blocks: Some(Some(vec![str_val("A")])),
+        thinking_blocks: Some(Some(ThinkingBlocks::List(vec![str_val("A")]))),
         tool_calls: None,
         extra: Map::new(),
     });
@@ -177,7 +177,7 @@ fn reasoning_merges_into_typed_target() {
         role: Role::Assistant,
         content: Some(Some(Content::Text("answer".to_owned()))),
         reasoning_content: Some(Some(ReasoningText::Text("c".to_owned()))),
-        thinking_blocks: Some(Some(vec![str_val("C")])),
+        thinking_blocks: Some(Some(ThinkingBlocks::List(vec![str_val("C")]))),
         tool_calls: None,
         extra: Map::new(),
     });
@@ -187,7 +187,7 @@ fn reasoning_merges_into_typed_target() {
         role: Role::Assistant,
         content: Some(Some(Content::Text("answer".to_owned()))),
         reasoning_content: Some(Some(ReasoningText::Text("a\nc".to_owned()))),
-        thinking_blocks: Some(Some(vec![str_val("A"), str_val("C")])),
+        thinking_blocks: Some(Some(ThinkingBlocks::List(vec![str_val("A"), str_val("C")]))),
         tool_calls: None,
         extra: Map::new(),
     });
@@ -202,7 +202,7 @@ fn reasoning_mixed_dict_and_attribute_records() {
         role: Role::Assistant,
         content: Some(None),
         reasoning_content: Some(Some(ReasoningText::Text("a".to_owned()))),
-        thinking_blocks: Some(Some(vec![str_val("A")])),
+        thinking_blocks: Some(Some(ThinkingBlocks::List(vec![str_val("A")]))),
         tool_calls: None,
         extra: Map::new(),
     });
@@ -474,26 +474,43 @@ fn assistant_answer(text: &str) -> Value {
     ])
 }
 
+// serde_json::Error carries no PartialEq, so a rejection names the variant rather than its cause.
+#[derive(Debug)]
+enum Expectation {
+    Merged(Option<Value>),
+    InvalidRecord,
+    InvalidContent,
+}
+
+fn assert_merge(result: Result<Option<Value>, MergeError>, expected: Expectation) {
+    match (result, expected) {
+        (Ok(value), Expectation::Merged(wanted)) => assert_eq!(value, wanted),
+        (Err(MergeError::InvalidRecord { .. }), Expectation::InvalidRecord)
+        | (Err(MergeError::InvalidContent), Expectation::InvalidContent) => {}
+        (other, other_expected) => panic!("unexpected {other:?} for {other_expected:?}"),
+    }
+}
+
 #[rstest]
-#[case::no_prior_messages(vec![], vec![], false, Ok(None))]
-#[case::zero_new_messages(vec![assistant_with_tool_calls()], vec![], false, Ok(None))]
+#[case::no_prior_messages(vec![], vec![], false, Expectation::Merged(None))]
+#[case::zero_new_messages(vec![assistant_with_tool_calls()], vec![], false, Expectation::Merged(None))]
 #[case::two_new_messages(
     vec![assistant_with_tool_calls()],
     vec![assistant_answer("b"), assistant_answer("c")],
     false,
-    Ok(None)
+    Expectation::Merged(None)
 )]
 #[case::typed_non_dict_last_message(
     vec![arr(vec![str_val("not"), str_val("a"), str_val("dict")])],
     vec![assistant_answer("b")],
     false,
-    Ok(None)
+    Expectation::Merged(None)
 )]
 #[case::new_message_not_dict_raises(
     vec![assistant_with_tool_calls()],
     vec![arr(vec![str_val("not"), str_val("a"), str_val("dict")])],
     false,
-    Err(MergeError::InvalidRecord)
+    Expectation::InvalidRecord
 )]
 #[case::last_message_not_assistant(
     vec![obj(vec![
@@ -503,19 +520,19 @@ fn assistant_answer(text: &str) -> Value {
     ])],
     vec![assistant_answer("b")],
     false,
-    Ok(None)
+    Expectation::Merged(None)
 )]
 #[case::new_message_not_assistant(
     vec![assistant_with_tool_calls()],
     vec![obj(vec![("role", str_val("user")), ("content", str_val("b"))])],
     false,
-    Ok(None)
+    Expectation::Merged(None)
 )]
 #[case::no_prior_tool_calls_without_hosted_search(
     vec![assistant_answer("a")],
     vec![assistant_answer("b")],
     false,
-    Ok(None)
+    Expectation::Merged(None)
 )]
 #[case::truthy_new_tool_calls(
     vec![assistant_with_tool_calls()],
@@ -525,19 +542,19 @@ fn assistant_answer(text: &str) -> Value {
         ("tool_calls", arr(vec![obj(vec![("id", str_val("call-2"))])])),
     ])],
     false,
-    Ok(None)
+    Expectation::Merged(None)
 )]
 #[case::new_content_null(
     vec![assistant_with_tool_calls()],
     vec![obj(vec![("role", str_val("assistant")), ("content", Value::Null)])],
     false,
-    Ok(None)
+    Expectation::Merged(None)
 )]
 #[case::empty_new_content_string_still_merges(
     vec![assistant_with_tool_calls()],
     vec![assistant_answer("")],
     false,
-    Ok(Some(obj(vec![
+    Expectation::Merged(Some(obj(vec![
         ("role", str_val("assistant")),
         (
             "content",
@@ -557,16 +574,97 @@ fn assistant_answer(text: &str) -> Value {
     ])],
     vec![assistant_answer("b")],
     false,
-    Err(MergeError::InvalidContent)
+    Expectation::InvalidContent
 )]
 fn trailing_rejections(
     #[case] messages: Vec<Value>,
     #[case] new_messages: Vec<Value>,
     #[case] hosted_search: bool,
-    #[case] expected: Result<Option<Value>, MergeError>,
+    #[case] expected: Expectation,
 ) {
-    assert_eq!(
+    assert_merge(
         merge_trailing(&messages, &new_messages, hosted_search),
-        expected
+        expected,
     );
+}
+
+#[test]
+fn trailing_assistant_hosted_search_preserves_explicit_null_tool_calls() {
+    let output = merge_trailing(
+        &[obj(vec![
+            ("role", str_val("assistant")),
+            ("content", str_val("a")),
+            ("tool_calls", Value::Null),
+        ])],
+        &[obj(vec![
+            ("role", str_val("assistant")),
+            ("content", str_val("b")),
+        ])],
+        true,
+    )
+    .unwrap();
+    assert_eq!(
+        output,
+        Some(obj(vec![
+            ("role", str_val("assistant")),
+            (
+                "content",
+                arr(vec![
+                    obj(vec![("type", str_val("text")), ("text", str_val("a"))]),
+                    obj(vec![("type", str_val("text")), ("text", str_val("b"))]),
+                ])
+            ),
+            ("tool_calls", Value::Null),
+        ]))
+    );
+}
+
+#[test]
+fn non_list_thinking_blocks_is_preserved_on_dict_record_without_merging() {
+    let output = merge_dicts(vec![
+        obj(vec![
+            ("role", str_val("assistant")),
+            ("content", Value::Null),
+            ("reasoning_content", str_val("a")),
+        ]),
+        obj(vec![
+            ("role", str_val("assistant")),
+            ("content", str_val("answer")),
+            (
+                "thinking_blocks",
+                obj(vec![("note", str_val("not-a-list"))]),
+            ),
+        ]),
+    ]);
+    // Pending text still merges in; the target's own non-list thinking_blocks is untouched, not rejected.
+    assert_eq!(
+        output,
+        vec![obj(vec![
+            ("role", str_val("assistant")),
+            ("content", str_val("answer")),
+            ("reasoning_content", str_val("a")),
+            (
+                "thinking_blocks",
+                obj(vec![("note", str_val("not-a-list"))])
+            ),
+        ])]
+    );
+}
+
+#[test]
+fn non_list_thinking_blocks_is_not_pending_on_attribute_record() {
+    let record = Record::Attribute(ChatRecord {
+        role: Role::Assistant,
+        content: Some(None),
+        reasoning_content: None,
+        thinking_blocks: Some(Some(ThinkingBlocks::Other(obj(vec![(
+            "note",
+            str_val("not-a-list"),
+        )])))),
+        tool_calls: None,
+        extra: Map::new(),
+    });
+    // content=null but a non-list thinking_blocks and no reasoning text leave nothing to accumulate.
+    assert!(!record.is_pending());
+    assert_eq!(record.blocks(), None);
 }
