@@ -30,6 +30,7 @@ scope:
   - crates/betterlite-models/Cargo.toml
   - crates/betterlite-models/src/catalog.rs
   - crates/betterlite-models/src/catalog/**
+  - crates/betterlite-models/src/price_fields/nested.rs
   - crates/betterlite-models/fixtures/**
   - crates/betterlite-models/fuzz/**
   - tools/oracle/Cargo.toml
@@ -127,6 +128,7 @@ pitfalls:
 - 'The oracle helper for this task is pre-registered as model_catalog in the models group. Replace the stub Op in tools/oracle/src/helpers/models/model_catalog.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/model_catalog.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The pinned map has no alias entries, so synthetic alias fixtures are necessary to cover alias logic.
 - Count actual model entries separately from metadata sentinels.
+- 'The pinned map gives amazon.titan-embed-text-v2:0 a provider_specific_entry of {"bedrock_invocation_schema": "titan_v2"} (root and backup alike), a string routing hint next to the us and fast multipliers. Add it to ProviderSpecificPricing in crates/betterlite-models/src/price_fields/nested.rs as Option<String> with serde''s plain string handling, so the strict pinned load knows it. LiteLLM reads it in litellm/llms/bedrock/files/transformation.py and compares it to "titan_v2".'
 - Root and packaged price assets happen to match at this pin; do not assume that for provider capability assets.
 review_level: security
 budget:
