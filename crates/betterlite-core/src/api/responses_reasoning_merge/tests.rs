@@ -1,7 +1,11 @@
 #![cfg(test)]
 
+use super::content::{Content, ReasoningText};
+use super::record::{ChatRecord, Record};
+use super::trailing::merge_trailing;
 use super::*;
 use rstest::rstest;
+use serde_json::Map;
 
 fn obj(pairs: Vec<(&str, Value)>) -> Value {
     let mut fields = Map::new();

@@ -1,6 +1,6 @@
-use betterlite_core::api::responses_reasoning_merge::{
-    ChatRecord, Record, merge_reasoning, merge_trailing,
-};
+use betterlite_core::api::responses_reasoning_merge::merge_reasoning;
+use betterlite_core::api::responses_reasoning_merge::record::{ChatRecord, Record};
+use betterlite_core::api::responses_reasoning_merge::trailing::merge_trailing;
 use serde::Deserialize;
 use serde_json::Value;
 
