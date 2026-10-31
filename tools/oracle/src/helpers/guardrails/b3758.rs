@@ -1,8 +1,8 @@
+use betterlite_guardrails::cisco_conversation::Fields;
 use betterlite_guardrails::cisco_conversation::json::Json;
+use betterlite_guardrails::cisco_verdict;
 use serde::Deserialize;
 use serde_json::{Value, json};
-
-use crate::helpers::HelperError;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
@@ -23,130 +23,65 @@ impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        outcome(input).map_err(|error| {
-            Box::new(HelperError {
-                class: "InvalidInput".to_owned(),
-                status: None,
-                error_type: None,
-                param: None,
-                code: None,
-                message: error.to_string(),
-            })
-        })
+        Ok(outcome(input))
     }
 }
 
-fn outcome(input: &Input) -> Result<Value, serde_json::Error> {
-    if let Input::UnwrapVerdict { response } = input {
-        return unwrap_value(response);
+fn outcome(input: &Input) -> Value {
+    match input {
+        Input::UnwrapVerdict { response } => to_value(&cisco_verdict::unwrap_verdict_envelope(
+            &Json::parse(&response.to_string()),
+        )),
+        Input::HasDecisionFields { response } => {
+            json!(cisco_verdict::decision::has_decision_fields(&Json::parse(
+                &response.to_string()
+            )))
+        }
+        Input::NormalizeAction { action } => {
+            json!(cisco_verdict::normalize_action(action).as_str())
+        }
+        Input::ExtractJsonrpcError { response } => {
+            cisco_verdict::extract_jsonrpc_error(&Json::parse(&response.to_string()))
+                .map_or(Value::Null, |error| to_value(&error))
+        }
+        Input::ExtractSanitizedText { response } => {
+            cisco_verdict::extract_sanitized_text(&Json::parse(&response.to_string()))
+                .map_or(Value::Null, Value::String)
+        }
+        Input::ExtractSanitizedMessages { response } => {
+            cisco_verdict::extract_sanitized_messages(&Json::parse(&response.to_string()))
+                .map_or(Value::Null, |messages| {
+                    Value::Array(messages.iter().map(fields_to_value).collect())
+                })
+        }
+        Input::ExtractSanitizedMcpArguments { response } => {
+            cisco_verdict::extract_mcp_args(&Json::parse(&response.to_string()))
+                .map_or(Value::Null, |arguments| fields_to_value(&arguments))
+        }
+        Input::ExtractMaskedEntityCount { rules } => {
+            cisco_verdict::extract_masked_entity_count(&Json::parse(&rules.to_string()))
+                .map_or(Value::Null, |counts| json!(counts))
+        }
     }
-    if let Input::HasDecisionFields { response } = input {
-        return has_fields_value(response);
-    }
-    if let Input::NormalizeAction { action } = input {
-        return Ok(json!(
-            betterlite_guardrails::cisco_verdict::normalize_action(action).as_str()
-        ));
-    }
-    if let Input::ExtractJsonrpcError { response } = input {
-        return error_value(response);
-    }
-    if let Input::ExtractSanitizedText { response } = input {
-        return text_value(response);
-    }
-    if let Input::ExtractSanitizedMessages { response } = input {
-        return messages_value(response);
-    }
-    if let Input::ExtractSanitizedMcpArguments { response } = input {
-        return arguments_value(response);
-    }
-    let Input::ExtractMaskedEntityCount { rules } = input else {
-        return Err(serde_json::Error::io(std::io::Error::other(
-            "unrecognized Cisco verdict input",
-        )));
-    };
-    count_value(rules)
 }
 
-fn unwrap_value(response: &Value) -> Result<Value, serde_json::Error> {
-    let parsed = as_json(response)?;
-    let verdict = betterlite_guardrails::cisco_verdict::unwrap_verdict_envelope(&parsed);
-    to_value(&verdict)
-}
-
-fn has_fields_value(response: &Value) -> Result<Value, serde_json::Error> {
-    let parsed = as_json(response)?;
-    let result = betterlite_guardrails::cisco_verdict::has_decision_fields(&parsed);
-    Ok(json!(result))
-}
-
-fn error_value(response: &Value) -> Result<Value, serde_json::Error> {
-    let parsed = as_json(response)?;
-    betterlite_guardrails::cisco_verdict::extract_jsonrpc_error(&parsed)
-        .map_or(Ok(Value::Null), |value| to_value(&value))
-}
-
-fn text_value(response: &Value) -> Result<Value, serde_json::Error> {
-    let parsed = as_json(response)?;
-    let result = betterlite_guardrails::cisco_verdict::extract_sanitized_text(&parsed)
-        .map_or(Value::Null, Value::String);
-    Ok(result)
-}
-
-fn messages_value(response: &Value) -> Result<Value, serde_json::Error> {
-    let parsed = as_json(response)?;
-    let result = betterlite_guardrails::cisco_verdict::extract_sanitized_messages(&parsed)
-        .map_or(Value::Null, |messages| json!(messages));
-    Ok(result)
-}
-
-fn arguments_value(response: &Value) -> Result<Value, serde_json::Error> {
-    let parsed = as_json(response)?;
-    let result = betterlite_guardrails::cisco_verdict::extract_mcp_args(&parsed)
-        .map_or(Value::Null, |arguments| json!(arguments));
-    Ok(result)
-}
-
-fn count_value(rules: &Value) -> Result<Value, serde_json::Error> {
-    let parsed = as_json(rules)?;
-    let result = betterlite_guardrails::cisco_verdict::extract_masked_entity_count(&parsed)
-        .map_or(Value::Null, |counts| json!(counts));
-    Ok(result)
-}
-
-fn as_json(value: &Value) -> Result<Json, serde_json::Error> {
-    let text = serde_json::to_string(value)?;
-    Ok(Json::parse(&text))
-}
-
-fn to_value(value: &Json) -> Result<Value, serde_json::Error> {
-    if matches!(value, Json::Null) {
-        return Ok(Value::Null);
+fn to_value(value: &Json) -> Value {
+    match value {
+        Json::Null => Value::Null,
+        Json::Bool(flag) => Value::Bool(*flag),
+        Json::Number(text) => serde_json::from_str(text).unwrap_or(Value::Null),
+        Json::Text(text) => Value::String(text.clone()),
+        Json::List(items) => Value::Array(
+            items
+                .iter()
+                .map(|item| serde_json::from_str(item.get()).unwrap_or(Value::Null))
+                .collect(),
+        ),
+        Json::Object(fields) => fields_to_value(fields),
     }
-    if let Json::Bool(flag) = value {
-        return Ok(json!(flag));
-    }
-    if let Json::Number(number) = value {
-        return serde_json::from_str(number);
-    }
-    if let Json::Text(text) = value {
-        return Ok(Value::String(text.clone()));
-    }
-    if let Json::List(items) = value {
-        return items
-            .iter()
-            .map(|item| serde_json::from_str(item.get()))
-            .collect::<Result<Vec<Value>, _>>()
-            .map(Value::Array);
-    }
-    let Json::Object(fields) = value else {
-        return Err(serde_json::Error::io(std::io::Error::other(
-            "unrecognized Cisco JSON value",
-        )));
-    };
-    fields
-        .iter()
-        .map(|(key, item)| serde_json::from_str(item.get()).map(|parsed| (key.clone(), parsed)))
-        .collect::<Result<serde_json::Map<String, Value>, _>>()
-        .map(Value::Object)
+}
+
+fn fields_to_value(fields: &Fields) -> Value {
+    let text = serde_json::to_string(fields).unwrap_or_default();
+    serde_json::from_str(&text).unwrap_or(Value::Null)
 }
