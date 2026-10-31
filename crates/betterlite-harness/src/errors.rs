@@ -26,8 +26,17 @@ pub enum HarnessError {
     },
     #[error("CodexOptions.config key {key:?} must be a non-empty key without '='")]
     InvalidConfigKey { key: String },
-    #[error("CodexOptions.config[{key:?}] is managed by Harness.{}; use the matching agent() argument instead", .harness.name())]
+    #[error("CodexOptions.config key {key:?} is managed by Harness.{}; use the matching agent() argument instead", .harness.name())]
     ManagedConfigKey { key: String, harness: Harness },
+    #[error(
+        "OpenCodeOptions.config[{section}{agent}] contains managed keys: {keys:?}",
+        agent = .agent.as_ref().map_or_else(String::new, |name| format!(".{name}"))
+    )]
+    OpenCodeManagedKeys {
+        section: String,
+        agent: Option<String>,
+        keys: Vec<String>,
+    },
     #[error("the runtime is missing from the sandbox or failed to start: {0}")]
     InstallFailed(#[source] io::Error),
     #[error("the sandbox failed: {source}")]
@@ -65,4 +74,12 @@ pub enum HarnessError {
         #[source]
         source: PayloadError,
     },
+    #[error(
+        "ClaudeCodeOptions.config may not set {keys}; use the matching agent() argument (model=, permissions=) instead"
+    )]
+    ClaudeCodeManagedConfig { keys: String },
+    #[error("ClaudeCodeOptions.env may not set {keys}; LiteLLM manages it")]
+    ClaudeCodeManagedEnv { keys: String },
+    #[error("Claude Code needs the session model endpoint")]
+    ClaudeCodeEndpoint,
 }

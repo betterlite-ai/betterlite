@@ -5,7 +5,7 @@ vendors:
     max_parallel: 12
   - id: anthropic
     limit_markers: ["You've hit your", "Not logged in", "Can't reach the API server"]
-    max_writers: 4
+    max_parallel: 12
 runners:
   - id: codex-worker
     vendor: openai

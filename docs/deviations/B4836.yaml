@@ -1,0 +1,23 @@
+task: B4836
+deviations:
+  - what: "Session token is never in argv or environment; the config references it with `{file:<path>}` inside OPENCODE_CONFIG_CONTENT JSON."
+    why: "Command-line arguments are visible in process listings. The token is a secret and must stay out of argv and env."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/opencode/harness/transformation.py#L324-L333
+  - what: "XDG_*_HOME environment variables are set to persist session state across resume, overriding user's ~/.opencode."
+    why: "OpenCode reads XDG dirs by default. This deployment isolates each session with its own persisted directories so previous sessions do not interfere."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/opencode/harness/transformation.py#L340-L342
+  - what: "`--pure` flag is always passed to disable plugins, even though opencode.json in the repo might define them."
+    why: "Plugins run arbitrary code as the host user before any tool permission applies. The flag is always on for security."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/opencode/harness/transformation.py#L363-L367
+  - what: "An error event in OpenCode fails a turn even when the process exits with code 0."
+    why: "OpenCode may report errors via JSONL events after successfully starting. state.error is checked before exit code."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/opencode/harness/transformation.py#L419-L421
+  - what: "The session config uses SessionSettings.gateway.api_base and api_key instead of Sandbox.host_url(endpoint.port) and the scoped endpoint token."
+    why: "The shared harness context has no endpoint object or endpoint port yet; B4841 owns rewiring this stand-in when endpoint-scoped session settings land."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/opencode/harness/transformation.py#L324-L333
+  - what: "Non-string OpenCode tool output is serialized with sorted JSON object keys because betterlite's JsonObject is a BTreeMap."
+    why: "LiteLLM uses plain json.dumps, while the typed Rust event boundary receives ordered JsonObject values; B4835 records the same wire-order limitation."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/opencode/harness/transformation.py#L168-L190
+  - what: "Malformed known OpenCode JSONL events fail the turn and append their parse error to earlier event errors."
+    why: "The typed Rust wire model rejects malformed known event fields, while LiteLLM leniently reads these events through _as_dict and str(). Appending the parse error preserves earlier event failures."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/opencode/harness/transformation.py#L382-L407
