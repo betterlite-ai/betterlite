@@ -9,11 +9,22 @@ cargo-fuzz = true
 
 [dependencies]
 betterlite-oracle = { path = ".." }
+chrono = { version = "0.4.45", default-features = false, features = ["now", "serde"] }
 libfuzzer-sys = "0.4.9"
+quick-xml = "0.41.0"
+serde = { version = "1.0.228", features = ["derive"] }
+thiserror = "2.0.17"
 
 [[bin]]
 name = "helper_case"
 path = "fuzz_targets/helper_case.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "blog_feed_xml"
+path = "fuzz_targets/blog_feed_xml.rs"
 test = false
 doc = false
 bench = false
