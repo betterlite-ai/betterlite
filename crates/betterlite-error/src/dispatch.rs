@@ -5,11 +5,12 @@ use betterlite_redact::secret::Redactor;
 use crate::error::details::{RateLimitDetails, TimeoutDetails, TimeoutStatus};
 use crate::error::{ErrorClass, ErrorContext};
 use crate::facts::presence::Field;
-use crate::facts::{ErrorCode, ProviderErrorBody};
+use crate::facts::{ErrorCode, ProviderErrorBody, ProviderErrorFacts};
 use crate::openai::body::{OpenaiErrorBody, OpenaiErrorDetail};
 use crate::openai::{self, OpenaiExceptionInput};
 use crate::parse::{self, LitellmExceptionFacts};
 use crate::rate_limit::RateLimitCategory;
+use crate::status::status_error_class;
 
 mod tests;
 
@@ -27,6 +28,8 @@ pub struct RawException {
     pub custom_llm_provider: String,
     pub error_str: String,
     pub status_code: Option<u16>,
+    #[serde(default)]
+    pub status_code_is_synthesized: bool,
     pub message: Option<String>,
     #[serde(default)]
     pub body: Option<OpenaiErrorBody>,
@@ -42,6 +45,7 @@ pub fn dispatch(input: &DispatchInput, redactor: &Redactor) -> ErrorClass {
                 custom_llm_provider: raw.custom_llm_provider.clone(),
                 error_str: redactor.redact_string(&raw.error_str),
                 status_code: raw.status_code,
+                status_code_is_synthesized: raw.status_code_is_synthesized,
                 message: raw
                     .message
                     .as_deref()
@@ -68,16 +72,18 @@ pub fn dispatch(input: &DispatchInput, redactor: &Redactor) -> ErrorClass {
 }
 
 fn dispatch_raw(raw: &RawException) -> ErrorClass {
+    // exception_type() overwrites error_str with str(original_exception.message) whenever that attribute exists
+    let error_str = raw.message.as_deref().unwrap_or(&raw.error_str);
     // the four literal phrases exception_type() checks before any provider-specific branch runs
-    if raw.error_str.contains("Request Timeout Error")
-        || raw.error_str.contains("Request timed out")
-        || raw.error_str.contains("Timed out generating response")
-        || raw.error_str.contains("The read operation timed out")
+    if error_str.contains("Request Timeout Error")
+        || error_str.contains("Request timed out")
+        || error_str.contains("Timed out generating response")
+        || error_str.contains("The read operation timed out")
     {
-        return timeout_preamble_class(raw);
+        return timeout_preamble_class(raw, error_str);
     }
     if raw.custom_llm_provider == "litellm_proxy" {
-        match litellm_proxy_branch(raw) {
+        match litellm_proxy_branch(raw, error_str) {
             LitellmProxyOutcome::Raised(class) => return class,
             // not a regex match for "litellm.*Error": litellm_proxy also belongs to openai_compatible_providers
             LitellmProxyOutcome::NoMatch => {}
@@ -90,21 +96,18 @@ fn dispatch_raw(raw: &RawException) -> ErrorClass {
         return openai::map_openai_exception(&OpenaiExceptionInput {
             model: raw.model.clone(),
             custom_llm_provider: raw.custom_llm_provider.clone(),
-            error_str: raw.error_str.clone(),
+            error_str: error_str.to_owned(),
             status_code: raw.status_code,
             message: raw.message.clone(),
             body: raw.body.clone(),
         });
     }
-    catchall(raw)
+    catchall(raw, error_str)
 }
 
-fn timeout_preamble_class(raw: &RawException) -> ErrorClass {
+fn timeout_preamble_class(raw: &RawException, error_str: &str) -> ErrorClass {
     let context = ErrorContext {
-        message: format!(
-            "APITimeoutError - Request timed out. Error_str: {}",
-            raw.error_str
-        ),
+        message: format!("APITimeoutError - Request timed out. Error_str: {error_str}"),
         model: Some(raw.model.clone()),
         provider: Some(raw.custom_llm_provider.clone()),
         max_retries: None,
@@ -138,15 +141,9 @@ fn proxy_body(body: Option<&OpenaiErrorBody>) -> Option<ProviderErrorBody> {
 }
 
 // extract_and_raise_litellm_exception: a regex match on "litellm.\w+Error" names the exception to construct
-fn litellm_proxy_branch(raw: &RawException) -> LitellmProxyOutcome {
+fn litellm_proxy_branch(raw: &RawException, error_str: &str) -> LitellmProxyOutcome {
     let body = proxy_body(raw.body.as_ref());
-    match parse::extract_exception(
-        None,
-        &raw.error_str,
-        &raw.model,
-        &raw.custom_llm_provider,
-        body,
-    ) {
+    match parse::extract_exception(None, error_str, &raw.model, &raw.custom_llm_provider, body) {
         Ok(Some(facts)) => LitellmProxyOutcome::Raised(classify_facts(&facts)),
         Ok(None) => LitellmProxyOutcome::NoMatch,
         Err(_) => LitellmProxyOutcome::Unconstructible,
@@ -216,10 +213,30 @@ fn unmappable_identity(raw: &RawException) -> ErrorClass {
 }
 
 // the unconditional raise at the end of exception_type()'s try block, reached once no provider branch raises
-fn catchall(raw: &RawException) -> ErrorClass {
+fn catchall(raw: &RawException, error_str: &str) -> ErrorClass {
     let exception_provider = exception_provider_label(&raw.custom_llm_provider);
+    // _map_exception_by_status runs first; a synthetic status never outranks this, since it bails out early
+    let facts = ProviderErrorFacts {
+        status_code: raw.status_code,
+        status_code_is_synthesized: raw.status_code_is_synthesized,
+        message: None,
+        body: None,
+        headers: None,
+        response: None,
+        litellm_response_headers: None,
+        request: None,
+    };
+    if let Some(class) = status_error_class(
+        &facts,
+        error_str,
+        &exception_provider,
+        Some(raw.model.clone()),
+        Some(raw.custom_llm_provider.clone()),
+    ) {
+        return class;
+    }
     let context = ErrorContext {
-        message: format!("{exception_provider} - {}", raw.error_str),
+        message: format!("{exception_provider} - {error_str}"),
         model: Some(raw.model.clone()),
         provider: Some(raw.custom_llm_provider.clone()),
         max_retries: None,

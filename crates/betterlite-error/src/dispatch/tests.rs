@@ -16,6 +16,7 @@ fn raw(provider: &str, error_str: &str, status_code: Option<u16>) -> Box<RawExce
         custom_llm_provider: provider.to_owned(),
         error_str: error_str.to_owned(),
         status_code,
+        status_code_is_synthesized: false,
         message: None,
         body: None,
     })
@@ -91,7 +92,7 @@ fn family(class: &ErrorClass) -> &'static str {
     "authentication"
 )]
 #[case::unknown_provider_reaches_the_unconditional_catchall(
-    DispatchInput::Raw(raw("some-unknown-provider", "boom", Some(401))),
+    DispatchInput::Raw(raw("some-unknown-provider", "boom", None)),
     "api_connection"
 )]
 fn openai_errors_openai_error_tests_behavior(
@@ -251,17 +252,25 @@ fn an_unrecognized_facts_name_never_panics_and_classifies_as_unclassified() {
 }
 
 #[test]
-fn catchall_status_is_ignored_unlike_the_openai_family_status_table() {
-    let left = dispatch(
+fn the_catchall_classifies_by_status_before_falling_back_to_api_connection() {
+    let classified = dispatch(
         &DispatchInput::Raw(raw("some-unknown-provider", "boom", Some(429))),
         &redactor(),
     );
-    let right = dispatch(
+    let unclassified = dispatch(
         &DispatchInput::Raw(raw("some-unknown-provider", "boom", None)),
         &redactor(),
     );
-    assert_eq!(family(&left), "api_connection");
-    assert_eq!(family(&right), "api_connection");
+    assert_eq!(family(&classified), "rate_limit");
+    assert_eq!(family(&unclassified), "api_connection");
+}
+
+#[test]
+fn a_synthesized_status_in_the_catchall_never_outranks_the_plain_api_connection_fallback() {
+    let mut request = raw("some-unknown-provider", "boom", Some(429));
+    request.status_code_is_synthesized = true;
+    let class = dispatch(&DispatchInput::Raw(request), &redactor());
+    assert_eq!(family(&class), "api_connection");
 }
 
 #[test]
