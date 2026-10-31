@@ -143,3 +143,41 @@ fn lasso_masking_response_rewrites_text_and_tool_arguments() {
         .as_deref();
     assert_eq!(arguments, Some(r#"{"email":"[MASKED EMAIL]"}"#));
 }
+
+#[test]
+fn lasso_masking_text_count_mismatch_skips_rewrite() {
+    let original = vec![
+        Message {
+            role: Role::User,
+            content: Some(Content::Text("first secret".to_owned())),
+            tool_calls: None,
+            tool_call_id: None,
+            extra: BTreeMap::new(),
+        },
+        Message {
+            role: Role::User,
+            content: Some(Content::Text("second secret".to_owned())),
+            tool_calls: None,
+            tool_call_id: None,
+            extra: BTreeMap::new(),
+        },
+        assistant_tool_call_message("call", "lookup", r#"{"email":"a"}"#),
+    ];
+    let masked = vec![LassoMessage {
+        role: "user".to_owned(),
+        content: LassoContent::Text("[MASKED]".to_owned()),
+    }];
+
+    let mapped = map_masked_messages_back(&original, &masked);
+    let Some(Content::Text(text)) = &mapped[0].content else {
+        panic!("expected the original text content");
+    };
+    assert_eq!(
+        text, "first secret",
+        "a text-count mismatch must leave content untouched"
+    );
+    assert!(
+        mapped[2].tool_calls.is_some(),
+        "tool_calls still rewrite even when the text rewrite is skipped"
+    );
+}
