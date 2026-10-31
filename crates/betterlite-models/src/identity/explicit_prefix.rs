@@ -14,7 +14,8 @@ pub struct PrefixClassificationInput<'input> {
     pub catalog: &'input ModelCatalog,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PrefixClassification {
     NonOpenaiAzure {
         model: String,
@@ -24,9 +25,11 @@ pub enum PrefixClassification {
         model: String,
         needs_provider_defaults: bool,
     },
+    #[serde(rename = "openrouter_native")]
     OpenRouterNative {
         model: String,
     },
+    #[serde(rename = "openrouter_nested")]
     OpenRouterNested {
         model: String,
     },

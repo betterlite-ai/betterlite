@@ -1,0 +1,9 @@
+kind: helper
+name: provider-identity-endpoint-path-boundary
+call:
+  provider_identity:
+    check: endpoint
+    endpoint: api.mistral.ai/v1
+    api_base: https://api.mistral.ai/v123/foo
+env: {}
+compare: {ignore: []}
