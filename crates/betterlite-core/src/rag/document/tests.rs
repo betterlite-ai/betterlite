@@ -140,6 +140,26 @@ fn splitter_force_split_strides_through_text_with_no_usable_separator() {
 }
 
 #[test]
+fn splitter_recursion_depth_bound_separates_normal_splitting_from_character_fallback() {
+    let splitter =
+        RecursiveCharacterTextSplitter::new(4, 2, Some(vec![String::new()])).expect("valid");
+    let separators = vec![String::new()];
+
+    let at_limit = splitter.split_recursive("abcdefgh", &separators, DEFAULT_MAX_RECURSE_DEPTH);
+    assert_eq!(
+        at_limit,
+        vec!["abcd".to_owned(), "cdef".to_owned(), "efgh".to_owned()]
+    );
+
+    let past_limit = splitter.split_recursive(
+        "abcdefgh",
+        &separators,
+        DEFAULT_MAX_RECURSE_DEPTH.saturating_add(1),
+    );
+    assert_eq!(past_limit, vec!["abcd".to_owned(), "efgh".to_owned()]);
+}
+
+#[test]
 fn splitter_counts_unicode_characters_not_bytes() {
     let splitter =
         RecursiveCharacterTextSplitter::new(4, 0, Some(vec![String::new()])).expect("valid");
