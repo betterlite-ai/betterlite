@@ -1,0 +1,40 @@
+{
+  "kind": "helper",
+  "name": "websearch-no-tool-openai",
+  "call": {
+    "b4112": {
+      "format": "openai",
+      "response": {
+        "choices": [
+          {
+            "message": {
+              "tool_calls": [
+                {
+                  "type": "function",
+                  "id": "one",
+                  "function": {
+                    "name": "WebSearch",
+                    "arguments": {}
+                  }
+                },
+                {
+                  "type": "function",
+                  "id": "one",
+                  "function": {
+                    "name": "other",
+                    "arguments": {}
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "operation": "detect"
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

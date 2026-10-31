@@ -1,0 +1,5 @@
+kind: helper
+name: extract-jsonrpc-error-nested-result
+call: {b3758: {function: extract_jsonrpc_error, response: {result: {error: {code: 2}}}}}
+env: {}
+compare: {ignore: []}

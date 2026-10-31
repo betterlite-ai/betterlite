@@ -11,7 +11,10 @@ pub(crate) struct Report {
     #[schemars(description = "The task id, for example B004.")]
     pub(crate) task: String,
     pub(crate) status: ReportStatus,
-    #[schemars(description = "What changed, in two to four plain sentences.")]
+    #[schemars(
+        regex(pattern = ".{40,}"),
+        description = "What changed, in two to four plain sentences, at least 40 characters."
+    )]
     pub(crate) summary: String,
     #[schemars(
         description = "Empty when done. When blocked: what is needed, where, and the evidence."
@@ -25,7 +28,6 @@ pub(crate) struct Report {
         description = "One entry per problem solved by choosing an existing solution or deliberately writing one."
     )]
     pub(crate) prior_art: Vec<PriorArt>,
-    pub(crate) deviations: Vec<ReportDeviation>,
     #[schemars(description = "Facts the architect needs and nothing else.")]
     pub(crate) notes: Vec<String>,
 }
@@ -82,13 +84,4 @@ pub(crate) struct PriorOption {
 pub(crate) enum OptionVerdict {
     Chosen,
     Rejected,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ReportDeviation {
-    pub(crate) what: String,
-    pub(crate) why: String,
-    #[schemars(description = "https link to LiteLLM's behavior, or an empty string.")]
-    pub(crate) link: String,
 }

@@ -1,0 +1,11 @@
+kind: helper
+name: expand_messages_for_classification
+call:
+  b3779:
+    expand_messages_for_classification:
+      messages:
+        - {role: user, content: hello}
+        - {role: assistant, content: null, tool_calls: [{id: call-1, function: {name: lookup, arguments: '{"email":"a@example.com"}'}}]}
+        - {role: tool, tool_call_id: call-1, content: result}
+env: {}
+compare: {ignore: []}

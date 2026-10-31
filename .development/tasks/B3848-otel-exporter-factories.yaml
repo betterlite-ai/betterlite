@@ -119,10 +119,10 @@ checks:
   commands:
     - id: exporter-factory-tests
       why: exporter factory, processor, codec, or baggage tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-logging -p betterlite-server --no-tests=fail -E 'test(/exporter_|baggage_|processor_|otlp_|codec_|event_)' 2>&1 | head -100
+      run: cargo nextest run --locked -p betterlite-logging -p betterlite-server --no-tests=fail -E 'test(/exporter_|baggage_|processor_|otlp_|codec_|event_/)' 2>&1 | head -100
     - id: database-endpoint-tests
       why: database endpoint parsing or attribute tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/database_|endpoint_|postgres_)' 2>&1 | head -100
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/database_|endpoint_|postgres_/)' 2>&1 | head -100
 oracle_cases: []
 deviations:
   - what: betterlite uses OpenTelemetry SDK global state through get_tracer_provider, get_meter_provider and get_logger_provider, same as LiteLLM.

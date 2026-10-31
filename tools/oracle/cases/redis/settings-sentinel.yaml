@@ -1,0 +1,13 @@
+kind: helper
+name: settings-sentinel
+call:
+  b4321:
+    function: resolve_redis_kwargs
+    environment: {}
+    overrides:
+      sentinel_nodes:
+        - ["a.internal", 26379]
+        - ["b.internal", 26379]
+      service_name: mymaster
+env: {}
+compare: {ignore: []}

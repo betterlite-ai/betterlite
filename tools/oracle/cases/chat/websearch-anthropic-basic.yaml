@@ -1,0 +1,30 @@
+{
+  "kind": "helper",
+  "name": "websearch-anthropic-basic",
+  "call": {
+    "b4112": {
+      "format": "anthropic",
+      "response": {
+        "content": [
+          {
+            "type": "tool_use",
+            "id": "one",
+            "name": "litellm_web_search",
+            "input": {
+              "query": "rust"
+            }
+          }
+        ]
+      },
+      "transform": true,
+      "results": [
+        "answer"
+      ],
+      "operation": "detect"
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

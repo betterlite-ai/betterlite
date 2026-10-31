@@ -1,0 +1,19 @@
+kind: helper
+name: lifecycle_post_call_malformed_tool
+call:
+  b3779:
+    lifecycle_post_call_hook:
+      response:
+        choices:
+          - message:
+              role: assistant
+              content: hello
+              tool_calls:
+                - id: broken
+                  type: function
+                  function: {name: '', arguments: '{}'}
+                - id: ''
+                  type: function
+                  function: {name: lookup, arguments: '{}'}
+env: {}
+compare: {ignore: []}

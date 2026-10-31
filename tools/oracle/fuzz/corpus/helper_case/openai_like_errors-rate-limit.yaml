@@ -1,0 +1,13 @@
+kind: helper
+name: openai-like-errors-rate-limit
+call:
+  openai_like_errors:
+    model: command-r
+    custom_llm_provider: my_provider
+    error_str: "too many requests, please slow down"
+    status_code: 429
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/context/message
+      why: betterlite writes its own message
