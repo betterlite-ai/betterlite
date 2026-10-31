@@ -6,7 +6,10 @@ use betterlite_db::budget_permission_rows::JsonData;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
-use super::{ApiKeySecret, AuthError, AuthInput, ParentOtelSpan, UserAPIKeyAuth};
+use super::{
+    ApiKeySecret, AuthError, AuthInput, ParentOtelSpan, UserAPIKeyAuth, is_team_service_account,
+    user_api_key_has_admin_view,
+};
 
 fn parse(text: &str) -> JsonData {
     serde_json::from_str(text).unwrap_or_else(|error| panic!("invalid JSON fixture: {error}"))
@@ -154,6 +157,60 @@ fn malformed_unselected_user_budget_entry_retained() {
     );
 }
 
+type MarkerCheck = fn(&UserAPIKeyAuth) -> bool;
+
+const MARKER_CHECKS: [(&str, MarkerCheck); 15] = [
+    ("mcp_admitted_user_subject", |key| {
+        !key.extra.mcp_access.mcp_admitted_user_subject
+    }),
+    ("requires_fresh_policy", |key| {
+        !key.extra.requires_fresh_policy
+    }),
+    ("mcp_explicit_grants_only", |key| {
+        !key.extra.mcp_access.mcp_explicit_grants_only
+    }),
+    ("mcp_source_team_rpm_limits", |key| {
+        key.extra.mcp_source_team_rpm_limits.is_none()
+    }),
+    ("mcp_session_resource_server_id", |key| {
+        key.extra.mcp_session_resource_server_id.is_none()
+    }),
+    ("mcp_toolset_id", |key| key.extra.mcp_toolset_id.is_none()),
+    ("via_virtual_key", |key| {
+        !key.extra.provenance.via_virtual_key
+    }),
+    ("authenticated_by_custom_auth", |key| {
+        !key.extra.provenance.authenticated_by_custom_auth
+    }),
+    ("agent_caller", |key| key.extra.agent_caller.is_none()),
+    ("managed_agent_context", |key| {
+        key.extra.managed_agent_context.is_none()
+    }),
+    ("managed_agent_policy", |key| {
+        key.extra.managed_agent_policy.is_none()
+    }),
+    ("invoked_agent_id", |key| {
+        key.extra.invoked_agent_id.is_none()
+    }),
+    ("invoked_agent_policy", |key| {
+        key.extra.invoked_agent_policy.is_none()
+    }),
+    ("agent_invocation_cost", |key| {
+        key.extra.agent_invocation_cost.is_none()
+    }),
+    ("billing_agent_policy", |key| {
+        key.extra.billing_agent_policy.is_none()
+    }),
+];
+
+fn assert_marker_cleared(auth: &UserAPIKeyAuth, field_name: &str) {
+    let check = MARKER_CHECKS
+        .into_iter()
+        .find_map(|(name, check)| (name == field_name).then_some(check))
+        .unwrap_or_else(|| panic!("unexpected stripped field name {field_name}"));
+    assert!(check(auth), "{field_name} marker was not cleared");
+}
+
 #[rstest]
 #[case::mcp_admitted_user_subject("mcp_admitted_user_subject")]
 #[case::requires_fresh_policy("requires_fresh_policy")]
@@ -174,6 +231,7 @@ fn each_untrusted_marker_stripped(#[case] field_name: &str) {
     let input = format!("{{\"{field_name}\": true}}");
     let auth = construct(&input);
     assert!(!serialized(&auth).contains_key(field_name));
+    assert_marker_cleared(&auth, field_name);
 }
 
 #[test]
@@ -288,4 +346,50 @@ fn serialized_span_requires_caller_cleanup() {
 fn unknown_auth_extras_ignored() {
     let auth = construct("{\"something_brand_new\": \"x\"}");
     assert!(!serialized(&auth).contains_key("something_brand_new"));
+}
+
+#[rstest]
+#[case::no_team_id(
+    "{\"user_id\": null, \"metadata\": {\"service_account_id\": \"svc\"}}",
+    false
+)]
+#[case::has_user_id(
+    "{\"user_id\": \"u1\", \"team_id\": \"t1\", \"metadata\": {\"service_account_id\": \"svc\"}}",
+    false
+)]
+#[case::empty_metadata("{\"user_id\": null, \"team_id\": \"t1\", \"metadata\": {}}", false)]
+#[case::metadata_without_marker(
+    "{\"user_id\": null, \"team_id\": \"t1\", \"metadata\": {\"other\": 1}}",
+    false
+)]
+#[case::present_marker(
+    "{\"user_id\": null, \"team_id\": \"t1\", \"metadata\": {\"service_account_id\": \"svc\"}}",
+    true
+)]
+fn service_account_none_vs_empty_fields(#[case] fields: &str, #[case] expected: bool) {
+    assert_eq!(is_team_service_account(&construct(fields)), expected);
+}
+
+#[test]
+fn service_account_false_value_is_present() {
+    let fields =
+        "{\"user_id\": null, \"team_id\": \"t1\", \"metadata\": {\"service_account_id\": false}}";
+    assert!(is_team_service_account(&construct(fields)));
+}
+
+#[rstest]
+#[case::proxy_admin("proxy_admin", true)]
+#[case::proxy_admin_viewer("proxy_admin_viewer", true)]
+#[case::org_admin("org_admin", false)]
+#[case::internal_user("internal_user", false)]
+#[case::team("team", false)]
+#[case::customer("customer", false)]
+#[case::absent_role("", false)]
+fn admin_view_admin_and_viewer_only(#[case] role: &str, #[case] expected: bool) {
+    let fields = if role.is_empty() {
+        "{}".to_owned()
+    } else {
+        format!("{{\"user_role\": \"{role}\"}}")
+    };
+    assert_eq!(user_api_key_has_admin_view(&construct(&fields)), expected);
 }
