@@ -36,7 +36,7 @@ struct Parameters {
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum ExtraHeaders {
-    Mapping(BTreeMap<String, String>),
+    Mapping(BTreeMap<String, SecretString>),
     List(Vec<String>),
 }
 
@@ -140,10 +140,7 @@ impl Entry {
 
 fn resolve_extra_headers(extra_headers: Option<ExtraHeaders>) -> BTreeMap<String, SecretString> {
     match extra_headers {
-        Some(ExtraHeaders::Mapping(values)) => values
-            .into_iter()
-            .map(|(name, value)| (name, SecretString::from(value)))
-            .collect(),
+        Some(ExtraHeaders::Mapping(values)) => values,
         Some(ExtraHeaders::List(values)) => {
             drop(values);
             tracing::warn!("DeepKeep extra_headers list ignored; a mapping is required");

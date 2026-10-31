@@ -1,18 +1,23 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::future::IntoFuture as _;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{env, fs, process};
 
 use super::{DeepKeepError, DeepKeepGuardrail, InputType, Inputs, RequestContext, Response};
+use axum::Router;
+use axum::http::StatusCode;
+use axum::routing::post;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::deepkeep_firewall::{Configured, UnreachableFallback};
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use rstest::rstest;
 use secrecy::SecretString;
 use tokio::net::TcpListener;
+use tokio::task::JoinSet;
 use tracing::subscriber::set_default;
 
 fn guardrail() -> DeepKeepGuardrail {
@@ -279,6 +284,50 @@ async fn deepkeep_guardrail_fail_open_logs_a_warning_with_guardrail_identity() {
     assert!(written.contains("firewall"));
     assert!(written.contains("fail_open"));
     assert!(!written.contains("key"));
+}
+
+#[tokio::test]
+async fn deepkeep_guardrail_fail_open_never_logs_upstream_response_body() {
+    let log_path = env::temp_dir().join(format!(
+        "betterlite-deepkeep-fail-open-body-{}",
+        process::id()
+    ));
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::WARN)
+        .with_writer(Arc::new(fs::File::create(&log_path).expect("log file")))
+        .finish();
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let base = format!("http://{}", listener.local_addr().expect("addr"));
+    let answer = || async {
+        (
+            StatusCode::BAD_GATEWAY,
+            "upstream failure echoing api_key=super-secret-upstream-token and \
+                header Authorization: Bearer super-secret-extra-header",
+        )
+    };
+    let router = Router::new().route("/v3/openai/beta/litellm_basic_guardrail_api", post(answer));
+    let mut server = JoinSet::new();
+    server.spawn(axum::serve(listener, router).into_future());
+    let mut deepkeep = guardrail();
+    deepkeep.settings.api_key = SecretString::from("super-secret-upstream-token");
+    deepkeep.settings.extra_headers = BTreeMap::from([(
+        "X-API-Key".to_owned(),
+        SecretString::from("super-secret-extra-header"),
+    )]);
+    deepkeep.settings.api_base = format!("{base}/v3/openai/beta/litellm_basic_guardrail_api");
+    deepkeep.settings.unreachable_fallback = UnreachableFallback::FailOpen;
+    deepkeep.timeout = Duration::from_secs(5);
+    let guard = set_default(subscriber);
+    let result = deepkeep.apply(inputs(), context()).await;
+    drop(guard);
+    assert_eq!(result.expect("fail-open passthrough"), inputs());
+    let written = fs::read_to_string(&log_path).expect("log contents");
+    fs::remove_file(&log_path).expect("remove log");
+    assert!(written.contains("fail_open"));
+    assert!(written.contains("502"));
+    assert!(!written.contains("super-secret-upstream-token"));
+    assert!(!written.contains("super-secret-extra-header"));
+    assert!(!written.contains("Authorization"));
 }
 
 #[test]

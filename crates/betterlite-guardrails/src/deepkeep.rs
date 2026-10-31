@@ -274,10 +274,21 @@ impl DeepKeepGuardrail {
             | DeepKeepError::InvalidHeaderName { .. } => false,
         };
         if self.settings.unreachable_fallback == UnreachableFallback::FailOpen && unreachable {
+            let (failure_category, status) = match &error {
+                DeepKeepError::Api { status, .. } => ("http_status", Some(status.to_string())),
+                DeepKeepError::Request { .. } => ("request_error", None),
+                DeepKeepError::Timeout { .. } => ("timeout", None),
+                DeepKeepError::Blocked { .. }
+                | DeepKeepError::ResponseJson { .. }
+                | DeepKeepError::RequestBuild { .. }
+                | DeepKeepError::InvalidHeader { .. }
+                | DeepKeepError::InvalidHeaderName { .. } => ("other", None),
+            };
             tracing::warn!(
                 guardrail_name = %self.settings.guardrail_name,
                 api_base = %self.settings.api_base,
-                error = %error,
+                failure_category,
+                status = status.as_deref().unwrap_or("n/a"),
                 "DeepKeep guardrail unreachable; evaluation bypassed because unreachable_fallback is fail_open",
             );
             return Ok(inputs);

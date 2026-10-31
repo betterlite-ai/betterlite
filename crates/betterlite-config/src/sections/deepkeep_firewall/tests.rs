@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::loader::ConfigLoader;
+use crate::loader::{ConfigLoader, parse_view};
 use rstest::rstest;
 use secrecy::ExposeSecret as _;
 
@@ -100,6 +100,16 @@ fn deepkeep_config_debug_never_shows_secrets() {
     let debugged = format!("{settings:?}");
     assert!(!debugged.contains("top-secret-key"));
     assert!(!debugged.contains("top-secret-token"));
+}
+
+#[test]
+fn deepkeep_raw_debug_never_shows_secrets() {
+    let source = "guardrails:\n  - guardrail_name: firewall\n    litellm_params:\n      guardrail: deepkeep\n      api_key: top-secret-key\n      api_base: https://deepkeep.test\n      deepkeep_firewall_id: fixed\n      extra_headers:\n        Authorization: Bearer top-secret-token\n        X-API-Key: top-secret-header\n";
+    let (raw, _ignored) = parse_view::<super::Raw>(source).expect("parses into Raw");
+    let debugged = format!("{raw:?}");
+    assert!(!debugged.contains("top-secret-key"));
+    assert!(!debugged.contains("top-secret-token"));
+    assert!(!debugged.contains("top-secret-header"));
 }
 
 #[test]
