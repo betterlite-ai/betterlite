@@ -1,12 +1,16 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::fs;
+use std::path::Path;
 
+use super::wire::ToolArguments;
 use crate::bedrock_message_selection::wire::{Content, Role};
-use crate::lasso::wire::ToolArguments;
+use crate::lasso::wire::MessageType;
 
 use super::apply_response::mask_model_response;
 use super::expand::expand_for_classification;
+use super::lifecycle::{self, Endpoint};
 use super::map_back::map_masked_messages_back;
 use super::wire::{
     LassoContent, LassoMessage, Message, ModelResponseShape, ResponseChoice, ResponseMessage,
@@ -88,6 +92,25 @@ fn lasso_masking_lifecycle() {
         panic!("expected masked text content");
     };
     assert_eq!(text, "[MASKED]");
+
+    let outcome = lifecycle::run(
+        &original,
+        Some("input secret"),
+        true,
+        MessageType::Prompt,
+        Some(&[
+            LassoMessage {
+                role: "user".to_owned(),
+                content: LassoContent::Text("[MASKED]".to_owned()),
+            },
+            LassoMessage {
+                role: "user".to_owned(),
+                content: LassoContent::Text("[MASKED INPUT]".to_owned()),
+            },
+        ]),
+    );
+    assert_eq!(outcome.endpoint, Endpoint::Classifix);
+    assert_eq!(outcome.input.as_deref(), Some("[MASKED INPUT]"));
 }
 
 fn response_with_tool_call() -> ModelResponseShape {
@@ -180,4 +203,33 @@ fn lasso_masking_text_count_mismatch_skips_rewrite() {
         mapped[2].tool_calls.is_some(),
         "tool_calls still rewrite even when the text rewrite is skipped"
     );
+}
+
+#[test]
+fn lasso_wire_replays_corpus_and_preserves_nulls() {
+    replay_lasso_corpus();
+}
+
+fn replay_lasso_corpus() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/lasso_wire");
+    for entry in fs::read_dir(corpus).expect("corpus") {
+        let bytes = fs::read(entry.expect("entry").path()).expect("seed");
+        let messages: Vec<Message> = serde_json::from_slice(&bytes).expect("messages");
+        let encoded = serde_json::to_string(&messages).expect("encoded");
+        assert!(encoded.contains("\"content\":null"));
+    }
+}
+
+#[test]
+fn lasso_tool_inputs_serialize_strings_and_arrays_directly() {
+    assert_direct_tool_input(r#""masked""#);
+    assert_direct_tool_input(r#"["masked"]"#);
+}
+
+fn assert_direct_tool_input(input: &str) {
+    let block: LassoContent =
+        serde_json::from_str(&format!(r#"{{"type":"tool_use","input":{input}}}"#))
+            .expect("tool block");
+    let encoded = serde_json::to_value(block).expect("encoded");
+    assert_eq!(encoded["input"].to_string(), input);
 }

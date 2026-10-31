@@ -2,10 +2,11 @@ use std::collections::BTreeMap;
 
 use betterlite_guardrails::lakera_pii::masking as lakera_masking;
 use betterlite_guardrails::lakera_pii::wire::{LakeraResponse, Message as LakeraMessage};
+use betterlite_guardrails::lasso::wire::MessageType;
 use betterlite_guardrails::lasso_masking::wire::{
     LassoMessage, Message as OpenAiMessage, ModelResponseShape, ResponseChoice, ToolCall,
 };
-use betterlite_guardrails::lasso_masking::{apply_response, expand, map_back};
+use betterlite_guardrails::lasso_masking::{apply_response, expand, lifecycle, map_back};
 use serde_json::{Value, json};
 
 // Bridges the oracle's b3779 operation to the LassoMasking and LakeraProcessing primitives.
@@ -21,10 +22,18 @@ pub(crate) enum Input {
     #[serde(rename = "lifecycle_pre_call_hook")]
     PreCall {
         messages: Vec<OpenAiMessage>,
+        #[serde(default)]
+        input: Option<String>,
+        #[serde(default)]
+        mask: bool,
     },
     #[serde(rename = "lifecycle_post_call_hook")]
     PostCall {
         messages: Vec<OpenAiMessage>,
+        #[serde(default)]
+        input: Option<String>,
+        #[serde(default)]
+        mask: bool,
     },
     MapMaskedMessagesBack {
         original: Vec<OpenAiMessage>,
@@ -52,41 +61,63 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         let result = match input {
-            Input::Expand { messages }
-            | Input::PreCall { messages }
-            | Input::PostCall { messages } => {
-                json!(expand::expand_for_classification(messages))
-            }
+            Input::Expand { messages } => json!(expand::expand_for_classification(messages)),
+            Input::PreCall {
+                messages,
+                input: input_text,
+                mask,
+            } => lifecycle_result(messages, input_text.as_deref(), *mask, MessageType::Prompt),
+            Input::PostCall {
+                messages,
+                input: input_text,
+                mask,
+            } => lifecycle_result(
+                messages,
+                input_text.as_deref(),
+                *mask,
+                MessageType::Completion,
+            ),
             Input::MapMaskedMessagesBack { original, masked } => {
                 json!(map_back::map_masked_messages_back(original, masked))
             }
             Input::ApplyMaskingToModelResponse { response, masked } => {
-                let updated = apply_response::mask_model_response(response, masked);
-                let choices: Vec<_> = updated.choices.iter().map(choice_projection).collect();
-                json!(choices)
+                apply_response_result(response, masked)
             }
-            Input::MaskPiiInMessages { messages, response } => {
-                let mut counts = BTreeMap::new();
-                let masked =
-                    lakera_masking::mask_pii_in_messages(messages, Some(response), &mut counts);
-                json!({"messages": masked, "counts": counts})
-            }
+            Input::MaskPiiInMessages { messages, response } => mask_pii_result(messages, response),
             Input::IsOnlyPiiViolation { response } => {
                 json!(lakera_masking::is_only_pii_violation(Some(response)))
             }
-            Input::Blocked { response } => {
-                let error = lakera_masking::blocked_error(Some(response));
-                json!({
-                    "status_code": error.status().as_u16(),
-                    "detail": {
-                        "error": error.to_string(),
-                        "lakera_guardrail_response": error.response(),
-                    },
-                })
-            }
+            Input::Blocked { response } => blocked_result(response),
         };
         Ok(result)
     }
+}
+
+fn apply_response_result(response: &ModelResponseShape, masked: &[LassoMessage]) -> Value {
+    let updated = apply_response::mask_model_response(response, masked);
+    let choices: Vec<_> = updated.choices.iter().map(choice_projection).collect();
+    json!(choices)
+}
+
+fn mask_pii_result(messages: &[LakeraMessage], response: &LakeraResponse) -> Value {
+    let mut counts = BTreeMap::new();
+    let masked = lakera_masking::mask_pii_in_messages(messages, Some(response), &mut counts);
+    json!({"messages": masked, "counts": counts})
+}
+
+fn blocked_result(response: &LakeraResponse) -> Value {
+    let error = lakera_masking::blocked_error(Some(response));
+    json!({"status_code": error.status().as_u16(), "detail": {"error": error.to_string(), "lakera_guardrail_response": error.response()}})
+}
+
+fn lifecycle_result(
+    messages: &[OpenAiMessage],
+    input: Option<&str>,
+    mask: bool,
+    message_type: MessageType,
+) -> Value {
+    let result = lifecycle::run(messages, input, mask, message_type, None);
+    json!(result.inspected)
 }
 
 fn choice_projection(choice: &ResponseChoice) -> Value {

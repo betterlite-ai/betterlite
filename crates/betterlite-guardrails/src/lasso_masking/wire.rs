@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
 use crate::bedrock_message_selection::wire::{Content, Role};
-use crate::lasso::wire::ToolArguments;
 
 // Box<RawValue> needs serde_json's own deserializer, and flatten always buffers through a generic Content type first, so split known fields from the raw object instead of flattening RawValue.
 fn split_fields<Head>(raw: &str) -> serde_json::Result<(Head, BTreeMap<String, Box<RawValue>>)>
@@ -16,7 +15,7 @@ where
     let modeled =
         serde_json::from_str::<BTreeMap<String, Box<RawValue>>>(&serde_json::to_string(&head)?)?;
     let mut rest = serde_json::from_str::<BTreeMap<String, Box<RawValue>>>(raw)?;
-    rest.retain(|key, _| !modeled.contains_key(key));
+    rest.retain(|key, value| !modeled.contains_key(key) || value.get() == "null");
     Ok((head, rest))
 }
 
@@ -117,6 +116,13 @@ raw_value_record!(ToolCallFunction / ToolCallFunctionHead {
 });
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ToolArguments {
+    Parsed(Box<RawValue>),
+    Malformed { arguments: String },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LassoMessage {
     pub role: String,
     pub content: LassoContent,
@@ -171,12 +177,17 @@ impl TryFrom<Box<RawValue>> for ToolUseBlock {
 }
 
 fn parse_tool_arguments(value: &RawValue) -> ToolArguments {
-    let Ok(parsed) = serde_json::from_str(value.get()) else {
+    if value.get().is_empty() {
         return ToolArguments::Malformed {
-            arguments: value.get().to_owned(),
+            arguments: String::new(),
         };
-    };
-    ToolArguments::Parsed(parsed)
+    }
+    serde_json::from_str::<Box<RawValue>>(value.get()).map_or_else(
+        |_| ToolArguments::Malformed {
+            arguments: value.get().to_owned(),
+        },
+        ToolArguments::Parsed,
+    )
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

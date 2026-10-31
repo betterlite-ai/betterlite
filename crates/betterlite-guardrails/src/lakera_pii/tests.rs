@@ -1,13 +1,18 @@
 #![cfg(test)]
 
+use serde_json::value::RawValue;
 use std::collections::BTreeMap;
+use std::fs;
+use std::path::Path;
 
 use super::masking::{blocked_error, is_only_pii_violation, mask_pii_in_messages};
 use super::wire::{BreakdownItem, LakeraResponse, Message, PayloadItem};
 
 fn message(content: &str) -> Message {
     Message {
-        content: Some(content.to_owned()),
+        content: Some(
+            RawValue::from_string(serde_json::to_string(content).expect("string")).expect("raw"),
+        ),
         extra: BTreeMap::new(),
     }
 }
@@ -54,7 +59,13 @@ fn lakera_pii_masking() {
     };
     let mut counts = BTreeMap::new();
     let masked = mask_pii_in_messages(&messages, Some(&response), &mut counts);
-    assert_eq!(masked[0].content.as_deref(), Some("email [MASKED EMAIL]"));
+    assert_eq!(
+        masked[0]
+            .content
+            .as_ref()
+            .and_then(|content| serde_json::from_str::<String>(content.get()).ok()),
+        Some("email [MASKED EMAIL]".to_owned())
+    );
     assert_eq!(counts["EMAIL"], 1);
 }
 
@@ -69,7 +80,13 @@ fn lakera_pii_masking_uses_character_offsets() {
     };
     let mut counts = BTreeMap::new();
     let masked = mask_pii_in_messages(&messages, Some(&response), &mut counts);
-    assert_eq!(masked[0].content.as_deref(), Some("\u{e9} [MASKED EMAIL]"));
+    assert_eq!(
+        masked[0]
+            .content
+            .as_ref()
+            .and_then(|content| serde_json::from_str::<String>(content.get()).ok()),
+        Some("\u{e9} [MASKED EMAIL]".to_owned())
+    );
 }
 
 #[test]
@@ -83,6 +100,58 @@ fn lakera_pii_masking_empty_detector_segment_falls_back_to_pii() {
     };
     let mut counts = BTreeMap::new();
     let masked = mask_pii_in_messages(&messages, Some(&response), &mut counts);
-    assert_eq!(masked[0].content.as_deref(), Some("[MASKED PII] value"));
+    assert_eq!(
+        masked[0]
+            .content
+            .as_ref()
+            .and_then(|content| serde_json::from_str::<String>(content.get()).ok()),
+        Some("[MASKED PII] value".to_owned())
+    );
     assert_eq!(counts["PII"], 1);
+}
+
+#[test]
+fn lakera_pii_accepts_multimodal_content_and_replays_corpus() {
+    let messages: Vec<Message> =
+        serde_json::from_str(r#"[{"content":[{"type":"text","text":"email"}]},{"content":null}]"#)
+            .expect("messages");
+    let response = LakeraResponse {
+        flagged: None,
+        payload: None,
+        breakdown: None,
+        extra: BTreeMap::new(),
+    };
+    let mut counts = BTreeMap::new();
+    let unchanged = mask_pii_in_messages(&messages, Some(&response), &mut counts);
+    assert_eq!(
+        serde_json::to_value(unchanged).expect("encoded"),
+        serde_json::to_value(messages).expect("encoded")
+    );
+    replay_lakera_corpus();
+}
+
+fn replay_lakera_corpus() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/lakera_wire");
+    for entry in fs::read_dir(corpus).expect("corpus") {
+        let bytes = fs::read(entry.expect("entry").path()).expect("seed");
+        let _messages: Vec<Message> = serde_json::from_slice(&bytes).expect("messages");
+    }
+}
+
+#[test]
+fn lakera_pii_omitted_start_defaults_to_zero() {
+    let messages = vec![message("secret value")];
+    let response: LakeraResponse = serde_json::from_str(
+        r#"{"payload":[{"message_id":0,"end":6,"detector_type":"pii/name"}]}"#,
+    )
+    .expect("response");
+    let mut counts = BTreeMap::new();
+    let masked = mask_pii_in_messages(&messages, Some(&response), &mut counts);
+    assert_eq!(
+        masked[0]
+            .content
+            .as_ref()
+            .and_then(|content| serde_json::from_str::<String>(content.get()).ok()),
+        Some("[MASKED NAME] value".to_owned())
+    );
 }

@@ -89,7 +89,7 @@ raw_value_record!(BreakdownItem / BreakdownItemHead {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(try_from = "Box<RawValue>")]
 pub struct Message {
-    pub content: Option<String>,
+    pub content: Option<Box<RawValue>>,
     #[serde(flatten)]
     pub extra: BTreeMap<String, Box<RawValue>>,
 }
@@ -97,7 +97,7 @@ pub struct Message {
 #[derive(Deserialize, Serialize)]
 struct MessageHead {
     #[serde(default)]
-    content: Option<String>,
+    content: Option<Box<RawValue>>,
 }
 
 impl TryFrom<Box<RawValue>> for Message {

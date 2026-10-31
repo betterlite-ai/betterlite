@@ -1,5 +1,6 @@
 pub mod apply_response;
 pub mod expand;
+pub mod lifecycle;
 pub mod map_back;
 pub mod wire;
 

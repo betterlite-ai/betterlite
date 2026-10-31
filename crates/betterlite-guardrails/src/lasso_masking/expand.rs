@@ -1,7 +1,10 @@
 use crate::bedrock_message_selection::wire::{Content, Part, Role};
 use crate::lasso::{self, wire as lasso_wire};
+use serde_json::value::RawValue;
 
-use super::wire::{LassoContent, LassoMessage, Message, ToolCall, ToolResultBlock, ToolUseBlock};
+use super::wire::{
+    LassoContent, LassoMessage, Message, ToolArguments, ToolCall, ToolResultBlock, ToolUseBlock,
+};
 
 // A tool message becomes a developer/tool_result block, an assistant tool_calls entry becomes its own model/tool_use block, and plain text passes through as-is.
 #[must_use]
@@ -61,9 +64,28 @@ fn push_tool_use(call: &ToolCall, expanded: &mut Vec<LassoMessage>) {
             kind: "tool_use".to_owned(),
             id: Some(id),
             name: Some(name),
-            input: fields.input,
+            input: fields.input.map(convert_tool_arguments),
         }),
     });
+}
+
+fn convert_tool_arguments(arguments: lasso_wire::ToolArguments) -> ToolArguments {
+    match arguments {
+        lasso_wire::ToolArguments::Parsed(value) => serde_json::to_string(&value)
+            .ok()
+            .and_then(|raw| RawValue::from_string(raw).ok())
+            .map_or_else(
+                || ToolArguments::Malformed {
+                    arguments: String::new(),
+                },
+                ToolArguments::Parsed,
+            ),
+        lasso_wire::ToolArguments::Malformed {
+            arguments: raw_arguments,
+        } => ToolArguments::Malformed {
+            arguments: raw_arguments,
+        },
+    }
 }
 
 fn extract_tool_call_fields(call: &ToolCall) -> lasso_wire::ToolCallFields {

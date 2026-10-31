@@ -1,3 +1,4 @@
+use serde_json::value::RawValue;
 use std::cmp::Reverse;
 use std::collections::BTreeMap;
 
@@ -33,6 +34,7 @@ fn mask_message(
     let Some(content) = message
         .content
         .as_ref()
+        .and_then(|raw| serde_json::from_str::<String>(raw.get()).ok())
         .filter(|content| !content.is_empty())
     else {
         return message.clone();
@@ -46,12 +48,16 @@ fn mask_message(
         return message.clone();
     }
     modifications.sort_by_key(|item| Reverse((item.start.unwrap_or(0), item.end.unwrap_or(0))));
-    let mut masked = content.clone();
+    let mut masked = content;
     for item in modifications {
         apply_modification(&mut masked, item, counts);
     }
     let mut updated = message.clone();
-    updated.content = Some(masked);
+    if let Ok(serialized) = serde_json::to_string(&masked)
+        && let Ok(raw) = RawValue::from_string(serialized)
+    {
+        updated.content = Some(raw);
+    }
     updated
 }
 
@@ -64,9 +70,11 @@ fn apply_modification(masked: &mut String, item: &PayloadItem, counts: &mut BTre
     else {
         return;
     };
-    let (Some(start), Some(end)) = (item.start, item.end) else {
+    if item.extra.contains_key("start") || item.extra.contains_key("end") {
         return;
-    };
+    }
+    let start = item.start.unwrap_or_default();
+    let end = item.end.unwrap_or_default();
     let label = detector_label(detector_type);
     if let (Some(start_byte), Some(end_byte)) = (
         character_byte_index(masked, start),
