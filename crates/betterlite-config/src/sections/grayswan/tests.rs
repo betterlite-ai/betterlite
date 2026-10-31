@@ -1,12 +1,29 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::fs;
+use std::sync::Arc;
 use std::time::Duration;
 
 use secrecy::ExposeSecret as _;
+use tempfile::NamedTempFile;
+use tracing::subscriber::with_default;
 
 use crate::loader::{ConfigError, ConfigLoader, parse_view};
 use crate::sections::Section as _;
+
+fn logged<T, F>(action: F) -> (T, String)
+where
+    F: FnOnce() -> T,
+{
+    let log = NamedTempFile::new().unwrap();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_writer(Arc::new(log.reopen().unwrap()))
+        .finish();
+    let result = with_default(subscriber, action);
+    (result, fs::read_to_string(log.path()).unwrap())
+}
 
 const GRAYSWAN_CONFIG: &str = "guardrails:\n  - guardrail_name: safety\n    litellm_params:\n      guardrail: grayswan\n      api_key: configured-key\n";
 
@@ -121,6 +138,13 @@ fn grayswan_config_resolves_on_flagged_action_monitor_explicitly() {
         configured.on_flagged_action,
         super::OnFlaggedAction::Monitor
     );
+}
+
+#[test]
+fn grayswan_config_resolves_on_flagged_action_monitor_without_a_warning() {
+    let (action, log) = logged(|| super::resolve_on_flagged_action(Some("monitor")));
+    assert_eq!(action, super::OnFlaggedAction::Monitor);
+    assert!(!log.contains("unsupported on_flagged_action"));
 }
 
 #[test]
