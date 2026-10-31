@@ -275,6 +275,39 @@ fn invalid_request_error_text_requires_no_status_or_400() {
     assert!(matches!(unmatched, ErrorClass::NotFound(_)));
 }
 
+#[rstest]
+#[case::status_400_has_no_label(400, "AzureException - boom")]
+#[case::status_401_label(401, "AzureException AuthenticationError - boom")]
+#[case::status_404_label(404, "AzureException NotFoundError - boom")]
+#[case::status_408_label(408, "AzureException Timeout - boom")]
+#[case::status_422_label(422, "AzureException BadRequestError - boom")]
+#[case::status_429_label(429, "AzureException RateLimitError - boom")]
+#[case::status_502_label(502, "AzureException BadGatewayError - boom")]
+#[case::status_503_label(503, "AzureException ServiceUnavailableError - boom")]
+#[case::status_504_label(504, "AzureException Timeout - boom")]
+#[case::status_other_label(418, "AzureException APIError - boom")]
+fn status_classification_renders_the_matching_label(#[case] status: u16, #[case] expected: &str) {
+    let class = map_azure_exception(&input("boom", Some(status)));
+    assert_eq!(message_of(&class), expected);
+}
+
+#[test]
+fn no_status_code_message_names_the_exception_provider() {
+    let class = map_azure_exception(&input("boom", None));
+    assert_eq!(message_of(&class), "Azure APIConnectionError - boom");
+}
+
+#[test]
+fn resolve_message_prefers_the_message_field_over_error_str() {
+    let mut request = input("boom", Some(401));
+    request.message = Some("the real message".to_owned());
+    let class = map_azure_exception(&request);
+    assert_eq!(
+        message_of(&class),
+        "AzureException AuthenticationError - the real message"
+    );
+}
+
 #[test]
 fn status_400_forwards_body_type_param_code() {
     let mut request = input("boom", Some(400));
@@ -291,4 +324,45 @@ fn status_400_forwards_body_type_param_code() {
     assert_eq!(context.body_type.as_deref(), Some("invalid_request_error"));
     assert_eq!(context.body_param.as_deref(), Some("messages"));
     assert_eq!(context.body_code.as_deref(), Some("missing_field"));
+}
+
+#[test]
+fn resolve_message_prefers_the_body_message_over_error_str() {
+    let mut request = input("boom", Some(401));
+    request.body = Some(AzureErrorBody {
+        kind: None,
+        param: None,
+        code: None,
+        message: Some("from the body".to_owned()),
+        error: None,
+    });
+    let class = map_azure_exception(&request);
+    assert_eq!(
+        message_of(&class),
+        "AzureException AuthenticationError - from the body"
+    );
+}
+
+#[test]
+fn content_policy_forwards_its_own_type_and_code_instead_of_the_defaults() {
+    let mut request = input("content_policy_violation detected", Some(400));
+    request.body = Some(AzureErrorBody {
+        kind: None,
+        param: None,
+        code: None,
+        message: None,
+        error: Some(AzureErrorDetail {
+            kind: Some("custom_type".to_owned()),
+            param: None,
+            code: Some("custom_code".to_owned()),
+            message: None,
+            inner_error: None,
+            innererror: None,
+        }),
+    });
+    let ErrorClass::ContentPolicyViolation(context) = map_azure_exception(&request) else {
+        panic!("expected ContentPolicyViolation");
+    };
+    assert_eq!(context.body_type.as_deref(), Some("custom_type"));
+    assert_eq!(context.body_code.as_deref(), Some("custom_code"));
 }
