@@ -74,6 +74,7 @@ description: >-
   The helper cases run through oracle operation b4836, registered with a stub in the harness helper group.
 scope:
   paths:
+    - crates/betterlite-harness/src/errors.rs
     - crates/betterlite-harness/src/providers/opencode.rs
     - crates/betterlite-harness/src/providers/opencode/**
     - tools/oracle/cases/opencode/**
