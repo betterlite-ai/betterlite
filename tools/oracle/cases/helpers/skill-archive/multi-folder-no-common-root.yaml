@@ -5,4 +5,7 @@ call:
     stored_content: UEsDBBQAAAAIAAAAIQCyC6jbBgAAAAQAAAAQAAAAZm9sZGVyQS9TS0lMTC5tZEvKT6kEAFBLAwQUAAAACAAAACEAY/PzrQYAAAAEAAAAEQAAAGZvbGRlckIvb3RoZXIudHh0S0ksSQQAUEsBAhQDFAAAAAgAAAAhALILqNsGAAAABAAAABAAAAAAAAAAAAAAAKSBAAAAAGZvbGRlckEvU0tJTEwubWRQSwECFAMUAAAACAAAACEAY/PzrQYAAAAEAAAAEQAAAAAAAAAAAAAApIE0AAAAZm9sZGVyQi9vdGhlci50eHRQSwUGAAAAAAIAAgB9AAAAaQAAAAAA
 env: {}
 compare:
-  ignore: []
+  ignore:
+    - pointer: /value
+      why: both sides agree the archive is rejected, but the oracle harness round-trips a bare top-level null answer through Option<Value>, which collapses the Python side to a missing key while the native side keeps it present
+
