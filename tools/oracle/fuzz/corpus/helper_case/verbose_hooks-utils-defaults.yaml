@@ -1,0 +1,5 @@
+kind: helper
+name: verbose-hooks-utils-defaults
+call: {verbose_hooks: {function: utils, payload: message, set_verbose: true}}
+env: {}
+compare: {ignore: []}
