@@ -75,7 +75,10 @@ fn create_pem_directory(candidates: &[PathBuf]) -> Result<PathBuf, CredentialErr
             }
         }
     }
-    Err(last_error.unwrap_or(CredentialError::NoTemporaryDirectory))
+    let Some(last_error) = last_error else {
+        return Err(CredentialError::NoTemporaryDirectory);
+    };
+    Err(last_error)
 }
 
 fn credential_path(
