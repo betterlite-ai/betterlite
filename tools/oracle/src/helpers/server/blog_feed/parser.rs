@@ -68,16 +68,21 @@ fn run_events(reader: &mut Reader<&[u8]>, collector: &mut Collector) -> Result<(
     }
 }
 
+fn open_tag(
+    tag: &quick_xml::events::BytesStart<'_>,
+    collector: &mut Collector,
+) -> Result<(String, TagKind), ParseFailure> {
+    let (kind, default_namespace) = tag_info(collector, tag)?;
+    let name = String::from_utf8_lossy(tag.name().as_ref()).into_owned();
+    collector.open(&name, kind, default_namespace);
+    Ok((name, kind))
+}
+
 fn handle_start(
     tag: &quick_xml::events::BytesStart<'_>,
     collector: &mut Collector,
 ) -> Result<(), ParseFailure> {
-    let (kind, default_namespace) = tag_info(collector, tag)?;
-    collector.open(
-        &String::from_utf8_lossy(tag.name().as_ref()),
-        kind,
-        default_namespace,
-    );
+    open_tag(tag, collector)?;
     Ok(())
 }
 
@@ -97,11 +102,14 @@ fn handle_empty(
     tag: &quick_xml::events::BytesStart<'_>,
     collector: &mut Collector,
 ) -> Result<(), ParseFailure> {
-    let name = String::from_utf8_lossy(tag.name().as_ref()).into_owned();
-    let (kind, default_namespace) = tag_info(collector, tag)?;
-    collector.open(&name, kind, default_namespace);
+    let (name, kind) = open_tag(tag, collector)?;
     collector.close(&name, kind);
     Ok(())
+}
+
+fn push_unescaped(raw: &str, collector: &mut Collector) -> Result<(), ParseFailure> {
+    let value = unescape(raw).map_err(ParseFailure::Escape)?;
+    collector.push_text(&value)
 }
 
 fn handle_text(
@@ -109,8 +117,7 @@ fn handle_text(
     collector: &mut Collector,
 ) -> Result<(), ParseFailure> {
     let decoded = text.decode().map_err(ParseFailure::Decode)?;
-    let value = unescape(decoded.as_ref()).map_err(ParseFailure::Escape)?;
-    collector.push_text(&value)
+    push_unescaped(decoded.as_ref(), collector)
 }
 
 fn handle_cdata(
@@ -126,9 +133,7 @@ fn handle_reference(
     collector: &mut Collector,
 ) -> Result<(), ParseFailure> {
     let decoded = reference.decode().map_err(ParseFailure::Decode)?;
-    let wrapped = format!("&{decoded};");
-    let value = unescape(&wrapped).map_err(ParseFailure::Escape)?;
-    collector.push_text(&value)
+    push_unescaped(&format!("&{decoded};"), collector)
 }
 
 fn tag_info(
