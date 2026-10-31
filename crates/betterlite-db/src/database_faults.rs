@@ -133,21 +133,13 @@ pub const fn is_prisma_error(error_type: ErrorType) -> bool {
     }
 }
 
-const DATA_SUBCLASSES: [ErrorType; 6] = [
-    ErrorType::UniqueViolation,
-    ErrorType::ForeignKeyViolation,
-    ErrorType::MissingRequiredValue,
-    ErrorType::RawQuery,
-    ErrorType::TableNotFound,
-    ErrorType::RecordNotFound,
-];
-
 #[must_use]
-pub fn is_base_data_error(error_type: ErrorType) -> bool {
-    if !error_type.is_data_type() {
-        return false;
+pub const fn is_base_data_error(error_type: ErrorType) -> bool {
+    use Lineage::{ConnectionAndPrisma, ConnectionOnly, Neither, PrismaBaseData, PrismaOnly};
+    match lineage(error_type) {
+        PrismaBaseData => true,
+        ConnectionOnly | ConnectionAndPrisma | PrismaOnly | Neither => false,
     }
-    !DATA_SUBCLASSES.contains(&error_type)
 }
 
 #[must_use]
