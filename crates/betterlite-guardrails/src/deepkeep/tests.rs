@@ -298,14 +298,16 @@ async fn deepkeep_guardrail_fail_open_never_logs_upstream_response_body() {
         .finish();
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let base = format!("http://{}", listener.local_addr().expect("addr"));
-    let answer = || async {
-        (
-            StatusCode::BAD_GATEWAY,
-            "upstream failure echoing api_key=super-secret-upstream-token and \
-                header Authorization: Bearer super-secret-extra-header",
-        )
-    };
-    let router = Router::new().route("/v3/openai/beta/litellm_basic_guardrail_api", post(answer));
+    let router = Router::new().route(
+        "/v3/openai/beta/litellm_basic_guardrail_api",
+        post(|| async {
+            (
+                StatusCode::BAD_GATEWAY,
+                "upstream failure echoing api_key=super-secret-upstream-token and \
+                    header Authorization: Bearer super-secret-extra-header",
+            )
+        }),
+    );
     let mut server = JoinSet::new();
     server.spawn(axum::serve(listener, router).into_future());
     let mut deepkeep = guardrail();
