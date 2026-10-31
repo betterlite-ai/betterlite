@@ -1,0 +1,13 @@
+kind: helper
+name: azure-openrouter-errors-openrouter-context
+call:
+  azure_openrouter_errors:
+    provider: openrouter
+    model: openrouter/anthropic/claude-3-haiku
+    custom_llm_provider: openrouter
+    error_str: "'messages' is a required property"
+    exception_provider: OpenRouterException
+    status_code: 400
+    status_code_is_synthesized: false
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,9 @@
+kind: helper
+name: budget-prefix-removed-everywhere
+call:
+  resolved_key:
+    function: view
+    value: {litellm_budget_table_litellm_budget_table_spend: 99}
+env: {}
+compare:
+  ignore: []

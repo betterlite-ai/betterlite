@@ -1,0 +1,5 @@
+kind: helper
+name: nondefault-recurse-depth
+call: {"b3992": {"operation": "event", "start_time": "2026-01-02T03:04:05", "source": {"s3_path": "logs", "s3_strip_base64_files": true}, "settings": {"DEFAULT_MAX_RECURSE_DEPTH_SENSITIVE_DATA_MASKER": "20"}, "payload": {"id": "request", "messages": [{"role": "user", "content": {"inner":{"inner":{"inner":{"inner":{"inner":{"inner":{"inner":{"inner":{"inner":{"inner":{"inner":{"inner":"data:image/png;base64,AAAA"}}}}}}}}}}}}}]}, "cold_storage": false}}
+env: {DEFAULT_MAX_RECURSE_DEPTH_SENSITIVE_DATA_MASKER: "20"}
+compare: {ignore: []}

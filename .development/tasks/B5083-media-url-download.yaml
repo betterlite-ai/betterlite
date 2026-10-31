@@ -1,0 +1,121 @@
+id: B5083
+title: Download request media URLs into data URLs
+description: >-
+  When a provider needs bytes and a request carries an http or https image or file URL, LiteLLM downloads it and turns it into a `data:{type};base64,...` URL (convert_url_to_base64 and async_convert_url_to_base64 in litellm/litellm_core_utils/prompt_templates/image_handling.py). betterlite does the same, through B5082's SSRF-checked fetch, with LiteLLM's size cap, cache, retries, messages and concurrency (Max, 2026-10-31: media URLs are fetched like LiteLLM). Build it in crates/betterlite-prompts/src/media_fetch.rs and media_fetch/** as one async fetcher that B183's traversal and the provider transforms call. Its client, cache and limits come in through its constructor; nothing is module state.
+
+
+  Size limit. MAX_IMAGE_URL_DOWNLOAD_SIZE_MB is read once at startup as a Python float, default 50 (constants.py L134-138). Read it in the config section image_url_download (crates/betterlite-config/src/sections/image_url_download.rs and image_url_download/**) through the config's environment lookup; a value Python's float() rejects stops startup with a config error naming the variable, where LiteLLM fails at import. The section exposes the float as config.sections.image_url_download. The comment at constants.py L135 says 0 disables the limit, but the code makes 0 disable downloads, and betterlite follows the code.
+
+
+  convert(url). A URL that starts with "data:" and holds ";base64," comes back unchanged. When the limit equals 0, fail with "Error: Image URL download is disabled (MAX_IMAGE_URL_DOWNLOAD_SIZE_MB=0). url={url}". Then look the URL up in the cache and return a hit. Otherwise try up to 3 times: fetch through B5082 (validation and allowlist from its user_url_policy section) and read the response as below. An ImageFetchError from reading is returned at once. An SSRF error from B5082 logs the warning "Image fetch of {url} rejected before any request went out: {error}" and fails with "Error: Unable to fetch image from URL. The proxy could not resolve this host or its URL policy rejected it; an admin can check the proxy log and `user_url_allowed_hosts` in litellm_settings. url={url}". Any other error (B5082's URL parse errors, connect and read failures, timeouts, too many redirects with validation off) is logged at error level the way convert_url_to_base64 logs it (the async copy drops it without a log) and the next try starts; after the third, fail with "Error: Unable to fetch image from URL after 3 attempts. url={url}". Every failure is an ImageFetchError, a 400 BadRequestError for the caller, and every text names the URL the caller passed.
+
+
+  Reading a response (_process_image_response). A status other than 200 fails with "Error: Unable to fetch image from URL. Status code: {status}, url={url}". A Content-Length header is read as an integer before the body; when it divided by 1048576 is above the limit, fail with "Error: Image size ({size:.2f}MB) exceeds maximum allowed size ({limit}MB). url={url}", where limit prints the way Python prints a float (50.0, 0.5). Then read the decoded body and count it in 8192-byte steps the way httpx's iter_bytes(chunk_size=8192) does; as soon as the count passes int(limit * 1048576), fail with the same size text for the count so far. Base64 the bytes and take the media type from B235's infer_content_type_from_url_and_content with the URL, the bytes and the Content-Type header; when it can't tell, fail with "Error: Unable to determine image content type from the server's headers, the URL, or the image bytes. url={url}". Store `data:{type};base64,{b64}` in the cache under the URL and return it. Make the limited body read (the 8192-step count and the size text, without the status and media type steps) a public function of its own, since B227 reads Bedrock image bodies through it.
+
+
+  Cache and client. The cache is B2226's LocalTtlCache built the way InMemoryCache(max_size_in_memory=10) is: 10 entries, the 600-second default TTL and the 1024 KiB item limit, so a data URL of 1 MiB or more is never kept. The client is B173's shared client with the timeout LiteLLM gives its module-level clients: litellm_settings.request_timeout, else REQUEST_TIMEOUT, else 6000 seconds (B198's CoreSettings), for connect and for each read.
+
+
+  Many URLs (_fetch_data_url and _fetch_data_urls). fetch_all(urls) converts every URL with at most 20 in flight (MAX_CONCURRENT_REMOTE_MEDIA_FETCHES), returns the results in input order, and on the first failure cancels the rest and returns that failure.
+
+
+  Tests. media_fetch::tests::response_reading_matches_litellm covers the status, Content-Length, body count, media type and cache store paths. media_fetch::tests::url_conversion_matches_litellm runs a local server on 127.0.0.1 with 127.0.0.1 allowlisted and covers the data URL pass-through, a 0 limit, a cache hit, three tries then the attempts text, no retry after an ImageFetchError, the SSRF rejection text and the total deadline. media_fetch::tests::parallel_fetches_are_bounded checks the 20-fetch limit, the result order and cancel-on-failure. sections::image_url_download::tests::download_limit_follows_litellm loads the default, a set value, 0, a value with spaces and a bad value. The skeleton gives this task the helper operation b5083 with two calls: `{call: read_response, status, headers, body_base64 | body_repeat: {byte, count}, url}`, which builds an httpx.Response (dropping the Content-Length httpx adds by itself unless the case sets one) and runs _process_image_response, and `{call: convert, url}`, which runs async_convert_url_to_base64 for URLs that never reach the network.
+scope:
+  paths:
+    - crates/betterlite-prompts/src/media_fetch.rs
+    - crates/betterlite-prompts/src/media_fetch/**
+    - crates/betterlite-prompts/Cargo.toml
+    - Cargo.toml
+    - crates/betterlite-config/src/sections/image_url_download.rs
+    - crates/betterlite-config/src/sections/image_url_download/**
+    - tools/oracle/cases/helpers/media-fetch/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/image_handling.py#L23-L81
+    why: The cache and fetch limits, _process_image_response with every text, and _rejected_image_fetch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/image_handling.py#L84-L136
+    why: async_convert_url_to_base64 and convert_url_to_base64 with the data URL pass-through, the 0 limit, the cache and the three tries.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/image_handling.py#L289-L303
+    why: _fetch_data_url and _fetch_data_urls with the 20-fetch semaphore and cancel-on-failure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L134-L141
+    why: MAX_IMAGE_URL_DOWNLOAD_SIZE_MB as a float from the environment, default 50.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L568-L577
+    why: request_timeout from REQUEST_TIMEOUT, default 6000 seconds.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_lazy_imports.py#L425-L452
+    why: The module-level clients the fetch uses take litellm.request_timeout as their only timeout.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L32-L91
+    why: InMemoryCache defaults and the item size check that keeps large data URLs out.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L270-L291
+    why: ImageFetchError is a BadRequestError, so callers answer 400.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L1504-L1594
+    why: infer_content_type_from_url_and_content, built by B235, and the ValueError it raises.
+  - url: https://github.com/encode/httpx/blob/0.28.1/httpx/_decoders.py#L228-L264
+    why: ByteChunker gives iter_bytes its fixed 8192-byte chunks.
+dod:
+  - text: Reading a response matches LiteLLM for the status check, the Content-Length check, the counted body limit, the media type and the data URL, with the same texts.
+    proof: [response-reading, oracle, helper-python]
+  - text: convert passes data URLs through, honors a 0 limit and the cache, tries three times, does not retry an ImageFetchError and turns an SSRF error into the rejection text, all as ImageFetchError.
+    proof: [url-conversion, oracle, helper-python]
+  - text: fetch_all keeps at most 20 fetches in flight, returns results in input order and cancels the rest on the first failure.
+    proof: [parallel-fetches]
+  - text: MAX_IMAGE_URL_DOWNLOAD_SIZE_MB loads as a Python float with default 50, and a value Python can't parse stops startup.
+    proof: [download-limit]
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: response-reading
+      why: the response reading tests are missing or a text, limit or data URL differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^media_fetch::tests::response_reading_matches_litellm($|::)/)'
+    - id: url-conversion
+      why: the conversion tests are missing or the pass-through, cache, retry or rejection path differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^media_fetch::tests::url_conversion_matches_litellm($|::)/)'
+    - id: parallel-fetches
+      why: the concurrency test is missing or more than 20 fetches run, results lose their order, or a failure leaves fetches running
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^media_fetch::tests::parallel_fetches_are_bounded($|::)/)'
+    - id: download-limit
+      why: the size limit setting test is missing or the value loads differently from LiteLLM
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::image_url_download::tests::download_limit_follows_litellm($|::)/)'
+    - id: helper-python
+      why: the oracle adapter fails strict Python checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/media-fetch/status-404.yaml
+  - tools/oracle/cases/helpers/media-fetch/status-204.yaml
+  - tools/oracle/cases/helpers/media-fetch/content-length-over-limit.yaml
+  - tools/oracle/cases/helpers/media-fetch/body-one-byte-over-limit.yaml
+  - tools/oracle/cases/helpers/media-fetch/body-over-limit.yaml
+  - tools/oracle/cases/helpers/media-fetch/png-bytes.yaml
+  - tools/oracle/cases/helpers/media-fetch/content-type-header-wins.yaml
+  - tools/oracle/cases/helpers/media-fetch/unknown-media-type.yaml
+  - tools/oracle/cases/helpers/media-fetch/data-url-passthrough.yaml
+  - tools/oracle/cases/helpers/media-fetch/loopback-rejected.yaml
+  - tools/oracle/cases/helpers/media-fetch/bad-port-retried.yaml
+deviations:
+  - what: A body that grows past the limit fails as soon as the count passes it, with the size text. A body that never ends, or drips slower than the read timeout allows, fails the same way once it passes the limit, where LiteLLM keeps reading until the read timeout and then answers "after 3 attempts".
+    why: >-
+      LiteLLM's safe_get reads the whole body into memory before _process_image_response counts it, so an endless or huge body uses unbounded memory. Stopping at the limit keeps memory bounded and gives the same text for every body LiteLLM can finish reading.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L713-L745
+  - what: Each try also has a total deadline equal to the request timeout (6000 seconds unless request_timeout or REQUEST_TIMEOUT sets it); a try that passes it counts as a failed try.
+    why: >-
+      LiteLLM's module-level clients give connect and every read the request timeout but have no total limit, so a server that sends one byte just inside each read timeout holds the request without end. B173's transport always takes a total deadline, and the request timeout is the largest one LiteLLM ever waits on a single read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_lazy_imports.py#L425-L452
+out_of_scope:
+  - Finding remote media in messages and putting the data URLs back (image_handling.py L142-L288 and L306-L334, inline_remote_media and async_inline_remote_media) belongs to B183.
+  - The SSRF check, redirects and the user_url_* settings belong to B5082; the outgoing query string and default headers belong to B173.
+  - Bedrock's own image fetch (factory.py get_image_details) has no cap, cache or retry and belongs to B227, which reads through this task's capped reader.
+  - Provider transforms that call convert directly (factory.py L179, L806 and L851, openai gpt_transformation.py L244-L253, gemini transformation.py L162, bedrock anthropic_claude3_transformation.py L331) belong to their provider tasks.
+pitfalls:
+  - httpx's iter_bytes(chunk_size=8192) hands out exact 8192-byte chunks whatever the network sends, so a 52,428,801-byte body fails at 52,428,801 bytes ("50.00MB") and a 60,000,000-byte body at 52,436,992 bytes ("50.01MB"); count in the same steps.
+  - The limit prints as a Python float in the size text ("50.0MB", "0.5MB", "1e-05MB"), never as Rust's "50".
+  - A limit of inf or nan makes LiteLLM's int(limit * 1048576) raise inside the read, so every fetch ends with the "after 3 attempts" text; keep that rather than reading without a limit.
+  - B5082 reports a bad port or an unclosed IPv6 bracket as a URL parse error, not an SSRF error, so convert retries it three times and answers "after 3 attempts", not the rejection text.
+  - Only status 200 passes; 201, 203 and 204 fail with the status text even though they are successes.
+  - The Content-Length check runs before any body byte is read and uses the header's number, so a Content-Length of 62914560 fails with "60.00MB" even when the body is short.
+  - asyncio.gather reports the failure that happens first in time, so fetch_all must not use futures' buffered(), which reports errors in input order.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

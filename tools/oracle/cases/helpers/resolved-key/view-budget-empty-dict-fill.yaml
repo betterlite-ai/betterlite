@@ -1,0 +1,9 @@
+kind: helper
+name: flattened-budget-empty-dict-fill
+call:
+  resolved_key:
+    function: view
+    value: {litellm_budget_table_model_max_budget: {gpt-4: 1.0}, model_max_budget: {}}
+env: {}
+compare:
+  ignore: []

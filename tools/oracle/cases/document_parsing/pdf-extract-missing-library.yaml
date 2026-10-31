@@ -1,0 +1,10 @@
+kind: helper
+name: pdf-extract-missing-library
+call:
+  b3450:
+    mode: extract_pdf
+    pdf_base64: "dGhpcyBpcyBub3QgYSBwZGY="
+    block_pypdf: true
+    block_pypdf2: true
+env: {}
+compare: {ignore: []}

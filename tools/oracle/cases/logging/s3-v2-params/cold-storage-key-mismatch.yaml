@@ -1,0 +1,5 @@
+kind: helper
+name: cold-storage-key-mismatch
+call: {"b3992": {"operation": "event", "start_time": "2026-01-02T03:04:05", "source": {"s3_path": "logs", "s3_use_team_prefix": true, "s3_use_key_prefix": true, "s3_partition_granularity": "hour"}, "payload": {"id": "request", "metadata": {"user_api_key_team_alias": "team", "user_api_key_alias": "key", "cold_storage_object_key": "other/tenant/key.json"}, "response": {"text": "ok"}}, "cold_storage": true}}
+env: {}
+compare: {ignore: []}

@@ -94,6 +94,10 @@ async fn connect_client(connection_url: &SecretString) -> (Client, JoinSet<()>) 
     });
     (client, driver)
 }
+async fn close_driver(client: Client, mut driver: JoinSet<()>) {
+    drop(client);
+    driver.join_next().await.unwrap().unwrap();
+}
 async fn database_exists(admin: &Client, database: &str) -> bool {
     admin
         .query_opt("SELECT 1 FROM pg_database WHERE datname = $1", &[&database])
@@ -185,8 +189,8 @@ async fn isolated_schemas() {
         .resolve()
         .await
         .unwrap();
-    let (writer, mut first_driver) = connect_client(&first.options.url).await;
-    let (reader, mut second_driver) = connect_client(&second.options.url).await;
+    let (writer, first_driver) = connect_client(&first.options.url).await;
+    let (reader, second_driver) = connect_client(&second.options.url).await;
     writer
         .batch_execute("CREATE TABLE rows (value TEXT); INSERT INTO rows VALUES ('first')")
         .await
@@ -203,15 +207,16 @@ async fn isolated_schemas() {
         fixture_scalar::<i64>(&second, "SELECT count(*) FROM rows").await,
         0
     );
-    drop(writer);
-    drop(reader);
-    first_driver.join_next().await.unwrap().unwrap();
-    second_driver.join_next().await.unwrap().unwrap();
+    let first_schema = fixture_scalar::<String>(&first, "SELECT current_schema()").await;
+    let second_schema = fixture_scalar::<String>(&second, "SELECT current_schema()").await;
+    close_driver(writer, first_driver).await;
+    close_driver(reader, second_driver).await;
     first.close_async().await.unwrap();
     second.close_async().await.unwrap();
     let (admin, _driver) = connect_client(&admin_url).await;
-    let statement = "SELECT 1 FROM pg_namespace WHERE nspname LIKE 'betterlite_fixture_%'";
-    let schemas = admin.query(statement, &[]).await.unwrap();
+    let statement = "SELECT 1 FROM pg_namespace WHERE nspname = ANY($1)";
+    let names = vec![first_schema, second_schema];
+    let schemas = admin.query(statement, &[&names]).await.unwrap();
     assert!(schemas.is_empty());
 }
 #[tokio::test]

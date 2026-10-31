@@ -1,0 +1,8 @@
+kind: helper
+name: empty-first-channel
+call:
+  blog_feed:
+    function: parse_rss_to_posts
+    xml: '<rss><channel/><channel><item><title>Later</title><link>https://later</link></item></channel></rss>'
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,10 @@
+kind: helper
+name: splitter-separators
+call:
+  b3450:
+    mode: split
+    chunk_size: 5
+    chunk_overlap: 0
+    text: "a\n\nb\nc"
+env: {}
+compare: {ignore: []}

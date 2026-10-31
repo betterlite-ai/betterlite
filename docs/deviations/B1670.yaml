@@ -1,0 +1,5 @@
+task: B1670
+deviations:
+  - what: Prices are exact finite decimals; nonfinite values, excess precision and overflow return a typed pricing failure.
+    why: B204 money rules prohibit binary-float billing while preserving ordinary malformed-string fallback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L804-L842

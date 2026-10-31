@@ -1,14 +1,14 @@
 id: B872
 milestone: M4 keys, spend and management
 title: Native database fault classification
-status: todo
+status: done
 depends_on: [B700, B856]
 file: tasks/B872-database-faults.yaml
 covers:
   - "litellm/proxy/db/exception_handler.py"
 parent: B051
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 413
