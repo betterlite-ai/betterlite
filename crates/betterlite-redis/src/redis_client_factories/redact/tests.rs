@@ -112,6 +112,18 @@ fn redaction_strips_the_password_out_of_a_url() {
 }
 
 #[test]
+fn redaction_strips_a_password_carried_in_the_url_query_string() {
+    let settings = RedisConnectionSettings {
+        url: Some(SecretString::from(
+            "redis://cache.internal:6379/0?password=hunter2".to_owned(),
+        )),
+        ..blank_settings()
+    };
+    let rows = redacted_config_rows(&settings);
+    assert!(rows.iter().all(|row| !row.value.contains("hunter2")));
+}
+
+#[test]
 fn redaction_leaves_a_non_sensitive_field_unmasked() {
     let settings = RedisConnectionSettings {
         host: Some("cache.internal".to_owned()),

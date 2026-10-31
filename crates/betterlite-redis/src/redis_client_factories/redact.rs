@@ -6,7 +6,6 @@ use betterlite_redact::structured::SensitiveDataMasker;
 
 use crate::redis_connection_settings::model::scalars::PassthroughValue;
 use crate::redis_connection_settings::model::settings::RedisConnectionSettings;
-use crate::redis_connection_settings::url_parts::strip_userinfo;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigRow {
@@ -117,9 +116,10 @@ fn push_secret_entries(
     ));
     entries.push((
         "url".to_owned(),
-        settings.url.as_ref().map(|value| {
-            strip_userinfo(value.expose_secret()).unwrap_or_else(|_| "<redis url>".to_owned())
-        }),
+        settings
+            .url
+            .as_ref()
+            .map(|value| redact_url(value.expose_secret())),
     ));
     entries.push((
         "credential_provider".to_owned(),
@@ -171,6 +171,18 @@ fn push_passthrough_entries(
         };
         entries.push((key.clone(), Some(value)));
     }
+}
+
+// redis-py's parse_url forwards every query parameter into connection kwargs, so a query can carry a password too.
+fn redact_url(url: &str) -> String {
+    let Ok(mut parsed) = url::Url::parse(url) else {
+        return "<redis url>".to_owned();
+    };
+    if parsed.set_username("").is_err() || parsed.set_password(None).is_err() {
+        return "<redis url>".to_owned();
+    }
+    parsed.set_query(None);
+    parsed.to_string()
 }
 
 fn node_count_text<T>(nodes: Option<&[T]>, label: &str) -> Option<String> {
