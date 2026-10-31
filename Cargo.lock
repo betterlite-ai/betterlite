@@ -844,6 +844,7 @@ dependencies = [
  "betterlite-error",
  "betterlite-logging",
  "betterlite-models",
+ "betterlite-prompts",
  "hex",
  "indexmap 2.14.2",
  "rstest",
