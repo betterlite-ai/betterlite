@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::time::Duration;
 
 use betterlite_config::sections::deepkeep_firewall::{Configured, UnreachableFallback};
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -10,8 +9,6 @@ use serde::{Deserialize, Serialize};
 
 pub mod error;
 mod transport;
-
-pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
 
 pub const SUPPORTED_EVENT_HOOKS: [CallHook; 3] = [CallHook::Pre, CallHook::Post, CallHook::During];
 
@@ -46,7 +43,7 @@ pub struct RequestContext {
     pub input_type: InputType,
     pub litellm_call_id: Option<String>,
     pub litellm_trace_id: Option<String>,
-    pub litellm_version: Option<String>,
+    pub litellm_version: String,
     pub dynamic_params: BTreeMap<String, GuardrailValue>,
 }
 
@@ -60,7 +57,7 @@ pub struct Request {
     pub tool_calls: Option<Vec<GuardrailValue>>,
     pub structured_messages: Option<Vec<GuardrailValue>>,
     pub request_data: BTreeMap<String, GuardrailValue>,
-    pub litellm_version: Option<String>,
+    pub litellm_version: String,
     #[serde(rename = "additional_provider_specific_params")]
     pub provider_params: BTreeMap<String, GuardrailValue>,
     pub input_type: InputType,
@@ -91,7 +88,6 @@ pub struct Response {
 pub struct DeepKeepGuardrail {
     pub settings: Configured,
     pub client: reqwest::Client,
-    pub timeout: Duration,
 }
 
 impl DeepKeepGuardrail {

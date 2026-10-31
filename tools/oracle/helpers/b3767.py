@@ -3,31 +3,32 @@ from types import SimpleNamespace
 from typing import Literal, TypeAlias, cast
 
 import httpx
+from litellm.proxy.guardrails.guardrail_hooks.deepkeep import initialize_guardrail
 from litellm.proxy.guardrails.guardrail_hooks.deepkeep.deepkeep import DeepKeepGuardrail
+from litellm.types.guardrails import LitellmParams
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
 
 def guardrail(settings: dict[str, Json]) -> DeepKeepGuardrail:
-    optional_params = cast(dict[str, Json], settings.get("optional_params") or {})
-    return DeepKeepGuardrail(
-        api_key=cast("str | None", settings.get("api_key")),
-        api_base=cast("str | None", settings.get("api_base")),
-        firewall_id=cast("str | None", settings.get("deepkeep_firewall_id")),
-        unreachable_fallback=cast(
-            Literal["fail_closed", "fail_open"],
-            optional_params.get("unreachable_fallback", "fail_closed"),
-        ),
-        extra_headers=cast("dict[str, str] | None", settings.get("extra_headers")),
-        guardrail_name=cast("str", settings.get("guardrail_name", "firewall")),
-        timeout=0.2,
+    parameters = LitellmParams.model_validate(
+        {"guardrail": "deepkeep", "mode": "pre_call", **settings}
+    )
+    return initialize_guardrail(
+        parameters,
+        {"guardrail_name": "firewall", "litellm_params": parameters},
     )
 
 
 def construct(settings: dict[str, Json]) -> Json:
     deepkeep = guardrail(settings)
+    timeout = deepkeep.timeout
+    if timeout is None:
+        timeout = deepkeep.async_handler.client.timeout
+    seconds = timeout.read if isinstance(timeout, httpx.Timeout) else timeout
     return {
         "api_base": deepkeep.api_base,
+        "timeout_ms": int(seconds * 1000) if seconds is not None else None,
         "supported_event_hooks": cast(Json, deepkeep.supported_event_hooks),
     }
 
@@ -40,7 +41,7 @@ def metadata(request_data: dict[str, Json]) -> Json:
         Json,
         deepkeep._extract_user_api_key_metadata(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportArgumentType]
             cast("dict[str, object]", request_data)  # pyright: ignore[reportArgumentType]
-        )
+        ),
     )
 
 
@@ -84,7 +85,7 @@ async def apply(  # noqa: PLR0913, PLR0917
     return {
         "path": paths[0] if paths else None,
         "request": bodies[0] if bodies else None,
-        "result": cast(Json, result),
+        "result": cast(Json, cast(object, result)),
     }
 
 

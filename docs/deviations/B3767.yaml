@@ -15,3 +15,6 @@ deviations:
   - what: Error bodies and blocked reasons that echo configured credentials are redacted, and JSON parse errors do not expose response data through Display or Debug.
     why: Upstream failures must not disclose API keys or extra-header secrets; typed parse causes remain available through the error source.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/deepkeep/deepkeep.py#L279-L280
+  - what: Negative, nonfinite and overflowing timeouts are rejected during configuration loading.
+    why: Resolve timeout to a finite nonnegative Duration before transport; invalid durations must not disable the bounded request wait.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1240-L1250

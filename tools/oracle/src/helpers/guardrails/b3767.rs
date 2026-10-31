@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 use std::net::TcpListener;
-use std::time::Duration;
 
 use betterlite_config::loader::{ConfigError, ConfigLoader};
 use betterlite_config::sections::deepkeep_firewall::Configured;
@@ -89,13 +88,13 @@ fn construct(settings: &Value) -> HelperResult {
     let configured = configure(settings, BTreeMap::new())?;
     Ok(json!({
         "api_base": configured.api_base,
+        "timeout_ms": configured.timeout.as_millis(),
         "supported_event_hooks": SUPPORTED_EVENT_HOOKS,
     }))
 }
 
 fn apply(args: ApplyArgs<'_>) -> HelperResult {
     let io = |error: std::io::Error| failure("OSError", error.to_string());
-    let mock_error = |error: crate::OracleError| failure("MockError", error.to_string());
     // with no answer the listener accepts the connection and never replies, so the call times out
     let ApplyArgs {
         settings,
@@ -108,16 +107,18 @@ fn apply(args: ApplyArgs<'_>) -> HelperResult {
         answer,
     } = args;
     let silent = TcpListener::bind(("127.0.0.1", 0)).map_err(io)?;
-    let start =
-        |reply| MockScript::try_from(std::slice::from_ref(reply)).and_then(MockProvider::start);
-    let mock = answer.map(start).transpose().map_err(mock_error)?;
+    let mock = answer
+        .map(|reply| {
+            MockScript::try_from(std::slice::from_ref(reply)).and_then(MockProvider::start)
+        })
+        .transpose()
+        .map_err(|error| failure("MockError", error.to_string()))?;
     let base = match &mock {
         Some(provider) => provider.base_url.clone(),
         None => format!("http://{}", silent.local_addr().map_err(io)?),
     };
     let mut deepkeep = guardrail(settings)?;
     deepkeep.settings.api_base = format!("{base}/v3/openai/beta/litellm_basic_guardrail_api");
-    deepkeep.timeout = Duration::from_millis(200);
     let context = context(
         request_data,
         dynamic_params,
@@ -149,7 +150,7 @@ fn context(
         input_type,
         litellm_call_id: call_id_copy,
         litellm_trace_id: trace_id_copy,
-        litellm_version: None,
+        litellm_version: "1.105.1".to_owned(),
         dynamic_params: dynamic_params_copy,
     }
 }
@@ -205,7 +206,6 @@ fn guardrail(settings: &Value) -> Result<DeepKeepGuardrail, Box<HelperError>> {
     Ok(DeepKeepGuardrail {
         settings: configured,
         client,
-        timeout: betterlite_guardrails::deepkeep::DEFAULT_TIMEOUT,
     })
 }
 

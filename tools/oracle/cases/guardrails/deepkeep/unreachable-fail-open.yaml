@@ -7,7 +7,7 @@ call:
         api_key: key
         api_base: "https://deepkeep.test"
         deepkeep_firewall_id: fixed
-        optional_params: {unreachable_fallback: fail_open}
+        unreachable_fallback: fail_open
       inputs: {texts: [hello]}
       input_type: request
       answer: {status: 401, headers: {}, body: {detail: unauthorized}}

@@ -16,7 +16,7 @@ pub(super) async fn send_request(
         .post(&guardrail.settings.api_base)
         .headers(guardrail.request_headers()?)
         .json(request)
-        .timeout(guardrail.timeout)
+        .timeout(guardrail.settings.timeout)
         .send()
         .await
         .map_err(request_error)?;

@@ -1,7 +1,11 @@
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
+use thiserror::Error;
+
+mod timeout;
 
 use super::Section;
 use crate::loader::{ConfigError, EnvironmentLookup};
@@ -29,7 +33,8 @@ struct Parameters {
     api_key: Option<SecretString>,
     api_base: Option<String>,
     deepkeep_firewall_id: Option<String>,
-    optional_params: OptionalParameters,
+    unreachable_fallback: UnreachableFallback,
+    timeout: timeout::Timeout,
     extra_headers: Option<ExtraHeaders>,
 }
 
@@ -40,18 +45,30 @@ enum ExtraHeaders {
     List(Vec<String>),
 }
 
-#[derive(Debug, Default, Deserialize)]
-#[serde(default)]
-struct OptionalParameters {
-    unreachable_fallback: Option<UnreachableFallback>,
-}
-
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(try_from = "String")]
 pub enum UnreachableFallback {
     #[default]
     FailClosed,
     FailOpen,
+}
+
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("invalid unreachable_fallback: {value}; expected fail_open or fail_closed")]
+    Fallback { value: String },
+}
+
+impl TryFrom<String> for UnreachableFallback {
+    type Error = Error;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        match value.to_lowercase().as_str() {
+            "fail_closed" => Ok(Self::FailClosed),
+            "fail_open" => Ok(Self::FailOpen),
+            _ => Err(Error::Fallback { value }),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -66,6 +83,7 @@ pub struct Configured {
     pub api_base: String,
     pub deepkeep_firewall_id: String,
     pub unreachable_fallback: UnreachableFallback,
+    pub timeout: Duration,
     pub extra_headers: BTreeMap<String, SecretString>,
 }
 
@@ -129,10 +147,8 @@ impl Entry {
             api_base: normalize_endpoint(&api_base),
             api_key,
             deepkeep_firewall_id: firewall_id,
-            unreachable_fallback: parameters
-                .optional_params
-                .unreachable_fallback
-                .unwrap_or_default(),
+            unreachable_fallback: parameters.unreachable_fallback,
+            timeout: parameters.timeout.0,
             extra_headers,
         })
     }

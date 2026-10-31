@@ -35,10 +35,10 @@ fn guardrail() -> DeepKeepGuardrail {
             api_base: "https://deepkeep.test/v3/openai/beta/litellm_basic_guardrail_api".to_owned(),
             deepkeep_firewall_id: "fixed".to_owned(),
             unreachable_fallback: UnreachableFallback::FailClosed,
+            timeout: Duration::from_secs(600),
             extra_headers: BTreeMap::new(),
         },
         client,
-        timeout: super::DEFAULT_TIMEOUT,
     }
 }
 
@@ -59,7 +59,7 @@ fn context() -> RequestContext {
         input_type: InputType::Request,
         litellm_call_id: None,
         litellm_trace_id: None,
-        litellm_version: None,
+        litellm_version: "1.105.1".to_owned(),
         dynamic_params: BTreeMap::new(),
     }
 }
@@ -155,7 +155,7 @@ fn deepkeep_guardrail_request_keeps_fixed_firewall_id() {
             input_type: InputType::Request,
             litellm_call_id: Some("call".to_owned()),
             litellm_trace_id: Some("trace".to_owned()),
-            litellm_version: Some("version".to_owned()),
+            litellm_version: "version".to_owned(),
             dynamic_params: BTreeMap::from([
                 ("firewall_id".to_owned(), text("attacker")),
                 ("custom".to_owned(), GuardrailValue::Boolean(true)),
@@ -170,6 +170,7 @@ fn deepkeep_guardrail_request_keeps_fixed_firewall_id() {
         request.provider_params["custom"],
         GuardrailValue::Boolean(true)
     );
+    assert_eq!(request.litellm_version, "version");
 }
 
 #[test]
@@ -215,7 +216,7 @@ fn deepkeep_guardrail_headers_include_secrets_without_debug_disclosure() {
 
 #[test]
 fn deepkeep_guardrail_loads_from_config() {
-    let source = "guardrails:\n  - guardrail_name: firewall\n    litellm_params:\n      guardrail: deepkeep\n      api_key: key\n      api_base: https://deepkeep.test\n      deepkeep_firewall_id: fixed\n      optional_params:\n        unreachable_fallback: fail_open\n";
+    let source = "guardrails:\n  - guardrail_name: firewall\n    litellm_params:\n      guardrail: deepkeep\n      api_key: key\n      api_base: https://deepkeep.test\n      deepkeep_firewall_id: fixed\n      unreachable_fallback: fail_open\n";
     let config = ConfigLoader {
         lookup: BTreeMap::new(),
     }
@@ -237,7 +238,7 @@ fn deepkeep_guardrail_loads_from_config() {
 
 #[test]
 fn deepkeep_guardrail_config_default_timeout_matches_http_handler() {
-    assert_eq!(guardrail().timeout, Duration::from_secs(600));
+    assert_eq!(guardrail().settings.timeout, Duration::from_secs(600));
 }
 
 #[test]
@@ -275,7 +276,13 @@ async fn deepkeep_guardrail_apply_honors_fail_open_when_unreachable(
     let mut deepkeep = guardrail();
     deepkeep.settings.api_base = format!("{base}/v3/openai/beta/litellm_basic_guardrail_api");
     deepkeep.settings.unreachable_fallback = unreachable_fallback;
-    deepkeep.timeout = Duration::from_millis(100);
+    let source = "guardrails:\n  - guardrail_name: firewall\n    litellm_params:\n      guardrail: deepkeep\n      api_key: key\n      api_base: https://deepkeep.test\n      deepkeep_firewall_id: fixed\n      timeout: '0.1'\n";
+    let configured = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(source)
+    .expect("config");
+    deepkeep.settings.timeout = configured.sections.deepkeep_firewall.guardrails[0].timeout;
     let result = deepkeep.apply(inputs(), context()).await;
     if expect_pass_through {
         assert_eq!(result.expect("fail-open passthrough"), inputs());
@@ -335,7 +342,7 @@ async fn deepkeep_guardrail_fail_open_logs_a_warning_with_guardrail_identity() {
     let mut deepkeep = guardrail();
     deepkeep.settings.api_base = format!("{base}/v3/openai/beta/litellm_basic_guardrail_api");
     deepkeep.settings.unreachable_fallback = UnreachableFallback::FailOpen;
-    deepkeep.timeout = Duration::from_millis(100);
+    deepkeep.settings.timeout = Duration::from_millis(100);
     let guard = set_default(subscriber);
     let result = deepkeep.apply(inputs(), context()).await;
     drop(guard);
@@ -373,7 +380,7 @@ async fn deepkeep_guardrail_fail_open_never_logs_upstream_response_body() {
     )]);
     deepkeep.settings.api_base = base;
     deepkeep.settings.unreachable_fallback = UnreachableFallback::FailOpen;
-    deepkeep.timeout = Duration::from_secs(5);
+    deepkeep.settings.timeout = Duration::from_secs(5);
     let guard = set_default(subscriber);
     let result = deepkeep.apply(inputs(), context()).await;
     drop(guard);

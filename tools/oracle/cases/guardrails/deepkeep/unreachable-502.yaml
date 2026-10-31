@@ -7,7 +7,7 @@ call:
         api_key: key
         api_base: "https://deepkeep.test"
         deepkeep_firewall_id: fixed
-        optional_params: {unreachable_fallback: fail_open}
+        unreachable_fallback: FAIL_OPEN
       inputs: {texts: [hello]}
       input_type: request
       answer: {status: 502, headers: {}, body: {}}
@@ -16,5 +16,3 @@ compare:
   ignore:
     - pointer: /value/result/model
       why: "LiteLLM's _build_return_inputs never echoes model back; betterlite's Inputs carries it through for internal callers"
-    - pointer: /value/request/litellm_version
-      why: "LiteLLM always sends its own installed package version; betterlite forwards whatever the lifecycle hook supplies"
