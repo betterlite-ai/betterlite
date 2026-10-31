@@ -29,7 +29,7 @@ pub(super) struct Context<'context> {
 struct Prompt<'prompt> {
     task: &'static str,
     context: &'prompt str,
-    checks: Vec<Check>,
+    questions: Vec<Check>,
     candidate: CandidatePrompt<'prompt>,
     candidate_run_count: usize,
     supporting_observations: &'prompt [Observation],
@@ -172,7 +172,7 @@ fn payload<'context>(
     Ok(Prompt {
         task: TASK_INSTRUCTIONS,
         context: &context.claim.job.settings.context,
-        checks: context.claim.job.settings.analysis_checks(),
+        questions: context.claim.job.settings.analysis_checks(),
         candidate: CandidatePrompt {
             check_id: &context.candidate.check_id,
             kind: context.candidate.kind,

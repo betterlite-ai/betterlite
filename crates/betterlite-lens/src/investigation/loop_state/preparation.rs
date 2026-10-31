@@ -2,7 +2,7 @@ use super::{Context, State};
 use crate::analysis::primitives::{partition_content, partition_items};
 use crate::analysis::{AnalysisError, Candidate, Examined, Observation};
 use crate::models::execution::{ExecutionContent, TracePart};
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 
 pub(super) struct Prepared {
     pub supporting: Vec<Observation>,
@@ -60,8 +60,8 @@ fn json_size<T>(value: &T) -> usize
 where
     T: serde::Serialize,
 {
-    let encoded = serde_json::to_vec(value);
-    encoded.map_or(usize::MAX, |bytes| bytes.len())
+    let encoded = serde_json::to_string(value);
+    encoded.map_or(usize::MAX, |text| text.chars().count())
 }
 
 fn catalog(candidate: &Candidate, examined: &[Examined], relevant: &[&Examined]) -> Vec<Examined> {
@@ -76,22 +76,28 @@ fn catalog(candidate: &Candidate, examined: &[Examined], relevant: &[&Examined])
 }
 
 fn unique_spans(relevant: &[&Examined], additional: &[TracePart]) -> Vec<TracePart> {
-    let mut unique = BTreeMap::new();
+    let mut positions = HashMap::new();
+    let mut unique = Vec::new();
     for part in relevant
         .iter()
         .flat_map(|item| item.parts.iter())
         .chain(additional.iter())
     {
-        unique.insert(
-            (
-                part.execution_id.clone(),
-                part.span_id.clone(),
-                part.content.clone(),
-            ),
-            part.clone(),
+        let key = (
+            part.execution_id.clone(),
+            part.span_id.clone(),
+            part.content.clone(),
         );
+        if let Some(position) = positions.get(&key).copied() {
+            if let Some(existing) = unique.get_mut(position) {
+                *existing = part.clone();
+            }
+        } else {
+            positions.insert(key, unique.len());
+            unique.push(part.clone());
+        }
     }
-    unique.into_values().collect()
+    unique
 }
 
 fn evidence_page(
