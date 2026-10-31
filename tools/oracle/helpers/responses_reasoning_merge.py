@@ -8,7 +8,7 @@ from litellm.responses.litellm_completion_transformation.transformation import (
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
-def responses_reasoning_merge(input_value: dict[str, Json]) -> Json:
+def run(input_value: dict[str, Json]) -> Json:
     mode = input_value["mode"]
     if mode == "reasoning":
         messages = cast(Any, input_value["messages"])  # pyright: ignore[reportAny]
@@ -20,7 +20,9 @@ def responses_reasoning_merge(input_value: dict[str, Json]) -> Json:
         messages = cast(Any, input_value["messages"])  # pyright: ignore[reportAny]
         new_messages = cast(Any, input_value.get("new_messages", []))  # pyright: ignore[reportAny]
         hosted_search = cast(bool, input_value.get("hosted_search", False))
-        return cast(Json, LiteLLMCompletionResponsesConfig._merged_trailing_assistant_message(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportAny]
+        merged = LiteLLMCompletionResponsesConfig._merged_trailing_assistant_message(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportAny]
             messages=messages, chat_completion_messages=new_messages, hosted_search=hosted_search
-        ))
+        )
+        # a bare null here drops the wire format's "value" key on the Option<Value> round trip
+        return {"merged": cast(Json, merged)}
     raise ValueError("unknown merge mode")

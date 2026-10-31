@@ -12,24 +12,15 @@ pub enum MergeError {
     InvalidContent,
 }
 
-// Mirrors how LiteLLM reads a non-dict message through getattr: closed fields, no passthrough.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TypedChatRecord {
-    pub role: String,
-    pub content: Option<String>,
-    pub reasoning_content: Option<String>,
-    pub thinking_blocks: Option<Vec<Value>>,
-    pub tool_calls: Option<Vec<Value>>,
-}
-
 // Public so merge_reasoning's trait bound is visible; lets one loop drive both record kinds.
 pub trait Reasoning: Sized {
     fn is_pending(&self) -> bool;
     fn is_assistant(&self) -> bool;
     fn text(&self) -> Option<&str>;
     fn blocks(&self) -> Option<&[Value]>;
-    fn apply_pending(&mut self, texts: &[Option<&str>], block_lists: &[Option<&[Value]>]);
-    fn standalone(texts: &[Option<&str>], block_lists: &[Option<&[Value]>]) -> Self;
+    fn set_text(&mut self, text: String);
+    fn set_blocks(&mut self, blocks: Vec<Value>);
+    fn blank(text: Option<String>, blocks: Option<Vec<Value>>) -> Self;
 }
 
 fn is_falsy(value: &Value) -> bool {
@@ -96,105 +87,69 @@ impl Reasoning for Value {
         dict_blocks(self)
     }
 
-    fn apply_pending(&mut self, texts: &[Option<&str>], block_lists: &[Option<&[Value]>]) {
-        let mut combined_texts: Vec<String> = texts
-            .iter()
-            .filter_map(|value| *value)
-            .map(str::to_owned)
-            .collect();
-        if let Some(existing) = dict_text(self) {
-            combined_texts.push(existing.to_owned());
-        }
-        let mut combined_blocks = concatenated_blocks(block_lists);
-        if let Some(existing) = dict_blocks(self) {
-            combined_blocks.extend(existing.iter().cloned());
-        }
-        let Some(fields) = self.as_object_mut() else {
-            return;
-        };
-        if !combined_texts.is_empty() {
-            fields.insert(
-                "reasoning_content".to_owned(),
-                Self::String(combined_texts.join("\n")),
-            );
-        }
-        if !combined_blocks.is_empty() {
-            fields.insert("thinking_blocks".to_owned(), Self::Array(combined_blocks));
+    fn set_text(&mut self, text: String) {
+        if let Some(fields) = self.as_object_mut() {
+            fields.insert("reasoning_content".to_owned(), Self::String(text));
         }
     }
 
-    fn standalone(texts: &[Option<&str>], block_lists: &[Option<&[Value]>]) -> Self {
+    fn set_blocks(&mut self, blocks: Vec<Value>) {
+        if let Some(fields) = self.as_object_mut() {
+            fields.insert("thinking_blocks".to_owned(), Self::Array(blocks));
+        }
+    }
+
+    fn blank(text: Option<String>, blocks: Option<Vec<Value>>) -> Self {
         let mut fields = Map::new();
         fields.insert("role".to_owned(), Self::String("assistant".to_owned()));
         fields.insert("content".to_owned(), Self::Null);
-        let joined = joined_text(texts);
-        if !joined.is_empty() {
-            fields.insert("reasoning_content".to_owned(), Self::String(joined));
+        if let Some(reasoning_content) = text {
+            fields.insert(
+                "reasoning_content".to_owned(),
+                Self::String(reasoning_content),
+            );
         }
-        let merged = concatenated_blocks(block_lists);
-        if !merged.is_empty() {
-            fields.insert("thinking_blocks".to_owned(), Self::Array(merged));
+        if let Some(thinking_blocks) = blocks {
+            fields.insert("thinking_blocks".to_owned(), Self::Array(thinking_blocks));
         }
         Self::Object(fields)
     }
 }
 
-impl Reasoning for TypedChatRecord {
-    fn is_pending(&self) -> bool {
-        self.role == "assistant"
-            && self.content.is_none()
-            && self.tool_calls.as_ref().is_none_or(Vec::is_empty)
-            && (self.text().is_some() || self.blocks().is_some())
+fn apply_pending<T>(target: &mut T, texts: &[Option<&str>], block_lists: &[Option<&[Value]>])
+where
+    T: Reasoning,
+{
+    let mut combined_texts: Vec<String> = texts
+        .iter()
+        .filter_map(|value| *value)
+        .map(str::to_owned)
+        .collect();
+    if let Some(existing) = target.text() {
+        combined_texts.push(existing.to_owned());
     }
+    let mut combined_blocks = concatenated_blocks(block_lists);
+    if let Some(existing) = target.blocks() {
+        combined_blocks.extend(existing.iter().cloned());
+    }
+    if !combined_texts.is_empty() {
+        target.set_text(combined_texts.join("\n"));
+    }
+    if !combined_blocks.is_empty() {
+        target.set_blocks(combined_blocks);
+    }
+}
 
-    fn is_assistant(&self) -> bool {
-        self.role == "assistant"
-    }
-
-    fn text(&self) -> Option<&str> {
-        self.reasoning_content
-            .as_deref()
-            .filter(|value| !value.is_empty())
-    }
-
-    fn blocks(&self) -> Option<&[Value]> {
-        self.thinking_blocks
-            .as_deref()
-            .filter(|value| !value.is_empty())
-    }
-
-    fn apply_pending(&mut self, texts: &[Option<&str>], block_lists: &[Option<&[Value]>]) {
-        let mut combined_texts: Vec<String> = texts
-            .iter()
-            .filter_map(|value| *value)
-            .map(str::to_owned)
-            .collect();
-        if let Some(existing) = self.text() {
-            combined_texts.push(existing.to_owned());
-        }
-        let mut combined_blocks = concatenated_blocks(block_lists);
-        if let Some(existing) = self.blocks() {
-            combined_blocks.extend(existing.iter().cloned());
-        }
-        if !combined_texts.is_empty() {
-            self.reasoning_content = Some(combined_texts.join("\n"));
-        }
-        if !combined_blocks.is_empty() {
-            self.thinking_blocks = Some(combined_blocks);
-        }
-    }
-
-    fn standalone(texts: &[Option<&str>], block_lists: &[Option<&[Value]>]) -> Self {
-        let joined = joined_text(texts);
-        let merged = concatenated_blocks(block_lists);
-        Self {
-            role: "assistant".to_owned(),
-            content: None,
-            reasoning_content: (!joined.is_empty()).then_some(joined),
-            thinking_blocks: (!merged.is_empty()).then_some(merged),
-            tool_calls: None,
-        }
-    }
+fn standalone<T>(texts: &[Option<&str>], block_lists: &[Option<&[Value]>]) -> T
+where
+    T: Reasoning,
+{
+    let joined = joined_text(texts);
+    let merged = concatenated_blocks(block_lists);
+    T::blank(
+        (!joined.is_empty()).then_some(joined),
+        (!merged.is_empty()).then_some(merged),
+    )
 }
 
 // Merges pending reasoning-only turns into the next assistant message, else rebuilds them standalone.
@@ -218,10 +173,10 @@ where
             continue;
         }
         if carried.is_assistant() {
-            carried.apply_pending(&texts, &block_lists);
+            apply_pending(&mut carried, &texts, &block_lists);
         } else {
             for (text, block) in texts.iter().zip(block_lists.iter()) {
-                merged.push(T::standalone(&[*text], &[*block]));
+                merged.push(standalone(&[*text], &[*block]));
             }
         }
         texts.clear();
@@ -229,7 +184,7 @@ where
         merged.push(carried);
     }
     for (text, block) in texts.iter().zip(block_lists.iter()) {
-        merged.push(T::standalone(&[*text], &[*block]));
+        merged.push(standalone(&[*text], &[*block]));
     }
     merged
 }

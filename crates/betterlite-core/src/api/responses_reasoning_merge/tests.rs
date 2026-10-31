@@ -1,7 +1,10 @@
 #![cfg(test)]
 
+mod typed_record;
+
 use super::*;
 use rstest::rstest;
+use typed_record::TypedChatRecord;
 
 fn obj(pairs: Vec<(&str, Value)>) -> Value {
     let mut fields = Map::new();
@@ -152,7 +155,7 @@ fn reasoning_merges_into_typed_target() {
 
 #[test]
 fn standalone_builder_with_no_reasoning_is_content_null_only() {
-    let built = TypedChatRecord::standalone(&[None], &[None]);
+    let built = TypedChatRecord::blank(None, None);
     assert_eq!(
         built,
         TypedChatRecord {
