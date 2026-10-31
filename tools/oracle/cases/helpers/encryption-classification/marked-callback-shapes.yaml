@@ -2,6 +2,7 @@ kind: helper
 name: encryption-classification-marked-callback-shapes
 call:
   encryption_classification:
+    salt_key: scan-key
     values: []
     callbacks:
     - litellm_enc::AAECAwQFBgcICQoLDA0ODxAREhMUFRYXbRIvLOA7WUwu8UmdnopPhr7H5AqjAg==

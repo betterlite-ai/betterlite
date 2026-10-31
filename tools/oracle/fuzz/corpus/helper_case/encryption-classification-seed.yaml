@@ -2,6 +2,7 @@ kind: helper
 name: encryption-classification-seed
 call:
   encryption_classification:
+    salt_key: scan-key
     values:
       - "v2:gcm:seed"
       - "plain"

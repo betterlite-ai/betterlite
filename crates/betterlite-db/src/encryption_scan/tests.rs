@@ -74,34 +74,35 @@ fn migration_json_is_bounded_and_typed() {
 fn report_wire_keys_and_checked_totals_are_stable() {
     let mut report = LocationReport {
         location: String::from("credentials"),
-        scanned: 0,
-        migrated: 0,
-        already_v2: 0,
-        plaintext: 0,
-        undecryptable: 0,
-        legacy: 0,
+        scanned: 20,
+        migrated: 2,
+        already_v2: 3,
+        plaintext: 4,
+        undecryptable: 5,
+        legacy: 6,
     };
     report.count(Some(ValueClass::Legacy)).unwrap();
     report.count(Some(ValueClass::Migrated)).unwrap();
     let aggregate = MigrationReport {
         locations: vec![report.clone()],
     };
-    assert_eq!(aggregate.as_dict().unwrap().residual_legacy, 1);
+    assert_eq!(aggregate.as_dict().unwrap().residual_legacy, 7);
     assert_eq!(
-        report.as_dict().keys().collect::<Vec<_>>(),
-        vec![
-            "already_v2",
-            "legacy",
-            "migrated",
-            "plaintext",
-            "scanned",
-            "undecryptable"
-        ]
+        report.as_dict(),
+        report::LocationCounts {
+            scanned: 22,
+            migrated: 2,
+            already_v2: 4,
+            plaintext: 4,
+            undecryptable: 5,
+            legacy: 7,
+        }
     );
-    let projection = serde_json::to_value(aggregate.as_dict().unwrap()).unwrap();
-    assert!(projection.get("residual_legacy").is_some());
-    assert!(projection.get("total_undecryptable").is_some());
-    assert!(projection.get("locations").is_some());
+    let projection = serde_json::to_string(&aggregate.as_dict().unwrap()).unwrap();
+    assert_eq!(
+        projection,
+        r#"{"residual_legacy":7,"total_undecryptable":5,"locations":{"credentials":{"scanned":22,"migrated":2,"already_v2":4,"plaintext":4,"undecryptable":5,"legacy":7}}}"#
+    );
 }
 
 #[test]

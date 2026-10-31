@@ -1,18 +1,21 @@
-use betterlite_db::encryption_scan::report::{LocationReport, MigrationReport, ValueClass};
+use betterlite_db::encryption_scan::report::{LocationReport, MigrationReport};
+use betterlite_db::encryption_scan::secret_text::SecretText;
 use betterlite_db::encryption_scan::{
     DbCipher, MigrationJson, ScanError, classify_callback_value, classify_secret_map,
     classify_value, iter_callback_var_dicts,
 };
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces};
-use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
+
+mod tests;
 
 pub(crate) struct Op;
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
+    pub salt_key: SecretText,
     pub values: Vec<MigrationJson>,
     #[serde(default)]
     pub callbacks: Vec<MigrationJson>,
@@ -29,7 +32,7 @@ impl crate::helpers::Helper for Op {
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         let cipher = DbCipher {
             settings: CipherSettings {
-                signing_key: Some(SecretString::from("scan-key")),
+                signing_key: Some(input.salt_key.0.clone()),
                 algorithm: Algorithm::XSalsa20Poly1305,
             },
             nonces: OsNonces,
@@ -64,10 +67,12 @@ fn classify_input(
         &input.key
     };
     for value in &input.values {
-        count_value(&mut report, Some(classify_value(value, cipher, key)))?;
+        let class = Some(classify_value(value, cipher, key));
+        report.count(class).map_err(|error| helper_error(&error))?;
     }
     for value in &input.maps {
-        count_value(&mut report, classify_secret_map(value, cipher, key))?;
+        let class = classify_secret_map(value, cipher, key);
+        report.count(class).map_err(|error| helper_error(&error))?;
     }
     let metadata_values = input
         .metadata
@@ -75,19 +80,10 @@ fn classify_input(
         .flat_map(iter_callback_var_dicts)
         .flat_map(|vars| vars.values());
     for value in input.callbacks.iter().chain(metadata_values) {
-        count_value(&mut report, Some(classify_callback_value(value, cipher)))?;
+        let class = Some(classify_callback_value(value, cipher));
+        report.count(class).map_err(|error| helper_error(&error))?;
     }
     Ok(report)
-}
-
-fn count_value(
-    report: &mut LocationReport,
-    class: Option<ValueClass>,
-) -> Result<(), Box<crate::helpers::HelperError>> {
-    match report.count(class) {
-        Ok(()) => Ok(()),
-        Err(error) => Err(helper_error(&error)),
-    }
 }
 
 fn helper_error(error: &ScanError) -> Box<crate::helpers::HelperError> {

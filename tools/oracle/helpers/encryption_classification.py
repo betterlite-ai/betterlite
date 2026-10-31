@@ -1,5 +1,7 @@
+import os
 from collections.abc import Iterable
 from typing import TypeAlias, cast
+from unittest.mock import patch
 
 from litellm.proxy.management_endpoints.credential_migration import (
     LocationReport,
@@ -14,6 +16,14 @@ Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Js
 
 
 def run(input_value: dict[str, Json]) -> Json:
+    salt_key = input_value.get("salt_key")
+    if not isinstance(salt_key, str):
+        raise ValueError("salt_key must be a string")
+    with patch.dict(os.environ, {"LITELLM_SALT_KEY": salt_key}):
+        return classify_input(input_value)
+
+
+def classify_input(input_value: dict[str, Json]) -> Json:
     values = input_value.get("values")
     if not isinstance(values, list):
         raise ValueError("values must be a list")

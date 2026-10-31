@@ -22,6 +22,16 @@ pub struct LocationReport {
     pub legacy: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LocationCounts {
+    pub scanned: u64,
+    pub migrated: u64,
+    pub already_v2: u64,
+    pub plaintext: u64,
+    pub undecryptable: u64,
+    pub legacy: u64,
+}
+
 impl LocationReport {
     pub fn count(&mut self, class: Option<ValueClass>) -> Result<(), super::ScanError> {
         let Some(value_class) = class else {
@@ -44,15 +54,25 @@ impl LocationReport {
     }
 
     #[must_use]
-    pub fn as_dict(&self) -> BTreeMap<String, u64> {
-        let mut fields = BTreeMap::new();
-        fields.insert(String::from("scanned"), self.scanned);
-        fields.insert(String::from("migrated"), self.migrated);
-        fields.insert(String::from("already_v2"), self.already_v2);
-        fields.insert(String::from("plaintext"), self.plaintext);
-        fields.insert(String::from("undecryptable"), self.undecryptable);
-        fields.insert(String::from("legacy"), self.legacy);
-        fields
+    pub const fn as_dict(&self) -> LocationCounts {
+        // Exhaustive destructuring requires an explicit wire decision for every added report field.
+        let Self {
+            location: _location,
+            scanned,
+            migrated,
+            already_v2,
+            plaintext,
+            undecryptable,
+            legacy,
+        } = self;
+        LocationCounts {
+            scanned: *scanned,
+            migrated: *migrated,
+            already_v2: *already_v2,
+            plaintext: *plaintext,
+            undecryptable: *undecryptable,
+            legacy: *legacy,
+        }
     }
 }
 
@@ -82,7 +102,7 @@ impl MigrationReport {
 pub struct MigrationReportProjection {
     pub residual_legacy: u64,
     pub total_undecryptable: u64,
-    pub locations: BTreeMap<String, BTreeMap<String, u64>>,
+    pub locations: BTreeMap<String, LocationCounts>,
 }
 
 fn checked_total(
