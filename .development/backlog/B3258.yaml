@@ -1,14 +1,14 @@
 id: B3258
 milestone: M6 guardrails
 title: Local EU AI Act and baseline PII catalog records
-status: todo
+status: done
 depends_on: []
 file: tasks/B3258-policy-catalog-local-eu-baseline.yaml
 covers:
   - "litellm/policy_templates_backup.json"
 parent: B079
 split_from: B079
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 365
