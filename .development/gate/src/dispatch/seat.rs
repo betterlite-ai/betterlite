@@ -13,6 +13,7 @@ use crate::spec::agents::{Agents, Rung, Runner};
 pub(crate) enum Seat {
     Worker,
     Reviewer,
+    ReviewerAgain,
 }
 
 pub(crate) enum Run {
@@ -44,7 +45,7 @@ pub(crate) fn invoke(
     prompt: &str,
 ) -> Result<Run, GateError> {
     let (schema, role) = match seat {
-        Seat::Reviewer => (
+        Seat::Reviewer | Seat::ReviewerAgain => (
             "review.schema.json",
             reviewer_role(attempt.agents, attempt.brief.task.review_level),
         ),

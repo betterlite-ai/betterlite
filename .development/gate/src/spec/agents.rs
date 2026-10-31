@@ -135,7 +135,7 @@ pub(crate) struct Policy {
     pub(crate) review_by_other_vendor: bool,
     #[schemars(
         range(min = 1),
-        description = "Worker attempts across the whole ladder, tries lent to a later rung included. A run that hits a usage limit doesn't count."
+        description = "Fresh worker starts across the whole ladder, tries lent to a later rung included. Fix turns and runs that hit a usage limit don't count. cargo gate dispatch --grant adds starts on the last rung once these are used."
     )]
     pub(crate) max_worker_attempts: u32,
     #[schemars(
@@ -152,7 +152,13 @@ pub(crate) struct Policy {
         description = "When every seat of a worker rung's vendor is taken, the try runs on the first later rung of another vendor that has a free seat. It still counts as a try on its own rung."
     )]
     pub(crate) overflow: bool,
-    #[schemars(description = "Review rounds before a task goes back to the architect.")]
+    #[schemars(
+        description = "Fix turns after one worker start or one review round: runs that go on from a red gate, a rejected report or an edit under .development. They don't count as worker attempts. When they run out, the next run is a fresh start that does."
+    )]
+    pub(crate) max_fix_turns: u32,
+    #[schemars(
+        description = "Review rounds before a task goes back to the architect. The worker fixes the findings on the same rung, without a new worker attempt. A dispatch after the rounds ran out gets one more round."
+    )]
     pub(crate) max_review_rounds: u32,
     #[schemars(
         description = "Blocked reports in a row before a task goes back to the architect instead of climbing to the next rung."

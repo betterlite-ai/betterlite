@@ -79,14 +79,6 @@ fn shape_problems(report: &Report, task_id: &str) -> Vec<String> {
                 .to_owned(),
         );
     }
-    let link_ok = |link: &str| link.is_empty() || link.starts_with("https://");
-    if report.deviations.iter().any(|deviation| {
-        deviation.what.trim().is_empty()
-            || deviation.why.trim().is_empty()
-            || !link_ok(&deviation.link)
-    }) {
-        problems.push("a deviation needs what, why, and an https link or an empty one".to_owned());
-    }
     if report.notes.iter().any(|note| note.trim().is_empty()) {
         problems.push("notes hold no empty strings".to_owned());
     }

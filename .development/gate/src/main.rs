@@ -88,6 +88,12 @@ enum Command {
             help = "Feedback for the first attempt, for example a finding the last run left open; repeat for more"
         )]
         notes: Vec<String>,
+        #[arg(
+            long,
+            default_value_t = 0,
+            help = "Worker starts beyond the ladder, for a task whose ladder ran out; they run on the last rung"
+        )]
+        grant: u32,
     },
     #[command(
         about = "Write .development/litellm-inventory.txt from a LiteLLM clone that has the pinned commit"
@@ -206,8 +212,8 @@ fn run_command(
             Ok((verdict.lines, verdict.passed))
         }
         Command::Schema => Ok((schema::write(&development.root)?, true)),
-        Command::Dispatch { task, notes } => {
-            Ok((dispatch::dispatch(development, &task, notes)?, true))
+        Command::Dispatch { task, notes, grant } => {
+            Ok((dispatch::dispatch(development, &task, notes, grant)?, true))
         }
         Command::Inventory { checkout } => {
             Ok((inventory::write(&development.root, &checkout)?, true))

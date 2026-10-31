@@ -29,6 +29,12 @@ pub(crate) fn worker(brief: &Brief<'_>, feedback: &[String]) -> String {
 
 pub(crate) fn reviewer(brief: &Brief<'_>, earlier: Option<&EarlierReview>) -> String {
     let rounds = earlier.map_or_else(String::new, |review| {
+        if review.findings.is_empty() {
+            return format!(
+                "\nAn earlier round approved this branch at {commit}. Report findings only for lines changed since then (git diff {commit}...HEAD); the rest is settled.\n",
+                commit = review.commit,
+            );
+        }
         let items: Vec<String> = review
             .findings
             .iter()
