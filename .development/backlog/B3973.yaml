@@ -1,7 +1,7 @@
 id: B3973
 milestone: M7 observability
 title: Opik settings metadata and trace payload construction
-status: todo
+status: done
 depends_on: [B002]
 file: tasks/B3973-opik-payloads.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/integrations/opik/opik_payload_builder/**"
 parent: B114
 split_from: B114
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 371

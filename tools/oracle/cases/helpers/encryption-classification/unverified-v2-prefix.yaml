@@ -1,0 +1,12 @@
+kind: helper
+name: encryption-classification-unverified-v2-prefix
+call:
+  encryption_classification:
+    salt_key: scan-key
+    values:
+    - v2:gcm:not-a-ciphertext
+    - plain
+env:
+  LITELLM_SALT_KEY: scan-key
+compare:
+  ignore: []

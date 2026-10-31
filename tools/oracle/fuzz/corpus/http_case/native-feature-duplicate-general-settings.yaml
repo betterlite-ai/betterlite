@@ -1,0 +1,8 @@
+name: native-feature-duplicate-general-settings
+config: |
+  general_settings: {}
+  general_settings: {litellm_license: value}
+env: {}
+request: {method: GET, path: /scim/v2/ServiceProviderConfig, headers: {}, body: null}
+upstream: []
+compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}

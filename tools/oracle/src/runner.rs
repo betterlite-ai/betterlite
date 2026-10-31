@@ -20,6 +20,7 @@ use crate::routing_mock_scripts::MockScript;
 
 mod config;
 mod fixtures;
+mod native_feature_eligibility;
 
 #[derive(Debug, clap::Parser)]
 pub(crate) struct DatabaseEnvironment {
@@ -39,7 +40,10 @@ pub(crate) fn run_cases(
     for loaded_case in cases {
         match loaded_case {
             LoadedCase::Http(http_case) => {
-                let group_key = format!("{}\n{:?}", http_case.config, http_case.env);
+                let group_key = format!(
+                    "{}\n{:?}\n{}",
+                    http_case.config, http_case.env, http_case.native_feature_eligibility
+                );
                 groups.entry(group_key).or_default().push(http_case);
             }
             LoadedCase::Helper(helper_case) => {
@@ -136,17 +140,20 @@ fn run_group_capture(input: GroupCaptureInput<'_>) -> Result<Vec<bool>, OracleEr
     } = input;
     let (group_dir, first_config, second_config) =
         config::prepare_gateway_configs(root, first_case, fixtures, &mock.base_url)?;
+    let first_case_env = native_feature_eligibility::child_environment(first_case, true);
+    let second_case_env =
+        native_feature_eligibility::child_environment(first_case, options.self_check);
     let first_input = GatewayInput {
         options,
         group_dir: &group_dir,
         config_path: &first_config,
-        case_env: &first_case.env,
+        case_env: &first_case_env,
     };
     let second_input = GatewayInput {
         options,
         group_dir: &group_dir,
         config_path: &second_config,
-        case_env: &first_case.env,
+        case_env: &second_case_env,
     };
     let client = http::client()?;
     let captures = capture_gateways(&first_input, &second_input, cases, &client, mock)?;
@@ -234,10 +241,14 @@ fn compare_case(input: artifacts::ArtifactInput<'_>) -> Result<bool, OracleError
         input.second_requests,
         &input.case.compare,
     );
-    artifacts::write(artifacts::ArtifactInput {
+    let artifact_directory = artifacts::write(artifacts::ArtifactInput {
         result: result.as_ref().err(),
         ..input
     })?;
+    native_feature_eligibility::write_marker(
+        &artifact_directory,
+        input.case.native_feature_eligibility,
+    )?;
     let name = &input.case.name;
     match result {
         Ok(()) => {

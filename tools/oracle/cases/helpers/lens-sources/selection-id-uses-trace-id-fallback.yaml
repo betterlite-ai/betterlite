@@ -1,0 +1,8 @@
+kind: helper
+name: selection-id-uses-trace-id-fallback
+call:
+  b4502:
+    selection_id:
+      value: WyJ0cmFjZXMiLCJ0ZWFtLTEiLCJ0cmFjZS0xIl0=
+env: {}
+compare: {ignore: []}

@@ -7,6 +7,7 @@ metadata.cargo-fuzz = true
 [dependencies]
 betterlite-harness = { path = ".." }
 libfuzzer-sys = "0.4.9"
+tokio = { version = "=1.53.3", features = ["io-util", "rt"] }
 [[bin]]
 name = "payloads"
 path = "fuzz_targets/payloads.rs"
@@ -16,6 +17,12 @@ bench = false
 [[bin]]
 name = "snapshots"
 path = "fuzz_targets/snapshots.rs"
+test = false
+doc = false
+bench = false
+[[bin]]
+name = "claude_code"
+path = "fuzz_targets/claude_code.rs"
 test = false
 doc = false
 bench = false
