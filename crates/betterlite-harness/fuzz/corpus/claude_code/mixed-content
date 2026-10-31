@@ -1,0 +1,1 @@
+{"type":"assistant","message":{"content":["ignored",{"type":"text","text":"kept"},{"type":"tool_use","id":"t","name":"Read","input":null}]}}
