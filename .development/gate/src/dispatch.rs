@@ -1,5 +1,6 @@
 mod attempt;
 mod overlap;
+mod progress;
 mod prompt;
 mod review;
 mod runner;
@@ -23,7 +24,10 @@ use crate::spec::backlog::Status;
 use crate::spec::task::{ReviewLevel, Task};
 use crate::yaml::read_yaml;
 
+use progress::Progress;
 use prompt::Brief;
+use seat::Seat;
+use serde::{Deserialize, Serialize};
 
 pub(crate) enum Step {
     Ready(Vec<String>),
@@ -32,21 +36,11 @@ pub(crate) enum Step {
     Climb(Vec<String>),
 }
 
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct EarlierReview {
     pub(crate) commit: String,
     pub(crate) findings: Vec<String>,
-}
-
-struct Progress {
-    feedback: Vec<String>,
-    number: u32,
-    used: u32,
-    limited: bool,
-    review_rounds: u32,
-    blocked_reports: u32,
-    last_blocked: u32,
-    earlier: Option<EarlierReview>,
-    litellm: Vec<String>,
 }
 
 pub(crate) struct Places<'run> {
@@ -203,6 +197,36 @@ fn apply_step(
     Ok(ControlFlow::Continue(()))
 }
 
+fn overflow_rung<'agents>(
+    agents: &'agents Agents,
+    places: &Places<'_>,
+    current: usize,
+    runner: &Runner,
+) -> Result<Option<(&'agents Runner, &'agents Rung)>, GateError> {
+    let git = places.git_common_dir;
+    let own = vendor::find_vendor(agents, &runner.vendor)?;
+    if !agents.policy.overflow || vendor::seat_free(git, agents, own, Seat::Worker)? {
+        return Ok(None);
+    }
+    for rung in agents
+        .roles
+        .worker
+        .ladder
+        .iter()
+        .skip(current.saturating_add(1))
+    {
+        let other = find_runner(agents, &rung.runner)?;
+        if other.vendor == runner.vendor || vendor::limited(git, agents, &other.vendor)? {
+            continue;
+        }
+        let account = vendor::find_vendor(agents, &other.vendor)?;
+        if vendor::seat_free(git, agents, account, Seat::Worker)? {
+            return Ok(Some((other, rung)));
+        }
+    }
+    Ok(None)
+}
+
 fn climb_rung(
     agents: &Agents,
     brief: &Brief<'_>,
@@ -211,12 +235,14 @@ fn climb_rung(
     progress: &mut Progress,
 ) -> Result<Option<Vec<String>>, GateError> {
     let runner = find_runner(agents, &rung.runner)?;
-    let mut used: u32 = 0;
-    while used < rung.attempts && progress.used < agents.policy.max_worker_attempts {
+    while progress.rung_used < rung.attempts && progress.used < agents.policy.max_worker_attempts {
         if vendor::limited(places.git_common_dir, agents, &runner.vendor)? {
             progress.limited = true;
             return Ok(None);
         }
+        let overflow = overflow_rung(agents, places, progress.rung, runner)?;
+        let (try_runner, try_rung) = overflow.unwrap_or((runner, rung));
+        progress.save(places.journal)?;
         progress.number = progress.number.saturating_add(1);
         let current = Attempt {
             agents,
@@ -225,14 +251,22 @@ fn climb_rung(
             number: progress.number,
             earlier: progress.earlier.as_ref(),
         };
-        let Some(step) = attempt::attempt_once(&current, runner, rung, &progress.feedback)? else {
+        let outcome = attempt::attempt_once(&current, try_runner, try_rung, &progress.feedback)?;
+        let removed = attempt::remove_extra_targets(places.worktree)?;
+        let Some(step) = outcome else {
+            // the overflow vendor is marked now, so the next try waits for this rung's own vendor
+            if overflow.is_some() {
+                continue;
+            }
             progress.limited = true;
             return Ok(None);
         };
-        used = used.saturating_add(1);
+        progress.rung_used = progress.rung_used.saturating_add(1);
         progress.used = progress.used.saturating_add(1);
         progress.limited = false;
-        if let ControlFlow::Break(lines) = apply_step(agents, brief, progress, step)? {
+        let flow = apply_step(agents, brief, progress, step)?;
+        progress.feedback.extend(removed);
+        if let ControlFlow::Break(lines) = flow {
             return Ok(lines);
         }
     }
@@ -245,21 +279,13 @@ fn run_ladder(
     places: &Places<'_>,
     notes: Vec<String>,
 ) -> Result<Vec<String>, GateError> {
-    let mut progress = Progress {
-        feedback: notes,
-        number: 0,
-        used: 0,
-        limited: false,
-        review_rounds: 0,
-        blocked_reports: 0,
-        last_blocked: 0,
-        earlier: None,
-        litellm: Vec::new(),
-    };
-    for rung in &agents.roles.worker.ladder {
+    let mut progress = Progress::load(places.journal, notes)?;
+    while let Some(rung) = agents.roles.worker.ladder.get(progress.rung) {
         if let Some(lines) = climb_rung(agents, brief, places, rung, &mut progress)? {
             return Ok(lines);
         }
+        progress.rung = progress.rung.saturating_add(1);
+        progress.rung_used = 0;
     }
     let ending = if progress.limited {
         "every runner left on the worker ladder is at its usage limit"
@@ -315,5 +341,7 @@ pub(crate) fn dispatch(
         home: &home,
         writable: &writable,
     };
-    run_ladder(&agents, &brief, &places, notes)
+    let outcome = run_ladder(&agents, &brief, &places, notes);
+    progress::clear(&journal)?;
+    outcome
 }

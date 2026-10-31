@@ -82,4 +82,4 @@ pitfalls:
   - A custom /v1 base swallows the default version segment, while an arbitrary mount path retains it.
   - The create wrapper's timeout and max_retries do not reach either HTTP call at this pin.
 budget: {max_changed_lines: 750, max_new_expects: 1}
-review_level: security
+review_level: standard

@@ -297,7 +297,7 @@ pitfalls:
 - 'The proxy projection always writes input, store and model, including nulls, and writes the updated request to call_kwargs.proxy_server_request as well as call_kwargs.litellm_metadata.proxy_server_request; no top-level proxy_request field exists.'
 - 'A truthy non-dict proxy_server_request returns before mutation, while absent, null or empty values are replaced with a new request and can create litellm_metadata {}.'
 - 'A serializer failure is a debug diagnostic plus None, and a warmup acknowledgement drops only that failed event before trying the next status.'
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 1

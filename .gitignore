@@ -1,2 +1,14 @@
 /target
 __pycache__/
+/.bashrc
+/.bash_profile
+/.profile
+/.zshrc
+/.zprofile
+/.gitconfig
+/.gitmodules
+/.mcp.json
+/.ripgreprc
+/.idea
+/.vscode
+/.claude/commands

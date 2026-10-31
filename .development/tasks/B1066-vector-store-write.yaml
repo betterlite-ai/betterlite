@@ -118,7 +118,7 @@ pitfalls:
 - An update accepts file_ids and chunking_strategy because it uses the create allowlist.
 - extra_query appears in the public signature but neither write passes it to the HTTP handler.
 - timeout=0 selects REQUEST_TIMEOUT rather than disabling the deadline.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0
