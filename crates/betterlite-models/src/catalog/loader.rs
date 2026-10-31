@@ -65,7 +65,12 @@ fn add_entry(
     accumulators: &mut Accumulators,
 ) -> Result<(), CatalogError> {
     let fields_map: BTreeMap<String, Box<RawValue>> = serde_json::from_str(value.get())?;
-    let typed_value = without_aliases(&fields_map)?;
+    let typed_fields = fields_map
+        .iter()
+        .filter(|(key, _)| key.as_str() != "aliases")
+        .map(|(key, value)| (key.clone(), value))
+        .collect::<BTreeMap<_, _>>();
+    let typed_value = to_raw_value(&typed_fields)?;
     let fields = parse_fields(
         name,
         typed_value.as_ref(),
@@ -204,7 +209,7 @@ fn parse_prices(
     unknown: UnknownFields,
     warnings: &mut Vec<String>,
 ) -> Result<PriceFields, CatalogError> {
-    let paths = price_unknown::unknown_paths(value);
+    let paths = price_unknown::unknown_paths(value)?;
     if unknown == UnknownFields::Reject {
         if let Some(path) = paths.into_iter().next() {
             return Err(CatalogError::UnknownPriceField {
@@ -225,17 +230,6 @@ fn parse_prices(
         model: name.to_owned(),
         source,
     })
-}
-
-fn without_aliases(
-    fields: &BTreeMap<String, Box<RawValue>>,
-) -> Result<Box<RawValue>, CatalogError> {
-    let typed_fields = fields
-        .iter()
-        .filter(|(key, _)| key.as_str() != "aliases")
-        .map(|(key, value)| (key.clone(), value))
-        .collect::<BTreeMap<_, _>>();
-    Ok(to_raw_value(&typed_fields)?)
 }
 
 fn aliases(
@@ -275,9 +269,9 @@ fn insert_lookup(
     }
 }
 
-fn push_warning(
+fn push_warning<Message: FnOnce() -> String>(
     warnings: &mut Vec<String>,
-    message: impl FnOnce() -> String,
+    message: Message,
 ) -> Result<(), CatalogError> {
     if warnings.len() >= MAX_CATALOG_WARNINGS {
         return Err(CatalogError::TooManyWarnings {
