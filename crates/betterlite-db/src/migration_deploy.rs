@@ -57,6 +57,23 @@ impl MigrationDeploy {
         client
             .query_one("SELECT pg_advisory_lock($1)", &[&LOCK_ID])
             .await?;
+        let result = self.apply_locked(client, deadline).await;
+        let unlock = client
+            .query_one("SELECT pg_advisory_unlock($1)", &[&LOCK_ID])
+            .await
+            .map(|_| ());
+        match (result, unlock) {
+            (Err(error), _) => Err(error),
+            (Ok(()), Err(error)) => Err(DeployError::Database(error)),
+            (Ok(()), Ok(())) => Ok(()),
+        }
+    }
+
+    async fn apply_locked(
+        &self,
+        client: &PostgresClient,
+        deadline: Instant,
+    ) -> Result<(), DeployError> {
         let schema = ledger::quote(&self.schema);
         client
             .query_one("SELECT set_config('search_path', $1, false)", &[&schema])
@@ -69,9 +86,6 @@ impl MigrationDeploy {
                 ledger::apply(client, &table, migration, (self.next_id)()).await?;
             }
         }
-        client
-            .query_one("SELECT pg_advisory_unlock($1)", &[&LOCK_ID])
-            .await?;
         Ok(())
     }
 }
