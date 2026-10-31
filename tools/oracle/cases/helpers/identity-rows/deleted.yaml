@@ -1,0 +1,9 @@
+kind: helper
+name: deleted_key_additions_and_two_org_ids
+call:
+  identity_rows:
+    operation: deleted_key
+    row: {token: tok, org_id: old, organization_id: new, id: id, deleted_at: '2026-01-01T00:00:00Z', deleted_by: user, deleted_by_api_key: api, litellm_changed_by: actor}
+env: {}
+compare:
+  ignore: []
