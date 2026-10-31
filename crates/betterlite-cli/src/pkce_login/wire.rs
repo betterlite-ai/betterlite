@@ -169,8 +169,13 @@ pub(super) fn refuse_redirect(
     response: &super::HttpResponse,
 ) -> Result<(), PkceFailure> {
     if (300..400).contains(&response.status) {
+        let location = response
+            .headers
+            .iter()
+            .find(|(header, _)| header.eq_ignore_ascii_case("location"))
+            .map_or("another address", |(_, value)| value.as_str());
         return Err(PkceFailure::Protocol(format!(
-            "{name} redirected; refusing to follow it"
+            "{name} redirected to {location}; refusing to follow it"
         )));
     }
     Ok(())

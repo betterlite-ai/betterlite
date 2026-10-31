@@ -497,6 +497,21 @@ fn register_client_rejects_redirect(#[case] status: u16) {
 }
 
 #[test]
+fn register_client_rejects_empty_client_id() {
+    let response = HttpResponse {
+        status: 201,
+        headers: Vec::new(),
+        body: br#"{"client_id":""}"#.to_vec(),
+    };
+    register_client(
+        &contract(),
+        "http://127.0.0.1:1/callback",
+        &ScriptedHttp::new(response),
+    )
+    .unwrap_err();
+}
+
+#[test]
 fn token_requests_capture_expiry() {
     let response = HttpResponse {
         status: 200,
@@ -549,6 +564,21 @@ fn expires_at_samples_wall_clock_after_the_response_arrives() {
 fn token_request_rejects_redirect(#[case] status: u16) {
     let transport = redirect_response(status);
     redeem_code(&contract(), &redemption(), &transport, &FixedWallClock(100)).unwrap_err();
+}
+
+#[test]
+fn token_request_redirect_message_names_the_location() {
+    let transport = ScriptedHttp::new(HttpResponse {
+        status: 307,
+        headers: vec![(
+            String::from("Location"),
+            String::from("https://attacker.test/collect"),
+        )],
+        body: Vec::new(),
+    });
+    let error = redeem_code(&contract(), &redemption(), &transport, &FixedWallClock(100))
+        .expect_err("redirect rejected");
+    assert!(error.to_string().contains("https://attacker.test/collect"));
 }
 
 #[test]
