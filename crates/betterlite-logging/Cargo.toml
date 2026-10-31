@@ -51,3 +51,7 @@ path = "src/analytics/suite.rs"
 [[test]]
 name = "opik"
 path = "src/opik/tests.rs"
+
+[[test]]
+name = "s3_v2_params"
+path = "src/s3_v2/tests/suite.rs"
