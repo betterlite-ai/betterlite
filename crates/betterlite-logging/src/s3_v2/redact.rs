@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, mem};
 
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_models::decisions::{Extra, Json};
@@ -17,13 +17,18 @@ const BASE64: &str =
 #[derive(Deserialize, Serialize)]
 struct Payload {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[serde(with = "serde_with::rust::double_option")]
-    messages: Option<Option<MessagesField>>,
+    messages: Option<Nullable<MessagesField>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[serde(with = "serde_with::rust::double_option")]
-    response: Option<Option<Json>>,
+    response: Option<Nullable<Json>>,
     #[serde(flatten)]
     extra: Extra,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(untagged)]
+enum Nullable<Value> {
+    Null(()),
+    Value(Value),
 }
 
 #[derive(Deserialize, Serialize)]
@@ -67,8 +72,7 @@ struct ContentObject {
     #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
     kind: Option<Json>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[serde(with = "serde_with::rust::double_option")]
-    file: Option<Option<Json>>,
+    file: Option<Nullable<Json>>,
     #[serde(flatten)]
     extra: Extra,
 }
@@ -83,18 +87,20 @@ pub(super) fn project(
     if features.contains(&Feature::StripBase64) {
         let pattern = Regex::new(BASE64)?;
         let max_depth = resolve_max_depth(environment);
-        let current = payload.messages.take();
+        let current = mem::take(&mut payload.messages);
         payload.messages = match current {
-            Some(Some(MessagesField::List(messages))) => Some(Some(strip_messages(
-                MessagesField::List(messages),
-                &pattern,
-                max_depth,
-            ))),
-            other => other,
+            Some(Nullable::Value(MessagesField::List(messages))) => Some(Nullable::Value(
+                strip_messages(MessagesField::List(messages), &pattern, max_depth),
+            )),
+            Some(Nullable::Value(MessagesField::Other(value))) => {
+                Some(Nullable::Value(MessagesField::Other(value)))
+            }
+            Some(Nullable::Null(value)) => Some(Nullable::Null(value)),
+            None => None,
         };
     }
     if prompts_only {
-        payload.response = Some(None);
+        payload.response = Some(Nullable::Null(()));
     }
     Ok(serde_json::to_string(&payload)?)
 }
