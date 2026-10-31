@@ -51,6 +51,34 @@ async fn evidence_validation_rejects_a_quote_that_matches_no_span() {
 }
 
 #[tokio::test]
+async fn evidence_validation_accepts_a_supported_quote_outside_the_first_evidence_page() {
+    let claim = fixtures::claim();
+    let candidate = fixtures::candidate(vec![String::from("e1"), String::from("e2")]);
+    let padding = "a".repeat(29_700);
+    let quote_content = format!("the original quote {}", "b".repeat(400));
+    let examined = vec![
+        fixtures::examined("e1", &padding),
+        fixtures::examined("e2", &quote_content),
+    ];
+    let read = fixtures::never_read();
+    let (model, _) = fixtures::scripted(vec![fixtures::submit_decision(
+        "e2",
+        "s1",
+        "the original quote",
+    )]);
+
+    let context = Context {
+        claim: &claim,
+        candidate: &candidate,
+        examined: &examined,
+        read: &read,
+        model: &model,
+    };
+    let result = loop_state::run(context).await.unwrap();
+    assert!(result.finding.is_some());
+}
+
+#[tokio::test]
 async fn evidence_validation_falls_back_to_the_trace_store_once_a_span_leaves_the_current_page() {
     let claim = fixtures::claim();
     let candidate = fixtures::candidate(vec![String::from("e1")]);

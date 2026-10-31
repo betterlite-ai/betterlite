@@ -30,7 +30,11 @@ pub(super) struct State {
 }
 pub(super) async fn run(context: Context<'_>) -> Result<Investigation, AnalysisError> {
     let feedback = feedback_pages(context.claim, Some(&context.candidate.check_id))?;
-    let relevant = relevant(context.candidate, context.examined);
+    let relevant: Vec<&Examined> = context
+        .examined
+        .iter()
+        .filter(|item| context.candidate.execution_ids.contains(&item.execution.id))
+        .collect();
     let mut store = trace_store()?;
     let mut state = State {
         additional: Vec::new(),
@@ -59,26 +63,25 @@ async fn step(
     state: &mut State,
 ) -> Result<(TraceStore, Option<Investigation>), AnalysisError> {
     let prepared = prepare(context, relevant, state)?;
+    let inconclusive = |parts: Vec<TracePart>| Investigation {
+        finding: None,
+        parts,
+    };
     let Some(decision) = ask(context, state, feedback, &prepared).await? else {
         return Ok((store, Some(inconclusive(prepared.evidence))));
     };
     store.add_reads(&state.additional)?;
-    if let Some(finding) = validation::valid_finding(
-        context.claim,
-        context.candidate,
-        &decision,
-        &prepared.evidence,
-        &store,
-    )? {
-        return Ok((
-            store,
-            Some(Investigation {
-                finding: Some(finding),
-                parts: prepared.evidence,
-            }),
-        ));
+    if let Some(investigation) = submitted_finding(context, &decision, &prepared, &store)? {
+        return Ok((store, Some(investigation)));
     }
-    if state.stalled || !is_navigation(decision.action) {
+    let can_navigate = matches!(
+        decision.action,
+        DecisionAction::Read
+            | DecisionAction::Observations
+            | DecisionAction::Catalog
+            | DecisionAction::Feedback
+    );
+    if state.stalled || !can_navigate {
         return Ok((store, Some(inconclusive(prepared.evidence))));
     }
     if !valid_page(&decision, &prepared, feedback) || repeated(&state.reads, &decision) {
@@ -89,6 +92,25 @@ async fn step(
         navigation::Outcome::Continue => Ok((store, None)),
         navigation::Outcome::Terminal(parts) => Ok((store, Some(inconclusive(parts)))),
     }
+}
+
+fn submitted_finding(
+    context: &Context<'_>,
+    decision: &Decision,
+    prepared: &Prepared,
+    store: &TraceStore,
+) -> Result<Option<Investigation>, AnalysisError> {
+    let finding = validation::valid_finding(
+        context.claim,
+        context.candidate,
+        decision,
+        &prepared.all_spans,
+        store,
+    )?;
+    Ok(finding.map(|value| Investigation {
+        finding: Some(value),
+        parts: prepared.evidence.clone(),
+    }))
 }
 
 async fn ask(
@@ -130,34 +152,6 @@ async fn ask(
     )
     .await?;
     Ok(Some(decision))
-}
-
-fn relevant<'examined>(
-    candidate: &Candidate,
-    examined: &'examined [Examined],
-) -> Vec<&'examined Examined> {
-    let filtered: Vec<&Examined> = examined
-        .iter()
-        .filter(|item| candidate.execution_ids.contains(&item.execution.id))
-        .collect();
-    debug_assert!(filtered.len() <= examined.len());
-    filtered
-}
-
-const fn inconclusive(parts: Vec<TracePart>) -> Investigation {
-    let finding = None;
-    Investigation { finding, parts }
-}
-
-const fn is_navigation(action: DecisionAction) -> bool {
-    let navigation = matches!(
-        action,
-        DecisionAction::Read
-            | DecisionAction::Observations
-            | DecisionAction::Catalog
-            | DecisionAction::Feedback
-    );
-    navigation
 }
 
 fn valid_page(decision: &Decision, prepared: &Prepared, feedback: &[Vec<FeedbackRow>]) -> bool {
