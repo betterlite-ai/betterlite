@@ -1,0 +1,5 @@
+kind: helper
+name: utils-console-fails
+call: {verbose_hooks: {function: utils, payload: message, set_verbose: true, log_level: DEBUG, logger_only: false, console_fails: true}}
+env: {}
+compare: {ignore: []}

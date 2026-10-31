@@ -1,0 +1,13 @@
+kind: helper
+name: alias-canonical-conflict
+call:
+  model_catalog:
+    operation: alias_canonical_conflict
+    source:
+      canonical: {litellm_provider: openai, aliases: [other]}
+      other: {litellm_provider: anthropic}
+    lookup: [other]
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/warnings, why: warning wording differs between Python and Rust}
