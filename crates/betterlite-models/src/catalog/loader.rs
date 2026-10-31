@@ -112,7 +112,6 @@ fn strip_aliases(
     let typed_fields = fields_map
         .iter()
         .filter(|(key, _)| key.as_str() != "aliases")
-        .map(|(key, field)| (key.clone(), field))
         .collect::<BTreeMap<_, _>>();
     Ok(to_raw_value(&typed_fields)?)
 }
