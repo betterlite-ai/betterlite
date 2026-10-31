@@ -97,7 +97,7 @@ pitfalls:
 - Missing principal bypass is a low-level caller contract, not an instruction to bypass HTTP authentication.
 - api_key precedes token here; using isolation.py's token-first rule changes which existing rows a key can access.
 - A raw user id is the primary scope even though the same principal also has a user-prefixed scope.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

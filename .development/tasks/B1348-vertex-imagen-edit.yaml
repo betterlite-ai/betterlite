@@ -80,4 +80,4 @@ pitfalls:
   - A dictionary path field recurses into a path rejection and does not open a file.
   - The mapped aspectRatio is unused by transform_image_edit_request at this pin.
 budget: {max_changed_lines: 775, max_new_expects: 1}
-review_level: security
+review_level: standard

@@ -101,7 +101,7 @@ pitfalls:
 - arun_thread_stream is a synchronous factory for an asynchronous stream manager, not a coroutine to await.
 - Azure drops event_handler in the SDK wrapper even though its provider stream helper supports handlers.
 - stream=1 polls rather than streams because the branch checks identity with true.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

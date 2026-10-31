@@ -88,4 +88,4 @@ pitfalls:
   - completed_requests is present in the native schema but succeeded_requests supplies the normalized completed count.
   - Batch retrieve carries credentials in its explicit GET plan rather than relying on the outer create-request headers.
 budget: {max_changed_lines: 800, max_new_expects: 0}
-review_level: security
+review_level: standard

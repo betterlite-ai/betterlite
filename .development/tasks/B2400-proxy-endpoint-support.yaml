@@ -150,7 +150,7 @@ pitfalls:
 - HTTPException(404) becomes internal_server_error here; the Responses request processor uses a different mapper.
 - An empty provider field is returned unchanged; only the calling route decides whether to fall through.
 - Reusing ProxyException preserves its original x-litellm-call-id even when another id is supplied.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

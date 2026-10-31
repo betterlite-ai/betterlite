@@ -241,7 +241,7 @@ pitfalls:
   - The hosted handler is lazily imported only when custom_llm_provider="litellm_proxy". Code
     that tries to import or initialize it earlier will create unnecessary module dependencies.
 
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

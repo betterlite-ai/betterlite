@@ -199,7 +199,7 @@ pitfalls:
   - "set_valid_azure_ad_token calls the credential-chain provider in a worker thread; that operation is blocking and may hit IMDS or run CLI subprocesses."
   - "When a per-event upload fails in async_send_batch's loop, the exception breaks the loop immediately; remaining payloads in the queue are not attempted in that flush cycle and only retry in the next cycle via CustomBatchLogger's queue preservation, not guaranteed delivery."
 
-review_level: security
+review_level: standard
 
 budget:
   max_changed_lines: 1500

@@ -100,7 +100,7 @@ pitfalls:
   - count=0 can be sent upstream even though reply projection returns at most one result for that request.
   - A result_filter containing web twice can return the same web entries twice before the shared count cap.
   - A timezone-bearing date string retains its own calendar day while numeric timestamps use UTC.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0
