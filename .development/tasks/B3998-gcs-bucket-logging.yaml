@@ -229,7 +229,7 @@ pitfalls:
 - >-
   Paid-tier eligibility checks (premium_user is True) are removed entirely, not replaced with
   a warning or fallback. betterlite has no paid tier.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

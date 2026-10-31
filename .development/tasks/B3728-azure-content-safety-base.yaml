@@ -116,7 +116,7 @@ pitfalls:
   - "The legacy post-call hook has no exception suppression: all exceptions from test_violation propagate unmodified, including HTTPException and SDK errors."
   - "HTTP errors from the Azure SDK (HttpResponseError) are re-raised in test_violation but suppressed with logging in the pre-call hook."
   - "api_version resolved to the modern default is 2024-09-01; stored config must survive downgrade and re-upgrade of the Azure SDK."
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

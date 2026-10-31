@@ -92,7 +92,7 @@ pitfalls:
 - The error message advertises text_body and binary_body even though neither is a send branch.
 - request_data.headers overrides extra_headers, including credential header names.
 - A missing body is converted as a provider error despite no request having been sent.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

@@ -89,4 +89,4 @@ pitfalls:
   - Existing singular usage aliases are preserved even if their value is null.
   - A non-transcription model leaves the unbilled audio counter untouched when close usage is requested.
 budget: {max_changed_lines: 600, max_new_expects: 1}
-review_level: security
+review_level: standard

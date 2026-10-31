@@ -59,9 +59,10 @@ fn failures(
     task_id: &str,
     report: &Report,
 ) -> Result<Vec<String>, GateError> {
-    let verdict = checks::run(worktree, &worktree.task(task_id)?, &Selection::default())?;
+    let task = worktree.task(task_id)?;
+    let verdict = checks::run(worktree, &task, &Selection::default())?;
     let added = added_dependencies(&worktree.root, &resolve_base(&worktree.root)?)?;
-    let mut problems = report_problems(report, task_id, &added);
+    let mut problems = report_problems(report, &task, &added);
     let logged = deviations::read_log(&worktree.root, task_id)?;
     problems.extend(deviations::mismatch(
         &report.deviations,

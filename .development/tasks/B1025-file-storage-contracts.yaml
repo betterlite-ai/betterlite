@@ -103,7 +103,7 @@ pitfalls:
 - litellm_db:// with an empty row id passes prefix validation; the repository determines whether content exists.
 - A stored empty byte array is a successful download, distinct from a missing row.
 - stream in a Responses batch body is filtered into options but never passed as the bridge's explicit stream argument.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

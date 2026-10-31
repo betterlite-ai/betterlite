@@ -1,0 +1,15 @@
+kind: helper
+name: zero-details-versus-absent-details
+call:
+  cost_usage:
+    transcription: []
+    interactions:
+      - total_input_tokens: 0
+        total_output_tokens: 0
+        input_tokens_by_modality:
+          - modality: text
+            tokens: 0
+      - total_input_tokens: 0
+        total_output_tokens: 0
+compare: {ignore: []}
+env: {}

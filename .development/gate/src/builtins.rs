@@ -1,7 +1,7 @@
 mod crates;
 mod diff_budget;
 pub(crate) mod expect_budget;
-mod file_size;
+pub(crate) mod file_size;
 pub(crate) mod globs;
 mod lint_table;
 mod scope;
