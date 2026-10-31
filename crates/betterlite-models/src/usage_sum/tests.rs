@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use crate::cost_usage::CostUsage;
+
 use super::*;
 
 fn empty_usage() -> Usage {
@@ -29,6 +31,7 @@ fn empty_prompt_details() -> PromptTokensDetails {
         query_count: None,
         cache_write_tokens: None,
         cache_creation_tokens: None,
+        cached_tokens: None,
         cached_tokens_details: None,
     }
 }
@@ -97,6 +100,23 @@ fn usage_sum_merges_cached_modalities() {
 }
 
 #[test]
+fn usage_sum_merges_cached_tokens() {
+    let mut first_details = empty_prompt_details();
+    first_details.cached_tokens = Some(3);
+    let mut first = empty_usage();
+    first.prompt_tokens_details = Some(first_details);
+
+    let mut second_details = empty_prompt_details();
+    second_details.cached_tokens = Some(5);
+    let mut second = empty_usage();
+    second.prompt_tokens_details = Some(second_details);
+
+    let result = usage_sum(&[first, second]).expect("usage sums");
+    let details = result.prompt_tokens_details.expect("details");
+    assert_eq!(details.cached_tokens, Some(8));
+}
+
+#[test]
 fn usage_sum_projects_decimal_and_boolean_extras() {
     let mut first_extras = BTreeMap::new();
     first_extras.insert(
@@ -116,9 +136,8 @@ fn usage_sum_projects_decimal_and_boolean_extras() {
     let mut second = empty_usage();
     second.numeric_extras = second_extras;
 
-    let projected = usage_sum(&[first, second])
-        .expect("usage sums")
-        .to_cost_usage();
+    let combined = usage_sum(&[first, second]).expect("usage sums");
+    let projected = CostUsage::from(&combined);
     assert_eq!(projected.numeric_extras["duration"], Decimal::from(4_i32));
     assert_eq!(projected.numeric_extras["flag"], Decimal::from(1_i32));
 }

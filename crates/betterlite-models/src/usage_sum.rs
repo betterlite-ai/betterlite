@@ -37,6 +37,7 @@ pub struct PromptTokensDetails {
     pub query_count: Option<i64>,
     pub cache_write_tokens: Option<i64>,
     pub cache_creation_tokens: Option<i64>,
+    pub cached_tokens: Option<i64>,
     pub cached_tokens_details: Option<CachedTokensDetails>,
 }
 
@@ -72,14 +73,24 @@ pub enum UsageSumError {
 pub fn usage_sum(usages: &[Usage]) -> Result<Usage, UsageSumError> {
     let mut combined = Usage::default();
     for usage in usages {
-        combined.prompt_tokens =
-            add_i64(combined.prompt_tokens, usage.prompt_tokens, "prompt_tokens")?;
-        combined.completion_tokens = add_i64(
-            combined.completion_tokens,
-            usage.completion_tokens,
-            "completion_tokens",
-        )?;
-        combined.total_tokens = add_i64(combined.total_tokens, usage.total_tokens, "total_tokens")?;
+        combined.prompt_tokens = combined
+            .prompt_tokens
+            .checked_add(usage.prompt_tokens)
+            .ok_or_else(|| UsageSumError::IntegerOverflow {
+                field: "prompt_tokens".to_owned(),
+            })?;
+        combined.completion_tokens = combined
+            .completion_tokens
+            .checked_add(usage.completion_tokens)
+            .ok_or_else(|| UsageSumError::IntegerOverflow {
+                field: "completion_tokens".to_owned(),
+            })?;
+        combined.total_tokens = combined
+            .total_tokens
+            .checked_add(usage.total_tokens)
+            .ok_or_else(|| UsageSumError::IntegerOverflow {
+                field: "total_tokens".to_owned(),
+            })?;
         if let Some(details) = usage.prompt_tokens_details.as_ref() {
             combined.prompt_tokens_details = Some(combine::combine_prompt_tokens_details(
                 combined.prompt_tokens_details.as_ref(),
@@ -99,13 +110,6 @@ pub fn usage_sum(usages: &[Usage]) -> Result<Usage, UsageSumError> {
         }
     }
     Ok(combined)
-}
-
-fn add_i64(current: i64, new: i64, field: &str) -> Result<i64, UsageSumError> {
-    let sum = current.checked_add(new);
-    sum.ok_or_else(|| UsageSumError::IntegerOverflow {
-        field: field.to_owned(),
-    })
 }
 
 fn add_number(

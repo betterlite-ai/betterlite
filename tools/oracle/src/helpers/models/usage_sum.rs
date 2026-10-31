@@ -49,6 +49,8 @@ pub(crate) struct PromptInput {
     #[serde(default)]
     pub(crate) cache_creation_tokens: Option<i64>,
     #[serde(default)]
+    pub(crate) cached_tokens: Option<i64>,
+    #[serde(default)]
     pub(crate) cached_tokens_details: Option<CachedInput>,
     // Accepted for schema symmetry with LiteLLM's input but always dropped: usage_sum never models the cache-creation TTL split.
     #[serde(default, rename = "cache_creation_token_details")]
@@ -104,10 +106,13 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn convert_entries<T, V>(
+fn convert_entries<T, V, F>(
     source: &BTreeMap<String, T>,
-    mut convert: impl FnMut(&str, &T) -> Result<V, Box<HelperError>>,
-) -> Result<BTreeMap<String, V>, Box<HelperError>> {
+    mut convert: F,
+) -> Result<BTreeMap<String, V>, Box<HelperError>>
+where
+    F: FnMut(&str, &T) -> Result<V, Box<HelperError>>,
+{
     let mut result = BTreeMap::new();
     for (name, value) in source {
         result.insert(name.clone(), convert(name, value)?);
@@ -121,40 +126,61 @@ impl UsageInput {
             if let Some(integer) = raw.as_i64() {
                 Ok(UsageNumber::Integer(integer))
             } else if let Some(float) = raw.as_f64() {
-                let decimal =
-                    Decimal::try_from(float).map_err(|error| invalid(error.to_string()))?;
+                let decimal = Decimal::try_from(float).map_err(|error| {
+                    Box::new(HelperError {
+                        class: "InvalidInput".to_owned(),
+                        status: None,
+                        error_type: None,
+                        param: None,
+                        code: None,
+                        message: error.to_string(),
+                    })
+                })?;
                 Ok(UsageNumber::Decimal(decimal))
             } else if let Some(boolean) = raw.as_bool() {
                 Ok(UsageNumber::Boolean(boolean))
             } else {
-                Err(invalid(format!("extra {name} is not numeric")))
+                Err(Box::new(HelperError {
+                    class: "InvalidInput".to_owned(),
+                    status: None,
+                    error_type: None,
+                    param: None,
+                    code: None,
+                    message: format!("extra {name} is not numeric"),
+                }))
             }
         })?;
         Ok(Usage {
             prompt_tokens: self.prompt_tokens.unwrap_or(0),
             completion_tokens: self.completion_tokens.unwrap_or(0),
             total_tokens: self.total_tokens.unwrap_or(0),
-            prompt_tokens_details: self.prompt_tokens_details.as_ref().map(PromptInput::build),
+            prompt_tokens_details: self
+                .prompt_tokens_details
+                .as_ref()
+                .map(PromptTokensDetails::from),
             completion_tokens_details: self
                 .completion_tokens_details
                 .as_ref()
-                .map(CompletionInput::build),
+                .map(CompletionTokensDetails::from),
             numeric_extras,
         })
     }
 }
 
-impl PromptInput {
-    fn build(&self) -> PromptTokensDetails {
-        let text_tokens = self.text_tokens;
-        PromptTokensDetails {
-            text_tokens,
-            audio_tokens: self.audio_tokens,
-            image_tokens: self.image_tokens,
-            video_tokens: self.video_tokens,
-            cache_write_tokens: self.cache_write_tokens,
-            cache_creation_tokens: self.cache_creation_tokens,
-            cached_tokens_details: self.cached_tokens_details.as_ref().map(CachedInput::build),
+impl From<&PromptInput> for PromptTokensDetails {
+    fn from(value: &PromptInput) -> Self {
+        Self {
+            text_tokens: value.text_tokens,
+            audio_tokens: value.audio_tokens,
+            image_tokens: value.image_tokens,
+            video_tokens: value.video_tokens,
+            cache_write_tokens: value.cache_write_tokens,
+            cache_creation_tokens: value.cache_creation_tokens,
+            cached_tokens: value.cached_tokens,
+            cached_tokens_details: value
+                .cached_tokens_details
+                .as_ref()
+                .map(CachedTokensDetails::from),
             web_search_requests: None,
             google_maps_grounding_requests: None,
             tool_use_tokens: None,
@@ -167,25 +193,23 @@ impl PromptInput {
     }
 }
 
-impl CachedInput {
-    const fn build(&self) -> CachedTokensDetails {
-        let text_tokens = self.text;
-        CachedTokensDetails {
-            text_tokens,
-            audio_tokens: self.audio_tokens,
-            image_tokens: self.image_tokens,
+impl From<&CachedInput> for CachedTokensDetails {
+    fn from(value: &CachedInput) -> Self {
+        Self {
+            text_tokens: value.text,
+            audio_tokens: value.audio_tokens,
+            image_tokens: value.image_tokens,
         }
     }
 }
 
-impl CompletionInput {
-    const fn build(&self) -> CompletionTokensDetails {
-        let text_tokens = self.text;
-        CompletionTokensDetails {
-            text_tokens,
-            reasoning_tokens: self.reasoning_tokens,
-            accepted_prediction_tokens: self.accepted_prediction_tokens,
-            rejected_prediction_tokens: self.rejected_prediction_tokens,
+impl From<&CompletionInput> for CompletionTokensDetails {
+    fn from(value: &CompletionInput) -> Self {
+        Self {
+            text_tokens: value.text,
+            reasoning_tokens: value.reasoning_tokens,
+            accepted_prediction_tokens: value.accepted_prediction_tokens,
+            rejected_prediction_tokens: value.rejected_prediction_tokens,
             audio_tokens: None,
             image_tokens: None,
             video_tokens: None,
@@ -198,10 +222,14 @@ fn usage_value(usage: &Usage) -> Result<Value, Box<HelperError>> {
         .prompt_tokens_details
         .as_ref()
         .map(prompt_details_value);
-    let completion_tokens_details = usage
-        .completion_tokens_details
-        .as_ref()
-        .map(completion_details_value);
+    let completion_tokens_details = usage.completion_tokens_details.as_ref().map(|details| {
+        json!({
+            "text_tokens": details.text_tokens,
+            "reasoning_tokens": details.reasoning_tokens,
+            "accepted_prediction_tokens": details.accepted_prediction_tokens,
+            "rejected_prediction_tokens": details.rejected_prediction_tokens,
+        })
+    });
     let numeric_extras = convert_entries(&usage.numeric_extras, |_, value| number_value(value))?;
     Ok(json!({
         "prompt_tokens": usage.prompt_tokens,
@@ -228,39 +256,24 @@ fn prompt_details_value(details: &PromptTokensDetails) -> Value {
         "video_tokens": details.video_tokens,
         "cache_write_tokens": details.cache_write_tokens,
         "cache_creation_tokens": details.cache_creation_tokens,
+        "cached_tokens": details.cached_tokens,
         "cached_tokens_details": cached_tokens_details,
-    })
-}
-
-fn completion_details_value(details: &CompletionTokensDetails) -> Value {
-    let text_tokens = details.text_tokens;
-    json!({
-        "text_tokens": text_tokens,
-        "reasoning_tokens": details.reasoning_tokens,
-        "accepted_prediction_tokens": details.accepted_prediction_tokens,
-        "rejected_prediction_tokens": details.rejected_prediction_tokens,
     })
 }
 
 fn number_value(value: &UsageNumber) -> Result<Value, Box<HelperError>> {
     match value {
         UsageNumber::Integer(inner) => Ok(json!(inner)),
-        UsageNumber::Decimal(inner) => inner
-            .to_f64()
-            .map(|float| json!(float))
-            .ok_or_else(|| invalid(format!("decimal extra {inner} has no f64 representation"))),
+        UsageNumber::Decimal(inner) => inner.to_f64().map(|float| json!(float)).ok_or_else(|| {
+            Box::new(HelperError {
+                class: "InvalidInput".to_owned(),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+                message: format!("decimal extra {inner} has no f64 representation"),
+            })
+        }),
         UsageNumber::Boolean(inner) => Ok(json!(inner)),
     }
-}
-
-fn invalid(message: String) -> Box<HelperError> {
-    let error = HelperError {
-        class: "InvalidInput".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
-    };
-    Box::new(error)
 }

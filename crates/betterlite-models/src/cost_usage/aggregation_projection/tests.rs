@@ -29,10 +29,8 @@ fn cost_usage_round_trips() {
         numeric_extras: BTreeMap::new(),
     };
 
-    let usage = Usage::from_cost_usage(&original);
-    let projected = usage.to_cost_usage();
+    let usage = Usage::from(&original);
+    let projected = CostUsage::from(&usage);
 
-    let mut expected = original;
-    expected.cache_read_tokens = None;
-    assert_eq!(projected, expected);
+    assert_eq!(projected, original);
 }

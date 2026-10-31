@@ -7,7 +7,7 @@ Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Js
 
 _PROMPT_DETAIL_KEYS = (
     "text_tokens", "audio_tokens", "image_tokens", "video_tokens",
-    "cache_write_tokens", "cache_creation_tokens",
+    "cache_write_tokens", "cache_creation_tokens", "cached_tokens",
 )
 _CACHED_DETAIL_KEYS = ("text_tokens", "audio_tokens", "image_tokens")
 _COMPLETION_DETAIL_KEYS = (
