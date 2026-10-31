@@ -1,0 +1,5 @@
+kind: helper
+name: json-tool-fallback
+call: {anthropic_output_schema: {function: tool, schema: null}}
+env: {}
+compare: {ignore: []}

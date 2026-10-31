@@ -6,6 +6,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+base64 = "0.23.1"
 chrono = { version = "0.4.45", default-features = false, features = ["alloc", "serde"] }
 garde = { version = "0.23.0", default-features = false, features = ["derive", "regex", "rust_decimal"] }
 hex = "0.4.3"

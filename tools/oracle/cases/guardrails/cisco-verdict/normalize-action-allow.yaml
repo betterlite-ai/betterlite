@@ -1,0 +1,5 @@
+kind: helper
+name: normalize-action-allow
+call: {b3758: {function: normalize_action, action: " SAFE "}}
+env: {}
+compare: {ignore: []}

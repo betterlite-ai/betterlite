@@ -10,6 +10,7 @@ cargo-fuzz = true
 [dependencies]
 betterlite-core = { path = ".." }
 libfuzzer-sys = "0.4.9"
+serde_json = { version = "1.0.154", features = ["arbitrary_precision"] }
 
 [[bin]]
 name = "proc_statm_meminfo"
@@ -19,3 +20,10 @@ doc = false
 bench = false
 
 [workspace]
+
+[[bin]]
+name = "agent_provider"
+path = "fuzz_targets/agent_provider.rs"
+test = false
+doc = false
+bench = false

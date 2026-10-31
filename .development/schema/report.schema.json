@@ -8,12 +8,6 @@
       "description": "Empty when done. When blocked: what is needed, where, and the evidence.",
       "type": "string"
     },
-    "deviations": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/ReportDeviation"
-      }
-    },
     "notes": {
       "description": "Facts the architect needs and nothing else.",
       "type": "array",
@@ -39,8 +33,9 @@
       "$ref": "#/$defs/ReportStatus"
     },
     "summary": {
-      "description": "What changed, in two to four plain sentences.",
-      "type": "string"
+      "description": "What changed, in two to four plain sentences, at least 40 characters.",
+      "type": "string",
+      "pattern": ".{40,}"
     },
     "task": {
       "description": "The task id, for example B004.",
@@ -55,7 +50,6 @@
     "blocker",
     "owned",
     "prior_art",
-    "deviations",
     "notes"
   ],
   "$defs": {
@@ -140,27 +134,6 @@
         "link",
         "verdict",
         "why"
-      ]
-    },
-    "ReportDeviation": {
-      "type": "object",
-      "properties": {
-        "link": {
-          "description": "https link to LiteLLM's behavior, or an empty string.",
-          "type": "string"
-        },
-        "what": {
-          "type": "string"
-        },
-        "why": {
-          "type": "string"
-        }
-      },
-      "additionalProperties": false,
-      "required": [
-        "what",
-        "why",
-        "link"
       ]
     },
     "ReportStatus": {

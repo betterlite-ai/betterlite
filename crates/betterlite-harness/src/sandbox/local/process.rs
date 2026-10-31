@@ -104,6 +104,9 @@ impl Process for SubprocessHandle {
     fn stdin(&mut self) -> Option<&mut ChildStdin> {
         self.stdin.as_mut()
     }
+    fn close_stdin(&mut self) {
+        drop(self.stdin.take());
+    }
     fn stdout(&mut self) -> &mut ChildStdout {
         &mut self.stdout
     }

@@ -66,7 +66,7 @@ checks:
         grep -q 'quote.*safe' crates/betterlite-logging/src/s3_transport.rs
     - id: s3-transport-tests
       why: the s3 transport tests fail, do not exist or do not cover error classification
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^s3_transport::/ - test(replays_the_s3_error_classifier_corpus))'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^s3_transport::/) - test(replays_the_s3_error_classifier_corpus)'
     - id: s3-error-classifier-fuzz
       why: the S3 error classifier fuzz corpus is missing or replay fails
       run: test -f crates/betterlite-logging/fuzz/fuzz_targets/s3_error_classifier.rs && test "$(ls crates/betterlite-logging/fuzz/corpus/s3_error_classifier 2>/dev/null | wc -l)" -ge 5 && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(replays_the_s3_error_classifier_corpus)'

@@ -1,0 +1,5 @@
+kind: helper
+name: text-format-no-tool
+call: {anthropic_output_schema: {function: map_tool, value: {type: text, response_schema: {type: object}}}}
+env: {}
+compare: {ignore: [{pointer: /value, why: Python None is omitted from the optional helper envelope}]}

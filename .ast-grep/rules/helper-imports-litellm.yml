@@ -1,0 +1,26 @@
+id: helper-imports-litellm
+language: python
+severity: error
+message: an oracle helper adapter imports litellm (or litellm_proxy_extras) and calls it, so its cases compare betterlite with LiteLLM and not with Python written for the oracle
+note: dispatch.py routes requests and is exempt; the other files listed under ignores predate this rule, and a task that moves one onto LiteLLM takes it off the list
+files:
+  - tools/oracle/helpers/*.py
+ignores:
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/b3973.py
+  - tools/oracle/helpers/codex_history_tools.py
+  - tools/oracle/helpers/file_type_records.py
+  - tools/oracle/helpers/model_fields.py
+  - tools/oracle/helpers/price_fields.py
+rule:
+  kind: module
+  not:
+    has:
+      stopBy: end
+      any:
+        - kind: import_statement
+          regex: ^import litellm(_proxy_extras)?\b
+        - kind: import_from_statement
+          regex: ^from litellm(_proxy_extras)?\b
+        - kind: call
+          regex: ^import_module\("litellm(_proxy_extras)?\b

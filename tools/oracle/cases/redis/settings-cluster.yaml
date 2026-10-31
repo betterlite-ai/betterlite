@@ -1,0 +1,12 @@
+kind: helper
+name: settings-cluster
+call:
+  b4321:
+    function: resolve_redis_kwargs
+    environment: {}
+    overrides:
+      startup_nodes:
+        - {host: "a.internal", port: 7000}
+        - {host: "b.internal", port: 7001}
+env: {}
+compare: {ignore: []}

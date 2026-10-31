@@ -89,7 +89,7 @@ checks:
       run: >-
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/b4740-*")" &&
         grep -lq 'mcp_tool_schema' tools/oracle/fuzz/corpus/helper_case/b4740-* &&
-        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(^oracle_helpers::mcp::schema.*)'
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: helper-python
       why: helper converters or adapters fail type checks
       run: >-
@@ -110,17 +110,15 @@ checks:
       why: pagination behavior does not match pinned LiteLLM
       run: >-
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/mcp-pagination)" &&
-        test -f tools/oracle/cases/helpers/mcp-pagination/*.yaml &&
         cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: oracle-tool-calls
       why: tool call behavior does not match pinned LiteLLM
       run: >-
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/mcp-tool-calls)" &&
-        test -f tools/oracle/cases/helpers/mcp-tool-calls/*.yaml &&
         cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: config-tests
       why: MCP timeout configuration tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/mcp::)'
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::mcp_tool_helpers::/)'
     - id: behavior-tests
       why: new behavior tests are missing or fail
       run: >-

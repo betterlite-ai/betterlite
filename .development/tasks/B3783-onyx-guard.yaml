@@ -52,16 +52,16 @@ checks:
   commands:
     - id: onyx-env-resolution
       why: environment variable reading or default values differ from LiteLLM
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^onyx::environment)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^onyx::environment/)'
     - id: onyx-timeout-int-cast
       why: ONYX_TIMEOUT integer truncation or non-integer string handling differs from LiteLLM
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^onyx::timeout)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^onyx::timeout/)'
     - id: onyx-config-model
       why: the config model structure or defaults do not match LiteLLM
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^onyx::config_model)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^onyx::config_model/)'
     - id: onyx-unit-tests
       why: unit tests for payload construction or conversation_id handling fail
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^onyx::)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^onyx::/)'
     - id: oracle-request-block
       why: the oracle comparison fails for a blocked request
       run: cargo gate run B3783 --only oracle
