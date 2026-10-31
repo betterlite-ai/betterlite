@@ -1,0 +1,13 @@
+kind: helper
+name: repeated-breakdown-addition-preserves-basis
+call:
+  guardrail_costs:
+    breakdown:
+      existing:
+        service_tier: default
+        input_cost: 1.0
+        output_cost: 2.0
+        total_cost: 3.0
+      guardrail_costs: [0.5, 1.5]
+compare: {ignore: []}
+env: {}
