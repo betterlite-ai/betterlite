@@ -1,6 +1,7 @@
 use chrono::Utc;
 use uuid::Uuid;
 
+#[must_use]
 pub fn create_uuid7() -> String {
     let timestamp = Utc::now().timestamp_millis();
     let timestamp_bytes = timestamp.to_be_bytes();
