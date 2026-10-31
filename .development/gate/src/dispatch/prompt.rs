@@ -27,6 +27,14 @@ pub(crate) fn worker(brief: &Brief<'_>, feedback: &[String]) -> String {
     prompt
 }
 
+pub(crate) fn fix_turn(feedback: &[String]) -> String {
+    let items: Vec<String> = feedback.iter().map(|item| format!("- {item}")).collect();
+    format!(
+        "Your last run did not pass. Fix these first:\n{items}\nYour final answer is the report JSON again.\n",
+        items = items.join("\n"),
+    )
+}
+
 pub(crate) fn reviewer(brief: &Brief<'_>, earlier: Option<&EarlierReview>) -> String {
     let rounds = earlier.map_or_else(String::new, |review| {
         if review.findings.is_empty() {

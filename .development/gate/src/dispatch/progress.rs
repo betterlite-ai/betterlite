@@ -25,6 +25,14 @@ pub(crate) struct ReviewerPin {
     pub(crate) model: String,
 }
 
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct WorkerSession {
+    pub(crate) runner: String,
+    pub(crate) model: String,
+    pub(crate) id: String,
+}
+
 // the fields from next on default, so a progress file saved before they existed still loads
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -48,6 +56,8 @@ pub(crate) struct Progress {
     pub(crate) granted: u32,
     #[serde(default)]
     pub(crate) reviewer: Option<ReviewerPin>,
+    #[serde(default)]
+    pub(crate) session: Option<WorkerSession>,
 }
 
 impl Progress {
@@ -83,6 +93,7 @@ impl Progress {
                 fix_turns: 0,
                 granted: 0,
                 reviewer: None,
+                session: None,
             }),
             Err(source) => Err(GateError::Read { path, source }),
         }

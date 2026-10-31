@@ -1,7 +1,7 @@
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-pub(crate) const PLACEHOLDERS: [&str; 11] = [
+pub(crate) const PLACEHOLDERS: [&str; 12] = [
     "model",
     "effort",
     "schema_text",
@@ -13,6 +13,7 @@ pub(crate) const PLACEHOLDERS: [&str; 11] = [
     "git_common_dir",
     "home",
     "sandbox_settings",
+    "session",
 ];
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -60,7 +61,7 @@ pub(crate) struct Vendor {
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(
-    description = "How to start one agent run. The prompt goes to stdin. Arguments may use {model}, {effort}, {worktree}, {schema}, {schema_text}, {output}, {instructions}, {git_common_dir}, {home}, {writable_roots} (the policy's writable folders as a TOML array) and {sandbox_settings} (a Claude settings file that sandboxes Bash to the worktree and those folders)."
+    description = "How to start one agent run. The prompt goes to stdin. Arguments may use {model}, {effort}, {worktree}, {schema}, {schema_text}, {output}, {instructions}, {git_common_dir}, {home}, {writable_roots} (the policy's writable folders as a TOML array), {sandbox_settings} (a Claude settings file that sandboxes Bash to the worktree and those folders) and, in resume only, {session}."
 )]
 pub(crate) struct Runner {
     #[schemars(regex(pattern = "^[a-z][a-z0-9-]*$"))]
@@ -73,6 +74,10 @@ pub(crate) struct Runner {
     #[schemars(length(min = 1))]
     pub(crate) program: String,
     pub(crate) args: Vec<String>,
+    #[schemars(
+        description = "Arguments for a fix turn that goes on in the session of the worker run before it, used instead of args when that run had this runner and model and reported its session. {session} expands to the session id. Without them every run starts a new session."
+    )]
+    pub(crate) resume: Option<Vec<String>>,
     pub(crate) output: OutputMode,
 }
 
