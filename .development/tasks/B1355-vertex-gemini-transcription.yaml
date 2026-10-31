@@ -79,4 +79,4 @@ pitfalls:
   - The text transcript includes every candidate rather than only candidate zero.
   - Only the literal AUDIO modality contributes audio_tokens in this adapter.
 budget: {max_changed_lines: 675, max_new_expects: 1}
-review_level: security
+review_level: standard

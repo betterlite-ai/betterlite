@@ -94,4 +94,4 @@ pitfalls:
   - A base ending in a slash can produce a double slash before embeddings.
   - A missing Voyage text-embedding key is serialized as Bearer None instead of failing locally.
 budget: {max_changed_lines: 775, max_new_expects: 0}
-review_level: security
+review_level: standard

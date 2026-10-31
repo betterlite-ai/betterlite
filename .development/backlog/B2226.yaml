@@ -1,7 +1,7 @@
 id: B2226
 milestone: M3 providers
 title: Shared local TTL cache primitives
-status: todo
+status: done
 depends_on: [B002, B171, B187]
 file: tasks/B2226-local-ttl-cache.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/caching/dual_cache.py"
 parent: B125
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 349

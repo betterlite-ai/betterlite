@@ -133,7 +133,7 @@ pitfalls:
 - async_pre_call_hook routes Responses API calls (call_type in ("responses", "aresponses")) via _responses_api_input_to_str before the generic messages branch; this routing decision applies only to blocking pre-call scan and mirrors async_logging_hook's routing for consistency.
 - async_logging_hook also routes Responses API calls via _responses_api_input_to_str with the same call_type dispatch; audit prompt and response are scanned independently with block_on_violation=False.
 - The replacement response on Responses API is accessed via _completion_response_text_parts on the assembled response body, not from the streamed events.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

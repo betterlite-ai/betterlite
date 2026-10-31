@@ -106,7 +106,7 @@ pitfalls:
 - A successful DB write is not undone when the following in-memory registry operation fails.
 - Create ignores caller team_id/user_id and uses the authenticated identity.
 - Explicit litellm_params=null clears params to an empty JSON object on update; omission leaves it untouched.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

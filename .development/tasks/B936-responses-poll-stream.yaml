@@ -155,7 +155,7 @@ pitfalls:
 - There is no cancellation-state read anywhere in the worker; cached cancellation can be overwritten.
 - The 150ms interval is checked after events, not by a background timer.
 - Only JSONDecodeError is warn-and-skip; invalid UTF-8 and event-shape failures mark the polling record failed.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

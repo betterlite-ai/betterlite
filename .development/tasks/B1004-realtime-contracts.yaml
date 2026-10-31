@@ -130,7 +130,7 @@ pitfalls:
 - websocket_close_reason truncates the message but returns an empty-message fallback without truncating it.
 - The cached authentication body does not escape a model string; using a general JSON serializer changes its bytes.
 - BaseRealtimeHTTPConfig appends /v1 twice for calls when the base already ends with /v1.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

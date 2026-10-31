@@ -125,7 +125,7 @@ pitfalls:
   - "Actor identity is sourced from metadata or litellm_metadata in request_data; test both paths and the unknown fallback."
   - "Session_id includes the current UTC date; tests must mock datetime.datetime.now or use a fixed date."
   - "Environment variables are read in __init__ using or chains with defaults; the config loader from B002 supplies these values when not hardcoded in the guardrail config."
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

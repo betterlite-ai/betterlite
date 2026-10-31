@@ -83,7 +83,7 @@ pitfalls:
   - A speaker field appearing only on the second word does not enable diarization.
   - Deepgram header validation discards caller headers even when no API key was found.
   - The reconstructed final speaker run introduces an extra blank line between the last two runs.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 1

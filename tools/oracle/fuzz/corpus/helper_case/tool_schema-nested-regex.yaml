@@ -1,0 +1,8 @@
+kind: helper
+name: tool-schema-nested-regex
+call:
+  tool_schema:
+    mode: flatten_combinators_and_drop_non_python_regex_patterns
+    schema: {type: object, properties: {value: {type: string, pattern: '\\p{Cc}'}, safe: {type: string, pattern: '^[a-z]+$'}}}
+env: {}
+compare: {ignore: []}
