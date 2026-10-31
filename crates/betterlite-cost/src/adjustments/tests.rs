@@ -100,7 +100,7 @@ fn boolean_config_values_are_inert() {
 }
 
 #[test]
-fn rejects_overflow() {
+fn rejects_margin_percentage_overflow() {
     let error = apply_cost_margin(
         Decimal::MAX,
         Some("provider"),
@@ -111,6 +111,76 @@ fn rejects_overflow() {
         error,
         AdjustmentError::Overflow {
             operation: "base * percentage"
+        }
+    );
+}
+
+#[test]
+fn rejects_discount_multiply_overflow() {
+    let error = apply_cost_discount(
+        Decimal::MAX,
+        Some("provider"),
+        &map(CostAdjustmentValue::Number(serde_json::Number::from(2_i32))),
+    )
+    .unwrap_err();
+    assert_eq!(
+        error,
+        AdjustmentError::Overflow {
+            operation: "base * discount"
+        }
+    );
+}
+
+#[test]
+fn rejects_discount_subtract_overflow() {
+    let error = apply_cost_discount(
+        Decimal::MAX,
+        Some("provider"),
+        &map(CostAdjustmentValue::Number(serde_json::Number::from(
+            -1_i32,
+        ))),
+    )
+    .unwrap_err();
+    assert_eq!(
+        error,
+        AdjustmentError::Overflow {
+            operation: "base - saved"
+        }
+    );
+}
+
+#[test]
+fn rejects_margin_percentage_plus_fixed_overflow() {
+    let config = map(CostAdjustmentValue::Object(BTreeMap::from([
+        (
+            "percentage".to_owned(),
+            CostAdjustmentValue::Number(serde_json::Number::from(1_i32)),
+        ),
+        (
+            "fixed_amount".to_owned(),
+            CostAdjustmentValue::Text(Decimal::MAX.to_string()),
+        ),
+    ])));
+    let error = apply_cost_margin(Decimal::MAX, Some("provider"), &config).unwrap_err();
+    assert_eq!(
+        error,
+        AdjustmentError::Overflow {
+            operation: "percentage + fixed"
+        }
+    );
+}
+
+#[test]
+fn rejects_margin_total_add_overflow() {
+    let config = map(CostAdjustmentValue::Object(BTreeMap::from([(
+        "fixed_amount".to_owned(),
+        CostAdjustmentValue::Text(Decimal::MAX.to_string()),
+    )])));
+    let error = apply_cost_margin(Decimal::MAX, Some("provider"), &config).unwrap_err();
+    assert_eq!(
+        error,
+        AdjustmentError::Overflow {
+            operation: "base + margin"
         }
     );
 }
