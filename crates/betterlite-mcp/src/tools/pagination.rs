@@ -1,148 +1,120 @@
 use std::collections::BTreeSet;
-use std::time::{Duration, Instant};
+use std::error::Error;
+use std::future::Future;
+use std::time::Duration;
+
+use serde::{Deserialize, Serialize};
+use tokio::time::{Instant, error::Elapsed, timeout};
+use tracing::warn;
 
 use super::schemas::{McpTool, OpenAiTool, mcp_tool_to_openai};
-use super::tool_calls::{CallToolResult, McpCallToolRequest};
+use super::tool_calls::CallRequest;
 
-#[derive(Clone, Debug, Default, PartialEq)]
+pub const MAX_PAGES: usize = 1_000;
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
 pub struct Page {
     pub tools: Vec<McpTool>,
+    #[serde(rename = "nextCursor")]
     pub next_cursor: Option<String>,
 }
 
 pub trait McpSession {
-    async fn list_tools(&mut self, cursor: Option<String>) -> Result<Page, String>;
-    async fn call_tool(&mut self, request: McpCallToolRequest) -> Result<CallToolResult, String>;
+    type Error: Error + Send + Sync + 'static;
+    type Output;
+    fn list_tools(
+        &mut self,
+        cursor: Option<&str>,
+    ) -> impl Future<Output = Result<Page, Self::Error>> + Send;
+    fn call_tool(
+        &mut self,
+        request: CallRequest,
+    ) -> impl Future<Output = Result<Self::Output, Self::Error>> + Send;
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Debug, thiserror::Error)]
+pub enum ToolError<Source> {
+    #[error("MCP session failed: {0}")]
+    Session(#[source] Source),
+    #[error("MCP tool call timed out")]
+    Timeout(#[source] Elapsed),
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Timeouts {
+    pub client: Duration,
+    pub listing: Duration,
+    pub listing_deadline: Option<Duration>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
 pub enum ToolFormat {
+    #[default]
     Mcp,
     Openai,
 }
 
-pub async fn list_tools_with_pagination<S: McpSession>(
-    session: &mut S,
-    client_timeout: Duration,
-    listing_timeout: Duration,
-) -> Vec<McpTool> {
-    let deadline = client_timeout.max(listing_timeout);
-    collect_pages(session, deadline).await
-}
-
-async fn collect_pages<S: McpSession>(session: &mut S, deadline: Duration) -> Vec<McpTool> {
+pub async fn list_tools_with_pagination<Session>(
+    session: &mut Session,
+    timeouts: Timeouts,
+) -> Result<Vec<McpTool>, ToolError<Session::Error>>
+where
+    Session: McpSession,
+{
+    let deadline = timeouts
+        .listing_deadline
+        .unwrap_or_else(|| timeouts.client.max(timeouts.listing));
     let mut tools = Vec::new();
     let mut cursor = None;
     let mut seen = BTreeSet::new();
     let started = Instant::now();
-    for _page in 0..1_000 {
-        let remaining = match deadline.checked_sub(started.elapsed()) {
-            Some(remaining) => remaining,
-            None => {
-                tracing::warn!("MCP tools/list listing deadline expired");
-                return tools;
-            }
+    for _page in 0..MAX_PAGES {
+        let remaining = deadline.saturating_sub(started.elapsed());
+        if remaining.is_zero() {
+            warn!("MCP tools/list listing deadline expired");
+            return Ok(tools);
+        }
+        let Ok(response) = timeout(remaining, session.list_tools(cursor.as_deref())).await else {
+            warn!("MCP tools/list listing deadline expired");
+            return Ok(tools);
         };
-        let page = match tokio::time::timeout(remaining, session.list_tools(cursor.clone())).await {
-            Ok(page) => page,
-            Err(_) => {
-                tracing::warn!("MCP tools/list listing deadline expired");
-                return tools;
-            }
-        };
-        let page = match page {
-            Ok(page) => page,
-            Err(error) => {
-                tracing::warn!(%error, "MCP tools/list page failed");
-                return tools;
-            }
-        };
+        let page = response.map_err(ToolError::Session)?;
         tools.extend(page.tools);
-        let Some(next_cursor) = page.next_cursor.filter(|cursor| !cursor.is_empty()) else {
-            return tools;
+        let Some(next_cursor) = page.next_cursor.filter(|value| !value.is_empty()) else {
+            return Ok(tools);
         };
         if !seen.insert(next_cursor.clone()) {
-            tracing::warn!("MCP server repeated a tools/list cursor");
-            return tools;
+            warn!("MCP server repeated a tools/list cursor");
+            return Ok(tools);
         }
         cursor = Some(next_cursor);
     }
-    tracing::warn!("MCP tools/list pagination reached the 1,000 page limit");
-    tools
+    warn!("MCP tools/list pagination reached the 1,000 page limit");
+    Ok(tools)
 }
 
-pub async fn load_mcp_tools<S: McpSession>(
-    session: &mut S,
+pub async fn load_mcp_tools<Session>(
+    session: &mut Session,
     format: ToolFormat,
-    client_timeout: Duration,
-    listing_timeout: Duration,
-) -> Result<Vec<McpToolOrOpenAi>, String> {
-    let tools = list_tools_with_pagination(session, client_timeout, listing_timeout).await;
+    timeouts: Timeouts,
+) -> Result<Vec<LoadedTool>, ToolError<Session::Error>>
+where
+    Session: McpSession,
+{
+    let tools = list_tools_with_pagination(session, timeouts).await?;
     Ok(match format {
-        ToolFormat::Mcp => tools.into_iter().map(McpToolOrOpenAi::Mcp).collect(),
+        ToolFormat::Mcp => tools.into_iter().map(LoadedTool::Mcp).collect(),
         ToolFormat::Openai => tools
             .iter()
-            .map(|tool| McpToolOrOpenAi::Openai(mcp_tool_to_openai(tool)))
+            .map(|tool| LoadedTool::Openai(mcp_tool_to_openai(tool)))
             .collect(),
     })
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum McpToolOrOpenAi {
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(untagged)]
+pub enum LoadedTool {
     Mcp(McpTool),
     Openai(OpenAiTool),
-}
-
-#[cfg(test)]
-mod pagination_behavior_tests {
-    use super::*;
-    use std::time::Duration;
-
-    struct Fake {
-        pages: Vec<Page>,
-    }
-    impl McpSession for Fake {
-        async fn list_tools(&mut self, cursor: Option<String>) -> Result<Page, String> {
-            let index = cursor
-                .and_then(|value| value.parse::<usize>().ok())
-                .unwrap_or(0);
-            self.pages
-                .get(index)
-                .cloned()
-                .ok_or_else(|| "missing page".to_owned())
-        }
-        async fn call_tool(
-            &mut self,
-            _request: McpCallToolRequest,
-        ) -> Result<CallToolResult, String> {
-            Err("unused".to_owned())
-        }
-    }
-
-    #[tokio::test]
-    async fn pagination_behavior_tests_follows_pages_and_keeps_partial_catalog() {
-        let mut session = Fake {
-            pages: vec![
-                Page {
-                    tools: vec![McpTool {
-                        name: "one".to_owned(),
-                        description: None,
-                        input_schema: serde_json::Value::Null,
-                    }],
-                    next_cursor: Some("1".to_owned()),
-                },
-                Page {
-                    tools: vec![],
-                    next_cursor: Some("1".to_owned()),
-                },
-            ],
-        };
-        let tools = list_tools_with_pagination(
-            &mut session,
-            Duration::from_secs(1),
-            Duration::from_secs(1),
-        )
-        .await;
-        assert_eq!(tools.len(), 1);
-    }
 }

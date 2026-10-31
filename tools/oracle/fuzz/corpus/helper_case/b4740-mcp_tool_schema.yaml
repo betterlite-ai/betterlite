@@ -1,1 +1,9 @@
-{"operation":"mcp_tool_schema","tool":{"name":"echo","description":null,"inputSchema":{}}}
+kind: helper
+name: mcp_tool_schema_partial_fields
+call:
+  b4740:
+    operation: mcp_tool_schema
+    tool: {name: echo, inputSchema: {properties: {text: {type: string}}}}
+env: {}
+compare:
+  ignore: []

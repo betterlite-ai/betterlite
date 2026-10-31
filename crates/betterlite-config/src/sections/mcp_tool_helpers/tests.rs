@@ -23,14 +23,14 @@ fn timeout_config_cases() {
         ("LITELLM_MCP_TOOL_LISTING_TIMEOUT", "7"),
     ];
     let defaults = load("", &[]).unwrap();
-    assert_eq!(defaults.client_timeout, 60.0);
-    assert_eq!(defaults.tool_listing_timeout, 30.0);
+    assert_eq!(defaults.client_timeout.to_string(), "60");
+    assert_eq!(defaults.tool_listing_timeout.to_string(), "30");
     let environment_settings = load("", &environment).unwrap();
-    assert_eq!(environment_settings.client_timeout, 12.0);
-    assert_eq!(environment_settings.tool_listing_timeout, 7.0);
+    assert_eq!(environment_settings.client_timeout.to_string(), "12");
+    assert_eq!(environment_settings.tool_listing_timeout.to_string(), "7");
     let settings = load(source, &environment).unwrap();
-    assert_eq!(settings.client_timeout, 9.0);
-    assert_eq!(settings.tool_listing_timeout, 4.0);
+    assert_eq!(settings.client_timeout.to_string(), "9");
+    assert_eq!(settings.tool_listing_timeout.to_string(), "4");
 }
 
 #[test]
@@ -39,4 +39,15 @@ fn invalid_timeout_is_reported() {
         load("", &[("LITELLM_MCP_CLIENT_TIMEOUT", "bad")]),
         Err(ConfigError::InvalidFloat { .. })
     ));
+}
+
+#[test]
+fn numeric_config_timeouts_are_accepted() {
+    let settings = load(
+        "litellm_settings:\n  mcp_client_timeout: 9.5\n  mcp_tool_listing_timeout: 4\n",
+        &[],
+    )
+    .unwrap();
+    assert_eq!(settings.client_timeout.to_string(), "9.5");
+    assert_eq!(settings.tool_listing_timeout.to_string(), "4");
 }

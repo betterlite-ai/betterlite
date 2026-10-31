@@ -8,6 +8,7 @@ publish.workspace = true
 [dependencies]
 aws-lc-rs = "1.18.2"
 base64 = "0.23.1"
+betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-secrets = { path = "../betterlite-secrets" }
 chrono = { version = "0.4.45", default-features = false }
 hex.workspace = true
@@ -22,6 +23,8 @@ tracing.workspace = true
 
 [dev-dependencies]
 rstest = "=0.27.0"
+tokio = { workspace = true, features = ["test-util"] }
+tracing-subscriber.workspace = true
 
 [lints]
 workspace = true

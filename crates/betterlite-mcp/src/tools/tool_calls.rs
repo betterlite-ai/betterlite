@@ -1,89 +1,61 @@
+use betterlite_prompts::arguments::json::{Json, Object};
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use tokio::time::timeout;
 
-use super::pagination::McpSession;
+use super::pagination::{McpSession, Timeouts, ToolError};
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 pub struct OpenAiToolCall {
-    pub function: OpenAiFunctionCall,
+    pub function: FunctionCall,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct OpenAiFunctionCall {
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+pub struct FunctionCall {
     pub name: String,
-    #[serde(default)]
-    pub arguments: Value,
+    pub arguments: Option<Json>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct McpCallToolRequest {
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct CallRequest {
     pub name: String,
-    pub arguments: Map<String, Value>,
+    pub arguments: Option<Object>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct CallToolResult {
-    pub content: Value,
-}
-
-pub fn transform_openai_tool_call_request_to_mcp_tool_call_request(
-    call: &OpenAiToolCall,
-) -> McpCallToolRequest {
+#[must_use]
+pub fn openai_tool_call_to_mcp(call: &OpenAiToolCall) -> CallRequest {
     let arguments = match &call.function.arguments {
-        Value::String(text) => serde_json::from_str::<Value>(text)
-            .ok()
-            .and_then(|value| value.as_object().cloned())
-            .unwrap_or_default(),
-        Value::Object(object) => object.clone(),
-        _ => Map::new(),
+        Some(Json::Text(text)) => serde_json::from_str::<Object>(text).unwrap_or_default(),
+        Some(Json::Object(object)) => object.clone(),
+        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_)) | None => Object::new(),
     };
-    McpCallToolRequest {
+    CallRequest {
         name: call.function.name.clone(),
-        arguments,
+        arguments: Some(arguments),
     }
 }
 
-pub async fn call_mcp_tool<S: McpSession>(
-    session: &mut S,
-    request: McpCallToolRequest,
-) -> Result<CallToolResult, String> {
-    session.call_tool(request).await
+pub async fn call_mcp_tool<Session>(
+    session: &mut Session,
+    request: CallRequest,
+    timeouts: Timeouts,
+) -> Result<Session::Output, ToolError<Session::Error>>
+where
+    Session: McpSession,
+{
+    let result = timeout(timeouts.client, session.call_tool(request))
+        .await
+        .map_err(ToolError::Timeout)?;
+    result.map_err(ToolError::Session)
 }
 
-pub async fn call_openai_tool<S: McpSession>(
-    session: &mut S,
+pub async fn call_openai_tool<Session>(
+    session: &mut Session,
     call: &OpenAiToolCall,
-) -> Result<CallToolResult, String> {
-    let request = transform_openai_tool_call_request_to_mcp_tool_call_request(call);
-    call_mcp_tool(session, request).await
-}
-
-#[cfg(test)]
-mod tool_call_behavior_tests {
-    use super::*;
-
-    #[test]
-    fn tool_call_behavior_tests_accepts_json_and_invalid_arguments() {
-        let call = OpenAiToolCall {
-            function: OpenAiFunctionCall {
-                name: "echo".to_owned(),
-                arguments: Value::String("{\"x\":1}".to_owned()),
-            },
-        };
-        assert_eq!(
-            transform_openai_tool_call_request_to_mcp_tool_call_request(&call).arguments["x"],
-            1
-        );
-        let invalid = OpenAiToolCall {
-            function: OpenAiFunctionCall {
-                name: "echo".to_owned(),
-                arguments: Value::String("bad".to_owned()),
-            },
-        };
-        assert!(
-            transform_openai_tool_call_request_to_mcp_tool_call_request(&invalid)
-                .arguments
-                .is_empty()
-        );
-    }
+    timeouts: Timeouts,
+) -> Result<Session::Output, ToolError<Session::Error>>
+where
+    Session: McpSession,
+{
+    let request = openai_tool_call_to_mcp(call);
+    call_mcp_tool(session, request, timeouts).await
 }

@@ -1,8 +1,5 @@
 task: B4740
 deviations:
-  - what: Repeated cursors, page exhaustion, deadline expiration, and page errors return the partial catalog with a warning.
-    why: A partial MCP catalog is usable and matches LiteLLM's graceful return behavior.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/tools.py#L119-L156
-  - what: Invalid JSON or non-object OpenAI arguments become an empty argument map.
-    why: This preserves LiteLLM's permissive tool-call adapter behavior.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/tools.py#L195-L203
+  - what: Invalid tool formats are rejected during typed deserialization instead of silently returning MCP tools.
+    why: The task explicitly requires invalid formats to report an error; valid mcp and openai formats are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/tools.py#L173-L175
