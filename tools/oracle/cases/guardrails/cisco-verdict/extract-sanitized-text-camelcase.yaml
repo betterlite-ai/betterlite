@@ -1,0 +1,5 @@
+kind: helper
+name: extract-sanitized-text-camelcase
+call: {b3758: {function: extract_sanitized_text, response: {result: {sanitizedText: clean}}}}
+env: {}
+compare: {ignore: []}

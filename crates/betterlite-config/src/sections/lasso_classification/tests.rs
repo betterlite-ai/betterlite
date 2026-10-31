@@ -14,14 +14,13 @@ fn lasso_config_names_the_guardrail_for_the_ui() {
 }
 
 #[test]
-fn lasso_config_rejects_other_guardrail_kinds() {
+fn lasso_config_skips_other_guardrail_kinds() {
     let loader = ConfigLoader {
         lookup: BTreeMap::new(),
     };
     let source = LASSO_CONFIG.replace("guardrail: lasso", "guardrail: aim");
-    let error = loader.load(&source).unwrap_err();
-    assert!(matches!(error, ConfigError::Unsupported { paths }
-        if paths == ["guardrails.0.litellm_params.guardrail"]));
+    let config = loader.load(&source).unwrap();
+    assert!(config.sections.lasso_classification.guardrails.is_empty());
 }
 
 #[test]

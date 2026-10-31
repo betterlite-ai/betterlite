@@ -58,15 +58,8 @@ impl Section for Raw {
     {
         let mut guardrails = Vec::new();
         for (index, entry) in self.guardrails.into_iter().enumerate() {
-            match entry.litellm_params.guardrail.as_str() {
-                "lasso" => guardrails.push(entry.resolve(index, lookup)?),
-                // the deepkeep_firewall section reads these entries
-                "deepkeep" => {}
-                _ => {
-                    return Err(ConfigError::Unsupported {
-                        paths: vec![format!("guardrails.{index}.litellm_params.guardrail")],
-                    });
-                }
+            if entry.litellm_params.guardrail == "lasso" {
+                guardrails.push(entry.resolve(index, lookup)?);
             }
         }
         Ok(Settings { guardrails })

@@ -1,0 +1,5 @@
+kind: helper
+name: extract-masked-entity-count-empty
+call: {b3758: {function: extract_masked_entity_count, rules: []}}
+env: {}
+compare: {ignore: []}

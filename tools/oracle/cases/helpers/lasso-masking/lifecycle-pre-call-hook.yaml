@@ -1,0 +1,8 @@
+kind: helper
+name: lifecycle_pre_call_hook
+call:
+  b3779:
+    lifecycle_pre_call_hook:
+      messages: [{role: user, content: hello}]
+env: {}
+compare: {ignore: []}

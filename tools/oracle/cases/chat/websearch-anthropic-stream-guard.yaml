@@ -1,0 +1,27 @@
+{
+  "kind": "helper",
+  "name": "websearch-anthropic-stream-guard",
+  "call": {
+    "b4112": {
+      "format": "anthropic",
+      "response": {
+        "content": [
+          {
+            "type": "tool_use",
+            "id": "one",
+            "name": "litellm_web_search",
+            "input": {
+              "query": "rust"
+            }
+          }
+        ]
+      },
+      "stream": true,
+      "operation": "detect"
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
