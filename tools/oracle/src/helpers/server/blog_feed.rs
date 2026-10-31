@@ -130,7 +130,6 @@ const fn parse_failure_class(error: &parser::ParseFailure) -> &'static str {
     match error {
         parser::ParseFailure::MissingChannel => "ValueError",
         parser::ParseFailure::Xml(_)
-        | parser::ParseFailure::Decode(_)
         | parser::ParseFailure::Escape(_)
         | parser::ParseFailure::UnclosedElement
         | parser::ParseFailure::OutsideRoot => "ParseError",

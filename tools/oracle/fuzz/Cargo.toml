@@ -11,7 +11,7 @@ cargo-fuzz = true
 betterlite-oracle = { path = ".." }
 chrono = { version = "0.4.45", default-features = false, features = ["now", "serde"] }
 libfuzzer-sys = "0.4.9"
-quick-xml = "0.41.0"
+quick-xml = "0.42.0"
 serde = { version = "1.0.228", features = ["derive"] }
 thiserror = "2.0.17"
 
