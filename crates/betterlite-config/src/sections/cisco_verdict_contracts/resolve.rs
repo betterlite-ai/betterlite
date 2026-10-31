@@ -93,7 +93,19 @@ fn resolve_endpoint<L>(
 where
     L: EnvironmentLookup,
 {
-    let api_base = resolve_api_base(configured_base, prefix, lookup)?;
+    let base_path = format!("{prefix}.api_base");
+    let resolved_base = configured_base
+        .filter(|value| !value.is_empty())
+        .map(|value| resolve_string(value, &base_path, lookup))
+        .transpose()?
+        .filter(|value| !value.is_empty())
+        .or_else(|| {
+            lookup
+                .lookup("CISCO_AI_DEFENSE_API_BASE")
+                .filter(|value| !value.is_empty())
+        });
+    let base_candidate = resolved_base.as_deref().unwrap_or(DEFAULT_API_BASE);
+    let api_base = base_candidate.trim_end_matches('/').to_owned();
     let inspection_type = resolve_enum_choice(
         Choice {
             configured: configured_inspection,
@@ -105,29 +117,6 @@ where
         lookup,
     )?;
     Ok((api_base, inspection_type))
-}
-
-fn resolve_api_base<L>(
-    configured_base: Option<String>,
-    prefix: &str,
-    lookup: &L,
-) -> Result<String, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let path = format!("{prefix}.api_base");
-    let configured = configured_base
-        .filter(|value| !value.is_empty())
-        .map(|value| resolve_string(value, &path, lookup))
-        .transpose()?
-        .filter(|value| !value.is_empty());
-    let base = configured.unwrap_or_else(|| {
-        lookup
-            .lookup("CISCO_AI_DEFENSE_API_BASE")
-            .filter(|value| !value.is_empty())
-            .unwrap_or_else(|| DEFAULT_API_BASE.to_owned())
-    });
-    Ok(base.trim_end_matches('/').to_owned())
 }
 
 fn resolve_inspect_path(
