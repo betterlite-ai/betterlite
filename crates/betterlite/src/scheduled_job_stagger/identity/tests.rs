@@ -111,6 +111,14 @@ fn system_identity_environment_reports_this_process_id() {
 }
 
 #[test]
+fn system_identity_environment_hostname_matches_whoami() {
+    assert_eq!(
+        SystemIdentityEnvironment.hostname(),
+        whoami::hostname().ok()
+    );
+}
+
+#[test]
 fn system_identity_environment_random_identity_is_a_uuid() {
     let random_identity = SystemIdentityEnvironment.random_identity();
     uuid::Uuid::parse_str(&random_identity).expect("random_identity should be a valid UUID");
