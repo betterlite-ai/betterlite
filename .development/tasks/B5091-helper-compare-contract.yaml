@@ -5,7 +5,7 @@ description: >-
   and compares every field the case does not list in compare.ignore. That includes HelperError's class (the Python
   exception class name), HelperError's message and each HelperWarning's message. docs/compatibility.md and rule
   errors-match-litellm make the message betterlite's own and put an error's HTTP status, type, param and code in the
-  contract, so 55 helper cases each list /error/message or /error/class in compare.ignore by hand, and a new case that
+  contract, so 63 helper cases each list /error/message or /error/class in compare.ignore by hand, and a new case that
   forgets the line fails on wording alone. The class is a Python detail with no Rust counterpart: the native side
   makes it up to match.
 
@@ -21,7 +21,7 @@ description: >-
   points to no field. Drop both pointers from the known list.
 
 
-  Remove the now redundant /error/class and /error/message entries from the 55 helper cases listed under
+  Remove the now redundant /error/class and /error/message entries from the 63 helper cases listed under
   oracle_cases, and keep every other ignore entry of those cases. A case whose ignore list becomes empty keeps
   compare: {ignore: []} the way other cases write it. HTTP cases (kind: http) keep their /error/message ignores,
   since the HTTP comparison does not change.
@@ -69,6 +69,7 @@ scope:
   - tools/oracle/cases/helpers/lens-state/check-id-reserved-expected-behavior.yaml
   - tools/oracle/cases/helpers/lens-state/check-id-uniqueness.yaml
   - tools/oracle/cases/helpers/lens-state/metadata-filter-constraints.yaml
+  - tools/oracle/cases/helpers/message-content/token-prompt-rejected.yaml
   - tools/oracle/cases/helpers/model-fields/documentation-entry.yaml
   - tools/oracle/cases/helpers/openapi-schema-transforms/missing-reference.yaml
   - tools/oracle/cases/helpers/pricing-tier/explicit-null-range-errors-during-sort.yaml
@@ -77,6 +78,13 @@ scope:
   - tools/oracle/cases/helpers/providers/a2a-text/a2a-wrong-shapes.yaml
   - tools/oracle/cases/helpers/providers/anthropic-output-schema/missing-tool-type.yaml
   - tools/oracle/cases/helpers/providers/bedrock-other-image-models/stability3-prompt.yaml
+  - tools/oracle/cases/helpers/resource-rows/access-group-all-fields-and-null-lists.yaml
+  - tools/oracle/cases/helpers/resource-rows/config-requires-dict-without-string-decode.yaml
+  - tools/oracle/cases/helpers/resource-rows/credential-create-update-contracts.yaml
+  - tools/oracle/cases/helpers/resource-rows/credential-create-wrong-shape-after-guard.yaml
+  - tools/oracle/cases/helpers/resource-rows/model-malformed-strings-fail-field-validation.yaml
+  - tools/oracle/cases/helpers/resource-rows/model-scalar-array-and-double-encoded-text-rejected.yaml
+  - tools/oracle/cases/helpers/resource-rows/organization-project-nulls-not-normalized.yaml
   - tools/oracle/cases/helpers/resource-sdk-settings/invalid-timeout.yaml
   - tools/oracle/cases/helpers/responses-reasoning-merge/trailing-new-message-not-dict.yaml
   - tools/oracle/cases/helpers/scim-record/email-address-literal.yaml
@@ -115,7 +123,7 @@ dod:
 - text: No helper case lists /error/class or /error/message in compare.ignore, and HTTP cases keep theirs.
   proof:
   - no-skipped-ignores
-- text: The 55 rewritten helper cases still match LiteLLM.
+- text: The 63 rewritten helper cases still match LiteLLM.
   proof:
   - oracle
 checks:
@@ -159,6 +167,7 @@ oracle_cases:
 - tools/oracle/cases/helpers/lens-state/check-id-reserved-expected-behavior.yaml
 - tools/oracle/cases/helpers/lens-state/check-id-uniqueness.yaml
 - tools/oracle/cases/helpers/lens-state/metadata-filter-constraints.yaml
+- tools/oracle/cases/helpers/message-content/token-prompt-rejected.yaml
 - tools/oracle/cases/helpers/model-fields/documentation-entry.yaml
 - tools/oracle/cases/helpers/openapi-schema-transforms/missing-reference.yaml
 - tools/oracle/cases/helpers/pricing-tier/explicit-null-range-errors-during-sort.yaml
@@ -167,6 +176,13 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/a2a-text/a2a-wrong-shapes.yaml
 - tools/oracle/cases/helpers/providers/anthropic-output-schema/missing-tool-type.yaml
 - tools/oracle/cases/helpers/providers/bedrock-other-image-models/stability3-prompt.yaml
+- tools/oracle/cases/helpers/resource-rows/access-group-all-fields-and-null-lists.yaml
+- tools/oracle/cases/helpers/resource-rows/config-requires-dict-without-string-decode.yaml
+- tools/oracle/cases/helpers/resource-rows/credential-create-update-contracts.yaml
+- tools/oracle/cases/helpers/resource-rows/credential-create-wrong-shape-after-guard.yaml
+- tools/oracle/cases/helpers/resource-rows/model-malformed-strings-fail-field-validation.yaml
+- tools/oracle/cases/helpers/resource-rows/model-scalar-array-and-double-encoded-text-rejected.yaml
+- tools/oracle/cases/helpers/resource-rows/organization-project-nulls-not-normalized.yaml
 - tools/oracle/cases/helpers/resource-sdk-settings/invalid-timeout.yaml
 - tools/oracle/cases/helpers/responses-reasoning-merge/trailing-new-message-not-dict.yaml
 - tools/oracle/cases/helpers/scim-record/email-address-literal.yaml
@@ -193,7 +209,7 @@ pitfalls:
 - remove_pointer sets an array element to null instead of removing it, so remove each warning's message key by its full pointer and never the warning itself; the warnings' count and order still count.
 - Reject an ignore of /error/class or /error/message before the "points to no field" check; a failed output has both fields, so that check alone would let the ignore pass.
 - The FAIL line and the artifacts serialize HelperOutput, not the trimmed comparison value, so they keep showing class and messages for debugging.
-- Some of the 55 cases list a second ignore next to /error/message; keep that one and its why.
+- Some of the 63 cases list a second ignore next to /error/message; keep that one and its why.
 review_level: standard
 budget:
   max_changed_lines: 400
