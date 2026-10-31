@@ -109,3 +109,9 @@ fn falls_back_to_a_resolvable_host_when_nothing_else_is_set() {
 fn system_identity_environment_reports_this_process_id() {
     assert_eq!(SystemIdentityEnvironment.process_id(), process::id());
 }
+
+#[test]
+fn system_identity_environment_random_identity_is_a_uuid() {
+    let random_identity = SystemIdentityEnvironment.random_identity();
+    uuid::Uuid::parse_str(&random_identity).expect("random_identity should be a valid UUID");
+}
