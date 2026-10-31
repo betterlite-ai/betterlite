@@ -1,0 +1,11 @@
+task: B4112
+deviations:
+  - what: Missing search results return a typed MissingResults error instead of raising IndexError or inserting empty tool messages.
+    why: No successful LiteLLM call can rely on the unhandled indexing failure; returning an error prevents silent result loss.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/transformation.py#L354-L367
+  - what: Recursive argument and fallback-response formatting returns ArgumentsTooComplex when its accounting exceeds 32 nesting levels, 20000 nodes, or a 1 MiB byte budget.
+    why: Checking raw container sizes before deserialization and reserving escaped string sizes bounds formatting work and allocations that LiteLLM leaves unbounded.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/transformation.py#L389
+  - what: A choices field that is present but not a JSON array or null fails Response deserialization with a serde error, instead of falling through Python's duck typing (choices[0] on a string or number) to "no calls".
+    why: Rust has no equivalent of indexing an arbitrary object; a non-list, non-null choices value is a malformed response, not an empty one, and is best surfaced rather than silently swallowed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/transformation.py#L210-L223

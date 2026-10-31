@@ -1,7 +1,7 @@
 id: B3779
 milestone: M6 guardrails
 title: Lasso masking and Lakera PII primitives
-status: todo
+status: done
 depends_on: [B3778]
 file: tasks/B3779-lasso-lakera-masking.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/types/proxy/guardrails/guardrail_hooks/lakera_ai_v2.py"
 parent: B107
 split_from: B107
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 384

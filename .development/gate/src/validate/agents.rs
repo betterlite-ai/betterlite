@@ -4,29 +4,51 @@ use crate::ids::check_id_problem;
 use crate::spec::agents::{Agents, PLACEHOLDERS, Role, Runner, Vendor};
 use crate::validate::duplicates;
 
-fn runner_problems(runner: &Runner) -> Vec<String> {
-    let mut problems: Vec<String> = check_id_problem(&runner.id)
-        .map(|problem| format!("agents.yaml: {problem}"))
-        .into_iter()
-        .collect();
-    for argument in &runner.args {
+fn placeholders<'list>(
+    runner: &str,
+    arguments: &'list [String],
+    problems: &mut Vec<String>,
+) -> Vec<&'list str> {
+    let mut names = Vec::new();
+    for argument in arguments {
         let mut rest = argument.as_str();
         while let Some((_, after_open)) = rest.split_once('{') {
             let Some((name, after_close)) = after_open.split_once('}') else {
                 problems.push(format!(
-                    "agents.yaml: {} has an unclosed placeholder in {argument}",
-                    runner.id
+                    "agents.yaml: {runner} has an unclosed placeholder in {argument}"
                 ));
                 break;
             };
             if !PLACEHOLDERS.contains(&name) {
                 problems.push(format!(
-                    "agents.yaml: {} uses unknown placeholder {{{name}}}",
-                    runner.id
+                    "agents.yaml: {runner} uses unknown placeholder {{{name}}}"
                 ));
             }
+            names.push(name);
             rest = after_close;
         }
+    }
+    names
+}
+
+pub(crate) fn runner_problems(runner: &Runner) -> Vec<String> {
+    let mut problems: Vec<String> = check_id_problem(&runner.id)
+        .map(|problem| format!("agents.yaml: {problem}"))
+        .into_iter()
+        .collect();
+    if placeholders(&runner.id, &runner.args, &mut problems).contains(&"session") {
+        problems.push(format!(
+            "agents.yaml: {} uses {{session}} in args; only resume has a session",
+            runner.id
+        ));
+    }
+    if let Some(resume) = &runner.resume
+        && !placeholders(&runner.id, resume, &mut problems).contains(&"session")
+    {
+        problems.push(format!(
+            "agents.yaml: {} has resume arguments without {{session}}",
+            runner.id
+        ));
     }
     problems
 }

@@ -12,46 +12,39 @@ use crate::dispatch::seat::{Run, Seat, invoke};
 use crate::dispatch::{Attempt, Step, prompt, review};
 use crate::error::GateError;
 use crate::facts::resolve_base;
+use crate::gate_lock;
 use crate::git::git;
 use crate::report_check::report_problems;
 use crate::spec::agents::{Rung, Runner};
 use crate::spec::report::{Report, ReportStatus};
 
-fn worker_report(
-    attempt: &Attempt<'_>,
-    runner: &Runner,
-    rung: &Rung,
-    feedback: &[String],
-) -> Result<Result<Report, Option<Step>>, GateError> {
-    let blocks = attempt.places.journal.join("hook-blocks");
+fn clear_leftovers(journal: &Path) -> Result<(), GateError> {
+    // a hook whose worker hit its timeout keeps running the checks and would race this attempt's own
+    gate_lock::stop_orphan(&journal.join("gate"), gate_lock::GRACE)?;
+    let blocks = journal.join("hook-blocks");
     if blocks.exists() {
         fs::remove_file(&blocks).map_err(|source| GateError::Write {
             path: blocks.clone(),
             source,
         })?;
     }
-    let prompt = prompt::worker(attempt.brief, feedback);
-    let text = match invoke(attempt, runner, rung, Seat::Worker, &prompt)? {
-        Run::Answer(text) => text,
-        Run::Silent => {
-            return Ok(Err(Some(Step::Retry(vec![
-                "The previous run ended without a final answer.".to_owned(),
-            ]))));
-        }
-        Run::Limited => return Ok(Err(None)),
+    Ok(())
+}
+
+fn worker_run(
+    attempt: &Attempt<'_>,
+    runner: &Runner,
+    rung: &Rung,
+    feedback: &[String],
+) -> Result<Run, GateError> {
+    clear_leftovers(attempt.places.journal)?;
+    let prompt = match attempt.resume {
+        Some(_) => prompt::fix_turn(feedback),
+        None => prompt::worker(attempt.brief, feedback),
     };
-    Ok(match parse_answer::<Report>(&text, "the report") {
-        Ok(report) if report.status == ReportStatus::Blocked => {
-            Err(Some(Step::Climb(vec![format!(
-                "A previous worker reported blocked: {}",
-                report.blocker
-            )])))
-        }
-        Ok(report) => Ok(report),
-        Err(error) => Err(Some(Step::Retry(vec![format!(
-            "The final answer did not match the report format: {error}"
-        )]))),
-    })
+    let run = invoke(attempt, runner, rung, Seat::Worker, &prompt)?;
+    gate_lock::stop_orphan(&attempt.places.journal.join("gate"), gate_lock::GRACE)?;
+    Ok(run)
 }
 
 fn failures(
@@ -63,12 +56,12 @@ fn failures(
     let verdict = checks::run(worktree, &task, &Selection::default())?;
     let added = added_dependencies(&worktree.root, &resolve_base(&worktree.root)?)?;
     let mut problems = report_problems(report, &task, &added);
-    let logged = deviations::read_log(&worktree.root, task_id)?;
-    problems.extend(deviations::mismatch(
-        &report.deviations,
-        logged.as_ref(),
-        task_id,
-    ));
+    let log = worktree
+        .root
+        .join(format!("docs/deviations/{task_id}.yaml"));
+    if log.exists() {
+        problems.extend(deviations::file_problems(&log, &worktree.backlog));
+    }
     if verdict.passed && problems.is_empty() {
         return Ok(Vec::new());
     }
@@ -139,25 +132,69 @@ pub(crate) fn remove_extra_targets(worktree: &Path) -> Result<Vec<String>, GateE
     Ok(notes)
 }
 
+fn answered(
+    attempt: &Attempt<'_>,
+    runner: &Runner,
+    text: &str,
+    start: &str,
+) -> Result<Option<Step>, GateError> {
+    let report = match parse_answer::<Report>(text, "the report") {
+        Ok(report) => report,
+        Err(error) => {
+            return Ok(Some(Step::Fix(vec![format!(
+                "The final answer did not match the report format: {error}"
+            )])));
+        }
+    };
+    if report.status == ReportStatus::Blocked {
+        return Ok(Some(Step::Climb(vec![format!(
+            "A previous worker reported blocked: {}",
+            report.blocker
+        )])));
+    }
+    let touched = worker_edits(attempt.places.worktree, start)?;
+    if !touched.is_empty() {
+        return Ok(Some(Step::Fix(touched)));
+    }
+    let worktree = Development::open(attempt.places.worktree)?;
+    let failing = failures(&worktree, &attempt.brief.task.id, &report)?;
+    if !failing.is_empty() {
+        return Ok(Some(Step::Fix(failing)));
+    }
+    review::review(attempt, runner, &worktree).map(Some)
+}
+
+pub(crate) struct Turn {
+    pub(crate) step: Option<Step>,
+    pub(crate) session: Option<String>,
+}
+
 pub(crate) fn attempt_once(
     attempt: &Attempt<'_>,
     runner: &Runner,
     rung: &Rung,
     feedback: &[String],
-) -> Result<Option<Step>, GateError> {
+) -> Result<Turn, GateError> {
     let start = git(attempt.places.worktree, &["rev-parse", "HEAD"])?;
-    let report = match worker_report(attempt, runner, rung, feedback)? {
-        Ok(report) => report,
-        Err(step) => return Ok(step),
+    let note = match worker_run(attempt, runner, rung, feedback)? {
+        Run::Answer { text, session } => {
+            let step = answered(attempt, runner, &text, start.trim())?;
+            return Ok(Turn { step, session });
+        }
+        Run::Silent => "The previous run ended without a final answer.".to_owned(),
+        Run::TimedOut => format!(
+            "The previous run hit its {} minute timeout before its final answer; its work stays in the worktree.",
+            rung.timeout_minutes
+        ),
+        Run::Limited => {
+            return Ok(Turn {
+                step: None,
+                session: None,
+            });
+        }
     };
-    let touched = worker_edits(attempt.places.worktree, start.trim())?;
-    if !touched.is_empty() {
-        return Ok(Some(Step::Retry(touched)));
-    }
-    let worktree = Development::open(attempt.places.worktree)?;
-    let failing = failures(&worktree, &attempt.brief.task.id, &report)?;
-    if !failing.is_empty() {
-        return Ok(Some(Step::Retry(failing)));
-    }
-    review::review(attempt, runner, &worktree).map(Some)
+    Ok(Turn {
+        step: Some(Step::Retry(vec![note])),
+        session: None,
+    })
 }
