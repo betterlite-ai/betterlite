@@ -50,6 +50,31 @@ async fn navigation_tracks_observation_catalog_and_feedback_pages_independently(
 }
 
 #[tokio::test]
+async fn a_feedback_page_can_hold_more_than_one_finding() {
+    let mut claim = fixtures::claim();
+    let mut second_finding = claim.findings[0].clone();
+    second_finding.id = String::from("f2");
+    claim.findings.push(second_finding);
+    let candidate = fixtures::candidate(vec![String::from("e1")]);
+    let examined = vec![fixtures::examined("e1", "the original quote")];
+    let read = fixtures::never_read();
+    let (model, prompts) = fixtures::scripted(vec![
+        fixtures::feedback_decision(0),
+        fixtures::inconclusive_decision(),
+    ]);
+
+    let context = Context {
+        claim: &claim,
+        candidate: &candidate,
+        examined: &examined,
+        read: &read,
+        model: &model,
+    };
+    loop_state::run(context).await.unwrap();
+    assert_eq!(prompts.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
 async fn read_action_terminates_immediately_for_an_unknown_execution_id() {
     let claim = fixtures::claim();
     let candidate = fixtures::candidate(vec![String::from("e1")]);
