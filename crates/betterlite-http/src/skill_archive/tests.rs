@@ -63,6 +63,32 @@ fn skill_archive_rejects_invalid_uploads(#[case] path: Option<&str>) {
     assert!(build_skill_archive(&upload(&members)).is_none());
 }
 
+#[rstest]
+#[case::null_byte("skill/ev\0il.txt")]
+#[case::backslash("skill/evil\\file.txt")]
+#[case::dot_segment("skill/./evil.txt")]
+fn skill_archive_rejects_unsafe_sibling_members(#[case] unsafe_path: &str) {
+    assert!(
+        build_skill_archive(&upload(&[
+            ("skill/SKILL.md", b"body"),
+            (unsafe_path, b"data"),
+        ]))
+        .is_none()
+    );
+}
+
+#[test]
+fn skill_archive_accepts_exactly_the_max_unpacked_bytes() {
+    let body = vec![0u8; 52_428_800];
+    assert!(build_skill_archive(&upload(&[("SKILL.md", &body)])).is_some());
+}
+
+#[test]
+fn skill_archive_rejects_one_byte_over_the_max_unpacked_bytes() {
+    let body = vec![0u8; 52_428_801];
+    assert!(build_skill_archive(&upload(&[("SKILL.md", &body)])).is_none());
+}
+
 #[test]
 fn skill_archive_tolerates_malformed_frontmatter() {
     let archive =
