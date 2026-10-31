@@ -17,4 +17,10 @@ fn message_content_behavior_tests_behavior() {
         as_openai_image_part(&image).expect("image").kind,
         "image_url"
     );
+
+    // Each disjunct of message_has_audio_or_image must independently report true.
+    let image_url_part = part("image_url", Object::new());
+    assert!(message_has_audio_or_image(&message(vec![image_url_part])));
+    let audio_part = part("input_audio", Object::new());
+    assert!(message_has_audio_or_image(&message(vec![audio_part])));
 }
