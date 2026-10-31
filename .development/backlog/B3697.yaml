@@ -1,7 +1,7 @@
 id: B3697
 milestone: M6 guardrails
 title: Competitor intent classification and airline policy
-status: todo
+status: done
 depends_on: [B3690, B3696]
 file: tasks/B3697-airline-competitor-intent.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/competitor_intent/{__init__.py,airline.py,major_airlines.json}"
 parent: B105
 split_from: B105
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 376
