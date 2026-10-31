@@ -262,6 +262,13 @@ fn grayswan_block_error_marks_a_pre_call_violation_as_the_input_location() {
     assert_eq!(violation_location, "input");
 }
 #[test]
+fn grayswan_block_error_status_code_is_bad_request() {
+    let error = guardrail(OnFlaggedAction::Block)
+        .process_response(&response(0.9), GuardrailInputType::Request, vec![])
+        .expect_err("blocked");
+    assert_eq!(error.status_code(), StatusCode::BAD_REQUEST);
+}
+#[test]
 fn grayswan_passthrough_replaces_post_call_messages() {
     let guardrail = guardrail(OnFlaggedAction::Passthrough);
     let result = guardrail
