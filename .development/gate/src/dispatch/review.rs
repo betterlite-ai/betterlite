@@ -56,7 +56,7 @@ fn review_text(
             continue;
         }
         let reason = match invoke(attempt, runner, rung, seat, prompt)? {
-            Run::Answer(text) => {
+            Run::Answer { text, .. } => {
                 let pin = ReviewerPin {
                     runner: rung.runner.clone(),
                     model: rung.model.clone(),

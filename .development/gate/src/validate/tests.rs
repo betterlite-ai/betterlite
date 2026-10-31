@@ -3,7 +3,9 @@
 use std::path::Path;
 
 use crate::ids::{check_id_problem, task_id_problem};
+use crate::spec::agents::Agents;
 use crate::spec::task::Task;
+use crate::validate::agents::runner_problems;
 use crate::validate::command_args::argument_problems;
 use crate::validate::needs::needed_paths;
 use crate::validate::task::{banned_tooling, outside_scope_roots};
@@ -158,4 +160,26 @@ fn needed_paths_come_from_oracle_cases_and_test_flags() {
         "tools/oracle/cases/passthrough/endpoint-type-vertex.yaml".to_owned(),
         false
     )));
+}
+
+#[test]
+fn only_resume_arguments_name_the_session() {
+    let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let mut agents: Agents = read_yaml(&folder.join("agents.yaml")).unwrap();
+    let runner = &mut agents.runners[0];
+    runner.args.push("{session}".to_owned());
+    runner.resume = Some(vec!["--resume".to_owned()]);
+    assert_eq!(
+        runner_problems(runner),
+        vec![
+            format!(
+                "agents.yaml: {} uses {{session}} in args; only resume has a session",
+                runner.id
+            ),
+            format!(
+                "agents.yaml: {} has resume arguments without {{session}}",
+                runner.id
+            ),
+        ]
+    );
 }

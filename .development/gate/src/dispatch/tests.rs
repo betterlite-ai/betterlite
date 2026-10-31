@@ -5,7 +5,7 @@ use std::ops::ControlFlow;
 use std::path::Path;
 
 use crate::dispatch::attempt::remove_extra_targets;
-use crate::dispatch::progress::{NextRun, Progress, ReviewerPin};
+use crate::dispatch::progress::{NextRun, Progress, ReviewerPin, WorkerSession};
 use crate::dispatch::prompt::Brief;
 use crate::dispatch::review::reviewer_rungs;
 use crate::dispatch::vendor::mark;
@@ -45,6 +45,7 @@ fn progress() -> Progress {
         fix_turns: 0,
         granted: 0,
         reviewer: None,
+        session: None,
     }
 }
 
@@ -759,4 +760,77 @@ fn a_granted_start_runs_on_the_last_rung_once_the_attempts_ran_out() {
             ladder[last].attempts + 1
         )
     );
+}
+
+fn claude_answers(agents: &mut Agents) {
+    let answer = r#"printf '{"structured_output":{},"session_id":"s1"}'"#;
+    for runner in &mut agents.runners {
+        "sh".clone_into(&mut runner.program);
+        runner.args = vec!["-c".to_owned(), format!("cat > /dev/null; {answer}")];
+        runner.resume = Some(vec![
+            "-c".to_owned(),
+            format!("echo {{session}} >> '{{home}}/resumed'; cat >> '{{home}}/prompts'; {answer}"),
+        ]);
+        runner.output = OutputMode::ClaudeJson;
+    }
+}
+
+#[test]
+fn fix_turns_go_on_in_the_session_of_the_run_before_them() {
+    let (mut agents, task) = fixtures();
+    claude_answers(&mut agents);
+    let folder = tempfile::tempdir().unwrap();
+    worktree(folder.path());
+    let first = &agents.roles.worker.ladder[0];
+    let mut progress = progress();
+    climb_rung(
+        &agents,
+        &brief(&task),
+        &places(folder.path()),
+        first,
+        &mut progress,
+    )
+    .unwrap();
+    let fix_turns = first.attempts.saturating_mul(agents.policy.max_fix_turns);
+    let resumed = fs::read_to_string(folder.path().join("resumed")).unwrap();
+    assert_eq!(resumed, "s1\n".repeat(usize::try_from(fix_turns).unwrap()));
+    let prompts = fs::read_to_string(folder.path().join("prompts")).unwrap();
+    assert_eq!(
+        prompts.matches("Your last run did not pass.").count(),
+        usize::try_from(fix_turns).unwrap()
+    );
+    assert!(!prompts.contains("You are the betterlite worker"));
+    let session = WorkerSession {
+        runner: first.runner.clone(),
+        model: first.model.clone(),
+        id: "s1".to_owned(),
+    };
+    assert_eq!(progress.session, Some(session));
+}
+
+#[test]
+fn a_session_from_another_model_starts_a_new_one() {
+    let (mut agents, task) = fixtures();
+    claude_answers(&mut agents);
+    let folder = tempfile::tempdir().unwrap();
+    worktree(folder.path());
+    let first = &agents.roles.worker.ladder[0];
+    let mut progress = progress();
+    progress.next = NextRun::Fix;
+    progress.feedback = vec!["a red check".to_owned()];
+    progress.session = Some(WorkerSession {
+        runner: first.runner.clone(),
+        model: "another".to_owned(),
+        id: "s0".to_owned(),
+    });
+    climb_rung(
+        &agents,
+        &brief(&task),
+        &places(folder.path()),
+        first,
+        &mut progress,
+    )
+    .unwrap();
+    let resumed = fs::read_to_string(folder.path().join("resumed")).unwrap();
+    assert!(!resumed.contains("s0"), "{resumed}");
 }

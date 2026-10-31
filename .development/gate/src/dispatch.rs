@@ -25,7 +25,7 @@ use crate::spec::review::ReviewVerdict;
 use crate::spec::task::{ReviewLevel, Task};
 use crate::yaml::read_yaml;
 
-use progress::{NextRun, Progress, ReviewerPin};
+use progress::{NextRun, Progress, ReviewerPin, WorkerSession};
 use prompt::Brief;
 use seat::Seat;
 use serde::{Deserialize, Serialize};
@@ -67,6 +67,7 @@ pub(crate) struct Attempt<'run> {
     pub(crate) number: u32,
     pub(crate) earlier: Option<&'run EarlierReview>,
     pub(crate) reviewer: Option<&'run ReviewerPin>,
+    pub(crate) resume: Option<&'run str>,
 }
 
 pub(crate) fn find_runner<'agents>(
@@ -326,6 +327,47 @@ fn pick_rung<'agents>(
     }))
 }
 
+fn run_once(
+    agents: &Agents,
+    brief: &Brief<'_>,
+    places: &Places<'_>,
+    pick: &Pick<'_>,
+    progress: &mut Progress,
+) -> Result<Option<Step>, GateError> {
+    // saved after the increment, so a killed dispatch never writes over this run's journal files
+    progress.number = progress.number.saturating_add(1);
+    progress.save(places.journal)?;
+    let fix = progress.next == NextRun::Fix && !progress.feedback.is_empty();
+    let resume = progress
+        .session
+        .as_ref()
+        .filter(|session| {
+            fix && pick.runner.resume.is_some()
+                && session.runner == pick.runner.id
+                && session.model == pick.rung.model
+        })
+        .map(|session| session.id.as_str());
+    let current = Attempt {
+        agents,
+        brief,
+        places,
+        number: progress.number,
+        earlier: progress.earlier.as_ref(),
+        reviewer: progress.reviewer.as_ref(),
+        resume,
+    };
+    let turn = attempt::attempt_once(&current, pick.runner, pick.rung, &progress.feedback)?;
+    // a run stopped by a usage limit keeps the session of the run before it
+    if turn.step.is_some() {
+        progress.session = turn.session.map(|id| WorkerSession {
+            runner: pick.runner.id.clone(),
+            model: pick.rung.model.clone(),
+            id,
+        });
+    }
+    Ok(turn.step)
+}
+
 fn climb_rung<'agents>(
     agents: &'agents Agents,
     brief: &Brief<'_>,
@@ -347,18 +389,7 @@ fn climb_rung<'agents>(
             progress.limited = true;
             return Ok(None);
         };
-        // saved after the increment, so a killed dispatch never writes over this run's journal files
-        progress.number = progress.number.saturating_add(1);
-        progress.save(places.journal)?;
-        let current = Attempt {
-            agents,
-            brief,
-            places,
-            number: progress.number,
-            earlier: progress.earlier.as_ref(),
-            reviewer: progress.reviewer.as_ref(),
-        };
-        let outcome = attempt::attempt_once(&current, pick.runner, pick.rung, &progress.feedback)?;
+        let outcome = run_once(agents, brief, places, &pick, progress)?;
         let removed = attempt::remove_extra_targets(places.worktree)?;
         // a run that hit a usage limit marked its vendor, so the next pick goes around it
         let Some(step) = outcome else {

@@ -31,43 +31,20 @@ fn clear_leftovers(journal: &Path) -> Result<(), GateError> {
     Ok(())
 }
 
-fn worker_report(
+fn worker_run(
     attempt: &Attempt<'_>,
     runner: &Runner,
     rung: &Rung,
     feedback: &[String],
-) -> Result<Result<Report, Option<Step>>, GateError> {
+) -> Result<Run, GateError> {
     clear_leftovers(attempt.places.journal)?;
-    let prompt = prompt::worker(attempt.brief, feedback);
+    let prompt = match attempt.resume {
+        Some(_) => prompt::fix_turn(feedback),
+        None => prompt::worker(attempt.brief, feedback),
+    };
     let run = invoke(attempt, runner, rung, Seat::Worker, &prompt)?;
     gate_lock::stop_orphan(&attempt.places.journal.join("gate"), gate_lock::GRACE)?;
-    let text = match run {
-        Run::Answer(text) => text,
-        Run::Silent => {
-            return Ok(Err(Some(Step::Retry(vec![
-                "The previous run ended without a final answer.".to_owned(),
-            ]))));
-        }
-        Run::TimedOut => {
-            return Ok(Err(Some(Step::Retry(vec![format!(
-                "The previous run hit its {} minute timeout before its final answer; its work stays in the worktree.",
-                rung.timeout_minutes
-            )]))));
-        }
-        Run::Limited => return Ok(Err(None)),
-    };
-    Ok(match parse_answer::<Report>(&text, "the report") {
-        Ok(report) if report.status == ReportStatus::Blocked => {
-            Err(Some(Step::Climb(vec![format!(
-                "A previous worker reported blocked: {}",
-                report.blocker
-            )])))
-        }
-        Ok(report) => Ok(report),
-        Err(error) => Err(Some(Step::Fix(vec![format!(
-            "The final answer did not match the report format: {error}"
-        )]))),
-    })
+    Ok(run)
 }
 
 fn failures(
@@ -155,18 +132,27 @@ pub(crate) fn remove_extra_targets(worktree: &Path) -> Result<Vec<String>, GateE
     Ok(notes)
 }
 
-pub(crate) fn attempt_once(
+fn answered(
     attempt: &Attempt<'_>,
     runner: &Runner,
-    rung: &Rung,
-    feedback: &[String],
+    text: &str,
+    start: &str,
 ) -> Result<Option<Step>, GateError> {
-    let start = git(attempt.places.worktree, &["rev-parse", "HEAD"])?;
-    let report = match worker_report(attempt, runner, rung, feedback)? {
+    let report = match parse_answer::<Report>(text, "the report") {
         Ok(report) => report,
-        Err(step) => return Ok(step),
+        Err(error) => {
+            return Ok(Some(Step::Fix(vec![format!(
+                "The final answer did not match the report format: {error}"
+            )])));
+        }
     };
-    let touched = worker_edits(attempt.places.worktree, start.trim())?;
+    if report.status == ReportStatus::Blocked {
+        return Ok(Some(Step::Climb(vec![format!(
+            "A previous worker reported blocked: {}",
+            report.blocker
+        )])));
+    }
+    let touched = worker_edits(attempt.places.worktree, start)?;
     if !touched.is_empty() {
         return Ok(Some(Step::Fix(touched)));
     }
@@ -176,4 +162,39 @@ pub(crate) fn attempt_once(
         return Ok(Some(Step::Fix(failing)));
     }
     review::review(attempt, runner, &worktree).map(Some)
+}
+
+pub(crate) struct Turn {
+    pub(crate) step: Option<Step>,
+    pub(crate) session: Option<String>,
+}
+
+pub(crate) fn attempt_once(
+    attempt: &Attempt<'_>,
+    runner: &Runner,
+    rung: &Rung,
+    feedback: &[String],
+) -> Result<Turn, GateError> {
+    let start = git(attempt.places.worktree, &["rev-parse", "HEAD"])?;
+    let note = match worker_run(attempt, runner, rung, feedback)? {
+        Run::Answer { text, session } => {
+            let step = answered(attempt, runner, &text, start.trim())?;
+            return Ok(Turn { step, session });
+        }
+        Run::Silent => "The previous run ended without a final answer.".to_owned(),
+        Run::TimedOut => format!(
+            "The previous run hit its {} minute timeout before its final answer; its work stays in the worktree.",
+            rung.timeout_minutes
+        ),
+        Run::Limited => {
+            return Ok(Turn {
+                step: None,
+                session: None,
+            });
+        }
+    };
+    Ok(Turn {
+        step: Some(Step::Retry(vec![note])),
+        session: None,
+    })
 }
