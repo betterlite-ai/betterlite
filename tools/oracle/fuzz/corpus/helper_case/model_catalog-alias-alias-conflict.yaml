@@ -1,0 +1,12 @@
+kind: helper
+name: alias-alias-conflict
+call:
+  model_catalog:
+    operation: alias_alias_conflict
+    source:
+      first: {litellm_provider: openai, aliases: [shared]}
+      second: {litellm_provider: anthropic, aliases: [shared]}
+    lookup: [shared]
+env: {}
+compare:
+  ignore: [{pointer: /value/warnings, why: warning wording differs between Python and Rust}]

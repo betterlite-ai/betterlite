@@ -1,0 +1,12 @@
+kind: helper
+name: azure-openrouter-errors-azure-content-policy
+call:
+  azure_openrouter_errors:
+    provider: azure
+    model: gpt-4
+    custom_llm_provider: azure
+    error_str: "content_policy_violation: the response was filtered"
+    exception_provider: Azure
+    status_code: 400
+env: {}
+compare: {ignore: []}

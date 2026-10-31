@@ -1,0 +1,5 @@
+task: B193
+deviations:
+  - what: Duplicate JSON keys are explicit load errors; runtime unknown fields are accepted with path-naming warnings.
+    why: Preserve duplicate evidence while allowing forward-compatible remote catalogs under the architect decision.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L85-L88
