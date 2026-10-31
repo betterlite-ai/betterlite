@@ -33,6 +33,7 @@ impl Process for NoProcess {
     fn stdin(&mut self) -> Option<&mut Sink> {
         None
     }
+    fn close_stdin(&mut self) {}
 
     fn stdout(&mut self) -> &mut Empty {
         &mut self.stdout

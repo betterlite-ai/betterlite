@@ -91,8 +91,6 @@ where
         .write_all(data.as_bytes())
         .await
         .map_err(|source| HarnessError::Sandbox { source })?;
-    stdin
-        .shutdown()
-        .await
-        .map_err(|source| HarnessError::Sandbox { source })
+    process.close_stdin();
+    Ok(())
 }
