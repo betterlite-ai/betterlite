@@ -1,9 +1,10 @@
 use rust_decimal::Decimal;
 
-use super::rates::{cost_per_unit, is_present, service_tier_cost_key};
+use super::rates::{cost_per_unit, service_tier_cost_key};
 use super::{ModelInfo, RequestContext, TokenRateError};
 use crate::off_peak::schema::OffPeakBlock;
 use crate::off_peak::{self, TokenRates};
+use crate::tiered_pricing::Scalar;
 
 // Off-peak wins first, then a selected tier's own rate, then service-tier precedence.
 pub(super) fn resolve_billed_reasoning_rate(
@@ -49,13 +50,15 @@ fn resolve_reasoning_token_cost(
     completion_base_cost: Decimal,
 ) -> Result<Decimal, TokenRateError> {
     let tier_reasoning_key = service_tier_cost_key("output_cost_per_reasoning_token", service_tier);
-    if is_present(model, &tier_reasoning_key)
+    if !matches!(model.get(&tier_reasoning_key), None | Some(Scalar::Null))
         && let Some(cost) = cost_per_unit(model, &tier_reasoning_key, None)?
     {
         return Ok(cost);
     }
     let tier_output_key = service_tier_cost_key("output_cost_per_token", service_tier);
-    if tier_output_key != "output_cost_per_token" && is_present(model, &tier_output_key) {
+    if tier_output_key != "output_cost_per_token"
+        && !matches!(model.get(&tier_output_key), None | Some(Scalar::Null))
+    {
         return Ok(completion_base_cost);
     }
     Ok(

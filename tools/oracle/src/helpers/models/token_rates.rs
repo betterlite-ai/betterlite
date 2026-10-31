@@ -1,6 +1,8 @@
 use betterlite_models::off_peak::schema::OffPeakBlockEntry;
 use betterlite_models::tiered_pricing::Tier;
-use betterlite_models::token_rates::{self, ModelInfo, ModelPricing, RequestContext, Usage};
+use betterlite_models::token_rates::{
+    self, ModelInfo, ModelPricing, RequestContext, TierKeyPresence, TokenRateError, Usage,
+};
 use chrono::{DateTime, Utc};
 use jiff::tz::TimeZoneDatabase;
 use rust_decimal::Decimal;
@@ -18,8 +20,9 @@ pub(crate) struct BaseInput {
     usage: Usage,
     service_tier: Option<String>,
     provider: Option<String>,
+    // Kept as raw maps so a key's presence survives deserialization alongside the typed `Tier`.
     #[serde(default)]
-    tiered_pricing: Vec<Tier>,
+    tiered_pricing: Vec<serde_json::Map<String, serde_json::Value>>,
     #[serde(default)]
     off_peak_pricing: Option<OffPeakBlockEntry>,
     #[serde(default = "default_moment")]
@@ -47,23 +50,49 @@ pub(crate) enum Input {
     Deployment { model_info: Option<ModelInfo> },
 }
 
-fn helper_error(error: impl std::fmt::Display) -> Box<crate::helpers::HelperError> {
-    let wrapped = crate::helpers::HelperError {
-        class: "TokenRateError".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: error.to_string(),
-    };
-    Box::new(wrapped)
+impl From<TokenRateError> for Box<crate::helpers::HelperError> {
+    fn from(error: TokenRateError) -> Self {
+        Self::new(crate::helpers::HelperError {
+            class: "TokenRateError".to_owned(),
+            status: None,
+            error_type: Some(None),
+            param: Some(None),
+            code: Some(None),
+            message: error.to_string(),
+        })
+    }
+}
+
+impl From<serde_json::Error> for Box<crate::helpers::HelperError> {
+    fn from(error: serde_json::Error) -> Self {
+        Self::new(crate::helpers::HelperError {
+            class: "TokenRateError".to_owned(),
+            status: None,
+            error_type: Some(None),
+            param: Some(None),
+            code: Some(None),
+            message: error.to_string(),
+        })
+    }
 }
 
 fn run_base(fields: &BaseInput) -> crate::helpers::HelperResult {
     let database = TimeZoneDatabase::from_env();
+    let mut tiers = Vec::with_capacity(fields.tiered_pricing.len());
+    let mut presence = Vec::with_capacity(fields.tiered_pricing.len());
+    for raw in &fields.tiered_pricing {
+        let tier: Tier = serde_json::from_value(serde_json::Value::Object(raw.clone()))?;
+        presence.push(TierKeyPresence {
+            input: raw.contains_key("input_cost_per_token"),
+            output: raw.contains_key("output_cost_per_token"),
+            output_reasoning: raw.contains_key("output_cost_per_reasoning_token"),
+        });
+        tiers.push(tier);
+    }
     let pricing = ModelPricing {
         model: &fields.model_info,
-        tiered_pricing: &fields.tiered_pricing,
+        tiered_pricing: &tiers,
+        tier_key_presence: &presence,
         off_peak_pricing: fields
             .off_peak_pricing
             .as_ref()
@@ -75,8 +104,7 @@ fn run_base(fields: &BaseInput) -> crate::helpers::HelperResult {
         moment: fields.moment,
         database: &database,
     };
-    let rates = token_rates::base_cost::get_token_base_cost(&pricing, fields.usage, &context)
-        .map_err(helper_error)?;
+    let rates = token_rates::base_cost::get_token_base_cost(&pricing, fields.usage, &context)?;
     Ok(serde_json::json!({
         "input_rate": rates.input_rate.normalize().to_string(),
         "output_rate": rates.output_rate.normalize().to_string(),
@@ -97,27 +125,27 @@ impl crate::helpers::Helper for Op {
                 model_info,
                 usage,
                 provider,
-            } => serde_json::to_value(
-                token_rates::batch::get_batch_cost_rates(model_info, *usage, provider.as_deref())
-                    .map_err(helper_error)?,
-            )
-            .map_err(helper_error),
+            } => {
+                let rates = token_rates::batch::get_batch_cost_rates(
+                    model_info,
+                    *usage,
+                    provider.as_deref(),
+                )?;
+                Ok(serde_json::to_value(rates)?)
+            }
             Input::Component {
                 model_info,
                 cost_key,
                 usage,
-            } => serde_json::to_value(
-                token_rates::deployment::calculate_cost_component(model_info, cost_key, *usage)
-                    .map_err(helper_error)?
-                    .normalize()
-                    .to_string(),
-            )
-            .map_err(helper_error),
-            Input::Deployment { model_info } => serde_json::to_value(
-                token_rates::deployment::deployment_pricing(model_info.as_ref())
-                    .map_err(helper_error)?,
-            )
-            .map_err(helper_error),
+            } => {
+                let component =
+                    token_rates::component::calculate_cost_component(model_info, cost_key, *usage)?;
+                Ok(serde_json::to_value(component.normalize().to_string())?)
+            }
+            Input::Deployment { model_info } => {
+                let pricing = token_rates::deployment::deployment_pricing(model_info.as_ref())?;
+                Ok(serde_json::to_value(pricing)?)
+            }
         }
     }
 }

@@ -4,28 +4,69 @@ use super::{ModelInfo, TokenRateError};
 use crate::price_fields::decimal_lexeme::parse_decimal_lexeme;
 use crate::tiered_pricing::Scalar;
 
-// Longest suffix first, so a tier-specific key is tried before a shorter sibling could match.
-pub(super) const ALL_SERVICE_SUFFIXES: [&str; 6] = [
-    "_ultrafast",
-    "_balanced",
-    "_priority",
-    "_auto",
-    "_flex",
-    "_fast",
-];
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum ServiceTier {
+    Ultrafast,
+    Balanced,
+    Priority,
+    Auto,
+    Flex,
+    Fast,
+}
+
+impl ServiceTier {
+    // Longest suffix first, so a tier-specific key is tried before a shorter sibling could match.
+    pub(super) const ALL: [Self; 6] = [
+        Self::Ultrafast,
+        Self::Balanced,
+        Self::Priority,
+        Self::Auto,
+        Self::Flex,
+        Self::Fast,
+    ];
+
+    fn parse(tier: &str) -> Option<Self> {
+        match tier.to_ascii_lowercase().as_str() {
+            "ultrafast" => Some(Self::Ultrafast),
+            "balanced" => Some(Self::Balanced),
+            "priority" => Some(Self::Priority),
+            "auto" => Some(Self::Auto),
+            "flex" => Some(Self::Flex),
+            "fast" => Some(Self::Fast),
+            _ => None,
+        }
+    }
+
+    pub(super) const fn suffix(self) -> &'static str {
+        match self {
+            Self::Ultrafast => "_ultrafast",
+            Self::Balanced => "_balanced",
+            Self::Priority => "_priority",
+            Self::Auto => "_auto",
+            Self::Flex => "_flex",
+            Self::Fast => "_fast",
+        }
+    }
+
+    const fn cost_key_suffix(self) -> Option<&'static str> {
+        match self {
+            Self::Flex => Some("_flex"),
+            Self::Balanced => Some("_balanced"),
+            Self::Priority | Self::Fast => Some("_priority"),
+            Self::Ultrafast => Some("_ultrafast"),
+            Self::Auto => None,
+        }
+    }
+}
 
 pub(super) fn service_tier_cost_key(base: &str, tier: Option<&str>) -> String {
-    let Some(lowered) = tier.map(str::to_ascii_lowercase) else {
+    let Some(suffix) = tier
+        .and_then(ServiceTier::parse)
+        .and_then(ServiceTier::cost_key_suffix)
+    else {
         return base.to_owned();
     };
-    let suffix = match lowered.as_str() {
-        "fast" | "priority" => "priority",
-        "flex" => "flex",
-        "balanced" => "balanced",
-        "ultrafast" => "ultrafast",
-        _ => return base.to_owned(),
-    };
-    format!("{base}_{suffix}")
+    format!("{base}{suffix}")
 }
 
 pub(super) fn decimal_value(
@@ -38,7 +79,14 @@ pub(super) fn decimal_value(
     };
     match scalar {
         Scalar::Bool(flag) => Ok(Some(Decimal::from(u8::from(*flag)))),
-        Scalar::Number(number) => parse_rate(key, &number.to_string()).map(Some),
+        Scalar::Number(number) => {
+            parse_decimal_lexeme(&number.to_string())
+                .map(Some)
+                .map_err(|source| TokenRateError::Rate {
+                    key: key.to_owned(),
+                    source,
+                })
+        }
         Scalar::Text(text) => parse_text_rate(key, text.trim(), default),
         Scalar::Null | Scalar::Array(_) | Scalar::Object(_) => Ok(default),
     }
@@ -51,17 +99,19 @@ pub(super) fn parse_text_rate(
     default: Option<Decimal>,
 ) -> Result<Option<Decimal>, TokenRateError> {
     if !matches_float_literal_grammar(text) {
+        tracing::warn!(
+            key,
+            text,
+            "malformed nonnull rate string uses the supplied default"
+        );
         return Ok(default);
     }
-    parse_rate(key, &text.replace('_', "")).map(Some)
-}
-
-pub(super) fn parse_rate(key: &str, text: &str) -> Result<Decimal, TokenRateError> {
-    let parsed = parse_decimal_lexeme(text);
-    parsed.map_err(|source| TokenRateError::Rate {
-        key: key.to_owned(),
-        source,
-    })
+    parse_decimal_lexeme(&text.replace('_', ""))
+        .map(Some)
+        .map_err(|source| TokenRateError::Rate {
+            key: key.to_owned(),
+            source,
+        })
 }
 
 pub(super) fn cost_per_unit(
@@ -76,7 +126,7 @@ pub(super) fn cost_per_unit(
         Some(Scalar::Array(_) | Scalar::Object(_)) => Ok(default),
         Some(Scalar::Null) | None => {
             // Only the first (longest) matching suffix anywhere in the key is tried, per the source's single `break`.
-            for suffix in ALL_SERVICE_SUFFIXES {
+            for suffix in ServiceTier::ALL.map(ServiceTier::suffix) {
                 if key.contains(suffix) {
                     let base = key.replacen(suffix, "", 1);
                     return decimal_value(&base, model.get(&base), default);
@@ -85,20 +135,6 @@ pub(super) fn cost_per_unit(
             Ok(default)
         }
     }
-}
-
-pub(super) fn rate(
-    model: &ModelInfo,
-    key: &str,
-    default: Decimal,
-) -> Result<Decimal, TokenRateError> {
-    let resolved = cost_per_unit(model, key, Some(default))?;
-    Ok(resolved.unwrap_or(default))
-}
-
-pub(super) fn is_present(model: &ModelInfo, key: &str) -> bool {
-    let found = model.get(key);
-    !matches!(found, None | Some(Scalar::Null))
 }
 
 // Python float() grammar, duplicated from tiered_pricing's private check since it isn't pub.

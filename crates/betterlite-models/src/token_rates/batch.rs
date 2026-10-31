@@ -5,6 +5,7 @@ use rust_decimal::Decimal;
 use super::rates::parse_text_rate;
 use super::threshold::prompt_exceeds;
 use super::{BatchCostRates, ModelInfo, TokenRateError, Usage};
+use crate::price_fields::decimal_lexeme::parse_decimal_lexeme;
 use crate::tiered_pricing::Scalar;
 
 const BATCH_PREFIXES: [&str; 4] = [
@@ -31,9 +32,12 @@ pub fn get_batch_cost_rates(
 // A direct value parse only: batch rates never take the service-tier suffix fallback.
 fn batch_rate(model: &ModelInfo, key: &str) -> Result<Option<Decimal>, TokenRateError> {
     match model.get(key) {
-        Some(Scalar::Number(number)) => {
-            super::rates::parse_rate(key, &number.to_string()).map(Some)
-        }
+        Some(Scalar::Number(number)) => parse_decimal_lexeme(&number.to_string())
+            .map(Some)
+            .map_err(|source| TokenRateError::Rate {
+                key: key.to_owned(),
+                source,
+            }),
         Some(Scalar::Bool(flag)) => Ok(Some(Decimal::from(u8::from(*flag)))),
         Some(Scalar::Text(text)) => parse_text_rate(key, text.trim(), None),
         Some(Scalar::Null | Scalar::Array(_) | Scalar::Object(_)) | None => Ok(None),
