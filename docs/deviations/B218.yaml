@@ -1,0 +1,5 @@
+task: B218
+deviations:
+  - what: from_model_response does not append the legacy function_call field; AssistantMessage has no such field.
+    why: betterlite's chat response type models the current tool_calls shape; the legacy function_call field predates it and no task has modeled it yet.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L319-L320

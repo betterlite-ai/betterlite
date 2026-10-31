@@ -3,17 +3,13 @@ title: Messages token route
 description: >-
   Install native Messages count_tokens and Claude event_logging/batch compatibility routes. Select B027 provider-native
   token counting where available and the existing B013 local tokenizer path where the source falls back; preserve
-  source beta/header and error envelopes, with no remote tokenizer downloads.
+  source beta/header and error envelopes. The local path is LiteLLM's: cohere, llama2 and llama3 count with the
+  Hugging Face tokenizer that B013 loads, downloads included. Native tests never reach huggingface.co.
 
 
   POST /v1/messages/count_tokens is authenticated, as is /claude_code_gateway/v1/messages/count_tokens with its
   enable guard. POST /api/event_logging/batch has no auth, does not read its body and always returns {status: ok}.
   Missing model or absent/empty messages return 400 FastAPI detail; unexpected counting failure returns 500 detail.
-
-
-  Open, waiting for Max: permit Hugging Face tokenizer downloads or retain the current offline OpenAI-tokenizer
-  fallback documented below; current successful requests still return 200, and validation retains its existing 400
-  codes.
 
 
   Implement crates/betterlite-server/src/api/messages_token_route.rs, crates/betterlite-core/src/api/messages_token_route.rs.
@@ -43,11 +39,6 @@ description: >-
   event_logging_invalid_body, gateway_count_disabled, route_aliases, auth_missing, auth_invalid, unauthenticated_route_contract
   under api::messages_token_route::tests. Each named function drives production code and asserts its case result;
   use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
-
-
-  Implement tests::compatibility_deviations with one named rstest case per deviation below, asserting the exact
-  current betterlite result and the pinned contrast. These cases are not disguised as differential equality; oracle
-  inputs for unchanged behavior remain comparable.
 
 
   This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
@@ -193,9 +184,6 @@ dod:
   proof:
   - case-unauthenticated-route-contract
   - oracle
-- text: Every explicit deviation has a native test for its documented status/code or fallback.
-  proof:
-  - deviation-tests
 - text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
   proof:
   - new-oracle-cases
@@ -252,9 +240,6 @@ checks:
   - id: case-unauthenticated-route-contract
     why: the unauthenticated-route-contract behavior or its assertions are absent
     run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::messages_token_route::tests::unauthenticated_route_contract($|::)/)'
-  - id: deviation-tests
-    why: the documented compatibility difference lacks a native assertion
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::messages_token_route::tests::compatibility_deviations($|::)/)'
   - id: new-oracle-cases
     why: no new domain case exists on this branch
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/messages-token-route)"
@@ -274,11 +259,7 @@ oracle_cases:
 - tools/oracle/cases/api/messages-token-route/auth-missing.yaml
 - tools/oracle/cases/api/messages-token-route/auth-invalid.yaml
 - tools/oracle/cases/api/messages-token-route/unauthenticated-route-contract.yaml
-deviations:
-- what: With Hugging Face downloads disabled, cohere, llama2 and llama3 fall back to the OpenAI tokenizer. Successful
-    counts keep HTTP 200 and their usual count schema; input validation retains the source 400 code/param fields.
-  why: Current offline tokenizer policy; the download decision remains open.
-  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2404-L2467
+deviations: []
 out_of_scope:
 - 'litellm/proxy/anthropic_endpoints/endpoints.py: B081 owns _with_provider_specific_fields L46-L50, _anthropic_error_detail
   L53-L62, _anthropic_error_json_response L65-L83, _strip_total_tokens_from_anthropic_response L86-L117, anthropic_response

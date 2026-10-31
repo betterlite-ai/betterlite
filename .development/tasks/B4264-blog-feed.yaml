@@ -27,6 +27,7 @@ scope:
   - tools/oracle/helpers/blog_feed/**
   - tools/oracle/cases/helpers/blog_feed/**
   - tools/oracle/fuzz/corpus/helper_case/blog_feed-*
+  - tools/postgres-fixture/src/tests.rs
   - Cargo.lock
   lint_tables: false
 references:

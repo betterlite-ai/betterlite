@@ -1,0 +1,5 @@
+task: B4263
+deviations:
+  - what: show_missing_vars_in_env takes a ProxyAvailability struct with explicit has_master_key and has_database flags rather than reading global proxy state like LiteLLM's master_key and prisma_client module variables.
+    why: betterlite is a standalone Rust server without FastAPI globals or module-level state. Callers determine availability independently and pass it in. Output HTML is identical.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/admin_ui_utils.py#L4-L22

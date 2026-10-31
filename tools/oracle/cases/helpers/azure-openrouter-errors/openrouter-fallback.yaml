@@ -1,0 +1,13 @@
+kind: helper
+name: azure-openrouter-errors-openrouter-fallback
+call:
+  azure_openrouter_errors:
+    provider: openrouter
+    model: openrouter/meta-llama/llama-3-70b
+    custom_llm_provider: openrouter
+    error_str: connection reset while streaming
+    exception_provider: OpenRouterException
+    status_code: 500
+    status_code_is_synthesized: true
+env: {}
+compare: {ignore: []}

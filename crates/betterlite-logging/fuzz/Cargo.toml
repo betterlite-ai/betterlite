@@ -9,8 +9,9 @@ cargo-fuzz = true
 
 [dependencies]
 betterlite-logging = { path = ".." }
+chrono = "0.4.45"
 libfuzzer-sys = "0.4.9"
-serde_json = "1.0.154"
+serde_json = { version = "1.0.154", features = ["raw_value"] }
 
 [[bin]]
 name = "otlp_decode"
@@ -20,3 +21,10 @@ doc = false
 bench = false
 
 [workspace]
+
+[[bin]]
+name = "s3_v2"
+path = "fuzz_targets/s3_v2.rs"
+test = false
+doc = false
+bench = false

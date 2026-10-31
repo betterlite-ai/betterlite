@@ -1,0 +1,11 @@
+kind: helper
+name: empty-binary-reply
+call:
+  bedrock_services_file_content:
+    response:
+      status_code: 204
+      body: []
+      headers: [[content-type, application/x-custom]]
+      request: {method: GET, url: 'https://bedrock.example/files/id/content'}
+env: {}
+compare: {ignore: []}

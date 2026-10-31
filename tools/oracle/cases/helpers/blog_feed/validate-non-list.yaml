@@ -1,0 +1,5 @@
+kind: helper
+name: validate-non-list
+call: {blog_feed: {function: validate_blog_posts, posts: null}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,13 @@
+id: B5087
+milestone: M1 openai data plane
+title: Hugging Face cache downloads like hf_hub_download
+status: done
+depends_on: [B5085, B5086]
+file: tasks/B5087-huggingface-hub-download.yaml
+covers: []
+parent: B013
+split_from: B195
+resolution: superseded
+superseded_by: B195
+blocked_reason: null
+pr: null

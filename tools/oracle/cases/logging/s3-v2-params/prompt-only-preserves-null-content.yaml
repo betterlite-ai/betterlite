@@ -1,0 +1,5 @@
+kind: helper
+name: prompt-only-preserves-null-content
+call: {"b3992": {"operation": "event", "start_time": "2026-01-02T03:04:05", "source": {"s3_log_prompts_only": true}, "payload": {"id": "request", "messages": [{"role": "assistant", "content": null}], "response": {"text": "ok"}}}}
+env: {}
+compare: {ignore: []}

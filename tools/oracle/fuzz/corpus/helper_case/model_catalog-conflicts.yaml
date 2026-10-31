@@ -1,0 +1,5 @@
+kind: helper
+name: model-catalog-conflicts
+call: {model_catalog: {operation: alias_alias_conflict, source: {a: {litellm_provider: openai, aliases: [x]}, b: {litellm_provider: anthropic, aliases: [x]}}, lookup: [x]}}
+env: {}
+compare: {ignore: []}

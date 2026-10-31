@@ -1,0 +1,92 @@
+id: B5088
+title: Hugging Face OIDC and OAuth refresh tokens for hf-hub
+description: >-
+  huggingface_hub 1.32.0's get_token runs when LiteLLM passes no token, and the hf-hub crate B195 downloads with has no OIDC exchange and no OAuth refresh, so betterlite builds both and hands the result to hf-hub as its token. Max decided on 2026-10-31 to keep both, since LiteLLM loads its default tokenizers with no token. get_token tries an OIDC exchange before the env token and refreshes an OAuth token after it reads the token file. B5085 builds the env and file steps in crates/betterlite-http/src/hub_token.rs and hub_token/**; this task adds the other two in the same lookup, in get_token's order, and puts the OIDC and OAuth requests in crates/betterlite-http/src/hub_oauth.rs and hub_oauth/**.
+
+
+  OIDC. When HF_OIDC_RESOURCE is set, get an ID token from HF_OIDC_ID_TOKEN or from GitHub Actions (detect_provider and _get_github_oidc_token with ACTIONS_ID_TOKEN_REQUEST_URL and ACTIONS_ID_TOKEN_REQUEST_TOKEN), exchange it at the Hub (exchange_oidc_token) and cache the result with _get_token_from_oidc's expiry margins. The config section huggingface_oidc (crates/betterlite-config/src/sections/huggingface_oidc.rs and huggingface_oidc/**) reads these env vars and HF_DEVICE_CODE_OAUTH_CLIENT_ID through the config's environment lookup.
+
+
+  OAuth refresh. After the token file is read, look the token up in the stored_tokens file at B5085's stored_tokens_path. When it carries a refresh token and an expiry, refresh it the way _refresh_oauth_token_if_needed does: the same margins, the same lock file and timeout, the same request, the one-time warning on failure, saving the new token with _save_token and _write_secret's file modes. Parse stored_tokens as configparser does with interpolation off, and give that parser a fuzz target.
+
+
+  Requests go through B173's pooled client in betterlite-http with B5085's endpoint and download timeout. The cache and the warned flag belong to the lookup's constructor, not to module state.
+
+
+  Tests. hub_oauth::tests::oidc_follows_huggingface_hub covers the env ID token, the GitHub Actions request, the exchange, the cache and its margins, and a failed exchange. hub_oauth::tests::oauth_refresh_follows_huggingface_hub covers a fresh token, an expired one that refreshes and is saved, a failed refresh with its one warning, invalid_grant and the lock. hub_oauth::tests::replays_the_stored_tokens_corpus replays the corpus. sections::huggingface_oidc::tests::settings_follow_huggingface_hub loads the env vars and the client id default.
+scope:
+  paths:
+    - crates/betterlite-http/src/hub_oauth.rs
+    - crates/betterlite-http/src/hub_oauth/**
+    - crates/betterlite-http/src/hub_token.rs
+    - crates/betterlite-http/src/hub_token/**
+    - crates/betterlite-http/Cargo.toml
+    - crates/betterlite-http/fuzz/Cargo.toml
+    - crates/betterlite-http/fuzz/fuzz_targets/stored_tokens.rs
+    - crates/betterlite-http/fuzz/corpus/stored_tokens/**
+    - crates/betterlite-config/src/sections/huggingface_oidc.rs
+    - crates/betterlite-config/src/sections/huggingface_oidc/**
+    - Cargo.toml
+    - Cargo.lock
+  lint_tables: false
+references:
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/utils/_auth.py#L58-L84
+    why: get_token's order, OIDC first and the OAuth refresh after the file.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/utils/_auth.py#L157-L218
+    why: The OIDC token cache and its margins.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/utils/_auth.py#L221-L399
+    why: The OAuth refresh, its cache, warning, expiry parsing and the stored tokens file.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/utils/_auth.py#L33-L48
+    why: _write_secret and its file modes.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/utils/_auth.py#L420-L446
+    why: _save_token.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/_oidc.py#L36-L126
+    why: The OIDC env vars, provider detection, the GitHub request and the exchange.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/utils/_oauth_device.py#L36-L37
+    why: The OAuth client id and its env var.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/utils/_oauth_device.py#L155-L197
+    why: The refresh token request.
+dod:
+  - text: The lookup runs the OIDC exchange first when HF_OIDC_RESOURCE is set, with the same ID token sources, cache and margins as huggingface_hub.
+    proof: [hub-oidc, hub-oidc-settings]
+  - text: A stored OAuth token is refreshed, saved and warned about as huggingface_hub does, under the same lock and file modes.
+    proof: [hub-oauth-refresh]
+  - text: The stored_tokens parser has a fuzz target and a committed corpus that replays.
+    proof: [stored-tokens-corpus]
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: hub-oidc
+      why: the OIDC test is missing or a source, request, cache or margin differs from huggingface_hub
+      run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^hub_oauth::tests::oidc_follows_huggingface_hub($|::)/)'
+    - id: hub-oauth-refresh
+      why: the refresh test is missing or a margin, request, warning, lock or file mode differs from huggingface_hub
+      run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^hub_oauth::tests::oauth_refresh_follows_huggingface_hub($|::)/)'
+    - id: hub-oidc-settings
+      why: the settings test is missing or an env var or default differs from huggingface_hub
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::huggingface_oidc::tests::settings_follow_huggingface_hub($|::)/)'
+    - id: stored-tokens-corpus
+      why: the fuzz target or a new corpus file is missing, or the replay fails
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-http/fuzz/corpus/stored_tokens)"
+        && test -f crates/betterlite-http/fuzz/fuzz_targets/stored_tokens.rs
+        && cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^hub_oauth::tests::replays_the_stored_tokens_corpus($|::)/)'
+oracle_cases: []
+deviations:
+  - what: The OIDC requests use B5085's download timeout, where huggingface_hub sends them with no timeout.
+    why: >-
+      A request without a timeout can hold the token lookup, and with it every tokenizer download, forever.
+    link: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/_oidc.py#L53-L126
+out_of_scope:
+  - The env token, the token file and the paths belong to B5085. The download that uses the token belongs to B195.
+  - The device code login flow and the oidc_login helper are interactive and LiteLLM never calls them.
+  - The Google Colab secret lookup only runs inside Colab notebooks and is not built.
+pitfalls:
+  - An OIDC failure propagates out of get_token, so it stops the download before the cache fallback runs.
+  - configparser lowercases keys and strips values, and interpolation is off, so "%" in a token stays as written.
+  - The token file and the stored_tokens file are written with mode 0o600 and their folder with 0o700.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
