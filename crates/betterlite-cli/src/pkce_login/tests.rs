@@ -76,23 +76,8 @@ impl ScriptedHttp {
     fn requests(&self) -> Vec<RecordedRequest> {
         self.requests.lock().expect("requests").clone()
     }
-}
 
-impl Http for ScriptedHttp {
-    fn get(&self, url: &str, timeout_seconds: u64) -> Result<HttpResponse, PkceFailure> {
-        self.requests
-            .lock()
-            .map_err(|_poisoned| PkceFailure::Protocol("request recorder was poisoned".to_owned()))?
-            .push(RecordedRequest {
-                url: url.to_owned(),
-                body: HttpBody::Json(Vec::new()),
-                timeout: timeout_seconds,
-                follow_redirects: false,
-            });
-        Ok(self.response.clone())
-    }
-
-    fn post(
+    fn record(
         &self,
         url: &str,
         body: HttpBody,
@@ -112,6 +97,22 @@ impl Http for ScriptedHttp {
     }
 }
 
+impl Http for ScriptedHttp {
+    fn get(&self, url: &str, timeout_seconds: u64) -> Result<HttpResponse, PkceFailure> {
+        self.record(url, HttpBody::Json(Vec::new()), timeout_seconds, false)
+    }
+
+    fn post(
+        &self,
+        url: &str,
+        body: HttpBody,
+        timeout_seconds: u64,
+        follow_redirects: bool,
+    ) -> Result<HttpResponse, PkceFailure> {
+        self.record(url, body, timeout_seconds, follow_redirects)
+    }
+}
+
 fn contract() -> CliAuthContract {
     CliAuthContract {
         contract_version: 1,
@@ -123,6 +124,14 @@ fn contract() -> CliAuthContract {
         resource: "https://example.test".to_owned(),
         supported_methods: vec!["S256".to_owned()],
     }
+}
+
+fn redirect_response(status: u16) -> ScriptedHttp {
+    ScriptedHttp::new(HttpResponse {
+        status,
+        headers: Vec::new(),
+        body: Vec::new(),
+    })
 }
 
 fn redemption() -> RedeemCodeRequest {
@@ -283,12 +292,12 @@ fn register_client_sends_public_client_payload() {
 #[case(307)]
 #[case(308)]
 fn register_client_rejects_redirect(#[case] status: u16) {
-    let http = ScriptedHttp::new(HttpResponse {
-        status,
-        headers: Vec::new(),
-        body: Vec::new(),
-    });
-    register_client(&contract(), "http://127.0.0.1:1/callback", &http).unwrap_err();
+    register_client(
+        &contract(),
+        "http://127.0.0.1:1/callback",
+        &redirect_response(status),
+    )
+    .unwrap_err();
 }
 
 #[test]
@@ -324,12 +333,7 @@ fn token_requests_capture_expiry() {
 #[case(307)]
 #[case(308)]
 fn token_request_rejects_redirect(#[case] status: u16) {
-    let http = ScriptedHttp::new(HttpResponse {
-        status,
-        headers: Vec::new(),
-        body: Vec::new(),
-    });
-    redeem_code(&contract(), &redemption(), &http, 100).unwrap_err();
+    redeem_code(&contract(), &redemption(), &redirect_response(status), 100).unwrap_err();
 }
 
 #[test]
@@ -385,12 +389,7 @@ fn revoke_503_is_unavailable() {
 #[case(307)]
 #[case(308)]
 fn revoke_rejects_redirect(#[case] status: u16) {
-    let http = ScriptedHttp::new(HttpResponse {
-        status,
-        headers: Vec::new(),
-        body: Vec::new(),
-    });
-    revoke_credential(&contract(), "client", "refresh", &http).unwrap_err();
+    revoke_credential(&contract(), "client", "refresh", &redirect_response(status)).unwrap_err();
 }
 
 #[test]
