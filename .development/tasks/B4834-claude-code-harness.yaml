@@ -32,6 +32,7 @@ description: >-
   in the harness helper group.
 scope:
   paths:
+    - crates/betterlite-harness/src/errors.rs
     - crates/betterlite-harness/src/providers/claude_code.rs
     - crates/betterlite-harness/src/providers/claude_code/**
     - tools/oracle/cases/claude_code/**

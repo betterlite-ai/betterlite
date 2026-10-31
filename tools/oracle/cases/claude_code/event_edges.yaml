@@ -1,0 +1,17 @@
+kind: helper
+name: claude-code-event-edges
+call:
+  b4834:
+    stream: |
+      {"type":"system","subtype":"init","session_id":"first"}
+      {"type":"assistant","parent_tool_use_id":"parent","message":{"content":"hidden"}}
+      {"type":"assistant","message":{"model":"<synthetic>","content":"hidden"}}
+      {"type":"user","parent_tool_use_id":"parent","message":{"content":[{"type":"tool_result","tool_use_id":"missing","content":"hidden"}]}}
+      {"type":"assistant","parent_tool_use_id":"","message":{"content":[null,"ignored",{"type":"thinking","thinking":"reason"},{"type":"tool_use","id":"tool","name":"mcp__example__image","input":null}]}}
+      {"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tool","is_error":true,"content":[{"data":"é","type":"image"},"tail"]}]}}
+      {"type":"system","subtype":"compact_boundary","compact_metadata":{"pre_tokens":123}}
+      {"type":"assistant","message":{"content":"prefix {\"ok\":true}"}}
+      {"type":"future"}
+      {"type":"result","session_id":"final","structured_output":[]}
+env: {}
+compare: {ignore: []}
