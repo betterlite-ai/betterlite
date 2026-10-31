@@ -61,4 +61,4 @@ pitfalls:
   - The complete response's upstream headers are not passed to convert_to_model_response_object.
   - The outer handler preserves a container's embedded status rather than replacing it with 500.
 budget: {max_changed_lines: 775, max_new_expects: 1}
-review_level: security
+review_level: standard

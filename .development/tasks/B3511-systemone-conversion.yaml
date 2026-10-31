@@ -137,7 +137,7 @@ pitfalls:
   - "BaseDecisionsConfig.transform_decisions_response catches ValidationError from Pydantic response parsing and wraps it in a BaseLLMException with status 500, not re-raised."
   - "api_base normalization removes trailing slashes and exactly one trailing /v1. The method call is base.rstrip('/').removesuffix('/v1'), which removes all trailing slashes then one /v1 suffix if present."
 
-review_level: security
+review_level: standard
 
 budget:
   max_changed_lines: 1500

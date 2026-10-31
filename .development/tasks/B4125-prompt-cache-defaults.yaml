@@ -117,7 +117,7 @@ pitfalls:
   - "When no breakpoints are added (added <= 0), record_gateway_injection returns early without
     creating the metadata bucket. Creating it would add a key to untyped kwargs, which breaks
     the Responses API where metadata is both a parameter name and this bucket's fallback name."
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

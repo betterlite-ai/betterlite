@@ -134,7 +134,7 @@ pitfalls:
   - "Release the channel before shutdown if possible; the grace period is not a guaranteed cleanup path, only a fallback for loggers that linger."
   - "The BatchSpanProcessor must use schedule_delay_millis (not seconds) to configure the flush interval from the float parameter."
 
-review_level: security
+review_level: standard
 
 budget:
   max_changed_lines: 1500

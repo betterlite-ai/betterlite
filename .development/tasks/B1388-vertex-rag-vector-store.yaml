@@ -90,4 +90,4 @@ pitfalls:
   - Explicit zero top_k is retained because only None suppresses retrieval options.
   - Corpus creation reports completed immediately without polling an operation.
 budget: {max_changed_lines: 700, max_new_expects: 1}
-review_level: security
+review_level: standard

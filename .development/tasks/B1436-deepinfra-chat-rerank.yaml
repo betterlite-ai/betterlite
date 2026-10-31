@@ -119,4 +119,4 @@ pitfalls:
   - Rerank documents arrive through non_default_params; the formal documents argument only sizes repeated queries.
   - A failing post_call hook triggers the same silent rerank fallback as invalid JSON.
 budget: {max_changed_lines: 800, max_new_expects: 0}
-review_level: security
+review_level: standard

@@ -1,0 +1,5 @@
+kind: helper
+name: cost-usage-counter-overflow-seed
+call: {cost_usage: {transcription: [], interactions: [{total_input_tokens: 9223372036854775808, total_output_tokens: 0}]}}
+env: {}
+compare: {ignore: []}

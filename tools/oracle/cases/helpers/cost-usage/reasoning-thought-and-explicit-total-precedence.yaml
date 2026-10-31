@@ -1,0 +1,17 @@
+kind: helper
+name: reasoning-thought-and-explicit-total-precedence
+call:
+  cost_usage:
+    transcription: []
+    interactions:
+      - total_input_tokens: 2
+        total_output_tokens: 3
+        total_reasoning_tokens: 0
+        total_thought_tokens: 4
+        total_tokens: 100
+      - total_input_tokens: 2
+        total_output_tokens: 3
+        total_reasoning_tokens: 7
+        total_thought_tokens: 4
+compare: {ignore: []}
+env: {}

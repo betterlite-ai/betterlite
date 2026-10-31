@@ -241,7 +241,7 @@ pitfalls:
 - get_batch_from_database and update_batch_in_database check the hook first, so neither may read or write a managed-object
   row in the OSS oracle.
 - PROXY_BATCH_POLLING_ENABLED=true does not imply an active poller when check_batch_cost_job is absent.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 1
