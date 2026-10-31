@@ -1,7 +1,7 @@
+use std::num::TryFromIntError;
+
 use thiserror::Error;
 
-pub const DEFAULT_CHUNK_SIZE: usize = 1000;
-pub const DEFAULT_CHUNK_OVERLAP: usize = 200;
 pub const DEFAULT_MAX_RECURSE_DEPTH: u32 = 100;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
@@ -12,6 +12,18 @@ pub enum ChunkConfigError {
     NegativeChunkOverlap { chunk_overlap: i64 },
     #[error("chunk_overlap ({chunk_overlap}) must be less than chunk_size ({chunk_size})")]
     OverlapNotLessThanSize { chunk_size: i64, chunk_overlap: i64 },
+    #[error("chunk_size {chunk_size} does not fit in this platform's usize")]
+    ChunkSizeOutOfRange {
+        chunk_size: i64,
+        #[source]
+        source: TryFromIntError,
+    },
+    #[error("chunk_overlap {chunk_overlap} does not fit in this platform's usize")]
+    ChunkOverlapOutOfRange {
+        chunk_overlap: i64,
+        #[source]
+        source: TryFromIntError,
+    },
 }
 
 pub trait TextSplitter {
@@ -35,7 +47,7 @@ impl RecursiveCharacterTextSplitter {
     pub fn new(
         requested_chunk_size: i64,
         requested_chunk_overlap: i64,
-        requested_separators: Option<Vec<String>>,
+        separators: Vec<String>,
     ) -> Result<Self, ChunkConfigError> {
         if requested_chunk_size <= 0 {
             return Err(ChunkConfigError::NonPositiveChunkSize {
@@ -53,15 +65,18 @@ impl RecursiveCharacterTextSplitter {
                 chunk_overlap: requested_chunk_overlap,
             });
         }
-        let chunk_size = usize::try_from(requested_chunk_size).unwrap_or(usize::MAX);
-        let chunk_overlap = usize::try_from(requested_chunk_overlap).unwrap_or(usize::MAX);
-        let separators = match requested_separators {
-            Some(given) if !given.is_empty() => given,
-            _ => ["\n\n", "\n", " ", ""]
-                .into_iter()
-                .map(str::to_owned)
-                .collect(),
-        };
+        let chunk_size = usize::try_from(requested_chunk_size).map_err(|source| {
+            ChunkConfigError::ChunkSizeOutOfRange {
+                chunk_size: requested_chunk_size,
+                source,
+            }
+        })?;
+        let chunk_overlap = usize::try_from(requested_chunk_overlap).map_err(|source| {
+            ChunkConfigError::ChunkOverlapOutOfRange {
+                chunk_overlap: requested_chunk_overlap,
+                source,
+            }
+        })?;
         Ok(Self {
             chunk_size,
             chunk_overlap,

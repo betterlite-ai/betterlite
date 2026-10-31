@@ -5,10 +5,10 @@ mod types {
 
     use crate::rag::document::{
         BedrockVectorStoreOptions, INGESTION_PROVIDERS, IngestionProvider,
-        OpenAIVectorStoreOptions, ProviderIdentity as _, RAGChunkingStrategy,
-        RAGIngestEmbeddingOptions, RAGIngestOCROptions, RAGIngestOptions, RAGIngestResponse,
-        RAGIngestStatus, RAGIngestVectorStoreOptions, S3VectorsDistanceMetric,
-        S3VectorsVectorStoreOptions, VertexAIVectorStoreOptions,
+        OpenAIVectorStoreOptions, RAGChunkingStrategy, RAGIngestEmbeddingOptions,
+        RAGIngestOCROptions, RAGIngestOptions, RAGIngestResponse, RAGIngestStatus,
+        RAGIngestVectorStoreOptions, S3VectorsDistanceMetric, S3VectorsVectorStoreOptions,
+        VertexAIVectorStoreOptions,
     };
 
     #[test]
@@ -21,7 +21,7 @@ mod types {
         assert_eq!(strategy.chunk_overlap, 50);
         assert_eq!(
             strategy.separators,
-            Some(vec!["\n\n".to_owned(), "\n".to_owned()])
+            vec!["\n\n".to_owned(), "\n".to_owned()]
         );
     }
 
@@ -31,8 +31,33 @@ mod types {
             serde_json::from_str("{}").expect("every field has a default");
         assert_eq!(strategy.chunk_size, 1000);
         assert_eq!(strategy.chunk_overlap, 200);
-        assert_eq!(strategy.separators, None);
+        assert_eq!(
+            strategy.separators,
+            vec![
+                "\n\n".to_owned(),
+                "\n".to_owned(),
+                " ".to_owned(),
+                String::new()
+            ]
+        );
         assert_eq!(strategy, RAGChunkingStrategy::default());
+    }
+
+    #[test]
+    fn chunking_strategy_null_separators_also_defaults() {
+        let strategy: RAGChunkingStrategy =
+            serde_json::from_str(r#"{"separators": null}"#).expect("null falls back to default");
+        assert_eq!(
+            strategy.separators,
+            RAGChunkingStrategy::default().separators
+        );
+    }
+
+    #[test]
+    fn chunking_strategy_explicit_empty_separators_is_used_as_given() {
+        let strategy: RAGChunkingStrategy =
+            serde_json::from_str(r#"{"separators": []}"#).expect("an empty list is valid");
+        assert_eq!(strategy.separators, Vec::<String>::new());
     }
 
     #[test]
@@ -335,8 +360,7 @@ mod types {
         #[case] wire_name: &str,
         #[case] class_name: &str,
     ) {
-        assert_eq!(provider.wire_name(), wire_name);
-        assert_eq!(provider.ingestion_class_name(), class_name);
+        assert_eq!(provider.wire_name_and_class(), (wire_name, class_name));
         assert_eq!(IngestionProvider::from_wire_name(wire_name), Some(provider));
     }
 

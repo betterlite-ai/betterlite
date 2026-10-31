@@ -1,6 +1,5 @@
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
-use betterlite_config::rag::document::ProviderIdentity as _;
 use betterlite_core::rag::document::pdf::extract_text_from_pdf;
 use betterlite_core::rag::document::provider::get_ingestion_class;
 use betterlite_core::rag::document::splitter::{RecursiveCharacterTextSplitter, TextSplitter as _};
@@ -49,9 +48,15 @@ impl Helper for Op {
 fn split(
     chunk_size: i64,
     chunk_overlap: i64,
-    separators: Option<Vec<String>>,
+    requested_separators: Option<Vec<String>>,
     text: &str,
 ) -> HelperResult {
+    let separators = requested_separators.unwrap_or_else(|| {
+        ["\n\n", "\n", " ", ""]
+            .into_iter()
+            .map(str::to_owned)
+            .collect()
+    });
     let splitter = RecursiveCharacterTextSplitter::new(chunk_size, chunk_overlap, separators)
         .map_err(|error| value_error(&error))?;
     let chunks = splitter.split_text(text);
@@ -70,7 +75,7 @@ fn extract_pdf(pdf_base64: &str) -> HelperResult {
 
 fn provider_lookup(provider: &str) -> HelperResult {
     let resolved = get_ingestion_class(provider).map_err(|error| value_error(&error))?;
-    Ok(Value::String(resolved.ingestion_class_name().to_owned()))
+    Ok(Value::String(resolved.wire_name_and_class().1.to_owned()))
 }
 
 fn value_error(error: &dyn std::fmt::Display) -> Box<HelperError> {

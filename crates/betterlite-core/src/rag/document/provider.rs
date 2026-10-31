@@ -1,6 +1,4 @@
-use betterlite_config::rag::document::{
-    INGESTION_PROVIDERS, IngestionProvider, ProviderIdentity as _,
-};
+use betterlite_config::rag::document::{INGESTION_PROVIDERS, IngestionProvider};
 use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -17,7 +15,7 @@ pub fn get_ingestion_class(provider: &str) -> Result<IngestionProvider, Ingestio
     }
     let supported = INGESTION_PROVIDERS
         .iter()
-        .map(|known| known.wire_name())
+        .map(|known| known.wire_name_and_class().0)
         .collect::<Vec<_>>()
         .join(", ");
     Err(IngestionProviderError::Unsupported {

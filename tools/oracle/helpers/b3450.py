@@ -1,8 +1,10 @@
 import base64
+import importlib.abc
 import re
 import sys
 import types
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from importlib.machinery import ModuleSpec
 from io import BytesIO
 from typing import TypeAlias, cast
 
@@ -33,12 +35,24 @@ class _StubReader:
 
 def _install_stub_reader(module_name: str) -> None:
     stub = types.ModuleType(module_name)
-    stub.PdfReader = _StubReader  # type: ignore[attr-defined]
+    stub.__dict__["PdfReader"] = _StubReader
     sys.modules[module_name] = stub
 
 
-def _block_import(module_name: str) -> None:
-    sys.modules[module_name] = None  # type: ignore[assignment]
+class _BlockedImportFinder(importlib.abc.MetaPathFinder):
+    def __init__(self, blocked_name: str) -> None:
+        self._blocked_name = blocked_name
+
+    def find_spec(
+        self,
+        fullname: str,
+        _path: Sequence[str] | None,
+        _target: types.ModuleType | None = None,
+        /,
+    ) -> ModuleSpec | None:
+        if fullname == self._blocked_name:
+            raise ImportError(f"{fullname} is blocked for this oracle case")
+        return None
 
 
 def _split(input_value: dict[str, Json]) -> Json:
@@ -56,13 +70,19 @@ def _extract_pdf(input_value: dict[str, Json]) -> Json:
     pdf_bytes = base64.b64decode(cast(str, input_value["pdf_base64"]))
     block_pypdf = cast(bool, input_value.get("block_pypdf", False))
     block_pypdf2 = cast(bool, input_value.get("block_pypdf2", False))
-    saved = {name: sys.modules.get(name) for name in ("pypdf", "PyPDF2")}
+    saved_modules = {name: sys.modules.get(name) for name in ("pypdf", "PyPDF2")}
+    saved_meta_path = list(sys.meta_path)
     try:
-        _block_import("pypdf") if block_pypdf else _install_stub_reader("pypdf")
-        _block_import("PyPDF2") if block_pypdf2 else _install_stub_reader("PyPDF2")
+        for name, blocked in (("pypdf", block_pypdf), ("PyPDF2", block_pypdf2)):
+            sys.modules.pop(name, None)
+            if blocked:
+                sys.meta_path.insert(0, _BlockedImportFinder(name))
+            else:
+                _install_stub_reader(name)
         extracted = extract_text_from_pdf(pdf_bytes)
     finally:
-        for name, module in saved.items():
+        sys.meta_path[:] = saved_meta_path
+        for name, module in saved_modules.items():
             if module is None:
                 sys.modules.pop(name, None)
             else:

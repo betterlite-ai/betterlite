@@ -8,9 +8,15 @@ use rstest::rstest;
 use super::pdf::extract_text_from_pdf;
 use super::provider::{IngestionProviderError, get_ingestion_class};
 use super::splitter::{
-    ChunkConfigError, DEFAULT_CHUNK_OVERLAP, DEFAULT_CHUNK_SIZE, DEFAULT_MAX_RECURSE_DEPTH,
-    RecursiveCharacterTextSplitter, TextSplitter as _,
+    ChunkConfigError, DEFAULT_MAX_RECURSE_DEPTH, RecursiveCharacterTextSplitter, TextSplitter as _,
 };
+
+fn default_separators() -> Vec<String> {
+    ["\n\n", "\n", " ", ""]
+        .into_iter()
+        .map(str::to_owned)
+        .collect()
+}
 
 fn push_object(buf: &mut Vec<u8>, offsets: &mut [usize], index: usize, body: &str) {
     offsets[index] = buf.len();
@@ -85,27 +91,25 @@ fn chunk_config_rejects_invalid_values(
     #[case] chunk_overlap: i64,
     #[case] expected: ChunkConfigError,
 ) {
-    let error = RecursiveCharacterTextSplitter::new(chunk_size, chunk_overlap, None)
+    let error = RecursiveCharacterTextSplitter::new(chunk_size, chunk_overlap, Vec::new())
         .expect_err("the configuration is invalid");
     assert_eq!(error, expected);
 }
 
 #[test]
 fn chunk_config_accepts_a_valid_configuration() {
-    RecursiveCharacterTextSplitter::new(100, 20, None).expect("the configuration is valid");
+    RecursiveCharacterTextSplitter::new(100, 20, Vec::new()).expect("the configuration is valid");
 }
 
 #[test]
 fn chunk_defaults_are_hardcoded_constants() {
-    assert_eq!(DEFAULT_CHUNK_SIZE, 1000);
-    assert_eq!(DEFAULT_CHUNK_OVERLAP, 200);
     assert_eq!(DEFAULT_MAX_RECURSE_DEPTH, 100);
 }
 
 #[test]
 fn splitter_basic_splits_on_the_default_separators() {
-    let splitter =
-        RecursiveCharacterTextSplitter::new(10, 0, None).expect("the configuration is valid");
+    let splitter = RecursiveCharacterTextSplitter::new(10, 0, default_separators())
+        .expect("the configuration is valid");
     let chunks = splitter.split_text("one two three four five six seven");
     assert_eq!(
         chunks,
@@ -122,16 +126,24 @@ fn splitter_basic_splits_on_the_default_separators() {
 
 #[test]
 fn splitter_overlap_repeats_text_between_adjacent_chunks() {
-    let splitter =
-        RecursiveCharacterTextSplitter::new(20, 5, Some(vec![" ".to_owned(), String::new()]))
-            .expect("the configuration is valid");
+    let splitter = RecursiveCharacterTextSplitter::new(20, 5, vec![" ".to_owned(), String::new()])
+        .expect("the configuration is valid");
     let chunks = splitter.split_text("alpha beta gamma delta epsilon zeta eta theta");
-    assert!(chunks.len() > 1);
+    assert_eq!(
+        chunks,
+        vec![
+            "alpha beta gamma".to_owned(),
+            "gamma delta epsilon".to_owned(),
+            "epsilon zeta eta".to_owned(),
+            "eta theta".to_owned(),
+        ]
+    );
 }
 
 #[test]
 fn splitter_separators_prefers_the_earliest_separator_present_in_the_text() {
-    let splitter = RecursiveCharacterTextSplitter::new(5, 0, None).expect("valid configuration");
+    let splitter = RecursiveCharacterTextSplitter::new(5, 0, default_separators())
+        .expect("valid configuration");
     let chunks = splitter.split_text("a\n\nb\nc");
     assert_eq!(chunks, vec!["a".to_owned(), "a\n\nb\nc".to_owned()]);
 }
@@ -141,7 +153,7 @@ fn splitter_recursion_falls_back_to_the_narrower_separator() {
     let splitter = RecursiveCharacterTextSplitter::new(
         3,
         0,
-        Some(vec!["\n\n".to_owned(), " ".to_owned(), String::new()]),
+        vec!["\n\n".to_owned(), " ".to_owned(), String::new()],
     )
     .expect("valid configuration");
     let chunks = splitter.split_text("ab cd\n\nef gh");
@@ -158,9 +170,8 @@ fn splitter_recursion_falls_back_to_the_narrower_separator() {
 
 #[test]
 fn splitter_force_split_strides_with_overlap_when_no_separator_matches() {
-    let splitter =
-        RecursiveCharacterTextSplitter::new(4, 1, Some(vec!["Q".to_owned(), "Z".to_owned()]))
-            .expect("valid configuration");
+    let splitter = RecursiveCharacterTextSplitter::new(4, 1, vec!["Q".to_owned(), "Z".to_owned()])
+        .expect("valid configuration");
     let chunks = splitter.split_text("abcdefgh");
     assert_eq!(
         chunks,
@@ -170,16 +181,15 @@ fn splitter_force_split_strides_with_overlap_when_no_separator_matches() {
 
 #[test]
 fn splitter_force_split_stops_exactly_at_the_end_of_the_text() {
-    let splitter =
-        RecursiveCharacterTextSplitter::new(4, 1, Some(vec!["Q".to_owned(), "Z".to_owned()]))
-            .expect("valid configuration");
+    let splitter = RecursiveCharacterTextSplitter::new(4, 1, vec!["Q".to_owned(), "Z".to_owned()])
+        .expect("valid configuration");
     let chunks = splitter.split_text("abcdefg");
     assert_eq!(chunks, vec!["abcd".to_owned(), "defg".to_owned()]);
 }
 
 #[test]
 fn assemble_chunks_sends_a_split_at_the_chunk_size_boundary_to_force_split() {
-    let splitter = RecursiveCharacterTextSplitter::new(4, 0, Some(vec!["|".to_owned()]))
+    let splitter = RecursiveCharacterTextSplitter::new(4, 0, vec!["|".to_owned()])
         .expect("valid configuration");
     let chunks = splitter.split_text("abcd|efgh");
     assert_eq!(chunks, vec!["abcd".to_owned(), "efgh".to_owned()]);
@@ -187,7 +197,7 @@ fn assemble_chunks_sends_a_split_at_the_chunk_size_boundary_to_force_split() {
 
 #[test]
 fn assemble_chunks_flushes_pending_good_splits_before_force_splitting_an_oversized_one() {
-    let splitter = RecursiveCharacterTextSplitter::new(5, 0, Some(vec!["|".to_owned()]))
+    let splitter = RecursiveCharacterTextSplitter::new(5, 0, vec!["|".to_owned()])
         .expect("valid configuration");
     let chunks = splitter.split_text("ab|verylongpiece");
     assert_eq!(
@@ -203,7 +213,7 @@ fn assemble_chunks_flushes_pending_good_splits_before_force_splitting_an_oversiz
 
 #[test]
 fn splitter_force_split_trims_python_whitespace_control_characters() {
-    let splitter = RecursiveCharacterTextSplitter::new(3, 0, Some(vec!["Q".to_owned()]))
+    let splitter = RecursiveCharacterTextSplitter::new(3, 0, vec!["Q".to_owned()])
         .expect("valid configuration");
     let chunks = splitter.split_text("\u{1c}doc\u{1f}");
     assert_eq!(chunks, vec!["do".to_owned(), "c".to_owned()]);
@@ -211,7 +221,7 @@ fn splitter_force_split_trims_python_whitespace_control_characters() {
 
 #[test]
 fn splitter_merge_splits_trims_python_whitespace_control_characters() {
-    let splitter = RecursiveCharacterTextSplitter::new(10, 0, Some(vec![String::new()]))
+    let splitter = RecursiveCharacterTextSplitter::new(10, 0, vec![String::new()])
         .expect("valid configuration");
     let chunks = splitter.split_text("\u{1c}doc\u{1f}");
     assert_eq!(chunks, vec!["doc".to_owned()]);
@@ -219,8 +229,7 @@ fn splitter_merge_splits_trims_python_whitespace_control_characters() {
 
 #[test]
 fn splitter_recursion_depth_bound_separates_normal_splitting_from_character_fallback() {
-    let splitter =
-        RecursiveCharacterTextSplitter::new(4, 2, Some(vec![String::new()])).expect("valid");
+    let splitter = RecursiveCharacterTextSplitter::new(4, 2, vec![String::new()]).expect("valid");
     let separators = vec![String::new()];
 
     let at_limit = splitter.split_recursive("abcdefgh", &separators, DEFAULT_MAX_RECURSE_DEPTH);
@@ -239,8 +248,7 @@ fn splitter_recursion_depth_bound_separates_normal_splitting_from_character_fall
 
 #[test]
 fn splitter_counts_unicode_characters_not_bytes() {
-    let splitter =
-        RecursiveCharacterTextSplitter::new(4, 0, Some(vec![String::new()])).expect("valid");
+    let splitter = RecursiveCharacterTextSplitter::new(4, 0, vec![String::new()]).expect("valid");
     let chunks = splitter.split_text("\u{65e5}\u{672c}\u{8a9e}\u{306e}\u{30c6}\u{30b9}\u{30c8}");
     assert_eq!(
         chunks,
@@ -281,7 +289,7 @@ fn pdf_returns_none_without_panicking_on_truncated_bytes() {
     let truncated = pdf
         .get(..pdf.len().checked_div(2).expect("2 is nonzero"))
         .expect("length is within bounds");
-    let _extracted = extract_text_from_pdf(truncated);
+    assert_eq!(extract_text_from_pdf(truncated), None);
 }
 
 #[test]
