@@ -1,0 +1,22 @@
+kind: helper
+name: unreachable-timeout
+call:
+  b3767:
+    apply:
+      settings:
+        api_key: key
+        api_base: "https://deepkeep.test"
+        deepkeep_firewall_id: fixed
+        unreachable_fallback: Fail_Open
+        timeout: "0.2"
+      inputs: {texts: [hello]}
+      input_type: request
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/model
+      why: "LiteLLM's _build_return_inputs never echoes model back; betterlite's Inputs carries it through for internal callers"
+    - pointer: /value/path
+      why: "betterlite's silent listener never parses the request, so it cannot record the path LiteLLM's mock transport captures before timing out"
+    - pointer: /value/request
+      why: "betterlite's silent listener never parses the request, so it cannot record the body LiteLLM's mock transport captures before timing out"

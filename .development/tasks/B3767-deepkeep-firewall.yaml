@@ -33,6 +33,8 @@ description: >-
 
 scope:
   paths:
+    - crates/betterlite-config/src/sections/lasso_classification.rs
+    - crates/betterlite-config/src/sections/lasso_classification/**
     - crates/betterlite-guardrails/src/deepkeep.rs
     - crates/betterlite-guardrails/Cargo.toml
     - tools/oracle/cases/guardrails/deepkeep/**
