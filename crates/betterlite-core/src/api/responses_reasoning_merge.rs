@@ -1,21 +1,10 @@
-use serde::{Deserialize, Serialize};
+#![expect(
+    clippy::disallowed_types,
+    reason = "Reasoning thinking blocks and tool calls are opaque, provider-specific JSON that this module only reorders and concatenates, never interprets"
+)]
+
 use serde_json::{Map, Value};
 use thiserror::Error;
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ChatRecord {
-    pub role: String,
-    #[serde(default)]
-    pub content: Value,
-    #[serde(default)]
-    pub reasoning_content: Option<String>,
-    #[serde(default)]
-    pub thinking_blocks: Option<Vec<Value>>,
-    #[serde(default)]
-    pub tool_calls: Option<Value>,
-    #[serde(flatten)]
-    pub extra: Map<String, Value>,
-}
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum MergeError {
@@ -23,138 +12,255 @@ pub enum MergeError {
     InvalidContent,
 }
 
-fn field<'a>(message: &'a Value, name: &str) -> Option<&'a Value> {
-    let fields = message.as_object()?;
-    fields.get(name)
+// Mirrors how LiteLLM reads a non-dict message through getattr: closed fields, no passthrough.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypedChatRecord {
+    pub role: String,
+    pub content: Option<String>,
+    pub reasoning_content: Option<String>,
+    pub thinking_blocks: Option<Vec<Value>>,
+    pub tool_calls: Option<Vec<Value>>,
 }
-fn text(message: &Value) -> Option<&str> {
-    let value = field(message, "reasoning_content")?.as_str()?;
-    (!value.is_empty()).then_some(value)
+
+// Public so merge_reasoning's trait bound is visible; lets one loop drive both record kinds.
+pub trait Reasoning: Sized {
+    fn is_pending(&self) -> bool;
+    fn is_assistant(&self) -> bool;
+    fn text(&self) -> Option<&str>;
+    fn blocks(&self) -> Option<&[Value]>;
+    fn apply_pending(&mut self, texts: &[Option<&str>], block_lists: &[Option<&[Value]>]);
+    fn standalone(texts: &[Option<&str>], block_lists: &[Option<&[Value]>]) -> Self;
 }
-fn blocks(message: &Value) -> Option<&[Value]> {
-    let blocks = field(message, "thinking_blocks")?.as_array()?;
-    (!blocks.is_empty()).then_some(blocks.as_slice())
-}
-fn pending(message: &Value) -> bool {
-    let role = field(message, "role").and_then(Value::as_str) == Some("assistant");
-    let content = field(message, "content").is_some_and(Value::is_null);
-    let tools = !field(message, "tool_calls")
-        .is_some_and(|value| !value.is_null() && value != &Value::Array(Vec::new()));
-    let reasoning = text(message).is_some() || blocks(message).is_some();
-    role && content && tools && reasoning
-}
-fn standalone(texts: &[Option<&str>], block_lists: &[Option<&[Value]>]) -> Value {
-    let mut result = Map::new();
-    result.insert("role".to_owned(), Value::String("assistant".to_owned()));
-    result.insert("content".to_owned(), Value::Null);
-    let joined = texts
-        .iter()
-        .filter_map(|value| *value)
-        .collect::<Vec<_>>()
-        .join("\n");
-    if !joined.is_empty() {
-        result.insert("reasoning_content".to_owned(), Value::String(joined));
-    }
-    let merged = block_lists
-        .iter()
-        .flat_map(|value| value.iter().flat_map(|items| items.iter().cloned()))
-        .collect::<Vec<_>>();
-    if !merged.is_empty() {
-        result.insert("thinking_blocks".to_owned(), Value::Array(merged));
-    }
-    Value::Object(result)
-}
-fn apply_pending(message: &mut Value, texts: &[Option<&str>], block_lists: &[Option<&[Value]>]) {
-    let mut all_texts = texts
-        .iter()
-        .filter_map(|value| value.map(str::to_owned))
-        .collect::<Vec<_>>();
-    if let Some(value) = text(message).map(str::to_owned) {
-        all_texts.push(value);
-    }
-    if !all_texts.is_empty() {
-        if let Some(fields) = message.as_object_mut() {
-            fields.insert(
-                "reasoning_content".to_owned(),
-                Value::String(all_texts.join("\n")),
-            );
-        }
-    }
-    let mut all_blocks = block_lists
-        .iter()
-        .flat_map(|value| value.iter().flat_map(|items| items.iter().cloned()))
-        .collect::<Vec<_>>();
-    if let Some(value) = blocks(message) {
-        all_blocks.extend(value.iter().cloned());
-    }
-    if !all_blocks.is_empty() {
-        if let Some(fields) = message.as_object_mut() {
-            fields.insert("thinking_blocks".to_owned(), Value::Array(all_blocks));
-        }
+
+fn is_falsy(value: &Value) -> bool {
+    match value {
+        Value::Null => true,
+        Value::Bool(flag) => !flag,
+        Value::Number(number) => number.as_f64() == Some(0.0),
+        Value::String(text) => text.is_empty(),
+        Value::Array(items) => items.is_empty(),
+        Value::Object(fields) => fields.is_empty(),
     }
 }
 
-pub fn merge_reasoning(messages: &[Value]) -> Vec<Value> {
-    let mut merged = Vec::with_capacity(messages.len());
-    let mut texts = Vec::new();
-    let mut block_lists = Vec::new();
-    for message in messages {
-        if pending(message) {
-            texts.push(text(message));
-            block_lists.push(blocks(message));
-            continue;
-        }
-        if !texts.is_empty() || !block_lists.is_empty() {
-            if field(message, "role").and_then(Value::as_str) == Some("assistant") {
-                let mut target = message.clone();
-                apply_pending(&mut target, &texts, &block_lists);
-                merged.push(target);
-            } else {
-                for (text, blocks) in texts.iter().zip(block_lists.iter()) {
-                    merged.push(standalone(&[*text], &[*blocks]));
-                }
-                merged.push(message.clone());
-            }
-            texts.clear();
-            block_lists.clear();
-        } else {
-            merged.push(message.clone());
-        }
-    }
-    for (text, blocks) in texts.iter().zip(block_lists.iter()) {
-        merged.push(standalone(&[*text], &[*blocks]));
+fn field<'message>(message: &'message Value, name: &str) -> Option<&'message Value> {
+    let fields = message.as_object()?;
+    fields.get(name)
+}
+
+fn dict_text(message: &Value) -> Option<&str> {
+    let value = field(message, "reasoning_content")?.as_str()?;
+    (!value.is_empty()).then_some(value)
+}
+
+fn dict_blocks(message: &Value) -> Option<&[Value]> {
+    let items = field(message, "thinking_blocks")?.as_array()?;
+    (!items.is_empty()).then_some(items.as_slice())
+}
+
+fn content_is_none(message: &Value) -> bool {
+    let content = field(message, "content");
+    content.is_none_or(Value::is_null)
+}
+
+fn joined_text(texts: &[Option<&str>]) -> String {
+    let present: Vec<&str> = texts.iter().filter_map(|value| *value).collect();
+    present.join("\n")
+}
+
+fn concatenated_blocks(block_lists: &[Option<&[Value]>]) -> Vec<Value> {
+    let mut merged = Vec::new();
+    for blocks in block_lists.iter().flatten() {
+        merged.extend(blocks.iter().cloned());
     }
     merged
 }
 
-pub fn merge_chat_records(messages: &[ChatRecord]) -> Result<Vec<ChatRecord>, serde_json::Error> {
-    let values = messages
-        .iter()
-        .map(serde_json::to_value)
-        .collect::<Result<Vec<_>, _>>()?;
-    merge_reasoning(&values)
-        .into_iter()
-        .map(serde_json::from_value)
-        .collect()
-}
-fn content_blocks(value: &Value) -> Result<Vec<Value>, MergeError> {
-    match value {
-        Value::String(text) => Ok(vec![serde_json::json!({"type": "text", "text": text})]),
-        Value::Array(items) => items
+impl Reasoning for Value {
+    fn is_pending(&self) -> bool {
+        field(self, "role").and_then(Self::as_str) == Some("assistant")
+            && content_is_none(self)
+            && field(self, "tool_calls").is_none_or(is_falsy)
+            && (dict_text(self).is_some() || dict_blocks(self).is_some())
+    }
+
+    fn is_assistant(&self) -> bool {
+        field(self, "role").and_then(Self::as_str) == Some("assistant")
+    }
+
+    fn text(&self) -> Option<&str> {
+        dict_text(self)
+    }
+
+    fn blocks(&self) -> Option<&[Value]> {
+        dict_blocks(self)
+    }
+
+    fn apply_pending(&mut self, texts: &[Option<&str>], block_lists: &[Option<&[Value]>]) {
+        let mut combined_texts: Vec<String> = texts
             .iter()
-            .map(|item| {
-                let fields = item.as_object().ok_or(MergeError::InvalidContent)?;
-                if fields.get("type").and_then(Value::as_str) != Some("text")
-                    || fields.get("text").and_then(Value::as_str).is_none()
-                {
-                    return Err(MergeError::InvalidContent);
-                }
-                Ok(item.clone())
-            })
-            .collect(),
-        _ => Err(MergeError::InvalidContent),
+            .filter_map(|value| *value)
+            .map(str::to_owned)
+            .collect();
+        if let Some(existing) = dict_text(self) {
+            combined_texts.push(existing.to_owned());
+        }
+        let mut combined_blocks = concatenated_blocks(block_lists);
+        if let Some(existing) = dict_blocks(self) {
+            combined_blocks.extend(existing.iter().cloned());
+        }
+        let Some(fields) = self.as_object_mut() else {
+            return;
+        };
+        if !combined_texts.is_empty() {
+            fields.insert(
+                "reasoning_content".to_owned(),
+                Self::String(combined_texts.join("\n")),
+            );
+        }
+        if !combined_blocks.is_empty() {
+            fields.insert("thinking_blocks".to_owned(), Self::Array(combined_blocks));
+        }
+    }
+
+    fn standalone(texts: &[Option<&str>], block_lists: &[Option<&[Value]>]) -> Self {
+        let mut fields = Map::new();
+        fields.insert("role".to_owned(), Self::String("assistant".to_owned()));
+        fields.insert("content".to_owned(), Self::Null);
+        let joined = joined_text(texts);
+        if !joined.is_empty() {
+            fields.insert("reasoning_content".to_owned(), Self::String(joined));
+        }
+        let merged = concatenated_blocks(block_lists);
+        if !merged.is_empty() {
+            fields.insert("thinking_blocks".to_owned(), Self::Array(merged));
+        }
+        Self::Object(fields)
     }
 }
+
+impl Reasoning for TypedChatRecord {
+    fn is_pending(&self) -> bool {
+        self.role == "assistant"
+            && self.content.is_none()
+            && self.tool_calls.as_ref().is_none_or(Vec::is_empty)
+            && (self.text().is_some() || self.blocks().is_some())
+    }
+
+    fn is_assistant(&self) -> bool {
+        self.role == "assistant"
+    }
+
+    fn text(&self) -> Option<&str> {
+        self.reasoning_content
+            .as_deref()
+            .filter(|value| !value.is_empty())
+    }
+
+    fn blocks(&self) -> Option<&[Value]> {
+        self.thinking_blocks
+            .as_deref()
+            .filter(|value| !value.is_empty())
+    }
+
+    fn apply_pending(&mut self, texts: &[Option<&str>], block_lists: &[Option<&[Value]>]) {
+        let mut combined_texts: Vec<String> = texts
+            .iter()
+            .filter_map(|value| *value)
+            .map(str::to_owned)
+            .collect();
+        if let Some(existing) = self.text() {
+            combined_texts.push(existing.to_owned());
+        }
+        let mut combined_blocks = concatenated_blocks(block_lists);
+        if let Some(existing) = self.blocks() {
+            combined_blocks.extend(existing.iter().cloned());
+        }
+        if !combined_texts.is_empty() {
+            self.reasoning_content = Some(combined_texts.join("\n"));
+        }
+        if !combined_blocks.is_empty() {
+            self.thinking_blocks = Some(combined_blocks);
+        }
+    }
+
+    fn standalone(texts: &[Option<&str>], block_lists: &[Option<&[Value]>]) -> Self {
+        let joined = joined_text(texts);
+        let merged = concatenated_blocks(block_lists);
+        Self {
+            role: "assistant".to_owned(),
+            content: None,
+            reasoning_content: (!joined.is_empty()).then_some(joined),
+            thinking_blocks: (!merged.is_empty()).then_some(merged),
+            tool_calls: None,
+        }
+    }
+}
+
+// Merges pending reasoning-only turns into the next assistant message, else rebuilds them standalone.
+#[must_use]
+pub fn merge_reasoning<T>(messages: &[T]) -> Vec<T>
+where
+    T: Reasoning + Clone,
+{
+    let mut merged = Vec::with_capacity(messages.len());
+    let mut texts = Vec::new();
+    let mut block_lists = Vec::new();
+    for message in messages {
+        if message.is_pending() {
+            texts.push(message.text());
+            block_lists.push(message.blocks());
+            continue;
+        }
+        let mut carried = message.clone();
+        if texts.is_empty() && block_lists.is_empty() {
+            merged.push(carried);
+            continue;
+        }
+        if carried.is_assistant() {
+            carried.apply_pending(&texts, &block_lists);
+        } else {
+            for (text, block) in texts.iter().zip(block_lists.iter()) {
+                merged.push(T::standalone(&[*text], &[*block]));
+            }
+        }
+        texts.clear();
+        block_lists.clear();
+        merged.push(carried);
+    }
+    for (text, block) in texts.iter().zip(block_lists.iter()) {
+        merged.push(T::standalone(&[*text], &[*block]));
+    }
+    merged
+}
+
+fn text_block(text: &str) -> Value {
+    let mut fields = Map::new();
+    fields.insert("type".to_owned(), Value::String("text".to_owned()));
+    fields.insert("text".to_owned(), Value::String(text.to_owned()));
+    Value::Object(fields)
+}
+
+fn validate_text_block(item: &Value) -> Result<Value, MergeError> {
+    let fields = item.as_object().ok_or(MergeError::InvalidContent)?;
+    let is_text = fields.get("type").and_then(Value::as_str) == Some("text")
+        && fields.get("text").and_then(Value::as_str).is_some();
+    is_text
+        .then(|| item.clone())
+        .ok_or(MergeError::InvalidContent)
+}
+
+fn content_blocks(value: &Value) -> Result<Vec<Value>, MergeError> {
+    match value {
+        Value::String(text) => Ok(vec![text_block(text)]),
+        Value::Array(items) => items.iter().map(validate_text_block).collect(),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::Object(_) => {
+            Err(MergeError::InvalidContent)
+        }
+    }
+}
+
+// Merges a new assistant message into the trailing one only when the trailing message already carries tool calls or hosted_search is set and the new one doesn't, leaving its other fields untouched.
 pub fn merge_trailing(
     messages: &[Value],
     new_messages: &[Value],
@@ -174,30 +280,21 @@ pub fn merge_trailing(
     {
         return Ok(None);
     }
-    if (!last
-        .get("tool_calls")
-        .is_some_and(|value| value != &Value::Null && value != &Value::Array(Vec::new()))
-        && !hosted_search)
-        || new
-            .get("tool_calls")
-            .is_some_and(|value| value != &Value::Null && value != &Value::Array(Vec::new()))
-        || new.get("content").is_none_or(Value::is_null)
-    {
+    let last_has_tool_calls = last.get("tool_calls").is_some_and(|value| !is_falsy(value));
+    let new_has_tool_calls = new.get("tool_calls").is_some_and(|value| !is_falsy(value));
+    if !(last_has_tool_calls || hosted_search) || new_has_tool_calls {
         return Ok(None);
     }
-    let new_content = new.get("content").ok_or(MergeError::InvalidContent)?;
-    let previous = last.get("content").unwrap_or(&Value::Null);
-    let content = if previous.is_null()
-        || previous == &Value::Bool(false)
-        || previous == &Value::Number(0.into())
-        || previous == &Value::String(String::new())
-        || previous == &Value::Array(Vec::new())
-    {
-        new_content.clone()
-    } else {
-        let mut blocks = content_blocks(previous)?;
-        blocks.extend(content_blocks(new_content)?);
-        Value::Array(blocks)
+    let Some(new_content) = new.get("content").filter(|value| !value.is_null()) else {
+        return Ok(None);
+    };
+    let content = match last.get("content") {
+        Some(previous) if !is_falsy(previous) => {
+            let mut blocks = content_blocks(previous)?;
+            blocks.extend(content_blocks(new_content)?);
+            Value::Array(blocks)
+        }
+        _ => new_content.clone(),
     };
     let mut result = last.clone();
     result.insert("content".to_owned(), content);
