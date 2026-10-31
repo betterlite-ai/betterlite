@@ -14,9 +14,16 @@ enum ConfigInspection {
 #[derive(Deserialize)]
 struct ConfigSections {
     #[serde(default)]
-    general_settings: Option<GeneralSettingsInspection>,
+    general_settings: Option<ConfigSection<GeneralSettingsInspection>>,
     #[serde(default)]
-    environment_variables: Option<EnvironmentVariablesInspection>,
+    environment_variables: Option<ConfigSection<EnvironmentVariablesInspection>>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ConfigSection<T> {
+    Fields(T),
+    Other(IgnoredAny),
 }
 
 #[derive(Deserialize)]
@@ -53,9 +60,20 @@ pub(super) fn requests_license(path: &Path, config: &str) -> Result<bool, Oracle
     };
     let general_settings_license = sections
         .general_settings
-        .is_some_and(|settings| matches!(settings.litellm_license, ForbiddenSetting::Present(_)));
-    let environment_variable_license = sections
-        .environment_variables
-        .is_some_and(|variables| matches!(variables.litellm_license, ForbiddenSetting::Present(_)));
+        .is_some_and(|section| match section {
+            ConfigSection::Fields(settings) => {
+                matches!(settings.litellm_license, ForbiddenSetting::Present(_))
+            }
+            ConfigSection::Other(_) => false,
+        });
+    let environment_variable_license =
+        sections
+            .environment_variables
+            .is_some_and(|section| match section {
+                ConfigSection::Fields(variables) => {
+                    matches!(variables.litellm_license, ForbiddenSetting::Present(_))
+                }
+                ConfigSection::Other(_) => false,
+            });
     Ok(general_settings_license || environment_variable_license)
 }

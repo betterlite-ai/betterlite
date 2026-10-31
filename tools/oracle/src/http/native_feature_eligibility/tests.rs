@@ -57,6 +57,16 @@ fn controlled_config_license_is_rejected() {
 }
 
 #[test]
+fn general_settings_license_is_rejected_when_environment_variables_are_wrongly_shaped() {
+    let source = case("").replace(
+        "general_settings: {}",
+        "general_settings: {litellm_license: value}\n  environment_variables: ''",
+    );
+    let result = decode_http_case(source.as_bytes());
+    assert!(matches!(result, Err(OracleError::CaseInvalid { .. })));
+}
+
+#[test]
 fn environment_variables_license_in_config_is_rejected() {
     let result = decode_http_case(include_bytes!(
         "../../../fuzz/corpus/http_case/native-feature-environment-variables-license-conflict.yaml"
