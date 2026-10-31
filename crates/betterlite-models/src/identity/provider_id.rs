@@ -1,0 +1,207 @@
+macro_rules! provider_id {
+    ($($variant:ident => $wire:literal),* $(,)?) => {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+        pub enum ProviderId {
+            $(
+                #[serde(rename = $wire)]
+                $variant,
+            )*
+        }
+
+        impl ProviderId {
+            #[must_use]
+            pub const fn as_str(self) -> &'static str {
+                match self {
+                    $(Self::$variant => $wire,)*
+                }
+            }
+
+            #[must_use]
+            pub fn parse(value: &str) -> Option<Self> {
+                match value {
+                    $($wire => Some(Self::$variant),)*
+                    _ => None,
+                }
+            }
+
+            pub const ALL: &'static [Self] = &[$(Self::$variant,)*];
+        }
+
+        impl std::fmt::Display for ProviderId {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str(self.as_str())
+            }
+        }
+    };
+}
+
+// A few slugs here (text-completion-openai, nano-gpt, meta_llama) are hand-mapped, not a mechanical rename.
+provider_id! {
+    Openai => "openai",
+    Chatgpt => "chatgpt",
+    OpenaiLike => "openai_like",
+    JinaAi => "jina_ai",
+    Xai => "xai",
+    Zai => "zai",
+    CustomOpenai => "custom_openai",
+    TextCompletionOpenai => "text-completion-openai",
+    Cohere => "cohere",
+    CohereChat => "cohere_chat",
+    Clarifai => "clarifai",
+    Anthropic => "anthropic",
+    AnthropicText => "anthropic_text",
+    Bytez => "bytez",
+    Replicate => "replicate",
+    Reducto => "reducto",
+    AwsTextract => "aws_textract",
+    Runwayml => "runwayml",
+    AwsPolly => "aws_polly",
+    Transcribe => "transcribe",
+    Huggingface => "huggingface",
+    TogetherAi => "together_ai",
+    Openrouter => "openrouter",
+    Datarobot => "datarobot",
+    VertexAi => "vertex_ai",
+    VertexAiBeta => "vertex_ai_beta",
+    Gemini => "gemini",
+    Ai21 => "ai21",
+    Baseten => "baseten",
+    BlackForestLabs => "black_forest_labs",
+    Azure => "azure",
+    AzureText => "azure_text",
+    AzureAi => "azure_ai",
+    Sagemaker => "sagemaker",
+    SagemakerChat => "sagemaker_chat",
+    SagemakerNova => "sagemaker_nova",
+    Bedrock => "bedrock",
+    Vllm => "vllm",
+    NlpCloud => "nlp_cloud",
+    Petals => "petals",
+    Oobabooga => "oobabooga",
+    Ollama => "ollama",
+    OllamaChat => "ollama_chat",
+    Deepinfra => "deepinfra",
+    Perplexity => "perplexity",
+    Typesafe => "typesafe",
+    StrandsDecider => "strands_decider",
+    Mistral => "mistral",
+    Milvus => "milvus",
+    Groq => "groq",
+    A2a => "a2a",
+    Gigachat => "gigachat",
+    NvidiaNim => "nvidia_nim",
+    NvidiaRiva => "nvidia_riva",
+    Soniox => "soniox",
+    Cerebras => "cerebras",
+    Nadir => "nadir",
+    Ai21Chat => "ai21_chat",
+    Volcengine => "volcengine",
+    Codestral => "codestral",
+    TextCompletionCodestral => "text-completion-codestral",
+    Dashscope => "dashscope",
+    Qwencloud => "qwencloud",
+    QwenAiPlatform => "qwen_ai_platform",
+    Modelscope => "modelscope",
+    Moonshot => "moonshot",
+    Publicai => "publicai",
+    V0 => "v0",
+    Morph => "morph",
+    LambdaAi => "lambda_ai",
+    Inception => "inception",
+    TextCompletionInception => "text-completion-inception",
+    Deepseek => "deepseek",
+    Sambanova => "sambanova",
+    Maritalk => "maritalk",
+    Voyage => "voyage",
+    Cloudflare => "cloudflare",
+    Xinference => "xinference",
+    FireworksAi => "fireworks_ai",
+    Friendliai => "friendliai",
+    FeatherlessAi => "featherless_ai",
+    Watsonx => "watsonx",
+    WatsonxText => "watsonx_text",
+    Triton => "triton",
+    Predibase => "predibase",
+    Databricks => "databricks",
+    Empower => "empower",
+    Github => "github",
+    Ragflow => "ragflow",
+    Compactifai => "compactifai",
+    DockerModelRunner => "docker_model_runner",
+    Custom => "custom",
+    LitellmProxy => "litellm_proxy",
+    HostedVllm => "hosted_vllm",
+    Tencent => "tencent",
+    Llamafile => "llamafile",
+    LmStudio => "lm_studio",
+    Galadriel => "galadriel",
+    Nebius => "nebius",
+    Infinity => "infinity",
+    Deepgram => "deepgram",
+    Elevenlabs => "elevenlabs",
+    Novita => "novita",
+    AiohttpOpenai => "aiohttp_openai",
+    Langfuse => "langfuse",
+    Humanloop => "humanloop",
+    Topaz => "topaz",
+    SapGenerativeAiHub => "sap",
+    Assemblyai => "assemblyai",
+    AzureSpeech => "azure_speech",
+    CharityEngine => "charity_engine",
+    GithubCopilot => "github_copilot",
+    Snowflake => "snowflake",
+    GradientAi => "gradient_ai",
+    Llama => "meta_llama",
+    Nscale => "nscale",
+    PgVector => "pg_vector",
+    S3Vectors => "s3_vectors",
+    Valkey => "valkey",
+    Mongodb => "mongodb",
+    Helicone => "helicone",
+    Hyperbolic => "hyperbolic",
+    Recraft => "recraft",
+    FalAi => "fal_ai",
+    Stability => "stability",
+    Heroku => "heroku",
+    Aiml => "aiml",
+    Cometapi => "cometapi",
+    Oci => "oci",
+    AutoRouter => "auto_router",
+    VercelAiGateway => "vercel_ai_gateway",
+    Edenai => "edenai",
+    Dotprompt => "dotprompt",
+    Manus => "manus",
+    Wandb => "wandb",
+    Ovhcloud => "ovhcloud",
+    Scaleway => "scaleway",
+    Lemonade => "lemonade",
+    AmazonNova => "amazon_nova",
+    A2aAgent => "a2a_agent",
+    Langgraph => "langgraph",
+    Langflow => "langflow",
+    Minimax => "minimax",
+    Synthetic => "synthetic",
+    Apertis => "apertis",
+    Nanogpt => "nano-gpt",
+    Poe => "poe",
+    Chutes => "chutes",
+    Neosantara => "neosantara",
+    Parasail => "parasail",
+    XiaomiMimo => "xiaomi_mimo",
+    Tensormesh => "tensormesh",
+    Libertai => "libertai",
+    Pinstripes => "pinstripes",
+    Cognition => "cognition",
+    Cortecs => "cortecs",
+    ScxAi => "scx-ai",
+    Prism => "prism",
+    Darkbloom => "darkbloom",
+    Meta => "meta",
+    Sail => "sail",
+    LitellmAgent => "litellm_agent",
+    Cursor => "cursor",
+    BedrockMantle => "bedrock_mantle",
+    Gdc => "gdc",
+}
+
+mod tests;

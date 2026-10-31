@@ -20,6 +20,7 @@ serde_with = { version = "3.24.0", default-features = false, features = ["alloc"
 speedate = "0.18.0"
 thiserror.workspace = true
 tracing.workspace = true
+url = "2.5.8"
 
 [dev-dependencies]
 rstest = "=0.27.0"

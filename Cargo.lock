@@ -1276,6 +1276,7 @@ dependencies = [
  "speedate",
  "thiserror",
  "tracing",
+ "url",
 ]
 
 [[package]]
