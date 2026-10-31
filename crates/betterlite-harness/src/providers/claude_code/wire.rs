@@ -1,7 +1,8 @@
-use serde::de::IgnoredAny;
+use serde::de::{DeserializeOwned, IgnoredAny};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+use super::StreamError;
 use crate::payloads::python_json::python_json_text;
 use crate::types::JsonObject;
 
@@ -25,9 +26,26 @@ pub(super) enum Line {
     Other,
 }
 
-pub(super) fn parse(line: &JsonObject) -> Option<Line> {
-    let text = serde_json::to_string(line).ok()?;
-    serde_json::from_str(&text).ok()
+fn decode<T>(text: Result<String, serde_json::Error>, kind: &str) -> Result<T, StreamError>
+where
+    T: DeserializeOwned,
+{
+    let invalid_shape = |source| StreamError::Shape {
+        kind: kind.to_owned(),
+        source,
+    };
+    let encoded = text.map_err(&invalid_shape)?;
+    serde_json::from_str(&encoded).map_err(invalid_shape)
+}
+
+pub(super) fn parse(line: &JsonObject) -> Result<Line, StreamError> {
+    let kind = line.get("type").and_then(|value| value.as_str());
+    match kind {
+        Some(name @ ("assistant" | "user" | "system" | "result")) => {
+            decode(serde_json::to_string(line), name)
+        }
+        Some(_) | None => Ok(Line::Other),
+    }
 }
 
 #[derive(Deserialize)]
@@ -142,9 +160,14 @@ fn stringify_tool_output_block(block: &WireValue) -> String {
     tool_json::encode(block)
 }
 
-pub(super) fn block(value: &WireValue) -> Option<Block> {
-    let text = python_json_text(&value).ok()?;
-    serde_json::from_str(&text).ok()
+pub(super) fn block(value: &WireValue) -> Result<Block, StreamError> {
+    let WireValue::Object(fields) = value else {
+        return Ok(Block::Other);
+    };
+    let Some(WireValue::Text(kind)) = fields.get("type") else {
+        return Ok(Block::Other);
+    };
+    decode(python_json_text(value), kind)
 }
 
 pub(super) fn object(value: &WireValue) -> JsonObject {

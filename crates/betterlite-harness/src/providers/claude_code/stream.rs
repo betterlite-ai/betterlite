@@ -3,7 +3,18 @@ use crate::events::Event;
 use crate::payloads::python_json::python_json_text;
 use crate::payloads::{last_json_object, stderr_tail_text};
 use crate::types::JsonObject;
+use std::sync::Arc;
 use wire::{AssistantLine, Block, Line, MessageContent, ResultLine, SystemLine, UserLine};
+
+#[derive(Debug, thiserror::Error)]
+pub enum StreamError {
+    #[error("invalid {kind} event shape")]
+    Shape {
+        kind: String,
+        #[source]
+        source: serde_json::Error,
+    },
+}
 
 #[derive(Clone, Debug, Default)]
 pub struct ClaudeCodeStreamState {
@@ -14,6 +25,7 @@ pub struct ClaudeCodeStreamState {
     pub is_error: bool,
     pub errors: Vec<String>,
     pub structured_output: Option<JsonObject>,
+    pub parse_errors: Vec<Arc<StreamError>>,
 }
 
 impl ClaudeCodeStreamState {
@@ -38,11 +50,15 @@ impl ClaudeCodeStreamState {
 
 pub fn transform(line: &JsonObject, state: &mut ClaudeCodeStreamState) -> Vec<Event> {
     match wire::parse(line) {
-        Some(Line::Assistant(assistant)) => assistant_events(assistant, state),
-        Some(Line::User(user)) => user_events(user),
-        Some(Line::System(system)) => system_events(system, state),
-        Some(Line::Result(result)) => result_events(result, state),
-        Some(Line::Other) | None => Vec::new(),
+        Ok(Line::Assistant(assistant)) => assistant_events(assistant, state),
+        Ok(Line::User(user)) => user_events(user, state),
+        Ok(Line::System(system)) => system_events(system, state),
+        Ok(Line::Result(result)) => result_events(result, state),
+        Ok(Line::Other) => Vec::new(),
+        Err(error) => {
+            state.parse_errors.push(Arc::new(error));
+            Vec::new()
+        }
     }
 }
 
@@ -61,8 +77,10 @@ fn assistant_events(assistant: AssistantLine, state: &mut ClaudeCodeStreamState)
         MessageContent::Text(text) => text_block_event(text, state).into_iter().collect(),
         MessageContent::Blocks(blocks) => blocks
             .into_iter()
-            .filter_map(|value| wire::block(&value))
-            .filter_map(|block| block_event(block, state))
+            .filter_map(|value| {
+                let block = parse_block(&value, state)?;
+                block_event(block, state)
+            })
             .collect(),
         MessageContent::Other(_) => Vec::new(),
     }
@@ -93,7 +111,17 @@ fn block_event(block: Block, state: &mut ClaudeCodeStreamState) -> Option<Event>
     }
 }
 
-fn user_events(user: UserLine) -> Vec<Event> {
+fn parse_block(value: &wire::WireValue, state: &mut ClaudeCodeStreamState) -> Option<Block> {
+    match wire::block(value) {
+        Ok(block) => Some(block),
+        Err(error) => {
+            state.parse_errors.push(Arc::new(error));
+            None
+        }
+    }
+}
+
+fn user_events(user: UserLine, state: &mut ClaudeCodeStreamState) -> Vec<Event> {
     if user
         .parent_tool_use_id
         .as_deref()
@@ -106,7 +134,7 @@ fn user_events(user: UserLine) -> Vec<Event> {
     };
     blocks
         .into_iter()
-        .filter_map(|value| wire::block(&value))
+        .filter_map(|value| parse_block(&value, state))
         .filter_map(|block| match block {
             Block::ToolResult {
                 tool_use_id,
@@ -166,13 +194,19 @@ pub(super) fn turn_error(
     exit_code: i32,
     stderr_tail: &[String],
 ) -> Option<String> {
-    if exit_code == 0_i32 && state.result_seen && !state.is_error {
+    if exit_code == 0_i32 && state.result_seen && !state.is_error && state.parse_errors.is_empty() {
         return None;
     }
-    let reason = state
-        .result_text
-        .clone()
-        .filter(|text| !text.is_empty())
+    let reason = (!state.parse_errors.is_empty())
+        .then(|| {
+            state
+                .parse_errors
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join("; ")
+        })
+        .or_else(|| state.result_text.clone().filter(|text| !text.is_empty()))
         .or_else(|| (!state.errors.is_empty()).then(|| state.errors.join("; ")))
         .filter(|reason| !reason.is_empty())
         .unwrap_or_else(|| {

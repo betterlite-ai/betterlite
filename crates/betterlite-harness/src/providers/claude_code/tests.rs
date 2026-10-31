@@ -138,7 +138,7 @@ fn claude_code_parsing_preserves_json_tool_results() {
         matches!(events.first(), Some(Event::ToolResult { output, .. }) if output == r#"{"ok": true}"#)
     );
     assert!(
-        matches!(events.get(1), Some(Event::ToolResult { output, .. }) if output.contains("image") && output.ends_with("\ntail"))
+        matches!(events.get(1), Some(Event::ToolResult { output, .. }) if output == "{\"source\": {\"data\": \"x\"}, \"type\": \"image\"}\ntail")
     );
 }
 
@@ -152,6 +152,7 @@ fn claude_code_response_ignores_non_string_result_and_empty_session() {
         is_error: false,
         errors: Vec::new(),
         structured_output: None,
+        parse_errors: Vec::new(),
     };
     let line: JsonObject = serde_json::from_str(
         r#"{"type":"result","session_id":"","result":{"not":"text"},"errors":["actual cause"]}"#,
@@ -193,7 +194,7 @@ fn claude_code_response_prefers_result_text_and_structured_output() {
     let mut state = ClaudeCodeStreamState::default();
     state.text_parts.push("stream text".to_owned());
     let result: JsonObject = serde_json::from_str(
-        r#"{"type":"result","session_id":"s1","result":"final","structured_output":{"ok":true}}"#,
+        r#"{"type":"result","session_id":"s1","result":"final","structured_output":{"word":"sum","answer":5}}"#,
     )
     .expect("valid result");
     super::stream::transform(&result, &mut state);
@@ -201,7 +202,7 @@ fn claude_code_response_prefers_result_text_and_structured_output() {
     assert_eq!(state.final_text(), "final");
     assert_eq!(
         state.structured_output_json().as_deref(),
-        Some(r#"{"ok": true}"#)
+        Some(r#"{"answer": 5, "word": "sum"}"#)
     );
 }
 
@@ -209,6 +210,39 @@ fn claude_code_response_prefers_result_text_and_structured_output() {
 fn claude_code_response_rejects_missing_result() {
     let state = ClaudeCodeStreamState::default();
     assert!(super::stream::turn_error(&state, 0, &[]).is_some());
+}
+
+#[rstest::rstest]
+#[case::result(r#"{"type":"result","is_error":null,"result":"done"}"#, "result")]
+#[case::assistant(r#"{"type":"assistant","message":false}"#, "assistant")]
+#[case::user(r#"{"type":"user","message":false}"#, "user")]
+#[case::system(r#"{"type":"system","session_id":42}"#, "system")]
+#[case::tool_use(
+    r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":42,"name":"Read"}]}}"#,
+    "tool_use"
+)]
+#[case::tool_result(
+    r#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":42}]}}"#,
+    "tool_result"
+)]
+fn claude_code_parsing_reports_mistyped_events(#[case] source: &str, #[case] kind: &str) {
+    let (_root, context) = session_context();
+    let mut state = ClaudeCodeStreamState::default();
+    let line = serde_json::from_str(source).unwrap();
+    assert!(super::stream::transform(&line, &mut state).is_empty());
+    assert_eq!(state.parse_errors.len(), 1);
+    assert!(std::error::Error::source(state.parse_errors[0].as_ref()).is_some());
+    let error = ClaudeCodeHarnessConfig
+        .transform_turn_response(&context, &state, 0, &[])
+        .unwrap_err();
+    assert!(error.to_string().contains(&format!("invalid {kind}")));
+    let result = serde_json::from_str(r#"{"type":"result","result":"done"}"#).unwrap();
+    super::stream::transform(&result, &mut state);
+    let later_error = ClaudeCodeHarnessConfig
+        .transform_turn_response(&context, &state, 0, &["tail".to_owned()])
+        .unwrap_err();
+    assert!(later_error.to_string().contains(&format!("invalid {kind}")));
+    assert!(later_error.to_string().ends_with("stderr:\ntail"));
 }
 
 #[test]
