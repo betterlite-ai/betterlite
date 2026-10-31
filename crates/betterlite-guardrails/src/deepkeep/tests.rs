@@ -249,6 +249,19 @@ fn deepkeep_guardrail_loads_from_config() {
 }
 
 #[test]
+fn deepkeep_config_leaves_lasso_entries_to_lasso_section() {
+    let source = "guardrails:\n  - guardrail_name: safety\n    litellm_params:\n      guardrail: lasso\n      api_key: key\n  - guardrail_name: firewall\n    litellm_params:\n      guardrail: deepkeep\n      api_key: key\n      api_base: https://deepkeep.test\n      deepkeep_firewall_id: fixed\n";
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(source)
+    .expect("config");
+    let guardrails = config.sections.deepkeep_firewall.guardrails;
+    assert_eq!(guardrails.len(), 1);
+    assert_eq!(guardrails[0].guardrail_name, "firewall");
+}
+
+#[test]
 fn deepkeep_guardrail_config_default_timeout_matches_http_handler() {
     assert_eq!(guardrail().settings.timeout, Duration::from_secs(600));
 }
