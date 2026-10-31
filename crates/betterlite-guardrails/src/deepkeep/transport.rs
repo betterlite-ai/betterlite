@@ -1,9 +1,14 @@
-use super::{DeepKeepError, DeepKeepGuardrail, Request};
+use super::{DeepKeepError, DeepKeepGuardrail, Request, Response};
+
+pub(super) enum Body {
+    Json(Response),
+    Text(String),
+}
 
 pub(super) async fn send_request(
     guardrail: &DeepKeepGuardrail,
     request: &Request,
-) -> Result<(reqwest::StatusCode, String), DeepKeepError> {
+) -> Result<(reqwest::StatusCode, Body), DeepKeepError> {
     let response = guardrail
         .client
         .post(&guardrail.settings.api_base)
@@ -22,9 +27,20 @@ pub(super) async fn send_request(
             }
         })?;
     let status = response.status();
-    let body = response
-        .text()
-        .await
-        .map_err(|source| DeepKeepError::Request { source })?;
+    let body = if status.is_success() {
+        Body::Json(
+            response
+                .json()
+                .await
+                .map_err(|source| DeepKeepError::Request { source })?,
+        )
+    } else {
+        Body::Text(
+            response
+                .text()
+                .await
+                .map_err(|source| DeepKeepError::Request { source })?,
+        )
+    };
     Ok((status, body))
 }

@@ -7,6 +7,7 @@ use reqwest::header::{
     CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue, InvalidHeaderName, InvalidHeaderValue,
 };
 use secrecy::ExposeSecret as _;
+use serde::de::Error as _;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -247,10 +248,22 @@ impl DeepKeepGuardrail {
             Err(error) => return self.recover_from_failure(error, inputs),
         };
         if !status.is_success() {
+            let transport::Body::Text(body) = body else {
+                return Err(DeepKeepError::ResponseJson {
+                    source: serde_json::Error::custom(
+                        "successful response body used for an error status",
+                    ),
+                });
+            };
             return self.recover_from_failure(DeepKeepError::Api { status, body }, inputs);
         }
-        let parsed_response: Response =
-            serde_json::from_str(&body).map_err(|source| DeepKeepError::ResponseJson { source })?;
+        let transport::Body::Json(parsed_response) = body else {
+            return Err(DeepKeepError::ResponseJson {
+                source: serde_json::Error::custom(
+                    "error response body used for a successful status",
+                ),
+            });
+        };
         Self::build_return_inputs(&inputs, parsed_response)
     }
 
