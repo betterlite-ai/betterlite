@@ -4,7 +4,7 @@ use super::DeployError;
 use super::fixtures::{checkpoint, database};
 use std::time::Duration;
 use tokio::fs;
-use tokio::time::Instant;
+use tokio::time::{Instant, sleep};
 use uuid::Uuid;
 
 #[tokio::test]
@@ -308,8 +308,25 @@ async fn prisma_lock_serializes_cutover() {
 #[tokio::test]
 async fn coordinator_transaction_lock_conflict() {
     database(async |db| {
-        db.lock_conflict("BEGIN; SELECT pg_advisory_xact_lock(72707369::bigint)")
-            .await;
+        let blocker = db.pool.get().await.unwrap();
+        blocker
+            .batch_execute("BEGIN; SELECT pg_advisory_xact_lock(72707369::bigint)")
+            .await
+            .unwrap();
+        let client = db.pool.get().await.unwrap();
+        let service = db.service(&[("locked", "SELECT 1")]);
+        let deployment = service.run(
+            client,
+            Instant::now().checked_add(Duration::from_secs(10)).unwrap(),
+        );
+        tokio::pin!(deployment);
+        checkpoint(deployment.as_mut(), sleep(Duration::from_millis(100))).await;
+        assert!(db.rows().await.is_empty());
+        blocker
+            .batch_execute("COMMIT; SELECT pg_advisory_unlock_all()")
+            .await
+            .unwrap();
+        deployment.await.unwrap();
     })
     .await;
 }

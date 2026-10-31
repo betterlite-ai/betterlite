@@ -2,7 +2,7 @@ use std::str::Utf8Error;
 
 use deadpool_postgres::Client;
 use thiserror::Error;
-use tokio::time::{Instant, error::Elapsed, timeout_at};
+use tokio::time::{Duration, Instant, error::Elapsed, sleep, timeout_at};
 use tokio_postgres::{Client as PostgresClient, Error as PostgresError};
 use uuid::Uuid;
 
@@ -54,10 +54,34 @@ impl MigrationDeploy {
 
     async fn apply(&self, client: &PostgresClient, deadline: Instant) -> Result<(), DeployError> {
         limit(client, deadline).await?;
-        client
-            .query_one("SELECT pg_advisory_lock($1)", &[&LOCK_ID])
-            .await?;
-        let result = self.apply_locked(client, deadline).await;
+        loop {
+            let acquired: bool = client
+                .query_one("SELECT pg_try_advisory_lock($1)", &[&LOCK_ID])
+                .await?
+                .get(0);
+            if acquired {
+                break;
+            }
+            sleep(Duration::from_millis(10)).await;
+        }
+        let result = async {
+            let schema = ledger::quote(&self.schema);
+            client
+                .query_one("SELECT set_config('search_path', $1, false)", &[&schema])
+                .await?;
+            let table = format!("{schema}.\"_prisma_migrations\"");
+            let finished = ledger::prepare(client, &table).await?;
+            for migration in self
+                .catalog
+                .iter()
+                .filter(|migration| !finished.contains(&migration.name))
+            {
+                limit(client, deadline).await?;
+                ledger::apply(client, &table, migration, (self.next_id)()).await?;
+            }
+            Ok::<(), DeployError>(())
+        }
+        .await;
         let unlock = client
             .query_one("SELECT pg_advisory_unlock($1)", &[&LOCK_ID])
             .await
@@ -67,26 +91,6 @@ impl MigrationDeploy {
             (Ok(()), Err(error)) => Err(DeployError::Database(error)),
             (Ok(()), Ok(())) => Ok(()),
         }
-    }
-
-    async fn apply_locked(
-        &self,
-        client: &PostgresClient,
-        deadline: Instant,
-    ) -> Result<(), DeployError> {
-        let schema = ledger::quote(&self.schema);
-        client
-            .query_one("SELECT set_config('search_path', $1, false)", &[&schema])
-            .await?;
-        let table = format!("{schema}.\"_prisma_migrations\"");
-        let finished = ledger::prepare(client, &table).await?;
-        for migration in &self.catalog {
-            if !finished.contains(&migration.name) {
-                limit(client, deadline).await?;
-                ledger::apply(client, &table, migration, (self.next_id)()).await?;
-            }
-        }
-        Ok(())
     }
 }
 

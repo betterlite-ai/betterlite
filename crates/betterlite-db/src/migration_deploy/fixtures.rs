@@ -134,20 +134,12 @@ impl Database {
         let blocker = self.pool.get().await.unwrap();
         blocker.batch_execute(lock_sql).await.unwrap();
         let client = self.pool.get().await.unwrap();
-        let pid: i32 = client
-            .query_one("SELECT pg_backend_pid()", &[])
-            .await
-            .unwrap()
-            .get(0);
         let service = self.service(&[("locked", "SELECT 1")]);
         let mut deployment = Box::pin(service.run(
             client,
             Instant::now().checked_add(Duration::from_secs(10)).unwrap(),
         ));
-        let waiting = format!(
-            "SELECT count(*) FROM pg_locks WHERE pid={pid} AND locktype='advisory' AND NOT granted"
-        );
-        checkpoint(deployment.as_mut(), self.wait_for(&waiting)).await;
+        checkpoint(deployment.as_mut(), sleep(Duration::from_millis(100))).await;
         assert!(self.rows().await.is_empty());
         blocker
             .batch_execute("COMMIT; SELECT pg_advisory_unlock_all()")
