@@ -277,6 +277,82 @@ fn mcp_stored_limits_reject_large_nested_input_before_deserialize() {
     assert!(started.elapsed() < Duration::from_secs(5));
 }
 
+#[test]
+fn mcp_stored_limits_accept_full_nested_input_promptly() {
+    let elements = (MAX_STORED_BYTES - 2 * MAX_STORED_DEPTH)
+        .checked_div(2)
+        .unwrap();
+    let flat = format!("[{}0]", "0,".repeat(elements - 1));
+    let baseline = Instant::now();
+    let flat_decoded = decode_mcp_stored_contract(flat.as_bytes()).unwrap();
+    let limit = baseline.elapsed() + Duration::from_millis(500);
+    drop(flat_decoded);
+    let nested = format!(
+        "{}{}0 {}",
+        "[".repeat(MAX_STORED_DEPTH),
+        "0,".repeat(elements - 1),
+        "]".repeat(MAX_STORED_DEPTH)
+    );
+    assert_eq!(nested.len(), MAX_STORED_BYTES);
+    let started = Instant::now();
+    let decoded = decode_mcp_stored_contract(nested.as_bytes()).unwrap();
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed < limit,
+        "nested decode took {elapsed:?}, limit {limit:?}"
+    );
+    assert_eq!(
+        serde_json::to_string(&decoded).unwrap(),
+        nested.replace(' ', "")
+    );
+}
+
+#[rstest]
+#[case::brackets("", "[")]
+#[case::braces("", "{")]
+#[case::escaped_quote("\"", "[")]
+#[case::backslash("\\", "[")]
+fn quoted_delimiters_are_not_depth(#[case] prefix: &str, #[case] content: &str) {
+    let text = format!("{prefix}{}", content.repeat(MAX_STORED_DEPTH + 1));
+    let encoded = serde_json::to_vec(&text).unwrap();
+    assert_eq!(
+        decode_mcp_stored_contract(&encoded).unwrap(),
+        JsonValue::String(text)
+    );
+}
+
+#[test]
+fn invalid_escapes_cannot_hide_depth() {
+    let input = "\\[".repeat(MAX_STORED_DEPTH + 1);
+    assert!(matches!(
+        decode_mcp_stored_contract(input.as_bytes()),
+        Err(decode::McpStoredDecodeError::TooDeep)
+    ));
+}
+
+#[test]
+fn sibling_containers_do_not_accumulate_depth() {
+    let input = format!("[{}[]]", "[],".repeat(MAX_STORED_DEPTH));
+    let decoded = decode_mcp_stored_contract(input.as_bytes()).unwrap();
+    assert_eq!(serde_json::to_string(&decoded).unwrap(), input);
+}
+
+#[rstest]
+#[case::brackets("]")]
+#[case::braces("}")]
+fn quoted_closers_cannot_hide_depth(#[case] closer: &str) {
+    let input = format!(
+        "[\"{}\",{}0{}]",
+        closer.repeat(MAX_STORED_DEPTH),
+        "[".repeat(MAX_STORED_DEPTH),
+        "]".repeat(MAX_STORED_DEPTH)
+    );
+    assert!(matches!(
+        decode_mcp_stored_contract(input.as_bytes()),
+        Err(decode::McpStoredDecodeError::TooDeep)
+    ));
+}
+
 #[rstest]
 fn replays_the_mcp_stored_contract_corpus(
     #[files("fuzz/corpus/mcp_stored_contract/*")] path: PathBuf,
