@@ -85,75 +85,28 @@ fn contains_any(message: &str, phrases: &[&str]) -> bool {
     phrases.iter().any(|phrase| lower.contains(phrase))
 }
 
+// Returns (connection, infrastructure, prisma) for the given error type.
 #[must_use]
-pub const fn is_database_connection_error(error_type: ErrorType) -> bool {
+pub const fn classify(error_type: ErrorType) -> (bool, bool, bool) {
     match error_type {
         ErrorType::Connect
         | ErrorType::ConnectTimeout
         | ErrorType::Read
         | ErrorType::ReadTimeout
-        | ErrorType::Deadline
-        | ErrorType::EngineConnection
-        | ErrorType::NoDbConnection => true,
+        | ErrorType::NoDbConnection => (true, true, false),
+        ErrorType::Deadline => (true, false, false),
+        ErrorType::EngineConnection => (true, true, true),
         ErrorType::Data
         | ErrorType::UniqueViolation
         | ErrorType::ForeignKeyViolation
         | ErrorType::MissingRequiredValue
         | ErrorType::RawQuery
         | ErrorType::TableNotFound
-        | ErrorType::RecordNotFound
-        | ErrorType::Prisma
-        | ErrorType::ClientNotConnected
-        | ErrorType::HttpClientClosed
-        | ErrorType::Other => false,
-    }
-}
-
-#[must_use]
-pub const fn is_database_infrastructure(error_type: ErrorType) -> bool {
-    match error_type {
-        ErrorType::Connect
-        | ErrorType::ConnectTimeout
-        | ErrorType::Read
-        | ErrorType::ReadTimeout
-        | ErrorType::EngineConnection
-        | ErrorType::NoDbConnection
-        | ErrorType::Prisma
-        | ErrorType::ClientNotConnected
-        | ErrorType::HttpClientClosed => true,
-        ErrorType::Deadline
-        | ErrorType::Other
-        | ErrorType::Data
-        | ErrorType::UniqueViolation
-        | ErrorType::ForeignKeyViolation
-        | ErrorType::MissingRequiredValue
-        | ErrorType::RawQuery
-        | ErrorType::TableNotFound
-        | ErrorType::RecordNotFound => false,
-    }
-}
-
-#[must_use]
-pub const fn is_prisma_error(error_type: ErrorType) -> bool {
-    match error_type {
-        ErrorType::Data
-        | ErrorType::UniqueViolation
-        | ErrorType::ForeignKeyViolation
-        | ErrorType::MissingRequiredValue
-        | ErrorType::RawQuery
-        | ErrorType::TableNotFound
-        | ErrorType::RecordNotFound
-        | ErrorType::Prisma
-        | ErrorType::EngineConnection
-        | ErrorType::ClientNotConnected
-        | ErrorType::HttpClientClosed => true,
-        ErrorType::Connect
-        | ErrorType::ConnectTimeout
-        | ErrorType::Read
-        | ErrorType::ReadTimeout
-        | ErrorType::Deadline
-        | ErrorType::NoDbConnection
-        | ErrorType::Other => false,
+        | ErrorType::RecordNotFound => (false, false, true),
+        ErrorType::Prisma | ErrorType::ClientNotConnected | ErrorType::HttpClientClosed => {
+            (false, true, true)
+        }
+        ErrorType::Other => (false, false, false),
     }
 }
 
@@ -163,7 +116,7 @@ pub fn is_error_type_or_subclass(error_type: ErrorType, ancestor: ErrorType) -> 
         return true;
     }
     match ancestor {
-        ErrorType::Prisma => is_prisma_error(error_type),
+        ErrorType::Prisma => classify(error_type).2,
         ErrorType::Data => error_type.is_data_type(),
         ErrorType::Connect
         | ErrorType::ConnectTimeout
@@ -186,13 +139,14 @@ pub fn is_error_type_or_subclass(error_type: ErrorType, ancestor: ErrorType) -> 
 
 #[must_use]
 pub fn is_transport_error(error: &DbError) -> bool {
-    if is_prisma_error(error.error_type) {
+    let (connection, _, prisma) = classify(error.error_type);
+    if prisma {
         return matches!(
             error.error_type,
             ErrorType::ClientNotConnected | ErrorType::HttpClientClosed
         ) || contains_any(&error.message, &TRANSPORT_WORDS);
     }
-    is_database_connection_error(error.error_type) && error.error_type != ErrorType::Deadline
+    connection && error.error_type != ErrorType::Deadline
 }
 
 #[must_use]
@@ -208,7 +162,7 @@ fn has_deadlock_marker(error: &DbError) -> bool {
 
 #[must_use]
 pub fn is_deadlock_error(error: &DbError) -> bool {
-    if is_prisma_error(error.error_type) {
+    if classify(error.error_type).2 {
         return has_deadlock_marker(error);
     }
     false
@@ -239,7 +193,7 @@ pub fn postgres_sqlstate(error: &DbError) -> Option<String> {
 
 #[must_use]
 pub fn is_read_only_transaction_error(error: &DbError) -> bool {
-    if !is_prisma_error(error.error_type) {
+    if !classify(error.error_type).2 {
         return false;
     }
     contains_any(&error.message, &["\"25006\"", "read-only transaction"])
@@ -247,7 +201,7 @@ pub fn is_read_only_transaction_error(error: &DbError) -> bool {
 
 #[must_use]
 pub fn is_prisma_engine_internal(error: &DbError) -> bool {
-    if is_prisma_error(error.error_type) {
+    if classify(error.error_type).2 {
         return false;
     }
     error
@@ -258,10 +212,11 @@ pub fn is_prisma_engine_internal(error: &DbError) -> bool {
 
 #[must_use]
 pub fn is_permanent_database_fault(error: &DbError) -> bool {
-    if !is_database_infrastructure(error.error_type) {
+    let (connection, infrastructure, _) = classify(error.error_type);
+    if !infrastructure {
         return false;
     }
-    !is_database_connection_error(error.error_type) && !is_transport_error(error)
+    !connection && !is_transport_error(error)
 }
 
 pub mod fixtures;

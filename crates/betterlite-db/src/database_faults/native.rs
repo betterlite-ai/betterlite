@@ -43,19 +43,14 @@ pub fn classify_sqlstate(code: &SqlState) -> NativeFault {
 
 #[must_use]
 pub fn is_native_transport_error<E>(error: &NativeDbError<E>) -> bool {
-    match error {
-        NativeDbError::NoDbConnected => true,
-        NativeDbError::Pool { source } => {
-            matches!(&source.driver, PoolError::Timeout(_) | PoolError::Closed)
-        }
-        NativeDbError::SqlState { code, .. } => {
-            classify_sqlstate(code) == NativeFault::ConnectionUnavailable
-        }
-        NativeDbError::Backend { .. }
-        | NativeDbError::UniqueViolation { .. }
-        | NativeDbError::InvalidRecord { .. }
-        | NativeDbError::CreateNull => false,
+    if matches!(error, NativeDbError::NoDbConnected) {
+        return true;
     }
+    if let NativeDbError::Pool { source } = error {
+        return matches!(&source.driver, PoolError::Timeout(_) | PoolError::Closed);
+    }
+    native_sqlstate(error)
+        .is_some_and(|code| classify_sqlstate(&code) == NativeFault::ConnectionUnavailable)
 }
 
 mod tests;

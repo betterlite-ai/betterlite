@@ -21,13 +21,13 @@ fn error(kind: ErrorType) -> DbError {
 
 #[test]
 fn connection_allowlist() {
-    assert!(is_database_connection_error(ErrorType::Deadline));
-    assert!(!is_database_connection_error(ErrorType::Prisma));
+    assert!(classify(ErrorType::Deadline).0);
+    assert!(!classify(ErrorType::Prisma).0);
 }
 #[test]
 fn infrastructure_data_exclusions() {
-    assert!(!is_database_infrastructure(ErrorType::UniqueViolation));
-    assert!(is_database_infrastructure(ErrorType::Prisma));
+    assert!(!classify(ErrorType::UniqueViolation).1);
+    assert!(classify(ErrorType::Prisma).1);
 }
 #[test]
 fn base_data_exact_type() {
@@ -53,9 +53,10 @@ fn unique_violation_uses_meta_sqlstate() {
 #[case::client_not_connected(ErrorType::ClientNotConnected)]
 #[case::http_client_closed(ErrorType::HttpClientClosed)]
 fn prisma_subclasses_cover_all_predicates(#[case] error_type: ErrorType) {
-    assert!(is_prisma_error(error_type));
-    assert!(is_database_infrastructure(error_type));
-    assert!(!is_database_infrastructure(ErrorType::Deadline));
+    let (_, infrastructure, prisma) = classify(error_type);
+    assert!(prisma);
+    assert!(infrastructure);
+    assert!(!classify(ErrorType::Deadline).1);
 }
 
 #[test]
@@ -137,7 +138,7 @@ fn permanent_excludes_transient() {
 }
 #[test]
 fn exception_classes_only() {
-    assert!(!is_prisma_error(ErrorType::Other));
+    assert!(!classify(ErrorType::Other).2);
 }
 
 #[derive(Clone, Default)]
@@ -423,10 +424,11 @@ async fn retry_success(#[case] second: Result<i32, DbError>) {
 #[case::read_timeout(ErrorType::ReadTimeout)]
 fn transport_type_predicates(#[case] kind: ErrorType) {
     let value = error(kind);
-    assert!(is_database_connection_error(kind));
-    assert!(is_database_infrastructure(kind));
+    let (connection, infrastructure, prisma) = classify(kind);
+    assert!(connection);
+    assert!(infrastructure);
     assert!(is_transport_error(&value));
-    assert!(!is_prisma_error(kind));
+    assert!(!prisma);
 }
 
 #[rstest::rstest]
