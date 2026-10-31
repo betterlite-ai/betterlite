@@ -27,6 +27,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+      pull-requests: read
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -44,6 +45,17 @@ jobs:
           git log --first-parent --format='%ct %s' HEAD > _site/merges.txt
           git log -1 --format='%H %ct' HEAD > _site/commit.txt
           ls -l _site
+
+      # the stage times go only into the page artifact, never into the repository
+      - name: Fetch when each merged pull request was started, opened, queued and merged
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api graphql --paginate \
+            -F owner="${GITHUB_REPOSITORY%/*}" -F name="${GITHUB_REPOSITORY#*/}" -F query=@.development/site/prs.graphql \
+            --jq '.data.repository.pullRequests.nodes[] | select(.baseRefName == "main") | {number, first: .commits.nodes[0].commit.authoredDate, opened: .createdAt, queued: .timelineItems.nodes[0].createdAt, merged: .mergedAt}' \
+            | jq -s . > _site/prs.json
+          jq length _site/prs.json
 
       - name: Upload the page
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
