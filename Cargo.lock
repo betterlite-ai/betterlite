@@ -1457,10 +1457,13 @@ dependencies = [
  "prometheus-client",
  "py_literal",
  "rstest",
+ "secrecy",
  "serde",
  "serde_json",
+ "serde_with",
  "thiserror",
  "tokio",
+ "url",
 ]
 
 [[package]]
