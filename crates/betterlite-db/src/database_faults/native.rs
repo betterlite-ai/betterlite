@@ -1,5 +1,6 @@
 use crate::postgres_store::errors::DbError as NativeDbError;
 use deadpool_postgres::PoolError;
+use std::error::Error as StdError;
 use tokio_postgres::error::SqlState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,10 +48,27 @@ pub fn is_native_transport_error<E>(error: &NativeDbError<E>) -> bool {
         return true;
     }
     if let NativeDbError::Pool { source } = error {
-        return matches!(&source.driver, PoolError::Timeout(_) | PoolError::Closed);
+        return match &source.driver {
+            PoolError::Timeout(_) | PoolError::Closed => true,
+            PoolError::Backend(driver) => is_driver_transport(driver),
+            PoolError::NoRuntimeSpecified | PoolError::PostCreateHook(_) => false,
+        };
+    }
+    if let NativeDbError::Backend { source } = error {
+        return is_driver_transport(&source.driver);
     }
     native_sqlstate(error)
         .is_some_and(|code| classify_sqlstate(&code) == NativeFault::ConnectionUnavailable)
+}
+
+fn is_driver_transport(error: &tokio_postgres::Error) -> bool {
+    if let Some(code) = error.code() {
+        return classify_sqlstate(code) == NativeFault::ConnectionUnavailable;
+    }
+    error.is_closed()
+        || error
+            .source()
+            .is_some_and(|source| source.downcast_ref::<std::io::Error>().is_some())
 }
 
 mod tests;

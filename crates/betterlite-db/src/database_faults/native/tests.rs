@@ -5,6 +5,7 @@ use crate::postgres_store::diagnostics::PoolFailure;
 use crate::postgres_store::errors::DbError as NativeDbError;
 use deadpool_postgres::TimeoutType;
 use std::convert::Infallible;
+use std::net::TcpListener;
 
 #[test]
 fn pool_timeout_and_closed_are_transport() {
@@ -30,6 +31,52 @@ fn pool_hook_failure_is_not_transport() {
         },
     };
     assert!(!is_native_transport_error(&no_runtime));
+}
+
+#[tokio::test]
+async fn refused_connection_is_transport() {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let address = listener.local_addr().unwrap();
+    drop(listener);
+    let error = match tokio_postgres::connect(
+        &format!("host=127.0.0.1 port={} user=missing", address.port()),
+        tokio_postgres::NoTls,
+    )
+    .await
+    {
+        Ok(_) => panic!("connection unexpectedly succeeded"),
+        Err(error) => error,
+    };
+    let value = NativeDbError::<Infallible>::Backend {
+        source: crate::postgres_store::diagnostics::DriverError { driver: error },
+    };
+    assert!(is_native_transport_error(&value));
+}
+
+#[tokio::test]
+async fn closed_connection_is_transport() {
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .unwrap();
+    let address = listener.local_addr().unwrap();
+    let accept = tokio::spawn(async move {
+        let (socket, _) = listener.accept().await.unwrap();
+        drop(socket);
+    });
+    let error = match tokio_postgres::connect(
+        &format!("host=127.0.0.1 port={} user=missing", address.port()),
+        tokio_postgres::NoTls,
+    )
+    .await
+    {
+        Ok(_) => panic!("connection unexpectedly succeeded"),
+        Err(error) => error,
+    };
+    accept.await.unwrap();
+    let value = NativeDbError::<Infallible>::Backend {
+        source: crate::postgres_store::diagnostics::DriverError { driver: error },
+    };
+    assert!(is_native_transport_error(&value));
 }
 
 #[test]

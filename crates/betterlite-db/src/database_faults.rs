@@ -85,28 +85,58 @@ fn contains_any(message: &str, phrases: &[&str]) -> bool {
     phrases.iter().any(|phrase| lower.contains(phrase))
 }
 
-// Returns (connection, infrastructure, prisma) for the given error type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ErrorClasses {
+    pub connection: bool,
+    pub infrastructure: bool,
+    pub prisma: bool,
+}
+
 #[must_use]
-pub const fn classify(error_type: ErrorType) -> (bool, bool, bool) {
+pub const fn classify(error_type: ErrorType) -> ErrorClasses {
     match error_type {
         ErrorType::Connect
         | ErrorType::ConnectTimeout
         | ErrorType::Read
         | ErrorType::ReadTimeout
-        | ErrorType::NoDbConnection => (true, true, false),
-        ErrorType::Deadline => (true, false, false),
-        ErrorType::EngineConnection => (true, true, true),
+        | ErrorType::NoDbConnection => ErrorClasses {
+            connection: true,
+            infrastructure: true,
+            prisma: false,
+        },
+        ErrorType::Deadline => ErrorClasses {
+            connection: true,
+            infrastructure: false,
+            prisma: false,
+        },
+        ErrorType::EngineConnection => ErrorClasses {
+            connection: true,
+            infrastructure: true,
+            prisma: true,
+        },
         ErrorType::Data
         | ErrorType::UniqueViolation
         | ErrorType::ForeignKeyViolation
         | ErrorType::MissingRequiredValue
         | ErrorType::RawQuery
         | ErrorType::TableNotFound
-        | ErrorType::RecordNotFound => (false, false, true),
+        | ErrorType::RecordNotFound => ErrorClasses {
+            connection: false,
+            infrastructure: false,
+            prisma: true,
+        },
         ErrorType::Prisma | ErrorType::ClientNotConnected | ErrorType::HttpClientClosed => {
-            (false, true, true)
+            ErrorClasses {
+                connection: false,
+                infrastructure: true,
+                prisma: true,
+            }
         }
-        ErrorType::Other => (false, false, false),
+        ErrorType::Other => ErrorClasses {
+            connection: false,
+            infrastructure: false,
+            prisma: false,
+        },
     }
 }
 
@@ -116,7 +146,7 @@ pub fn is_error_type_or_subclass(error_type: ErrorType, ancestor: ErrorType) -> 
         return true;
     }
     match ancestor {
-        ErrorType::Prisma => classify(error_type).2,
+        ErrorType::Prisma => classify(error_type).prisma,
         ErrorType::Data => error_type.is_data_type(),
         ErrorType::Connect
         | ErrorType::ConnectTimeout
@@ -139,14 +169,14 @@ pub fn is_error_type_or_subclass(error_type: ErrorType, ancestor: ErrorType) -> 
 
 #[must_use]
 pub fn is_transport_error(error: &DbError) -> bool {
-    let (connection, _, prisma) = classify(error.error_type);
-    if prisma {
+    let classes = classify(error.error_type);
+    if classes.prisma {
         return matches!(
             error.error_type,
             ErrorType::ClientNotConnected | ErrorType::HttpClientClosed
         ) || contains_any(&error.message, &TRANSPORT_WORDS);
     }
-    connection && error.error_type != ErrorType::Deadline
+    classes.connection && error.error_type != ErrorType::Deadline
 }
 
 #[must_use]
@@ -162,7 +192,7 @@ fn has_deadlock_marker(error: &DbError) -> bool {
 
 #[must_use]
 pub fn is_deadlock_error(error: &DbError) -> bool {
-    if classify(error.error_type).2 {
+    if classify(error.error_type).prisma {
         return has_deadlock_marker(error);
     }
     false
@@ -176,24 +206,16 @@ pub fn postgres_sqlstate(error: &DbError) -> Option<String> {
     if let Some(code) = &error.meta_code {
         return Some(code.clone());
     }
-    let marker = "PostgresError { code: \"";
-    error.message.match_indices(marker).find_map(|(offset, _)| {
-        let start = offset.checked_add(marker.len())?;
-        let end = start.checked_add(5)?;
-        if error.message.get(end..end.checked_add(1)?)? != "\"" {
-            return None;
-        }
-        let value = error.message.get(start..end)?;
-        value
-            .bytes()
-            .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit())
-            .then(|| value.to_owned())
-    })
+    let pattern = regex::Regex::new(r#"PostgresError \{ code: "([0-9A-Z]{5})""#).ok()?;
+    pattern
+        .captures(&error.message)
+        .and_then(|captures| captures.get(1))
+        .map(|capture| capture.as_str().to_owned())
 }
 
 #[must_use]
 pub fn is_read_only_transaction_error(error: &DbError) -> bool {
-    if !classify(error.error_type).2 {
+    if !classify(error.error_type).prisma {
         return false;
     }
     contains_any(&error.message, &["\"25006\"", "read-only transaction"])
@@ -201,7 +223,7 @@ pub fn is_read_only_transaction_error(error: &DbError) -> bool {
 
 #[must_use]
 pub fn is_prisma_engine_internal(error: &DbError) -> bool {
-    if classify(error.error_type).2 {
+    if classify(error.error_type).prisma {
         return false;
     }
     error
@@ -212,11 +234,11 @@ pub fn is_prisma_engine_internal(error: &DbError) -> bool {
 
 #[must_use]
 pub fn is_permanent_database_fault(error: &DbError) -> bool {
-    let (connection, infrastructure, _) = classify(error.error_type);
-    if !infrastructure {
+    let classes = classify(error.error_type);
+    if !classes.infrastructure {
         return false;
     }
-    !connection && !is_transport_error(error)
+    !classes.connection && !is_transport_error(error)
 }
 
 pub mod fixtures;
