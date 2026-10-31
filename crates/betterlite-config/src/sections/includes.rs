@@ -133,7 +133,10 @@ fn resolve_include_file_path(entry: &str, declared_in: &Path, root: &Path) -> Pa
             .join(entry),
     );
     let root_relative = normalize_path(&root.parent().unwrap_or_else(|| Path::new("")).join(entry));
-    if root_relative == declared_relative || !root_relative.exists() {
+    if root_relative == declared_relative {
+        return declared_relative;
+    }
+    if !root_relative.exists() {
         return declared_relative;
     }
     if !declared_relative.exists() {
