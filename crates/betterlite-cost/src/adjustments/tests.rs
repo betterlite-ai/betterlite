@@ -2,7 +2,9 @@
 
 use std::collections::BTreeMap;
 
-use betterlite_config::cost_adjustments::{DiscountEntry, MarginEntry};
+use betterlite_config::cost_adjustments::{
+    AdjustmentField, DiscountEntry, MarginEntry, MarginFieldEntry,
+};
 use rust_decimal::Decimal;
 
 use super::{AdjustmentError, AdjustmentOperation, apply_cost_discount, apply_cost_margin};
@@ -26,8 +28,8 @@ fn adjustments_preserve_exact_subcent_values() {
         &map(
             "provider",
             MarginEntry::Split {
-                percentage: Some(Decimal::new(1, 1)),
-                fixed_amount: Some(Decimal::new(1, 3)),
+                percentage: MarginFieldEntry::Number(Decimal::new(1, 1)),
+                fixed_amount: MarginFieldEntry::Number(Decimal::new(1, 3)),
             },
         ),
     )
@@ -98,8 +100,8 @@ fn fixed_margin_applies_to_zero_base_cost() {
     let config = map(
         "provider",
         MarginEntry::Split {
-            percentage: None,
-            fixed_amount: Some(Decimal::new(1, 2)),
+            percentage: MarginFieldEntry::Absent,
+            fixed_amount: MarginFieldEntry::Number(Decimal::new(1, 2)),
         },
     );
     let margin = apply_cost_margin(Decimal::ZERO, Some("provider"), &config).unwrap();
@@ -160,8 +162,8 @@ fn rejects_margin_percentage_plus_fixed_overflow() {
     let config = map(
         "provider",
         MarginEntry::Split {
-            percentage: Some(Decimal::from(1_i32)),
-            fixed_amount: Some(Decimal::MAX),
+            percentage: MarginFieldEntry::Number(Decimal::from(1_i32)),
+            fixed_amount: MarginFieldEntry::Number(Decimal::MAX),
         },
     );
     let error = apply_cost_margin(Decimal::MAX, Some("provider"), &config).unwrap_err();
@@ -178,8 +180,8 @@ fn rejects_margin_total_add_overflow() {
     let config = map(
         "provider",
         MarginEntry::Split {
-            percentage: None,
-            fixed_amount: Some(Decimal::MAX),
+            percentage: MarginFieldEntry::Absent,
+            fixed_amount: MarginFieldEntry::Number(Decimal::MAX),
         },
     );
     let error = apply_cost_margin(Decimal::MAX, Some("provider"), &config).unwrap_err();
@@ -187,6 +189,74 @@ fn rejects_margin_total_add_overflow() {
         error,
         AdjustmentError::Overflow {
             operation: AdjustmentOperation::BasePlusMargin
+        }
+    );
+}
+
+#[test]
+fn rejects_an_invalid_discount_scalar_instead_of_defaulting_to_zero() {
+    let error = apply_cost_discount(
+        Decimal::ONE,
+        Some("provider"),
+        &map("provider", DiscountEntry::Invalid),
+    )
+    .unwrap_err();
+    assert_eq!(
+        error,
+        AdjustmentError::InvalidField {
+            field: AdjustmentField::DiscountPercent
+        }
+    );
+}
+
+#[test]
+fn rejects_an_invalid_margin_scalar_instead_of_defaulting_to_zero() {
+    let error = apply_cost_margin(
+        Decimal::ONE,
+        Some("provider"),
+        &map("provider", MarginEntry::Invalid),
+    )
+    .unwrap_err();
+    assert_eq!(
+        error,
+        AdjustmentError::InvalidField {
+            field: AdjustmentField::MarginPercent
+        }
+    );
+}
+
+#[test]
+fn rejects_an_invalid_margin_percentage_field_instead_of_defaulting_to_zero() {
+    let config = map(
+        "provider",
+        MarginEntry::Split {
+            percentage: MarginFieldEntry::Invalid,
+            fixed_amount: MarginFieldEntry::Absent,
+        },
+    );
+    let error = apply_cost_margin(Decimal::ONE, Some("provider"), &config).unwrap_err();
+    assert_eq!(
+        error,
+        AdjustmentError::InvalidField {
+            field: AdjustmentField::Percentage
+        }
+    );
+}
+
+#[test]
+fn rejects_an_invalid_margin_fixed_amount_field_instead_of_defaulting_to_zero() {
+    let config = map(
+        "provider",
+        MarginEntry::Split {
+            percentage: MarginFieldEntry::Absent,
+            fixed_amount: MarginFieldEntry::Invalid,
+        },
+    );
+    let error = apply_cost_margin(Decimal::ONE, Some("provider"), &config).unwrap_err();
+    assert_eq!(
+        error,
+        AdjustmentError::InvalidField {
+            field: AdjustmentField::FixedAmount
         }
     );
 }
