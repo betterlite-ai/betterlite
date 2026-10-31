@@ -1,0 +1,113 @@
+id: B5081
+title: Harness config errors in LiteLLM's words
+description: >-
+  The Codex and OpenCode harnesses reject the same bad options.config that LiteLLM rejects, but the error text differs, so a user who moves from LiteLLM sees new messages. Make each text match LiteLLM's exactly, with the same class (OptionsMismatch), and pin every text with Rust tests and helper oracle cases. The HarnessError variants live in crates/betterlite-harness/src/errors.rs; the checks that raise them live in providers/codex/config.rs and providers/opencode/validation.rs.
+
+
+  Codex, in config_overrides and toml_value. A key that is empty or holds "=" now prints `CodexOptions.config key "a=b" must be a non-empty key without '='` (errors.rs L27-28); LiteLLM prints `Invalid CodexOptions.config key: 'a=b'`. A key whose part before the first dot is managed now prints `CodexOptions.config key "model" is managed by Harness.CODEX; use the matching agent() argument instead` (errors.rs L29-30); LiteLLM prints `CodexOptions.config['model'] is managed by LiteLLM; use the matching agent() argument instead`. A JSON null value now prints the generic OptionsMismatch text; LiteLLM prints `CodexOptions.config value of type NoneType cannot be passed to codex`. A value nested past DEFAULT_MAX_RECURSE_DEPTH (100) now prints the generic text too; LiteLLM prints `CodexOptions.config is nested deeper than 100 levels`.
+
+
+  OpenCode, in validate_user_config. betterlite now collects every managed top-level key into `OpenCodeOptions.config[config] contains managed keys: ["model"]` (errors.rs L31-39). LiteLLM stops at the first managed top-level key and prints `OpenCodeOptions.config['model'] is managed by LiteLLM; use the matching agent() argument (model=, permissions=, disable_tools=) instead`. For an agent or mode entry that sets permission, tools or model, LiteLLM prints `OpenCodeOptions.config['agent']['build'] sets ['model', 'permission'], which LiteLLM manages; use permissions=/disable_tools=/model= instead`, with the managed names sorted and printed as a Python list. A present agent or mode section that is not a mapping prints `OpenCodeOptions.config['mode'] must be a mapping`.
+
+
+  OpenCode section shapes follow LiteLLM too. A null agent or mode section is skipped (LiteLLM L208-209); betterlite now rejects it. LiteLLM reads each entry as `frozenset(agent or ())`: null, false, 0, "" and empty entries pass, a mapping counts its keys, a list counts its items (so ["model"] is rejected with the sets text) and a non-empty string counts its characters (so it always passes). betterlite now rejects every entry that is not an object; change it to this rule. Entries LiteLLM can't turn into a set (a number other than 0, true, a list holding an object or a list) crash LiteLLM with a Python TypeError; betterlite returns OptionsMismatch `OpenCodeOptions.config['agent']['build'] must be a mapping` for them, recorded below as a deviation.
+
+
+  Keys, agent names and sections print the way Python's repr() prints a str: single quotes, or double quotes when the text holds a single quote and no double quote, with backslash escapes for the backslash, the chosen quote, \n, \r, \t and the characters str.isprintable() rejects. Put that formatter in the errors module (errors/python_repr.rs or similar) and use it from the Display texts.
+
+
+  Tests. providers::codex::transformation::tests::config_errors_match_litellm is an rstest over the invalid, empty, managed, managed-dotted, quote-holding, null-value and too-deep cases, and asserts the full to_string() of each error. providers::opencode::transformation::tests::config_errors_match_litellm does the same for the top-level, agent, mode and not-a-mapping texts, and providers::opencode::transformation::tests::section_shapes_follow_litellm covers the null section and the null, false, 0, "", list and string agent entries. Update the existing tests that match on the old variant fields.
+
+
+  Oracle. The skeleton gives this task the helper operation b5081. It takes `{harness: codex|opencode, config: <object>}`. The Python side calls config_overrides (Codex) or validate_user_config (OpenCode) from the pinned modules and returns `{valid: true}`; the Rust side calls validate_environment on a session whose options carry that config, and maps these HarnessError variants to the class OptionsMismatch. Write the cases listed under oracle_cases.
+scope:
+  paths:
+    - crates/betterlite-harness/src/errors.rs
+    - crates/betterlite-harness/src/errors/**
+    - crates/betterlite-harness/src/providers/codex/config.rs
+    - crates/betterlite-harness/src/providers/codex/transformation/**
+    - crates/betterlite-harness/src/providers/opencode/validation.rs
+    - crates/betterlite-harness/src/providers/opencode/transformation/**
+    - tools/oracle/cases/helpers/harness-managed-keys/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codex/harness/transformation.py#L150-L166
+    why: toml_value raises the nesting text at L152-153 and the "value of type ... cannot be passed to codex" text at L165.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codex/harness/transformation.py#L173-L187
+    why: _config_override raises "Invalid CodexOptions.config key" at L176 and the "is managed by LiteLLM" text at L177-180, key by key in dict order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codex/harness/transformation.py#L50-L61
+    why: Codex MANAGED_CONFIG_KEYS.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/opencode/harness/transformation.py#L198-L218
+    why: validate_user_config with the first-key text at L203-204, the mapping text at L211, frozenset(agent or ()) at L213 and the sets text at L216-217.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/opencode/harness/transformation.py#L81-L94
+    why: OpenCode MANAGED_CONFIG_KEYS and AGENT_MANAGED_KEYS.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/opencode/harness/transformation.py#L312-L314
+    why: OpenCode validate_environment runs validate_user_config; Codex does the same with config_overrides at codex transformation.py L214-216.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/errors.py#L19-L20
+    why: OptionsMismatch is the class every one of these errors carries.
+  - url: https://docs.python.org/3/library/functions.html#repr
+    why: The quoting and escapes the key and name texts follow.
+dod:
+  - text: Codex invalid and managed keys fail with LiteLLM's texts, keys printed as Python repr.
+    proof: [codex-errors, oracle, helper-python]
+  - text: A Codex null value and a value nested past 100 levels fail with LiteLLM's texts.
+    proof: [codex-errors, oracle]
+  - text: The first managed OpenCode top-level key fails with LiteLLM's "is managed by LiteLLM" text.
+    proof: [opencode-errors, oracle, helper-python]
+  - text: An OpenCode agent or mode entry that sets managed keys fails with LiteLLM's sorted "sets [...]" text, and a section that is not a mapping fails with its "must be a mapping" text.
+    proof: [opencode-errors, oracle]
+  - text: A null section is skipped and agent entries are read the way frozenset(agent or ()) reads them.
+    proof: [opencode-shapes, oracle]
+checks:
+  optional: []
+  commands:
+    - id: codex-errors
+      why: the Codex config error text tests are missing or a text differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^providers::codex::transformation::tests::config_errors_match_litellm($|::)/)'
+    - id: opencode-errors
+      why: the OpenCode config error text tests are missing or a text differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^providers::opencode::transformation::tests::config_errors_match_litellm($|::)/)'
+    - id: opencode-shapes
+      why: the OpenCode section shape tests are missing or a shape is read differently from LiteLLM
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^providers::opencode::transformation::tests::section_shapes_follow_litellm($|::)/)'
+    - id: helper-python
+      why: the oracle adapter fails strict Python checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/harness-managed-keys/codex-invalid-key.yaml
+  - tools/oracle/cases/helpers/harness-managed-keys/codex-empty-key.yaml
+  - tools/oracle/cases/helpers/harness-managed-keys/codex-managed-key.yaml
+  - tools/oracle/cases/helpers/harness-managed-keys/codex-managed-dotted-key.yaml
+  - tools/oracle/cases/helpers/harness-managed-keys/codex-key-with-quote.yaml
+  - tools/oracle/cases/helpers/harness-managed-keys/codex-null-value.yaml
+  - tools/oracle/cases/helpers/harness-managed-keys/codex-valid-config.yaml
+  - tools/oracle/cases/helpers/harness-managed-keys/opencode-managed-top-level.yaml
+  - tools/oracle/cases/helpers/harness-managed-keys/opencode-managed-agent-keys.yaml
+  - tools/oracle/cases/helpers/harness-managed-keys/opencode-managed-mode-list.yaml
+  - tools/oracle/cases/helpers/harness-managed-keys/opencode-section-not-mapping.yaml
+  - tools/oracle/cases/helpers/harness-managed-keys/opencode-null-section.yaml
+  - tools/oracle/cases/helpers/harness-managed-keys/opencode-string-entry.yaml
+deviations:
+  - what: When a config holds two offending keys, betterlite reports the first in alphabetical order; LiteLLM reports the first in the order the user wrote them. The same holds for agent names inside a section.
+    why: Harness options keep config in JsonObject, a BTreeMap (crates/betterlite-harness/src/types.rs L14), so the insertion order is gone before validation runs. The texts are the same; only which key is named can differ.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/opencode/harness/transformation.py#L200-L205
+  - what: An OpenCode agent or mode entry that is a non-zero number, true, or a list holding an object or a list fails with OptionsMismatch `OpenCodeOptions.config['agent']['build'] must be a mapping`.
+    why: >-
+      LiteLLM crashes there with a Python TypeError ("'int' object is not iterable", "unhashable type: 'dict'"). An options error in LiteLLM's own wording for the section tells the user what to fix.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/opencode/harness/transformation.py#L212-L213
+out_of_scope:
+  - The Claude Code texts in errors.rs L76-82 already match LiteLLM's claude_code transformation.py L284-293 and stay as they are.
+  - DEFAULT_MAX_RECURSE_DEPTH stays the constant 100 from payloads.rs; reading LiteLLM's env override belongs to the payloads owner (B4831).
+  - toml_key and toml_value encodings, argv building and the rest of the Codex and OpenCode transformations stay with B4835 and B4836.
+pitfalls:
+  - The similarity check compares the whole workspace, and crates/betterlite-models/src/catalog_generalizations/python_text.rs and crates/betterlite-db/src/database_url_policy/python_repr.rs already hold a python_repr; a copied body of 8 lines or more fails it.
+  - Python prints sorted(managed) as `['model', 'permission']`, single quotes and ", " between items, never Rust's `["model", "permission"]`.
+  - Codex checks the key before its value, key by key, so a config holding "a=b" set to null must fail on the key text, not the NoneType text.
+  - A string agent entry like "model" passes in LiteLLM because frozenset("model") is a set of letters; don't treat a string as one key.
+  - Write each oracle case with a single offending key, or with the offending keys already in alphabetical order, so the order deviation can't make LiteLLM and betterlite name different keys.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
