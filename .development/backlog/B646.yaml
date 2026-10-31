@@ -1,7 +1,7 @@
 id: B646
 milestone: M3 providers
 title: Bedrock binary file content results
-status: todo
+status: done
 depends_on: [B004, B682, B171]
 file: tasks/B646-bedrock-services-file-content.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/bedrock/files/handler.py"
 parent: B030
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 397
