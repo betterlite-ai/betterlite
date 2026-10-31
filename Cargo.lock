@@ -1095,6 +1095,7 @@ dependencies = [
 name = "betterlite-error"
 version = "0.1.0"
 dependencies = [
+ "betterlite-redact",
  "rstest",
  "rust_decimal",
  "serde",
