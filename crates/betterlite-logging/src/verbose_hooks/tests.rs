@@ -262,6 +262,40 @@ fn utils_guard_requires_logger_only_to_be_identically_false_a_falsey_non_boolean
 }
 
 #[test]
+fn utils_error_level_logs_the_record_and_allows_the_console() {
+    let result =
+        healthy_hooks(json!(true)).utils_print_verbose(json!("body"), "ERROR", &json!(false));
+    assert_eq!(result.logs.len(), 1);
+    assert_eq!(result.logs[0].level, "ERROR");
+    assert_eq!(result.console.len(), 1);
+}
+
+#[test]
+fn main_guard_treats_an_empty_string_set_verbose_as_falsey() {
+    let result = healthy_hooks(json!("")).main_print_verbose(json!("body"));
+    assert!(result.console.is_empty());
+}
+
+#[test]
+fn main_guard_treats_a_non_empty_string_set_verbose_as_truthy() {
+    let result = healthy_hooks(json!("yes")).main_print_verbose(json!("body"));
+    assert_eq!(result.console.len(), 1);
+}
+
+#[test]
+fn main_guard_treats_a_non_empty_array_set_verbose_as_truthy() {
+    let result = healthy_hooks(json!([1_i64])).main_print_verbose(json!("body"));
+    assert_eq!(result.console.len(), 1);
+}
+
+#[test]
+fn main_guard_treats_a_non_empty_object_set_verbose_as_truthy() {
+    let set_verbose: Payload = serde_json::from_str(r#"{"on": true}"#).expect("valid json fixture");
+    let result = healthy_hooks(set_verbose).main_print_verbose(json!("body"));
+    assert_eq!(result.console.len(), 1);
+}
+
+#[test]
 fn is_active_is_true_when_the_logger_is_already_enabled_at_debug_even_if_set_verbose_is_falsey() {
     let hooks = hooks(
         FixtureLogger {
