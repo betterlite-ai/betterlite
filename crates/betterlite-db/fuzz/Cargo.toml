@@ -32,4 +32,11 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "identity_rows"
+path = "fuzz_targets/identity_rows.rs"
+test = false
+doc = false
+bench = false
+
 [workspace]

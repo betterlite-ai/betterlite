@@ -1,14 +1,14 @@
 id: B873
 milestone: M4 keys, spend and management
 title: Native migration deploy and Prisma ledger writes
-status: todo
+status: done
 depends_on: [B700, B860]
 file: tasks/B873-migration-deploy.yaml
 covers:
   - "litellm-proxy-extras/litellm_proxy_extras/migration_recovery.py"
 parent: B051
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 363
