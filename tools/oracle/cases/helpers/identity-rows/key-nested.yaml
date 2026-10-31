@@ -1,0 +1,9 @@
+kind: helper
+name: key_generic_budget_dict_and_typed_permission
+call:
+  identity_rows:
+    operation: key
+    row: {litellm_budget_table: {budget_id: b}, object_permission: {object_permission_id: p}}
+env: {}
+compare:
+  ignore: []

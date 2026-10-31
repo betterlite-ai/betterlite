@@ -1,7 +1,7 @@
 id: B4142
 milestone: M8 platform
 title: Resolve recursive config includes before typed loading
-status: todo
+status: done
 depends_on: [B002]
 file: tasks/B4142-config-includes.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/{_new_new_secret_config,_new_secret_config,_super_secret_config,model_config,proxy_config,wildcard_config}.yaml"
 parent: B120
 split_from: B120
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 364

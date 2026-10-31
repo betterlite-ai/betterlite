@@ -1,0 +1,9 @@
+kind: helper
+name: placeholder_required_tuples_preserve_order_and_duplicates
+call:
+  identity_rows:
+    operation: placeholder
+    row: {placeholder_user_id: p, resolved_user_ids: [u2, u1, u2], team_ids: [t2, t1, t2]}
+env: {}
+compare:
+  ignore: []
