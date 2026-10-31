@@ -65,12 +65,7 @@ fn add_entry(
     accumulators: &mut Accumulators,
 ) -> Result<(), CatalogError> {
     let fields_map: BTreeMap<String, Box<RawValue>> = serde_json::from_str(value.get())?;
-    let typed_fields = fields_map
-        .iter()
-        .filter(|(key, _)| key.as_str() != "aliases")
-        .map(|(key, value)| (key.clone(), value))
-        .collect::<BTreeMap<_, _>>();
-    let typed_value = to_raw_value(&typed_fields)?;
+    let typed_value = strip_aliases(&fields_map)?;
     let fields = parse_fields(
         name,
         typed_value.as_ref(),
@@ -105,6 +100,17 @@ fn add_entry(
         &mut accumulators.warnings,
         &mut accumulators.alias_claims,
     )
+}
+
+fn strip_aliases(
+    fields_map: &BTreeMap<String, Box<RawValue>>,
+) -> Result<Box<RawValue>, CatalogError> {
+    let typed_fields = fields_map
+        .iter()
+        .filter(|(key, _)| key.as_str() != "aliases")
+        .map(|(key, field)| (key.clone(), field))
+        .collect::<BTreeMap<_, _>>();
+    Ok(to_raw_value(&typed_fields)?)
 }
 
 fn add_alias_claims(
@@ -269,10 +275,10 @@ fn insert_lookup(
     }
 }
 
-fn push_warning<Message: FnOnce() -> String>(
-    warnings: &mut Vec<String>,
-    message: Message,
-) -> Result<(), CatalogError> {
+fn push_warning<Message>(warnings: &mut Vec<String>, message: Message) -> Result<(), CatalogError>
+where
+    Message: FnOnce() -> String,
+{
     if warnings.len() >= MAX_CATALOG_WARNINGS {
         return Err(CatalogError::TooManyWarnings {
             limit: MAX_CATALOG_WARNINGS,
