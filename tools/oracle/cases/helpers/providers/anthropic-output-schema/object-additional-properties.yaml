@@ -1,0 +1,5 @@
+kind: helper
+name: object-additional-properties
+call: {anthropic_output_schema: {function: filter, schema: {type: object, additionalProperties: true, properties: {name: {type: string}}}}}
+env: {}
+compare: {ignore: []}
