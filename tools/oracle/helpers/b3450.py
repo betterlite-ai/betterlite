@@ -67,7 +67,7 @@ def _extract_pdf(input_value: dict[str, Json]) -> Json:
                 sys.modules.pop(name, None)
             else:
                 sys.modules[name] = module
-    return {"text": extracted.strip() if extracted is not None else None}
+    return {"text": extracted}
 
 
 def _provider_lookup(input_value: dict[str, Json]) -> Json:

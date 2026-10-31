@@ -1,9 +1,9 @@
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use betterlite_config::rag::document::ProviderIdentity as _;
-use betterlite_core::rag::document::{
-    RecursiveCharacterTextSplitter, TextSplitter as _, extract_text_from_pdf, get_ingestion_class,
-};
+use betterlite_core::rag::document::pdf::extract_text_from_pdf;
+use betterlite_core::rag::document::provider::get_ingestion_class;
+use betterlite_core::rag::document::splitter::{RecursiveCharacterTextSplitter, TextSplitter as _};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -64,8 +64,7 @@ fn extract_pdf(pdf_base64: &str) -> HelperResult {
     let bytes = BASE64
         .decode(pdf_base64)
         .map_err(|error| value_error(&error))?;
-    let extracted = extract_text_from_pdf(&bytes).map(|text| text.trim().to_owned());
-    let text = extracted.map_or(Value::Null, Value::String);
+    let text = extract_text_from_pdf(&bytes).map_or(Value::Null, Value::String);
     Ok(serde_json::json!({ "text": text }))
 }
 
