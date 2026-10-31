@@ -20,9 +20,9 @@ pub fn parse_execution(
         .map_err(ParseExecutionError::Base64)?;
     let elements: Vec<String> =
         serde_json::from_slice(&bytes).map_err(ParseExecutionError::Json)?;
-    match <[String; 3]>::try_from(elements.clone()) {
+    match <[String; 3]>::try_from(elements) {
         Ok([source, team_id, trace_id]) => Ok((source, team_id, trace_id, String::new())),
-        Err(_) => match <[String; 4]>::try_from(elements) {
+        Err(back) => match <[String; 4]>::try_from(back) {
             Ok(four) => Ok(<(String, String, String, String)>::from(four)),
             Err(other) => Err(ParseExecutionError::ElementCount(other.len())),
         },
