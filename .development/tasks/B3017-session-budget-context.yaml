@@ -128,10 +128,10 @@ checks:
   commands:
     - id: agent-tests
       why: agent service tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent::)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent::/)'
     - id: provider-resolver-tests
       why: provider resolver tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^provider_resolution::)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^provider_resolution::/)'
     - id: provider-resolver-empty
       why: empty/None model fallback case test does not exist or fails
       run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^provider_resolution::.*empty/)'
@@ -140,7 +140,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^provider_resolution::.*model_preserved/)'
     - id: rate-limit-error-tests
       why: rate limit error tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(/^rate_limit::)'
+      run: cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(/^rate_limit::/)'
 
 oracle_cases:
   - tools/oracle/cases/rate-limit/agent-exact-id.yaml

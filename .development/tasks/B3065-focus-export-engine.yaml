@@ -71,7 +71,7 @@ checks:
   commands:
     - id: factory-dispatch
       why: FocusDestinationFactory does not dispatch to the correct destination class for each provider
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_export::/|^focus_destination_factory::dispatch/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_export::|^focus_destination_factory::dispatch/)'
     - id: factory-config-precedence
       why: configuration resolution does not check overrides before environment variables
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_destination_factory::config/)'

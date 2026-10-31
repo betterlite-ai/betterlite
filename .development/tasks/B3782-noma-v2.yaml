@@ -80,32 +80,32 @@ checks:
     - id: noma-v2-config
       why: Noma v2 does not read and apply configuration from environment and constructor correctly
       run: >-
-        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::config_from_environment)' &&
-        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::config_constructor_overrides_environment)'
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::config_from_environment/)' &&
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::config_constructor_overrides_environment/)'
     - id: noma-v2-authorization
       why: Noma v2 authorization header or API key requirement is incorrect
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*authorization)' && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*requires_api_key)' && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*custom_hostname_no_api_key)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*authorization/)' && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*requires_api_key/)' && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*custom_hostname_no_api_key/)'
     - id: noma-v2-payload
       why: Noma v2 does not build the correct payload structure
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*payload)' && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*excludes_messages)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*payload/)' && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*excludes_messages/)'
     - id: noma-v2-config-resolution
       why: Noma v2 does not resolve application_id correctly
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*application_id.*fallback)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*application_id.*fallback/)'
     - id: noma-v2-serialization
       why: Noma v2 payload serialization or safe_json_loads fallback is incorrect
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*serialization)' && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*sanitize)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*serialization/)' && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*sanitize/)'
     - id: noma-v2-actions
       why: Noma v2 does not apply actions (BLOCKED, GUARDRAIL_INTERVENED, NONE) correctly
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*action)' && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*blocked)' && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*intervened)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*action/)' && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*blocked/)' && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*intervened/)'
     - id: noma-v2-monitor
       why: Noma v2 monitor mode does not suppress blocking and action application
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*monitor)' && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*monitor_mode_allows_all)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*monitor/)' && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*monitor_mode_allows_all/)'
     - id: noma-v2-error-handling
       why: Noma v2 does not handle generic API errors correctly with block_failures flag
       run: >-
         cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*error_handling($|::)/)' &&
-        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*block_failures_true)' &&
-        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*block_failures_false)'
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*block_failures_true/)' &&
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*block_failures_false/)'
 
     - id: noma-v2-error-handling-blocked
       why: NomaBlockedMessage handling sets wrong guardrail_status or respects block_failures incorrectly
@@ -113,19 +113,19 @@ checks:
         cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*error_handling_blocked($|::)/)'
     - id: noma-v2-observability
       why: Noma v2 does not add observability metadata correctly
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*observability)' && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*logging)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*observability/)' && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*logging/)'
     - id: noma-v2-initialization
       why: Noma v2 initialization function does not register the guardrail correctly
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::initialize.*)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::initialize.*/)'
     - id: noma-v2-hooks
       why: Noma v2 does not report supported event hooks correctly
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*hooks)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*hooks/)'
     - id: noma-v2-config-model
       why: Noma v2 config model or ui_friendly_name is incorrect
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*config_model)' && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*ui_friendly_name)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*config_model/)' && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*ui_friendly_name/)'
     - id: noma-v2-validation
       why: Noma v2 does not validate non-empty string fields correctly
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*validation)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^noma_v2::.*validation/)'
 oracle_cases: []
 deviations:
   - what: Payload serialization falls back to safe_json_loads with default={}, matching LiteLLM's safe_dumps behavior rather than attempting multiple serialization strategies.
