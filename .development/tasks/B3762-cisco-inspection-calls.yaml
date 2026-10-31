@@ -133,7 +133,7 @@ checks:
   commands:
     - id: inspection-tests
       why: The cisco inspection module tests fail, do not exist, or do not exercise hook dispatch and payload building.
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^cisco_inspection::)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^cisco_inspection::/)'
 
 oracle_cases:
   - tools/oracle/cases/helpers/cisco-inspection/constructor-initializes-config.yaml

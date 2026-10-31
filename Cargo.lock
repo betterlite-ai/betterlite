@@ -1236,6 +1236,7 @@ version = "0.1.0"
 dependencies = [
  "aws-lc-rs",
  "base64 0.23.1",
+ "betterlite-prompts",
  "betterlite-secrets",
  "chrono",
  "hex",
@@ -1246,6 +1247,9 @@ dependencies = [
  "serde_json",
  "sha2 0.11.1",
  "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -1461,10 +1465,13 @@ dependencies = [
  "prometheus-client",
  "py_literal",
  "rstest",
+ "secrecy",
  "serde",
  "serde_json",
+ "serde_with",
  "thiserror",
  "tokio",
+ "url",
 ]
 
 [[package]]
@@ -1612,8 +1619,11 @@ name = "betterlite-websearch"
 version = "0.1.0"
 dependencies = [
  "betterlite-openai",
+ "indexmap 2.14.2",
  "serde",
  "serde_json",
+ "thiserror",
+ "tracing",
 ]
 
 [[package]]

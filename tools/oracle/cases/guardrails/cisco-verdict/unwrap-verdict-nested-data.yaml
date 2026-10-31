@@ -1,0 +1,5 @@
+kind: helper
+name: unwrap-verdict-nested-data
+call: {b3758: {function: unwrap_verdict, response: {data: {is_safe: true}}}}
+env: {}
+compare: {ignore: []}

@@ -44,3 +44,22 @@ fn a_later_review_checks_the_earlier_findings_and_the_lines_changed_since() {
     assert!(prompt.contains("- typed-errors at src/a.rs:3: boxed error Fix: use the enum"));
     assert!(prompt.contains("git diff def456...HEAD"));
 }
+
+#[test]
+fn a_review_after_an_approval_reads_only_the_lines_changed_since() {
+    let task = task();
+    let brief = Brief {
+        task: &task,
+        file: "tasks/B000-workspace.yaml",
+        branch: "task/B000-workspace",
+        base: "abc123",
+    };
+    let approved = EarlierReview {
+        commit: "def456".to_owned(),
+        findings: Vec::new(),
+    };
+    let prompt = reviewer(&brief, Some(&approved));
+    assert!(prompt.contains("approved this branch at def456"));
+    assert!(prompt.contains("git diff def456...HEAD"));
+    assert!(!prompt.contains("asked for these changes"));
+}

@@ -1,0 +1,41 @@
+{
+  "kind": "helper",
+  "name": "websearch-anthropic-invalid-input",
+  "call": {
+    "b4112": {
+      "format": "anthropic",
+      "response": {
+        "content": [
+          {
+            "type": "tool_use",
+            "id": "one",
+            "name": "litellm_web_search"
+          },
+          {
+            "type": "tool_use",
+            "id": "one",
+            "name": "litellm_web_search",
+            "input": null
+          },
+          {
+            "type": "tool_use",
+            "id": "one",
+            "name": "litellm_web_search",
+            "input": "unexpected"
+          }
+        ]
+      },
+      "transform": true,
+      "results": [
+        "missing",
+        "null",
+        "text"
+      ],
+      "operation": "detect"
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

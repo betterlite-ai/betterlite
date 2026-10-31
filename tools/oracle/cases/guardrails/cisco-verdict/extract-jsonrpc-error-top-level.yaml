@@ -1,0 +1,5 @@
+kind: helper
+name: extract-jsonrpc-error-top-level
+call: {b3758: {function: extract_jsonrpc_error, response: {error: {code: 1}}}}
+env: {}
+compare: {ignore: []}

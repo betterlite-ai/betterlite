@@ -1,0 +1,15 @@
+kind: helper
+name: settings-env-precedence
+call:
+  b4321:
+    function: resolve_redis_kwargs
+    environment:
+      REDIS_URL: redis://from-environment.internal:6379
+      REDIS_CLIENT_NAME: environment
+      REDIS_RETRY_ON_TIMEOUT: "true"
+    overrides:
+      host: configured.internal
+      client_name: configured
+      retry_on_timeout: "false"
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,8 @@
+kind: helper
+name: is_only_pii_violation
+call:
+  b3779:
+    is_only_pii_violation:
+      response: {breakdown: [{detected: true, detector_type: pii/email}]}
+env: {}
+compare: {ignore: []}

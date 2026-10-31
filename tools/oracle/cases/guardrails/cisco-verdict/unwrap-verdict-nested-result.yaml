@@ -1,0 +1,5 @@
+kind: helper
+name: unwrap-verdict-nested-result
+call: {b3758: {function: unwrap_verdict, response: {result: {action: allow}}}}
+env: {}
+compare: {ignore: []}
