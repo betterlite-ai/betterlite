@@ -244,27 +244,36 @@ impl DeepKeepGuardrail {
         let request = self.build_request(inputs.clone(), context);
         let (status, body) = match transport::send_request(self, &request).await {
             Ok(response) => response,
-            Err(error) => return self.recover_from_transport_failure(error, inputs),
+            Err(error) => return self.recover_from_failure(error, inputs),
         };
         if !status.is_success() {
-            return self.recover_from_api_failure(status, body, inputs);
+            return self.recover_from_failure(DeepKeepError::Api { status, body }, inputs);
         }
         let parsed_response: Response =
             serde_json::from_str(&body).map_err(|source| DeepKeepError::ResponseJson { source })?;
         Self::build_return_inputs(&inputs, parsed_response)
     }
 
-    fn recover_from_transport_failure(
+    fn recover_from_failure(
         &self,
         error: DeepKeepError,
         inputs: Inputs,
     ) -> Result<Inputs, DeepKeepError> {
-        if self.settings.unreachable_fallback == UnreachableFallback::FailOpen
-            && matches!(
-                error,
-                DeepKeepError::Request { .. } | DeepKeepError::Timeout { .. }
-            )
-        {
+        let unreachable = match &error {
+            DeepKeepError::Request { .. } | DeepKeepError::Timeout { .. } => true,
+            DeepKeepError::Api { status, .. } => matches!(
+                *status,
+                reqwest::StatusCode::BAD_GATEWAY
+                    | reqwest::StatusCode::SERVICE_UNAVAILABLE
+                    | reqwest::StatusCode::GATEWAY_TIMEOUT
+            ),
+            DeepKeepError::Blocked { .. }
+            | DeepKeepError::ResponseJson { .. }
+            | DeepKeepError::RequestBuild { .. }
+            | DeepKeepError::InvalidHeader { .. }
+            | DeepKeepError::InvalidHeaderName { .. } => false,
+        };
+        if self.settings.unreachable_fallback == UnreachableFallback::FailOpen && unreachable {
             tracing::warn!(
                 guardrail_name = %self.settings.guardrail_name,
                 api_base = %self.settings.api_base,
@@ -274,32 +283,6 @@ impl DeepKeepGuardrail {
             return Ok(inputs);
         }
         Err(error)
-    }
-
-    fn recover_from_api_failure(
-        &self,
-        status: reqwest::StatusCode,
-        body: String,
-        inputs: Inputs,
-    ) -> Result<Inputs, DeepKeepError> {
-        if self.settings.unreachable_fallback == UnreachableFallback::FailOpen
-            && matches!(
-                status,
-                reqwest::StatusCode::BAD_GATEWAY
-                    | reqwest::StatusCode::SERVICE_UNAVAILABLE
-                    | reqwest::StatusCode::GATEWAY_TIMEOUT
-            )
-        {
-            let error = DeepKeepError::Api { status, body };
-            tracing::warn!(
-                guardrail_name = %self.settings.guardrail_name,
-                api_base = %self.settings.api_base,
-                error = %error,
-                "DeepKeep guardrail unreachable; evaluation bypassed because unreachable_fallback is fail_open",
-            );
-            return Ok(inputs);
-        }
-        Err(DeepKeepError::Api { status, body })
     }
 }
 
