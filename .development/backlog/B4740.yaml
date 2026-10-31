@@ -1,7 +1,7 @@
 id: B4740
 milestone: M9 agents and mcp
 title: MCP tool schemas and paginated session helpers
-status: todo
+status: done
 depends_on: [B002, B217, B4652]
 file: tasks/B4740-mcp-tool-helpers.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/experimental_mcp_client/__init__.py"
 parent: B140
 split_from: B140
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 377
