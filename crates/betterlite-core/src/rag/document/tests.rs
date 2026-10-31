@@ -5,48 +5,73 @@ use std::path::PathBuf;
 
 use rstest::rstest;
 
-use super::{
+use super::pdf::extract_text_from_pdf;
+use super::provider::{IngestionProviderError, get_ingestion_class};
+use super::splitter::{
     ChunkConfigError, DEFAULT_CHUNK_OVERLAP, DEFAULT_CHUNK_SIZE, DEFAULT_MAX_RECURSE_DEPTH,
-    IngestionProviderError, RecursiveCharacterTextSplitter, TextSplitter as _,
-    extract_text_from_pdf, get_ingestion_class,
+    RecursiveCharacterTextSplitter, TextSplitter as _,
 };
 
-fn minimal_pdf(text: &str) -> Vec<u8> {
-    let mut buf: Vec<u8> = Vec::new();
-    buf.extend_from_slice(b"%PDF-1.4\n");
-    let mut offsets = [0_usize; 6];
+fn push_object(buf: &mut Vec<u8>, offsets: &mut [usize], index: usize, body: &str) {
+    offsets[index] = buf.len();
+    buf.extend_from_slice(format!("{index} 0 obj\n{body}\nendobj\n").as_bytes());
+}
 
-    offsets[1] = buf.len();
-    buf.extend_from_slice(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
-    offsets[2] = buf.len();
-    buf.extend_from_slice(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
-    offsets[3] = buf.len();
-    buf.extend_from_slice(
-        b"3 0 obj\n<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> /MediaBox [0 0 612 792] /Contents 5 0 R >>\nendobj\n",
-    );
-    offsets[4] = buf.len();
-    buf.extend_from_slice(
-        b"4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n",
-    );
-    offsets[5] = buf.len();
-    let stream = format!("BT /F1 12 Tf 100 700 Td ({text}) Tj ET");
-    buf.extend_from_slice(
-        format!(
-            "5 0 obj\n<< /Length {} >>\nstream\n{stream}\nendstream\nendobj\n",
-            stream.len()
-        )
-        .as_bytes(),
-    );
-
+fn finish_pdf(buf: &mut Vec<u8>, offsets: &[usize]) {
+    let count = offsets.len();
     let xref_offset = buf.len();
-    buf.extend_from_slice(b"xref\n0 6\n0000000000 65535 f \n");
+    buf.extend_from_slice(format!("xref\n0 {count}\n0000000000 65535 f \n").as_bytes());
     for offset in &offsets[1..] {
         buf.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
     }
-    buf.extend_from_slice(b"trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n");
-    buf.extend_from_slice(format!("{xref_offset}\n").as_bytes());
-    buf.extend_from_slice(b"%%EOF");
+    buf.extend_from_slice(
+        format!("trailer\n<< /Size {count} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF")
+            .as_bytes(),
+    );
+}
+
+fn build_pdf(object_count: usize, bodies: &[String]) -> Vec<u8> {
+    let mut buf: Vec<u8> = Vec::new();
+    buf.extend_from_slice(b"%PDF-1.4\n");
+    let mut offsets = vec![0_usize; object_count];
+    for (zero_based_index, body) in bodies.iter().enumerate() {
+        push_object(
+            &mut buf,
+            &mut offsets,
+            zero_based_index.saturating_add(1),
+            body,
+        );
+    }
+    finish_pdf(&mut buf, &offsets);
     buf
+}
+
+fn pdf_with_stream(stream: &str) -> Vec<u8> {
+    let bodies = [
+        "<< /Type /Catalog /Pages 2 0 R >>".to_owned(),
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_owned(),
+        "<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> /MediaBox [0 0 612 792] /Contents 5 0 R >>".to_owned(),
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_owned(),
+        format!("<< /Length {} >>\nstream\n{stream}\nendstream", stream.len()),
+    ];
+    build_pdf(6, &bodies)
+}
+
+fn minimal_pdf(text: &str) -> Vec<u8> {
+    pdf_with_stream(&format!("BT /F1 12 Tf 100 700 Td ({text}) Tj ET"))
+}
+
+fn two_page_pdf(stream1: &str, stream2: &str) -> Vec<u8> {
+    let bodies = [
+        "<< /Type /Catalog /Pages 2 0 R >>".to_owned(),
+        "<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>".to_owned(),
+        "<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 5 0 R >> >> /MediaBox [0 0 612 792] /Contents 6 0 R >>".to_owned(),
+        "<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 5 0 R >> >> /MediaBox [0 0 612 792] /Contents 7 0 R >>".to_owned(),
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_owned(),
+        format!("<< /Length {} >>\nstream\n{stream1}\nendstream", stream1.len()),
+        format!("<< /Length {} >>\nstream\n{stream2}\nendstream", stream2.len()),
+    ];
+    build_pdf(8, &bodies)
 }
 
 #[rstest]
@@ -177,6 +202,22 @@ fn assemble_chunks_flushes_pending_good_splits_before_force_splitting_an_oversiz
 }
 
 #[test]
+fn splitter_force_split_trims_python_whitespace_control_characters() {
+    let splitter = RecursiveCharacterTextSplitter::new(3, 0, Some(vec!["Q".to_owned()]))
+        .expect("valid configuration");
+    let chunks = splitter.split_text("\u{1c}doc\u{1f}");
+    assert_eq!(chunks, vec!["do".to_owned(), "c".to_owned()]);
+}
+
+#[test]
+fn splitter_merge_splits_trims_python_whitespace_control_characters() {
+    let splitter = RecursiveCharacterTextSplitter::new(10, 0, Some(vec![String::new()]))
+        .expect("valid configuration");
+    let chunks = splitter.split_text("\u{1c}doc\u{1f}");
+    assert_eq!(chunks, vec!["doc".to_owned()]);
+}
+
+#[test]
 fn splitter_recursion_depth_bound_separates_normal_splitting_from_character_fallback() {
     let splitter =
         RecursiveCharacterTextSplitter::new(4, 2, Some(vec![String::new()])).expect("valid");
@@ -214,7 +255,19 @@ fn splitter_counts_unicode_characters_not_bytes() {
 fn pdf_extracts_text_from_a_well_formed_document() {
     let pdf = minimal_pdf("Test PDF File");
     let extracted = extract_text_from_pdf(&pdf);
-    assert!(extracted.is_some());
+    assert_eq!(extracted, Some("Test PDF File".to_owned()));
+}
+
+#[test]
+fn pdf_returns_none_for_a_page_with_no_text_showing_operators() {
+    let pdf = pdf_with_stream("BT ET");
+    assert_eq!(extract_text_from_pdf(&pdf), None);
+}
+
+#[test]
+fn pdf_returns_none_when_any_page_fails_to_extract() {
+    let pdf = two_page_pdf("BT /F1 12 Tf 100 700 Td (Test PDF File) Tj ET", "BT Tf ET");
+    assert_eq!(extract_text_from_pdf(&pdf), None);
 }
 
 #[test]
