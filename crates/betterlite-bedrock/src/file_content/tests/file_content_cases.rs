@@ -80,6 +80,7 @@ fn failed_binary_reply(#[case] body: Vec<u8>, #[case] message: &str) {
 #[case::declared_charset(vec![0xE9], "iso-8859-1", "\u{e9}")]
 #[case::iso_8859_1_byte_0x80(vec![0x80], "iso-8859-1", "\u{80}")]
 #[case::ascii_invalid_byte(vec![b'a', 0x80], "us-ascii", "a\u{fffd}")]
+#[case::ascii_valid_utf8_bytes(vec![0xC3, 0xA9], "us-ascii", "\u{fffd}\u{fffd}")]
 fn failed_binary_reply_decodes_declared_charset(
     #[case] body: Vec<u8>,
     #[case] charset: &str,
