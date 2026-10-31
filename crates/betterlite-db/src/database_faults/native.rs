@@ -1,6 +1,7 @@
 use crate::postgres_store::errors::DbError as NativeDbError;
 use deadpool_postgres::PoolError;
-use std::error::Error as StdError;
+use std::error::Error as _;
+use std::io::Error as IoError;
 use tokio_postgres::error::SqlState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -68,7 +69,7 @@ fn is_driver_transport(error: &tokio_postgres::Error) -> bool {
     error.is_closed()
         || error
             .source()
-            .is_some_and(|source| source.downcast_ref::<std::io::Error>().is_some())
+            .is_some_and(|source| source.downcast_ref::<IoError>().is_some())
 }
 
 mod tests;
