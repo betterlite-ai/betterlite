@@ -1,6 +1,4 @@
-#![expect(
-    clippy::pub_use,
-    reason = "sections re-export their Raw/Settings from the crate module that owns them"
-)]
+use crate::cost_adjustments::{Raw as AdjustmentsRaw, Settings as AdjustmentsSettings};
 
-pub use crate::cost_adjustments::{Raw, Settings};
+pub type Raw = AdjustmentsRaw;
+pub type Settings = AdjustmentsSettings;
