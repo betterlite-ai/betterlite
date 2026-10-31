@@ -1,19 +1,31 @@
 use super::super::{FileContentError, FileContentRequest, RawResponse, transform_file_response};
 use crate::bedrock_settings::error_response_text;
 use rstest::rstest;
-use std::collections::BTreeMap;
+use std::error::Error as _;
 
 fn response(status_code: u16, body: Vec<u8>) -> RawResponse {
-    RawResponse {
+    response_with_headers(
         status_code,
         body,
-        headers: BTreeMap::from([
+        vec![
             ("content-type".to_owned(), "application/x-custom".to_owned()),
             (
                 "content-disposition".to_owned(),
                 "attachment; filename=x".to_owned(),
             ),
-        ]),
+        ],
+    )
+}
+
+fn response_with_headers(
+    status_code: u16,
+    body: Vec<u8>,
+    headers: Vec<(String, String)>,
+) -> RawResponse {
+    RawResponse {
+        status_code,
+        body,
+        headers,
         request: FileContentRequest {
             method: "GET".to_owned(),
             url: "https://bedrock.example/files/id/content".to_owned(),
@@ -49,19 +61,58 @@ fn empty_binary_reply() {
 #[case::empty(Vec::new(), "")]
 #[case::invalid_utf8(vec![0, 255, 10], "\u{0}\u{fffd}\n")]
 fn failed_binary_reply(#[case] body: Vec<u8>, #[case] message: &str) {
-    let expected = response(500, body);
+    let expected = response(500, body.clone());
     let outcome = transform_file_response(expected.clone()).expect_err("failure");
-    let FileContentError::Bedrock { status, error } = outcome else {
+    assert!(outcome.source().is_some());
+    let FileContentError::Bedrock {
+        status,
+        body: raw_body,
+        error,
+    } = outcome
+    else {
         panic!("expected BedrockError");
     };
     assert_eq!(status, 500);
-    assert_eq!(error.error.status_code, 500);
-    assert_eq!(error.error.message, message);
-    assert_eq!(
-        error.response_headers,
-        expected.headers.into_iter().collect::<Vec<_>>()
+    assert_eq!(raw_body, body);
+    assert_eq!(error.cause.error.status_code, 500);
+    assert_eq!(error.cause.error.message, message);
+    assert_eq!(error.cause.response_headers, expected.headers);
+    assert_eq!(error_response_text(&error.cause.response_body), message);
+}
+
+#[rstest]
+fn failed_binary_reply_decodes_declared_charset() {
+    let expected = response_with_headers(
+        500,
+        vec![0xE9],
+        vec![(
+            "Content-Type".to_owned(),
+            "text/plain; charset=iso-8859-1".to_owned(),
+        )],
     );
-    assert_eq!(error_response_text(&error.response_body), message);
+    let outcome = transform_file_response(expected).expect_err("failure");
+    let FileContentError::Bedrock { error, .. } = outcome else {
+        panic!("expected BedrockError");
+    };
+    assert_eq!(error.cause.error.message, "\u{e9}");
+}
+
+#[rstest]
+fn raw_binary_reply_preserves_repeated_headers() {
+    let expected = response_with_headers(
+        200,
+        vec![1, 2, 3],
+        vec![
+            ("Content-Type".to_owned(), "application/x-custom".to_owned()),
+            ("content-type".to_owned(), "text/plain".to_owned()),
+        ],
+    );
+    let actual = transform_file_response(expected.clone()).expect("success");
+    assert_eq!(actual.response.headers, expected.headers);
+    assert_eq!(
+        actual.logging_summary().content_type,
+        Some("application/x-custom".to_owned())
+    );
 }
 
 #[rstest]
