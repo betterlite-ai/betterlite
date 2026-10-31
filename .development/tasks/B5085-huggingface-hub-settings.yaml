@@ -1,0 +1,94 @@
+id: B5085
+title: Hugging Face Hub settings and token like huggingface_hub
+description: >-
+  LiteLLM counts tokens for command-r, llama-2 and llama-3 models with tokenizers it downloads from the Hugging Face Hub: tokenizers' Tokenizer.from_pretrained calls huggingface_hub.hf_hub_download (huggingface_hub 1.32.0 and tokenizers 0.23.1 in LiteLLM's uv.lock). Max decided on 2026-10-31 that betterlite downloads from Hugging Face wherever LiteLLM does, with no deviation. huggingface_hub reads its settings from env vars in its constants module and finds the token itself. This task reads the same env vars into the config section huggingface_hub and builds the token lookup in crates/betterlite-http/src/hub_token.rs and hub_token/**. B5086 builds the requests and file metadata on top, B5087 the cache download, B5088 OIDC and OAuth refresh.
+
+
+  Section huggingface_hub (crates/betterlite-config/src/sections/huggingface_hub.rs and huggingface_hub/**) reads env vars only, through the config's environment lookup, like sections/billing_metrics.rs. Bools go through B5090's flag and integers through B5090's number. It exposes: endpoint, HF_ENDPOINT with trailing "/" stripped, default "https://huggingface.co"; staging (HUGGINGFACE_CO_STAGING) sets the endpoint to "https://hub-ci.huggingface.co" whatever HF_ENDPOINT says; url_hosts, the set {"hf.co", "huggingface.co", "hub-ci.huggingface.co"} plus the lowercased host of the final endpoint; offline, HF_HUB_OFFLINE, or TRANSFORMERS_OFFLINE when HF_HUB_OFFLINE is unset or empty; etag_timeout and download_timeout in whole seconds from HF_HUB_ETAG_TIMEOUT and HF_HUB_DOWNLOAD_TIMEOUT, default 10 each; disable_implicit_token (HF_HUB_DISABLE_IMPLICIT_TOKEN), disable_symlinks (HF_HUB_DISABLE_SYMLINKS) and disable_symlinks_warning (HF_HUB_DISABLE_SYMLINKS_WARNING), default false; user_agent_origin, HF_HUB_USER_AGENT_ORIGIN as given; and env_token, HF_TOKEN, or HUGGING_FACE_HUB_TOKEN when HF_TOKEN is unset or empty, as a SecretString cleaned like _clean_token (drop every "\r" and "\n", strip whitespace, empty means none). hf_transfer_deprecated is true when HF_HUB_ENABLE_HF_TRANSFER is true and HF_XET_HIGH_PERFORMANCE is not; huggingface_hub then raises a FutureWarning on import, and B5086 logs the same warning when it builds the client.
+
+
+  Paths. hf_home is HF_HOME, else "{XDG_CACHE_HOME}/huggingface", else "~/.cache/huggingface". hub_cache is HF_HUB_CACHE, else HUGGINGFACE_HUB_CACHE, else "{hf_home}/hub". token_path is HF_TOKEN_PATH, else "{hf_home}/token". stored_tokens_path is "stored_tokens" in the folder of token_path. Each env-sourced value is expanded the way Python's os.path.expanduser then os.path.expandvars do: a leading "~" alone or before "/" becomes HOME from the lookup (else the current user's home from the home crate) with its trailing "/" stripped, then every $name and ${name} whose name is set in the lookup is replaced and every other one stays as written. Staging changes only the token path: token_path becomes "~/.cache/huggingface_staging/token" while hub_cache and stored_tokens_path keep the values computed before, as constants.py L259-L265 does.
+
+
+  Token (hub_token). HubToken has two choices, Explicit(SecretString) for a token the caller passes and Implicit, the only two LiteLLM reaches since tokenizers passes token only when LiteLLM has one. resolve(&HubToken) returns Option<SecretString>: Explicit is returned as given, even when empty, so the header becomes "Bearer "; Implicit returns none when disable_implicit_token is set, else env_token, else the token file read fresh on every call and cleaned like _clean_token. A missing token file means no token; any other read failure (a folder, no permission, bytes that are not UTF-8) is a typed HubTokenError carrying the path. The settings and the file reader come in through the constructor, and the read uses tokio::fs so async callers never block. B5088 adds OIDC before the env token and OAuth refresh after the file read, so keep the order in one function.
+
+
+  Tests. sections::huggingface_hub::tests::settings_follow_huggingface_hub loads the defaults, each env var above, HF_ENDPOINT with a trailing slash, staging with and without HF_ENDPOINT, the TRANSFORMERS_OFFLINE fallback, HF_TOKEN "" falling back to HUGGING_FACE_HUB_TOKEN, a token with "\r\n" inside, "~" and "$VAR" expansion with set and unset names, a timeout of 0, a bad bool and a bad integer. hub_token::tests::token_follows_huggingface_hub covers an explicit token, an empty explicit token, the implicit-token switch, env before file, a missing file, a file with only whitespace and an unreadable path.
+scope:
+  paths:
+    - crates/betterlite-http/src/hub_token.rs
+    - crates/betterlite-http/src/hub_token/**
+    - crates/betterlite-http/Cargo.toml
+    - crates/betterlite-config/src/sections/huggingface_hub.rs
+    - crates/betterlite-config/src/sections/huggingface_hub/**
+    - crates/betterlite-config/Cargo.toml
+    - Cargo.toml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/uv.lock#L3372-L3385
+    why: LiteLLM's lock pins huggingface-hub 1.32.0 with hf-xet on x86_64 and arm64.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2518-L2532
+    why: create_pretrained_tokenizer passes LiteLLM's optional auth token on to from_pretrained.
+  - url: https://github.com/huggingface/tokenizers/blob/v0.23.1/bindings/python/src/tokenizer.rs#L786-L812
+    why: from_pretrained calls hf_hub_download for tokenizer.json and passes token only when one is given.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/constants.py#L12-L25
+    why: _is_true and _as_int, the env readers this section replaces with B5090's parsers.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/constants.py#L37-L38
+    why: The 10-second etag and download timeout defaults.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/constants.py#L65-L90
+    why: HUGGINGFACE_CO_STAGING, HF_ENDPOINT, the resolve URL template and HF_URL_HOSTS.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/constants.py#L159-L194
+    why: HF_HOME, the hub cache env vars and the offline switch.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/constants.py#L249-L265
+    why: The token and stored-tokens paths and how staging moves only the token path.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/constants.py#L278-L316
+    why: The symlink and implicit-token switches, the HF_HUB_ENABLE_HF_TRANSFER warning, both timeouts and the user agent origin.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/utils/_auth.py#L58-L84
+    why: get_token's order, OIDC, then the env token, then the token file, then Colab.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/utils/_auth.py#L145-L154
+    why: The env token and the token file, where only a missing file means no token.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/utils/_auth.py#L449-L456
+    why: _clean_token.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/utils/_headers.py#L125-L155
+    why: get_token_to_send for an explicit token, the implicit-token switch and get_token.
+  - url: https://github.com/python/cpython/blob/v3.13.16/Lib/posixpath.py#L229-L333
+    why: expanduser and expandvars; expandvars keeps an unknown variable as written.
+dod:
+  - text: The huggingface_hub section loads every env var above with huggingface_hub's defaults, the staging rules and Python's path expansion, and a bad value stops startup naming the variable.
+    proof: [hub-settings]
+  - text: The token lookup returns the explicit token as given, honors the implicit-token switch, reads the env token before the token file, and fails with a typed error for an unreadable token file.
+    proof: [hub-token]
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: hub-settings
+      why: the settings test is missing or a value, default or path differs from huggingface_hub
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::huggingface_hub::tests::settings_follow_huggingface_hub($|::)/)'
+    - id: hub-token
+      why: the token test is missing or the lookup order or cleaning differs from huggingface_hub
+      run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^hub_token::tests::token_follows_huggingface_hub($|::)/)'
+oracle_cases: []
+deviations:
+  - what: A path setting that starts with "~name" for another user stops startup with a config error naming the variable, where Python looks that user up in the password database and leaves the text unchanged when the user is unknown.
+    why: >-
+      Looking up another user's home needs getpwnam. The forbidden-unsafe rule keeps it out of reach, and no pinned crate offers it safely. A path for another user's home is rare in a server config, and failing loudly beats writing to a folder named "~name" under the working directory.
+    link: https://github.com/python/cpython/blob/v3.13.16/Lib/posixpath.py#L229-L280
+out_of_scope:
+  - The request client, headers, retries, Hub errors, file metadata and the streamed download belong to B5086.
+  - The cache folder layout, locks and symlinks belong to B5087. It uses hub_cache, disable_symlinks and disable_symlinks_warning.
+  - OIDC token exchange, OAuth refresh and the stored tokens file belong to B5088.
+  - The Google Colab secret lookup (_auth.py L87-L143) only runs inside Colab notebooks and is not built.
+  - HF_ASSETS_CACHE, HF_XET_CACHE, HF_HUB_DISABLE_PROGRESS_BARS, HF_HUB_DISABLE_TELEMETRY, HF_DEBUG and HF_HUB_DISABLE_XET feed code no LiteLLM path reaches or code B5086 and B5087 list as deviations, so they are not read here.
+pitfalls:
+  - huggingface_hub reads `os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")`, so HF_TOKEN set to spaces wins, cleans to none and never falls back to HUGGING_FACE_HUB_TOKEN.
+  - HF_HUB_OFFLINE set to "0" or "false" is non-empty, so TRANSFORMERS_OFFLINE is never read.
+  - huggingface_hub's `_as_int(...) or 10` turns a timeout of 0 into 10; docs/compatibility.md says an explicit value is used as given, so 0 stays 0 seconds and every Hub call times out at once.
+  - _is_true reads only 1, ON, YES and TRUE and treats any other text as false; B5090's flag also takes 0, no, off and false and turns other text into a load error, as docs/compatibility.md says.
+  - Staging sets HUGGINGFACE_HUB_CACHE after HF_HUB_CACHE was already computed (constants.py L177 runs before L264), so the download cache stays on the production path while the token moves to huggingface_staging.
+  - The endpoint host in url_hosts comes from the endpoint after staging, and a HF_ENDPOINT without a host adds nothing.
+  - HOME set to an empty string still counts in expanduser, so "~/.cache" becomes "/.cache".
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

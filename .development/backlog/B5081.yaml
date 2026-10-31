@@ -1,0 +1,13 @@
+id: B5081
+milestone: M9 agents and mcp
+title: Harness config errors in LiteLLM's words
+status: todo
+depends_on: [B4835, B4836]
+file: tasks/B5081-harness-config-errors.yaml
+covers: []
+parent: B143
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

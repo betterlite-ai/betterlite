@@ -2,8 +2,18 @@ id: B227
 title: Bedrock image and MIME blocks
 description: >-
   Implement _parse_content_type, _parse_mime_type and every BedrockImageProcessor method. Use B183 supplied inline
-  bytes and MIME descriptors, preserve data-URL and S3 representations. Remote HTTP fetching remains the open B183
-  decision; no network path is added. Budget 280 transforms/types, 100 adapters, 300 tests/fuzz and 70 wiring (750
+  bytes and MIME descriptors, preserve data-URL and S3 representations. Keep the substring dispatch of process_image_sync
+  and process_image_async (factory.py L3580-L3616): a URL holding "base64" is parsed as base64, else one holding
+  "http://" or "https://" is fetched, else fail with "Unsupported image type. Expected either image url or base64
+  encoded string". Remote images are fetched the way get_image_details and get_image_details_async do it (L3411-L3438,
+  Max, 2026-10-31: media URLs are fetched like LiteLLM): one GET through B5082's SSRF-checked fetch on B173's client
+  with LiteLLM's _DEFAULT_TIMEOUT of 600 seconds and a 5-second connect (http_handler.py L164-L167), no cache and no
+  retry. B5082's errors pass through unchanged. A status outside 200-299 fails with httpx's raise_for_status text
+  "{error_type} '{status} {reason}' for url '{url}'" plus the line "For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/{status}",
+  where error_type is "Informational response", "Redirect response", "Client error", "Server error" or "Invalid
+  status code" and url is the URL B5082 sent the last request to. The body is read through B5083's limited body
+  reader, then _post_call_image_processing (L3392-L3409) takes the media type from B235's infer_content_type_from_url_and_content
+  and _parse_content_type and base64-encodes the bytes. Budget 280 transforms/types, 100 adapters, 300 tests/fuzz and 70 wiring (750
   total). Write the behavior rstest functions bedrock_images_behavior_tests_behavior in adjacent tests.rs files, with a named
   case for each behavior and failure in the DoD; corpus replay tests have separate names. The helper operation bedrock_images is already registered; each operation has its
   own Rust and Python adapter file and corpus seed.
@@ -25,6 +35,17 @@ references:
 - url: >-
     https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L3375-L3616
   why: Exact function/class ownership.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L164-L167
+  why: _DEFAULT_TIMEOUT, the timeout of both clients get_image_details and get_image_details_async build.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1713-L1764
+  why: get_async_httpx_client with params builds AsyncHTTPHandler without a timeout, so the request timeout setting never applies.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L571-L572
+  why: COMPLETION_HTTP_FALLBACK_SECONDS 600.0 and HTTP_HANDLER_CONNECT_TIMEOUT_SECONDS 5.0.
+- url: https://github.com/encode/httpx/blob/0.28.1/httpx/_models.py#L794-L830
+  why: raise_for_status and its error text.
 dod:
 - text: >-
     Each listed helper case compares its named production function with the pinned Python function, including precedence,
@@ -37,6 +58,14 @@ dod:
     independently of corpus replay.
   proof:
   - behavior-tests
+- text: >-
+    Remote image URLs go through B5082 once with the 600-second and 5-second timeouts, a status outside 200-299
+    fails with httpx's raise_for_status text, a body over the limit fails with B5083's size text, and a blocked
+    loopback URL fails before any request goes out.
+  proof:
+  - behavior-tests
+  - oracle
+  - helper-python
 - text: Each operation has a newly committed seed consumed by the shared helper parser.
   proof:
   - helper-case-corpus
@@ -66,13 +95,22 @@ oracle_cases:
 - tools/oracle/cases/helpers/bedrock-images/mime-parameters.yaml
 - tools/oracle/cases/helpers/bedrock-images/s3-image.yaml
 - tools/oracle/cases/helpers/bedrock-images/unsupported-format.yaml
+- tools/oracle/cases/helpers/bedrock-images/loopback-url-rejected.yaml
 deviations:
 - what: >-
-    Open, waiting for Max: retain no remote media downloads or use SSRF-checked public-URL fetching shared with
-    B183.
-  why: Keep the current inline-only plan; do not build a download dependency until the decision.
+    A fetched Bedrock image body stops at MAX_IMAGE_URL_DOWNLOAD_SIZE_MB (default 50) with image_handling's size
+    text. LiteLLM reads the whole body with no cap, and a limit of 0 here fails every fetch with a body.
+  why: >-
+    A user-supplied URL can send an endless body, and LiteLLM already caps the same kind of download at this limit
+    in image_handling.py.
   link: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L3431-L3586
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L3411-L3438
+- what: >-
+    Each fetch also has a total deadline of 600 seconds. LiteLLM's httpx timeout applies to each connect, read and
+    write on its own, with no total.
+  why: B173's client always sets a total deadline, so a server that trickles bytes can't hold a request open forever.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L164-L167
 out_of_scope:
 - >-
   The remaining functions in the shared covered paths belong to B181 and its explicitly named sibling parts; this
@@ -81,8 +119,12 @@ pitfalls:
 - 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/bedrock_images-<case>.yaml. The rest of that folder belongs to other tasks.'
 - 'The oracle helper for this task is pre-registered as bedrock_images in the prompts group. Replace the stub Op in tools/oracle/src/helpers/prompts/bedrock_images.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_images.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - >-
-  Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
-  wording reason.
+  Adapters compare independently executed implementations, and error cases compare LiteLLM's message text, including
+  the raise_for_status and "Unsupported image type" texts.
+- >-
+  The dispatch tests substrings, not prefixes: "https://host/base64.png" is parsed as base64 and fails there, the
+  way LiteLLM fails it.
+- Both LiteLLM clients ignore litellm_settings.request_timeout, so don't use B5083's client timeout here.
 review_level: standard
 budget:
   max_changed_lines: 1500

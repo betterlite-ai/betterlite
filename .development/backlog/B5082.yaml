@@ -1,0 +1,14 @@
+id: B5082
+milestone: M1 openai data plane
+title: SSRF-checked fetch of user-supplied URLs
+status: todo
+depends_on: [B171, B172, B173]
+file: tasks/B5082-user-url-fetch.yaml
+covers:
+  - "litellm/litellm_core_utils/url_utils.py"
+parent: B009
+split_from: B009
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

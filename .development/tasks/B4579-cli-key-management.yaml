@@ -1,114 +1,175 @@
 id: B4579
-title: CLI key management, migration and encryption commands
+title: CLI key management and encryption migration commands
 description: >-
-  Build key list/generate/delete, cross-gateway key recreation, and encryption migration/check
-  output for betterlite-management-cli. The keys command manages API keys: list by user/team/
-  organization/hash/alias with optional team-keys inclusion and full-object return, display as
-  table or JSON output; generate with models/spend/duration/team/user/budget constraints; delete
-  by hash or alias; and import keys from another gateway with optional creation-date filtering
-  and dry-run preview. Preserve pagination at 100 records per page, naive timestamp filtering on
-  YYYY-MM-DD_HH:MM or YYYY-MM-DD format, truthy-only field copying (only copy key fields that
-  have a truthy value), per-key failure continuation (one failed import does not stop the rest),
-  and residual-legacy reporting in encryption output. The encryption command executes migration
-  or attestation: GET /credentials/migrate-encryption/check reports remaining legacy values,
-  and POST /credentials/migrate-encryption with dry_run true/false performs or simulates the
-  migration. Encryption output displays the residual_legacy count in the response and renders it
-  as a colored message. Every HTTP operation (list, generate, delete, import, migrate, check) is
-  backed by management client calls to KeysManagementClient or HTTPClient, injected for
-  testability; error responses are parsed and displayed to stderr.
+  Build the keys and encryption command groups of betterlite-management-cli in Rust, ported from LiteLLM's litellm/proxy/client/cli/commands/keys.py and encryption.py. The keys group lives in tools/management-cli/src/commands/keys.rs and keys/**, the encryption group in tools/management-cli/src/commands/encryption.rs and encryption/**. Each group is a clap Subcommand enum with LiteLLM's command names (keys list, generate, delete and import; encryption migrate), option names, defaults and help texts, so the CLI root can mount it. Each command takes B4560's context values (base_url and the optional api_key), a betterlite_redact::secret::Redactor and two injected writers for stdout and stderr, and returns Ok or its module's own error enum. That enum has an Aborted variant for click.Abort (the root prints "Aborted!" to stderr and exits 1), a Usage variant for click.BadParameter (the root reports it on stderr and exits 2), and variants for everything else (the root prints the text on one line to stderr and exits 1, where Python printed a traceback and exited 1).
+
+  docs/compatibility.md decides what is ported. Command and option names, the requests sent (paths, query, body fields, headers), pagination at 100, the two created_since formats, the lines the commands print, the exit codes and the streams stay LiteLLM's. Python's truthiness, str() and repr text and json.dumps formatting are not copied: a field that is absent or null takes its default, an explicit value is used as given, and a value outside LiteLLM's declared type is an error that names the field. Error texts are betterlite's own words, as rule errors-match-litellm says.
+
+  HTTP. LiteLLM's KeysManagementClient and HTTPClient sit in the Python client package (B169), so this task carries the requests these commands send, in keys/** and encryption/**. Use reqwest 0.13.5 (already in Cargo.lock through betterlite-http) with default features off and rustls, async on a current-thread tokio runtime, with connect_timeout and read_timeout of 30 seconds each, the way requests' timeout=30 bounds the connect and every read. The base URL loses its trailing slashes. Key requests always send Content-Type: application/json, and both clients add Authorization: Bearer {api_key} when a key is given. The keys client sends GET {base}/key/list with a query parameter only for each option given (page, size, user_id, team_id, organization_id, key_hash, key_alias, return_full_object, include_team_keys, booleans as "true" or "false"), POST {base}/key/generate with a JSON object of only the fields given (models, aliases, spend, duration, key_alias, team_id, user_id, budget_id, config), and POST {base}/key/delete with {"keys": ..., "key_aliases": ...}, null for a list not given. A status from 400 to 599 is an HTTP error that keeps the status and the body, and its text is "HTTP {status} {reason} for {method} {url}" with the status's standard reason phrase and the full request URL. In the keys client a 401 is Unauthorized instead (UnauthorizedError), with that same text passed through Redactor::redact_string; HTTPClient has no 401 case and redacts nothing. Any other status parses the body as JSON, and a body that isn't JSON is an error that names the URL. Tests build the Redactor with betterlite_redact::secret::MINIMUM_CUSTOM_KEY_LENGTH (16), the default of LiteLLM's MINIMUM_CUSTOM_KEY_LENGTH env var.
+
+  Output. Where LiteLLM calls rich.print_json, betterlite writes the parsed response as standard JSON, pretty-printed with a two-space indent (serde_json::to_writer_pretty on a serde_json::Value), and a newline. Object keys come out in serde_json's map order, sorted by key since no crate turns on preserve_order, and numbers as serde_json writes them. docs/compatibility.md puts key order and 300 against 300.0 outside the contract, so tests parse stdout back to a Value, compare it with the expected value and check the text equals serde_json::to_string_pretty of it plus "\n". "Generated key: {response}" prints the response as compact one-line JSON (serde_json::to_string). Table cells are plain text: a string as it is, a number as its JSON text, and "" when the field is absent or null. Tables are drawn with comfy-table, default features off, and have no color.
+
+  keys list takes --page and --size (integers), --user-id, --team-id, --organization-id, --key-hash, --key-alias, --return-full-object (a flag whose default is already true, so it is always sent as true), --include-team-keys (a flag, sent as false when absent) and --format table|json (default table). A response that is not a JSON object is an error in both formats (LiteLLM asserts a dict before it branches). With json it prints the response. With table it reads the response typed: keys is a list of objects (absent or null is an empty list) with token, key_alias, user_id and team_id as strings and spend as a number, each one allowed to be absent or null, and total_count is an integer that shows 0 when absent or null. It prints "Showing {n} keys out of {total}", then a table titled "API Keys" with the columns Key Hash, Alias, User ID, Team ID and Spend filled from token, key_alias, user_id, team_id and spend. A keys entry that is not an object, or a field of another type, is an error that names it. list has no error handler, so every client error goes back to the root unchanged.
+
+  keys generate splits --models on commas and trims each part (empty parts stay, "a,,b" gives ["a", "", "b"]), reads --aliases as a JSON object of strings and --config as a JSON object (the types KeysManagementClient.generate declares), and takes --spend as a float and --duration, --key-alias, --team-id, --user-id and --budget-id as text. An option given empty is used as given: --models "" sends [""], --aliases "" and --config "" fail as invalid JSON, and an empty text option sends "". Text that doesn't parse returns Usage with "Invalid JSON: {serde_json's error}" before any request, and JSON of another type returns Usage with a message that names the option. The response prints as JSON. keys delete splits --keys and --key-aliases the same way. Both commands catch only an HTTP error, not Unauthorized and not a transport or JSON error: they print "Error: HTTP {status}" to stderr, then the error body as JSON to stdout when it parses as JSON or the raw body text to stderr when it doesn't, and return Aborted.
+
+  keys import takes --source-base-url (required), --source-api-key, --dry-run and --created-since. It parses --created-since first, with chrono: a value with "_" in it must match %Y-%m-%d_%H:%M, any other value %Y-%m-%d, and a failure (an empty value included) prints "Error: Invalid date format '{value}'. Use YYYY-MM-DD_HH:MM or YYYY-MM-DD" to stderr and returns Aborted before any request. Then it prints "Fetching keys from source server: {source_base_url}" with the value as given and pages through the source's /key/list with a keys client built from --source-base-url and --source-api-key, sending page 1, 2 and on, size=100 and return_full_object=true. Each page must be a JSON object, and its keys read typed as source keys: models a JSON array, aliases and config JSON objects, spend a number, key_alias, team_id, user_id and budget_id strings, created_at a string, each one allowed to be absent or null, other fields ignored. A page that is not an object, or a field of another type, is an error that names the page and the field. The loop stops on an empty, absent or null keys list, prints "Fetched page {page}: {n} keys" for each page with keys, and stops after a page with fewer than 100.
+
+  With --created-since given, import keeps only keys whose created_at is at or after the filter time; a key whose created_at is absent or null is left out. A created_at string is a date-time the way LiteLLM's API writes one, YYYY-MM-DDTHH:MM:SS with an optional fraction and an optional Z or +HH:MM offset. The offset is dropped without converting, as LiteLLM does, so the comparison uses the wall time as written. Any other string is an error that names created_at. Then it prints "Filtered {before} keys to {after} keys created since {created_since}". When no keys are left it prints "No keys found in source instance." and ends with success; otherwise it prints "Found {n} keys in source instance.". A dry run then prints "\n--- DRY RUN MODE ---" and a table titled "Keys that would be imported" with the columns Key Alias, User ID and Created, where Created is the created_at wall time as %Y-%m-%d %H:%M ("" when absent or null, the same error when it doesn't parse), and ends with no request to the destination.
+
+  Otherwise each key goes to the destination's /key/generate (the context's base_url and api_key) with every one of models, aliases, spend, key_alias, team_id, user_id, budget_id and config that is present and not null, sent as given. So a spend of 0, an empty models list, empty aliases and config objects and an empty string id are sent, where LiteLLM's truthiness check left them out. docs/compatibility.md says an explicit value is used as given, and for most fields the key that gets created comes out the same: the destination's defaults are spend 0, models [], aliases {} and config {}, and it reads team_id "" as unset. A key_alias, user_id or budget_id of "" reaches the destination as "". false, or any other value outside a field's declared type, never reaches a request, because reading the page already failed on it. A success prints "Generated key: {response}" and then "Imported key: {alias}"; any error for that key, HTTP errors and Unauthorized included, prints "Failed to import key {alias}: {error}" to stderr and the loop goes on. alias is key_alias, "N/A" when it is absent or null. The command ends with "\nImport completed:", "  Successfully imported: {imported}", "  Failed to import: {failed}" and "  Total keys processed: {n}". Around the fetch, the filter and the import, an HTTP error prints the way generate prints it and returns Aborted, and any other error (Unauthorized, a bad page or field, a bad created_at, a transport or JSON error) prints "Error: {error}" to stderr and returns Aborted.
+
+  encryption migrate with --check sends GET {base}/credentials/migrate-encryption/check; without it, POST {base}/credentials/migrate-encryption with the JSON body {} and the query dry_run=true only when --dry-run is set (--check wins when both are given). It sends through HTTPClient's rules: Content-Type only on the POST because of its JSON body, Bearer when a key is given, and no error handler, so every error goes back to the root unchanged. The response prints as JSON. Then the response must be an object; its report counts as an empty object when absent or null and is an error that names report when it is not an object. report's residual_legacy is an integer (MigrationReport.residual_legacy): above 0 prints "Residual legacy values remaining: {residual}", 0 prints "No legacy values remaining (residual_legacy == 0).", and absent, null or below 0 prints nothing. A residual_legacy that is not an integer is an error that names it. These errors come after the JSON print. Both lines go to stdout without color.
+
+  Tests. Test functions live in tests.rs files under keys/ and encryption/ with the name prefixes the checks select: list_, generate_, delete_, import_, dates_, client_ and output_ under commands::keys, and migrate_ under commands::encryption. They run each command against a local HTTP server on 127.0.0.1:0 (axum is in Cargo.lock) that records the method, path, decoded query pairs, headers and body of every request and answers canned statuses and bodies. They compare the exact stdout and stderr bytes for the lines LiteLLM prints, and assert the returned error variant and the field or option its message names for betterlite's own error texts.
 scope:
   paths:
-    - tools/management-cli/litellm/proxy/client/cli/commands/keys.py
-    - tools/management-cli/litellm/proxy/client/cli/commands/encryption.py
+    - tools/management-cli/Cargo.toml
+    - Cargo.lock
+    - tools/management-cli/src/commands/keys.rs
+    - tools/management-cli/src/commands/keys/**
+    - tools/management-cli/src/commands/encryption.rs
+    - tools/management-cli/src/commands/encryption/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/keys.py#L35-L112
-    why: keys group, list command with pagination, output formatting and table rendering
+    why: The keys group and list, with the option defaults, the "Showing" line, the API Keys table and the dict assert at L90.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/keys.py#L115-L171
-    why: generate command with model/spend/duration/team/user/budget options and JSON parsing
+    why: generate, with the comma split, the "Invalid JSON" BadParameter and the HTTP error handler that aborts.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/keys.py#L174-L194
-    why: delete command with key hash and alias options
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/keys.py#L197-L243
-    why: _parse_created_since_filter, _fetch_keys_paginated pagination and filtering logic
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/keys.py#L246-L421
-    why: _filter_keys_by_created_since, _display_dry_run_table, _prepare_key_import_data, _import_keys_to_destination, import_keys command with error handling and per-key failure continuation
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/encryption.py#L1-L61
-    why: encryption group, migrate command with check and dry-run options, response parsing and output formatting
+    why: delete, with the same split and error handler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/keys.py#L197-L274
+    why: The created_since formats and their error line, pagination at 100 and the created_at filter that drops the offset.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/keys.py#L277-L347
+    why: The dry-run table, the field copy and the per-key import loop that catches every exception.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/keys.py#L350-L420
+    why: import, its options, message order, summary and the two outer error handlers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/encryption.py#L11-L61
+    why: encryption migrate, its two requests and the residual_legacy lines.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/keys.py#L12-L36
+    why: KeysManagementClient's base URL strip, 30-second timeout and headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/keys.py#L38-L111
+    why: The list query parameters, the lowercase booleans and the 401 to UnauthorizedError mapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/keys.py#L113-L230
+    why: The declared types of generate (aliases dict[str, str], config Mapping[str, object]), its body of given fields only and the delete body that keeps nulls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/http_client.py#L9-L97
+    why: HTTPClient, used by encryption migrate, with its URL join, Bearer rule and no error mapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/exceptions.py#L1-L19
+    why: UnauthorizedError redacts the HTTP error text through redact_string.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1888
+    why: MINIMUM_CUSTOM_KEY_LENGTH reads its env var with a default of 16.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4884-L4888
+    why: KeyListResponseObject, the declared shape of a /key/list page (keys, total_count as int or None).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/verification_token.py#L16-L65
+    why: The declared types of a listed key's fields (models list, aliases and config dict, spend float, ids str or None, created_at datetime or None).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1289-L1324
+    why: The destination's defaults for a generated key, models [] (L1296), spend 0 (L1297), config {} (L1310) and aliases {} (L1324).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1391-L1396
+    why: treat_cleared_id_as_unset reads team_id "" as unset on the destination.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/credential_migration.py#L95-L118
+    why: MigrationReport, with residual_legacy declared as int and the report dict it answers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5378-L5415
+    why: The migrate route, its dry_run query and its {"status", "dry_run", "report"} answer.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5418-L5445
+    why: The check route and its {"status", "report"} answer.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/main.py#L153-L160
+    why: The root mounts encryption and keys; mounting stays with the root.
+  - url: https://github.com/pallets/click/blob/8.5.0/src/click/core.py#L1591-L1595
+    why: click prints "Aborted!" to stderr for Abort and exits 1.
+  - url: https://docs.rs/reqwest/0.13.5/reqwest/struct.ClientBuilder.html#method.read_timeout
+    why: The per-read timeout that matches requests' read timeout.
+  - url: https://docs.rs/chrono/0.4.45/chrono/naive/struct.NaiveDateTime.html#method.parse_from_str
+    why: Parses the two created_since formats with format strings.
+  - url: https://docs.rs/serde_json/1.0.154/serde_json/fn.to_writer_pretty.html
+    why: The pretty writer with a two-space indent.
 dod:
   - text: >-
-      The keys list command accepts page, size, user-id, team-id, organization-id, key-hash,
-      key-alias, --include-team-keys (toggle, default False), and --return-full-object (toggle,
-      default True) filters; returns full key objects by default; displays a table with key hash,
-      alias, user ID, team ID and spend; and outputs JSON on --format json.
-    proof: [list-command]
+      keys list sends LiteLLM's query, fails on a non-object response in both formats, prints the JSON or the "Showing" line and the API Keys table with plain cells, rejects a field of another type by name and passes client errors through.
+    proof: [keys-list, keys-output]
   - text: >-
-      The keys generate command accepts models (comma-separated), aliases (JSON), spend,
-      duration, key-alias, team-id, user-id, budget-id and config (JSON) parameters; parses
-      JSON fields with BadParameter error handling; calls the client; and outputs the response
-      or prints HTTP errors to stderr with the response body.
-    proof: [generate-command]
+      keys generate splits and parses its options, uses empty options as given, returns Usage for bad or wrongly typed JSON, sends only the given fields, prints the response and handles HTTP errors with "Error: HTTP {status}", the body and Aborted, while Unauthorized passes through.
+    proof: [keys-generate]
   - text: >-
-      The keys delete command accepts keys (comma-separated list of key hashes) and key-aliases
-      (comma-separated list of aliases), calls the client with both, and handles HTTP errors.
-    proof: [delete-command]
+      keys delete sends both lists with nulls kept, prints the response and handles HTTP errors like generate.
+    proof: [keys-delete]
   - text: >-
-      The keys import command fetches all keys from a source gateway using pagination (100 per
-      page), filters by created-since date if provided (format YYYY-MM-DD_HH:MM or YYYY-MM-DD),
-      displays a dry-run table with key alias, user ID and created date, imports keys to the
-      destination by calling generate with only truthy fields from the source, continues
-      importing remaining keys even if one fails, and reports counts of successfully imported
-      and failed keys.
-    proof: [import-command]
+      keys import checks --created-since first, pages the source at 100, reads source keys typed, filters by created_at, prints the dry-run table or copies every present non-null field key by key with LiteLLM's messages and summary, and aborts with "Error: HTTP" or "Error: {error}".
+    proof: [keys-import]
   - text: >-
-      The encryption migrate command with --check sends GET /credentials/migrate-encryption/check,
-      without --check sends POST /credentials/migrate-encryption with dry_run query parameter
-      true when --dry-run is set, outputs the JSON response, and displays residual_legacy count
-      from the response with green text if zero and yellow if greater than zero.
-    proof: [encryption-command]
-  - text: Created-since filtering parses both YYYY-MM-DD_HH:MM and YYYY-MM-DD formats and filters keys by comparing parsed timestamp against key created_at field.
-    proof: [timestamp-parsing-both-formats]
-  - text: Key import continues importing remaining keys even when one key import fails, and reports the total count including failed attempts.
-    proof: [import-failure-continuation]
+      The created_since parser takes the two formats and rejects anything else with LiteLLM's line, and the created_at parser takes the API's date-time forms, drops the offset without converting and rejects any other string by name.
+    proof: [keys-dates]
+  - text: >-
+      The requests strip the base URL, send Content-Type and Bearer by the two clients' rules, use 30-second connect and read timeouts, give betterlite's HTTP error text and redact the 401 text in the keys client only.
+    proof: [keys-client]
+  - text: >-
+      JSON output is standard JSON with a two-space indent and a newline, "Generated key" carries one-line JSON, and table cells show strings and numbers as plain text and "" for absent or null.
+    proof: [keys-output]
+  - text: >-
+      encryption migrate sends the check GET or the migrate POST with dry_run only when asked, prints the response, prints the residual_legacy line for an integer report value, rejects a non-object report or a non-integer residual by name and passes every client error through.
+    proof: [encryption-migrate]
 checks:
   optional: []
   commands:
-    - id: list-command
-      why: keys list command does not accept all options or does not pass them to the client
-      run: grep -qF '@keys.command()' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF -- '--include-team-keys' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF -- '--return-full-object' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF 'client.list' tools/management-cli/litellm/proxy/client/cli/commands/keys.py
-    - id: generate-command
-      why: keys generate command does not handle JSON parsing or pass all parameters to the client
-      run: grep -qF 'def generate' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF 'json.loads' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF 'BadParameter' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF 'client.generate' tools/management-cli/litellm/proxy/client/cli/commands/keys.py
-    - id: delete-command
-      why: keys delete command does not parse comma-separated lists or pass them to the client
-      run: grep -qF 'def delete' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF 'split' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF 'client.delete' tools/management-cli/litellm/proxy/client/cli/commands/keys.py
-    - id: import-command
-      why: keys import command does not fetch all keys, filter, display dry-run table, or handle per-key failures
-      run: grep -qF 'def import_keys' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF '_fetch_keys_paginated' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF '_filter_keys_by_created_since' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF '_display_dry_run_table' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF '_import_keys_to_destination' tools/management-cli/litellm/proxy/client/cli/commands/keys.py
-    - id: encryption-command
-      why: encryption migrate command does not send the correct request or handle the response
-      run: grep -qF 'def migrate' tools/management-cli/litellm/proxy/client/cli/commands/encryption.py && grep -qF '/credentials/migrate-encryption/check' tools/management-cli/litellm/proxy/client/cli/commands/encryption.py && grep -qF 'dry_run' tools/management-cli/litellm/proxy/client/cli/commands/encryption.py && grep -qF 'residual_legacy' tools/management-cli/litellm/proxy/client/cli/commands/encryption.py
-    - id: timestamp-parsing-both-formats
-      why: created-since filtering does not parse both YYYY-MM-DD_HH:MM and YYYY-MM-DD formats correctly
-      run: grep -qF 'def _parse_created_since_filter' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF '%Y-%m-%d_%H:%M' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF '%Y-%m-%d' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && test "$(grep -c '%Y-%m-%d' tools/management-cli/litellm/proxy/client/cli/commands/keys.py)" -ge 2
-    - id: import-failure-continuation
-      why: key import does not continue after a failure or does not report counts correctly
-      run: grep -qF 'except Exception as e:' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF 'failed_count' tools/management-cli/litellm/proxy/client/cli/commands/keys.py && grep -qF 'imported_count' tools/management-cli/litellm/proxy/client/cli/commands/keys.py
+    - id: keys-list
+      why: the keys list tests are missing or the query, table, JSON output or type errors differ from the description
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::keys::.*tests::list_/)'
+    - id: keys-generate
+      why: the keys generate tests are missing or the option parsing, body, output or error path differs from the description
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::keys::.*tests::generate_/)'
+    - id: keys-delete
+      why: the keys delete tests are missing or the body, output or error path differs from the description
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::keys::.*tests::delete_/)'
+    - id: keys-import
+      why: the keys import tests are missing or a message, page request, filter, field copy or summary differs from the description
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::keys::.*tests::import_/)'
+    - id: keys-dates
+      why: the date tests are missing or a created_since or created_at value is read differently from the description
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::keys::.*tests::dates_/)'
+    - id: keys-client
+      why: the request tests are missing or a URL, header, timeout, error text or redaction differs from the description
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::keys::.*tests::client_/)'
+    - id: keys-output
+      why: the output tests are missing or the JSON text, the one-line JSON or a table cell differs from the description
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::keys::.*tests::output_/)'
+    - id: encryption-migrate
+      why: the encryption tests are missing or a request, output line or error path differs from the description
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::encryption::.*tests::migrate_/)'
 oracle_cases: []
-deviations: []
+deviations:
+  - what: >-
+      Tables are drawn with comfy-table (default features off). The title, column headers, row order and cell text are as the description says, but borders, column widths and wrapping differ from rich's, there is no color, and cell text is never read as rich markup.
+    why: >-
+      rich's table layout is a large port for output people read, and B4578 draws its tables with a Rust table crate too. Scripts use --format json.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/keys.py#L97-L112
 out_of_scope:
-  - KeysManagementClient and HTTPClient implementation (B169 manages the client library).
-  - The actual /credentials/migrate-encryption and /credentials/migrate-encryption/check server endpoints (B785 implements the HTTP migration/attestation handlers).
-  - Advanced filtering, sorting, or field selection beyond what the listed options provide.
-  - Multi-page streaming or incremental display; pagination is load-all-at-once.
+  - The CLI root mounts both groups and turns Aborted, Usage and every other error into "Aborted!", usage output, one-line errors and exit codes (main.py L153 and L160); B134 covers main.py.
+  - tools/management-cli/src/commands.rs declares the keys and encryption modules; B4580 owns that file.
+  - The context values base_url and api_key and the config file they come from are B4560's.
+  - KeysManagementClient and HTTPClient as an importable Python API are B169's (the M12 Python package); this task ports only the requests these commands send.
+  - >-
+    The /key/list, /key/generate and /key/delete routes are B055's, and /credentials/migrate-encryption and /credentials/migrate-encryption/check (key_management_endpoints.py L5378 and L5418) are B785's.
+  - The credentials, users, teams and model-groups groups are B4580's, and models is B4578's.
 pitfalls:
-  - Pagination is fixed at 100 records per page in import, not configurable; iteration stops when fewer than 100 records are returned on a page.
-  - Timestamp filtering parses created_since as a user-supplied string in YYYY-MM-DD_HH:MM or YYYY-MM-DD format and compares it against key created_at as an ISO 8601 datetime string; handle both timezone-aware and naive datetimes.
-  - Truthy-only field copying means only include a field in import_data if key.get(field) evaluates to True; do not copy empty strings, zero, False, or None.
-  - Per-key failure continuation in import_keys means one exception does not stop the loop; catch and log each error and continue with the next key.
-  - The import command shows total_count from the list response, and the import summary counts attempted keys (sum of imported plus failed), not the total_count from the gateway.
-  - Residual-legacy reporting uses response.get("report", {}) and then report.get("residual_legacy"); neither the report key nor residual_legacy is guaranteed, so compare with None and format accordingly.
-  - --return-full-object default is True in the CLI options but is passed explicitly to the client; --include-team-keys default is False.
-  - KeysManagementClient is initialized with base_url and api_key from the click context (ctx.obj); HTTPClient follows the same pattern.
+  - >-
+    A 401 from the keys client is Unauthorized, not an HTTP error, so generate and delete print no "Error: HTTP 401" line, and import prints "Error: {redacted text}" for a 401 from the source and "Failed to import key {alias}: {redacted text}" for one from the destination.
+  - >-
+    The per-key handler in import catches HTTP errors too, so a 422 from the destination's /key/generate prints "Failed to import key {alias}: ..." and counts as failed; only the source fetch's HTTP errors reach "Error: HTTP {status}".
+  - >-
+    generate prints the whole response and import prints "Generated key: {...}", so the new key's secret reaches stdout on purpose; the api_key itself stays in a SecretString and is never printed.
+  - >-
+    keys list always sends return_full_object=true and include_team_keys, while import's page requests send only page, size and return_full_object.
+  - >-
+    "Filtered {before} keys to {after} ..." counts before the filter, and a filter that leaves nothing still ends with "No keys found in source instance." and exit 0.
+  - >-
+    The error body of "Error: HTTP {status}" goes to stdout as JSON while the status line goes to stderr, and only a body that isn't JSON goes to stderr.
+  - >-
+    "2024-05-01T23:30:00-02:00" compares as 23:30 on May 1, not as 01:30 UTC on May 2, because the offset is dropped, not applied.
+  - >-
+    The migrate POST carries Content-Type: application/json only because it has the body {}, and the check GET carries no Content-Type at all.
+  - >-
+    reqwest's query encoder and requests' quote_plus differ on characters such as "*" and "~", so tests compare decoded query pairs, not raw query strings.
+  - >-
+    comfy-table pulls unicode-width, and Cargo.lock already holds 0.2.2; pick a comfy-table release that uses it so cargo deny sees one version.
 review_level: security
 budget:
   max_changed_lines: 1500
