@@ -1,3 +1,5 @@
+use secrecy::SecretString;
+
 use super::{
     HTTP_TIMEOUT_SECONDS, Http, HttpBody,
     models::{PkceFailure, RevocationUnavailable},
@@ -17,12 +19,12 @@ where
         .post(
             &contract.revocation_endpoint,
             HttpBody::Form(vec![
-                (String::from("token"), String::from(refresh_token)),
+                (String::from("token"), SecretString::from(refresh_token)),
                 (
                     String::from("token_type_hint"),
-                    String::from("refresh_token"),
+                    SecretString::from("refresh_token"),
                 ),
-                (String::from("client_id"), String::from(client_id)),
+                (String::from("client_id"), SecretString::from(client_id)),
             ]),
             HTTP_TIMEOUT_SECONDS,
             false,
@@ -32,13 +34,13 @@ where
     if response.status == 503 {
         return Err(RevocationUnavailableOrFailure::Unavailable(
             RevocationUnavailable {
-                reason: error_detail(&response),
+                reason: error_detail(&response.body),
             },
         ));
     }
     if response.status != 200 {
         return Err(RevocationUnavailableOrFailure::Failure(
-            PkceFailure::Protocol(error_detail(&response)),
+            PkceFailure::Protocol(error_detail(&response.body)),
         ));
     }
     Ok(())

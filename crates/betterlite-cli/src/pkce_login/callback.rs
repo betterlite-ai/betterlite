@@ -1,36 +1,39 @@
-use std::io::{Error, ErrorKind, Read as _, Write as _};
-use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::str::from_utf8;
+use std::io::Error;
+use std::net::SocketAddr;
 use std::thread::park_timeout;
 use std::time::Duration;
 
 use secrecy::SecretString;
-use thiserror::Error;
-use url::Url;
+use thiserror::Error as ThisError;
 
 use super::{
     CALLBACK_PATH, Clock,
+    loopback::{LoopbackConnection, LoopbackListener, TcpLoopbackListener},
     models::{CallbackCode, CallbackDenied, CallbackOutcome, PkceFailure},
+    request::{CallbackQuery, RequestRead, parse_request},
 };
 
-#[derive(Debug, Error)]
+#[derive(Debug, ThisError)]
 pub enum CallbackError {
     #[error("loopback bind failed: {0}")]
     Bind(#[source] Error),
 }
 
-pub struct LoopbackServer {
-    listener: TcpListener,
+pub struct LoopbackServer<L: LoopbackListener> {
+    listener: L,
     pub(super) address: SocketAddr,
     expected_state: String,
 }
 
-impl LoopbackServer {
+impl LoopbackServer<TcpLoopbackListener> {
     pub fn bind(expected_state: &str) -> Result<Self, CallbackError> {
-        let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(CallbackError::Bind)?;
-        listener
-            .set_nonblocking(true)
-            .map_err(CallbackError::Bind)?;
+        let listener = TcpLoopbackListener::bind().map_err(CallbackError::Bind)?;
+        Self::with_listener(listener, expected_state)
+    }
+}
+
+impl<L: LoopbackListener> LoopbackServer<L> {
+    pub(super) fn with_listener(listener: L, expected_state: &str) -> Result<Self, CallbackError> {
         let address = listener.local_addr().map_err(CallbackError::Bind)?;
         Ok(Self {
             listener,
@@ -65,102 +68,83 @@ impl LoopbackServer {
     }
 
     fn accept_request(&self) -> Result<Option<CallbackOutcome>, PkceFailure> {
-        let accepted = match self.listener.accept() {
-            Ok(accepted) => accepted,
-            Err(error) if error.kind() == ErrorKind::WouldBlock => return Ok(None),
-            Err(error) => {
-                return Err(PkceFailure::LoopbackAccept { source: error });
-            }
-        };
-        let (mut stream, _) = accepted;
-        if stream.set_nonblocking(false).is_err()
-            || stream
-                .set_read_timeout(Some(Duration::from_secs(5)))
-                .is_err()
-        {
+        let accepted = self
+            .listener
+            .accept()
+            .map_err(|source| PkceFailure::LoopbackAccept { source })?;
+        let Some(mut connection) = accepted else {
             return Ok(None);
-        }
-        Ok(self.handle(&mut stream))
+        };
+        Ok(self.handle(&mut connection))
     }
 
-    fn handle(&self, stream: &mut TcpStream) -> Option<CallbackOutcome> {
-        let parsed = callback_url(stream)?;
-        if parsed.path() != CALLBACK_PATH {
-            drop(respond(stream, 404, "Not found."));
+    fn handle(&self, connection: &mut L::Connection) -> Option<CallbackOutcome> {
+        let query = read_callback_request(connection)?;
+        if query.path != CALLBACK_PATH {
+            drop(respond(connection, 404, "Not found."));
             return None;
         }
-        let state = parsed
-            .query_pairs()
-            .find(|(name, _)| name == "state")
-            .map(|(_, value)| value.into_owned());
-        if state.as_deref() != Some(self.expected_state.as_str()) {
+        if query.state.as_deref() != Some(self.expected_state.as_str()) {
             drop(respond(
-                stream,
+                connection,
                 400,
                 "This response does not belong to the pending sign-in; still waiting.",
             ));
             return None;
         }
-        settle_callback(stream, &parsed)
+        settle_callback(connection, &query)
     }
 }
 
-fn callback_url(stream: &mut TcpStream) -> Option<Url> {
-    let mut bytes = [0_u8; 8192];
-    let Ok(size) = stream.read(&mut bytes) else {
-        return None;
-    };
-    let Some(request_bytes) = bytes.get(..size) else {
-        drop(respond(stream, 400, "Invalid callback."));
-        return None;
-    };
-    let Ok(request) = from_utf8(request_bytes) else {
-        drop(respond(stream, 400, "Invalid callback."));
-        return None;
-    };
-    let Some(path) = request.split_whitespace().nth(1) else {
-        drop(respond(stream, 400, "Invalid callback."));
-        return None;
-    };
-    let Ok(parsed) = Url::parse(&format!("http://localhost{path}")) else {
-        drop(respond(stream, 400, "Invalid callback."));
-        return None;
-    };
-    Some(parsed)
+// Re-parses the accumulated buffer after every read, so a request split across several TCP reads parses like one that arrives whole, and drops the connection silently on any error so the wait loop just keeps polling.
+fn read_callback_request(connection: &mut impl LoopbackConnection) -> Option<CallbackQuery> {
+    let mut buffer = Vec::new();
+    let mut chunk = [0_u8; 1024];
+    loop {
+        match parse_request(&buffer) {
+            RequestRead::Complete(query) => return Some(query),
+            RequestRead::TooLarge | RequestRead::Malformed | RequestRead::UnsupportedMethod => {
+                drop(respond(connection, 400, "Invalid callback."));
+                return None;
+            }
+            RequestRead::Incomplete => {}
+        }
+        match connection.read(&mut chunk) {
+            Ok(0) | Err(_) => return None,
+            Ok(size) => {
+                let bytes = chunk.get(..size)?;
+                buffer.extend_from_slice(bytes);
+            }
+        }
+    }
 }
 
-fn settle_callback(stream: &mut TcpStream, parsed: &Url) -> Option<CallbackOutcome> {
-    let callback_error = parsed
-        .query_pairs()
-        .find(|(name, _)| name == "error")
-        .map(|(_, value)| value.into_owned());
-    if let Some(error) = callback_error {
-        let description = parsed
-            .query_pairs()
-            .find(|(name, _)| name == "error_description")
-            .map(|(_, value)| value.into_owned());
-        let outcome = CallbackOutcome::Denied(CallbackDenied { error, description });
+fn settle_callback(
+    connection: &mut impl LoopbackConnection,
+    query: &CallbackQuery,
+) -> Option<CallbackOutcome> {
+    if let Some(error) = query.error.clone() {
+        let outcome = CallbackOutcome::Denied(CallbackDenied {
+            error,
+            description: query.description.clone(),
+        });
         drop(respond(
-            stream,
+            connection,
             200,
             "Sign-in was not approved. You can close this window.",
         ));
         return Some(outcome);
     }
-    let Some(code) = parsed
-        .query_pairs()
-        .find(|(name, _)| name == "code")
-        .map(|(_, value)| value.into_owned())
-    else {
+    let Some(code) = query.code.clone() else {
         drop(respond(
-            stream,
+            connection,
             400,
             "The sign-in response carried no authorization code; still waiting.",
         ));
         return None;
     };
     drop(respond(
-        stream,
+        connection,
         200,
         "Signed in. You can close this window.",
     ));
@@ -169,12 +153,16 @@ fn settle_callback(stream: &mut TcpStream, parsed: &Url) -> Option<CallbackOutco
     }))
 }
 
-fn respond(stream: &mut TcpStream, status: u16, body: &str) -> Result<(), PkceFailure> {
+fn respond(
+    connection: &mut impl LoopbackConnection,
+    status: u16,
+    body: &str,
+) -> Result<(), PkceFailure> {
     let response = format!(
         "HTTP/1.1 {status}\r\nContent-Type: text/plain; charset=utf-8\r\nCache-Control: no-store\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
         body.len()
     );
-    stream
+    connection
         .write_all(response.as_bytes())
         .map_err(|source| PkceFailure::LoopbackWrite { source })
 }

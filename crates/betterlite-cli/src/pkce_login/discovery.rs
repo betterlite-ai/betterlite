@@ -3,6 +3,7 @@ use url::{Host, Url};
 use super::{
     DISCOVERY_PATH, HTTP_TIMEOUT_SECONDS, Http,
     models::{CliAuthContract, PkceFailure},
+    wire::parse_contract,
 };
 
 pub fn discover_cli_auth<H>(base_url: &str, http: &H) -> Result<CliAuthContract, PkceFailure>
@@ -17,8 +18,7 @@ where
             status: response.status,
         });
     }
-    let contract: CliAuthContract = serde_json::from_slice(&response.body)
-        .map_err(|source| PkceFailure::DiscoveryDocument { source })?;
+    let contract = parse_contract(&response.body)?;
     validate_contract(&contract, base_url)?;
     Ok(contract)
 }

@@ -15,7 +15,7 @@ betterlite-config = { path = "../betterlite-config" }
 keyring-core = { version = "1.0.1", optional = true }
 secrecy.workspace = true
 serde.workspace = true
-serde_json = "1.0.154"
+serde_json = { version = "1.0.154", features = ["raw_value"] }
 sha2.workspace = true
 subtle.workspace = true
 thiserror.workspace = true

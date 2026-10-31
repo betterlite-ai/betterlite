@@ -1,9 +1,13 @@
 #![cfg(test)]
 
 use rstest::rstest;
-use secrecy::SecretString;
-use std::io::{Read as _, Write as _};
-use std::net::TcpStream;
+use secrecy::{ExposeSecret as _, SecretString};
+use std::collections::VecDeque;
+use std::fs;
+use std::io::{Error as IoError, ErrorKind, Read as _, Write as _};
+use std::net::{SocketAddr, TcpStream};
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::mpsc::sync_channel;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -12,15 +16,18 @@ use std::time::Duration;
 use std::time::Instant;
 
 use super::{
-    Clock, Entropy, Http, HttpBody, HttpResponse,
+    Clock, Entropy, Http, HttpBody, HttpResponse, WallClock,
     callback::LoopbackServer,
     discovery::{discover_cli_auth, origin},
+    loopback::{LoopbackConnection, LoopbackListener},
     models::{CallbackCode, CallbackOutcome, CliAuthContract, PkceFailure},
     oauth::{
         RedeemCodeRequest, RefreshCredentialRequest, pkce_pair, redeem_code, refresh_credential,
         register_client,
     },
+    request::{RequestRead, parse_request},
     revoke::{RevocationUnavailableOrFailure, revoke_credential},
+    wire,
 };
 
 struct FixedEntropy;
@@ -30,6 +37,31 @@ struct FixedClock(Instant);
 impl Clock for FixedClock {
     fn now(&self) -> Instant {
         self.0
+    }
+}
+
+struct SystemClock;
+
+impl Clock for SystemClock {
+    fn now(&self) -> Instant {
+        Instant::now()
+    }
+}
+
+struct FixedWallClock(i64);
+
+impl WallClock for FixedWallClock {
+    fn now_seconds(&self) -> i64 {
+        self.0
+    }
+}
+
+// Shares a counter with a transport double that advances it, to catch a clock read before the call.
+struct SharedWallClock(Arc<AtomicI64>);
+
+impl WallClock for SharedWallClock {
+    fn now_seconds(&self) -> i64 {
+        self.0.load(Ordering::SeqCst)
     }
 }
 
@@ -110,6 +142,96 @@ impl Http for ScriptedHttp {
         follow_redirects: bool,
     ) -> Result<HttpResponse, PkceFailure> {
         self.record(url, body, timeout_seconds, follow_redirects)
+    }
+}
+
+// Bumps a shared wall-clock counter as a side effect of answering, so a test can tell whether a caller sampled the clock before or after this transport's call.
+struct AdvancingHttp {
+    response: HttpResponse,
+    clock: Arc<AtomicI64>,
+    advance_by: i64,
+}
+
+impl Http for AdvancingHttp {
+    fn get(&self, _url: &str, _timeout_seconds: u64) -> Result<HttpResponse, PkceFailure> {
+        Ok(self.response.clone())
+    }
+
+    fn post(
+        &self,
+        _url: &str,
+        _body: HttpBody,
+        _timeout_seconds: u64,
+        _follow_redirects: bool,
+    ) -> Result<HttpResponse, PkceFailure> {
+        self.clock.fetch_add(self.advance_by, Ordering::SeqCst);
+        Ok(self.response.clone())
+    }
+}
+
+// Reads the values out of a `HttpBody::Form`; its values are `SecretString` so a derived `PartialEq` cannot compare them.
+fn form_fields(body: &HttpBody) -> Vec<(String, String)> {
+    let HttpBody::Form(fields) = body else {
+        panic!("expected a form body");
+    };
+    fields
+        .iter()
+        .map(|(name, value)| (name.clone(), value.expose_secret().to_owned()))
+        .collect()
+}
+
+struct FailingListener {
+    address: SocketAddr,
+    attempts: Mutex<VecDeque<Result<Option<RecordedConnection>, ErrorKind>>>,
+}
+
+impl LoopbackListener for FailingListener {
+    type Connection = RecordedConnection;
+
+    fn local_addr(&self) -> Result<SocketAddr, IoError> {
+        Ok(self.address)
+    }
+
+    fn accept(&self) -> Result<Option<Self::Connection>, IoError> {
+        let mut attempts = self
+            .attempts
+            .lock()
+            .map_err(|_poisoned| IoError::other("attempts queue was poisoned"))?;
+        match attempts.pop_front() {
+            Some(Ok(connection)) => Ok(connection),
+            Some(Err(kind)) => Err(IoError::from(kind)),
+            None => Ok(None),
+        }
+    }
+}
+
+struct RecordedConnection {
+    reads: VecDeque<Result<Vec<u8>, ErrorKind>>,
+    write_result: Result<(), ErrorKind>,
+}
+
+impl LoopbackConnection for RecordedConnection {
+    fn read(&mut self, buffer: &mut [u8]) -> Result<usize, IoError> {
+        match self.reads.pop_front() {
+            Some(Ok(bytes)) => {
+                let size = bytes.len().min(buffer.len());
+                let (Some(destination), Some(source)) = (buffer.get_mut(..size), bytes.get(..size))
+                else {
+                    return Err(IoError::other("short read buffer"));
+                };
+                destination.copy_from_slice(source);
+                Ok(size)
+            }
+            Some(Err(kind)) => Err(IoError::from(kind)),
+            None => Ok(0),
+        }
+    }
+
+    fn write_all(&mut self, _bytes: &[u8]) -> Result<(), IoError> {
+        match self.write_result {
+            Ok(()) => Ok(()),
+            Err(kind) => Err(IoError::from(kind)),
+        }
     }
 }
 
@@ -194,8 +316,9 @@ fn callback_validation_waits_for_matching_state() {
                 .expect("write");
             let mut response = [0; 256];
             let size = stream.read(&mut response).expect("read");
+            let payload = response.get(..size).expect("read within buffer").to_vec();
             sender
-                .send(String::from_utf8(response[..size].to_vec()).expect("response UTF-8"))
+                .send(String::from_utf8(payload).expect("response UTF-8"))
                 .expect("send");
             let mut next_stream = TcpStream::connect(address).expect("connect");
             next_stream
@@ -255,6 +378,94 @@ fn loopback_server_exposes_callback_redirect() {
 }
 
 #[test]
+fn loopback_wait_surfaces_accept_failure() {
+    let listener = FailingListener {
+        address: "127.0.0.1:0".parse().expect("address"),
+        attempts: Mutex::new(VecDeque::from([Err(ErrorKind::ConnectionAborted)])),
+    };
+    let mut server = LoopbackServer::with_listener(listener, "state").expect("bind");
+    let error = server
+        .wait(Duration::from_secs(1), &FixedClock(Instant::now()))
+        .unwrap_err();
+    assert!(matches!(error, PkceFailure::LoopbackAccept { .. }));
+}
+
+#[test]
+fn loopback_write_failure_is_swallowed_and_connection_still_settles() {
+    let request =
+        b"GET /callback?state=state&code=good HTTP/1.1\r\nHost: localhost\r\n\r\n".to_vec();
+    let connection = RecordedConnection {
+        reads: VecDeque::from([Ok(request)]),
+        write_result: Err(ErrorKind::BrokenPipe),
+    };
+    let listener = FailingListener {
+        address: "127.0.0.1:0".parse().expect("address"),
+        attempts: Mutex::new(VecDeque::from([Ok(Some(connection))])),
+    };
+    let mut server = LoopbackServer::with_listener(listener, "state").expect("bind");
+    let outcome = server
+        .wait(Duration::from_secs(1), &FixedClock(Instant::now()))
+        .expect("outcome");
+    assert!(matches!(outcome, CallbackOutcome::Code(_)));
+}
+
+#[test]
+fn loopback_no_pending_connection_keeps_waiting_until_timeout() {
+    let listener = FailingListener {
+        address: "127.0.0.1:0".parse().expect("address"),
+        attempts: Mutex::new(VecDeque::new()),
+    };
+    let mut server = LoopbackServer::with_listener(listener, "state").expect("bind");
+    let error = server
+        .wait(Duration::from_millis(20), &SystemClock)
+        .unwrap_err();
+    assert!(matches!(error, PkceFailure::CallbackTimeout));
+}
+
+#[test]
+fn callback_request_parses_once_headers_complete_across_reads() {
+    let full = b"GET /callback?state=s&code=c HTTP/1.1\r\nHost: localhost\r\n\r\n";
+    let split = full.len().checked_div(2).expect("nonzero length");
+    let prefix = full.get(..split).expect("split within buffer");
+    assert_eq!(parse_request(prefix), RequestRead::Incomplete);
+    let RequestRead::Complete(query) = parse_request(full) else {
+        panic!("expected a complete request");
+    };
+    assert_eq!(query.state.as_deref(), Some("s"));
+    assert_eq!(query.code.as_deref(), Some("c"));
+}
+
+#[test]
+fn callback_request_rejects_non_get_method() {
+    let request = b"POST /callback HTTP/1.1\r\nHost: localhost\r\n\r\n";
+    assert_eq!(parse_request(request), RequestRead::UnsupportedMethod);
+}
+
+#[test]
+fn callback_request_rejects_extra_request_line_tokens() {
+    let request = b"GET /callback HTTP/1.1 extra\r\nHost: localhost\r\n\r\n";
+    assert_eq!(parse_request(request), RequestRead::Malformed);
+}
+
+#[test]
+fn callback_request_rejects_oversized_buffer() {
+    let request = vec![b'A'; super::request::MAX_REQUEST_BYTES + 1];
+    assert_eq!(parse_request(&request), RequestRead::TooLarge);
+}
+
+#[test]
+fn callback_request_drops_blank_query_values() {
+    let request =
+        b"GET /callback?state=&state=real&error=&code=good HTTP/1.1\r\nHost: localhost\r\n\r\n";
+    let RequestRead::Complete(query) = parse_request(request) else {
+        panic!("expected a complete request");
+    };
+    assert_eq!(query.state.as_deref(), Some("real"));
+    assert_eq!(query.error, None);
+    assert_eq!(query.code.as_deref(), Some("good"));
+}
+
+#[test]
 fn register_client_sends_public_client_payload() {
     let response = HttpResponse {
         status: 201,
@@ -289,15 +500,13 @@ fn register_client_sends_public_client_payload() {
 }
 
 #[rstest]
+#[case(300)]
 #[case(307)]
 #[case(308)]
+#[case(399)]
 fn register_client_rejects_redirect(#[case] status: u16) {
-    register_client(
-        &contract(),
-        "http://127.0.0.1:1/callback",
-        &redirect_response(status),
-    )
-    .unwrap_err();
+    let redirect_uri = "http://127.0.0.1:1/callback";
+    register_client(&contract(), redirect_uri, &redirect_response(status)).unwrap_err();
 }
 
 #[test]
@@ -308,14 +517,15 @@ fn token_requests_capture_expiry() {
         body: br#"{"access_token":"access","expires_in":30,"refresh_token":"refresh"}"#.to_vec(),
     };
     let http = ScriptedHttp::new(response);
-    let credential = redeem_code(&contract(), &redemption(), &http, 100).expect("token");
+    let credential =
+        redeem_code(&contract(), &redemption(), &http, &FixedWallClock(100)).expect("token");
     assert_eq!(credential.expires_at, 130);
     let request = http.requests().pop().expect("token request");
     assert_eq!(request.timeout, 15);
     assert!(!request.follow_redirects);
     assert_eq!(
-        request.body,
-        HttpBody::Form(vec![
+        form_fields(&request.body),
+        vec![
             ("grant_type".to_owned(), "authorization_code".to_owned()),
             ("code".to_owned(), "code".to_owned()),
             (
@@ -325,15 +535,37 @@ fn token_requests_capture_expiry() {
             ("client_id".to_owned(), "client".to_owned()),
             ("code_verifier".to_owned(), "verifier".to_owned()),
             ("resource".to_owned(), "https://example.test".to_owned()),
-        ])
+        ]
     );
 }
 
+#[test]
+fn expires_at_samples_wall_clock_after_the_response_arrives() {
+    let clock = Arc::new(AtomicI64::new(100));
+    let http = AdvancingHttp {
+        response: HttpResponse {
+            status: 200,
+            headers: Vec::new(),
+            body: br#"{"access_token":"access","expires_in":30,"refresh_token":"refresh"}"#
+                .to_vec(),
+        },
+        clock: Arc::clone(&clock),
+        advance_by: 20,
+    };
+    let wall_clock = SharedWallClock(Arc::clone(&clock));
+    let credential = redeem_code(&contract(), &redemption(), &http, &wall_clock).expect("token");
+    // The clock only reaches 120 once `post` returns; sampling before the call would yield 130.
+    assert_eq!(credential.expires_at, 150);
+}
+
 #[rstest]
+#[case(300)]
 #[case(307)]
 #[case(308)]
+#[case(399)]
 fn token_request_rejects_redirect(#[case] status: u16) {
-    redeem_code(&contract(), &redemption(), &redirect_response(status), 100).unwrap_err();
+    let transport = redirect_response(status);
+    redeem_code(&contract(), &redemption(), &transport, &FixedWallClock(100)).unwrap_err();
 }
 
 #[test]
@@ -351,20 +583,20 @@ fn refresh_credential_sends_form_fields() {
             refresh_token: SecretString::from("refresh token\0"),
         },
         &http,
-        100,
+        &FixedWallClock(100),
     )
     .expect("refresh");
     let request = http.requests().pop().expect("refresh request");
     assert_eq!(request.timeout, 15);
     assert!(!request.follow_redirects);
     assert_eq!(
-        request.body,
-        HttpBody::Form(vec![
+        form_fields(&request.body),
+        vec![
             ("grant_type".to_owned(), "refresh_token".to_owned()),
             ("refresh_token".to_owned(), "refresh token\0".to_owned()),
             ("client_id".to_owned(), "client".to_owned()),
             ("resource".to_owned(), "https://example.test".to_owned()),
-        ])
+        ]
     );
 }
 
@@ -386,8 +618,10 @@ fn revoke_503_is_unavailable() {
 }
 
 #[rstest]
+#[case(300)]
 #[case(307)]
 #[case(308)]
+#[case(399)]
 fn revoke_rejects_redirect(#[case] status: u16) {
     revoke_credential(&contract(), "client", "refresh", &redirect_response(status)).unwrap_err();
 }
@@ -403,9 +637,29 @@ fn expires_rejects_non_positive_lifetime() {
         &contract(),
         &redemption(),
         &ScriptedHttp::new(response),
-        100,
+        &FixedWallClock(100),
     )
     .unwrap_err();
+}
+
+#[test]
+fn expires_in_accepts_numeric_string() {
+    let body = br#"{"access_token":"access","expires_in":"30","refresh_token":"refresh"}"#;
+    let token = wire::parse_token(body).expect("token");
+    assert_eq!(token.expires_in, 30);
+}
+
+#[test]
+fn expires_in_accepts_integral_float() {
+    let body = br#"{"access_token":"access","expires_in":30.0,"refresh_token":"refresh"}"#;
+    let token = wire::parse_token(body).expect("token");
+    assert_eq!(token.expires_in, 30);
+}
+
+#[test]
+fn expires_in_rejects_fractional_float() {
+    let body = br#"{"access_token":"access","expires_in":30.5,"refresh_token":"refresh"}"#;
+    wire::parse_token(body).unwrap_err();
 }
 
 #[test]
@@ -419,7 +673,7 @@ fn error_detail_is_bounded() {
         &contract(),
         &redemption(),
         &ScriptedHttp::new(response),
-        100,
+        &FixedWallClock(100),
     )
     .expect_err("failure");
     assert_eq!(error.to_string(), "denied");
@@ -436,10 +690,55 @@ fn error_detail_preserves_invalid_utf8_fallback() {
         &contract(),
         &redemption(),
         &ScriptedHttp::new(response),
-        100,
+        &FixedWallClock(100),
     )
     .expect_err("failure");
     assert_eq!(error.to_string().chars().count(), 200);
+}
+
+#[test]
+fn error_description_empty_falls_through_to_error() {
+    let body = br#"{"error_description":"","error":"denied"}"#;
+    assert_eq!(wire::error_detail(body), "denied");
+}
+
+#[test]
+fn error_detail_structured_value_is_stringified() {
+    let body = br#"{"error_description":null,"error":null,"detail":{"code":"bad"}}"#;
+    assert_eq!(wire::error_detail(body), r#"{"code":"bad"}"#);
+}
+
+#[test]
+fn error_detail_zero_number_falls_through_to_error() {
+    let body = br#"{"error_description":0,"error":"denied"}"#;
+    assert_eq!(wire::error_detail(body), "denied");
+}
+
+#[test]
+fn error_detail_nonzero_number_is_stringified() {
+    let body = br#"{"error_description":5}"#;
+    assert_eq!(wire::error_detail(body), "5");
+}
+
+#[test]
+fn http_debug_output_never_reveals_response_body_bytes() {
+    let response = HttpResponse {
+        status: 200,
+        headers: Vec::new(),
+        body: b"super-secret-token-value".to_vec(),
+    };
+    let rendered = format!("{response:?}");
+    assert!(!rendered.contains("super-secret-token-value"));
+}
+
+#[test]
+fn http_debug_output_never_reveals_form_field_values() {
+    let body = HttpBody::Form(vec![(
+        "refresh_token".to_owned(),
+        SecretString::from("super-secret-refresh-value"),
+    )]);
+    let rendered = format!("{body:?}");
+    assert!(!rendered.contains("super-secret-refresh-value"));
 }
 
 #[test]
@@ -459,4 +758,23 @@ fn http_timeout_is_passed_to_transport() {
     );
     assert_eq!(request.timeout, 15);
     assert!(!request.follow_redirects);
+}
+
+#[rstest]
+fn replays_the_callback_request_corpus(#[files("fuzz/corpus/callback_request/*")] path: PathBuf) {
+    let Ok(bytes) = fs::read(&path) else {
+        panic!("{}", path.display());
+    };
+    let _outcome = parse_request(&bytes);
+}
+
+#[rstest]
+fn replays_the_wire_responses_corpus(#[files("fuzz/corpus/wire_responses/*")] path: PathBuf) {
+    let Ok(bytes) = fs::read(&path) else {
+        panic!("{}", path.display());
+    };
+    let _token = wire::parse_token(&bytes);
+    let _client = wire::parse_registered_client(&bytes);
+    let _contract = wire::parse_contract(&bytes);
+    let _detail = wire::error_detail(&bytes);
 }

@@ -1,12 +1,14 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 use sha2::{Digest as _, Sha256};
 use url::form_urlencoded::Serializer;
 
 use super::{
-    Entropy, HTTP_TIMEOUT_SECONDS, Http, HttpBody,
+    Entropy, HTTP_TIMEOUT_SECONDS, Http, HttpBody, WallClock,
     models::{CliAuthContract, PkceCredential, PkceFailure},
-    wire::{ClientRegistration, RegisteredClient, error_detail, parse_token, refuse_redirect},
+    wire::{
+        ClientRegistration, error_detail, parse_registered_client, parse_token, refuse_redirect,
+    },
 };
 
 pub fn pkce_pair<E>(entropy: &mut E) -> Result<(String, String), PkceFailure>
@@ -66,11 +68,10 @@ where
     if response.status != 200 && response.status != 201 {
         return Err(PkceFailure::Protocol(format!(
             "client registration failed: {}",
-            error_detail(&response)
+            error_detail(&response.body)
         )));
     }
-    let registered = serde_json::from_slice::<RegisteredClient>(&response.body)
-        .map_err(|error| PkceFailure::RegistrationResponse { source: error })?;
+    let registered = parse_registered_client(&response.body)?;
     if registered.client_id.is_empty() {
         return Err(PkceFailure::Protocol(
             "registration returned an empty client_id".to_owned(),
@@ -94,17 +95,18 @@ pub struct RefreshCredentialRequest {
 // A macro, not two near-identical functions, carries the one difference between the grants: their form fields.
 macro_rules! token_grant_fn {
     ($name:ident, $request_ty:ty, |$request:ident, $contract:ident| $form:expr) => {
-        pub fn $name<H>(
+        pub fn $name<H, W>(
             $contract: &CliAuthContract,
             $request: &$request_ty,
             http: &H,
-            now_seconds: i64,
+            wall_clock: &W,
         ) -> Result<PkceCredential, PkceFailure>
         where
             H: Http,
+            W: WallClock,
         {
             let form = $form;
-            token_request($contract, &$request.client_id, http, now_seconds, form)
+            token_request($contract, &$request.client_id, http, wall_clock, form)
         }
     };
 }
@@ -112,44 +114,54 @@ macro_rules! token_grant_fn {
 token_grant_fn!(redeem_code, RedeemCodeRequest, |request, contract| vec![
     (
         String::from("grant_type"),
-        String::from("authorization_code"),
+        SecretString::from("authorization_code"),
+    ),
+    (String::from("code"), request.code.clone()),
+    (
+        String::from("redirect_uri"),
+        SecretString::from(request.redirect_uri.clone()),
     ),
     (
-        String::from("code"),
-        request.code.expose_secret().to_owned()
+        String::from("client_id"),
+        SecretString::from(request.client_id.clone()),
     ),
-    (String::from("redirect_uri"), request.redirect_uri.clone()),
-    (String::from("client_id"), request.client_id.clone()),
+    (String::from("code_verifier"), request.verifier.clone()),
     (
-        String::from("code_verifier"),
-        request.verifier.expose_secret().to_owned(),
+        String::from("resource"),
+        SecretString::from(contract.resource.clone()),
     ),
-    (String::from("resource"), contract.resource.clone()),
 ]);
 
 token_grant_fn!(
     refresh_credential,
     RefreshCredentialRequest,
     |request, contract| vec![
-        (String::from("grant_type"), String::from("refresh_token")),
         (
-            String::from("refresh_token"),
-            request.refresh_token.expose_secret().to_owned(),
+            String::from("grant_type"),
+            SecretString::from("refresh_token"),
         ),
-        (String::from("client_id"), request.client_id.clone()),
-        (String::from("resource"), contract.resource.clone()),
+        (String::from("refresh_token"), request.refresh_token.clone()),
+        (
+            String::from("client_id"),
+            SecretString::from(request.client_id.clone()),
+        ),
+        (
+            String::from("resource"),
+            SecretString::from(contract.resource.clone()),
+        ),
     ]
 );
 
-fn token_request<H>(
+fn token_request<H, W>(
     contract: &CliAuthContract,
     client_id: &str,
     http: &H,
-    now_seconds: i64,
-    form: Vec<(String, String)>,
+    wall_clock: &W,
+    form: Vec<(String, SecretString)>,
 ) -> Result<PkceCredential, PkceFailure>
 where
     H: Http,
+    W: WallClock,
 {
     let response = http.post(
         &contract.token_endpoint,
@@ -159,10 +171,11 @@ where
     )?;
     refuse_redirect("token request", &response)?;
     if response.status != 200 {
-        return Err(PkceFailure::Protocol(error_detail(&response)));
+        return Err(PkceFailure::Protocol(error_detail(&response.body)));
     }
-    let token = parse_token(&response)?;
-    let expires_at = now_seconds
+    let token = parse_token(&response.body)?;
+    let expires_at = wall_clock
+        .now_seconds()
         .checked_add(token.expires_in)
         .ok_or_else(|| PkceFailure::Protocol("token expiry overflow".to_owned()))?;
     Ok(PkceCredential {
