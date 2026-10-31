@@ -81,7 +81,7 @@ pitfalls:
   - mask appears in the advertised supported list but is absent from _BFL_REQUEST_PARAMS and needs its own byte conversion.
   - An empty image list fails rather than falling through to a later image.
   - The async BFL-specific handler calls the synchronous transformer at the pin, so both entry paths must enforce the media policy.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

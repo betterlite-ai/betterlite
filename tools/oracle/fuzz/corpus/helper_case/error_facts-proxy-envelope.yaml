@@ -1,0 +1,8 @@
+kind: helper
+name: error-facts-proxy-envelope
+call:
+  error_facts:
+    kind: message
+    body: {error: {message: nested provider message}}
+env: {}
+compare: {ignore: []}

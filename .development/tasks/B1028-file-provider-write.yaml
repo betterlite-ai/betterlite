@@ -124,7 +124,7 @@ pitfalls:
 - Only upload validates passthrough; deletion has no such guard.
 - Explicit-null litellm_call_id is retained by delete's fallback logger.
 - The unsupported-provider messages are stale lists; the reachable registry is broader.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

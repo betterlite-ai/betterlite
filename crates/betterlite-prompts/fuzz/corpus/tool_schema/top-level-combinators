@@ -1,0 +1,1 @@
+{"anyOf":[{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]},{"type":"object","properties":{"limit":{"type":"integer"}},"required":["limit"]}]}

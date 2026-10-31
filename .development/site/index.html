@@ -1,0 +1,1227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>betterlite progress</title>
+<meta name="description" content="How far betterlite, the Rust port of LiteLLM, has come: tasks merged, Python files ported, where each milestone stands and every deviation.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23f7f5f0'/%3E%3Crect x='2' y='9' width='3' height='5' fill='%232f6b4f'/%3E%3Crect x='6.5' y='5' width='3' height='9' fill='%232f6b4f'/%3E%3Crect x='11' y='2' width='3' height='12' fill='%231c1b19'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.min.css" integrity="sha384-IfV0B7MIOYuO95kO9G5ySKPz/85zqFNOAs8iy4tkK5zd9izhJAB8b7lHrwYqqmYE" crossorigin="anonymous" referrerpolicy="no-referrer">
+<style>
+:root {
+  --paper: #f7f5f0;
+  --ink: #1c1b19;
+  --muted: #6c6a63;
+  --rule: #dcd8cf;
+  --faint: #ebe8e1;
+  --done: #2f6b4f;
+  --open: #d7d3c9;
+  --c1: #2a78d6;
+  --c2: #eb6834;
+  --c3: #1baf7a;
+  --c4: #eda100;
+  --c5: #e87ba4;
+  --c6: #008300;
+  --c7: #4a3aa7;
+  --other: #a19e95;
+  --sans: "IBM Plex Sans", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, monospace;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #161614;
+    --ink: #e9e6df;
+    --muted: #9b988f;
+    --rule: #34322d;
+    --faint: #22211e;
+    --done: #7cc49a;
+    --open: #3d3b36;
+    --c1: #3987e5;
+    --c2: #d95926;
+    --c3: #199e70;
+    --c4: #c98500;
+    --c5: #d55181;
+    --c6: #008300;
+    --c7: #9085e9;
+    --other: #6e6b63;
+  }
+}
+* { box-sizing: border-box; }
+html { scroll-padding-top: 5rem; -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 400 1rem/1.55 var(--sans); }
+a { color: inherit; text-decoration-color: var(--rule); text-underline-offset: 0.2em; }
+a:hover { text-decoration-color: currentColor; }
+.wrap { max-width: 72rem; margin: 0 auto; padding: 0 16px; }
+@media (min-width: 40rem) { .wrap { padding: 0 2rem; } }
+
+.masthead { position: sticky; top: 0; z-index: 1; background: var(--paper); border-bottom: 1px solid var(--ink); }
+.masthead .wrap { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.25rem 1.5rem; padding-top: 0.875rem; }
+.brand { font: 500 0.9375rem var(--mono); text-decoration: none; padding-bottom: 0.75rem; }
+.brand span { color: var(--muted); }
+nav { display: flex; gap: 1.25rem; overflow-x: auto; }
+nav a { color: var(--muted); text-decoration: none; font-size: 0.875rem; white-space: nowrap; padding-bottom: 0.625rem; border-bottom: 2px solid transparent; }
+nav a:hover { color: var(--ink); }
+nav a[aria-current="true"] { color: var(--ink); border-bottom-color: var(--ink); }
+
+.lede { padding: 3rem 0 2.5rem; }
+h1, .section-head h2 { font-size: clamp(1.75rem, 1.2rem + 2.2vw, 2.75rem); font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; margin: 0 0 1rem; }
+.lede p { max-width: 42rem; color: var(--muted); margin: 0; }
+.status { margin: 1.5rem 0 0; font: 0.875rem var(--mono); color: var(--muted); }
+.status.error { color: var(--ink); border-left: 2px solid var(--ink); padding-left: 0.75rem; }
+
+.figures { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 1.5rem 2rem; margin: 2.5rem 0 0; }
+.figures.small { margin: 0 0 2rem; }
+.figure { border-top: 1px solid var(--ink); padding-top: 0.75rem; }
+.figure .value { font-size: 2.25rem; font-weight: 500; line-height: 1.15; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.figures.small .value { font-size: 1.75rem; }
+.figure .value small { font-size: 0.9375rem; font-weight: 400; letter-spacing: 0; color: var(--muted); }
+.figure .label { font-size: 0.875rem; color: var(--muted); margin-top: 0.25rem; }
+
+.section-head { padding: 3rem 0 1rem; }
+.block { display: grid; grid-template-columns: 14rem 1fr; gap: 1rem 2.5rem; border-top: 1px solid var(--rule); padding: 2rem 0 2.5rem; }
+.section-head + .block { border-top: 0; }
+.block > header h3 { font-size: 1rem; font-weight: 600; margin: 0 0 0.5rem; }
+.block > header p { font-size: 0.875rem; color: var(--muted); margin: 0 0 0.75rem; }
+.block > div { min-width: 0; }
+@media (max-width: 52rem) { .block { grid-template-columns: 1fr; } }
+h4 { font-size: 0.9375rem; font-weight: 600; margin: 2rem 0 0.75rem; }
+h4:first-child { margin-top: 0; }
+
+.table-scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 0.9375rem; font-variant-numeric: tabular-nums; }
+th { text-align: left; font-weight: 500; font-size: 0.8125rem; color: var(--muted); border-bottom: 1px solid var(--rule); padding: 0 0.75rem 0.5rem 0; white-space: nowrap; }
+td { border-bottom: 1px solid var(--faint); padding: 0.5rem 0.75rem 0.5rem 0; vertical-align: top; }
+th:last-child, td:last-child { padding-right: 0; }
+tfoot td { border-bottom: 0; border-top: 1px solid var(--rule); font-weight: 500; }
+.num { text-align: right; white-space: nowrap; }
+.id { font: 0.875rem var(--mono); white-space: nowrap; }
+.muted { color: var(--muted); }
+.date { white-space: nowrap; }
+.empty { color: var(--muted); font-size: 0.9375rem; margin: 0; }
+details { margin-top: 1rem; }
+summary { cursor: pointer; color: var(--muted); font-size: 0.875rem; }
+summary:hover { color: var(--ink); }
+details[open] summary { margin-bottom: 0.75rem; }
+
+.bar { display: flex; align-items: center; gap: 0.75rem; min-width: 8rem; }
+.bar .track { flex: 1; height: 0.5rem; background: var(--open); }
+.bar .fill { height: 100%; background: var(--done); }
+.bar .pct { min-width: 3.5em; text-align: right; font-size: 0.8125rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.figures.small + .bar { margin-bottom: 2rem; }
+@media (max-width: 40rem) { .bar { min-width: 4.5rem; gap: 0.5rem; } .bar .pct { min-width: 3em; } }
+
+.section-head p { max-width: 42rem; color: var(--muted); font-size: 0.875rem; margin: 0; }
+.modes { display: inline-flex; margin: 0.25rem 0 0.75rem; border: 1px solid var(--rule); }
+.modes button { font: 0.8125rem var(--sans); color: var(--muted); background: transparent; border: 0; padding: 0.375rem 0.75rem; min-height: 2rem; cursor: pointer; }
+.modes button + button { border-left: 1px solid var(--rule); }
+.modes button:hover { color: var(--ink); }
+.modes button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+.modes button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.chart { overflow-x: auto; min-height: 2rem; }
+.chart .uplot { font-family: var(--sans); }
+.chart .u-legend { width: auto; font-size: 0.8125rem; text-align: left; margin: 0.5rem 0 0; color: var(--ink); }
+.chart .u-legend th, .chart .u-legend td { border: 0; font-size: inherit; font-weight: 400; color: inherit; white-space: nowrap; }
+.chart .u-legend .u-value { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.chart .u-legend .u-marker { width: 0.75em; height: 0.75em; }
+.chart .u-legend .u-series:first-child th { color: var(--muted); }
+.chart .u-cursor-x, .chart .u-cursor-y { border-color: var(--muted) !important; }
+.chart .u-select { background: color-mix(in srgb, var(--ink) 8%, transparent); }
+#stage-table { margin-top: 1.5rem; }
+
+.paths { display: grid; gap: 2rem; }
+.path h4 { margin: 0 0 0.25rem; }
+.path p { margin: 0 0 0.5rem; font-size: 0.875rem; color: var(--muted); }
+.path .bar { margin: 0.75rem 0 0.5rem; }
+.path details { margin-top: 0.5rem; }
+#milestone-list { border-top: 1px solid var(--rule); }
+.milestone { margin: 0; border-bottom: 1px solid var(--faint); }
+.milestone > summary { padding: 0.75rem 0; color: var(--ink); font-size: 0.9375rem; }
+.milestone[open] > summary { margin-bottom: 0; }
+.milestone > summary .count { float: right; margin-left: 1rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.states { display: flex; gap: 2px; height: 0.75rem; margin: 0.5rem 0 0.375rem; }
+.states span { min-width: 3px; }
+.states:hover span:not(:hover) { opacity: 0.35; }
+.keys { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; font-size: 0.8125rem; color: var(--muted); }
+.keys span { white-space: nowrap; }
+.keys i { display: inline-block; width: 0.625rem; height: 0.625rem; margin-right: 0.375rem; vertical-align: baseline; }
+.keys b { font-weight: 500; color: var(--ink); font-variant-numeric: tabular-nums; }
+.state-done { background: var(--done); }
+.state-review { background: var(--c1); }
+.state-ready { background: var(--c4); }
+.state-waiting { background: var(--open); }
+.state-unplanned { background: repeating-linear-gradient(135deg, var(--open) 0 2px, transparent 2px 5px); box-shadow: inset 0 0 0 1px var(--open); }
+.milestone-body { padding: 0 0 1.5rem 1.125rem; }
+.milestone-body > p { margin: 0 0 0.75rem; font-size: 0.875rem; color: var(--muted); }
+
+.filter { display: block; margin-top: 1rem; font-size: 0.8125rem; color: var(--muted); }
+.filter input { display: block; width: 100%; margin-top: 0.375rem; padding: 0.5rem 0.625rem; font: 0.9375rem var(--sans); color: var(--ink); background: transparent; border: 1px solid var(--rule); border-radius: 0; }
+.filter input:focus { outline: 2px solid var(--ink); outline-offset: -1px; }
+#deviation-latest, #deviation-list { border-top: 1px solid var(--rule); }
+.deviation-task summary .date { display: inline-block; min-width: 3.75rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.deviation-group > summary .count { white-space: nowrap; }
+.deviation-group .milestone-body { padding-bottom: 1rem; }
+.deviation-task { margin: 0; border-bottom: 1px solid var(--faint); }
+.deviation-task summary { padding: 0.5rem 0; color: var(--ink); font-size: 0.9375rem; }
+.deviation-task[open] summary { margin-bottom: 0; }
+.deviation-task summary .count { float: right; margin-left: 1rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.deviation-task ul { list-style: none; margin: 0; padding: 0.25rem 0 1.25rem 1.125rem; display: grid; gap: 0.875rem; }
+.deviation-task p { margin: 0; }
+.deviation-task .why { color: var(--muted); font-size: 0.9375rem; margin-top: 0.125rem; }
+.deviation-task .source { font: 0.8125rem var(--mono); margin-top: 0.25rem; }
+
+footer { border-top: 1px solid var(--ink); margin-top: 3.5rem; padding: 1rem 0 3rem; font-size: 0.8125rem; color: var(--muted); }
+footer p { margin: 0 0 0.25rem; }
+</style>
+</head>
+<body>
+<header class="masthead">
+  <div class="wrap">
+    <a class="brand" href="#overview">betterlite <span>progress</span></a>
+    <nav aria-label="Sections">
+      <a href="#overview">Overview</a>
+      <a href="#history">History</a>
+      <a href="#milestones">Milestones</a>
+      <a href="#deviations">Deviations</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <section id="overview">
+    <div class="lede">
+      <h1>Porting LiteLLM to Rust</h1>
+      <p>betterlite rewrites <a id="litellm-link" href="https://github.com/BerriAI/litellm">LiteLLM</a> in Rust under the MIT license. Coding agents build it one task at a time, and a task merges once its gate passes. This page reads the task list on main and is rebuilt after every merge.</p>
+      <p class="status" id="status" role="status">Loading the task list</p>
+      <div class="figures" id="figures"></div>
+    </div>
+
+    <div class="block">
+      <header>
+        <h3>Milestones</h3>
+        <p>Tasks merged in each milestone. A milestone groups related work, not a build order: many tasks depend on work in later milestones.</p>
+      </header>
+      <div class="table-scroll" id="milestone-table"></div>
+    </div>
+
+    <div class="block">
+      <header>
+        <h3>Areas of LiteLLM</h3>
+        <p>LiteLLM's Python files by folder. A file counts as ported in the share its merged tasks make up of all tasks that cover it.</p>
+      </header>
+      <div class="table-scroll" id="areas"></div>
+    </div>
+  </section>
+
+  <section id="history" hidden>
+    <div class="section-head">
+      <h2>History</h2>
+      <p>Hover a chart to read its values below it. Click a legend entry to hide that line, drag across a chart to zoom in and double-click to zoom out.</p>
+    </div>
+    <div class="block">
+      <header>
+        <h3>Tasks merged</h3>
+        <p>Total merged into main at the end of each day.</p>
+        <div class="modes" data-chart="burnup" role="group" aria-label="Tasks merged by">
+          <button type="button" value="tasks" aria-pressed="true">Tasks</button>
+          <button type="button" value="milestones" aria-pressed="false">Milestones</button>
+          <button type="button" value="prs" aria-pressed="false">All PRs</button>
+        </div>
+        <p id="unmatched" hidden></p>
+      </header>
+      <div class="chart" id="burnup"></div>
+    </div>
+    <div class="block">
+      <header>
+        <h3>Merges per day</h3>
+        <p>Pull requests merged into main each day.</p>
+        <div class="modes" data-chart="daily" role="group" aria-label="Merges per day by">
+          <button type="button" value="tasks" aria-pressed="true">Tasks</button>
+          <button type="button" value="milestones" aria-pressed="false">Milestones</button>
+          <button type="button" value="prs" aria-pressed="false">All PRs</button>
+        </div>
+      </header>
+      <div class="chart" id="daily"></div>
+    </div>
+    <div class="block">
+      <header>
+        <h3>Time per pull request</h3>
+        <p>One dot per pull request and stage, placed at the day it merged. The line is the median of the last 20 pull requests. The scale is logarithmic, and a stage under a minute sits on the one-minute line.</p>
+        <div class="modes" data-chart="stages" role="group" aria-label="Time per pull request for">
+          <button type="button" value="tasks" aria-pressed="true">Tasks</button>
+          <button type="button" value="prs" aria-pressed="false">All PRs</button>
+        </div>
+        <p id="stage-count"></p>
+      </header>
+      <div>
+        <div class="chart" id="stages"></div>
+        <div class="table-scroll" id="stage-table"></div>
+      </div>
+    </div>
+    <div class="block">
+      <header>
+        <h3>Open pull requests</h3>
+        <p>Read live from GitHub when the page loads.</p>
+      </header>
+      <div class="table-scroll" id="open-prs"></div>
+    </div>
+    <div class="block">
+      <header>
+        <h3>Latest merges</h3>
+        <p>Newest first.</p>
+      </header>
+      <div class="table-scroll" id="merges"></div>
+    </div>
+  </section>
+
+  <section id="milestones" hidden>
+    <div class="section-head">
+      <h2>Milestones</h2>
+      <p>Where every task stands, by milestone. Open a milestone to see what is in review, what can start now, its umbrella tasks and what it waits on.</p>
+    </div>
+    <div class="block">
+      <header>
+        <h3>Request paths</h3>
+        <p>Two requests that should work end to end. Each one counts every task its target tasks need through their dependencies.</p>
+      </header>
+      <div class="paths" id="paths"><p class="empty">Asking GitHub which tasks are in review</p></div>
+    </div>
+    <div class="block">
+      <header>
+        <h3>By milestone</h3>
+        <p>Done: merged, or closed without code. In review: a task pull request is open. Ready: the task file is written and every dependency is merged. Waiting: a dependency is not merged yet. No task file: the planner has not written it yet.</p>
+        <p id="review-note" hidden>GitHub didn't answer, so no task shows as in review.</p>
+      </header>
+      <div id="milestone-list"><p class="empty">Asking GitHub which tasks are in review</p></div>
+    </div>
+  </section>
+
+  <section id="deviations" hidden>
+    <div class="section-head">
+      <h2>Deviations</h2>
+      <p>Where betterlite differs from LiteLLM on purpose. Each task logs every such place, with the reason and the LiteLLM code it departs from.</p>
+    </div>
+    <div class="block">
+      <header>
+        <h3>Latest</h3>
+        <p>The last five tasks that merged with deviations, newest first.</p>
+      </header>
+      <div id="deviation-latest"></div>
+    </div>
+    <div class="block">
+      <header>
+        <h3>By milestone</h3>
+        <p>Every deviation, grouped by the milestone of the task that logged it. Inside a milestone the newest task comes first.</p>
+        <p id="deviation-count"></p>
+        <label class="filter">Filter
+          <input id="deviation-filter" type="search" placeholder="Task, word or LiteLLM file" autocomplete="off" spellcheck="false">
+        </label>
+      </header>
+      <div id="deviation-list"></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p id="built"></p>
+    <p>Data: the task list in <a href="https://github.com/betterlite-ai/betterlite/tree/main/.development/backlog">.development/backlog</a> and the logs in <a href="https://github.com/betterlite-ai/betterlite/tree/main/docs/deviations">docs/deviations</a>. Source of this page: <a href="https://github.com/betterlite-ai/betterlite/blob/main/.development/site/index.html">.development/site/index.html</a>.</p>
+  </div>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.1/js-yaml.min.js" integrity="sha512-Ccva9tZjPfyRDMMosATBaEnAKvX+eBbDfHMnr+0LhTa+NMqKRxUAoDGPotb8biwzQ6xnf4IYuDaPiXw10DYaNA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.iife.min.js" integrity="sha384-Gx3t0zdBAuQOuvvmaLZj7HKEiSgWTAs+VdtNY7wt19QDPTDQjFIwAuXDj0zeN00c" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script>
+"use strict";
+
+const REPO = "betterlite-ai/betterlite";
+const GITHUB = `https://github.com/${REPO}`;
+const DAY = 86400000;
+const MEDIAN_WINDOW = 20;
+// Gridlines of the logarithmic stage chart, in minutes.
+const STAGE_TICKS = [1, 5, 15, 60, 240, 1440, 4320, 10080];
+// Steps between date ticks, in seconds: whole days on the daily charts, hours too on the stage chart.
+const DAY_STEPS = [86400, 172800, 604800, 1209600, 2419200];
+const HOUR_STEPS = [3600, 10800, 21600, 43200, ...DAY_STEPS];
+const STAGES = [
+  { key: "build", label: "Build", about: "First commit to pull request opened", color: "--c1" },
+  { key: "checks", label: "Checks", about: "Opened to added to the merge queue", color: "--c2" },
+  { key: "queue", label: "Queue", about: "Added to the merge queue to merged", color: "--c3" },
+];
+const STATES = [
+  { key: "done", label: "Done" },
+  { key: "review", label: "In review" },
+  { key: "ready", label: "Ready" },
+  { key: "waiting", label: "Waiting" },
+  { key: "unplanned", label: "No task file" },
+];
+
+// First match wins, so the narrower folders come before litellm/proxy/.
+const AREAS = [
+  { name: "Providers", prefixes: ["litellm/llms/"] },
+  { name: "Guardrails", prefixes: ["litellm/proxy/guardrails/", "litellm/guardrails"] },
+  { name: "Proxy server, keys and spend", prefixes: ["litellm/proxy/"] },
+  { name: "Router", prefixes: ["litellm/router"] },
+  { name: "Observability", prefixes: ["litellm/integrations/"] },
+  { name: "Core", prefixes: ["litellm/litellm_core_utils/", "litellm/main.py", "litellm/utils.py", "litellm/cost_calculator", "litellm/exceptions", "litellm/types/"] },
+  { name: "Everything else", prefixes: [""] },
+];
+
+const PATHS = [
+  {
+    name: "Router and Anthropic",
+    about: "A chat request goes through the router, picks a deployment, retries within its deadline and gets its answer from Anthropic.",
+    targets: ["B016", "B017", "B027"],
+  },
+  {
+    name: "Keys, spend and logging",
+    about: "The same request behind virtual keys, with its cost written to spend tracking and the call logged.",
+    targets: ["B016", "B017", "B027", "B014", "B052", "B068", "B070", "B012"],
+  },
+];
+
+const ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" };
+const number = new Intl.NumberFormat("en-US");
+const shortDate = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
+const longDate = new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+const dayTime = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+const hourOnly = new Intl.DateTimeFormat("en-US", { hour: "numeric" });
+
+function esc(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (c) => ESCAPES[c]);
+}
+
+function percent(part, whole) {
+  const share = whole === 0 ? 0 : (100 * part) / whole;
+  return `${share.toFixed(1)}%`;
+}
+
+function idNumber(id) {
+  return Number(id.slice(1));
+}
+
+function taskLink(entry) {
+  const href = entry.pr ? `${GITHUB}/pull/${entry.pr}` : `${GITHUB}/blob/main/.development/backlog/${entry.id}.yaml`;
+  return `<a class="id" href="${esc(href)}">${esc(entry.id)}</a>`;
+}
+
+function progressBar(part, whole) {
+  const share = whole === 0 ? 0 : (100 * part) / whole;
+  return `<div class="bar" role="img" aria-label="${percent(part, whole)} done"><div class="track"><div class="fill" style="width:${share.toFixed(2)}%"></div></div><span class="pct">${percent(part, whole)}</span></div>`;
+}
+
+function figure(value, small, label) {
+  return `<div class="figure"><div class="value">${value} <small>${small}</small></div><div class="label">${label}</div></div>`;
+}
+
+function dayKey(time) {
+  const date = new Date(time);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+// Globs follow globset with literal_separator: * and ? stay inside one path segment, ** crosses them.
+function globToRegExp(glob) {
+  let source = "";
+  let braces = 0;
+  for (let i = 0; i < glob.length; i++) {
+    const c = glob[i];
+    if (c === "*" && glob[i + 1] === "*" && glob[i + 2] === "/") {
+      source += "(?:.*/)?";
+      i += 2;
+    } else if (c === "*" && glob[i + 1] === "*") {
+      source += ".*";
+      i += 1;
+    } else if (c === "*") {
+      source += "[^/]*";
+    } else if (c === "?") {
+      source += "[^/]";
+    } else if (c === "[" && glob.indexOf("]", i + 2) !== -1) {
+      const end = glob.indexOf("]", i + 2);
+      const body = glob.slice(i + 1, end).replace(/\\/g, "\\\\");
+      source += body.startsWith("!") ? `[^${body.slice(1)}]` : `[${body}]`;
+      i = end;
+    } else if (c === "{") {
+      source += "(?:";
+      braces += 1;
+    } else if (c === "}" && braces > 0) {
+      source += ")";
+      braces -= 1;
+    } else if (c === "," && braces > 0) {
+      source += "|";
+    } else {
+      source += c.replace(/[.+^$()|\\[\]{}]/g, "\\$&");
+    }
+  }
+  return new RegExp(`^${source}$`);
+}
+
+async function fetchText(path) {
+  const response = await fetch(path, { cache: "no-cache" });
+  if (!response.ok) {
+    throw new Error(`${path} answered HTTP ${response.status}`);
+  }
+  return response.text();
+}
+
+function cssColor(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+function duration(minutes) {
+  if (minutes < 1) {
+    return "under 1 min";
+  }
+  const total = Math.round(minutes);
+  if (total < 60) {
+    return `${total} min`;
+  }
+  if (total < 2880) {
+    return total % 60 === 0 ? `${total / 60} h` : `${Math.floor(total / 60)} h ${total % 60} min`;
+  }
+  const hours = Math.round(minutes / 60);
+  return hours % 24 === 0 ? `${hours / 24} d` : `${Math.floor(hours / 24)} d ${hours % 24} h`;
+}
+
+function quantile(values, share) {
+  const sorted = values.filter((value) => value !== null).sort((a, b) => a - b);
+  return sorted.length === 0 ? null : sorted[Math.min(sorted.length - 1, Math.floor(share * sorted.length))];
+}
+
+function minutesBetween(from, to) {
+  return from && to ? Math.max(0, (Date.parse(to) - Date.parse(from)) / 60000) : null;
+}
+
+function dayStarts(first) {
+  const days = [];
+  const cursor = new Date(first);
+  cursor.setHours(0, 0, 0, 0);
+  while (cursor.getTime() <= Date.now()) {
+    days.push(cursor.getTime());
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return days;
+}
+
+function countPerDay(days, times) {
+  const slots = new Map(days.map((day, i) => [dayKey(day), i]));
+  const counts = days.map(() => 0);
+  for (const time of times) {
+    counts[slots.get(dayKey(time))] += 1;
+  }
+  return counts;
+}
+
+// Each view is a list of series: a label, a color variable and the merge times the series counts.
+function historyViews(merges, milestones, pulls, byPull) {
+  const taskTimes = merges.map((merge) => merge.time);
+  const byCode = new Map();
+  for (const merge of merges) {
+    const code = merge.entry.milestone.split(" ")[0];
+    byCode.set(code, [...(byCode.get(code) ?? []), merge.time]);
+  }
+  // Seven colors plus Other, so the milestones with the fewest merges share Other.
+  const ranked = [...byCode.keys()].sort((a, b) => byCode.get(b).length - byCode.get(a).length || idNumber(a) - idNumber(b));
+  const colored = ranked.slice(0, 7).sort((a, b) => idNumber(a) - idNumber(b));
+  const rest = ranked.slice(7).sort((a, b) => idNumber(a) - idNumber(b));
+  const byMilestone = colored.map((code, i) => ({ label: milestones.get(code).name, color: `--c${i + 1}`, times: byCode.get(code) }));
+  if (rest.length > 0) {
+    byMilestone.push({ label: `Other: ${rest.join(", ")}`, color: "--other", times: rest.flatMap((code) => byCode.get(code)) });
+  }
+  const otherTimes = pulls.filter((pull) => !byPull.has(pull.number)).map((pull) => Date.parse(pull.merged));
+  return {
+    tasks: [{ label: "Tasks", color: "--done", times: taskTimes }],
+    milestones: byMilestone,
+    prs: [{ label: "Tasks", color: "--c6", times: taskTimes }, { label: "Other PRs", color: "--c1", times: otherTimes }],
+  };
+}
+
+function stageRows(pulls, byPull) {
+  const rows = pulls.map((pull) => ({
+    number: pull.number,
+    task: byPull.get(pull.number)?.id,
+    merged: Math.floor(Date.parse(pull.merged) / 1000),
+    build: minutesBetween(pull.first, pull.opened),
+    checks: minutesBetween(pull.opened, pull.queued),
+    queue: minutesBetween(pull.queued, pull.merged),
+    total: minutesBetween(pull.first, pull.merged),
+  })).sort((a, b) => a.merged - b.merged);
+  // uPlot needs rising x values, and some pull requests merged in the same second.
+  for (let i = 1; i < rows.length; i++) {
+    rows[i].merged = Math.max(rows[i].merged, rows[i - 1].merged + 1);
+  }
+  return rows;
+}
+
+// Without the cursor on the chart, the legend shows the last point instead of dashes.
+function legendAtEnd(chart) {
+  if (chart.cursor.idx == null) {
+    chart.setLegend({ idx: chart.data[0].length - 1 });
+  }
+}
+
+function axis() {
+  return {
+    stroke: cssColor("--muted"),
+    font: "11px 'IBM Plex Mono', ui-monospace, monospace",
+    grid: { stroke: cssColor("--faint"), width: 1 },
+    ticks: { stroke: cssColor("--rule"), width: 1, size: 4 },
+  };
+}
+
+// Midnight ticks show the date, the ones between show the hour.
+function timeLabels(chart, splits) {
+  return splits.map((split) => {
+    const date = new Date(split * 1000);
+    return date.getHours() === 0 ? shortDate.format(date) : hourOnly.format(date);
+  });
+}
+
+function chartOptions(container, height, colors, first, incrs) {
+  return {
+    width: Math.max(320, container.clientWidth),
+    height,
+    cursor: { y: false, sync: { key: "history" }, drag: { x: true, y: false } },
+    legend: { markers: { width: 0, fill: (chart, i) => colors[i] } },
+    scales: { x: { time: true }, y: { range: (chart, min, max) => [0, uPlot.rangeNum(0, max, 0.1, true)[1]] } },
+    axes: [{ ...axis(), space: 60, incrs, values: timeLabels }, { ...axis(), size: 48 }],
+    series: [first],
+    hooks: { ready: [legendAtEnd], setCursor: [legendAtEnd] },
+  };
+}
+
+function dayLabel(chart, value) {
+  return value == null ? null : shortDate.format(value * 1000);
+}
+
+function drawTotals(container, days, view) {
+  const colors = [null, ...view.map((series) => cssColor(series.color))];
+  const data = [days.map((day) => day / 1000)];
+  for (const series of view) {
+    const totals = [];
+    let total = 0;
+    for (const count of countPerDay(days, series.times)) {
+      total += count;
+      totals.push(total);
+    }
+    data.push(totals);
+  }
+  const options = chartOptions(container, 260, colors, { label: "Day", value: dayLabel }, DAY_STEPS);
+  view.forEach((series, i) => {
+    options.series.push({
+      label: series.label,
+      stroke: colors[i + 1],
+      width: 2,
+      fill: view.length === 1 ? `${colors[i + 1]}1f` : undefined,
+      points: { show: false },
+      value: (chart, value) => (value == null ? null : number.format(value)),
+    });
+  });
+  return new uPlot(options, data, container);
+}
+
+// A series' bar reaches its own count plus every shown series after it. Taller bars draw first, so later ones cover their lower part.
+function stackBars(counts, shown) {
+  const stacked = [];
+  let below = counts[0].map(() => 0);
+  for (let k = counts.length - 1; k >= 0; k--) {
+    if (shown[k]) {
+      below = below.map((sum, i) => sum + counts[k][i]);
+    }
+    stacked[k] = shown[k] ? below : counts[k];
+  }
+  return stacked;
+}
+
+function drawDaily(container, days, view) {
+  const colors = [null, ...view.map((series) => cssColor(series.color))];
+  const counts = view.map((series) => countPerDay(days, series.times));
+  const x = days.map((day) => day / 1000);
+  const options = chartOptions(container, 220, colors, { label: "Day", value: dayLabel }, DAY_STEPS);
+  options.scales.x.range = (chart, min, max) => [min - 43200, max + 43200];
+  options.cursor.points = { show: false };
+  const bars = uPlot.paths.bars({ size: [0.7, 48] });
+  view.forEach((series, i) => {
+    options.series.push({
+      label: series.label,
+      fill: colors[i + 1],
+      stroke: cssColor("--paper"),
+      width: 1,
+      paths: bars,
+      points: { show: false },
+      value: (chart, value, seriesIdx, idx) => (idx == null ? null : number.format(counts[seriesIdx - 1][idx])),
+    });
+  });
+  options.hooks.setSeries = [(chart) => chart.setData([x, ...stackBars(counts, chart.series.slice(1).map((series) => series.show))])];
+  return new uPlot(options, [x, ...stackBars(counts, view.map(() => true))], container);
+}
+
+function drawStages(container, rows) {
+  const paper = cssColor("--paper");
+  const colors = [null];
+  const raw = [null];
+  const data = [rows.map((row) => row.merged)];
+  const label = (chart, value, seriesIdx, idx) => (idx == null ? null : `#${rows[idx].number}${rows[idx].task ? ` ${rows[idx].task}` : ""}, ${dayTime.format(rows[idx].merged * 1000)}`);
+  const value = (chart, plotted, seriesIdx, idx) => (idx == null || raw[seriesIdx][idx] === null ? null : duration(raw[seriesIdx][idx]));
+  const options = chartOptions(container, 320, colors, { label: "Pull request", value: label }, HOUR_STEPS);
+  for (const stage of STAGES) {
+    const color = cssColor(stage.color);
+    const values = rows.map((row) => row[stage.key]);
+    const medians = [];
+    for (let i = 0; i < values.length; i++) {
+      medians.push(quantile(values.slice(Math.max(0, i - MEDIAN_WINDOW + 1), i + 1), 0.5));
+    }
+    colors.push(color, color);
+    raw.push(values, medians);
+    // The scale is logarithmic, so anything under a minute sits on the one-minute line.
+    data.push(values.map((minutes) => (minutes === null ? null : Math.max(1, minutes))));
+    data.push(medians.map((minutes) => (minutes === null ? null : Math.max(1, minutes))));
+    options.series.push(
+      { label: stage.label, stroke: color, width: 0, paths: () => null, points: { show: true, size: 8, width: 1, stroke: paper, fill: `${color}80` }, value },
+      { label: `${stage.label} median`, stroke: color, width: 2, points: { show: false }, value },
+    );
+  }
+  options.cursor.points = { size: 12, width: 2, stroke: (chart, i) => colors[i], fill: paper };
+  options.scales.y = { distr: 3, log: 10, range: (chart, min, max) => [1, STAGE_TICKS.find((tick) => tick >= max) ?? max] };
+  options.axes[1] = {
+    ...axis(),
+    size: 64,
+    splits: (chart, axisIdx, min, max) => STAGE_TICKS.filter((tick) => tick >= min && tick <= max),
+    // uPlot labels only powers of ten on a log scale unless the filter keeps every tick.
+    filter: (chart, splits) => splits,
+    values: (chart, splits) => splits.map(duration),
+  };
+  return new uPlot(options, data, container);
+}
+
+function renderStageTable(rows) {
+  const parts = [...STAGES, { key: "total", label: "Total", about: "First commit to merged" }];
+  const cells = parts.map((stage) => {
+    const values = rows.map((row) => row[stage.key]);
+    return `<tr><td>${esc(stage.label)}</td><td class="muted">${esc(stage.about)}</td><td class="num">${esc(duration(quantile(values, 0.5)))}</td><td class="num">${esc(duration(quantile(values, 0.9)))}</td></tr>`;
+  });
+  document.getElementById("stage-table").innerHTML = `<table><thead><tr><th>Stage</th><th>From and to</th><th class="num">Median</th><th class="num">90th percentile</th></tr></thead><tbody>${cells.slice(0, -1).join("")}</tbody><tfoot>${cells.at(-1)}</tfoot></table>`;
+  document.getElementById("stage-count").textContent = `${number.format(rows.length)} merged since ${shortDate.format(rows[0].merged * 1000)}.`;
+}
+
+function drawHistory(charts, days, views, rows) {
+  for (const chart of charts.values()) {
+    chart.destroy();
+  }
+  const burnup = document.getElementById("burnup");
+  const daily = document.getElementById("daily");
+  const stages = document.getElementById("stages");
+  charts.set(burnup, drawTotals(burnup, days, views[document.querySelector('.modes[data-chart="burnup"] [aria-pressed="true"]').value]));
+  charts.set(daily, drawDaily(daily, days, views[document.querySelector('.modes[data-chart="daily"] [aria-pressed="true"]').value]));
+  const pulls = document.querySelector('.modes[data-chart="stages"] [aria-pressed="true"]').value === "tasks" ? rows.filter((row) => row.task) : rows;
+  charts.set(stages, drawStages(stages, pulls));
+  renderStageTable(pulls);
+}
+
+function depthOf(id, byId, depths, next) {
+  if (depths.has(id)) {
+    return depths.get(id);
+  }
+  depths.set(id, 0);
+  const entry = byId.get(id);
+  let best = 0;
+  for (const dep of entry.depends_on ?? []) {
+    if (!byId.has(dep)) {
+      continue;
+    }
+    const depth = depthOf(dep, byId, depths, next);
+    if (depth > best) {
+      best = depth;
+      next.set(id, dep);
+    }
+  }
+  const depth = best + (entry.status === "done" ? 0 : 1);
+  depths.set(id, depth);
+  return depth;
+}
+
+// Every task the path's targets need, through depends_on, and the longest run of open tasks among them.
+function analyzePath(path, byId, depths, next) {
+  const members = new Set();
+  const stack = [...path.targets];
+  while (stack.length > 0) {
+    const id = stack.pop();
+    if (members.has(id) || !byId.has(id)) {
+      continue;
+    }
+    members.add(id);
+    stack.push(...(byId.get(id).depends_on ?? []));
+  }
+  const entries = [...members].map((id) => byId.get(id));
+  const open = entries.filter((entry) => entry.status !== "done").sort((a, b) => idNumber(a.id) - idNumber(b.id));
+
+  let head = path.targets[0];
+  for (const id of path.targets) {
+    if (depthOf(id, byId, depths, next) > depthOf(head, byId, depths, next)) {
+      head = id;
+    }
+  }
+  const chain = [];
+  for (let id = head; id !== undefined; id = next.get(id)) {
+    if (byId.get(id).status !== "done") {
+      chain.push(byId.get(id));
+    }
+  }
+  chain.reverse();
+  return { path, total: entries.length, open, chain, withoutFile: open.filter((entry) => !entry.file).length };
+}
+
+// The first five rows, and the rest behind a toggle.
+function shortTable(head, rows, rest) {
+  const shown = `<div class="table-scroll"><table>${head}<tbody>${rows.slice(0, 5).join("")}</tbody></table></div>`;
+  if (rows.length <= 5) {
+    return shown;
+  }
+  return `${shown}<details><summary>Show ${number.format(rows.length - 5)} ${rest}</summary><div class="table-scroll"><table>${head}<tbody>${rows.slice(5).join("")}</tbody></table></div></details>`;
+}
+
+function taskRow(entry) {
+  return `<tr><td>${taskLink(entry)}</td><td>${esc(entry.title)}</td></tr>`;
+}
+
+function renderPath(facts, byId, reviewing) {
+  const { path, total, open, chain, withoutFile } = facts;
+  const done = total - open.length;
+  const ready = open.filter((entry) => taskState(entry, byId, reviewing) === "ready");
+  const inReview = open.filter((entry) => reviewing.has(entry.id)).length;
+  const targets = path.targets.map((id) => taskLink(byId.get(id))).join(", ");
+  const readyRows = ready.map((entry) => `<tr><td>${taskLink(entry)}</td><td>${esc(entry.title)}</td><td class="muted">${esc(entry.milestone)}</td></tr>`);
+  const chainRows = chain.map((entry, i) => `<tr><td class="num muted">${i + 1}</td><td>${taskLink(entry)}</td><td>${esc(entry.title)}</td><td class="muted">${esc(entry.milestone)}</td></tr>`).join("");
+  const readyTable = ready.length === 0
+    ? `<p class="empty">Nothing on this path can start yet.</p>`
+    : shortTable(`<thead><tr><th>Task</th><th>Title</th><th>Milestone</th></tr></thead>`, readyRows, "more");
+  const chainTable = chain.length === 0
+    ? ""
+    : `<details><summary>Longest open chain, ${number.format(chain.length)} tasks, first step first</summary><div class="table-scroll"><table><thead><tr><th class="num">Step</th><th>Task</th><th>Title</th><th>Milestone</th></tr></thead><tbody>${chainRows}</tbody></table></div></details>`;
+
+  return `<div class="path">
+    <h4>${esc(path.name)}</h4>
+    <p>${esc(path.about)} Done when ${targets} merge.</p>
+    ${progressBar(done, total)}
+    <p>${number.format(done)} of ${number.format(total)} tasks merged, dependencies included. The longest open chain is ${number.format(chain.length)} tasks, ${number.format(withoutFile)} still need a task file and ${number.format(inReview)} ${inReview === 1 ? "is" : "are"} in review. These ${number.format(ready.length)} are ready to start:</p>
+    ${readyTable}
+    ${chainTable}
+  </div>`;
+}
+
+function taskState(entry, byId, reviewing) {
+  if (entry.status === "done") {
+    return "done";
+  }
+  if (reviewing.has(entry.id)) {
+    return "review";
+  }
+  if (!entry.file) {
+    return "unplanned";
+  }
+  return (entry.depends_on ?? []).some((dep) => byId.has(dep) && byId.get(dep).status !== "done") ? "waiting" : "ready";
+}
+
+function renderMilestone(group, milestones, byId, children, merges, reviewing) {
+  const byState = new Map(STATES.map((state) => [state.key, []]));
+  for (const entry of [...group.entries].sort((a, b) => idNumber(a.id) - idNumber(b.id))) {
+    byState.get(taskState(entry, byId, reviewing)).push(entry);
+  }
+  const bar = STATES.filter((state) => byState.get(state.key).length > 0)
+    .map((state) => `<span class="state-${state.key}" style="flex-grow:${byState.get(state.key).length}" title="${state.label}: ${number.format(byState.get(state.key).length)}"></span>`)
+    .join("");
+  const keys = STATES.map((state) => `<span><i class="state-${state.key}"></i>${state.label} <b>${number.format(byState.get(state.key).length)}</b></span>`).join("");
+
+  const sections = [];
+  const review = byState.get("review");
+  if (review.length > 0) {
+    const rows = review.map((entry) => `<tr><td>${taskLink(entry)}</td><td>${esc(entry.title)}</td><td class="id"><a href="${esc(reviewing.get(entry.id).html_url)}">#${reviewing.get(entry.id).number}</a></td></tr>`);
+    sections.push(`<h4>In review</h4>${shortTable(`<thead><tr><th>Task</th><th>Title</th><th>Pull request</th></tr></thead>`, rows, "more")}`);
+  }
+  const ready = byState.get("ready");
+  if (ready.length > 0) {
+    sections.push(`<h4>Ready now</h4>${shortTable(`<thead><tr><th>Task</th><th>Title</th></tr></thead>`, ready.map(taskRow), "more")}`);
+  }
+  const umbrellas = group.entries.filter((entry) => children.has(entry.id)).sort((a, b) => idNumber(a.id) - idNumber(b.id));
+  if (umbrellas.length > 0) {
+    const rows = umbrellas.map((entry) => {
+      const parts = children.get(entry.id);
+      const done = parts.filter((part) => part.status === "done").length;
+      return `<tr><td>${taskLink(entry)}</td><td>${esc(entry.title)}</td><td class="num">${number.format(done)} of ${number.format(parts.length)}</td><td>${progressBar(done, parts.length)}</td></tr>`;
+    });
+    sections.push(`<h4>Umbrella tasks</h4>${shortTable(`<thead><tr><th>Task</th><th>Title</th><th class="num">Parts done</th><th>Progress</th></tr></thead>`, rows, "more")}`);
+  }
+  const waiting = byState.get("waiting");
+  if (waiting.length > 0) {
+    const needed = new Map();
+    for (const entry of waiting) {
+      for (const dep of entry.depends_on) {
+        const other = byId.get(dep);
+        if (other && other.status !== "done") {
+          const code = other.milestone.split(" ")[0];
+          needed.set(code, (needed.get(code) ?? new Set()).add(dep));
+        }
+      }
+    }
+    const rows = [...needed.entries()]
+      .sort((a, b) => b[1].size - a[1].size)
+      .map(([code, ids]) => `<tr><td>${esc(milestones.get(code).name)}</td><td class="num">${number.format(ids.size)}</td></tr>`);
+    sections.push(`<h4>Waiting on</h4><p>The ${number.format(waiting.length)} waiting tasks here need these unmerged tasks first, counted by the milestone they belong to.</p>${shortTable(`<thead><tr><th>Milestone</th><th class="num">Unmerged tasks needed</th></tr></thead>`, rows, "more")}`);
+  }
+  const merged = merges.filter((merge) => merge.entry.milestone.split(" ")[0] === group.code).slice(0, 5);
+  if (merged.length > 0) {
+    const rows = merged.map((merge) => `<tr><td class="muted date">${esc(shortDate.format(merge.time))}</td><td>${taskLink(merge.entry)}</td><td>${esc(merge.entry.title)}</td></tr>`);
+    sections.push(`<h4>Last merged</h4>${shortTable(`<thead><tr><th>Date</th><th>Task</th><th>Title</th></tr></thead>`, rows, "more")}`);
+  }
+
+  return `<details class="milestone" id="milestone-${esc(group.code)}">
+    <summary><span class="count">${number.format(group.done)} of ${number.format(group.total)}</span>${esc(group.name)}<span class="states" aria-hidden="true">${bar}</span><span class="keys">${keys}</span></summary>
+    <div class="milestone-body">${sections.join("")}</div>
+  </details>`;
+}
+
+function renderMilestoneList(milestones, entries, byId, merges, reviewing) {
+  const children = new Map();
+  for (const entry of entries) {
+    if (entry.parent) {
+      const parts = children.get(entry.parent) ?? [];
+      parts.push(entry);
+      children.set(entry.parent, parts);
+    }
+  }
+  document.getElementById("milestone-list").innerHTML = [...milestones.values()]
+    .sort((a, b) => idNumber(a.code) - idNumber(b.code))
+    .map((group) => renderMilestone(group, milestones, byId, children, merges, reviewing))
+    .join("");
+}
+
+function plural(count, word) {
+  return `${number.format(count)} ${word}${count === 1 ? "" : "s"}`;
+}
+
+function deviationTask(task) {
+  const items = task.log.deviations.map((deviation) => {
+    const source = /^https:\/\//.test(deviation.link ?? "") ? `<p class="source"><a href="${esc(deviation.link)}">LiteLLM source</a></p>` : "";
+    return `<li><p>${esc(deviation.what)}</p><p class="why">${esc(deviation.why)}</p>${source}</li>`;
+  }).join("");
+  const date = task.time === undefined ? "" : `<span class="date">${esc(shortDate.format(task.time))}</span>`;
+  return `<details class="deviation-task"><summary><span class="count">${number.format(task.log.deviations.length)}</span>${date}${taskLink(task.entry)} ${esc(task.entry.title)}</summary><ul>${items}</ul></details>`;
+}
+
+// A deviation file lands in the same commit as its task, so the task's merge time dates it.
+function renderDeviations(logs, byId, milestones, merges) {
+  const latest = document.getElementById("deviation-latest");
+  const list = document.getElementById("deviation-list");
+  const mergedAt = new Map(merges.map((merge) => [merge.entry.id, merge.time]));
+  const tasks = logs
+    .filter((log) => log && log.task && (log.deviations ?? []).length > 0)
+    .map((log) => ({ log, entry: byId.get(log.task) ?? { id: log.task, title: "", pr: null, milestone: "Not in the task list" }, time: mergedAt.get(log.task) }))
+    .sort((a, b) => (b.time ?? 0) - (a.time ?? 0) || idNumber(a.entry.id) - idNumber(b.entry.id));
+  const count = tasks.reduce((sum, task) => sum + task.log.deviations.length, 0);
+  document.getElementById("deviation-count").textContent = `${plural(count, "deviation")} from ${plural(tasks.length, "task")}.`;
+  if (tasks.length === 0) {
+    latest.innerHTML = `<p class="empty">No task has logged a deviation yet.</p>`;
+    list.innerHTML = latest.innerHTML;
+    return;
+  }
+  latest.innerHTML = tasks.slice(0, 5).map(deviationTask).join("");
+
+  const groups = new Map();
+  for (const task of tasks) {
+    const code = task.entry.milestone.split(" ")[0];
+    const group = groups.get(code) ?? { code, name: milestones.get(code)?.name ?? task.entry.milestone, tasks: [], count: 0 };
+    group.tasks.push(task);
+    group.count += task.log.deviations.length;
+    groups.set(code, group);
+  }
+  const ordered = [...groups.values()].sort((a, b) => idNumber(a.code) - idNumber(b.code));
+  list.innerHTML = ordered.map((group) => {
+    const rest = group.tasks.length <= 5 ? "" : `<details class="more"><summary>Show ${plural(group.tasks.length - 5, "more task")}</summary>${group.tasks.slice(5).map(deviationTask).join("")}</details>`;
+    return `<details class="milestone deviation-group"><summary><span class="count">${plural(group.count, "deviation")} from ${plural(group.tasks.length, "task")}</span>${esc(group.name)}</summary><div class="milestone-body">${group.tasks.slice(0, 5).map(deviationTask).join("")}${rest}</div></details>`;
+  }).join("") + `<p class="empty" id="deviation-none" hidden>No deviation matches the filter.</p>`;
+
+  // The link is searched too, so a LiteLLM file path finds every deviation from that file.
+  const listed = ordered.flatMap((group) => group.tasks);
+  const rows = [...list.querySelectorAll(".deviation-task")].map((task, i) => ({
+    task,
+    head: `${listed[i].entry.id} ${listed[i].entry.title}`.toLowerCase(),
+    items: [...task.querySelectorAll("li")].map((item, j) => {
+      const deviation = listed[i].log.deviations[j];
+      return { item, text: `${deviation.what} ${deviation.why} ${deviation.link ?? ""}`.toLowerCase() };
+    }),
+  }));
+  document.getElementById("deviation-filter").addEventListener("input", (event) => {
+    const query = event.target.value.trim().toLowerCase();
+    let shown = 0;
+    for (const row of rows) {
+      const whole = row.head.includes(query);
+      let matches = 0;
+      for (const { item, text } of row.items) {
+        item.hidden = !whole && !text.includes(query);
+        matches += item.hidden ? 0 : 1;
+      }
+      row.task.hidden = matches === 0;
+      row.task.open = query !== "" && matches > 0;
+      shown += matches > 0 ? 1 : 0;
+    }
+    for (const holder of list.querySelectorAll(".deviation-group, .more")) {
+      const matched = [...holder.querySelectorAll(".deviation-task")].some((task) => !task.hidden);
+      holder.hidden = !matched;
+      holder.open = query !== "" && matched;
+    }
+    document.getElementById("deviation-none").hidden = shown > 0;
+  });
+}
+
+// Answers the open pull request of each task in review, or null when GitHub doesn't answer.
+async function renderOpenPullRequests(byId) {
+  const container = document.getElementById("open-prs");
+  container.innerHTML = `<p class="empty">Asking GitHub</p>`;
+  let pulls;
+  try {
+    const response = await fetch(`https://api.github.com/repos/${REPO}/pulls?state=open&per_page=100`, { headers: { Accept: "application/vnd.github+json" }, signal: AbortSignal.timeout(10000) });
+    if (!response.ok) {
+      throw new Error(`GitHub answered HTTP ${response.status}`);
+    }
+    pulls = await response.json();
+  } catch (error) {
+    container.innerHTML = `<p class="empty">GitHub's API didn't answer (${esc(error.message)}). It allows 60 requests an hour per address without a login.</p>`;
+    return null;
+  }
+  const reviewing = new Map();
+  if (pulls.length === 0) {
+    container.innerHTML = `<p class="empty">No pull request is open right now.</p>`;
+    return reviewing;
+  }
+  const rows = pulls.map((pull) => {
+    const task = /^task\/(B\d+)/.exec(pull.head.ref);
+    const entry = task ? byId.get(task[1]) : undefined;
+    if (entry) {
+      reviewing.set(entry.id, pull);
+    }
+    const hours = Math.max(0, (Date.now() - Date.parse(pull.created_at)) / 3600000);
+    const age = hours < 1 ? "under an hour" : hours < 48 ? `${Math.floor(hours)} h` : `${Math.floor(hours / 24)} days`;
+    return `<tr><td class="id"><a href="${esc(pull.html_url)}">#${pull.number}</a></td><td>${esc(pull.title)}${entry ? ` <span class="muted">${esc(entry.milestone)}</span>` : ""}</td><td class="num muted">${age}</td></tr>`;
+  }).join("");
+  container.innerHTML = `<table><thead><tr><th>PR</th><th>Title</th><th class="num">Open for</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return reviewing;
+}
+
+// #milestone-M5 opens the Milestones tab at that milestone.
+function showTab() {
+  const links = [...document.querySelectorAll("nav a")];
+  const tab = location.hash.startsWith("#milestone-") ? "#milestones" : location.hash;
+  const current = links.find((link) => link.hash === tab) ?? links[0];
+  for (const link of links) {
+    document.getElementById(link.hash.slice(1)).hidden = link !== current;
+    link.setAttribute("aria-current", String(link === current));
+  }
+  const milestone = tab === location.hash ? null : document.getElementById(location.hash.slice(1));
+  if (milestone) {
+    milestone.open = true;
+    milestone.scrollIntoView();
+  } else {
+    window.scrollTo(0, 0);
+  }
+}
+
+// A file counts as ported in the merged share of its covering tasks, counting only leaf tasks when it has any.
+function coverage(entries, config, inventoryText) {
+  const parents = new Set(entries.map((entry) => entry.parent).filter(Boolean));
+  const excluded = (config.excluded ?? []).map((rule) => globToRegExp(rule.glob));
+  const files = inventoryText.split("\n").filter((line) => line.endsWith(".py") && !excluded.some((rule) => rule.test(line)));
+  const literal = new Map();
+  const wild = [];
+  for (const entry of entries) {
+    if (entry.status === "done" && entry.resolution !== "merged") {
+      continue;
+    }
+    for (const pattern of entry.covers ?? []) {
+      const special = pattern.search(/[*?[{]/);
+      if (special === -1) {
+        literal.set(pattern, [...(literal.get(pattern) ?? []), entry]);
+      } else {
+        wild.push({ prefix: pattern.slice(0, special), rule: globToRegExp(pattern), entry });
+      }
+    }
+  }
+  const areas = AREAS.map((area) => ({ ...area, files: 0, full: 0, ported: 0 }));
+  for (const file of files) {
+    const owners = new Set(literal.get(file) ?? []);
+    for (const glob of wild) {
+      if (file.startsWith(glob.prefix) && glob.rule.test(file)) {
+        owners.add(glob.entry);
+      }
+    }
+    const leaves = [...owners].filter((entry) => !parents.has(entry.id));
+    const counted = leaves.length > 0 ? leaves : [...owners];
+    const share = counted.length === 0 ? 0 : counted.filter((entry) => entry.status === "done").length / counted.length;
+    const area = areas.find((candidate) => candidate.prefixes.some((prefix) => file.startsWith(prefix)));
+    area.files += 1;
+    area.full += share === 1 ? 1 : 0;
+    area.ported += share;
+  }
+  return areas;
+}
+
+// merges.txt is git log --first-parent on main, one "<unix time> <subject>" per line; a task's subject ends in (#<pr>).
+function mergeTimes(byPull, mergesText) {
+  const merges = [];
+  for (const line of mergesText.split("\n")) {
+    const match = /^(\d+) .*\(#(\d+)\)$/.exec(line);
+    if (match && byPull.has(Number(match[2]))) {
+      merges.push({ time: Number(match[1]) * 1000, entry: byPull.get(Number(match[2])) });
+    }
+  }
+  return merges.sort((a, b) => b.time - a.time);
+}
+
+// Grouped by code, named by the most common spelling, since a few entries spell a milestone differently.
+function milestoneGroups(entries) {
+  const milestones = new Map();
+  for (const entry of entries) {
+    const code = entry.milestone.split(" ")[0];
+    const group = milestones.get(code) ?? { code, names: new Map(), done: 0, total: 0, entries: [] };
+    group.names.set(entry.milestone, (group.names.get(entry.milestone) ?? 0) + 1);
+    group.entries.push(entry);
+    group.total += 1;
+    group.done += entry.status === "done" ? 1 : 0;
+    milestones.set(code, group);
+  }
+  for (const group of milestones.values()) {
+    group.name = [...group.names.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  }
+  return milestones;
+}
+
+function renderMilestones(milestones, entries, done) {
+  const rows = [...milestones.values()]
+    .sort((a, b) => idNumber(a.code) - idNumber(b.code))
+    .map((group) => `<tr><td><a href="#milestone-${esc(group.code)}">${esc(group.name)}</a></td><td class="num">${number.format(group.done)}</td><td class="num">${number.format(group.total)}</td><td>${progressBar(group.done, group.total)}</td></tr>`)
+    .join("");
+  document.getElementById("milestone-table").innerHTML = `<table><thead><tr><th>Milestone</th><th class="num">Done</th><th class="num">Tasks</th><th>Progress</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td>All</td><td class="num">${number.format(done)}</td><td class="num">${number.format(entries.length)}</td><td>${progressBar(done, entries.length)}</td></tr></tfoot></table>`;
+}
+
+function renderAreas(areas, files, full, ported) {
+  const rows = areas.map((area) => `<tr><td>${esc(area.name)}</td><td class="num">${number.format(area.files)}</td><td class="num">${number.format(area.full)}</td><td>${progressBar(area.ported, area.files)}</td></tr>`).join("");
+  document.getElementById("areas").innerHTML = `<table><thead><tr><th>Area</th><th class="num">Files</th><th class="num">Fully ported</th><th>Ported share</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td>All</td><td class="num">${number.format(files)}</td><td class="num">${number.format(full)}</td><td>${progressBar(ported, files)}</td></tr></tfoot></table>`;
+}
+
+function mergeRow(merge) {
+  return `<tr><td class="muted date">${esc(shortDate.format(merge.time))}</td><td>${taskLink(merge.entry)}</td><td>${esc(merge.entry.title)}</td><td class="muted">${esc(merge.entry.milestone)}</td></tr>`;
+}
+
+function renderMerges(merges) {
+  const container = document.getElementById("merges");
+  if (merges.length === 0) {
+    container.innerHTML = `<p class="empty">No task has merged yet.</p>`;
+    return;
+  }
+  container.innerHTML = shortTable(`<thead><tr><th>Date</th><th>Task</th><th>Title</th><th>Milestone</th></tr></thead>`, merges.map(mergeRow), "older merges");
+}
+
+async function main() {
+  const [backlogText, deviationsText, inventoryText, configText, mergesText, commitText, prsText] = await Promise.all(
+    ["backlog.yaml", "deviations.yaml", "litellm-inventory.txt", "litellm.yaml", "merges.txt", "commit.txt", "prs.json"].map(fetchText),
+  );
+  const entries = jsyaml.loadAll(backlogText).filter((entry) => entry && entry.id);
+  const byId = new Map(entries.map((entry) => [entry.id, entry]));
+  const byPull = new Map(entries.filter((entry) => entry.pr).map((entry) => [Number(entry.pr), entry]));
+  const milestones = milestoneGroups(entries);
+  const config = jsyaml.load(configText);
+  const litellm = document.getElementById("litellm-link");
+  litellm.href = `${config.repository}/tree/${config.commit}`;
+  litellm.textContent = `LiteLLM ${config.version}`;
+
+  const areas = coverage(entries, config, inventoryText);
+  const files = areas.reduce((sum, area) => sum + area.files, 0);
+  const full = areas.reduce((sum, area) => sum + area.full, 0);
+  const ported = areas.reduce((sum, area) => sum + area.ported, 0);
+  const merges = mergeTimes(byPull, mergesText);
+  const lastWeek = merges.filter((merge) => merge.time >= Date.now() - 7 * DAY).length;
+  const done = entries.filter((entry) => entry.status === "done").length;
+  const depths = new Map();
+  const next = new Map();
+  const paths = PATHS.map((path) => analyzePath(path, byId, depths, next));
+
+  document.getElementById("figures").innerHTML = [
+    figure(number.format(done), `of ${number.format(entries.length)}`, "Tasks done"),
+    figure(percent(ported, files), `of ${number.format(files)} files`, "LiteLLM's Python ported"),
+    figure(number.format(lastWeek), `${(lastWeek / 7).toFixed(1)} a day`, "Merged in the last 7 days"),
+    figure(number.format(paths[0].chain.length), "tasks", `Longest open chain: ${PATHS[0].name}`),
+  ].join("");
+  renderMilestones(milestones, entries, done);
+  renderAreas(areas, files, full, ported);
+
+  const found = new Set(merges.map((merge) => merge.entry.id));
+  const unmatched = entries.filter((entry) => entry.resolution === "merged" && !found.has(entry.id)).map((entry) => entry.id);
+  if (unmatched.length > 0) {
+    const note = document.getElementById("unmatched");
+    note.textContent = `Not shown: ${unmatched.join(", ")}. Their commits on main don't name a pull request, so their merge day is unknown.`;
+    note.hidden = false;
+  }
+  const pulls = JSON.parse(prsText);
+  const rows = stageRows(pulls, byPull);
+  if (rows.length === 0) {
+    for (const id of ["burnup", "daily", "stages"]) {
+      document.getElementById(id).innerHTML = `<p class="empty">No pull request has merged yet.</p>`;
+    }
+  } else {
+    const views = historyViews(merges, milestones, pulls, byPull);
+    const days = dayStarts(Math.min(rows[0].merged * 1000, ...merges.map((merge) => merge.time)));
+    const charts = new Map();
+    drawHistory(charts, days, views, rows);
+    for (const group of document.querySelectorAll(".modes")) {
+      group.addEventListener("click", (event) => {
+        const pressed = event.target.closest("button");
+        if (pressed) {
+          for (const button of group.querySelectorAll("button")) {
+            button.setAttribute("aria-pressed", String(button === pressed));
+          }
+          drawHistory(charts, days, views, rows);
+        }
+      });
+    }
+    // A chart reads its colors when it is drawn, so a theme change draws it again.
+    matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => drawHistory(charts, days, views, rows));
+    // A hidden tab has no width, so a chart takes its width when its tab shows, and again on every resize.
+    const resizer = new ResizeObserver((records) => {
+      for (const record of records) {
+        const chart = charts.get(record.target);
+        if (record.contentRect.width > 0) {
+          chart.setSize({ width: record.contentRect.width, height: chart.height });
+        }
+      }
+    });
+    for (const container of charts.keys()) {
+      resizer.observe(container);
+    }
+  }
+  renderMerges(merges);
+  renderDeviations(jsyaml.loadAll(deviationsText), byId, milestones, merges);
+
+  const [sha, committed] = commitText.trim().split(" ");
+  document.getElementById("built").innerHTML = `Built from <a class="id" href="${GITHUB}/commit/${esc(sha)}">${esc(sha.slice(0, 8))}</a>, committed ${esc(longDate.format(Number(committed) * 1000))}.`;
+  document.getElementById("status").hidden = true;
+
+  const reviewing = await renderOpenPullRequests(byId);
+  document.getElementById("review-note").hidden = reviewing !== null;
+  document.getElementById("paths").innerHTML = paths.map((facts) => renderPath(facts, byId, reviewing ?? new Map())).join("");
+  renderMilestoneList(milestones, entries, byId, merges, reviewing ?? new Map());
+  if (location.hash.startsWith("#milestone-")) {
+    showTab();
+  }
+}
+
+showTab();
+window.addEventListener("hashchange", showTab);
+main().catch((error) => {
+  const status = document.getElementById("status");
+  status.classList.add("error");
+  status.textContent = `The page couldn't load its data: ${error.message}`;
+});
+</script>
+</body>
+</html>
