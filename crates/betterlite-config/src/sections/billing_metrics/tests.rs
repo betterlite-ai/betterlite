@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::env;
 use std::fs;
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
@@ -156,7 +157,7 @@ fn billing_metrics_config_picks_the_temp_root(
 #[test]
 fn billing_metrics_config_uses_the_current_directory_after_platform_defaults() {
     let candidates = settings(&[]).temp_root_candidates;
-    assert_eq!(candidates.last(), Some(&std::env::current_dir().unwrap()));
+    assert_eq!(candidates.last(), Some(&env::current_dir().unwrap()));
 }
 
 #[rstest]
