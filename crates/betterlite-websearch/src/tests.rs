@@ -1,5 +1,8 @@
 #![cfg(test)]
 
+use std::fs;
+use std::path::Path;
+use std::str;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tracing::span::{Attributes, Id, Record};
@@ -247,6 +250,45 @@ fn call_transformation_responses_and_no_tool() {
 }
 
 #[test]
+fn call_transformation_arguments_depth_limit_errors() {
+    let depth = 40;
+    let nested = format!("{}0{}", "[".repeat(depth), "]".repeat(depth));
+    let response = format!(
+        r#"{{"choices": [{{"message": {{"tool_calls": [
+            {{"id": "call-1", "type": "function", "function": {{"name": "litellm_web_search", "arguments": {{"query": {nested}}}}}}}
+        ]}}}}]}}"#
+    );
+    let (found, calls) = WebSearchTransformation::transform_request(
+        &serde_json::from_str::<Response>(&response).unwrap(),
+        false,
+        "openai",
+    )
+    .unwrap();
+    assert!(found);
+    assert!(matches!(
+        WebSearchTransformation::transform_response(&calls, &[String::from("result")], "openai"),
+        Err(TransformationError::ArgumentsTooComplex)
+    ));
+}
+
+#[test]
+fn call_transformation_responses_skips_unparsable_items() {
+    let response = r#"{"output": [
+        null,
+        {"type": "function_call", "call_id": "one", "name": "litellm_web_search", "arguments": {"query": "rust"}}
+    ]}"#;
+    let (found, calls) = WebSearchTransformation::transform_request(
+        &serde_json::from_str::<Response>(response).unwrap(),
+        false,
+        "responses",
+    )
+    .unwrap();
+    assert!(found);
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].id.as_deref(), Some("one"));
+}
+
+#[test]
 fn call_transformation_invalid_and_stream() {
     let invalid = r#"{"output": [
         {"type": "function_call", "call_id": "call-2", "name": "litellm_web_search", "arguments": "not-json"}
@@ -394,6 +436,59 @@ fn call_transformation_no_tool_responses() {
         WebSearchTransformation::transform_request(&response, false, "responses").unwrap();
     assert!(!found);
     assert!(calls.is_empty());
+}
+
+fn call_transformation_outcome(response: &Response, format: &str) -> Option<(bool, bool)> {
+    let (found, calls) =
+        WebSearchTransformation::transform_request(response, false, format).ok()?;
+    if calls.is_empty() {
+        return Some((found, false));
+    }
+    let results: Vec<String> = calls.iter().map(|_| String::from("result")).collect();
+    let budget_error = matches!(
+        WebSearchTransformation::transform_response(&calls, &results, format),
+        Err(TransformationError::ArgumentsTooComplex)
+    );
+    Some((found, budget_error))
+}
+
+fn call_transformation_outcomes(response: &Response) -> Vec<(bool, bool)> {
+    ["anthropic", "openai", "responses"]
+        .into_iter()
+        .filter_map(|format| call_transformation_outcome(response, format))
+        .collect()
+}
+
+#[test]
+fn replays_the_call_transformation_corpus() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/call_transformation");
+    let outcomes: Vec<(bool, bool)> = fs::read_dir(corpus)
+        .unwrap()
+        .filter(|entry| {
+            entry
+                .as_ref()
+                .is_ok_and(|dir_entry| dir_entry.path().is_file())
+        })
+        .flat_map(|entry| {
+            let bytes = fs::read(entry.unwrap().path()).unwrap();
+            let body = str::from_utf8(&bytes).unwrap_or_default();
+            serde_json::from_str::<Response>(body)
+                .map(|response| call_transformation_outcomes(&response))
+                .unwrap_or_default()
+        })
+        .collect();
+    assert!(
+        outcomes.iter().any(|&(found, _)| found),
+        "corpus must exercise a detected call"
+    );
+    assert!(
+        outcomes.iter().any(|&(found, _)| !found),
+        "corpus must exercise a response with no call"
+    );
+    assert!(
+        outcomes.iter().any(|&(_, budget_error)| budget_error),
+        "corpus must exercise the argument depth limit"
+    );
 }
 
 #[derive(Clone)]
