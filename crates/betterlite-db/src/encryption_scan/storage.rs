@@ -6,6 +6,7 @@ use futures_util::TryStreamExt as _;
 use secrecy::{ExposeSecret as _, SecretString};
 use std::{iter, pin::pin, time::Duration};
 use tokio::time::timeout;
+use tokio_postgres::error::SqlState;
 use tokio_postgres::{GenericClient, Row};
 
 const MARK_SAVEPOINT: &str = "SAVEPOINT betterlite_encryption_scan";
@@ -61,9 +62,7 @@ async fn recover_unavailable_location<C>(client: &C, location: &str, source: &to
 where
     C: GenericClient + Sync,
 {
-    let sqlstate = source
-        .code()
-        .map_or("none", tokio_postgres::error::SqlState::code);
+    let sqlstate = source.code().map_or("none", SqlState::code);
     tracing::debug!(location, sqlstate, "scan: location unavailable");
     drop(client.execute(RECOVER_SAVEPOINT, &[]).await);
 }
