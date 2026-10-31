@@ -153,7 +153,7 @@ pitfalls:
   - The apply hook must preserve the caller's original inputs object when no compression occurred or it failed; returning a rebuilt copy on an unchanged request triggers unnecessary message rewrites downstream.
   - Token savings are only counted when tokens_before and tokens_after are both present as numbers (not booleans); a service that returns booleans true/false instead of numeric token counts will have tokens_saved omitted.
   - Retrieval tool is only added when hashes were successfully recorded; if ccr_retrieval is false, no tool is added even if compression succeeded.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 2

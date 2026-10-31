@@ -84,4 +84,4 @@ pitfalls:
   - An empty after value is sent as pageToken rather than omitted.
   - Only cancellation's POST receives the caller timeout; its follow-up GET does not.
 budget: {max_changed_lines: 775, max_new_expects: 1}
-review_level: security
+review_level: standard

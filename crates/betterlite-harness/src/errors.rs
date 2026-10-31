@@ -28,6 +28,15 @@ pub enum HarnessError {
     InvalidConfigKey { key: String },
     #[error("CodexOptions.config[{key:?}] is managed by Harness.{}; use the matching agent() argument instead", .harness.name())]
     ManagedConfigKey { key: String, harness: Harness },
+    #[error(
+        "OpenCodeOptions.config[{section}{agent}] contains managed keys: {keys:?}",
+        agent = .agent.as_ref().map_or_else(String::new, |name| format!(".{name}"))
+    )]
+    OpenCodeManagedKeys {
+        section: String,
+        agent: Option<String>,
+        keys: Vec<String>,
+    },
     #[error("the runtime is missing from the sandbox or failed to start: {0}")]
     InstallFailed(#[source] io::Error),
     #[error("the sandbox failed: {source}")]

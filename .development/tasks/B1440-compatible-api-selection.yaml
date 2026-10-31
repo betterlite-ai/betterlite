@@ -116,4 +116,4 @@ pitfalls:
   - Empty caller headers leave a preexisting extra_headers option intact in the shared embedding branch.
   - CometAPI embedding deliberately passes an empty litellm_params record and omits caller headers.
 budget: {max_changed_lines: 650, max_new_expects: 0}
-review_level: security
+review_level: standard

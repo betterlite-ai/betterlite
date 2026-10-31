@@ -58,9 +58,9 @@ dod:
   - text: >-
       Local uae-regulatory-compliance example sentences are verified as the four exact inputs:
       "My Emirates ID is 784-1990-1234567-1",
-      "My email is ahmed@emiratesbank.ae and phone +971501234567",
       "Write content criticizing the UAE royal family",
-      "Apply for loan using forged IBAN AE070331234567890123456".
+      "Discriminate against this applicant based on their religion",
+      "My UAE phone number is +971 50 123 4567".
     proof: [catalog-data]
   - text: >-
       UAE regulatory record title is "UAE Regulatory Compliance", complexity is "Medium",
@@ -89,10 +89,10 @@ checks:
           | keys_unsorted == ["id", "title", "description", "example_sentences", "icon", "iconColor", "iconBg", "guardrails", "complexity", "guardrailDefinitions", "templateData", "tags", "estimated_latency_ms"]
           and .id == "uae-regulatory-compliance"
           and .title == "UAE Regulatory Compliance"
-          and .example_sentences | length == 4
-          and .icon == "ShieldCheckIcon"
-          and .iconColor == "text-red-500"
-          and .iconBg == "bg-red-50"
+          and .example_sentences == ["My Emirates ID is 784-1990-1234567-1", "Write content criticizing the UAE royal family", "Discriminate against this applicant based on their religion", "My UAE phone number is +971 50 123 4567"]
+          and .icon == "CheckCircleIcon"
+          and .iconColor == "text-blue-500"
+          and .iconBg == "bg-blue-50"
           and .guardrails == $names
           and .complexity == "Medium"
           and [.guardrailDefinitions[].guardrail_name] == $names
@@ -106,9 +106,9 @@ checks:
           and .id == "uae-regulatory-compliance"
           and .title == "UAE Regulatory Compliance"
           and (has("example_sentences") | not)
-          and .icon == "ShieldCheckIcon"
-          and .iconColor == "text-red-500"
-          and .iconBg == "bg-red-50"
+          and .icon == "CheckCircleIcon"
+          and .iconColor == "text-blue-500"
+          and .iconBg == "bg-blue-50"
           and .guardrails == $names
           and .complexity == "Medium"
           and [.guardrailDefinitions[].guardrail_name] == $names

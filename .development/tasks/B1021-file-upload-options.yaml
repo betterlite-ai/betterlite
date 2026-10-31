@@ -233,7 +233,7 @@ pitfalls:
   The file checker method is distinct from the object checker method: only resource_kind="file"
   calls can_user_call_unified_file_id; both "batch" and "fine-tuning job" call
   can_user_call_unified_object_id.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

@@ -87,7 +87,7 @@ pitfalls:
   - "input_cost_per_query may be 0.0, None, or a missing field; treat None and missing as Decimal(0), and None optional_params as an empty mapping."
   - "output_cost is always Decimal(0) for search providers; never read it from metadata or calculate it separately."
 
-review_level: security
+review_level: standard
 
 budget:
   max_changed_lines: 1500

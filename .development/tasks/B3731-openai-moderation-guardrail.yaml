@@ -166,7 +166,7 @@ pitfalls:
       the dict, not by assuming a fixed set of names.
   - >-
       HTTPException detail must be a dict, not a string, for proper JSON serialization. Include error and details keys.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 1

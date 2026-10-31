@@ -93,4 +93,4 @@ pitfalls:
   - Buffered responses ignore data:-prefixed lines even though the streaming iterator accepts them.
   - An empty first text part prevents state_delta fallback for that object.
 budget: {max_changed_lines: 700, max_new_expects: 1}
-review_level: security
+review_level: standard

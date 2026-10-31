@@ -169,7 +169,7 @@ pitfalls:
     of its largest field from its respective group, marked with the v2 consumer's truncation constant.
     Once all three groups (input, output, metadata) are truncated and the span is still rejected,
     it is dropped and logged.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 1

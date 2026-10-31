@@ -4,6 +4,7 @@ use std::path::Path;
 use crate::builtins::Context;
 use crate::error::GateError;
 use crate::git::git;
+use crate::spec::catalog::FileSize;
 
 fn measured_paths(context: &Context<'_>, roots: &[&str]) -> Result<Vec<String>, GateError> {
     let mut arguments = vec!["ls-files", "-z", "--"];
@@ -32,6 +33,26 @@ fn measured_paths(context: &Context<'_>, roots: &[&str]) -> Result<Vec<String>, 
     Ok(paths)
 }
 
+pub(crate) fn size_problem(path: &str, text: &str, settings: &FileSize) -> Option<String> {
+    // cargo-mutants only finds a module through a literal mod line, so a file of them stays one line each
+    let count = text
+        .lines()
+        .filter(|line| {
+            let item = line.strip_prefix("pub ").unwrap_or(line);
+            !(item.starts_with("mod ") && item.ends_with(';'))
+        })
+        .count();
+    let is_test = path.ends_with("/tests.rs") || format!("/{path}").contains("/tests/");
+    let limit = if is_test {
+        settings.test_max_lines
+    } else {
+        settings.src_max_lines
+    };
+    (count > limit).then(|| {
+        format!("{path} has {count} lines, limit is {limit}; split it along a real boundary")
+    })
+}
+
 pub(crate) fn check(context: &Context<'_>) -> Result<Vec<String>, GateError> {
     let root = &context.development.root;
     let settings = &context.development.catalog.settings.file_size;
@@ -44,21 +65,9 @@ pub(crate) fn check(context: &Context<'_>) -> Result<Vec<String>, GateError> {
     let mut problems = Vec::new();
     for path in measured_paths(context, &roots)? {
         let file = root.join(&path);
-        let count = fs::read_to_string(&file)
-            .map_err(|source| GateError::Read { path: file, source })?
-            .lines()
-            .count();
-        let is_test = path.ends_with("/tests.rs") || format!("/{path}").contains("/tests/");
-        let limit = if is_test {
-            settings.test_max_lines
-        } else {
-            settings.src_max_lines
-        };
-        if count > limit {
-            problems.push(format!(
-                "{path} has {count} lines, limit is {limit}; split it along a real boundary"
-            ));
-        }
+        let text =
+            fs::read_to_string(&file).map_err(|source| GateError::Read { path: file, source })?;
+        problems.extend(size_problem(&path, &text, settings));
     }
     Ok(problems)
 }

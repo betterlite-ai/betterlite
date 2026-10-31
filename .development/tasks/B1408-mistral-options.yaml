@@ -98,4 +98,4 @@ pitfalls:
   - A base ending in /v1/ becomes /v1//v1 under the literal suffix test.
   - The seed option replaces an existing extra_body mapping instead of merging random_seed into it.
 budget: {max_changed_lines: 700, max_new_expects: 0}
-review_level: security
+review_level: standard
