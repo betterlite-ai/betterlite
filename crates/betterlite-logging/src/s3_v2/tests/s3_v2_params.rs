@@ -18,6 +18,23 @@ use serde_json::value::RawValue;
 type Environment = BTreeMap<String, String>;
 
 #[rstest]
+#[case::malformed("not-an-integer")]
+#[case::negative("-1")]
+fn invalid_upload_default_uses_builtin_limit(#[case] configured: &str) {
+    let environment = Environment::from([(
+        "DEFAULT_S3_MAX_CONCURRENT_UPLOADS".to_owned(),
+        configured.to_owned(),
+    )]);
+    let parameters = resolve_s3_parameters(
+        &Source::<()>::default(),
+        &Source::default(),
+        None,
+        &environment,
+    );
+    assert_eq!(parameters.max_concurrent_uploads, 16);
+}
+
+#[rstest]
 #[case::missing("{}", 50_000_usize, Some(3_600_u64))]
 #[case::coerced(
     r#"{"s3_max_queue_size":"42","s3_max_retry_age_seconds":"17"}"#,

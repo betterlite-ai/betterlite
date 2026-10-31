@@ -1,5 +1,8 @@
 task: B3992
 deviations:
+  - what: Malformed or negative DEFAULT_S3_MAX_CONCURRENT_UPLOADS values fall back to 16.
+    why: LiteLLM raises during import for malformed values or semaphore initialization for negative values; these configurations cannot initialize a working exporter.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L63
   - what: Parameter source values are not resolved from os.environ/ markers.
     why: Environment and secret resolution remains at the configuration boundary owned by B002.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L297-L302
