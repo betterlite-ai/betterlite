@@ -1,0 +1,9 @@
+guardrails:
+  - guardrail_name: firewall
+    litellm_params:
+      guardrail: deepkeep
+      api_key: key
+      api_base: https://deepkeep.test
+      deepkeep_firewall_id: fixed
+      unreachable_fallback: Fail_Open
+      timeout: '0.125'

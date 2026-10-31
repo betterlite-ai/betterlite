@@ -1,0 +1,5 @@
+task: B2314
+deviations:
+  - what: Resolved-key monetary and other numeric fields reject nonfinite/out-of-range values instead of retaining Python floats.
+    why: Native checked numeric representations cannot preserve NaN/infinity; ordinary defaults, nulls and negative values remain compatible.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3283-L3443
