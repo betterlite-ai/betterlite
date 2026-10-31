@@ -14,11 +14,21 @@ description: >-
   "Unlimited" only when it is null or absent; an explicit number, 0 included, shows as given. Optional
   user-field omission: create_user omits user_alias and teams from the request when not supplied; delete_user
   takes multiple user_ids as arguments. Every command takes its own flags and arguments and loads base_url/api_key
-  from B4560's cli_context_values. This task implements the CLI commands that call the management clients; the
-  clients themselves are owned elsewhere.
+  from B4560's cli_context_values. tools/management-cli/src/commands.rs, the parent module, builds the one
+  shared client every command in this crate sends requests through: reqwest 0.13.5 (already in Cargo.lock
+  through betterlite-http), default features off, rustls, async on a current-thread tokio runtime, connect_timeout
+  and read_timeout of 30 seconds each, the base URL with its trailing slashes stripped, and Authorization:
+  Bearer {api_key} added when a key is given. commands.rs also holds the shared HTTP error printing, "Error:
+  HTTP {status}" to stderr then the body as JSON when it parses or the raw text when it doesn't, that
+  credentials create/delete and teams list/available/assign_key call. Each command module builds its own
+  request (path, query, JSON body) on top of that client; B4579 and B4578 reuse this same client instead of
+  building their own. The four tables these commands print (Users, Credentials, Available Teams and Accessible
+  Model Groups) are drawn with comfy-table, default features off, and carry no color.
 
 scope:
   paths:
+    - tools/management-cli/Cargo.toml
+    - Cargo.lock
     - tools/management-cli/src/commands.rs
     - tools/management-cli/src/commands/credentials.rs
     - tools/management-cli/src/commands/users.rs
@@ -38,6 +48,10 @@ references:
   why: CLI context resolution for base_url and api_key from click context (B4560 dependency).
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/teams.py#L37-L83
   why: Teams table formatting with alias, team_id, models, max_budget and role columns.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/http_client.py#L9-L97
+  why: HTTPClient's base URL strip, Bearer rule and 30-second timeout, the pattern the shared client in commands.rs follows.
+- url: https://docs.rs/reqwest/0.13.5/reqwest/struct.ClientBuilder.html#method.read_timeout
+  why: The per-read timeout that matches requests' read timeout.
 dod:
 - text: >-
     Credentials list and get call client methods with no error handler; any error there prints one line to
@@ -73,6 +87,14 @@ dod:
     number, bool or null) in betterlite's own words, not a copy of Python's type name.
   proof:
   - model-groups-error-handling
+- text: >-
+    The shared client in commands.rs builds from cli_context_values (base_url, api_key), strips the base
+    URL's trailing slashes, sends every request over reqwest 0.13.5 (rustls, default features off) on a
+    current-thread tokio runtime with 30-second connect and read timeouts, and adds Authorization: Bearer
+    {api_key} only when a key is given. The shared HTTP error printing prints "Error: HTTP {status}" to
+    stderr, then the body as JSON when it parses or the raw text when it doesn't.
+  proof:
+  - shared-client
 checks:
   optional: []
   commands:
@@ -102,6 +124,11 @@ checks:
     run: >-
       cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E
       'test(/^commands::model_groups::.*tests::list_/)'
+  - id: shared-client
+    why: The shared client tests are missing or the base URL, timeouts, Bearer header or HTTP error printing differ from the description.
+    run: >-
+      cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E
+      'test(/^commands::.*tests::client_/)'
 oracle_cases: []
 deviations:
 - what: >-
@@ -116,22 +143,26 @@ deviations:
     commands already have.
   link: >-
     https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/teams.py#L97-L101
+- what: >-
+    The Users, Credentials, Available Teams and Accessible Model Groups tables keep LiteLLM's titles, columns,
+    row order and cell values, but comfy-table draws the borders and picks the column widths and wrapping, so
+    the frame looks different from rich's, nothing is colored and no cell is parsed as rich markup.
+  why: >-
+    Porting rich's layout engine buys nothing for output a person reads, and the models and keys commands use
+    the same crate, so every table in the CLI looks alike. Scripts read --format json where a command has it.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/teams.py#L37-L83
 out_of_scope:
 - >-
   CredentialsManagementClient, UsersManagementClient, TeamsManagementClient, ModelGroupsManagementClient,
-  and HTTPClient implementation (B169 manages the Python client library).
-- >-
-  The Client class and its management subclasses used by teams and model-groups commands (for
-  client.teams.list/get_available and client.model_groups.info) are owned by B169 as part of the
-  litellm/proxy/client/*.* coverage.
+  the generic Client class and HTTPClient as importable Python classes stay B169's reference; this task
+  builds their Rust equivalent itself, the shared client in commands.rs and each command's own request.
 - >-
   Browser-based authentication and SSO flow; owned by B4576.
 - >-
   CLI configuration and context loading; owned by B4560.
 - >-
   The main CLI entry point and command registration; owned by B4585.
-- >-
-  Terminal formatting libraries; use standard Rust output or injected writers for testability.
 pitfalls:
 - >-
   Credentials list and get have no error handler around client calls, so any error there prints one line to
@@ -154,6 +185,9 @@ pitfalls:
   Role field in teams table is always "Member"; LiteLLM never reads the real role, so there's no other value
   to show. Max_budget renders as "$X" for an explicit number, 0 included, and "Unlimited" only when it is null
   or absent.
+- >-
+  comfy-table pulls unicode-width, and Cargo.lock already holds 0.2.2; pick a comfy-table release that uses
+  it so cargo deny sees one version.
 review_level: security
 budget:
   max_changed_lines: 1500

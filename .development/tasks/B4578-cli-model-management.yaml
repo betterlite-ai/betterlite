@@ -3,7 +3,8 @@ title: CLI model management and YAML imports
 description: >-
   Build the models command group for the management CLI, porting LiteLLM's model management
   from litellm/proxy/client/cli/commands/models.py to Rust. Commands dispatch through
-  an injected HTTP client (from B4560's CLI context) to model endpoints: list with table/json
+  the shared client B4580 builds in tools/management-cli/src/commands.rs from B4560's
+  cli_context_values, to model endpoints: list with table/json
   output, add and update with multiple --param and --info key=value options split on the first
   =, delete and get (by --id or --name, at least one required), info with flexible --columns
   selection (defaults to public_model,upstream_model,updated_at), and import from YAML files
@@ -189,7 +190,7 @@ deviations:
       draw their tables with the same crate. Scripts use --format json.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L355-L378
 out_of_scope:
-  - Client HTTP implementation and API integration; the CLI receives an injected HTTP client from B4560's context.
+  - Client HTTP implementation and API integration; the CLI receives the shared client B4580 builds in tools/management-cli/src/commands.rs from B4560's cli_context_values.
   - CLI command registration and parameter binding; that happens in the CLI group assembly, not in this module.
   - YAML schema validation beyond model_list key existence and type; individual model field validation is server-side.
 pitfalls:
