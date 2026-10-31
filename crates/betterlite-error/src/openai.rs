@@ -290,7 +290,7 @@ fn mistral_streaming_branch(
 
 fn status_text(provider: &str, status: Option<u16>, message: &str) -> String {
     match status {
-        None => format!("{provider} APIConnectionError - {message}"),
+        None => format!("APIConnectionError: {provider} - {message}"),
         Some(400 | 422) => format!("{provider} - {message}"),
         Some(401) => format!("AuthenticationError: {provider} - {message}"),
         Some(404) => format!("NotFoundError: {provider} - {message}"),

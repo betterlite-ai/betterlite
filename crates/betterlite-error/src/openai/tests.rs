@@ -292,7 +292,7 @@ fn no_status_code_message_names_the_exception_provider() {
     let class = map_openai_exception(&input("boom", None));
     assert_eq!(
         describe(&class).1,
-        "OpenAIException APIConnectionError - boom"
+        "APIConnectionError: OpenAIException - boom"
     );
 }
 
