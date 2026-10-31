@@ -1,13 +1,13 @@
 id: B5086
 milestone: M1 openai data plane
 title: Hugging Face Hub requests and file metadata like huggingface_hub
-status: todo
+status: done
 depends_on: [B5085, B173]
 file: tasks/B5086-huggingface-hub-requests.yaml
 covers: []
 parent: B013
 split_from: B195
-resolution: null
-superseded_by: null
+resolution: superseded
+superseded_by: B195
 blocked_reason: null
 pr: null
