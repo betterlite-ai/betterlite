@@ -2,12 +2,11 @@ use std::collections::BTreeSet;
 use std::ops::Div as _;
 
 use betterlite_config::sections::content_filter_records::overrides::CompetitorIntentResult;
+use fancy_regex::Regex as FancyRegex;
 use regex::Regex;
 use serde::Deserialize;
 
-use super::competitor_intent_base::{
-    BaseCompetitorIntentChecker, CompetitorIntentError, Meaning, normalize,
-};
+use super::competitor_intent_base::{BaseCompetitorIntentChecker, CompetitorIntentError, Meaning};
 
 pub mod settings;
 use settings::AirlineSettings;
@@ -140,10 +139,13 @@ impl AirlineCompetitorIntentChecker {
 
     #[must_use]
     pub fn run(&self, text: &str) -> CompetitorIntentResult {
-        let normalized = normalize(text);
-        self.base.run_with(&normalized, |segment, token| {
+        let mut result = self.base.run_with(text, |segment, token| {
             self.classify_ambiguous(segment, token)
-        })
+        });
+        if let Some(confidence) = result.confidence.as_mut() {
+            *confidence = (*confidence * 100.0_f64).round() / 100.0_f64;
+        }
+        result
     }
 
     #[must_use]
@@ -187,9 +189,10 @@ fn owned_or_default(custom: &[String], default_patterns: &[&str]) -> Vec<String>
 }
 
 fn compile_explicit_marker(custom: Option<&str>, default_pattern: &str) -> Option<Regex> {
-    let pattern = custom
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or(default_pattern);
+    let pattern = match custom {
+        Some("") | None => default_pattern,
+        Some(value) => value,
+    };
     Regex::new(&format!("(?i){pattern}")).ok()
 }
 
@@ -228,8 +231,10 @@ where
 {
     let mut count = 0_u32;
     for pattern in patterns {
-        if Regex::new(&format!("(?i){}", pattern.as_ref())).is_ok_and(|regex| regex.is_match(text))
-        {
+        let matches = FancyRegex::new(&format!("(?i){}", pattern.as_ref()))
+            .and_then(|regex| regex.is_match(text))
+            .unwrap_or(false);
+        if matches {
             count = count.saturating_add(1);
         }
     }

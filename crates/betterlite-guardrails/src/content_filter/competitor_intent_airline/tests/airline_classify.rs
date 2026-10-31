@@ -50,3 +50,15 @@ fn custom_explicit_competitor_marker_overrides_default() {
         (Meaning::OtherMeaning, 0.5_f64)
     );
 }
+
+#[test]
+fn whitespace_explicit_competitor_marker_disables_default() {
+    let mut settings = airline_settings();
+    settings.explicit_competitor_marker = Some("   ".to_owned());
+    let checker = AirlineCompetitorIntentChecker::new(&settings).unwrap();
+
+    assert_eq!(
+        checker.classify_ambiguous("qatar airways city", "qatar"),
+        (Meaning::OtherMeaning, 0.5_f64)
+    );
+}

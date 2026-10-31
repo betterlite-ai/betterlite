@@ -39,6 +39,18 @@ fn custom_competitor_and_other_meaning_signals_are_used() {
 }
 
 #[test]
+fn custom_competitor_signal_supports_lookahead() {
+    let mut settings = airline_settings();
+    settings.competitor_signals = vec![r"\bmiles\b(?= balance)".to_owned()];
+    let checker = AirlineCompetitorIntentChecker::new(&settings).unwrap();
+
+    assert_eq!(
+        checker.classify_ambiguous("qatar miles balance", "qatar"),
+        (Meaning::Competitor, 0.9_f64)
+    );
+}
+
+#[test]
 fn custom_other_meaning_anchors_pull_the_ratio_toward_other_meaning() {
     let mut settings = airline_settings();
     settings.competitor_signals = vec![r"\bmiles\b".to_owned()];
