@@ -720,6 +720,13 @@ fn expires_in_rejects_whitespace_padded_fractional_string() {
 }
 
 #[test]
+fn expires_in_rejects_huge_exponent_string_without_allocating() {
+    let body =
+        br#"{"access_token":"access","expires_in":"1e2000000000","refresh_token":"refresh"}"#;
+    wire::parse_token(body).unwrap_err();
+}
+
+#[test]
 fn error_detail_is_bounded() {
     let response = HttpResponse {
         status: 400,

@@ -87,6 +87,9 @@ fn parse_integral_number(text: &str) -> Option<i64> {
     signed_digits.parse::<i64>().ok()
 }
 
+// i64::MIN and i64::MAX both print as 19 digits, so a decimal position past that can only overflow; rejecting it here, before any zero-padding, keeps the allocation bounded regardless of how large the exponent claims to be.
+const MAX_I64_DIGITS: usize = 19;
+
 fn normalize_integer_digits(digits: &str, whole_length: usize, exponent: i32) -> Option<String> {
     let decimal_position = i64::try_from(whole_length)
         .ok()?
@@ -106,6 +109,9 @@ fn normalize_integer_digits(digits: &str, whole_length: usize, exponent: i32) ->
             }
             integer.to_owned()
         } else {
+            if position > MAX_I64_DIGITS {
+                return None;
+            }
             let mut integer = digits.to_owned();
             let zeros = position.checked_sub(integer.len())?;
             integer.extend(repeat_n('0', zeros));
