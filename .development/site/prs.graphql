@@ -1,0 +1,30 @@
+query($owner: String!, $name: String!, $endCursor: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(states: MERGED, first: 100, after: $endCursor) {
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      nodes {
+        number
+        baseRefName
+        createdAt
+        mergedAt
+        commits(first: 1) {
+          nodes {
+            commit {
+              authoredDate
+            }
+          }
+        }
+        timelineItems(itemTypes: [ADDED_TO_MERGE_QUEUE_EVENT], first: 1) {
+          nodes {
+            ... on AddedToMergeQueueEvent {
+              createdAt
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -21,8 +21,8 @@ test = false
 doc = false
 bench = false
 [[bin]]
-name = "cli_jsonl_framing"
-path = "fuzz_targets/cli_jsonl_framing.rs"
+name = "claude_code"
+path = "fuzz_targets/claude_code.rs"
 test = false
 doc = false
 bench = false

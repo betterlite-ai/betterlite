@@ -1,14 +1,14 @@
 id: B4836
 milestone: M9 agents and mcp
 title: Translate OpenCode permissions, isolated configuration and events
-status: todo
+status: done
 depends_on: [B4830, B4831]
 file: tasks/B4836-opencode-harness.yaml
 covers:
   - "litellm/llms/opencode/**"
 parent: B143
 split_from: B143
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 357

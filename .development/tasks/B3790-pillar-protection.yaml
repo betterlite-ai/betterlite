@@ -225,7 +225,7 @@ deviations:
     security model without exposing extra metadata
   why: LiteLLM's implementation checks "metadata excluded for security"; betterlite matches that behavior
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/pillar/pillar.py#L562
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

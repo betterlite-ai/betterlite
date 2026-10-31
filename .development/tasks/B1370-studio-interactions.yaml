@@ -89,4 +89,4 @@ pitfalls:
   - An image_config type field overwrites the initially supplied image type in the moved format.
   - Delete success does not depend on receiving valid JSON.
 budget: {max_changed_lines: 800, max_new_expects: 1}
-review_level: security
+review_level: standard

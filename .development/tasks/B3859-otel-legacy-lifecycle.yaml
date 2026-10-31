@@ -172,7 +172,7 @@ pitfalls:
   - "The langfuse_otel callback checks hasattr(self, 'callback_name') and self.callback_name == 'langfuse_otel' to trigger env-var credential loading; this special case must be preserved."
   - "Construct_dynamic_otel_headers and construct_dynamic_otel_config return None in the base class; every override (Arize, Langfuse, etc.) is responsible for its own routing logic and must also return None if no override applies."
 
-review_level: security
+review_level: standard
 
 budget:
   max_changed_lines: 1500

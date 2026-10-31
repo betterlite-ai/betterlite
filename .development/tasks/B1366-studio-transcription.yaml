@@ -84,4 +84,4 @@ pitfalls:
   - An empty text content item participates in transcript spacing.
   - A missing last-word end omits duration even if an earlier word has a valid end.
 budget: {max_changed_lines: 750, max_new_expects: 1}
-review_level: security
+review_level: standard

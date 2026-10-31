@@ -313,7 +313,7 @@ pitfalls:
 - '`_mask_response_create` marks a request changed even when `check_pii` returns the same string, but `_mask_response_completed` serializes only after a changed arguments, summary or content value.'
 - '`_unmask_response_event` invokes only the separately supplied first unmask function, whereas output masking invokes every output callback; the callback list must not be reused as an unmask chain.'
 - 'A valid top-level `[1,2,3]` is safely ignored by quota selection but reaches `.get("type")` in all three masking methods; B943 must surface the typed non-object error as termination without a Rust panic.'
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

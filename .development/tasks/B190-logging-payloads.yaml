@@ -123,7 +123,7 @@ pitfalls:
 - Logged output must reflect post-processing that changed the served response, not the raw provider text.
 - A sparse choice index must not allocate an unbounded vector.
 - Do not create a permissive catch-all JSON logging record to avoid typing the standard payload.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

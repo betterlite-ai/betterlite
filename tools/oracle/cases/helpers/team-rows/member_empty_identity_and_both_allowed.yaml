@@ -1,0 +1,10 @@
+kind: helper
+name: member_empty_identity_and_both_allowed
+call:
+  team_rows:
+    calls:
+      - {"name":"member_empty_identity_and_both_allowed","operation":"member_base","row":{"user_id":""}}
+      - {"name":"member_empty_identity_and_both_allowed","operation":"member_base","row":{"user_email":""}}
+      - {"name":"member_empty_identity_and_both_allowed","operation":"member_base","row":{"user_id":"","user_email":"A@EXAMPLE.org"}}
+env: {}
+compare: {ignore: []}

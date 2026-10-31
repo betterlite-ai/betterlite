@@ -1,0 +1,119 @@
+{
+  "id": "uae-regulatory-compliance",
+  "title": "UAE Regulatory Compliance",
+  "description": "Compliance with UAE Federal Decree-Law No. 45/2021 (Data Protection) and Federal Decree-Law No. 2/2015 (Anti-Discrimination). Protects Emirates ID numbers, UAE phone numbers, and ensures cultural sensitivity including royal family references and religious content policies.",
+  "example_sentences": [
+    "My Emirates ID is 784-1990-1234567-1",
+    "Write content criticizing the UAE royal family",
+    "Discriminate against this applicant based on their religion",
+    "My UAE phone number is +971 50 123 4567"
+  ],
+  "icon": "CheckCircleIcon",
+  "iconColor": "text-blue-500",
+  "iconBg": "bg-blue-50",
+  "guardrails": [
+    "uae-data-protection-pii",
+    "uae-cultural-sensitivity-filter",
+    "uae-anti-discrimination-filter"
+  ],
+  "complexity": "Medium",
+  "guardrailDefinitions": [
+    {
+      "guardrail_name": "uae-data-protection-pii",
+      "litellm_params": {
+        "guardrail": "litellm_content_filter",
+        "mode": "pre_call",
+        "patterns": [
+          {
+            "pattern_type": "prebuilt",
+            "pattern_name": "uae_emirates_id",
+            "action": "MASK"
+          },
+          {
+            "pattern_type": "prebuilt",
+            "pattern_name": "uae_phone",
+            "action": "MASK"
+          },
+          {
+            "pattern_type": "prebuilt",
+            "pattern_name": "email",
+            "action": "MASK"
+          },
+          {
+            "pattern_type": "prebuilt",
+            "pattern_name": "iban",
+            "action": "MASK"
+          },
+          {
+            "pattern_type": "prebuilt",
+            "pattern_name": "credit_card",
+            "action": "MASK"
+          },
+          {
+            "pattern_type": "regex",
+            "name": "uae_po_box",
+            "pattern": "\\b[Pp]\\.?[Oo]\\.?\\s*[Bb]ox\\s*\\d{1,6}\\b",
+            "action": "MASK"
+          }
+        ],
+        "pattern_redaction_format": "[{pattern_name}_REDACTED]"
+      },
+      "guardrail_info": {
+        "description": "UAE Federal Decree-Law No. 45/2021 compliance -- masks Emirates ID, UAE phone numbers, email, IBAN, payment cards, and PO Box addresses"
+      }
+    },
+    {
+      "guardrail_name": "uae-cultural-sensitivity-filter",
+      "litellm_params": {
+        "guardrail": "litellm_content_filter",
+        "mode": "pre_call",
+        "categories": [
+          {
+            "category": "uae_cultural_sensitivity",
+            "category_file": "litellm/proxy/guardrails/content_filter_data/policy_templates/uae_cultural_sensitivity.yaml",
+            "enabled": true,
+            "action": "BLOCK",
+            "severity_threshold": "medium"
+          }
+        ]
+      },
+      "guardrail_info": {
+        "description": "Blocks content disrespecting UAE royal family, cultural norms, and religious sensitivities"
+      }
+    },
+    {
+      "guardrail_name": "uae-anti-discrimination-filter",
+      "litellm_params": {
+        "guardrail": "litellm_content_filter",
+        "mode": "pre_call",
+        "categories": [
+          {
+            "category": "uae_anti_discrimination",
+            "category_file": "litellm/proxy/guardrails/content_filter_data/policy_templates/uae_anti_discrimination.yaml",
+            "enabled": true,
+            "action": "BLOCK",
+            "severity_threshold": "medium"
+          }
+        ]
+      },
+      "guardrail_info": {
+        "description": "UAE Federal Decree-Law No. 2/2015 compliance -- blocks discriminatory content based on race, religion, caste, ethnicity, or nationality"
+      }
+    }
+  ],
+  "templateData": {
+    "policy_name": "uae-regulatory-compliance",
+    "description": "UAE regulatory compliance policy. Covers Federal Decree-Law No. 45/2021 (Data Protection) and Federal Decree-Law No. 2/2015 (Anti-Discrimination). Protects Emirates ID, UAE contact info, and ensures cultural and religious sensitivity.",
+    "guardrails_add": [
+      "uae-data-protection-pii",
+      "uae-cultural-sensitivity-filter",
+      "uae-anti-discrimination-filter"
+    ],
+    "guardrails_remove": []
+  },
+  "tags": [
+    "Regulatory",
+    "UAE"
+  ],
+  "estimated_latency_ms": 1
+}

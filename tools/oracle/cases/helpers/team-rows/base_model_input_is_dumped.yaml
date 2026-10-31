@@ -1,0 +1,8 @@
+kind: helper
+name: base_model_input_is_dumped
+call:
+  team_rows:
+    calls:
+      - {"name":"base_model_input_is_dumped","operation":"base_model","row":{"team_id":"t","metadata":{"x":true}}}
+env: {}
+compare: {ignore: []}

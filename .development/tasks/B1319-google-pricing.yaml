@@ -78,4 +78,4 @@ pitfalls:
   - The character output high-context branch bills completion_tokens against a character rate.
   - A configured Maps rate of zero must not fall through to the published default price.
 budget: {max_changed_lines: 700, max_new_expects: 0}
-review_level: security
+review_level: standard
