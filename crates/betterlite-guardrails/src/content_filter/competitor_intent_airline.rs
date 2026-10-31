@@ -142,8 +142,8 @@ impl AirlineCompetitorIntentChecker {
         let mut result = self.base.run_with(text, |segment, token| {
             self.classify_ambiguous(segment, token)
         });
-        if let Some(confidence) = result.confidence.as_mut() {
-            *confidence = (*confidence * 100.0_f64).round() / 100.0_f64;
+        if result.intent.as_deref() == Some("log_only") {
+            result.action_hint = Some("log_only".to_owned());
         }
         result
     }
