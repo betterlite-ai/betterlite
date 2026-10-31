@@ -63,6 +63,11 @@ fn skill_archive_rejects_invalid_uploads(#[case] path: Option<&str>) {
     assert!(build_skill_archive(&upload(&members)).is_none());
 }
 
+#[test]
+fn skill_archive_rejects_malformed_zip_bytes() {
+    assert!(build_skill_archive(b"not a ZIP archive").is_none());
+}
+
 #[rstest]
 #[case::null_byte("skill/ev\0il.txt")]
 #[case::backslash("skill/evil\\file.txt")]
