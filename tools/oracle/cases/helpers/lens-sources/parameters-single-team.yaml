@@ -1,0 +1,9 @@
+kind: helper
+name: parameters-single-team
+call:
+  b4502:
+    parameters:
+      scope: {team_id: team-1, api_key_hash: hash-1, all_teams: false}
+      filters: []
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,9 @@
+kind: helper
+name: identity_rows_key_defaults
+call:
+  identity_rows:
+    operation: key
+    row: {}
+env: {}
+compare:
+  ignore: []
