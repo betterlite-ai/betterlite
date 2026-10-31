@@ -121,6 +121,13 @@ fn grayswan_config_rejects_a_negative_guardrail_timeout() {
 }
 
 #[test]
+fn grayswan_config_logs_invalid_duration_category() {
+    let source = format!("{GRAYSWAN_CONFIG}      guardrail_timeout: -1\n");
+    let error = resolve(&source, &BTreeMap::new()).unwrap_err();
+    assert_eq!(super::error_category(&error), "invalid_duration");
+}
+
+#[test]
 fn grayswan_config_rejects_a_nan_guardrail_timeout() {
     let source = format!("{GRAYSWAN_CONFIG}      guardrail_timeout: .nan\n");
     let error = resolve(&source, &BTreeMap::new()).unwrap_err();

@@ -13,6 +13,18 @@ mod tests;
 pub const UI_FRIENDLY_NAME: &str = "Gray Swan Cygnal";
 const DEFAULT_API_BASE: &str = "https://api.grayswan.ai";
 const DEFAULT_GUARDRAIL_TIMEOUT: Duration = Duration::from_secs(30);
+#[must_use]
+pub const fn error_category(error: &ConfigError) -> &'static str {
+    match error {
+        ConfigError::Yaml { .. } => "yaml",
+        ConfigError::Unsupported { .. } => "unsupported_key",
+        ConfigError::MissingEnvironment { .. } => "missing_environment",
+        ConfigError::InvalidFloat { .. } => "invalid_float",
+        ConfigError::InvalidInteger { .. } => "invalid_integer",
+        ConfigError::InvalidDuration { .. } => "invalid_duration",
+        ConfigError::InvalidScalar { .. } => "invalid_scalar",
+    }
+}
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum OnFlaggedAction {
     Block,
