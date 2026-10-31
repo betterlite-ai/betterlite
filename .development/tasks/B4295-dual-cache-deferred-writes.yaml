@@ -51,13 +51,13 @@ checks:
   commands:
     - id: dual-cache-deferred-write-functions
       why: the deferred-write functions are missing or do not compile
-      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^dual_cache::)'
+      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^dual_cache::/)'
     - id: dual-cache-deferred-write-integration
       why: deferred writes do not integrate correctly with active batches
-      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^dual_cache::(deferred_write|batch_integration))'
+      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^dual_cache::(deferred_write|batch_integration)/)'
     - id: error-propagation-tests
       why: error propagation differs between increments and set operations
-      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^dual_cache::(error_propagation|error_swallowing))'
+      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^dual_cache::(error_propagation|error_swallowing)/)'
 oracle_cases: []
 deviations:
   - what: Rust function names are shortened to 30 characters or fewer per coding rules; `increment_cache_post_call`, `pipeline_increment_post_call`, and `log_deferred_increment_failure` implement LiteLLM's longer-named `async_increment_cache_post_call`, `async_increment_cache_pipeline_post_call`, and `_log_deferred_increment_failure`.

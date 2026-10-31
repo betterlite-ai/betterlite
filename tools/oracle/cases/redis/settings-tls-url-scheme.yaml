@@ -1,0 +1,10 @@
+kind: helper
+name: settings-tls-url-scheme
+call:
+  b4321:
+    function: resolve_redis_kwargs
+    environment: {}
+    overrides:
+      url: rediss://cache.internal:6379
+env: {}
+compare: {ignore: []}

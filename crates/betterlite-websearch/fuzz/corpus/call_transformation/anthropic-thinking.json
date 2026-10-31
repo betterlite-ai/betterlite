@@ -1,0 +1,1 @@
+{"content": [{"type": "thinking", "thinking": "reason"}, {"type": "tool_use", "id": "call-1", "name": "litellm_web_search", "input": {"query": "rust"}}]}

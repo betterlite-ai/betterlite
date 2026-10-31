@@ -77,7 +77,7 @@ checks:
   commands:
     - id: bitbucket-compiler-init-tests
       why: BitBucketPromptManager initialization, integration_name, or prompt_initializer tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket_prompt_manager::.*init/|^bitbucket_prompt_manager::.*integration_name/|^bitbucket_initializer_tests::/)'
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket_prompt_manager::.*init|^bitbucket_prompt_manager::.*integration_name|^bitbucket_initializer_tests::/)'
     - id: bitbucket-compiler-lazy-tests
       why: lazy property tests for prompt_manager fail or do not exist
       run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket_prompt_manager::.*lazy/)'

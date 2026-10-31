@@ -109,7 +109,7 @@ checks:
   commands:
     - id: chat-input-tests
       why: the adapter input tests fail, do not exist, or core chat types are missing
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::genai_chat_input::)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::genai_chat_input::/)'
     - id: chat-input-fuzz-corpus
       why: the input adapter fuzz target or its corpus is missing, or replaying the corpus fails
       run: test -f crates/betterlite-core/fuzz/fuzz_targets/genai_chat_input.rs && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_genai_chat_input_corpus)'

@@ -1,0 +1,5 @@
+kind: helper
+name: extract-sanitized-messages-modified-variant
+call: {b3758: {function: extract_sanitized_messages, response: {modified_messages: [{role: user}]}}}
+env: {}
+compare: {ignore: []}

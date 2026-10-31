@@ -22,6 +22,7 @@ A finding is a broken reviewed rule at a specific line of a changed file. For ea
 - Check reuse-before-building against the worker's prior art: hand-written code for a solved problem with no recorded comparison is a finding.
 - Splitting a file, a function or a data file only to get under a lint or size limit is a finding under one-responsibility-per-file: a split follows a seam, not a number.
 - Before you call a behavior wrong, read the LiteLLM line it ports. Code that does what LiteLLM does is not a finding, unless it repeats a bug that rule owned-behavior-is-built says to fix: then report it with origin litellm. A fix of such a bug that docs/deviations/<ID>.yaml lists is accepted. Everything else betterlite introduced, including a change to what a working LiteLLM setup relies on, has origin ours.
+- A finding under owned-behavior-is-built names what a client, a provider or a config file sees differently, with an input of the type LiteLLM declares. A difference only Python's runtime makes (truthiness, duck typing, repr or str text, json.dumps formatting, object identity or a change to the caller's dict) is not a finding: docs/compatibility.md sets what betterlite does there for every task.
 
 ## Final answer
 

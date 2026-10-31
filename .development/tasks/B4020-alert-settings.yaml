@@ -68,7 +68,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-config -p betterlite-logging --no-tests=fail -E 'test(/^(sections::)?alert_settings::/) - test(/replays_the_/)'
     - id: alert-types-tests
       why: alert type and record tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^alert_settings::(?!.*trace_lookup)/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^alert_settings::/) - test(/trace_lookup/)'
     - id: alert-trace-tests
       why: langfuse trace lookup tests fail or do not exist
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^alert_settings::.*trace_lookup/)'

@@ -91,7 +91,7 @@ checks:
   commands:
     - id: headroom-compression-tests
       why: compression request, hash tracking, bypass/background handling or apply orchestration fail or do not exist
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^headroom_compression::|^headroom_compression_call_id::|^headroom_compression_hash_tracking::)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^headroom_compression::|^headroom_compression_call_id::|^headroom_compression_hash_tracking::/)'
 oracle_cases:
   - tools/oracle/cases/guardrails/headroom/compression/bypass-header-true.yaml
   - tools/oracle/cases/guardrails/headroom/compression/bypass-header-false.yaml
