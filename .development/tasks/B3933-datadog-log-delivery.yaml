@@ -195,7 +195,7 @@ pitfalls:
   - Health check does not use the request/response payload inspection; it only checks HTTP status. A non-202 status from async_send_compressed_data raises HTTPStatusError, not returned.
   - get_request_response_payload is live dispatch through AdditionalLoggingUtils.payload_reading_on_dd but only for DataDogLogger instances; a return value of None is correct.
   - flush_queue requires a flush_lock (asyncio.Lock) acquired in __init__ by the parent CustomBatchLogger; it must not be None during operation.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

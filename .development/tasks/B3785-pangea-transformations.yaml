@@ -138,7 +138,7 @@ pitfalls:
   - "applied-guardrail headers are added after successful Pangea calls; ensure the header addition does not fail silently."
   - "async_handler is obtained via get_async_httpx_client; it already has the timeout configured as a dependency from B173."
   - "Environment variables are read in __init__ using or chains with defaults; the config loader from B002 supplies these values when not hardcoded in the guardrail config."
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

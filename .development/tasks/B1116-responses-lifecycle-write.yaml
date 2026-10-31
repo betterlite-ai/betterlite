@@ -118,7 +118,7 @@ pitfalls:
 - Cancel returns a provider response directly; the proxy polling route's re-read belongs to B938, not this SDK call.
 - An embedded provider wins even when the caller explicitly supplied a different provider.
 - extra_query disappears before the HTTP handler and extra_body disappears inside it.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

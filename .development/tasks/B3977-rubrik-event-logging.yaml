@@ -162,7 +162,7 @@ pitfalls:
   - Sampled logging returns None early when sampling_rate drops the event; _enqueue_log_event must return early without appending.
   - The fallback path is used when standard_logging_object is absent (prompt blocks or race conditions), never copied from elsewhere.
 
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

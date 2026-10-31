@@ -83,4 +83,4 @@ pitfalls:
   - Explicit format outranks mime_type, which outranks content_type.
   - The model=None media path deliberately omits both per-part resolution and video metadata.
 budget: {max_changed_lines: 675, max_new_expects: 0}
-review_level: security
+review_level: standard

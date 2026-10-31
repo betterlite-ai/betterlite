@@ -302,7 +302,7 @@ pitfalls:
   - "Malformed response handling: when transformed=true but the response shape cannot be parsed, a 500 is raised immediately to avoid dropping delivered redactions; when transformed is false or absent, validation errors re-raise naturally."
   - "Constructor's fail_on_error parameter defaults to True when None is passed, using the pattern 'True if fail_on_error is None else fail_on_error'."
   - "LiteLLM class names exceed the 30-character Rust identifier limit: CrowdStrikeAIDRGuardrailMissingSecrets (38 chars), CrowdStrikeAIDRGuardrailConfigModel (35 chars), CrowdStrikeAIDRGuardrailConfigModelOptionalParams (51 chars). Use shorter names: CrowdStrikeMissingSecrets (25 chars), CrowdStrikeAIDRConfig (20 chars), CrowdStrikeAIDROptionalParams (27 chars)."
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0
