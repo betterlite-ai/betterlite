@@ -13,8 +13,11 @@ use tokio::task::JoinSet;
 use tokio::time::timeout;
 
 use super::CLIHarnessHandler;
-use super::io::{drain_stderr, iter_stream_lines, push_tail};
-use super::setup::{copy_skills, persist_dir, sandbox_path};
+use super::io::{
+    HARNESS_STREAM_CHUNK_BYTES, decode_lossy, drain_stderr, iter_stream_lines, push_tail,
+};
+use super::setup::{PERSIST_OUTPUT_LIMIT, copy_skills, persist_dir, sandbox_path};
+use super::turn_io::{TurnCursor, TurnProgress};
 use crate::context::{SessionContext, SessionSettings, TurnOutcome};
 use crate::errors::HarnessError;
 use crate::events::Event;
@@ -248,11 +251,15 @@ async fn turn_streams_a_long_stdout_line_without_truncation_and_tracks_the_sessi
         native_id: None,
     };
     handler.start(&mut ctx).await.unwrap();
-    let events = handler
-        .turn(&mut ctx, "prompt")
-        .map(Result::unwrap)
-        .collect::<Vec<_>>()
-        .await;
+    let events = timeout(
+        Duration::from_secs(5),
+        handler
+            .turn(&mut ctx, "prompt")
+            .map(Result::unwrap)
+            .collect::<Vec<_>>(),
+    )
+    .await
+    .unwrap();
     assert_eq!(events.len(), 1);
     let Event::Text { delta } = events.first().unwrap() else {
         panic!("expected a text event");
@@ -294,6 +301,65 @@ async fn turn_drains_stderr_concurrently_so_a_full_pipe_cannot_deadlock_stdout()
     let tail = ctx.outcome.output_json.clone().unwrap();
     assert!(tail.contains("stderr-line-19999"));
     assert!(!tail.contains("stderr-line-0,"));
+}
+
+#[tokio::test]
+async fn turn_progress_finishes_after_both_pipes_close_without_data() {
+    let root = tempdir();
+    let sandbox = sandbox_with_env(root.path(), &BTreeMap::new());
+    let command = SandboxCommand {
+        argv: vec![
+            "sh".to_owned(),
+            "-c".to_owned(),
+            "exec 1>&-; exec 2>&-".to_owned(),
+        ],
+        env: BTreeMap::new(),
+        cwd: None,
+    };
+    let mut process = sandbox.exec(&command).await.unwrap();
+    let mut cursor = TurnCursor::default();
+    let progress = timeout(
+        Duration::from_secs(5),
+        super::turn_io::next_turn_progress(&mut process, &mut cursor),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(progress.is_none());
+    process.wait().await.unwrap();
+}
+
+#[tokio::test]
+async fn turn_progress_reads_stderr_after_stdout_closes() {
+    let root = tempdir();
+    let sandbox = sandbox_with_env(root.path(), &BTreeMap::new());
+    let command = SandboxCommand {
+        argv: vec![
+            "sh".to_owned(),
+            "-c".to_owned(),
+            "exec 1>&-; sleep 0.1; printf late >&2".to_owned(),
+        ],
+        env: BTreeMap::new(),
+        cwd: None,
+    };
+    let mut process = sandbox.exec(&command).await.unwrap();
+    let mut cursor = TurnCursor::default();
+    let stderr = timeout(Duration::from_secs(5), async {
+        loop {
+            let progress = super::turn_io::next_turn_progress(&mut process, &mut cursor)
+                .await
+                .unwrap();
+            match progress {
+                Some(TurnProgress::Stderr(data)) => break data,
+                Some(TurnProgress::Stdout(_)) => panic!("stdout should already be closed"),
+                None => panic!("stderr must be read before both pipes close"),
+            }
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(stderr, b"late");
+    process.wait().await.unwrap();
 }
 
 // Fails today: AsyncWriteExt::shutdown() is a no-op on tokio's ChildStdin, see the task report.
@@ -378,7 +444,10 @@ async fn iter_stream_lines_splits_chunks_arriving_separately_and_in_one_read() {
         writer.write_all(b"e-b\nline-c").await.unwrap();
         writer.shutdown().await.unwrap();
     });
-    let lines = iter_stream_lines(reader).await.unwrap();
+    let lines = timeout(Duration::from_secs(5), iter_stream_lines(reader))
+        .await
+        .unwrap()
+        .unwrap();
     writing.join_next().await.unwrap().unwrap();
     assert_eq!(
         lines,
@@ -391,7 +460,10 @@ async fn iter_stream_lines_keeps_the_final_partial_line_without_a_trailing_newli
     let (mut writer, reader) = duplex(64);
     writer.write_all(b"only-line-no-newline").await.unwrap();
     writer.shutdown().await.unwrap();
-    let lines = iter_stream_lines(reader).await.unwrap();
+    let lines = timeout(Duration::from_secs(5), iter_stream_lines(reader))
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(lines, vec![b"only-line-no-newline".to_vec()]);
 }
 
@@ -401,9 +473,18 @@ async fn drain_stderr_decodes_invalid_utf8_with_replacement() {
     writer.write_all(b"bad-\xff-byte\n").await.unwrap();
     writer.shutdown().await.unwrap();
     let mut tail = VecDeque::new();
-    drain_stderr(reader, &mut tail).await.unwrap();
-    assert_eq!(tail.len(), 1);
-    assert!(tail[0].contains('\u{fffd}'));
+    timeout(Duration::from_secs(5), drain_stderr(reader, &mut tail))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(tail.as_slices().0, ["bad-�-byte".to_owned()]);
+    assert_eq!(decode_lossy(b"bad-\xff-byte"), "bad-�-byte");
+}
+
+#[test]
+fn stream_chunk_size_is_64_kibibytes() {
+    assert_eq!(HARNESS_STREAM_CHUNK_BYTES, 64 * 1024);
+    assert_eq!(PERSIST_OUTPUT_LIMIT, 16 * 1024);
 }
 
 #[test]

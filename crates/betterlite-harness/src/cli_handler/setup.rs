@@ -14,7 +14,7 @@ use crate::transformation::HarnessSessionSetup;
 // links <private_dir>/<link> to a betterlite-owned cache dir so a later session can resume
 const PERSIST_DIR_SCRIPT: &str = "d=\"${HOME:-/tmp}/.cache/litellm-harness/$2\"; mkdir -p \"$d\" && mkdir -p \"$(dirname \"$1\")\" && ln -sfn \"$d\" \"$1\"";
 const PERSIST_TIMEOUT: Duration = Duration::from_secs(30);
-const PERSIST_OUTPUT_LIMIT: usize = 16 * 1024;
+pub(super) const PERSIST_OUTPUT_LIMIT: usize = 16 * 1024;
 
 #[must_use]
 pub(super) fn sandbox_path(private_dir: &str, path: &str) -> String {
