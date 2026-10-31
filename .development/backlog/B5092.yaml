@@ -1,0 +1,13 @@
+id: B5092
+milestone: M0 foundation
+title: Oracle helper adapters call LiteLLM
+status: todo
+depends_on: [B5091, B3973, B2410, B1128, B205, B204]
+file: tasks/B5092-helper-adapters-call-litellm.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
