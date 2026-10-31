@@ -1,0 +1,9 @@
+kind: helper
+name: null_search_results_are_ignored
+call:
+  message_content:
+    operation: extract_search_results_text
+    search_results: null
+env: {}
+compare:
+  ignore: []

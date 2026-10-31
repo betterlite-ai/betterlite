@@ -92,18 +92,13 @@ oracle_cases:
 - tools/oracle/cases/helpers/bedrock-prompt/tool-name-roundtrip.yaml
 - tools/oracle/cases/helpers/bedrock-prompt/native-tool-block.yaml
 - tools/oracle/cases/helpers/bedrock-prompt/cache-point-ttl.yaml
-deviations:
-- what: >-
-    Open, waiting for Max: keep inline-only conversion without remote-image fetching, or fetch public media through
-    the shared SSRF policy.
-  why: >-
-    LiteLLM BedrockImageProcessor fetches HTTP(S) via safe_get; keep the current plan and build no remote downloader
-    until Max decides.
-  link: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L3431-L3586
+deviations: []
 out_of_scope:
 - SigV4, credentials, model discovery and Converse/Invoke execution are B028-B030.
-- Remote images are governed by B009/B183 and are never fetched here.
+- >-
+  Remote image fetching is B227's: BedrockImageProcessor.get_image_details and get_image_details_async fetch through
+  B5082's SSRF-checked fetch (factory.py L3411-L3438), and this task calls B227's process_image_sync and process_image_async
+  as LiteLLM does.
 - >-
   Image/MIME helpers B227, tool results and Bedrock ID sanitizer B228, content/order helpers B229, processor B230,
   tool/cache blocks B231.

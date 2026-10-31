@@ -1,0 +1,11 @@
+kind: helper
+name: token_prompt_rejected
+call:
+  message_content:
+    operation: text_completion_prompt_to_messages
+    prompt: [1, 2]
+env: {}
+compare:
+  ignore:
+    - pointer: /error/message
+      why: Native typed validation uses its own error wording

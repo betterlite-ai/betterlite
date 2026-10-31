@@ -1,224 +1,148 @@
 id: B4575
 title: CLI session commands and temporary settings backup
 description: >-
-  Build logout, token printing, identity display, login-driven Claude setup, and temporary-settings
-  backup/restore primitives for betterlite-management-cli. The logout command revokes the stored
-  credential on the proxy, then clears it locally, but does not fail if revocation is unavailable
-  (503); token printing routes to stdout only (all diagnostics to stderr) for apiKeyHelper support,
-  refreshing the token if stored as PKCE and exiting nonzero if the token has expired. The whoami
-  command shows user email, ID, role, team and token age, with a warning if the keychain cannot be
-  read. Login-driven Claude setup (_configure_claude_code) writes the login key to Claude Code's
-  settings.json as a static token using configure_claude_settings, undoable with `lite unconfigure
-  claude`. Temporary backup/restore saves the original ~/.claude/settings.json state before patching
-  it, preserves whether the file existed, and restores exactly: if it existed, rewrites with original
-  content; if it did not, deletes the patched copy. The up command patches settings for foreground
-  interception, backing up first, installing the statusline script, and restoring on Ctrl-C or
-  SIGTERM via atexit and signal handlers. The down command restores from a crashed up session.
-  Helper functions branch on whether the stored login is PKCE (has refresh_token) to determine the
-  right login command suggestion. All file writes use secure_create (mode 0o600 before any content),
-  and backup paths are private-mode on POSIX. Transport, keychain access and clock are injected for
-  testability; the module owns shared outcome and credential records from B4573 (PkceFailure,
-  RevocationUnavailable). Missing: the prerequisite-1 storage owner for clear_cli_token,
-  get_cli_token_file_path, is_cli_token_fresh.
+  Build the session commands and the Claude Code settings backup of betterlite-management-cli in Rust, ported from LiteLLM's litellm/proxy/client/cli/commands/auth.py (logout, auth print-token, whoami and _configure_claude_code) and up.py (BackupRecord, secure_create, write_backup, read_backup, restore_claude_settings, _restore_and_report, down and the three login probes _usable_login, _key_resolved_on_the_way_in and _stored_login_is_pkce). The session code lives in tools/management-cli/src/session.rs and session/**, the backup code in tools/management-cli/src/settings_backup.rs and settings_backup/**. The auth group is a clap Subcommand enum holding print-token, and logout, whoami and down are command functions with LiteLLM's names and help texts, so the CLI root can mount them. Each command takes B4560's context values (base_url, base_url_explicit, api_key and api_key_from_token_file, the last two absent meaning None and false), B4590's SecretVault, B4573's HTTP transport, a clock and two injected writers for stdout and stderr, and returns Ok or its module's own error enum. The root prints an error's text as one line on stderr and exits 1, where LiteLLM raised click.ClickException or called sys.exit(1).
+
+  docs/compatibility.md decides what is ported. Command names, the order of the checks, what each command sends, clears and writes, the lines printed on stdout, the exit codes and the streams stay LiteLLM's. The stored credential comes typed from B4591's loader, the Rust form of CliTokenRecord (cli_token_utils.py L86-L104): base_url, user_id, user_email and user_role are strings that default to "", timestamp a number that defaults to 0, key, expires_at and refresh_token optional, team_id an optional string (CliTokenData L80). A field of another type is that loader's error, so this task has no runtime type checks and no isinstance fallbacks. Text on stderr and in errors is betterlite's own words, as rule errors-match-litellm says, and each one still names the command that fixes it (lite login, lite login --pkce or lite logout).
+
+  logout loads the stored credential. When there is one it revokes it first through B4573's revoke_stored_credential with a real transport. RevocationUnavailable returns an error that gives the reason, says nothing was cleared and asks to run lite logout again, and nothing is cleared (auth.py L974-L979). PkceFailure prints "Could not revoke the refresh token on the proxy ({reason}); it expires on its own." and goes on. With no stored credential no request is sent and the clear still runs. Then it clears through B4592's clear_cli_token and prints LiteLLM's lines for each outcome on stdout with exit 0: SecretErased "Logged out successfully. Authentication token cleared.", CredentialNotCleared the two lines with B4591's token file path and the detail, SecretStranded STRANDED_CREDENTIAL_MESSAGE and the unlock line, and KeyringNotInstalled, KeyringDisabled and KeyringUnreachable UNCHECKED_KEYCHAIN_MESSAGE and their second lines (auth.py L986-L1005), with B4574's install hint and B4590's DISABLE_KEYRING_ENV_VAR.
+
+  auth print-token is Claude Code's apiKeyHelper, so stdout carries only the key and a newline, and every other outcome is an error with exit 1. The checks run in LiteLLM's order (auth.py L1018-L1060). No stored credential is an error. The credential counts as issued for this server when its base_url equals the context base_url with trailing slashes stripped; with base_url_explicit set and a different server it is an error, and without it the stored server is trusted, as LiteLLM does. A credential that B4591's freshness check calls stale and that has no refresh_token is an error. A credential whose key is None is an error carrying B4574's keychain_unreadable_notice. The key is the context api_key when the credential is issued for this server and api_key_from_token_file is true, and otherwise B4574's fresh_api_key with its saver and reader and warnings on stderr. A key that is None or "" is an error that names lite login --pkce when the credential has a refresh_token and lite login otherwise.
+
+  whoami prints on stdout and always exits 0. With no stored credential it prints "Not authenticated. Run 'lite login' to authenticate." and stops. Otherwise it prints "Authenticated" when key is present and "Signed in, but the credential cannot be read" when it is None, then "User Email: {user_email}", "User ID: {user_id}" and "User Role: {user_role}" with "Unknown" for an empty string, then "Team ID: {team_id}" only when team_id is present and not "". The record's default for these strings is "", so an absent field and "" are the same stored value, and printing "Unknown" for it matches LiteLLM for every record of the declared type; both logins write "unknown", "cli" and "cli-user" when they know nothing better (pkce_login.py L471-L473, auth.py L934-L936). Then "Token age: {hours:.1} hours" with hours = (now - timestamp) / 3600, then B4574's keychain_unreadable_notice when key is None. With expires_at present it prints the expiry line: remaining = (expires_at - now) / 3600, at or below 0 "Key expired. Run '{login command}' again" with no final period, otherwise "Key expires in: {remaining:.1} hours" followed by ", renewed on next use" when refresh_token is present. Without expires_at, an age above the CLI expiry hours prints "Warning: Token is more than {hours} hours old and may have expired.", where the hours are the CLI_JWT_EXPIRATION_HOURS setting B1223 reads (constants.py L1749-L1752).
+
+  _configure_claude_code(base_url, api_key) resolves the settings path with B4562's claude_settings_path from the process environment and calls B4563's configure_claude_settings with StaticToken(api_key), KeepModel, that path, configure_state_path(path) and settings_file_owners(path). A ClaudeSettingsError returns an error that says the login worked but Claude Code could not be configured, with the cause. On success it prints LiteLLM's two blocks (auth.py L804-L808) with base_url's trailing slashes stripped and B4562's STARTING_MODEL_ROLE. No apiKeyHelper is written. B4585's login calls it.
+
+  Backup. BackupRecord holds existed (bool) and content (a JSON object or None). The secure create opens a path for writing with create and truncate and mode 0o600 (std::os::unix::fs::OpenOptionsExt::mode), then sets 0o600 on the open file before writing a byte (File::set_permissions), so an existing file with wider permissions is tightened too. write_backup calls B192's ensure_private_dir on the parent and writes {"existed": ..., "content": ...} as standard JSON through the secure create. read_backup returns None when the file doesn't exist; otherwise it reads it as a JSON object with existed a JSON bool and content an object or null, both required, other keys ignored. Invalid JSON, a missing field or a value of another type is an error that names the path and says it cannot be restored safely, and a read failure is an error that names the path. restore_claude_settings reads the backup and returns None when there is none. When existed is true and content is an object it creates the settings file's parent directories and writes content through B4562's write_claude_settings; otherwise it removes the settings file if it exists. Only then does it remove the backup, and it returns the record. Both paths default to B4562's CLAUDE_SETTINGS_PATH (~/.claude/settings.json) and BACKUP_PATH (~/.litellm/claude_settings_backup.json), not the CLAUDE_CONFIG_DIR-aware claude_settings_path (claude_settings.py L76-L78). The restore report prints "Nothing to restore.", "Restored {path} to its original contents." or "Removed {path} (it did not exist before `lite up`)." on stdout, and down runs it and returns its error. The login probes: usable_login is false for a None key and otherwise true when a stored credential exists and B4591 calls it fresh; key_resolved_on_the_way_in returns the context api_key when api_key_from_token_file is true and otherwise B4574's get_stored_api_key for the given base URL; stored_login_is_pkce is true when a stored credential has a refresh_token. B4577's ensure_fresh_login and up use them.
+
+  Tests. Test functions live in tests.rs files under session/ and settings_backup/ with the name prefixes the checks select: logout_, print_token_, whoami_ and configure_claude_ under session, and backup_, restore_, down_ and login_probe_ under settings_backup. They use a fake SecretVault, a fake transport that records revocation and refresh calls and answers canned outcomes, a fixed clock and paths in a temp directory, so no test touches the real home directory or keychain. They compare the exact stdout bytes for the lines LiteLLM prints, assert that print-token writes nothing to stdout on every error, and assert the returned error variant for betterlite's own texts.
 scope:
   paths:
-    - tools/management-cli/litellm/proxy/client/cli/commands/auth.py
-    - tools/management-cli/litellm/proxy/client/cli/commands/up.py
+    - tools/management-cli/src/session.rs
+    - tools/management-cli/src/session/**
+    - tools/management-cli/src/settings_backup.rs
+    - tools/management-cli/src/settings_backup/**
   lint_tables: false
 references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L64-L95
+    why: CliTokenData and CliContextObj, the declared types of the stored credential and the context values.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cli_token_utils.py#L86-L104
+    why: CliTokenRecord, the field defaults the stored credential loads with ("" for the strings, 0.0 for timestamp).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L124-L135
+    why: KEYRING_INSTALL_HINT, KEYRING_ENABLE_HINT, STRANDED_CREDENTIAL_MESSAGE and UNCHECKED_KEYCHAIN_MESSAGE texts logout prints.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L268-L273
+    why: _warn writes to stderr and _login_command picks lite login --pkce or lite login.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L786-L808
-    why: _configure_claude_code function that writes key to Claude Code settings.
+    why: _configure_claude_code, the configure_claude_settings call and its two output blocks.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L967-L1005
-    why: logout command that revokes credential and clears token file.
+    why: logout, revoke first, RevocationUnavailable stops before the clear, one message pair per clear outcome.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L1008-L1060
-    why: print_token command that outputs token for apiKeyHelper.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L1063-L1094
-    why: whoami command that displays user and token information.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L1097-L1102
-    why: _key_expiry_line helper for formatting key expiry information.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L1105-L1107
-    why: auth_group Click group with print_token registration.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/up.py#L39-L45
-    why: BackupRecord dataclass with existed and content fields.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/up.py#L50-L68
-    why: secure_create context manager that sets 0o600 mode before writing.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/up.py#L71-L87
-    why: write_backup and read_backup functions for persisting settings snapshot.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/up.py#L90-L106
-    why: restore_claude_settings that restores or deletes based on original state.
+    why: print-token, the order of the checks, the trusted stored server and the stdout-only key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L1063-L1102
+    why: whoami and _key_expiry_line, the lines and their order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L1105-L1110
+    why: The auth group and its print-token command.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/pkce_login.py#L467-L485
+    why: pkce_token_record writes "unknown" and "cli" for the user fields, so "" only comes from a record that lacks them.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L930-L940
+    why: The SSO login's stored record, with the same placeholder user fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1749-L1752
+    why: CLI_JWT_EXPIRATION_HOURS, the hours in the whoami warning.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/up.py#L35-L68
+    why: UpError, BackupRecord and secure_create (mode on open, then fchmod before any write).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/up.py#L71-L106
+    why: write_backup, read_backup and restore_claude_settings, with the backup removed last.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/up.py#L109-L124
-    why: Helper functions for checking login usability and PKCE status.
+    why: The three login probes B4577's ensure_fresh_login uses.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/up.py#L145-L153
-    why: _restore_and_report helper that restores settings and reports outcome.
+    why: _restore_and_report and its three lines.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/up.py#L229-L239
-    why: down command that restores settings from backup if available.
+    why: down runs the restore report and turns its error into exit 1.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/claude_settings.py#L74-L78
+    why: STARTING_MODEL_ROLE, CLAUDE_SETTINGS_PATH and BACKUP_PATH.
+  - url: https://doc.rust-lang.org/std/os/unix/fs/trait.OpenOptionsExt.html#tymethod.mode
+    why: The mode a new file is created with.
+  - url: https://doc.rust-lang.org/std/fs/struct.File.html#method.set_permissions
+    why: Tightens an existing file's mode on the open handle before the first write.
 dod:
   - text: >-
-      logout revokes the stored credential on the proxy, clears the token file/keychain,
-      and reports storage failures without clearing local state on revocation errors.
-    proof: [logout-revocation, logout-clear]
+      logout revokes a stored credential first, stops with an error and clears nothing on RevocationUnavailable, prints the PkceFailure line and goes on, skips the request when nothing is stored, and prints LiteLLM's lines for each clear outcome with exit 0.
+    proof: [session-logout]
   - text: >-
-      print-token outputs only the token to stdout; all diagnostics go to stderr or exit
-      with status 1.
-    proof: [print-token-stdout, print-token-exit]
+      auth print-token runs LiteLLM's checks in order, trusts the stored server unless base_url_explicit is set, takes the context key or fresh_api_key by LiteLLM's rule, writes only the key and a newline to stdout, and returns an error naming the right login command on every failure.
+    proof: [session-print-token]
   - text: >-
-      print-token rejects expired tokens unless they auto-renew with refresh_token,
-      and validates the stored token matches the base_url (or trusts the stored endpoint
-      if --base-url was not explicit).
-    proof: [print-token-exit]
+      whoami prints LiteLLM's lines in order from the typed record, "Unknown" for an empty user field, Team ID only when set and not empty, the token age, the keychain notice, and the expiry line or the age warning.
+    proof: [session-whoami]
   - text: >-
-      print-token refreshes PKCE-backed tokens if needed; basic tokens are reused if
-      still fresh.
-    proof: [print-token-refresh]
+      _configure_claude_code calls configure_claude_settings with a static token and KeepModel, turns ClaudeSettingsError into an error, and prints LiteLLM's two blocks on success.
+    proof: [session-configure-claude]
   - text: >-
-      whoami displays user email, ID, role, team ID, token age, and expiry time with
-      fallback warning if older than CLI_JWT_EXPIRATION_HOURS.
-    proof: [whoami-display]
+      The secure create leaves a new or existing file at mode 0o600 before the first byte, and write_backup and read_backup round-trip a BackupRecord, with None for a missing file and an error naming the path for bad JSON, a missing field or a wrong type.
+    proof: [backup-files]
   - text: >-
-      _configure_claude_code writes a static token to Claude Code settings.json using
-      configure_claude_settings (B4563) and does not use apiKeyHelper.
-    proof: [configure-claude-code]
+      restore_claude_settings writes the saved content back or removes the settings file, removes the backup only after that step succeeds, and returns the record or None.
+    proof: [backup-restore]
   - text: >-
-      secure_create opens files with mode 0o600 set before any content is written,
-      preventing world-readable windows.
-    proof: [secure-create]
+      down prints "Nothing to restore.", the Restored line or the Removed line, and returns the restore error.
+    proof: [backup-down]
   - text: >-
-      write_backup calls ensure_private_dir and uses secure_create to persist the
-      BackupRecord JSON.
-    proof: [write-backup]
-  - text: >-
-      read_backup reads and validates the backup JSON, returning None if missing or
-      invalid.
-    proof: [read-backup]
-  - text: >-
-      restore_claude_settings restores settings.json if existed=true and content is
-      present, deletes settings.json if existed=false, then deletes the backup file.
-    proof: [restore-settings]
-  - text: >-
-      down command restores settings from backup and reports the outcome, or reports
-      nothing-to-restore if no backup exists.
-    proof: [down-restore]
-  - text: >-
-      Helper functions check login freshness via is_cli_token_fresh, detect PKCE
-      status via refresh_token presence, and extract keys from context or vault.
-    proof: [usable-login, stored-login-pkce, key-resolved, ensure-fresh-login]
-  - text: >-
-      up command backs up settings before patching and registers signal/atexit handlers
-      for restore on Ctrl-C or SIGTERM.
-    proof: [up-backup-patch, up-signals]
+      usable_login, key_resolved_on_the_way_in and stored_login_is_pkce answer as LiteLLM's probes do for each mix of key, context flag, freshness and refresh_token.
+    proof: [backup-login-probes]
 checks:
   optional: []
   commands:
-    - id: logout-revocation
-      why: logout does not revoke credential or does not handle RevocationUnavailable correctly
-      run: grep -qF 'RevocationUnavailable' tools/management-cli/litellm/proxy/client/cli/commands/auth.py && grep -qF 'revoke_stored_credential' tools/management-cli/litellm/proxy/client/cli/commands/auth.py
-    - id: logout-clear
-      why: logout does not call clear_cli_token or does not match clear outcomes
-      run: grep -qF 'clear_cli_token' tools/management-cli/litellm/proxy/client/cli/commands/auth.py && grep -qF 'SecretErased' tools/management-cli/litellm/proxy/client/cli/commands/auth.py
-    - id: print-token-stdout
-      why: print_token outputs diagnostics to stdout instead of stderr
-      run: grep -qF 'err=True' tools/management-cli/litellm/proxy/client/cli/commands/auth.py && grep -qF 'click.echo(api_key)' tools/management-cli/litellm/proxy/client/cli/commands/auth.py
-    - id: print-token-refresh
-      why: print_token does not refresh PKCE tokens or does not use fresh_api_key
-      run: grep -qF 'fresh_api_key' tools/management-cli/litellm/proxy/client/cli/commands/auth.py && grep -qF 'refresh_token' tools/management-cli/litellm/proxy/client/cli/commands/auth.py
-    - id: print-token-exit
-      why: print_token does not exit with code 1 on expired or unreadable token
-      run: grep -qF 'sys.exit(1)' tools/management-cli/litellm/proxy/client/cli/commands/auth.py
-    - id: whoami-display
-      why: whoami does not display user email, ID, role, team, age or expiry correctly
-      run: grep -qF 'user_email' tools/management-cli/litellm/proxy/client/cli/commands/auth.py && grep -qF 'Token age' tools/management-cli/litellm/proxy/client/cli/commands/auth.py && grep -qF 'user_id' tools/management-cli/litellm/proxy/client/cli/commands/auth.py
-    - id: configure-claude-code
-      why: _configure_claude_code does not call configure_claude_settings or does not report outcome
-      run: grep -qF 'configure_claude_settings' tools/management-cli/litellm/proxy/client/cli/commands/auth.py && grep -qF 'StaticToken' tools/management-cli/litellm/proxy/client/cli/commands/auth.py
-    - id: secure-create
-      why: secure_create does not set mode 0o600 before writing or does not use os.fchmod
-      run: grep -qF 'os.fchmod' tools/management-cli/litellm/proxy/client/cli/commands/up.py && grep -qF '0o600' tools/management-cli/litellm/proxy/client/cli/commands/up.py
-    - id: write-backup
-      why: write_backup does not call ensure_private_dir or does not serialize BackupRecord
-      run: grep -qF 'ensure_private_dir' tools/management-cli/litellm/proxy/client/cli/commands/up.py && grep -qF 'BackupRecord' tools/management-cli/litellm/proxy/client/cli/commands/up.py && grep -qF 'json.dump' tools/management-cli/litellm/proxy/client/cli/commands/up.py
-    - id: read-backup
-      why: read_backup does not validate BackupRecord or does not raise on corruption
-      run: grep -qF 'validate_json' tools/management-cli/litellm/proxy/client/cli/commands/up.py && grep -qF 'ValidationError' tools/management-cli/litellm/proxy/client/cli/commands/up.py
-    - id: restore-settings
-      why: restore_claude_settings does not restore based on existed flag or does not delete backup
-      run: grep -qF 'record.existed' tools/management-cli/litellm/proxy/client/cli/commands/up.py && grep -qF '.unlink()' tools/management-cli/litellm/proxy/client/cli/commands/up.py
-    - id: usable-login
-      why: _usable_login does not check api_key or does not call is_cli_token_fresh
-      run: grep -qF 'is_cli_token_fresh' tools/management-cli/litellm/proxy/client/cli/commands/up.py && grep -qF 'api_key is None' tools/management-cli/litellm/proxy/client/cli/commands/up.py
-    - id: key-resolved
-      why: _key_resolved_on_the_way_in does not branch on api_key_from_token_file or does not return stored key
-      run: grep -qF 'api_key_from_token_file' tools/management-cli/litellm/proxy/client/cli/commands/up.py && grep -qF 'get_stored_api_key' tools/management-cli/litellm/proxy/client/cli/commands/up.py
-    - id: stored-login-pkce
-      why: _stored_login_is_pkce does not check refresh_token presence
-      run: grep -qF 'refresh_token' tools/management-cli/litellm/proxy/client/cli/commands/up.py
-    - id: ensure-fresh-login
-      why: ensure_fresh_login does not invoke login or does not check for usable token
-      run: grep -qF 'ctx.invoke(login' tools/management-cli/litellm/proxy/client/cli/commands/up.py && grep -qF '_usable_login' tools/management-cli/litellm/proxy/client/cli/commands/up.py
-    - id: up-backup-patch
-      why: up does not back up before patching or does not use merge_claude_settings
-      run: grep -qF 'write_backup' tools/management-cli/litellm/proxy/client/cli/commands/up.py && grep -qF 'merge_claude_settings' tools/management-cli/litellm/proxy/client/cli/commands/up.py && grep -qF 'BACKUP_PATH.exists()' tools/management-cli/litellm/proxy/client/cli/commands/up.py
-    - id: up-signals
-      why: up does not register SIGINT/SIGTERM handlers or does not use atexit
-      run: grep -qF 'signal.signal' tools/management-cli/litellm/proxy/client/cli/commands/up.py && grep -qF 'atexit.register' tools/management-cli/litellm/proxy/client/cli/commands/up.py
-    - id: down-restore
-      why: down does not call restore_claude_settings or _restore_and_report
-      run: grep -qF 'restore_claude_settings' tools/management-cli/litellm/proxy/client/cli/commands/up.py && grep -qF '_restore_and_report' tools/management-cli/litellm/proxy/client/cli/commands/up.py
+    - id: session-logout
+      why: the logout tests are missing or the revocation order, the stop on RevocationUnavailable or a clear outcome's lines differ from the description
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^session::.*tests::logout_/)'
+    - id: session-print-token
+      why: the print-token tests are missing or a check, its order, the key choice or the stdout-only rule differs from the description
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^session::.*tests::print_token_/)'
+    - id: session-whoami
+      why: the whoami tests are missing or a line, its order or the expiry and warning rules differ from the description
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^session::.*tests::whoami_/)'
+    - id: session-configure-claude
+      why: the Claude Code wiring tests are missing or the configure call, its error or the printed blocks differ from the description
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^session::.*tests::configure_claude_/)'
+    - id: backup-files
+      why: the backup file tests are missing or the file mode, the written JSON or the read rules differ from the description
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^settings_backup::.*tests::backup_/)'
+    - id: backup-restore
+      why: the restore tests are missing or the restore branches or the order of the backup removal differ from the description
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^settings_backup::.*tests::restore_/)'
+    - id: backup-down
+      why: the down tests are missing or its lines or error differ from the description
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^settings_backup::.*tests::down_/)'
+    - id: backup-login-probes
+      why: the login probe tests are missing or a probe answers differently from LiteLLM's
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^settings_backup::.*tests::login_probe_/)'
 oracle_cases: []
-deviations:
-  - what: >-
-      print-token accepts an invocation without explicit --base-url and trusts the stored
-      token's base_url endpoint, rather than requiring explicit --base-url to be set on
-      every invocation.
-    why: >-
-      The apiKeyHelper use case needs the token command to work from any shell context
-      without requiring Claude Code to pass its configured proxy URL to every helper call.
-      The stored token's origin is authoritative for that invocation.
-    link: >-
-      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L1026-L1034
-  - what: >-
-      logout does not clear the local token if revocation is unavailable (network/proxy
-      error), to preserve the credential in case the user recovers connectivity and tries
-      logout again.
-    why: >-
-      A revocation error (503, 500, network timeout) is transient; clearing the token
-      and failing leaves the user unable to retry logout without logging in again. The
-      token expires on its own.
-    link: >-
-      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L974-L979
+deviations: []
 out_of_scope:
-  - The storage/keyring implementation for clear_cli_token, get_cli_token_file_path, and is_cli_token_fresh; these are prerequisite-1 tasks owned below B135.
-  - The configure_claude_settings function (B4563) and its receipt/undo logic.
-  - The context_secret_vault function (B4574) and token loading/saving via the vault.
-  - The run_pkce_login, revoke_stored_credential and token refresh logic (B4573 and B4574).
-  - The ensure_fresh_login function, which bridges login and up (B4577).
-  - Click's context object setup and base_url resolution (B4585 and B4560).
-  - The login command implementation and login flow (B4585 handles dispatch; B4574 owns PKCE coordination).
+  - The CLI root mounts these commands, declares the session and settings_backup modules and turns their errors into one stderr line and exit 1 (main.py); B134 covers main.py.
+  - The context values and the config file they come from are B4560's.
+  - The stored credential record, its file path, load and save, freshness and clear_cli_token with its outcomes are B4591's and B4592's.
+  - fresh_api_key, get_stored_api_key, storage_notice, keychain_unreadable_notice, the renewal saver and reader and KEYRING_INSTALL_HINT are B4574's.
+  - revoke_stored_credential, PkceFailure, RevocationUnavailable and the HTTP transport are B4573's.
+  - configure_claude_settings is B4563's; claude_settings_path, configure_state_path, settings_file_owners, write_claude_settings, StaticToken, KeepModel, STARTING_MODEL_ROLE, CLAUDE_SETTINGS_PATH and BACKUP_PATH are B4562's.
+  - ensure_private_dir is B192's, and reading CLI_JWT_EXPIRATION_HOURS is B1223's.
+  - login and _finish_login are B4585's; up, ensure_fresh_login and the signal and exit handlers are B4577's.
 pitfalls:
   - >-
-      print-token must not print any diagnostic message to stdout, only the bare token.
-      Errors, warnings and auth failures go to stderr via click.echo(..., err=True).
+    print-token is read by Claude Code as the key, so a warning from fresh_api_key, a keychain notice or any error text that reaches stdout breaks every Claude Code request; only the final key goes to stdout.
   - >-
-      print-token outputs the token only on success; every error path calls sys.exit(1),
-      never falling through to a click.echo.
+    The issued-for-this-server check strips trailing slashes from the context base_url only, since the stored base_url was stripped when it was saved, and without base_url_explicit a mismatch is not an error.
   - >-
-      The base_url validation in print-token checks ctx_obj.get("base_url_explicit"),
-      not just whether base_url is set; explicit and implicit bases are different.
+    restore_claude_settings removes the backup last, so a failed write or removal leaves the backup in place for the next lite down.
   - >-
-      Token age is computed as (time.time() - stamped) / 3600 hours, and stamped
-      must be checked with isinstance(stamped, (int, float)) to avoid TypeError.
+    existed true with content null takes the removal branch, as LiteLLM's if and elif do; up never writes that pair, but a hand-edited backup can hold it.
   - >-
-      logout must not clear the token file if revocation fails with RevocationUnavailable
-      or other errors; it reports the error and leaves the credential in place.
+    The restore report and down use the fixed ~/.claude/settings.json, while _configure_claude_code uses claude_settings_path and so follows CLAUDE_CONFIG_DIR.
   - >-
-      write_backup passes BackupRecord fields directly to json.dump, not via a custom encoder;
-      ensure the dataclass is JSON-serializable (existed=bool, content=dict or None).
+    The expired line from the expiry check has no final period, while the one print-token returns names the command the same way but is betterlite's own text.
   - >-
-      restore_claude_settings unlinks the backup file after restore, even if restore
-      partly fails; it must not leave stale backup files behind.
-  - >-
-      secure_create must fchmod before yielding the file handle to the user, not after close,
-      to prevent any content being written at the default umask mode.
-review_level: standard
+    logout clears even when nothing is stored, so a machine with only a keychain entry left still gets the clear and its outcome line.
+review_level: security
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

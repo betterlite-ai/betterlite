@@ -1,0 +1,15 @@
+kind: helper
+name: message-content-any-messages-conversion
+call:
+  message_content:
+    operation: handle_any_messages_to_chat_completion_str_messages_conversion
+    any_messages:
+      - role: user
+        content:
+          - type: text
+            text: hi
+      - role: assistant
+        content: ok
+env: {}
+compare:
+  ignore: []

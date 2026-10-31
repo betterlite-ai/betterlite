@@ -1,14 +1,14 @@
 id: B910
 milestone: M5 api families
 title: Responses reasoning merge
-status: todo
+status: done
 depends_on: [B171, B004]
 file: tasks/B910-responses-reasoning-merge.yaml
 covers:
   - "litellm/responses/litellm_completion_transformation/transformation.py"
 parent: B080
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 398
