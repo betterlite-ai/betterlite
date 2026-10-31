@@ -1,0 +1,6 @@
+kind: helper
+name: local-posts-load
+call:
+  blog_feed: {function: load_local_blog_posts}
+env: {}
+compare: {ignore: []}

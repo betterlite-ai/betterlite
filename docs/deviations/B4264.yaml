@@ -1,0 +1,5 @@
+task: B4264
+deviations:
+  - what: quick-xml is used for RSS parsing instead of Python's xml.etree.ElementTree
+    why: Rust needs a maintained XML parser; quick-xml is the required compatible crate
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_blog_posts.py#L68-L111

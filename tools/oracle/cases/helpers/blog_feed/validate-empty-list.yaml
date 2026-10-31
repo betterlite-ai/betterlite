@@ -1,0 +1,5 @@
+kind: helper
+name: validate-empty-list
+call: {blog_feed: {function: validate_blog_posts, posts: []}}
+env: {}
+compare: {ignore: []}
