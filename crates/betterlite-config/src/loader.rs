@@ -1,23 +1,19 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::{ParseFloatError, ParseIntError};
-use std::time::TryFromFloatSecsError;
 
 use secrecy::SecretString;
 use serde::de::DeserializeOwned;
 use thiserror::Error;
 
 use crate::providers::bedrock::request_policy::metadata_fields;
-use crate::raw::{
-    RawConfig, RawDeployment, RawGeneral, RawInfo, RawLiteLlm, RawNumber, RawParams, RawRouter,
-};
+use crate::raw::{RawConfig, RawDeployment, RawLiteLlm, RawNumber, RawParams, RawRouter};
 use crate::resolve::{
     parse_float, parse_integer, resolve_number as number, resolve_secret, resolve_string,
 };
 use crate::secret_codec::general_settings;
 use crate::sections::{RawSections, Sections};
 use crate::types::{
-    Config, GeneralSettings, LiteLlmParams, LiteLlmSettings, ModelDeployment, ModelInfo,
-    ProxyTrust, RouterSettings,
+    Config, LiteLlmParams, LiteLlmSettings, ModelDeployment, ModelInfo, ProxyTrust, RouterSettings,
 };
 
 pub trait EnvironmentLookup {
@@ -53,15 +49,25 @@ pub enum ConfigError {
         #[source]
         source: ParseIntError,
     },
-    #[error("invalid duration at {path}: {source}")]
-    InvalidDuration {
-        path: String,
-        #[source]
-        source: TryFromFloatSecsError,
-    },
+    #[error("invalid duration at {path}: {value}")]
+    InvalidDuration { path: String, value: f64 },
     #[error("invalid scalar at {path}")]
     InvalidScalar { path: String, value: bool },
 }
+
+#[must_use]
+pub const fn error_category(error: &ConfigError) -> &'static str {
+    match error {
+        ConfigError::Yaml { .. } => "yaml",
+        ConfigError::Unsupported { .. } => "unsupported_key",
+        ConfigError::MissingEnvironment { .. } => "missing_environment",
+        ConfigError::InvalidFloat { .. } => "invalid_float",
+        ConfigError::InvalidInteger { .. } => "invalid_integer",
+        ConfigError::InvalidDuration { .. } => "invalid_duration",
+        ConfigError::InvalidScalar { .. } => "invalid_scalar",
+    }
+}
+
 pub struct ConfigLoader<L> {
     pub lookup: L,
 }
@@ -134,13 +140,22 @@ where
     }
     Ok(Config {
         model_list,
-        general_settings: convert_general(raw.general_settings, lookup)?,
+        general_settings: general_settings(
+            raw.general_settings.encryption_algorithm,
+            resolve_secret(
+                raw.general_settings.master_key,
+                "general_settings.master_key",
+                lookup,
+            )?,
+            lookup,
+        ),
         router_settings: convert_router(raw.router_settings, lookup)?,
         litellm_settings: convert_litellm(raw.litellm_settings, lookup)?,
         environment_variables: convert_environment(raw.environment_variables, lookup)?,
         sections,
     })
 }
+
 fn convert_deployment<L>(
     raw: RawDeployment,
     index: usize,
@@ -150,7 +165,13 @@ where
     L: EnvironmentLookup,
 {
     let litellm_params = convert_params(raw.litellm_params, index, lookup)?;
-    let model_info = convert_info(raw.model_info, index, lookup)?;
+    let model_info = ModelInfo {
+        id: raw
+            .model_info
+            .id
+            .map(|text| resolve_string(text, &format!("model_list.{index}.model_info.id"), lookup))
+            .transpose()?,
+    };
     let model_name = resolve_string(
         raw.model_name,
         &format!("model_list.{index}.model_name"),
@@ -162,6 +183,7 @@ where
         model_info,
     })
 }
+
 fn convert_params<L>(raw: RawParams, index: usize, lookup: &L) -> Result<LiteLlmParams, ConfigError>
 where
     L: EnvironmentLookup,
@@ -197,27 +219,7 @@ where
         weight,
     })
 }
-fn convert_info<L>(raw: RawInfo, index: usize, lookup: &L) -> Result<ModelInfo, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let id = raw
-        .id
-        .map(|text| resolve_string(text, &format!("model_list.{index}.model_info.id"), lookup))
-        .transpose()?;
-    Ok(ModelInfo { id })
-}
-fn convert_general<L>(raw: RawGeneral, lookup: &L) -> Result<GeneralSettings, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let master_key = resolve_secret(raw.master_key, "general_settings.master_key", lookup)?;
-    Ok(general_settings(
-        raw.encryption_algorithm,
-        master_key,
-        lookup,
-    ))
-}
+
 fn convert_router<L>(raw: RawRouter, lookup: &L) -> Result<RouterSettings, ConfigError>
 where
     L: EnvironmentLookup,
@@ -237,6 +239,7 @@ where
         fallbacks: raw.fallbacks,
     })
 }
+
 fn convert_litellm<L>(raw: RawLiteLlm, lookup: &L) -> Result<LiteLlmSettings, ConfigError>
 where
     L: EnvironmentLookup,
@@ -245,7 +248,7 @@ where
     let timeout_path = "litellm_settings.request_timeout";
     let num_retries = number(raw.num_retries, retries_path, lookup, parse_integer)?;
     let request_timeout = number(raw.request_timeout, timeout_path, lookup, parse_float)?;
-    let (modify_params, default_max_tokens) = environment_defaults(raw.modify_params, lookup)?;
+    let (modify_params, default_max_tokens) = litellm_env_defaults(raw.modify_params, lookup)?;
     Ok(LiteLlmSettings {
         num_retries,
         request_timeout,
@@ -259,7 +262,7 @@ where
         default_max_tokens,
     })
 }
-fn environment_defaults<L>(configured: Option<bool>, lookup: &L) -> Result<(bool, i64), ConfigError>
+fn litellm_env_defaults<L>(configured: Option<bool>, lookup: &L) -> Result<(bool, i64), ConfigError>
 where
     L: EnvironmentLookup,
 {
@@ -281,7 +284,6 @@ where
         })?;
     Ok((modify_params, default_max_tokens))
 }
-
 fn convert_environment<L>(
     values: BTreeMap<String, Option<String>>,
     lookup: &L,
@@ -289,12 +291,10 @@ fn convert_environment<L>(
 where
     L: EnvironmentLookup,
 {
-    let resolved = values
-        .into_iter()
-        .map(|(key, value)| {
-            let path = format!("environment_variables.{key}");
-            resolve_secret(value, &path, lookup).map(|secret| (key, secret))
-        })
-        .collect::<Result<BTreeMap<_, _>, ConfigError>>()?;
+    let mut resolved = BTreeMap::new();
+    for (key, value) in values {
+        let path = format!("environment_variables.{key}");
+        resolved.insert(key, resolve_secret(value, &path, lookup)?);
+    }
     Ok(resolved)
 }

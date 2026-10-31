@@ -6,23 +6,11 @@ use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::raw::RawNumber;
 use crate::resolve::{parse_float, resolve_number, resolve_string};
 use secrecy::{ExposeSecret as _, SecretString};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 mod tests;
 pub const UI_FRIENDLY_NAME: &str = "Gray Swan Cygnal";
 const DEFAULT_API_BASE: &str = "https://api.grayswan.ai";
 const DEFAULT_GUARDRAIL_TIMEOUT: Duration = Duration::from_secs(30);
-#[must_use]
-pub const fn error_category(error: &ConfigError) -> &'static str {
-    match error {
-        ConfigError::Yaml { .. } => "yaml",
-        ConfigError::Unsupported { .. } => "unsupported_key",
-        ConfigError::MissingEnvironment { .. } => "missing_environment",
-        ConfigError::InvalidFloat { .. } => "invalid_float",
-        ConfigError::InvalidInteger { .. } => "invalid_integer",
-        ConfigError::InvalidDuration { .. } => "invalid_duration",
-        ConfigError::InvalidScalar { .. } => "invalid_scalar",
-    }
-}
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum OnFlaggedAction {
     Block,
@@ -30,7 +18,8 @@ pub enum OnFlaggedAction {
     Monitor,
     Passthrough,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum ReasoningMode {
     Off,
     Hybrid,
@@ -122,18 +111,15 @@ impl Entry {
                 .lookup("GRAYSWAN_API_BASE")
                 .unwrap_or_else(|| DEFAULT_API_BASE.to_owned()),
         };
-        let violation_threshold = resolve_number(
+        let violation_threshold = match resolve_number(
             parameters.violation_threshold,
             &format!("{prefix}.violation_threshold"),
             lookup,
             parse_float,
-        )?
-        .unwrap_or_else(|| {
-            lookup
-                .lookup("GRAYSWAN_VIOLATION_THRESHOLD")
-                .and_then(|text| text.parse::<f64>().ok())
-                .unwrap_or(DEFAULT_VIOLATION_THRESHOLD)
-        });
+        )? {
+            Some(value) => value,
+            None => env_violation_threshold(lookup)?,
+        };
         Ok(Configured {
             guardrail_name: self.guardrail_name,
             api_key,
@@ -153,6 +139,19 @@ impl Entry {
         })
     }
 }
+fn env_violation_threshold<L>(lookup: &L) -> Result<f64, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let Some(text) = lookup.lookup("GRAYSWAN_VIOLATION_THRESHOLD") else {
+        return Ok(DEFAULT_VIOLATION_THRESHOLD);
+    };
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return Ok(DEFAULT_VIOLATION_THRESHOLD);
+    }
+    parse_float(trimmed, "GRAYSWAN_VIOLATION_THRESHOLD")
+}
 fn resolve_guardrail_timeout(
     guardrail_timeout: Option<f64>,
     path: &str,
@@ -160,9 +159,9 @@ fn resolve_guardrail_timeout(
     let Some(secs) = guardrail_timeout else {
         return Ok(DEFAULT_GUARDRAIL_TIMEOUT);
     };
-    Duration::try_from_secs_f64(secs).map_err(|source| ConfigError::InvalidDuration {
+    Duration::try_from_secs_f64(secs).map_err(|_error| ConfigError::InvalidDuration {
         path: path.to_owned(),
-        source,
+        value: secs,
     })
 }
 fn resolve_api_key<L>(

@@ -9,7 +9,7 @@ use secrecy::ExposeSecret as _;
 use tempfile::NamedTempFile;
 use tracing::subscriber::with_default;
 
-use crate::loader::{ConfigError, ConfigLoader, parse_view};
+use crate::loader::{ConfigError, ConfigLoader, error_category, parse_view};
 use crate::sections::Section as _;
 
 fn logged<T, F>(action: F) -> (T, String)
@@ -189,7 +189,7 @@ fn grayswan_config_rejects_a_negative_guardrail_timeout() {
 fn grayswan_config_logs_invalid_duration_category() {
     let source = format!("{GRAYSWAN_CONFIG}      guardrail_timeout: -1\n");
     let error = resolve(&source, &BTreeMap::new()).unwrap_err();
-    assert_eq!(super::error_category(&error), "invalid_duration");
+    assert_eq!(error_category(&error), "invalid_duration");
 }
 
 #[test]
