@@ -24,20 +24,15 @@ struct Payload {
     extra: Extra,
 }
 
-#[derive(Deserialize, Serialize, strum::EnumIs)]
+#[derive(Default, Deserialize, Serialize, strum::EnumIs)]
 #[serde(untagged)]
 enum NullableField<Value> {
     #[strum(disabled)]
     Null(()),
     #[strum(disabled)]
     Value(Value),
+    #[default]
     Missing,
-}
-
-impl<Value> Default for NullableField<Value> {
-    fn default() -> Self {
-        Self::Missing
-    }
 }
 
 #[derive(Deserialize, Serialize)]
