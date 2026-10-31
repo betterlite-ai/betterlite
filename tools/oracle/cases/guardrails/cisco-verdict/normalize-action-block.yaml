@@ -1,0 +1,5 @@
+kind: helper
+name: normalize-action-block
+call: {b3758: {function: normalize_action, action: denied}}
+env: {}
+compare: {ignore: []}

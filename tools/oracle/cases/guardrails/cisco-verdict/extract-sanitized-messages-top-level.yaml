@@ -1,0 +1,5 @@
+kind: helper
+name: extract-sanitized-messages-top-level
+call: {b3758: {function: extract_sanitized_messages, response: {sanitized_messages: [{role: user}]}}}
+env: {}
+compare: {ignore: []}
