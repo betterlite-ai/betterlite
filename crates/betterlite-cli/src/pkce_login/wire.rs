@@ -38,22 +38,32 @@ struct RawTokenResponse {
     team_id: Option<String>,
 }
 
-// LiteLLM's _TokenResponse.expires_in is a plain Pydantic int field. In non-strict (lax) mode that also accepts an integral JSON float (30.0) or a numeric string ("30"), not only a JSON integer; this reads the field's raw JSON text and mirrors that coercion while still rejecting non-numeric text, fractional values and anything that overflows i64.
+// LiteLLM's _TokenResponse.expires_in is a plain Pydantic int field. In non-strict (lax) mode that also accepts an integral JSON float (30.0) or a numeric string, whitespace-padded or spelled out with JSON unicode escapes, not only a JSON integer; this reads the field's raw JSON text, decodes it as a JSON string when it is one, and mirrors that coercion while still rejecting non-numeric text, fractional values and anything that overflows i64. No binary float is ever constructed.
 fn parse_expires_in(raw: &RawValue) -> Option<i64> {
-    let text = raw.get().trim();
-    let numeric_text = text
-        .strip_prefix('"')
-        .and_then(|rest| rest.strip_suffix('"'))
-        .unwrap_or(text);
-    if let Ok(value) = numeric_text.parse::<i64>() {
-        return Some(value);
+    let text = raw.get();
+    if let Ok(decoded) = serde_json::from_str::<String>(text) {
+        return parse_integral_decimal(decoded.trim());
     }
-    let value = numeric_text.parse::<f64>().ok()?;
-    if value.is_finite() && value.fract() == 0.0_f64 {
-        format!("{value:.0}").parse::<i64>().ok()
-    } else {
-        None
+    parse_integral_decimal(text.trim())
+}
+
+// Accepts an optional sign, a run of digits, and an optional ".digits" fraction that must be all zero to stay integral; the sign and digit-count checks reject anything that would overflow or truncate i64.
+fn parse_integral_decimal(text: &str) -> Option<i64> {
+    let (sign, unsigned) = text.strip_prefix('-').map_or_else(
+        || (1_i64, text.strip_prefix('+').unwrap_or(text)),
+        |rest| (-1_i64, rest),
+    );
+    let (whole, fraction) = unsigned.split_once('.').unwrap_or((unsigned, ""));
+    if whole.is_empty() || !whole.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
     }
+    if !fraction.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    if fraction.bytes().any(|byte| byte != b'0') {
+        return None;
+    }
+    whole.parse::<i64>().ok()?.checked_mul(sign)
 }
 
 // Mirrors LiteLLM's _error_detail: the response body parses into an arbitrary JSON object, and the first of error_description, error, detail that is present and truthy under Python's truthiness rules wins, so an empty string or null falls through to the next field instead of winning as a present-but-blank value.
@@ -66,51 +76,43 @@ pub fn error_detail(body: &[u8]) -> String {
                 .into_iter()
                 .flatten()
                 .find(|value| is_truthy(value))
-                .map(|value| raw_to_text(&value))
+                .map(|value| {
+                    serde_json::from_str::<String>(value.get())
+                        .unwrap_or_else(|_| value.get().to_owned())
+                })
         })
         .unwrap_or_else(|| response_text(body));
     detail.chars().take(200).collect()
 }
 
-// A minimal typed stand-in for an arbitrary JSON scalar, array or object: carries just enough shape (and, for Array/Object, just the element count) to decide Python truthiness and to recover a string's unescaped content, without parsing into a disallowed untyped serde_json::Value.
-#[derive(serde::Deserialize)]
-#[serde(untagged)]
-enum JsonScalar {
-    Bool(bool),
-    Number(f64),
-    Text(String),
-    Array(Vec<Box<RawValue>>),
-    Object(BTreeMap<String, Box<RawValue>>),
-}
-
+// Every RawValue here is guaranteed syntactically valid JSON, so dispatching on its first byte covers every possible token: a quoted string, true/false/null, an object, an array, or a number. No field is ever parsed through a binary float.
 fn is_truthy(raw: &RawValue) -> bool {
-    let Ok(parsed) = serde_json::from_str::<Option<JsonScalar>>(raw.get()) else {
-        return true;
-    };
-    match parsed {
-        None => false,
-        Some(JsonScalar::Bool(flag)) => flag,
-        Some(JsonScalar::Number(number)) => number != 0.0_f64,
-        Some(JsonScalar::Text(text)) => !text.is_empty(),
-        Some(JsonScalar::Array(items)) => !items.is_empty(),
-        Some(JsonScalar::Object(fields)) => !fields.is_empty(),
+    let text = raw.get().trim();
+    if let Ok(decoded) = serde_json::from_str::<String>(text) {
+        return !decoded.is_empty();
     }
+    match text {
+        "true" => return true,
+        "false" | "null" => return false,
+        _ => {}
+    }
+    if text.starts_with('{') {
+        return serde_json::from_str::<BTreeMap<String, Box<RawValue>>>(text)
+            .is_ok_and(|fields| !fields.is_empty());
+    }
+    if text.starts_with('[') {
+        return serde_json::from_str::<Vec<Box<RawValue>>>(text)
+            .is_ok_and(|items| !items.is_empty());
+    }
+    is_nonzero_number(text)
 }
 
-fn raw_to_text(raw: &RawValue) -> String {
-    match serde_json::from_str::<Option<JsonScalar>>(raw.get()) {
-        Ok(Some(JsonScalar::Text(text))) => text,
-        Ok(
-            Some(
-                JsonScalar::Bool(_)
-                | JsonScalar::Number(_)
-                | JsonScalar::Array(_)
-                | JsonScalar::Object(_),
-            )
-            | None,
-        )
-        | Err(_) => raw.get().to_owned(),
-    }
+// A JSON number's exponent only rescales its mantissa, so it never turns a zero mantissa nonzero or a nonzero mantissa zero: truthiness only needs to look at the mantissa's digits, never at a parsed float value.
+fn is_nonzero_number(text: &str) -> bool {
+    let mantissa = text.split(['e', 'E']).next().unwrap_or(text);
+    mantissa
+        .bytes()
+        .any(|byte| byte.is_ascii_digit() && byte != b'0')
 }
 
 fn response_text(body: &[u8]) -> String {

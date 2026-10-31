@@ -25,7 +25,7 @@ use super::{
         RedeemCodeRequest, RefreshCredentialRequest, authorize_url, pkce_pair, redeem_code,
         refresh_credential, register_client,
     },
-    request::{RequestRead, parse_request},
+    request::{CallbackQuery, RequestRead, parse_request},
     revoke::{RevocationUnavailableOrFailure, revoke_credential},
     wire,
 };
@@ -428,35 +428,64 @@ fn loopback_no_pending_connection_keeps_waiting_until_timeout() {
     assert!(matches!(error, PkceFailure::CallbackTimeout));
 }
 
+// A SecretString has no PartialEq, so a parsed code is compared by exposing its secret rather than with `as_deref`.
+fn exposed_code(query: &CallbackQuery) -> Option<&str> {
+    query
+        .code
+        .as_ref()
+        .map(secrecy::ExposeSecret::expose_secret)
+}
+
 #[test]
 fn callback_request_parses_once_headers_complete_across_reads() {
     let full = b"GET /callback?state=s&code=c HTTP/1.1\r\nHost: localhost\r\n\r\n";
     let split = full.len().checked_div(2).expect("nonzero length");
     let prefix = full.get(..split).expect("split within buffer");
-    assert_eq!(parse_request(prefix), RequestRead::Incomplete);
+    assert!(matches!(parse_request(prefix), RequestRead::Incomplete));
     let RequestRead::Complete(query) = parse_request(full) else {
         panic!("expected a complete request");
     };
     assert_eq!(query.state.as_deref(), Some("s"));
-    assert_eq!(query.code.as_deref(), Some("c"));
+    assert_eq!(exposed_code(&query), Some("c"));
 }
 
 #[test]
 fn callback_request_rejects_non_get_method() {
     let request = b"POST /callback HTTP/1.1\r\nHost: localhost\r\n\r\n";
-    assert_eq!(parse_request(request), RequestRead::UnsupportedMethod);
+    assert!(matches!(
+        parse_request(request),
+        RequestRead::UnsupportedMethod
+    ));
 }
 
 #[test]
 fn callback_request_rejects_extra_request_line_tokens() {
     let request = b"GET /callback HTTP/1.1 extra\r\nHost: localhost\r\n\r\n";
-    assert_eq!(parse_request(request), RequestRead::Malformed);
+    assert!(matches!(parse_request(request), RequestRead::Malformed));
 }
 
 #[test]
 fn callback_request_rejects_oversized_buffer() {
     let request = vec![b'A'; super::request::MAX_REQUEST_BYTES + 1];
-    assert_eq!(parse_request(&request), RequestRead::TooLarge);
+    assert!(matches!(parse_request(&request), RequestRead::TooLarge));
+}
+
+#[rstest]
+#[case(b"GET /callback HTTP/nonsense\r\nHost: localhost\r\n\r\n")]
+#[case(b"GET /callback HTTP/1\r\nHost: localhost\r\n\r\n")]
+#[case(b"GET /callback HTTP/1.1.1\r\nHost: localhost\r\n\r\n")]
+#[case(b"GET /callback HTTP/one.one\r\nHost: localhost\r\n\r\n")]
+fn callback_request_rejects_malformed_version(#[case] request: &[u8]) {
+    assert!(matches!(parse_request(request), RequestRead::Malformed));
+}
+
+#[test]
+fn callback_request_rejects_http_version_2() {
+    let request = b"GET /callback HTTP/2.0\r\nHost: localhost\r\n\r\n";
+    assert!(matches!(
+        parse_request(request),
+        RequestRead::UnsupportedVersion
+    ));
 }
 
 #[test]
@@ -468,7 +497,52 @@ fn callback_request_drops_blank_query_values() {
     };
     assert_eq!(query.state.as_deref(), Some("real"));
     assert_eq!(query.error, None);
-    assert_eq!(query.code.as_deref(), Some("good"));
+    assert_eq!(exposed_code(&query), Some("good"));
+}
+
+#[test]
+fn callback_query_debug_output_never_reveals_code() {
+    let RequestRead::Complete(query) = parse_request(
+        b"GET /callback?state=s&code=super-secret-code HTTP/1.1\r\nHost: localhost\r\n\r\n",
+    ) else {
+        panic!("expected a complete request");
+    };
+    let rendered = format!("{query:?}");
+    assert!(!rendered.contains("super-secret-code"));
+    let enum_rendered = format!("{:?}", RequestRead::Complete(query));
+    assert!(!enum_rendered.contains("super-secret-code"));
+}
+
+#[test]
+fn callback_unsupported_method_responds_501() {
+    let server = LoopbackServer::bind("state").expect("bind");
+    let address = server.address;
+    let (sender, receiver) = sync_channel(1);
+    thread::scope(|scope| {
+        scope.spawn(move || {
+            let mut stream = TcpStream::connect(address).expect("connect");
+            stream
+                .write_all(b"POST /callback HTTP/1.1\r\nHost: localhost\r\n\r\n")
+                .expect("write");
+            let mut response = [0; 256];
+            let size = stream.read(&mut response).expect("read");
+            let payload = response.get(..size).expect("read within buffer").to_vec();
+            sender
+                .send(String::from_utf8(payload).expect("response UTF-8"))
+                .expect("send");
+        });
+        let mut callback_server = server;
+        let error = callback_server
+            .wait(Duration::from_millis(200), &SystemClock)
+            .unwrap_err();
+        assert!(matches!(error, PkceFailure::CallbackTimeout));
+    });
+    assert!(
+        receiver
+            .recv()
+            .expect("response")
+            .starts_with("HTTP/1.1 501")
+    );
 }
 
 #[test]
@@ -695,6 +769,30 @@ fn expires_in_rejects_fractional_float() {
 }
 
 #[test]
+fn expires_in_accepts_whitespace_padded_numeric_string() {
+    let body = br#"{"access_token":"access","expires_in":" 30 ","refresh_token":"refresh"}"#;
+    let token = wire::parse_token(body).expect("token");
+    assert_eq!(token.expires_in, 30);
+}
+
+#[test]
+fn expires_in_accepts_unicode_escaped_numeric_string() {
+    // Spells "30" as two JSON unicode escapes, built at run time so this file never embeds one literally.
+    let backslash = '\\';
+    let body = format!(
+        r#"{{"access_token":"access","expires_in":"{backslash}u0033{backslash}u0030","refresh_token":"refresh"}}"#
+    );
+    let token = wire::parse_token(body.as_bytes()).expect("token");
+    assert_eq!(token.expires_in, 30);
+}
+
+#[test]
+fn expires_in_rejects_whitespace_padded_fractional_string() {
+    let body = br#"{"access_token":"access","expires_in":" 30.5 ","refresh_token":"refresh"}"#;
+    wire::parse_token(body).unwrap_err();
+}
+
+#[test]
 fn error_detail_is_bounded() {
     let response = HttpResponse {
         status: 400,
@@ -754,13 +852,21 @@ fn error_detail_nonzero_number_is_stringified() {
 
 #[test]
 fn http_debug_output_never_reveals_response_body_bytes() {
+    let body = b"super-secret-token-value".to_vec();
     let response = HttpResponse {
         status: 200,
         headers: Vec::new(),
-        body: b"super-secret-token-value".to_vec(),
+        body: body.clone(),
     };
     let rendered = format!("{response:?}");
-    assert!(!rendered.contains("super-secret-token-value"));
+    // Pins the exact Debug output, since a derived impl printing decimal bytes would also pass a mere substring check.
+    assert_eq!(
+        rendered,
+        format!(
+            "HttpResponse {{ status: 200, headers: [], body: [{} bytes] }}",
+            body.len()
+        )
+    );
 }
 
 #[test]

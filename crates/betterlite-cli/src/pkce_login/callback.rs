@@ -3,7 +3,6 @@ use std::net::SocketAddr;
 use std::thread::park_timeout;
 use std::time::Duration;
 
-use secrecy::SecretString;
 use thiserror::Error as ThisError;
 
 use super::{
@@ -97,14 +96,25 @@ impl<L: LoopbackListener> LoopbackServer<L> {
 }
 
 // Re-parses the accumulated buffer after every read, so a request split across several TCP reads parses like one that arrives whole, and drops the connection silently on any error so the wait loop just keeps polling.
-fn read_callback_request(connection: &mut impl LoopbackConnection) -> Option<CallbackQuery> {
+fn read_callback_request<C>(connection: &mut C) -> Option<CallbackQuery>
+where
+    C: LoopbackConnection,
+{
     let mut buffer = Vec::new();
     let mut chunk = [0_u8; 1024];
     loop {
         match parse_request(&buffer) {
             RequestRead::Complete(query) => return Some(query),
-            RequestRead::TooLarge | RequestRead::Malformed | RequestRead::UnsupportedMethod => {
+            RequestRead::TooLarge | RequestRead::Malformed => {
                 drop(respond(connection, 400, "Invalid callback."));
+                return None;
+            }
+            RequestRead::UnsupportedMethod => {
+                drop(respond(connection, 501, "Unsupported method."));
+                return None;
+            }
+            RequestRead::UnsupportedVersion => {
+                drop(respond(connection, 505, "Unsupported HTTP version."));
                 return None;
             }
             RequestRead::Incomplete => {}
@@ -119,10 +129,10 @@ fn read_callback_request(connection: &mut impl LoopbackConnection) -> Option<Cal
     }
 }
 
-fn settle_callback(
-    connection: &mut impl LoopbackConnection,
-    query: &CallbackQuery,
-) -> Option<CallbackOutcome> {
+fn settle_callback<C>(connection: &mut C, query: &CallbackQuery) -> Option<CallbackOutcome>
+where
+    C: LoopbackConnection,
+{
     if let Some(error) = query.error.clone() {
         let outcome = CallbackOutcome::Denied(CallbackDenied {
             error,
@@ -148,16 +158,13 @@ fn settle_callback(
         200,
         "Signed in. You can close this window.",
     ));
-    Some(CallbackOutcome::Code(CallbackCode {
-        code: SecretString::from(code),
-    }))
+    Some(CallbackOutcome::Code(CallbackCode { code }))
 }
 
-fn respond(
-    connection: &mut impl LoopbackConnection,
-    status: u16,
-    body: &str,
-) -> Result<(), PkceFailure> {
+fn respond<C>(connection: &mut C, status: u16, body: &str) -> Result<(), PkceFailure>
+where
+    C: LoopbackConnection,
+{
     let response = format!(
         "HTTP/1.1 {status}\r\nContent-Type: text/plain; charset=utf-8\r\nCache-Control: no-store\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
         body.len()
