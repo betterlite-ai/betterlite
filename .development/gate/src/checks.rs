@@ -8,6 +8,7 @@ use crate::builtins::{Context, run_builtin};
 use crate::development::Development;
 use crate::error::GateError;
 use crate::facts::Facts;
+use crate::gate_lock;
 use crate::journal::journal_dir;
 use crate::spec::command::Command;
 use crate::spec::task::Task;
@@ -99,6 +100,8 @@ pub(crate) fn run(
         path: log_dir.clone(),
         source,
     })?;
+    // a dispatch reads the holder's process group from it to stop a check run whose worker died
+    let _held = gate_lock::hold(&log_dir)?;
     let mut outcomes = builtin_outcomes(development, task, &facts, selection);
     let environment = [
         ("GATE_TASK", task.id.clone()),

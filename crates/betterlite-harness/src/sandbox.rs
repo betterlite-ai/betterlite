@@ -30,6 +30,7 @@ pub trait Process: Send {
     type Stderr: AsyncRead + Send + Unpin;
 
     fn stdin(&mut self) -> Option<&mut Self::Stdin>;
+    fn close_stdin(&mut self);
     fn stdout(&mut self) -> &mut Self::Stdout;
     fn stderr(&mut self) -> &mut Self::Stderr;
     fn wait(&mut self) -> impl Future<Output = Result<i32, HarnessError>> + Send;

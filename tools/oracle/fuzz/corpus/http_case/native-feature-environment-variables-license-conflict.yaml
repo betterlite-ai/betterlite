@@ -1,0 +1,8 @@
+name: native-feature-environment-variables-license-conflict
+config: |
+  general_settings: {}
+  environment_variables: {LITELLM_LICENSE: value}
+env: {}
+request: {method: GET, path: /scim/v2/ServiceProviderConfig, headers: {}, body: null}
+upstream: []
+compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}

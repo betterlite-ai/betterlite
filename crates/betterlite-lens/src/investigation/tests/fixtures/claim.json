@@ -1,0 +1,29 @@
+{
+  "lens_id": "lens",
+  "job": {
+    "id": "job",
+    "created_at": "2026-01-01T00:00:00Z",
+    "start": "2026-01-01T00:00:00Z",
+    "end": "2026-01-01T00:00:00Z",
+    "settings": {
+      "name": "lens",
+      "model": "model",
+      "checks": [{ "id": "check", "instruction": "check it" }]
+    },
+    "revision": 1
+  },
+  "findings": [
+    {
+      "id": "f",
+      "title": "title",
+      "description": "description",
+      "check_id": "check",
+      "evidence": [{ "execution_id": "e1", "span_id": "s1", "quote": "quote" }],
+      "status": "open",
+      "reason": "reason",
+      "first_seen": "2026-01-01T00:00:00Z",
+      "last_seen": "2026-01-01T00:00:00Z",
+      "revision": 1
+    }
+  ]
+}

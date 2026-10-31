@@ -1,0 +1,35 @@
+{
+  "kind": "helper",
+  "name": "websearch-openai-first-choice",
+  "call": {
+    "b4112": {
+      "format": "openai",
+      "response": {
+        "choices": [
+          {
+            "message": {}
+          },
+          {
+            "message": {
+              "tool_calls": [
+                {
+                  "type": "function",
+                  "id": "one",
+                  "function": {
+                    "name": "litellm_web_search",
+                    "arguments": {}
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "operation": "detect"
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

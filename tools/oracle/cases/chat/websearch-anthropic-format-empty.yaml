@@ -1,0 +1,16 @@
+{
+  "kind": "helper",
+  "name": "websearch-anthropic-format-empty",
+  "call": {
+    "b4112": {
+      "operation": "format",
+      "search_response": {
+        "results": []
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

@@ -10,6 +10,8 @@ use reqwest::blocking::{Client, ClientBuilder, RequestBuilder};
 use reqwest::redirect::Policy;
 use serde_json::Value;
 
+#[path = "http/native_feature_eligibility/native_feature_eligibility.rs"]
+pub mod native_feature_eligibility;
 pub mod postgres;
 
 pub(crate) const MAX_BODY: usize = 16 * 1024 * 1024;
