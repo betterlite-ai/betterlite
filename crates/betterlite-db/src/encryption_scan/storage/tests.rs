@@ -8,7 +8,7 @@ use betterlite_postgres_fixture::connection::PostgresFixture;
 use clap::Parser;
 use deadpool_postgres::{Client, Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
-use std::fmt::{Debug, Write as _};
+use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio_postgres::NoTls;
@@ -30,12 +30,8 @@ impl Visit for EventFields {
         self.0.push(' ');
     }
 
-    fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
-        self.0.push_str(field.name());
-        self.0.push('=');
-        write!(self.0, "{value:?}").unwrap();
-        self.0.push(' ');
-    }
+    // Assertions inspect structured string fields, not formatted message text.
+    fn record_debug(&mut self, _field: &Field, _value: &dyn Debug) {}
 }
 
 impl<Inner: Subscriber> Layer<Inner> for CapturedLogs {
