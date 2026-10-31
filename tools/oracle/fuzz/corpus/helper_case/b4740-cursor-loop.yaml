@@ -1,0 +1,1 @@
+{"kind":"helper","name":"b4740_cursor_loop","call":{"b4740":{"operation":"pagination","client_ms":60000,"listing_ms":30000,"pages":[{"tools":[{"name":"one","inputSchema":{}}],"nextCursor":"next","delay_ms":0},{"tools":[{"name":"two","inputSchema":{}}],"nextCursor":"next","delay_ms":0}]}},"env":{},"compare":{"ignore":[]}}
