@@ -7,7 +7,8 @@ use super::{
     Entropy, HTTP_TIMEOUT_SECONDS, Http, HttpBody, WallClock,
     models::{CliAuthContract, PkceCredential, PkceFailure},
     wire::{
-        ClientRegistration, error_detail, parse_registered_client, parse_token, refuse_redirect,
+        ClientRegistration, RegisteredClient, error_detail, parse_and_require, parse_token,
+        refuse_redirect,
     },
 };
 
@@ -71,7 +72,12 @@ where
             error_detail(&response.body)
         )));
     }
-    let registered = parse_registered_client(&response.body)?;
+    let registered: RegisteredClient = parse_and_require(
+        &response.body,
+        |source| PkceFailure::RegistrationResponse { source },
+        |registered: &RegisteredClient| registered.client_id.is_empty(),
+        "registration returned an empty client_id",
+    )?;
     Ok(registered.client_id)
 }
 

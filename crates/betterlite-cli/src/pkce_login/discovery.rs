@@ -3,7 +3,7 @@ use url::{Host, Url};
 use super::{
     DISCOVERY_PATH, HTTP_TIMEOUT_SECONDS, Http,
     models::{CliAuthContract, PkceFailure},
-    wire::parse_contract,
+    wire::parse_and_require,
 };
 
 pub fn discover_cli_auth<H>(base_url: &str, http: &H) -> Result<CliAuthContract, PkceFailure>
@@ -18,17 +18,17 @@ where
             status: response.status,
         });
     }
-    let contract = parse_contract(&response.body)?;
+    let contract = parse_and_require(
+        &response.body,
+        |source| PkceFailure::DiscoveryDocument { source },
+        |contract: &CliAuthContract| contract.contract_version != 1,
+        "unsupported discovery contract version",
+    )?;
     validate_contract(&contract, base_url)?;
     Ok(contract)
 }
 
 fn validate_contract(contract: &CliAuthContract, base_url: &str) -> Result<(), PkceFailure> {
-    if contract.contract_version != 1 {
-        return Err(PkceFailure::Protocol(
-            "unsupported discovery contract version".to_owned(),
-        ));
-    }
     if !contract
         .supported_methods
         .iter()

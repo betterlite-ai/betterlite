@@ -1,11 +1,11 @@
-use std::collections::BTreeMap;
 use std::iter::repeat_n;
 use std::str;
 
 use secrecy::{ExposeSecret as _, SecretString};
+use serde::de::DeserializeOwned;
 use serde_json::value::RawValue;
 
-use super::models::{CliAuthContract, PkceFailure};
+use super::models::PkceFailure;
 
 #[derive(serde::Deserialize)]
 pub struct RegisteredClient {
@@ -115,7 +115,7 @@ fn normalize_integer_digits(digits: &str, whole_length: usize, exponent: i32) ->
     Some(integer_digits)
 }
 
-// Mirrors LiteLLM's _error_detail: the response body parses into an arbitrary JSON object, and the first of error_description, error, detail that is present and truthy under Python's truthiness rules wins, so an empty string or null falls through to the next field instead of winning as a present-but-blank value.
+// Mirrors LiteLLM's _error_detail field order, but not its Python `or` chaining: docs/compatibility.md treats that as a runtime habit, so a present field wins even when it is "", 0 or false, and only an absent or explicit null field falls through to the next one.
 #[must_use]
 pub fn error_detail(body: &[u8]) -> String {
     let detail = serde_json::from_slice::<ErrorBody>(body)
@@ -124,7 +124,7 @@ pub fn error_detail(body: &[u8]) -> String {
             [parsed.error_description, parsed.error, parsed.detail]
                 .into_iter()
                 .flatten()
-                .find(|value| is_truthy(value))
+                .next()
                 .map(|value| {
                     serde_json::from_str::<String>(value.get())
                         .unwrap_or_else(|_| value.get().to_owned())
@@ -132,36 +132,6 @@ pub fn error_detail(body: &[u8]) -> String {
         })
         .unwrap_or_else(|| response_text(body));
     detail.chars().take(200).collect()
-}
-
-// Every RawValue here is guaranteed syntactically valid JSON, so dispatching on its first byte covers every possible token: a quoted string, true/false/null, an object, an array, or a number. No field is ever parsed through a binary float.
-fn is_truthy(raw: &RawValue) -> bool {
-    let text = raw.get().trim();
-    if let Ok(decoded) = serde_json::from_str::<String>(text) {
-        return !decoded.is_empty();
-    }
-    match text {
-        "true" => return true,
-        "false" | "null" => return false,
-        _ => {}
-    }
-    if text.starts_with('{') {
-        return serde_json::from_str::<BTreeMap<String, Box<RawValue>>>(text)
-            .is_ok_and(|fields| !fields.is_empty());
-    }
-    if text.starts_with('[') {
-        return serde_json::from_str::<Vec<Box<RawValue>>>(text)
-            .is_ok_and(|items| !items.is_empty());
-    }
-    is_nonzero_number(text)
-}
-
-// A JSON number's exponent only rescales its mantissa, so it never turns a zero mantissa nonzero or a nonzero mantissa zero: truthiness only needs to look at the mantissa's digits, never at a parsed float value.
-fn is_nonzero_number(text: &str) -> bool {
-    let mantissa = text.split(['e', 'E']).next().unwrap_or(text);
-    mantissa
-        .bytes()
-        .any(|byte| byte.is_ascii_digit() && byte != b'0')
 }
 
 fn response_text(body: &[u8]) -> String {
@@ -199,26 +169,21 @@ pub fn parse_token(body: &[u8]) -> Result<TokenResponse, PkceFailure> {
     })
 }
 
-pub fn parse_registered_client(body: &[u8]) -> Result<RegisteredClient, PkceFailure> {
-    let registered: RegisteredClient = serde_json::from_slice(body)
-        .map_err(|source| PkceFailure::RegistrationResponse { source })?;
-    if registered.client_id.is_empty() {
-        return Err(PkceFailure::Protocol(
-            "registration returned an empty client_id".to_owned(),
-        ));
+// Shared by every parser here that deserializes a response body and then rejects one invariant the type itself can't express.
+pub(super) fn parse_and_require<T>(
+    body: &[u8],
+    to_error: impl FnOnce(serde_json::Error) -> PkceFailure,
+    invalid: impl FnOnce(&T) -> bool,
+    message: &str,
+) -> Result<T, PkceFailure>
+where
+    T: DeserializeOwned,
+{
+    let value: T = serde_json::from_slice(body).map_err(to_error)?;
+    if invalid(&value) {
+        return Err(PkceFailure::Protocol(message.to_owned()));
     }
-    Ok(registered)
-}
-
-pub fn parse_contract(body: &[u8]) -> Result<CliAuthContract, PkceFailure> {
-    let contract: CliAuthContract =
-        serde_json::from_slice(body).map_err(|source| PkceFailure::DiscoveryDocument { source })?;
-    if contract.contract_version != 1 {
-        return Err(PkceFailure::Protocol(
-            "unsupported discovery contract version".to_owned(),
-        ));
-    }
-    Ok(contract)
+    Ok(value)
 }
 
 pub(super) fn refuse_redirect(

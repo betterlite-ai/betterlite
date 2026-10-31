@@ -27,6 +27,7 @@ use super::{
     request::{CallbackQuery, RequestRead, parse_request},
     revoke::{RevocationUnavailableOrFailure, revoke_credential},
     wire,
+    wire::RegisteredClient,
 };
 
 mod fixtures;
@@ -753,8 +754,14 @@ fn error_detail_preserves_invalid_utf8_fallback() {
 }
 
 #[test]
-fn error_description_empty_falls_through_to_error() {
+fn error_detail_empty_description_is_used_as_given() {
     let body = br#"{"error_description":"","error":"denied"}"#;
+    assert_eq!(wire::error_detail(body), "");
+}
+
+#[test]
+fn error_detail_null_description_falls_through_to_error() {
+    let body = br#"{"error_description":null,"error":"denied"}"#;
     assert_eq!(wire::error_detail(body), "denied");
 }
 
@@ -765,9 +772,9 @@ fn error_detail_structured_value_is_stringified() {
 }
 
 #[test]
-fn error_detail_zero_number_falls_through_to_error() {
+fn error_detail_zero_number_is_used_as_given() {
     let body = br#"{"error_description":0,"error":"denied"}"#;
-    assert_eq!(wire::error_detail(body), "denied");
+    assert_eq!(wire::error_detail(body), "0");
 }
 
 #[test]
@@ -778,7 +785,7 @@ fn error_detail_nonzero_number_is_stringified() {
 
 // Pins the documented deviation from LiteLLM's Python dict-repr fallback; see docs/deviations/B4573.yaml.
 #[test]
-fn error_detail_all_falsy_falls_back_to_raw_body_not_python_dict_repr() {
+fn error_detail_all_absent_falls_back_to_raw_body_not_python_dict_repr() {
     let body = br#"{"other":"x"}"#;
     assert_eq!(wire::error_detail(body), r#"{"other":"x"}"#);
 }
@@ -861,7 +868,17 @@ fn replays_the_wire_responses_corpus(#[files("fuzz/corpus/wire_responses/*")] pa
         panic!("{}", path.display());
     };
     let _token = wire::parse_token(&bytes);
-    let _client = wire::parse_registered_client(&bytes);
-    let _contract = wire::parse_contract(&bytes);
+    let _client: Result<RegisteredClient, _> = wire::parse_and_require(
+        &bytes,
+        |source| PkceFailure::RegistrationResponse { source },
+        |registered: &RegisteredClient| registered.client_id.is_empty(),
+        "registration returned an empty client_id",
+    );
+    let _contract: Result<CliAuthContract, _> = wire::parse_and_require(
+        &bytes,
+        |source| PkceFailure::DiscoveryDocument { source },
+        |contract: &CliAuthContract| contract.contract_version != 1,
+        "unsupported discovery contract version",
+    );
     let _detail = wire::error_detail(&bytes);
 }

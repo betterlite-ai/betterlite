@@ -37,18 +37,16 @@ pub struct HttpResponse {
 }
 
 impl fmt::Debug for HttpResponse {
-    // A derived Debug would print the response body verbatim, and that body carries access and refresh tokens.
+    // A derived Debug would print the response body verbatim and every header value, and a Set-Cookie or Location header can carry a session credential or an authorization code.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let redacted_headers: Vec<_> = self
+            .headers
+            .iter()
+            .map(|(name, _value)| (name, "[REDACTED]"))
+            .collect();
         f.debug_struct("HttpResponse")
             .field("status", &self.status)
-            .field(
-                "headers",
-                &self
-                    .headers
-                    .iter()
-                    .map(|(name, _value)| (name, "[REDACTED]"))
-                    .collect::<Vec<_>>(),
-            )
+            .field("headers", &redacted_headers)
             .field("body", &format_args!("[{} bytes]", self.body.len()))
             .finish()
     }
@@ -76,14 +74,8 @@ impl fmt::Debug for HttpBody {
     // Form fields carry authorization codes, PKCE verifiers and refresh tokens that a derived Debug would print.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Json(bytes) => f
-                .debug_tuple("Json")
-                .field(&format_args!("[{} bytes]", bytes.len()))
-                .finish(),
-            Self::Form(fields) => f
-                .debug_tuple("Form")
-                .field(&format_args!("[{} fields]", fields.len()))
-                .finish(),
+            Self::Json(bytes) => write!(f, "Json([{} bytes])", bytes.len()),
+            Self::Form(fields) => write!(f, "Form([{} fields])", fields.len()),
         }
     }
 }
