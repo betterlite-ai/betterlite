@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
 
-use betterlite_auth::resolved_key::auth::{AuthError, AuthInput, UserAPIKeyAuth};
-use betterlite_auth::resolved_key::view::VerificationTokenView;
+use betterlite_auth::resolved_key::auth::{
+    AuthError, AuthInput, UserAPIKeyAuth, is_team_service_account, user_api_key_has_admin_view,
+};
+use betterlite_auth::resolved_key::view::{VerificationTokenView, ViewError};
 use betterlite_auth::resolved_key::{credential, factories};
 use betterlite_auth::user_roles::UserRole;
 use betterlite_db::budget_permission_rows::JsonData;
@@ -49,15 +51,51 @@ impl crate::helpers::Helper for Op {
             Function::JobsPrincipal => principal(factories::system_principal(
                 &factories::SystemPrincipal::Jobs,
             )),
-            Function::ServiceAccount => predicate(&input.value, factories::is_team_service_account),
-            Function::AdminView => predicate(&input.value, factories::user_api_key_has_admin_view),
+            Function::ServiceAccount => predicate(&input.value, is_team_service_account),
+            Function::AdminView => predicate(&input.value, user_api_key_has_admin_view),
         }
     }
 }
 
+enum Failure {
+    InvalidRole(serde_json::Error),
+    InvalidValue(&'static str),
+    Encoding(serde_json::Error),
+    View(ViewError),
+    Auth(AuthError),
+}
+
+impl From<Failure> for Box<HelperError> {
+    fn from(failure: Failure) -> Self {
+        let (class, message) = match failure {
+            Failure::InvalidRole(error) => ("ValueError", error.to_string()),
+            Failure::InvalidValue(message) => ("ValueError", message.to_owned()),
+            Failure::Encoding(error) => (
+                "ValueError",
+                format!("resolved key payload could not be encoded: {error}"),
+            ),
+            Failure::View(error) => ("ValidationError", error.to_string()),
+            Failure::Auth(error) => {
+                let class = match &error {
+                    AuthError::NonStringApiKey => "TypeError",
+                    AuthError::View(_) | AuthError::Json(_) => "ValidationError",
+                };
+                (class, error.to_string())
+            }
+        };
+        Self::new(HelperError {
+            class: class.to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message,
+        })
+    }
+}
+
 fn role(value: &Value) -> HelperResult {
-    let decoded: UserRole = serde_json::from_value(value.clone())
-        .map_err(|error| to_error("ValueError", error.to_string()))?;
+    let decoded: UserRole = serde_json::from_value(value.clone()).map_err(Failure::InvalidRole)?;
     let (description, ui_label) = decoded.description_and_ui_label();
     Ok(serde_json::json!({
         "value": decoded.to_string(),
@@ -69,23 +107,20 @@ fn role(value: &Value) -> HelperResult {
 
 fn view(value: &Value) -> HelperResult {
     let fields = object_fields(value)?;
-    let decoded = VerificationTokenView::construct(fields)
-        .map_err(|error| to_error("ValidationError", error.to_string()))?;
-    serde_json::to_value(decoded).map_err(|error| encoding_error(&error))
+    let decoded = VerificationTokenView::construct(fields).map_err(Failure::View)?;
+    Ok(serde_json::to_value(decoded).map_err(Failure::Encoding)?)
 }
 
 fn auth(value: &Value) -> HelperResult {
     let fields = object_fields(value)?;
-    let decoded =
-        UserAPIKeyAuth::construct(AuthInput::Dict(fields)).map_err(|error| auth_error(&error))?;
-    serde_json::to_value(decoded).map_err(|error| encoding_error(&error))
+    let decoded = UserAPIKeyAuth::construct(AuthInput::Dict(fields)).map_err(Failure::Auth)?;
+    Ok(serde_json::to_value(decoded).map_err(Failure::Encoding)?)
 }
 
 fn hash_token(value: &Value) -> HelperResult {
-    let text = optional_string_value(value)?.map_or_else(
-        || Err(to_error("ValueError", "value must be a string".to_owned())),
-        Ok,
-    )?;
+    let Some(text) = optional_string_value(value)? else {
+        return Err(Failure::InvalidValue("value must be a string").into());
+    };
     let hashed = credential::hash_token(&text);
     Ok(serde_json::json!({ "hash": hashed }))
 }
@@ -97,31 +132,25 @@ fn is_jwt(value: &Value) -> HelperResult {
 }
 
 fn principal(constructed: Result<UserAPIKeyAuth, AuthError>) -> HelperResult {
-    let decoded = constructed.map_err(|error| auth_error(&error))?;
-    let encoded = serde_json::to_value(decoded).map_err(|error| encoding_error(&error))?;
-    Ok(encoded)
+    let decoded = constructed.map_err(Failure::Auth)?;
+    Ok(serde_json::to_value(decoded).map_err(Failure::Encoding)?)
 }
 
 fn predicate(value: &Value, check: fn(&UserAPIKeyAuth) -> bool) -> HelperResult {
     let fields = object_fields(value)?;
-    let decoded =
-        UserAPIKeyAuth::construct(AuthInput::Dict(fields)).map_err(|error| auth_error(&error))?;
+    let decoded = UserAPIKeyAuth::construct(AuthInput::Dict(fields)).map_err(Failure::Auth)?;
     Ok(serde_json::json!({ "result": check(&decoded) }))
 }
 
 fn object_fields(value: &Value) -> Result<BTreeMap<String, JsonData>, Box<HelperError>> {
-    let decoded: JsonData =
-        serde_json::from_value(value.clone()).map_err(|error| encoding_error(&error))?;
+    let decoded: JsonData = serde_json::from_value(value.clone()).map_err(Failure::Encoding)?;
     match decoded {
         JsonData::Object(fields) => Ok(fields),
         JsonData::Null
         | JsonData::Bool(_)
         | JsonData::Number(_)
         | JsonData::String(_)
-        | JsonData::Array(_) => Err(to_error(
-            "ValueError",
-            "value must be a JSON object".to_owned(),
-        )),
+        | JsonData::Array(_) => Err(Failure::InvalidValue("value must be a JSON object").into()),
     }
 }
 
@@ -129,34 +158,8 @@ fn optional_string_value(value: &Value) -> Result<Option<String>, Box<HelperErro
     match value {
         Value::Null => Ok(None),
         Value::String(text) => Ok(Some(text.clone())),
-        Value::Bool(_) | Value::Number(_) | Value::Array(_) | Value::Object(_) => Err(to_error(
-            "ValueError",
-            "value must be a string or null".to_owned(),
-        )),
+        Value::Bool(_) | Value::Number(_) | Value::Array(_) | Value::Object(_) => {
+            Err(Failure::InvalidValue("value must be a string or null").into())
+        }
     }
-}
-
-fn auth_error(error: &AuthError) -> Box<HelperError> {
-    let class = match error {
-        AuthError::NonStringApiKey => "TypeError",
-        AuthError::View(_) | AuthError::Json(_) => "ValidationError",
-    };
-    to_error(class, error.to_string())
-}
-
-fn encoding_error(error: &serde_json::Error) -> Box<HelperError> {
-    let message = format!("resolved key payload could not be encoded: {error}");
-    to_error("ValueError", message)
-}
-
-fn to_error(class: &str, message: String) -> Box<HelperError> {
-    let owned_class = class.to_owned();
-    Box::new(HelperError {
-        class: owned_class,
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
-    })
 }
