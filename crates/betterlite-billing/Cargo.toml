@@ -1,0 +1,27 @@
+[package]
+name = "betterlite-billing"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+betterlite-config = { path = "../betterlite-config" }
+betterlite-http = { path = "../betterlite-http" }
+opentelemetry = { version = "0.33.1", default-features = false, features = ["internal-logs", "metrics"] }
+opentelemetry-otlp = { version = "0.33.1", default-features = false, features = ["http-proto", "internal-logs", "metrics"] }
+opentelemetry_sdk = { version = "0.33.1", default-features = false, features = ["internal-logs", "metrics"] }
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+opentelemetry_sdk = { version = "0.33.1", default-features = false, features = ["metrics", "testing"] }
+rstest = "=0.27.0"
+rustls = { workspace = true, features = ["std", "tls12"] }
+secrecy.workspace = true
+tempfile = "3.27.0"
+tokio.workspace = true
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true

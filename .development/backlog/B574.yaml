@@ -1,14 +1,14 @@
 id: B574
 milestone: M3 providers
 title: Anthropic structured-output schema filtering
-status: todo
+status: done
 depends_on: [B217, B171, B2202]
 file: tasks/B574-anthropic-output-schema.yaml
 covers:
   - "litellm/llms/anthropic/chat/transformation.py"
 parent: B027
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 370

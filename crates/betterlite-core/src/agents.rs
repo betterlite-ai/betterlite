@@ -9,6 +9,7 @@ pub mod card;
 pub mod json;
 pub mod kill_switch;
 pub mod permissions;
+pub mod provider;
 pub mod public;
 mod tests;
 mod validation;

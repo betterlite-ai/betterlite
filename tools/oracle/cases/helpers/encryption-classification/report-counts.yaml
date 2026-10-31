@@ -1,0 +1,19 @@
+kind: helper
+name: encryption-classification-report-counts
+call:
+  encryption_classification:
+    salt_key: alternate-scan-key
+    values:
+    - AAECAwQFBgcICQoLDA0ODxAREhMUFRYXvDOJyJMw/xKuXGxKjbDJovT6e8AVaQ==
+    - v2:gcm:b
+    - one
+    - null
+    maps:
+    - {}
+    - bad
+    callbacks:
+    - litellm_enc::AAECAwQFBgcICQoLDA0ODxAREhMUFRYXvDOJyJMw/xKuXGxKjbDJovT6e8AVaQ==
+env:
+  LITELLM_SALT_KEY: scan-key
+compare:
+  ignore: []

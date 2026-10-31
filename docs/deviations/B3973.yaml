@@ -1,0 +1,8 @@
+task: B3973
+deviations:
+  - what: Configuration resolution reads the environment and ~/.opik.config as injected arguments rather than reading them directly.
+    why: Prevents coupling tests to the real process environment, matching B002's constructor-injected lookup pattern; only the binary passes the real process environment.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opik/utils.py#L57-L81
+  - what: Metadata precedence follows auth-key defaults < request-level metadata < requester metadata (proxy headers), expressed as three explicit merge steps instead of LiteLLM's dict literal copy plus two conditional updates.
+    why: Allows operators to set defaults, requests to override, and proxies to enforce final values, with the same priority order LiteLLM applies.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opik/opik_payload_builder/extractors.py#L38-L72

@@ -1,0 +1,22 @@
+kind: helper
+name: encryption-classification-marked-callback-shapes
+call:
+  encryption_classification:
+    salt_key: scan-key
+    values: []
+    callbacks:
+    - litellm_enc::AAECAwQFBgcICQoLDA0ODxAREhMUFRYXbRIvLOA7WUwu8UmdnopPhr7H5AqjAg==
+    - litellm_enc::v2:gcm:broken
+    - false
+    metadata:
+      logging:
+      - null
+      - callback_vars:
+          key: litellm_enc::AAECAwQFBgcICQoLDA0ODxAREhMUFRYXbRIvLOA7WUwu8UmdnopPhr7H5AqjAg==
+      callback_settings:
+        callback_vars:
+          key: litellm_enc::v2:gcm:bad
+env:
+  LITELLM_SALT_KEY: scan-key
+compare:
+  ignore: []
