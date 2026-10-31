@@ -228,6 +228,36 @@ fn protocol_metadata() {
     metadata.insert("protocol_version".to_owned(), wire("\"auto\""));
     validate_mcp_protocol_metadata(metadata).unwrap();
 }
+
+#[rstest]
+#[case::nov_2024("2024-11-05")]
+#[case::mar_2025("2025-03-26")]
+#[case::jun_2025("2025-06-18")]
+#[case::nov_2025("2025-11-25")]
+fn each_legacy_version(#[case] version: &str) {
+    let mut metadata = BTreeMap::new();
+    metadata.insert(
+        "protocol_version".to_owned(),
+        wire(&format!("\"{version}\"")),
+    );
+    validate_mcp_protocol_metadata(metadata).unwrap();
+}
+
+#[test]
+fn auto_version() {
+    let mut metadata = BTreeMap::new();
+    metadata.insert("protocol_version".to_owned(), wire("\"auto\""));
+    validate_mcp_protocol_metadata(metadata).unwrap();
+}
+
+#[test]
+fn custom_metadata() {
+    let mut metadata = BTreeMap::new();
+    metadata.insert("custom".to_owned(), wire(r#"{"nested":{"value":true}}"#));
+    let validated = validate_mcp_protocol_metadata(metadata.clone()).unwrap();
+    assert_eq!(validated, metadata);
+}
+
 #[test]
 fn absent_version() {
     validate_mcp_protocol_metadata(BTreeMap::new()).unwrap();
