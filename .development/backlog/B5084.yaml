@@ -1,0 +1,13 @@
+id: B5084
+milestone: M1 openai data plane
+title: Fetch Hugging Face chat templates like LiteLLM
+status: todo
+depends_on: [B177, B173]
+file: tasks/B5084-huggingface-chat-templates.yaml
+covers: []
+parent: B010
+split_from: B177
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

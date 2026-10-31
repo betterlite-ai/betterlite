@@ -1,0 +1,9 @@
+kind: helper
+name: text_prompt_string_and_list
+call:
+  message_content:
+    operation: text_completion_prompt_to_messages
+    prompt: [one, two]
+env: {}
+compare:
+  ignore: []

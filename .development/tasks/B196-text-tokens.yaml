@@ -14,13 +14,17 @@ description: >-
   (default 1024, range 1-4096) and sum; whole-string BPE differs at boundaries. Config resolves TOKEN_COUNTER_MAX_EXACT_CHARS
   (default 4000000, range 1-1000000000); threshold cases set a small value in their environment. Above the exact
   threshold sample/extrapolate rather than reject; the HTTP body limit supplies the oversized-request cap. Invalid
-  bounded-integer settings warn and fall back. Do not implement undecided HF family selection or model_info.custom_tokenizer
-  from B195. Write the behavior rstest functions text_tokens_token_count_tests_behavior in adjacent tests.rs files, with
+  bounded-integer settings warn and fall back. Hugging Face family selection and the cl100k_base fallback are decided
+  and owned by B195: token_count calls B195's select and never re-picks a family or a fallback. A custom tokenizer
+  input bypasses model-based selection and counts through its own engine kind, matching B195's SelectTokenizerResponse
+  type: a Hugging Face handle counts directly and an OpenAI handle still chunks by TIKTOKEN_ENCODE_CHUNK_SIZE_CHARS.
+  The proxy route that reads a deployment's model_info.custom_tokenizer and builds that input is unowned and not
+  built here. Write the behavior rstest functions text_tokens_token_count_tests_behavior in adjacent tests.rs files, with
   a named case for each behavior and failure in the DoD; corpus replay tests have separate names. The helper operation token_count is already registered; each operation
   has its own Rust and Python adapter file and corpus seed. Own token_counter.py 364-662 and use B259 for 663-690
-  and 954-1051. The utils.py tokenizer backend and supported bundled-engine selection are B195; do not add HF acquisition
-  or decide its fallback. Budget 300 counting/sampling, 100 adapters, 240 tests, 70 fuzz/replay and 60 config/wiring
-  (770 total).
+  and 954-1051. The utils.py tokenizer backend, bundled-engine selection and Hugging Face family selection are B195;
+  this task calls B195's select and never rebuilds it. Budget 300 counting/sampling, 100 adapters, 240 tests, 70
+  fuzz/replay and 60 config/wiring (770 total).
 
 
   Own main.py _load_module_encoding L9379-L9382 and _get_encoding L9385-L9391 as the shared default-tokenizer access
@@ -28,7 +32,9 @@ description: >-
   failures do not populate the cache. B195 owns the actual default engine construction and lazy encoding export.
   Inject that engine into callers; no Python globals in production. Count 11 nonblank source lines; add 10 production
   and 20 test/adapter lines to the 770-line budget (800 total). Add token_count helper case shared_default_encoding
-  and standalone test default_encoding_initializes_once.
+  and standalone test default_encoding_initializes_once. Add the custom tokenizer dispatch test: 20 test and 10
+  adapter/case lines to the 800-line budget (830 total). Add token_count helper case custom-tokenizer-huggingface
+  and standalone test custom_tokenizer_bypasses_model_selection.
 scope:
   paths:
   - Cargo.toml
@@ -75,6 +81,11 @@ dod:
   - shared-default-encoding
   - oracle
   - helper-python
+- text: A custom tokenizer input bypasses model-based selection and counts through its own engine kind.
+  proof:
+  - custom-tokenizer-dispatch
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
@@ -108,6 +119,9 @@ checks:
   - id: shared-default-encoding
     why: Default encoding is re-created or a failed initialization is cached.
     run: cargo nextest run --locked -p betterlite-tokenizer --no-tests=fail -E 'test(/::default_encoding_initializes_once$/)'
+  - id: custom-tokenizer-dispatch
+    why: a custom tokenizer input does not skip model-based selection, or a Hugging Face handle is chunked like tiktoken
+    run: cargo nextest run --locked -p betterlite-tokenizer --no-tests=fail -E 'test(/::custom_tokenizer_bypasses_model_selection$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/token-count/text.yaml
 - tools/oracle/cases/helpers/token-count/text-list-joined.yaml
@@ -122,18 +136,22 @@ oracle_cases:
 - tools/oracle/cases/helpers/token-count/disabled.yaml
 - tools/oracle/cases/helpers/token-count/chunk-boundary-unicode.yaml
 - tools/oracle/cases/helpers/token-count/sample-above-exact-threshold.yaml
+- tools/oracle/cases/helpers/token-count/custom-tokenizer-huggingface.yaml
 deviations: []
 out_of_scope:
 - Image/document accounting and maximum-output adjustment are B197.
 - Monetary cost calculation is B068.
-- Tool formatting and catalog-based model-name normalization are B259; engine/backend selection is B195, including
-  the undecided HF acquisition policy.
+- Tool formatting and catalog-based model-name normalization are B259; engine/backend selection and Hugging Face
+  family selection are B195.
+- The /utils/token_counter proxy route and the model_info.custom_tokenizer field it reads are unowned; this task
+  only consumes an already-built custom tokenizer input, never a raw identifier.
 pitfalls:
 - 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/token_count-<case>.yaml. The rest of that folder belongs to other tasks.'
 - 'The oracle helper for this task is pre-registered as token_count in the tokenizer group. Replace the stub Op in tools/oracle/src/helpers/tokenizer/token_count.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/token_count.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Rust byte length is not Python string length.
 - A named tool_choice contributes a different overhead from none or auto.
 - Keep default normalization parity separate from whether a future provider offers an exact native token-count endpoint.
+- A custom tokenizer input short-circuits model-based selection entirely; check for it before calling B195's select, never after.
 review_level: standard
 budget:
   max_changed_lines: 1500

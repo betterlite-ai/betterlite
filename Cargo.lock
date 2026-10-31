@@ -893,8 +893,10 @@ version = "0.1.0"
 dependencies = [
  "betterlite-config",
  "betterlite-openai",
+ "encoding_rs",
  "futures-util",
  "indexmap 2.14.2",
+ "mime",
  "rstest",
  "secrecy",
  "serde",
@@ -947,13 +949,19 @@ name = "betterlite-cli"
 version = "0.1.0"
 dependencies = [
  "apple-native-keyring-store",
+ "base64 0.23.1",
  "betterlite-config",
  "dbus-secret-service-keyring-store",
+ "httparse",
  "keyring-core",
  "rstest",
  "secrecy",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
  "subtle",
  "thiserror",
+ "url",
  "windows-native-keyring-store",
 ]
 
@@ -1054,6 +1062,7 @@ dependencies = [
  "serde_json",
  "serde_with",
  "sha2 0.11.1",
+ "strum",
  "thiserror",
  "tokio",
  "tokio-postgres",
@@ -1198,6 +1207,7 @@ version = "0.1.0"
 dependencies = [
  "betterlite-config",
  "betterlite-models",
+ "betterlite-redact",
  "chrono",
  "flate2",
  "hex",
@@ -1211,9 +1221,11 @@ dependencies = [
  "rstest",
  "rust_decimal",
  "ryu",
+ "secrecy",
  "serde",
  "serde-saphyr",
  "serde_json",
+ "serde_with",
  "sha2 0.11.1",
  "strum",
  "thiserror",

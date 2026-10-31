@@ -9,17 +9,19 @@ description: >-
   header using HTTPX precedence. Other schemes fail startup by key. A configured private inference endpoint remains
   valid. Add helper url_origin and url_destination cases around the pinned pure helpers, plus local adversarial
   tests demonstrating that request bodies cannot override the destination and redirect chains cannot leak credentials.
-  Implement the URL policy parser's fuzz target and replay corpus. The user-URL download wrappers in url_utils.py
-  are deliberately unavailable under the bounded-inputs rule, and callers receive a typed error rather than an attempted
-  fetch.  Seed B171's shared helper_case corpus with every added operation and replay it through the common typed
-  parser. Load litellm_settings.provider_url_destination_allowed_hosts as typed host/port patterns; B052 calls this
+  Implement the URL policy parser's fuzz target and replay corpus. The SSRF-checked fetch of user-supplied URLs in
+  url_utils.py (validate_url, safe_get, async_safe_get and their settings) is B5082's, split from this task; B009
+  calls its _normalize_host, _default_port_for_scheme and SSRFError and adds no second copy.  Seed B171's shared helper_case corpus with every added operation and replay it through the common typed
+  parser. Load litellm_settings.provider_url_destination_allowed_hosts as typed host/port patterns, and let
+  general_settings.provider_url_destination_allowed_hosts replace it whenever that key is present, the way
+  _apply_ssrf_general_settings does after the litellm_settings loop (proxy_server.py L4855-4858, called at L6879); B052 calls this
   policy when enforcing its request-body 400 Rejected Request rule. No request field reaches the configured URL
   builder in B009. Follow redirects with a bounded explicit send loop in betterlite-http, setting reqwest redirect::Policy::none():
   on every origin change strip Authorization, Cookie, Cookie2, Proxy-Authorization, WWW-Authenticate, api-key, x-api-key,
   x-goog-api-key and every header marked sensitive by the provider; refuse HTTPS-to-HTTP and redirect userinfo.
   Policy::custom cannot mutate headers. Cover 301/302/303 method rewrite, 307/308 replayability, relative Location,
   hop bound, and streaming non-replayable bodies. Budget 300 policy/integration, 100 oracle adapters and 350 tests/fuzz
-  (750 total). Do not add behavior depending on the open remote-download decision. Write the behavior rstest functions
+  (750 total). Write the behavior rstest functions
   http_boundaries_url_boundary_tests_behavior in adjacent tests.rs files, with a named case for each behavior and failure in
   the DoD; corpus replay tests have separate names. The helper operations url_origin, url_destination are already registered; each operation has its own Rust and Python adapter file and corpus seed.
 scope:
@@ -45,11 +47,11 @@ references:
     https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L151-L247
   why: Host/port normalization, destination candidates and allowlist matching.
 - url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L283-L405
-  why: DNS validation and same-origin checks before credential forwarding.
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L367-L405
+  why: Same-origin checks before credential forwarding.
 - url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L411-L487
-  why: Redirect traversal and the user-URL fetch behavior that conflicts with repository rules.
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4847-L4858
+  why: general_settings.provider_url_destination_allowed_hosts replaces the litellm_settings value when the key is present.
 - url: >-
     https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L463-L505
   why: Destination allowlist consumption and B052-owned request rejection.
@@ -67,8 +69,8 @@ dod:
     and redirects cannot forward credentials across origins or downgrade TLS.
   proof:
   - url-boundary-tests
-- text: Configured loopback/private providers still work; request-supplied fetch URLs are rejected before network
-    I/O.
+- text: Configured loopback/private providers still work and never go through the user-URL address check, and
+    general_settings.provider_url_destination_allowed_hosts replaces the litellm_settings list when present.
   proof:
   - url-boundary-tests
 - text: The URL policy parser has a nonempty corpus replay and existing config corpus still passes.
@@ -123,14 +125,6 @@ oracle_cases:
 - tools/oracle/cases/helpers/url-origin/destination-allowlist.yaml
 deviations:
 - what: >-
-    Open, waiting for Max: keep rejecting request-supplied media/file URL downloads, or allow public URLs through
-    LiteLLM-compatible SSRF validation and allowlists.
-  why: >-
-    The current bounded-inputs rule forbids request destinations, but LiteLLM safe_get serves providers requiring
-    downloaded image/PDF bytes. Keep the current plan and add no dependent download feature until decided.
-  link: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L411-L487
-- what: >-
     Cross-origin redirects strip all credential headers and HTTPS downgrades are refused; configured bases accept
     only http/https.
   why: >-
@@ -138,12 +132,14 @@ deviations:
   link: >-
     https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L610-L618
 out_of_scope:
-- Actual remote media downloads and user_url_validation opt-outs are unavailable under the current rules.
+- >-
+  B5082 owns the user-URL fetch and its settings: the fetch type views, the exception networks, SSRFError,
+  _is_blocked_ip, _normalize_host, _default_port_for_scheme, _format_host_header, _sockaddr_host, _is_host_allowlisted,
+  validate_url, _extract_redirect_url, safe_get, async_safe_get, user_url_validation and user_url_allowed_hosts
+  (url_utils.py L33-L93, L131-L157, L242-L364 and L408-L487). Media downloads are B5083's.
 - Endpoint implementations and provider-specific signing remain in the provider backlog.
 - B052 owns is_request_body_safe and the 400 Rejected Request envelope; B009 supplies only URL-policy helpers.
-- >-
-  encode_url_path_segment/segments are B171; safe_get/safe_async_get, SSRF DNS resolution and their download-only
-  helpers remain blocked by the open Max decision; provider follow-up URL origin checks remain in B009.
+- encode_url_path_segment/segments are B171; provider follow-up URL origin checks remain in B009.
 pitfalls:
 - 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/url_origin-<case>.yaml. The rest of that folder belongs to other tasks.'
 - 'The oracle helper for this task is pre-registered as url_origin and url_destination in the http group. Replace the stub Op in tools/oracle/src/helpers/http/url_origin.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/url_origin.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
