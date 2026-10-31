@@ -173,7 +173,8 @@ impl RecursiveCharacterTextSplitter {
         let total = chars.len();
         let mut chunks = Vec::new();
         let mut start = 0_usize;
-        while start < total {
+        let mut done = total == 0;
+        while !done {
             let end = start.saturating_add(self.chunk_size);
             let clamped_end = end.min(total);
             let chunk: String = chars
@@ -186,11 +187,11 @@ impl RecursiveCharacterTextSplitter {
             if !chunk.is_empty() {
                 chunks.push(chunk);
             }
-            start = if end < total {
-                end.saturating_sub(self.chunk_overlap)
+            if end < total {
+                start = end.saturating_sub(self.chunk_overlap);
             } else {
-                total
-            };
+                done = true;
+            }
         }
         chunks
     }
