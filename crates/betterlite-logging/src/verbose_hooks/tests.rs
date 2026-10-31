@@ -1,0 +1,466 @@
+#![cfg(test)]
+
+use std::sync::{Arc, Mutex};
+
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use betterlite_redact::structured::Payload;
+use rstest::rstest;
+use serde_json::json;
+
+use super::{ConsoleSink, LoggerSink, VerboseHooks};
+
+#[derive(Default)]
+struct FixtureLogger {
+    fails: bool,
+    debug_enabled: bool,
+}
+
+impl LoggerSink for FixtureLogger {
+    fn debug(&self, _payload: &Payload) -> bool {
+        !self.fails
+    }
+
+    fn info(&self, _payload: &Payload) -> bool {
+        !self.fails
+    }
+
+    fn error(&self, _payload: &Payload) -> bool {
+        !self.fails
+    }
+
+    fn debug_enabled(&self) -> bool {
+        self.debug_enabled
+    }
+}
+
+#[derive(Default)]
+struct FixtureConsole {
+    fails: bool,
+}
+
+impl ConsoleSink for FixtureConsole {
+    fn print(&self, _payload: &Payload) -> bool {
+        !self.fails
+    }
+}
+
+fn redactor() -> Arc<Redactor> {
+    Arc::new(Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("fixture redaction patterns compile"))
+}
+
+fn credential_payload() -> Payload {
+    serde_json::from_str(r#"{"api_key": "secret", "message": "body"}"#).expect("valid json fixture")
+}
+
+fn redacted_payload() -> Payload {
+    serde_json::from_str(r#"{"api_key": "REDACTED", "message": "REDACTED"}"#)
+        .expect("valid redacted fixture")
+}
+
+fn hooks(
+    logger: FixtureLogger,
+    console: FixtureConsole,
+    set_verbose: Payload,
+) -> VerboseHooks<FixtureLogger, FixtureConsole> {
+    VerboseHooks {
+        logger,
+        console,
+        set_verbose,
+        redactor: redactor(),
+    }
+}
+
+fn healthy_hooks(set_verbose: Payload) -> VerboseHooks<FixtureLogger, FixtureConsole> {
+    hooks(
+        FixtureLogger::default(),
+        FixtureConsole::default(),
+        set_verbose,
+    )
+}
+
+enum Scenario {
+    Main {
+        payload: Payload,
+        set_verbose: Payload,
+    },
+    Utils {
+        payload: Payload,
+        set_verbose: Payload,
+        log_level: &'static str,
+        logger_only: Payload,
+    },
+    Active {
+        set_verbose: Payload,
+        logger_debug_enabled: bool,
+    },
+}
+
+struct Expected {
+    logs: usize,
+    console: usize,
+    active: bool,
+    payload: Payload,
+}
+
+#[rstest]
+#[case::main_verbose_guard(
+    Scenario::Main { payload: json!("message"), set_verbose: json!(true) },
+    Expected { logs: 1, console: 1, active: false, payload: json!("message") }
+)]
+#[case::utils_verbose_levels(
+    Scenario::Utils {
+        payload: json!("message"),
+        set_verbose: json!(true),
+        log_level: "INFO",
+        logger_only: json!(false),
+    },
+    Expected { logs: 1, console: 1, active: false, payload: json!("message") }
+)]
+#[case::verbose_active(
+    Scenario::Active { set_verbose: json!(false), logger_debug_enabled: true },
+    Expected { logs: 0, console: 0, active: true, payload: json!(null) }
+)]
+#[case::redacted_verbose_payload(
+    Scenario::Main { payload: credential_payload(), set_verbose: json!(true) },
+    Expected { logs: 1, console: 1, active: false, payload: redacted_payload() }
+)]
+fn verbose_hooks_cases(#[case] scenario: Scenario, #[case] expected: Expected) {
+    let result = match scenario {
+        Scenario::Main {
+            payload,
+            set_verbose,
+        } => healthy_hooks(set_verbose).main_print_verbose(payload),
+        Scenario::Utils {
+            payload,
+            set_verbose,
+            log_level,
+            logger_only,
+        } => healthy_hooks(set_verbose).utils_print_verbose(payload, log_level, &logger_only),
+        Scenario::Active {
+            set_verbose,
+            logger_debug_enabled,
+        } => {
+            let hooks = hooks(
+                FixtureLogger {
+                    fails: false,
+                    debug_enabled: logger_debug_enabled,
+                },
+                FixtureConsole::default(),
+                set_verbose,
+            );
+            assert_eq!(hooks.is_active(), expected.active);
+            return;
+        }
+    };
+    assert_eq!(result.logs.len(), expected.logs);
+    assert_eq!(result.console.len(), expected.console);
+    assert_eq!(result.logs[0].payload, expected.payload);
+    assert_eq!(result.console[0], expected.payload);
+}
+
+#[test]
+fn redacts_object_credentials_before_any_sink_sees_them() {
+    let result = healthy_hooks(json!(true)).main_print_verbose(credential_payload());
+    assert_eq!(result.logs[0].payload["api_key"], "REDACTED");
+    assert_eq!(result.logs[0].payload["message"], "REDACTED");
+    assert_eq!(result.console[0]["message"], "REDACTED");
+}
+
+#[test]
+fn redacts_strings_nested_in_objects_and_arrays_for_both_sinks() {
+    let payload: Payload = serde_json::from_str(
+        r#"{
+            "detail": "Bearer sk-abcdefghijklmnopqrstuvwxyz",
+            "items": [{"detail": "Bearer sk-zyxwvutsrqponmlkjihgfedcba"}],
+            "message": "private request body"
+        }"#,
+    )
+    .expect("valid nested payload fixture");
+    let result = healthy_hooks(json!(true)).main_print_verbose(payload);
+    assert_redacted(&result.logs[0].payload, "private request body");
+    assert_redacted(&result.console[0], "private request body");
+}
+
+struct CapturingLogger {
+    records: Arc<Mutex<Vec<Payload>>>,
+}
+
+impl LoggerSink for CapturingLogger {
+    fn debug(&self, payload: &Payload) -> bool {
+        self.records
+            .lock()
+            .expect("capture lock is not poisoned")
+            .push(payload.clone());
+        true
+    }
+
+    fn info(&self, payload: &Payload) -> bool {
+        self.debug(payload)
+    }
+
+    fn error(&self, payload: &Payload) -> bool {
+        self.debug(payload)
+    }
+
+    fn debug_enabled(&self) -> bool {
+        false
+    }
+}
+
+struct CapturingConsole {
+    records: Arc<Mutex<Vec<Payload>>>,
+}
+
+impl ConsoleSink for CapturingConsole {
+    fn print(&self, payload: &Payload) -> bool {
+        self.records
+            .lock()
+            .expect("capture lock is not poisoned")
+            .push(payload.clone());
+        true
+    }
+}
+
+#[test]
+fn redacts_payload_before_main_and_utils_capturing_sinks() {
+    let logger_records = Arc::new(Mutex::new(Vec::new()));
+    let console_records = Arc::new(Mutex::new(Vec::new()));
+    let hooks = VerboseHooks {
+        logger: CapturingLogger {
+            records: Arc::clone(&logger_records),
+        },
+        console: CapturingConsole {
+            records: Arc::clone(&console_records),
+        },
+        set_verbose: json!(true),
+        redactor: redactor(),
+    };
+    let payload: Payload = serde_json::from_str(
+        r#"{"detail":"Bearer sk-abcdefghijklmnopqrstuvwxyz","message":"body"}"#,
+    )
+    .expect("valid capture fixture");
+    drop(hooks.main_print_verbose(payload.clone()));
+    drop(hooks.utils_print_verbose(payload, "DEBUG", &json!(false)));
+    let logger_captured = logger_records.lock().expect("capture lock is not poisoned");
+    let console_captured = console_records
+        .lock()
+        .expect("capture lock is not poisoned");
+    assert_eq!(logger_captured.len(), 2);
+    assert_eq!(console_captured.len(), 2);
+    assert_redacted(&logger_captured[0], "body");
+    assert_redacted(&logger_captured[1], "body");
+    drop(logger_captured);
+    assert_redacted(&console_captured[0], "body");
+    assert_redacted(&console_captured[1], "body");
+}
+
+fn assert_redacted(payload: &Payload, body: &str) {
+    let rendered = payload.to_string();
+    assert!(!rendered.contains("abcdefghijklmnopqrstuvwxyz"));
+    assert!(!rendered.contains(body));
+    assert_eq!(payload["message"], "REDACTED");
+}
+
+#[test]
+fn redacts_a_bearer_token_carried_as_a_bare_string() {
+    let result = healthy_hooks(json!(true))
+        .main_print_verbose(json!("Authorization: Bearer sk-abcdefghijklmnopqrstuvwxyz"));
+    assert!(
+        !result.logs[0]
+            .payload
+            .as_str()
+            .unwrap()
+            .contains("abcdefghijklmnopqrstuvwxyz")
+    );
+    assert!(
+        !result.console[0]
+            .as_str()
+            .unwrap()
+            .contains("abcdefghijklmnopqrstuvwxyz")
+    );
+}
+
+#[test]
+fn redacts_a_bearer_token_nested_inside_an_array() {
+    let result = healthy_hooks(json!(true))
+        .main_print_verbose(json!(["Bearer sk-abcdefghijklmnopqrstuvwxyz", "plain"]));
+    let logged = result.logs[0].payload.as_array().unwrap();
+    assert!(
+        !logged[0]
+            .as_str()
+            .unwrap()
+            .contains("abcdefghijklmnopqrstuvwxyz")
+    );
+    assert_eq!(logged[1], "plain");
+}
+
+#[test]
+fn logger_failure_suppresses_both_sinks() {
+    let failing_logger = || {
+        hooks(
+            FixtureLogger {
+                fails: true,
+                debug_enabled: false,
+            },
+            FixtureConsole::default(),
+            json!(true),
+        )
+    };
+
+    let main_failed = failing_logger().main_print_verbose(json!("body"));
+    assert!(main_failed.logs.is_empty());
+    assert!(main_failed.console.is_empty());
+
+    let utils_failed = failing_logger().utils_print_verbose(json!("body"), "DEBUG", &json!(false));
+    assert!(utils_failed.logs.is_empty());
+    assert!(utils_failed.console.is_empty());
+}
+
+#[test]
+fn logger_only_suppresses_the_console_even_when_verbose_is_set() {
+    let result =
+        healthy_hooks(json!(true)).utils_print_verbose(json!("body"), "DEBUG", &json!(true));
+    assert_eq!(result.logs.len(), 1);
+    assert!(result.console.is_empty());
+}
+
+#[test]
+fn unknown_log_level_skips_the_logger_but_not_the_console() {
+    let result =
+        healthy_hooks(json!(true)).utils_print_verbose(json!("body"), "TRACE", &json!(false));
+    assert!(result.logs.is_empty());
+    assert_eq!(result.console.len(), 1);
+}
+
+#[test]
+fn console_failure_does_not_drop_the_logger_record() {
+    let result = hooks(
+        FixtureLogger::default(),
+        FixtureConsole { fails: true },
+        json!(true),
+    )
+    .main_print_verbose(json!("body"));
+    assert_eq!(result.logs.len(), 1);
+    assert!(result.console.is_empty());
+}
+
+#[test]
+fn main_guard_treats_a_truthy_non_boolean_set_verbose_as_verbose() {
+    let result = healthy_hooks(json!(1_i64)).main_print_verbose(json!("body"));
+    assert_eq!(result.console.len(), 1);
+}
+
+#[test]
+fn utils_guard_requires_set_verbose_to_be_identically_true_not_merely_truthy() {
+    let result =
+        healthy_hooks(json!(1_i64)).utils_print_verbose(json!("body"), "DEBUG", &json!(false));
+    assert!(result.console.is_empty());
+}
+
+#[test]
+fn utils_guard_requires_logger_only_to_be_identically_false_a_falsey_non_boolean_suppresses_the_console()
+ {
+    let result =
+        healthy_hooks(json!(true)).utils_print_verbose(json!("body"), "DEBUG", &json!(0_i64));
+    assert!(result.console.is_empty());
+}
+
+#[test]
+fn utils_error_level_logs_the_record_and_allows_the_console() {
+    let result =
+        healthy_hooks(json!(true)).utils_print_verbose(json!("body"), "ERROR", &json!(false));
+    assert_eq!(result.logs.len(), 1);
+    assert_eq!(result.logs[0].level, "ERROR");
+    assert_eq!(result.console.len(), 1);
+}
+
+#[test]
+fn main_guard_treats_an_empty_string_set_verbose_as_falsey() {
+    let result = healthy_hooks(json!("")).main_print_verbose(json!("body"));
+    assert!(result.console.is_empty());
+}
+
+#[test]
+fn main_guard_treats_a_non_empty_string_set_verbose_as_truthy() {
+    let result = healthy_hooks(json!("yes")).main_print_verbose(json!("body"));
+    assert_eq!(result.console.len(), 1);
+}
+
+#[test]
+fn main_guard_treats_a_non_empty_array_set_verbose_as_truthy() {
+    let result = healthy_hooks(json!([1_i64])).main_print_verbose(json!("body"));
+    assert_eq!(result.console.len(), 1);
+}
+
+#[test]
+fn main_guard_treats_a_non_empty_object_set_verbose_as_truthy() {
+    let set_verbose: Payload = serde_json::from_str(r#"{"on": true}"#).expect("valid json fixture");
+    let result = healthy_hooks(set_verbose).main_print_verbose(json!("body"));
+    assert_eq!(result.console.len(), 1);
+}
+
+#[test]
+fn is_active_is_true_when_the_logger_is_already_enabled_at_debug_even_if_set_verbose_is_falsey() {
+    let hooks = hooks(
+        FixtureLogger {
+            fails: false,
+            debug_enabled: true,
+        },
+        FixtureConsole::default(),
+        json!(0_i64),
+    );
+    assert!(hooks.is_active());
+}
+
+#[test]
+fn is_active_requires_identity_not_truthiness_for_set_verbose() {
+    assert!(!healthy_hooks(json!(1_i64)).is_active());
+}
+
+#[rstest]
+#[case::null(json!(null))]
+#[case::false_boolean(json!(false))]
+#[case::zero(json!(0_i64))]
+#[case::empty_array(json!([]))]
+#[case::empty_object(serde_json::from_str("{}").expect("valid empty object"))]
+fn falsey_main_settings(#[case] set_verbose: Payload) {
+    let result = healthy_hooks(set_verbose).main_print_verbose(json!("body"));
+    assert_eq!(result.logs.len(), 1);
+    assert!(result.console.is_empty());
+}
+
+#[test]
+fn verbose_true_activates_a_disabled_logger() {
+    assert!(healthy_hooks(json!(true)).is_active());
+}
+
+#[rstest]
+#[case::debug("DEBUG")]
+#[case::info("INFO")]
+#[case::error("ERROR")]
+fn utils_logger_failure(#[case] log_level: &str) {
+    let result = hooks(
+        FixtureLogger {
+            fails: true,
+            debug_enabled: false,
+        },
+        FixtureConsole::default(),
+        json!(true),
+    )
+    .utils_print_verbose(credential_payload(), log_level, &json!(false));
+    assert!(result.logs.is_empty());
+    assert!(result.console.is_empty());
+}
+
+#[test]
+fn utils_console_failure_keeps_logs() {
+    let result = hooks(
+        FixtureLogger::default(),
+        FixtureConsole { fails: true },
+        json!(true),
+    )
+    .utils_print_verbose(credential_payload(), "INFO", &json!(false));
+    assert_eq!(result.logs.len(), 1);
+    assert_eq!(result.logs[0].payload, redacted_payload());
+    assert!(result.console.is_empty());
+}

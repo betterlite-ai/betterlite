@@ -32,4 +32,11 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "model_catalog"
+path = "fuzz_targets/model_catalog.rs"
+test = false
+doc = false
+bench = false
+
 [workspace]
