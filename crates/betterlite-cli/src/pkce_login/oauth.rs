@@ -86,57 +86,74 @@ pub struct RedeemCodeRequest {
     pub verifier: SecretString,
 }
 
-pub fn redeem_code<H>(
-    contract: &CliAuthContract,
-    request: &RedeemCodeRequest,
-    http: &H,
-    now_seconds: i64,
-) -> Result<PkceCredential, PkceFailure>
-where
-    H: Http,
-{
-    let input = TokenInput::Code(request);
-    token_request(contract, &request.client_id, http, now_seconds, input)
-}
-
 pub struct RefreshCredentialRequest {
     pub client_id: String,
     pub refresh_token: SecretString,
 }
 
-pub fn refresh_credential<H>(
-    contract: &CliAuthContract,
-    request: &RefreshCredentialRequest,
-    http: &H,
-    now_seconds: i64,
-) -> Result<PkceCredential, PkceFailure>
-where
-    H: Http,
-{
-    let input = TokenInput::Refresh(request);
-    token_request(contract, &request.client_id, http, now_seconds, input)
+// A macro, not two near-identical functions, carries the one difference between the grants: their form fields.
+macro_rules! token_grant_fn {
+    ($name:ident, $request_ty:ty, |$request:ident, $contract:ident| $form:expr) => {
+        pub fn $name<H>(
+            $contract: &CliAuthContract,
+            $request: &$request_ty,
+            http: &H,
+            now_seconds: i64,
+        ) -> Result<PkceCredential, PkceFailure>
+        where
+            H: Http,
+        {
+            let form = $form;
+            token_request($contract, &$request.client_id, http, now_seconds, form)
+        }
+    };
 }
 
-#[derive(Clone, Copy)]
-enum TokenInput<'request> {
-    Code(&'request RedeemCodeRequest),
-    Refresh(&'request RefreshCredentialRequest),
-}
+token_grant_fn!(redeem_code, RedeemCodeRequest, |request, contract| vec![
+    (
+        String::from("grant_type"),
+        String::from("authorization_code"),
+    ),
+    (
+        String::from("code"),
+        request.code.expose_secret().to_owned()
+    ),
+    (String::from("redirect_uri"), request.redirect_uri.clone()),
+    (String::from("client_id"), request.client_id.clone()),
+    (
+        String::from("code_verifier"),
+        request.verifier.expose_secret().to_owned(),
+    ),
+    (String::from("resource"), contract.resource.clone()),
+]);
+
+token_grant_fn!(
+    refresh_credential,
+    RefreshCredentialRequest,
+    |request, contract| vec![
+        (String::from("grant_type"), String::from("refresh_token")),
+        (
+            String::from("refresh_token"),
+            request.refresh_token.expose_secret().to_owned(),
+        ),
+        (String::from("client_id"), request.client_id.clone()),
+        (String::from("resource"), contract.resource.clone()),
+    ]
+);
 
 fn token_request<H>(
     contract: &CliAuthContract,
     client_id: &str,
     http: &H,
     now_seconds: i64,
-    input: TokenInput<'_>,
+    form: Vec<(String, String)>,
 ) -> Result<PkceCredential, PkceFailure>
 where
     H: Http,
 {
-    let fields = token_fields(contract, input);
     let response = http.post(
         &contract.token_endpoint,
-        HttpBody::Form(fields),
+        HttpBody::Form(form),
         HTTP_TIMEOUT_SECONDS,
         false,
     )?;
@@ -159,35 +176,4 @@ where
         user_id: token.user_id,
         team_id: token.team_id,
     })
-}
-
-fn token_fields(contract: &CliAuthContract, input: TokenInput<'_>) -> Vec<(String, String)> {
-    match input {
-        TokenInput::Code(request) => vec![
-            (
-                String::from("grant_type"),
-                String::from("authorization_code"),
-            ),
-            (
-                String::from("code"),
-                request.code.expose_secret().to_owned(),
-            ),
-            (String::from("redirect_uri"), request.redirect_uri.clone()),
-            (String::from("client_id"), request.client_id.clone()),
-            (
-                String::from("code_verifier"),
-                request.verifier.expose_secret().to_owned(),
-            ),
-            (String::from("resource"), contract.resource.clone()),
-        ],
-        TokenInput::Refresh(request) => vec![
-            (String::from("grant_type"), String::from("refresh_token")),
-            (
-                String::from("refresh_token"),
-                request.refresh_token.expose_secret().to_owned(),
-            ),
-            (String::from("client_id"), request.client_id.clone()),
-            (String::from("resource"), contract.resource.clone()),
-        ],
-    }
 }
