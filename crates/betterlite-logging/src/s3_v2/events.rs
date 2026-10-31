@@ -1,4 +1,5 @@
 use betterlite_config::loader::EnvironmentLookup;
+use betterlite_models::decisions::Json;
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
@@ -25,7 +26,7 @@ struct EventFields {
 struct Metadata {
     user_api_key_team_alias: Option<String>,
     user_api_key_alias: Option<String>,
-    cold_storage_object_key: Option<String>,
+    cold_storage_object_key: Option<Json>,
 }
 
 pub struct Event<'payload, Payload> {
@@ -53,7 +54,7 @@ where
     let prompts_only =
         resolve_log_prompts_only(parameters.connection.log_prompts_only.as_ref(), environment);
     let output = if parameters.features.contains(&Feature::StripBase64) || prompts_only {
-        let rewritten = redact::project(&encoded, &parameters.features, prompts_only)?;
+        let rewritten = redact::project(&encoded, &parameters.features, prompts_only, environment)?;
         serde_json::from_str(&rewritten)?
     } else {
         input.clone()
@@ -125,7 +126,11 @@ where
     };
     let cold_key = metadata
         .cold_storage_object_key
-        .clone()
+        .as_ref()
+        .and_then(|candidate| match candidate {
+            Json::Text(text) => Some(text.clone()),
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
+        })
         .filter(|candidate| {
             event.cold_storage_enabled
                 && (*candidate == key_for(PartitionGranularity::Day)

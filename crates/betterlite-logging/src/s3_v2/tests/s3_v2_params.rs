@@ -8,6 +8,7 @@ use betterlite_logging::s3_v2::events::{Event, create_batch_element};
 use betterlite_logging::s3_v2::parameters::resolve_s3_parameters;
 use betterlite_logging::s3_v2::source::Source;
 use betterlite_logging::s3_v2::{Feature, PartitionGranularityCache};
+use betterlite_models::decisions::Json;
 use chrono::{NaiveDate, NaiveDateTime};
 use rstest::rstest;
 use secrecy::ExposeSecret as _;
@@ -176,6 +177,34 @@ fn cold_storage_keys(#[case] cold_key: &str, #[case] enabled: bool, #[case] expe
     assert!(output.body.is_none());
 }
 
+#[test]
+fn cold_storage_key_numeric_value_is_a_mismatch() {
+    let source: Source<()> = serde_json::from_str(r#"{"s3_path":"logs","s3_use_team_prefix":true,"s3_use_key_prefix":true,"s3_partition_granularity":"hour"}"#).unwrap();
+    let parameters =
+        resolve_s3_parameters(&Source::default(), &source, None, &Environment::default());
+    let payload: Box<RawValue> = serde_json::from_str(r#"{"id":"request","metadata":{"user_api_key_team_alias":"team","user_api_key_alias":"key","cold_storage_object_key":123}}"#).unwrap();
+    let time = NaiveDate::from_ymd_opt(2026, 1, 2)
+        .unwrap()
+        .and_hms_opt(3, 4, 5)
+        .unwrap();
+    let output = create_batch_element(
+        &parameters,
+        &Event {
+            start_time: time,
+            payload: Some(&payload),
+            cold_storage_enabled: true,
+        },
+        &mut PartitionGranularityCache::default(),
+        &Environment::default(),
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        output.s3_object_key,
+        "logs/team/key/2026-01-02/03/time-03-04-05-000000_request.json"
+    );
+}
+
 #[derive(Deserialize)]
 struct PayloadView {
     messages: Vec<Message>,
@@ -230,6 +259,71 @@ fn strip_base64_and_prompt_projection_are_immutable() {
         projected.metadata.get("arbitrary").map(String::as_str),
         Some("kept")
     );
+}
+
+#[rstest]
+#[case::default_depth_truncates(None, Json::Text("[MAX_DEPTH_REACHED]".to_owned()))]
+#[case::configured_depth_preserves(Some("20"), Json::Text("[BASE64_REDACTED]".to_owned()))]
+#[case::malformed_depth_falls_back_to_default(
+    Some("not-a-number"),
+    Json::Text("[MAX_DEPTH_REACHED]".to_owned())
+)]
+#[case::negative_depth_falls_back_to_default(
+    Some("-1"),
+    Json::Text("[MAX_DEPTH_REACHED]".to_owned())
+)]
+fn strip_base64_respects_configured_recursion_depth(
+    #[case] configured: Option<&str>,
+    #[case] expected_leaf: Json,
+) {
+    let source: Source<()> = serde_json::from_str(r#"{"s3_strip_base64_files":true}"#).unwrap();
+    let mut environment = Environment::default();
+    if let Some(value) = configured {
+        environment.insert(
+            "DEFAULT_MAX_RECURSE_DEPTH_SENSITIVE_DATA_MASKER".to_owned(),
+            value.to_owned(),
+        );
+    }
+    let parameters = resolve_s3_parameters(&Source::default(), &source, None, &environment);
+    let nested = r#"{"inner":{"inner":{"inner":{"inner":{"inner":{"inner":{"inner":{"inner":{"inner":{"inner":{"inner":"data:image/png;base64,AAAA"}}}}}}}}}}}"#;
+    let payload: Box<RawValue> = serde_json::from_str(&format!(
+        r#"{{"id":"request","messages":[{{"role":"user","content":{nested}}}]}}"#
+    ))
+    .unwrap();
+    let time = NaiveDate::from_ymd_opt(2026, 1, 2)
+        .unwrap()
+        .and_hms_opt(3, 4, 5)
+        .unwrap();
+    let output = create_batch_element(
+        &parameters,
+        &Event {
+            start_time: time,
+            payload: Some(&payload),
+            cold_storage_enabled: false,
+        },
+        &mut PartitionGranularityCache::default(),
+        &environment,
+    )
+    .unwrap()
+    .unwrap();
+    let projected: Json = serde_json::from_str(output.payload.get()).unwrap();
+    let Json::Object(fields) = &projected else {
+        panic!("expected a JSON object");
+    };
+    let Some(Json::List(messages)) = fields.get("messages") else {
+        panic!("expected a messages list");
+    };
+    let Some(Json::Object(message)) = messages.first() else {
+        panic!("expected a message object");
+    };
+    let mut leaf = message.get("content").unwrap();
+    for _ in 0..11_u8 {
+        let Json::Object(wrapper) = leaf else {
+            panic!("expected a nested object");
+        };
+        leaf = wrapper.get("inner").unwrap();
+    }
+    assert_eq!(leaf, &expected_leaf);
 }
 
 #[test]
