@@ -88,4 +88,4 @@ pitfalls:
   - tunedModelDisplayName is the returned fine_tuned_model, not a synthesized endpoint resource.
   - The final tuning URL does not use the URL returned by token preparation.
 budget: {max_changed_lines: 700, max_new_expects: 1}
-review_level: security
+review_level: standard

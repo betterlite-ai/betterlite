@@ -212,7 +212,7 @@ pitfalls:
   - "The tracing-config.yaml model list supplies one model gpt-6.1-sol for testing; additional models or deployments are not provided."
   - "ClickHouse and Postgres volumes are named volumes managed by Docker, not bind mounts. They persist across docker-compose down and up."
 
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

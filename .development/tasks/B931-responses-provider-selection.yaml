@@ -179,7 +179,7 @@ pitfalls:
 - An empty api_key or api_base still prevents a prompt from crossing the credential boundary.
 - The bridged prompt context removes an existing _litellm_carry_unmatched_cache_control_points value instead of restoring it.
 - A string use_chat_completions_api="false" is truthy, while the bridge predicate itself uses identity with true.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

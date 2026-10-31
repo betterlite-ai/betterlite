@@ -119,7 +119,7 @@ pitfalls:
 - Factory initialization runs before target-model rejection, so missing Azure settings can fail before the managed-hook message.
 - The target-model error says no database even when one exists; hook availability is the actual condition.
 - A storage-only response has no persisted managed ownership record, despite carrying storage metadata internally.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

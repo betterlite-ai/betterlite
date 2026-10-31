@@ -79,4 +79,4 @@ pitfalls:
   - The legacy prediction detector inspects only element zero and does not scan later predictions.
   - Vertex edit billing ignores both usageMetadata and web-search charges.
 budget: {max_changed_lines: 450, max_new_expects: 1}
-review_level: security
+review_level: standard

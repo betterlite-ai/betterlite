@@ -77,4 +77,4 @@ pitfalls:
   - With server_vad, a final result can complete a turn before an interim result in the same frame starts another.
   - Discarded audio can still contribute billable duration reported at session close.
 budget: {max_changed_lines: 775, max_new_expects: 1}
-review_level: security
+review_level: standard

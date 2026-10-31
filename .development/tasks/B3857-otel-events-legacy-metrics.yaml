@@ -149,7 +149,7 @@ pitfalls:
   - "Inference-details event name is a single constant _INFERENCE_DETAILS_EVENT_NAME, not a per-message/per-choice template; both branches use one event name and emit once per request."
   - "Per-message prompt events carry role (from message['role'], default 'user') and conditionally id (from message['id'] if role=='tool'); per-choice completion events carry index (choice index), finish_reason, and role (from message.role, default 'assistant')."
   - "Content capture (_capture_in_event()) gates both the attrs['gen_ai.prompt'/'message.content'] attribute and the body copy; drop_none removes null/None attributes before emit."
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

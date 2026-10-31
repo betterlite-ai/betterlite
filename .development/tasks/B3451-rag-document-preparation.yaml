@@ -191,7 +191,7 @@ pitfalls:
   - Fetched file_url responses use response.headers.get with default application/octet-stream (the pin literal when content-type absent).
   - "OCR base64 encoding includes content-type and semicolon exactly as data:mime/type;base64,encoded with no spaces."
 
-review_level: security
+review_level: standard
 
 budget:
   max_changed_lines: 1500

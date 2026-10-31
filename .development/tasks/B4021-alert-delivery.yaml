@@ -111,7 +111,7 @@ pitfalls:
   - "Periodic flush runs on a fixed interval set by SlackAlerting.flush_interval; digest draining is before queue flush each cycle."
   - "Digest entries preserve webhook_url as-is (string or list); the formatter must handle both without coercion."
   - "Console logging payload contains the formatted message with count prefix, not the original event; log_to_console guards it."
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

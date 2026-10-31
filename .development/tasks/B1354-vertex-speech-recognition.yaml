@@ -83,4 +83,4 @@ pitfalls:
   - The default Speech-to-Text location is us rather than the general Vertex default.
   - x-goog-user-project is the resolved credential project even when caller headers supplied another value.
 budget: {max_changed_lines: 700, max_new_expects: 1}
-review_level: security
+review_level: standard

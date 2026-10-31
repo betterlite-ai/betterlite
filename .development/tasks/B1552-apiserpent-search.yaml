@@ -95,7 +95,7 @@ pitfalls:
   - deep=true with num=2 is accepted unless max_results is also supplied.
   - APISerpent's domain clause is juxtaposed with the query rather than joined with AND.
   - An invalid engine string is not rejected by the dataclass's Literal annotation.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 1

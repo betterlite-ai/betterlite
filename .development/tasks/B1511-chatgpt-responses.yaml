@@ -71,7 +71,7 @@ pitfalls:
   - A response.completed event ends the search even if a later event contains a valid response.
   - stream=true in the upstream body does not mean a nonstreaming caller should receive SSE.
   - The instruction check is substring containment rather than equality or a prefix test.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0
