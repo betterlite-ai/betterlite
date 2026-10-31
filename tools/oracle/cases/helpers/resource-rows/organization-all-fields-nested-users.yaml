@@ -1,0 +1,14 @@
+kind: helper
+name: organization_all_fields_nested_users
+call:
+  resource_rows:
+    operation: organization
+    row: {organization_id: o, organization_alias: a, budget_id: b, spend: 12.5,
+      metadata: {k: v}, models: [gpt], model_spend: {gpt: 1.0}, created_by: c,
+      updated_by: u, object_permission_id: p,
+      users: [{user_id: u1}],
+      litellm_budget_table: {budget_id: b, max_budget: 10},
+      object_permission: {object_permission_id: p}}
+env: {}
+compare:
+  ignore: []

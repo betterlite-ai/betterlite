@@ -1,0 +1,9 @@
+kind: helper
+name: old_access_model_ids_not_an_alias
+call:
+  resource_rows:
+    operation: access_group
+    row: {access_group_id: g, access_group_name: n, access_model_ids: [old]}
+env: {}
+compare:
+  ignore: []

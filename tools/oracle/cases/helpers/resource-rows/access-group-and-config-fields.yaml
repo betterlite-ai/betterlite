@@ -1,0 +1,9 @@
+kind: helper
+name: access_group_required_ids_and_all_defaults
+call:
+  resource_rows:
+    operation: access_group
+    row: {access_group_id: g, access_group_name: n}
+env: {}
+compare:
+  ignore: []

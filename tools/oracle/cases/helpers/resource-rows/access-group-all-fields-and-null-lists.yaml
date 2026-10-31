@@ -1,0 +1,14 @@
+kind: helper
+name: access_group_all_fields_and_null_lists
+call:
+  resource_rows:
+    operation: access_group
+    row: {access_group_id: g, access_group_name: n, description: d, access_model_names: [m],
+      access_mcp_server_ids: [s], access_agent_ids: [a], assigned_team_ids: [t],
+      assigned_key_ids: null, created_at: '2026-01-01T00:00:00Z', created_by: c,
+      updated_at: '2026-01-02T00:00:00Z', updated_by: u}
+env: {}
+compare:
+  ignore:
+    - pointer: /error/message
+      why: Native typed validation uses its own error wording
