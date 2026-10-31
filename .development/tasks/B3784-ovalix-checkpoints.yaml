@@ -69,19 +69,19 @@ checks:
   commands:
     - id: ovalix-env-resolution
       why: environment variable reading or default values differ from LiteLLM
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^ovalix::environment)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^ovalix::environment/)'
     - id: ovalix-session-identity
       why: actor/session id normalization differs from LiteLLM
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^ovalix::session_identity)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^ovalix::session_identity/)'
     - id: ovalix-exception-status
       why: OvalixGuardrailBlockedException status code is not 400
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^ovalix::exception_status)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^ovalix::exception_status/)'
     - id: ovalix-config-model
       why: the config model structure or defaults do not match LiteLLM
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^ovalix::config_model)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^ovalix::config_model/)'
     - id: ovalix-unit-tests
       why: unit tests for checkpoint payload construction or text processing fail
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^ovalix::)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^ovalix::/)'
     - id: oracle-pre-call-block
       why: the oracle comparison fails for a blocked pre-call request
       run: cargo gate run B3784 --only oracle

@@ -47,7 +47,7 @@ checks:
   commands:
     - id: config-sync-unit-tests
       why: the config sync module tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-redis --no-tests=fail -E 'test(/^config_sync::)'
+      run: cargo nextest run --locked -p betterlite-redis --no-tests=fail -E 'test(/^config_sync::/)'
 oracle_cases: []
 deviations:
   - what: betterlite skips parsing and validation of the published pubsub message body, matching LiteLLM's behavior.
