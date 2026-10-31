@@ -212,7 +212,7 @@ struct CapturedProviderParams {
 }
 
 #[tokio::test]
-async fn generic_guardrail_apply_guardrail_with_original_merges_configured_provider_params() {
+async fn generic_guardrail_apply_guardrail_merges_configured_provider_params() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}{}", listener.local_addr().unwrap(), DEFAULT_PATH);
     let mut instance = api(GenericGuardrailAPISettings::from_optional(None), &base);
@@ -232,10 +232,8 @@ async fn generic_guardrail_apply_guardrail_with_original_merges_configured_provi
     let router = Router::new().route(DEFAULT_PATH, post(answer));
     let mut server = JoinSet::new();
     server.spawn(axum::serve(listener, router).into_future());
-    let request = base_request();
-    let original = base_request();
     instance
-        .apply_guardrail_with_original(&request, &original)
+        .apply_guardrail(base_request())
         .await
         .expect("success");
     let body = captured.lock().unwrap().clone();

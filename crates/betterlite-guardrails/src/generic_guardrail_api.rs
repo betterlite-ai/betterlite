@@ -85,14 +85,6 @@ impl GenericGuardrailAPI {
         }
         Ok(headers)
     }
-    pub async fn apply_guardrail(
-        &self,
-        request: GenericGuardrailAPIRequest,
-    ) -> Result<GenericGuardrailAPIResponse, GenericGuardrailAPIError> {
-        let original = request.clone();
-        self.apply_guardrail_with_original(&request, &original)
-            .await
-    }
     fn merge_provider_params(
         &self,
         request: GenericGuardrailAPIRequest,
@@ -106,15 +98,14 @@ impl GenericGuardrailAPI {
             ..request
         }
     }
-    pub async fn apply_guardrail_with_original(
+    pub async fn apply_guardrail(
         &self,
-        request: &GenericGuardrailAPIRequest,
-        original: &GenericGuardrailAPIRequest,
+        request: GenericGuardrailAPIRequest,
     ) -> Result<GenericGuardrailAPIResponse, GenericGuardrailAPIError> {
         let merged = self.merge_provider_params(request.clone());
-        let fallback = passthrough_response(original);
+        let fallback = passthrough_response(&request);
         match self.call_api(&merged).await {
-            Ok(response) => enforce_response(response, original, &merged),
+            Ok(response) => enforce_response(response, &request, &merged),
             Err(error) => self.handle_error(error, fallback),
         }
     }
