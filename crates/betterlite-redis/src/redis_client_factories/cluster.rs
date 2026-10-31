@@ -53,37 +53,23 @@ pub fn build(settings: &RedisConnectionSettings, kind: ClientKind) -> ClusterCli
         .health_check_interval
         .get_or_insert(CLUSTER_HEALTH_INTERVAL_SECS);
     client.socket_keepalive.get_or_insert(true);
+    let reinitialize_steps = match client.passthrough.get("reinitialize_steps") {
+        Some(PassthroughValue::Number(number)) => number
+            .as_u64()
+            .and_then(|value| u32::try_from(value).ok())
+            .unwrap_or(DEFAULT_REINITIALIZE_STEPS),
+        _ => DEFAULT_REINITIALIZE_STEPS,
+    };
+    let read_from_replicas = matches!(
+        client.passthrough.get("read_from_replicas"),
+        Some(PassthroughValue::Bool(true))
+    );
     client.isolation = Some(IsolationConfig {
         branch: select_branch(true),
         request_ttl: DEFAULT_REQUEST_TTL,
-        reinitialize_steps: passthrough_u32(&client.passthrough, "reinitialize_steps")
-            .unwrap_or(DEFAULT_REINITIALIZE_STEPS),
+        reinitialize_steps,
         initialize: true,
-        read_from_replicas: passthrough_bool(&client.passthrough, "read_from_replicas")
-            .unwrap_or(false),
+        read_from_replicas,
     });
     client
-}
-
-fn passthrough_u32(passthrough: &BTreeMap<String, PassthroughValue>, key: &str) -> Option<u32> {
-    match passthrough.get(key)? {
-        PassthroughValue::Number(number) => {
-            let value = number.as_u64()?;
-            u32::try_from(value).ok()
-        }
-        PassthroughValue::Bool(_)
-        | PassthroughValue::Text(_)
-        | PassthroughValue::List(_)
-        | PassthroughValue::Map(_) => None,
-    }
-}
-
-fn passthrough_bool(passthrough: &BTreeMap<String, PassthroughValue>, key: &str) -> Option<bool> {
-    match passthrough.get(key)? {
-        PassthroughValue::Bool(flag) => Some(*flag),
-        PassthroughValue::Number(_)
-        | PassthroughValue::Text(_)
-        | PassthroughValue::List(_)
-        | PassthroughValue::Map(_) => None,
-    }
 }

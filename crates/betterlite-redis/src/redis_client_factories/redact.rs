@@ -61,7 +61,7 @@ fn raw_entries(settings: &RedisConnectionSettings) -> Vec<(String, Option<String
     push_scalar_entries(settings, &mut entries);
     push_secret_entries(settings, &mut entries);
     push_node_entries(settings, &mut entries);
-    entries.extend(passthrough_entries(settings));
+    push_passthrough_entries(settings, &mut entries);
     entries
 }
 
@@ -159,22 +159,18 @@ fn push_node_entries(
     ));
 }
 
-fn passthrough_entries(settings: &RedisConnectionSettings) -> Vec<(String, Option<String>)> {
-    let mut entries = Vec::new();
-    if settings.passthrough.contains_key("redis_connect_func") {
-        entries.push((
-            "redis_connect_func".to_owned(),
-            Some("<redis connect function>".to_owned()),
-        ));
+fn push_passthrough_entries(
+    settings: &RedisConnectionSettings,
+    entries: &mut Vec<(String, Option<String>)>,
+) {
+    for (key, raw) in &settings.passthrough {
+        let value = if key == "redis_connect_func" {
+            "<redis connect function>".to_owned()
+        } else {
+            stringify_passthrough(raw)
+        };
+        entries.push((key.clone(), Some(value)));
     }
-    entries.extend(
-        settings
-            .passthrough
-            .iter()
-            .filter(|(key, _)| key.as_str() != "redis_connect_func")
-            .map(|(key, raw)| (key.clone(), Some(stringify_passthrough(raw)))),
-    );
-    entries
 }
 
 fn node_count_text<T>(nodes: Option<&[T]>, label: &str) -> Option<String> {

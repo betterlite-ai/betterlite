@@ -2,10 +2,10 @@
 
 use std::collections::BTreeMap;
 
-use super::{build_async_client, build_sync_client};
+use super::build_client;
 use crate::redis_client_factories::RedisClient;
 use crate::redis_connection_settings::model::nodes::ClusterNodeConfig;
-use crate::redis_connection_settings::model::settings::RedisConnectionSettings;
+use crate::redis_connection_settings::model::settings::{ClientKind, RedisConnectionSettings};
 
 fn blank_settings() -> RedisConnectionSettings {
     RedisConnectionSettings {
@@ -42,11 +42,11 @@ fn startup_nodes_dispatch_to_a_cluster_client() {
         ..blank_settings()
     };
     assert!(matches!(
-        build_sync_client(&settings).expect("startup_nodes resolves"),
+        build_client(&settings, ClientKind::Sync).expect("startup_nodes resolves"),
         RedisClient::Cluster(_)
     ));
     assert!(matches!(
-        build_async_client(&settings).expect("startup_nodes resolves"),
+        build_client(&settings, ClientKind::Async).expect("startup_nodes resolves"),
         RedisClient::Cluster(_)
     ));
 }
@@ -58,7 +58,7 @@ fn a_url_dispatches_to_a_url_client() {
         ..blank_settings()
     };
     assert!(matches!(
-        build_sync_client(&settings).expect("url resolves"),
+        build_client(&settings, ClientKind::Sync).expect("url resolves"),
         RedisClient::Url(_)
     ));
 }
@@ -71,7 +71,7 @@ fn sentinel_nodes_and_service_name_dispatch_to_a_sentinel_client() {
         ..blank_settings()
     };
     assert!(matches!(
-        build_sync_client(&settings).expect("sentinel_nodes and service_name resolve"),
+        build_client(&settings, ClientKind::Sync).expect("sentinel_nodes and service_name resolve"),
         RedisClient::Sentinel(_)
     ));
 }
@@ -83,7 +83,7 @@ fn a_bare_host_dispatches_to_a_direct_client() {
         ..blank_settings()
     };
     assert!(matches!(
-        build_sync_client(&settings).expect("host resolves"),
+        build_client(&settings, ClientKind::Sync).expect("host resolves"),
         RedisClient::Direct(_)
     ));
 }
@@ -102,7 +102,7 @@ fn startup_nodes_take_priority_over_every_other_target() {
         ..blank_settings()
     };
     assert!(matches!(
-        build_sync_client(&settings).expect("startup_nodes resolves"),
+        build_client(&settings, ClientKind::Sync).expect("startup_nodes resolves"),
         RedisClient::Cluster(_)
     ));
 }
@@ -116,10 +116,13 @@ fn an_async_cluster_dispatch_carries_isolation_but_a_sync_one_does_not() {
         }]),
         ..blank_settings()
     };
-    let RedisClient::Cluster(sync_client) = build_sync_client(&settings).expect("resolves") else {
+    let RedisClient::Cluster(sync_client) =
+        build_client(&settings, ClientKind::Sync).expect("resolves")
+    else {
         panic!("expected a cluster client");
     };
-    let RedisClient::Cluster(async_client) = build_async_client(&settings).expect("resolves")
+    let RedisClient::Cluster(async_client) =
+        build_client(&settings, ClientKind::Async).expect("resolves")
     else {
         panic!("expected a cluster client");
     };
@@ -129,5 +132,5 @@ fn an_async_cluster_dispatch_carries_isolation_but_a_sync_one_does_not() {
 
 #[test]
 fn no_target_fields_set_is_an_error() {
-    build_sync_client(&blank_settings()).expect_err("no target field is set");
+    build_client(&blank_settings(), ClientKind::Sync).expect_err("no target field is set");
 }

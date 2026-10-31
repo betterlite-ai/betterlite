@@ -8,7 +8,7 @@ use crate::redis_connection_settings::model::nodes::ClusterNodeConfig;
 use crate::redis_connection_settings::model::scalars::PassthroughValue;
 use crate::redis_connection_settings::model::settings::{ClientKind, RedisConnectionSettings};
 
-fn blank_settings() -> RedisConnectionSettings {
+fn cluster_settings() -> RedisConnectionSettings {
     RedisConnectionSettings {
         host: None,
         port: None,
@@ -24,17 +24,6 @@ fn blank_settings() -> RedisConnectionSettings {
         health_check_interval: None,
         credential_provider: false,
         credential_provider_settings: None,
-        startup_nodes: None,
-        sentinel_nodes: None,
-        sentinel_password: None,
-        service_name: None,
-        ssl_password: None,
-        passthrough: BTreeMap::new(),
-    }
-}
-
-fn cluster_settings() -> RedisConnectionSettings {
-    RedisConnectionSettings {
         startup_nodes: Some(vec![
             ClusterNodeConfig {
                 host: "node-a".to_owned(),
@@ -45,7 +34,11 @@ fn cluster_settings() -> RedisConnectionSettings {
                 port: 7001,
             },
         ]),
-        ..blank_settings()
+        sentinel_nodes: None,
+        sentinel_password: None,
+        service_name: None,
+        ssl_password: None,
+        passthrough: BTreeMap::new(),
     }
 }
 
