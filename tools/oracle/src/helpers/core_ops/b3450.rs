@@ -1,5 +1,6 @@
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
+use betterlite_config::rag::document::RAGChunkingStrategy;
 use betterlite_core::rag::document::pdf::extract_text_from_pdf;
 use betterlite_core::rag::document::provider::get_ingestion_class;
 use betterlite_core::rag::document::splitter::{RecursiveCharacterTextSplitter, TextSplitter as _};
@@ -51,12 +52,8 @@ fn split(
     requested_separators: Option<Vec<String>>,
     text: &str,
 ) -> HelperResult {
-    let separators = requested_separators.unwrap_or_else(|| {
-        ["\n\n", "\n", " ", ""]
-            .into_iter()
-            .map(str::to_owned)
-            .collect()
-    });
+    let separators =
+        requested_separators.unwrap_or_else(|| RAGChunkingStrategy::default().separators);
     let splitter = RecursiveCharacterTextSplitter::new(chunk_size, chunk_overlap, separators)
         .map_err(|error| value_error(&error))?;
     let chunks = splitter.split_text(text);
