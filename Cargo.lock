@@ -1488,6 +1488,7 @@ dependencies = [
 name = "betterlite-redis"
 version = "0.1.0"
 dependencies = [
+ "betterlite-redact",
  "prometheus-client",
  "py_literal",
  "rstest",
