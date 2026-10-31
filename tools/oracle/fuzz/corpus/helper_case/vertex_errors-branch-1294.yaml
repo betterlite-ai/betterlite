@@ -1,0 +1,13 @@
+kind: helper
+name: vertex-errors-branch-1294
+call:
+  vertex_errors:
+    model: gemini-1.5-pro
+    custom_llm_provider: vertex_ai
+    error_str: "no known predicate matches this message"
+    status_code: 401
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message
