@@ -1,0 +1,9 @@
+kind: helper
+name: search_results_text_fields
+call:
+  message_content:
+    operation: extract_search_results_text
+    search_results: [{source: s, title: t, content: [{text: c}], citations: [x]}]
+env: {}
+compare:
+  ignore: []

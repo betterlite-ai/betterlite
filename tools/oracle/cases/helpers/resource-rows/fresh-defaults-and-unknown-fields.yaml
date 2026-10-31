@@ -1,0 +1,11 @@
+kind: helper
+name: fresh_defaults_and_unknown_fields
+call:
+  resource_rows:
+    operation: organization
+    row: {budget_id: b, created_by: c, updated_by: u, unknown: 1}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/spend
+      why: Decimal and float serializers use different zero representations
