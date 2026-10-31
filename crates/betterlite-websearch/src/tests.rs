@@ -325,10 +325,7 @@ fn assert_false_value_normalizes_to_empty_object(raw: &str) {
     )
     .unwrap();
     assert!(found);
-    assert_eq!(
-        serde_json::to_value(&calls[0].input).unwrap(),
-        serde_json::json!({})
-    );
+    assert_eq!(serde_json::to_string(&calls[0].input).unwrap(), "{}");
     let (assistant, _) =
         WebSearchTransformation::transform_response(&calls, &[String::from("result")], "openai")
             .unwrap();

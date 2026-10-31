@@ -1,8 +1,9 @@
 use std::fmt::Write as _;
 
 use indexmap::IndexMap;
+use serde::Deserialize;
 use serde::ser::Error as _;
-use serde_json::value::{RawValue, Value};
+use serde_json::value::{Number, RawValue};
 
 use super::TransformationError;
 use super::wire::{Arguments, Input};
@@ -67,7 +68,7 @@ pub(super) fn normalize(raw: &Arguments, responses: bool) -> Input {
 }
 
 fn normalize_input(input: Input, raw: &str, responses: bool) -> Input {
-    if !responses && is_false_value(raw) {
+    if (responses && !matches!(&input, Input::Object(_))) || (!responses && is_false_value(raw)) {
         Input::default()
     } else {
         input
@@ -75,17 +76,37 @@ fn normalize_input(input: Input, raw: &str, responses: bool) -> Input {
 }
 
 fn is_false_value(raw: &str) -> bool {
-    let Ok(value) = serde_json::from_str::<Value>(raw) else {
+    let Ok(parsed) = serde_json::from_str::<ParsedValue>(raw) else {
         return false;
     };
-    match value {
-        Value::Null | Value::Bool(false) => true,
-        Value::Array(items) => items.is_empty(),
-        Value::Number(number) => {
-            number.as_i64() == Some(0) || number.as_u64() == Some(0) || number.as_f64() == Some(0.0)
+    match parsed {
+        ParsedValue::Null(value) => {
+            let () = value;
+            true
         }
-        Value::Object(_) | Value::String(_) | Value::Bool(true) => false,
+        ParsedValue::Bool(flag) => !flag,
+        ParsedValue::Number(number) => number.as_f64() == Some(0.0),
+        ParsedValue::Array(items) => items.is_empty(),
+        ParsedValue::Object(object) => {
+            drop(object);
+            false
+        }
+        ParsedValue::String(string) => {
+            drop(string);
+            false
+        }
     }
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ParsedValue {
+    Null(()),
+    Bool(bool),
+    Number(Number),
+    Array(Vec<Box<RawValue>>),
+    Object(IndexMap<String, Box<RawValue>>),
+    String(String),
 }
 
 pub(super) fn wire_text(input: &Input) -> Result<String, TransformationError> {
