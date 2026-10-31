@@ -26,6 +26,7 @@ enum Outcome {
     GeneralizationWarnings,
     GeneralizationUnknown,
     PriceWarn(&'static str),
+    PriceFieldWarn(&'static str),
     PriceUnknown,
     NoWarnings,
     WarningBoundary(usize, usize),
@@ -80,6 +81,9 @@ enum Failure {
 #[case::price_unknown_warn(br#"{"model":{"litellm_provider":"openai","off_peak_pricing":{"input_cost_per_token":0.0000002,"new_field":true}}}"#.to_vec(), UnknownFields::Warn, Outcome::PriceWarn("model.off_peak_pricing.new_field"))]
 #[case::price_unknown_reject(br#"{"model":{"litellm_provider":"openai","off_peak_pricing":{"input_cost_per_token":0.0000002,"new_field":true}}}"#.to_vec(), UnknownFields::Reject, Outcome::PriceUnknown)]
 #[case::provider_specific_known(br#"{"model":{"litellm_provider":"bedrock","provider_specific_entry":{"bedrock_invocation_schema":{}}}}"#.to_vec(), UnknownFields::Reject, Outcome::Count(1))]
+#[case::provider_specific_unknown_warn(br#"{"model":{"litellm_provider":"bedrock","provider_specific_entry":{"bedrock_invocation_schema":{},"new_field":true}}}"#.to_vec(), UnknownFields::Warn, Outcome::PriceFieldWarn("model.provider_specific_entry.new_field"))]
+#[case::search_context_unknown_warn(br#"{"model":{"litellm_provider":"openai","search_context_cost_per_query":{"search_context_size_low":0.0000001,"new_field":true}}}"#.to_vec(), UnknownFields::Warn, Outcome::PriceFieldWarn("model.search_context_cost_per_query.new_field"))]
+#[case::tiered_pricing_unknown_warn(br#"{"model":{"litellm_provider":"openai","tiered_pricing":[{"input_cost_per_token":0.0000001,"new_field":true}]}}"#.to_vec(), UnknownFields::Warn, Outcome::PriceFieldWarn("model.tiered_pricing[0].new_field"))]
 #[case::aliases_null(br#"{"model":{"litellm_provider":"openai","aliases":null}}"#.to_vec(), UnknownFields::Reject, Outcome::NoWarnings)]
 #[case::warning_boundary(
     warning_entries(WARNING_BOUNDARY_ENTRIES),
@@ -166,6 +170,10 @@ fn model_catalog_tests_behavior(
                     .to_string(),
                 "0.0000002"
             );
+        }
+        Outcome::PriceFieldWarn(path) => {
+            let catalog = result.unwrap();
+            assert!(catalog.warnings.contains(&path.to_owned()));
         }
         Outcome::PriceUnknown => {
             assert!(matches!(
