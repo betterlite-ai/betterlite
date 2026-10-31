@@ -1201,6 +1201,7 @@ version = "0.1.0"
 dependencies = [
  "betterlite-config",
  "betterlite-models",
+ "betterlite-redact",
  "chrono",
  "flate2",
  "hex",
