@@ -1,11 +1,12 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::error::Error as _;
 use std::future::IntoFuture as _;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
-use std::{env, fs, process};
+use std::{env, fs, io, process};
 
 use super::error::DeepKeepError;
 use super::{DeepKeepGuardrail, InputType, Inputs, RequestContext, Response};
@@ -360,7 +361,8 @@ async fn deepkeep_guardrail_fail_open_never_logs_upstream_response_body() {
         StatusCode::BAD_GATEWAY,
         "upstream failure echoing api_key=super-secret-upstream-token and \
          header Authorization: Bearer super-secret-extra-header"
-            .to_owned(),
+            .as_bytes()
+            .to_vec(),
     )
     .await;
     let mut deepkeep = guardrail();
@@ -416,7 +418,7 @@ async fn deepkeep_guardrail_fail_open_requires_unreachable_service(
     #[case] body: &'static str,
     #[case] expected: &str,
 ) {
-    let (base, mut server) = serve(status, body.to_owned()).await;
+    let (base, mut server) = serve(status, body.as_bytes().to_vec()).await;
     let mut deepkeep = guardrail();
     deepkeep.settings.api_base = base;
     deepkeep.settings.unreachable_fallback = UnreachableFallback::FailOpen;
@@ -442,10 +444,10 @@ async fn deepkeep_guardrail_fail_open_requires_unreachable_service(
 }
 
 #[rstest]
-#[case::at_limit(StatusCode::OK, 1_048_576, true)]
-#[case::over_limit(StatusCode::OK, 1_048_577, false)]
-#[case::oversized_unreachable(StatusCode::BAD_GATEWAY, 1_048_577, true)]
-#[case::oversized_unauthorized(StatusCode::UNAUTHORIZED, 1_048_577, false)]
+#[case::at_limit(StatusCode::OK, 0x0010_0000, true)]
+#[case::over_limit(StatusCode::OK, 0x0010_0001, false)]
+#[case::oversized_unreachable(StatusCode::BAD_GATEWAY, 0x0010_0001, true)]
+#[case::oversized_unauthorized(StatusCode::UNAUTHORIZED, 0x0010_0001, false)]
 #[tokio::test]
 async fn deepkeep_guardrail_bounds_upstream_responses(
     #[case] status: StatusCode,
@@ -453,7 +455,7 @@ async fn deepkeep_guardrail_bounds_upstream_responses(
     #[case] accepted: bool,
 ) {
     let body = format!("{{}}{}", " ".repeat(size.checked_sub(2).unwrap()));
-    let (base, mut server) = serve(status, body).await;
+    let (base, mut server) = serve(status, body.into_bytes()).await;
     let mut deepkeep = guardrail();
     deepkeep.settings.api_base = base;
     deepkeep.settings.unreachable_fallback = UnreachableFallback::FailOpen;
@@ -490,7 +492,7 @@ async fn deepkeep_guardrail_errors_redact_echoed_credentials(
     #[case] body: &str,
     #[case] blocked: bool,
 ) {
-    let (base, mut server) = serve(status, body.to_owned()).await;
+    let (base, mut server) = serve(status, body.as_bytes().to_vec()).await;
     let mut deepkeep = guardrail();
     deepkeep.settings.api_base = base;
     deepkeep.settings.api_key = SecretString::from("secret-api-token");
@@ -506,7 +508,7 @@ async fn deepkeep_guardrail_errors_redact_echoed_credentials(
         assert!(matches!(error, DeepKeepError::Blocked { .. }));
     } else if status.is_success() {
         assert!(matches!(error, DeepKeepError::ResponseJson { .. }));
-        assert!(std::error::Error::source(&error).is_some());
+        assert!(error.source().is_some());
     } else {
         assert!(matches!(
             error,
@@ -520,7 +522,31 @@ async fn deepkeep_guardrail_errors_redact_echoed_credentials(
     server.shutdown().await;
 }
 
-async fn serve(status: StatusCode, body: String) -> (String, JoinSet<std::io::Result<()>>) {
+#[rstest]
+#[case::unauthorized(StatusCode::UNAUTHORIZED, false)]
+#[case::unreachable(StatusCode::BAD_GATEWAY, true)]
+#[tokio::test]
+async fn deepkeep_guardrail_rejects_non_utf8_error_details(
+    #[case] status: StatusCode,
+    #[case] fail_open: bool,
+) {
+    let (base, mut server) = serve(status, vec![0xff]).await;
+    let mut deepkeep = guardrail();
+    deepkeep.settings.api_base = base;
+    deepkeep.settings.unreachable_fallback = UnreachableFallback::FailOpen;
+    let result = deepkeep.apply(inputs(), context()).await;
+    if fail_open {
+        assert_eq!(result.expect("unreachable passthrough"), inputs());
+    } else {
+        let error = result.expect_err("unauthorized");
+        assert!(error.source().is_some());
+        assert!(error.to_string().contains("401"));
+        assert!(error.to_string().contains("UTF-8"));
+    }
+    server.shutdown().await;
+}
+
+async fn serve(status: StatusCode, body: Vec<u8>) -> (String, JoinSet<io::Result<()>>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let base = format!("http://{}", listener.local_addr().expect("addr"));
     let router = Router::new().route(

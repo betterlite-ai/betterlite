@@ -239,7 +239,7 @@ impl DeepKeepGuardrail {
         let (unreachable, failure_category, status) = match &error {
             DeepKeepError::Request { .. } => (true, "request_error", None),
             DeepKeepError::Timeout { .. } => (true, "timeout", None),
-            DeepKeepError::Api { status, .. } => (
+            DeepKeepError::Api { status, .. } | DeepKeepError::ApiEncoding { status, .. } => (
                 matches!(
                     *status,
                     reqwest::StatusCode::BAD_GATEWAY

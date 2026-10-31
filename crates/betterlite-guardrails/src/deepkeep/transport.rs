@@ -1,4 +1,4 @@
-use std::iter;
+use std::{iter, str};
 
 use secrecy::ExposeSecret as _;
 
@@ -27,9 +27,11 @@ pub(super) async fn send_request(
         result => result?,
     };
     if !status.is_success() {
+        let message = str::from_utf8(&body)
+            .map_err(|source| DeepKeepError::ApiEncoding { status, source })?;
         return Err(DeepKeepError::Api {
             status,
-            body: redact_message(guardrail, &String::from_utf8_lossy(&body)),
+            body: redact_message(guardrail, message),
         });
     }
     let mut parsed: Response =

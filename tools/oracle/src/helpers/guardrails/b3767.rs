@@ -213,6 +213,7 @@ fn deepkeep_failure(error: &DeepKeepError) -> Box<HelperError> {
     let class = match error {
         DeepKeepError::Blocked { .. } => "GuardrailRaisedException",
         DeepKeepError::Api { .. }
+        | DeepKeepError::ApiEncoding { .. }
         | DeepKeepError::ResponseJson { .. }
         | DeepKeepError::ResponseTooLarge { .. }
         | DeepKeepError::Request { .. }

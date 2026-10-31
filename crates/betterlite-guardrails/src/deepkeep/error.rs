@@ -1,4 +1,5 @@
 use std::fmt;
+use std::str::Utf8Error;
 
 use reqwest::header::{InvalidHeaderName, InvalidHeaderValue};
 use thiserror::Error;
@@ -11,6 +12,11 @@ pub enum DeepKeepError {
     Api {
         status: reqwest::StatusCode,
         body: String,
+    },
+    #[error("DeepKeep API returned HTTP {status} with invalid UTF-8")]
+    ApiEncoding {
+        status: reqwest::StatusCode,
+        source: Utf8Error,
     },
     #[error("DeepKeep response was invalid JSON")]
     ResponseJson { source: serde_json::Error },
@@ -35,8 +41,8 @@ pub enum DeepKeepError {
 }
 
 impl fmt::Debug for DeepKeepError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Parser errors can quote credentials from an upstream response.
-        fmt::Display::fmt(self, formatter)
+        fmt::Display::fmt(self, f)
     }
 }
