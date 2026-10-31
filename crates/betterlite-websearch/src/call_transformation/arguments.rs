@@ -2,7 +2,7 @@ use std::fmt::Write as _;
 
 use indexmap::IndexMap;
 use serde::ser::Error as _;
-use serde_json::value::RawValue;
+use serde_json::value::{RawValue, Value};
 
 use super::TransformationError;
 use super::wire::{Arguments, Input};
@@ -54,19 +54,37 @@ pub(super) fn normalize(raw: &Arguments, responses: bool) -> Input {
         return Input::default();
     };
     if let Ok(text) = serde_json::from_str::<String>(value.get()) {
-        return serde_json::from_str(&text).unwrap_or_else(|_| {
+        let input = serde_json::from_str::<Input>(&text).unwrap_or_else(|_| {
             tracing::warn!("Cannot parse search function arguments");
             Input::default()
         });
+        return normalize_input(input, &text, responses);
     }
-    match serde_json::from_str::<Input>(value.get()) {
-        Ok(input @ Input::Object(_)) => input,
-        Ok(Input::Other(payload))
-            if !responses && !matches!(payload.get(), "null" | "false" | "0" | "[]") =>
-        {
-            Input::Other(payload)
+    serde_json::from_str::<Input>(value.get()).map_or_else(
+        |_| Input::default(),
+        |input| normalize_input(input, value.get(), responses),
+    )
+}
+
+fn normalize_input(input: Input, raw: &str, responses: bool) -> Input {
+    if !responses && is_false_value(raw) {
+        Input::default()
+    } else {
+        input
+    }
+}
+
+fn is_false_value(raw: &str) -> bool {
+    let Ok(value) = serde_json::from_str::<Value>(raw) else {
+        return false;
+    };
+    match value {
+        Value::Null | Value::Bool(false) => true,
+        Value::Array(items) => items.is_empty(),
+        Value::Number(number) => {
+            number.as_i64() == Some(0) || number.as_u64() == Some(0) || number.as_f64() == Some(0.0)
         }
-        Ok(Input::Other(_)) | Err(_) => Input::default(),
+        Value::Object(_) | Value::String(_) | Value::Bool(true) => false,
     }
 }
 
@@ -76,6 +94,9 @@ pub(super) fn wire_text(input: &Input) -> Result<String, TransformationError> {
     match input {
         Input::Object(fields) => object_text(fields, false, &mut budget),
         Input::Other(raw) => {
+            if raw.get().as_bytes().first() == Some(&b'"') {
+                charge_bytes(&mut budget, raw.get().len())?;
+            }
             if let Ok(text_value) = serde_json::from_str::<String>(raw.get()) {
                 return Ok(text_value);
             }

@@ -312,6 +312,69 @@ fn call_transformation_arguments_byte_limit_rejects_oversized_string_and_key() {
     ));
 }
 
+fn assert_false_value_normalizes_to_empty_object(raw: &str) {
+    let response = format!(
+        r#"{{"choices": [{{"message": {{"tool_calls": [
+            {{"id": "call-1", "type": "function", "function": {{"name": "litellm_web_search", "arguments": {raw}}}}}
+        ]}}}}]}}"#
+    );
+    let (found, calls) = WebSearchTransformation::transform_request(
+        &serde_json::from_str::<Response>(&response).unwrap(),
+        false,
+        "openai",
+    )
+    .unwrap();
+    assert!(found);
+    assert_eq!(
+        serde_json::to_value(&calls[0].input).unwrap(),
+        serde_json::json!({})
+    );
+    let (assistant, _) =
+        WebSearchTransformation::transform_response(&calls, &[String::from("result")], "openai")
+            .unwrap();
+    assert_eq!(
+        serde_json::to_value(assistant).unwrap()["tool_calls"][0]["function"]["arguments"],
+        "{}"
+    );
+}
+
+#[test]
+fn call_transformation_arguments_normalize_empty_array_by_value() {
+    assert_false_value_normalizes_to_empty_object("[]");
+}
+
+#[test]
+fn call_transformation_arguments_normalize_negative_zero_by_value() {
+    assert_false_value_normalizes_to_empty_object("-0");
+}
+
+#[test]
+fn call_transformation_arguments_normalize_decimal_zero_by_value() {
+    assert_false_value_normalizes_to_empty_object("0.0");
+}
+
+#[test]
+fn call_transformation_arguments_byte_limit_rejects_oversized_encoded_string() {
+    let value = "x".repeat(1_100_000);
+    let inner = serde_json::to_string(&value).unwrap();
+    let encoded = serde_json::to_string(&inner).unwrap();
+    let response = format!(
+        r#"{{"choices": [{{"message": {{"tool_calls": [
+            {{"id": "call-1", "type": "function", "function": {{"name": "litellm_web_search", "arguments": {encoded}}}}}
+        ]}}}}]}}"#
+    );
+    let (_, calls) = WebSearchTransformation::transform_request(
+        &serde_json::from_str::<Response>(&response).unwrap(),
+        false,
+        "openai",
+    )
+    .unwrap();
+    assert!(matches!(
+        WebSearchTransformation::transform_response(&calls, &[String::from("result")], "openai"),
+        Err(TransformationError::ArgumentsTooComplex)
+    ));
+}
+
 #[test]
 fn call_transformation_responses_skips_unparsable_items() {
     let response = r#"{"output": [
