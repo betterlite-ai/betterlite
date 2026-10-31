@@ -3,6 +3,7 @@ mod request_id;
 mod tests;
 use super::AgentResponse;
 use super::json::AgentJson;
+use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
@@ -74,8 +75,8 @@ pub struct AgentRequest {
     pub url: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub query_params: BTreeMap<String, String>,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub headers: BTreeMap<String, String>,
+    #[serde(default, skip_serializing)]
+    pub headers: BTreeMap<String, SecretString>,
     #[serde(default)]
     pub body: Option<AgentJson>,
 }
@@ -151,9 +152,9 @@ pub trait BaseAgentsAPIConfig {
 
     fn validate_environment(
         &self,
-        headers: &BTreeMap<String, String>,
+        headers: &BTreeMap<String, SecretString>,
         parameters: &BTreeMap<String, AgentJson>,
-    ) -> Result<BTreeMap<String, String>, Self::Error>;
+    ) -> Result<BTreeMap<String, SecretString>, Self::Error>;
 
     fn transform_create_request(
         &self,

@@ -7,6 +7,7 @@ use super::{
     ListAgentsResponse,
 };
 use crate::agents::json::AgentJson;
+use secrecy::{ExposeSecret as _, SecretString};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
@@ -91,9 +92,9 @@ impl BaseAgentsAPIConfig for $provider {
 
     fn validate_environment(
         &self,
-        headers: &BTreeMap<String, String>,
+        headers: &BTreeMap<String, SecretString>,
         _parameters: &BTreeMap<String, AgentJson>,
-    ) -> Result<BTreeMap<String, String>, AgentProviderError> {
+    ) -> Result<BTreeMap<String, SecretString>, AgentProviderError> {
         Ok(headers.clone())
     }
 
@@ -349,6 +350,14 @@ fn invalid_a2a_records_fail(#[case] payload: AgentJson) {
 #[rstest::rstest]
 #[case::fractional("1.5", "1.5")]
 #[case::integer_float("1.0", "1.0")]
+#[case::trailing_zero("1.50", "1.5")]
+#[case::trailing_zeros("1.500", "1.5")]
+#[case::whole_trailing_zeros("100.00", "100.0")]
+#[case::lowercase_exponent("1.5e2", "150.0")]
+#[case::uppercase_exponent("1.5E2", "150.0")]
+#[case::large_exponent("1.5e20", "1.5e+20")]
+#[case::small_exponent("1.5e-10", "1.5e-10")]
+#[case::single_digit_exponent("1e16", "1e+16")]
 fn fractional_request_ids_become_strings(#[case] input: &str, #[case] expected: &str) {
     let request: AgentJson = serde_json::from_str(input).unwrap();
     let response = LiteLLMSendMessageResponse::from_dict(&json("{}"), Some(&request)).unwrap();
@@ -435,14 +444,15 @@ fn provider_can_override_error_mapping() {
 fn native_contract_exposes_requests() {
     let provider = TestProvider;
     let params = BTreeMap::new();
-    let headers = BTreeMap::from([(String::from("authorization"), String::from("key"))]);
+    let headers = BTreeMap::from([(String::from("authorization"), SecretString::from("key"))]);
     assert_eq!(
         provider.get_complete_url(None, &params).unwrap(),
         "https://example.test/agents"
     );
+    let validated = provider.validate_environment(&headers, &params).unwrap();
     assert_eq!(
-        provider.validate_environment(&headers, &params).unwrap(),
-        headers
+        validated["authorization"].expose_secret(),
+        headers["authorization"].expose_secret()
     );
     let create = provider.transform_create_request("a", &params).unwrap();
     let list = provider.transform_list_request(None, &params).unwrap();
@@ -458,6 +468,28 @@ fn native_contract_exposes_requests() {
     assert!(get.query_params.is_empty());
     assert!(delete.headers.is_empty());
     assert!(versions.url.is_none());
+}
+
+#[test]
+fn agent_request_debug_redacts_credential_headers() {
+    let request = AgentRequest {
+        url: None,
+        query_params: BTreeMap::new(),
+        headers: BTreeMap::from([
+            (
+                String::from("Authorization"),
+                SecretString::from("Bearer top-secret"),
+            ),
+            (
+                String::from("x-goog-api-key"),
+                SecretString::from("goog-secret"),
+            ),
+        ]),
+        body: None,
+    };
+    let rendered = format!("{request:?}");
+    assert!(!rendered.contains("top-secret"));
+    assert!(!rendered.contains("goog-secret"));
 }
 
 #[test]

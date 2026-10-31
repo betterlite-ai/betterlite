@@ -7,7 +7,7 @@ pub(super) fn python_string(value: &AgentJson) -> Result<String, AgentProviderEr
         AgentJson::Null => Ok(String::from("None")),
         AgentJson::Bool(true) => Ok(String::from("True")),
         AgentJson::Bool(false) => Ok(String::from("False")),
-        AgentJson::Number(number) => Ok(number.to_string()),
+        AgentJson::Number(number) => Ok(python_number(number)),
         AgentJson::String(text) => quoted(text),
         AgentJson::Array(values) => {
             let items = values
@@ -25,6 +25,26 @@ pub(super) fn python_string(value: &AgentJson) -> Result<String, AgentProviderEr
                 .join(", ");
             Ok(format!("{{{items}}}"))
         }
+    }
+}
+
+fn python_number(number: &serde_json::Number) -> String {
+    let spelling = number.to_string();
+    if !spelling.contains(['.', 'e', 'E']) {
+        return spelling;
+    }
+    let Some(value) = number.as_f64() else {
+        return spelling;
+    };
+    let debug = format!("{value:?}");
+    match debug.split_once('e') {
+        Some((mantissa, exponent)) => {
+            let (sign, digits) = exponent
+                .strip_prefix('-')
+                .map_or(('+', exponent), |rest| ('-', rest));
+            format!("{mantissa}e{sign}{digits:0>2}")
+        }
+        None => debug,
     }
 }
 
