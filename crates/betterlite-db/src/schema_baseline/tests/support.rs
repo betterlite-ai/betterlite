@@ -85,14 +85,10 @@ where
     F: FnOnce(Client, Client) -> Fut + Send + 'static,
     Fut: Future<Output = ()> + Send + 'static,
 {
-    let (fixture_a, client_a, tasks_a) = setup().await;
-    let (fixture_b, client_b, tasks_b) = setup().await;
-    let outcome = run_body(body(client_a, client_b)).await;
-    close_fixture(tasks_a, fixture_a).await;
-    close_fixture(tasks_b, fixture_b).await;
-    if let Err(err) = outcome {
-        panic::resume_unwind(err.into_panic());
-    }
+    harness(move |client_a| async move {
+        harness(move |client_b| body(client_a, client_b)).await;
+    })
+    .await;
 }
 
 async fn exec(client: &Client, sql: &str) {
