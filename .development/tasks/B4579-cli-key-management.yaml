@@ -5,7 +5,7 @@ description: >-
 
   docs/compatibility.md decides what is ported. Command and option names, the requests sent (paths, query, body fields, headers), pagination at 100, the two created_since formats, the lines the commands print, the exit codes and the streams stay LiteLLM's. Python's truthiness, str() and repr text and json.dumps formatting are not copied: a field that is absent or null takes its default, an explicit value is used as given, and a value outside LiteLLM's declared type is an error that names the field. Error texts are betterlite's own words, as rule errors-match-litellm says.
 
-  HTTP. LiteLLM's KeysManagementClient and HTTPClient sit in the Python client package (B169), so this task carries the requests these commands send, in keys/** and encryption/**. Use reqwest 0.13.5 (already in Cargo.lock through betterlite-http) with default features off and rustls, async on a current-thread tokio runtime, with connect_timeout and read_timeout of 30 seconds each, the way requests' timeout=30 bounds the connect and every read. The base URL loses its trailing slashes. Key requests always send Content-Type: application/json, and both clients add Authorization: Bearer {api_key} when a key is given. The keys client sends GET {base}/key/list with a query parameter only for each option given (page, size, user_id, team_id, organization_id, key_hash, key_alias, return_full_object, include_team_keys, booleans as "true" or "false"), POST {base}/key/generate with a JSON object of only the fields given (models, aliases, spend, duration, key_alias, team_id, user_id, budget_id, config), and POST {base}/key/delete with {"keys": ..., "key_aliases": ...}, null for a list not given. A status from 400 to 599 is an HTTP error that keeps the status and the body, and its text is "HTTP {status} {reason} for {method} {url}" with the status's standard reason phrase and the full request URL. In the keys client a 401 is Unauthorized instead (UnauthorizedError), with that same text passed through Redactor::redact_string; HTTPClient has no 401 case and redacts nothing. Any other status parses the body as JSON, and a body that isn't JSON is an error that names the URL. Tests build the Redactor with betterlite_redact::secret::MINIMUM_CUSTOM_KEY_LENGTH (16), the default of LiteLLM's MINIMUM_CUSTOM_KEY_LENGTH env var.
+  HTTP. LiteLLM's KeysManagementClient and HTTPClient sit in the Python client package (B169), so this task carries the requests these commands send, in keys/** and encryption/**, on the shared client B4580 builds in tools/management-cli/src/commands.rs: reqwest, rustls, a current-thread tokio runtime, 30-second connect and read timeouts, the base URL with its trailing slashes stripped, and Authorization: Bearer {api_key} added when a key is given. Key requests always send Content-Type: application/json, including the GET requests the shared client otherwise sends with no body header, so keys.rs sets that header itself on every call. The keys client sends GET {base}/key/list with a query parameter only for each option given (page, size, user_id, team_id, organization_id, key_hash, key_alias, return_full_object, include_team_keys, booleans as "true" or "false"), POST {base}/key/generate with a JSON object of only the fields given (models, aliases, spend, duration, key_alias, team_id, user_id, budget_id, config), and POST {base}/key/delete with {"keys": ..., "key_aliases": ...}, null for a list not given. A status from 400 to 599 is an HTTP error that keeps the status and the body, and its text is "HTTP {status} {reason} for {method} {url}" with the status's standard reason phrase and the full request URL. In the keys client a 401 is Unauthorized instead (UnauthorizedError), with that same text passed through Redactor::redact_string; HTTPClient has no 401 case and redacts nothing. Any other status parses the body as JSON, and a body that isn't JSON is an error that names the URL. Tests build the Redactor with betterlite_redact::secret::MINIMUM_CUSTOM_KEY_LENGTH (16), the default of LiteLLM's MINIMUM_CUSTOM_KEY_LENGTH env var.
 
   Output. Where LiteLLM calls rich.print_json, betterlite writes the parsed response as standard JSON, pretty-printed with a two-space indent (serde_json::to_writer_pretty on a serde_json::Value), and a newline. Object keys come out in serde_json's map order, sorted by key since no crate turns on preserve_order, and numbers as serde_json writes them. docs/compatibility.md puts key order and 300 against 300.0 outside the contract, so tests parse stdout back to a Value, compare it with the expected value and check the text equals serde_json::to_string_pretty of it plus "\n". "Generated key: {response}" prints the response as compact one-line JSON (serde_json::to_string). Table cells are plain text: a string as it is, a number as its JSON text, and "" when the field is absent or null. Tables are drawn with comfy-table, default features off, and have no color.
 
@@ -76,8 +76,6 @@ references:
     why: The root mounts encryption and keys; mounting stays with the root.
   - url: https://github.com/pallets/click/blob/8.5.0/src/click/core.py#L1591-L1595
     why: click prints "Aborted!" to stderr for Abort and exits 1.
-  - url: https://docs.rs/reqwest/0.13.5/reqwest/struct.ClientBuilder.html#method.read_timeout
-    why: The per-read timeout that matches requests' read timeout.
   - url: https://docs.rs/chrono/0.4.45/chrono/naive/struct.NaiveDateTime.html#method.parse_from_str
     why: Parses the two created_since formats with format strings.
   - url: https://docs.rs/serde_json/1.0.154/serde_json/fn.to_writer_pretty.html
@@ -143,9 +141,9 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/keys.py#L97-L112
 out_of_scope:
   - The CLI root mounts both groups and turns Aborted, Usage and every other error into "Aborted!", usage output, one-line errors and exit codes (main.py L153 and L160); B134 covers main.py.
-  - tools/management-cli/src/commands.rs declares the keys and encryption modules; B4580 owns that file.
+  - tools/management-cli/src/commands.rs declares the keys and encryption modules and holds the shared client this task's requests go through; B4580 owns that file.
   - The context values base_url and api_key and the config file they come from are B4560's.
-  - KeysManagementClient and HTTPClient as an importable Python API are B169's (the M12 Python package); this task ports only the requests these commands send.
+  - KeysManagementClient and HTTPClient as an importable Python API are B169's (the M12 Python package); this task ports only the requests these commands send, on the shared client B4580 builds.
   - >-
     The /key/list, /key/generate and /key/delete routes are B055's, and /credentials/migrate-encryption and /credentials/migrate-encryption/check (key_management_endpoints.py L5378 and L5418) are B785's.
   - The credentials, users, teams and model-groups groups are B4580's, and models is B4578's.
@@ -168,8 +166,6 @@ pitfalls:
     The migrate POST carries Content-Type: application/json only because it has the body {}, and the check GET carries no Content-Type at all.
   - >-
     reqwest's query encoder and requests' quote_plus differ on characters such as "*" and "~", so tests compare decoded query pairs, not raw query strings.
-  - >-
-    comfy-table pulls unicode-width, and Cargo.lock already holds 0.2.2; pick a comfy-table release that uses it so cargo deny sees one version.
 review_level: security
 budget:
   max_changed_lines: 1500
