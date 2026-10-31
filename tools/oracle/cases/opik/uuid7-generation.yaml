@@ -1,0 +1,8 @@
+kind: helper
+name: opik-uuid7-generation
+call:
+  b3973:
+    function: uuid
+env: {}
+compare:
+  ignore: []

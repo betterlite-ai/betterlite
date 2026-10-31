@@ -1,0 +1,9 @@
+kind: helper
+name: key_all_defaults
+call:
+  identity_rows:
+    operation: key
+    row: {token: '*', models: ['all-proxy-models'], budget_fallbacks: {gpt-4: [gpt-4o]}, rotation_count: 0, auto_rotate: false}
+env: {}
+compare:
+  ignore: []

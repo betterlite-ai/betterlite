@@ -1,0 +1,8 @@
+task: B720
+deviations:
+  - what: Stored identity-row JSON over 1048576 bytes or depth 64 fails with a typed decode-limit error.
+    why: Bound this new stored-data decoder to prevent unbounded parsing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/verification_token.py#L16-L65
+  - what: Identity-row monetary values outside Decimal's finite range fail decoding.
+    why: Checked Decimal conversion keeps malformed money from becoming unlimited budgets without changing the SQL schema.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/verification_token.py#L20-L22
