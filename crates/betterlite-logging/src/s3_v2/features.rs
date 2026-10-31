@@ -4,16 +4,6 @@ use crate::s3_v2::{Feature, source::Source};
 use std::collections::BTreeSet;
 use std::num::FpCategory;
 
-pub(super) const fn truthy(value: Option<&OptionValue>) -> bool {
-    match value {
-        None | Some(OptionValue::Other(_)) => false,
-        Some(OptionValue::Bool(flag)) => *flag,
-        Some(OptionValue::Integer(integer)) => *integer != 0,
-        Some(OptionValue::Text(text)) => !text.is_empty(),
-        Some(OptionValue::Float(number)) => !matches!(number.classify(), FpCategory::Zero),
-    }
-}
-
 pub(super) fn resolve<Config>(
     source: &Source<Config>,
     defaults: &Source<Config>,
@@ -23,10 +13,6 @@ where
 {
     let mut output = BTreeSet::new();
     legacy_flags(source, defaults, &mut output);
-    let ssl = source.use_ssl.as_ref().or(defaults.use_ssl.as_ref());
-    if ssl.is_none() || truthy(ssl) {
-        output.insert(Feature::UseSsl);
-    }
     let drop = source
         .drop_on_terminal_error
         .as_ref()
@@ -34,7 +20,7 @@ where
     if resolve_toggle(Toggle::DropOnTerminalError, drop) {
         output.insert(Feature::DropOnTerminalError);
     }
-    if truthy(defaults.adaptive_concurrency.as_ref())
+    if nonzero(defaults.adaptive_concurrency.as_ref())
         || resolve_toggle(
             Toggle::AdaptiveConcurrency,
             source.adaptive_concurrency.as_ref(),
@@ -42,12 +28,23 @@ where
     {
         output.insert(Feature::AdaptiveConcurrency);
     }
-    if truthy(defaults.batch_file_upload.as_ref())
+    if nonzero(defaults.batch_file_upload.as_ref())
         || resolve_toggle(Toggle::BatchFileUpload, source.batch_file_upload.as_ref())
     {
         output.insert(Feature::BatchFileUpload);
     }
     output
+}
+
+// `s3_adaptive_concurrency or resolve_s3_adaptive_concurrency(...)` keeps the kwarg's own truthiness.
+pub(super) const fn nonzero(value: Option<&OptionValue>) -> bool {
+    match value {
+        None | Some(OptionValue::Other(_)) => false,
+        Some(OptionValue::Bool(flag)) => *flag,
+        Some(OptionValue::Integer(integer)) => *integer != 0,
+        Some(OptionValue::Text(text)) => !text.is_empty(),
+        Some(OptionValue::Float(number)) => !matches!(number.classify(), FpCategory::Zero),
+    }
 }
 
 fn legacy_flags<Config>(

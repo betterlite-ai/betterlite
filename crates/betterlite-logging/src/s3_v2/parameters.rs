@@ -92,12 +92,12 @@ where
     let algorithm = source
         .server_side_encryption
         .as_ref()
-        .filter(|value| features::truthy(Some(value)))
+        .filter(|value| features::nonzero(Some(value)))
         .or(defaults.server_side_encryption.as_ref());
     let kms_key = source
         .sse_kms_key_id
         .as_ref()
-        .filter(|value| features::truthy(Some(value)))
+        .filter(|value| features::nonzero(Some(value)))
         .or(defaults.sse_kms_key_id.as_ref());
     resolve_server_side_encryption(algorithm, kms_key)
 }

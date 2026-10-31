@@ -122,7 +122,7 @@ fn summary(parameters: &S3Parameters<Value>) -> Value {
         "max_queue_size": parameters.max_queue_size,
         "max_retry_age_seconds": parameters.max_retry_age_seconds.map(|age| age.as_secs()),
         "max_adaptive_concurrency": parameters.max_adaptive_concurrency,
-        "use_ssl": parameters.features.contains(&Feature::UseSsl),
+        "use_ssl": option_value_json(connection.use_ssl.as_ref()),
         "use_team_prefix": parameters.features.contains(&Feature::TeamPrefix),
         "use_key_prefix": parameters.features.contains(&Feature::KeyPrefix),
         "strip_base64_files": parameters.features.contains(&Feature::StripBase64),
@@ -133,6 +133,18 @@ fn summary(parameters: &S3Parameters<Value>) -> Value {
         "server_side_encryption": parameters.encryption.as_ref().map(|encryption| &encryption.algorithm),
         "sse_kms_key_id": parameters.encryption.as_ref().and_then(|encryption| encryption.kms_key_id.as_ref()),
     })
+}
+
+fn option_value_json(value: Option<&OptionValue>) -> Value {
+    match value {
+        None | Some(OptionValue::Other(_)) => Value::Null,
+        Some(OptionValue::Bool(flag)) => Value::Bool(*flag),
+        Some(OptionValue::Integer(integer)) => Value::from(*integer),
+        Some(OptionValue::Float(number)) => {
+            serde_json::Number::from_f64(*number).map_or(Value::Null, Value::Number)
+        }
+        Some(OptionValue::Text(text)) => Value::String(text.clone()),
+    }
 }
 
 fn partitions(values: &[Option<OptionValue>], environment: &BTreeMap<String, String>) -> Value {

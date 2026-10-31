@@ -17,7 +17,6 @@ pub mod source;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Feature {
-    UseSsl,
     TeamPrefix,
     KeyPrefix,
     StripBase64,

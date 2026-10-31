@@ -11,6 +11,7 @@ pub struct Connection<Config> {
     pub api_version: Option<String>,
     pub endpoint_url: Option<String>,
     pub path: Option<String>,
+    pub use_ssl: Option<OptionValue>,
     pub verify: Option<OptionValue>,
     pub config: Option<BTreeMap<String, Config>>,
     pub credentials: Credentials,
@@ -48,31 +49,50 @@ where
         ],
         String::is_empty,
     );
-    Connection {
+    let mut connection = Connection {
         bucket_name,
         region_name,
         api_version,
         endpoint_url,
         path,
+        use_ssl: None,
+        verify: None,
+        config: None,
         credentials,
-        verify: source.verify.as_ref().or(defaults.verify.as_ref()).cloned(),
-        config: source
-            .config
-            .as_ref()
-            .filter(|config| !config.is_empty())
-            .or(defaults.config.as_ref())
-            .cloned(),
-        log_prompts_only: defaults
-            .log_prompts_only
-            .as_ref()
-            .or(source.log_prompts_only.as_ref())
-            .cloned(),
-        partition_granularity: defaults
-            .partition_granularity
-            .as_ref()
-            .or(source.partition_granularity.as_ref())
-            .cloned(),
-    }
+        log_prompts_only: None,
+        partition_granularity: None,
+    };
+    apply_options(source, defaults, &mut connection);
+    connection
+}
+
+fn apply_options<Config>(
+    source: &Source<Config>,
+    defaults: &Source<Config>,
+    connection: &mut Connection<Config>,
+) where
+    Config: Clone + Default,
+{
+    connection.use_ssl = source
+        .use_ssl
+        .clone()
+        .or_else(|| defaults.use_ssl.clone())
+        .or(Some(OptionValue::Bool(true)));
+    connection.verify = source.verify.clone().or_else(|| defaults.verify.clone());
+    connection.config = source
+        .config
+        .as_ref()
+        .filter(|config| !config.is_empty())
+        .or(defaults.config.as_ref())
+        .cloned();
+    connection.log_prompts_only = defaults
+        .log_prompts_only
+        .clone()
+        .or_else(|| source.log_prompts_only.clone());
+    connection.partition_granularity = defaults
+        .partition_granularity
+        .clone()
+        .or_else(|| source.partition_granularity.clone());
 }
 
 impl<Config> From<(&Source<Config>, &Source<Config>)> for Credentials
@@ -80,69 +100,43 @@ where
     Config: Default,
 {
     fn from((source, defaults): (&Source<Config>, &Source<Config>)) -> Self {
-        let [
-            aws_access_key_id,
-            aws_secret_access_key,
-            aws_session_token,
-            aws_web_identity_token,
-        ] = resolve_credential_secrets(source, defaults);
-        let [
-            aws_session_name,
-            aws_profile_name,
-            aws_role_name,
-            aws_sts_endpoint,
-        ] = resolve_credential_strings(source, defaults);
+        let secrets = resolve_fields(
+            [
+                (&source.aws_access_key_id, &defaults.aws_access_key_id),
+                (
+                    &source.aws_secret_access_key,
+                    &defaults.aws_secret_access_key,
+                ),
+                (&source.aws_session_token, &defaults.aws_session_token),
+                (
+                    &source.aws_web_identity_token,
+                    &defaults.aws_web_identity_token,
+                ),
+            ],
+            |value: &SecretString| value.expose_secret().is_empty(),
+        );
+        let strings = resolve_fields(
+            [
+                (&source.aws_session_name, &defaults.aws_session_name),
+                (&source.aws_profile_name, &defaults.aws_profile_name),
+                (&source.aws_role_name, &defaults.aws_role_name),
+                (&source.aws_sts_endpoint, &defaults.aws_sts_endpoint),
+            ],
+            String::is_empty,
+        );
+        let [access_key, secret_key, session_token, web_identity_token] = secrets;
+        let [session_name, profile_name, role_name, sts_endpoint] = strings;
         Self {
-            aws_access_key_id,
-            aws_secret_access_key,
-            aws_session_token,
-            aws_session_name,
-            aws_profile_name,
-            aws_role_name,
-            aws_web_identity_token,
-            aws_sts_endpoint,
+            aws_access_key_id: access_key,
+            aws_secret_access_key: secret_key,
+            aws_session_token: session_token,
+            aws_session_name: session_name,
+            aws_profile_name: profile_name,
+            aws_role_name: role_name,
+            aws_web_identity_token: web_identity_token,
+            aws_sts_endpoint: sts_endpoint,
         }
     }
-}
-
-fn resolve_credential_secrets<Config>(
-    source: &Source<Config>,
-    defaults: &Source<Config>,
-) -> [Option<SecretString>; 4]
-where
-    Config: Default,
-{
-    let fields = [
-        (&source.aws_access_key_id, &defaults.aws_access_key_id),
-        (
-            &source.aws_secret_access_key,
-            &defaults.aws_secret_access_key,
-        ),
-        (&source.aws_session_token, &defaults.aws_session_token),
-        (
-            &source.aws_web_identity_token,
-            &defaults.aws_web_identity_token,
-        ),
-    ];
-    resolve_fields(fields, |value: &SecretString| {
-        value.expose_secret().is_empty()
-    })
-}
-
-fn resolve_credential_strings<Config>(
-    source: &Source<Config>,
-    defaults: &Source<Config>,
-) -> [Option<String>; 4]
-where
-    Config: Default,
-{
-    let fields = [
-        (&source.aws_session_name, &defaults.aws_session_name),
-        (&source.aws_profile_name, &defaults.aws_profile_name),
-        (&source.aws_role_name, &defaults.aws_role_name),
-        (&source.aws_sts_endpoint, &defaults.aws_sts_endpoint),
-    ];
-    resolve_fields(fields, String::is_empty)
 }
 
 fn resolve_fields<Value, const N: usize>(
