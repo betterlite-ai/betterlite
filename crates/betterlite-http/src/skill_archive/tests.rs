@@ -79,13 +79,13 @@ fn skill_archive_rejects_unsafe_sibling_members(#[case] unsafe_path: &str) {
 
 #[test]
 fn skill_archive_accepts_exactly_the_max_unpacked_bytes() {
-    let body = vec![0u8; 52_428_800];
+    let body = vec![0_u8; 52_428_800];
     assert!(build_skill_archive(&upload(&[("SKILL.md", &body)])).is_some());
 }
 
 #[test]
 fn skill_archive_rejects_one_byte_over_the_max_unpacked_bytes() {
-    let body = vec![0u8; 52_428_801];
+    let body = vec![0_u8; 52_428_801];
     assert!(build_skill_archive(&upload(&[("SKILL.md", &body)])).is_none());
 }
 
