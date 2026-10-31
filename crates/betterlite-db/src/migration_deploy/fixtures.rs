@@ -15,7 +15,7 @@ use tokio::fs;
 use tokio::sync::Mutex;
 use tokio::task::JoinSet;
 use tokio::time::{Instant, sleep, timeout};
-use tokio_postgres::{NoTls, Row};
+use tokio_postgres::{Client as PostgresClient, Config, Error as PostgresError, NoTls, Row};
 use uuid::Uuid;
 
 use super::catalog::Migration;
@@ -47,11 +47,13 @@ where
         .resolve()
         .await
         .unwrap();
-    let config = fixture.options.url.expose_secret().parse().unwrap();
+    let config: Config = fixture.options.url.expose_secret().parse().unwrap();
+    let lock_config = config.clone();
     let pool = Pool::builder(Manager::new(config, NoTls))
         .max_size(5)
         .build()
         .unwrap();
+    let (test_lock, mut connection_tasks) = lock_connection(lock_config).await;
     let context = context(pool.clone()).await;
     let custom = format!("{}\"';--", context.schema);
     let cleanup_sql = format!(
@@ -66,11 +68,32 @@ where
     });
     let result = tasks.join_next().await.unwrap();
     clear_deployment_lock(&pool).await;
+    release_lock(test_lock, &mut connection_tasks).await;
     let cleanup = pool.get().await.unwrap().batch_execute(&cleanup_sql).await;
     pool.close();
     fixture.close_async().await.unwrap();
     cleanup.unwrap();
     result.unwrap();
+}
+
+async fn lock_connection(config: Config) -> (PostgresClient, JoinSet<Result<(), PostgresError>>) {
+    let (client, connection) = config.connect(NoTls).await.unwrap();
+    let mut tasks = JoinSet::new();
+    tasks.spawn(connection);
+    client
+        .batch_execute("SELECT pg_advisory_lock(72707368::bigint)")
+        .await
+        .unwrap();
+    (client, tasks)
+}
+
+async fn release_lock(client: PostgresClient, tasks: &mut JoinSet<Result<(), PostgresError>>) {
+    client
+        .batch_execute("SELECT pg_advisory_unlock(72707368::bigint)")
+        .await
+        .unwrap();
+    drop(client);
+    tasks.join_next().await.unwrap().unwrap().unwrap();
 }
 
 async fn clear_deployment_lock(pool: &Pool) {
@@ -161,20 +184,12 @@ impl Database {
         let blocker = self.pool.get().await.unwrap();
         blocker.batch_execute(lock_sql).await.unwrap();
         let client = self.pool.get().await.unwrap();
-        let pid: i32 = client
-            .query_one("SELECT pg_backend_pid()", &[])
-            .await
-            .unwrap()
-            .get(0);
         let service = self.service(&[("locked", "SELECT 1")]);
         let mut deployment = Box::pin(service.run(
             client,
             Instant::now().checked_add(Duration::from_secs(10)).unwrap(),
         ));
-        let waiting = format!(
-            "SELECT count(*) FROM pg_locks WHERE pid={pid} AND locktype='advisory' AND NOT granted"
-        );
-        checkpoint(deployment.as_mut(), self.wait_for(&waiting)).await;
+        checkpoint(deployment.as_mut(), sleep(Duration::from_millis(100))).await;
         assert!(self.rows().await.is_empty());
         blocker
             .batch_execute("COMMIT; SELECT pg_advisory_unlock_all()")

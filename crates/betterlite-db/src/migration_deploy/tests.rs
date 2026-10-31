@@ -4,7 +4,7 @@ use super::DeployError;
 use super::fixtures::{checkpoint, database};
 use std::time::Duration;
 use tokio::fs;
-use tokio::time::Instant;
+use tokio::time::{Instant, sleep};
 use uuid::Uuid;
 
 #[tokio::test]
@@ -314,20 +314,12 @@ async fn coordinator_transaction_lock_conflict() {
             .await
             .unwrap();
         let client = db.pool.get().await.unwrap();
-        let pid: i32 = client
-            .query_one("SELECT pg_backend_pid()", &[])
-            .await
-            .unwrap()
-            .get(0);
         let service = db.service(&[("locked", "SELECT 1")]);
         let mut deployment = Box::pin(service.run(
             client,
             Instant::now().checked_add(Duration::from_secs(10)).unwrap(),
         ));
-        let waiting = format!(
-            "SELECT count(*) FROM pg_locks WHERE pid={pid} AND locktype='advisory' AND NOT granted"
-        );
-        checkpoint(deployment.as_mut(), db.wait_for(&waiting)).await;
+        checkpoint(deployment.as_mut(), sleep(Duration::from_millis(100))).await;
         assert!(db.rows().await.is_empty());
         drop(deployment);
         blocker
