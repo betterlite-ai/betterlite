@@ -40,15 +40,8 @@ where
         undecryptable: 0,
         legacy: 0,
     };
-    drop(client.execute(MARK_SAVEPOINT, &[]).await);
-    let rows = match read_table_rows(client, spec).await {
-        Ok(rows) => rows,
-        Err(ScanError::Read { location, source }) => {
-            tracing::debug!(location, error = %source, "scan: location unavailable");
-            drop(client.execute(RECOVER_SAVEPOINT, &[]).await);
-            return Ok(report);
-        }
-        Err(other) => return Err(other),
+    let Some(rows) = read_table_rows(client, spec).await? else {
+        return Ok(report);
     };
     let empty = report.clone();
     let mut stream = pin!(rows);
@@ -57,18 +50,25 @@ where
             Ok(Some(row)) => scan_row(&mut report, &row, spec, cipher)?,
             Ok(None) => return Ok(report),
             Err(source) => {
-                tracing::debug!(location = spec.location, error = %source, "scan: location unavailable");
-                drop(client.execute(RECOVER_SAVEPOINT, &[]).await);
+                recover_unavailable_location(client, spec.location, &source).await;
                 return Ok(empty);
             }
         }
     }
 }
 
+async fn recover_unavailable_location<C>(client: &C, location: &str, source: &tokio_postgres::Error)
+where
+    C: GenericClient + Sync,
+{
+    tracing::debug!(location, error = %source, "scan: location unavailable");
+    drop(client.execute(RECOVER_SAVEPOINT, &[]).await);
+}
+
 async fn read_table_rows<C>(
     client: &C,
     spec: &CoveredTableSpec,
-) -> Result<tokio_postgres::RowStream, ScanError>
+) -> Result<Option<tokio_postgres::RowStream>, ScanError>
 where
     C: GenericClient + Sync,
 {
@@ -83,13 +83,14 @@ where
     if spec.table == "LiteLLM_Config" {
         sql.push_str(" WHERE \"param_name\" = 'environment_variables'");
     }
-    client
-        .query_raw(&sql, iter::empty::<&str>())
-        .await
-        .map_err(|source| ScanError::Read {
-            location: spec.location.to_owned(),
-            source,
-        })
+    drop(client.execute(MARK_SAVEPOINT, &[]).await);
+    match client.query_raw(&sql, iter::empty::<&str>()).await {
+        Ok(rows) => Ok(Some(rows)),
+        Err(source) => {
+            recover_unavailable_location(client, spec.location, &source).await;
+            Ok(None)
+        }
+    }
 }
 
 fn scan_row(
