@@ -115,7 +115,7 @@ pitfalls:
 - A lifecycle event makes is_pre_first_chunk false without preventing transport fallback.
 - ReadError after a terminal is normal exhaustion,but other HTTP errors after a terminal still fail.
 - Cached completed_response exists before any events are consumed,but logging waits until its terminal event is yielded.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 1

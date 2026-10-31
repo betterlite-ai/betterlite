@@ -97,7 +97,7 @@ pitfalls:
 - page_size changes total_pages but never limits returned data.
 - An unavailable DB represented by null can purge non-config registry entries during list.
 - Info checks the DB connection before using a cache hit and preserves HTTP 403/404 from either source.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

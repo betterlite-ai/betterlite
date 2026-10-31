@@ -79,7 +79,7 @@ pitfalls:
   - Pixel pricing uses binary megapixels of 1,048,576 pixels rather than one million.
   - A keyed price tie is resolved by pixel area, not width or aspect ratio.
   - passthrough num_images=true means one, while a true catalog price retains the source numeric value one.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

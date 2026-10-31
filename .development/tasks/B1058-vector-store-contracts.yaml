@@ -119,7 +119,7 @@ pitfalls:
 - An empty litellm_metadata dictionary suppresses a populated metadata dictionary.
 - Search mapping sees the unfiltered params as well as the filtered optional map and always receives drop_params=false.
 - Router embedding removes configured model/input while the direct embedding executor passes them through and can raise duplicate-argument errors.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

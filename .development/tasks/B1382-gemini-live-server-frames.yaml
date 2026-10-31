@@ -96,4 +96,4 @@ pitfalls:
   - Ordinary turn completion passes a shallow frame copy and always supplies output_items=None.
   - Usage accompanying an emitted transcription event is not buffered by the final empty-event branch.
 budget: {max_changed_lines: 750, max_new_expects: 1}
-review_level: security
+review_level: standard

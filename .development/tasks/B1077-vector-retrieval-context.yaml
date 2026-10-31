@@ -128,7 +128,7 @@ pitfalls:
 - Store litellm_params is expanded last and can override the actual search id/query while diagnostics retain the original registry id.
 - Error mode runs after every selected store search, so a first failure does not skip later stores.
 - Guardrail failures occur outside the augmentation catch and must not be swallowed as an optional retrieval failure.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

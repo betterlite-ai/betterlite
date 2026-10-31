@@ -78,4 +78,4 @@ pitfalls:
   - An empty filters mapping suppresses flat allowed_domains rather than falling back to it.
   - Removing metadata is a debug diagnostic rather than a request error.
 budget: {max_changed_lines: 650, max_new_expects: 0}
-review_level: security
+review_level: standard

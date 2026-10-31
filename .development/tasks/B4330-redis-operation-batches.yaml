@@ -123,7 +123,7 @@ pitfalls:
 - Miss tracking records MGET keys that returned None; later SET or DELETE operations
   clear miss entries for those keys, but subsequent MGET operations rediscover the
   actual stored value if it was written since the earlier MGET.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

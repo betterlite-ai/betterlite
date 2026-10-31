@@ -121,7 +121,7 @@ pitfalls:
   - Team lookup validates the team exists but does not check team membership of the requesting user.
   - When endpoint_id is provided, only database endpoints are returned because config endpoints use generated IDs.
   - The allowed_passthrough_routes team metadata must be a Sequence[str] of path values for filtering to work.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

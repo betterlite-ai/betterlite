@@ -127,7 +127,7 @@ pitfalls:
   - api_base_env and api_key_env are tuples of environment variable names; resolve_api_base and resolve_api_key iterate through them and return the first non-empty secret, or None if none are found or provided.
   - Provider configs are looked up by provider name through ProviderConfigManager; an unmapped provider name returns None and triggers the "Unknown Decisions provider" error.
 
-review_level: security
+review_level: standard
 
 budget:
   max_changed_lines: 1500
