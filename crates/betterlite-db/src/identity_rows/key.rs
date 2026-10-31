@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 
 use super::{
     AutoRotateFlag, DefaultFilledList, ExposedSecret, Payload, PydanticBool, ZeroRotationCount,
-    integer_option, serialize_as_float,
+    integer_option,
 };
 use crate::budget_permission_rows::{JsonData, LiteLLMObjectPermissionTable, Timestamp};
 
@@ -30,13 +30,13 @@ pub struct LiteLLMVerificationToken {
     pub key_alias: Option<String>,
     #[serde(
         default,
-        serialize_with = "serialize_as_float",
+        serialize_with = "rust_decimal::serde::float::serialize",
         deserialize_with = "rust_decimal::serde::arbitrary_precision::deserialize"
     )]
     pub spend: Decimal,
     #[serde(
         default,
-        serialize_with = "serialize_as_float",
+        serialize_with = "rust_decimal::serde::float::serialize",
         deserialize_with = "rust_decimal::serde::arbitrary_precision::deserialize"
     )]
     pub total_spend: Decimal,

@@ -1,4 +1,4 @@
-use super::{PydanticBool, null_decimal, serialize_as_float};
+use super::{PydanticBool, null_decimal};
 use crate::budget_permission_rows::{LiteLLMBudgetTable, LiteLLMObjectPermissionTable};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -11,7 +11,7 @@ pub struct LiteLLMEndUserTable {
     pub alias: Option<String>,
     #[serde(
         default,
-        serialize_with = "serialize_as_float",
+        serialize_with = "rust_decimal::serde::float::serialize",
         deserialize_with = "null_decimal"
     )]
     pub spend: Decimal,

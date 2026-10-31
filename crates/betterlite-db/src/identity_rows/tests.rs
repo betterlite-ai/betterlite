@@ -75,6 +75,16 @@ fn identity_money_nonfinite_and_overflow_rejected() {
 }
 
 #[test]
+fn identity_lax_bool_rejects_numeric_text_spellings() {
+    let blocked: LiteLLMEndUserTable =
+        serde_json::from_str(r#"{"user_id":"u","blocked":"yes"}"#).unwrap();
+    assert!(blocked.blocked.0);
+    serde_json::from_str::<LiteLLMEndUserTable>(r#"{"user_id":"u","blocked":"1.0"}"#).unwrap_err();
+    serde_json::from_str::<LiteLLMEndUserTable>(r#"{"user_id":"u","blocked":"01"}"#).unwrap_err();
+    serde_json::from_str::<LiteLLMEndUserTable>(r#"{"user_id":"u","blocked":"1e0"}"#).unwrap_err();
+}
+
+#[test]
 fn identity_rows_reject_duplicate_payload_keys() {
     serde_json::from_str::<LiteLLMVerificationToken>(r#"{"aliases":{"a":1,"a":2}}"#).unwrap_err();
     serde_json::from_str::<LiteLLMUserTable>(r#"{"user_id":"u","metadata":{"a":1,"a":2}}"#)

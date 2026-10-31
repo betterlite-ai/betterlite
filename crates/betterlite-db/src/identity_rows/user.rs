@@ -1,6 +1,5 @@
 use super::{
     OptionalPayload, Payload, PydanticBool, empty_vec_or_null, integer_option, null_decimal,
-    serialize_as_float,
 };
 use crate::budget_permission_rows::{
     JsonData, LiteLLMObjectPermissionTable, OrganizationMembership, Timestamp,
@@ -36,7 +35,7 @@ pub struct LiteLLMUserTable {
     pub max_budget: Option<Decimal>,
     #[serde(
         default,
-        serialize_with = "serialize_as_float",
+        serialize_with = "rust_decimal::serde::float::serialize",
         deserialize_with = "null_decimal"
     )]
     pub spend: Decimal,

@@ -59,10 +59,7 @@ impl crate::helpers::Helper for Op {
 fn validated<T>(row: &Validated<T>) -> Result<&T, Box<crate::helpers::HelperError>> {
     match row {
         Validated::Valid(value) => Ok(value),
-        Validated::Invalid(value) => Err(helper_error(
-            "ValidationError",
-            &format!("invalid row: {value:?}"),
-        )),
+        Validated::Invalid(_) => Err(helper_error("ValidationError", "invalid row")),
     }
 }
 

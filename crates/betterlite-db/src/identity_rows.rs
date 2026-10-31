@@ -1,6 +1,6 @@
 use rust_decimal::prelude::ToPrimitive as _;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde::{Deserialize, Serialize, de::Error as _, ser::Error as _};
+use serde::{Deserialize, Serialize, de::Error as _};
 use std::collections::BTreeMap;
 use std::str::{Utf8Error, from_utf8};
 pub mod end_user;
@@ -54,8 +54,8 @@ pub struct PydanticBool(pub bool);
 enum LaxBool {
     Flag(bool),
     Integer(i64),
-    Decimal(rust_decimal::Decimal),
     Text(String),
+    Decimal(rust_decimal::Decimal),
 }
 #[derive(Debug, thiserror::Error)]
 #[error("the value is not a valid boolean")]
@@ -143,19 +143,6 @@ where
     let value = Option::<ArbitraryDecimal>::deserialize(deserializer)?;
     Ok(value.map_or(rust_decimal::Decimal::ZERO, |wrapper| wrapper.0))
 }
-// LiteLLM stores these amounts as a Python float, so this keeps the JSON number identical to Pydantic's output.
-pub(crate) fn serialize_as_float<S>(
-    value: &rust_decimal::Decimal,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    let Some(as_float) = value.to_f64() else {
-        return Err(S::Error::custom("decimal value does not fit in a float"));
-    };
-    serializer.serialize_f64(as_float)
-}
 pub(crate) fn integer_option<'de, D>(deserializer: D) -> Result<Option<i64>, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -188,7 +175,7 @@ where
 // Serde's library adapter creates this private, non-Debug value only during explicit serialization.
 #[derive(Serialize)]
 #[serde(transparent)]
-pub struct ExposedSecret(String);
+pub(crate) struct ExposedSecret(String);
 impl From<&SecretString> for ExposedSecret {
     fn from(secret: &SecretString) -> Self {
         Self(secret.expose_secret().to_owned())
