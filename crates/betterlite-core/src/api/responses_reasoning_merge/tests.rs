@@ -106,61 +106,167 @@ fn reasoning_boundaries() {
 }
 
 #[test]
+fn reasoning_missing_content_key_stays_missing() {
+    let output = merge_dicts(vec![
+        obj(vec![("role", str_val("tool")), ("tool_calls", Value::Null)]),
+        obj(vec![("role", str_val("user")), ("content", str_val("q"))]),
+    ]);
+    assert_eq!(
+        output,
+        vec![
+            obj(vec![("role", str_val("tool")), ("tool_calls", Value::Null)]),
+            obj(vec![("role", str_val("user")), ("content", str_val("q"))]),
+        ]
+    );
+}
+
+#[test]
 fn reasoning_boundaries_typed_records() {
-    let before = AttributeRecord {
+    let before = Record::Attribute(ChatRecord {
         role: Role::Assistant,
         content: None,
-        reasoning_content: Some("a".to_owned()),
+        reasoning_content: Some(Some(ReasoningText::Text("a".to_owned()))),
         thinking_blocks: None,
         tool_calls: None,
-    };
-    let user = AttributeRecord {
+        extra: Map::new(),
+    });
+    let user = Record::Attribute(ChatRecord {
         role: Role::User,
-        content: Some("q".to_owned()),
+        content: Some(Some(Content::Text("q".to_owned()))),
         reasoning_content: None,
         thinking_blocks: None,
         tool_calls: None,
-    };
-    let after = AttributeRecord {
+        extra: Map::new(),
+    });
+    let after = Record::Attribute(ChatRecord {
         role: Role::Assistant,
         content: None,
         reasoning_content: None,
-        thinking_blocks: Some(vec![str_val("B")]),
+        thinking_blocks: Some(Some(vec![str_val("B")])),
         tool_calls: None,
-    };
-    let mut records = vec![before.clone(), user.clone(), after.clone()];
+        extra: Map::new(),
+    });
+    let mut records = vec![before, user.clone(), after];
     let output = merge_reasoning(&mut records);
-    assert_eq!(output, vec![before, user, after]);
+    // Both pending turns rebuild as the dict shape, even though their source records were attribute-typed.
+    assert_eq!(
+        output,
+        vec![
+            Record::Dict(ChatRecord::blank(Some("a".to_owned()), None)),
+            user,
+            Record::Dict(ChatRecord::blank(None, Some(vec![str_val("B")]))),
+        ]
+    );
 }
 
 #[test]
 fn reasoning_merges_into_typed_target() {
-    let pending = AttributeRecord {
+    let pending = Record::Attribute(ChatRecord {
         role: Role::Assistant,
         content: None,
-        reasoning_content: Some("a".to_owned()),
-        thinking_blocks: Some(vec![str_val("A")]),
+        reasoning_content: Some(Some(ReasoningText::Text("a".to_owned()))),
+        thinking_blocks: Some(Some(vec![str_val("A")])),
         tool_calls: None,
-    };
-    let target = AttributeRecord {
+        extra: Map::new(),
+    });
+    let target = Record::Attribute(ChatRecord {
         role: Role::Assistant,
-        content: Some("answer".to_owned()),
-        reasoning_content: Some("c".to_owned()),
-        thinking_blocks: Some(vec![str_val("C")]),
+        content: Some(Some(Content::Text("answer".to_owned()))),
+        reasoning_content: Some(Some(ReasoningText::Text("c".to_owned()))),
+        thinking_blocks: Some(Some(vec![str_val("C")])),
         tool_calls: None,
-    };
+        extra: Map::new(),
+    });
     let mut records = vec![pending, target];
     let output = merge_reasoning(&mut records);
-    let expected = AttributeRecord {
+    let expected = Record::Attribute(ChatRecord {
         role: Role::Assistant,
-        content: Some("answer".to_owned()),
-        reasoning_content: Some("a\nc".to_owned()),
-        thinking_blocks: Some(vec![str_val("A"), str_val("C")]),
+        content: Some(Some(Content::Text("answer".to_owned()))),
+        reasoning_content: Some(Some(ReasoningText::Text("a\nc".to_owned()))),
+        thinking_blocks: Some(Some(vec![str_val("A"), str_val("C")])),
         tool_calls: None,
-    };
+        extra: Map::new(),
+    });
     assert_eq!(output, vec![expected.clone()]);
     // The target element in the original slice is mutated in place, not left as a pending-free clone.
     assert_eq!(records[1], expected);
+}
+
+#[test]
+fn reasoning_mixed_dict_and_attribute_records() {
+    let pending = Record::Dict(ChatRecord {
+        role: Role::Assistant,
+        content: Some(None),
+        reasoning_content: Some(Some(ReasoningText::Text("a".to_owned()))),
+        thinking_blocks: Some(Some(vec![str_val("A")])),
+        tool_calls: None,
+        extra: Map::new(),
+    });
+    let target = Record::Attribute(ChatRecord {
+        role: Role::Assistant,
+        content: Some(Some(Content::Text("answer".to_owned()))),
+        reasoning_content: None,
+        thinking_blocks: None,
+        tool_calls: Some(Some(arr(vec![str_val("call-1")]))),
+        extra: Map::new(),
+    });
+    let mut records = vec![pending, target];
+    let output = merge_reasoning(&mut records);
+    let Record::Attribute(merged) = &output[0] else {
+        panic!(
+            "a dict-kind pending turn merges into an attribute-kind target without changing its kind"
+        );
+    };
+    assert_eq!(merged.text(), Some("a"));
+    assert_eq!(merged.blocks(), Some(&[str_val("A")][..]));
+    assert_eq!(
+        merged.content,
+        Some(Some(Content::Text("answer".to_owned())))
+    );
+}
+
+#[test]
+fn attribute_record_list_content_is_a_merge_target_not_pending() {
+    let record = ChatRecord {
+        role: Role::Assistant,
+        content: Some(Some(Content::Blocks(vec![str_val("block")]))),
+        reasoning_content: Some(Some(ReasoningText::Other(Value::Number(
+            serde_json::Number::from(5_i64),
+        )))),
+        thinking_blocks: None,
+        tool_calls: None,
+        extra: Map::new(),
+    };
+    // List content is not null, so this is an assistant target, not a reasoning-only pending turn.
+    assert!(!record.is_pending());
+    // A non-string reasoning_content is ignored for merge purposes, not rejected.
+    assert_eq!(record.text(), None);
+}
+
+#[test]
+fn attribute_record_extra_fields_survive_merge() {
+    let pending = ChatRecord {
+        role: Role::Assistant,
+        content: Some(None),
+        reasoning_content: Some(Some(ReasoningText::Text("a".to_owned()))),
+        thinking_blocks: None,
+        tool_calls: None,
+        extra: Map::new(),
+    };
+    let mut extra = Map::new();
+    extra.insert("name".to_owned(), str_val("carried"));
+    extra.insert("tool_call_id".to_owned(), str_val("call-1"));
+    let target = ChatRecord {
+        role: Role::Assistant,
+        content: Some(Some(Content::Text("answer".to_owned()))),
+        reasoning_content: None,
+        thinking_blocks: None,
+        tool_calls: None,
+        extra,
+    };
+    let mut records = vec![pending, target.clone()];
+    let output = merge_reasoning(&mut records);
+    assert_eq!(output[0].extra, target.extra);
 }
 
 #[test]
@@ -168,38 +274,39 @@ fn merge_reasoning_mutates_original_target_record() {
     let mut records = vec![
         ChatRecord {
             role: Role::Assistant,
-            content: Value::Null,
-            reasoning_content: str_val("a"),
-            thinking_blocks: Value::Null,
-            tool_calls: Value::Null,
+            content: Some(None),
+            reasoning_content: Some(Some(ReasoningText::Text("a".to_owned()))),
+            thinking_blocks: None,
+            tool_calls: None,
             extra: Map::new(),
         },
         ChatRecord {
             role: Role::Assistant,
-            content: str_val("answer"),
-            reasoning_content: str_val("c"),
-            thinking_blocks: Value::Null,
-            tool_calls: Value::Null,
+            content: Some(Some(Content::Text("answer".to_owned()))),
+            reasoning_content: Some(Some(ReasoningText::Text("c".to_owned()))),
+            thinking_blocks: None,
+            tool_calls: None,
             extra: Map::new(),
         },
     ];
     let output = merge_reasoning(&mut records);
     assert_eq!(records.len(), 2);
-    assert_eq!(records[1].reasoning_content, str_val("a\nc"));
+    assert_eq!(records[1].text(), Some("a\nc"));
     assert_eq!(output, vec![records[1].clone()]);
 }
 
 #[test]
 fn standalone_builder_with_no_reasoning_is_content_null_only() {
-    let built = AttributeRecord::blank(None, None);
+    let built = ChatRecord::blank(None, None);
     assert_eq!(
         built,
-        AttributeRecord {
+        ChatRecord {
             role: Role::Assistant,
-            content: None,
+            content: Some(None),
             reasoning_content: None,
             thinking_blocks: None,
             tool_calls: None,
+            extra: Map::new(),
         }
     );
 }

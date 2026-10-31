@@ -1,0 +1,12 @@
+kind: helper
+name: reasoning-attribute-shapes
+call:
+  responses_reasoning_merge:
+    mode: reasoning
+    record_kind: attribute
+    messages:
+      - {role: assistant, content: null, reasoning_content: a}
+      - {role: assistant, content: [{type: text, text: existing}], reasoning_content: 5}
+env: {}
+compare:
+  ignore: []
