@@ -68,14 +68,15 @@ pub(super) const NORMALIZED_TO_NATIVE: [(&str, &[&str]); 8] = [
 ];
 
 pub(super) fn validate_options(options: &ClaudeCodeOptions) -> Result<(), HarnessError> {
-    if MANAGED_ENV_KEYS
+    let mut env_conflicts = MANAGED_ENV_KEYS
         .iter()
-        .any(|key| options.env.contains_key(*key))
-    {
-        return Err(HarnessError::OptionsMismatch {
-            given: "ClaudeCodeOptions.env",
-            harness: Harness::ClaudeCode,
-            expected: "keys other than ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN, ANTHROPIC_API_KEY, ANTHROPIC_MODEL, ANTHROPIC_SMALL_FAST_MODEL, CLAUDE_CONFIG_DIR",
+        .filter(|key| options.env.contains_key(*key))
+        .copied()
+        .collect::<Vec<_>>();
+    if !env_conflicts.is_empty() {
+        env_conflicts.sort_unstable();
+        return Err(HarnessError::ClaudeCodeManagedEnv {
+            keys: env_conflicts.join(", "),
         });
     }
     let config_conflicts = MANAGED_CONFIG_KEYS
@@ -84,9 +85,10 @@ pub(super) fn validate_options(options: &ClaudeCodeOptions) -> Result<(), Harnes
         .copied()
         .collect::<Vec<_>>();
     if !config_conflicts.is_empty() {
-        return Err(HarnessError::ManagedConfigKey {
-            key: config_conflicts.join(", "),
-            harness: Harness::ClaudeCode,
+        let mut config_conflicts = config_conflicts;
+        config_conflicts.sort_unstable();
+        return Err(HarnessError::ClaudeCodeManagedConfig {
+            keys: config_conflicts.join(", "),
         });
     }
     Ok(())

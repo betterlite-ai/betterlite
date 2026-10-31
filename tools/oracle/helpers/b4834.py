@@ -15,10 +15,10 @@ class EventMismatchError(ValueError):
     pass
 
 
-def structured_output_json(state: ClaudeCodeStreamState) -> str:
+def structured_output_json(state: ClaudeCodeStreamState) -> str | None:
     if isinstance(state.structured_output, dict):
         return json.dumps(cast(dict[str, Json], state.structured_output))
-    return last_json_object(state.final_text) or ""
+    return last_json_object(state.final_text)
 
 
 def run(input_value: dict[str, Json]) -> dict[str, Json]:

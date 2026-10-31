@@ -125,19 +125,19 @@ fn user_events(user: UserLine) -> Vec<Event> {
 }
 
 fn system_events(system: SystemLine, state: &mut ClaudeCodeStreamState) -> Vec<Event> {
-    match system.subtype.as_deref() {
-        Some("init") => {
-            if let Some(id) = system.session_id.filter(|id| !id.is_empty()) {
-                state.session_id = Some(id);
-            }
-            Vec::new()
+    if system.subtype.as_deref() == Some("init") {
+        if let Some(id) = system.session_id.filter(|id| !id.is_empty()) {
+            state.session_id = Some(id);
         }
-        Some("compact_boundary") => vec![Event::Compaction {
+        return Vec::new();
+    }
+    if system.subtype.as_deref() == Some("compact_boundary") {
+        return vec![Event::Compaction {
             tokens_before: system.compact_metadata.and_then(|meta| meta.pre_tokens),
             tokens_after: None,
-        }],
-        _ => Vec::new(),
+        }];
     }
+    Vec::new()
 }
 
 fn result_events(result: ResultLine, state: &mut ClaudeCodeStreamState) -> Vec<Event> {

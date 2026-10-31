@@ -56,7 +56,10 @@ fn claude_code_validation_rejects_managed_env() {
         .insert("ANTHROPIC_API_KEY".to_owned(), "bad".to_owned());
     let error =
         super::config::validate_options(&options).expect_err("managed env must be rejected");
-    assert!(error.to_string().contains("ClaudeCodeOptions.env"));
+    assert_eq!(
+        error.to_string(),
+        "ClaudeCodeOptions.env may not set ANTHROPIC_API_KEY; LiteLLM manages it"
+    );
 }
 
 #[test]
@@ -83,9 +86,10 @@ fn claude_code_validation_lists_all_managed_config_conflicts() {
     let error =
         super::config::validate_options(&options).expect_err("managed config must be rejected");
     let message = error.to_string();
-    assert!(message.contains("ClaudeCodeOptions"));
-    assert!(message.contains("model"));
-    assert!(message.contains("permissions"));
+    assert_eq!(
+        message,
+        "ClaudeCodeOptions.config may not set model, permissions; use the matching agent() argument (model=, permissions=) instead"
+    );
 }
 
 #[test]
