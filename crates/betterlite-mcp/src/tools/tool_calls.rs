@@ -1,5 +1,6 @@
 use betterlite_prompts::arguments::json::{Json, Object};
 use serde::{Deserialize, Serialize};
+use std::future::Future;
 use tokio::time::timeout;
 
 use super::pagination::{McpSession, Timeouts, ToolError};
@@ -48,14 +49,16 @@ where
     result.map_err(ToolError::Session)
 }
 
-pub async fn call_openai_tool<Session>(
-    session: &mut Session,
+pub fn call_openai_tool<'session, Session>(
+    session: &'session mut Session,
     call: &OpenAiToolCall,
     timeouts: Timeouts,
-) -> Result<Session::Output, ToolError<Session::Error>>
+) -> impl Future<Output = Result<Session::Output, ToolError<Session::Error>>>
++ 'session
++ use<'session, Session>
 where
     Session: McpSession,
 {
     let request = openai_tool_call_to_mcp(call);
-    call_mcp_tool(session, request, timeouts).await
+    call_mcp_tool(session, request, timeouts)
 }

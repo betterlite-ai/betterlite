@@ -3,3 +3,6 @@ deviations:
   - what: Invalid tool formats are rejected during typed deserialization instead of silently returning MCP tools.
     why: The task explicitly requires invalid formats to report an error; valid mcp and openai formats are unchanged.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/tools.py#L173-L175
+  - what: MCP helper dependencies are checked by Cargo at build time instead of raising Python optional-import errors with a pip installation hint.
+    why: Native Rust helpers use required crate dependencies and an injected session, so Python import-time failures are not reachable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/__init__.py#L1-L8

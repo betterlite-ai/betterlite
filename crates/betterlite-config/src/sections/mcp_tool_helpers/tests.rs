@@ -2,6 +2,7 @@
 
 use super::Settings;
 use crate::loader::{ConfigError, ConfigLoader};
+use rstest::rstest;
 use std::collections::BTreeMap;
 
 fn load(source: &str, environment: &[(&str, &str)]) -> Result<Settings, ConfigError> {
@@ -15,22 +16,26 @@ fn load(source: &str, environment: &[(&str, &str)]) -> Result<Settings, ConfigEr
         .mcp_tool_helpers)
 }
 
+#[rstest]
+#[case::defaults("", &[], ("60", "30"))]
+#[case::environment("", &[("LITELLM_MCP_CLIENT_TIMEOUT", "12"), ("LITELLM_MCP_TOOL_LISTING_TIMEOUT", "7")], ("12", "7"))]
+#[case::configured("litellm_settings:\n  mcp_client_timeout: '9'\n  mcp_tool_listing_timeout: '4'\n", &[("LITELLM_MCP_CLIENT_TIMEOUT", "12"), ("LITELLM_MCP_TOOL_LISTING_TIMEOUT", "7")], ("9", "4"))]
+#[case::reference("litellm_settings:\n  mcp_client_timeout: os.environ/CUSTOM\n", &[("CUSTOM", "2.5")], ("2.5", "30"))]
+fn timeout_config_cases(
+    #[case] source: &str,
+    #[case] environment: &[(&str, &str)],
+    #[case] expected: (&str, &str),
+) {
+    let settings = load(source, environment).unwrap();
+    assert_eq!(settings.client_timeout.to_string(), expected.0);
+    assert_eq!(settings.tool_listing_timeout.to_string(), expected.1);
+}
+
 #[test]
-fn timeout_config_cases() {
-    let source = "litellm_settings:\n  mcp_client_timeout: '9'\n  mcp_tool_listing_timeout: '4'\n";
-    let environment = [
-        ("LITELLM_MCP_CLIENT_TIMEOUT", "12"),
-        ("LITELLM_MCP_TOOL_LISTING_TIMEOUT", "7"),
-    ];
-    let defaults = load("", &[]).unwrap();
-    assert_eq!(defaults.client_timeout.to_string(), "60");
-    assert_eq!(defaults.tool_listing_timeout.to_string(), "30");
-    let environment_settings = load("", &environment).unwrap();
-    assert_eq!(environment_settings.client_timeout.to_string(), "12");
-    assert_eq!(environment_settings.tool_listing_timeout.to_string(), "7");
-    let settings = load(source, &environment).unwrap();
-    assert_eq!(settings.client_timeout.to_string(), "9");
-    assert_eq!(settings.tool_listing_timeout.to_string(), "4");
+fn settings_defaults_match_loaded_defaults() {
+    let defaults = Settings::default();
+    let loaded = load("", &[]).unwrap();
+    assert_eq!(defaults, loaded);
 }
 
 #[test]
