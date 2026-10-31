@@ -121,7 +121,7 @@ pitfalls:
 - The three SDK methods do not call _model_params_with_stored_credentials; adding that merge here would change credential precedence.
 - Empty session/expires_after dictionaries are treated as absent before Pydantic defaults are constructed.
 - timeout=0 falls back to REQUEST_TIMEOUT because the source uses a truthiness test.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

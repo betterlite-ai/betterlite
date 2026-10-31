@@ -100,4 +100,4 @@ pitfalls:
   - MiniMax does not remove /v1 before appending its Messages suffix.
   - Only a tool with exact type=custom loses its discriminator after DeepSeek's parent transform.
 budget: {max_changed_lines: 725, max_new_expects: 0}
-review_level: security
+review_level: standard

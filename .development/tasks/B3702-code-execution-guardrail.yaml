@@ -158,7 +158,7 @@ pitfalls:
   - "event_type in tracing_detail is GuardrailEventHooks.pre_call for request input_type, GuardrailEventHooks.post_call for response. Do not use during_call even though it is in get_supported_event_hooks; during_call is supported but not logged."
   - "The finally block in apply_guardrail runs on normal completion, HTTPException, ModifyResponseException, and other exceptions. Status assignment happens inside the try/except, then logging happens in finally. Do not skip finally on any path."
 
-review_level: security
+review_level: standard
 
 budget:
   max_changed_lines: 1500

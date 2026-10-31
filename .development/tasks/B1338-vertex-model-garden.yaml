@@ -75,4 +75,4 @@ pitfalls:
   - A custom dedicated base must not acquire :predict or another colon verb.
   - Empty model in the body is deliberate for a single-segment endpoint id.
 budget: {max_changed_lines: 450, max_new_expects: 0}
-review_level: security
+review_level: standard

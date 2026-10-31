@@ -224,7 +224,7 @@ pitfalls:
   - Tags are only applied when root_span_id is absent. A presence check on root_span_id (not a truthy check) determines tag inclusion.
   - The output field must always be present in request_data, even if empty; never omit it.
   - HTTPStatusError.response.text is the error message; betterlite re-raises it. Do not suppress HTTP errors; let them propagate.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

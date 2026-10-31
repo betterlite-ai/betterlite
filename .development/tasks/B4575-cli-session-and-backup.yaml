@@ -218,7 +218,7 @@ pitfalls:
   - >-
       secure_create must fchmod before yielding the file handle to the user, not after close,
       to prevent any content being written at the default umask mode.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

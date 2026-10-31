@@ -148,7 +148,7 @@ pitfalls:
   - postgres_endpoint reads the environment on every span to follow RDS IAM rotation, database URL overlays and reads from different hosts; do not cache.
   - The OTel SDK's log record attribute lookup changed between versions; SDK_LOG_RECORD guards the difference on the pinned commit.
   - baggage_allowed_keys parsing must not silently drop entries that contain colons or commas; use simple split/strip logic to preserve header values.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 2

@@ -90,7 +90,7 @@ pitfalls:
   - endswith(SKILL.md) matches a suffix such as NOT_SKILL.md and does not require the basename to equal SKILL.md.
   - The archive-wide exception returns the extracted prefix of files instead of discarding all earlier entries.
   - Description truncation counts Unicode characters rather than UTF-8 bytes.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

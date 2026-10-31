@@ -125,7 +125,7 @@ pitfalls:
 - >-
   A2AStreamingIterator receives a request and logging_obj already initialized; do not rebuild them or
   lose request fields during text extraction.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

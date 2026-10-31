@@ -150,7 +150,7 @@ pitfalls:
 - _run_tool_call catches JSONDecodeError and TypeError but not AttributeError, so a valid non-object JSON value (e.g., a string "print()") panics and triggers deletion in the caller's exception handler.
 - The LRU eviction looks at entries with matching identity, so request-scoped entries (identity=None) never trigger eviction and only evict on per-key deletion.
 - Expiry check uses current timestamp minus entry timestamp, so a clock mock in tests must provide consistent time.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 1

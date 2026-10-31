@@ -936,9 +936,12 @@ dependencies = [
 name = "betterlite-context"
 version = "0.1.0"
 dependencies = [
+ "betterlite-config",
+ "betterlite-redact",
  "percent-encoding",
  "rstest",
  "rust_decimal",
+ "secrecy",
  "serde",
  "serde_json",
  "thiserror",
@@ -1147,6 +1150,7 @@ version = "0.1.0"
 dependencies = [
  "aws-lc-rs",
  "base64 0.23.1",
+ "betterlite-secrets",
  "chrono",
  "hex",
  "pem",

@@ -13,8 +13,9 @@ description: >-
   moderation call site. The method compares prompt_injection and jailbreak scores against configured
   `category_thresholds`, and returns a block decision when flagged is true with no thresholds set.
 
-  Register helper operation `lakera_moderation_threshold_check` to verify that a Lakera response above a
-  configured threshold blocks the request.
+  Oracle operation b3755, registered with a stub in the guardrails helper group, runs
+  `lakera_moderation_threshold_check` to verify that a Lakera response above a configured threshold blocks
+  the request.
 scope:
   paths:
     - crates/betterlite-guardrails/src/cato/**
@@ -22,6 +23,10 @@ scope:
     - crates/betterlite-config/src/sections/cato_lifecycle.rs
     - crates/betterlite-config/src/sections/cato_lifecycle/**
     - crates/betterlite-guardrails/src/lakera/**
+    - tools/oracle/helpers/b3755.py
+    - tools/oracle/helpers/b3755/**
+    - tools/oracle/src/helpers/guardrails/b3755.rs
+    - tools/oracle/src/helpers/guardrails/b3755/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cato_networks/__init__.py#L11-L29

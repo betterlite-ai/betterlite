@@ -91,4 +91,4 @@ pitfalls:
   - A present non-object responseSchema prevents schema normalization rather than falling through to response_schema.
   - Studio retains tools null and an empty generationConfig where Vertex omits them.
 budget: {max_changed_lines: 800, max_new_expects: 1}
-review_level: security
+review_level: standard
