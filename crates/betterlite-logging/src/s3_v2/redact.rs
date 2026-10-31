@@ -16,19 +16,33 @@ const BASE64: &str =
 
 #[derive(Deserialize, Serialize)]
 struct Payload {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    messages: Option<Nullable<MessagesField>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    response: Option<Nullable<Json>>,
+    #[serde(default, skip_serializing_if = "NullableField::is_missing")]
+    messages: NullableField<MessagesField>,
+    #[serde(default, skip_serializing_if = "NullableField::is_missing")]
+    response: NullableField<Json>,
     #[serde(flatten)]
     extra: Extra,
 }
 
 #[derive(Deserialize, Serialize)]
 #[serde(untagged)]
-enum Nullable<Value> {
+enum NullableField<Value> {
     Null(()),
     Value(Value),
+    Missing,
+}
+
+impl<Value> Default for NullableField<Value> {
+    fn default() -> Self {
+        Self::Missing
+    }
+}
+
+impl<Value> NullableField<Value> {
+    fn is_missing(&self) -> bool {
+        let missing = matches!(self, Self::Missing);
+        missing
+    }
 }
 
 #[derive(Deserialize, Serialize)]
@@ -71,8 +85,8 @@ enum ContentPart {
 struct ContentObject {
     #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
     kind: Option<Json>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    file: Option<Nullable<Json>>,
+    #[serde(default, skip_serializing_if = "NullableField::is_missing")]
+    file: NullableField<Json>,
     #[serde(flatten)]
     extra: Extra,
 }
@@ -89,18 +103,18 @@ pub(super) fn project(
         let max_depth = resolve_max_depth(environment);
         let current = mem::take(&mut payload.messages);
         payload.messages = match current {
-            Some(Nullable::Value(MessagesField::List(messages))) => Some(Nullable::Value(
+            NullableField::Value(MessagesField::List(messages)) => NullableField::Value(
                 strip_messages(MessagesField::List(messages), &pattern, max_depth),
-            )),
-            Some(Nullable::Value(MessagesField::Other(value))) => {
-                Some(Nullable::Value(MessagesField::Other(value)))
+            ),
+            NullableField::Value(MessagesField::Other(value)) => {
+                NullableField::Value(MessagesField::Other(value))
             }
-            Some(Nullable::Null(value)) => Some(Nullable::Null(value)),
-            None => None,
+            NullableField::Null(value) => NullableField::Null(value),
+            NullableField::Missing => NullableField::Missing,
         };
     }
     if prompts_only {
-        payload.response = Some(Nullable::Null(()));
+        payload.response = NullableField::Null(());
     }
     Ok(serde_json::to_string(&payload)?)
 }
@@ -172,7 +186,7 @@ fn keep_part(part: &ContentPart) -> bool {
     match part {
         ContentPart::Other(_) => true,
         ContentPart::Object(object) => {
-            object.file.is_none()
+            matches!(object.file, NullableField::Missing)
                 && !matches!(&object.kind, Some(Json::Text(text)) if text != "text")
         }
     }
