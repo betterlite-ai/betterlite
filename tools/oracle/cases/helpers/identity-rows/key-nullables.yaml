@@ -1,0 +1,9 @@
+kind: helper
+name: key_nullable_lists_and_rotation_fields
+call:
+  identity_rows:
+    operation: key
+    row: {allowed_cache_controls: null, allowed_routes: null, rotation_count: null, auto_rotate: null}
+env: {}
+compare:
+  ignore: []

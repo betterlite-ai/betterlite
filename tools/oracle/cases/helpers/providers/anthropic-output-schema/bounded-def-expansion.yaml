@@ -1,0 +1,5 @@
+kind: helper
+name: bounded-def-expansion
+call: {anthropic_output_schema: {function: output, schema: {$defs: {Name: {type: string}}, type: object, properties: {name: {$ref: '#/$defs/Name'}}}}}
+env: {}
+compare: {ignore: []}

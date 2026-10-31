@@ -1,0 +1,1014 @@
+kind: helper
+name: sample-offset-continuation
+call:
+  b4502:
+    sample:
+      scope: {team_id: team-1, api_key_hash: hash-1, all_teams: false}
+      settings:
+        name: Support replies
+        context: Replies should answer the customer's question directly.
+        model: gpt-4o-mini
+      window: {start: 0, end: 100, offset: 50, page_size: 100}
+      rows:
+          - selection_key: key-1
+            source: traces
+            trace_id: trace-1
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-2
+            source: traces
+            trace_id: trace-2
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-3
+            source: traces
+            trace_id: trace-3
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-4
+            source: traces
+            trace_id: trace-4
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-5
+            source: traces
+            trace_id: trace-5
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-6
+            source: traces
+            trace_id: trace-6
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-7
+            source: traces
+            trace_id: trace-7
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-8
+            source: traces
+            trace_id: trace-8
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-9
+            source: traces
+            trace_id: trace-9
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-10
+            source: traces
+            trace_id: trace-10
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-11
+            source: traces
+            trace_id: trace-11
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-12
+            source: traces
+            trace_id: trace-12
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-13
+            source: traces
+            trace_id: trace-13
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-14
+            source: traces
+            trace_id: trace-14
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-15
+            source: traces
+            trace_id: trace-15
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-16
+            source: traces
+            trace_id: trace-16
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-17
+            source: traces
+            trace_id: trace-17
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-18
+            source: traces
+            trace_id: trace-18
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-19
+            source: traces
+            trace_id: trace-19
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-20
+            source: traces
+            trace_id: trace-20
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-21
+            source: traces
+            trace_id: trace-21
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-22
+            source: traces
+            trace_id: trace-22
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-23
+            source: traces
+            trace_id: trace-23
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-24
+            source: traces
+            trace_id: trace-24
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-25
+            source: traces
+            trace_id: trace-25
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-26
+            source: traces
+            trace_id: trace-26
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-27
+            source: traces
+            trace_id: trace-27
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-28
+            source: traces
+            trace_id: trace-28
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-29
+            source: traces
+            trace_id: trace-29
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-30
+            source: traces
+            trace_id: trace-30
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-31
+            source: traces
+            trace_id: trace-31
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-32
+            source: traces
+            trace_id: trace-32
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-33
+            source: traces
+            trace_id: trace-33
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-34
+            source: traces
+            trace_id: trace-34
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-35
+            source: traces
+            trace_id: trace-35
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-36
+            source: traces
+            trace_id: trace-36
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-37
+            source: traces
+            trace_id: trace-37
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-38
+            source: traces
+            trace_id: trace-38
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-39
+            source: traces
+            trace_id: trace-39
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-40
+            source: traces
+            trace_id: trace-40
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-41
+            source: traces
+            trace_id: trace-41
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-42
+            source: traces
+            trace_id: trace-42
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-43
+            source: traces
+            trace_id: trace-43
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-44
+            source: traces
+            trace_id: trace-44
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-45
+            source: traces
+            trace_id: trace-45
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-46
+            source: traces
+            trace_id: trace-46
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-47
+            source: traces
+            trace_id: trace-47
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-48
+            source: traces
+            trace_id: trace-48
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-49
+            source: traces
+            trace_id: trace-49
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-50
+            source: traces
+            trace_id: trace-50
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-51
+            source: traces
+            trace_id: trace-51
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-52
+            source: traces
+            trace_id: trace-52
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-53
+            source: traces
+            trace_id: trace-53
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-54
+            source: traces
+            trace_id: trace-54
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-55
+            source: traces
+            trace_id: trace-55
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-56
+            source: traces
+            trace_id: trace-56
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-57
+            source: traces
+            trace_id: trace-57
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-58
+            source: traces
+            trace_id: trace-58
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-59
+            source: traces
+            trace_id: trace-59
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-60
+            source: traces
+            trace_id: trace-60
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-61
+            source: traces
+            trace_id: trace-61
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-62
+            source: traces
+            trace_id: trace-62
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-63
+            source: traces
+            trace_id: trace-63
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-64
+            source: traces
+            trace_id: trace-64
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-65
+            source: traces
+            trace_id: trace-65
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-66
+            source: traces
+            trace_id: trace-66
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-67
+            source: traces
+            trace_id: trace-67
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-68
+            source: traces
+            trace_id: trace-68
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-69
+            source: traces
+            trace_id: trace-69
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-70
+            source: traces
+            trace_id: trace-70
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-71
+            source: traces
+            trace_id: trace-71
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-72
+            source: traces
+            trace_id: trace-72
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-73
+            source: traces
+            trace_id: trace-73
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-74
+            source: traces
+            trace_id: trace-74
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-75
+            source: traces
+            trace_id: trace-75
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-76
+            source: traces
+            trace_id: trace-76
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-77
+            source: traces
+            trace_id: trace-77
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-78
+            source: traces
+            trace_id: trace-78
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-79
+            source: traces
+            trace_id: trace-79
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-80
+            source: traces
+            trace_id: trace-80
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-81
+            source: traces
+            trace_id: trace-81
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-82
+            source: traces
+            trace_id: trace-82
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-83
+            source: traces
+            trace_id: trace-83
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-84
+            source: traces
+            trace_id: trace-84
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-85
+            source: traces
+            trace_id: trace-85
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-86
+            source: traces
+            trace_id: trace-86
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-87
+            source: traces
+            trace_id: trace-87
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-88
+            source: traces
+            trace_id: trace-88
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-89
+            source: traces
+            trace_id: trace-89
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-90
+            source: traces
+            trace_id: trace-90
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-91
+            source: traces
+            trace_id: trace-91
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-92
+            source: traces
+            trace_id: trace-92
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-93
+            source: traces
+            trace_id: trace-93
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-94
+            source: traces
+            trace_id: trace-94
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-95
+            source: traces
+            trace_id: trace-95
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-96
+            source: traces
+            trace_id: trace-96
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-97
+            source: traces
+            trace_id: trace-97
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-98
+            source: traces
+            trace_id: trace-98
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-99
+            source: traces
+            trace_id: trace-99
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+          - selection_key: key-100
+            source: traces
+            trace_id: trace-100
+            team_id: team-1
+            name: run
+            start_time: '2026-01-01T00:00:00Z'
+            span_count: 1
+            root_seen: 1
+            eligible: 250
+            selected: 200
+env: {}
+compare: {ignore: []}

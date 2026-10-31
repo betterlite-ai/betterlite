@@ -1,7 +1,7 @@
 id: B720
 milestone: M4 keys, spend and management
 title: Verification-token, user and end-user row contracts
-status: todo
+status: done
 depends_on: [B171, B700, B856, B860, B2307, B2310]
 file: tasks/B720-identity-rows.yaml
 covers:
@@ -11,7 +11,7 @@ covers:
   - "litellm/models/verification_token.py"
 parent: B051
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 367

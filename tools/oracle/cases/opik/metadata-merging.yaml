@@ -1,0 +1,11 @@
+kind: helper
+name: opik-metadata-merging
+call:
+  b3973:
+    function: metadata
+    auth: {project_name: auth}
+    request: {project_name: request}
+    requester: {project_name: requester}
+env: {}
+compare:
+  ignore: []
