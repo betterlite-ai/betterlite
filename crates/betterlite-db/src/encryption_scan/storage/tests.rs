@@ -107,6 +107,41 @@ async fn unavailable_tables_do_not_stop_later_scans() {
 }
 
 #[tokio::test]
+async fn unavailable_table_recovers_inside_a_transaction() {
+    let (fixture, pool, mut client) = database().await;
+    client
+        .batch_execute(include_str!("fixtures.sql"))
+        .await
+        .unwrap();
+    client
+        .batch_execute(r#"DROP TABLE "LiteLLM_ProxyModelTable";"#)
+        .await
+        .unwrap();
+    let transaction = client
+        .build_transaction()
+        .read_only(true)
+        .start()
+        .await
+        .unwrap();
+    let report = scan_covered_tables(&*transaction, &cipher(), Duration::from_secs(10))
+        .await
+        .unwrap();
+    transaction.commit().await.unwrap();
+    assert_eq!(report.locations[0].scanned, 0);
+    assert_eq!(
+        (
+            report.locations[1].scanned,
+            report.locations[1].already_v2,
+            report.locations[1].legacy
+        ),
+        (2, 1, 1)
+    );
+    drop(client);
+    pool.close();
+    fixture.close_async().await.unwrap();
+}
+
+#[tokio::test]
 async fn malformed_config_is_empty_and_json_text_is_decoded() {
     let (fixture, pool, client) = database().await;
     client.batch_execute(r#"

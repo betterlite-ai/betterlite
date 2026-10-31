@@ -8,6 +8,9 @@ use std::{iter, pin::pin, time::Duration};
 use tokio::time::timeout;
 use tokio_postgres::{GenericClient, Row};
 
+const MARK_SAVEPOINT: &str = "SAVEPOINT betterlite_encryption_scan";
+const RECOVER_SAVEPOINT: &str = "ROLLBACK TO SAVEPOINT betterlite_encryption_scan";
+
 fn row_value(row: &Row, column: &str) -> Result<Option<MigrationJson>, ScanError> {
     let raw: Option<String> = row.try_get(column).map_err(|source| ScanError::Read {
         location: column.to_owned(),
@@ -37,8 +40,15 @@ where
         undecryptable: 0,
         legacy: 0,
     };
-    let Ok(rows) = read_table_rows(client, spec).await else {
-        return Ok(report);
+    drop(client.execute(MARK_SAVEPOINT, &[]).await);
+    let rows = match read_table_rows(client, spec).await {
+        Ok(rows) => rows,
+        Err(ScanError::Read { location, source }) => {
+            tracing::debug!(location, error = %source, "scan: location unavailable");
+            drop(client.execute(RECOVER_SAVEPOINT, &[]).await);
+            return Ok(report);
+        }
+        Err(other) => return Err(other),
     };
     let empty = report.clone();
     let mut stream = pin!(rows);
@@ -46,7 +56,11 @@ where
         match stream.try_next().await {
             Ok(Some(row)) => scan_row(&mut report, &row, spec, cipher)?,
             Ok(None) => return Ok(report),
-            Err(_) => return Ok(empty),
+            Err(source) => {
+                tracing::debug!(location = spec.location, error = %source, "scan: location unavailable");
+                drop(client.execute(RECOVER_SAVEPOINT, &[]).await);
+                return Ok(empty);
+            }
         }
     }
 }
