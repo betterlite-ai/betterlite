@@ -10,7 +10,9 @@ use sha2::{Digest as _, Sha256};
 use std::str;
 use tokio::task::JoinSet;
 use tokio_postgres::Client;
+use tokio_postgres::Row;
 use tokio_postgres::error::SqlState;
+use tokio_postgres::types::ToSql;
 
 const PINNED_SHA256: &str = "0bf3d5cabe50d5d7249eb505cf2ec6fe2d8b49dc8b496dceb2179a357ed4725e";
 
@@ -66,6 +68,33 @@ async fn exec(client: &Client, sql: &str) {
     client.execute(sql, &[]).await.unwrap();
 }
 
+async fn exec_err(client: &Client, sql: &str) -> tokio_postgres::Error {
+    client.execute(sql, &[]).await.unwrap_err()
+}
+
+async fn insert_nullable_unique_fk_rows(client: &Client) {
+    exec(
+        client,
+        r#"INSERT INTO "LiteLLM_TeamTable" (team_id) VALUES ('t1')"#,
+    )
+    .await;
+    exec(
+        client,
+        r#"INSERT INTO "LiteLLM_TeamTable" (team_id) VALUES ('t2')"#,
+    )
+    .await;
+    exec(
+        client,
+        r#"INSERT INTO "LiteLLM_UserTable" (user_id) VALUES ('u1')"#,
+    )
+    .await;
+    exec(
+        client,
+        r#"INSERT INTO "LiteLLM_UserTable" (user_id) VALUES ('u2')"#,
+    )
+    .await;
+}
+
 async fn scalar_text(client: &Client, sql: &str) -> String {
     client.query_one(sql, &[]).await.unwrap().get(0)
 }
@@ -91,27 +120,25 @@ struct ColumnInfo {
 }
 
 async fn column(client: &Client, table: &str, name: &str) -> ColumnInfo {
-    let row = client
-        .query_one(
-            "SELECT data_type, is_nullable, column_default FROM information_schema.columns \
-             WHERE table_name = $1 AND column_name = $2",
-            &[&table, &name],
-        )
-        .await
+    let rows = columns_in(client, "public", table).await;
+    let row = rows
+        .iter()
+        .find(|row| row.get::<_, String>(1) == name)
         .unwrap();
     ColumnInfo {
-        data_type: row.get(0),
-        is_nullable: row.get::<_, String>(1) == "YES",
-        default: row.get(2),
+        data_type: row.get(2),
+        is_nullable: row.get::<_, String>(3) == "YES",
+        default: row.get(4),
     }
 }
 
-async fn index_names(client: &Client, table: &str) -> Vec<String> {
+async fn query_one_row(client: &Client, sql: &str, params: &[&(dyn ToSql + Sync)]) -> Row {
+    client.query_one(sql, params).await.unwrap()
+}
+
+async fn string_rows(client: &Client, sql: &str, params: &[&(dyn ToSql + Sync)]) -> Vec<String> {
     client
-        .query(
-            "SELECT indexname FROM pg_indexes WHERE tablename = $1",
-            &[&table],
-        )
+        .query(sql, params)
         .await
         .unwrap()
         .iter()
@@ -119,14 +146,22 @@ async fn index_names(client: &Client, table: &str) -> Vec<String> {
         .collect()
 }
 
+async fn index_names(client: &Client, table: &str) -> Vec<String> {
+    string_rows(
+        client,
+        "SELECT indexname FROM pg_indexes WHERE tablename = $1",
+        &[&table],
+    )
+    .await
+}
+
 async fn assert_rule(client: &Client, conname: &str, delete_rule: char) {
-    let row = client
-        .query_one(
-            "SELECT confupdtype, confdeltype FROM pg_constraint WHERE conname = $1",
-            &[&conname],
-        )
-        .await
-        .unwrap();
+    let row = query_one_row(
+        client,
+        "SELECT confupdtype, confdeltype FROM pg_constraint WHERE conname = $1",
+        &[&conname],
+    )
+    .await;
     let update: i8 = row.get(0);
     let delete: i8 = row.get(1);
     assert_eq!(char::from(u8::try_from(update).unwrap()), 'c');
@@ -439,36 +474,47 @@ async fn baseline_defaults_audit_empty_actor_defaults() {
 
 type ColumnFacts = (i32, String, String, bool, bool);
 
-async fn table_columns(client: &Client, schema: &str, table: &str) -> Vec<ColumnFacts> {
+async fn columns_in(client: &Client, schema: &str, table: &str) -> Vec<Row> {
     client
         .query(
-            "SELECT ordinal_position, column_name, data_type, is_nullable = 'YES', column_default IS NOT NULL \
+            "SELECT ordinal_position, column_name, data_type, is_nullable, column_default \
              FROM information_schema.columns WHERE table_schema = $1 AND table_name = $2 \
              ORDER BY ordinal_position",
             &[&schema, &table],
         )
         .await
         .unwrap()
-        .iter()
-        .map(|row| (row.get(0), row.get(1), row.get(2), row.get(3), row.get(4)))
-        .collect()
 }
 
-async fn primary_key_columns(client: &Client, schema: &str, table: &str) -> Vec<String> {
-    client
-        .query(
-            "SELECT kcu.column_name FROM information_schema.table_constraints tc \
-             JOIN information_schema.key_column_usage kcu \
-             ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema \
-             WHERE tc.table_schema = $1 AND tc.table_name = $2 AND tc.constraint_type = 'PRIMARY KEY' \
-             ORDER BY kcu.ordinal_position",
-            &[&schema, &table],
-        )
+async fn table_shape(
+    client: &Client,
+    schema: &str,
+    table: &str,
+) -> (Vec<ColumnFacts>, Vec<String>) {
+    let columns = columns_in(client, schema, table)
         .await
-        .unwrap()
         .iter()
-        .map(|row| row.get(0))
-        .collect()
+        .map(|row| {
+            (
+                row.get(0),
+                row.get(1),
+                row.get(2),
+                row.get::<_, String>(3) == "YES",
+                row.get::<_, Option<String>>(4).is_some(),
+            )
+        })
+        .collect();
+    let primary_key = string_rows(
+        client,
+        "SELECT kcu.column_name FROM information_schema.table_constraints tc \
+         JOIN information_schema.key_column_usage kcu \
+         ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema \
+         WHERE tc.table_schema = $1 AND tc.table_name = $2 AND tc.constraint_type = 'PRIMARY KEY' \
+         ORDER BY kcu.ordinal_position",
+        &[&schema, &table],
+    )
+    .await;
+    (columns, primary_key)
 }
 
 #[rstest]
@@ -504,12 +550,10 @@ async fn baseline_catalog_columns(#[case] table: &str) {
         ))
         .await
         .unwrap();
-    let candidate = table_columns(&client, "public", table).await;
-    let upstream = table_columns(&client, "upstream", table).await;
+    let (candidate, candidate_pk) = table_shape(&client, "public", table).await;
+    let (upstream, upstream_pk) = table_shape(&client, "upstream", table).await;
     assert_eq!(candidate, upstream, "{table} columns differ from upstream");
     assert!(!candidate.is_empty(), "{table} has no columns");
-    let candidate_pk = primary_key_columns(&client, "public", table).await;
-    let upstream_pk = primary_key_columns(&client, "upstream", table).await;
     assert_eq!(
         candidate_pk, upstream_pk,
         "{table} primary key differs from upstream"
@@ -528,35 +572,14 @@ async fn baseline_constraints() {
         r#"INSERT INTO "LiteLLM_CredentialsTable" (credential_id, credential_name, credential_values, created_by, updated_by) VALUES ('c1', 'dup', '{}', 't', 't')"#,
     )
     .await;
-    let error = client
-        .execute(
-            r#"INSERT INTO "LiteLLM_CredentialsTable" (credential_id, credential_name, credential_values, created_by, updated_by) VALUES ('c2', 'dup', '{}', 't', 't')"#,
-            &[],
-        )
-        .await
-        .unwrap_err();
+    let error = exec_err(
+        &client,
+        r#"INSERT INTO "LiteLLM_CredentialsTable" (credential_id, credential_name, credential_values, created_by, updated_by) VALUES ('c2', 'dup', '{}', 't', 't')"#,
+    )
+    .await;
     assert_eq!(error.code(), Some(&SqlState::UNIQUE_VIOLATION));
 
-    exec(
-        &client,
-        r#"INSERT INTO "LiteLLM_TeamTable" (team_id) VALUES ('t1')"#,
-    )
-    .await;
-    exec(
-        &client,
-        r#"INSERT INTO "LiteLLM_TeamTable" (team_id) VALUES ('t2')"#,
-    )
-    .await;
-    exec(
-        &client,
-        r#"INSERT INTO "LiteLLM_UserTable" (user_id) VALUES ('u1')"#,
-    )
-    .await;
-    exec(
-        &client,
-        r#"INSERT INTO "LiteLLM_UserTable" (user_id) VALUES ('u2')"#,
-    )
-    .await;
+    insert_nullable_unique_fk_rows(&client).await;
 
     let spend_log_indexes = index_names(&client, "LiteLLM_SpendLogs").await;
     assert!(spend_log_indexes.contains(&"LiteLLM_SpendLogs_startTime_idx".to_owned()));
