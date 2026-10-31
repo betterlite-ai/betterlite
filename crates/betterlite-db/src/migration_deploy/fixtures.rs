@@ -1,12 +1,10 @@
 #![cfg(test)]
 
 use std::env::temp_dir;
-use std::fs::remove_dir_all;
+use std::fs::{File, TryLockError, remove_dir_all};
 use std::future::{Future, poll_fn};
-use std::io::ErrorKind;
 use std::path::PathBuf;
 use std::pin::Pin;
-use std::process::id;
 use std::time::Duration;
 
 use betterlite_postgres_fixture::connection::PostgresFixture;
@@ -14,16 +12,13 @@ use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::fs;
-use tokio::sync::Mutex;
 use tokio::task::JoinSet;
 use tokio::time::{Instant, sleep, timeout};
-use tokio_postgres::{Client as PostgresClient, Config, Error as PostgresError, NoTls, Row};
+use tokio_postgres::{Config, NoTls, Row};
 use uuid::Uuid;
 
 use super::catalog::Migration;
 use super::{DeployError, MigrationDeploy};
-
-static DATABASE_TESTS: Mutex<()> = Mutex::const_new(());
 
 #[derive(Parser)]
 struct Environment {
@@ -41,8 +36,9 @@ where
     F: FnOnce(Database) -> Fut + Send + 'static,
     Fut: Future<Output = ()> + Send + 'static,
 {
-    let _guard = DATABASE_TESTS.lock().await;
-    let test_file = acquire_test_file().await;
+    let _test_lock = timeout(Duration::from_secs(120), acquire_test_file())
+        .await
+        .unwrap();
     let url = Environment::parse_from(["migration-tests"])
         .url
         .map(SecretString::from);
@@ -51,12 +47,10 @@ where
         .await
         .unwrap();
     let config: Config = fixture.options.url.expose_secret().parse().unwrap();
-    let lock_config = config.clone();
     let pool = Pool::builder(Manager::new(config, NoTls))
         .max_size(5)
         .build()
         .unwrap();
-    let (test_lock, mut connection_tasks) = lock_connection(lock_config).await;
     let context = context(pool.clone()).await;
     let custom = format!("{}\"';--", context.schema);
     let cleanup_sql = format!(
@@ -71,61 +65,32 @@ where
     });
     let result = tasks.join_next().await.unwrap();
     clear_deployment_lock(&pool).await;
-    release_lock(test_lock, &mut connection_tasks).await;
     let cleanup = pool.get().await.unwrap().batch_execute(&cleanup_sql).await;
     pool.close();
     fixture.close_async().await.unwrap();
     cleanup.unwrap();
     result.unwrap();
-    fs::remove_file(test_file).await.unwrap();
 }
 
-async fn acquire_test_file() -> PathBuf {
+async fn acquire_test_file() -> File {
     let path = temp_dir().join("betterlite-migration-deploy.lock");
+    // Keep the inode in place so every waiter locks the same file after an owner exits.
+    let file = fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(path)
+        .await
+        .unwrap()
+        .into_std()
+        .await;
     loop {
-        match fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&path)
-            .await
-        {
-            Ok(file) => {
-                drop(file);
-                fs::write(&path, id().to_string()).await.unwrap();
-                return path;
-            }
-            Err(error) if error.kind() == ErrorKind::AlreadyExists => {
-                let owner = fs::read_to_string(&path).await.unwrap_or_default();
-                let process_path = PathBuf::from(format!("/proc/{}", owner.trim()));
-                let process_exists = fs::try_exists(process_path).await.unwrap_or(true);
-                if !owner.is_empty() && !process_exists {
-                    drop(fs::remove_file(&path).await);
-                }
-                sleep(Duration::from_millis(10)).await;
-            }
-            Err(error) => panic!("could not create migration test lock: {error}"),
+        match file.try_lock() {
+            Ok(()) => return file,
+            Err(TryLockError::WouldBlock) => sleep(Duration::from_millis(10)).await,
+            Err(error) => panic!("could not lock migration test file: {error}"),
         }
     }
-}
-
-async fn lock_connection(config: Config) -> (PostgresClient, JoinSet<Result<(), PostgresError>>) {
-    let (client, connection) = config.connect(NoTls).await.unwrap();
-    let mut tasks = JoinSet::new();
-    tasks.spawn(connection);
-    client
-        .batch_execute("SELECT pg_advisory_lock(72707368::bigint)")
-        .await
-        .unwrap();
-    (client, tasks)
-}
-
-async fn release_lock(client: PostgresClient, tasks: &mut JoinSet<Result<(), PostgresError>>) {
-    client
-        .batch_execute("SELECT pg_advisory_unlock(72707368::bigint)")
-        .await
-        .unwrap();
-    drop(client);
-    tasks.join_next().await.unwrap().unwrap().unwrap();
 }
 
 async fn clear_deployment_lock(pool: &Pool) {
