@@ -3,6 +3,6 @@ deviations:
   - what: Missing search results return a typed MissingResults error instead of raising IndexError or inserting empty tool messages.
     why: No successful LiteLLM call can rely on the unhandled indexing failure; returning an error prevents silent result loss.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/transformation.py#L354-L367
-  - what: Formatting search arguments or an unstructured search response as text stops with an ArgumentsTooComplex error past a fixed nesting depth and node count, instead of recursing without a limit.
-    why: json.dumps and str() recurse as deep as a crafted response demands, bounded only by the interpreter's call stack; no caller can rely on that staying safe against adversarial input.
+  - what: Recursive argument and fallback-response formatting returns ArgumentsTooComplex when its accounting exceeds 32 nesting levels, 20000 nodes, or a 1 MiB byte budget.
+    why: Checking raw container sizes before deserialization and reserving escaped string sizes bounds formatting work and allocations that LiteLLM leaves unbounded.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/transformation.py#L389
