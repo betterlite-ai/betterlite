@@ -1,14 +1,15 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
+use betterlite_config::sections::grayswan::{Configured, OnFlaggedAction};
 use betterlite_guardrails::generic_guardrail_contracts::{
     GuardrailExtraValue, GuardrailInputType, GuardrailMessage, GuardrailToolParam,
 };
+use betterlite_guardrails::grayswan::GraySwanGuardrail;
 use betterlite_guardrails::grayswan::error::GraySwanGuardrailAPIError;
 use betterlite_guardrails::grayswan::wire::{
     GraySwanDynamicParams, GraySwanInput, GraySwanResponse, GraySwanVerdict,
 };
-use betterlite_guardrails::grayswan::{GraySwanGuardrail, GraySwanSettings, OnFlaggedAction};
 use secrecy::SecretString;
 use serde_json::json;
 
@@ -28,8 +29,12 @@ pub(super) fn verdict(input: &serde_json::Value) -> crate::helpers::HelperResult
         mutation: None,
         ipi: None,
     };
-    let value = guardrail(input)?
-        .process_response(&response, input_type(input), Vec::new())
+    let guardrail = GraySwanGuardrail {
+        settings: parse_settings(input, OnFlaggedAction::Block)?,
+        client: reqwest::Client::default(),
+    };
+    let value = guardrail
+        .process_response(&response, input_type(input), Vec::new(), Vec::new())
         .map_err(|error| failure(&error))?;
     let (flagged, replaced) = match value.verdict {
         GraySwanVerdict::Pass => (false, false),
@@ -53,22 +58,10 @@ fn input_type(input: &serde_json::Value) -> GuardrailInputType {
         GuardrailInputType::Request
     }
 }
-fn guardrail(
-    input: &serde_json::Value,
-) -> Result<GraySwanGuardrail, Box<crate::helpers::HelperError>> {
-    let settings = parse_settings(input, OnFlaggedAction::Block)?;
-    Ok(GraySwanGuardrail {
-        api_key: SecretString::from("oracle-key"),
-        api_base: "http://oracle.invalid".to_owned(),
-        settings,
-        client: reqwest::Client::default(),
-        timeout: betterlite_guardrails::grayswan::DEFAULT_TIMEOUT,
-    })
-}
 fn parse_settings(
     value: &serde_json::Value,
     default_action: OnFlaggedAction,
-) -> Result<GraySwanSettings, Box<crate::helpers::HelperError>> {
+) -> Result<Configured, Box<crate::helpers::HelperError>> {
     let action = match value.get("action").and_then(serde_json::Value::as_str) {
         Some("BLOCK") => OnFlaggedAction::Block,
         Some("MONITOR") => OnFlaggedAction::Monitor,
@@ -88,18 +81,24 @@ fn parse_settings(
         .and_then(serde_json::Value::as_str)
         .map(str::to_owned)
         .unwrap_or_default();
-    Ok(GraySwanSettings {
+    Ok(Configured {
+        guardrail_name: "oracle".to_owned(),
+        api_key: SecretString::from("oracle-key"),
+        api_base: "http://oracle.invalid".to_owned(),
         on_flagged_action: action,
         violation_threshold,
         reasoning_mode: parse_json_field(value, "reasoning_mode")?,
         categories: parse_json_field(value, "categories")?.unwrap_or_default(),
         policy_id,
         fail_open,
+        guardrail_timeout: Duration::from_secs(30),
+        streaming_end_of_stream_only: false,
+        streaming_sampling_rate: 5,
     })
 }
 struct Request {
     input_type: GuardrailInputType,
-    settings: GraySwanSettings,
+    settings: Configured,
     dynamic_params: GraySwanDynamicParams,
     tools: Vec<GuardrailToolParam>,
     messages: Vec<GuardrailMessage>,
@@ -174,11 +173,8 @@ pub(super) fn payload(input: &serde_json::Value) -> crate::helpers::HelperResult
 }
 fn run_payload(parsed: Request) -> crate::helpers::HelperResult {
     let guardrail = GraySwanGuardrail {
-        api_key: SecretString::from("oracle-key"),
-        api_base: "http://oracle.invalid".to_owned(),
         settings: parsed.settings,
         client: reqwest::Client::default(),
-        timeout: betterlite_guardrails::grayswan::DEFAULT_TIMEOUT,
     };
     let prepared = GraySwanInput {
         texts: Vec::new(),
@@ -204,12 +200,12 @@ fn run_call(call: Request) -> crate::helpers::HelperResult {
         None => disconnection_script(&call.fail),
     };
     let mock = MockProvider::start(script).map_err(guardrail_error)?;
+    let mut settings = call.settings;
+    settings.api_base.clone_from(&mock.base_url);
+    settings.guardrail_timeout = Duration::from_millis(200);
     let guardrail = GraySwanGuardrail {
-        api_key: SecretString::from("oracle-key"),
-        api_base: mock.base_url.clone(),
-        settings: call.settings,
+        settings,
         client: reqwest::Client::default(),
-        timeout: Duration::from_millis(200),
     };
     let prepared = GraySwanInput {
         texts: call.texts,

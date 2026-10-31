@@ -1,13 +1,13 @@
 use std::collections::BTreeMap;
 use std::num::ParseFloatError;
 
+use betterlite_config::sections::grayswan::ReasoningMode;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::generic_guardrail_contracts::{
     GuardrailExtraValue, GuardrailMessage, GuardrailToolParam,
 };
-use crate::grayswan::ReasoningMode;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -186,5 +186,6 @@ pub enum GraySwanVerdict {
 #[derive(Debug, Clone)]
 pub struct GraySwanResult {
     pub verdict: GraySwanVerdict,
-    pub messages: Vec<GuardrailMessage>,
+    pub texts: Vec<String>,
+    pub tool_calls: Vec<GuardrailExtraValue>,
 }

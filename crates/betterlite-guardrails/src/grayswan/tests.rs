@@ -11,6 +11,7 @@ use std::time::Duration;
 use axum::Router;
 use axum::body::Bytes;
 use axum::routing::post;
+use betterlite_config::sections::grayswan::{Configured, OnFlaggedAction, ReasoningMode};
 use reqwest::StatusCode;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use secrecy::SecretString;
@@ -25,28 +26,33 @@ use super::wire::{
 };
 use super::{
     GraySwanGuardrail, GraySwanGuardrailAPIError, GraySwanInput, GraySwanPayload, GraySwanResponse,
-    GraySwanSettings, OnFlaggedAction, ReasoningMode,
 };
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::generic_guardrail_contracts::{
     GuardrailExtraValue, GuardrailMessage, GuardrailToolParam,
 };
 
-fn guardrail(action: OnFlaggedAction) -> GraySwanGuardrail {
-    let settings = GraySwanSettings {
+fn configured(api_base: &str, action: OnFlaggedAction, fail_open: bool) -> Configured {
+    Configured {
+        guardrail_name: "safety".to_owned(),
+        api_key: SecretString::from("secret"),
+        api_base: api_base.to_owned(),
         on_flagged_action: action,
         violation_threshold: 0.5,
         reasoning_mode: None,
         categories: BTreeMap::new(),
         policy_id: String::new(),
-        fail_open: true,
-    };
+        fail_open,
+        guardrail_timeout: Duration::from_secs(30),
+        streaming_end_of_stream_only: false,
+        streaming_sampling_rate: 5,
+    }
+}
+
+fn guardrail(action: OnFlaggedAction) -> GraySwanGuardrail {
     GraySwanGuardrail {
-        api_key: SecretString::from("secret"),
-        api_base: "http://example".to_owned(),
-        settings,
+        settings: configured("http://example", action, true),
         client: reqwest::Client::default(),
-        timeout: super::DEFAULT_TIMEOUT,
     }
 }
 
@@ -206,7 +212,8 @@ fn grayswan_build_messages_appends_a_separate_tool_calls_message_when_multiple_t
 #[test]
 fn grayswan_verdict_at_threshold_blocks() {
     let guardrail = guardrail(OnFlaggedAction::Block);
-    let result = guardrail.process_response(&response(0.5), GuardrailInputType::Request, vec![]);
+    let result =
+        guardrail.process_response(&response(0.5), GuardrailInputType::Request, vec![], vec![]);
     drop(result.expect_err("threshold violation"));
 }
 #[test]
@@ -220,7 +227,7 @@ fn grayswan_block_error_preserves_the_detection_fields() {
     scan_response.mutation = Some(true);
     scan_response.ipi = Some(false);
     let error = guardrail(OnFlaggedAction::Block)
-        .process_response(&scan_response, GuardrailInputType::Response, vec![])
+        .process_response(&scan_response, GuardrailInputType::Response, vec![], vec![])
         .expect_err("blocked");
     let GraySwanGuardrailAPIError::Blocked {
         violation_location,
@@ -251,7 +258,7 @@ fn grayswan_block_error_preserves_the_detection_fields() {
 #[test]
 fn grayswan_block_error_marks_a_pre_call_violation_as_the_input_location() {
     let error = guardrail(OnFlaggedAction::Block)
-        .process_response(&response(0.9), GuardrailInputType::Request, vec![])
+        .process_response(&response(0.9), GuardrailInputType::Request, vec![], vec![])
         .expect_err("blocked");
     let GraySwanGuardrailAPIError::Blocked {
         violation_location, ..
@@ -264,7 +271,7 @@ fn grayswan_block_error_marks_a_pre_call_violation_as_the_input_location() {
 #[test]
 fn grayswan_block_error_status_code_is_bad_request() {
     let error = guardrail(OnFlaggedAction::Block)
-        .process_response(&response(0.9), GuardrailInputType::Request, vec![])
+        .process_response(&response(0.9), GuardrailInputType::Request, vec![], vec![])
         .expect_err("blocked");
     assert_eq!(error.status_code(), StatusCode::BAD_REQUEST);
 }
@@ -272,23 +279,24 @@ fn grayswan_block_error_status_code_is_bad_request() {
 fn grayswan_passthrough_replaces_post_call_messages() {
     let guardrail = guardrail(OnFlaggedAction::Passthrough);
     let result = guardrail
-        .process_response(&response(0.5), GuardrailInputType::Response, vec![])
+        .process_response(&response(0.5), GuardrailInputType::Response, vec![], vec![])
         .expect("post-call passthrough");
-    assert_eq!(result.messages.len(), 1);
+    assert_eq!(result.texts.len(), 1);
     assert!(matches!(result.verdict, GraySwanVerdict::Replaced { .. }));
 }
 #[test]
 fn grayswan_passthrough_short_circuits_pre_call_instead_of_replacing_messages() {
     let guardrail = guardrail(OnFlaggedAction::Passthrough);
-    let original = vec![message("user", "hello")];
+    let original = vec!["hello".to_owned()];
     let result = guardrail
         .process_response(
             &response(0.5),
             GuardrailInputType::Request,
             original.clone(),
+            Vec::new(),
         )
         .expect("pre-call passthrough short-circuits instead of erroring");
-    assert_eq!(result.messages, original);
+    assert_eq!(result.texts, original);
     assert!(matches!(
         result.verdict,
         GraySwanVerdict::ShortCircuited { .. }
@@ -325,7 +333,7 @@ fn grayswan_verdict_message_includes_rule_name_and_description() {
         Some("content promotes self-harm"),
     )];
     let result = guardrail(OnFlaggedAction::Passthrough)
-        .process_response(&scan_response, GuardrailInputType::Response, vec![])
+        .process_response(&scan_response, GuardrailInputType::Response, vec![], vec![])
         .expect("post-call passthrough");
     assert_eq!(
         violation_message(&result.verdict),
@@ -340,7 +348,7 @@ fn grayswan_verdict_message_includes_rule_name_only_when_description_missing() {
     let mut scan_response = response(0.9);
     scan_response.violated_rule_descriptions = vec![structured_rule(None, Some("self_harm"), None)];
     let result = guardrail(OnFlaggedAction::Passthrough)
-        .process_response(&scan_response, GuardrailInputType::Response, vec![])
+        .process_response(&scan_response, GuardrailInputType::Response, vec![], vec![])
         .expect("post-call passthrough");
     assert_eq!(
         violation_message(&result.verdict),
@@ -359,7 +367,7 @@ fn grayswan_verdict_message_prefixes_the_rule_number_when_present() {
         Some("content promotes illegal activities"),
     )];
     let result = guardrail(OnFlaggedAction::Passthrough)
-        .process_response(&scan_response, GuardrailInputType::Response, vec![])
+        .process_response(&scan_response, GuardrailInputType::Response, vec![], vec![])
         .expect("post-call passthrough");
     assert_eq!(
         violation_message(&result.verdict),
@@ -378,7 +386,7 @@ fn grayswan_verdict_message_prefixes_an_explicit_zero_rule_number() {
         Some("content promotes illegal activities"),
     )];
     let result = guardrail(OnFlaggedAction::Passthrough)
-        .process_response(&scan_response, GuardrailInputType::Response, vec![])
+        .process_response(&scan_response, GuardrailInputType::Response, vec![], vec![])
         .expect("post-call passthrough");
     assert_eq!(
         violation_message(&result.verdict),
@@ -397,7 +405,7 @@ fn grayswan_verdict_message_prefixes_an_explicit_empty_string_rule_number() {
         Some("content promotes illegal activities"),
     )];
     let result = guardrail(OnFlaggedAction::Passthrough)
-        .process_response(&scan_response, GuardrailInputType::Response, vec![])
+        .process_response(&scan_response, GuardrailInputType::Response, vec![], vec![])
         .expect("post-call passthrough");
     assert_eq!(
         violation_message(&result.verdict),
@@ -414,7 +422,7 @@ fn grayswan_verdict_message_falls_back_to_a_typed_plain_value_for_an_unrecognize
         GuardrailExtraValue::Text("profanity".to_owned()),
     )];
     let result = guardrail(OnFlaggedAction::Passthrough)
-        .process_response(&scan_response, GuardrailInputType::Response, vec![])
+        .process_response(&scan_response, GuardrailInputType::Response, vec![], vec![])
         .expect("post-call passthrough");
     assert_eq!(
         violation_message(&result.verdict),
@@ -434,7 +442,7 @@ fn grayswan_verdict_message_falls_back_to_typed_fields_for_a_nameless_rule_objec
         Some("content promotes illegal activities"),
     )];
     let result = guardrail(OnFlaggedAction::Passthrough)
-        .process_response(&scan_response, GuardrailInputType::Response, vec![])
+        .process_response(&scan_response, GuardrailInputType::Response, vec![], vec![])
         .expect("post-call passthrough");
     assert_eq!(
         violation_message(&result.verdict),
@@ -448,7 +456,12 @@ fn grayswan_verdict_message_falls_back_to_typed_fields_for_a_nameless_rule_objec
 #[test]
 fn grayswan_monitor_verdict_passes_through() {
     let result = guardrail(OnFlaggedAction::Monitor)
-        .process_response(&response(0.5), GuardrailInputType::Request, Vec::new())
+        .process_response(
+            &response(0.5),
+            GuardrailInputType::Request,
+            Vec::new(),
+            Vec::new(),
+        )
         .expect("monitor action");
     assert!(matches!(result.verdict, GraySwanVerdict::Monitored { .. }));
 }
@@ -483,6 +496,7 @@ fn grayswan_monitor_verdict_logs_the_flagged_content() {
             &response(0.5),
             GuardrailInputType::Request,
             Vec::new(),
+            Vec::new(),
         )
     })
     .expect("monitor action");
@@ -500,7 +514,7 @@ fn grayswan_error_policy_is_fail_open_by_default() {
 fn grayswan_below_threshold_passes_through_even_when_the_action_is_block() {
     let guardrail = guardrail(OnFlaggedAction::Block);
     let result = guardrail
-        .process_response(&response(0.1), GuardrailInputType::Request, vec![])
+        .process_response(&response(0.1), GuardrailInputType::Request, vec![], vec![])
         .expect("below threshold is not blocked");
     assert_eq!(result.verdict, GraySwanVerdict::Pass);
 }
@@ -539,11 +553,8 @@ async fn call_api_mock(
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let instance = GraySwanGuardrail {
-        api_key: SecretString::from("secret"),
-        api_base: base,
-        settings: GraySwanSettings::default(),
+        settings: configured(&base, OnFlaggedAction::Monitor, true),
         client: reqwest::Client::default(),
-        timeout: super::DEFAULT_TIMEOUT,
     };
     let answer = move || async move { (status, body) };
     let router = Router::new().route("/cygnal/monitor", post(answer));
@@ -592,15 +603,6 @@ async fn grayswan_call_api_rejects_a_body_over_the_size_limit() {
     ));
 }
 
-#[test]
-fn grayswan_default_settings_match_litellm() {
-    let settings = GraySwanSettings::default();
-    assert_eq!(settings.on_flagged_action, OnFlaggedAction::Monitor);
-    assert!((settings.violation_threshold - 0.5).abs() < f64::EPSILON);
-    assert!(settings.fail_open);
-    assert_eq!(super::DEFAULT_TIMEOUT, Duration::from_secs(30));
-}
-
 #[tokio::test]
 async fn grayswan_apply_guardrail_skips_the_api_call_when_there_are_no_messages() {
     let instance = guardrail(OnFlaggedAction::Block);
@@ -638,20 +640,9 @@ async fn apply_guardrail_against_a_failing_server(
 ) -> Result<super::GraySwanResult, GraySwanGuardrailAPIError> {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
-    let settings = GraySwanSettings {
-        on_flagged_action: OnFlaggedAction::Block,
-        violation_threshold: 0.5,
-        reasoning_mode: None,
-        categories: BTreeMap::new(),
-        policy_id: String::new(),
-        fail_open,
-    };
     let instance = GraySwanGuardrail {
-        api_key: SecretString::from("secret"),
-        api_base: base,
-        settings,
+        settings: configured(&base, OnFlaggedAction::Block, fail_open),
         client: reqwest::Client::default(),
-        timeout: super::DEFAULT_TIMEOUT,
     };
     let answer = || async { (StatusCode::INTERNAL_SERVER_ERROR, "oops".to_owned()) };
     let router = Router::new().route("/cygnal/monitor", post(answer));
@@ -700,11 +691,8 @@ async fn apply_guardrail_capturing_payload(input_type: GuardrailInputType) -> Ca
     let mut server = JoinSet::new();
     server.spawn(axum::serve(listener, router).into_future());
     let instance = GraySwanGuardrail {
-        api_key: SecretString::from("secret"),
-        api_base: base,
-        settings: GraySwanSettings::default(),
+        settings: configured(&base, OnFlaggedAction::Monitor, true),
         client: reqwest::Client::default(),
-        timeout: super::DEFAULT_TIMEOUT,
     };
     let scan = input(
         vec!["hello".to_owned()],
@@ -753,11 +741,8 @@ async fn apply_guardrail_capturing_raw_payload(scan: GraySwanInput) -> CapturedT
     let mut server = JoinSet::new();
     server.spawn(axum::serve(listener, router).into_future());
     let instance = GraySwanGuardrail {
-        api_key: SecretString::from("secret"),
-        api_base: base,
-        settings: GraySwanSettings::default(),
+        settings: configured(&base, OnFlaggedAction::Monitor, true),
         client: reqwest::Client::default(),
-        timeout: super::DEFAULT_TIMEOUT,
     };
     instance
         .apply_guardrail(scan, GuardrailInputType::Request)
@@ -836,7 +821,7 @@ fn grayswan_response_rejects_a_non_numeric_violation_string() {
 fn grayswan_response_with_a_numeric_string_violation_is_blocked_instead_of_passed_through() {
     let parsed: GraySwanResponse = serde_json::from_str(r#"{"violation": "0.9"}"#).unwrap();
     let error = guardrail(OnFlaggedAction::Block)
-        .process_response(&parsed, GuardrailInputType::Request, Vec::new())
+        .process_response(&parsed, GuardrailInputType::Request, Vec::new(), Vec::new())
         .expect_err("a normalized violation above the threshold is blocked");
     assert!(matches!(error, GraySwanGuardrailAPIError::Blocked { .. }));
 }

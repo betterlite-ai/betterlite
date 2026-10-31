@@ -1,5 +1,4 @@
-use betterlite_config::loader::{ConfigError, ConfigLoader};
-use betterlite_config::sections::grayswan::error_category;
+use betterlite_config::loader::{ConfigError, ConfigLoader, error_category};
 use betterlite_config::types::Config;
 use betterlite_server::server::chat_setup::chat_executor;
 use betterlite_server::server::run;

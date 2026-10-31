@@ -1,9 +1,6 @@
-use std::collections::BTreeMap;
-use std::time::Duration;
-
+use betterlite_config::sections::grayswan::{Configured, OnFlaggedAction};
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
-use secrecy::{ExposeSecret as _, SecretString};
-use serde::{Deserialize, Serialize};
+use secrecy::ExposeSecret as _;
 
 use crate::generic_guardrail_contracts::{
     GuardrailExtraValue, GuardrailInputType, GuardrailMessage, GuardrailToolParam,
@@ -20,59 +17,18 @@ use wire::{
     GraySwanViolatedRule,
 };
 
-pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum OnFlaggedAction {
-    #[serde(rename = "BLOCK")]
-    Block,
-    #[serde(rename = "MONITOR")]
-    Monitor,
-    #[serde(rename = "PASSTHROUGH")]
-    Passthrough,
-}
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ReasoningMode {
-    Off,
-    Hybrid,
-    Thinking,
-}
-#[derive(Debug, Clone)]
-pub struct GraySwanSettings {
-    pub on_flagged_action: OnFlaggedAction,
-    pub violation_threshold: f64,
-    pub reasoning_mode: Option<ReasoningMode>,
-    pub categories: BTreeMap<String, String>,
-    pub policy_id: String,
-    pub fail_open: bool,
-}
-impl Default for GraySwanSettings {
-    fn default() -> Self {
-        Self {
-            on_flagged_action: OnFlaggedAction::Monitor,
-            violation_threshold: 0.5,
-            reasoning_mode: None,
-            categories: BTreeMap::new(),
-            policy_id: String::new(),
-            fail_open: true,
-        }
-    }
-}
 #[derive(Debug, Clone)]
 pub struct GraySwanGuardrail {
-    pub api_key: SecretString,
-    pub api_base: String,
-    pub settings: GraySwanSettings,
+    pub settings: Configured,
     pub client: reqwest::Client,
-    pub timeout: Duration,
 }
 impl GraySwanGuardrail {
     pub fn prepare_headers(&self) -> Result<HeaderMap, GraySwanGuardrailAPIError> {
         let mut headers = HeaderMap::new();
         let mut authorization =
-            HeaderValue::from_str(&format!("Bearer {}", self.api_key.expose_secret()))
+            HeaderValue::from_str(&format!("Bearer {}", self.settings.api_key.expose_secret()))
                 .map_err(|source| GraySwanGuardrailAPIError::InvalidHeader { source })?;
         authorization.set_sensitive(true);
         headers.insert(AUTHORIZATION, authorization);
@@ -132,6 +88,13 @@ impl GraySwanGuardrail {
         } else {
             &[]
         };
+        if input.texts.is_empty() && tool_calls.is_empty() {
+            return Ok(GraySwanResult {
+                verdict: GraySwanVerdict::Pass,
+                texts: input.texts,
+                tool_calls: input.tool_calls,
+            });
+        }
         let context = if input_type == GuardrailInputType::Response {
             input.request_history.clone()
         } else {
@@ -142,21 +105,18 @@ impl GraySwanGuardrail {
         } else {
             Vec::new()
         };
-        if input.texts.is_empty() && tool_calls.is_empty() {
-            return Ok(GraySwanResult {
-                verdict: GraySwanVerdict::Pass,
-                messages: context,
-            });
-        }
         let messages = build_messages(&input.texts, tool_calls, input_type, context);
-        let payload = self.prepare_payload(&input, messages.clone(), tools);
+        let payload = self.prepare_payload(&input, messages, tools);
         match self.call_api(&payload).await {
-            Ok(response) => self.process_response(&response, input_type, messages),
+            Ok(response) => {
+                self.process_response(&response, input_type, input.texts, input.tool_calls)
+            }
             Err(error) if self.settings.fail_open => {
                 tracing::error!(error = %error, "Gray Swan API error; passing through");
                 Ok(GraySwanResult {
                     verdict: GraySwanVerdict::Pass,
-                    messages,
+                    texts: input.texts,
+                    tool_calls: input.tool_calls,
                 })
             }
             Err(error) => Err(error),
@@ -166,13 +126,16 @@ impl GraySwanGuardrail {
         &self,
         payload: &GraySwanPayload,
     ) -> Result<GraySwanResponse, GraySwanGuardrailAPIError> {
-        let endpoint = format!("{}/cygnal/monitor", self.api_base.trim_end_matches('/'));
+        let endpoint = format!(
+            "{}/cygnal/monitor",
+            self.settings.api_base.trim_end_matches('/')
+        );
         let response = self
             .client
             .post(endpoint)
             .headers(self.prepare_headers()?)
             .json(payload)
-            .timeout(self.timeout)
+            .timeout(self.settings.guardrail_timeout)
             .send()
             .await
             .map_err(request_error)?;
@@ -188,13 +151,15 @@ impl GraySwanGuardrail {
         &self,
         response: &GraySwanResponse,
         input_type: GuardrailInputType,
-        original: Vec<GuardrailMessage>,
+        texts: Vec<String>,
+        tool_calls: Vec<GuardrailExtraValue>,
     ) -> Result<GraySwanResult, GraySwanGuardrailAPIError> {
         let flagged = response.violation >= self.settings.violation_threshold;
         if !flagged {
             return Ok(GraySwanResult {
                 verdict: GraySwanVerdict::Pass,
-                messages: original,
+                texts,
+                tool_calls,
             });
         }
         let is_output = input_type == GuardrailInputType::Response;
@@ -204,26 +169,22 @@ impl GraySwanGuardrail {
                 tracing::info!("Gray Swan Guardrail: Monitoring mode - allowing flagged content");
                 Ok(GraySwanResult {
                     verdict: GraySwanVerdict::Monitored { violation_message },
-                    messages: original,
+                    texts,
+                    tool_calls,
                 })
             }
             OnFlaggedAction::Block => Err(blocked_error(response, &violation_message, is_output)),
-            OnFlaggedAction::Passthrough if is_output => {
-                let guardrail_message = GuardrailMessage {
-                    role: "assistant".to_owned(),
-                    extra: BTreeMap::from([(
-                        "content".to_owned(),
-                        GuardrailExtraValue::Text(violation_message.clone()),
-                    )]),
-                };
-                Ok(GraySwanResult {
-                    verdict: GraySwanVerdict::Replaced { violation_message },
-                    messages: vec![guardrail_message],
-                })
-            }
+            OnFlaggedAction::Passthrough if is_output => Ok(GraySwanResult {
+                verdict: GraySwanVerdict::Replaced {
+                    violation_message: violation_message.clone(),
+                },
+                texts: vec![violation_message],
+                tool_calls,
+            }),
             OnFlaggedAction::Passthrough => Ok(GraySwanResult {
                 verdict: GraySwanVerdict::ShortCircuited { violation_message },
-                messages: original,
+                texts,
+                tool_calls,
             }),
         }
     }
