@@ -1,2 +1,5 @@
 task: B1602
-deviations: []
+deviations:
+  - what: "There is no is_migrated function; classify_secret and classify_secret_map check the v2:gcm: prefix inline."
+    why: LiteLLM's helper is one expression, and rule no-one-line-functions (enforced by .ast-grep/rules/no-one-line-functions.yml in the hooks check) rejects a function whose body is a single expression.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/credential_migration.py#L126-L128
