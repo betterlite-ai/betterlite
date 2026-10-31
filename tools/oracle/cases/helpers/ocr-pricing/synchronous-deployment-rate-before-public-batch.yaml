@@ -1,0 +1,14 @@
+kind: helper
+name: synchronous-deployment-rate-before-public-batch
+call:
+  ocr_pricing:
+    kind: batch
+    model: fixture-missing
+    custom_llm_provider: openai
+    model_info: {ocr_cost_per_page: 2}
+    usage: {pages_processed: 5, pages_processed_annotation: 3}
+    catalog:
+      key: openai/fixture-missing
+      entry: {annotation_cost_per_page_batches: 4}
+compare: {ignore: []}
+env: {}
