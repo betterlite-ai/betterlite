@@ -66,7 +66,7 @@ pub struct Configured {
     pub api_base: String,
     pub deepkeep_firewall_id: String,
     pub unreachable_fallback: UnreachableFallback,
-    pub extra_headers: BTreeMap<String, String>,
+    pub extra_headers: BTreeMap<String, SecretString>,
 }
 
 impl Section for Raw {
@@ -138,9 +138,12 @@ impl Entry {
     }
 }
 
-fn resolve_extra_headers(extra_headers: Option<ExtraHeaders>) -> BTreeMap<String, String> {
+fn resolve_extra_headers(extra_headers: Option<ExtraHeaders>) -> BTreeMap<String, SecretString> {
     match extra_headers {
-        Some(ExtraHeaders::Mapping(values)) => values,
+        Some(ExtraHeaders::Mapping(values)) => values
+            .into_iter()
+            .map(|(name, value)| (name, SecretString::from(value)))
+            .collect(),
         Some(ExtraHeaders::List(values)) => {
             drop(values);
             tracing::warn!("DeepKeep extra_headers list ignored; a mapping is required");
@@ -160,14 +163,20 @@ fn required_value<L>(
 where
     L: EnvironmentLookup,
 {
-    let resolved = configured
+    let path = format!("{prefix}.{path_name}");
+    let missing = || ConfigError::MissingEnvironment {
+        variable: variable.to_owned(),
+        path: path.clone(),
+    };
+    let candidate = configured
         .filter(|value| !value.is_empty())
         .or_else(|| lookup.lookup(variable))
-        .ok_or_else(|| ConfigError::MissingEnvironment {
-            variable: variable.to_owned(),
-            path: format!("{prefix}.{path_name}"),
-        })?;
-    resolve_string(resolved, &format!("{prefix}.{path_name}"), lookup)
+        .ok_or_else(missing)?;
+    let resolved = resolve_string(candidate, &path, lookup)?;
+    if resolved.is_empty() {
+        return Err(missing());
+    }
+    Ok(resolved)
 }
 
 #[must_use]
