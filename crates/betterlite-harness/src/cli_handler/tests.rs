@@ -14,9 +14,12 @@ use tokio::time::timeout;
 
 use super::CLIHarnessHandler;
 use super::io::{
-    HARNESS_STREAM_CHUNK_BYTES, decode_lossy, drain_stderr, iter_stream_lines, push_tail,
+    HARNESS_STREAM_CHUNK_BYTES, decode_lossy, drain_stderr, iter_stream_lines, push_tail, take_line,
 };
-use super::setup::{PERSIST_OUTPUT_LIMIT, copy_skills, persist_dir, sandbox_path};
+use super::setup::{
+    PERSIST_OUTPUT_LIMIT, PersistOutcome, apply_session_setup, copy_skills, persist_dir,
+    persist_outcome, sandbox_path,
+};
 use super::turn_io::{TurnCursor, TurnProgress};
 use crate::context::{SessionContext, SessionSettings, TurnOutcome};
 use crate::errors::HarnessError;
@@ -345,20 +348,44 @@ async fn turn_progress_reads_stderr_after_stdout_closes() {
     let mut process = sandbox.exec(&command).await.unwrap();
     let mut cursor = TurnCursor::default();
     let stderr = timeout(Duration::from_secs(5), async {
-        loop {
-            let progress = super::turn_io::next_turn_progress(&mut process, &mut cursor)
-                .await
-                .unwrap();
-            match progress {
-                Some(TurnProgress::Stderr(data)) => break data,
-                Some(TurnProgress::Stdout(_)) => panic!("stdout should already be closed"),
-                None => panic!("stderr must be read before both pipes close"),
-            }
+        let progress = super::turn_io::next_turn_progress(&mut process, &mut cursor)
+            .await
+            .unwrap();
+        match progress {
+            Some(TurnProgress::Stderr(data)) => data,
+            Some(TurnProgress::Stdout(_)) => panic!("stdout should already be closed"),
+            None => panic!("stderr must be read before both pipes close"),
         }
     })
     .await
     .unwrap();
     assert_eq!(stderr, b"late");
+    process.wait().await.unwrap();
+}
+
+#[tokio::test]
+async fn turn_progress_does_not_emit_an_empty_stderr_line_after_eof() {
+    let root = tempdir();
+    let sandbox = sandbox_with_env(root.path(), &BTreeMap::new());
+    let command = SandboxCommand {
+        argv: vec![
+            "sh".to_owned(),
+            "-c".to_owned(),
+            "exec 1>&-; exec 2>&-".to_owned(),
+        ],
+        env: BTreeMap::new(),
+        cwd: None,
+    };
+    let mut process = sandbox.exec(&command).await.unwrap();
+    let mut cursor = TurnCursor::default();
+    let progress = timeout(
+        Duration::from_secs(5),
+        super::turn_io::next_turn_progress(&mut process, &mut cursor),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(progress.is_none());
     process.wait().await.unwrap();
 }
 
@@ -477,8 +504,8 @@ async fn drain_stderr_decodes_invalid_utf8_with_replacement() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(tail.as_slices().0, ["bad-�-byte".to_owned()]);
-    assert_eq!(decode_lossy(b"bad-\xff-byte"), "bad-�-byte");
+    assert_eq!(tail.as_slices().0, ["bad-\u{fffd}-byte".to_owned()]);
+    assert_eq!(decode_lossy(b"bad-\xff-byte"), "bad-\u{fffd}-byte");
 }
 
 #[test]
@@ -494,6 +521,12 @@ fn push_tail_drops_the_oldest_line_once_the_ring_is_full() {
     assert_eq!(tail.len(), 40);
     assert_eq!(tail.front(), Some(&"line-5".to_owned()));
     assert_eq!(tail.back(), Some(&"line-44".to_owned()));
+}
+
+#[test]
+fn persist_outcome_recognizes_success_and_failure_exit_codes() {
+    assert_eq!(persist_outcome(0_i32), PersistOutcome::Complete);
+    assert_eq!(persist_outcome(1_i32), PersistOutcome::Failed);
 }
 
 #[test]
@@ -546,6 +579,48 @@ async fn copy_skills_resolves_the_skill_name_and_converts_separators() {
         .await
         .unwrap();
     assert_eq!(data, b"hi");
+}
+
+#[tokio::test]
+async fn apply_session_setup_skips_empty_skill_lists() {
+    let root = tempdir();
+    let sandbox = sandbox_with_env(root.path(), &BTreeMap::new());
+    let setup = HarnessSessionSetup {
+        files: BTreeMap::new(),
+        persisted_dirs: Vec::new(),
+        skills_dir: Some("skills".to_owned()),
+        env: BTreeMap::new(),
+    };
+    apply_session_setup(&sandbox, "private", &setup, &[])
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn apply_session_setup_reads_nonempty_skill_lists() {
+    let root = tempdir();
+    let sandbox = sandbox_with_env(root.path(), &BTreeMap::new());
+    let setup = HarnessSessionSetup {
+        files: BTreeMap::new(),
+        persisted_dirs: Vec::new(),
+        skills_dir: Some("skills".to_owned()),
+        env: BTreeMap::new(),
+    };
+    let result = apply_session_setup(
+        &sandbox,
+        "private",
+        &setup,
+        &["missing-skill-for-cli-handler-test".to_owned()],
+    )
+    .await;
+    assert!(result.is_err());
+}
+
+#[test]
+fn take_line_removes_only_one_complete_line() {
+    let mut buffer = b"first\nsecond".to_vec();
+    assert_eq!(take_line(&mut buffer), Some(b"first".to_vec()));
+    assert_eq!(buffer, b"second");
 }
 
 // Fails today for the same reason as turn_closes_stdin_before_reading_stdout.

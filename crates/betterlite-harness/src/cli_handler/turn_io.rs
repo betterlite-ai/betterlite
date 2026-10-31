@@ -10,6 +10,8 @@ use super::io::{HARNESS_STREAM_CHUNK_BYTES, take_line};
 use crate::errors::HarnessError;
 use crate::sandbox::Process;
 
+mod tests;
+
 enum ChunkPoll {
     Pending,
     Eof,
@@ -114,14 +116,24 @@ fn take_ready_line(cursor: &mut TurnCursor) -> Option<TurnProgress> {
     if let Some(line) = take_line(&mut cursor.stdout_buf) {
         return Some(TurnProgress::Stdout(line));
     }
-    if cursor.stdout_done && !cursor.stdout_buf.is_empty() {
-        return Some(TurnProgress::Stdout(mem::take(&mut cursor.stdout_buf)));
+    if cursor.stdout_done {
+        let line = mem::take(&mut cursor.stdout_buf);
+        if line.is_empty() {
+            cursor.stdout_buf = line;
+        } else {
+            return Some(TurnProgress::Stdout(line));
+        }
     }
     if let Some(line) = take_line(&mut cursor.stderr_buf) {
         return Some(TurnProgress::Stderr(line));
     }
-    if cursor.stderr_done && !cursor.stderr_buf.is_empty() {
-        return Some(TurnProgress::Stderr(mem::take(&mut cursor.stderr_buf)));
+    if cursor.stderr_done {
+        let line = mem::take(&mut cursor.stderr_buf);
+        if line.is_empty() {
+            cursor.stderr_buf = line;
+        } else {
+            return Some(TurnProgress::Stderr(line));
+        }
     }
     None
 }

@@ -16,6 +16,28 @@ const PERSIST_DIR_SCRIPT: &str = "d=\"${HOME:-/tmp}/.cache/litellm-harness/$2\";
 const PERSIST_TIMEOUT: Duration = Duration::from_secs(30);
 pub(super) const PERSIST_OUTPUT_LIMIT: usize = 16 * 1024;
 
+#[derive(Debug, Eq, PartialEq)]
+pub(super) enum PersistOutcome {
+    Complete,
+    Failed,
+}
+
+pub(super) const fn persist_outcome(exit_code: i32) -> PersistOutcome {
+    if exit_code == 0_i32 {
+        PersistOutcome::Complete
+    } else {
+        PersistOutcome::Failed
+    }
+}
+
+pub(super) async fn private_dir_for<S>(sandbox: &S) -> Result<String, HarnessError>
+where
+    S: Sandbox,
+{
+    let private_dir = sandbox.tempdir().await?;
+    Ok(private_dir)
+}
+
 #[must_use]
 pub(super) fn sandbox_path(private_dir: &str, path: &str) -> String {
     if path.starts_with('/') {
@@ -48,12 +70,13 @@ where
     let result = sandbox
         .run(&command, PERSIST_TIMEOUT, PERSIST_OUTPUT_LIMIT)
         .await?;
-    if result.exit_code != 0_i32 {
-        tracing::debug!(
+    match persist_outcome(result.exit_code) {
+        PersistOutcome::Complete => return Ok(()),
+        PersistOutcome::Failed => tracing::debug!(
             cache_subpath,
             stderr = %result.stderr,
             "harness: could not persist cache dir, resume across sessions disabled",
-        );
+        ),
     }
     Ok(())
 }

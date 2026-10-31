@@ -95,7 +95,7 @@ where
                 ),
             )));
         }
-        let private_dir = context.sandbox.tempdir().await?;
+        let private_dir = setup::private_dir_for(&context.sandbox).await?;
         let setup = self.config.transform_session_setup(context, &private_dir)?;
         setup::apply_session_setup(
             &context.sandbox,
