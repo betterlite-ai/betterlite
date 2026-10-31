@@ -65,6 +65,23 @@ fn wrong_shape_falls_back() {
 }
 
 #[test]
+fn unrecognized_boolean_word_falls_back() {
+    let (loaded, output) =
+        load_with_capture("general_settings:\n  scheduled_job_stagger:\n    enabled: nah\n");
+    assert!(loaded, "startup must not fail on an invalid stagger config");
+    assert!(output.contains("falling back to defaults"));
+}
+
+#[test]
+fn negative_window_string_falls_back() {
+    let (loaded, output) = load_with_capture(
+        "general_settings:\n  scheduled_job_stagger:\n    window_seconds: \"-1\"\n",
+    );
+    assert!(loaded, "startup must not fail on an invalid stagger config");
+    assert!(output.contains("falling back to defaults"));
+}
+
+#[test]
 fn invalid_config_uses_defaults() {
     let config = ConfigLoader {
         lookup: BTreeMap::new(),
