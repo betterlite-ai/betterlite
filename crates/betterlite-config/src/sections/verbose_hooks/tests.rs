@@ -15,7 +15,7 @@ use crate::loader::{ConfigError, ConfigLoader};
 #[case::default("{}\n", BTreeMap::new(), json!(false))]
 #[case::explicit_false("litellm_settings:\n  set_verbose: false\n", BTreeMap::new(), json!(false))]
 #[case::environment("litellm_settings:\n  set_verbose: os.environ/VERBOSE\n", BTreeMap::from([("VERBOSE".to_owned(), "yes".to_owned())]), json!("yes"))]
-#[case::literal_string("litellm_settings:\n  set_verbose: yes\n", BTreeMap::new(), json!("yes"))]
+#[case::literal_string("litellm_settings:\n  set_verbose: 'yes'\n", BTreeMap::new(), json!("yes"))]
 fn verbose_hooks_config_cases(
     #[case] source: &str,
     #[case] lookup: BTreeMap<String, String>,
