@@ -3,15 +3,20 @@ title: CLI model management and YAML imports
 description: >-
   Build the models command group for the management CLI, porting LiteLLM's model management
   from litellm/proxy/client/cli/commands/models.py to Rust. Commands dispatch through
-  an injected HTTP client (from B4560's CLI context) to model endpoints: list with table/json
+  the shared client B4580 builds in tools/management-cli/src/commands.rs from B4560's
+  cli_context_values, to model endpoints: list with table/json
   output, add and update with multiple --param and --info key=value options split on the first
   =, delete and get (by --id or --name, at least one required), info with flexible --columns
   selection (defaults to public_model,upstream_model,updated_at), and import from YAML files
   with --dry-run and regex filtering on litellm_params.model and model_info.access_groups.
 
-  Formatting helpers convert ISO datetime strings (with "Z" as "+00:00") and Unix timestamps
-  to minute-resolution YYYY-MM-DD HH:MM, and per-token costs to dollar amounts per 1000 tokens
-  formatted to 4 decimal places. On parse errors or None values, they return empty strings.
+  Formatting helpers take typed fields, not raw JSON values: an ISO datetime string, a Unix
+  timestamp integer, or a per-token cost number. Each one renders an absent or null field as
+  an empty string and a present field as given: a datetime to minute-resolution YYYY-MM-DD HH:MM
+  (the parser reads RFC 3339 directly, Z suffix or numeric offset alike, with no text
+  substitution first), a Unix timestamp to the same YYYY-MM-DD HH:MM format, and a cost to a
+  dollar amount per 1000 tokens with 4 decimal places. A field present but of the wrong type
+  is an error that names the field, not a fallback to its literal text.
 
   Import validates that model_list key exists and holds a list, filters models by regex against
   model_id and access_groups, displays filtered models in a table (regardless of --dry-run;
@@ -19,6 +24,12 @@ description: >-
   shows a provider summary. Dry-run changes the table title but does not call client.models.new().
   API errors in the import loop are silently ignored (try/except). Info command warns to stderr
   for unknown columns but continues rendering valid ones.
+
+  Tests. Test functions live in tests.rs files under models/ with the name prefixes the checks
+  select: list_, add_, delete_, get_, info_, update_, cost_, iso_, unix_, import_, filter_,
+  print_ and summary_ under commands::models. They run each command against a fake of the
+  injected client from B4560's context that records each call and returns a canned response,
+  and compare stdout and stderr against the exact lines and tables this task describes.
 scope:
   paths:
     - tools/management-cli/src/commands/models.rs
@@ -28,7 +39,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L46-L61
     why: _get_model_info_obj_from_yaml extracts model name, params, info, and provider
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L64-L73
-    why: format_iso_datetime_str parses ISO strings with Z as +00:00, formats to minute resolution
+    why: format_iso_datetime_str parses an ISO/RFC 3339 string, formats to minute resolution
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L76-L84
     why: format_timestamp converts Unix timestamps to YYYY-MM-DD HH:MM format
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L87-L97
@@ -61,8 +72,10 @@ references:
     why: import_models command with dry-run flag and regex filtering
 dod:
   - text: >-
-      list_models outputs a table with id, object, created (formatted timestamp/datetime),
-      owned_by columns, or JSON when --format=json is specified.
+      list_models outputs a table with id, object, created (formatted timestamp or datetime)
+      and owned_by columns, each cell as plain JSON-typed text (a string as it is, a number as
+      its JSON text, empty for absent or null), or the response as JSON when --format=json is
+      specified.
     proof: [list-models]
   - text: >-
       add_model parses multiple --param and --info as key=value, splits each on the first =,
@@ -76,25 +89,31 @@ dod:
       a UsageError, and calls client.models.get().
     proof: [get-model]
   - text: >-
-      get_models_info outputs table with flexible --columns (default public_model,upstream_model,
-      updated_at) from a fixed set of column configs, warns to stderr for unknown columns,
-      or JSON when --format=json is specified.
+      get_models_info outputs a table with flexible --columns (default public_model,upstream_model,
+      updated_at) from a fixed set of column configs, each cell as plain JSON-typed text the
+      same way as list_models, warns to stderr for unknown columns but renders the valid ones,
+      or the response as JSON when --format=json is specified.
     proof: [info-models]
   - text: >-
       update_model parses multiple --param and --info like add_model and calls
       client.models.update(model_id=..., model_params=..., model_info=...).
     proof: [update-model]
   - text: >-
-      format_cost_per_1k_tokens multiplies cost by 1000, formats to 4 decimal places with
-      $ prefix ($X.XXXX), returns empty string on None, and returns str(cost) on parse error.
+      format_cost_per_1k_tokens takes cost as a number, multiplies it by 1000 and formats it
+      to 4 decimal places with a $ prefix ($X.XXXX), and returns an empty string when cost is
+      absent or null. A cost of another type is an error that names the field; there is no
+      string-to-float conversion and no textual fallback.
     proof: [cost-format]
   - text: >-
-      format_iso_datetime_str parses ISO strings with Z replaced as +00:00, formats to
-      YYYY-MM-DD HH:MM, returns empty on None, and returns str(value) on error.
+      format_iso_datetime_str parses an RFC 3339 datetime string directly, Z suffix or numeric
+      offset alike, formats it to YYYY-MM-DD HH:MM, and returns an empty string when the value
+      is absent or null. A value that isn't a valid RFC 3339 string is an error that names the
+      field.
     proof: [iso-format]
   - text: >-
-      format_timestamp formats Unix timestamp integers to YYYY-MM-DD HH:MM, returns empty
-      on None, and returns str(timestamp) on error.
+      format_timestamp takes a Unix timestamp as an integer, formats it to YYYY-MM-DD HH:MM,
+      and returns an empty string when it is absent or null. list_models reads the created
+      field typed as that integer directly, with no digit-string-to-integer conversion.
     proof: [unix-format]
   - text: >-
       import_models loads YAML, validates model_list key exists and is a list, filters by
@@ -102,69 +121,76 @@ dod:
       --dry-run, silently ignores API errors in the import loop, and shows provider summary.
     proof: [import-models]
   - text: >-
-      _filter_model returns false if model_name missing, litellm_params missing, model_id
-      not a string, model_id doesn't match model_regex (if given), or no access_groups string
-      matches access_group_regex (if given).
+      filter_model returns false only when model_name is absent or null, litellm_params is
+      absent or null, or model_id is absent, null or not a string, or when model_id doesn't
+      match model_regex (if given), or no access_groups string matches access_group_regex
+      (if given). A model_name, model_id or litellm_params that is present but empty still
+      passes the filter.
     proof: [filter-model]
   - text: >-
-      _print_models_table skips if list empty, else prints table with model_name, upstream
-      model_id, and access_groups_str (comma-space joined or empty if none).
+      print_models_table skips if the list is empty, else prints a table with model_name,
+      upstream model_id, and access_groups_str (comma-space joined or empty if none).
     proof: [print-models]
   - text: >-
-      _print_summary_table prints provider counts per provider and total with "[bold]" tags.
+      print_summary_table prints provider counts per provider and a Total row with the sum,
+      with the Total row visually distinguished through the table library's own styling, not
+      literal markup text in the cell.
     proof: [print-summary]
 checks:
   optional: []
   commands:
     - id: list-models
-      why: list_models does not output table and JSON formats
-      run: grep -qF 'list_models' tools/management-cli/src/commands/models.rs && grep -qE 'table|json' tools/management-cli/src/commands/models.rs
+      why: the list tests are missing or the columns, cell formatting or output format differ from the description
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::models::.*tests::list_/)'
     - id: add-model
-      why: add_model does not parse --param and call client.models.new()
-      run: grep -qF 'add_model' tools/management-cli/src/commands/models.rs && grep -qF 'split' tools/management-cli/src/commands/models.rs && grep -qE 'models\.new|new_model' tools/management-cli/src/commands/models.rs
+      why: the add tests are missing or the --param/--info parsing or the client call differs from the description
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::models::.*tests::add_/)'
     - id: delete-model
-      why: delete_model does not call client.models.delete()
-      run: grep -qF 'delete_model' tools/management-cli/src/commands/models.rs && grep -qE 'models\.delete|delete_model' tools/management-cli/src/commands/models.rs
+      why: the delete tests are missing or the client call or output differs from the description
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::models::.*tests::delete_/)'
     - id: get-model
-      why: get_model does not require either --id or --name and validate at least one
-      run: grep -qF 'get_model' tools/management-cli/src/commands/models.rs && grep -qE 'model_id\.is_none\(\).*&&.*model_name\.is_none\(\)|model_id\.is_none\(\).*model_name\.is_none\(\)' tools/management-cli/src/commands/models.rs
+      why: the get tests are missing or the --id/--name requirement differs from the description
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::models::.*tests::get_/)'
     - id: info-models
-      why: get_models_info does not support --columns and column configuration
-      run: grep -qF 'get_models_info' tools/management-cli/src/commands/models.rs && grep -qF 'columns' tools/management-cli/src/commands/models.rs && grep -qF 'column_config' tools/management-cli/src/commands/models.rs
+      why: the info tests are missing or the --columns handling or cell formatting differs from the description
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::models::.*tests::info_/)'
     - id: update-model
-      why: update_model does not parse --param and --info or call client.models.update()
-      run: grep -qF 'update_model' tools/management-cli/src/commands/models.rs && grep -qE 'models\.update|update_model' tools/management-cli/src/commands/models.rs && grep -qF 'split' tools/management-cli/src/commands/models.rs
+      why: the update tests are missing or the --param/--info parsing or the client call differs from the description
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::models::.*tests::update_/)'
     - id: cost-format
-      why: format_cost_per_1k_tokens does not multiply by 1000 and format to $X.XXXX
-      run: grep -qF 'format_cost' tools/management-cli/src/commands/models.rs && grep -qE '1000|1e3' tools/management-cli/src/commands/models.rs && grep -qF '"$' tools/management-cli/src/commands/models.rs
+      why: the cost tests are missing or the multiply, 4-decimal formatting or empty/error handling differs from the description
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::models::.*tests::cost_/)'
     - id: iso-format
-      why: format_iso_datetime_str does not parse ISO format and format to YYYY-MM-DD HH:MM
-      run: grep -qF 'format_iso_datetime' tools/management-cli/src/commands/models.rs && grep -qE 'parse|DateTime|chrono' tools/management-cli/src/commands/models.rs && grep -qF 'YYYY-MM-DD' tools/management-cli/src/commands/models.rs
+      why: the iso tests are missing or the RFC 3339 parsing or empty/error handling differs from the description
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::models::.*tests::iso_/)'
     - id: unix-format
-      why: format_timestamp does not format Unix timestamps to YYYY-MM-DD HH:MM
-      run: grep -qF 'format_timestamp' tools/management-cli/src/commands/models.rs && grep -qE 'from_timestamp|DateTime|chrono' tools/management-cli/src/commands/models.rs
+      why: the unix tests are missing or the timestamp formatting or empty/error handling differs from the description
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::models::.*tests::unix_/)'
     - id: import-models
-      why: import_models does not load YAML, validate, filter and handle dry-run
-      run: grep -qF 'import_models' tools/management-cli/src/commands/models.rs && grep -qF 'model_list' tools/management-cli/src/commands/models.rs && grep -qE 'dry.run|dry_run' tools/management-cli/src/commands/models.rs && grep -qF 'regex' tools/management-cli/src/commands/models.rs
+      why: the import tests are missing or the YAML load, filtering, dry-run or summary differs from the description
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::models::.*tests::import_/)'
     - id: filter-model
-      why: _filter_model does not validate model structure and apply regexes
-      run: grep -qF 'filter_model' tools/management-cli/src/commands/models.rs && grep -qE 'model_name|litellm_params' tools/management-cli/src/commands/models.rs
+      why: the filter tests are missing or a missing, empty or wrongly-typed field is handled differently from the description
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::models::.*tests::filter_/)'
     - id: print-models
-      why: _print_models_table does not print table with model details
-      run: grep -qF 'print_models_table' tools/management-cli/src/commands/models.rs && grep -qE 'Table|table' tools/management-cli/src/commands/models.rs
+      why: the print tests are missing or the table content differs from the description
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::models::.*tests::print_/)'
     - id: print-summary
-      why: _print_summary_table does not print provider counts
-      run: grep -qF 'print_summary_table' tools/management-cli/src/commands/models.rs && grep -qF 'provider' tools/management-cli/src/commands/models.rs
+      why: the summary tests are missing or the provider counts, total or styling differ from the description
+      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::models::.*tests::summary_/)'
 oracle_cases: []
 deviations:
-  - what: No commands are registered with Click decorators in this task; command registration and CLI group assembly happens elsewhere.
-    why: Following Rust patterns, this task owns the helper functions and command logic, while command registration happens in a separate layer.
-  - what: Table rendering uses Rust table libraries (prettytable, tabled, comfy-table, etc.) instead of Python's rich module.
-    why: betterlite uses Rust ecosystem libraries; visual output conveys the same information but formatting differs slightly.
-  - what: YAML parsing uses serde_yaml and Result types for error handling instead of try/except.
-    why: Rust idiom; behavior is equivalent (invalid YAML exits with an error message).
+  - what: >-
+      Tables are drawn with comfy-table (default features off). The title, column headers,
+      row order and cell text are as the description says, but borders, column widths and
+      wrapping differ from rich's, there is no color, and cell text is never read as rich
+      markup.
+    why: >-
+      rich's table layout is a large port for output people read, and keys and encryption
+      draw their tables with the same crate. Scripts use --format json.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L355-L378
 out_of_scope:
-  - Client HTTP implementation and API integration; the CLI receives an injected HTTP client from B4560's context.
+  - Client HTTP implementation and API integration; the CLI receives the shared client B4580 builds in tools/management-cli/src/commands.rs from B4560's cli_context_values.
   - CLI command registration and parameter binding; that happens in the CLI group assembly, not in this module.
   - YAML schema validation beyond model_list key existence and type; individual model field validation is server-side.
 pitfalls:
@@ -172,17 +198,19 @@ pitfalls:
     The add and update commands split each param on the first = only, so values can contain =:
     `"key=value=more"` becomes `("key", "value=more")`, not three parts.
   - >-
-    format_iso_datetime_str replaces "Z" with "+00:00" before parsing, since ISO 8601 "Z" is
-    not accepted by all ISO parsers without this substitution.
+    format_iso_datetime_str parses RFC 3339 directly; chrono's parser accepts a Z suffix on
+    its own, so there is no Z-to-+00:00 substitution step the way Python's datetime.fromisoformat
+    needed before 3.11.
   - >-
-    format_timestamp expects a Unix timestamp as an integer. The list command converts string
-    digits to i64/i32 before passing to format_timestamp.
+    format_timestamp takes an integer Unix timestamp. list_models reads the created field as
+    that integer type directly, with no string-of-digits conversion.
   - >-
     import_models silently ignores errors from client.models.new() in the loop, so the summary
     counts attempted imports (including failures), not successful ones.
   - >-
-    _filter_model returns false if model_name is missing, litellm_params is missing, or model_id
-    is not a string. This filters out corrupt or incomplete model records.
+    filter_model rejects a record only when model_name, litellm_params or model_id is actually
+    absent or null, or when model_id is present but not a string. A model_name or model_id
+    that is present and empty still passes the filter.
   - >-
     get_models_info prints warnings to stderr for unknown column names but continues rendering
     with valid columns; it does not fail or raise.

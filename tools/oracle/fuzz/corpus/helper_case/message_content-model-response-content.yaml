@@ -1,0 +1,5 @@
+kind: helper
+name: message-content-model-response-content-seed
+call: {message_content: {operation: get_content_from_model_response, response: {id: c, object: chat.completion, created: 0, model: m, choices: [{index: 0, message: {role: assistant, content: hi}, finish_reason: stop}], usage: {prompt_tokens: 0, completion_tokens: 0, total_tokens: 0}}}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,28 @@
+[package]
+name = "betterlite-cli-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+betterlite-cli = { path = ".." }
+libfuzzer-sys = "0.4.9"
+
+[[bin]]
+name = "callback_request"
+path = "fuzz_targets/callback_request.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "wire_responses"
+path = "fuzz_targets/wire_responses.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

@@ -1,0 +1,14 @@
+id: B5083
+milestone: M1 openai data plane
+title: Download request media URLs into data URLs
+status: todo
+depends_on: [B5082, B235, B2226, B198, B173]
+file: tasks/B5083-media-url-download.yaml
+covers:
+  - "litellm/litellm_core_utils/prompt_templates/image_handling.py"
+parent: B010
+split_from: B183
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

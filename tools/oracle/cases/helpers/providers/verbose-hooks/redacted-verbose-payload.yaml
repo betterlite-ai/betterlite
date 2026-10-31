@@ -1,0 +1,10 @@
+kind: helper
+name: redacted-verbose-payload
+call: {verbose_hooks: {function: main, payload: {api_key: sk-secret, message: body}, set_verbose: true}}
+env: {}
+compare:
+  ignore:
+  - pointer: /value/logs/0/payload
+    why: "LiteLLM's verbose_logger carries a DiagnosticProcessingFilter attached directly to the logger (litellm/_logging.py L886) that stringifies every debug record and pattern-redacts it a second time; betterlite keeps the structured, key-redacted payload instead of reproducing that separate string-scrubbing filter"
+  - pointer: /value/console/0/message
+    why: "B2239's documented privacy deviation redacts message bodies before console emission; verbose_hooks_cases::case_4_redacted_verbose_payload asserts the REDACTED value."

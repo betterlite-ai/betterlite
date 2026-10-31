@@ -33,6 +33,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "resource_rows"
+path = "fuzz_targets/resource_rows.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "team_rows"
 path = "fuzz_targets/team_rows.rs"
 test = false
@@ -42,6 +49,13 @@ bench = false
 [[bin]]
 name = "identity_rows"
 path = "fuzz_targets/identity_rows.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mcp_stored_contract"
+path = "fuzz_targets/mcp_stored_contract.rs"
 test = false
 doc = false
 bench = false

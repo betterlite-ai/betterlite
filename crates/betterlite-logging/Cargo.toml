@@ -8,6 +8,7 @@ publish.workspace = true
 [dependencies]
 betterlite-config = { path = "../betterlite-config" }
 betterlite-models = { path = "../betterlite-models" }
+betterlite-redact = { path = "../betterlite-redact" }
 chrono.workspace = true
 flate2 = "1.1.5"
 hex.workspace = true
@@ -19,8 +20,10 @@ prost = "0.14.4"
 regex.workspace = true
 rust_decimal.workspace = true
 ryu = "1.0.23"
+secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
-serde_json = "1.0.154"
+serde_json = { version = "1.0.154", features = ["raw_value"] }
+serde_with = { version = "3.24.0", default-features = false, features = ["alloc"] }
 sha2.workspace = true
 strum = { version = "0.28.0", features = ["derive"] }
 thiserror.workspace = true
@@ -32,7 +35,7 @@ uuid.workspace = true
 insta = { version = "1.49.0", default-features = false, features = ["yaml"] }
 rstest = "=0.27.0"
 serde-saphyr.workspace = true
-serde_json = "1.0.154"
+serde_json = { version = "1.0.154", features = ["raw_value"] }
 tracing-subscriber.workspace = true
 
 [[test]]
@@ -49,3 +52,7 @@ path = "src/analytics/suite.rs"
 [[test]]
 name = "opik"
 path = "src/opik/tests.rs"
+
+[[test]]
+name = "s3_v2_params"
+path = "src/s3_v2/tests/suite.rs"

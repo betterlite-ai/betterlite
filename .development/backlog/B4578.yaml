@@ -2,7 +2,7 @@ id: B4578
 milestone: M8 platform
 title: CLI model management and YAML imports
 status: todo
-depends_on: [B4560]
+depends_on: [B4560, B4580]
 file: tasks/B4578-cli-model-management.yaml
 covers:
   - "litellm/proxy/client/cli/commands/models.py"

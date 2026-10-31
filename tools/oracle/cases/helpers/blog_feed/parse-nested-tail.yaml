@@ -1,0 +1,8 @@
+kind: helper
+name: parse-nested-tail
+call:
+  blog_feed:
+    function: parse_rss_to_posts
+    xml: '<rss><channel><item><title>A<b>B</b>C</title><link>https://nested</link></item></channel></rss>'
+env: {}
+compare: {ignore: []}

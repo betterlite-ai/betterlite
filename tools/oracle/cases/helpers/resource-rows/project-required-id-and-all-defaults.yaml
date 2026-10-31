@@ -1,0 +1,11 @@
+kind: helper
+name: project_required_id_and_all_defaults
+call:
+  resource_rows:
+    operation: project
+    row: {project_id: p}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/spend
+      why: Decimal and float serializers use different zero representations

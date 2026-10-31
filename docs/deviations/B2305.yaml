@@ -1,0 +1,5 @@
+task: B2305
+deviations:
+  - what: Stored MCP JSON over 1048576 bytes or depth 64 fails with a typed decode-limit error.
+    why: The shared stored-input parser requires a finite resource bound.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp_server/mcp_server_manager.py#L83-L85

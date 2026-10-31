@@ -1,0 +1,11 @@
+kind: helper
+name: trailing-rejections
+call:
+  responses_reasoning_merge:
+    mode: trailing
+    messages:
+      - {role: assistant, content: a}
+    new_messages: []
+env: {}
+compare:
+  ignore: []
