@@ -20,7 +20,7 @@ use crate::spec::report::{Report, ReportStatus};
 
 fn clear_leftovers(journal: &Path) -> Result<(), GateError> {
     // a hook whose worker hit its timeout keeps running the checks and would race this attempt's own
-    gate_lock::stop_orphan(&journal.join("gate"))?;
+    gate_lock::stop_orphan(&journal.join("gate"), gate_lock::GRACE)?;
     let blocks = journal.join("hook-blocks");
     if blocks.exists() {
         fs::remove_file(&blocks).map_err(|source| GateError::Write {
@@ -40,7 +40,7 @@ fn worker_report(
     clear_leftovers(attempt.places.journal)?;
     let prompt = prompt::worker(attempt.brief, feedback);
     let run = invoke(attempt, runner, rung, Seat::Worker, &prompt)?;
-    gate_lock::stop_orphan(&attempt.places.journal.join("gate"))?;
+    gate_lock::stop_orphan(&attempt.places.journal.join("gate"), gate_lock::GRACE)?;
     let text = match run {
         Run::Answer(text) => text,
         Run::Silent => {

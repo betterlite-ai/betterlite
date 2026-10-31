@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use crate::error::GateError;
 
-const GRACE: Duration = Duration::from_secs(120);
+pub(crate) const GRACE: Duration = Duration::from_secs(120);
 
 fn own_group() -> Result<String, GateError> {
     let path = Path::new("/proc/self/stat");
@@ -52,8 +52,9 @@ pub(crate) fn hold(log_dir: &Path) -> Result<File, GateError> {
     Ok(file)
 }
 
-fn signal(group: &str, name: &str) -> Result<bool, GateError> {
-    let status = Command::new("kill")
+fn signal(group: &str, name: &str) -> Result<(), GateError> {
+    // kill fails for a group that is already gone, so the caller waits on the lock instead
+    Command::new("kill")
         .args(["-s", name, "--", &format!("-{group}")])
         .stderr(Stdio::null())
         .status()
@@ -61,10 +62,21 @@ fn signal(group: &str, name: &str) -> Result<bool, GateError> {
             program: "kill".to_owned(),
             source,
         })?;
-    Ok(status.success())
+    Ok(())
 }
 
-pub(crate) fn stop_orphan(log_dir: &Path) -> Result<(), GateError> {
+fn is_free(file: &File, path: &Path) -> Result<bool, GateError> {
+    match file.try_lock() {
+        Ok(()) => Ok(true),
+        Err(TryLockError::WouldBlock) => Ok(false),
+        Err(TryLockError::Error(source)) => Err(GateError::Lock {
+            path: path.to_owned(),
+            source,
+        }),
+    }
+}
+
+pub(crate) fn stop_orphan(log_dir: &Path, grace: Duration) -> Result<(), GateError> {
     let path = log_dir.join("gate.lock");
     if !path.exists() {
         return Ok(());
@@ -74,27 +86,25 @@ pub(crate) fn stop_orphan(log_dir: &Path) -> Result<(), GateError> {
         source,
     };
     let file = File::open(&path).map_err(read_error)?;
-    match file.try_lock() {
-        Ok(()) => return Ok(()),
-        Err(TryLockError::WouldBlock) => {}
-        Err(TryLockError::Error(source)) => return Err(GateError::Lock { path, source }),
+    if is_free(&file, &path)? {
+        return Ok(());
     }
     let text = fs::read_to_string(&path).map_err(read_error)?;
     let holder = text.trim();
-    if holder.parse::<u32>().is_err() || holder == own_group()? {
-        // a holder in this process's own group is not an orphan, so the gate waits for it instead
-        return file
-            .lock()
-            .map_err(|source| GateError::Lock { path, source });
+    // a holder in this process's own group is not an orphan, so the gate waits for it instead
+    let orphan = holder.parse::<u32>().is_ok() && holder != own_group()?;
+    if orphan {
+        signal(holder, "INT")?;
     }
-    signal(holder, "INT")?;
     let started = Instant::now();
-    while signal(holder, "0")? {
-        if started.elapsed() >= GRACE {
+    while orphan && !is_free(&file, &path)? {
+        if started.elapsed() >= grace {
             signal(holder, "KILL")?;
             break;
         }
-        thread::sleep(Duration::from_secs(1));
+        thread::sleep(Duration::from_millis(200));
     }
-    Ok(())
+    // the lock goes free once every process that holds it has exited
+    file.lock()
+        .map_err(|source| GateError::Lock { path, source })
 }
