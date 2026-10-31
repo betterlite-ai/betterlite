@@ -1,0 +1,17 @@
+kind: helper
+name: websearch-anthropic-format-fallback
+call:
+  b4112:
+    operation: detect
+    format: unknown
+    response:
+      content:
+        - type: tool_use
+          id: fallback
+          name: litellm_web_search
+          input: {query: rust}
+    transform: true
+    results: [answer]
+env: {}
+compare:
+  ignore: []

@@ -42,16 +42,16 @@ checks:
       run: cargo nextest run --locked -p betterlite-cache -E 'test(/^replay::(conversion|embedded|text|transcription|rerank)/)' --no-tests=fail
     - id: replay-streaming
       why: cached results do not stream correctly or the wrapper does not delegate to the external converter without rewrapping
-      run: cargo nextest run --locked -p betterlite-cache -E 'test(/^replay::streaming)' --no-tests=fail
+      run: cargo nextest run --locked -p betterlite-cache -E 'test(/^replay::streaming/)' --no-tests=fail
     - id: replay-metadata
       why: cache_hit is not set on converted responses
-      run: cargo nextest run --locked -p betterlite-cache -E 'test(/^replay::metadata)' --no-tests=fail
+      run: cargo nextest run --locked -p betterlite-cache -E 'test(/^replay::metadata/)' --no-tests=fail
     - id: replay-deferral
       why: callbacks are not deferred or wrapped status is not recognized
-      run: cargo nextest run --locked -p betterlite-cache -E 'test(/^replay::deferral)' --no-tests=fail
+      run: cargo nextest run --locked -p betterlite-cache -E 'test(/^replay::deferral/)' --no-tests=fail
     - id: replay-responses-bridge
       why: Responses chat-shaped cache detection or routing fails
-      run: cargo nextest run --locked -p betterlite-cache -E 'test(/^replay::responses_bridge)' --no-tests=fail
+      run: cargo nextest run --locked -p betterlite-cache -E 'test(/^replay::responses_bridge/)' --no-tests=fail
 oracle_cases: []
 deviations:
   - what: Cached Anthropic Messages and Responses API results are wrapped in streaming iterators owned by B980 and B927; their concrete implementations and parent-stream detection are external dependencies.

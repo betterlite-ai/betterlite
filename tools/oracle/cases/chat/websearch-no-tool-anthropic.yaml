@@ -1,0 +1,27 @@
+{
+  "kind": "helper",
+  "name": "websearch-no-tool-anthropic",
+  "call": {
+    "b4112": {
+      "format": "anthropic",
+      "response": {
+        "content": [
+          {
+            "type": "tool_use",
+            "id": "one",
+            "name": "WebSearch"
+          },
+          {
+            "type": "text",
+            "text": "hello"
+          }
+        ]
+      },
+      "operation": "detect"
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
