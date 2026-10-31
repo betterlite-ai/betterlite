@@ -1,8 +1,8 @@
 task: B4839
 deviations:
-  - what: persist_dir logs a debug message and continues when the linking script exits nonzero, instead of raising.
-    why: LiteLLM already treats this as non-fatal (verbose_logger.debug, no raise); cache persistence is optional and resuming without it still works.
+  - what: persist_dir logs a debug message and continues when the linking script exits nonzero.
+    why: Retained from the task's declared deviations; this matches LiteLLM's non-fatal handling because cache persistence is optional.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/handlers/cli_handler.py#L74-L81
-  - what: stop() does not kill a stored process; turn() already kills its own process on an early or errored exit, and no process outlives a single turn() call.
-    why: LiteLLM's stop() kills self._proc, a field set for the duration of one turn. betterlite's CLIHarnessHandler is generic per call over the sandbox type, so it cannot hold a live S::Process field between calls; turn() owns and ends its own process before returning control.
+  - what: stop() is a no-op; turn() owns the process and calls kill() on stdin, stream-read, or wait errors, while dropped-stream cleanup belongs to the sandbox.
+    why: The turn stream borrows the handler mutably and owns the sandbox-specific process. LocalSandbox (B4832) owns process-group cleanup; the handler does not store a process for stop() to kill.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/handlers/cli_handler.py#L152-L155
