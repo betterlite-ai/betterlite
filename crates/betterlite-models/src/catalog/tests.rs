@@ -29,6 +29,7 @@ enum Outcome {
     PriceFieldWarn(&'static str),
     PriceUnknown,
     NoWarnings,
+    AliasInvalid,
     WarningBoundary(usize, usize),
     WarningOverflow,
     AliasOverflow,
@@ -92,6 +93,7 @@ enum Failure {
 #[case::off_peak_null_warn(br#"{"model":{"off_peak_pricing":null}}"#.to_vec(), UnknownFields::Warn, Outcome::NoWarnings)]
 #[case::search_context_null_warn(br#"{"model":{"search_context_cost_per_query":null}}"#.to_vec(), UnknownFields::Warn, Outcome::NoWarnings)]
 #[case::aliases_null(br#"{"model":{"litellm_provider":"openai","aliases":null}}"#.to_vec(), UnknownFields::Reject, Outcome::NoWarnings)]
+#[case::aliases_not_list(br#"{"model":{"litellm_provider":"openai","aliases":"bad"}}"#.to_vec(), UnknownFields::Reject, Outcome::AliasInvalid)]
 #[case::warning_boundary(
     warning_entries(WARNING_BOUNDARY_ENTRIES),
     UnknownFields::Warn,
@@ -192,6 +194,13 @@ fn model_catalog_tests_behavior(
             let catalog = result.unwrap();
             assert!(catalog.warnings.is_empty());
             assert!(catalog.lookup("model").is_some());
+        }
+        Outcome::AliasInvalid => {
+            let catalog = result.unwrap();
+            assert_eq!(catalog.entries.len(), 1);
+            assert!(catalog.lookup("bad").is_none());
+            assert_eq!(catalog.warnings.len(), 1);
+            assert!(catalog.warnings[0].contains("aliases"));
         }
         Outcome::WarningBoundary(entries, warnings) => {
             let catalog = result.unwrap();
