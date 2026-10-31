@@ -65,10 +65,33 @@ where
             .unwrap();
     });
     let result = tasks.join_next().await.unwrap();
+    clear_deployment_lock(&pool).await;
     let cleanup = pool.get().await.unwrap().batch_execute(&cleanup_sql).await;
     pool.close();
     fixture.close_async().await.unwrap();
     cleanup.unwrap();
+    result.unwrap();
+}
+
+async fn clear_deployment_lock(pool: &Pool) {
+    let result = timeout(Duration::from_secs(5), async {
+        loop {
+            let client = pool.get().await.unwrap();
+            let locks: i64 = client
+                .query_one(
+                    "SELECT count(*) FROM pg_locks WHERE locktype='advisory' AND objid=72707369",
+                    &[],
+                )
+                .await
+                .unwrap()
+                .get(0);
+            if locks == 0 {
+                break;
+            }
+            sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await;
     result.unwrap();
 }
 
