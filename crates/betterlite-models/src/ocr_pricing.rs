@@ -128,20 +128,20 @@ pub fn first_price(source: Option<&PriceRecord>, keys: &[&str]) -> Option<Decima
 // An absent provider is spelled "None" to match Python's str(None) in the same log line.
 #[must_use]
 pub fn single_log_line(value: Option<&str>) -> String {
-    match value {
-        Some(text) => text.replace(['\r', '\n'], ""),
-        None => "None".to_string(),
-    }
+    let Some(text) = value else {
+        return "None".to_owned();
+    };
+    text.replace(['\r', '\n'], "")
 }
 
 fn checked_page_cost(rate: Option<Decimal>, pages: i64) -> Result<Decimal, OcrCostError> {
-    match rate
+    let Some(cost) = rate
         .unwrap_or(Decimal::ZERO)
         .checked_mul(Decimal::from(pages))
-    {
-        Some(cost) => Ok(cost),
-        None => Err(OcrCostError::Overflow),
-    }
+    else {
+        return Err(OcrCostError::Overflow);
+    };
+    Ok(cost)
 }
 
 // A page-priced model raises on a missing page count; any other model bills 0.0 instead.

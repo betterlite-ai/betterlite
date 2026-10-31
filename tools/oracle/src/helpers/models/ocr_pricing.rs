@@ -3,13 +3,14 @@ use betterlite_models::ocr_pricing::{
     ocr_batch_cost, ocr_cost,
 };
 use betterlite_models::price_lookup::{PriceLookup, PriceRecord};
+use rust_decimal::Decimal;
 use serde::Deserialize;
 
 pub(crate) struct Op;
 
 #[derive(Deserialize)]
 pub(crate) struct UsageInput {
-    credits: Option<rust_decimal::Decimal>,
+    credits: Option<Decimal>,
     pages_processed: Option<i64>,
     pages_processed_annotation: Option<i64>,
 }
@@ -51,6 +52,28 @@ pub(crate) enum Input {
     },
 }
 
+impl From<&UsageInput> for OcrBilling {
+    fn from(usage: &UsageInput) -> Self {
+        Self {
+            kind: OcrResponseKind::Ocr,
+            usage: Some(OcrUsage {
+                credits: usage.credits,
+                pages_processed: usage.pages_processed,
+                pages_processed_annotation: usage.pages_processed_annotation,
+            }),
+        }
+    }
+}
+
+impl From<&BatchUsageInput> for OcrBatchUsage {
+    fn from(usage: &BatchUsageInput) -> Self {
+        Self {
+            pages_processed: usage.pages_processed,
+            pages_processed_annotation: usage.pages_processed_annotation,
+        }
+    }
+}
+
 struct CaseLookup {
     catalog: Option<CatalogInput>,
 }
@@ -86,11 +109,11 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn decimal_json(value: Option<rust_decimal::Decimal>) -> serde_json::Value {
-    match value {
-        Some(decimal) => serde_json::Value::String(decimal.normalize().to_string()),
-        None => serde_json::Value::Null,
-    }
+fn decimal_json(value: Option<Decimal>) -> serde_json::Value {
+    let Some(decimal) = value else {
+        return serde_json::Value::Null;
+    };
+    serde_json::Value::String(decimal.normalize().to_string())
 }
 
 fn run_layering(sources: &[Option<PriceRecord>]) -> serde_json::Value {
@@ -103,49 +126,14 @@ fn run_layering(sources: &[Option<PriceRecord>]) -> serde_json::Value {
     })
 }
 
-fn run_sync(
-    model: &str,
-    custom_llm_provider: Option<&str>,
-    model_info: Option<&PriceRecord>,
-    usage: &UsageInput,
+fn priced_json(
     catalog: Option<&CatalogInput>,
+    compute_cost: impl FnOnce(&CaseLookup) -> Result<Decimal, OcrCostError>,
 ) -> Result<serde_json::Value, OcrCostError> {
-    let billing = OcrBilling {
-        kind: OcrResponseKind::Ocr,
-        usage: Some(OcrUsage {
-            credits: usage.credits,
-            pages_processed: usage.pages_processed,
-            pages_processed_annotation: usage.pages_processed_annotation,
-        }),
-    };
     let lookup = CaseLookup {
         catalog: catalog.cloned(),
     };
-    let cost = ocr_cost(model, custom_llm_provider, &billing, model_info, &lookup)?;
-    Ok(serde_json::json!({ "cost": cost.normalize().to_string() }))
-}
-
-fn run_batch(
-    model: &str,
-    custom_llm_provider: Option<&str>,
-    model_info: Option<&PriceRecord>,
-    usage: &BatchUsageInput,
-    catalog: Option<&CatalogInput>,
-) -> Result<serde_json::Value, OcrCostError> {
-    let batch_usage = OcrBatchUsage {
-        pages_processed: usage.pages_processed,
-        pages_processed_annotation: usage.pages_processed_annotation,
-    };
-    let lookup = CaseLookup {
-        catalog: catalog.cloned(),
-    };
-    let cost = ocr_batch_cost(
-        model,
-        custom_llm_provider,
-        &batch_usage,
-        model_info,
-        &lookup,
-    )?;
+    let cost = compute_cost(&lookup)?;
     Ok(serde_json::json!({ "cost": cost.normalize().to_string() }))
 }
 
@@ -158,26 +146,36 @@ fn run_inner(input: &Input) -> Result<serde_json::Value, OcrCostError> {
             model_info,
             usage,
             catalog,
-        } => run_sync(
-            model,
-            custom_llm_provider.as_deref(),
-            model_info.as_ref(),
-            usage,
-            catalog.as_ref(),
-        ),
+        } => {
+            let billing = OcrBilling::from(usage);
+            priced_json(catalog.as_ref(), |lookup| {
+                ocr_cost(
+                    model,
+                    custom_llm_provider.as_deref(),
+                    &billing,
+                    model_info.as_ref(),
+                    lookup,
+                )
+            })
+        }
         Input::Batch {
             model,
             custom_llm_provider,
             model_info,
             usage,
             catalog,
-        } => run_batch(
-            model,
-            custom_llm_provider.as_deref(),
-            model_info.as_ref(),
-            usage,
-            catalog.as_ref(),
-        ),
+        } => {
+            let batch_usage = OcrBatchUsage::from(usage);
+            priced_json(catalog.as_ref(), |lookup| {
+                ocr_batch_cost(
+                    model,
+                    custom_llm_provider.as_deref(),
+                    &batch_usage,
+                    model_info.as_ref(),
+                    lookup,
+                )
+            })
+        }
     }
 }
 

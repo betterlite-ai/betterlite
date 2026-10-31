@@ -398,7 +398,7 @@ fn batch_cost_bills_only_the_families_that_remain_priced_after_a_failed_lookup()
 // Proves docs/deviations/B1678.yaml: a product too large for Decimal is a typed error, not a rounded float.
 #[test]
 fn ocr_cost_rejects_an_unrepresentable_product_instead_of_rounding_through_a_float() {
-    let max_rate: Scalar = Scalar::Number(
+    let max_rate = Scalar::Number(
         serde_json::from_str("79228162514264337593543950335").expect("Decimal::MAX parses"),
     );
     let deployment_override = record(&[("ocr_cost_per_page", max_rate)]);
