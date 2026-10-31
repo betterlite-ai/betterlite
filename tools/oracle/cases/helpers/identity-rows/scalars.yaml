@@ -1,0 +1,11 @@
+kind: helper
+name: pydantic_scalar_coercion_boundaries
+call:
+  identity_rows:
+    operation: key
+    row: {spend: '1.5', max_parallel_requests: '2', blocked: '1.0'}
+env: {}
+compare:
+  ignore:
+    - pointer: /error/message
+      why: Native typed validation uses its own error wording
