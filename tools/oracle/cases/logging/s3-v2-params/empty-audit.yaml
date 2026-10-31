@@ -1,0 +1,5 @@
+kind: helper
+name: empty-audit
+call: {"b3992": {"operation": "params", "constructor": {"s3_bucket_name": "constructor"}, "global": {"s3_bucket_name": "global"}, "audit": {}}}
+env: {}
+compare: {ignore: []}

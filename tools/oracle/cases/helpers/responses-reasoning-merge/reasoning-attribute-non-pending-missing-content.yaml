@@ -1,0 +1,11 @@
+kind: helper
+name: reasoning-attribute-non-pending-missing-content
+call:
+  responses_reasoning_merge:
+    mode: reasoning
+    record_kind: attribute
+    messages:
+      - {role: user}
+env: {}
+compare:
+  ignore: []

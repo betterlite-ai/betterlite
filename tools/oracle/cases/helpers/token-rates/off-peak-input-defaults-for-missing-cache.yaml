@@ -1,0 +1,18 @@
+kind: helper
+name: off-peak-input-defaults-for-missing-cache
+call:
+  token_rates:
+    operation: base
+    model_info:
+      input_cost_per_token: "0.000001"
+    usage:
+      prompt_tokens: 1
+    service_tier: null
+    provider: null
+    off_peak_pricing:
+      hours_utc: "10:00-11:00"
+      input_cost_per_token: "0.000002"
+      cache_read_input_token_cost: 0
+    moment: "2024-06-16T10:30:00Z"
+compare: {ignore: []}
+env: {}

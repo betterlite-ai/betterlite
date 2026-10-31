@@ -1,0 +1,13 @@
+kind: helper
+name: database-faults-data-error
+call:
+  database_faults:
+    error:
+      error_type: data
+      message: "invalid byte sequence"
+      code: null
+      meta_code: null
+      traceback_modules: []
+env: {}
+compare:
+  ignore: []

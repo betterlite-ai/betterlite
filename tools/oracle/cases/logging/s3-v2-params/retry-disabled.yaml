@@ -1,0 +1,5 @@
+kind: helper
+name: retry-disabled
+call: {"b3992": {"operation": "params", "constructor": {}, "global": {"s3_max_retry_age_seconds": 0}}}
+env: {}
+compare: {ignore: []}

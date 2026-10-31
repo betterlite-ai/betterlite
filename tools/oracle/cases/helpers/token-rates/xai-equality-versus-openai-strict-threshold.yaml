@@ -1,0 +1,14 @@
+kind: helper
+name: xai-equality-versus-openai-strict-threshold
+call:
+  token_rates:
+    operation: base
+    model_info:
+      input_cost_per_token: "0.000001"
+      input_cost_per_token_above_100_tokens: "0.000005"
+    usage:
+      prompt_tokens: 100
+    service_tier: null
+    provider: xai
+compare: {ignore: []}
+env: {}

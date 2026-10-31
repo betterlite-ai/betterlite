@@ -1,0 +1,40 @@
+{
+  "kind": "helper",
+  "name": "database-faults-sqlstate-extraction",
+  "call": {
+    "database_faults": {
+      "errors": [
+        {
+          "error_type": "data",
+          "message": "PostgresError { code: \"123456\""
+        },
+        {
+          "error_type": "data",
+          "message": "PostgresError { code: \"ABCDE"
+        },
+        {
+          "error_type": "data",
+          "message": "PostgresError { code: \"abcde\" PostgresError { code: \"12345\""
+        },
+        {
+          "error_type": "data",
+          "message": "PostgresError { code: \"40P01\""
+        },
+        {
+          "error_type": "data",
+          "meta_code": "23505",
+          "message": "PostgresError { code: \"40001\""
+        },
+        {
+          "error_type": "data",
+          "meta_code": 123,
+          "message": "PostgresError { code: \"40P01\""
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

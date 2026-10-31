@@ -1,0 +1,12 @@
+kind: helper
+name: reasoning-attribute-null-optionals
+call:
+  responses_reasoning_merge:
+    mode: reasoning
+    record_kind: attribute
+    messages:
+      - {role: assistant, content: null, reasoning_content: a}
+      - {role: user, content: q, reasoning_content: null, thinking_blocks: null}
+env: {}
+compare:
+  ignore: []

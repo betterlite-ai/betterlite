@@ -1,0 +1,15 @@
+kind: helper
+name: unreachable-fail-closed
+call:
+  b3767:
+    apply:
+      settings:
+        api_key: key
+        api_base: "https://deepkeep.test"
+        deepkeep_firewall_id: fixed
+        unreachable_fallback: FAIL_CLOSED
+        timeout: 0.2
+      inputs: {texts: [hello]}
+      input_type: request
+env: {}
+compare: {ignore: [{pointer: /error/message, why: "betterlite writes its own message"}]}

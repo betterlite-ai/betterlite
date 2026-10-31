@@ -1,0 +1,5 @@
+kind: helper
+name: null-messages-and-response
+call: {"b3992": {"operation": "event", "start_time": "2026-01-02T03:04:05", "source": {"s3_strip_base64_files": true}, "payload": {"id": "request", "messages": null, "response": null}}}
+env: {}
+compare: {ignore: []}

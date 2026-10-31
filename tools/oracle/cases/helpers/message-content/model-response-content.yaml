@@ -1,0 +1,23 @@
+kind: helper
+name: message-content-model-response-content
+call:
+  message_content:
+    operation: get_content_from_model_response
+    response:
+      id: chatcmpl-1
+      object: chat.completion
+      created: 1700000000
+      model: gpt-4
+      choices:
+        - index: 0
+          message:
+            role: assistant
+            content: hello
+          finish_reason: stop
+      usage:
+        prompt_tokens: 1
+        completion_tokens: 1
+        total_tokens: 2
+env: {}
+compare:
+  ignore: []
