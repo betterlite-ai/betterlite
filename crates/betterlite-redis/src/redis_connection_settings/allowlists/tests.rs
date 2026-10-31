@@ -92,6 +92,29 @@ fn direct_target_rejects_an_unrecognized_option() {
 #[case::async_packer(Target::Url, ClientKind::Async, "command_packer", false)]
 #[case::sync_encoder(Target::Url, ClientKind::Sync, "encoder_class", false)]
 #[case::async_encoder(Target::Url, ClientKind::Async, "encoder_class", true)]
+#[case::sentinel_async_pool(
+    Target::Sentinel,
+    ClientKind::Async,
+    "auto_close_connection_pool",
+    false
+)]
+#[case::sentinel_async_cache(Target::Sentinel, ClientKind::Async, "cache", true)]
+#[case::sentinel_async_cache_config(Target::Sentinel, ClientKind::Async, "cache_config", true)]
+#[case::sentinel_async_ocsp(Target::Sentinel, ClientKind::Async, "ssl_validate_ocsp", true)]
+#[case::sentinel_async_stapled(
+    Target::Sentinel,
+    ClientKind::Async,
+    "ssl_validate_ocsp_stapled",
+    true
+)]
+#[case::sentinel_async_context(Target::Sentinel, ClientKind::Async, "ssl_ocsp_context", true)]
+#[case::sentinel_async_cert(Target::Sentinel, ClientKind::Async, "ssl_ocsp_expected_cert", true)]
+#[case::sentinel_async_maintenance(
+    Target::Sentinel,
+    ClientKind::Async,
+    "oss_cluster_maint_notifications_handler",
+    true
+)]
 fn redis_target_resolution_client_allowlist(
     #[case] target: Target,
     #[case] client: ClientKind,

@@ -214,30 +214,6 @@ fn redis_credential_retains_gcp_callback_settings() {
 }
 
 #[test]
-fn redis_credential_retains_azure_callback_settings() {
-    let overrides: RedisOverrides = serde_json::from_str(
-        r#"{"azure_redis_ad_token":"true","azure_client_id":"client","azure_tenant_id":"tenant","azure_client_secret":"secret"}"#,
-    ).unwrap();
-    let mut settings = blank_settings();
-    apply_iam_precedence(&overrides, &mut settings, &BTreeMap::new()).unwrap();
-    assert!(!settings.credential_provider);
-    let Some(CredentialProviderSettings::Azure {
-        client_id,
-        tenant_id,
-        client_secret,
-    }) = settings.credential_provider_settings
-    else {
-        panic!("missing Azure selection")
-    };
-    assert_eq!(client_id.as_deref(), Some("client"));
-    assert_eq!(tenant_id.as_deref(), Some("tenant"));
-    assert_eq!(
-        client_secret.as_ref().map(ExposeSecret::expose_secret),
-        Some("secret")
-    );
-}
-
-#[test]
 fn redis_credential_retains_aws_signing_settings() {
     let overrides: RedisOverrides = serde_json::from_str(
         r#"{"aws_iam_auth":true,"aws_iam_user_name":"user","aws_iam_cache_name":"cache","aws_iam_region":"region","aws_iam_serverless":"yes"}"#,
@@ -259,4 +235,50 @@ fn redis_credential_retains_aws_signing_settings() {
     assert_eq!(cache_name, "cache");
     assert_eq!(region, "region");
     assert!(serverless);
+}
+
+#[rstest::rstest]
+#[case::redis_only("{}", "redis", "redis")]
+#[case::azure_only("{}", "azure", "azure")]
+#[case::redis_before_azure("{}", "both", "redis")]
+#[case::explicit_before_redis(r#"{"azure_client_id":"explicit","azure_tenant_id":"explicit","azure_client_secret":"explicit"}"#, "both", "explicit")]
+fn redis_credential_retains_azure_callback_settings(
+    #[case] config: &str,
+    #[case] source: &str,
+    #[case] expected: &str,
+) {
+    let overrides: RedisOverrides = serde_json::from_str(config).unwrap();
+    let mut env = BTreeMap::from([
+        ("REDIS_AZURE_AD_TOKEN".to_owned(), "true".to_owned()),
+        ("REDIS_AZURE_CLIENT_ID".to_owned(), "redis".to_owned()),
+        ("REDIS_AZURE_TENANT_ID".to_owned(), "redis".to_owned()),
+        ("REDIS_AZURE_CLIENT_SECRET".to_owned(), "redis".to_owned()),
+    ]);
+    if source == "azure" {
+        env.retain(|name, _| name == "REDIS_AZURE_AD_TOKEN");
+    }
+    if source != "redis" {
+        env.extend([
+            ("AZURE_CLIENT_ID".to_owned(), "azure".to_owned()),
+            ("AZURE_TENANT_ID".to_owned(), "azure".to_owned()),
+            ("AZURE_CLIENT_SECRET".to_owned(), "azure".to_owned()),
+        ]);
+    }
+    let mut settings = blank_settings();
+    apply_iam_precedence(&overrides, &mut settings, &env).unwrap();
+    assert!(!settings.credential_provider);
+    let Some(CredentialProviderSettings::Azure {
+        client_id,
+        tenant_id,
+        client_secret,
+    }) = settings.credential_provider_settings
+    else {
+        panic!("missing Azure selection")
+    };
+    assert_eq!(client_id.as_deref(), Some(expected));
+    assert_eq!(tenant_id.as_deref(), Some(expected));
+    assert_eq!(
+        client_secret.as_ref().map(ExposeSecret::expose_secret),
+        Some(expected)
+    );
 }

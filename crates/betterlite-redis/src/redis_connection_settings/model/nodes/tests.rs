@@ -47,3 +47,10 @@ fn node_ports_accept_quoted_json_numbers() {
         matches!(sentinel, SentinelNodesInput::Value(nodes) if nodes.first().is_some_and(|node| matches!(node, SentinelNodeInput::Tuple((_, IntOrText::Text(port))) if port == "26379")))
     );
 }
+
+#[test]
+fn redis_target_resolution_rejects_sentinel_objects() {
+    let result =
+        serde_json::from_str::<SentinelNodesInput>(r#"[{"host":"sentinel","port":26379}]"#);
+    assert!(result.is_err());
+}

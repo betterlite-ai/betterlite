@@ -19,7 +19,6 @@ pub struct ClusterNodeInput {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(untagged)]
 pub enum SentinelNodeInput {
-    Object { host: String, port: IntOrText },
     Tuple((String, IntOrText)),
 }
 
@@ -61,7 +60,7 @@ impl NodeInput for SentinelNodeInput {
 
     fn into_parts(self) -> (String, IntOrText) {
         match self {
-            Self::Object { host, port } | Self::Tuple((host, port)) => (host, port),
+            Self::Tuple((host, port)) => (host, port),
         }
     }
 

@@ -133,7 +133,8 @@ pub fn filter_passthrough_for_target(
     passthrough: &mut BTreeMap<String, PassthroughValue>,
 ) -> Result<(), super::error::RedisSettingsError> {
     let (common, sync, asynchronous) = match target {
-        Target::Direct | Target::Sentinel => (DIRECT_COMMON, DIRECT_SYNC_ONLY, DIRECT_ASYNC_ONLY),
+        Target::Direct => (DIRECT_COMMON, DIRECT_SYNC_ONLY, DIRECT_ASYNC_ONLY),
+        Target::Sentinel => (DIRECT_COMMON, DIRECT_SYNC_ONLY, DIRECT_SYNC_ONLY),
         Target::Url => (URL_COMMON, URL_SYNC_ONLY, URL_ASYNC_ONLY),
         Target::Cluster => (CLUSTER_COMMON, CLUSTER_SYNC_ONLY, CLUSTER_ASYNC_ONLY),
     };

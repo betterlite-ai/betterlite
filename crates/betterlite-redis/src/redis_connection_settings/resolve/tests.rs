@@ -488,7 +488,6 @@ fn redis_target_resolution_rejects_empty_environment_nodes(#[case] key: &str) {
 #[rstest]
 #[case::cluster(r#"{"startup_nodes":[{"host":"cache","port":"7000"}]}"#, true)]
 #[case::sentinel_tuple(r#"{"sentinel_nodes":[["cache","7000"]]}"#, false)]
-#[case::sentinel_object(r#"{"sentinel_nodes":[{"host":"cache","port":"7000"}]}"#, false)]
 fn redis_target_resolution_normalizes_node_ports(#[case] json: &str, #[case] cluster: bool) {
     let overrides: RedisOverrides = serde_json::from_str(json).unwrap();
     let settings = resolve_redis_kwargs(overrides, ClientKind::Sync, &env(&[])).unwrap();
@@ -510,4 +509,18 @@ fn redis_target_resolution_normalizes_node_ports(#[case] json: &str, #[case] clu
 fn redis_target_resolution_rejects_invalid_node_ports(#[case] json: &str) {
     let overrides: RedisOverrides = serde_json::from_str(json).unwrap();
     resolve_redis_kwargs(overrides, ClientKind::Sync, &env(&[])).unwrap_err();
+}
+
+#[test]
+fn redis_target_resolution_rejects_environment_sentinel_objects() {
+    let environment = env(&[(
+        "REDIS_SENTINEL_NODES",
+        r#"[{"host":"cache","port":"7000"}]"#,
+    )]);
+    let error = resolve_redis_kwargs(RedisOverrides::default(), ClientKind::Async, &environment)
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        crate::redis_connection_settings::error::RedisSettingsError::InvalidSentinelNodesJson { .. }
+    ));
 }

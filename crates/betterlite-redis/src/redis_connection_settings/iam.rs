@@ -91,16 +91,27 @@ fn azure_provider<E>(overrides: &RedisOverrides, env: &E) -> CredentialProviderS
 where
     E: EnvironmentLookup,
 {
-    let client_id = resolve_string(overrides.azure_client_id.as_deref(), env, "AZURE_CLIENT_ID");
-    let tenant_id = resolve_string(overrides.azure_tenant_id.as_deref(), env, "AZURE_TENANT_ID");
+    let client_id = resolve_string(
+        overrides.azure_client_id.as_deref(),
+        env,
+        "REDIS_AZURE_CLIENT_ID",
+    )
+    .or_else(|| env.lookup("AZURE_CLIENT_ID"));
+    let tenant_id = resolve_string(
+        overrides.azure_tenant_id.as_deref(),
+        env,
+        "REDIS_AZURE_TENANT_ID",
+    )
+    .or_else(|| env.lookup("AZURE_TENANT_ID"));
     let client_secret = resolve_string(
         overrides
             .azure_client_secret
             .as_ref()
             .map(ExposeSecret::expose_secret),
         env,
-        "AZURE_CLIENT_SECRET",
+        "REDIS_AZURE_CLIENT_SECRET",
     )
+    .or_else(|| env.lookup("AZURE_CLIENT_SECRET"))
     .map(SecretString::from);
     CredentialProviderSettings::Azure {
         client_id,
