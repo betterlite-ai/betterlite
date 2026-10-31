@@ -15,7 +15,7 @@ fn uuid_embeds_the_millisecond_timestamp_in_the_first_48_bits() {
     let now_ms = Utc::now().timestamp_millis();
     let uuid = uuid::Uuid::parse_str(&create_uuid7()).unwrap();
     let bytes = uuid.into_bytes();
-    let mut timestamp_bytes = [0u8; 8];
+    let mut timestamp_bytes = [0_u8; 8];
     timestamp_bytes[2..].copy_from_slice(&bytes[..6]);
     let embedded_ms = i64::from_be_bytes(timestamp_bytes);
     assert!((embedded_ms - now_ms).abs() < 5000);
