@@ -1,0 +1,20 @@
+task: B3992
+deviations:
+  - what: Malformed or negative DEFAULT_S3_MAX_CONCURRENT_UPLOADS values fall back to 16.
+    why: LiteLLM raises during import for malformed values or semaphore initialization for negative values; these configurations cannot initialize a working exporter.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L63
+  - what: Parameter source values are not resolved from os.environ/ markers.
+    why: Environment and secret resolution remains at the configuration boundary owned by B002.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L297-L302
+  - what: Exporter state and upload machinery are not initialized by the parameter/event builder.
+    why: The task owns immutable parameter and event construction; exporter state belongs to later S3 tasks.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L128-L254
+  - what: Base64 stripping leaves the caller's logging payload unchanged.
+    why: Event construction must be immutable; LiteLLM's message filtering modifies the input payload.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L1044-L1074
+  - what: A malformed DEFAULT_MAX_RECURSE_DEPTH_SENSITIVE_DATA_MASKER value falls back to the default of 10 with a warning instead of crashing the process.
+    why: Pinned LiteLLM reads the variable with int(os.getenv(...)) at import time, so a bad value stops the whole process; no running deployment can rely on that crash.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L86
+  - what: A negative configured recursion depth is treated as invalid and falls back to the default of 10 instead of being used directly.
+    why: A negative max_depth makes depth=0 exceed it immediately, so LiteLLM redacts nothing and returns "[MAX_DEPTH_REACHED]" for the whole top-level value on every call; no sane deployment configures a negative depth on purpose.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L1083-L1085

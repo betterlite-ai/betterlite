@@ -1,0 +1,5 @@
+kind: helper
+name: collection-flags
+call: {b3992: {operation: params, global: {s3_use_team_prefix: [1], s3_use_key_prefix: {}, s3_strip_base64_files: {x: null}, s3_use_virtual_hosted_style: []}}}
+env: {}
+compare: {ignore: []}
