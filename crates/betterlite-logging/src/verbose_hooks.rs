@@ -48,7 +48,7 @@ impl<L: LoggerSink, C: ConsoleSink> VerboseHooks<L, C> {
             level: "DEBUG".to_owned(),
             payload: redacted.clone(),
         });
-        if is_truthy(&self.set_verbose) && self.console.print(&redacted) {
+        if main_guard_allows_console(&self.set_verbose) && self.console.print(&redacted) {
             result.console.push(redacted);
         }
         result
@@ -94,7 +94,7 @@ impl<L: LoggerSink, C: ConsoleSink> VerboseHooks<L, C> {
     }
 }
 
-fn is_truthy(value: &Payload) -> bool {
+fn main_guard_allows_console(value: &Payload) -> bool {
     match value {
         Payload::Null => false,
         Payload::Bool(flag) => *flag,
