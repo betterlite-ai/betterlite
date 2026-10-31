@@ -5,10 +5,12 @@ use betterlite_config::sections::content_filter_records::overrides::CompetitorIn
 use regex::Regex;
 use serde::Deserialize;
 
-use super::competitor_intent_base::configuration::Settings;
 use super::competitor_intent_base::{
     BaseCompetitorIntentChecker, CompetitorIntentError, Meaning, normalize,
 };
+
+pub mod settings;
+use settings::AirlineSettings;
 
 pub const AIRLINE_OTHER_MEANING_SIGNALS: &[&str] = &[
     r"\b(fly|flying|travel|traveling|going|visit|visiting|transit|layover|stopover)\b.{0,12}\b(to|from|via|in|at|through|into)\b",
@@ -87,7 +89,6 @@ const AIRLINES_JSON: &str = include_str!("competitor_intent/major_airlines.json"
 
 #[derive(Debug, Deserialize)]
 struct AirlineEntry {
-    id: Option<String>,
     #[serde(rename = "match")]
     matches: Option<String>,
 }
@@ -96,76 +97,110 @@ pub struct AirlineCompetitorIntentChecker {
     base: BaseCompetitorIntentChecker,
     other_marker: Option<Regex>,
     competitor_marker: Option<Regex>,
+    other_meaning_signals: Vec<String>,
+    competitor_signals: Vec<String>,
+    other_meaning_anchors: Vec<String>,
 }
 
 impl AirlineCompetitorIntentChecker {
-    pub fn new(config: &Settings) -> Result<Self, CompetitorIntentError> {
-        let mut airline_config = config.clone();
-        if airline_config.competitors.is_empty() {
-            airline_config.competitors = load_competitors_excl_brand(&airline_config.brand_self);
+    pub fn new(settings: &AirlineSettings) -> Result<Self, CompetitorIntentError> {
+        let mut base_config = settings.base.clone();
+        if base_config.competitors.is_empty() {
+            base_config.competitors = load_competitors_excl_brand(&base_config.brand_self);
         }
-        if airline_config.domain_words.is_empty() {
-            airline_config.domain_words = ["airline", "airlines", "carrier"]
+        if base_config.domain_words.is_empty() {
+            base_config.domain_words = ["airline", "airlines", "carrier"]
                 .map(str::to_owned)
                 .to_vec();
         }
-        let base = BaseCompetitorIntentChecker::new(&airline_config)?;
-        let competitor_marker = Regex::new(&format!("(?i){EXPLICIT_COMPETITOR_MARKER}")).ok();
-        let other_marker = Regex::new(&format!("(?i){EXPLICIT_OTHER_MEANING_MARKER}")).ok();
+        let base = BaseCompetitorIntentChecker::new(&base_config)?;
+        let other_meaning_signals = owned_or_default(
+            &settings.other_meaning_signals,
+            AIRLINE_OTHER_MEANING_SIGNALS,
+        );
+        let competitor_signals =
+            owned_or_default(&settings.competitor_signals, AIRLINE_COMPETITOR_SIGNALS);
+        let competitor_marker = compile_explicit_marker(
+            settings.explicit_competitor_marker.as_deref(),
+            EXPLICIT_COMPETITOR_MARKER,
+        );
+        let other_marker = compile_explicit_marker(
+            settings.explicit_other_meaning_marker.as_deref(),
+            EXPLICIT_OTHER_MEANING_MARKER,
+        );
         Ok(Self {
             base,
             other_marker,
             competitor_marker,
+            other_meaning_signals,
+            competitor_signals,
+            other_meaning_anchors: settings.other_meaning_anchors.clone(),
         })
     }
 
     #[must_use]
     pub fn run(&self, text: &str) -> CompetitorIntentResult {
-        if text.is_empty() {
-            return self.base.run_with(text, |normalized, token| {
-                self.classify_ambiguous(normalized, token)
-            });
-        }
-        self.base.run_with(text, |normalized, token| {
-            self.classify_ambiguous(normalized, token)
+        let normalized = normalize(text);
+        self.base.run_with(&normalized, |segment, token| {
+            self.classify_ambiguous(segment, token)
         })
     }
 
     #[must_use]
     pub fn classify_ambiguous(&self, text: &str, token: &str) -> (Meaning, f64) {
-        let normalized = normalize(text);
-        if self
-            .competitor_marker
-            .as_ref()
-            .is_some_and(|marker| marker.is_match(&normalized) && word_boundary(&normalized, token))
-        {
-            return (Meaning::Competitor, 0.85);
+        let text_lower = text.to_lowercase();
+        let token_lower = token.to_lowercase();
+        if self.competitor_marker.as_ref().is_some_and(|marker| {
+            marker.is_match(&text_lower) && word_boundary(&text_lower, &token_lower)
+        }) {
+            return (Meaning::Competitor, 0.85_f64);
         }
         if self
             .other_marker
             .as_ref()
-            .is_some_and(|marker| marker.is_match(&normalized))
+            .is_some_and(|marker| marker.is_match(&text_lower))
         {
-            return (Meaning::OtherMeaning, 0.85);
+            return (Meaning::OtherMeaning, 0.85_f64);
         }
-        let has_comparison = count_signals(&normalized, COMPARISON_SIGNALS) > 0;
-        if !has_comparison && count_signals(&normalized, OPERATIONAL_SIGNALS) > 0 {
-            return (Meaning::OtherMeaning, 0.85);
+        let has_comparison = count_signals(&text_lower, COMPARISON_SIGNALS) > 0;
+        if !has_comparison && count_signals(&text_lower, OPERATIONAL_SIGNALS) > 0 {
+            return (Meaning::OtherMeaning, 0.85_f64);
         }
-        score_context(
-            count_signals(&normalized, AIRLINE_OTHER_MEANING_SIGNALS),
-            count_signals(&normalized, AIRLINE_COMPETITOR_SIGNALS),
-        )
+        let other_count =
+            count_signals(&text_lower, self.other_meaning_signals.as_slice()).saturating_add(
+                count_signals(&text_lower, self.other_meaning_anchors.as_slice()),
+            );
+        let competitor_count = count_signals(&text_lower, self.competitor_signals.as_slice());
+        score_context(other_count, competitor_count)
     }
 }
 
+fn owned_or_default(custom: &[String], default_patterns: &[&str]) -> Vec<String> {
+    if custom.is_empty() {
+        default_patterns
+            .iter()
+            .map(|pattern| (*pattern).to_owned())
+            .collect()
+    } else {
+        custom.to_vec()
+    }
+}
+
+fn compile_explicit_marker(custom: Option<&str>, default_pattern: &str) -> Option<Regex> {
+    let pattern = custom
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or(default_pattern);
+    Regex::new(&format!("(?i){pattern}")).ok()
+}
+
+#[must_use]
 pub fn load_competitors_excl_brand(brand_self: &[String]) -> Vec<String> {
     let Ok(airlines) = serde_json::from_str::<Vec<AirlineEntry>>(AIRLINES_JSON) else {
         return Vec::new();
     };
     let brands: BTreeSet<String> = brand_self
         .iter()
-        .map(|brand| normalize(brand))
+        .map(|brand| brand.trim().to_lowercase())
         .filter(|brand| !brand.is_empty())
         .collect();
     let mut competitors = Vec::new();
@@ -174,18 +209,12 @@ pub fn load_competitors_excl_brand(brand_self: &[String]) -> Vec<String> {
             .matches
             .unwrap_or_default()
             .split('|')
-            .map(normalize)
+            .map(|variant| variant.trim().to_lowercase())
             .filter(|variant| !variant.is_empty())
             .collect::<Vec<_>>();
-        let id = airline
-            .id
-            .map(|value| normalize(&value))
-            .unwrap_or_default();
-        let overlaps = brands.contains(&id)
-            || variants.iter().any(|variant| {
-                brands.contains(variant)
-                    || variant.split_whitespace().any(|word| brands.contains(word))
-            });
+        let overlaps = variants.iter().any(|variant| {
+            brands.contains(variant) || variant.split_whitespace().any(|word| brands.contains(word))
+        });
         if !overlaps {
             competitors.extend(variants);
         }
@@ -193,25 +222,28 @@ pub fn load_competitors_excl_brand(brand_self: &[String]) -> Vec<String> {
     competitors
 }
 
-fn count_signals(text: &str, patterns: &[&str]) -> usize {
-    let mut count = 0_usize;
+fn count_signals<S>(text: &str, patterns: &[S]) -> u32
+where
+    S: AsRef<str>,
+{
+    let mut count = 0_u32;
     for pattern in patterns {
-        if Regex::new(&format!("(?i){pattern}")).is_ok_and(|regex| regex.is_match(text)) {
+        if Regex::new(&format!("(?i){}", pattern.as_ref())).is_ok_and(|regex| regex.is_match(text))
+        {
             count = count.saturating_add(1);
         }
     }
     count
 }
 
-fn score_context(other_count: usize, competitor_count: usize) -> (Meaning, f64) {
+fn score_context(other_count: u32, competitor_count: u32) -> (Meaning, f64) {
     let total = other_count.saturating_add(competitor_count);
     if total == 0 {
         return (Meaning::OtherMeaning, 0.5_f64);
     }
-    let total_ratio = f64::from(u32::try_from(total).unwrap_or(u32::MAX));
-    let other_ratio = f64::from(u32::try_from(other_count).unwrap_or(u32::MAX)).div(total_ratio);
-    let competitor_ratio =
-        f64::from(u32::try_from(competitor_count).unwrap_or(u32::MAX)).div(total_ratio);
+    let total_f64 = f64::from(total);
+    let other_ratio = f64::from(other_count).div(total_f64);
+    let competitor_ratio = f64::from(competitor_count).div(total_f64);
     if other_ratio >= 0.6_f64 {
         return (
             Meaning::OtherMeaning,
@@ -266,5 +298,7 @@ mod run_log_only;
 mod run_non_competitor;
 #[path = "competitor_intent_airline/tests/run_possible_competitor.rs"]
 mod run_possible_competitor;
+#[path = "competitor_intent_airline/tests/shared.rs"]
+mod shared;
 #[path = "competitor_intent_airline/tests/signal_scoring.rs"]
 mod signal_scoring;
