@@ -16,7 +16,10 @@ description: >-
   Settings. The config section tokenizer_engines (crates/betterlite-config/src/sections/tokenizer_engines.rs and tokenizer_engines/**) reads litellm_settings.disable_hf_tokenizer_download (bool, default unset), CUSTOM_TIKTOKEN_CACHE_DIR and TOKEN_COUNTER_MAX_CONCURRENT_COUNTS (default 4, range 1 to 256; a bad value logs LiteLLM's warning and uses 4).
 
 
-  Dependency policy. hf-hub and tokenizers add about 100 crates. Scope deny.toml and add only what they need, each with a one-line comment: hf-hub, reqwest-middleware, xet-client and xet-runtime as reqwest wrappers on line 72; skips for base64@0.13.1, darling@0.20.11, darling_core@0.20.11, darling_macro@0.20.11 and core-foundation@0.9.4; one-crate MPL-2.0 license exceptions for colored and option-ext (both reached through xet-runtime); and RUSTSEC-2024-0436 (paste is unmaintained, reached through tokenizers) in the advisories ignore list. Use hf-hub's rustls-tls feature so no OpenSSL enters.
+  Dependency policy. hf-hub and tokenizers add about 115 crates; Max accepted them on 2026-10-31. Scope deny.toml and add only what they need, each with a one-line comment: hf-hub, reqwest-middleware, xet-client and xet-runtime as reqwest wrappers on line 72; skips for base64@0.13.1, darling@0.20.11, darling_core@0.20.11, darling_macro@0.20.11 and core-foundation@0.9.4; one-crate MPL-2.0 license exceptions for colored and option-ext (both reached through xet-runtime); and RUSTSEC-2024-0436 (paste is unmaintained, reached through tokenizers) in the advisories ignore list. Use hf-hub's rustls-tls feature so no OpenSSL enters.
+
+
+  MPL-2.0 notice. Max allowed the two MPL-2.0 crates on 2026-10-31. MPL-2.0 section 3.2(a) asks whoever ships a binary to tell its users where the source of those files is, so add a section to THIRD_PARTY_NOTICES.md below Berri AI's notice that names colored and option-ext, says they are under MPL-2.0 and are used unmodified, and links each one's crates.io page and repository. Never patch, fork or vendor either crate: a changed file of theirs would have to be published under MPL-2.0.
 
 
   Tests and oracle. engine::tests::engines_follow_litellm covers each bundled encoding, Unicode, whitespace, special tokens, bad ids and the r50k_base fetch against a local server. engine::tests::hub_download_follows_huggingface_hub runs a local Hub on 127.0.0.1 through B5085's endpoint and covers a fresh download, a cached file with the same etag, offline with and without a cached file, a 401, a 404 repo and a 503 with a cached file, a missing revision and a missing file without fallback, a HEAD past etag_timeout, the 60-second retry with no cached file, a stalled body past download_timeout, the token header present and absent, and a custom tokenizer's explicit token. engine::tests::selection_follows_litellm covers every kind, the disable switch, the per-kind cache, a failed download falling back to cl100k_base and a custom tokenizer's failure reaching the caller. engine::tests::limits_hold covers the concurrency limiter and the input and output caps. sections::tokenizer_engines::tests::settings_follow_litellm loads every setting. The helper operation tokenizer_engine is already registered; force LITELLM_RUST=false so the oracle uses _python_encoding and PythonHuggingFaceTokenizer (rust_bridge/tokenizer.py L64-L108), and build Hugging Face cases from tokenizer.json bytes with from_str so no case needs the network.
@@ -38,6 +41,7 @@ scope:
     - tools/oracle/cases/helpers/tokenizer-engine/**
     - "tools/oracle/fuzz/corpus/helper_case/tokenizer_engine-*"
     - deny.toml
+    - THIRD_PARTY_NOTICES.md
     - Cargo.toml
     - Cargo.lock
   lint_tables: false
@@ -99,6 +103,8 @@ dod:
     proof: [tokenizer-settings, config-yaml-corpus]
   - text: The asset and input parsers and every added helper operation have committed corpora that replay.
     proof: [tokenizer-asset-corpus, tokenizer-input-corpus, helper-case-corpus]
+  - text: THIRD_PARTY_NOTICES.md names colored and option-ext as MPL-2.0 with links to their source, and Berri AI's notice stays.
+    proof: [mpl-notice]
 checks:
   optional:
     - mutants
@@ -115,6 +121,13 @@ checks:
     - id: limits
       why: the limits test is missing or a cap or the limiter does not hold
       run: cargo nextest run --locked -p betterlite-tokenizer --no-tests=fail -E 'test(/^engine::tests::limits_hold($|::)/)'
+    - id: mpl-notice
+      why: THIRD_PARTY_NOTICES.md does not tell users where the MPL-2.0 sources of colored and option-ext are, or lost Berri AI's notice
+      run: >-
+        grep -q 'Copyright (c) 2023 Berri AI' THIRD_PARTY_NOTICES.md
+        && grep -q 'MPL-2.0' THIRD_PARTY_NOTICES.md
+        && grep -q 'https://crates.io/crates/colored' THIRD_PARTY_NOTICES.md
+        && grep -q 'https://crates.io/crates/option-ext' THIRD_PARTY_NOTICES.md
     - id: tokenizer-settings
       why: the settings test is missing or a setting loads differently from LiteLLM
       run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::tokenizer_engines::tests::settings_follow_litellm($|::)/)'
@@ -183,7 +196,7 @@ deviations:
     link: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/utils/_headers.py#L157-L203
   - what: When the token lookup finds no token, hf-hub runs its own lookup, so an HF_TOKEN made only of whitespace is sent as written and a missing HF_TOKEN_PATH file falls through to {HF_HOME}/token, where huggingface_hub sends no token.
     why: >-
-      HFClientBuilder has no way to say "no token"; without one it calls its own resolve_token. Both cases need a broken setup to reach. An upstream option is an open question for Max.
+      HFClientBuilder has no way to say "no token"; without one it calls its own resolve_token. Both cases need a broken setup to reach. Max decided on 2026-10-31 not to ask hf-hub upstream for such an option for now.
     link: https://docs.rs/hf-hub/1.0.0/hf_hub/struct.HFClientBuilder.html
   - what: HF_HUB_DISABLE_XET is not read. A file the Hub serves through Xet downloads through hf-xet even when the variable is set.
     why: >-
