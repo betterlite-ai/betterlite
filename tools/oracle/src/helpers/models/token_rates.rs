@@ -7,6 +7,7 @@ use chrono::{DateTime, Utc};
 use jiff::tz::TimeZoneDatabase;
 use rust_decimal::Decimal;
 use serde::Deserialize;
+use thiserror::Error;
 
 pub(crate) struct Op;
 
@@ -49,28 +50,19 @@ pub(crate) enum Input {
     Deployment { model_info: Option<ModelInfo> },
 }
 
+#[derive(Debug, Error)]
 enum RunError {
-    Token(TokenRateError),
-    Serialize(serde_json::Error),
-}
-
-impl From<TokenRateError> for RunError {
-    fn from(error: TokenRateError) -> Self {
-        Self::Token(error)
-    }
-}
-
-impl From<serde_json::Error> for RunError {
-    fn from(error: serde_json::Error) -> Self {
-        Self::Serialize(error)
-    }
+    #[error(transparent)]
+    Token(#[from] TokenRateError),
+    #[error(transparent)]
+    Serialize(#[from] serde_json::Error),
 }
 
 impl From<RunError> for Box<crate::helpers::HelperError> {
     fn from(error: RunError) -> Self {
-        let (class, message) = match error {
-            RunError::Token(source) => ("TokenRateError", source.to_string()),
-            RunError::Serialize(source) => ("Serialize", source.to_string()),
+        let class = match &error {
+            RunError::Token(_) => "TokenRateError",
+            RunError::Serialize(_) => "Serialize",
         };
         Self::new(crate::helpers::HelperError {
             class: class.to_owned(),
@@ -78,7 +70,7 @@ impl From<RunError> for Box<crate::helpers::HelperError> {
             error_type: Some(None),
             param: Some(None),
             code: Some(None),
-            message,
+            message: error.to_string(),
         })
     }
 }
