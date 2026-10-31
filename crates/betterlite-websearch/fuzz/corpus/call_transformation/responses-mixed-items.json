@@ -1,0 +1,1 @@
+{"output": [null, "ignored", {"type": "function_call", "call_id": "one", "name": "litellm_web_search", "arguments": {"query": "rust"}}]}

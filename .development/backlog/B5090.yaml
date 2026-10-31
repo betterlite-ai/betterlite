@@ -1,0 +1,13 @@
+id: B5090
+milestone: M0 foundation
+title: One shared parser for env and os.environ/ values
+status: todo
+depends_on: [B002, B208, B243, B2202, B2307, B3078, B3930, B4320, B4321, B4590, B5091]
+file: tasks/B5090-shared-env-parser.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
