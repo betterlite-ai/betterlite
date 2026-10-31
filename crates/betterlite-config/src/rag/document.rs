@@ -3,29 +3,51 @@ use serde::{Deserialize, Serialize};
 
 // secrecy::SecretString has no Serialize impl by design, so structs holding one derive Deserialize only.
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+const fn default_chunk_size() -> i64 {
+    1000
+}
+
+const fn default_chunk_overlap() -> i64 {
+    200
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RAGChunkingStrategy {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub chunk_size: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub chunk_overlap: Option<i64>,
+    #[serde(default = "default_chunk_size")]
+    pub chunk_size: i64,
+    #[serde(default = "default_chunk_overlap")]
+    pub chunk_overlap: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub separators: Option<Vec<String>>,
 }
 
+impl Default for RAGChunkingStrategy {
+    fn default() -> Self {
+        Self {
+            chunk_size: default_chunk_size(),
+            chunk_overlap: default_chunk_overlap(),
+            separators: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RAGIngestOCROptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RAGIngestEmbeddingOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OpenAIVectorStoreOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vector_store_id: Option<String>,
@@ -40,6 +62,7 @@ pub struct OpenAIVectorStoreOptions {
 }
 
 #[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BedrockVectorStoreOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vector_store_id: Option<String>,
@@ -58,7 +81,7 @@ pub struct BedrockVectorStoreOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub litellm_credential_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub aws_access_key_id: Option<String>,
+    pub aws_access_key_id: Option<SecretString>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub aws_secret_access_key: Option<SecretString>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -79,7 +102,8 @@ pub struct BedrockVectorStoreOptions {
     pub aws_external_id: Option<SecretString>,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct VertexAIVectorStoreOptions {
     pub vector_store_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -87,7 +111,7 @@ pub struct VertexAIVectorStoreOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vertex_location: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub vertex_credentials: Option<String>,
+    pub vertex_credentials: Option<SecretString>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gcs_bucket: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -104,6 +128,7 @@ pub enum S3VectorsDistanceMetric {
 }
 
 #[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct S3VectorsVectorStoreOptions {
     pub vector_bucket_name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -117,7 +142,7 @@ pub struct S3VectorsVectorStoreOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub litellm_credential_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub aws_access_key_id: Option<String>,
+    pub aws_access_key_id: Option<SecretString>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub aws_secret_access_key: Option<SecretString>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -148,6 +173,7 @@ pub enum RAGIngestVectorStoreOptions {
 }
 
 #[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RAGIngestOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -170,6 +196,7 @@ pub enum RAGIngestStatus {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RAGIngestResponse {
     pub id: String,
     pub status: RAGIngestStatus,

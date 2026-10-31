@@ -16,9 +16,9 @@ mod types {
         let strategy: RAGChunkingStrategy = serde_json::from_str(
             r#"{"chunk_size": 500, "chunk_overlap": 50, "separators": ["\n\n", "\n"]}"#,
         )
-        .expect("every field is optional and all are present here");
-        assert_eq!(strategy.chunk_size, Some(500));
-        assert_eq!(strategy.chunk_overlap, Some(50));
+        .expect("every field here matches the struct");
+        assert_eq!(strategy.chunk_size, 500);
+        assert_eq!(strategy.chunk_overlap, 50);
         assert_eq!(
             strategy.separators,
             Some(vec!["\n\n".to_owned(), "\n".to_owned()])
@@ -26,10 +26,31 @@ mod types {
     }
 
     #[test]
-    fn chunking_strategy_defaults_to_empty() {
+    fn chunking_strategy_defaults_to_hardcoded_values() {
         let strategy: RAGChunkingStrategy =
-            serde_json::from_str("{}").expect("every field is optional");
+            serde_json::from_str("{}").expect("every field has a default");
+        assert_eq!(strategy.chunk_size, 1000);
+        assert_eq!(strategy.chunk_overlap, 200);
+        assert_eq!(strategy.separators, None);
         assert_eq!(strategy, RAGChunkingStrategy::default());
+    }
+
+    #[test]
+    fn chunking_strategy_rejects_an_unknown_field() {
+        let error =
+            serde_json::from_str::<RAGChunkingStrategy>(r#"{"chunk_bogus": 500}"#).unwrap_err();
+        assert!(error.to_string().contains("chunk_bogus"));
+    }
+
+    #[test]
+    fn ingest_options_rejects_an_unknown_field_nested_inside_a_vector_store_record() {
+        let error = serde_json::from_str::<RAGIngestOptions>(
+            r#"{
+                "vector_store": {"custom_llm_provider": "openai", "api_kye": "sk-secret"}
+            }"#,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("api_kye"));
     }
 
     #[test]
@@ -93,11 +114,45 @@ mod types {
         )
         .expect("every field here matches the struct");
         assert_eq!(options.vector_store_id, Some("vs_bedrock".to_owned()));
-        assert_eq!(options.aws_access_key_id, Some("AKIA".to_owned()));
         assert_bedrock_secrets_expose_their_values(&options);
     }
 
+    #[test]
+    fn bedrock_debug_output_redacts_every_secret_field() {
+        let options: BedrockVectorStoreOptions = serde_json::from_str(
+            r#"{
+                "aws_access_key_id": "akia-value",
+                "aws_secret_access_key": "sak-value",
+                "aws_session_token": "sess-value",
+                "aws_web_identity_token": "wit-value",
+                "aws_sts_endpoint": "sts-value",
+                "aws_external_id": "ext-value"
+            }"#,
+        )
+        .expect("every field here matches the struct");
+        let debug_output = format!("{options:?}");
+        assert!(!debug_output.contains("akia-value"));
+        assert!(!debug_output.contains("sak-value"));
+        assert!(!debug_output.contains("sess-value"));
+        assert!(!debug_output.contains("wit-value"));
+        assert!(!debug_output.contains("sts-value"));
+        assert!(!debug_output.contains("ext-value"));
+    }
+
     fn assert_bedrock_secrets_expose_their_values(options: &BedrockVectorStoreOptions) {
+        assert_bedrock_auth_secrets_expose_their_values(options);
+        assert_bedrock_federation_secrets_expose_their_values(options);
+    }
+
+    fn assert_bedrock_auth_secrets_expose_their_values(options: &BedrockVectorStoreOptions) {
+        assert_eq!(
+            options
+                .aws_access_key_id
+                .as_ref()
+                .expect("aws_access_key_id was set")
+                .expose_secret(),
+            "AKIA"
+        );
         assert_eq!(
             options
                 .aws_secret_access_key
@@ -114,6 +169,9 @@ mod types {
                 .expose_secret(),
             "session"
         );
+    }
+
+    fn assert_bedrock_federation_secrets_expose_their_values(options: &BedrockVectorStoreOptions) {
         assert_eq!(
             options
                 .aws_web_identity_token
@@ -147,6 +205,7 @@ mod types {
                 "vector_store_id": "vs_vertex",
                 "vertex_project": "my-project",
                 "vertex_location": "us-central1",
+                "vertex_credentials": "{\"private_key\": \"shh\"}",
                 "gcs_bucket": "bucket",
                 "wait_for_import": false,
                 "import_timeout": 30
@@ -155,12 +214,31 @@ mod types {
         .expect("vector_store_id is required and present here");
         assert_eq!(options.vector_store_id, "vs_vertex");
         assert_eq!(options.vertex_project, Some("my-project".to_owned()));
+        assert_eq!(
+            options
+                .vertex_credentials
+                .as_ref()
+                .expect("vertex_credentials was set")
+                .expose_secret(),
+            "{\"private_key\": \"shh\"}"
+        );
 
         let missing_id = serde_json::from_str::<VertexAIVectorStoreOptions>(
             r#"{"vertex_project": "my-project"}"#,
         )
         .unwrap_err();
         assert!(missing_id.to_string().contains("vector_store_id"));
+    }
+
+    #[test]
+    fn vertex_ai_debug_output_redacts_the_service_account_credentials() {
+        let options: VertexAIVectorStoreOptions = serde_json::from_str(
+            r#"{"vector_store_id": "vs_vertex", "vertex_credentials": "{\"private_key\": \"shh\"}"}"#,
+        )
+        .expect("vector_store_id and vertex_credentials match the struct");
+        let debug_output = format!("{options:?}");
+        assert!(!debug_output.contains("private_key"));
+        assert!(!debug_output.contains("shh"));
     }
 
     #[test]
@@ -172,6 +250,7 @@ mod types {
                 "dimension": 1536,
                 "distance_metric": "cosine",
                 "non_filterable_metadata_keys": ["source"],
+                "aws_access_key_id": "AKIA",
                 "aws_secret_access_key": "secret",
                 "aws_session_token": "session",
                 "aws_web_identity_token": "web-token",
@@ -187,11 +266,33 @@ mod types {
         );
         assert_eq!(
             options
+                .aws_access_key_id
+                .expect("aws_access_key_id was set")
+                .expose_secret(),
+            "AKIA"
+        );
+        assert_eq!(
+            options
                 .aws_secret_access_key
                 .expect("aws_secret_access_key was set")
                 .expose_secret(),
             "secret"
         );
+    }
+
+    #[test]
+    fn s3_vectors_debug_output_redacts_every_secret_field() {
+        let options: S3VectorsVectorStoreOptions = serde_json::from_str(
+            r#"{
+                "vector_bucket_name": "bucket",
+                "aws_access_key_id": "akia-value",
+                "aws_secret_access_key": "sak-value"
+            }"#,
+        )
+        .expect("every field here matches the struct");
+        let debug_output = format!("{options:?}");
+        assert!(!debug_output.contains("akia-value"));
+        assert!(!debug_output.contains("sak-value"));
     }
 
     #[test]
