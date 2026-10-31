@@ -67,7 +67,7 @@ fn nested_child_tail_matches_element_text() {
 fn first_empty_channel_stops_channel_selection() {
     let xml = "<rss><channel/></rss><rss><channel><item><title>Later</title>\
         <link>https://later</link></item></channel></rss>";
-    assert!(parse_rss_to_posts(xml, 1).is_err());
+    drop(parse_rss_to_posts(xml, 1).unwrap_err());
 }
 
 #[test]
@@ -78,9 +78,9 @@ fn namespace_qualified_channel_is_not_selected() {
 
 #[test]
 fn malformed_document_boundaries_are_rejected() {
-    assert!(parse_rss_to_posts("<rss><channel/></rss>tail", 1).is_err());
-    assert!(parse_rss_to_posts("<rss><channel/></rss><extra/>", 1).is_err());
-    assert!(parse_rss_to_posts("<rss><channel a='unterminated'/></rss>", 1).is_err());
+    drop(parse_rss_to_posts("<rss><channel/></rss>tail", 1).unwrap_err());
+    drop(parse_rss_to_posts("<rss><channel/></rss><extra/>", 1).unwrap_err());
+    drop(parse_rss_to_posts("<rss><channel a='unterminated></rss>", 1).unwrap_err());
 }
 
 #[test]
@@ -93,7 +93,7 @@ fn replay_xml_fuzz_corpus() {
     let entries = fs::read_dir(corpus).unwrap();
     for entry in entries {
         let xml = fs::read_to_string(entry.unwrap().path()).unwrap();
-        let _ = parse_rss_to_posts(&xml, 1);
+        drop(parse_rss_to_posts(&xml, 1));
     }
 }
 

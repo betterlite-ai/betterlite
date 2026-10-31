@@ -4,7 +4,10 @@ use serde_json::{Value, json};
 use thiserror::Error;
 
 mod date_parse;
+mod logic;
 mod parser;
+
+use logic::{Cache, fetch_rss_feed, get_blog_posts, local_posts, validate_blog_posts};
 
 pub(crate) struct Op;
 
@@ -72,6 +75,15 @@ pub(crate) struct MockResponse {
     error: bool,
 }
 
+struct GetRequest<'request> {
+    url: &'request str,
+    now: f64,
+    local_only: bool,
+    cached_posts: Option<&'request Vec<BlogPost>>,
+    last_fetch_time: f64,
+    response: &'request MockResponse,
+}
+
 #[derive(Debug, Clone, Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct BlogPost {
@@ -125,12 +137,6 @@ const fn parse_failure_class(error: &parser::ParseFailure) -> &'static str {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
-struct Warning {
-    subject: String,
-    message: String,
-}
-
 impl Helper for Op {
     type Input = Input;
     fn run(input: &Self::Input) -> HelperResult {
@@ -143,18 +149,8 @@ impl Helper for Op {
                 timeout,
                 response,
             } => json!(fetch_rss_feed(url, *timeout, response)?),
-            Input::ParseRssToPosts { xml, max_posts } => {
-                let posts: Vec<BlogPost> = parser::parse_rss_to_posts(xml, *max_posts)
-                    .map_err(Failure::from)?
-                    .into_iter()
-                    .map(BlogPost::from)
-                    .collect();
-                serde_json::to_value(posts).map_err(|error| serialization_error(&error))?
-            }
-            Input::ValidateBlogPosts { posts } => {
-                let (valid, warnings) = validate_blog_posts(posts);
-                json!({ "valid": valid, "warnings": warnings })
-            }
+            Input::ParseRssToPosts { xml, max_posts } => run_parse(xml, *max_posts)?,
+            Input::ValidateBlogPosts { posts } => run_validate(posts),
             Input::GetBlogPosts {
                 url,
                 now,
@@ -162,153 +158,81 @@ impl Helper for Op {
                 cached_posts,
                 last_fetch_time,
                 response,
-            } => {
-                let mut cache = Cache {
-                    posts: cached_posts.clone(),
-                    last_fetch_time: *last_fetch_time,
-                };
-                let (posts, warnings) =
-                    get_blog_posts(&mut cache, url, *now, *local_only, response);
-                serde_json::to_value(json!({ "posts": posts, "warnings": warnings }))
-                    .map_err(|error| serialization_error(&error))?
-            }
-            Input::GetBlogPostsSequence { calls } => {
-                let mut cache = Cache {
-                    posts: None,
-                    last_fetch_time: 0.0,
-                };
-                let mut results = Vec::new();
-                let mut snapshots = Vec::new();
-                let mut fetch_count = 0_u64;
-                let mut requests = Vec::new();
-                for call in calls {
-                    let cache_hit = !call.local_only
-                        && cache.posts.is_some()
-                        && call.now < cache.last_fetch_time.mul_add(1.0, BLOG_POSTS_TTL_SECONDS);
-                    let (posts, warnings) = get_blog_posts(
-                        &mut cache,
-                        &call.url,
-                        call.now,
-                        call.local_only,
-                        &call.response,
-                    );
-                    if !cache_hit && !call.local_only {
-                        fetch_count = fetch_count.saturating_add(1);
-                        requests
-                            .push(json!({ "url": call.url.clone(), "timeout": default_timeout() }));
-                    }
-                    results.push(json!({ "posts": posts, "warnings": warnings }));
-                    snapshots.push(json!({
-                        "cached_posts": cache.posts.clone(),
-                        "last_fetch_time": cache.last_fetch_time,
-                    }));
-                }
-                json!({ "results": results, "snapshots": snapshots, "fetch_count": fetch_count, "requests": requests })
-            }
+            } => run_get(&GetRequest {
+                url,
+                now: *now,
+                local_only: *local_only,
+                cached_posts: cached_posts.as_ref(),
+                last_fetch_time: *last_fetch_time,
+                response,
+            })?,
+            Input::GetBlogPostsSequence { calls } => run_sequence(calls),
         };
         Ok(value)
     }
 }
 
-fn local_posts() -> Vec<BlogPost> {
-    let post = BlogPost {
-        title: "Realtime WebRTC HTTP Endpoints".to_owned(),
-        description: "Use the LiteLLM proxy to route OpenAI-style WebRTC realtime via HTTP: client_secrets and SDP exchange.".to_owned(),
-        date: "2026-03-12".to_owned(),
-        url: "https://docs.litellm.ai/blog/realtime_webrtc_http_endpoints".to_owned(),
+fn run_parse(xml: &str, max_posts: usize) -> Result<Value, Box<HelperError>> {
+    let posts: Vec<BlogPost> = parser::parse_rss_to_posts(xml, max_posts)
+        .map_err(Failure::from)?
+        .into_iter()
+        .map(BlogPost::from)
+        .collect();
+    serde_json::to_value(posts).map_err(|error| serialization_error(&error))
+}
+
+fn run_validate(posts: &Value) -> Value {
+    let (valid, warnings) = validate_blog_posts(posts);
+    json!({ "valid": valid, "warnings": warnings })
+}
+
+fn run_get(request: &GetRequest<'_>) -> Result<Value, Box<HelperError>> {
+    let mut cache = Cache {
+        posts: request.cached_posts.cloned(),
+        last_fetch_time: request.last_fetch_time,
     };
-    vec![post]
+    let (posts, warnings) = get_blog_posts(
+        &mut cache,
+        request.url,
+        request.now,
+        request.local_only,
+        request.response,
+    );
+    serde_json::to_value(json!({ "posts": posts, "warnings": warnings }))
+        .map_err(|error| serialization_error(&error))
 }
 
-// `timeout` is accepted but never mocked: the oracle never actually waits on the clock.
-fn fetch_rss_feed(url: &str, _timeout: u64, response: &MockResponse) -> Result<String, Failure> {
-    if response.error {
-        return Err(Failure::Connect {
-            url: url.to_owned(),
-        });
-    }
-    if !(200..=299).contains(&response.status) {
-        return Err(Failure::Status {
-            status: response.status,
-        });
-    }
-    Ok(response.text.clone())
-}
-
-fn fetch_and_parse(url: &str, response: &MockResponse) -> Result<Vec<BlogPost>, Failure> {
-    let xml = fetch_rss_feed(url, default_timeout(), response)?;
-    let posts = parser::parse_rss_to_posts(&xml, default_max_posts())?;
-    Ok(posts.into_iter().map(BlogPost::from).collect())
-}
-
-fn validate_blog_posts(posts: &Value) -> (bool, Vec<Warning>) {
-    let valid = posts.as_array().is_some_and(|entries| !entries.is_empty());
-    if valid {
-        return (valid, Vec::new());
-    }
-    let warning = Warning {
-        subject: "None".to_owned(),
-        message: "LiteLLM: Parsed RSS feed has no valid posts. Falling back to local backup."
-            .to_owned(),
+fn run_sequence(calls: &[GetBlogPostsCall]) -> Value {
+    let mut cache = Cache {
+        posts: None,
+        last_fetch_time: 0.0,
     };
-    (valid, vec![warning])
-}
-
-// Mirrors `GetBlogPosts._cached_posts`/`_last_fetch_time`, populated on a successful fetch.
-struct Cache {
-    posts: Option<Vec<BlogPost>>,
-    last_fetch_time: f64,
-}
-
-impl Cache {
-    fn store(&mut self, posts: Vec<BlogPost>, now: f64) {
-        self.posts = Some(posts);
-        self.last_fetch_time = now;
-    }
-}
-
-fn get_blog_posts(
-    cache: &mut Cache,
-    url: &str,
-    now: f64,
-    local_only: bool,
-    response: &MockResponse,
-) -> (Vec<BlogPost>, Vec<Warning>) {
-    if local_only {
-        return (local_posts(), Vec::new());
-    }
-    // Uses `mul_add` for the TTL bound, as `local_ttl_cache.rs` does, to avoid an unsigned subtraction.
-    let cache_hit = cache
-        .posts
-        .clone()
-        .filter(|_| now < cache.last_fetch_time.mul_add(1.0, BLOG_POSTS_TTL_SECONDS));
-    if let Some(posts) = cache_hit {
-        return (posts, Vec::new());
-    }
-    match fetch_and_parse(url, response) {
-        Err(failure) => {
-            let warning = Warning {
-                subject: url.to_owned(),
-                message: format!(
-                    "LiteLLM: Failed to fetch blog posts from {url}: {failure}. Falling back to local backup."
-                ),
-            };
-            (local_posts(), vec![warning])
+    let mut results = Vec::new();
+    let mut snapshots = Vec::new();
+    let mut fetch_count = 0_u64;
+    let mut requests = Vec::new();
+    for call in calls {
+        let cache_hit = !call.local_only
+            && cache.posts.is_some()
+            && call.now < cache.last_fetch_time.mul_add(1.0, BLOG_POSTS_TTL_SECONDS);
+        let (posts, warnings) = get_blog_posts(
+            &mut cache,
+            &call.url,
+            call.now,
+            call.local_only,
+            &call.response,
+        );
+        if !cache_hit && !call.local_only {
+            fetch_count = fetch_count.saturating_add(1);
+            requests.push(json!({ "url": call.url.clone(), "timeout": default_timeout() }));
         }
-        Ok(posts) if posts.is_empty() => {
-            let warning = Warning {
-                subject: "None".to_owned(),
-                message:
-                    "LiteLLM: Parsed RSS feed has no valid posts. Falling back to local backup."
-                        .to_owned(),
-            };
-            (local_posts(), vec![warning])
-        }
-        Ok(posts) => {
-            cache.store(posts.clone(), now);
-            (posts, Vec::new())
-        }
+        results.push(json!({ "posts": posts, "warnings": warnings }));
+        snapshots.push(json!({
+            "cached_posts": cache.posts.clone(),
+            "last_fetch_time": cache.last_fetch_time,
+        }));
     }
+    json!({ "results": results, "snapshots": snapshots, "fetch_count": fetch_count, "requests": requests })
 }
 
 fn serialization_error(error: &serde_json::Error) -> Box<HelperError> {

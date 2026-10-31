@@ -47,7 +47,7 @@ struct Fields {
 }
 
 fn format_fields(fields: Fields) -> Option<String> {
-    if !(1..=9999).contains(&fields.year) {
+    if !(1_i32..=9_999_i32).contains(&fields.year) {
         return None;
     }
     NaiveTime::from_hms_opt(fields.hour, fields.minute, fields.second)?;
