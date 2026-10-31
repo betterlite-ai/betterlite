@@ -10,11 +10,9 @@ use crate::raw::RawNumber;
 use crate::resolve::{parse_float, resolve_number, resolve_string};
 
 mod tests;
-
 pub const UI_FRIENDLY_NAME: &str = "Gray Swan Cygnal";
 const DEFAULT_API_BASE: &str = "https://api.grayswan.ai";
 const DEFAULT_GUARDRAIL_TIMEOUT: Duration = Duration::from_secs(30);
-
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum OnFlaggedAction {
     Block,
@@ -22,14 +20,12 @@ pub enum OnFlaggedAction {
     Monitor,
     Passthrough,
 }
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReasoningMode {
     Off,
     Hybrid,
     Thinking,
 }
-
 impl ReasoningMode {
     fn parse(value: &str) -> Option<Self> {
         match value.to_ascii_lowercase().as_str() {
@@ -40,19 +36,16 @@ impl ReasoningMode {
         }
     }
 }
-
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct Raw {
     guardrails: Vec<Entry>,
 }
-
 #[derive(Debug, Default, Deserialize)]
 struct Entry {
     guardrail_name: String,
     litellm_params: Parameters,
 }
-
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 struct Parameters {
@@ -69,12 +62,10 @@ struct Parameters {
     streaming_end_of_stream_only: Option<bool>,
     streaming_sampling_rate: Option<u32>,
 }
-
 #[derive(Debug, Clone, Default)]
 pub struct Settings {
     pub guardrails: Vec<Configured>,
 }
-
 #[derive(Debug, Clone)]
 pub struct Configured {
     pub guardrail_name: String,
@@ -90,7 +81,6 @@ pub struct Configured {
     pub streaming_end_of_stream_only: bool,
     pub streaming_sampling_rate: u32,
 }
-
 impl Section for Raw {
     type Settings = Settings;
 
@@ -107,9 +97,7 @@ impl Section for Raw {
         Ok(Settings { guardrails })
     }
 }
-
 const DEFAULT_VIOLATION_THRESHOLD: f64 = 0.5_f64;
-
 impl Entry {
     fn resolve<L>(self, index: usize, lookup: &L) -> Result<Configured, ConfigError>
     where
@@ -155,7 +143,6 @@ impl Entry {
         })
     }
 }
-
 fn resolve_guardrail_timeout(
     guardrail_timeout: Option<f64>,
     path: &str,
@@ -168,7 +155,6 @@ fn resolve_guardrail_timeout(
         source,
     })
 }
-
 fn resolve_api_key<L>(
     api_key: Option<SecretString>,
     prefix: &str,
@@ -191,7 +177,6 @@ where
         lookup,
     )?))
 }
-
 fn resolve_on_flagged_action(value: Option<&str>) -> OnFlaggedAction {
     let Some(text) = value else {
         return OnFlaggedAction::default();
@@ -210,7 +195,6 @@ fn resolve_on_flagged_action(value: Option<&str>) -> OnFlaggedAction {
         }
     }
 }
-
 fn resolve_reasoning_mode<L>(value: Option<&str>, lookup: &L) -> Option<ReasoningMode>
 where
     L: EnvironmentLookup,

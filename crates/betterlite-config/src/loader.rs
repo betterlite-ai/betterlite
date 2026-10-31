@@ -1,3 +1,11 @@
+use std::collections::{BTreeMap, BTreeSet};
+use std::num::{ParseFloatError, ParseIntError};
+use std::time::TryFromFloatSecsError;
+
+use secrecy::SecretString;
+use serde::de::DeserializeOwned;
+use thiserror::Error;
+
 use crate::providers::bedrock::request_policy::metadata_fields;
 use crate::raw::{
     RawConfig, RawDeployment, RawGeneral, RawInfo, RawLiteLlm, RawNumber, RawParams, RawRouter,
@@ -11,20 +19,17 @@ use crate::types::{
     Config, GeneralSettings, LiteLlmParams, LiteLlmSettings, ModelDeployment, ModelInfo,
     ProxyTrust, RouterSettings,
 };
-use secrecy::SecretString;
-use serde::de::DeserializeOwned;
-use std::collections::{BTreeMap, BTreeSet};
-use std::num::{ParseFloatError, ParseIntError};
-use std::time::TryFromFloatSecsError;
-use thiserror::Error;
+
 pub trait EnvironmentLookup {
     fn lookup(&self, name: &str) -> Option<String>;
 }
+
 impl EnvironmentLookup for BTreeMap<String, String> {
     fn lookup(&self, name: &str) -> Option<String> {
         self.get(name).cloned()
     }
 }
+
 #[derive(Debug, Error)]
 pub enum ConfigError {
     #[error("invalid YAML: {source}")]
@@ -232,19 +237,10 @@ fn convert_litellm<L>(raw: RawLiteLlm, lookup: &L) -> Result<LiteLlmSettings, Co
 where
     L: EnvironmentLookup,
 {
-    let num_retries = number(
-        raw.num_retries,
-        "litellm_settings.num_retries",
-        lookup,
-        parse_integer,
-    )?;
-    let request_timeout = number(
-        raw.request_timeout,
-        "litellm_settings.request_timeout",
-        lookup,
-        parse_float,
-    )?;
-    // LiteLLM reads bool(os.getenv(...)), so every nonempty value, "false" included, turns it on
+    let retries_path = "litellm_settings.num_retries";
+    let timeout_path = "litellm_settings.request_timeout";
+    let num_retries = number(raw.num_retries, retries_path, lookup, parse_integer)?;
+    let request_timeout = number(raw.request_timeout, timeout_path, lookup, parse_float)?;
     let (modify_params, default_max_tokens) = environment_defaults(raw.modify_params, lookup)?;
     Ok(LiteLlmSettings {
         num_retries,

@@ -26,7 +26,6 @@ pub(super) fn metadata(input: &serde_json::Value) -> crate::helpers::HelperResul
     object.retain(|_, item| !item.is_null());
     Ok(serde_json::Value::Object(object))
 }
-
 fn metadata_field(
     input: &serde_json::Value,
     key: &str,
@@ -34,7 +33,6 @@ fn metadata_field(
     let field = input.get(key).cloned().unwrap_or_else(|| json!({}));
     serde_json::from_value(field).map_err(guardrail_error)
 }
-
 pub(super) fn call(input: &serde_json::Value) -> crate::helpers::HelperResult {
     let request = input
         .get("generic_call")
@@ -42,7 +40,6 @@ pub(super) fn call(input: &serde_json::Value) -> crate::helpers::HelperResult {
         .unwrap_or_else(|| json!({}));
     run_call(&request)
 }
-
 fn run_call(request: &serde_json::Value) -> crate::helpers::HelperResult {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -75,7 +72,6 @@ fn run_call(request: &serde_json::Value) -> crate::helpers::HelperResult {
     }
     result_payload(result)
 }
-
 fn result_payload(
     result: Result<GenericGuardrailAPIResponse, GenericGuardrailAPIError>,
 ) -> crate::helpers::HelperResult {
@@ -98,7 +94,6 @@ fn result_payload(
         }
     }
 }
-
 fn settings(
     request: &serde_json::Value,
 ) -> betterlite_guardrails::generic_guardrail_contracts::GenericGuardrailAPISettings {
@@ -121,7 +116,6 @@ fn settings(
         streaming_transform_mode: StreamingTransformMode::BlockOnly,
     }
 }
-
 fn request_payload(
     request: &serde_json::Value,
 ) -> Result<GenericGuardrailAPIRequest, Box<crate::helpers::HelperError>> {

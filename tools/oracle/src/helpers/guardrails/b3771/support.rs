@@ -15,7 +15,6 @@ where
     let parsed = serde_json::from_value(value).map_err(guardrail_error)?;
     Ok(Some(parsed))
 }
-
 pub(super) fn error_failure(
     is_blocked: bool,
     blocked_class: &str,
@@ -29,7 +28,6 @@ pub(super) fn error_failure(
     };
     failure_with_class(class, message)
 }
-
 pub(super) fn failure_with_class(
     class_name: &str,
     message: String,
@@ -44,7 +42,6 @@ pub(super) fn failure_with_class(
         message,
     })
 }
-
 pub(super) fn guardrail_error<E>(error: E) -> Box<crate::helpers::HelperError>
 where
     E: std::fmt::Display,
@@ -52,7 +49,6 @@ where
     let message = error.to_string();
     failure_with_class("GuardrailError", message)
 }
-
 // "closed" drops the connection immediately; "timeout" delays past the client's timeout.
 pub(super) fn disconnection_script(fail: &str) -> MockScript {
     let wait = if fail == "closed" {

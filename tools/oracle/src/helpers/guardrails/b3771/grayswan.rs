@@ -42,7 +42,6 @@ pub(super) fn verdict(input: &serde_json::Value) -> crate::helpers::HelperResult
         "replaced": replaced,
     }))
 }
-
 fn input_type(input: &serde_json::Value) -> GuardrailInputType {
     let is_output = input
         .get("is_output")
@@ -54,7 +53,6 @@ fn input_type(input: &serde_json::Value) -> GuardrailInputType {
         GuardrailInputType::Request
     }
 }
-
 fn guardrail(
     input: &serde_json::Value,
 ) -> Result<GraySwanGuardrail, Box<crate::helpers::HelperError>> {
@@ -67,7 +65,6 @@ fn guardrail(
         timeout: betterlite_guardrails::grayswan::DEFAULT_TIMEOUT,
     })
 }
-
 fn parse_settings(
     value: &serde_json::Value,
     default_action: OnFlaggedAction,
@@ -100,7 +97,6 @@ fn parse_settings(
         fail_open,
     })
 }
-
 struct Request {
     input_type: GuardrailInputType,
     settings: GraySwanSettings,
@@ -113,7 +109,6 @@ struct Request {
     answer: Option<UpstreamAnswer>,
     fail: String,
 }
-
 // grayswan_payload nests settings under "config"; grayswan_call puts them at the top level.
 fn parse_request(request: &serde_json::Value) -> Result<Request, Box<crate::helpers::HelperError>> {
     let settings_source = request
@@ -157,7 +152,6 @@ fn parse_request(request: &serde_json::Value) -> Result<Request, Box<crate::help
         fail,
     })
 }
-
 fn request_flags(request: &serde_json::Value) -> (GuardrailInputType, String) {
     let input_type = match request
         .get("input_type")
@@ -173,13 +167,11 @@ fn request_flags(request: &serde_json::Value) -> (GuardrailInputType, String) {
         .to_owned();
     (input_type, fail)
 }
-
 pub(super) fn payload(input: &serde_json::Value) -> crate::helpers::HelperResult {
     let found = input.get("grayswan_payload").cloned();
     let request = found.unwrap_or_else(|| json!({}));
     run_payload(parse_request(&request)?)
 }
-
 fn run_payload(parsed: Request) -> crate::helpers::HelperResult {
     let guardrail = GraySwanGuardrail {
         api_key: SecretString::from("oracle-key"),
@@ -199,13 +191,11 @@ fn run_payload(parsed: Request) -> crate::helpers::HelperResult {
     let payload = guardrail.prepare_payload(&prepared, parsed.messages, parsed.tools);
     serde_json::to_value(payload).map_err(guardrail_error)
 }
-
 pub(super) fn call(input: &serde_json::Value) -> crate::helpers::HelperResult {
     let found = input.get("grayswan_call").cloned();
     let request = found.unwrap_or_else(|| json!({}));
     run_call(parse_request(&request)?)
 }
-
 fn run_call(call: Request) -> crate::helpers::HelperResult {
     let script = match &call.answer {
         Some(reply) => {
@@ -243,7 +233,6 @@ fn run_call(call: Request) -> crate::helpers::HelperResult {
         .map(|_outcome| payload.unwrap_or(serde_json::Value::Null))
         .map_err(|error| failure(&error))
 }
-
 fn failure(error: &GraySwanGuardrailAPIError) -> Box<crate::helpers::HelperError> {
     let is_blocked = matches!(error, GraySwanGuardrailAPIError::Blocked { .. });
     error_failure(

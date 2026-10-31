@@ -32,7 +32,6 @@ pub enum OnFlaggedAction {
     #[serde(rename = "PASSTHROUGH")]
     Passthrough,
 }
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ReasoningMode {
@@ -40,7 +39,6 @@ pub enum ReasoningMode {
     Hybrid,
     Thinking,
 }
-
 #[derive(Debug, Clone)]
 pub struct GraySwanSettings {
     pub on_flagged_action: OnFlaggedAction,
@@ -81,7 +79,6 @@ impl GraySwanGuardrail {
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         Ok(headers)
     }
-
     #[must_use]
     pub fn prepare_payload(
         &self,
@@ -125,7 +122,6 @@ impl GraySwanGuardrail {
             litellm_metadata,
         }
     }
-
     pub async fn apply_guardrail(
         &self,
         input: GraySwanInput,
@@ -166,7 +162,6 @@ impl GraySwanGuardrail {
             Err(error) => Err(error),
         }
     }
-
     pub async fn call_api(
         &self,
         payload: &GraySwanPayload,
@@ -189,7 +184,6 @@ impl GraySwanGuardrail {
         serde_json::from_slice(&body)
             .map_err(|source| GraySwanGuardrailAPIError::ResponseJson { source })
     }
-
     pub fn process_response(
         &self,
         response: &GraySwanResponse,
@@ -280,6 +274,5 @@ async fn read_capped_body(
     }
     Ok(body)
 }
-
 #[path = "grayswan/tests.rs"]
 mod tests;

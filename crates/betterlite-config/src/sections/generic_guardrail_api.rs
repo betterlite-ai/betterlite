@@ -9,10 +9,8 @@ use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::resolve::resolve_string;
 
 mod tests;
-
 pub const UI_FRIENDLY_NAME: &str = "Generic Guardrail API";
 const GUARDRAIL_PATH: &str = "/beta/litellm_basic_guardrail_api";
-
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UnreachableFallback {
@@ -20,19 +18,16 @@ pub enum UnreachableFallback {
     FailClosed,
     FailOpen,
 }
-
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct Raw {
     guardrails: Vec<Entry>,
 }
-
 #[derive(Debug, Default, Deserialize)]
 struct Entry {
     guardrail_name: String,
     litellm_params: Parameters,
 }
-
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 struct Parameters {
@@ -44,12 +39,10 @@ struct Parameters {
     #[serde(rename = "additional_provider_specific_params")]
     provider_params: Option<BTreeMap<String, GuardrailValue>>,
 }
-
 #[derive(Debug, Clone, Default)]
 pub struct Settings {
     pub guardrails: Vec<Configured>,
 }
-
 #[derive(Debug, Clone)]
 pub struct Configured {
     pub guardrail_name: String,
@@ -59,7 +52,6 @@ pub struct Configured {
     pub fail_on_error: bool,
     pub provider_params: BTreeMap<String, GuardrailValue>,
 }
-
 impl Section for Raw {
     type Settings = Settings;
 
@@ -76,7 +68,6 @@ impl Section for Raw {
         Ok(Settings { guardrails })
     }
 }
-
 impl Entry {
     fn resolve<L>(self, index: usize, lookup: &L) -> Result<Configured, ConfigError>
     where

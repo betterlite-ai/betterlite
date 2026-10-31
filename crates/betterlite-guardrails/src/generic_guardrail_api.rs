@@ -48,7 +48,6 @@ impl GenericGuardrailAPIError {
             | Self::ResponseJson { .. } => StatusCode::BAD_REQUEST,
         }
     }
-
     const fn is_unreachable(&self) -> bool {
         match self {
             Self::Timeout { .. } | Self::Request { .. } => true,
@@ -86,7 +85,6 @@ impl GenericGuardrailAPI {
         }
         Ok(headers)
     }
-
     pub async fn apply_guardrail(
         &self,
         request: GenericGuardrailAPIRequest,
@@ -95,7 +93,6 @@ impl GenericGuardrailAPI {
         self.apply_guardrail_with_original(&request, &original)
             .await
     }
-
     fn merge_provider_params(
         &self,
         request: GenericGuardrailAPIRequest,
@@ -109,7 +106,6 @@ impl GenericGuardrailAPI {
             ..request
         }
     }
-
     pub async fn apply_guardrail_with_original(
         &self,
         request: &GenericGuardrailAPIRequest,
@@ -122,7 +118,6 @@ impl GenericGuardrailAPI {
             Err(error) => self.handle_error(error, fallback),
         }
     }
-
     pub async fn call_api(
         &self,
         request: &GenericGuardrailAPIRequest,
@@ -144,7 +139,6 @@ impl GenericGuardrailAPI {
         serde_json::from_slice(&body)
             .map_err(|source| GenericGuardrailAPIError::ResponseJson { source })
     }
-
     fn handle_error(
         &self,
         error: GenericGuardrailAPIError,
@@ -209,6 +203,5 @@ async fn read_capped_body(
     }
     Ok(body)
 }
-
 #[path = "generic_guardrail_api/tests.rs"]
 mod tests;

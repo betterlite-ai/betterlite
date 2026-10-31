@@ -17,7 +17,6 @@ pub struct GraySwanDynamicParams {
     pub reasoning_mode: Option<ReasoningMode>,
     pub metadata: Option<GuardrailExtraValue>,
 }
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GraySwanInput {
     #[serde(default)]
@@ -57,7 +56,6 @@ pub struct GraySwanResponse {
     pub mutation: Option<bool>,
     pub ipi: Option<bool>,
 }
-
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 struct RawGraySwanResponse {
@@ -66,7 +64,6 @@ struct RawGraySwanResponse {
     mutation: Option<bool>,
     ipi: Option<bool>,
 }
-
 // LiteLLM treats a null, missing or numeric-string violation score the same as a plain float.
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
@@ -75,13 +72,11 @@ enum ViolationScore {
     Number(f64),
     Text(String),
 }
-
 #[derive(Debug, Deserialize)]
 struct PrivateNumber {
     #[serde(rename = "$serde_json::private::Number")]
     number: String,
 }
-
 #[derive(Debug, Error)]
 pub enum GraySwanResponseError {
     #[error("invalid violation score: {text:?}")]
@@ -91,10 +86,8 @@ pub enum GraySwanResponseError {
         source: ParseFloatError,
     },
 }
-
 impl TryFrom<RawGraySwanResponse> for GraySwanResponse {
     type Error = GraySwanResponseError;
-
     fn try_from(raw: RawGraySwanResponse) -> Result<Self, Self::Error> {
         let violation = match raw.violation {
             None => 0.0_f64,
@@ -123,14 +116,12 @@ impl TryFrom<RawGraySwanResponse> for GraySwanResponse {
         })
     }
 }
-
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum GraySwanViolatedRule {
     Structured(GraySwanViolatedRuleFields),
     Plain(GuardrailExtraValue),
 }
-
 #[derive(Debug, Clone, Deserialize)]
 pub struct GraySwanViolatedRuleFields {
     #[serde(default)]
@@ -142,7 +133,6 @@ pub struct GraySwanViolatedRuleFields {
     #[serde(flatten)]
     pub extra: BTreeMap<String, GuardrailExtraValue>,
 }
-
 impl GraySwanViolatedRuleFields {
     #[must_use]
     pub fn to_fields(&self) -> BTreeMap<String, GuardrailExtraValue> {
@@ -162,7 +152,6 @@ impl GraySwanViolatedRuleFields {
         map
     }
 }
-
 impl GraySwanViolatedRule {
     #[must_use]
     pub fn to_extra_value(&self) -> GuardrailExtraValue {
@@ -172,14 +161,12 @@ impl GraySwanViolatedRule {
         }
     }
 }
-
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum GraySwanRuleNumber {
     Integer(i64),
     Text(String),
 }
-
 impl GraySwanRuleNumber {
     #[must_use]
     pub const fn is_truthy(&self) -> bool {
@@ -188,7 +175,6 @@ impl GraySwanRuleNumber {
             Self::Text(value) => !value.is_empty(),
         }
     }
-
     #[must_use]
     pub fn to_extra_value(&self) -> GuardrailExtraValue {
         match self {
@@ -197,7 +183,6 @@ impl GraySwanRuleNumber {
         }
     }
 }
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GraySwanVerdict {
     Pass,
@@ -205,7 +190,6 @@ pub enum GraySwanVerdict {
     Replaced { violation_message: String },
     ShortCircuited { violation_message: String },
 }
-
 #[derive(Debug, Clone)]
 pub struct GraySwanResult {
     pub verdict: GraySwanVerdict,
