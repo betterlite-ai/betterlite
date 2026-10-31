@@ -8,7 +8,7 @@ use crate::metadata::identity::Mode;
 use rstest::rstest;
 use std::sync::Arc;
 use std::{
-    fs, io,
+    fs, io, iter,
     sync::atomic::{AtomicUsize, Ordering},
 };
 
@@ -44,6 +44,7 @@ enum Failure {
     Invalid,
     Unknown,
     PriceType,
+    WarningBytes,
 }
 
 #[rstest]
@@ -78,7 +79,11 @@ enum Failure {
 #[case::depth_limit(nested(MAX_CATALOG_DEPTH - 1), UnknownFields::Warn, Outcome::Failure(Failure::TooDeep))]
 #[case::invalid_key(br#"{"\uQQQQ":{}}"#.to_vec(), UnknownFields::Warn, Outcome::Failure(Failure::Invalid))]
 #[case::unterminated(br#"{"model"#.to_vec(), UnknownFields::Warn, Outcome::Failure(Failure::Invalid))]
-#[case::large_key_array(large_key_array(), UnknownFields::Warn, Outcome::Count(1))]
+#[case::large_key_array(
+    large_key_array(),
+    UnknownFields::Warn,
+    Outcome::Failure(Failure::WarningBytes)
+)]
 #[case::trailing(b"{}x".to_vec(), UnknownFields::Warn, Outcome::Failure(Failure::Invalid))]
 #[case::price_unknown_warn(br#"{"model":{"litellm_provider":"openai","off_peak_pricing":{"input_cost_per_token":0.0000002,"new_field":true}}}"#.to_vec(), UnknownFields::Warn, Outcome::PriceWarn("model.off_peak_pricing.new_field"))]
 #[case::price_unknown_reject(br#"{"model":{"litellm_provider":"openai","off_peak_pricing":{"input_cost_per_token":0.0000002,"new_field":true}}}"#.to_vec(), UnknownFields::Reject, Outcome::PriceUnknown)]
@@ -260,7 +265,9 @@ fn generalization_nested_price_unknown_is_checked() {
 #[test]
 fn repeated_long_alias_collisions_hit_warning_byte_limit() {
     let canonical = "c".repeat(256 * 1024);
-    let aliases = (0..100).map(|_| "\"shared\"").collect::<Vec<_>>().join(",");
+    let aliases = iter::repeat_n("\"shared\"", 100)
+        .collect::<Vec<_>>()
+        .join(",");
     let bytes = format!(
         "{{\"{canonical}\":{{\"aliases\":[{aliases}]}},\"other\":{{\"aliases\":[\"shared\"]}}}}"
     )
@@ -296,7 +303,12 @@ fn check_error(error: &CatalogError, failure: Failure) {
         Failure::Unknown => assert!(error.to_string().contains("unknown field")),
         Failure::Invalid => assert!(matches!(error, CatalogError::Json(_))),
         Failure::PriceType => assert!(matches!(error, CatalogError::Prices { .. })),
+        Failure::WarningBytes => check_warning_bytes(error),
     }
+}
+
+fn check_warning_bytes(error: &CatalogError) {
+    assert!(matches!(error, CatalogError::TooManyWarningBytes { .. }));
 }
 
 fn check_lookup(catalog: &ModelCatalog, name: &str) {

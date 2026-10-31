@@ -24,6 +24,7 @@ const BACKUP_ASSET: &[u8] =
 mod decoder;
 mod loader;
 mod price_unknown;
+mod warnings;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CatalogEntry {
