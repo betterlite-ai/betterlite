@@ -47,6 +47,17 @@ fn config_parser_reads_only_opik_section() {
 }
 
 #[test]
+fn config_parser_preserves_hashes_and_quotes_in_values() {
+    let values =
+        read_config_section("[opik]\nurl_override = https://host/path#frag\napi_key = \"token\"\n");
+    assert_eq!(
+        values.get("url_override"),
+        Some(&String::from("https://host/path#frag"))
+    );
+    assert_eq!(values.get("api_key"), Some(&String::from("\"token\"")));
+}
+
+#[test]
 fn payload_classification_removes_nulls() {
     let payload = vec![
         obj(r#"{"id": "trace", "key2": null}"#),

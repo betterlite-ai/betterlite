@@ -1,16 +1,16 @@
 import time
 import uuid
-from typing import Any, cast
+from typing import cast
 
 
-def uuid_shape() -> dict[str, Any]:
+def uuid_shape() -> dict[str, object]:
     value = uuid.uuid4().hex
     value = f"{int(time.time() * 1000):012x}" + value[12:]
     value = value[:12] + "7" + value[13:16] + "8" + value[17:]
     return {"version": int(value[12], 16), "variant": int(value[16], 16) >> 2}
 
 
-def run(input_value: dict[str, Any]) -> dict[str, Any]:
+def run(input_value: dict[str, object]) -> dict[str, object]:
     function = cast(str, input_value["function"])
     if function == "uuid":
         return uuid_shape()
@@ -26,9 +26,9 @@ def run(input_value: dict[str, Any]) -> dict[str, Any]:
         return {"value": result}
     if function == "metadata":
         values = input_value
-        auth = cast(dict[str, Any], values.get("auth", {}))
-        request = cast(dict[str, Any], values.get("request", {}))
-        requester = cast(dict[str, Any], values.get("requester", {}))
+        auth = cast(dict[str, object], values.get("auth", {}))
+        request = cast(dict[str, object], values.get("request", {}))
+        requester = cast(dict[str, object], values.get("requester", {}))
         result = {**auth, **request, **requester}
         return {"metadata": result}
     if function == "payload":

@@ -43,11 +43,7 @@ pub fn read_config_section(contents: &str) -> BTreeMap<String, String> {
         let Some((key, raw_value)) = trimmed.split_once('=') else {
             continue;
         };
-        let stripped = raw_value
-            .split_once('#')
-            .map_or(raw_value, |(head, _)| head)
-            .trim();
-        values.insert(key.trim().to_owned(), unquote(stripped));
+        values.insert(key.trim().to_owned(), raw_value.trim().to_owned());
     }
     values
 }
@@ -63,14 +59,4 @@ pub fn create_usage_object(usage: &IndexMap<String, Json>) -> IndexMap<String, J
                 .map(|value| (key.to_owned(), value.clone()))
         })
         .collect()
-}
-
-fn unquote(value: &str) -> String {
-    let double_quoted = value
-        .strip_prefix('"')
-        .and_then(|rest| rest.strip_suffix('"'));
-    let single_quoted = value
-        .strip_prefix('\'')
-        .and_then(|rest| rest.strip_suffix('\''));
-    double_quoted.or(single_quoted).unwrap_or(value).to_owned()
 }
