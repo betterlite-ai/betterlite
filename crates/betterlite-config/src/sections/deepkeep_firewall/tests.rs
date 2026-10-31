@@ -6,6 +6,11 @@ use crate::loader::ConfigLoader;
 use secrecy::ExposeSecret as _;
 
 #[test]
+fn deepkeep_ui_friendly_name_matches_litellm() {
+    assert_eq!(super::UI_FRIENDLY_NAME, "DeepKeep AI Firewall");
+}
+
+#[test]
 fn deepkeep_config_normalizes_and_loads_required_values() {
     let source = "guardrails:\n  - guardrail_name: firewall\n    litellm_params:\n      guardrail: deepkeep\n      api_key: key\n      api_base: https://deepkeep.test///\n      deepkeep_firewall_id: configured\n      optional_params:\n        unreachable_fallback: fail_open\n      extra_headers:\n        X-Test: 'yes'\n";
     let config = ConfigLoader {
