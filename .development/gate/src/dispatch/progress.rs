@@ -66,7 +66,14 @@ impl Progress {
     }
 }
 
-pub(crate) fn clear(journal: &Path) -> Result<(), GateError> {
+pub(crate) fn finish(
+    journal: &Path,
+    outcome: &Result<Vec<String>, GateError>,
+) -> Result<(), GateError> {
+    // a dispatch stopped by a usage limit keeps its progress, so the next one goes on from the same rung
+    if let Err(GateError::UsageLimit { .. }) = outcome {
+        return Ok(());
+    }
     let path = journal.join(FILE);
     match fs::remove_file(&path) {
         Err(error) if error.kind() != ErrorKind::NotFound => Err(GateError::Write {

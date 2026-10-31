@@ -12,10 +12,24 @@ use crate::dispatch::seat::{Run, Seat, invoke};
 use crate::dispatch::{Attempt, Step, prompt, review};
 use crate::error::GateError;
 use crate::facts::resolve_base;
+use crate::gate_lock;
 use crate::git::git;
 use crate::report_check::report_problems;
 use crate::spec::agents::{Rung, Runner};
 use crate::spec::report::{Report, ReportStatus};
+
+fn clear_leftovers(journal: &Path) -> Result<(), GateError> {
+    // a hook whose worker hit its timeout keeps running the checks and would race this attempt's own
+    gate_lock::stop_orphan(&journal.join("gate"), gate_lock::GRACE)?;
+    let blocks = journal.join("hook-blocks");
+    if blocks.exists() {
+        fs::remove_file(&blocks).map_err(|source| GateError::Write {
+            path: blocks.clone(),
+            source,
+        })?;
+    }
+    Ok(())
+}
 
 fn worker_report(
     attempt: &Attempt<'_>,
@@ -23,20 +37,22 @@ fn worker_report(
     rung: &Rung,
     feedback: &[String],
 ) -> Result<Result<Report, Option<Step>>, GateError> {
-    let blocks = attempt.places.journal.join("hook-blocks");
-    if blocks.exists() {
-        fs::remove_file(&blocks).map_err(|source| GateError::Write {
-            path: blocks.clone(),
-            source,
-        })?;
-    }
+    clear_leftovers(attempt.places.journal)?;
     let prompt = prompt::worker(attempt.brief, feedback);
-    let text = match invoke(attempt, runner, rung, Seat::Worker, &prompt)? {
+    let run = invoke(attempt, runner, rung, Seat::Worker, &prompt)?;
+    gate_lock::stop_orphan(&attempt.places.journal.join("gate"), gate_lock::GRACE)?;
+    let text = match run {
         Run::Answer(text) => text,
         Run::Silent => {
             return Ok(Err(Some(Step::Retry(vec![
                 "The previous run ended without a final answer.".to_owned(),
             ]))));
+        }
+        Run::TimedOut => {
+            return Ok(Err(Some(Step::Retry(vec![format!(
+                "The previous run hit its {} minute timeout before its final answer; its work stays in the worktree.",
+                rung.timeout_minutes
+            )]))));
         }
         Run::Limited => return Ok(Err(None)),
     };

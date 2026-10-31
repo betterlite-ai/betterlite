@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use strum::IntoStaticStr;
 
@@ -17,6 +18,7 @@ pub(crate) enum Seat {
 pub(crate) enum Run {
     Answer(String),
     Silent,
+    TimedOut,
     Limited,
 }
 
@@ -83,6 +85,7 @@ fn run_on_seat(
 ) -> Result<Run, GateError> {
     let account = vendor::find_vendor(agents, &runner.vendor)?;
     let seats = vendor::take_seat(invocation.git_common_dir, agents, account, seat)?;
+    let started = Instant::now();
     let answer = runner::run(runner, rung, invocation)?;
     drop(seats);
     if let Some(text) = answer {
@@ -93,6 +96,11 @@ fn run_on_seat(
         Some(line) => {
             vendor::mark(invocation.git_common_dir, &account.id, &line)?;
             Ok(Run::Limited)
+        }
+        None if started.elapsed()
+            >= Duration::from_secs(60).saturating_mul(rung.timeout_minutes) =>
+        {
+            Ok(Run::TimedOut)
         }
         None => Ok(Run::Silent),
     }

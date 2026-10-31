@@ -68,12 +68,14 @@ fn shape_problems(report: &Report, task_id: &str) -> Vec<String> {
         ));
     }
     let consistent = match report.status {
-        ReportStatus::Done => !report.summary.trim().is_empty() && report.blocker.trim().is_empty(),
+        ReportStatus::Done => {
+            report.summary.trim().chars().count() >= 40 && report.blocker.trim().is_empty()
+        }
         ReportStatus::Blocked => !report.blocker.trim().is_empty(),
     };
     if !consistent {
         problems.push(
-            "a done report needs a summary and an empty blocker; a blocked report needs a blocker"
+            "a done report needs a summary of at least 40 characters and an empty blocker; a blocked report needs a blocker"
                 .to_owned(),
         );
     }
