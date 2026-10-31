@@ -100,6 +100,17 @@ fn boolean_config_values_are_inert() {
 }
 
 #[test]
+fn fixed_margin_applies_to_zero_base_cost() {
+    let config = map(CostAdjustmentValue::Object(BTreeMap::from([(
+        "fixed_amount".to_owned(),
+        CostAdjustmentValue::Number(serde_json::Number::from_f64(0.01).unwrap()),
+    )])));
+    let margin = apply_cost_margin(Decimal::ZERO, Some("provider"), &config).unwrap();
+    assert_eq!(margin.total_amount, Decimal::new(1, 2));
+    assert_eq!(margin.final_cost, Decimal::new(1, 2));
+}
+
+#[test]
 fn rejects_margin_percentage_overflow() {
     let error = apply_cost_margin(
         Decimal::MAX,
