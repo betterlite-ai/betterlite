@@ -64,6 +64,19 @@ fn config_coerces_negative_offset_string() {
 }
 
 #[test]
+fn config_coerces_integer_string_with_underscores() {
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(
+        "general_settings:\n  scheduled_job_stagger:\n    offsets:\n      custom_cron: \"1_234\"\n",
+    )
+    .expect("config should load");
+    let settings = &config.sections.scheduled_job_stagger;
+    assert_eq!(settings.offsets.get("custom_cron"), Some(&1234));
+}
+
+#[test]
 fn config_coerces_boolean_like_integer_and_word_forms() {
     let config = ConfigLoader {
         lookup: BTreeMap::new(),
