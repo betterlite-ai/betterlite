@@ -327,6 +327,151 @@ fn strip_base64_respects_configured_recursion_depth(
 }
 
 #[test]
+fn strip_base64_drops_a_content_item_with_a_null_file_key() {
+    let source: Source<()> = serde_json::from_str(r#"{"s3_strip_base64_files":true}"#).unwrap();
+    let payload: Box<RawValue> = serde_json::from_str(r#"{"id":"request","messages":[{"role":"user","content":[{"type":"text","text":"keep"},{"file":null}]}]}"#).unwrap();
+    let parameters =
+        resolve_s3_parameters(&Source::default(), &source, None, &Environment::default());
+    let time = NaiveDate::from_ymd_opt(2026, 1, 2)
+        .unwrap()
+        .and_hms_opt(3, 4, 5)
+        .unwrap();
+    let output = create_batch_element(
+        &parameters,
+        &Event {
+            start_time: time,
+            payload: Some(&payload),
+            cold_storage_enabled: false,
+        },
+        &mut PartitionGranularityCache::default(),
+        &Environment::default(),
+    )
+    .unwrap()
+    .unwrap();
+    let projected: Json = serde_json::from_str(output.payload.get()).unwrap();
+    let Json::Object(fields) = &projected else {
+        panic!("expected a JSON object");
+    };
+    let Some(Json::List(messages)) = fields.get("messages") else {
+        panic!("expected a messages list");
+    };
+    let Some(Json::Object(message)) = messages.first() else {
+        panic!("expected a message object");
+    };
+    let Some(Json::List(content)) = message.get("content") else {
+        panic!("expected a content list");
+    };
+    assert_eq!(content.len(), 1);
+}
+
+#[test]
+fn strip_base64_preserves_null_messages_and_response() {
+    let source: Source<()> = serde_json::from_str(r#"{"s3_strip_base64_files":true}"#).unwrap();
+    let payload: Box<RawValue> =
+        serde_json::from_str(r#"{"id":"request","messages":null,"response":null}"#).unwrap();
+    let parameters =
+        resolve_s3_parameters(&Source::default(), &source, None, &Environment::default());
+    let time = NaiveDate::from_ymd_opt(2026, 1, 2)
+        .unwrap()
+        .and_hms_opt(3, 4, 5)
+        .unwrap();
+    let output = create_batch_element(
+        &parameters,
+        &Event {
+            start_time: time,
+            payload: Some(&payload),
+            cold_storage_enabled: false,
+        },
+        &mut PartitionGranularityCache::default(),
+        &Environment::default(),
+    )
+    .unwrap()
+    .unwrap();
+    let projected: Json = serde_json::from_str(output.payload.get()).unwrap();
+    let Json::Object(fields) = &projected else {
+        panic!("expected a JSON object");
+    };
+    assert_eq!(fields.get("messages"), Some(&Json::Null));
+    assert_eq!(fields.get("response"), Some(&Json::Null));
+}
+
+#[test]
+fn prompts_only_alone_leaves_a_contentless_message_untouched() {
+    let source: Source<()> = serde_json::from_str("{}").unwrap();
+    let environment = Environment::from([("S3_LOG_PROMPTS_ONLY".to_owned(), "true".to_owned())]);
+    let payload: Box<RawValue> = serde_json::from_str(
+        r#"{"id":"request","messages":[{"role":"user"}],"response":{"text":"ok"}}"#,
+    )
+    .unwrap();
+    let parameters = resolve_s3_parameters(&Source::default(), &source, None, &environment);
+    let time = NaiveDate::from_ymd_opt(2026, 1, 2)
+        .unwrap()
+        .and_hms_opt(3, 4, 5)
+        .unwrap();
+    let output = create_batch_element(
+        &parameters,
+        &Event {
+            start_time: time,
+            payload: Some(&payload),
+            cold_storage_enabled: false,
+        },
+        &mut PartitionGranularityCache::default(),
+        &environment,
+    )
+    .unwrap()
+    .unwrap();
+    let projected: Json = serde_json::from_str(output.payload.get()).unwrap();
+    let Json::Object(fields) = &projected else {
+        panic!("expected a JSON object");
+    };
+    let Some(Json::List(messages)) = fields.get("messages") else {
+        panic!("expected a messages list");
+    };
+    let Some(Json::Object(message)) = messages.first() else {
+        panic!("expected a message object");
+    };
+    assert!(!message.contains_key("content"));
+    assert_eq!(fields.get("response"), Some(&Json::Null));
+}
+
+#[test]
+fn strip_base64_appends_a_null_content_key_to_a_contentless_message() {
+    let source: Source<()> = serde_json::from_str(r#"{"s3_strip_base64_files":true}"#).unwrap();
+    let payload: Box<RawValue> =
+        serde_json::from_str(r#"{"id":"request","messages":[{"role":"user"}]}"#).unwrap();
+    let parameters =
+        resolve_s3_parameters(&Source::default(), &source, None, &Environment::default());
+    let time = NaiveDate::from_ymd_opt(2026, 1, 2)
+        .unwrap()
+        .and_hms_opt(3, 4, 5)
+        .unwrap();
+    let output = create_batch_element(
+        &parameters,
+        &Event {
+            start_time: time,
+            payload: Some(&payload),
+            cold_storage_enabled: false,
+        },
+        &mut PartitionGranularityCache::default(),
+        &Environment::default(),
+    )
+    .unwrap()
+    .unwrap();
+    let projected: Json = serde_json::from_str(output.payload.get()).unwrap();
+    let Json::Object(fields) = &projected else {
+        panic!("expected a JSON object");
+    };
+    let Some(Json::List(messages)) = fields.get("messages") else {
+        panic!("expected a messages list");
+    };
+    let Some(Json::Object(message)) = messages.first() else {
+        panic!("expected a message object");
+    };
+    assert_eq!(message.get("content"), Some(&Json::Null));
+    assert_eq!(message.keys().last().map(String::as_str), Some("content"));
+}
+
+#[test]
 fn constructor_flags_and_encryption_precedence() {
     let constructor: Source<()> = serde_json::from_str(r#"{"s3_use_team_prefix":true,"s3_log_prompts_only":false,"s3_partition_granularity":"hour","s3_aws_session_name":"session"}"#).unwrap();
     let source = serde_json::from_str(r#"{"s3_use_team_prefix":false,"s3_use_key_prefix":"false","s3_sse_kms_key_id":"kms","s3_log_prompts_only":true}"#).unwrap();
