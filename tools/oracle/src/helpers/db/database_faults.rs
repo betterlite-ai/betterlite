@@ -64,18 +64,18 @@ struct Output {
 
 impl From<&DbError> for Output {
     fn from(error: &DbError) -> Self {
-        let classes = database_faults::classify(error.error_type);
+        let error_type = error.error_type;
         Self {
-            connection: classes.connection,
-            infrastructure: classes.infrastructure,
-            data: error.error_type == ErrorType::Data,
-            prisma: classes.prisma,
-            transport: database_faults::is_transport_error(error),
+            connection: database_faults::is_database_connection_error(error_type),
+            infrastructure: database_faults::is_infrastructure_error(error_type),
+            data: database_faults::is_prisma_data_error(error_type),
+            prisma: database_faults::is_prisma_error(error_type),
+            transport: database_faults::is_database_transport_error(error),
             sqlstate: database_faults::postgres_sqlstate(error),
             deadlock: database_faults::is_deadlock_error(error),
             read_only: database_faults::is_read_only_transaction_error(error),
             permanent: database_faults::is_permanent_database_fault(error),
-            engine_internal: database_faults::is_prisma_engine_internal(error),
+            engine_internal: database_faults::is_engine_internal_error(error),
         }
     }
 }
