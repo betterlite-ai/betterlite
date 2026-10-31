@@ -236,8 +236,13 @@ pub(crate) fn validate(path: &Path, case: &Case) -> Result<(), OracleError> {
     if case.env.contains_key("LITELLM_WORKER_STARTUP_HOOKS") {
         return Err(invalid("env cannot set LITELLM_WORKER_STARTUP_HOOKS"));
     }
-    if config_sets_litellm_license(&case.config) {
-        return Err(invalid("general_settings cannot set litellm_license"));
+    if case.native_feature_eligibility && case.env.contains_key("PYTHONPATH") {
+        return Err(invalid("env cannot set PYTHONPATH on an eligible case"));
+    }
+    if config_requests_license(path, &case.config)? {
+        return Err(invalid(
+            "config cannot set general_settings.litellm_license or environment_variables.LITELLM_LICENSE",
+        ));
     }
     if let Some(database) = &case.database {
         database
@@ -258,17 +263,22 @@ pub(crate) fn validate(path: &Path, case: &Case) -> Result<(), OracleError> {
     validate_ignores(path, &case.compare.ignore)
 }
 
-fn config_sets_litellm_license(config: &str) -> bool {
-    #[derive(Deserialize)]
-    struct Config {
-        #[serde(default)]
-        general_settings: Option<BTreeMap<String, Value>>,
-    }
-
-    serde_saphyr::from_str::<Config>(config)
-        .ok()
-        .and_then(|parsed| parsed.general_settings)
-        .is_some_and(|settings| settings.contains_key("litellm_license"))
+// a self-describing Value tolerates a non-mapping config but still surfaces a duplicate key as a parse error
+fn config_requests_license(path: &Path, config: &str) -> Result<bool, OracleError> {
+    let parsed: Value =
+        serde_saphyr::from_str(config).map_err(|source| OracleError::CaseParse {
+            path: path.to_owned(),
+            source: Box::new(source),
+        })?;
+    let general_settings_license = parsed
+        .get("general_settings")
+        .and_then(Value::as_object)
+        .is_some_and(|settings| settings.contains_key("litellm_license"));
+    let environment_variable_license = parsed
+        .get("environment_variables")
+        .and_then(Value::as_object)
+        .is_some_and(|variables| variables.contains_key("LITELLM_LICENSE"));
+    Ok(general_settings_license || environment_variable_license)
 }
 
 fn validate_ignores(path: &Path, ignores: &[Ignore]) -> Result<(), OracleError> {

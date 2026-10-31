@@ -8,11 +8,14 @@ use std::process;
 
 use serde_json::Value;
 
+use crate::OracleError;
 use crate::case::{BodyKind, Case, Request, decode_http_case, validate};
 use crate::cli::Options;
 use crate::gateway::{self, GatewayInput};
-use crate::http::{self, client};
+use crate::http::{self, Response, client};
+use crate::paths::unique_id;
 use crate::process::Gateway;
+use crate::runner::run_group_with_url;
 
 fn case(extra: &str) -> String {
     let body = "name: scim\nconfig: |\n  general_settings: {}\n";
@@ -51,6 +54,38 @@ fn controlled_config_license_is_rejected() {
     );
     let result = decode_http_case(source.as_bytes());
     let _error = result.unwrap_err();
+}
+
+#[test]
+fn environment_variables_license_in_config_is_rejected() {
+    let result = decode_http_case(include_bytes!(
+        "../../../fuzz/corpus/http_case/native-feature-environment-variables-license-conflict.yaml"
+    ));
+    assert!(matches!(result, Err(OracleError::CaseInvalid { .. })));
+}
+
+#[test]
+fn duplicate_general_settings_in_config_is_rejected() {
+    let result = decode_http_case(include_bytes!(
+        "../../../fuzz/corpus/http_case/native-feature-duplicate-general-settings.yaml"
+    ));
+    assert!(matches!(result, Err(OracleError::CaseParse { .. })));
+}
+
+#[test]
+fn pythonpath_conflict_on_an_eligible_case_is_rejected() {
+    let result = decode_http_case(include_bytes!(
+        "../../../fuzz/corpus/http_case/native-feature-pythonpath-conflict.yaml"
+    ));
+    assert!(matches!(result, Err(OracleError::CaseInvalid { .. })));
+}
+
+#[test]
+fn ineligible_cases_may_still_set_pythonpath() {
+    let source = case("\n  PYTHONPATH: value");
+    let parsed: Case = serde_saphyr::from_str(&source).expect("case decodes");
+    validate(Path::new("<test>"), &parsed)
+        .expect("PYTHONPATH is only controlled on eligible cases");
 }
 
 #[test]
@@ -208,4 +243,33 @@ fn enterprise_import_still_fails(#[case] eligible: bool) {
     }
     let status = command.status().expect("uv runs");
     assert!(!status.success());
+}
+
+#[test]
+fn the_real_runner_resolves_the_fixture_and_the_mit_handler_answers() {
+    let scim_case = decode_http_case(include_bytes!(
+        "../../../cases/management/native-feature-oracle/scim-service-provider-config.yaml"
+    ))
+    .expect("the oracle case decodes");
+    let options = Options {
+        self_check: true,
+        paths: Vec::new(),
+    };
+    let root = root()
+        .join("target/oracle")
+        .join(unique_id().expect("a unique run suffix is available"));
+    let outcomes = run_group_with_url(&options, &root, &[scim_case], None)
+        .expect("the real runner resolves the fixture under the repository root");
+    assert_eq!(outcomes, [false]);
+    let mut runs = fs::read_dir(root.join("scim-service-provider-config"))
+        .expect("the case wrote an artifact directory")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("the directory entries are readable");
+    assert_eq!(runs.len(), 1);
+    let directory = runs.remove(0).path();
+    let litellm: Response = serde_json::from_slice(
+        &fs::read(directory.join("client-litellm.json")).expect("the first capture is written"),
+    )
+    .expect("the first capture is valid JSON");
+    assert_eq!(litellm.status, 200);
 }

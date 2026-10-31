@@ -140,9 +140,9 @@ fn run_group_capture(input: GroupCaptureInput<'_>) -> Result<Vec<bool>, OracleEr
     } = input;
     let (group_dir, first_config, second_config) =
         config::prepare_gateway_configs(root, first_case, fixtures, &mock.base_url)?;
-    let first_case_env = native_feature_eligibility::child_environment(root, first_case, true)?;
+    let first_case_env = native_feature_eligibility::child_environment(first_case, true);
     let second_case_env =
-        native_feature_eligibility::child_environment(root, first_case, options.self_check)?;
+        native_feature_eligibility::child_environment(first_case, options.self_check);
     let first_input = GatewayInput {
         options,
         group_dir: &group_dir,

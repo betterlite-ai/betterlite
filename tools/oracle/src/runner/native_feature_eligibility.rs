@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 use std::fs;
-use std::io;
 use std::path::Path;
 
 use serde::Serialize;
@@ -13,25 +12,22 @@ struct ArtifactMarker {
     native_feature_eligibility: bool,
 }
 
-pub(super) fn child_environment(
-    root: &Path,
-    case: &Case,
-    litellm_child: bool,
-) -> Result<BTreeMap<String, String>, OracleError> {
+// Resolved beside the crate manifest, not the caller's artifact root, so it is cwd-independent.
+const FIXTURE_DIRECTORY: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/fixtures/native-feature-oracle"
+);
+
+pub(super) fn child_environment(case: &Case, litellm_child: bool) -> BTreeMap<String, String> {
     let mut environment = case.env.clone();
     if case.native_feature_eligibility && litellm_child {
-        let fixture = root.join("tools/oracle/fixtures/native-feature-oracle");
-        let fixture_path = fixture.to_str().ok_or_else(|| OracleError::Filesystem {
-            path: fixture.clone(),
-            source: io::Error::other("native feature fixture path is not UTF-8"),
-        })?;
         environment.insert(
             "LITELLM_WORKER_STARTUP_HOOKS".to_owned(),
             "startup:set_premium_user".to_owned(),
         );
-        environment.insert("PYTHONPATH".to_owned(), fixture_path.to_owned());
+        environment.insert("PYTHONPATH".to_owned(), FIXTURE_DIRECTORY.to_owned());
     }
-    Ok(environment)
+    environment
 }
 
 pub(super) fn write_marker(directory: &Path, eligible: bool) -> Result<(), OracleError> {

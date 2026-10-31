@@ -9,4 +9,11 @@ request:
   headers: {Authorization: Bearer oracle-master}
   body: null
 upstream: []
-compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore:
+    - pointer: /meta/location
+      why: each run binds its own free port, so the handler's echoed request URL differs between the two processes
+
