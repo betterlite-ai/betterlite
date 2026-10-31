@@ -43,7 +43,7 @@ fn explicit_eligibility_decodes() {
 #[case("LITELLM_WORKER_STARTUP_HOOKS")]
 fn controlled_environment_values_are_rejected(#[case] key: &str) {
     let result = decode_http_case(case(&format!("\n  {key}: value")).as_bytes());
-    let _error = result.unwrap_err();
+    assert!(matches!(result, Err(OracleError::CaseInvalid { .. })));
 }
 
 #[test]
@@ -53,7 +53,7 @@ fn controlled_config_license_is_rejected() {
         "general_settings: {litellm_license: value}",
     );
     let result = decode_http_case(source.as_bytes());
-    let _error = result.unwrap_err();
+    assert!(matches!(result, Err(OracleError::CaseInvalid { .. })));
 }
 
 #[test]
