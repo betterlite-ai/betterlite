@@ -1,13 +1,13 @@
 #![cfg(test)]
 
 use rstest::rstest;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 use std::collections::VecDeque;
 use std::fs;
-use std::io::{Error as IoError, ErrorKind, Read as _, Write as _};
-use std::net::{SocketAddr, TcpStream};
+use std::io::{ErrorKind, Read as _, Write as _};
+use std::net::TcpStream;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::atomic::AtomicI64;
 use std::sync::mpsc::sync_channel;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -16,10 +16,9 @@ use std::time::Duration;
 use std::time::Instant;
 
 use super::{
-    Clock, Entropy, Http, HttpBody, HttpResponse, WallClock,
+    HttpBody, HttpResponse,
     callback::LoopbackServer,
     discovery::{discover_cli_auth, origin},
-    loopback::{LoopbackConnection, LoopbackListener},
     models::{CallbackCode, CallbackOutcome, CliAuthContract, PkceFailure},
     oauth::{
         RedeemCodeRequest, RefreshCredentialRequest, authorize_url, pkce_pair, redeem_code,
@@ -30,197 +29,12 @@ use super::{
     wire,
 };
 
-struct FixedEntropy;
-
-struct FixedClock(Instant);
-
-impl Clock for FixedClock {
-    fn now(&self) -> Instant {
-        self.0
-    }
-}
-
-struct SystemClock;
-
-impl Clock for SystemClock {
-    fn now(&self) -> Instant {
-        Instant::now()
-    }
-}
-
-struct FixedWallClock(i64);
-
-impl WallClock for FixedWallClock {
-    fn now_seconds(&self) -> i64 {
-        self.0
-    }
-}
-
-// Shares a counter with a transport double that advances it, to catch a clock read before the call.
-struct SharedWallClock(Arc<AtomicI64>);
-
-impl WallClock for SharedWallClock {
-    fn now_seconds(&self) -> i64 {
-        self.0.load(Ordering::SeqCst)
-    }
-}
-
-impl Entropy for FixedEntropy {
-    fn fill(&mut self, bytes: &mut [u8]) -> Result<(), PkceFailure> {
-        for byte in bytes {
-            *byte = 1;
-        }
-        Ok(())
-    }
-}
-
-#[derive(Clone)]
-struct ScriptedHttp {
-    response: HttpResponse,
-    requests: Arc<Mutex<Vec<RecordedRequest>>>,
-    clock_advance: Option<(Arc<AtomicI64>, i64)>,
-}
-
-#[derive(Clone)]
-struct RecordedRequest {
-    url: String,
-    body: HttpBody,
-    timeout: u64,
-    follow_redirects: bool,
-}
-
-#[derive(serde::Deserialize)]
-struct RegistrationPayload {
-    client_name: String,
-    redirect_uris: Vec<String>,
-    grant_types: Vec<String>,
-    response_types: Vec<String>,
-    token_endpoint_auth_method: String,
-}
-
-impl ScriptedHttp {
-    fn new(response: HttpResponse) -> Self {
-        Self {
-            response,
-            requests: Arc::new(Mutex::new(Vec::new())),
-            clock_advance: None,
-        }
-    }
-
-    // Bumps a shared wall-clock counter as a side effect of answering, so a test can tell whether a caller sampled the clock before or after this transport's call.
-    fn with_clock_advance(mut self, clock: Arc<AtomicI64>, advance_by: i64) -> Self {
-        self.clock_advance = Some((clock, advance_by));
-        self
-    }
-
-    fn requests(&self) -> Vec<RecordedRequest> {
-        self.requests.lock().expect("requests").clone()
-    }
-
-    fn record(
-        &self,
-        url: &str,
-        body: HttpBody,
-        timeout_seconds: u64,
-        follow_redirects: bool,
-    ) -> Result<HttpResponse, PkceFailure> {
-        if let Some((clock, advance_by)) = &self.clock_advance {
-            clock.fetch_add(*advance_by, Ordering::SeqCst);
-        }
-        self.requests
-            .lock()
-            .map_err(|_poisoned| PkceFailure::Protocol("request recorder was poisoned".to_owned()))?
-            .push(RecordedRequest {
-                url: url.to_owned(),
-                body,
-                timeout: timeout_seconds,
-                follow_redirects,
-            });
-        Ok(self.response.clone())
-    }
-}
-
-impl Http for ScriptedHttp {
-    fn get(&self, url: &str, timeout_seconds: u64) -> Result<HttpResponse, PkceFailure> {
-        self.record(url, HttpBody::Json(Vec::new()), timeout_seconds, false)
-    }
-
-    fn post(
-        &self,
-        url: &str,
-        body: HttpBody,
-        timeout_seconds: u64,
-        follow_redirects: bool,
-    ) -> Result<HttpResponse, PkceFailure> {
-        self.record(url, body, timeout_seconds, follow_redirects)
-    }
-}
-
-// Reads the values out of a `HttpBody::Form`; its values are `SecretString` so a derived `PartialEq` cannot compare them.
-fn form_fields(body: &HttpBody) -> Vec<(String, String)> {
-    let HttpBody::Form(fields) = body else {
-        panic!("expected a form body");
-    };
-    fields
-        .iter()
-        .map(|(name, value)| (name.clone(), value.expose_secret().to_owned()))
-        .collect()
-}
-
-struct FailingListener {
-    address: SocketAddr,
-    attempts: Mutex<VecDeque<Result<Option<RecordedConnection>, ErrorKind>>>,
-}
-
-impl LoopbackListener for FailingListener {
-    type Connection = RecordedConnection;
-
-    fn local_addr(&self) -> Result<SocketAddr, IoError> {
-        Ok(self.address)
-    }
-
-    fn accept(&self) -> Result<Option<Self::Connection>, IoError> {
-        let mut attempts = self
-            .attempts
-            .lock()
-            .map_err(|_poisoned| IoError::other("attempts queue was poisoned"))?;
-        match attempts.pop_front() {
-            Some(Ok(connection)) => Ok(connection),
-            Some(Err(kind)) => Err(IoError::from(kind)),
-            None => Ok(None),
-        }
-    }
-}
-
-struct RecordedConnection {
-    reads: VecDeque<Result<Vec<u8>, ErrorKind>>,
-    write_result: Result<(), ErrorKind>,
-}
-
-impl LoopbackConnection for RecordedConnection {
-    fn read(&mut self, buffer: &mut [u8]) -> Result<usize, IoError> {
-        match self.reads.pop_front() {
-            Some(Ok(bytes)) => {
-                let size = bytes.len().min(buffer.len());
-                let (Some(destination), Some(source)) = (buffer.get_mut(..size), bytes.get(..size))
-                else {
-                    return Err(IoError::other("short read buffer"));
-                };
-                destination.copy_from_slice(source);
-                Ok(size)
-            }
-            Some(Err(kind)) => Err(IoError::from(kind)),
-            None => Ok(0),
-        }
-    }
-
-    fn write_all(&mut self, _bytes: &[u8]) -> Result<(), IoError> {
-        match self.write_result {
-            Ok(()) => Ok(()),
-            Err(kind) => Err(IoError::from(kind)),
-        }
-    }
-}
+mod fixtures;
+use fixtures::{
+    FailingListener, FixedClock, FixedEntropy, FixedWallClock, RecordedConnection,
+    RegistrationPayload, ScriptedHttp, SharedWallClock, SystemClock, form_fields,
+    redirect_response,
+};
 
 fn contract() -> CliAuthContract {
     CliAuthContract {
@@ -233,14 +47,6 @@ fn contract() -> CliAuthContract {
         resource: "https://example.test".to_owned(),
         supported_methods: vec!["S256".to_owned()],
     }
-}
-
-fn redirect_response(status: u16) -> ScriptedHttp {
-    ScriptedHttp::new(HttpResponse {
-        status,
-        headers: Vec::new(),
-        body: Vec::new(),
-    })
 }
 
 fn redemption() -> RedeemCodeRequest {
