@@ -118,19 +118,19 @@ checks:
   commands:
     - id: lasso-masking-behaviors
       why: Lasso masking and lifecycle tests are absent or fail
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::lasso_masking_behaviors(::|$)/ or test(/::lasso_masking_lifecycle(::|$)/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::lasso_masking_behaviors(::|$)/) or test(/::lasso_masking_lifecycle(::|$)/)'
     - id: lasso-masking-oracle
       why: Oracle cases for Lasso masking are missing or fail
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/lasso-masking)" && cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/lasso-masking/
     - id: lakera-pii-behaviors
       why: Lakera PII detection and masking tests are absent or fail
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::lakera_pii_behaviors(::|$)/ or test(/::lakera_pii_masking(::|$)/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::lakera_pii_behaviors(::|$)/) or test(/::lakera_pii_masking(::|$)/)'
     - id: lakera-pii-oracle
       why: Oracle cases for Lakera PII are missing or fail
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/lakera-pii)" && cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/lakera-pii/
     - id: helper-python
       why: Python adapters are missing, unregistered, untyped or fail lint
-      run: test -f tools/oracle/helpers/b3779.py && test -f tools/oracle/helpers/b3779.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright tools/oracle/helpers
+      run: test -f tools/oracle/helpers/b3779.py && test -f tools/oracle/helpers/b3779.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
     - id: helper-registration
       why: Helper operations are unregistered
       run: grep -q 'LassoMasking' tools/oracle/src/helpers/guardrails/*.rs && grep -q 'LakeraProcessing' tools/oracle/src/helpers/guardrails/*.rs

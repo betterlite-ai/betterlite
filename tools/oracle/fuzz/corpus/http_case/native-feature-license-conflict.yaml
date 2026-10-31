@@ -1,0 +1,7 @@
+name: native-feature-license-conflict
+config: |
+  general_settings: {litellm_license: null}
+env: {}
+request: {method: GET, path: /scim/v2/ServiceProviderConfig, headers: {}, body: null}
+upstream: []
+compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}

@@ -1,0 +1,15 @@
+task: B4508
+deviations:
+  - what: Investigation is async Rust instead of Python async/await, using tokio for concurrent candidate processing.
+    why: Betterlite is a Rust gateway; async code mirrors the surrounding crate architecture with typed futures.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/analysis.py#L373-L384
+  - what: Repeated request detection uses explicit tuple tracking instead of mutable state.
+    why: Rust requires explicit mutability; a bounded tuple tracks completed requests to detect cycles without relying on implicit state.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/analysis.py#L568-L574
+  - what: The response_schema sent to the model omits a property's "default" key when the
+      underlying JSON Schema sets it to null, instead of keeping an explicit null.
+    why: clippy forbids serde_json::Value as a wire type; the typed SchemaDefault enum only
+      carries integer and string defaults, and Option<SchemaDefault> collapses JSON null to
+      a missing key the same way it collapses an absent key, so the two states are no longer
+      distinguishable in the rendered prompt.
+    link: ""

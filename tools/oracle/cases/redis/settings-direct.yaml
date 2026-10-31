@@ -1,0 +1,13 @@
+kind: helper
+name: settings-direct
+call:
+  b4321:
+    function: resolve_redis_kwargs
+    environment: {}
+    overrides:
+      host: cache.internal
+      port: 6379
+env:
+  REDIS_RETRY_ON_TIMEOUT: "false"
+  REDIS_CLIENT_NAME: from-environment
+compare: {ignore: []}

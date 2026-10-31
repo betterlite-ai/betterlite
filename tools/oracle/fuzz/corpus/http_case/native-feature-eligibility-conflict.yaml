@@ -1,0 +1,8 @@
+name: native-feature-eligibility-conflict
+native_feature_eligibility: true
+config: |
+  general_settings: {}
+env: {LITELLM_WORKER_STARTUP_HOOKS: caller-controlled}
+request: {method: GET, path: /scim/v2/ServiceProviderConfig, headers: {}, body: null}
+upstream: []
+compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}

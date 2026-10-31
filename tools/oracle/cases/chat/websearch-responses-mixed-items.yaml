@@ -1,0 +1,28 @@
+{
+  "kind": "helper",
+  "name": "websearch-responses-mixed-items",
+  "call": {
+    "b4112": {
+      "format": "responses",
+      "response": {
+        "output": [
+          null,
+          {
+            "type": "function_call",
+            "call_id": "one",
+            "id": "item",
+            "name": "litellm_web_search",
+            "arguments": {
+              "query": "rust"
+            }
+          }
+        ]
+      },
+      "operation": "detect"
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

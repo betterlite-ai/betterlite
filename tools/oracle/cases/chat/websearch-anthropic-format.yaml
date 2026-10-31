@@ -1,0 +1,27 @@
+{
+  "kind": "helper",
+  "name": "websearch-anthropic-format",
+  "call": {
+    "b4112": {
+      "operation": "format",
+      "search_response": {
+        "results": [
+          {
+            "title": "first",
+            "url": "https://one.test",
+            "snippet": "one"
+          },
+          {
+            "title": "second",
+            "url": "https://two.test",
+            "snippet": "two"
+          }
+        ]
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

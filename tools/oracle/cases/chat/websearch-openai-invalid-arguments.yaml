@@ -1,0 +1,36 @@
+{
+  "kind": "helper",
+  "name": "websearch-openai-invalid-arguments",
+  "call": {
+    "b4112": {
+      "format": "openai",
+      "response": {
+        "choices": [
+          {
+            "message": {
+              "tool_calls": [
+                {
+                  "type": "function",
+                  "id": "one",
+                  "function": {
+                    "name": "litellm_web_search",
+                    "arguments": "bad"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "transform": true,
+      "results": [
+        "answer"
+      ],
+      "operation": "detect"
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

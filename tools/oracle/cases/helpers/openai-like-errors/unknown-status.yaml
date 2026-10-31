@@ -1,0 +1,11 @@
+kind: helper
+name: openai-like-errors-unknown-status
+call:
+  openai_like_errors:
+    model: command-r
+    custom_llm_provider: my_provider
+    error_str: "a transient glitch occurred"
+    status_code: 418
+env: {}
+compare:
+  ignore: []

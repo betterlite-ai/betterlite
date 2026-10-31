@@ -1,3 +1,5 @@
+use nextest_filtering::{ParsedExpr, errors::ParseSingleError};
+
 const AFTER_SEPARATOR: [&str; 5] = [
     "--exact",
     "--skip",
@@ -6,6 +8,7 @@ const AFTER_SEPARATOR: [&str; 5] = [
     "--nocapture",
 ];
 const LIBTEST_ONLY: [&str; 4] = ["--exact", "--skip", "--ignored", "--include-ignored"];
+const FILTERSET_OPTIONS: [&str; 3] = ["-E", "--filterset", "--filter-expr"];
 
 struct ShellWord {
     text: String,
@@ -33,6 +36,38 @@ fn quoted_letters(run: &str) -> Vec<(char, bool)> {
         }
     }
     letters
+}
+
+fn filterset_problems(before: &[ShellWord]) -> Vec<String> {
+    let mut filtersets = Vec::new();
+    for pair in before.windows(2) {
+        if let [flag, value] = pair
+            && FILTERSET_OPTIONS.contains(&flag.text.as_str())
+        {
+            filtersets.push(value.text.as_str());
+        }
+    }
+    for word in before {
+        if let Some((option, value)) = word.text.split_once('=')
+            && FILTERSET_OPTIONS.contains(&option)
+        {
+            filtersets.push(value);
+        }
+    }
+    let mut problems = Vec::new();
+    for filterset in filtersets {
+        for error in ParsedExpr::parse(filterset).err().unwrap_or_default() {
+            let detail = if let ParseSingleError::InvalidRegex { message, .. } = &error {
+                format!("{error}: {message}")
+            } else {
+                format!("{error}")
+            };
+            problems.push(format!(
+                "passes the filterset {filterset} that cargo nextest can't parse ({detail})"
+            ));
+        }
+    }
+    problems
 }
 
 fn nextest_problems(words: &[ShellWord]) -> Vec<String> {
@@ -73,7 +108,9 @@ fn nextest_problems(words: &[ShellWord]) -> Vec<String> {
                 AFTER_SEPARATOR.join(", ")
             )
         });
-    early.chain(late).collect()
+    let mut problems: Vec<String> = early.chain(late).collect();
+    problems.extend(filterset_problems(before));
+    problems
 }
 
 fn grep_problem(words: &[ShellWord]) -> Option<String> {

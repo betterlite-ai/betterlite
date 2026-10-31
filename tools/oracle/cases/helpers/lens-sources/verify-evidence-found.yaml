@@ -1,0 +1,22 @@
+kind: helper
+name: verify-evidence-found
+call:
+  b4502:
+    verify_evidence:
+      scope: {team_id: team-1, api_key_hash: hash-1, all_teams: false}
+      execution:
+        id: exec-1
+        source: traces
+        trace_id: trace-1
+        team_id: team-1
+        name: run
+        start_time: "2026-01-01T00:00:00Z"
+        span_count: 3
+      evidence:
+        execution_id: exec-1
+        span_id: span-1
+        quote: the answer quoted the help center
+      rows:
+        - {count: 2}
+env: {}
+compare: {ignore: []}

@@ -28,6 +28,7 @@ strum = { version = "0.28.0", features = ["derive"] }
 thiserror.workspace = true
 tracing.workspace = true
 unicode-properties = { version = "0.1.4", default-features = false, features = ["general-category"] }
+uuid.workspace = true
 
 [dev-dependencies]
 insta = { version = "1.49.0", default-features = false, features = ["yaml"] }
@@ -48,5 +49,5 @@ name = "sdk_analytics"
 path = "src/analytics/suite.rs"
 
 [[test]]
-name = "s3_v2_params"
-path = "src/s3_v2/tests/suite.rs"
+name = "opik"
+path = "src/opik/tests.rs"
