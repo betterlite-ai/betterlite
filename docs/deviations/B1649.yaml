@@ -9,6 +9,3 @@ deviations:
   - what: Boolean adjustment entries, whether the top-level scalar entry or a percentage/fixed_amount field inside it, remain unsupported and unapplied instead of becoming the numeric 1.0/0.0 Python's float(bool) would produce.
     why: B1649 requires unsupported legacy variants to remain explicit unapplied entries, while Python's bool subclass behavior is not a supported configuration shape.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1194-L1204
-  - what: A discount or margin field holding a value that cannot convert to a number (non-numeric text, null, a list or an object) is resolved once at config load into a typed Invalid marker, then raises a typed AdjustmentError naming the field the first time a request reads that provider's entry, instead of raising the uncaught ValueError Python's float() produces at the same point.
-    why: Section::convert resolves cost adjustments once at config load so every request reuses the same typed entry, but the error itself still surfaces at apply time because the field is only read when a request actually prices a call against that provider.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1201-L1204

@@ -22,8 +22,6 @@ pub enum CostAdjustmentValue {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, strum::Display)]
 #[strum(serialize_all = "snake_case")]
 pub enum AdjustmentField {
-    DiscountPercent,
-    MarginPercent,
     Percentage,
     FixedAmount,
 }
@@ -31,7 +29,6 @@ pub enum AdjustmentField {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiscountEntry {
     Percent(Decimal),
-    Invalid,
     Unsupported,
 }
 
@@ -39,13 +36,11 @@ pub enum DiscountEntry {
 pub enum MarginFieldEntry {
     Absent,
     Number(Decimal),
-    Invalid,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MarginEntry {
     Percent(Decimal),
-    Invalid,
     Split {
         percentage: MarginFieldEntry,
         fixed_amount: MarginFieldEntry,
@@ -81,71 +76,122 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         Ok(Settings {
-            cost_discount_config: resolve_discount_config(
+            cost_discount_config: resolve_adjustment_entries(
+                "litellm_settings.cost_discount_config",
                 self.litellm_settings.cost_discount_config,
-            ),
-            cost_margin_config: resolve_margin_config(self.litellm_settings.cost_margin_config),
+                discount_entry,
+            )?,
+            cost_margin_config: resolve_adjustment_entries(
+                "litellm_settings.cost_margin_config",
+                self.litellm_settings.cost_margin_config,
+                margin_entry,
+            )?,
         })
     }
 }
 
-#[must_use]
-pub fn resolve_discount_config(config: CostAdjustmentMap) -> BTreeMap<String, DiscountEntry> {
+pub fn resolve_adjustment_entries<T>(
+    prefix: &str,
+    config: CostAdjustmentMap,
+    mut entry_for: impl FnMut(&str, &CostAdjustmentValue, &mut Vec<String>) -> Option<T>,
+) -> Result<BTreeMap<String, T>, ConfigError> {
     let mut resolved = BTreeMap::new();
+    let mut paths = Vec::new();
     for (provider, value) in config {
-        resolved.insert(provider, discount_entry(&value));
+        let path = format!("{prefix}.{provider}");
+        if let Some(entry) = entry_for(&path, &value, &mut paths) {
+            resolved.insert(provider, entry);
+        }
     }
-    resolved
+    if paths.is_empty() {
+        Ok(resolved)
+    } else {
+        Err(ConfigError::Unsupported { paths })
+    }
 }
 
-#[must_use]
-pub fn resolve_margin_config(config: CostAdjustmentMap) -> BTreeMap<String, MarginEntry> {
-    let mut resolved = BTreeMap::new();
-    for (provider, value) in config {
-        resolved.insert(provider, margin_entry(&value));
+fn parse_percent_lexeme<T>(
+    lexeme: &str,
+    error_path: impl FnOnce() -> String,
+    paths: &mut Vec<String>,
+    build: impl FnOnce(Decimal) -> T,
+) -> Option<T> {
+    match parse_decimal_lexeme(lexeme) {
+        Ok(percent) => Some(build(percent)),
+        Err(_) => {
+            paths.push(error_path());
+            None
+        }
     }
-    resolved
 }
 
-fn margin_entry(value: &CostAdjustmentValue) -> MarginEntry {
+pub fn discount_entry(
+    path: &str,
+    value: &CostAdjustmentValue,
+    paths: &mut Vec<String>,
+) -> Option<DiscountEntry> {
+    let CostAdjustmentValue::Number(number) = value else {
+        return Some(DiscountEntry::Unsupported);
+    };
+    parse_percent_lexeme(
+        &number.to_string(),
+        || path.to_owned(),
+        paths,
+        DiscountEntry::Percent,
+    )
+}
+
+pub fn margin_entry(
+    path: &str,
+    value: &CostAdjustmentValue,
+    paths: &mut Vec<String>,
+) -> Option<MarginEntry> {
     match value {
-        CostAdjustmentValue::Number(number) => parse_decimal_lexeme(&number.to_string())
-            .map_or(MarginEntry::Invalid, MarginEntry::Percent),
-        CostAdjustmentValue::Object(entries) => MarginEntry::Split {
-            percentage: margin_field(entries, AdjustmentField::Percentage),
-            fixed_amount: margin_field(entries, AdjustmentField::FixedAmount),
-        },
+        CostAdjustmentValue::Number(number) => parse_percent_lexeme(
+            &number.to_string(),
+            || path.to_owned(),
+            paths,
+            MarginEntry::Percent,
+        ),
+        CostAdjustmentValue::Object(entries) => Some(MarginEntry::Split {
+            percentage: margin_field(path, entries, AdjustmentField::Percentage, paths),
+            fixed_amount: margin_field(path, entries, AdjustmentField::FixedAmount, paths),
+        }),
         CostAdjustmentValue::Null
         | CostAdjustmentValue::Boolean(_)
         | CostAdjustmentValue::Text(_)
-        | CostAdjustmentValue::Array(_) => MarginEntry::Unsupported,
-    }
-}
-
-// a discount entry reads the same scalar shape as a margin entry, so delegate and collapse margin's split shape into unsupported
-fn discount_entry(value: &CostAdjustmentValue) -> DiscountEntry {
-    match margin_entry(value) {
-        MarginEntry::Percent(percent) => DiscountEntry::Percent(percent),
-        MarginEntry::Invalid => DiscountEntry::Invalid,
-        MarginEntry::Split { .. } | MarginEntry::Unsupported => DiscountEntry::Unsupported,
+        | CostAdjustmentValue::Array(_) => Some(MarginEntry::Unsupported),
     }
 }
 
 fn margin_field(
+    path: &str,
     entries: &BTreeMap<String, CostAdjustmentValue>,
     field: AdjustmentField,
+    paths: &mut Vec<String>,
 ) -> MarginFieldEntry {
+    let field_path = || format!("{path}.{field}");
     match entries.get(field.to_string().as_str()) {
         None | Some(CostAdjustmentValue::Boolean(_)) => MarginFieldEntry::Absent,
-        Some(CostAdjustmentValue::Number(number)) => parse_decimal_lexeme(&number.to_string())
-            .map_or(MarginFieldEntry::Invalid, MarginFieldEntry::Number),
-        Some(CostAdjustmentValue::Text(text)) => parse_decimal_lexeme(text.trim())
-            .map_or(MarginFieldEntry::Invalid, MarginFieldEntry::Number),
+        Some(CostAdjustmentValue::Number(number)) => parse_percent_lexeme(
+            &number.to_string(),
+            field_path,
+            paths,
+            MarginFieldEntry::Number,
+        )
+        .unwrap_or(MarginFieldEntry::Absent),
+        Some(CostAdjustmentValue::Text(text)) => {
+            parse_percent_lexeme(text.trim(), field_path, paths, MarginFieldEntry::Number)
+                .unwrap_or(MarginFieldEntry::Absent)
+        }
         Some(
             CostAdjustmentValue::Null
             | CostAdjustmentValue::Object(_)
             | CostAdjustmentValue::Array(_),
-        ) => MarginFieldEntry::Invalid,
+        ) => {
+            paths.push(field_path());
+            MarginFieldEntry::Absent
+        }
     }
 }
 

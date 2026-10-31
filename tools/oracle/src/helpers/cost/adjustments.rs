@@ -1,6 +1,7 @@
 use betterlite_config::cost_adjustments::{
-    CostAdjustmentMap, resolve_discount_config, resolve_margin_config,
+    CostAdjustmentMap, discount_entry, margin_entry, resolve_adjustment_entries,
 };
+use betterlite_config::loader::ConfigError;
 use betterlite_cost::adjustments::{apply_cost_discount, apply_cost_margin};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
@@ -25,6 +26,8 @@ enum Failure {
     #[error("invalid base cost: {0}")]
     BaseCost(#[source] rust_decimal::Error),
     #[error(transparent)]
+    Config(#[from] ConfigError),
+    #[error(transparent)]
     Adjustment(#[from] betterlite_cost::adjustments::AdjustmentError),
 }
 
@@ -34,8 +37,18 @@ impl crate::helpers::Helper for Op {
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         let base_cost = Decimal::from_str_exact(&input.base_cost)
             .map_err(|error| Box::<crate::helpers::HelperError>::from(Failure::BaseCost(error)))?;
-        let discount_config = resolve_discount_config(input.discount_config.clone());
-        let margin_config = resolve_margin_config(input.margin_config.clone());
+        let discount_config = resolve_adjustment_entries(
+            "litellm_settings.cost_discount_config",
+            input.discount_config.clone(),
+            discount_entry,
+        )
+        .map_err(|error| Box::<crate::helpers::HelperError>::from(Failure::Config(error)))?;
+        let margin_config = resolve_adjustment_entries(
+            "litellm_settings.cost_margin_config",
+            input.margin_config.clone(),
+            margin_entry,
+        )
+        .map_err(|error| Box::<crate::helpers::HelperError>::from(Failure::Config(error)))?;
         let discount = apply_cost_discount(base_cost, input.provider.as_deref(), &discount_config)
             .map_err(|error| {
                 Box::<crate::helpers::HelperError>::from(Failure::Adjustment(error))
@@ -86,8 +99,12 @@ fn canonical_numbers(value: &mut serde_json::Value) {
 
 impl From<Failure> for Box<crate::helpers::HelperError> {
     fn from(failure: Failure) -> Self {
+        let class = match &failure {
+            Failure::BaseCost(_) | Failure::Adjustment(_) => "RuntimeError",
+            Failure::Config(_) => "ConfigError",
+        };
         Self::new(crate::helpers::HelperError {
-            class: "RuntimeError".to_owned(),
+            class: class.to_owned(),
             status: None,
             error_type: None,
             param: None,

@@ -6,7 +6,7 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 
 use crate::cost_adjustments::{DiscountEntry, MarginEntry, MarginFieldEntry};
-use crate::loader::ConfigLoader;
+use crate::loader::{ConfigError, ConfigLoader};
 
 #[test]
 fn loads_cost_adjustments() {
@@ -158,57 +158,75 @@ fn margin_object_field_trims_whitespace_before_converting() {
 }
 
 #[rstest]
-#[case::non_numeric_text("percentage: \"not-a-number\"")]
-#[case::overflowing_text("fixed_amount: \"1e40\"")]
-#[case::null_value("fixed_amount: null")]
-#[case::list_value("percentage: [1]")]
-#[case::nested_object_value("percentage: {x: 1}")]
-fn margin_object_field_rejects_a_value_that_cannot_convert_to_a_number(#[case] field: &str) {
-    let config = ConfigLoader {
+#[case::non_numeric_text(
+    "percentage: \"not-a-number\"",
+    "litellm_settings.cost_margin_config.global.percentage"
+)]
+#[case::overflowing_text(
+    "fixed_amount: \"1e40\"",
+    "litellm_settings.cost_margin_config.global.fixed_amount"
+)]
+#[case::null_value(
+    "fixed_amount: null",
+    "litellm_settings.cost_margin_config.global.fixed_amount"
+)]
+#[case::list_value(
+    "percentage: [1]",
+    "litellm_settings.cost_margin_config.global.percentage"
+)]
+#[case::nested_object_value(
+    "percentage: {x: 1}",
+    "litellm_settings.cost_margin_config.global.percentage"
+)]
+fn margin_object_field_rejects_a_value_that_cannot_convert_to_a_number(
+    #[case] field: &str,
+    #[case] expected_path: &str,
+) {
+    let error = ConfigLoader {
         lookup: BTreeMap::<String, String>::new(),
     }
     .load(&format!(
         "litellm_settings:\n  cost_margin_config:\n    global: {{{field}}}\n"
     ))
-    .unwrap();
-    let settings = &config.sections.cost_adjustments;
-    let MarginEntry::Split {
-        percentage,
-        fixed_amount,
-    } = settings.cost_margin_config["global"]
-    else {
-        panic!(
-            "expected a Split entry, got {:?}",
-            settings.cost_margin_config["global"]
-        );
+    .unwrap_err();
+    let ConfigError::Unsupported { paths } = error else {
+        panic!("expected ConfigError::Unsupported, got {error:?}");
     };
-    assert!(
-        percentage == MarginFieldEntry::Invalid || fixed_amount == MarginFieldEntry::Invalid,
-        "a value that cannot convert to a number stays marked invalid instead of defaulting to zero"
+    assert_eq!(
+        paths,
+        vec![expected_path.to_owned()],
+        "a value that cannot convert to a number fails to load instead of defaulting to zero"
     );
 }
 
 #[test]
-fn discount_scalar_number_is_invalid_when_the_lexeme_overflows_decimal() {
-    let config = ConfigLoader {
+fn discount_scalar_number_fails_to_load_when_the_lexeme_overflows_decimal() {
+    let error = ConfigLoader {
         lookup: BTreeMap::<String, String>::new(),
     }
     .load("litellm_settings:\n  cost_discount_config:\n    vertex_ai: 1e40\n")
-    .unwrap();
-    let settings = &config.sections.cost_adjustments;
+    .unwrap_err();
+    let ConfigError::Unsupported { paths } = error else {
+        panic!("expected ConfigError::Unsupported, got {error:?}");
+    };
     assert_eq!(
-        settings.cost_discount_config["vertex_ai"],
-        DiscountEntry::Invalid
+        paths,
+        vec!["litellm_settings.cost_discount_config.vertex_ai".to_owned()]
     );
 }
 
 #[test]
-fn margin_scalar_number_is_invalid_when_the_lexeme_overflows_decimal() {
-    let config = ConfigLoader {
+fn margin_scalar_number_fails_to_load_when_the_lexeme_overflows_decimal() {
+    let error = ConfigLoader {
         lookup: BTreeMap::<String, String>::new(),
     }
     .load("litellm_settings:\n  cost_margin_config:\n    global: 1e40\n")
-    .unwrap();
-    let settings = &config.sections.cost_adjustments;
-    assert_eq!(settings.cost_margin_config["global"], MarginEntry::Invalid);
+    .unwrap_err();
+    let ConfigError::Unsupported { paths } = error else {
+        panic!("expected ConfigError::Unsupported, got {error:?}");
+    };
+    assert_eq!(
+        paths,
+        vec!["litellm_settings.cost_margin_config.global".to_owned()]
+    );
 }
