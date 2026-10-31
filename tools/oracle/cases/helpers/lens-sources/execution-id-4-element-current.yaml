@@ -1,0 +1,11 @@
+kind: helper
+name: execution-id-4-element-current
+call:
+  b4502:
+    execution_id:
+      source: requests
+      team_id: team-2
+      trace_id: trace-2
+      trace_ref: span-9
+env: {}
+compare: {ignore: []}

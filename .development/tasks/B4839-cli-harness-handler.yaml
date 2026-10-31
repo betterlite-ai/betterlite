@@ -38,12 +38,25 @@ description: >-
   Every behavior at the pinned LiteLLM commit is present. Shell script linking may fail
   gracefully with debug logging. Process shutdown is owned by sandbox.exec; this handler
   only calls proc.kill() on early exit from turn().
+
+  send_stdin closes the pipe the way LiteLLM's proc.stdin.close() does. tokio's ChildStdin
+  shutdown() is a no-op on Unix, so only dropping the handle gives the child EOF, and the
+  Process trait in crates/betterlite-harness/src/sandbox.rs only lends stdin out. Add
+  `fn close_stdin(&mut self);` to Process, implement it in SubprocessHandle
+  (sandbox/local/process.rs) by dropping its stdin, give the two NoProcess test doubles
+  (crates/betterlite-harness/src/snapshots/tests.rs and
+  crates/betterlite-deepagents-harness/src/sandbox_backend/tests/host.rs) an empty body,
+  and call it from send_stdin after the write.
 scope:
   paths:
     - crates/betterlite-harness/src/cli_handler.rs
     - crates/betterlite-harness/src/cli_handler/**
     - crates/betterlite-harness/fuzz/fuzz_targets/cli_jsonl_framing.rs
     - crates/betterlite-harness/fuzz/corpus/cli_jsonl_framing/**
+    - crates/betterlite-harness/src/sandbox.rs
+    - crates/betterlite-harness/src/sandbox/local/process.rs
+    - crates/betterlite-harness/src/snapshots/tests.rs
+    - crates/betterlite-deepagents-harness/src/sandbox_backend/tests/host.rs
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/handlers/cli_handler.py#L28-L88
@@ -99,6 +112,7 @@ pitfalls:
   - Process stdout is read before wait() is called; if the process fills stdout and blocks, turn() blocks on draining chunks. Never change the order.
   - The native_session_id is captured from state after every line parse; config.get_native_session_id may return None early in the turn.
   - A process that closes stderr before stdout will not deadlock because drain_stderr is concurrent; ensure both streams are drained.
+  - AsyncWriteExt::shutdown() on a tokio ChildStdin leaves the pipe open on Unix, so `cat` or `codex exec ... -` waits for EOF forever; send_stdin must call Process::close_stdin.
   - PERSIST_DIR_SCRIPT uses shell variable substitution with HOME fallback; it runs in the sandbox and must reference paths the sandbox can create.
   - Skill names are resolved with os.path.realpath before use, so symlink targets must be readable; the copy loop includes os.sep replacement for Windows compatibility even on Unix.
 review_level: standard
