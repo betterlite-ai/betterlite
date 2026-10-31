@@ -122,7 +122,7 @@ fn summary(parameters: &S3Parameters<Value>) -> Value {
         "max_queue_size": parameters.max_queue_size,
         "max_retry_age_seconds": parameters.max_retry_age_seconds.map(|age| age.as_secs()),
         "max_adaptive_concurrency": parameters.max_adaptive_concurrency,
-        "use_ssl": option_value_json(connection.use_ssl.as_ref()),
+        "use_ssl": option_value_json(Some(&connection.use_ssl)),
         "use_team_prefix": parameters.features.contains(&Feature::TeamPrefix),
         "use_key_prefix": parameters.features.contains(&Feature::KeyPrefix),
         "strip_base64_files": parameters.features.contains(&Feature::StripBase64),

@@ -2,7 +2,6 @@ use crate::s3_transport::option_value::OptionValue;
 use crate::s3_transport::options::{Toggle, resolve_toggle};
 use crate::s3_v2::{Feature, source::Source};
 use std::collections::BTreeSet;
-use std::num::FpCategory;
 
 pub(super) fn resolve<Config>(
     source: &Source<Config>,
@@ -20,7 +19,7 @@ where
     if resolve_toggle(Toggle::DropOnTerminalError, drop) {
         output.insert(Feature::DropOnTerminalError);
     }
-    if nonzero(defaults.adaptive_concurrency.as_ref())
+    if matches!(defaults.adaptive_concurrency, Some(OptionValue::Bool(true)))
         || resolve_toggle(
             Toggle::AdaptiveConcurrency,
             source.adaptive_concurrency.as_ref(),
@@ -28,23 +27,12 @@ where
     {
         output.insert(Feature::AdaptiveConcurrency);
     }
-    if nonzero(defaults.batch_file_upload.as_ref())
+    if matches!(defaults.batch_file_upload, Some(OptionValue::Bool(true)))
         || resolve_toggle(Toggle::BatchFileUpload, source.batch_file_upload.as_ref())
     {
         output.insert(Feature::BatchFileUpload);
     }
     output
-}
-
-// `s3_adaptive_concurrency or resolve_s3_adaptive_concurrency(...)` keeps the kwarg's own truthiness.
-pub(super) const fn nonzero(value: Option<&OptionValue>) -> bool {
-    match value {
-        None | Some(OptionValue::Other(_)) => false,
-        Some(OptionValue::Bool(flag)) => *flag,
-        Some(OptionValue::Integer(integer)) => *integer != 0,
-        Some(OptionValue::Text(text)) => !text.is_empty(),
-        Some(OptionValue::Float(number)) => !matches!(number.classify(), FpCategory::Zero),
-    }
 }
 
 fn legacy_flags<Config>(

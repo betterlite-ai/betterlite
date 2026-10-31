@@ -11,7 +11,7 @@ pub struct Connection<Config> {
     pub api_version: Option<String>,
     pub endpoint_url: Option<String>,
     pub path: Option<String>,
-    pub use_ssl: Option<OptionValue>,
+    pub use_ssl: OptionValue,
     pub verify: Option<OptionValue>,
     pub config: Option<BTreeMap<String, Config>>,
     pub credentials: Credentials,
@@ -39,7 +39,7 @@ where
     Config: Clone + Default,
 {
     let credentials = Credentials::from((source, defaults));
-    let [bucket_name, region_name, api_version, endpoint_url, path] = resolve_fields(
+    let fields = resolve_fields(
         [
             (&source.bucket_name, &defaults.bucket_name),
             (&source.region_name, &defaults.region_name),
@@ -49,50 +49,51 @@ where
         ],
         String::is_empty,
     );
-    let mut connection = Connection {
-        bucket_name,
-        region_name,
-        api_version,
-        endpoint_url,
-        path,
-        use_ssl: None,
-        verify: None,
-        config: None,
-        credentials,
-        log_prompts_only: None,
-        partition_granularity: None,
-    };
-    apply_options(source, defaults, &mut connection);
-    connection
+    build_connection(source, defaults, credentials, fields)
 }
 
-fn apply_options<Config>(
+fn build_connection<Config>(
     source: &Source<Config>,
     defaults: &Source<Config>,
-    connection: &mut Connection<Config>,
-) where
+    credentials: Credentials,
+    [bucket_name, region_name, api_version, endpoint_url, path]: [Option<String>; 5],
+) -> Connection<Config>
+where
     Config: Clone + Default,
 {
-    connection.use_ssl = source
+    let use_ssl = source
         .use_ssl
         .clone()
         .or_else(|| defaults.use_ssl.clone())
-        .or(Some(OptionValue::Bool(true)));
-    connection.verify = source.verify.clone().or_else(|| defaults.verify.clone());
-    connection.config = source
+        .unwrap_or(OptionValue::Bool(true));
+    let verify = source.verify.clone().or_else(|| defaults.verify.clone());
+    let config = source
         .config
         .as_ref()
         .filter(|config| !config.is_empty())
         .or(defaults.config.as_ref())
         .cloned();
-    connection.log_prompts_only = defaults
+    let log_prompts_only = defaults
         .log_prompts_only
         .clone()
         .or_else(|| source.log_prompts_only.clone());
-    connection.partition_granularity = defaults
+    let partition_granularity = defaults
         .partition_granularity
         .clone()
         .or_else(|| source.partition_granularity.clone());
+    Connection {
+        bucket_name,
+        region_name,
+        api_version,
+        endpoint_url,
+        path,
+        use_ssl,
+        verify,
+        config,
+        credentials,
+        log_prompts_only,
+        partition_granularity,
+    }
 }
 
 impl<Config> From<(&Source<Config>, &Source<Config>)> for Credentials
