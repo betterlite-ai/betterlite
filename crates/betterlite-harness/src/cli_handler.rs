@@ -161,13 +161,8 @@ where
     }
 
     // turn() already kills its own process on an early or errored exit
-    fn stop<S>(
-        &mut self,
-        _: &mut SessionContext<S>,
-    ) -> impl Future<Output = Result<(), HarnessError>> + Send
-    where
-        S: Sandbox,
-    {
+    #[rustfmt::skip]
+    fn stop<S>(&mut self, _: &mut SessionContext<S>) -> impl Future<Output = Result<(), HarnessError>> + Send where S: Sandbox {
         ready(Ok(()))
     }
 
@@ -175,14 +170,8 @@ where
         self.native_id.clone()
     }
 
-    fn resume<S>(
-        &mut self,
-        _: &mut SessionContext<S>,
-        native_session_id: &str,
-    ) -> impl Future<Output = Result<(), HarnessError>> + Send
-    where
-        S: Sandbox,
-    {
+    #[rustfmt::skip]
+    fn resume<S>(&mut self, _: &mut SessionContext<S>, native_session_id: &str) -> impl Future<Output = Result<(), HarnessError>> + Send where S: Sandbox {
         self.native_id = Some(native_session_id.to_owned());
         ready(Ok(()))
     }
