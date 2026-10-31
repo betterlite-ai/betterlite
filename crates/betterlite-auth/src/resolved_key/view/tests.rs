@@ -169,11 +169,13 @@ fn budget_prefix_removed_everywhere() {
 
 #[test]
 fn budget_added_values_not_revisited() {
-    let mut fields = object("{\"litellm_budget_table_team_spend\": 7}");
+    let mut fields = object("{\"litellm_budget_table_end_user_id\": true}");
     normalize_fields(&mut fields);
-    let settled = fields.clone();
-    normalize_fields(&mut fields);
-    assert_eq!(fields, settled);
+    assert_eq!(field(&fields, "end_user_id"), parse("true"));
+
+    let fresh = object("{\"litellm_budget_table_end_user_id\": true}");
+    let outcome = VerificationTokenView::construct(fresh);
+    outcome.unwrap_err();
 }
 
 #[rstest]
