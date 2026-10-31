@@ -91,77 +91,23 @@ fn redactor() -> Result<Arc<Redactor>, Box<crate::helpers::HelperError>> {
 }
 
 fn build_hooks(
-    logger: FixtureLogger,
-    console: FixtureConsole,
+    sink_fails: (bool, bool),
+    logger_debug_enabled: bool,
     set_verbose: &Payload,
 ) -> Result<VerboseHooks<FixtureLogger, FixtureConsole>, Box<crate::helpers::HelperError>> {
+    let (logger_fails, console_fails) = sink_fails;
     let redactor = redactor()?;
     Ok(VerboseHooks {
-        logger,
-        console,
+        logger: FixtureLogger {
+            fails: logger_fails,
+            debug_enabled: logger_debug_enabled,
+        },
+        console: FixtureConsole {
+            fails: console_fails,
+        },
         set_verbose: set_verbose.clone(),
         redactor,
     })
-}
-
-struct MainCall<'call> {
-    payload: &'call Payload,
-    set_verbose: &'call Payload,
-    logger_fails: bool,
-    console_fails: bool,
-}
-
-fn run_main(call: &MainCall<'_>) -> crate::helpers::HelperResult {
-    let hooks = build_hooks(
-        FixtureLogger {
-            fails: call.logger_fails,
-            debug_enabled: false,
-        },
-        FixtureConsole {
-            fails: call.console_fails,
-        },
-        call.set_verbose,
-    )?;
-    Ok(json!(hooks.main_print_verbose(call.payload.clone())))
-}
-
-struct UtilsCall<'call> {
-    payload: &'call Payload,
-    set_verbose: &'call Payload,
-    log_level: &'call str,
-    logger_only: &'call Payload,
-    logger_fails: bool,
-    console_fails: bool,
-}
-
-fn run_utils(call: &UtilsCall<'_>) -> crate::helpers::HelperResult {
-    let hooks = build_hooks(
-        FixtureLogger {
-            fails: call.logger_fails,
-            debug_enabled: false,
-        },
-        FixtureConsole {
-            fails: call.console_fails,
-        },
-        call.set_verbose,
-    )?;
-    Ok(json!(hooks.utils_print_verbose(
-        call.payload.clone(),
-        call.log_level,
-        call.logger_only
-    )))
-}
-
-fn run_active(set_verbose: &Payload, logger_debug_enabled: bool) -> crate::helpers::HelperResult {
-    let hooks = build_hooks(
-        FixtureLogger {
-            fails: false,
-            debug_enabled: logger_debug_enabled,
-        },
-        FixtureConsole { fails: false },
-        set_verbose,
-    )?;
-    Ok(json!({ "logs": [], "console": [], "active": hooks.is_active() }))
 }
 
 pub(crate) struct Op;
@@ -176,12 +122,10 @@ impl crate::helpers::Helper for Op {
                 set_verbose,
                 logger_fails,
                 console_fails,
-            } => run_main(&MainCall {
-                payload,
-                set_verbose,
-                logger_fails: *logger_fails,
-                console_fails: *console_fails,
-            }),
+            } => {
+                let hooks = build_hooks((*logger_fails, *console_fails), false, set_verbose)?;
+                Ok(json!(hooks.main_print_verbose(payload.clone())))
+            }
             Input::Utils {
                 payload,
                 set_verbose,
@@ -189,18 +133,21 @@ impl crate::helpers::Helper for Op {
                 logger_only,
                 logger_fails,
                 console_fails,
-            } => run_utils(&UtilsCall {
-                payload,
-                set_verbose,
-                log_level,
-                logger_only,
-                logger_fails: *logger_fails,
-                console_fails: *console_fails,
-            }),
+            } => {
+                let hooks = build_hooks((*logger_fails, *console_fails), false, set_verbose)?;
+                Ok(json!(hooks.utils_print_verbose(
+                    payload.clone(),
+                    log_level,
+                    logger_only
+                )))
+            }
             Input::Active {
                 set_verbose,
                 logger_debug_enabled,
-            } => run_active(set_verbose, *logger_debug_enabled),
+            } => {
+                let hooks = build_hooks((false, false), *logger_debug_enabled, set_verbose)?;
+                Ok(json!({ "logs": [], "console": [], "active": hooks.is_active() }))
+            }
         }
     }
 }
