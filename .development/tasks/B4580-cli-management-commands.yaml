@@ -2,17 +2,20 @@ id: B4580
 title: CLI credential, team, user and model-group commands
 description: >-
   Build credential CRUD, team discovery/key assignment, user CRUD and model-group listing. Preserve the
-  inconsistent HTTP-error exit behavior of the owned commands: credentials create/delete and all teams.py commands
-  (list, available, assign_key) have try/except HTTPError handlers that print "Error: HTTP {status}" and attempt
-  JSON extraction; credentials list/get, all users.py commands (list_users, get_user, create_user, delete_user),
-  and model-groups list have no HTTP error handler and let exceptions propagate. Model-groups list outputs to
-  table or JSON with model_group, mode, input_cost_per_token and output_cost_per_token columns. Teams available
-  differs in error handling from list: available doesn't raise click.Abort() on non-HTTPError exceptions. Role and
-  budget display defaults (role defaults to "Member", max_budget displays as "Unlimited" when absent). Optional
+  inconsistent HTTP-error exit behavior of the owned commands: credentials create/delete and all teams commands
+  (list, available, assign_key) print "Error: HTTP {status}" on an HTTP error, then print the body as JSON when
+  it parses and the raw text when it doesn't, so a non-JSON error body never crashes the command. Credentials
+  list/get, all users commands (list_users, get_user, create_user, delete_user), and model-groups list have no
+  HTTP error handler; any error there prints one line to stderr and exits 1, never a backtrace. Model-groups list
+  outputs to table or JSON with model_group, mode, input_cost_per_token and output_cost_per_token columns. Teams
+  available differs from list: it does not raise on an HTTP error, so it exits 0 after printing the error, but it
+  does raise on any other exception. List and assign_key raise on both kinds of error. The teams table always
+  shows role "Member": LiteLLM never reads the real role, and betterlite matches that. Max_budget shows
+  "Unlimited" only when it is null or absent; an explicit number, 0 included, shows as given. Optional
   user-field omission: create_user omits user_alias and teams from the request when not supplied; delete_user
-  takes multiple user_ids as arguments. Every command uses click decorators and loads base_url/api_key from
-  B4560's cli_context_values. This task implements the CLI commands that call the management clients; the clients
-  themselves are owned elsewhere.
+  takes multiple user_ids as arguments. Every command takes its own flags and arguments and loads base_url/api_key
+  from B4560's cli_context_values. This task implements the CLI commands that call the management clients; the
+  clients themselves are owned elsewhere.
 
 scope:
   paths:
@@ -37,31 +40,37 @@ references:
   why: Teams table formatting with alias, team_id, models, max_budget and role columns.
 dod:
 - text: >-
-    Credentials list and get call client methods and output response JSON with no error handler.
-    Create and delete catch HTTPError, format "Error: HTTP {status}" to stderr, attempt JSON extraction, and raise click.Abort().
+    Credentials list and get call client methods with no error handler; any error there prints one line to
+    stderr and exits 1, never a backtrace. Create and delete catch HTTPError, print "Error: HTTP {status}" to
+    stderr, then the body as JSON when it parses or the raw text when it doesn't, and raise click.Abort().
   proof:
   - credentials-error-handling
 - text: >-
-    Users list_users, get_user, create_user and delete_user call client methods with no error handler and
-    let exceptions propagate. List shows "No users found" when empty.
+    Users list_users, get_user, create_user and delete_user call client methods with no error handler; any
+    error there prints one line to stderr and exits 1, never a backtrace. List shows "No users found" when empty.
   proof:
   - users-error-handling
 - text: >-
-    Teams list and assign_key catch HTTPError with formatted output and raise click.Abort().
-    Teams available catches HTTPError but does not raise click.Abort() on non-HTTPError exceptions.
+    Teams list and assign_key print "Error: HTTP {status}" on an HTTP error, then the body as JSON when it
+    parses or the raw text when it doesn't, and raise click.Abort(); they also raise click.Abort() on any
+    other exception. Teams available prints the same HTTP error output but does not raise on it, so it exits
+    0; it does raise click.Abort() on any other exception.
   proof:
   - teams-error-handling
 - text: >-
-    Teams list outputs table with columns team_alias (N/A fallback), team_id, models (formatted or "All models"),
-    max_budget ($X or Unlimited), and role (default Member); available shows joinable teams with same format
-    and "No available teams to join" when empty. Assign_key prompts for team selection if --team-id omitted,
-    calls client.keys.update, and shows "Successfully assigned key to team: {team_id}" then accessible models.
+    Teams list outputs a table with columns team_alias ("N/A" only when absent or null), team_id, models
+    (formatted or "All models"), max_budget ("$X" for an explicit number, 0 included, "Unlimited" only when
+    absent or null), and role (always "Member"); available shows joinable teams in the same format and
+    "No available teams to join" when empty. Assign_key prompts for team selection only when --team-id is
+    absent, not when it is an explicit empty string; it calls client.keys.update and shows "Successfully
+    assigned key to team: {team_id}" then accessible models.
   proof:
   - teams-behavior
 - text: >-
     Model-groups list calls client.model_groups.info(), outputs table with model_group, mode (default chat),
     input_cost_per_token and output_cost_per_token columns, supports --format json, raises ClickException if
-    response is not a list, and has no error handler.
+    response is not a list, and has no error handler. The error names the JSON type it got (object, string,
+    number, bool or null) in betterlite's own words, not a copy of Python's type name.
   proof:
   - model-groups-error-handling
 checks:
@@ -71,39 +80,42 @@ checks:
     why: Credentials commands do not match LiteLLM error behavior (create/delete with error handler, list/get without).
     run: >-
       cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E
-      'test(/^credentials::(create|delete|list|get).*($|::)/)'
+      'test(/^commands::credentials::.*tests::(create|delete|list|get)_/)'
   - id: users-error-handling
     why: Users commands do not match LiteLLM behavior (no error handlers in any command).
     run: >-
       cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E
-      'test(/^users::(list_users|get_user|create_user|delete_user).*($|::)/)'
+      'test(/^commands::users::.*tests::(list_users|get_user|create_user|delete_user)_/)'
   - id: teams-error-handling
-    why: Teams commands do not match LiteLLM error behavior (list/assign_key always raise, available does not on non-HTTP errors).
+    why: Teams commands do not match LiteLLM error behavior (list and assign_key raise on any error; available
+      does not raise on an HTTP error but does raise on any other exception).
     run: >-
       cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E
-      'test(/^teams::(list|available|assign_key)_error.*($|::)/)'
+      'test(/^commands::teams::.*tests::(list|available|assign_key)_error/)'
   - id: teams-behavior
     why: Teams commands do not format table correctly, handle team selection or show model access messages.
     run: >-
       cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E
-      'test(/^teams::(list|available|assign_key)_behavior.*($|::)/)'
+      'test(/^commands::teams::.*tests::(list|available|assign_key)_behavior/)'
   - id: model-groups-error-handling
     why: Model-groups list command does not match LiteLLM behavior (no error handler) or format table correctly.
     run: >-
       cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E
-      'test(/^model_groups::list.*($|::)/)'
+      'test(/^commands::model_groups::.*tests::list_/)'
 oracle_cases: []
 deviations:
 - what: >-
-    Error handling is inconsistent across commands: credentials create/delete and all teams.py commands
-    (list, available, assign_key) catch HTTPError with formatted "Error: HTTP {status}" output and raise click.Abort();
-    credentials list/get, all users.py commands (list_users, get_user, create_user, delete_user), and model-groups
-    list have no HTTP error handler and let exceptions propagate. Teams available does not raise click.Abort() on
-    non-HTTPError exceptions. Betterlite preserves this LiteLLM behavior without adding uniform error handling.
-  why: The owned LiteLLM range exhibits this inconsistency at the pinned commit; betterlite preserves
-    it rather than normalizing to match the source exactly.
+    Teams list, available and assign_key print the HTTP error body as JSON when it parses and the raw text
+    when it doesn't, the same fallback credentials create and delete already use. LiteLLM's teams commands
+    call e.response.json() directly with no fallback, so a non-JSON error body raises a second, unhandled
+    exception there instead.
+  why: >-
+    A working setup where the proxy always answers HTTP errors with a JSON body never reaches this path, so
+    there's nothing for it to break. A proxy or a gateway in front of it that answers an error with a plain
+    text page would otherwise crash the command outright; betterlite uses the same safe fallback its sibling
+    commands already have.
   link: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/credentials.py#L103-L144
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/teams.py#L97-L101
 out_of_scope:
 - >-
   CredentialsManagementClient, UsersManagementClient, TeamsManagementClient, ModelGroupsManagementClient,
@@ -122,22 +134,26 @@ out_of_scope:
   Terminal formatting libraries; use standard Rust output or injected writers for testability.
 pitfalls:
 - >-
-  Credentials list and get have no try/except around client calls and will propagate HTTPError and other exceptions
-  directly to the user. Create and delete have explicit error handlers; this inconsistency is preserved from LiteLLM.
+  Credentials list and get have no error handler around client calls, so any error there prints one line to
+  stderr and exits 1, not a backtrace. Create and delete have explicit HTTP error handlers; this inconsistency
+  is preserved from LiteLLM.
 - >-
-  Teams available catches HTTPError but does not raise click.Abort() on other exception types, unlike list and
-  assign_key. This asymmetry is a LiteLLM behavior to preserve.
+  Teams available does not raise click.Abort() on an HTTP error, so it exits 0 after printing "Error: HTTP
+  {status}"; it does raise on any other exception. List and assign_key raise on both kinds of error. This
+  asymmetry is a LiteLLM behavior to preserve, exit codes included.
 - >-
   Model-groups list is registered as a "list" subcommand (@model_groups.command("list")), not "info". The name
   "info" refers only to the underlying ModelGroupsManagementClient.info() method, not the CLI subcommand.
 - >-
-  JSON parsing for --info and --values in credentials create must handle parse errors and output BadParameter
-  with the error message, not silently default.
+  JSON parsing for --info and --values in credentials create must handle parse errors and return a usage
+  error with "Invalid JSON: {error}", the parser's own error text, not a copy of Python's JSONDecodeError
+  message.
 - >-
   Teams models list formatting shows "+{N} more" only when len(models) > 3, not >= 3. Empty models list shows "All models".
 - >-
-  Role field in teams table defaults to "Member" when absent. Max_budget renders as "$X" for numbers/strings or
-  "Unlimited" for None/absent.
+  Role field in teams table is always "Member"; LiteLLM never reads the real role, so there's no other value
+  to show. Max_budget renders as "$X" for an explicit number, 0 included, and "Unlimited" only when it is null
+  or absent.
 review_level: security
 budget:
   max_changed_lines: 1500
