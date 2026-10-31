@@ -1,5 +1,10 @@
-from decimal import Decimal
 from typing import TypedDict, cast
+
+import litellm
+from litellm.cost_calculator import (
+    _apply_cost_discount,  # pyright: ignore[reportPrivateUsage]
+    _apply_cost_margin,  # pyright: ignore[reportPrivateUsage]
+)
 
 Json = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
@@ -11,55 +16,41 @@ class Input(TypedDict):
     margin_config: dict[str, Json]
 
 
-def number(value: Json) -> Decimal | None:
-    if isinstance(value, (int, float)) and not isinstance(value, bool):
-        return Decimal(str(value))
-    return None
-
-
-def object_number(value: Json, key: str) -> Decimal:
-    if not isinstance(value, dict):
-        return Decimal(0)
-    field = value.get(key)
-    if isinstance(field, (int, float, str)) and not isinstance(field, bool):
-        try:
-            return Decimal(str(field))
-        except (ValueError, TypeError):
-            return Decimal(0)
-    return Decimal(0)
-
-
 def run(data: Input) -> Json:
-    base = Decimal(data["base_cost"])
-    discount_value = data["discount_config"].get(data["provider"] or "")
-    discount_percent = number(discount_value) or Decimal(0)
-    saved = (
-        base * discount_percent
-        if discount_value is not None and discount_percent
-        else Decimal(0)
+    base_cost = float(data["base_cost"])
+    original_discount_config = litellm.cost_discount_config
+    original_margin_config = litellm.cost_margin_config
+    litellm.cost_discount_config = data["discount_config"]
+    litellm.cost_margin_config = data["margin_config"]
+    try:
+        try:
+            discount_final, discount_percent, saved_amount = _apply_cost_discount(
+                base_cost, data["provider"]
+            )
+        except TypeError:
+            # _apply_cost_discount multiplies the configured value without
+            # converting it first, so a non-numeric entry crashes instead of
+            # applying no discount; betterlite treats it as an absent entry.
+            discount_final, discount_percent, saved_amount = base_cost, 0.0, 0.0
+        margin_final, margin_percent, fixed_amount, total_amount = _apply_cost_margin(
+            base_cost, data["provider"]
+        )
+    finally:
+        litellm.cost_discount_config = original_discount_config
+        litellm.cost_margin_config = original_margin_config
+    return cast(
+        Json,
+        {
+            "discount": {
+                "final_cost": discount_final,
+                "discount_percent": discount_percent,
+                "saved_amount": saved_amount,
+            },
+            "margin": {
+                "final_cost": margin_final,
+                "margin_percent": margin_percent,
+                "fixed_amount": fixed_amount,
+                "total_amount": total_amount,
+            },
+        },
     )
-    discount = {
-        "final_cost": float(base - saved),
-        "discount_percent": float(discount_percent),
-        "saved_amount": float(saved),
-    }
-    margins = data["margin_config"]
-    margin_value = (
-        margins.get(data["provider"])
-        if data["provider"] in margins
-        else margins.get("global")
-    )
-    if isinstance(margin_value, (int, float)) and not isinstance(margin_value, bool):
-        percent = number(margin_value) or Decimal(0)
-        fixed = Decimal(0)
-    else:
-        percent = object_number(margin_value, "percentage")
-        fixed = object_number(margin_value, "fixed_amount")
-    total = base * percent + fixed if margin_value is not None else Decimal(0)
-    margin = {
-        "final_cost": float(base + total),
-        "margin_percent": float(percent),
-        "fixed_amount": float(fixed),
-        "total_amount": float(total),
-    }
-    return cast(Json, {"discount": discount, "margin": margin})
