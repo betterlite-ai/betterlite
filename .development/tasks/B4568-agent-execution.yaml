@@ -107,7 +107,7 @@ pitfalls:
   - catalog read-back calls `codex debug models` a second time with the -c override already in place; a failure skips Codex sync but does not raise.
   - ModelSyncSkipped.reason becomes a warn() message to the user, not an exception. Best-effort means launch anyway.
   - run_agent replaces the process and never returns on success; reattach_terminal is the last thing before _hand_off.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

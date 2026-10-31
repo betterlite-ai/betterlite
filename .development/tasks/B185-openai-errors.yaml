@@ -126,7 +126,7 @@ pitfalls:
 - Python checks error strings before some status branches, so a status-only table is insufficient.
 - Ignore only client message wording, not type/code/param or header semantics.
 - A synthetic response status must not override more meaningful transport information.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 1

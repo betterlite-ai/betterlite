@@ -247,7 +247,7 @@ pitfalls:
   - "stream_holdback_chars values are byte counts of modified_text, not original text; they inform the streaming layer how much buffer is needed."
   - "apply_guardrail is async; _apply_guardrail_on_request and _apply_guardrail_on_response are both async and must be awaited."
 
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 2

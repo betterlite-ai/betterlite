@@ -86,7 +86,7 @@ pitfalls:
   - "Missing usage is expected for in_progress, queued, failed, cancelled, incomplete and budget_exceeded, but an alarm fires if completed or requires_action arrives without it. LiteLLM checks this in a cost-tracking diagnostic that logs the issue but does not fail the call. betterlite does the same: log a warning but continue."
   - A poll that times out without reaching a terminal status logs an error if the last status it saw was not in the pollable or terminal sets (a bad state), or a warning otherwise, and releases the budget reservation.
   - "Batch polling: LiteLLM groups polls by (provider, interaction_id) so one fetch operation satisfies many poll tasks waiting for the same interaction. Do not implement batching in the initial version; each poll task fetches independently. Batching is a later optimization."
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

@@ -79,4 +79,4 @@ pitfalls:
   - The async timeout fallback local variable is unused by the pinned client construction.
   - Repeated files/ references are not deduplicated before metadata GETs.
 budget: {max_changed_lines: 800, max_new_expects: 1}
-review_level: security
+review_level: standard

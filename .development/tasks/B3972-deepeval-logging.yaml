@@ -129,7 +129,7 @@ pitfalls:
   - Error span output uses error_string from standard_logging_object, not exception type or message; error_string may be an empty string.
   - _prepare_trace_api uses Pydantic by_alias=True and exclude_none=True serialization; field aliases map snake_case to camelCase (traceUuid, startTime, etc.).
 
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

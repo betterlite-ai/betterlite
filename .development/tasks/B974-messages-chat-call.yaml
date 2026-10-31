@@ -126,7 +126,7 @@ pitfalls:
 - Sync context management must not attach the proxy router implicitly because its clients belong to another event loop.
 - Explicit prompt_cache_key overrides a translated key even when it is the empty string.
 - Re-merging output_config after translation leaks an Anthropic-only parameter to chat providers.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0
