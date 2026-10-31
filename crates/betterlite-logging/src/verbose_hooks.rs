@@ -1,6 +1,14 @@
 use betterlite_redact::structured::{Payload, redact::redact_credentials_in_payload};
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
+pub struct SinkFailures {
+    #[serde(default)]
+    pub logger: bool,
+    #[serde(default)]
+    pub console: bool,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
 pub enum HookInput {
@@ -8,9 +16,7 @@ pub enum HookInput {
         payload: Payload,
         set_verbose: bool,
         #[serde(default)]
-        logger_fails: bool,
-        #[serde(default)]
-        console_fails: bool,
+        sinks: SinkFailures,
     },
     Utils {
         payload: Payload,
@@ -18,9 +24,7 @@ pub enum HookInput {
         log_level: String,
         logger_only: bool,
         #[serde(default)]
-        logger_fails: bool,
-        #[serde(default)]
-        console_fails: bool,
+        sinks: SinkFailures,
     },
     Active {
         set_verbose: bool,
@@ -51,35 +55,20 @@ impl VerboseHooks {
             HookInput::Main {
                 payload,
                 set_verbose,
-                logger_fails,
-                console_fails,
-            } => Self::emit(
-                payload,
-                Some("DEBUG"),
-                set_verbose,
-                logger_fails,
-                console_fails,
-            ),
+                sinks,
+            } => Self::emit(payload, Some("DEBUG"), set_verbose, sinks),
             HookInput::Utils {
                 payload,
                 set_verbose,
                 log_level,
                 logger_only,
-                logger_fails,
-                console_fails,
-            } => {
-                let level = match log_level.as_str() {
-                    "DEBUG" | "INFO" | "ERROR" => Some(log_level.as_str()),
-                    _ => None,
-                };
-                Self::emit(
-                    payload,
-                    level,
-                    set_verbose && !logger_only,
-                    logger_fails,
-                    console_fails,
-                )
-            }
+                sinks,
+            } => Self::emit(
+                payload,
+                known_level(&log_level),
+                set_verbose && !logger_only,
+                sinks,
+            ),
             HookInput::Active {
                 set_verbose,
                 logger_debug_enabled,
@@ -95,24 +84,30 @@ impl VerboseHooks {
         payload: Payload,
         level: Option<&str>,
         console_enabled: bool,
-        logger_fails: bool,
-        console_fails: bool,
+        sinks: SinkFailures,
     ) -> HookResult {
         let redacted = redact(payload);
         let mut result = HookResult::default();
-        if logger_fails {
-            return result;
-        }
         if let Some(level_name) = level {
+            if sinks.logger {
+                return result;
+            }
             result.logs.push(LogRecord {
                 level: level_name.to_owned(),
                 payload: redacted.clone(),
             });
         }
-        if console_enabled && !console_fails {
+        if console_enabled && !sinks.console {
             result.console.push(redacted);
         }
         result
+    }
+}
+
+fn known_level(log_level: &str) -> Option<&str> {
+    match log_level {
+        "DEBUG" | "INFO" | "ERROR" => Some(log_level),
+        _ => None,
     }
 }
 
