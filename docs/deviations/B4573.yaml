@@ -1,2 +1,14 @@
 task: B4573
-deviations: []
+deviations:
+  - what: >-
+      error_detail falls back to the raw response body text when error_description, error and
+      detail are all absent or falsy, instead of LiteLLM's Python dict repr of the whole parsed
+      mapping.
+    why: >-
+      LiteLLM's _error_detail stringifies the parsed mapping with Python's str() (single-quoted
+      keys, no quoting of the JSON structure) in that fallback case. Reproducing that exact
+      formatting would mean emulating CPython dict repr for an edge case the task's own DoD text
+      already collapses into "full response body", and real proxy error responses always set one
+      of the three fields, so the fallback is a diagnostic string shown to a human, not a value
+      any caller parses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/pkce_login.py#L427-L429

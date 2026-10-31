@@ -308,6 +308,53 @@ fn discover_rejects_foreign_endpoint() {
 }
 
 #[test]
+fn discover_rejects_unsupported_contract_version() {
+    let body = br#"{
+        "contract_version": 2,
+        "issuer": "https://example.test",
+        "authorization_endpoint": "https://example.test/oauth/authorize",
+        "token_endpoint": "https://example.test/oauth/token",
+        "registration_endpoint": "https://example.test/oauth/register",
+        "revocation_endpoint": "https://example.test/oauth/revoke",
+        "resource": "https://example.test",
+        "supported_methods": ["S256"]
+    }"#;
+    let response = HttpResponse {
+        status: 200,
+        headers: Vec::new(),
+        body: body.to_vec(),
+    };
+    let result = discover_cli_auth("https://example.test", &ScriptedHttp::new(response));
+    result.unwrap_err();
+}
+
+#[test]
+fn discover_rejects_missing_s256() {
+    let mut value = contract();
+    value.supported_methods = vec!["plain".to_owned()];
+    let response = HttpResponse {
+        status: 200,
+        headers: Vec::new(),
+        body: serde_json::to_vec(&value).expect("json"),
+    };
+    let result = discover_cli_auth("https://example.test", &ScriptedHttp::new(response));
+    result.unwrap_err();
+}
+
+#[test]
+fn discover_rejects_issuer_mismatch() {
+    let mut value = contract();
+    value.issuer = "https://other.test".to_owned();
+    let response = HttpResponse {
+        status: 200,
+        headers: Vec::new(),
+        body: serde_json::to_vec(&value).expect("json"),
+    };
+    let result = discover_cli_auth("https://example.test", &ScriptedHttp::new(response));
+    result.unwrap_err();
+}
+
+#[test]
 fn callback_validation_waits_for_matching_state() {
     let (sender, receiver) = sync_channel(1);
     let mut server = LoopbackServer::bind("state").expect("bind");
@@ -848,6 +895,13 @@ fn error_detail_zero_number_falls_through_to_error() {
 fn error_detail_nonzero_number_is_stringified() {
     let body = br#"{"error_description":5}"#;
     assert_eq!(wire::error_detail(body), "5");
+}
+
+// Pins the documented deviation from LiteLLM's Python dict-repr fallback; see docs/deviations/B4573.yaml.
+#[test]
+fn error_detail_all_falsy_falls_back_to_raw_body_not_python_dict_repr() {
+    let body = br#"{"other":"x"}"#;
+    assert_eq!(wire::error_detail(body), r#"{"other":"x"}"#);
 }
 
 #[test]
