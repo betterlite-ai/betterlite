@@ -25,8 +25,6 @@ enum Failure {
     #[error("invalid base cost: {0}")]
     BaseCost(#[source] rust_decimal::Error),
     #[error(transparent)]
-    Config(#[from] betterlite_config::loader::ConfigError),
-    #[error(transparent)]
     Adjustment(#[from] betterlite_cost::adjustments::AdjustmentError),
 }
 
@@ -36,10 +34,8 @@ impl crate::helpers::Helper for Op {
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         let base_cost = Decimal::from_str_exact(&input.base_cost)
             .map_err(|error| Box::<crate::helpers::HelperError>::from(Failure::BaseCost(error)))?;
-        let discount_config = resolve_discount_config(input.discount_config.clone())
-            .map_err(|error| Box::<crate::helpers::HelperError>::from(Failure::Config(error)))?;
-        let margin_config = resolve_margin_config(input.margin_config.clone())
-            .map_err(|error| Box::<crate::helpers::HelperError>::from(Failure::Config(error)))?;
+        let discount_config = resolve_discount_config(input.discount_config.clone());
+        let margin_config = resolve_margin_config(input.margin_config.clone());
         let discount = apply_cost_discount(base_cost, input.provider.as_deref(), &discount_config)
             .map_err(|error| {
                 Box::<crate::helpers::HelperError>::from(Failure::Adjustment(error))
