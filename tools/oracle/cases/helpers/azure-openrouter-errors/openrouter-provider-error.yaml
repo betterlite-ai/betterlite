@@ -1,0 +1,13 @@
+kind: helper
+name: azure-openrouter-errors-openrouter-provider-error
+call:
+  azure_openrouter_errors:
+    provider: openrouter
+    model: openrouter/mistralai/mixtral-8x7b
+    custom_llm_provider: openrouter
+    error_str: upstream model is unavailable
+    exception_provider: OpenRouterException
+    status_code: 503
+    status_code_is_synthesized: false
+env: {}
+compare: {ignore: []}
