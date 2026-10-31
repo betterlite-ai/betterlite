@@ -1,7 +1,7 @@
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-pub(crate) const PLACEHOLDERS: [&str; 11] = [
+pub(crate) const PLACEHOLDERS: [&str; 12] = [
     "model",
     "effort",
     "schema_text",
@@ -13,6 +13,7 @@ pub(crate) const PLACEHOLDERS: [&str; 11] = [
     "git_common_dir",
     "home",
     "sandbox_settings",
+    "session",
 ];
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -60,7 +61,7 @@ pub(crate) struct Vendor {
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(
-    description = "How to start one agent run. The prompt goes to stdin. Arguments may use {model}, {effort}, {worktree}, {schema}, {schema_text}, {output}, {instructions}, {git_common_dir}, {home}, {writable_roots} (the policy's writable folders as a TOML array) and {sandbox_settings} (a Claude settings file that sandboxes Bash to the worktree and those folders)."
+    description = "How to start one agent run. The prompt goes to stdin. Arguments may use {model}, {effort}, {worktree}, {schema}, {schema_text}, {output}, {instructions}, {git_common_dir}, {home}, {writable_roots} (the policy's writable folders as a TOML array), {sandbox_settings} (a Claude settings file that sandboxes Bash to the worktree and those folders) and, in resume only, {session}."
 )]
 pub(crate) struct Runner {
     #[schemars(regex(pattern = "^[a-z][a-z0-9-]*$"))]
@@ -73,6 +74,10 @@ pub(crate) struct Runner {
     #[schemars(length(min = 1))]
     pub(crate) program: String,
     pub(crate) args: Vec<String>,
+    #[schemars(
+        description = "Arguments for a fix turn that goes on in the session of the worker run before it, used instead of args when that run had this runner and model and reported its session. {session} expands to the session id. Without them every run starts a new session."
+    )]
+    pub(crate) resume: Option<Vec<String>>,
     pub(crate) output: OutputMode,
 }
 
@@ -106,7 +111,7 @@ pub(crate) struct Role {
     pub(crate) instructions: String,
     #[schemars(
         length(min = 1),
-        description = "Rungs tried in order. The dispatcher climbs to the next rung when a rung's attempts run out, and skips a rung whose vendor is at its usage limit."
+        description = "Rungs tried in order. A worker climbs to the next rung when a rung's attempts run out. While a worker rung's vendor is at its usage limit, its tries go to the first later rung on another vendor and the rung keeps its own attempts; with no such rung the dispatch stops and keeps its progress. A reviewer skips a rung whose vendor is at its usage limit."
     )]
     pub(crate) ladder: Vec<Rung>,
 }
@@ -135,7 +140,7 @@ pub(crate) struct Policy {
     pub(crate) review_by_other_vendor: bool,
     #[schemars(
         range(min = 1),
-        description = "Worker attempts across the whole ladder. A run that hits a usage limit doesn't count, so skipped rungs leave their attempts to the rungs after them."
+        description = "Fresh worker starts across the whole ladder, tries lent to a later rung included. Fix turns and runs that hit a usage limit don't count. cargo gate dispatch --grant adds starts on the last rung once these are used."
     )]
     pub(crate) max_worker_attempts: u32,
     #[schemars(
@@ -152,7 +157,13 @@ pub(crate) struct Policy {
         description = "When every seat of a worker rung's vendor is taken, the try runs on the first later rung of another vendor that has a free seat. It still counts as a try on its own rung."
     )]
     pub(crate) overflow: bool,
-    #[schemars(description = "Review rounds before a task goes back to the architect.")]
+    #[schemars(
+        description = "Fix turns after one worker start or one review round: runs that go on from a red gate, a rejected report or an edit under .development. They don't count as worker attempts. When they run out, the next run is a fresh start that does."
+    )]
+    pub(crate) max_fix_turns: u32,
+    #[schemars(
+        description = "Review rounds before a task goes back to the architect. The worker fixes the findings on the same rung, without a new worker attempt. A dispatch after the rounds ran out gets one more round."
+    )]
     pub(crate) max_review_rounds: u32,
     #[schemars(
         description = "Blocked reports in a row before a task goes back to the architect instead of climbing to the next rung."

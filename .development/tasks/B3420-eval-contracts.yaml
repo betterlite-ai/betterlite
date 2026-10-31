@@ -95,10 +95,10 @@ checks:
   commands:
     - id: eval-types-test
       why: eval type definitions do not parse, serialize, or have missing fields
-      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^eval_types::/ || /^eval_contracts::/)'
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^eval_types::/) | test(/^eval_contracts::/)'
     - id: base-config-test
       why: BaseEvalsAPIConfig initialization or error class construction fails
-      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^base_evals_config::/ || /^eval_error_class::/)'
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^base_evals_config::/) | test(/^eval_error_class::/)'
 
 oracle_cases: []
 

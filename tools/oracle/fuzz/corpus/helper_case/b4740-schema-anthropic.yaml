@@ -1,0 +1,1 @@
+{"kind":"helper","name":"b4740_schema_anthropic","call":{"b4740":{"operation":"mcp_tool_schema","tool":{"name":"echo","description":"Echo","inputSchema":{"title":"drop","additionalProperties":true,"required":["x"],"properties":{"x":{"$ref":"#/definitions/X"}},"definitions":{"X":{"type":"string"}}}}}},"env":{},"compare":{"ignore":[]}}

@@ -817,13 +817,18 @@ version = "0.1.0"
 dependencies = [
  "betterlite-config",
  "betterlite-server",
+ "chrono",
  "clap",
  "rand 0.10.3",
+ "rstest",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "uuid",
+ "whoami",
 ]
 
 [[package]]
@@ -1104,6 +1109,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "betterlite-config",
+ "fancy-regex",
  "indexmap 2.14.2",
  "regex",
  "reqwest",
@@ -1122,6 +1128,7 @@ dependencies = [
 name = "betterlite-harness"
 version = "0.1.0"
 dependencies = [
+ "async-stream",
  "futures-core",
  "futures-util",
  "hex",
@@ -1138,6 +1145,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tracing",
  "uuid",
  "which",
 ]
@@ -1172,6 +1180,7 @@ dependencies = [
 name = "betterlite-lens"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
  "chrono",
  "garde",
  "hex",
@@ -1226,6 +1235,7 @@ version = "0.1.0"
 dependencies = [
  "aws-lc-rs",
  "base64 0.23.1",
+ "betterlite-prompts",
  "betterlite-secrets",
  "chrono",
  "hex",
@@ -1236,6 +1246,9 @@ dependencies = [
  "serde_json",
  "sha2 0.11.1",
  "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -1450,10 +1463,13 @@ dependencies = [
  "prometheus-client",
  "py_literal",
  "rstest",
+ "secrecy",
  "serde",
  "serde_json",
+ "serde_with",
  "thiserror",
  "tokio",
+ "url",
 ]
 
 [[package]]
@@ -1601,8 +1617,11 @@ name = "betterlite-websearch"
 version = "0.1.0"
 dependencies = [
  "betterlite-openai",
+ "indexmap 2.14.2",
  "serde",
  "serde_json",
+ "thiserror",
+ "tracing",
 ]
 
 [[package]]

@@ -1,0 +1,1 @@
+{"kind":"helper","name":"b4740_deadline_override","call":{"b4740":{"operation":"pagination","client_ms":60000,"listing_ms":30000,"deadline_ms":90000,"pages":[{"tools":[{"name":"slow","inputSchema":{}}],"nextCursor":null,"delay_ms":70000}]}},"env":{},"compare":{"ignore":[]}}

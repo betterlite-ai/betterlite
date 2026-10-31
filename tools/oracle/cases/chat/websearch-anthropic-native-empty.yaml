@@ -1,0 +1,13 @@
+{
+  "kind": "helper",
+  "name": "websearch-anthropic-native-empty",
+  "call": {
+    "b4112": {
+      "operation": "native"
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
