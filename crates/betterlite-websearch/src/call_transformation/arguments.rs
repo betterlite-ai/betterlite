@@ -9,11 +9,13 @@ use super::wire::{Arguments, Input};
 
 const MAX_ARGUMENT_DEPTH: usize = 32;
 const MAX_ARGUMENT_NODES: usize = 20_000;
+const MAX_ARGUMENT_BYTES: usize = 0x0010_0000;
 
 #[derive(Default)]
 pub(super) struct Budget {
     depth: usize,
     nodes: usize,
+    bytes: usize,
 }
 
 fn bump(counter: &mut usize, limit: usize) -> Result<(), TransformationError> {
@@ -22,6 +24,29 @@ fn bump(counter: &mut usize, limit: usize) -> Result<(), TransformationError> {
         .filter(|&value| value <= limit)
         .ok_or(TransformationError::ArgumentsTooComplex)?;
     Ok(())
+}
+
+fn charge_bytes(budget: &mut Budget, bytes: usize) -> Result<(), TransformationError> {
+    budget.bytes = budget
+        .bytes
+        .checked_add(bytes)
+        .filter(|&value| value <= MAX_ARGUMENT_BYTES)
+        .ok_or(TransformationError::ArgumentsTooComplex)?;
+    Ok(())
+}
+
+fn quote_with_budget(
+    value: &str,
+    python: bool,
+    budget: &mut Budget,
+) -> Result<String, TransformationError> {
+    let quoted_bytes = value
+        .len()
+        .checked_mul(6)
+        .and_then(|bytes| bytes.checked_add(2))
+        .ok_or(TransformationError::ArgumentsTooComplex)?;
+    charge_bytes(budget, quoted_bytes)?;
+    quote(value, python).map_err(TransformationError::from)
 }
 
 pub(super) fn normalize(raw: &Arguments, responses: bool) -> Input {
@@ -67,9 +92,10 @@ fn object_text(
     let entries = fields
         .iter()
         .map(|(key, value)| {
+            charge_bytes(budget, key.len())?;
             Ok(format!(
                 "{}: {}",
-                quote(key, python)?,
+                quote_with_budget(key, python, budget)?,
                 text(value, python, budget)?
             ))
         })
@@ -83,6 +109,7 @@ pub(super) fn text(
     budget: &mut Budget,
 ) -> Result<String, TransformationError> {
     bump(&mut budget.nodes, MAX_ARGUMENT_NODES)?;
+    charge_bytes(budget, raw.get().len())?;
     match raw.get().as_bytes().first() {
         Some(b'{') => {
             bump(&mut budget.depth, MAX_ARGUMENT_DEPTH)?;
@@ -102,7 +129,10 @@ pub(super) fn text(
             budget.depth = budget.depth.saturating_sub(1);
             rendered
         }
-        Some(b'"') => Ok(quote(&serde_json::from_str::<String>(raw.get())?, python)?),
+        Some(b'"') => {
+            let value = serde_json::from_str::<String>(raw.get())?;
+            quote_with_budget(&value, python, budget)
+        }
         Some(b'n') if python => Ok("None".to_owned()),
         Some(b't') if python => Ok("True".to_owned()),
         Some(b'f') if python => Ok("False".to_owned()),

@@ -272,6 +272,47 @@ fn call_transformation_arguments_depth_limit_errors() {
 }
 
 #[test]
+fn call_transformation_arguments_byte_limit_rejects_wide_arrays() {
+    let items = "0,".repeat(600_000);
+    let response = format!(
+        r#"{{"choices": [{{"message": {{"tool_calls": [
+            {{"id": "call-1", "type": "function", "function": {{"name": "litellm_web_search", "arguments": {{"query": [{items}0]}}}}}}
+        ]}}}}]}}"#
+    );
+    let (_, calls) = WebSearchTransformation::transform_request(
+        &serde_json::from_str::<Response>(&response).unwrap(),
+        false,
+        "openai",
+    )
+    .unwrap();
+    assert!(matches!(
+        WebSearchTransformation::transform_response(&calls, &[String::from("result")], "openai"),
+        Err(TransformationError::ArgumentsTooComplex)
+    ));
+}
+
+#[test]
+fn call_transformation_arguments_byte_limit_rejects_oversized_string_and_key() {
+    let value = "x".repeat(1_100_000);
+    let key = "k".repeat(1_100_000);
+    let response = format!(
+        r#"{{"choices": [{{"message": {{"tool_calls": [
+            {{"id": "call-1", "type": "function", "function": {{"name": "litellm_web_search", "arguments": {{"{key}": "{value}"}}}}}}
+        ]}}}}]}}"#
+    );
+    let (_, calls) = WebSearchTransformation::transform_request(
+        &serde_json::from_str::<Response>(&response).unwrap(),
+        false,
+        "openai",
+    )
+    .unwrap();
+    assert!(matches!(
+        WebSearchTransformation::transform_response(&calls, &[String::from("result")], "openai"),
+        Err(TransformationError::ArgumentsTooComplex)
+    ));
+}
+
+#[test]
 fn call_transformation_responses_skips_unparsable_items() {
     let response = r#"{"output": [
         null,
