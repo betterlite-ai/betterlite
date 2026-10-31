@@ -6,9 +6,9 @@ deviations:
   - what: A non-numeric discount config entry (a string, list or object) is treated as an absent discount instead of crashing the request.
     why: LiteLLM multiplies the configured value into the base cost without converting it first, so a type that cannot multiply a float raises TypeError for every request to that provider; no caller relies on that crash.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1140-L1141
-  - what: A margin percentage or fixed_amount field holding non-numeric text is treated as zero instead of raising the uncaught ValueError Python's float() produces for that text.
-    why: float() on a dict value is reachable with any configured string, and a caller passing a typo'd or malformed margin value has no way to catch that crash; treating it as absent keeps the request billable instead of failing it outright.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1198-L1204
-  - what: Boolean adjustment entries remain unsupported and unapplied instead of becoming numeric 1.0/0.0 values.
+  - what: Boolean adjustment entries, whether the top-level scalar entry or a percentage/fixed_amount field inside it, remain unsupported and unapplied instead of becoming the numeric 1.0/0.0 Python's float(bool) would produce.
     why: B1649 requires unsupported legacy variants to remain explicit unapplied entries, while Python's bool subclass behavior is not a supported configuration shape.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1194-L1197
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1194-L1204
+  - what: A margin percentage or fixed_amount field holding a value that cannot convert to a number (non-numeric text, null, a list or an object) fails config loading with a typed error naming the field, instead of raising the uncaught ValueError Python's float() produces the first time a request reads that field.
+    why: Cost adjustments are resolved once when the config loads instead of re-parsed on every request, so a configured value bad enough to crash every request to that provider is caught before the gateway starts serving rather than on the first request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1201-L1204
