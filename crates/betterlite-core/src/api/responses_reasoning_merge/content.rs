@@ -41,6 +41,23 @@ impl From<Content> for Value {
     }
 }
 
+// thinking_blocks: a non-empty list joins reasoning accumulation; any other JSON shape (a dict, a string, an empty list) is kept as-is but never merged.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ThinkingBlocks {
+    List(Vec<Value>),
+    Other(Value),
+}
+
+impl ThinkingBlocks {
+    pub(super) const fn as_list(&self) -> Option<&[Value]> {
+        match self {
+            Self::List(items) if !items.is_empty() => Some(items.as_slice()),
+            Self::List(_) | Self::Other(_) => None,
+        }
+    }
+}
+
 // reasoning_content: any JSON is accepted, but only a non-empty string counts as reasoning text.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]

@@ -11,12 +11,15 @@ pub mod content;
 pub mod record;
 pub mod trailing;
 
-#[derive(Debug, Error, PartialEq, Eq)]
+#[derive(Debug, Error)]
 pub enum MergeError {
     #[error("assistant content must be a string or a list of content blocks")]
     InvalidContent,
-    #[error("assistant message must be a JSON object")]
-    InvalidRecord,
+    #[error("assistant message must be a JSON object: {source}")]
+    InvalidRecord {
+        #[source]
+        source: serde_json::Error,
+    },
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

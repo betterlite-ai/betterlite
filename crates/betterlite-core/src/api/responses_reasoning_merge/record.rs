@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use serde_with::rust::double_option;
 
-use super::content::{Content, ReasoningText};
+use super::content::{Content, ReasoningText, ThinkingBlocks};
 use super::{Reasoning, Role, is_falsy};
 
 // A chat message, dict or attribute shaped, with double_option keeping "missing" distinct from an explicit null.
@@ -26,7 +26,7 @@ pub struct ChatRecord {
         skip_serializing_if = "Option::is_none",
         with = "double_option"
     )]
-    pub thinking_blocks: Option<Option<Vec<Value>>>,
+    pub thinking_blocks: Option<Option<ThinkingBlocks>>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -64,8 +64,7 @@ impl Reasoning for ChatRecord {
         self.thinking_blocks
             .as_ref()
             .and_then(Option::as_ref)
-            .map(Vec::as_slice)
-            .filter(|items| !items.is_empty())
+            .and_then(ThinkingBlocks::as_list)
     }
 
     fn set_text(&mut self, text: String) {
@@ -73,7 +72,7 @@ impl Reasoning for ChatRecord {
     }
 
     fn set_blocks(&mut self, blocks: Vec<Value>) {
-        self.thinking_blocks = Some(Some(blocks));
+        self.thinking_blocks = Some(Some(ThinkingBlocks::List(blocks)));
     }
 
     fn blank(text: Option<String>, blocks: Option<Vec<Value>>) -> Self {
