@@ -1,0 +1,5 @@
+task: B574
+deviations:
+  - what: Schema filtering rejects inputs deeper than 128 levels or larger than 10000000 estimated bytes.
+    why: Bound recursive work and allocation for untrusted schemas; LiteLLM has no explicit filtering limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L530-L665
