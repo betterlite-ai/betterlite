@@ -59,10 +59,13 @@ impl TryFrom<Box<RawValue>> for Choices {
         if raw.get() == "null" {
             return Ok(Self(Vec::new()));
         }
-        let items = serde_json::from_str::<Vec<Box<RawValue>>>(raw.get()).map_err(ChoicesError)?;
-        let choice = items
-            .first()
-            .and_then(|first| serde_json::from_str::<Choice>(first.get()).ok());
+        let mut entries = serde_json::from_str::<Vec<Box<RawValue>>>(raw.get())
+            .map_err(ChoicesError)?
+            .into_iter();
+        let Some(first) = entries.next() else {
+            return Ok(Self(Vec::new()));
+        };
+        let choice = serde_json::from_str::<Choice>(first.get()).ok();
         Ok(Self(choice.into_iter().collect()))
     }
 }
