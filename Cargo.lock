@@ -1103,6 +1103,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "betterlite-config",
+ "fancy-regex",
  "indexmap 2.14.2",
  "regex",
  "reqwest",
