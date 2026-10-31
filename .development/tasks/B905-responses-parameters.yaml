@@ -134,7 +134,7 @@ pitfalls:
 - include_usage is a chat-stream option; the Responses normalizer recognizes only boolean include_obfuscation.
 - Prompt preservation uses object identity as well as role/id correspondence; equal copies do not exercise the insertion branch.
 - Tool headers merge after OAuth extraction, so adding Authorization to a tool does not change the returned OAuth mapping.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 1

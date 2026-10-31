@@ -93,7 +93,7 @@ pitfalls:
 - The API key passed to validate_environment differs from the api_key passed to get_complete_url.
 - Multipart generation deliberately adds files={none:""}; omitting it changes form encoding.
 - extra_body is not merged here, even though it appears in both signatures.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

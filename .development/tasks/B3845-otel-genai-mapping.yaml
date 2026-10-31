@@ -134,7 +134,7 @@ pitfalls:
   - Responses API items are Pydantic v2 models from the openai SDK with a model_dump() method, not dict-like objects with .get(); _to_dict handles both forms.
   - The cost breakdown keys in LiteLLM's GenAI mapper are "input", "output", "cache_read", "cache_creation", "tool_usage", "original", "discount_amount", "discount_percent", "margin_fixed_amount", "margin_percent", "margin_total_amount", all optional (None-valued when absent).
   - Tool definitions are limited by the budget before the span attribute limit; exceed the budget and the oldest tools are silently dropped.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

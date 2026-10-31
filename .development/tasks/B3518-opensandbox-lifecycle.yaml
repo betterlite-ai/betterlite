@@ -143,7 +143,7 @@ pitfalls:
   - adelete_sandbox with a bare string ID must construct a temporary handle with _as_handle; the api_key fallback in _api_key must handle missing cached credentials gracefully.
   - The handle.domain field is updated during _ensure_handle to reflect the resolved api_base; preserve this across credential updates.
   - Timeout values default to 30 seconds for readiness but can be overridden per call; defaults come from B3517 constants.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 2

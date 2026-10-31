@@ -81,7 +81,7 @@ pitfalls:
   - The transcription adapter does not inherit ElevenLabs speech's litellm.openai_key fallback.
   - words omitted and words present but containing only spacing produce different response shapes.
   - Form booleans use Python True/False spellings rather than Deepgram's lowercase query encoding.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 1

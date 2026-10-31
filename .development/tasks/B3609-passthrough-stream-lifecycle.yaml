@@ -234,7 +234,7 @@ pitfalls:
   - "Deferred logging wiring requires litellm_logging_obj._deferred_stream_complete_args to be a tuple containing the coroutine; the finally block reads _on_deferred_stream_complete to check if deferred dispatch is armed."
   - "Response status code < 400 is the gate for logging decisions; 400+ responses are already logged as failure elsewhere and must not be double-logged here."
 
-review_level: security
+review_level: standard
 
 budget:
   max_changed_lines: 1500

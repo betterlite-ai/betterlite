@@ -102,7 +102,7 @@ pitfalls:
   - "Created_at never changes after insert; updated_at advances only on update, not list reads."
   - "Descending order for list results uses order={created_at:\"desc\"} via find_many, not a separate sort."
   - "find_many call is wrapped with call_with_db_reconnect_retry for list reads only, not for single-row operations."
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

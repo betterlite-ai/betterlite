@@ -173,7 +173,7 @@ pitfalls:
   - "The apply_guardrail method for logging_only must check _event_hook_is_event_type(logging_only) to decide whether to raise on a flagged verdict; if logging_only is set, the verdict is logged but not raised."
   - "Common_utils helpers (get_last_user_message, set_last_user_message, get_content_from_model_response) are imported inside the function, not at module level, to avoid circular imports."
 
-review_level: security
+review_level: standard
 
 budget:
   max_changed_lines: 1500

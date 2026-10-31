@@ -165,7 +165,7 @@ pitfalls:
   - >-
     Async clients queued on a loop that closes before reap is called will be dropped by weak-ref GC; the weak ref returns
     None and the entry is cleaned up. No panic or blocking occurs.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

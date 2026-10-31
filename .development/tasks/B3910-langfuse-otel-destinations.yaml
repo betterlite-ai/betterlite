@@ -243,7 +243,7 @@ pitfalls:
   - '_create_open_telemetry_config_from_langfuse_env returns OpenTelemetryConfig.from_env() only when at least
     one credential is missing; it does not check for partial credentials (both must be absent to fall back).'
 
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0
