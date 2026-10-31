@@ -20,7 +20,8 @@ runners:
   - id: claude-worker
     vendor: anthropic
     program: claude
-    args: [-p, --model, "{model}", --effort, "{effort}", --append-system-prompt-file, "{instructions}", --permission-mode, acceptEdits, --settings, "{sandbox_settings}", --allowedTools, Read, Edit, Write, Glob, Grep, WebSearch, WebFetch, --disallowedTools, Agent, --output-format, json, --json-schema, "{schema_text}", --no-session-persistence, --strict-mcp-config]
+    args: [-p, --model, "{model}", --effort, "{effort}", --append-system-prompt-file, "{instructions}", --permission-mode, acceptEdits, --settings, "{sandbox_settings}", --allowedTools, Read, Edit, Write, Glob, Grep, WebSearch, WebFetch, --disallowedTools, Agent, --output-format, json, --json-schema, "{schema_text}", --strict-mcp-config]
+    resume: [-p, --resume, "{session}", --model, "{model}", --effort, "{effort}", --append-system-prompt-file, "{instructions}", --permission-mode, acceptEdits, --settings, "{sandbox_settings}", --allowedTools, Read, Edit, Write, Glob, Grep, WebSearch, WebFetch, --disallowedTools, Agent, --output-format, json, --json-schema, "{schema_text}", --strict-mcp-config]
     output: claude-json
   - id: claude-reviewer
     vendor: anthropic
@@ -45,7 +46,7 @@ roles:
         model: sonnet
         effort: high
         attempts: 3
-        timeout_minutes: 120
+        timeout_minutes: 180
   reviewer:
     instructions: roles/reviewer.md
     ladder:
@@ -91,6 +92,7 @@ policy:
   limit_retry_minutes: 30
   max_parallel: 8
   overflow: true
+  max_fix_turns: 2
   max_review_rounds: 3
   max_blocked_reports: 2
   max_hook_blocks: 6

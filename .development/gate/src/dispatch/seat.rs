@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use strum::IntoStaticStr;
 
@@ -12,11 +13,16 @@ use crate::spec::agents::{Agents, Rung, Runner};
 pub(crate) enum Seat {
     Worker,
     Reviewer,
+    ReviewerAgain,
 }
 
 pub(crate) enum Run {
-    Answer(String),
+    Answer {
+        text: String,
+        session: Option<String>,
+    },
     Silent,
+    TimedOut,
     Limited,
 }
 
@@ -41,12 +47,17 @@ pub(crate) fn invoke(
     seat: Seat,
     prompt: &str,
 ) -> Result<Run, GateError> {
-    let (schema, role) = match seat {
-        Seat::Reviewer => (
+    let (schema, role, session) = match seat {
+        Seat::Reviewer | Seat::ReviewerAgain => (
             "review.schema.json",
             reviewer_role(attempt.agents, attempt.brief.task.review_level),
+            None,
         ),
-        Seat::Worker => ("report.schema.json", &attempt.agents.roles.worker),
+        Seat::Worker => (
+            "report.schema.json",
+            &attempt.agents.roles.worker,
+            attempt.resume,
+        ),
     };
     let instructions = role.instructions.as_str();
     let seat_name: &str = seat.into();
@@ -70,6 +81,7 @@ pub(crate) fn invoke(
         instructions: &folder.join(instructions),
         log: &log,
         prompt,
+        session,
     };
     run_on_seat(attempt.agents, runner, rung, seat, &invocation)
 }
@@ -83,16 +95,25 @@ fn run_on_seat(
 ) -> Result<Run, GateError> {
     let account = vendor::find_vendor(agents, &runner.vendor)?;
     let seats = vendor::take_seat(invocation.git_common_dir, agents, account, seat)?;
-    let answer = runner::run(runner, rung, invocation)?;
+    let started = Instant::now();
+    let reply = runner::run(runner, rung, invocation)?;
     drop(seats);
-    if let Some(text) = answer {
-        return Ok(Run::Answer(text));
+    if let Some(text) = reply.answer {
+        return Ok(Run::Answer {
+            text,
+            session: reply.session,
+        });
     }
     let stdout = invocation.output.with_extension("stdout");
     match vendor::limit_line(account, &[&stdout, invocation.log])? {
         Some(line) => {
             vendor::mark(invocation.git_common_dir, &account.id, &line)?;
             Ok(Run::Limited)
+        }
+        None if started.elapsed()
+            >= Duration::from_secs(60).saturating_mul(rung.timeout_minutes) =>
+        {
+            Ok(Run::TimedOut)
         }
         None => Ok(Run::Silent),
     }

@@ -1,0 +1,24 @@
+{
+  "kind": "helper",
+  "name": "websearch-anthropic-native",
+  "call": {
+    "b4112": {
+      "operation": "native",
+      "search_response": {
+        "results": [
+          {
+            "title": "title",
+            "url": "https://example.test",
+            "snippet": "evidence",
+            "date": "",
+            "last_updated": "yesterday"
+          }
+        ]
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

@@ -1,0 +1,8 @@
+kind: helper
+name: selection-id-hides-trace-ref
+call:
+  b4502:
+    selection_id:
+      value: WyJyZXF1ZXN0cyIsInRlYW0tMiIsInRyYWNlLTIiLCJzcGFuLTkiXQ==
+env: {}
+compare: {ignore: []}
