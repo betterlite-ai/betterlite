@@ -9,8 +9,4 @@ call:
       - not-a-dict
 env: {}
 compare:
-  ignore:
-    - pointer: /error/class
-      why: betterlite raises a typed MergeError where LiteLLM's pydantic adapter raises a ValidationError
-    - pointer: /error/message
-      why: betterlite writes its own message
+  ignore: []

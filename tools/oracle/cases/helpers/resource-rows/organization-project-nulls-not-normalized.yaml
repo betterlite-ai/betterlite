@@ -6,6 +6,4 @@ call:
     row: {budget_id: b, created_by: c, updated_by: u, spend: null}
 env: {}
 compare:
-  ignore:
-    - pointer: /error/message
-      why: Native typed validation uses its own error wording
+  ignore: []

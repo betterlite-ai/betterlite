@@ -13,6 +13,4 @@ call:
         Other: {type: string}
 env: {}
 compare:
-  ignore:
-    - pointer: /error/message
-      why: betterlite writes its own error message
+  ignore: []
