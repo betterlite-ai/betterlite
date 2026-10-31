@@ -1,0 +1,11 @@
+kind: helper
+name: anthropic-replicate-errors-branch-571
+call:
+  anthropic_replicate_errors:
+    provider: anthropic
+    model: claude-3-opus
+    error_str: "generic failure"
+    status_code: 599
+env: {}
+compare:
+  ignore: []
