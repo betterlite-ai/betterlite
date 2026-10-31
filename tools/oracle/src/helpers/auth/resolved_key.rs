@@ -119,7 +119,9 @@ fn auth(value: &Value) -> HelperResult {
 
 fn hash_token(value: &Value) -> HelperResult {
     let Some(text) = optional_string_value(value)? else {
-        return Err(Failure::InvalidValue("value must be a string").into());
+        return Err(Box::<HelperError>::from(Failure::InvalidValue(
+            "value must be a string",
+        )));
     };
     let hashed = credential::hash_token(&text);
     Ok(serde_json::json!({ "hash": hashed }))
@@ -150,7 +152,9 @@ fn object_fields(value: &Value) -> Result<BTreeMap<String, JsonData>, Box<Helper
         | JsonData::Bool(_)
         | JsonData::Number(_)
         | JsonData::String(_)
-        | JsonData::Array(_) => Err(Failure::InvalidValue("value must be a JSON object").into()),
+        | JsonData::Array(_) => Err(Box::<HelperError>::from(Failure::InvalidValue(
+            "value must be a JSON object",
+        ))),
     }
 }
 
@@ -159,7 +163,9 @@ fn optional_string_value(value: &Value) -> Result<Option<String>, Box<HelperErro
         Value::Null => Ok(None),
         Value::String(text) => Ok(Some(text.clone())),
         Value::Bool(_) | Value::Number(_) | Value::Array(_) | Value::Object(_) => {
-            Err(Failure::InvalidValue("value must be a string or null").into())
+            Err(Box::<HelperError>::from(Failure::InvalidValue(
+                "value must be a string or null",
+            )))
         }
     }
 }
