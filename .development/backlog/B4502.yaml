@@ -1,14 +1,14 @@
 id: B4502
 milestone: M8 platform
 title: Read Lens activity samples and verify stored evidence
-status: todo
+status: done
 depends_on: [B4500]
 file: tasks/B4502-lens-sources.yaml
 covers:
   - "litellm/proxy/lens/sources.py"
 parent: B132
 split_from: B132
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 373

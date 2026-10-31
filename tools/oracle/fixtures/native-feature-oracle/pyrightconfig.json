@@ -1,0 +1,6 @@
+{
+  "include": ["startup.py"],
+  "typeCheckingMode": "strict",
+  "reportMissingImports": true,
+  "reportMissingTypeStubs": false
+}

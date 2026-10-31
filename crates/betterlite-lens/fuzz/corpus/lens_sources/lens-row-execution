@@ -1,0 +1,1 @@
+[{"selection_key": "k1", "source": "traces", "trace_id": "t1", "trace_ref": "r1", "team_id": "team1", "name": "run", "start_time": "2026-01-01T00:00:00Z", "span_count": 3, "root_seen": 1, "eligible": 10, "selected": 5, "service": "svc", "attributes": [["a", "b"]]}]

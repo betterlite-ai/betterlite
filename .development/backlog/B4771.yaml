@@ -1,7 +1,7 @@
 id: B4771
 milestone: M9 agents and mcp
 title: Native agent provider contracts and A2A response records
-status: todo
+status: done
 depends_on: [B2202]
 file: tasks/B4771-agent-provider-contracts.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/base_llm/agents/**"
 parent: B141
 split_from: B141
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 369
