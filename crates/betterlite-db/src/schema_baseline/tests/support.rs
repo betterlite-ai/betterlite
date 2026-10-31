@@ -29,28 +29,48 @@ fn postgres_test_url() -> Option<SecretString> {
 
 type ConnectionTasks = JoinSet<Result<(), tokio_postgres::Error>>;
 
-async fn setup() -> (PostgresFixture, Client, ConnectionTasks) {
+const RESET_PUBLIC_SCHEMA_SQL: &str = "DROP SCHEMA public CASCADE; CREATE SCHEMA public;";
+
+async fn provision() -> PostgresFixture {
     let url = postgres_test_url();
     let mut generator = RandomDatabaseName;
-    let fixture = PostgresFixture::provision_with_name_generator(
+    PostgresFixture::provision_with_name_generator(
         url.as_ref(),
         &FixtureSeed::default(),
         &mut generator,
     )
     .resolve()
     .await
-    .unwrap();
+    .unwrap()
+}
+
+async fn initialize_schema(
+    fixture: &PostgresFixture,
+    sql: &str,
+) -> Result<(Client, ConnectionTasks), tokio_postgres::Error> {
     let (client, connection) =
-        tokio_postgres::connect(fixture.options.url.expose_secret(), tokio_postgres::NoTls)
-            .await
-            .unwrap();
+        tokio_postgres::connect(fixture.options.url.expose_secret(), tokio_postgres::NoTls).await?;
     let mut tasks = JoinSet::new();
     tasks.spawn(connection);
-    client
-        .batch_execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
-        .await
-        .unwrap();
-    (fixture, client, tasks)
+    client.batch_execute(sql).await?;
+    Ok((client, tasks))
+}
+
+async fn initialize_or_close(
+    fixture: PostgresFixture,
+    sql: &str,
+) -> (PostgresFixture, Client, ConnectionTasks) {
+    match initialize_schema(&fixture, sql).await {
+        Ok((client, tasks)) => (fixture, client, tasks),
+        Err(err) => {
+            fixture.close_async().await.unwrap();
+            panic!("failed to initialize schema: {err}");
+        }
+    }
+}
+
+async fn setup() -> (PostgresFixture, Client, ConnectionTasks) {
+    initialize_or_close(provision().await, RESET_PUBLIC_SCHEMA_SQL).await
 }
 
 async fn close_fixture(mut tasks: ConnectionTasks, fixture: PostgresFixture) {
@@ -72,7 +92,7 @@ where
     F: FnOnce(Client) -> Fut + Send + 'static,
     Fut: Future<Output = ()> + Send + 'static,
 {
-    let (fixture, client, tasks) = setup().await;
+    let (fixture, client, tasks) = Box::pin(setup()).await;
     let outcome = run_body(body(client)).await;
     close_fixture(tasks, fixture).await;
     if let Err(err) = outcome {

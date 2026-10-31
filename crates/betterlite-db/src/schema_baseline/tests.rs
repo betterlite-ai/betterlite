@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 include!("tests/support.rs");
+include!("tests/cleanup.rs");
 include!("tests/identity.rs");
 include!("tests/defaults.rs");
 include!("tests/constraints.rs");
