@@ -1,0 +1,38 @@
+task: B4834
+deviations:
+  - what: >-
+      Malformed known stream events and content blocks fail the turn with an error naming
+      their type instead of coercing fields through Python bool() or str(). Parse failures
+      remain visible even if a later result event reports success.
+    why: >-
+      The typed wire structs reject mismatched field shapes. Recording their errors in
+      stream state prevents silent loss of result events and tool calls while retaining
+      the deserialization cause. Unknown event types and non-object blocks remain ignored.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/claude_code/harness/transformation.py#L169-L241
+  - what: >-
+      ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN use SessionSettings.gateway.api_base and
+      the caller's real gateway key instead of the sandbox URL and scoped per-session token.
+      Sessions without a gateway target fail setup; the CLI can read the real gateway key
+      from its environment, including when running with bypassPermissions.
+    why: >-
+      SessionContext has no endpoint field, and context.rs is outside B4834's scope.
+      B4841 owns ModelEndpoint; B4841 or its session-endpoint integration successor must
+      wire it into SessionContext and replace this stand-in with sandbox.host_url(endpoint.port)
+      and endpoint.token, as also recorded for B4835.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/claude_code/harness/transformation.py#L311-L312
+  - what: >-
+      ToolResult.output serializes object content and image or other non-text blocks with
+      sorted keys instead of preserving their JSON input order.
+    why: >-
+      JsonObject in crate::types is a BTreeMap outside this task's scope, so input order is
+      already lost before stream translation. WireValue::Object also uses BTreeMap;
+      LiteLLM's json.dumps retains dictionary insertion order.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/claude_code/harness/transformation.py#L149
+  - what: >-
+      output_json derived from a structured_output object has sorted keys instead of
+      preserving the object's JSON input order.
+    why: >-
+      JsonObject in crate::types is a BTreeMap outside this task's scope, so input order is
+      already lost before stream translation. LiteLLM's json.dumps retains dictionary
+      insertion order; JSON extracted directly from final text remains unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/claude_code/harness/transformation.py#L386
