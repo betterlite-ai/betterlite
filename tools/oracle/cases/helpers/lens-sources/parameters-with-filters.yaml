@@ -1,0 +1,11 @@
+kind: helper
+name: parameters-with-filters
+call:
+  b4502:
+    parameters:
+      scope: {team_id: team-2, api_key_hash: hash-2, all_teams: false}
+      filters:
+        - {key: env, value: prod}
+        - {key: region, value: us}
+env: {}
+compare: {ignore: []}

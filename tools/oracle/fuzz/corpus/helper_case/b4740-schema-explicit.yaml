@@ -1,0 +1,1 @@
+{"kind":"helper","name":"b4740_schema_explicit","call":{"b4740":{"operation":"mcp_tool_schema","tool":{"name":"lookup","description":"Find item","inputSchema":{"type":"array","properties":null,"additionalProperties":true}}}},"env":{},"compare":{"ignore":[]}}

@@ -74,7 +74,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^sandbox/)'
     - id: e2b-tests
       why: the E2B provider tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^e2b::/')
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^e2b::/)')
     - id: e2b-fuzz-corpus
       why: the sandbox NDJSON fuzz target or its corpus is missing, or replaying the corpus fails
       run: test -f crates/betterlite-provider/fuzz/fuzz_targets/sandbox_ndjson.rs && test -n "$(ls -A crates/betterlite-provider/fuzz/corpus/sandbox_ndjson)" && cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(replays_the_sandbox_ndjson_corpus)'

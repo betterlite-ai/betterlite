@@ -309,9 +309,9 @@ fn no_try_moves_while_the_other_vendor_is_full_or_at_its_limit() {
     };
     let codex = find_runner(&agents, "codex-worker").unwrap();
     let openai = hold_seats(folder.path(), "openai", 12);
-    let writers = hold_seats(folder.path(), "anthropic-writer", 4);
+    let anthropic = hold_seats(folder.path(), "anthropic", 12);
     assert!(overflow_rung(&agents, &places, 0, codex).unwrap().is_none());
-    drop(writers);
+    drop(anthropic);
     mark(folder.path(), "anthropic", "You've hit your limit").unwrap();
     assert!(overflow_rung(&agents, &places, 0, codex).unwrap().is_none());
     drop(openai);

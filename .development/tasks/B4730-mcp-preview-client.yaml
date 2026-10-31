@@ -78,7 +78,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^mcp_preview::.*timeout.*defaults?/)'
   - id: preview-client-tests
     why: The preview client functions fail, do not exist, or do not handle auth_type None/MCPAuth.none blanking
-    run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^mcp_preview::/')
+    run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^mcp_preview::/)')
 oracle_cases: []
 deviations: []
 out_of_scope:
