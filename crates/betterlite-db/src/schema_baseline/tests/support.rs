@@ -4,9 +4,10 @@ use clap::Parser;
 use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 use std::future::Future;
-use std::panic;
 use std::str;
-use tokio::task::{JoinError, JoinSet};
+use std::time::Duration;
+use tokio::task::JoinSet;
+use tokio::time::timeout;
 use tokio_postgres::Client;
 use tokio_postgres::Row;
 use tokio_postgres::types::ToSql;
@@ -30,30 +31,65 @@ fn postgres_test_url() -> Option<SecretString> {
 type ConnectionTasks = JoinSet<Result<(), tokio_postgres::Error>>;
 
 const RESET_PUBLIC_SCHEMA_SQL: &str = "DROP SCHEMA public CASCADE; CREATE SCHEMA public;";
+const SETUP_TIMEOUT: Duration = Duration::from_secs(30);
+const HARNESS_SETUP_TIMEOUT: Duration = Duration::from_secs(90);
+const BODY_TIMEOUT: Duration = Duration::from_secs(30);
+const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
 
 async fn provision() -> PostgresFixture {
     let url = postgres_test_url();
     let mut generator = RandomDatabaseName;
-    PostgresFixture::provision_with_name_generator(
+    let mut task = PostgresFixture::provision_with_name_generator(
         url.as_ref(),
         &FixtureSeed::default(),
         &mut generator,
-    )
-    .resolve()
-    .await
-    .unwrap()
+    );
+    match timeout(SETUP_TIMEOUT, task.resolve()).await {
+        Ok(Ok(fixture)) => fixture,
+        Ok(Err(error)) => {
+            timeout(SHUTDOWN_TIMEOUT, task.close())
+                .await
+                .unwrap_or_else(|_| panic!("timed out cleaning up fixture provisioning"))
+                .unwrap();
+            panic!("failed to provision fixture: {error}");
+        }
+        Err(_) => {
+            timeout(SHUTDOWN_TIMEOUT, task.close())
+                .await
+                .unwrap_or_else(|_| panic!("timed out cleaning up fixture provisioning"))
+                .unwrap();
+            panic!("timed out provisioning fixture");
+        }
+    }
 }
 
 async fn initialize_schema(
     fixture: &PostgresFixture,
     sql: &str,
-) -> Result<(Client, ConnectionTasks), tokio_postgres::Error> {
-    let (client, connection) =
-        tokio_postgres::connect(fixture.options.url.expose_secret(), tokio_postgres::NoTls).await?;
+) -> Result<(Client, ConnectionTasks), String> {
+    let connected = timeout(
+        SETUP_TIMEOUT,
+        tokio_postgres::connect(fixture.options.url.expose_secret(), tokio_postgres::NoTls),
+    )
+    .await
+    .map_err(|error| format!("timed out connecting to fixture: {error}"))?
+    .map_err(|error| error.to_string())?;
+    let (client, connection) = connected;
     let mut tasks = JoinSet::new();
     tasks.spawn(connection);
-    client.batch_execute(sql).await?;
-    Ok((client, tasks))
+    match timeout(SETUP_TIMEOUT, client.batch_execute(sql)).await {
+        Ok(Ok(())) => Ok((client, tasks)),
+        Ok(Err(error)) => {
+            drop(client);
+            close_connection_tasks(tasks).await;
+            Err(error.to_string())
+        }
+        Err(_) => {
+            drop(client);
+            close_connection_tasks(tasks).await;
+            Err("timed out initializing fixture schema".to_owned())
+        }
+    }
 }
 
 async fn initialize_or_close(
@@ -63,28 +99,75 @@ async fn initialize_or_close(
     match initialize_schema(&fixture, sql).await {
         Ok((client, tasks)) => (fixture, client, tasks),
         Err(err) => {
-            fixture.close_async().await.unwrap();
+            timeout(SHUTDOWN_TIMEOUT, fixture.close_async())
+                .await
+                .unwrap_or_else(|_| panic!("timed out closing failed fixture setup"))
+                .unwrap();
             panic!("failed to initialize schema: {err}");
         }
     }
 }
 
 async fn setup() -> (PostgresFixture, Client, ConnectionTasks) {
-    initialize_or_close(provision().await, RESET_PUBLIC_SCHEMA_SQL).await
+    initialize_or_close(Box::pin(provision()).await, RESET_PUBLIC_SCHEMA_SQL).await
 }
 
-async fn close_fixture(mut tasks: ConnectionTasks, fixture: PostgresFixture) {
-    drop(tasks.join_next().await);
-    fixture.close_async().await.unwrap();
+async fn close_fixture(tasks: ConnectionTasks, fixture: PostgresFixture) {
+    close_connection_tasks(tasks).await;
+    timeout(SHUTDOWN_TIMEOUT, fixture.close_async())
+        .await
+        .unwrap_or_else(|_| panic!("timed out closing fixture"))
+        .unwrap();
 }
 
-async fn run_body<Fut>(body: Fut) -> Result<(), JoinError>
+async fn close_connection_tasks(mut tasks: ConnectionTasks) {
+    let drained = timeout(SHUTDOWN_TIMEOUT, async {
+        while tasks.join_next().await.is_some() {}
+    })
+    .await;
+    if drained.is_err() {
+        tasks.abort_all();
+        let drained_after_abort = timeout(SHUTDOWN_TIMEOUT, async {
+            while tasks.join_next().await.is_some() {}
+        })
+        .await;
+        if drained_after_abort.is_err() {
+            tasks.abort_all();
+        }
+    }
+}
+
+enum BodyFailure {
+    Panicked,
+    TimedOut,
+}
+
+async fn run_body<Fut>(body: Fut) -> Result<(), BodyFailure>
 where
     Fut: Future<Output = ()> + Send + 'static,
 {
     let mut bodies: JoinSet<()> = JoinSet::new();
     bodies.spawn(body);
-    bodies.join_next().await.unwrap()
+    match timeout(BODY_TIMEOUT, bodies.join_next()).await {
+        Ok(Some(Ok(()))) => Ok(()),
+        Ok(Some(Err(error))) if error.is_panic() => {
+            drop(error);
+            Err(BodyFailure::Panicked)
+        }
+        Ok(Some(Err(_))) => panic!("body task was cancelled"),
+        Ok(None) => panic!("body task ended without an outcome"),
+        Err(_) => {
+            bodies.abort_all();
+            let drained_after_abort = timeout(SHUTDOWN_TIMEOUT, async {
+                while bodies.join_next().await.is_some() {}
+            })
+            .await;
+            if drained_after_abort.is_err() {
+                bodies.abort_all();
+            }
+            Err(BodyFailure::TimedOut)
+        }
+    }
 }
 
 async fn harness<F, Fut>(body: F)
@@ -92,11 +175,16 @@ where
     F: FnOnce(Client) -> Fut + Send + 'static,
     Fut: Future<Output = ()> + Send + 'static,
 {
-    let (fixture, client, tasks) = Box::pin(setup()).await;
-    let outcome = run_body(body(client)).await;
+    let (fixture, client, tasks) = Box::pin(timeout(HARNESS_SETUP_TIMEOUT, setup()))
+        .await
+        .unwrap_or_else(|_| panic!("timed out setting up fixture"));
+    let outcome = Box::pin(run_body(body(client))).await;
     close_fixture(tasks, fixture).await;
-    if let Err(err) = outcome {
-        panic::resume_unwind(err.into_panic());
+    if let Err(error) = outcome {
+        match error {
+            BodyFailure::Panicked => panic!("schema-baseline test body panicked"),
+            BodyFailure::TimedOut => panic!("timed out running schema-baseline test"),
+        }
     }
 }
 
@@ -105,10 +193,15 @@ where
     F: FnOnce(Client, Client) -> Fut + Send + 'static,
     Fut: Future<Output = ()> + Send + 'static,
 {
-    harness(move |client_a| async move {
-        harness(move |client_b| body(client_a, client_b)).await;
-    })
-    .await;
+    harness(move |client_a| nested_harness(client_a, body)).await;
+}
+
+async fn nested_harness<F, Fut>(client_a: Client, body: F)
+where
+    F: FnOnce(Client, Client) -> Fut + Send + 'static,
+    Fut: Future<Output = ()> + Send + 'static,
+{
+    harness(move |client_b| body(client_a, client_b)).await;
 }
 
 async fn exec(client: &Client, sql: &str) {
