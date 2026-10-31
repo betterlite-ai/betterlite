@@ -45,3 +45,43 @@ fn loads_cost_adjustments() {
     assert!(default_settings.cost_discount_config.is_empty());
     assert!(default_settings.cost_margin_config.is_empty());
 }
+
+#[test]
+fn loader_keeps_an_integer_fixed_amount_exact_past_f64_range() {
+    let config = ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
+    }
+    .load(
+        "litellm_settings:\n  cost_margin_config:\n    global: {fixed_amount: 9007199254740993}\n",
+    )
+    .unwrap();
+    let settings = &config.sections.cost_adjustments;
+    let CostAdjustmentValue::Object(global) = &settings.cost_margin_config["global"] else {
+        panic!("expected an object");
+    };
+    assert_eq!(
+        global["fixed_amount"],
+        CostAdjustmentValue::Number(serde_json::Number::from(0x0020_0000_0000_0001_u64)),
+        "an integer lexeme has no decimal point, so the loader keeps every digit past f64's 2^53 bound",
+    );
+}
+
+#[test]
+fn loader_keeps_quoted_text_exact_instead_of_rounding_a_float_lexeme() {
+    let config = ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
+    }
+    .load(
+        "litellm_settings:\n  cost_margin_config:\n    global: {fixed_amount: '9007199254740993.0'}\n",
+    )
+    .unwrap();
+    let settings = &config.sections.cost_adjustments;
+    let CostAdjustmentValue::Object(global) = &settings.cost_margin_config["global"] else {
+        panic!("expected an object");
+    };
+    assert_eq!(
+        global["fixed_amount"],
+        CostAdjustmentValue::Text("9007199254740993.0".to_owned()),
+        "a quoted lexeme keeps its exact original text instead of rounding through f64",
+    );
+}

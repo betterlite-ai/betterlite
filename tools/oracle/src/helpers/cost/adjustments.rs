@@ -21,7 +21,7 @@ pub(crate) struct Input {
 #[derive(Debug, Error)]
 enum Failure {
     #[error("invalid base cost: {0}")]
-    BaseCost(String),
+    BaseCost(#[source] rust_decimal::Error),
     #[error(transparent)]
     Adjustment(#[from] betterlite_cost::adjustments::AdjustmentError),
 }
@@ -30,9 +30,8 @@ impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let base_cost = Decimal::from_str_exact(&input.base_cost).map_err(|error| {
-            Box::<crate::helpers::HelperError>::from(Failure::BaseCost(error.to_string()))
-        })?;
+        let base_cost = Decimal::from_str_exact(&input.base_cost)
+            .map_err(|error| Box::<crate::helpers::HelperError>::from(Failure::BaseCost(error)))?;
         let discount =
             apply_cost_discount(base_cost, input.provider.as_deref(), &input.discount_config)
                 .map_err(|error| {

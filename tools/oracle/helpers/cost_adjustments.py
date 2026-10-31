@@ -23,15 +23,9 @@ def run(data: Input) -> Json:
     litellm.cost_discount_config = data["discount_config"]
     litellm.cost_margin_config = data["margin_config"]
     try:
-        try:
-            discount_final, discount_percent, saved_amount = _apply_cost_discount(
-                base_cost, data["provider"]
-            )
-        except TypeError:
-            # _apply_cost_discount multiplies the configured value without
-            # converting it first, so a non-numeric entry crashes instead of
-            # applying no discount; betterlite treats it as an absent entry.
-            discount_final, discount_percent, saved_amount = base_cost, 0.0, 0.0
+        discount_final, discount_percent, saved_amount = _apply_cost_discount(
+            base_cost, data["provider"]
+        )
         margin_final, margin_percent, fixed_amount, total_amount = _apply_cost_margin(
             base_cost, data["provider"]
         )

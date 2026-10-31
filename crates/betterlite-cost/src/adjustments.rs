@@ -1,15 +1,38 @@
 use std::collections::BTreeMap;
-use std::str::FromStr as _;
 
 use betterlite_config::cost_adjustments::{CostAdjustmentMap, CostAdjustmentValue};
+use betterlite_models::price_fields::decimal_lexeme::{DecimalLexemeError, parse_decimal_lexeme};
 use rust_decimal::Decimal;
 use thiserror::Error;
 
-#[derive(Debug, Error, PartialEq, Eq)]
+#[derive(Debug, Error)]
 pub enum AdjustmentError {
     #[error("cost adjustment overflow while calculating {operation}")]
     Overflow { operation: &'static str },
+    #[error(
+        "cost adjustment field {field} has a numeric-looking value that cannot convert: {source}"
+    )]
+    InvalidNumericText {
+        field: &'static str,
+        #[source]
+        source: DecimalLexemeError,
+    },
 }
+
+impl PartialEq for AdjustmentError {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Overflow { operation: left }, Self::Overflow { operation: right })
+            | (
+                Self::InvalidNumericText { field: left, .. },
+                Self::InvalidNumericText { field: right, .. },
+            ) => left == right,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for AdjustmentError {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DiscountResult {
@@ -26,15 +49,30 @@ pub struct MarginResult {
     pub total_amount: Decimal,
 }
 
+fn config_value<'config>(
+    provider: Option<&str>,
+    config: &'config CostAdjustmentMap,
+    fallback_key: Option<&str>,
+) -> Option<&'config CostAdjustmentValue> {
+    let selected = provider
+        .filter(|name| !name.is_empty())
+        .and_then(|name| config.get(name));
+    match (selected, fallback_key) {
+        (Some(value), _) => Some(value),
+        (None, Some(key)) => config.get(key),
+        (None, None) => None,
+    }
+}
+
 pub fn apply_cost_discount(
     base_cost: Decimal,
     provider: Option<&str>,
     config: &CostAdjustmentMap,
 ) -> Result<DiscountResult, AdjustmentError> {
-    let discount_percent = provider
-        .filter(|name| !name.is_empty())
-        .and_then(|name| config.get(name))
-        .and_then(decimal_number)
+    let discount_percent = config_value(provider, config, None)
+        .map(|value| scalar_decimal(value, "discount_percent"))
+        .transpose()?
+        .flatten()
         .unwrap_or(Decimal::ZERO);
     let (final_cost, saved_amount) = discount_values(base_cost, discount_percent)?;
     Ok(DiscountResult {
@@ -42,6 +80,10 @@ pub fn apply_cost_discount(
         discount_percent,
         saved_amount,
     })
+}
+
+const fn boolean_decimal(flag: bool) -> Decimal {
+    if flag { Decimal::ONE } else { Decimal::ZERO }
 }
 
 fn discount_values(
@@ -67,11 +109,7 @@ pub fn apply_cost_margin(
     provider: Option<&str>,
     config: &CostAdjustmentMap,
 ) -> Result<MarginResult, AdjustmentError> {
-    let Some(value) = provider
-        .filter(|name| !name.is_empty())
-        .and_then(|name| config.get(name))
-        .or_else(|| config.get("global"))
-    else {
+    let Some(value) = config_value(provider, config, Some("global")) else {
         return Ok(MarginResult {
             final_cost: base_cost,
             margin_percent: Decimal::ZERO,
@@ -79,7 +117,7 @@ pub fn apply_cost_margin(
             total_amount: Decimal::ZERO,
         });
     };
-    let (margin_percent, fixed_amount) = margin_components(value);
+    let (margin_percent, fixed_amount) = margin_components(value)?;
     let percentage_amount =
         base_cost
             .checked_mul(margin_percent)
@@ -105,44 +143,59 @@ pub fn apply_cost_margin(
     })
 }
 
-fn margin_components(value: &CostAdjustmentValue) -> (Decimal, Decimal) {
+fn margin_components(value: &CostAdjustmentValue) -> Result<(Decimal, Decimal), AdjustmentError> {
     match value {
-        CostAdjustmentValue::Number(_) => (
-            decimal_number(value).unwrap_or(Decimal::ZERO),
+        CostAdjustmentValue::Number(_) | CostAdjustmentValue::Boolean(_) => Ok((
+            scalar_decimal(value, "margin_percent")?.unwrap_or(Decimal::ZERO),
             Decimal::ZERO,
-        ),
-        CostAdjustmentValue::Object(entries) => (
-            object_decimal(entries, "percentage"),
-            object_decimal(entries, "fixed_amount"),
-        ),
+        )),
+        CostAdjustmentValue::Object(entries) => Ok((
+            object_decimal(entries, "percentage")?,
+            object_decimal(entries, "fixed_amount")?,
+        )),
         CostAdjustmentValue::Null
-        | CostAdjustmentValue::Boolean(_)
         | CostAdjustmentValue::Text(_)
-        | CostAdjustmentValue::Array(_) => (Decimal::ZERO, Decimal::ZERO),
+        | CostAdjustmentValue::Array(_) => Ok((Decimal::ZERO, Decimal::ZERO)),
     }
 }
 
-fn decimal_number(value: &CostAdjustmentValue) -> Option<Decimal> {
-    if let CostAdjustmentValue::Number(number) = value {
-        Decimal::from_str(&number.to_string()).ok()
-    } else {
-        None
+fn scalar_decimal(
+    value: &CostAdjustmentValue,
+    field: &'static str,
+) -> Result<Option<Decimal>, AdjustmentError> {
+    match value {
+        CostAdjustmentValue::Number(number) => parse_decimal_lexeme(&number.to_string())
+            .map(Some)
+            .map_err(|source| AdjustmentError::InvalidNumericText { field, source }),
+        CostAdjustmentValue::Boolean(flag) => Ok(Some(boolean_decimal(*flag))),
+        CostAdjustmentValue::Null
+        | CostAdjustmentValue::Text(_)
+        | CostAdjustmentValue::Object(_)
+        | CostAdjustmentValue::Array(_) => Ok(None),
     }
 }
 
-fn object_decimal(entries: &BTreeMap<String, CostAdjustmentValue>, key: &str) -> Decimal {
-    match entries.get(key) {
-        Some(CostAdjustmentValue::Number(number)) => {
-            Decimal::from_str(&number.to_string()).unwrap_or(Decimal::ZERO)
+fn object_decimal(
+    entries: &BTreeMap<String, CostAdjustmentValue>,
+    field: &'static str,
+) -> Result<Decimal, AdjustmentError> {
+    let Some(value) = entries.get(field) else {
+        return Ok(Decimal::ZERO);
+    };
+    if let CostAdjustmentValue::Text(text) = value {
+        return text_decimal(text, field);
+    }
+    Ok(scalar_decimal(value, field)?.unwrap_or(Decimal::ZERO))
+}
+
+fn text_decimal(text: &str, field: &'static str) -> Result<Decimal, AdjustmentError> {
+    let trimmed = text.trim();
+    match parse_decimal_lexeme(trimmed) {
+        Ok(decimal) => Ok(decimal),
+        Err(source) if trimmed.parse::<f64>().is_ok() => {
+            Err(AdjustmentError::InvalidNumericText { field, source })
         }
-        Some(CostAdjustmentValue::Text(text)) => Decimal::from_str(text).unwrap_or(Decimal::ZERO),
-        Some(
-            CostAdjustmentValue::Null
-            | CostAdjustmentValue::Boolean(_)
-            | CostAdjustmentValue::Object(_)
-            | CostAdjustmentValue::Array(_),
-        )
-        | None => Decimal::ZERO,
+        Err(_) => Ok(Decimal::ZERO),
     }
 }
 

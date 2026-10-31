@@ -967,6 +967,7 @@ name = "betterlite-cost"
 version = "0.1.0"
 dependencies = [
  "betterlite-config",
+ "betterlite-models",
  "rust_decimal",
  "serde_json",
  "thiserror",
