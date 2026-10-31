@@ -3,24 +3,51 @@
     reason = "Reasoning thinking blocks and tool calls are opaque, provider-specific JSON that this module only reorders and concatenates, never interprets"
 )]
 
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use thiserror::Error;
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum MergeError {
-    #[error("assistant content must be a string or a list of text blocks")]
+    #[error("assistant content must be a string or a list of content blocks")]
     InvalidContent,
+    #[error("assistant message must be a JSON object")]
+    InvalidRecord,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Role {
+    System,
+    Developer,
+    User,
+    #[default]
+    Assistant,
+    Tool,
+    Function,
 }
 
 // Public so merge_reasoning's trait bound is visible; lets one loop drive both record kinds.
-pub trait Reasoning: Sized {
+pub trait Reasoning: Sized + Default {
     fn is_pending(&self) -> bool;
     fn is_assistant(&self) -> bool;
     fn text(&self) -> Option<&str>;
     fn blocks(&self) -> Option<&[Value]>;
     fn set_text(&mut self, text: String);
     fn set_blocks(&mut self, blocks: Vec<Value>);
-    fn blank(text: Option<String>, blocks: Option<Vec<Value>>) -> Self;
+
+    // A blank, standalone assistant record built from just-merged reasoning text/blocks.
+    #[must_use]
+    fn blank(text: Option<String>, blocks: Option<Vec<Value>>) -> Self {
+        let mut record = Self::default();
+        if let Some(found_text) = text {
+            record.set_text(found_text);
+        }
+        if let Some(found_blocks) = blocks {
+            record.set_blocks(found_blocks);
+        }
+        record
+    }
 }
 
 fn is_falsy(value: &Value) -> bool {
@@ -34,101 +61,117 @@ fn is_falsy(value: &Value) -> bool {
     }
 }
 
-fn field<'message>(message: &'message Value, name: &str) -> Option<&'message Value> {
-    let fields = message.as_object()?;
-    fields.get(name)
+// Dict-shaped chat message: the wire format LiteLLM feeds providers and the only shape the trailing merge accepts.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChatRecord {
+    pub role: Role,
+    #[serde(default)]
+    pub content: Value,
+    #[serde(default, skip_serializing_if = "Value::is_null")]
+    pub reasoning_content: Value,
+    #[serde(default, skip_serializing_if = "Value::is_null")]
+    pub thinking_blocks: Value,
+    #[serde(default, skip_serializing_if = "Value::is_null")]
+    pub tool_calls: Value,
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
 }
 
-fn dict_text(message: &Value) -> Option<&str> {
-    let value = field(message, "reasoning_content")?.as_str()?;
-    (!value.is_empty()).then_some(value)
-}
-
-fn dict_blocks(message: &Value) -> Option<&[Value]> {
-    let items = field(message, "thinking_blocks")?.as_array()?;
-    (!items.is_empty()).then_some(items.as_slice())
-}
-
-fn content_is_none(message: &Value) -> bool {
-    let content = field(message, "content");
-    content.is_none_or(Value::is_null)
-}
-
-fn joined_text(texts: &[Option<&str>]) -> String {
-    let present: Vec<&str> = texts.iter().filter_map(|value| *value).collect();
-    present.join("\n")
-}
-
-fn concatenated_blocks(block_lists: &[Option<&[Value]>]) -> Vec<Value> {
-    let mut merged = Vec::new();
-    for blocks in block_lists.iter().flatten() {
-        merged.extend(blocks.iter().cloned());
-    }
-    merged
-}
-
-impl Reasoning for Value {
+impl Reasoning for ChatRecord {
     fn is_pending(&self) -> bool {
-        field(self, "role").and_then(Self::as_str) == Some("assistant")
-            && content_is_none(self)
-            && field(self, "tool_calls").is_none_or(is_falsy)
-            && (dict_text(self).is_some() || dict_blocks(self).is_some())
+        self.role == Role::Assistant
+            && self.content.is_null()
+            && is_falsy(&self.tool_calls)
+            && (self.text().is_some() || self.blocks().is_some())
     }
 
     fn is_assistant(&self) -> bool {
-        field(self, "role").and_then(Self::as_str) == Some("assistant")
+        self.role == Role::Assistant
     }
 
     fn text(&self) -> Option<&str> {
-        dict_text(self)
+        self.reasoning_content
+            .as_str()
+            .filter(|value| !value.is_empty())
     }
 
     fn blocks(&self) -> Option<&[Value]> {
-        dict_blocks(self)
+        self.thinking_blocks
+            .as_array()
+            .map(Vec::as_slice)
+            .filter(|items| !items.is_empty())
     }
 
     fn set_text(&mut self, text: String) {
-        if let Some(fields) = self.as_object_mut() {
-            fields.insert("reasoning_content".to_owned(), Self::String(text));
-        }
+        self.reasoning_content = Value::String(text);
     }
 
     fn set_blocks(&mut self, blocks: Vec<Value>) {
-        if let Some(fields) = self.as_object_mut() {
-            fields.insert("thinking_blocks".to_owned(), Self::Array(blocks));
-        }
-    }
-
-    fn blank(text: Option<String>, blocks: Option<Vec<Value>>) -> Self {
-        let mut fields = Map::new();
-        fields.insert("role".to_owned(), Self::String("assistant".to_owned()));
-        fields.insert("content".to_owned(), Self::Null);
-        if let Some(reasoning_content) = text {
-            fields.insert(
-                "reasoning_content".to_owned(),
-                Self::String(reasoning_content),
-            );
-        }
-        if let Some(thinking_blocks) = blocks {
-            fields.insert("thinking_blocks".to_owned(), Self::Array(thinking_blocks));
-        }
-        Self::Object(fields)
+        self.thinking_blocks = Value::Array(blocks);
     }
 }
 
-fn apply_pending<T>(target: &mut T, texts: &[Option<&str>], block_lists: &[Option<&[Value]>])
+// Attribute-shaped chat record: LiteLLM reads these through getattr, so there is no passthrough bucket.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AttributeRecord {
+    pub role: Role,
+    #[serde(default)]
+    pub content: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_content: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking_blocks: Option<Vec<Value>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<Value>>,
+}
+
+impl Reasoning for AttributeRecord {
+    fn is_pending(&self) -> bool {
+        self.role == Role::Assistant
+            && self.content.is_none()
+            && self.tool_calls.as_ref().is_none_or(Vec::is_empty)
+            && (self.text().is_some() || self.blocks().is_some())
+    }
+
+    fn is_assistant(&self) -> bool {
+        self.role == Role::Assistant
+    }
+
+    fn text(&self) -> Option<&str> {
+        self.reasoning_content
+            .as_deref()
+            .filter(|value| !value.is_empty())
+    }
+
+    fn blocks(&self) -> Option<&[Value]> {
+        self.thinking_blocks
+            .as_deref()
+            .filter(|items| !items.is_empty())
+    }
+
+    fn set_text(&mut self, text: String) {
+        self.reasoning_content = Some(text);
+    }
+
+    fn set_blocks(&mut self, blocks: Vec<Value>) {
+        self.thinking_blocks = Some(blocks);
+    }
+}
+
+// Prepends pending reasoning ahead of the target's own text/blocks, mutating it in place.
+fn apply_pending<T>(target: &mut T, texts: &[Option<String>], block_lists: &[Option<Vec<Value>>])
 where
     T: Reasoning,
 {
-    let mut combined_texts: Vec<String> = texts
-        .iter()
-        .filter_map(|value| *value)
-        .map(str::to_owned)
-        .collect();
+    let mut combined_texts: Vec<String> = texts.iter().filter_map(Option::clone).collect();
     if let Some(existing) = target.text() {
         combined_texts.push(existing.to_owned());
     }
-    let mut combined_blocks = concatenated_blocks(block_lists);
+    let mut combined_blocks: Vec<Value> = block_lists
+        .iter()
+        .filter_map(Option::as_ref)
+        .flat_map(|blocks| blocks.iter().cloned())
+        .collect();
     if let Some(existing) = target.blocks() {
         combined_blocks.extend(existing.iter().cloned());
     }
@@ -140,51 +183,38 @@ where
     }
 }
 
-fn standalone<T>(texts: &[Option<&str>], block_lists: &[Option<&[Value]>]) -> T
-where
-    T: Reasoning,
-{
-    let joined = joined_text(texts);
-    let merged = concatenated_blocks(block_lists);
-    T::blank(
-        (!joined.is_empty()).then_some(joined),
-        (!merged.is_empty()).then_some(merged),
-    )
-}
-
-// Merges pending reasoning-only turns into the next assistant message, else rebuilds them standalone.
+// Merges pending reasoning-only turns into the next assistant message (mutated in place), else rebuilds them standalone.
 #[must_use]
-pub fn merge_reasoning<T>(messages: &[T]) -> Vec<T>
+pub fn merge_reasoning<T>(messages: &mut [T]) -> Vec<T>
 where
     T: Reasoning + Clone,
 {
     let mut merged = Vec::with_capacity(messages.len());
-    let mut texts = Vec::new();
-    let mut block_lists = Vec::new();
-    for message in messages {
+    let mut texts: Vec<Option<String>> = Vec::new();
+    let mut block_lists: Vec<Option<Vec<Value>>> = Vec::new();
+    for message in messages.iter_mut() {
         if message.is_pending() {
-            texts.push(message.text());
-            block_lists.push(message.blocks());
+            texts.push(message.text().map(str::to_owned));
+            block_lists.push(message.blocks().map(<[Value]>::to_vec));
             continue;
         }
-        let mut carried = message.clone();
         if texts.is_empty() && block_lists.is_empty() {
-            merged.push(carried);
+            merged.push(message.clone());
             continue;
         }
-        if carried.is_assistant() {
-            apply_pending(&mut carried, &texts, &block_lists);
+        if message.is_assistant() {
+            apply_pending(message, &texts, &block_lists);
         } else {
-            for (text, block) in texts.iter().zip(block_lists.iter()) {
-                merged.push(standalone(&[*text], &[*block]));
+            for (text, blocks) in texts.iter().zip(block_lists.iter()) {
+                merged.push(T::blank(text.clone(), blocks.clone()));
             }
         }
         texts.clear();
         block_lists.clear();
-        merged.push(carried);
+        merged.push(message.clone());
     }
-    for (text, block) in texts.iter().zip(block_lists.iter()) {
-        merged.push(standalone(&[*text], &[*block]));
+    for (text, blocks) in texts.iter().zip(block_lists.iter()) {
+        merged.push(T::blank(text.clone(), blocks.clone()));
     }
     merged
 }
@@ -196,19 +226,11 @@ fn text_block(text: &str) -> Value {
     Value::Object(fields)
 }
 
-fn validate_text_block(item: &Value) -> Result<Value, MergeError> {
-    let fields = item.as_object().ok_or(MergeError::InvalidContent)?;
-    let is_text = fields.get("type").and_then(Value::as_str) == Some("text")
-        && fields.get("text").and_then(Value::as_str).is_some();
-    is_text
-        .then(|| item.clone())
-        .ok_or(MergeError::InvalidContent)
-}
-
+// A string becomes one text block; a list is kept as-is, item shape unchecked, matching list[object].
 fn content_blocks(value: &Value) -> Result<Vec<Value>, MergeError> {
     match value {
         Value::String(text) => Ok(vec![text_block(text)]),
-        Value::Array(items) => items.iter().map(validate_text_block).collect(),
+        Value::Array(items) => Ok(items.clone()),
         Value::Null | Value::Bool(_) | Value::Number(_) | Value::Object(_) => {
             Err(MergeError::InvalidContent)
         }
@@ -227,9 +249,10 @@ pub fn merge_trailing(
     let Some(last) = messages.last().and_then(Value::as_object) else {
         return Ok(None);
     };
-    let Some(new) = new_messages.first().and_then(Value::as_object) else {
-        return Ok(None);
-    };
+    let new = new_messages
+        .first()
+        .and_then(Value::as_object)
+        .ok_or(MergeError::InvalidRecord)?;
     if last.get("role").and_then(Value::as_str) != Some("assistant")
         || new.get("role").and_then(Value::as_str) != Some("assistant")
     {

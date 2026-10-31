@@ -1,10 +1,7 @@
 #![cfg(test)]
 
-mod typed_record;
-
 use super::*;
 use rstest::rstest;
-use typed_record::TypedChatRecord;
 
 fn obj(pairs: Vec<(&str, Value)>) -> Value {
     let mut fields = Map::new();
@@ -20,6 +17,17 @@ fn str_val(value: &str) -> Value {
 
 fn arr(items: Vec<Value>) -> Value {
     Value::Array(items)
+}
+
+fn merge_dicts(messages: Vec<Value>) -> Vec<Value> {
+    let mut records: Vec<ChatRecord> = messages
+        .into_iter()
+        .map(|value| serde_json::from_value(value).expect("test fixture is a chat record"))
+        .collect();
+    merge_reasoning(&mut records)
+        .into_iter()
+        .map(|record| serde_json::to_value(record).expect("chat record serializes"))
+        .collect()
 }
 
 #[test]
@@ -46,7 +54,7 @@ fn reasoning_before_answer() {
             ("extra", str_val("retained")),
         ]),
     ];
-    let output = merge_reasoning(&input);
+    let output = merge_dicts(input);
     assert_eq!(
         output,
         vec![obj(vec![
@@ -65,7 +73,7 @@ fn reasoning_before_answer() {
 
 #[test]
 fn reasoning_boundaries() {
-    let output = merge_reasoning(&[
+    let output = merge_dicts(vec![
         obj(vec![
             ("role", str_val("assistant")),
             ("content", Value::Null),
@@ -99,67 +107,95 @@ fn reasoning_boundaries() {
 
 #[test]
 fn reasoning_boundaries_typed_records() {
-    let before = TypedChatRecord {
-        role: "assistant".to_owned(),
+    let before = AttributeRecord {
+        role: Role::Assistant,
         content: None,
         reasoning_content: Some("a".to_owned()),
         thinking_blocks: None,
         tool_calls: None,
     };
-    let user = TypedChatRecord {
-        role: "user".to_owned(),
+    let user = AttributeRecord {
+        role: Role::User,
         content: Some("q".to_owned()),
         reasoning_content: None,
         thinking_blocks: None,
         tool_calls: None,
     };
-    let after = TypedChatRecord {
-        role: "assistant".to_owned(),
+    let after = AttributeRecord {
+        role: Role::Assistant,
         content: None,
         reasoning_content: None,
         thinking_blocks: Some(vec![str_val("B")]),
         tool_calls: None,
     };
-    let output = merge_reasoning(&[before.clone(), user.clone(), after.clone()]);
+    let mut records = vec![before.clone(), user.clone(), after.clone()];
+    let output = merge_reasoning(&mut records);
     assert_eq!(output, vec![before, user, after]);
 }
 
 #[test]
 fn reasoning_merges_into_typed_target() {
-    let pending = TypedChatRecord {
-        role: "assistant".to_owned(),
+    let pending = AttributeRecord {
+        role: Role::Assistant,
         content: None,
         reasoning_content: Some("a".to_owned()),
         thinking_blocks: Some(vec![str_val("A")]),
         tool_calls: None,
     };
-    let target = TypedChatRecord {
-        role: "assistant".to_owned(),
+    let target = AttributeRecord {
+        role: Role::Assistant,
         content: Some("answer".to_owned()),
         reasoning_content: Some("c".to_owned()),
         thinking_blocks: Some(vec![str_val("C")]),
         tool_calls: None,
     };
-    let output = merge_reasoning(&[pending, target]);
-    assert_eq!(
-        output,
-        vec![TypedChatRecord {
-            role: "assistant".to_owned(),
-            content: Some("answer".to_owned()),
-            reasoning_content: Some("a\nc".to_owned()),
-            thinking_blocks: Some(vec![str_val("A"), str_val("C")]),
-            tool_calls: None,
-        }]
-    );
+    let mut records = vec![pending, target];
+    let output = merge_reasoning(&mut records);
+    let expected = AttributeRecord {
+        role: Role::Assistant,
+        content: Some("answer".to_owned()),
+        reasoning_content: Some("a\nc".to_owned()),
+        thinking_blocks: Some(vec![str_val("A"), str_val("C")]),
+        tool_calls: None,
+    };
+    assert_eq!(output, vec![expected.clone()]);
+    // The target element in the original slice is mutated in place, not left as a pending-free clone.
+    assert_eq!(records[1], expected);
+}
+
+#[test]
+fn merge_reasoning_mutates_original_target_record() {
+    let mut records = vec![
+        ChatRecord {
+            role: Role::Assistant,
+            content: Value::Null,
+            reasoning_content: str_val("a"),
+            thinking_blocks: Value::Null,
+            tool_calls: Value::Null,
+            extra: Map::new(),
+        },
+        ChatRecord {
+            role: Role::Assistant,
+            content: str_val("answer"),
+            reasoning_content: str_val("c"),
+            thinking_blocks: Value::Null,
+            tool_calls: Value::Null,
+            extra: Map::new(),
+        },
+    ];
+    let output = merge_reasoning(&mut records);
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[1].reasoning_content, str_val("a\nc"));
+    assert_eq!(output, vec![records[1].clone()]);
 }
 
 #[test]
 fn standalone_builder_with_no_reasoning_is_content_null_only() {
-    let built = TypedChatRecord::blank(None, None);
+    let built = AttributeRecord::blank(None, None);
     assert_eq!(
         built,
-        TypedChatRecord {
-            role: "assistant".to_owned(),
+        AttributeRecord {
+            role: Role::Assistant,
             content: None,
             reasoning_content: None,
             thinking_blocks: None,
@@ -268,6 +304,47 @@ fn trailing_assistant_with_falsy_prior_content_takes_new_content() {
     );
 }
 
+#[test]
+fn trailing_assistant_preserves_non_text_block() {
+    let image_block = obj(vec![
+        ("type", str_val("image_url")),
+        (
+            "image_url",
+            obj(vec![("url", str_val("https://example.test/a.png"))]),
+        ),
+    ]);
+    let output = merge_trailing(
+        &[obj(vec![
+            ("role", str_val("assistant")),
+            ("content", arr(vec![image_block.clone()])),
+            (
+                "tool_calls",
+                arr(vec![obj(vec![("id", str_val("call-1"))])]),
+            ),
+        ])],
+        &[assistant_answer("b")],
+        false,
+    )
+    .unwrap();
+    assert_eq!(
+        output,
+        Some(obj(vec![
+            ("role", str_val("assistant")),
+            (
+                "content",
+                arr(vec![
+                    image_block,
+                    obj(vec![("type", str_val("text")), ("text", str_val("b"))]),
+                ])
+            ),
+            (
+                "tool_calls",
+                arr(vec![obj(vec![("id", str_val("call-1"))])])
+            ),
+        ]))
+    );
+}
+
 fn assistant_with_tool_calls() -> Value {
     obj(vec![
         ("role", str_val("assistant")),
@@ -300,6 +377,12 @@ fn assistant_answer(text: &str) -> Value {
     vec![assistant_answer("b")],
     false,
     Ok(None)
+)]
+#[case::new_message_not_dict_raises(
+    vec![assistant_with_tool_calls()],
+    vec![arr(vec![str_val("not"), str_val("a"), str_val("dict")])],
+    false,
+    Err(MergeError::InvalidRecord)
 )]
 #[case::last_message_not_assistant(
     vec![obj(vec![
@@ -358,8 +441,8 @@ fn assistant_answer(text: &str) -> Value {
 #[case::malformed_content_block_raises(
     vec![obj(vec![
         ("role", str_val("assistant")),
-        ("content", arr(vec![str_val("not-a-block")])),
-        ("tool_calls", arr(vec![str_val("call-1")])),
+        ("content", Value::Number(serde_json::Number::from(5_i64))),
+        ("tool_calls", arr(vec![obj(vec![("id", str_val("call-1"))])])),
     ])],
     vec![assistant_answer("b")],
     false,
