@@ -1,0 +1,5 @@
+kind: helper
+name: utils-verbose-levels
+call: {verbose_hooks: {function: utils, payload: message, set_verbose: true, log_level: INFO, logger_only: false}}
+env: {}
+compare: {ignore: []}

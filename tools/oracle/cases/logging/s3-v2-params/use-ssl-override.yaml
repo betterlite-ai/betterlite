@@ -1,0 +1,5 @@
+kind: helper
+name: use-ssl-override
+call: {"b3992": {"operation": "params", "constructor": {"s3_use_ssl": true}, "global": {"s3_use_ssl": false}}}
+env: {}
+compare: {ignore: []}

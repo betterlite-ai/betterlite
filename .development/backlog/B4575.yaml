@@ -2,7 +2,7 @@ id: B4575
 milestone: M8 platform
 title: CLI session commands and temporary settings backup
 status: todo
-depends_on: [B192, B4562, B4563, B4573, B4574]
+depends_on: [B192, B4560, B4562, B4563, B4573, B4574, B4591, B4592]
 file: tasks/B4575-cli-session-and-backup.yaml
 covers:
   - "litellm/proxy/client/cli/commands/auth.py"

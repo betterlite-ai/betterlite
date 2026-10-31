@@ -1,0 +1,1 @@
+[{"s3_strip_base64_files":true,"s3_log_prompts_only":true},{"id":"request","messages":[null,{"content":[{"type":"image_url"},{"type":"text","text":"data:image/png;base64,AAAA"}]}],"response":{}}]

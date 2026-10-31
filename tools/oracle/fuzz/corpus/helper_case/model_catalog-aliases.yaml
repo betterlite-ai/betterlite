@@ -1,0 +1,10 @@
+kind: helper
+name: aliases
+call:
+  model_catalog:
+    operation: aliases
+    source:
+      canonical: {litellm_provider: openai, aliases: [short-name]}
+    lookup: [short-name]
+env: {}
+compare: {ignore: []}
