@@ -1,4 +1,4 @@
-use super::{DbError, ErrorType, is_transport_error};
+use super::{DbError, ErrorType, is_error_type_or_subclass, is_transport_error};
 use serde::{Deserialize, de::IgnoredAny};
 use std::future::Future;
 use std::pin::Pin;
@@ -54,6 +54,18 @@ where
     (timeout_seconds, lock_timeout_seconds)
 }
 
+fn is_retry_eligible(error: &DbError, policy: &RetryPolicy<'_>) -> bool {
+    if !is_transport_error(error) {
+        return false;
+    }
+    let Some(allowed) = policy.retry_safe_error_types else {
+        return true;
+    };
+    allowed
+        .iter()
+        .any(|&ancestor| is_error_type_or_subclass(error.error_type, ancestor))
+}
+
 pub async fn call_with_db_reconnect_retry<T, Read, ReadFuture, Client>(
     client: Option<&mut Client>,
     mut read: Read,
@@ -69,11 +81,7 @@ where
         Ok(value) => return Ok(value),
         Err(error) => error,
     };
-    if !is_transport_error(&error)
-        || policy
-            .retry_safe_error_types
-            .is_some_and(|allowed| !allowed.contains(&error.error_type))
-    {
+    if !is_retry_eligible(&error, &policy) {
         return Err(error);
     }
     let Some(available_client) = client else {

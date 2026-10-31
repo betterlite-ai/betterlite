@@ -21,15 +21,13 @@ fn error(kind: ErrorType) -> DbError {
 
 #[test]
 fn connection_allowlist() {
-    assert!(is_database_connection_error(&error(ErrorType::Deadline)));
-    assert!(!is_database_connection_error(&error(ErrorType::Prisma)));
+    assert!(is_database_connection_error(ErrorType::Deadline));
+    assert!(!is_database_connection_error(ErrorType::Prisma));
 }
 #[test]
 fn infrastructure_data_exclusions() {
-    assert!(!is_database_infrastructure(&error(
-        ErrorType::UniqueViolation
-    )));
-    assert!(is_database_infrastructure(&error(ErrorType::Prisma)));
+    assert!(!is_database_infrastructure(ErrorType::UniqueViolation));
+    assert!(is_database_infrastructure(ErrorType::Prisma));
 }
 #[test]
 fn base_data_exact_type() {
@@ -55,10 +53,9 @@ fn unique_violation_uses_meta_sqlstate() {
 #[case::client_not_connected(ErrorType::ClientNotConnected)]
 #[case::http_client_closed(ErrorType::HttpClientClosed)]
 fn prisma_subclasses_cover_all_predicates(#[case] error_type: ErrorType) {
-    let value = error(error_type);
-    assert!(is_prisma_error(&value));
-    assert!(is_database_infrastructure(&value));
-    assert!(!is_database_infrastructure(&error(ErrorType::Deadline)));
+    assert!(is_prisma_error(error_type));
+    assert!(is_database_infrastructure(error_type));
+    assert!(!is_database_infrastructure(ErrorType::Deadline));
 }
 
 #[test]
@@ -140,7 +137,7 @@ fn permanent_excludes_transient() {
 }
 #[test]
 fn exception_classes_only() {
-    assert!(!is_prisma_error(&error(ErrorType::Other)));
+    assert!(!is_prisma_error(ErrorType::Other));
 }
 
 #[derive(Clone, Default)]
@@ -285,6 +282,23 @@ async fn unsafe_transport_no_replay(#[case] kind: ErrorType) {
 }
 
 #[tokio::test]
+async fn prisma_allowlist_covers_subclasses() {
+    let mut first = error(ErrorType::ClientNotConnected);
+    first.message = "connection refused".to_owned();
+    let mut retry_policy = POLICY;
+    retry_policy.retry_safe_error_types = Some(&[ErrorType::Prisma]);
+    let (result, effects) = scripted_retry(
+        vec![Err(first), Ok(5_i32)],
+        Some(Ok(true)),
+        (None, None),
+        retry_policy,
+    )
+    .await;
+    assert_eq!(result, Ok(5_i32));
+    assert_eq!(effects.len(), 4);
+}
+
+#[tokio::test]
 async fn absent_reconnect() {
     let first = transport_error();
     let (result, effects) = scripted_retry(
@@ -409,10 +423,10 @@ async fn retry_success(#[case] second: Result<i32, DbError>) {
 #[case::read_timeout(ErrorType::ReadTimeout)]
 fn transport_type_predicates(#[case] kind: ErrorType) {
     let value = error(kind);
-    assert!(is_database_connection_error(&value));
-    assert!(is_database_infrastructure(&value));
+    assert!(is_database_connection_error(kind));
+    assert!(is_database_infrastructure(kind));
     assert!(is_transport_error(&value));
-    assert!(!is_prisma_error(&value));
+    assert!(!is_prisma_error(kind));
 }
 
 #[rstest::rstest]
@@ -422,6 +436,21 @@ fn prisma_subclass_transport_keywords(#[case] kind: ErrorType) {
     let mut value = error(kind);
     value.message = "connection refused".to_owned();
     assert!(is_transport_error(&value));
+}
+
+#[rstest::rstest]
+#[case::exact_match(ErrorType::Connect, ErrorType::Connect, true)]
+#[case::prisma_covers_client_not_connected(ErrorType::ClientNotConnected, ErrorType::Prisma, true)]
+#[case::prisma_covers_unique_violation(ErrorType::UniqueViolation, ErrorType::Prisma, true)]
+#[case::data_covers_unique_violation(ErrorType::UniqueViolation, ErrorType::Data, true)]
+#[case::data_excludes_client_not_connected(ErrorType::ClientNotConnected, ErrorType::Data, false)]
+#[case::connect_has_no_subclasses(ErrorType::ReadTimeout, ErrorType::Connect, false)]
+fn subclass_membership(
+    #[case] error_type: ErrorType,
+    #[case] ancestor: ErrorType,
+    #[case] expected: bool,
+) {
+    assert_eq!(is_error_type_or_subclass(error_type, ancestor), expected);
 }
 
 #[rstest::rstest]
