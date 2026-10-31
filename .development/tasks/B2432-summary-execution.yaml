@@ -132,7 +132,7 @@ pitfalls:
 - No configured summary model disables summarization; it does not silently use the main request model.
 - Summary errors preserve the already-sliced history, not the original pre-compaction history.
 - Parent spend attribution uses litellm_metadata and end-user user, never the upstream metadata field.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

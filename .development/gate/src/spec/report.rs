@@ -18,6 +18,10 @@ pub(crate) struct Report {
     )]
     pub(crate) blocker: String,
     #[schemars(
+        description = "One entry per behavior a user can observe in the LiteLLM code the task's references own. Behavior another task owns goes in notes with that task's id."
+    )]
+    pub(crate) owned: Vec<OwnedBehavior>,
+    #[schemars(
         description = "One entry per problem solved by choosing an existing solution or deliberately writing one."
     )]
     pub(crate) prior_art: Vec<PriorArt>,
@@ -31,6 +35,21 @@ pub(crate) struct Report {
 pub(crate) enum ReportStatus {
     Done,
     Blocked,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct OwnedBehavior {
+    #[schemars(
+        description = "The behavior, for example: OpenAI-Beta: assistants=v2 is added when the caller didn't send it."
+    )]
+    pub(crate) behavior: String,
+    #[schemars(description = "https link to the LiteLLM line that does it, at the pinned commit.")]
+    pub(crate) litellm: String,
+    #[schemars(description = "Where betterlite does it, as path:line.")]
+    pub(crate) code: String,
+    #[schemars(description = "The test name or oracle case that proves it.")]
+    pub(crate) test: String,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]

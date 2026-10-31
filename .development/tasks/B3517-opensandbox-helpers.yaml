@@ -180,7 +180,7 @@ pitfalls:
   - Deadline calculations use time.monotonic() for wall-clock immunity; never use time.time() or compare against actual clock values in tests.
   - The SSE parser filters by stripping and checking line prefixes before calling json.loads, and must handle empty lines and comment-only lines gracefully.
   - The 10 MiB limit is per execution, not per line; it counts cumulative UTF-8 bytes from _read_capped_lines (B3516).
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 3

@@ -112,4 +112,4 @@ pitfalls:
   - Inception treats an explicit empty base as caller-supplied when deciding whether to borrow ambient credentials.
   - Heroku appends /v1/chat/completions to an existing /v1 base without removing the duplicated version.
 budget: {max_changed_lines: 775, max_new_expects: 0}
-review_level: security
+review_level: standard

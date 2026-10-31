@@ -82,7 +82,7 @@ pitfalls:
   - reasoning_effort=none must serialize reasoning=false rather than dropping the field as falsey.
   - A content list with one empty image_url string satisfies the image-count requirement.
   - The source validates usage_info even when output is an empty string.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

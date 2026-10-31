@@ -1,0 +1,16 @@
+id: no-string-errors
+language: rust
+severity: error
+message: an error that is only text can't be matched by the caller; return the module's thiserror enum and carry the cause with #[from] or source
+ignores:
+  - tools/**
+  - .development/**
+  - crates/*/tests/**
+  - "**/tests.rs"
+  - "**/tests/**"
+rule:
+  any:
+    - pattern: $A.map_err(|$E| $E.to_string())
+    - pattern: $A.map_err(|$$$| format!($$$))
+    - kind: generic_type
+      regex: ^Result<.*, ?(String|&'static str|&str)>$

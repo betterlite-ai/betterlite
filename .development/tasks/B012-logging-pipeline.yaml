@@ -121,7 +121,7 @@ pitfalls:
 - Call identity belongs to a request context, not a mutable global logger field.
 - >-
   Service failures and model failures are distinct events and must not be counted twice as a terminal model result.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

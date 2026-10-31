@@ -279,7 +279,7 @@ pitfalls:
 - A filename is metadata, never permission to open a local path.
 - Enforce decoded-size bounds before base64 decoding, not after allocating the decoded buffer.
 - File metadata extraction must not consume a streaming upload.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

@@ -1,0 +1,8 @@
+task: B3698
+deviations:
+  - what: Risk scoring floors a nonzero masked score at 2.0.
+    why: This matches LiteLLM's explicit minimum-risk behavior for masked entities.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1634-L1638
+  - what: GuardrailTracingDetail is a typed Rust record rather than LiteLLM's tracing dictionary.
+    why: Rust type safety preserves the same serialized field names and values without untyped internal data.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1730-L1742

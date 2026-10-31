@@ -1,0 +1,21 @@
+[package]
+name = "betterlite-error-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+betterlite-error = { path = ".." }
+libfuzzer-sys = "0.4.9"
+
+[[bin]]
+name = "provider_error"
+path = "fuzz_targets/provider_error.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

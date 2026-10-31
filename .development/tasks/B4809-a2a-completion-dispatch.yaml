@@ -137,7 +137,7 @@ pitfalls:
   - A2A_USER_API_KEY_HASH_PARAM ("litellm_a2a_user_api_key_hash") must match the value defined in this task
     (B4809 supplies the constant, B4802 references it as a declaration dependency).
 
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

@@ -1,0 +1,13 @@
+kind: helper
+name: counter-above-i64-max-is-an-overflow-error
+call:
+  cost_usage:
+    transcription: []
+    interactions:
+      - total_input_tokens: 9223372036854775808
+        total_output_tokens: 0
+compare:
+  ignore:
+    - pointer: ""
+      why: betterlite returns a typed overflow error for a counter outside i64 range; LiteLLM counts the exact Python int (docs/deviations/B1668.yaml)
+env: {}

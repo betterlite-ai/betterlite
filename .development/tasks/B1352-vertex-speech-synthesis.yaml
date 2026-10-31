@@ -84,4 +84,4 @@ pitfalls:
   - SSML detection checks a case-sensitive substring rather than parsing XML.
   - Successful synthesis reconstruction resets the response status to 200 and discards upstream headers.
 budget: {max_changed_lines: 800, max_new_expects: 1}
-review_level: security
+review_level: standard

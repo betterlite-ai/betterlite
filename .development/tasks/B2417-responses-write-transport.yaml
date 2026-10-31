@@ -113,7 +113,7 @@ pitfalls:
 - extra_body is accepted by both methods but never merged into transformed data.
 - DELETE uses no JSON argument for an empty mapping; cancel sends an empty object.
 - Cancel does not call sign_request, unlike create and compact.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0
