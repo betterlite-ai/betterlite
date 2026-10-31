@@ -62,9 +62,11 @@ pub enum ConfigError {
     #[error("invalid scalar at {path}")]
     InvalidScalar { path: String, value: bool },
 }
+
 pub struct ConfigLoader<L> {
     pub lookup: L,
 }
+
 impl<L> ConfigLoader<L>
 where
     L: EnvironmentLookup,
@@ -81,6 +83,7 @@ where
         convert(raw, sections, &self.lookup)
     }
 }
+
 pub(crate) fn parse_view<View>(source: &str) -> Result<(View, BTreeSet<String>), ConfigError>
 where
     View: DeserializeOwned,
@@ -94,6 +97,7 @@ where
     .map_err(|yaml_error| ConfigError::Yaml { source: yaml_error })?;
     Ok((value, ignored))
 }
+
 // a key is unknown when every view ignored it or one of its parents; only the outermost such paths are reported
 pub(crate) fn unknown_paths(views: &[BTreeSet<String>]) -> Vec<String> {
     let mut unknown = BTreeSet::new();
@@ -120,6 +124,7 @@ pub(crate) fn unknown_paths(views: &[BTreeSet<String>]) -> Vec<String> {
         .map(|path| (*path).to_owned())
         .collect()
 }
+
 fn convert<L>(raw: RawConfig, sections: Sections, lookup: &L) -> Result<Config, ConfigError>
 where
     L: EnvironmentLookup,
@@ -137,6 +142,7 @@ where
         sections,
     })
 }
+
 fn convert_deployment<L>(
     raw: RawDeployment,
     index: usize,
@@ -158,6 +164,7 @@ where
         model_info,
     })
 }
+
 fn convert_params<L>(raw: RawParams, index: usize, lookup: &L) -> Result<LiteLlmParams, ConfigError>
 where
     L: EnvironmentLookup,
@@ -193,6 +200,7 @@ where
         weight,
     })
 }
+
 fn convert_info<L>(raw: RawInfo, index: usize, lookup: &L) -> Result<ModelInfo, ConfigError>
 where
     L: EnvironmentLookup,
@@ -203,6 +211,7 @@ where
         .transpose()?;
     Ok(ModelInfo { id })
 }
+
 fn convert_general<L>(raw: RawGeneral, lookup: &L) -> Result<GeneralSettings, ConfigError>
 where
     L: EnvironmentLookup,
@@ -214,6 +223,7 @@ where
         lookup,
     ))
 }
+
 fn convert_router<L>(raw: RawRouter, lookup: &L) -> Result<RouterSettings, ConfigError>
 where
     L: EnvironmentLookup,
@@ -233,6 +243,7 @@ where
         fallbacks: raw.fallbacks,
     })
 }
+
 fn convert_litellm<L>(raw: RawLiteLlm, lookup: &L) -> Result<LiteLlmSettings, ConfigError>
 where
     L: EnvironmentLookup,
@@ -255,6 +266,7 @@ where
         default_max_tokens,
     })
 }
+
 fn environment_defaults<L>(configured: Option<bool>, lookup: &L) -> Result<(bool, i64), ConfigError>
 where
     L: EnvironmentLookup,
@@ -277,6 +289,7 @@ where
         })?;
     Ok((modify_params, default_max_tokens))
 }
+
 fn convert_environment<L>(
     values: BTreeMap<String, Option<String>>,
     lookup: &L,
