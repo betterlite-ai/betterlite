@@ -1,13 +1,20 @@
 use crate::helpers::{Helper, HelperError, HelperResult};
-use parser::parse_rss_to_posts;
 use serde::Deserialize;
 use serde_json::{Value, json};
-use std::time::Duration;
 use thiserror::Error;
 
+mod date_parse;
 mod parser;
 
 pub(crate) struct Op;
+
+const fn default_timeout() -> u64 {
+    5
+}
+
+const fn default_max_posts() -> usize {
+    1
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
@@ -15,14 +22,14 @@ pub(crate) enum Input {
     LoadLocalBlogPosts,
     FetchRssFeed {
         url: String,
-        #[serde(default)]
-        timeout: Option<u64>,
+        #[serde(default = "default_timeout")]
+        timeout: u64,
         response: MockResponse,
     },
     ParseRssToPosts {
         xml: String,
-        #[serde(default)]
-        max_posts: Option<usize>,
+        #[serde(default = "default_max_posts")]
+        max_posts: usize,
     },
     ValidateBlogPosts {
         posts: Value,
@@ -30,6 +37,7 @@ pub(crate) enum Input {
     GetBlogPosts {
         url: String,
         now: f64,
+        // Stands in for `os.getenv("LITELLM_LOCAL_BLOG_POSTS")`, since the native path never sees case env.
         #[serde(default)]
         local_only: bool,
         #[serde(default)]
@@ -59,14 +67,53 @@ pub(crate) struct BlogPost {
     url: String,
 }
 
+impl From<parser::BlogPost> for BlogPost {
+    fn from(post: parser::BlogPost) -> Self {
+        Self {
+            title: post.title,
+            description: post.description,
+            date: post.date,
+            url: post.url,
+        }
+    }
+}
+
+const BLOG_POSTS_TTL_SECONDS: f64 = 3_600.0;
+
 #[derive(Debug, Error)]
 enum Failure {
-    #[error("HTTP request to {url} failed after {timeout} seconds")]
-    Fetch { url: String, timeout: u64 },
+    #[error("HTTP request to {url} failed")]
+    Connect { url: String },
     #[error("RSS response returned HTTP status {status}")]
     Status { status: u16 },
-    #[error("RSS parse failed: {message}")]
-    Parse { message: String },
+    #[error(transparent)]
+    Parse(#[from] parser::ParseFailure),
+}
+
+impl Failure {
+    const fn class(&self) -> &'static str {
+        match self {
+            Self::Connect { .. } => "ConnectError",
+            Self::Status { .. } => "HTTPStatusError",
+            Self::Parse(parse_failure) => parse_failure_class(parse_failure),
+        }
+    }
+}
+
+const fn parse_failure_class(error: &parser::ParseFailure) -> &'static str {
+    match error {
+        parser::ParseFailure::MissingChannel => "ValueError",
+        parser::ParseFailure::Xml(_)
+        | parser::ParseFailure::Decode(_)
+        | parser::ParseFailure::Escape(_)
+        | parser::ParseFailure::UnclosedElement => "ParseError",
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+struct Warning {
+    subject: String,
+    message: String,
 }
 
 impl Helper for Op {
@@ -80,12 +127,19 @@ impl Helper for Op {
                 url,
                 timeout,
                 response,
-            } => json!(fetch_rss_feed(url, timeout.unwrap_or(5), response)?),
+            } => json!(fetch_rss_feed(url, *timeout, response)?),
             Input::ParseRssToPosts { xml, max_posts } => {
-                serde_json::to_value(parse_rss_to_posts(xml, max_posts.unwrap_or(1))?)
-                    .map_err(|error| serialization_error(&error))?
+                let posts: Vec<BlogPost> = parser::parse_rss_to_posts(xml, *max_posts)
+                    .map_err(Failure::from)?
+                    .into_iter()
+                    .map(BlogPost::from)
+                    .collect();
+                serde_json::to_value(posts).map_err(|error| serialization_error(&error))?
             }
-            Input::ValidateBlogPosts { posts } => json!(validate_blog_posts(posts)),
+            Input::ValidateBlogPosts { posts } => {
+                let (valid, warnings) = validate_blog_posts(posts);
+                json!({ "valid": valid, "warnings": warnings })
+            }
             Input::GetBlogPosts {
                 url,
                 now,
@@ -93,15 +147,16 @@ impl Helper for Op {
                 cached_posts,
                 last_fetch_time,
                 response,
-            } => serde_json::to_value(get_blog_posts(&BlogPostsRequest {
-                url,
-                now: *now,
-                local_only: *local_only,
-                cached_posts: cached_posts.as_deref(),
-                last_fetch_time: *last_fetch_time,
-                response,
-            }))
-            .map_err(|error| serialization_error(&error))?,
+            } => {
+                let mut cache = Cache {
+                    posts: cached_posts.clone(),
+                    last_fetch_time: *last_fetch_time,
+                };
+                let (posts, warnings) =
+                    get_blog_posts(&mut cache, url, *now, *local_only, response);
+                serde_json::to_value(json!({ "posts": posts, "warnings": warnings }))
+                    .map_err(|error| serialization_error(&error))?
+            }
         };
         Ok(value)
     }
@@ -117,11 +172,11 @@ fn local_posts() -> Vec<BlogPost> {
     vec![post]
 }
 
-fn fetch_rss_feed(url: &str, timeout: u64, response: &MockResponse) -> Result<String, Failure> {
+// `timeout` is accepted but never mocked: the oracle never actually waits on the clock.
+fn fetch_rss_feed(url: &str, _timeout: u64, response: &MockResponse) -> Result<String, Failure> {
     if response.error {
-        return Err(Failure::Fetch {
+        return Err(Failure::Connect {
             url: url.to_owned(),
-            timeout,
         });
     }
     if !(200..=299).contains(&response.status) {
@@ -132,55 +187,80 @@ fn fetch_rss_feed(url: &str, timeout: u64, response: &MockResponse) -> Result<St
     Ok(response.text.clone())
 }
 
-fn validate_blog_posts(posts: &Value) -> bool {
-    let items = posts.as_array();
-    if items.is_none() {
-        return false;
-    }
-    items.is_some_and(|entries| !entries.is_empty())
+fn fetch_and_parse(url: &str, response: &MockResponse) -> Result<Vec<BlogPost>, Failure> {
+    let xml = fetch_rss_feed(url, default_timeout(), response)?;
+    let posts = parser::parse_rss_to_posts(&xml, default_max_posts())?;
+    Ok(posts.into_iter().map(BlogPost::from).collect())
 }
 
-struct BlogPostsRequest<'request> {
-    url: &'request str,
+fn validate_blog_posts(posts: &Value) -> (bool, Vec<Warning>) {
+    let valid = posts.as_array().is_some_and(|entries| !entries.is_empty());
+    if valid {
+        return (valid, Vec::new());
+    }
+    let warning = Warning {
+        subject: "None".to_owned(),
+        message: "LiteLLM: Parsed RSS feed has no valid posts. Falling back to local backup."
+            .to_owned(),
+    };
+    (valid, vec![warning])
+}
+
+// Mirrors `GetBlogPosts._cached_posts`/`_last_fetch_time`, populated on a successful fetch.
+struct Cache {
+    posts: Option<Vec<BlogPost>>,
+    last_fetch_time: f64,
+}
+
+impl Cache {
+    fn store(&mut self, posts: Vec<BlogPost>, now: f64) {
+        self.posts = Some(posts);
+        self.last_fetch_time = now;
+    }
+}
+
+fn get_blog_posts(
+    cache: &mut Cache,
+    url: &str,
     now: f64,
     local_only: bool,
-    cached_posts: Option<&'request [BlogPost]>,
-    last_fetch_time: f64,
-    response: &'request MockResponse,
-}
-
-fn get_blog_posts(request: &BlogPostsRequest<'_>) -> Vec<BlogPost> {
-    if request.local_only {
-        return local_posts();
+    response: &MockResponse,
+) -> (Vec<BlogPost>, Vec<Warning>) {
+    if local_only {
+        return (local_posts(), Vec::new());
     }
-    if let Some(posts) = request
-        .cached_posts
-        .filter(|_| within_ttl(request.now, request.last_fetch_time))
-    {
-        return posts.to_vec();
+    // Uses `mul_add` for the TTL bound, as `local_ttl_cache.rs` does, to avoid an unsigned subtraction.
+    let cache_hit = cache
+        .posts
+        .clone()
+        .filter(|_| now < cache.last_fetch_time.mul_add(1.0, BLOG_POSTS_TTL_SECONDS));
+    if let Some(posts) = cache_hit {
+        return (posts, Vec::new());
     }
-    let Ok(xml) = fetch_rss_feed(request.url, 5, request.response) else {
-        return local_posts();
-    };
-    let Ok(posts) = parse_rss_to_posts(&xml, 1) else {
-        return local_posts();
-    };
-    if posts.is_empty() {
-        local_posts()
-    } else {
-        posts
+    match fetch_and_parse(url, response) {
+        Err(failure) => {
+            let warning = Warning {
+                subject: url.to_owned(),
+                message: format!(
+                    "LiteLLM: Failed to fetch blog posts from {url}: {failure}. Falling back to local backup."
+                ),
+            };
+            (local_posts(), vec![warning])
+        }
+        Ok(posts) if posts.is_empty() => {
+            let warning = Warning {
+                subject: "None".to_owned(),
+                message:
+                    "LiteLLM: Parsed RSS feed has no valid posts. Falling back to local backup."
+                        .to_owned(),
+            };
+            (local_posts(), vec![warning])
+        }
+        Ok(posts) => {
+            cache.store(posts.clone(), now);
+            (posts, Vec::new())
+        }
     }
-}
-
-fn within_ttl(now_seconds: f64, last_fetch_time_seconds: f64) -> bool {
-    let Ok(now) = Duration::try_from_secs_f64(now_seconds) else {
-        return false;
-    };
-    let Ok(last_fetch_time) = Duration::try_from_secs_f64(last_fetch_time_seconds) else {
-        return false;
-    };
-    now.checked_sub(last_fetch_time)
-        .is_some_and(|elapsed| elapsed < Duration::from_secs(3_600))
 }
 
 fn serialization_error(error: &serde_json::Error) -> Box<HelperError> {
@@ -194,10 +274,11 @@ fn serialization_error(error: &serde_json::Error) -> Box<HelperError> {
     };
     Box::new(helper_error)
 }
+
 impl From<Failure> for Box<HelperError> {
     fn from(error: Failure) -> Self {
         Self::new(HelperError {
-            class: "RuntimeError".to_owned(),
+            class: error.class().to_owned(),
             status: None,
             error_type: None,
             param: None,
