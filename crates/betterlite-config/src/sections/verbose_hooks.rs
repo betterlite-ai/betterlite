@@ -3,11 +3,7 @@ mod tests;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
-#[expect(
-    clippy::disallowed_types,
-    reason = "The logging hook receives the original JSON truthiness and boolean identity."
-)]
-type SettingValue = serde_json::Value;
+use crate::sections::settings::JsonValue;
 
 #[derive(Debug, Default, serde::Deserialize)]
 pub struct Raw {
@@ -18,7 +14,7 @@ pub struct Raw {
 #[derive(Debug, serde::Deserialize)]
 pub struct Global {
     #[serde(default = "default_set_verbose")]
-    pub set_verbose: SettingValue,
+    pub set_verbose: JsonValue,
 }
 
 impl Default for Global {
@@ -29,9 +25,17 @@ impl Default for Global {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
-    pub set_verbose: SettingValue,
+    pub set_verbose: JsonValue,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            set_verbose: default_set_verbose(),
+        }
+    }
 }
 
 impl Section for Raw {
@@ -47,23 +51,23 @@ impl Section for Raw {
     }
 }
 
-const fn default_set_verbose() -> SettingValue {
-    SettingValue::Bool(false)
+const fn default_set_verbose() -> JsonValue {
+    JsonValue::Bool(false)
 }
 
-fn resolve_setting(
-    value: SettingValue,
-    lookup: &impl EnvironmentLookup,
-) -> Result<SettingValue, ConfigError> {
-    let SettingValue::String(text) = value else {
+fn resolve_setting<L: EnvironmentLookup>(
+    value: JsonValue,
+    lookup: &L,
+) -> Result<JsonValue, ConfigError> {
+    let JsonValue::String(text) = value else {
         return Ok(value);
     };
     let Some(name) = text.strip_prefix("os.environ/") else {
-        return Ok(SettingValue::String(text));
+        return Ok(JsonValue::String(text));
     };
     lookup
         .lookup(name)
-        .map(SettingValue::String)
+        .map(JsonValue::String)
         .ok_or_else(|| ConfigError::MissingEnvironment {
             variable: name.to_owned(),
             path: "litellm_settings.set_verbose".to_owned(),

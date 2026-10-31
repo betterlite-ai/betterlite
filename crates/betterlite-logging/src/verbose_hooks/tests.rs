@@ -94,12 +94,13 @@ struct Expected {
     logs: usize,
     console: usize,
     active: bool,
+    payload: Payload,
 }
 
 #[rstest]
 #[case::main_verbose_guard(
     Scenario::Main { payload: json!("message"), set_verbose: json!(true) },
-    Expected { logs: 1, console: 1, active: false }
+    Expected { logs: 1, console: 1, active: false, payload: json!("message") }
 )]
 #[case::utils_verbose_levels(
     Scenario::Utils {
@@ -108,15 +109,15 @@ struct Expected {
         log_level: "INFO",
         logger_only: json!(false),
     },
-    Expected { logs: 1, console: 1, active: false }
+    Expected { logs: 1, console: 1, active: false, payload: json!("message") }
 )]
 #[case::verbose_active(
     Scenario::Active { set_verbose: json!(false), logger_debug_enabled: true },
-    Expected { logs: 0, console: 0, active: true }
+    Expected { logs: 0, console: 0, active: true, payload: json!(null) }
 )]
 #[case::redacted_verbose_payload(
     Scenario::Main { payload: credential_payload(), set_verbose: json!(true) },
-    Expected { logs: 1, console: 1, active: false }
+    Expected { logs: 1, console: 1, active: false, payload: json!({"api_key": "REDACTED", "message": "REDACTED"}) }
 )]
 fn verbose_hooks_cases(#[case] scenario: Scenario, #[case] expected: Expected) {
     let result = match scenario {
@@ -148,6 +149,8 @@ fn verbose_hooks_cases(#[case] scenario: Scenario, #[case] expected: Expected) {
     };
     assert_eq!(result.logs.len(), expected.logs);
     assert_eq!(result.console.len(), expected.console);
+    assert_eq!(result.logs[0].payload, expected.payload);
+    assert_eq!(result.console[0], expected.payload);
 }
 
 #[test]
@@ -406,4 +409,55 @@ fn is_active_is_true_when_the_logger_is_already_enabled_at_debug_even_if_set_ver
 #[test]
 fn is_active_requires_identity_not_truthiness_for_set_verbose() {
     assert!(!healthy_hooks(json!(1_i64)).is_active());
+}
+
+#[rstest]
+#[case::null(json!(null))]
+#[case::false_boolean(json!(false))]
+#[case::zero(json!(0_i64))]
+#[case::empty_array(json!([]))]
+#[case::empty_object(json!({}))]
+fn falsey_main_settings(#[case] set_verbose: Payload) {
+    let result = healthy_hooks(set_verbose).main_print_verbose(json!("body"));
+    assert_eq!(result.logs.len(), 1);
+    assert!(result.console.is_empty());
+}
+
+#[test]
+fn verbose_true_activates_a_disabled_logger() {
+    assert!(healthy_hooks(json!(true)).is_active());
+}
+
+#[rstest]
+#[case::debug("DEBUG")]
+#[case::info("INFO")]
+#[case::error("ERROR")]
+fn utils_logger_failure(#[case] log_level: &str) {
+    let result = hooks(
+        FixtureLogger {
+            fails: true,
+            debug_enabled: false,
+        },
+        FixtureConsole::default(),
+        json!(true),
+    )
+    .utils_print_verbose(credential_payload(), log_level, &json!(false));
+    assert!(result.logs.is_empty());
+    assert!(result.console.is_empty());
+}
+
+#[test]
+fn utils_console_failure_keeps_logs() {
+    let result = hooks(
+        FixtureLogger::default(),
+        FixtureConsole { fails: true },
+        json!(true),
+    )
+    .utils_print_verbose(credential_payload(), "INFO", &json!(false));
+    assert_eq!(result.logs.len(), 1);
+    assert_eq!(
+        result.logs[0].payload,
+        json!({"api_key": "REDACTED", "message": "REDACTED"})
+    );
+    assert!(result.console.is_empty());
 }
