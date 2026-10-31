@@ -1,10 +1,9 @@
 use std::collections::BTreeSet;
 
 use betterlite_config::loader::EnvironmentLookup;
-use betterlite_models::decisions::Json;
-use indexmap::IndexMap;
+use betterlite_models::decisions::{Extra, Json};
 use regex::Regex;
-use serde_json::value::RawValue;
+use serde::{Deserialize, Serialize};
 
 use crate::s3_transport::option_value::integer_from_text;
 use crate::s3_v2::Feature;
@@ -15,7 +14,64 @@ const DEFAULT_MAX_DEPTH: i64 = 10;
 const BASE64: &str =
     r"data:(?:application|image|audio|video)/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=\s]+";
 
-type RawFields = IndexMap<String, Box<RawValue>>;
+#[derive(Deserialize, Serialize)]
+struct Payload {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(with = "serde_with::rust::double_option")]
+    messages: Option<Option<MessagesField>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(with = "serde_with::rust::double_option")]
+    response: Option<Option<Json>>,
+    #[serde(flatten)]
+    extra: Extra,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(untagged)]
+enum MessagesField {
+    List(Vec<MessageEntry>),
+    Other(Json),
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(untagged)]
+enum MessageEntry {
+    Message(Message),
+    Other(Json),
+}
+
+#[derive(Deserialize, Serialize)]
+struct Message {
+    #[serde(flatten)]
+    extra: Extra,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    content: Option<ContentField>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(untagged)]
+enum ContentField {
+    Parts(Vec<ContentPart>),
+    Other(Json),
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(untagged)]
+enum ContentPart {
+    Object(ContentObject),
+    Other(Json),
+}
+
+#[derive(Deserialize, Serialize)]
+struct ContentObject {
+    #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
+    kind: Option<Json>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(with = "serde_with::rust::double_option")]
+    file: Option<Option<Json>>,
+    #[serde(flatten)]
+    extra: Extra,
+}
 
 pub(super) fn project(
     encoded: &str,
@@ -23,20 +79,24 @@ pub(super) fn project(
     prompts_only: bool,
     environment: &dyn EnvironmentLookup,
 ) -> Result<String, EventError> {
-    let mut fields: RawFields = serde_json::from_str(encoded)?;
+    let mut payload: Payload = serde_json::from_str(encoded)?;
     if features.contains(&Feature::StripBase64) {
         let pattern = Regex::new(BASE64)?;
         let max_depth = resolve_max_depth(environment);
-        if let Some(messages) = fields.get("messages").cloned()
-            && let Some(processed) = strip_messages(&messages, &pattern, max_depth)?
-        {
-            fields.insert("messages".to_owned(), processed);
-        }
+        let current = payload.messages.take();
+        payload.messages = match current {
+            Some(Some(MessagesField::List(messages))) => Some(Some(strip_messages(
+                MessagesField::List(messages),
+                &pattern,
+                max_depth,
+            ))),
+            other => other,
+        };
     }
     if prompts_only {
-        fields.insert("response".to_owned(), RawValue::NULL.to_owned());
+        payload.response = Some(None);
     }
-    Ok(serde_json::to_string(&fields)?)
+    Ok(serde_json::to_string(&payload)?)
 }
 
 fn resolve_max_depth(environment: &dyn EnvironmentLookup) -> i64 {
@@ -46,7 +106,7 @@ fn resolve_max_depth(environment: &dyn EnvironmentLookup) -> i64 {
         Some(_) => {
             tracing::warn!(
                 ?configured,
-                "s3 logging: DEFAULT_MAX_RECURSE_DEPTH_SENSITIVE_DATA_MASKER must be at least 0, using 10"
+                "s3 logging: recurse depth must be at least 0, using 10"
             );
             DEFAULT_MAX_DEPTH
         }
@@ -54,93 +114,81 @@ fn resolve_max_depth(environment: &dyn EnvironmentLookup) -> i64 {
         None => {
             tracing::warn!(
                 ?configured,
-                "s3 logging: DEFAULT_MAX_RECURSE_DEPTH_SENSITIVE_DATA_MASKER is not an integer, using 10"
+                "s3 logging: recurse depth is not an integer, using 10"
             );
             DEFAULT_MAX_DEPTH
         }
     }
 }
 
-// mirrors _strip_base64_from_messages_sync: a non-list or empty "messages" value stays untouched
-fn strip_messages(
-    raw: &RawValue,
-    pattern: &Regex,
-    max_depth: i64,
-) -> Result<Option<Box<RawValue>>, EventError> {
-    let Ok(items) = serde_json::from_str::<Vec<Box<RawValue>>>(raw.get()) else {
-        return Ok(None);
+fn strip_messages(messages: MessagesField, pattern: &Regex, max_depth: i64) -> MessagesField {
+    let MessagesField::List(entries) = messages else {
+        return messages;
     };
-    if items.is_empty() {
-        return Ok(None);
-    }
-    let mut kept = Vec::with_capacity(items.len());
-    for item in items {
-        // mirrors _process_messages' `if not isinstance(msg, dict): continue`
-        let Ok(message) = serde_json::from_str::<RawFields>(item.get()) else {
-            continue;
-        };
-        let processed = process_message(message, pattern, max_depth)?;
-        kept.push(RawValue::from_string(serde_json::to_string(&processed)?)?);
-    }
-    Ok(Some(RawValue::from_string(serde_json::to_string(&kept)?)?))
+    let processed = entries
+        .into_iter()
+        .filter_map(|entry| match entry {
+            MessageEntry::Other(_) => None,
+            MessageEntry::Message(message) => Some(MessageEntry::Message(strip_message(
+                message, pattern, max_depth,
+            ))),
+        })
+        .collect();
+    MessagesField::List(processed)
 }
 
-// mirrors _process_messages: "content" is always reassigned, landing at the end when it was absent
-fn process_message(
-    mut message: RawFields,
-    pattern: &Regex,
-    max_depth: i64,
-) -> Result<RawFields, EventError> {
-    let content = message.get("content").cloned();
-    let redacted_content = match content {
-        Some(raw) => match serde_json::from_str::<Vec<Box<RawValue>>>(raw.get()) {
-            Ok(items) => {
-                let mut kept = Vec::with_capacity(items.len());
-                for item in items {
-                    if should_keep_content(&item) {
-                        kept.push(redact_raw(&item, pattern, 0, max_depth)?);
-                    }
-                }
-                RawValue::from_string(serde_json::to_string(&kept)?)?
-            }
-            Err(_) => redact_raw(&raw, pattern, 0, max_depth)?,
-        },
-        None => redact_raw(RawValue::NULL, pattern, 0, max_depth)?,
+fn strip_message(message: Message, pattern: &Regex, max_depth: i64) -> Message {
+    let extra = message
+        .extra
+        .into_iter()
+        .map(|(key, value)| (key, redact_json(&value, pattern, 0, max_depth)))
+        .collect();
+    let content = match message.content {
+        None => ContentField::Other(redact_json(&Json::Null, pattern, 0, max_depth)),
+        Some(ContentField::Other(value)) => {
+            ContentField::Other(redact_json(&value, pattern, 0, max_depth))
+        }
+        Some(ContentField::Parts(parts)) => ContentField::Parts(
+            parts
+                .into_iter()
+                .filter(keep_part)
+                .map(|part| redact_part(part, pattern, max_depth))
+                .collect(),
+        ),
     };
-    message.insert("content".to_owned(), redacted_content);
-    for (key, value) in &mut message {
-        if key != "content" {
-            *value = redact_raw(value, pattern, 0, max_depth)?;
+    Message {
+        extra,
+        content: Some(content),
+    }
+}
+
+fn keep_part(part: &ContentPart) -> bool {
+    match part {
+        ContentPart::Other(_) => true,
+        ContentPart::Object(object) => {
+            object.file.is_none()
+                && !matches!(&object.kind, Some(Json::Text(text)) if text != "text")
         }
     }
-    Ok(message)
 }
 
-// mirrors _should_keep_content: drop an entry carrying a "file" key regardless of its value
-fn should_keep_content(raw: &RawValue) -> bool {
-    let Ok(content) = serde_json::from_str::<RawFields>(raw.get()) else {
-        return true;
-    };
-    if content.contains_key("file") {
-        return false;
+fn redact_part(part: ContentPart, pattern: &Regex, max_depth: i64) -> ContentPart {
+    match part {
+        ContentPart::Other(value) => ContentPart::Other(redact_json(&value, pattern, 0, max_depth)),
+        ContentPart::Object(object) => ContentPart::Object(ContentObject {
+            kind: object
+                .kind
+                .map(|value| redact_json(&value, pattern, 1, max_depth)),
+            file: object.file,
+            extra: object
+                .extra
+                .into_iter()
+                .map(|(key, value)| (key, redact_json(&value, pattern, 1, max_depth)))
+                .collect(),
+        }),
     }
-    content.get("type").is_none_or(|kind| {
-        !serde_json::from_str::<String>(kind.get()).is_ok_and(|text| text != "text")
-    })
 }
 
-fn redact_raw(
-    raw: &RawValue,
-    pattern: &Regex,
-    depth: i64,
-    max_depth: i64,
-) -> Result<Box<RawValue>, EventError> {
-    let value: Json = serde_json::from_str(raw.get())?;
-    let redacted = redact_json(&value, pattern, depth, max_depth);
-    Ok(RawValue::from_string(serde_json::to_string(&redacted)?)?)
-}
-
-// mirrors CustomLogger._redact_base64: each object or list level adds one to the recursion depth
 fn redact_json(value: &Json, pattern: &Regex, depth: i64, max_depth: i64) -> Json {
     if depth > max_depth {
         return Json::Text("[MAX_DEPTH_REACHED]".to_owned());
