@@ -79,6 +79,27 @@ fn empty_provider_does_not_select_discount() {
 }
 
 #[test]
+fn boolean_config_values_are_inert() {
+    let discount = apply_cost_discount(
+        Decimal::ONE,
+        Some("provider"),
+        &map(CostAdjustmentValue::Boolean(true)),
+    )
+    .unwrap();
+    assert_eq!(discount.discount_percent, Decimal::ZERO);
+    assert_eq!(discount.final_cost, Decimal::ONE);
+
+    let margin = apply_cost_margin(
+        Decimal::ONE,
+        Some("provider"),
+        &map(CostAdjustmentValue::Boolean(true)),
+    )
+    .unwrap();
+    assert_eq!(margin.margin_percent, Decimal::ZERO);
+    assert_eq!(margin.final_cost, Decimal::ONE);
+}
+
+#[test]
 fn rejects_overflow() {
     let error = apply_cost_margin(
         Decimal::MAX,

@@ -6,3 +6,6 @@ deviations:
   - what: A non-numeric discount config entry (a string, list or object) is treated as an absent discount instead of crashing the request.
     why: LiteLLM multiplies the configured value into the base cost without converting it first, so a type that cannot multiply a float raises TypeError for every request to that provider; no caller relies on that crash.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1140-L1141
+  - what: A boolean discount or margin config entry is treated as an unsupported, unapplied value instead of the numeric 1.0/0.0 Python derives from bool being an int subclass.
+    why: The task's config shape keeps booleans out of the Number variant, matching its direction to preserve unsupported legacy values as explicit unapplied entries rather than silently reinterpreting them as numbers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1194-L1197
