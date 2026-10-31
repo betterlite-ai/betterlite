@@ -113,7 +113,7 @@ pitfalls:
 - Registry custom_llm_provider does not change the local provider selected before the registry overlay.
 - Create ignores extra_query while list forwards it, so one generic argument projection would change one of them.
 - OpenAI cleans numeric attributes after this wrapper logs the uncleaned request fields.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

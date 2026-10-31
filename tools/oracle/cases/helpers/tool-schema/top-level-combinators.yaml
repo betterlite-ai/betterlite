@@ -1,0 +1,15 @@
+kind: helper
+name: tool-schema-top-level-combinators
+call:
+  tool_schema:
+    mode: flatten_top_level
+    schema:
+      anyOf:
+        - type: object
+          properties: {query: {type: string}}
+          required: [query]
+        - type: object
+          properties: {limit: {type: integer}}
+          required: [limit]
+env: {}
+compare: {ignore: []}

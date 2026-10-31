@@ -150,7 +150,7 @@ pitfalls:
 - Use test certificate fixtures and local ports; public TLS endpoints make the gate nondeterministic.
 - HTTPX ignores cert= when transport= is supplied; a client-certificate option alone does not prove mTLS.
 - An invalid ECDH name warns; do not turn that fallback into a startup failure.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

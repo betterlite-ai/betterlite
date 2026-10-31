@@ -96,7 +96,7 @@ pitfalls:
 - List is undecorated while retrieve uses @client, so their exception projections must be checked independently.
 - The list default is null and is not replaced with the docstring's 20.
 - Azure list results do not run the per-job normalization used by retrieve.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

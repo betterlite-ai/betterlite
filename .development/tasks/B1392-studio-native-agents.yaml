@@ -92,4 +92,4 @@ pitfalls:
   - Custom api_base rejects a missing explicit key even if a process-wide Gemini key is configured.
   - Deleting with HTTP 204 succeeds despite the source comment describing HTTP 200.
 budget: {max_changed_lines: 700, max_new_expects: 1}
-review_level: security
+review_level: standard

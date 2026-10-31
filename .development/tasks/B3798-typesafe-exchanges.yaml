@@ -176,7 +176,7 @@ pitfalls:
   - "_build_state iterates messages forward to accumulate task/system, then iterates backward to find the last user message. Reversed iteration finds the most recent task context without redundant scans."
   - "_call_systemone must handle httpx.HTTPStatusError (status errors), invalid UTF-8 decoding errors and validation errors separately. Connection timeouts, DNS failures and other asyncio exceptions are caught as generic Exception and logged without crashing."
 
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

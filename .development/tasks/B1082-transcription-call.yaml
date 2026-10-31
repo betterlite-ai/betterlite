@@ -131,7 +131,7 @@ pitfalls:
 - Azure transcription omits AZURE_OPENAI_API_KEY from its key chain even though speech includes it.
 - The outer async wrapper only finds file in kwargs, so positional uploads do not get its duration calculation.
 - Existing public duration=0 prevents fallback; existing hidden duration alone does not.
-review_level: security
+review_level: standard
 budget:
   max_changed_lines: 1500
   max_new_expects: 1

@@ -1,0 +1,2 @@
+litellm_settings:
+  default_in_memory_ttl: os.environ/CACHE_TTL
