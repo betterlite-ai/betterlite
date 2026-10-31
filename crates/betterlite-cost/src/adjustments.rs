@@ -150,6 +150,7 @@ fn margin_components(value: &CostAdjustmentValue) -> Result<(Decimal, Decimal), 
             object_decimal(entries, "fixed_amount")?,
         )),
         CostAdjustmentValue::Null
+        | CostAdjustmentValue::Boolean(_)
         | CostAdjustmentValue::Text(_)
         | CostAdjustmentValue::Array(_) => Ok((Decimal::ZERO, Decimal::ZERO)),
     }
