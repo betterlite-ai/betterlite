@@ -23,7 +23,7 @@ tracing.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
-rcgen = "0.14.10"
+rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem"] }
 rstest = "=0.27.0"
 tempfile = "3.27.0"
 tokio.workspace = true

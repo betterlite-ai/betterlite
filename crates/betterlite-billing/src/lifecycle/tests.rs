@@ -10,7 +10,7 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use betterlite_config::sections::billing_metrics::Settings;
-use rustls::crypto::ring;
+use rustls::crypto::aws_lc_rs;
 use rustls::pki_types::pem::PemObject as _;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::server::WebPkiClientVerifier;
@@ -51,7 +51,7 @@ fn settings(endpoint: &str, temp_root: &Path) -> Settings {
 }
 
 fn server_config() -> Arc<ServerConfig> {
-    let provider = Arc::new(ring::default_provider());
+    let provider = Arc::new(aws_lc_rs::default_provider());
     let mut roots = RootCertStore::empty();
     roots.add(certificate("ca.crt")).unwrap();
     let verifier =
