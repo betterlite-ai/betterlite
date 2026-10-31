@@ -1,0 +1,22 @@
+[package]
+name = "betterlite-websearch-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+betterlite-websearch = { path = ".." }
+libfuzzer-sys = "0.4.9"
+serde_json = "1.0.145"
+
+[[bin]]
+name = "call_transformation"
+path = "fuzz_targets/call_transformation.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

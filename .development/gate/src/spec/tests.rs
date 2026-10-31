@@ -101,14 +101,14 @@ fn an_unknown_status_is_rejected() {
 
 #[test]
 fn a_report_reads_from_json() {
-    let text = r#"{"task":"B004","status":"blocked","summary":"","blocker":"deny.toml is outside scope","owned":[],"prior_art":[],"deviations":[],"notes":[]}"#;
+    let text = r#"{"task":"B004","status":"blocked","summary":"","blocker":"deny.toml is outside scope","owned":[],"prior_art":[],"notes":[]}"#;
     let report: Report = serde_json::from_str(text).unwrap();
     assert_eq!(report.status, ReportStatus::Blocked);
 }
 
 #[test]
 fn a_report_with_an_extra_field_is_rejected() {
-    let text = r#"{"task":"B004","status":"done","summary":"x","blocker":"","owned":[],"prior_art":[],"deviations":[],"notes":[],"confidence":"high"}"#;
+    let text = r#"{"task":"B004","status":"done","summary":"x","blocker":"","owned":[],"prior_art":[],"notes":[],"confidence":"high"}"#;
     assert!(
         serde_json::from_str::<Report>(text)
             .is_err_and(|error| error.to_string().contains("confidence"))

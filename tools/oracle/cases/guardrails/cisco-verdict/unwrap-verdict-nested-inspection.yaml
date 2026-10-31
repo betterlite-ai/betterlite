@@ -1,0 +1,5 @@
+kind: helper
+name: unwrap-verdict-nested-inspection
+call: {b3758: {function: unwrap_verdict, response: {inspection: {rules: []}}}}
+env: {}
+compare: {ignore: []}

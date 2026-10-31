@@ -1,0 +1,5 @@
+kind: helper
+name: extract-jsonrpc-error-not-found
+call: {b3758: {function: extract_jsonrpc_error, response: {result: {ok: true}}}}
+env: {}
+compare: {ignore: []}
