@@ -51,7 +51,7 @@ checks:
   commands:
     - id: model-recognition-tests
       why: Model recognition behavior tests are absent or fail
-      run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^model_recognition::tests::/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^model_recognition::tests::/) - test(/replays_the_/)'
 
 oracle_cases: []
 
