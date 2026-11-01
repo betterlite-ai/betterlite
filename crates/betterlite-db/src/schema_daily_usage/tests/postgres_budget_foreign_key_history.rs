@@ -110,6 +110,11 @@ async fn prior_rows_unchanged_by_constraint_replacement() {
 async fn other_schema_constraint_drop_42704() {
     harness(|[client]| async move {
         batch_execute(&client, &migration_sql_through(ADD_DAILY_USER_TABLE)).await;
+        batch_execute(
+            &client,
+            r#"ALTER TABLE "LiteLLM_TeamMembership" DROP CONSTRAINT "LiteLLM_TeamMembership_budget_id_fkey";"#,
+        )
+        .await;
         create_decoy_constraint(&client, "LiteLLM_TeamMembership_budget_id_fkey").await;
         let error = batch_execute_err(&client, migration_sql_of(CASCADE_BUDGET_CHANGES)).await;
         assert_eq!(error.code().unwrap().code(), "42704");
