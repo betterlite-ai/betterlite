@@ -175,6 +175,35 @@ fn generic_guardrail_api_config_explicit_values_win() {
 }
 
 #[test]
+fn generic_guardrail_api_config_accepts_unreachable_fallback_case_insensitively() {
+    let source = format!("{GENERIC_CONFIG}      unreachable_fallback: FAIL_OPEN\n");
+    let settings = resolve(&source, &BTreeMap::new()).unwrap();
+    let configured = settings.guardrails.first().unwrap();
+    assert_eq!(
+        configured.unreachable_fallback,
+        super::UnreachableFallback::FailOpen
+    );
+}
+
+#[test]
+fn generic_guardrail_api_config_defaults_on_unrecognized_unreachable_fallback() {
+    let source = format!("{GENERIC_CONFIG}      unreachable_fallback: not_a_real_value\n");
+    let settings = resolve(&source, &BTreeMap::new()).unwrap();
+    let configured = settings.guardrails.first().unwrap();
+    assert_eq!(
+        configured.unreachable_fallback,
+        super::UnreachableFallback::FailClosed
+    );
+}
+
+#[test]
+fn generic_guardrail_api_config_ignores_other_guardrails_unreachable_fallback_case() {
+    let source = "guardrails:\n  - guardrail_name: firewall\n    litellm_params:\n      guardrail: deepkeep\n      unreachable_fallback: FAIL_OPEN\n";
+    let settings = resolve(source, &BTreeMap::new()).unwrap();
+    assert!(settings.guardrails.is_empty());
+}
+
+#[test]
 fn generic_guardrail_api_config_retains_unknown_paths() {
     let loader = ConfigLoader {
         lookup: BTreeMap::new(),
