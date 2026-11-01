@@ -51,9 +51,57 @@ fn usage_from_spend_log_warns_and_returns_none_on_a_malformed_record() {
     assert!(usage_from_spend_log(Some(&usage_object)).is_none());
 }
 
+#[test]
+fn usage_from_spend_log_carries_completion_counters_through() {
+    let usage_object = raw_usage(r#"{"completion_tokens": 7, "total_tokens": 7}"#);
+    let usage = usage_from_spend_log(Some(&usage_object))
+        .expect("a nonempty mapping with no prompt fields still rebuilds");
+    assert_eq!(usage.completion_tokens, 7);
+    assert_eq!(usage.total_tokens, 7);
+}
+
+#[test]
+fn usage_from_spend_log_applies_top_level_cache_overrides_without_nested_details() {
+    let usage_object = raw_usage(
+        r#"{
+            "prompt_tokens": 100,
+            "cache_read_input_tokens": 5,
+            "cache_creation_input_tokens": 3
+        }"#,
+    );
+    let usage = usage_from_spend_log(Some(&usage_object))
+        .expect("top-level cache counts alone still rebuild");
+    let details = usage
+        .prompt_tokens_details
+        .expect("the override creates prompt_tokens_details");
+    assert_eq!(details.cached_tokens, 5);
+    assert_eq!(details.cache_write_tokens, 3);
+}
+
+#[test]
+fn usage_from_spend_log_top_level_cache_read_overrides_an_existing_detail() {
+    let usage_object = raw_usage(
+        r#"{
+            "prompt_tokens": 100,
+            "cache_read_input_tokens": 9,
+            "prompt_tokens_details": {"cached_tokens": 2}
+        }"#,
+    );
+    let usage = usage_from_spend_log(Some(&usage_object)).expect("a well-shaped record rebuilds");
+    assert_eq!(
+        usage
+            .prompt_tokens_details
+            .expect("details carried over")
+            .cached_tokens,
+        9
+    );
+}
+
 fn usage_with_details(details: PromptTokensDetails) -> LoggedUsage {
     LoggedUsage {
         prompt_tokens: 0,
+        completion_tokens: 0,
+        total_tokens: 0,
         cache_read_input_tokens: details.cached_tokens,
         cache_creation_input_tokens: if details.cache_creation_tokens != 0 {
             details.cache_creation_tokens
@@ -61,6 +109,7 @@ fn usage_with_details(details: PromptTokensDetails) -> LoggedUsage {
             details.cache_write_tokens
         },
         prompt_tokens_details: Some(details),
+        completion_tokens_details: None,
     }
 }
 
@@ -192,6 +241,8 @@ fn ttl_detail() -> Scalar {
 fn baseline_usage_converts_an_unpriced_read_bucket_to_ordinary_input() {
     let usage = LoggedUsage {
         prompt_tokens: 20,
+        completion_tokens: 0,
+        total_tokens: 0,
         cache_read_input_tokens: 5,
         cache_creation_input_tokens: 3,
         prompt_tokens_details: Some(PromptTokensDetails {
@@ -204,6 +255,7 @@ fn baseline_usage_converts_an_unpriced_read_bucket_to_ordinary_input() {
             video_tokens: 0,
             cache_creation_token_details: Some(ttl_detail()),
         }),
+        completion_tokens_details: None,
     };
     let baseline_info = model_info(&[(
         "cache_creation_input_token_cost",
@@ -225,6 +277,8 @@ fn baseline_usage_converts_an_unpriced_read_bucket_to_ordinary_input() {
 fn baseline_usage_clears_ttl_detail_when_no_writes_remain() {
     let usage = LoggedUsage {
         prompt_tokens: 10,
+        completion_tokens: 0,
+        total_tokens: 0,
         cache_read_input_tokens: 0,
         cache_creation_input_tokens: 4,
         prompt_tokens_details: Some(PromptTokensDetails {
@@ -237,6 +291,7 @@ fn baseline_usage_clears_ttl_detail_when_no_writes_remain() {
             video_tokens: 0,
             cache_creation_token_details: Some(ttl_detail()),
         }),
+        completion_tokens_details: None,
     };
     let baseline_info = model_info(&[]);
     let normalized = baseline_usage(usage, Some(&baseline_info));

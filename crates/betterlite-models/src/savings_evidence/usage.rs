@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use rust_decimal::prelude::ToPrimitive as _;
 use serde::Deserialize;
 
@@ -6,14 +8,20 @@ use crate::price_fields::decimal_lexeme::parse_decimal_lexeme;
 use crate::tiered_pricing::Scalar;
 use crate::token_rates::ModelInfo;
 
-// Every numeric leaf keeps whatever shape the logged spend row stored until it is coerced below.
+// Every numeric leaf keeps its logged shape until coerced below; `extra` only proves the mapping nonempty.
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct RawUsageObject {
     pub prompt_tokens: Option<Scalar>,
+    pub completion_tokens: Option<Scalar>,
+    pub total_tokens: Option<Scalar>,
     pub cache_read_input_tokens: Option<Scalar>,
     pub cache_creation_input_tokens: Option<Scalar>,
+    pub prompt_cache_hit_tokens: Option<Scalar>,
+    pub completion_tokens_details: Option<Scalar>,
     pub prompt_tokens_details: Option<RawPromptTokensDetails>,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Scalar>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -32,9 +40,12 @@ pub struct RawPromptTokensDetails {
 #[derive(Clone, Debug, Default)]
 pub struct LoggedUsage {
     pub prompt_tokens: i64,
+    pub completion_tokens: i64,
+    pub total_tokens: i64,
     pub cache_read_input_tokens: i64,
     pub cache_creation_input_tokens: i64,
     pub prompt_tokens_details: Option<PromptTokensDetails>,
+    pub completion_tokens_details: Option<Scalar>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -49,14 +60,19 @@ pub struct PromptTokensDetails {
     pub cache_creation_token_details: Option<Scalar>,
 }
 
-// A malformed usage_object must not fail a spend write, so a shape mismatch is a warning, not an error.
+// A malformed usage_object must not fail a spend write; LiteLLM's own guard is just `if not usage_object`.
 #[must_use]
 pub fn usage_from_spend_log(usage_object: Option<&RawUsageObject>) -> Option<LoggedUsage> {
     let raw = usage_object.filter(|value| {
         value.prompt_tokens.is_some()
+            || value.completion_tokens.is_some()
+            || value.total_tokens.is_some()
             || value.cache_read_input_tokens.is_some()
             || value.cache_creation_input_tokens.is_some()
+            || value.prompt_cache_hit_tokens.is_some()
+            || value.completion_tokens_details.is_some()
             || value.prompt_tokens_details.is_some()
+            || !value.extra.is_empty()
     })?;
     match coerce_logged_usage(raw) {
         Ok(usage) => Some(usage),
@@ -69,19 +85,68 @@ pub fn usage_from_spend_log(usage_object: Option<&RawUsageObject>) -> Option<Log
 
 fn coerce_logged_usage(raw: &RawUsageObject) -> Result<LoggedUsage, SavingsEvidenceError> {
     let prompt_tokens = numeric_field(raw.prompt_tokens.as_ref())?;
+    let completion_tokens = numeric_field(raw.completion_tokens.as_ref())?;
+    let total_tokens = numeric_field(raw.total_tokens.as_ref())?;
     let cache_read_input_tokens = numeric_field(raw.cache_read_input_tokens.as_ref())?;
     let cache_creation_input_tokens = numeric_field(raw.cache_creation_input_tokens.as_ref())?;
-    let prompt_tokens_details = raw
+    let mut prompt_tokens_details = raw
         .prompt_tokens_details
         .as_ref()
         .map(coerce_prompt_tokens_details)
         .transpose()?;
+    apply_cache_overrides(raw, &mut prompt_tokens_details)?;
     Ok(LoggedUsage {
         prompt_tokens,
+        completion_tokens,
+        total_tokens,
         cache_read_input_tokens,
         cache_creation_input_tokens,
         prompt_tokens_details,
+        completion_tokens_details: raw.completion_tokens_details.clone(),
     })
+}
+
+// Mirrors Usage.__init__: a top-level cache count always overwrites the matching detail, creating it first.
+fn apply_cache_overrides(
+    raw: &RawUsageObject,
+    details: &mut Option<PromptTokensDetails>,
+) -> Result<(), SavingsEvidenceError> {
+    if let Some(cached) = integer_like_cache_count(raw.prompt_cache_hit_tokens.as_ref())? {
+        details
+            .get_or_insert_with(PromptTokensDetails::default)
+            .cached_tokens = cached;
+    }
+    if let Some(cached) = integer_like_cache_count(raw.cache_read_input_tokens.as_ref())? {
+        details
+            .get_or_insert_with(PromptTokensDetails::default)
+            .cached_tokens = cached;
+    }
+    if let Some(write) = integer_like_cache_count(raw.cache_creation_input_tokens.as_ref())? {
+        details
+            .get_or_insert_with(PromptTokensDetails::default)
+            .cache_write_tokens = write;
+    }
+    Ok(())
+}
+
+// Mirrors Python's isinstance(x, int): a bool or an integer lexeme overrides a detail, a float lexeme never does.
+fn integer_like_cache_count(value: Option<&Scalar>) -> Result<Option<i64>, SavingsEvidenceError> {
+    match value {
+        Some(Scalar::Bool(flag)) => Ok(Some(i64::from(*flag))),
+        Some(Scalar::Number(number)) => {
+            let lexeme = number.to_string();
+            if lexeme.contains(['.', 'e', 'E']) {
+                return Ok(None);
+            }
+            let decimal = parse_decimal_lexeme(&lexeme)
+                .map_err(|source| SavingsEvidenceError::AmountOutOfRange { source })?;
+            decimal
+                .to_i64()
+                .map(Some)
+                .ok_or(SavingsEvidenceError::SavedTokensOverflow)
+        }
+        _ => Ok(None),
+    }
 }
 
 fn coerce_prompt_tokens_details(
@@ -111,10 +176,14 @@ fn numeric_field(value: Option<&Scalar>) -> Result<i64, SavingsEvidenceError> {
     match value {
         None => Ok(0),
         Some(Scalar::Bool(flag)) => Ok(i64::from(*flag)),
-        Some(Scalar::Number(number)) => parse_decimal_lexeme(&number.to_string())
-            .ok()
-            .and_then(|decimal| decimal.trunc().to_i64())
-            .ok_or(SavingsEvidenceError::NonNumericAmount),
+        Some(Scalar::Number(number)) => {
+            let decimal = parse_decimal_lexeme(&number.to_string())
+                .map_err(|source| SavingsEvidenceError::AmountOutOfRange { source })?;
+            decimal
+                .trunc()
+                .to_i64()
+                .ok_or(SavingsEvidenceError::SavedTokensOverflow)
+        }
         _ => Err(SavingsEvidenceError::NonNumericAmount),
     }
 }
@@ -200,6 +269,8 @@ fn rebuild_baseline_usage(
     };
     LoggedUsage {
         prompt_tokens: usage.prompt_tokens,
+        completion_tokens: usage.completion_tokens,
+        total_tokens: usage.total_tokens,
         cache_read_input_tokens: reads,
         cache_creation_input_tokens: writes,
         prompt_tokens_details: Some(PromptTokensDetails {
@@ -212,6 +283,7 @@ fn rebuild_baseline_usage(
             video_tokens: details.video_tokens,
             cache_creation_token_details,
         }),
+        completion_tokens_details: usage.completion_tokens_details.clone(),
     }
 }
 
