@@ -213,7 +213,7 @@ pub(crate) fn compare_group(
     let mut request_offset = 0;
     let mut response_offset = 0;
     for case in cases {
-        outcomes.push(compare_one_case(
+        outcomes.push(browser_flow_group::compare_one_case(
             root,
             case,
             captures,
@@ -226,64 +226,6 @@ pub(crate) fn compare_group(
         request_offset = request_offset.saturating_add(case.upstream.len());
     }
     Ok(outcomes)
-}
-
-fn compare_one_case(
-    root: &Path,
-    case: &Case,
-    captures: &GroupCapture,
-    response_offset: usize,
-    request_offset: usize,
-) -> Result<bool, OracleError> {
-    let response_count = case.steps.as_ref().map_or(1, Vec::len);
-    let first_responses = response_slice(&captures.first, response_offset, response_count);
-    let second_responses = response_slice(&captures.second, response_offset, response_count);
-    let first_slice = request_slice(
-        &captures.first_requests,
-        request_offset,
-        case.upstream.len(),
-    );
-    let second_slice = request_slice(
-        &captures.second_requests,
-        request_offset,
-        case.upstream.len(),
-    );
-    if let Some(steps) = &case.steps {
-        browser_flow_group::compare_case_steps(browser_flow_group::StepsCompareInput {
-            root,
-            case,
-            steps,
-            first: first_responses,
-            second: second_responses,
-            first_requests: first_slice,
-            second_requests: second_slice,
-            first_log: &captures.first_log,
-            second_log: &captures.second_log,
-        })
-    } else {
-        let first = first_responses
-            .first()
-            .ok_or(OracleError::MissingCapture(response_offset))?;
-        let second = second_responses
-            .first()
-            .ok_or(OracleError::MissingCapture(response_offset))?;
-        compare_case(artifacts::ArtifactInput {
-            root,
-            case,
-            first,
-            second,
-            first_requests: first_slice,
-            second_requests: second_slice,
-            first_log: &captures.first_log,
-            second_log: &captures.second_log,
-            result: None,
-        })
-    }
-}
-
-fn response_slice(responses: &[Response], offset: usize, count: usize) -> &[Response] {
-    let end = offset.saturating_add(count);
-    responses.get(offset..end).unwrap_or_default()
 }
 
 fn compare_case(input: artifacts::ArtifactInput<'_>) -> Result<bool, OracleError> {
