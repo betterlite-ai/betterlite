@@ -1,0 +1,22 @@
+name: errors-upstream-html
+config: |
+  model_list:
+    - model_name: html-error-model
+      litellm_params: {model: openai/gpt-html-upstream, api_base: "{{upstream}}", api_key: oracle-key}
+  router_settings: {num_retries: 0}
+env: {}
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers: {content-type: application/json, authorization: Bearer oracle-master, x-litellm-call-id: oracle-call-html}
+  body: {model: html-error-model, messages: [{role: user, content: hi}]}
+upstream:
+  - status: 502
+    headers: {content-type: text/html}
+    body: "<html><body><h1>502 Bad Gateway</h1></body></html>"
+compare:
+  headers: [content-type, llm_provider-content-type, x-litellm-call-id, x-litellm-timeout]
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore:
+    - {pointer: /error/message, why: betterlite writes its own message}
