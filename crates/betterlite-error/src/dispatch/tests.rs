@@ -5,6 +5,7 @@ use rstest::rstest;
 
 use super::*;
 use crate::error::details::{ApiDetails, GuardrailDetails};
+use crate::parse::LitellmExceptionFacts;
 
 fn redactor() -> Redactor {
     Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("built-in redaction patterns always compile")
@@ -235,7 +236,10 @@ fn image_fetch_and_invalid_request_names_share_the_bad_request_family(#[case] na
         response: None,
         body: None,
     };
-    assert_eq!(family(&classify_facts(&facts)), "bad_request");
+    assert_eq!(
+        family(&litellm_proxy::classify_facts(&facts)),
+        "bad_request"
+    );
 }
 
 #[test]
@@ -248,7 +252,10 @@ fn an_unrecognized_facts_name_never_panics_and_classifies_as_unclassified() {
         response: None,
         body: None,
     };
-    assert_eq!(family(&classify_facts(&facts)), "unclassified");
+    assert_eq!(
+        family(&litellm_proxy::classify_facts(&facts)),
+        "unclassified"
+    );
 }
 
 #[test]
