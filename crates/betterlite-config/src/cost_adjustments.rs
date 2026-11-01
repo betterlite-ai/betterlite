@@ -77,32 +77,29 @@ impl Section for Raw {
     {
         Ok(Settings {
             cost_discount_config: resolve_adjustment_entries(
+                AdjustmentKind::Discount,
                 "litellm_settings.cost_discount_config",
                 self.litellm_settings.cost_discount_config,
-                |path, value, paths| adjustment_entry(AdjustmentKind::Discount, path, value, paths),
             )?,
             cost_margin_config: resolve_adjustment_entries(
+                AdjustmentKind::Margin,
                 "litellm_settings.cost_margin_config",
                 self.litellm_settings.cost_margin_config,
-                |path, value, paths| adjustment_entry(AdjustmentKind::Margin, path, value, paths),
             )?,
         })
     }
 }
 
-pub fn resolve_adjustment_entries<T, F>(
+pub fn resolve_adjustment_entries(
+    kind: AdjustmentKind,
     prefix: &str,
     config: CostAdjustmentMap,
-    mut entry_for: F,
-) -> Result<BTreeMap<String, T>, ConfigError>
-where
-    F: FnMut(&str, &CostAdjustmentValue, &mut Vec<String>) -> Option<T>,
-{
+) -> Result<BTreeMap<String, AdjustmentEntry>, ConfigError> {
     let mut resolved = BTreeMap::new();
     let mut paths = Vec::new();
     for (provider, value) in config {
         let path = format!("{prefix}.{provider}");
-        if let Some(entry) = entry_for(&path, &value, &mut paths) {
+        if let Some(entry) = adjustment_entry(kind, &path, &value, &mut paths) {
             resolved.insert(provider, entry);
         }
     }
@@ -121,7 +118,7 @@ fn parse_adjustment_decimal(lexeme: &str, path: &str, paths: &mut Vec<String>) -
     Some(value)
 }
 
-pub fn adjustment_entry(
+fn adjustment_entry(
     kind: AdjustmentKind,
     path: &str,
     value: &CostAdjustmentValue,

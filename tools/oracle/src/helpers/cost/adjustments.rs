@@ -1,5 +1,5 @@
 use betterlite_config::cost_adjustments::{
-    AdjustmentKind, CostAdjustmentMap, adjustment_entry, resolve_adjustment_entries,
+    AdjustmentKind, CostAdjustmentMap, resolve_adjustment_entries,
 };
 use betterlite_config::loader::ConfigError;
 use betterlite_cost::adjustments::apply_cost_adjustment;
@@ -38,15 +38,15 @@ impl crate::helpers::Helper for Op {
         let base_cost = Decimal::from_str_exact(&input.base_cost)
             .map_err(|error| Box::<crate::helpers::HelperError>::from(Failure::BaseCost(error)))?;
         let discount_config = resolve_adjustment_entries(
+            AdjustmentKind::Discount,
             "litellm_settings.cost_discount_config",
             input.discount_config.clone(),
-            |path, value, paths| adjustment_entry(AdjustmentKind::Discount, path, value, paths),
         )
         .map_err(|error| Box::<crate::helpers::HelperError>::from(Failure::Config(error)))?;
         let margin_config = resolve_adjustment_entries(
+            AdjustmentKind::Margin,
             "litellm_settings.cost_margin_config",
             input.margin_config.clone(),
-            |path, value, paths| adjustment_entry(AdjustmentKind::Margin, path, value, paths),
         )
         .map_err(|error| Box::<crate::helpers::HelperError>::from(Failure::Config(error)))?;
         let discount = apply_cost_adjustment(
