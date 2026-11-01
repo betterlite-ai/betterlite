@@ -1,8 +1,18 @@
 #![cfg(test)]
 
-use super::super::super::loader::ConfigLoader;
+use super::super::super::loader::{ConfigLoader, parse_view};
 use secrecy::ExposeSecret as _;
 use std::collections::BTreeMap;
+
+#[test]
+fn raw_settings_debug_hides_keys() {
+    let source = "litellm_settings:\n  api_key: marker-api-key\n  openai_key: marker-openai-key\n  azure_key: marker-azure-key\n";
+    let (raw, _ignored) = parse_view::<super::Raw>(source).expect("settings parse");
+    let debug = format!("{raw:?}");
+    assert!(!debug.contains("marker-api-key"));
+    assert!(!debug.contains("marker-openai-key"));
+    assert!(!debug.contains("marker-azure-key"));
+}
 
 #[test]
 fn loads_resource_sdk_settings() {
