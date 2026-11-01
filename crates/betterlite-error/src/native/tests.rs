@@ -216,3 +216,20 @@ fn azure_body_conversion_is_none_when_the_raw_exception_carries_no_body() {
     };
     assert_eq!(details.context.body_code, None);
 }
+
+#[test]
+fn azure_body_top_level_code_alone_drives_content_policy_classification() {
+    let mut input = raw("azure", "boom underlying failure", None);
+    input.body = Some(OpenaiErrorBody {
+        kind: Some("custom_kind_xyz".to_owned()),
+        param: None,
+        code: Some("content_policy_violation".to_owned()),
+        message: None,
+        error: None,
+    });
+    let class = dispatch_native(&input, &input.error_str).expect("azure always classifies");
+    let ErrorClass::ContentPolicyViolation(context) = class else {
+        panic!("expected ContentPolicyViolation, driven by the body's top-level code alone")
+    };
+    assert_eq!(context.body_type.as_deref(), Some("custom_kind_xyz"));
+}
