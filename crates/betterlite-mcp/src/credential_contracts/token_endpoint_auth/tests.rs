@@ -127,3 +127,18 @@ fn build_token_client_auth_missing_secret_raises(
         "token_endpoint_auth_method=client_secret_basic requires both client_id and client_secret"
     );
 }
+
+#[rstest]
+fn token_endpoint_client_auth_debug_redacts_values_and_names_keys() {
+    let auth = build_token_client_auth(
+        Some(TokenEndpointAuthMethod::ClientSecretBasic),
+        Some("my-client"),
+        Some(&secret("my-secret")),
+    )
+    .expect("both credentials are present");
+    let debugged = format!("{auth:?}");
+    assert!(debugged.contains("header_names"));
+    assert!(debugged.contains("Authorization"));
+    assert!(!debugged.contains("my-secret"));
+    assert!(!debugged.contains("Basic "));
+}
