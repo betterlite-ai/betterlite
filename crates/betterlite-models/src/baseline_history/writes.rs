@@ -1,9 +1,8 @@
-use std::collections::HashMap;
 use std::ops::Sub as _;
 
 use crate::baseline_history::cache_plan::CountedBreakpoint;
 use crate::baseline_history::error::BaselineHistoryError;
-use crate::baseline_history::estimate::{entry_status, is_plan_valid, markers_for};
+use crate::baseline_history::matching::{entry_status, is_plan_valid, markers_for};
 use crate::baseline_history::model::{BaselineHistory, BaselineObservation, CacheEntry, Outcome};
 use crate::baseline_history::time::{checked_add_timestamp, ttl_seconds_as_f64};
 use crate::baseline_history::usage::is_usage_complete;
@@ -109,23 +108,24 @@ fn marker_entries(
 }
 
 pub(crate) fn compact_entries(entries: &[CacheEntry], started: f64) -> Vec<CacheEntry> {
-    let mut groups: HashMap<(String, String, i64, i64, bool), Vec<CacheEntry>> = HashMap::new();
-    for entry in entries
-        .iter()
-        .filter(|entry| entry.expires_at >= started.sub(MAX_CACHE_TTL_SECONDS))
-    {
-        let key = (
+    let key = |entry: &CacheEntry| {
+        (
             entry.fingerprint.clone(),
             entry.content_fingerprint.clone(),
             entry.tokens,
             entry.ttl_seconds,
             entry.uncertain,
-        );
-        groups.entry(key).or_default().push(entry.clone());
-    }
-    groups
-        .into_values()
-        .flat_map(|group| retained_from_group(&group, started))
+        )
+    };
+    let mut ordered: Vec<CacheEntry> = entries
+        .iter()
+        .filter(|entry| entry.expires_at >= started.sub(MAX_CACHE_TTL_SECONDS))
+        .cloned()
+        .collect();
+    ordered.sort_by_key(&key);
+    ordered
+        .chunk_by(|left, right| key(left) == key(right))
+        .flat_map(|group| retained_from_group(group, started))
         .collect()
 }
 

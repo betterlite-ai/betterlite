@@ -30,6 +30,7 @@ fn usage(prompt: i64, completion: i64) -> Usage {
             cached_tokens: Some(0),
             cache_creation_tokens: Some(0),
             cache_creation_token_details: None,
+            cache_write_tokens: None,
             extra: Extra::default(),
         }),
         extra: Extra::default(),

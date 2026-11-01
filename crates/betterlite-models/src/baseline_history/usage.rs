@@ -10,18 +10,47 @@ pub struct CacheCreationTokenDetails {
     pub ephemeral_1h_input_tokens: Option<i64>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
+struct RawPromptTokensDetails {
+    #[serde(default)]
+    text_tokens: Option<i64>,
+    #[serde(default)]
+    cached_tokens: Option<i64>,
+    #[serde(default)]
+    cache_creation_tokens: Option<i64>,
+    #[serde(default)]
+    cache_creation_token_details: Option<CacheCreationTokenDetails>,
+    #[serde(default)]
+    cache_write_tokens: Option<i64>,
+    #[serde(flatten)]
+    extra: Extra,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "RawPromptTokensDetails")]
 pub struct PromptTokensDetails {
-    #[serde(default)]
     pub text_tokens: Option<i64>,
-    #[serde(default)]
     pub cached_tokens: Option<i64>,
-    #[serde(default)]
     pub cache_creation_tokens: Option<i64>,
-    #[serde(default)]
     pub cache_creation_token_details: Option<CacheCreationTokenDetails>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_write_tokens: Option<i64>,
     #[serde(flatten)]
     pub extra: Extra,
+}
+
+impl From<RawPromptTokensDetails> for PromptTokensDetails {
+    fn from(raw: RawPromptTokensDetails) -> Self {
+        let mirrored = raw.cache_write_tokens.or(raw.cache_creation_tokens);
+        Self {
+            text_tokens: raw.text_tokens,
+            cached_tokens: raw.cached_tokens,
+            cache_creation_tokens: mirrored,
+            cache_creation_token_details: raw.cache_creation_token_details,
+            cache_write_tokens: mirrored,
+            extra: raw.extra,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
@@ -117,10 +146,7 @@ pub(crate) fn usage_with_cache(
         ephemeral_5m_input_tokens: Some(write_short_ttl),
         ephemeral_1h_input_tokens: Some(write_long_ttl),
     });
-    details.extra.insert(
-        "cache_write_tokens".to_owned(),
-        Json::Number(Number::from(writes)),
-    );
+    details.cache_write_tokens = Some(writes);
     let mut extra = usage.extra.clone();
     extra.insert(
         "cache_read_input_tokens".to_owned(),

@@ -1,7 +1,8 @@
 use std::cmp::Ordering;
 
 use crate::baseline_history::error::BaselineHistoryError;
-use crate::baseline_history::estimate::{BaselineEstimate, estimate_for, is_plan_valid};
+use crate::baseline_history::estimate::{BaselineEstimate, estimate_for};
+use crate::baseline_history::matching::is_plan_valid;
 use crate::baseline_history::model::{BaselineHistory, BaselineObservation, CacheEntry, Outcome};
 use crate::baseline_history::usage::is_usage_complete;
 use crate::baseline_history::writes::{compact_entries, writes_for};

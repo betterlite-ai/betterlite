@@ -29,6 +29,7 @@ fn usage(prompt: i64, completion: i64) -> Usage {
             cached_tokens: Some(0),
             cache_creation_tokens: Some(0),
             cache_creation_token_details: None,
+            cache_write_tokens: None,
             extra: Extra::default(),
         }),
         extra: Extra::default(),
@@ -131,4 +132,20 @@ fn compact_entries_drops_entries_that_expired_past_the_retention_window() {
     let entries = vec![entry("a", 10, 300, 0.0, 10.0)];
     let compacted = compact_entries(&entries, 10_000.0);
     assert!(compacted.is_empty());
+}
+
+#[test]
+fn compact_entries_orders_by_fingerprint_key_not_by_insertion() {
+    let entries = vec![
+        entry("zeta", 10, 300, 0.0, 300.0),
+        entry("alpha", 10, 300, 0.0, 300.0),
+    ];
+    let compacted = compact_entries(&entries, 10.0);
+    assert_eq!(
+        compacted
+            .iter()
+            .map(|entry| entry.fingerprint.as_str())
+            .collect::<Vec<_>>(),
+        vec!["alpha", "zeta"]
+    );
 }

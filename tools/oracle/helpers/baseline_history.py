@@ -123,7 +123,7 @@ def run(input_value: dict[str, Json]) -> Json:
     for group in groups:
         if not isinstance(group, list):
             raise ValueError("each group must be an array")
-        observations = [BaselineObservation.model_validate(item) for item in group]
+        observations = [BaselineObservation.model_validate(item, strict=False) for item in group]
         history, estimates = advance_baseline_history(history, observations)
         steps.append(
             {

@@ -43,6 +43,7 @@ fn usage(prompt: i64, completion: i64, text: i64, cached: i64, creation: i64) ->
                     ephemeral_1h_input_tokens: Some(0),
                 })
             },
+            cache_write_tokens: None,
             extra: Extra::default(),
         }),
         extra: Extra::default(),
