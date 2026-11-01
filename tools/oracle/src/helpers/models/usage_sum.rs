@@ -90,24 +90,34 @@ impl crate::helpers::Helper for Op {
         let usages = input
             .usages
             .iter()
-            .map(UsageInput::build)
-            .collect::<Result<Vec<_>, _>>()?;
-        let result = usage_sum(&usages)
-            .map_err(|error| Box::new(HelperError::from(("UsageSumError", error.to_string()))))?;
+            .map(|usage| {
+                Ok(Usage {
+                    prompt_tokens: usage.prompt_tokens.unwrap_or(0),
+                    completion_tokens: usage.completion_tokens.unwrap_or(0),
+                    total_tokens: usage.total_tokens.unwrap_or(0),
+                    prompt_tokens_details: usage
+                        .prompt_tokens_details
+                        .as_ref()
+                        .map(PromptTokensDetails::from),
+                    completion_tokens_details: usage
+                        .completion_tokens_details
+                        .as_ref()
+                        .map(CompletionTokensDetails::from),
+                    numeric_extras: convert_entries(&usage.numeric_extras, number_from_json)?,
+                })
+            })
+            .collect::<Result<Vec<_>, Box<HelperError>>>()?;
+        let result = usage_sum(&usages).map_err(|error| {
+            Box::new(HelperError {
+                class: "UsageSumError".to_owned(),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+                message: error.to_string(),
+            })
+        })?;
         usage_value(&result)
-    }
-}
-
-impl From<(&str, String)> for HelperError {
-    fn from((class, message): (&str, String)) -> Self {
-        Self {
-            class: class.to_owned(),
-            status: None,
-            error_type: None,
-            param: None,
-            code: None,
-            message,
-        }
     }
 }
 
@@ -125,12 +135,6 @@ where
     Ok(result)
 }
 
-impl From<String> for Box<HelperError> {
-    fn from(message: String) -> Self {
-        Self::new(HelperError::from(("InvalidInput", message)))
-    }
-}
-
 fn number_from_json(name: &str, raw: &Value) -> Result<UsageNumber, Box<HelperError>> {
     if let Some(integer) = raw.as_i64() {
         return Ok(UsageNumber::Integer(integer));
@@ -139,31 +143,27 @@ fn number_from_json(name: &str, raw: &Value) -> Result<UsageNumber, Box<HelperEr
         return Ok(UsageNumber::Boolean(boolean));
     }
     let Some(float) = raw.as_f64() else {
-        return Err(format!("extra {name} is not numeric").into());
+        return Err(Box::new(HelperError {
+            class: "InvalidInput".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: format!("extra {name} is not numeric"),
+        }));
     };
     Decimal::try_from(float)
         .map(UsageNumber::Decimal)
-        .map_err(|error| error.to_string().into())
-}
-
-impl UsageInput {
-    fn build(&self) -> Result<Usage, Box<HelperError>> {
-        let numeric_extras = convert_entries(&self.numeric_extras, number_from_json)?;
-        Ok(Usage {
-            prompt_tokens: self.prompt_tokens.unwrap_or(0),
-            completion_tokens: self.completion_tokens.unwrap_or(0),
-            total_tokens: self.total_tokens.unwrap_or(0),
-            prompt_tokens_details: self
-                .prompt_tokens_details
-                .as_ref()
-                .map(PromptTokensDetails::from),
-            completion_tokens_details: self
-                .completion_tokens_details
-                .as_ref()
-                .map(CompletionTokensDetails::from),
-            numeric_extras,
+        .map_err(|error| {
+            Box::new(HelperError {
+                class: "InvalidInput".to_owned(),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+                message: error.to_string(),
+            })
         })
-    }
 }
 
 impl From<&PromptInput> for PromptTokensDetails {
@@ -264,9 +264,15 @@ fn number_value(value: &UsageNumber) -> Result<Value, Box<HelperError>> {
     match value {
         UsageNumber::Boolean(inner) => Ok(json!(inner)),
         UsageNumber::Integer(inner) => Ok(json!(inner)),
-        UsageNumber::Decimal(inner) => inner
-            .to_f64()
-            .map(|float| json!(float))
-            .ok_or_else(|| format!("decimal extra {inner} has no f64 representation").into()),
+        UsageNumber::Decimal(inner) => inner.to_f64().map(|float| json!(float)).ok_or_else(|| {
+            Box::new(HelperError {
+                class: "InvalidInput".to_owned(),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+                message: format!("decimal extra {inner} has no f64 representation"),
+            })
+        }),
     }
 }
