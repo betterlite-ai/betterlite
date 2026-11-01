@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::str::{self, Utf8Error};
+use std::str;
 
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use secrecy::ExposeSecret as _;
@@ -14,7 +14,7 @@ use crate::case::browser_flow::{
 };
 use crate::multipart_oracle::request::request_body;
 
-// Case loading already validated each placeholder, so find_placeholders is read here, not reparsed.
+// Case loading parsed every placeholder before any capture had a value, so find_placeholders runs again here to read the actual substitution.
 pub(crate) fn resolve_text(
     index: usize,
     text: &str,
@@ -71,7 +71,7 @@ pub(crate) fn resolve_body(
                 return Err(BrowserFlowError::BytesBody { index });
             };
             let text = str::from_utf8(&bytes)
-                .map_err(|source: Utf8Error| BrowserFlowError::BodyUtf8 { index, source })?;
+                .map_err(|source| BrowserFlowError::BodyUtf8 { index, source })?;
             let interpolated = resolve_text(index, text, captures)?;
             Ok(RequestBody::Raw {
                 content_type,

@@ -47,16 +47,6 @@ pub(crate) fn send(
     request: &Request,
 ) -> Result<Response, OracleError> {
     let body = request_body(&request.body, request.body_kind).map_err(OracleError::Multipart)?;
-    send_with_body(client, base, request, body)
-}
-
-// Browser-flow steps build the RequestBody themselves instead of decoding request.body again.
-pub(crate) fn send_with_body(
-    client: &Client,
-    base: &str,
-    request: &Request,
-    body: RequestBody,
-) -> Result<Response, OracleError> {
     let (response, _raw_headers) = send_with_raw_headers(client, base, request, body)?;
     Ok(response)
 }

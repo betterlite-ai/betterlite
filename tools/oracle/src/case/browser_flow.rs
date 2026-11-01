@@ -211,8 +211,7 @@ pub(crate) fn find_placeholders(text: &str) -> Result<Vec<PlaceholderRef>, Place
     Ok(found)
 }
 
-// Shared with interpolate::resolve_text so a placeholder body is parsed only once.
-pub(crate) fn parse_placeholder_body(body: &str) -> Result<PlaceholderRef, PlaceholderError> {
+fn parse_placeholder_body(body: &str) -> Result<PlaceholderRef, PlaceholderError> {
     let mut parts = body.split(':');
     let name = parts.next().unwrap_or_default();
     let encoding = parts.next().unwrap_or_default();
