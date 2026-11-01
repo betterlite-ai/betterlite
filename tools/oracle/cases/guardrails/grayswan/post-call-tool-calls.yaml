@@ -1,0 +1,14 @@
+kind: helper
+name: post-call-tool-calls
+call:
+  b3771:
+    grayswan_call:
+      input_type: response
+      texts: ["calling a tool"]
+      tool_calls:
+        - id: call_1
+          type: function
+          function: {name: get_weather, arguments: "{}"}
+      answer: {status: 200, headers: {}, body: {violation: 0.1}}
+env: {}
+compare: {ignore: []}

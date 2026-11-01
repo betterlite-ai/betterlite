@@ -1,0 +1,17 @@
+task: B3771
+deviations:
+  - what: Generic guardrail error messages in outage scenarios use betterlite's own wording, not LiteLLM's.
+    why: Error messages are betterlite's own per rule errors-match-litellm, with status codes unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/generic_guardrail_api/generic_guardrail_api.py#L390-L392
+  - what: Gray Swan violation message formatting is betterlite's own template, not LiteLLM's exact wording.
+    why: Error messages are betterlite's own per rule errors-match-litellm; status code 400 matches.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L738-L756
+  - what: The generic guardrail config section treats api_key as optional and api_base as required, the reverse of the task's own DoD wording.
+    why: The pinned LiteLLM source only adds api_key as a header when present and raises when api_base and GENERIC_GUARDRAIL_API_BASE are both absent; the oracle and source take precedence over the task text's description.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/generic_guardrail_api/generic_guardrail_api.py#L213-L230
+  - what: The generic guardrail config trims a trailing slash from api_base before checking whether it already ends with /beta/litellm_basic_guardrail_api, instead of checking first and trimming only on the append branch.
+    why: LiteLLM checks endswith before trimming, so an api_base already suffixed with a trailing slash fails the check and gets the path appended a second time; trimming first avoids that duplication for a configured value a guardrail server can rely on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/generic_guardrail_api/generic_guardrail_api.py#L224-L228
+  - what: LiteLLM keeps float(guardrail_timeout) as configured and passes it to every request, so invalid values fail per request and fail_open decides; betterlite rejects an unrepresentable guardrail_timeout while loading config.
+    why: Duration cannot represent negative, NaN, or too-large seconds, so betterlite reports the invalid configuration at its boundary instead of replacing it with 30 seconds.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L166

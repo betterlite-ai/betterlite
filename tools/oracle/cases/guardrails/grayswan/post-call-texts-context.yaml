@@ -1,0 +1,11 @@
+kind: helper
+name: post-call-texts-context
+call:
+  b3771:
+    grayswan_call:
+      input_type: response
+      texts: ["final answer"]
+      context: [{role: user, content: "what is 2+2?"}]
+      answer: {status: 200, headers: {}, body: {violation: 0.1}}
+env: {}
+compare: {ignore: []}

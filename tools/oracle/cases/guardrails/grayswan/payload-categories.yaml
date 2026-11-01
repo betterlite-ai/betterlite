@@ -1,0 +1,9 @@
+kind: helper
+name: payload-categories
+call:
+  b3771:
+    grayswan_payload:
+      config: {categories: {violence: block}}
+      dynamic: {categories: {harassment: block}}
+env: {}
+compare: {ignore: []}
