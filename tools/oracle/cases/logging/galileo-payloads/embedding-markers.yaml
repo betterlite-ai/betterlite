@@ -1,0 +1,5 @@
+kind: helper
+name: embedding-markers
+call: {"b3963": {"operation": "content_selection", "kwargs": {"call_type": "embedding", "input": ["text to embed"]}, "response": {"family": "embedding"}}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,5 @@
+kind: helper
+name: image-extraction
+call: {"b3963": {"operation": "content_selection", "kwargs": {"call_type": "image_generation", "input": "a cat"}, "response": {"family": "image", "data": [{"url": "https://example.com/image.png"}]}}}
+env: {}
+compare: {ignore: []}

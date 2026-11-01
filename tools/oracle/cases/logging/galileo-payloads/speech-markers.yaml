@@ -1,0 +1,5 @@
+kind: helper
+name: speech-markers
+call: {"b3963": {"operation": "content_selection", "kwargs": {"call_type": "aspeech", "input": "hello world"}, "response": {"family": "speech"}}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,5 @@
+kind: helper
+name: responses-api-extraction
+call: {"b3963": {"operation": "content_selection", "kwargs": {"call_type": "responses", "messages": [{"role": "user", "content": "input prompt"}]}, "response": {"family": "responses_api", "output": [{"type": "message", "content": [{"type": "output_text", "text": "response text"}]}]}}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,5 @@
+kind: helper
+name: rerank-extraction
+call: {"b3963": {"operation": "content_selection", "kwargs": {"call_type": "rerank", "messages": [{"role": "user", "content": "query text"}]}, "response": {"family": "rerank", "results": [{"index": 0, "relevance_score": 0.9}]}}}
+env: {}
+compare: {ignore: []}

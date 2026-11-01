@@ -1,0 +1,5 @@
+kind: helper
+name: message-normalization
+call: {"b3963": {"operation": "message_normalization", "messages": {"messages": [{"role": "user", "content": [{"type": "text", "text": "Hello "}, {"type": "text", "text": "World"}]}, {"role": "assistant", "content": "Hi there"}, {"content": "no role, dropped"}]}, "input_text": "fallback text"}}
+env: {}
+compare: {ignore: []}

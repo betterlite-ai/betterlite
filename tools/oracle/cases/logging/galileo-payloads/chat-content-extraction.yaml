@@ -1,0 +1,5 @@
+kind: helper
+name: chat-content-extraction
+call: {"b3963": {"operation": "content_selection", "kwargs": {"call_type": "completion", "messages": [{"role": "user", "content": "Hello"}]}, "response": {"family": "chat", "message": {"role": "assistant", "content": "Hi there"}}}}
+env: {}
+compare: {ignore: []}

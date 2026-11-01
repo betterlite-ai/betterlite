@@ -1,0 +1,5 @@
+kind: helper
+name: token-metrics-aggregation
+call: {"b3963": {"operation": "token_metrics", "record": {"num_input_tokens": 10, "num_output_tokens": 5, "cost": 0.002}}}
+env: {}
+compare: {ignore: []}

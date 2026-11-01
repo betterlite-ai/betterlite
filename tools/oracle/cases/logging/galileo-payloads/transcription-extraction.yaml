@@ -1,0 +1,5 @@
+kind: helper
+name: transcription-extraction
+call: {"b3963": {"operation": "content_selection", "kwargs": {"call_type": "atranscription", "input": "audio-file-ref"}, "response": {"family": "transcription", "text": "transcribed audio content"}}}
+env: {}
+compare: {ignore: []}
