@@ -46,9 +46,16 @@ fn case_slices<'slices>(
     &'slices [ProviderRequest],
 ) {
     let response_count = case.steps.as_ref().map_or(1, Vec::len);
+    let response_end = response_offset.saturating_add(response_count);
     (
-        response_slice(&captures.first, response_offset, response_count),
-        response_slice(&captures.second, response_offset, response_count),
+        captures
+            .first
+            .get(response_offset..response_end)
+            .unwrap_or_default(),
+        captures
+            .second
+            .get(response_offset..response_end)
+            .unwrap_or_default(),
         super::request_slice(
             &captures.first_requests,
             request_offset,
@@ -103,11 +110,6 @@ fn compare_one_case(
             result: None,
         })
     }
-}
-
-fn response_slice(responses: &[Response], offset: usize, count: usize) -> &[Response] {
-    let end = offset.saturating_add(count);
-    responses.get(offset..end).unwrap_or_default()
 }
 
 fn compare_case(input: artifacts::ArtifactInput<'_>) -> Result<bool, OracleError> {
