@@ -1,0 +1,21 @@
+kind: helper
+name: identical_path_before_plan_validation
+call:
+  baseline_history:
+    groups:
+      - - request_id: "r1"
+          started_at: 1000.0
+          available_at: 1000.0
+          outcome: complete
+          baseline_equivalent: true
+          usage:
+            prompt_tokens: 100
+            completion_tokens: 20
+            total_tokens: 120
+            prompt_tokens_details:
+              text_tokens: 100
+              cached_tokens: 0
+              cache_creation_tokens: 0
+              cache_creation_token_details: {ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 0}
+compare: {ignore: []}
+env: {}

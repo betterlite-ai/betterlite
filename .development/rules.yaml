@@ -373,7 +373,7 @@ rules:
   - id: errors-match-litellm
     title: Errors match LiteLLM's status and codes, in betterlite's words
     statement: >-
-      An error betterlite returns has the same HTTP status and the same error type, param and code that LiteLLM returns for that case. The message is betterlite's own, so oracle cases for errors list /error/message in compare.ignore with that reason.
+      An error betterlite returns has the same HTTP status and the same error type, param and code that LiteLLM returns for that case. The message is betterlite's own, so HTTP oracle cases (kind: http) for errors list /error/message in compare.ignore with that reason. Helper cases never compare an error's class or message, so they list neither.
     why: >-
       Clients branch on the status and the codes, never on the wording, and LiteLLM's messages ("litellm.BadRequestError: OpenAIException - ...") name a library betterlite is not.
     enforced_by: [oracle]

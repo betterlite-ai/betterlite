@@ -12,4 +12,4 @@ call:
       inputs: {texts: [hello]}
       input_type: request
 env: {}
-compare: {ignore: [{pointer: /error/message, why: "betterlite writes its own message"}]}
+compare: {ignore: []}

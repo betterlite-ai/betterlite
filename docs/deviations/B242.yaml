@@ -1,0 +1,11 @@
+task: B242
+deviations:
+  - what: A together_ai exception with no status_code attribute falls through to no classification, instead of crashing.
+    why: "`_map_together_ai_exception`'s trailing else branch reads `original_exception.status_code` with no hasattr guard, so a real exception without that attribute raises AttributeError in LiteLLM; no working setup can rely on that crash."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1796-L1803
+  - what: A together_ai 422 response body without an "error" key still classifies as bad_request, instead of crashing.
+    why: "The 422 branch subscripts `error_response['error']` unconditionally; a parsed JSON body missing that key raises KeyError in LiteLLM, which no working setup can rely on since the body shape is provider-controlled."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1776-L1782
+  - what: nlp_cloud, together_ai, aleph_alpha and vllm fall back to the error string (or an empty description for vllm) when the original exception carries no message attribute, instead of crashing.
+    why: "Every status-matched branch across these four functions reads `original_exception.message` with no hasattr/getattr guard; a real caught exception (which, unlike litellm's own exception classes, does not carry a `.message` attribute in Python 3) raises AttributeError in LiteLLM, which no working setup can rely on."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1666

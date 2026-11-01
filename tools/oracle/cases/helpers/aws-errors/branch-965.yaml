@@ -1,0 +1,14 @@
+kind: helper
+name: aws-errors-branch-965
+call:
+  aws_errors:
+    provider: bedrock
+    model: claude-3
+    custom_llm_provider: bedrock
+    error_str: "an unmatched failure"
+    status_code: 500
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

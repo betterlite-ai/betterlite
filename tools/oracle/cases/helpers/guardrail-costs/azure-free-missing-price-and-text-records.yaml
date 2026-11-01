@@ -1,0 +1,16 @@
+kind: helper
+name: azure-free-missing-price-and-text-records
+call:
+  guardrail_costs:
+    azure:
+      - usage_units: {text_records: 100}
+        cost_tier: free
+        price_per_1000_text_records: null
+      - usage_units: {text_records: 100}
+        cost_tier: null
+        price_per_1000_text_records: null
+      - usage_units: {text_records: 250}
+        cost_tier: null
+        price_per_1000_text_records: 2.0
+compare: {ignore: []}
+env: {}

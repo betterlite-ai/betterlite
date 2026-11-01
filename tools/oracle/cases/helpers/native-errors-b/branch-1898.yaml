@@ -1,0 +1,14 @@
+kind: helper
+name: native-errors-b-branch-1898
+call:
+  native_errors_b:
+    provider: ollama
+    model: ollama/llama2
+    original_exception:
+      kind: text
+      text: "Read timed out"
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/context/message
+      why: betterlite writes its own message

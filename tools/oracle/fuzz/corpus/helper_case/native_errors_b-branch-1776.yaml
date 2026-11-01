@@ -1,0 +1,14 @@
+kind: helper
+name: native-errors-b-branch-1776
+call:
+  native_errors_b:
+    provider: together_ai
+    model: together_ai/llama-3
+    error_str: '{"error": "bad request details"}'
+    status_code: 422
+    message: "boom"
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

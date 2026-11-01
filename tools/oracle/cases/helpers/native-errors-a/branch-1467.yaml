@@ -1,0 +1,13 @@
+kind: helper
+name: native-errors-a-branch-1467
+call:
+  native_errors_a:
+    provider: cohere
+    model: command-r
+    error_str: "Unexpected server error occurred"
+    exception_type: "SomeOtherError"
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

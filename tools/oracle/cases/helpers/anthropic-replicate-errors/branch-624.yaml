@@ -1,0 +1,13 @@
+kind: helper
+name: anthropic-replicate-errors-branch-624
+call:
+  anthropic_replicate_errors:
+    provider: anthropic
+    model: claude-3-opus
+    error_str: "generic failure"
+    status_code: 503
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message
