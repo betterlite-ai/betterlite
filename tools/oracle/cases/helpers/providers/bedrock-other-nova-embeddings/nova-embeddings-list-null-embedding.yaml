@@ -1,0 +1,12 @@
+kind: helper
+name: nova-embeddings-list-null-embedding
+call:
+  bedrock_other_nova_embeddings:
+    nova_result_index_token_estimate:
+      response_list:
+        - embeddings:
+            - embedding: null
+              truncatedCharLength: 8
+env: {}
+compare:
+  ignore: []
