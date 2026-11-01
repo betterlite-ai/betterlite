@@ -1,0 +1,22 @@
+kind: helper
+name: nova-result-index-token-estimate
+call:
+  bedrock_other_nova_embeddings:
+    nova_result_index_token_estimate:
+      response_list:
+        - embeddings:
+            - embedding: [0.1, 0.2, 0.3]
+              truncatedCharLength: 40
+            - embedding: [0.4, 0.5, 0.6, 0.7]
+            - embeddingType: TEXT
+        - embeddings: []
+          embedding: [1.0, 2.0]
+        - embedding: [9.0, 8.0, 7.0, 6.0, 5.0]
+        - {}
+      batch_data:
+        - singleEmbeddingParams: {image: present}
+        - segmentedEmbeddingParams: {image: present}
+        - singleEmbeddingParams: {}
+env: {}
+compare:
+  ignore: []

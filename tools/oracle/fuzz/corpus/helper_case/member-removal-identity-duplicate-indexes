@@ -1,0 +1,11 @@
+kind: helper
+name: member-removal-identity-duplicate-indexes
+call:
+  member_removal_identity:
+    operation: duplicate_indexes
+    requests:
+      - {user_id: u1, user_email: null}
+      - {user_id: u1, user_email: null}
+env: {}
+compare:
+  ignore: []

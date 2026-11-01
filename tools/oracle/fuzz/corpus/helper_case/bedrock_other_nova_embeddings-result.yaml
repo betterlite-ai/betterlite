@@ -1,0 +1,11 @@
+kind: helper
+name: bedrock-other-nova-embeddings-result
+call:
+  bedrock_other_nova_embeddings:
+    nova_result_index_token_estimate:
+      response_list:
+        - embedding: [1.0, 2.0, 3.0, 4.0]
+      batch_data: []
+env: {}
+compare:
+  ignore: []

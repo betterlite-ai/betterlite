@@ -1,7 +1,7 @@
 id: B2363
 milestone: M4 keys, spend and management
 title: Member removal identities and matching predicates
-status: todo
+status: done
 depends_on: [B171, B720, B856, B859]
 file: tasks/B2363-member-removal-identity.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/management_helpers/bulk_user_deletion.py"
 parent: B056
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 426

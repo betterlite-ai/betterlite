@@ -6,6 +6,7 @@ mod aggregation_projection;
 pub mod error;
 mod field;
 pub mod interactions;
+pub mod modality_projection;
 mod token_count;
 pub mod transcription;
 

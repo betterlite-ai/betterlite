@@ -916,6 +916,7 @@ dependencies = [
  "futures-util",
  "indexmap 2.14.2",
  "mime",
+ "percent-encoding",
  "rstest",
  "secrecy",
  "serde",
@@ -1145,6 +1146,7 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "temp-env",
  "thiserror",
  "tokio",
  "tracing",
@@ -5690,6 +5692,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.9",
+]
+
+[[package]]
+name = "temp-env"
+version = "0.3.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "96374855068f47402c3121c6eed88d29cb1de8f3ab27090e273e420bdabcf050"
+dependencies = [
+ "parking_lot",
 ]
 
 [[package]]

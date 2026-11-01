@@ -1,0 +1,12 @@
+kind: helper
+name: earlier_duplicate_still_counts_against_later_entry
+call:
+  member_removal_identity:
+    operation: duplicate_indexes
+    requests:
+      - {user_id: "u1", user_email: "e1"}
+      - {user_id: "u1", user_email: "e2"}
+      - {user_email: "e2"}
+env: {}
+compare:
+  ignore: []
