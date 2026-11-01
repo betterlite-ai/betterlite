@@ -21,7 +21,7 @@ fn a_first_review_reads_the_whole_branch() {
         branch: "task/B000-workspace",
         base: "abc123",
     };
-    let prompt = reviewer(&brief, None);
+    let prompt = reviewer(&brief, "roles/reviewer.md", None);
     assert!(prompt.contains("git diff abc123...HEAD"));
     assert!(!prompt.contains("earlier round"));
 }
@@ -39,7 +39,7 @@ fn a_later_review_checks_the_earlier_findings_and_the_lines_changed_since() {
         commit: "def456".to_owned(),
         findings: vec!["typed-errors at src/a.rs:3: boxed error Fix: use the enum".to_owned()],
     };
-    let prompt = reviewer(&brief, Some(&earlier));
+    let prompt = reviewer(&brief, "roles/reviewer.md", Some(&earlier));
     assert!(prompt.contains("reviewed this branch at def456"));
     assert!(prompt.contains("- typed-errors at src/a.rs:3: boxed error Fix: use the enum"));
     assert!(prompt.contains("git diff def456...HEAD"));
@@ -58,7 +58,7 @@ fn a_review_after_an_approval_reads_only_the_lines_changed_since() {
         commit: "def456".to_owned(),
         findings: Vec::new(),
     };
-    let prompt = reviewer(&brief, Some(&approved));
+    let prompt = reviewer(&brief, "roles/reviewer.md", Some(&approved));
     assert!(prompt.contains("approved this branch at def456"));
     assert!(prompt.contains("git diff def456...HEAD"));
     assert!(!prompt.contains("asked for these changes"));

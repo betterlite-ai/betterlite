@@ -1,0 +1,12 @@
+kind: helper
+name: provider-error-guardrail-identity
+call:
+  provider_error:
+    kind: mapped
+    family: guardrail_raised
+    guardrail_name: pii
+    message: blocked
+    status_code: 400
+    blocked_content: true
+env: {}
+compare: {ignore: []}

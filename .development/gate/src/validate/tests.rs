@@ -4,11 +4,12 @@ use std::path::Path;
 
 use crate::ids::{check_id_problem, task_id_problem};
 use crate::spec::agents::Agents;
+use crate::spec::catalog::Catalog;
 use crate::spec::task::Task;
 use crate::validate::agents::runner_problems;
 use crate::validate::command_args::argument_problems;
 use crate::validate::needs::needed_paths;
-use crate::validate::task::{banned_tooling, outside_scope_roots};
+use crate::validate::task::{banned_tooling, scope_root_problems};
 use crate::validate::validate;
 use crate::yaml::read_yaml;
 
@@ -126,21 +127,33 @@ fn check_commands_pass_filtersets_nextest_can_parse() {
 #[test]
 fn scope_paths_stay_under_the_scope_roots_or_existing_root_entries() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let roots = ["crates".to_owned(), "tools".to_owned()];
-    for good in [
+    let mut catalog: Catalog = read_yaml(&root.join(".development/checks.yaml")).unwrap();
+    catalog.settings.scope_roots = vec!["crates".to_owned(), "tools".to_owned()];
+    let mut task: Task =
+        read_yaml(&root.join(".development/tasks/B860-postgres-http.yaml")).unwrap();
+    let good = [
         "crates/betterlite-new/src/lib.rs",
         "tools/oracle/**",
         "Cargo.toml",
         ".development/x",
-    ] {
-        assert!(!outside_scope_roots(&root, &roots, good), "{good}");
-    }
-    for bad in [
+    ];
+    let bad = [
         "litellm/policy_templates_backup.json",
         "policy_templates.json",
         "packaging/homebrew/lite.rb",
-    ] {
-        assert!(outside_scope_roots(&root, &roots, bad), "{bad}");
+    ];
+    task.scope.paths = good
+        .iter()
+        .chain(&bad)
+        .map(|path| (*path).to_owned())
+        .collect();
+    let flagged = scope_root_problems(&root, &catalog, &task);
+    assert_eq!(flagged.len(), bad.len(), "{flagged:?}");
+    for (problem, path) in flagged.iter().zip(bad) {
+        assert!(
+            problem.contains(&format!("scope path {path} is outside")),
+            "{problem}"
+        );
     }
 }
 
