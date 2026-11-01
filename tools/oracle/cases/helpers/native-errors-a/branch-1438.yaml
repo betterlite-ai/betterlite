@@ -1,0 +1,14 @@
+kind: helper
+name: native-errors-a-branch-1438
+call:
+  native_errors_a:
+    provider: cohere
+    model: command-r
+    error_str: "unrecognized failure"
+    exception_type: ""
+    status_code: 408
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/context/message
+      why: betterlite writes its own message

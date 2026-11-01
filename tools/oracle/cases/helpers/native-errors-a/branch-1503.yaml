@@ -1,0 +1,12 @@
+kind: helper
+name: native-errors-a-branch-1503
+call:
+  native_errors_a:
+    provider: huggingface
+    model: hf/model-a
+    error_str: "A valid user token is required"
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

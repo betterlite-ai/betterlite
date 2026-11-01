@@ -1,0 +1,9 @@
+kind: helper
+name: native-errors-a-branch-1572
+call:
+  native_errors_a:
+    provider: ai21
+    model: ai21/model-a
+    message: "a completely unrelated message"
+env: {}
+compare: {ignore: []}

@@ -7,6 +7,4 @@ call:
     field_name: file_id
 env: {}
 compare:
-  ignore:
-    - pointer: /error/message
-      why: betterlite writes its own error message
+  ignore: []

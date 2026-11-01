@@ -1,0 +1,8 @@
+kind: helper
+name: nonstring-api-key-not-stringified
+call:
+  resolved_key:
+    function: auth
+    value: {api_key: 123}
+env: {}
+compare: {ignore: []}

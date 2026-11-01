@@ -11,7 +11,4 @@ call:
       inputs: {texts: [hello]}
       answer: {status: 200, headers: {}, body: "not an object"}
 env: {}
-compare:
-  ignore:
-    - pointer: /error/message
-      why: betterlite uses its own typed error wording
+compare: {ignore: []}
