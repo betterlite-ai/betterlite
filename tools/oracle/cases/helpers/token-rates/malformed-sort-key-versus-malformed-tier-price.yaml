@@ -11,10 +11,5 @@ call:
       prompt_tokens: 1
     service_tier: null
     provider: null
-compare:
-  ignore:
-    - pointer: /error/class
-      why: betterlite raises a typed TokenRateError where LiteLLM's sorted() raises a native ValueError
-    - pointer: /error/message
-      why: betterlite writes its own message
+compare: {ignore: []}
 env: {}
