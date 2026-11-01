@@ -65,7 +65,7 @@ fn builtin_outcomes(
     };
     let mut outcomes = Vec::new();
     for builtin in &development.catalog.base.builtin {
-        let id: &str = builtin.id.into();
+        let id = <&str>::from(builtin.id);
         if (!selection.only.is_empty() && !selection.only.iter().any(|selected| selected == id))
             || selection.skip.iter().any(|skipped| skipped == id)
         {

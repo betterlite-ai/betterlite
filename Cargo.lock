@@ -1002,6 +1002,7 @@ dependencies = [
  "aws-credential-types",
  "aws-sigv4",
  "aws-smithy-runtime-api",
+ "betterlite-models",
  "betterlite-rate-limit",
  "betterlite-secrets",
  "dec_from_char",
@@ -1010,12 +1011,14 @@ dependencies = [
  "netrc-rs",
  "percent-encoding",
  "rstest",
+ "rust_decimal",
  "secrecy",
  "serde",
  "serde-inline-default",
  "serde-saphyr",
  "serde_ignored",
  "serde_json",
+ "strum",
  "tempfile",
  "thiserror",
  "tracing",
@@ -1065,6 +1068,12 @@ dependencies = [
 [[package]]
 name = "betterlite-cost"
 version = "0.1.0"
+dependencies = [
+ "betterlite-config",
+ "rust_decimal",
+ "strum",
+ "thiserror",
+]
 
 [[package]]
 name = "betterlite-db"
@@ -1279,12 +1288,14 @@ dependencies = [
  "betterlite-secrets",
  "chrono",
  "hex",
+ "http 1.5.0",
  "pem",
  "rstest",
  "secrecy",
  "serde",
  "serde_json",
  "sha2 0.11.1",
+ "strum",
  "thiserror",
  "tokio",
  "tracing",
@@ -1358,6 +1369,7 @@ dependencies = [
  "betterlite-config",
  "betterlite-context",
  "betterlite-core",
+ "betterlite-cost",
  "betterlite-db",
  "betterlite-error",
  "betterlite-guardrails",

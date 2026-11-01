@@ -1,14 +1,14 @@
 id: B1693
 milestone: M4 keys, spend and management
 title: Preserve savings evidence, cache buckets and compression attribution
-status: todo
+status: done
 depends_on: [B171, B204, B1668]
 file: tasks/B1693-savings-evidence.yaml
 covers:
   - "litellm/proxy/spend_tracking/{savings,compression_savings}.py"
 parent: B068
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 438

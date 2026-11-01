@@ -1,13 +1,15 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
+use itertools::Itertools as _;
+
 use crate::builtins::globs::glob_set;
 use crate::ids::check_id_problem;
 use crate::spec::backlog::BacklogEntry;
 use crate::spec::catalog::Catalog;
 use crate::spec::task::Task;
+use crate::validate::catalog;
 use crate::validate::command_args::argument_problems;
-use crate::validate::{catalog, duplicates};
 
 fn text_problems(task: &Task) -> Vec<String> {
     let id = &task.id;
@@ -108,8 +110,8 @@ fn proof_problems(catalog: &Catalog, task: &Task) -> Vec<String> {
         .map(|check| check.id.as_str())
         .collect();
     problems.extend(
-        duplicates(&own)
-            .into_iter()
+        own.iter()
+            .duplicates()
             .map(|check| format!("{id}: command {check} is defined twice")),
     );
     let misnamed = own
@@ -180,17 +182,15 @@ fn command_problems(task: &Task) -> Vec<String> {
     problems
 }
 
-pub(crate) fn outside_scope_roots(root: &Path, roots: &[String], path: &str) -> bool {
-    let first = path.split('/').next().unwrap_or(path);
-    !roots.iter().any(|allowed| allowed == first) && !root.join(first).exists()
-}
-
-fn scope_root_problems(root: &Path, catalog: &Catalog, task: &Task) -> Vec<String> {
+pub(crate) fn scope_root_problems(root: &Path, catalog: &Catalog, task: &Task) -> Vec<String> {
     let roots = &catalog.settings.scope_roots;
     task.scope
         .paths
         .iter()
-        .filter(|path| outside_scope_roots(root, roots, path))
+        .filter(|path| {
+            let first = path.split('/').next().unwrap_or(path);
+            !roots.iter().any(|allowed| allowed == first) && !root.join(first).exists()
+        })
         .map(|path| {
             format!(
                 "{}: scope path {path} is outside {} and starts with nothing that exists at the repository root",

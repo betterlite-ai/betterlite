@@ -1,0 +1,5 @@
+task: B1693
+deviations:
+  - what: Savings counters and money use checked finite arithmetic; nonfinite or overflowing compression/cache counts return a typed data error rather than entering a daily subtotal.
+    why: The source's int/float conversions can overflow or carry nonfinite values, which cannot be persisted as valid spend.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/compression_savings.py#L13-L18
