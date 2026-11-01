@@ -297,6 +297,68 @@ fn no_status_code_message_names_the_exception_provider() {
 }
 
 #[test]
+fn content_policy_text_needs_both_invalid_prompt_and_the_usage_policy_phrase() {
+    let class = map_openai_exception(&input("Invalid prompt: this one is fine", None));
+    assert_eq!(describe(&class).0, "api_connection");
+}
+
+#[test]
+fn content_policy_text_needs_the_invalid_prompt_prefix_too() {
+    let class = map_openai_exception(&input(
+        "this text is violating our usage policy somehow",
+        None,
+    ));
+    assert_eq!(describe(&class).0, "api_connection");
+}
+
+#[test]
+fn encrypted_content_text_alone_is_enough_without_the_could_not_be_verified_phrase() {
+    let class = map_openai_exception(&input("invalid_encrypted_content supplied", None));
+    assert_eq!(
+        describe(&class).1,
+        "OpenAIException - invalid_encrypted_content supplied\n\n\
+Encrypted content affinity is required across deployments."
+    );
+}
+
+#[test]
+fn could_not_be_verified_text_alone_is_enough_without_the_encrypted_content_phrase() {
+    let class = map_openai_exception(&input("the signature could not be verified", None));
+    assert_eq!(
+        describe(&class).1,
+        "OpenAIException - the signature could not be verified\n\n\
+Encrypted content affinity is required across deployments."
+    );
+}
+
+#[test]
+fn rate_limit_text_produces_the_rate_limit_error_message_prefix() {
+    let class = map_openai_exception(&input("Rate limit reached for requests", None));
+    assert_eq!(
+        describe(&class).1,
+        "RateLimitError: OpenAIException - Rate limit reached for requests"
+    );
+}
+
+#[test]
+fn context_window_text_does_not_forward_the_request_body() {
+    let mut request = input("This model's maximum context length is 4096 tokens", None);
+    request.body = Some(OpenaiErrorBody {
+        kind: Some("invalid_request_error".to_owned()),
+        param: Some("messages".to_owned()),
+        code: Some("context_length".to_owned()),
+        message: None,
+        error: None,
+    });
+    let ErrorClass::ContextWindowExceeded(context) = map_openai_exception(&request) else {
+        panic!("expected ContextWindowExceeded");
+    };
+    assert_eq!(context.body_type, None);
+    assert_eq!(context.body_param, None);
+    assert_eq!(context.body_code, None);
+}
+
+#[test]
 fn content_policy_violation_forwards_body_type_and_code() {
     let mut request = input(
         "invalid_request_error raised: content_policy_violation detected",
