@@ -1,0 +1,14 @@
+kind: helper
+name: anthropic-replicate-errors-branch-671
+call:
+  anthropic_replicate_errors:
+    provider: replicate
+    model: replicate/some-model
+    error_str: "Request was throttled by replicate"
+    exception_type: APIError
+    status_code: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/context/message
+      why: betterlite writes its own message
