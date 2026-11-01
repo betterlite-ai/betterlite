@@ -1,0 +1,8 @@
+kind: helper
+name: mcp-blocking-response-with-error-dict
+call: {b3761: {function: blocking_response, detail: {reason: blocked, code: 7}}}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/mcp_tool_call_response/0/text
+      why: "Python's json.dumps and Rust's serde_json::to_string format the embedded detail payload with different whitespace; the parsed content is identical"
