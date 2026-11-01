@@ -4,6 +4,8 @@ use std::fs;
 use std::io::{Cursor, Read as _, Write as _};
 use std::path::Path;
 
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use rstest::rstest;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
@@ -227,6 +229,107 @@ fn skill_archive_ignores_a_frontmatter_field_that_is_not_a_string() {
     .unwrap();
     assert_eq!(archive.declared_name, None);
     assert_eq!(archive.declared_description.as_deref(), Some("ok"));
+}
+
+#[test]
+fn skill_archive_reads_a_bzip2_compressed_member() {
+    let bytes = BASE64
+        .decode(
+            "UEsDBAoAAAAAAA6oYV30xqGHBwAAAAcAAAAOAAAAc2tpbGwvU0tJTEwubWQjIERlbW8KUEsDBC4AAAAMAA+oYV27FPsFegAAAIsAAAAOAAAAc2tpbGwvZGF0YS5iaW5CWmg5MUFZJlNZ4lLFawAAFNmAABBABRAAP+7fMCAAZBVQU9TJ+qbUG1GASqfqjTQBgAV9pwiWJ5qqs6KJywowhdZZhpaWS7vNndu1f2UedqK6tDs9NnKENFm7l9RKz5xxJhwIbuhBIwzUQhHjTYeZF3JFOFCQ4lLFa1BLAQI/AwoAAAAAAA6oYV30xqGHBwAAAAcAAAAOACQAAAAAAAAAIIC0gQAAAABza2lsbC9TS0lMTC5tZAoAIAAAAAAAAQAYAHnW6qM7at0BAAAAAAAAAAAAAAAAAAAAAFBLAQI/Ay4AAAAMAA+oYV27FPsFegAAAIsAAAAOACQAAAAAAAAAIIC0gTMAAABza2lsbC9kYXRhLmJpbgoAIAAAAAAAAQAYADVfLaQ7at0BAAAAAAAAAAAAAAAAAAAAAFBLBQYAAAAAAgACAMAAAADZAAAAAAA=",
+        )
+        .unwrap();
+    let archive = build_skill_archive(&bytes).unwrap();
+    let mut repacked = ZipArchive::new(Cursor::new(archive.content)).unwrap();
+    let mut data = Vec::new();
+    repacked
+        .by_name("data.bin")
+        .unwrap()
+        .read_to_end(&mut data)
+        .unwrap();
+    assert_eq!(
+        data,
+        b"bzip2 member payload for the skill archive oracle case, \
+repeated for good measure. bzip2 member payload for the skill archive oracle case.\n"
+            .as_slice()
+    );
+}
+
+#[test]
+fn skill_archive_reads_an_lzma_compressed_member() {
+    let bytes = BASE64
+        .decode(
+            "UEsDBAoAAAAAAA6oYV30xqGHBwAAAAcAAAAOAAAAc2tpbGwvU0tJTEwubWQjIERlbW8KUEsDBD8AAgAOACKoYV0glgUcYQAAAIkAAAAOAAAAc2tpbGwvbHptYS5iaW4ZAQUAXQAQAAAANh6J3X1JUuD1HFWCmniukVUGa43emQjtMqsvL60n1NE32xcjT7Hb6CGbYINCs1O7GryCNtgNmaJDtY0OOwtggZqM4HxIzpBORGyho603TPfX///nglAAUEsBAj8DCgAAAAAADqhhXfTGoYcHAAAABwAAAA4AJAAAAAAAAAAggLSBAAAAAHNraWxsL1NLSUxMLm1kCgAgAAAAAAABABgAedbqoztq3QEAAAAAAAAAAAAAAAAAAAAAUEsBAj8DPwACAA4AIqhhXSCWBRxhAAAAiQAAAA4AJAAAAAAAAAAggLSBMwAAAHNraWxsL2x6bWEuYmluCgAgAAAAAAABABgA8vG0uDtq3QEAAAAAAAAAAAAAAAAAAAAAUEsFBgAAAAACAAIAwAAAAMAAAAAAAA==",
+        )
+        .unwrap();
+    let archive = build_skill_archive(&bytes).unwrap();
+    let mut repacked = ZipArchive::new(Cursor::new(archive.content)).unwrap();
+    let mut data = Vec::new();
+    repacked
+        .by_name("lzma.bin")
+        .unwrap()
+        .read_to_end(&mut data)
+        .unwrap();
+    assert_eq!(
+        data,
+        b"lzma member payload for the skill archive oracle case, \
+repeated for good measure. lzma member payload for the skill archive oracle case.\n"
+            .as_slice()
+    );
+}
+
+#[test]
+fn skill_archive_keeps_the_last_duplicate_frontmatter_key() {
+    let archive = build_skill_archive(&upload(&[(
+        "SKILL.md",
+        b"---\nname: First\nname: Second\ndescription: demo\n---\nbody",
+    )]))
+    .unwrap();
+    assert_eq!(archive.declared_name.as_deref(), Some("Second"));
+}
+
+#[test]
+fn skill_archive_rejects_an_upload_with_a_trailing_backslash_member() {
+    assert!(
+        build_skill_archive(&upload(&[
+            ("skill/SKILL.md", b"---\nname: Demo\n---\nbody"),
+            ("skill/notes\\", b""),
+        ]))
+        .is_none()
+    );
+}
+
+#[test]
+fn skill_archive_rejects_a_local_and_central_header_name_mismatch() {
+    let mut bytes = upload(&[("skill/SKILL.md", b"body")]);
+    let marker = b"skill/SKILL.md";
+    let mut occurrences = Vec::new();
+    let mut start = 0;
+    while let Some(position) = bytes[start..]
+        .windows(marker.len())
+        .position(|window| window == marker)
+    {
+        occurrences.push(start + position);
+        start += position + 1;
+    }
+    assert_eq!(occurrences.len(), 2);
+    let central_directory_offset = occurrences[1];
+    bytes[central_directory_offset..central_directory_offset + marker.len()]
+        .copy_from_slice(b"skill/XKILL.md");
+    assert!(build_skill_archive(&bytes).is_none());
+}
+
+#[test]
+fn skill_archive_returns_none_for_a_corrupted_deflate_member() {
+    let bytes = upload(&[("SKILL.md", b"some deflate-compressed body text")]);
+    let marker = b"SKILL.md";
+    let header_position = bytes
+        .windows(marker.len())
+        .position(|window| window == marker)
+        .unwrap();
+    let data_start = header_position + marker.len();
+    let mut corrupted = bytes;
+    corrupted[data_start..data_start + 4].copy_from_slice(&[0xFF; 4]);
+    assert!(build_skill_archive(&corrupted).is_none());
 }
 
 #[test]
