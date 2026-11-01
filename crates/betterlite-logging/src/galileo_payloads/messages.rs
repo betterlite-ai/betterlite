@@ -143,10 +143,10 @@ pub fn input_text_from_messages(messages: &Json) -> String {
     }
 }
 
-fn find_role_content<'items>(
-    items: impl Iterator<Item = &'items Json>,
-    only_user_or_human: bool,
-) -> Option<String> {
+fn find_role_content<'items, I>(items: I, only_user_or_human: bool) -> Option<String>
+where
+    I: Iterator<Item = &'items Json>,
+{
     for message in items {
         let Json::Object(fields) = message else {
             continue;
