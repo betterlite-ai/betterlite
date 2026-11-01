@@ -14,37 +14,52 @@ use betterlite_db::team_rows::member::Member;
 pub(crate) struct Op;
 
 #[derive(serde::Deserialize)]
+pub(crate) struct ValidateArgs {
+    user_id: Option<String>,
+    user_email: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+pub(crate) struct SameEmailArgs {
+    candidate_email: Option<String>,
+    user_id: Option<String>,
+    user_email: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+pub(crate) struct AddressesMemberArgs {
+    member: Box<Member>,
+    user_id: Option<String>,
+    user_email: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+pub(crate) struct AddressesUserArgs {
+    user: Box<LiteLLMUserTable>,
+    user_id: Option<String>,
+    user_email: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+pub(crate) struct WithRowEmailArgs {
+    user_id: Option<String>,
+    user_email: Option<String>,
+    email_of: BTreeMap<String, String>,
+}
+
+#[derive(serde::Deserialize)]
 #[serde(tag = "operation")]
 pub(crate) enum Input {
     #[serde(rename = "validate")]
-    Validate {
-        user_id: Option<String>,
-        user_email: Option<String>,
-    },
+    Validate(ValidateArgs),
     #[serde(rename = "same_email")]
-    SameEmail {
-        candidate_email: Option<String>,
-        user_id: Option<String>,
-        user_email: Option<String>,
-    },
+    SameEmail(SameEmailArgs),
     #[serde(rename = "addresses_member")]
-    AddressesMember {
-        member: Box<Member>,
-        user_id: Option<String>,
-        user_email: Option<String>,
-    },
+    AddressesMember(AddressesMemberArgs),
     #[serde(rename = "addresses_user")]
-    AddressesUser {
-        user: Box<LiteLLMUserTable>,
-        user_id: Option<String>,
-        user_email: Option<String>,
-    },
+    AddressesUser(AddressesUserArgs),
     #[serde(rename = "with_row_email")]
-    WithRowEmail {
-        user_id: Option<String>,
-        user_email: Option<String>,
-        email_of: BTreeMap<String, String>,
-    },
+    WithRowEmail(WithRowEmailArgs),
     #[serde(rename = "duplicate_indexes")]
     DuplicateIndexes { requests: Vec<MemberIdentity> },
     #[serde(rename = "eq_filter")]
@@ -65,34 +80,11 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         match input {
-            Input::Validate {
-                user_id,
-                user_email,
-            } => run_validate(user_id.as_deref(), user_email.as_deref()),
-            Input::SameEmail {
-                candidate_email,
-                user_id,
-                user_email,
-            } => run_same_email(
-                candidate_email.as_deref(),
-                user_id.as_deref(),
-                user_email.as_deref(),
-            ),
-            Input::AddressesMember {
-                member,
-                user_id,
-                user_email,
-            } => run_addresses_member(member, user_id.as_deref(), user_email.as_deref()),
-            Input::AddressesUser {
-                user,
-                user_id,
-                user_email,
-            } => run_addresses_user(user, user_id.as_deref(), user_email.as_deref()),
-            Input::WithRowEmail {
-                user_id,
-                user_email,
-                email_of,
-            } => run_with_row_email(user_id.as_deref(), user_email.as_deref(), email_of),
+            Input::Validate(args) => run_validate(args),
+            Input::SameEmail(args) => run_same_email(args),
+            Input::AddressesMember(args) => run_addresses_member(args),
+            Input::AddressesUser(args) => run_addresses_user(args),
+            Input::WithRowEmail(args) => run_with_row_email(args),
             Input::DuplicateIndexes { requests } => run_duplicate_indexes(requests),
             Input::EqFilter { field, value } => to_json(&eq_filter(field, value.clone())),
             Input::InFilter { field, values } => to_json(&in_filter(field, values.clone())),
@@ -106,45 +98,48 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn run_validate(user_id: Option<&str>, user_email: Option<&str>) -> crate::helpers::HelperResult {
-    let identity = build_identity(user_id, user_email)?;
+fn run_validate(args: &ValidateArgs) -> crate::helpers::HelperResult {
+    let identity = build_identity(args.user_id.as_deref(), args.user_email.as_deref())?;
     to_json(&identity)
 }
 
-fn run_same_email(
-    candidate_email: Option<&str>,
-    user_id: Option<&str>,
-    user_email: Option<&str>,
-) -> crate::helpers::HelperResult {
-    let request = build_identity(user_id, user_email)?;
-    to_json(&same_email(candidate_email, &request))
+fn run_same_email(args: &SameEmailArgs) -> crate::helpers::HelperResult {
+    let request = build_identity(args.user_id.as_deref(), args.user_email.as_deref())?;
+    to_json(&same_email(args.candidate_email.as_deref(), &request))
 }
 
-fn run_addresses_member(
-    member: &Member,
-    user_id: Option<&str>,
-    user_email: Option<&str>,
-) -> crate::helpers::HelperResult {
-    let request = build_identity(user_id, user_email)?;
-    to_json(&addresses_member(member, &request))
+#[derive(Clone, Copy)]
+enum AddressTarget<'row> {
+    Member(&'row Member),
+    User(&'row LiteLLMUserTable),
 }
 
-fn run_addresses_user(
-    user: &LiteLLMUserTable,
+fn run_addresses(
+    target: AddressTarget<'_>,
     user_id: Option<&str>,
     user_email: Option<&str>,
 ) -> crate::helpers::HelperResult {
     let request = build_identity(user_id, user_email)?;
-    to_json(&addresses_user(user, &request))
+    let matched = match target {
+        AddressTarget::Member(member) => addresses_member(member, &request),
+        AddressTarget::User(user) => addresses_user(user, &request),
+    };
+    to_json(&matched)
 }
 
-fn run_with_row_email(
-    user_id: Option<&str>,
-    user_email: Option<&str>,
-    email_of: &BTreeMap<String, String>,
-) -> crate::helpers::HelperResult {
-    let request = build_identity(user_id, user_email)?;
-    to_json(&with_row_email(request, email_of))
+fn run_addresses_member(args: &AddressesMemberArgs) -> crate::helpers::HelperResult {
+    let target = AddressTarget::Member(&args.member);
+    run_addresses(target, args.user_id.as_deref(), args.user_email.as_deref())
+}
+
+fn run_addresses_user(args: &AddressesUserArgs) -> crate::helpers::HelperResult {
+    let target = AddressTarget::User(&args.user);
+    run_addresses(target, args.user_id.as_deref(), args.user_email.as_deref())
+}
+
+fn run_with_row_email(args: &WithRowEmailArgs) -> crate::helpers::HelperResult {
+    let request = build_identity(args.user_id.as_deref(), args.user_email.as_deref())?;
+    to_json(&with_row_email(request, &args.email_of))
 }
 
 fn run_duplicate_indexes(requests: &[MemberIdentity]) -> crate::helpers::HelperResult {

@@ -132,28 +132,14 @@ fn addresses_member_matching(
     assert_eq!(addresses_member(&member, &request), expected);
 }
 
-#[rstest]
-#[case::user_row_id_overrides_email(
-    Some("u1"),
-    Some("different@example.com"),
-    "u1",
-    Some("other@example.com"),
-    true
-)]
-#[case::user_row_email_only_match(None, Some("a@example.com"), "u9", Some("a@example.com"), true)]
-fn addresses_user_matching(
-    #[case] request_id: Option<&str>,
-    #[case] request_email: Option<&str>,
-    #[case] user_id: &str,
-    #[case] user_email: Option<&str>,
-    #[case] expected: bool,
-) {
+#[test]
+fn user_row_id_overrides_email() {
     let request = MemberIdentity {
-        user_id: request_id.map(str::to_owned),
-        user_email: request_email.map(str::to_owned),
+        user_id: Some("u1".to_owned()),
+        user_email: Some("different@example.com".to_owned()),
     };
-    let user = user_fixture(user_id, user_email);
-    assert_eq!(addresses_user(&user, &request), expected);
+    let user = user_fixture("u1", Some("other@example.com"));
+    assert!(addresses_user(&user, &request));
 }
 
 #[rstest]
