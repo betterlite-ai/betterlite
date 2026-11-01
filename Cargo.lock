@@ -1656,12 +1656,14 @@ version = "0.1.0"
 name = "betterlite-websearch"
 version = "0.1.0"
 dependencies = [
+ "betterlite-error",
  "betterlite-openai",
  "indexmap 2.14.2",
  "serde",
  "serde_json",
  "thiserror",
  "tracing",
+ "uuid",
 ]
 
 [[package]]
