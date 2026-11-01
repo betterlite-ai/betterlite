@@ -6,6 +6,11 @@ call:
     messages:
       - role: user
         content: Take a screenshot of the dashboard.
+      - role: user
+        content:
+          - type: image_url
+            image_url:
+              url: data:image/png;base64,dXNlcg==
       - role: tool
         tool_call_id: call_1
         content:

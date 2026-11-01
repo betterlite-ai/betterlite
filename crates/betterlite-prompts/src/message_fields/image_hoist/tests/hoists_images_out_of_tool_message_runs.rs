@@ -5,6 +5,7 @@ fn message_fields_behavior_tests_behavior() {
     asserts_no_images_pass_through_unchanged();
     asserts_image_run_hoists_into_an_inserted_user_message();
     asserts_an_image_only_tool_run_gets_placeholder_text();
+    asserts_a_non_tool_role_image_passes_through_unchanged();
 }
 
 fn asserts_no_images_pass_through_unchanged() {
@@ -51,6 +52,28 @@ fn asserts_image_run_hoists_into_an_inserted_user_message() {
     assert_eq!(inserted_parts[0].kind, "text");
     assert_eq!(inserted_parts[1].kind, "image_url");
     assert_eq!(hoisted[3].role, "user");
+}
+
+fn asserts_a_non_tool_role_image_passes_through_unchanged() {
+    let user_with_image = vec![
+        message(
+            "user",
+            vec![image_url_part_string("data:image/png;base64,abc")],
+        ),
+        message(
+            "tool",
+            vec![part(
+                "text",
+                Object::from_iter([("text".to_owned(), Json::Text("ok".to_owned()))]),
+            )],
+        ),
+    ];
+
+    assert_eq!(
+        hoist_tool_message_images(&user_with_image),
+        user_with_image,
+        "only a role: tool run carries images out, never a user message"
+    );
 }
 
 fn asserts_an_image_only_tool_run_gets_placeholder_text() {
