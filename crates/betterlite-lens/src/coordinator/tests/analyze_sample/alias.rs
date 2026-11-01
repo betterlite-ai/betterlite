@@ -2,20 +2,19 @@ use super::super::fixtures::{
     capture_progress, claim, execution, extraction_observation, inconclusive_decision,
     no_extraction_observation, page, part, reader, submit_decision,
 };
-use crate::analysis::{ModelCall, ReadContent, ReadFuture};
+use crate::analysis::{ModelCall, ReadContent};
 use crate::models::execution::{ExecutionContent, Sample};
 use crate::models::messages::{ModelResult, Purpose};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 fn recording_reader(pages: Vec<ExecutionContent>) -> (ReadContent, Arc<Mutex<Vec<String>>>) {
-    let pending = Mutex::new(VecDeque::from(pages));
+    let base = reader(pages);
     let calls = Arc::new(Mutex::new(Vec::new()));
     let handle = Arc::clone(&calls);
-    let read: ReadContent = Arc::new(move |execution_id, _cursor, _offset| -> ReadFuture {
-        handle.lock().unwrap().push(execution_id);
-        let result = pending.lock().unwrap().pop_front().unwrap();
-        Box::pin(async move { Ok(result) })
+    let read: ReadContent = Arc::new(move |execution_id, cursor, offset| {
+        handle.lock().unwrap().push(execution_id.clone());
+        base(execution_id, cursor, offset)
     });
     (read, calls)
 }
