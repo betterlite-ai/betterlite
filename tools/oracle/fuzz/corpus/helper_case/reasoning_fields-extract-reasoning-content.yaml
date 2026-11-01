@@ -1,0 +1,11 @@
+kind: helper
+name: reasoning-fields-extract-reasoning-content
+call:
+  reasoning_fields:
+    operation: extract_reasoning_content
+    message:
+      role: assistant
+      content: "<think>because of the facts</think>the final answer"
+env: {}
+compare:
+  ignore: []
