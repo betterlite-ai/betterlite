@@ -1,8 +1,9 @@
 use std::collections::BTreeMap;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{Arc, Mutex};
 
-use secrecy::{ExposeSecret, SecretString};
-use sha2::{Digest, Sha256};
+use secrecy::{ExposeSecret as _, SecretString};
+use sha2::{Digest as _, Sha256};
 use thiserror::Error;
 
 pub const DEFAULT_TTL_FOR_HTTPX_CLIENTS: f64 = 3600.0;
@@ -61,7 +62,7 @@ impl<V: Clone> DynamicLoggerCache<V> {
         let mut entries = self
             .entries
             .lock()
-            .map_err(|_| DynamicLoggerCacheError::Unavailable)?;
+            .map_err(|_poisoned| DynamicLoggerCacheError::Unavailable)?;
         let Some(entry) = entries.get(&key) else {
             return Ok(None);
         };
@@ -70,8 +71,8 @@ impl<V: Clone> DynamicLoggerCache<V> {
         }
         let removed = entries.remove(&key);
         drop(entries);
-        if let Some(entry) = removed {
-            self.stop(entry.value);
+        if let Some(removed_entry) = removed {
+            self.stop(removed_entry.value);
         }
         Ok(None)
     }
@@ -88,13 +89,14 @@ impl<V: Clone> DynamicLoggerCache<V> {
         let mut entries = self
             .entries
             .lock()
-            .map_err(|_| DynamicLoggerCacheError::Unavailable)?;
+            .map_err(|_poisoned| DynamicLoggerCacheError::Unavailable)?;
         let fresh_expiry = now.mul_add(1.0_f64, self.default_ttl);
         let expiry = match entries.get(&key) {
             Some(entry) if entry.expiry >= now => entry.expiry,
             _ => fresh_expiry,
         };
         entries.insert(key, Entry { value, expiry });
+        drop(entries);
         Ok(())
     }
 
@@ -108,7 +110,7 @@ impl<V: Clone> DynamicLoggerCache<V> {
             let mut entries = self
                 .entries
                 .lock()
-                .map_err(|_| DynamicLoggerCacheError::Unavailable)?;
+                .map_err(|_poisoned| DynamicLoggerCacheError::Unavailable)?;
             entries.remove(&key)
         };
         if let Some(entry) = removed {
@@ -129,7 +131,7 @@ impl<V: Clone> DynamicLoggerCache<V> {
     // Mirrors LangfuseInMemoryCache._remove_key's try/except: a failing stop() stays local.
     fn stop(&self, value: V) {
         let effect = Arc::clone(&self.on_remove);
-        if std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || effect(value))).is_err() {
+        if catch_unwind(AssertUnwindSafe(move || effect(value))).is_err() {
             tracing::debug!("dynamic logger cache: stop() panicked during eviction");
         }
     }

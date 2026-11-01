@@ -21,14 +21,19 @@ fn credentials(pairs: &[(&str, &str)]) -> BTreeMap<String, SecretString> {
 }
 
 fn fake_clock(time: &Arc<Mutex<f64>>) -> Arc<dyn Fn() -> f64 + Send + Sync> {
-    let time = Arc::clone(time);
-    Arc::new(move || *time.lock().expect("fixture clock lock is not poisoned"))
+    let shared_time = Arc::clone(time);
+    Arc::new(move || {
+        *shared_time
+            .lock()
+            .expect("fixture clock lock is not poisoned")
+    })
 }
 
 fn capturing_removal(log: &Arc<Mutex<Vec<FixtureLogger>>>) -> RemovalEffect<FixtureLogger> {
-    let log = Arc::clone(log);
+    let shared_log = Arc::clone(log);
     Arc::new(move |value: FixtureLogger| {
-        log.lock()
+        shared_log
+            .lock()
             .expect("fixture capture lock is not poisoned")
             .push(value);
     })
@@ -251,10 +256,10 @@ fn cache_holds_an_arbitrary_value_type_with_no_reference_to_any_logger_crate() {
         value: FixtureLogger { name: "direct" },
         expiry: 100.0_f64,
     };
-    assert_eq!(entry.expiry, 100.0_f64);
+    assert!((entry.expiry - 100.0_f64).abs() < f64::EPSILON);
 
     cache
-        .set_cache(&creds, "langfuse", entry.value.clone())
+        .set_cache(&creds, "langfuse", entry.value)
         .expect("set succeeds");
     assert_eq!(
         cache.get_cache(&creds, "langfuse").expect("get succeeds"),
