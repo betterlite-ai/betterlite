@@ -71,7 +71,9 @@ fn cache_treats_a_zero_ttl_window_as_already_stale() {
             CachedByokCredential {
                 credential: Some("api-key".to_owned()),
             },
-            Instant::now() + Duration::from_secs(3600),
+            Instant::now()
+                .checked_add(Duration::from_secs(3600))
+                .expect("not near Instant's upper bound"),
         ),
     );
     assert_eq!(cache.get_cached_byok_credential("user-1", "server-1"), None);
