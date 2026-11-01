@@ -3,7 +3,6 @@ use crate::envelope::{
     open_envelope, open_refresh_envelope,
 };
 use chrono::{DateTime, Utc};
-use scrypt::errors::{InvalidOutputLen, InvalidParams};
 use scrypt::{Params, scrypt};
 use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
@@ -18,9 +17,9 @@ const DERIVED_KEY_BYTES: usize = 32;
 #[derive(Debug, Error)]
 pub enum BridgeKeyError {
     #[error("scrypt parameters are invalid")]
-    ScryptParams(#[from] InvalidParams),
+    ScryptParams,
     #[error("scrypt output length is invalid")]
-    ScryptOutput(#[from] InvalidOutputLen),
+    ScryptOutput,
     #[error("derived envelope keys are invalid")]
     Keys(#[from] EnvelopeMintError),
 }
@@ -39,9 +38,11 @@ pub fn envelope_keys_from_master_key(
 
 // exposed so the oracle can compare it against LiteLLM's hashlib.scrypt(...).hex().
 pub fn scrypt_hex(master_key: &str, domain: &[u8]) -> Result<String, BridgeKeyError> {
-    let params = Params::new(SCRYPT_LOG_N, SCRYPT_R, SCRYPT_P)?;
+    let params = Params::new(SCRYPT_LOG_N, SCRYPT_R, SCRYPT_P, DERIVED_KEY_BYTES)
+        .map_err(|_scrypt_error| BridgeKeyError::ScryptParams)?;
     let mut output = [0_u8; DERIVED_KEY_BYTES];
-    scrypt(master_key.as_bytes(), domain, &params, &mut output)?;
+    scrypt(master_key.as_bytes(), domain, &params, &mut output)
+        .map_err(|_scrypt_error| BridgeKeyError::ScryptOutput)?;
     Ok(hex::encode(output))
 }
 
