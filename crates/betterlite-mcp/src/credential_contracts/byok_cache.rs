@@ -4,36 +4,38 @@ use std::collections::HashMap;
 use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
+use secrecy::SecretString;
+
 pub const BYOK_CREDENTIAL_CACHE_TTL_SECS: u64 = 60;
 pub const BYOK_CREDENTIAL_CACHE_MAX_SIZE: usize = 4096;
 
-const CACHE_KEY_PREFIX: &str = "mcp_byok_credential";
+pub const CACHE_KEY_PREFIX: &str = "mcp_byok_credential";
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+pub trait Clock: Send + Sync {
+    fn now(&self) -> Instant;
+}
+
+#[derive(Debug, Default)]
+pub struct SystemClock;
+
+impl Clock for SystemClock {
+    fn now(&self) -> Instant {
+        Instant::now()
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct CachedByokCredential {
-    pub credential: Option<String>,
+    pub credential: Option<SecretString>,
 }
 
-#[must_use]
-pub fn byok_credential_cache_key(user_id: &str, server_id: &str) -> String {
-    let capacity = CACHE_KEY_PREFIX
-        .len()
-        .saturating_add(user_id.len())
-        .saturating_add(server_id.len())
-        .saturating_add(2);
-    let mut key = String::with_capacity(capacity);
-    key.push_str(CACHE_KEY_PREFIX);
-    key.push(':');
-    key.push_str(user_id);
-    key.push(':');
-    key.push_str(server_id);
-    key
-}
+type CacheKey = (String, String);
 
 pub struct ByokCredentialCache {
     pub max_size: usize,
     pub ttl: Duration,
-    pub entries: Mutex<HashMap<String, (CachedByokCredential, Instant)>>,
+    pub clock: Box<dyn Clock>,
+    pub entries: Mutex<HashMap<CacheKey, (CachedByokCredential, Instant)>>,
 }
 
 impl ByokCredentialCache {
@@ -43,10 +45,13 @@ impl ByokCredentialCache {
         user_id: &str,
         server_id: &str,
     ) -> Option<CachedByokCredential> {
-        let key = byok_credential_cache_key(user_id, server_id);
+        let key = (user_id.to_owned(), server_id.to_owned());
+        let now = self.clock.now();
         let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
         match entries.get(&key) {
-            Some((value, stored_at)) if stored_at.elapsed() < self.ttl => Some(value.clone()),
+            Some((value, stored_at)) if now.saturating_duration_since(*stored_at) < self.ttl => {
+                Some(value.clone())
+            }
             Some(_) => {
                 entries.remove(&key);
                 None
@@ -60,9 +65,10 @@ impl ByokCredentialCache {
         &self,
         user_id: &str,
         server_id: &str,
-        credential: Option<String>,
+        credential: Option<SecretString>,
     ) {
-        let key = byok_credential_cache_key(user_id, server_id);
+        let key = (user_id.to_owned(), server_id.to_owned());
+        let now = self.clock.now();
         let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
         if entries.len() >= self.max_size && !entries.contains_key(&key) {
             let oldest = entries
@@ -73,6 +79,6 @@ impl ByokCredentialCache {
                 entries.remove(&oldest_key);
             }
         }
-        entries.insert(key, (CachedByokCredential { credential }, Instant::now()));
+        entries.insert(key, (CachedByokCredential { credential }, now));
     }
 }
