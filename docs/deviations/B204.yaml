@@ -1,7 +1,7 @@
 task: B204
 deviations:
   - what: Prices and calculated costs use exact Decimal rather than binary floats, so final digits can differ from LiteLLM.
-    why: The money-is-decimal rule requires exact parsing and arithmetic; the Python adapter parses the same source lexeme with Decimal.
+    why: The money-is-decimal rule requires exact parsing and arithmetic from the same source lexeme.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L64-L105
   - what: Duplicate guardrail unit keys are rejected instead of keeping the last value.
     why: The no-silent-drops rule requires an error rather than silently replacing a price.
