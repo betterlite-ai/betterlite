@@ -1,14 +1,14 @@
 id: B1630
 milestone: M4 keys, spend and management
 title: Drive stateful login flows through both real proxies
-status: todo
+status: done
 depends_on: [B001, B860, B900]
 file: tasks/B1630-browser-flow-oracle.yaml
 covers:
   - "litellm/proxy/management_endpoints/ui_sso.py"
 parent: B063
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 465

@@ -3,13 +3,14 @@ use serde_json::{Map, Value};
 use serde_with::rust::double_option;
 
 use super::content::{Content, ReasoningText, ThinkingBlocks};
-use super::{Reasoning, Role, is_empty_value};
+use super::{Reasoning, Role};
 
 // A chat message, dict or attribute shaped, with double_option keeping "missing" distinct from an explicit null.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChatRecord {
     #[serde(default, skip_serializing_if = "Role::is_missing")]
     pub role: Role,
+    // betterlite_openai::chat::ChatMessage.content collapses a missing key and an explicit null into the same absent output; this field keeps them apart.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -33,7 +34,7 @@ pub struct ChatRecord {
         skip_serializing_if = "Option::is_none",
         with = "double_option"
     )]
-    pub tool_calls: Option<Option<Value>>,
+    pub tool_calls: Option<Option<Vec<Value>>>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -46,7 +47,7 @@ impl Reasoning for ChatRecord {
                 .tool_calls
                 .as_ref()
                 .and_then(Option::as_ref)
-                .is_none_or(is_empty_value)
+                .is_none_or(Vec::is_empty)
             && (self.text().is_some() || self.blocks().is_some())
     }
 

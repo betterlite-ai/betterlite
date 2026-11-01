@@ -1,23 +1,24 @@
 use reqwest::blocking::Client;
 use secrecy::SecretString;
 use std::collections::BTreeMap;
-use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+pub(crate) use self::compare_cases::compare_group;
 use super::gateway::{GatewayInput, start as start_gateway};
 use crate::OracleError;
-use crate::artifacts;
 use crate::case::{Case, LoadedCase};
 use crate::cli::Options;
-use crate::compare;
 use crate::helpers;
+use crate::http::browser_flow;
 use crate::http::{self, Response};
 use crate::mock::{MockProvider, ProviderRequest};
 use crate::paths::artifact_root;
 use crate::process::Gateway;
 use crate::routing_mock_scripts::MockScript;
 
+pub(crate) mod browser_flow_group;
+pub(crate) mod compare_cases;
 mod config;
 mod fixtures;
 mod native_feature_eligibility;
@@ -140,9 +141,13 @@ fn run_group_capture(input: GroupCaptureInput<'_>) -> Result<Vec<bool>, OracleEr
     } = input;
     let (group_dir, first_config, second_config) =
         config::prepare_gateway_configs(root, first_case, fixtures, &mock.base_url)?;
-    let first_case_env = native_feature_eligibility::child_environment(first_case, true);
-    let second_case_env =
-        native_feature_eligibility::child_environment(first_case, options.self_check);
+    let first_case_env =
+        native_feature_eligibility::child_environment(first_case, true, &mock.base_url);
+    let second_case_env = native_feature_eligibility::child_environment(
+        first_case,
+        options.self_check,
+        &mock.base_url,
+    );
     let first_input = GatewayInput {
         options,
         group_dir: &group_dir,
@@ -198,69 +203,25 @@ pub(crate) struct GroupCapture {
     pub(crate) second_requests: Vec<ProviderRequest>,
 }
 
-pub(crate) fn compare_group(
-    root: &Path,
+pub(crate) fn capture_gateway(
+    client: &Client,
+    mut gateway: Gateway,
     cases: &[Case],
-    captures: &GroupCapture,
-) -> Result<Vec<bool>, OracleError> {
-    let mut outcomes = Vec::with_capacity(cases.len());
-    let mut first_offset = 0;
-    for (index, case) in cases.iter().enumerate() {
-        let request_count = case.upstream.len();
-        let first_capture = captures
-            .first
-            .get(index)
-            .ok_or(OracleError::MissingCapture(index))?;
-        let second_capture = captures
-            .second
-            .get(index)
-            .ok_or(OracleError::MissingCapture(index))?;
-        let first_slice = request_slice(&captures.first_requests, first_offset, request_count);
-        let second_slice = request_slice(&captures.second_requests, first_offset, request_count);
-        first_offset = first_offset.saturating_add(request_count);
-        outcomes.push(compare_case(artifacts::ArtifactInput {
-            root,
-            case,
-            first: first_capture,
-            second: second_capture,
-            first_requests: first_slice,
-            second_requests: second_slice,
-            first_log: &captures.first_log,
-            second_log: &captures.second_log,
-            result: None,
-        })?);
-    }
-    Ok(outcomes)
-}
-
-fn compare_case(input: artifacts::ArtifactInput<'_>) -> Result<bool, OracleError> {
-    let result = compare::compare(
-        input.first,
-        input.second,
-        input.first_requests,
-        input.second_requests,
-        &input.case.compare,
-    );
-    let artifact_directory = artifacts::write(artifacts::ArtifactInput {
-        result: result.as_ref().err(),
-        ..input
-    })?;
-    native_feature_eligibility::write_marker(
-        &artifact_directory,
-        input.case.native_feature_eligibility,
-    )?;
-    let name = &input.case.name;
-    match result {
-        Ok(()) => {
-            writeln!(io::stdout().lock(), "PASS {name}").map_err(OracleError::Output)?;
-            Ok(false)
-        }
-        Err(error) => {
-            writeln!(io::stdout().lock(), "FAIL {name}: {}", error.pointer)
-                .map_err(OracleError::Output)?;
-            Ok(true)
+) -> Result<Vec<Response>, OracleError> {
+    let mut captures = Vec::new();
+    for case in cases {
+        if let Some(steps) = &case.steps {
+            captures.extend(browser_flow::run_case_steps(
+                client,
+                &gateway.base_url,
+                steps,
+            )?);
+        } else {
+            captures.push(http::send(client, &gateway.base_url, &case.request)?);
         }
     }
+    gateway.stop()?;
+    Ok(captures)
 }
 
 pub(crate) fn request_slice(
@@ -270,18 +231,4 @@ pub(crate) fn request_slice(
 ) -> &[ProviderRequest] {
     let end = offset.saturating_add(count);
     requests.get(offset..end).unwrap_or_default()
-}
-
-pub(crate) fn capture_gateway(
-    client: &Client,
-    mut gateway: Gateway,
-    cases: &[Case],
-) -> Result<Vec<Response>, OracleError> {
-    let mut captures = Vec::with_capacity(cases.len());
-    for case in cases {
-        let response = http::send(client, &gateway.base_url, &case.request)?;
-        captures.push(response);
-    }
-    gateway.stop()?;
-    Ok(captures)
 }
