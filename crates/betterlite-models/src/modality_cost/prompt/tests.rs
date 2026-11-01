@@ -105,37 +105,27 @@ fn negative_reported_modality_is_retained_through_subtraction() {
 }
 
 #[rstest]
-#[case::absent_defaults_to_zero(None, 0)]
-#[case::zero_stays_zero(Some(0), 0)]
-#[case::negative_collapses_to_zero(Some(-3), 0)]
-#[case::positive_is_kept(Some(4), 4)]
-fn video_tokens_require_a_strictly_positive_count(
-    #[case] reported: Option<i64>,
-    #[case] expected: i64,
+#[case::absent_defaults_to_zero(None, None, 0, 0)]
+#[case::zero_stays_zero(Some(0), Some(0), 0, 0)]
+#[case::negative_collapses_to_zero(Some(-3), Some(-5), 0, 0)]
+#[case::positive_is_kept(Some(4), Some(7), 4, 7)]
+fn video_and_query_counts_require_a_strictly_positive_count(
+    #[case] video: Option<i64>,
+    #[case] query: Option<i64>,
+    #[case] expected_video: i64,
+    #[case] expected_query: i64,
 ) {
     let base = PromptDetails {
-        video_tokens: reported,
+        video_tokens: video,
         ..empty_base()
     };
-    let result = parse_prompt_tokens_details(&usage(base, 0, empty_counters())).expect("ok");
-    assert_eq!(result.video_tokens, expected);
-}
-
-#[rstest]
-#[case::absent_defaults_to_zero(None, 0)]
-#[case::zero_stays_zero(Some(0), 0)]
-#[case::negative_collapses_to_zero(Some(-3), 0)]
-#[case::positive_is_kept(Some(4), 4)]
-fn query_count_requires_a_strictly_positive_count(
-    #[case] reported: Option<i64>,
-    #[case] expected: i64,
-) {
     let present = PromptModalityUsage {
-        query_count: reported,
-        ..empty_usage()
+        query_count: query,
+        ..usage(base, 0, empty_counters())
     };
     let result = parse_prompt_tokens_details(&present).expect("ok");
-    assert_eq!(result.query_count, expected);
+    assert_eq!(result.video_tokens, expected_video);
+    assert_eq!(result.query_count, expected_query);
 }
 
 #[test]

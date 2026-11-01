@@ -45,16 +45,8 @@ pub fn price_for_key(model: &ModelInfo, key: &str) -> Result<Option<Decimal>, Mo
 
 #[must_use]
 pub fn key_has_price(model: &ModelInfo, key: &str) -> bool {
-    match model.get(key) {
-        None | Some(Scalar::Null) => false,
-        Some(
-            Scalar::Bool(_)
-            | Scalar::Number(_)
-            | Scalar::Text(_)
-            | Scalar::Array(_)
-            | Scalar::Object(_),
-        ) => true,
-    }
+    let value = model.get(key);
+    !matches!(value, None | Some(Scalar::Null))
 }
 
 mod tests;
