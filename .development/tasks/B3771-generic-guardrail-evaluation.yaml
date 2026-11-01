@@ -200,6 +200,7 @@ pitfalls:
   - Gray Swan PASSTHROUGH on pre-call raises ModifyResponseException to short-circuit the LLM call, unlike post-call which modifies inputs.
   - Gray Swan dynamic parameters (categories, policy_id, reasoning_mode) come from request metadata and override config values.
   - Both api_key parameters must never appear in logs or Debug output; mark as SecretString.
+  - 'guardrail_timeout gets no ConfigError variant: loader.rs sits at the 300-line cap, so ConfigError stays as on main. Read the field as a newtype with #[serde(try_from = "f64")] and its own thiserror error in a module under sections/grayswan/, the way sections/deepkeep_firewall/timeout.rs does. A negative, NaN or too-large value then fails as ConfigError::Yaml while parsing, and loader.rs, crates/betterlite/src/main.rs, b3767.rs and b3778.rs go back to origin/main.'
 review_level: security
 budget:
   max_changed_lines: 2100
