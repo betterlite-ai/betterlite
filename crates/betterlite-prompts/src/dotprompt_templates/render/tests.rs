@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use super::super::PromptManager;
-use crate::arguments::json::Object;
+use crate::arguments::json::{Json, Object};
 use rstest::rstest;
 
 fn object(json: &str) -> Object {
@@ -100,10 +100,7 @@ fn render_rejects_a_template_past_the_byte_limit() {
 fn render_rejects_an_output_past_the_byte_limit() {
     let manager = manager_with("echo", "{{ name }}", "{}");
     let mut variables = Object::new();
-    variables.insert(
-        "name".to_owned(),
-        crate::arguments::json::Json::Text("x".repeat(0x0010_0001)),
-    );
+    variables.insert("name".to_owned(), Json::Text("x".repeat(0x0010_0001)));
     manager.render("echo", &variables, None).unwrap_err();
 }
 
