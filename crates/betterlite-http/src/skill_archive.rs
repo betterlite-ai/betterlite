@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 use std::io::{Cursor, Read as _, Write as _};
+use std::ops::Range;
 
 use regex::Regex;
 use serde::Deserialize;
@@ -13,6 +14,9 @@ const MAX_ARCHIVE_UNPACKED_BYTES: u64 = 50 * 1024 * 1024;
 const MAX_ARCHIVE_ENTRIES: usize = 1_000;
 const SKILL_MANIFEST_FILENAME: &str = "SKILL.md";
 const FRONTMATTER_PATTERN: &str = r"(?s)^---\s*\n(.*?)\n---\s*(?:\n|$)";
+const LOCAL_HEADER_SIGNATURE: [u8; 4] = [0x50, 0x4b, 0x03, 0x04];
+const LOCAL_HEADER_FIXED_LEN: usize = 30;
+const LOCAL_HEADER_NAME_LEN_RANGE: Range<usize> = 26..28;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SkillArchive {
@@ -25,8 +29,7 @@ pub struct SkillArchive {
 #[must_use]
 pub fn build_skill_archive(stored_content: &[u8]) -> Option<SkillArchive> {
     let mut uploaded = ZipArchive::new(Cursor::new(stored_content)).ok()?;
-    uploaded.validate_header_consistency().ok()?;
-    let members = flattened_members(&mut uploaded)?;
+    let members = flattened_members(stored_content, &mut uploaded)?;
     let manifest = members
         .iter()
         .find_map(|(name, data)| (name == SKILL_MANIFEST_FILENAME).then_some(data.as_slice()))?;
@@ -41,7 +44,10 @@ pub fn build_skill_archive(stored_content: &[u8]) -> Option<SkillArchive> {
     })
 }
 
-fn flattened_members(uploaded: &mut ZipArchive<Cursor<&[u8]>>) -> Option<Vec<(String, Vec<u8>)>> {
+fn flattened_members(
+    stored_content: &[u8],
+    uploaded: &mut ZipArchive<Cursor<&[u8]>>,
+) -> Option<Vec<(String, Vec<u8>)>> {
     let mut entries = Vec::new();
     let mut unpacked_bytes = 0_u64;
     for index in 0..uploaded.len() {
@@ -53,13 +59,7 @@ fn flattened_members(uploaded: &mut ZipArchive<Cursor<&[u8]>>) -> Option<Vec<(St
             return None;
         }
         let path = normalize_path(&raw_name)?;
-        let mut info = uploaded.by_index(index).ok()?;
-        unpacked_bytes = unpacked_bytes.checked_add(info.size())?;
-        if unpacked_bytes > MAX_ARCHIVE_UNPACKED_BYTES {
-            return None;
-        }
-        let mut data = Vec::new();
-        info.read_to_end(&mut data).ok()?;
+        let data = read_validated_entry(stored_content, uploaded, index, &mut unpacked_bytes)?;
         entries.push((path, data));
     }
     if entries.is_empty() {
@@ -81,6 +81,43 @@ fn flattened_members(uploaded: &mut ZipArchive<Cursor<&[u8]>>) -> Option<Vec<(St
     }
     flattened.sort_by(|left, right| left.0.cmp(&right.0));
     Some(flattened)
+}
+
+fn read_validated_entry(
+    stored_content: &[u8],
+    uploaded: &mut ZipArchive<Cursor<&[u8]>>,
+    index: usize,
+    unpacked_bytes: &mut u64,
+) -> Option<Vec<u8>> {
+    let mut info = uploaded.by_index(index).ok()?;
+    if !local_header_name_matches(stored_content, info.header_start(), info.name_raw())? {
+        return None;
+    }
+    *unpacked_bytes = unpacked_bytes.checked_add(info.size())?;
+    if *unpacked_bytes > MAX_ARCHIVE_UNPACKED_BYTES {
+        return None;
+    }
+    let mut data = Vec::new();
+    info.read_to_end(&mut data).ok()?;
+    Some(data)
+}
+
+fn local_header_name_matches(
+    stored_content: &[u8],
+    header_start: u64,
+    central_name_raw: &[u8],
+) -> Option<bool> {
+    let start = usize::try_from(header_start).ok()?;
+    let fixed = stored_content.get(start..start.checked_add(LOCAL_HEADER_FIXED_LEN)?)?;
+    let signature: [u8; 4] = fixed.get(..4)?.try_into().ok()?;
+    if signature != LOCAL_HEADER_SIGNATURE {
+        return None;
+    }
+    let name_length_bytes: [u8; 2] = fixed.get(LOCAL_HEADER_NAME_LEN_RANGE)?.try_into().ok()?;
+    let name_length = usize::from(u16::from_le_bytes(name_length_bytes));
+    let name_start = start.checked_add(LOCAL_HEADER_FIXED_LEN)?;
+    let local_name_raw = stored_content.get(name_start..name_start.checked_add(name_length)?)?;
+    Some(local_name_raw == central_name_raw)
 }
 
 fn normalize_path(raw_path: &str) -> Option<String> {
