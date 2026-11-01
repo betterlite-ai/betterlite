@@ -9,7 +9,5 @@ call:
         input_tokens_by_modality:
           - "not an object"
 compare:
-  ignore:
-    - pointer: /error/message
-      why: betterlite writes its own error message
+  ignore: []
 env: {}

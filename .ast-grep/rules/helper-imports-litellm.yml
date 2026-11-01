@@ -8,10 +8,6 @@ files:
 ignores:
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/b3973.py
-  - tools/oracle/helpers/codex_history_tools.py
-  - tools/oracle/helpers/file_type_records.py
-  - tools/oracle/helpers/model_fields.py
-  - tools/oracle/helpers/price_fields.py
 rule:
   kind: module
   not:

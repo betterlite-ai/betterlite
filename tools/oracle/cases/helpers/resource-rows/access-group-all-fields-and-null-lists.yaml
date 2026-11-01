@@ -9,6 +9,4 @@ call:
       updated_at: '2026-01-02T00:00:00Z', updated_by: u}
 env: {}
 compare:
-  ignore:
-    - pointer: /error/message
-      why: Native typed validation uses its own error wording
+  ignore: []

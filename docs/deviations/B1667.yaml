@@ -1,0 +1,5 @@
+task: B1667
+deviations:
+  - what: Guardrail pricing uses exact Decimal results; unrepresentable prices or arithmetic overflow produce a typed pricing error instead of float rounding or infinity.
+    why: Cost arithmetic must remain finite and checked, while metadata entries the source already ignores still contribute zero independently.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/guardrail_cost.py#L70-L91

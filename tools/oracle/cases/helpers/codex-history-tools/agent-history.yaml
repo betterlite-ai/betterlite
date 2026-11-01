@@ -6,10 +6,11 @@ call:
     input:
       - type: agent_message
         content:
-          - text: a
+          - type: output_text
+            text: a
           - encrypted_content: b
-          - text: 0
-            encrypted_content: c
+          - text: c
+            encrypted_content: ignored
           - 7
       - type: other
         value: kept

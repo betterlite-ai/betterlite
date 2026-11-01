@@ -1,0 +1,12 @@
+kind: helper
+name: search-error-code-bad-request
+call:
+  b4113:
+    operation: search_error_code
+    error:
+      family: bad_request
+      message: "'query' is a required property"
+      model: gpt-4
+      provider: openai
+env: {}
+compare: {ignore: []}

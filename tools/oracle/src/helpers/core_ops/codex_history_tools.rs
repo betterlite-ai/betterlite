@@ -1,64 +1,82 @@
+use serde::Deserialize;
+use serde_json::Value;
+use std::collections::BTreeSet;
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
+pub(crate) enum Input {
+    Normalize {
+        #[serde(rename = "input")]
+        items: Value,
+    },
+    DropUnsupportedTools {
+        #[serde(default)]
+        tools: Vec<Value>,
+        #[serde(default)]
+        supported_types: BTreeSet<String>,
+    },
+    HoistAdditionalTools {
+        #[serde(rename = "input")]
+        items: Value,
+        #[serde(default)]
+        tools: Option<Vec<Value>>,
+    },
+}
+
 pub(crate) struct Op;
 
 impl crate::helpers::Helper for Op {
-    type Input = serde_json::Value;
+    type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let operation = input
-            .get("operation")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or_default();
-        match operation {
-            "normalize" => Ok(normalize(input)),
-            "drop_unsupported_tools" => Ok(drop_unsupported(input)),
-            "hoist_additional_tools" => Ok(hoist(input)),
-            _ => Self::not_built("codex_history_tools"),
-        }
+        let output = match input {
+            Input::Normalize { items } => normalize(items),
+            Input::DropUnsupportedTools {
+                tools,
+                supported_types,
+            } => drop_unsupported(tools, supported_types),
+            Input::HoistAdditionalTools { items, tools } => hoist(items, tools.as_deref()),
+        };
+        Ok(output)
     }
 }
 
-fn normalize(input: &serde_json::Value) -> serde_json::Value {
-    let value = input.get("input").unwrap_or(&serde_json::Value::Null);
+fn normalize(value: &Value) -> Value {
     let (normalized, rewritten_types) =
         betterlite_core::api::codex_history_tools::normalize_codex_input_items(value);
-    serde_json::json!({"input": normalized, "rewritten_types": rewritten_types})
+    let parsed_input = parse_tool_arguments(normalized);
+    serde_json::json!({"input": parsed_input, "rewritten_types": rewritten_types})
 }
 
-fn drop_unsupported(input: &serde_json::Value) -> serde_json::Value {
-    let tools = values(input, "tools");
-    let supported_types = supported_types(input);
+fn parse_tool_arguments(value: Value) -> Value {
+    let Value::Array(items) = value else {
+        return value;
+    };
+    let parsed_items = items.into_iter().map(parse_tool_argument_item).collect();
+    Value::Array(parsed_items)
+}
+
+fn parse_tool_argument_item(item: Value) -> Value {
+    let Value::Object(mut object) = item else {
+        return item;
+    };
+    let is_function_call = object.get("type").and_then(Value::as_str) == Some("function_call");
+    if is_function_call
+        && let Some(Value::String(arguments)) = object.get("arguments")
+        && let Ok(parsed) = serde_json::from_str::<Value>(arguments)
+    {
+        object.insert("arguments".to_owned(), parsed);
+    }
+    Value::Object(object)
+}
+
+fn drop_unsupported(tools: &[Value], supported_types: &BTreeSet<String>) -> Value {
     let (kept, dropped_types) =
-        betterlite_core::api::codex_history_tools::drop_unsupported_tools(&tools, &supported_types);
+        betterlite_core::api::codex_history_tools::drop_unsupported_tools(tools, supported_types);
     serde_json::json!({"tools": kept, "dropped_types": dropped_types})
 }
 
-fn supported_types(input: &serde_json::Value) -> std::collections::BTreeSet<String> {
-    let Some(values) = input
-        .get("supported_types")
-        .and_then(serde_json::Value::as_array)
-    else {
-        return std::collections::BTreeSet::new();
-    };
-    values
-        .iter()
-        .filter_map(serde_json::Value::as_str)
-        .map(str::to_owned)
-        .collect()
-}
-
-fn hoist(input: &serde_json::Value) -> serde_json::Value {
-    let value = input.get("input").unwrap_or(&serde_json::Value::Null);
-    let tools = values(input, "tools");
-    let result = betterlite_core::api::codex_history_tools::hoist_additional_tools(
-        value,
-        Some(tools.as_slice()),
-    );
-    serde_json::json!({"input": result.input, "tools": result.tools, "hoisted": result.hoisted, "debug": result.debug})
-}
-
-fn values(input: &serde_json::Value, field: &str) -> Vec<serde_json::Value> {
-    let Some(values) = input.get(field).and_then(serde_json::Value::as_array) else {
-        return Vec::new();
-    };
-    values.clone()
+fn hoist(value: &Value, tools: Option<&[Value]>) -> Value {
+    let result = betterlite_core::api::codex_history_tools::hoist_additional_tools(value, tools);
+    serde_json::json!({"input": result.input, "tools": result.tools, "hoisted": result.hoisted})
 }

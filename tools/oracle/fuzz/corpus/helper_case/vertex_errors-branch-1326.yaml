@@ -1,0 +1,13 @@
+kind: helper
+name: vertex-errors-branch-1326
+call:
+  vertex_errors:
+    model: gemini-1.5-pro
+    custom_llm_provider: vertex_ai
+    error_str: "throttled while calling the upstream service"
+    status_code: 429
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/context/message
+      why: betterlite writes its own message
