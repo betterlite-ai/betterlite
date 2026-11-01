@@ -56,7 +56,7 @@ checks:
   commands:
     - id: dynamic-logger-cache-tests
       why: the dynamic logger cache tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^dynamic_logger_cache::/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^dynamic_logger_cache::/) - test(/replays_the_/)'
     - id: eviction-cleanup
       why: eviction does not call stop() on logger fixtures
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^dynamic_logger_cache::.*evict/)'

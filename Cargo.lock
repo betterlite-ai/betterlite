@@ -1119,6 +1119,7 @@ dependencies = [
 name = "betterlite-error"
 version = "0.1.0"
 dependencies = [
+ "betterlite-redact",
  "regex",
  "rstest",
  "rust_decimal",
@@ -1142,6 +1143,7 @@ dependencies = [
  "regex",
  "reqwest",
  "rstest",
+ "rust_decimal",
  "secrecy",
  "serde",
  "serde_json",
@@ -1277,12 +1279,14 @@ dependencies = [
  "betterlite-secrets",
  "chrono",
  "hex",
+ "http 1.5.0",
  "pem",
  "rstest",
  "secrecy",
  "serde",
  "serde_json",
  "sha2 0.11.1",
+ "strum",
  "thiserror",
  "tokio",
  "tracing",
