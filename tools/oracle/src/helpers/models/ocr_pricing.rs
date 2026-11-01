@@ -78,14 +78,6 @@ struct CaseLookup {
     catalog: Option<CatalogInput>,
 }
 
-impl From<Option<&CatalogInput>> for CaseLookup {
-    fn from(catalog: Option<&CatalogInput>) -> Self {
-        Self {
-            catalog: catalog.cloned(),
-        }
-    }
-}
-
 impl PriceLookup for CaseLookup {
     fn effective_model_info(
         &self,
@@ -117,24 +109,19 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn decimal_to_json(value: Option<Decimal>) -> serde_json::Value {
-    let Some(decimal) = value else {
-        return serde_json::Value::Null;
-    };
-    serde_json::Value::String(decimal.normalize().to_string())
+fn layering_response(sources: &[Option<PriceRecord>]) -> Result<serde_json::Value, OcrCostError> {
+    let refs: Vec<Option<&PriceRecord>> = sources.iter().map(Option::as_ref).collect();
+    let pricing = layered_ocr_pricing(&refs)?;
+    Ok(serde_json::json!({
+        "ocr_cost_per_page": pricing.ocr_cost_per_page.map(|price| price.normalize().to_string()),
+        "ocr_cost_per_credit": pricing.ocr_cost_per_credit.map(|price| price.normalize().to_string()),
+        "annotation_cost_per_page": pricing.annotation_cost_per_page.map(|price| price.normalize().to_string()),
+    }))
 }
 
 fn run_inner(input: &Input) -> Result<serde_json::Value, OcrCostError> {
     let cost = match input {
-        Input::Layering { sources } => {
-            let refs: Vec<Option<&PriceRecord>> = sources.iter().map(Option::as_ref).collect();
-            let pricing = layered_ocr_pricing(&refs)?;
-            return Ok(serde_json::json!({
-                "ocr_cost_per_page": decimal_to_json(pricing.ocr_cost_per_page),
-                "ocr_cost_per_credit": decimal_to_json(pricing.ocr_cost_per_credit),
-                "annotation_cost_per_page": decimal_to_json(pricing.annotation_cost_per_page),
-            }));
-        }
+        Input::Layering { sources } => return layering_response(sources),
         Input::Sync {
             model,
             custom_llm_provider,
@@ -146,7 +133,9 @@ fn run_inner(input: &Input) -> Result<serde_json::Value, OcrCostError> {
             custom_llm_provider.as_deref(),
             &OcrBilling::from(usage),
             model_info.as_ref(),
-            &CaseLookup::from(catalog.as_ref()),
+            &CaseLookup {
+                catalog: catalog.clone(),
+            },
         )?,
         Input::Batch {
             model,
@@ -159,7 +148,9 @@ fn run_inner(input: &Input) -> Result<serde_json::Value, OcrCostError> {
             custom_llm_provider.as_deref(),
             &OcrBatchUsage::from(usage),
             model_info.as_ref(),
-            &CaseLookup::from(catalog.as_ref()),
+            &CaseLookup {
+                catalog: catalog.clone(),
+            },
         )?,
     };
     Ok(serde_json::json!({ "cost": cost.normalize().to_string() }))

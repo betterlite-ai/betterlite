@@ -98,7 +98,7 @@ fn numeric_value(scalar: &Scalar) -> Result<Option<Decimal>, OcrCostError> {
     }
 }
 
-// Each pair is tried in order; the first present source whose key holds a numeric value wins.
+// A string-typed price is skipped on purpose: LiteLLM layers only numeric source values.
 fn first_numeric(pairs: &[(Option<&PriceRecord>, &str)]) -> Result<Option<Decimal>, OcrCostError> {
     let scalars = pairs.iter().filter_map(|&(source, key)| {
         let record = source?;
@@ -152,7 +152,7 @@ pub fn single_log_line(value: Option<&str>) -> String {
     text.replace(['\r', '\n'], "")
 }
 
-// Sums each family's page_rate * page_count product, checking overflow on every multiply and add.
+// An absent rate bills its family at 0 rather than skipping it, so an unpriced family never breaks the sum.
 fn checked_page_total(parts: &[(Option<Decimal>, i64)]) -> Result<Decimal, OcrCostError> {
     let mut total = Decimal::ZERO;
     for &(rate, pages) in parts {
