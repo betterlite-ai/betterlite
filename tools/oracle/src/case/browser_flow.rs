@@ -2,7 +2,6 @@ use std::collections::BTreeSet;
 use std::path::Path;
 use std::str::{self, Utf8Error};
 
-use scraper::{Html, Selector};
 use serde::Deserialize;
 use serde_json::Value;
 use thiserror::Error;
@@ -67,6 +66,8 @@ pub enum FormCaptureError {
     FormCount { count: usize },
     #[error("cannot parse selector \"{0}\"")]
     Selector(String),
+    #[error("cannot parse response as HTML: {0}")]
+    Html(#[source] tl::ParseError),
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -77,33 +78,49 @@ pub struct FormProjection {
 }
 
 pub(crate) fn parse_form_projection(text: &str) -> Result<FormProjection, FormCaptureError> {
-    let document = Html::parse_document(text);
-    let form_selector =
-        Selector::parse("form").map_err(|_source| FormCaptureError::Selector("form".to_owned()))?;
-    let forms = document.select(&form_selector).collect::<Vec<_>>();
+    let dom = tl::parse(text, tl::ParserOptions::default()).map_err(FormCaptureError::Html)?;
+    let parser = dom.parser();
+    let forms = dom
+        .query_selector("form")
+        .ok_or_else(|| FormCaptureError::Selector("form".to_owned()))?
+        .collect::<Vec<_>>();
     let [form] = forms.as_slice() else {
         return Err(FormCaptureError::FormCount { count: forms.len() });
     };
-    let method = form
-        .value()
-        .attr("method")
-        .map_or_else(|| "get".to_owned(), str::to_ascii_lowercase);
-    let action = form.value().attr("action").map(str::to_owned);
-    let control_selector = Selector::parse("input[name], button[name]")
-        .map_err(|_source| FormCaptureError::Selector("input[name], button[name]".to_owned()))?;
-    let controls = form
-        .select(&control_selector)
-        .map(|element| {
-            let name = element.value().attr("name").unwrap_or_default().to_owned();
-            let value = element.value().attr("value").map(str::to_owned);
-            (name, value)
-        })
+    let form_tag = form
+        .get(parser)
+        .and_then(tl::Node::as_tag)
+        .ok_or(FormCaptureError::FormCount { count: 0 })?;
+    let method = form_tag.attributes().get("method").flatten().map_or_else(
+        || "get".to_owned(),
+        |value| value.as_utf8_str().to_ascii_lowercase(),
+    );
+    let action = form_tag
+        .attributes()
+        .get("action")
+        .flatten()
+        .map(|value| value.as_utf8_str().into_owned());
+    let controls = form_tag
+        .query_selector(parser, "input[name], button[name]")
+        .ok_or_else(|| FormCaptureError::Selector("input[name], button[name]".to_owned()))?
+        .map(|handle| control_pair(handle, parser))
         .collect();
     Ok(FormProjection {
         method,
         action,
         controls,
     })
+}
+
+fn control_pair(handle: tl::NodeHandle, parser: &tl::Parser<'_>) -> (String, Option<String>) {
+    let tag = handle.get(parser).and_then(tl::Node::as_tag);
+    let name = tag
+        .and_then(|element| element.attributes().get("name").flatten())
+        .map_or_else(String::new, |value| value.as_utf8_str().into_owned());
+    let value = tag
+        .and_then(|element| element.attributes().get("value").flatten())
+        .map(|value| value.as_utf8_str().into_owned());
+    (name, value)
 }
 
 // Serde defaults the unused side of request/compare or steps, so emptiness stands in for absence.
