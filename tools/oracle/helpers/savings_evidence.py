@@ -64,6 +64,8 @@ def _run_baseline_usage(input_value: dict[str, Json]) -> Json:
     return {
         "available": True,
         "prompt_tokens": normalized.prompt_tokens,
+        "completion_tokens": dump.get("completion_tokens", 0),
+        "total_tokens": dump.get("total_tokens", 0),
         "cache_read_input_tokens": dump.get("cache_read_input_tokens", 0),
         "cache_creation_input_tokens": dump.get("cache_creation_input_tokens", 0),
         "cached_tokens": None if details is None else details.cached_tokens,

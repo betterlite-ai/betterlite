@@ -116,6 +116,8 @@ fn baseline_usage_value(
     serde_json::json!({
         "available": true,
         "prompt_tokens": normalized.prompt_tokens,
+        "completion_tokens": normalized.completion_tokens,
+        "total_tokens": normalized.total_tokens,
         "cache_read_input_tokens": normalized.cache_read_input_tokens,
         "cache_creation_input_tokens": normalized.cache_creation_input_tokens,
         "cached_tokens": details.as_ref().map(|value| value.cached_tokens),
