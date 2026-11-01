@@ -1,0 +1,14 @@
+kind: helper
+name: native-errors-b-branch-1671
+call:
+  native_errors_b:
+    provider: nlp_cloud
+    model: nlp_cloud/dolphin
+    error_str: "boom"
+    status_code: 401
+    message: "boom"
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

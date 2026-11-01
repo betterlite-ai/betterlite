@@ -1,0 +1,14 @@
+kind: helper
+name: native-errors-b-branch-1636
+call:
+  native_errors_b:
+    provider: nlp_cloud
+    model: nlp_cloud/dolphin
+    error_str: "detail: Input text length should not exceed 512"
+    status_code: null
+    message: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

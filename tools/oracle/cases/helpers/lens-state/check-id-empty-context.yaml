@@ -11,6 +11,4 @@ call:
           - {id: tone, instruction: Keep a calm tone., enabled: false}
 env: {}
 compare:
-  ignore:
-    - pointer: /error/message
-      why: betterlite writes its own error message
+  ignore: []

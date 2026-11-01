@@ -126,7 +126,7 @@ checks:
       run: grep -qE '_text_tool_result.*is_error' crates/betterlite-server/src/mcp/search_handlers.rs
     - id: mcp-tool-call-scoped-denial
       why: handle_mcp_tool_call does not call raise_denied_scoped_mcp_access for explicit server denial
-      run: grep -q 'raise_denied_scoped_mcp_access' crates/betterlite-server/src/mcp/search_handlers.rs && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::b4686::/) - test(/replays_the_/)'
+      run: grep -q 'raise_denied_scoped_mcp_access' crates/betterlite-server/src/mcp/search_handlers.rs && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::server::b4686::/) - test(/replays_the_/)'
     - id: helper-python
       why: The referenced helper adapter is missing or strict Python checking fails
       run: test -f tools/oracle/helpers/b4686.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
