@@ -35,13 +35,6 @@ fn extract_base64_data(image_url: &str) -> String {
     image_url.to_owned()
 }
 
-fn tool_message_carries_image(message: &Message) -> bool {
-    let Some(Content::Parts(parts)) = &message.content else {
-        return false;
-    };
-    message.role == "tool" && parts.iter().any(|part| part.kind == "image_url")
-}
-
 fn split_images_from_tool_message(message: &Message) -> (Message, Vec<ContentPart>) {
     let Some(Content::Parts(parts)) = &message.content else {
         return (message.clone(), Vec::new());
@@ -94,9 +87,6 @@ fn hoist_images_in_tool_run(run: &[Message]) -> Vec<Message> {
 // The OpenAI chat spec only allows text in tool messages.
 #[must_use]
 pub fn hoist_tool_message_images(messages: &[Message]) -> Vec<Message> {
-    if !messages.iter().any(tool_message_carries_image) {
-        return messages.to_vec();
-    }
     let mut result = Vec::with_capacity(messages.len().saturating_add(1));
     for run in messages.chunk_by(|left, right| (left.role == "tool") == (right.role == "tool")) {
         if run.first().is_some_and(|message| message.role == "tool") {
