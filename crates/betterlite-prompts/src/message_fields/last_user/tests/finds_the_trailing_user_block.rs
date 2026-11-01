@@ -19,6 +19,10 @@ use rstest::rstest;
     ],
     Some("first\nsecond".to_owned())
 )]
+#[case::whitespace_only_trailing_user_returns_none(
+    vec![text_message("assistant", "hello"), text_message("user", "   ")],
+    None
+)]
 fn message_fields_behavior_tests_behavior(
     #[case] messages: Vec<Message>,
     #[case] expected: Option<String>,
