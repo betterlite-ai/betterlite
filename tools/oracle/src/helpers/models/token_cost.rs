@@ -1,27 +1,23 @@
-use std::collections::BTreeMap;
-
-use betterlite_models::cost_usage::modality_projection::{
-    CacheCreationTokenDetails, CachedTokenCounters,
-};
-use betterlite_models::cost_usage::{CompletionDetails, CostUsage, PromptDetails};
+use betterlite_models::cost_usage::CostUsage;
 use betterlite_models::off_peak::schema::OffPeakBlock;
 use betterlite_models::off_peak::schema::RateField;
 use betterlite_models::price_lookup::{PriceLookup, PriceRecord};
 use betterlite_models::tiered_pricing::Scalar;
-use betterlite_models::tiered_pricing::Tier;
 use betterlite_models::token_cost::cache_default::provider_cache_read_default;
 use betterlite_models::token_cost::error::TokenCostError;
 use betterlite_models::token_cost::prompt_overlap::PromptExtras;
 use betterlite_models::token_cost::regional::provider_geo_multiplier;
 use betterlite_models::token_cost::{GenericCostRequest, generic_cost_per_token};
 use betterlite_models::token_rates::ModelInfo;
-use chrono::{DateTime, Utc};
 use jiff::tz::TimeZoneDatabase;
-use rust_decimal::Decimal;
-use serde::Deserialize;
 use serde_json::json;
 
 use crate::helpers::HelperError;
+
+mod input;
+
+use input::GenericInput;
+pub(crate) use input::Input;
 
 struct NullLookup;
 
@@ -37,186 +33,6 @@ impl PriceLookup for NullLookup {
     fn raw_cost_map_entry(&self, _key: &str) -> Option<PriceRecord> {
         None
     }
-}
-
-#[derive(Debug, Clone, Copy, Default, Deserialize)]
-pub(crate) struct PromptDetailsInput {
-    #[serde(default)]
-    text_tokens: Option<i64>,
-    #[serde(default)]
-    audio_tokens: Option<i64>,
-    #[serde(default)]
-    image_tokens: Option<i64>,
-    #[serde(default)]
-    video_tokens: Option<i64>,
-    #[serde(default)]
-    web_search_requests: Option<i64>,
-}
-
-impl From<PromptDetailsInput> for PromptDetails {
-    fn from(fields: PromptDetailsInput) -> Self {
-        Self {
-            text_tokens: fields.text_tokens,
-            audio_tokens: fields.audio_tokens,
-            image_tokens: fields.image_tokens,
-            video_tokens: fields.video_tokens,
-            web_search_requests: fields.web_search_requests,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Default, Deserialize)]
-#[expect(
-    clippy::struct_field_names,
-    reason = "Mirrors CompletionDetails's own field names, which the real struct keeps because every field means a distinct modality's token count."
-)]
-pub(crate) struct CompletionDetailsInput {
-    #[serde(default)]
-    text_tokens: Option<i64>,
-    #[serde(default)]
-    audio_tokens: Option<i64>,
-    #[serde(default)]
-    image_tokens: Option<i64>,
-    #[serde(default)]
-    video_tokens: Option<i64>,
-    #[serde(default)]
-    reasoning_tokens: Option<i64>,
-}
-
-impl From<CompletionDetailsInput> for CompletionDetails {
-    fn from(fields: CompletionDetailsInput) -> Self {
-        Self {
-            text_tokens: fields.text_tokens,
-            audio_tokens: fields.audio_tokens,
-            image_tokens: fields.image_tokens,
-            video_tokens: fields.video_tokens,
-            reasoning_tokens: fields.reasoning_tokens,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
-pub(crate) struct UsageInput {
-    #[serde(default)]
-    prompt_tokens: i64,
-    #[serde(default)]
-    completion_tokens: i64,
-    #[serde(default)]
-    total_tokens: i64,
-    #[serde(default)]
-    prompt_details: Option<PromptDetailsInput>,
-    #[serde(default)]
-    completion_details: Option<CompletionDetailsInput>,
-    #[serde(default)]
-    cache_read_tokens: Option<i64>,
-}
-
-impl From<UsageInput> for CostUsage {
-    fn from(fields: UsageInput) -> Self {
-        Self {
-            prompt_tokens: fields.prompt_tokens,
-            completion_tokens: fields.completion_tokens,
-            total_tokens: fields.total_tokens,
-            prompt_details: fields.prompt_details.map(PromptDetails::from),
-            completion_details: fields.completion_details.map(CompletionDetails::from),
-            cache_read_tokens: fields.cache_read_tokens,
-            numeric_extras: BTreeMap::new(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
-pub(crate) struct PromptExtrasInput {
-    #[serde(default)]
-    cache_write_tokens: Option<i64>,
-    #[serde(default)]
-    cache_creation_tokens: Option<i64>,
-    #[serde(default)]
-    cache_creation_token_details: Option<CacheCreationTokenDetails>,
-    #[serde(default)]
-    cached_tokens_details: Option<CachedTokenCounters>,
-    #[serde(default)]
-    character_count: Option<i64>,
-    #[serde(default)]
-    image_count: Option<i64>,
-    #[serde(default)]
-    video_length_seconds: Option<Decimal>,
-    #[serde(default)]
-    audio_length_seconds: Option<Decimal>,
-    #[serde(default)]
-    query_count: Option<i64>,
-}
-
-impl From<PromptExtrasInput> for PromptExtras {
-    fn from(fields: PromptExtrasInput) -> Self {
-        Self {
-            cache_write_tokens: fields.cache_write_tokens,
-            cache_creation_tokens: fields.cache_creation_tokens,
-            cache_creation_token_details: fields.cache_creation_token_details,
-            cached_tokens_details: fields.cached_tokens_details,
-            character_count: fields.character_count,
-            image_count: fields.image_count,
-            video_length_seconds: fields.video_length_seconds,
-            audio_length_seconds: fields.audio_length_seconds,
-            query_count: fields.query_count,
-        }
-    }
-}
-
-const fn default_moment() -> DateTime<Utc> {
-    DateTime::UNIX_EPOCH
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct GenericInput {
-    #[serde(default)]
-    custom_llm_provider: Option<String>,
-    usage: UsageInput,
-    #[serde(default)]
-    prompt_extras: Option<PromptExtrasInput>,
-    #[serde(default)]
-    supplied_model_info: Option<ModelInfo>,
-    #[serde(default)]
-    service_tier: Option<String>,
-    #[serde(default)]
-    data_residency: Option<String>,
-    #[serde(default)]
-    vertex_location: Option<String>,
-    #[serde(default = "default_moment")]
-    moment: DateTime<Utc>,
-    #[serde(default)]
-    tiered_pricing: Vec<Tier>,
-    #[serde(default)]
-    off_peak_pricing: Option<OffPeakBlock>,
-    #[serde(default)]
-    off_peak_cache_read_present: bool,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(tag = "operation")]
-pub(crate) enum Input {
-    #[serde(rename = "generic")]
-    Generic(Box<GenericInput>),
-    #[serde(rename = "provider_geo")]
-    ProviderGeo {
-        #[serde(default)]
-        provider_specific_entry: Option<PriceRecord>,
-        #[serde(default)]
-        inference_geo: Option<String>,
-    },
-    #[serde(rename = "fireworks_cache_default")]
-    FireworksCacheDefault(Box<FireworksCacheDefaultInput>),
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct FireworksCacheDefaultInput {
-    model_info: ModelInfo,
-    #[serde(default)]
-    custom_llm_provider: Option<String>,
-    #[serde(default)]
-    off_peak_pricing: Option<OffPeakBlock>,
-    #[serde(default)]
-    off_peak_cache_read_present: bool,
 }
 
 pub(crate) struct Op;
@@ -243,7 +59,7 @@ impl crate::helpers::Helper for Op {
 
 fn run_generic(fields: &GenericInput) -> crate::helpers::HelperResult {
     let database = TimeZoneDatabase::from_env();
-    let usage: CostUsage = fields.usage.clone().into();
+    let usage = CostUsage::from(fields.usage.clone());
     let prompt_extras: Option<PromptExtras> = fields.prompt_extras.clone().map(PromptExtras::from);
     let request = GenericCostRequest {
         model: "oracle-model",
@@ -294,7 +110,15 @@ fn run_fireworks_cache_default(
         .and_then(scalar_to_value);
     let off_peak_cache_read_rate = updated_off_peak
         .and_then(|block| block.cache_read_input_token_cost)
-        .and_then(|field| rate_field_to_value(&field));
+        .and_then(|field| {
+            let as_scalar = match field {
+                RateField::Bool(flag) => Scalar::Bool(flag),
+                RateField::Number(number) => Scalar::Number(number),
+                RateField::Text(text) => Scalar::Text(text),
+                RateField::Other(_) => return None,
+            };
+            scalar_to_value(&as_scalar)
+        });
     Ok(json!({
         "cache_read_input_token_cost": cache_read_rate,
         "off_peak_cache_read_input_token_cost": off_peak_cache_read_rate,
@@ -308,15 +132,6 @@ fn scalar_to_value(value: &Scalar) -> Option<serde_json::Value> {
         Scalar::Number(number) => Some(json!(number)),
         Scalar::Text(text) => Some(json!(text)),
         Scalar::Array(_) | Scalar::Object(_) => None,
-    }
-}
-
-fn rate_field_to_value(value: &RateField) -> Option<serde_json::Value> {
-    match value {
-        RateField::Bool(flag) => Some(json!(flag)),
-        RateField::Number(number) => Some(json!(number)),
-        RateField::Text(text) => Some(json!(text)),
-        RateField::Other(_) => None,
     }
 }
 
