@@ -42,6 +42,7 @@ fn rejects_calling_an_unknown_mutating_method_on_a_caller_supplied_list() {
 #[rstest]
 fn a_runaway_loop_is_stopped_by_the_fuel_budget() {
     let env = build();
-    let result = env.render_str("{% for i in range(100000000) %}{{ i }}{% endfor %}", ());
-    result.unwrap_err();
+    let template = "{% for i in range(100000) %}{% for j in range(100000) %}{{ i }}{{ j }}{% endfor %}{% endfor %}";
+    let error = env.render_str(template, ()).unwrap_err();
+    assert!(error.to_string().contains("fuel"));
 }
