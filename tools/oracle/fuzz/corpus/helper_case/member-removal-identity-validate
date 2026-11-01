@@ -1,0 +1,10 @@
+kind: helper
+name: member-removal-identity-validate
+call:
+  member_removal_identity:
+    operation: validate
+    user_id: u1
+    user_email: null
+env: {}
+compare:
+  ignore: []

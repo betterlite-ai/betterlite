@@ -1,0 +1,15 @@
+kind: helper
+name: search-outcome-failed
+call:
+  b4113:
+    operation: search_outcome
+    error:
+      family: rate_limit
+      context:
+        message: slow down
+        model: gpt-4
+        provider: openai
+      category: vendor_rate_limit
+    message: "litellm.RateLimitError: slow down"
+env: {}
+compare: {ignore: []}

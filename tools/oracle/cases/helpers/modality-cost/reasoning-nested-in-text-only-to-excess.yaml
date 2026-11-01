@@ -1,0 +1,10 @@
+kind: helper
+name: reasoning-nested-in-text-only-to-excess
+call:
+  modality_cost:
+    operation: completion
+    completion_tokens: 10
+    text_tokens: 8
+    reasoning_tokens: 5
+compare: {ignore: []}
+env: {}

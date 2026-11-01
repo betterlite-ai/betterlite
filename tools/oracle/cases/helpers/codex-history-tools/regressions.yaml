@@ -5,14 +5,17 @@ call:
     operation: normalize
     input:
       - type: agent_message
-        content:
-          - text: []
-            encrypted_content: fallback
       - type: local_shell_call
-        call_id: c
+        call_id: c1
         action:
-          hé: é😀
-    tools: []
+          command: [echo, "café🎉"]
+          env:
+            LANG: café
+      - type: local_shell_call
+        call_id: c2
+      - type: local_shell_call
+        action:
+          command: [echo, hi]
 compare:
   ignore: []
 env: {}
