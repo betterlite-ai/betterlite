@@ -2,7 +2,7 @@ use std::str::FromStr as _;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::raw::RawNumber;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 
 type Lookup<'lookup> = &'lookup dyn EnvironmentLookup;
 
@@ -11,11 +11,22 @@ pub(super) fn resolve_secret(
     path: &str,
     lookup: Lookup<'_>,
 ) -> Result<Option<SecretString>, ConfigError> {
-    let Some(text) = value else {
+    match value {
+        Some(text) => resolve_secret_value(Some(SecretString::from(text)), path, lookup),
+        None => Ok(None),
+    }
+}
+
+pub(super) fn resolve_secret_value(
+    value: Option<SecretString>,
+    path: &str,
+    lookup: Lookup<'_>,
+) -> Result<Option<SecretString>, ConfigError> {
+    let Some(secret) = value else {
         return Ok(None);
     };
-    let secret = SecretString::from(resolve_string(text, path, lookup)?);
-    Ok(Some(secret))
+    let resolved = resolve_string(secret.expose_secret().to_owned(), path, lookup)?;
+    Ok(Some(SecretString::from(resolved)))
 }
 
 pub(super) fn resolve_string(

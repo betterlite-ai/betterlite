@@ -9,9 +9,8 @@ use crate::providers::bedrock::request_policy::metadata_fields;
 use crate::raw::{
     RawConfig, RawDeployment, RawGeneral, RawInfo, RawLiteLlm, RawNumber, RawParams, RawRouter,
 };
-use crate::resolve::{
-    parse_float, parse_integer, resolve_number as number, resolve_secret, resolve_string,
-};
+use crate::resolve::{parse_float, parse_integer, resolve_number as number, resolve_string};
+use crate::resolve::{resolve_secret, resolve_secret_value};
 use crate::secret_codec::general_settings;
 use crate::sections::{RawSections, Sections};
 use crate::types::{
@@ -169,7 +168,7 @@ where
     };
     let model = optional(raw.model, &format!("{prefix}.model"))?;
     let api_base = optional(raw.api_base, &format!("{prefix}.api_base"))?;
-    let api_key = resolve_secret(raw.api_key, &format!("{prefix}.api_key"), lookup)?;
+    let api_key = resolve_secret_value(raw.api_key, &format!("{prefix}.api_key"), lookup)?;
     let api_version = optional(raw.api_version, &format!("{prefix}.api_version"))?;
     let float = |value: Option<RawNumber>, path: &str| number(value, path, lookup, parse_float);
     let integer = |value: Option<RawNumber>, path: &str| number(value, path, lookup, parse_integer);
@@ -208,7 +207,7 @@ fn convert_general<L>(raw: RawGeneral, lookup: &L) -> Result<GeneralSettings, Co
 where
     L: EnvironmentLookup,
 {
-    let master_key = resolve_secret(raw.master_key, "general_settings.master_key", lookup)?;
+    let master_key = resolve_secret_value(raw.master_key, "general_settings.master_key", lookup)?;
     Ok(general_settings(
         raw.encryption_algorithm,
         master_key,

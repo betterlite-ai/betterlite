@@ -1,7 +1,7 @@
 mod tests;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
-use crate::resolve::{resolve_secret, resolve_string};
+use crate::resolve::{resolve_secret_value, resolve_string};
 use crate::sections::Section;
 use secrecy::SecretString;
 
@@ -16,9 +16,9 @@ pub struct Raw {
 pub struct RawSettings {
     pub api_base: Option<String>,
     pub api_version: Option<String>,
-    pub api_key: Option<String>,
-    pub openai_key: Option<String>,
-    pub azure_key: Option<String>,
+    pub api_key: Option<SecretString>,
+    pub openai_key: Option<SecretString>,
+    pub azure_key: Option<SecretString>,
     pub organization: Option<String>,
     pub vertex_project: Option<String>,
     pub vertex_location: Option<String>,
@@ -81,9 +81,13 @@ impl RawSettings {
         let configured = ConfiguredSettings {
             api_base: optional_string(self.api_base, "litellm_settings.api_base", lookup)?,
             api_version: optional_string(self.api_version, "litellm_settings.api_version", lookup)?,
-            api_key: resolve_secret(self.api_key, "litellm_settings.api_key", lookup)?,
-            openai_key: resolve_secret(self.openai_key, "litellm_settings.openai_key", lookup)?,
-            azure_key: resolve_secret(self.azure_key, "litellm_settings.azure_key", lookup)?,
+            api_key: resolve_secret_value(self.api_key, "litellm_settings.api_key", lookup)?,
+            openai_key: resolve_secret_value(
+                self.openai_key,
+                "litellm_settings.openai_key",
+                lookup,
+            )?,
+            azure_key: resolve_secret_value(self.azure_key, "litellm_settings.azure_key", lookup)?,
             organization: optional_string(
                 self.organization,
                 "litellm_settings.organization",
