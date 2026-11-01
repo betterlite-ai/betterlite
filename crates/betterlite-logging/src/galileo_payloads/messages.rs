@@ -10,9 +10,8 @@ pub fn galileo_input_messages(messages: Option<&Json>, input_text: &str) -> Vec<
         Some(Json::Object(fields)) => fields.get("messages"),
         other => other,
     };
-    let items = match unwrapped {
-        Some(Json::List(items)) if !items.is_empty() => items,
-        _ => return vec![fallback_message(input_text)],
+    let Some(Json::List(items)) = unwrapped else {
+        return vec![fallback_message(input_text)];
     };
 
     let built: Vec<Json> = items

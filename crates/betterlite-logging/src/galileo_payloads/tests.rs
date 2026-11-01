@@ -9,7 +9,9 @@ use super::LlmResponse;
 use super::content::{
     GalileoKwargs, Level, ResponseObj, galileo_input_output_content, serialize_galileo_output,
 };
-use super::messages::{convert_content_list_to_str, galileo_input_messages};
+use super::messages::{
+    convert_content_list_to_str, galileo_input_messages, input_text_from_messages,
+};
 use super::metrics::token_metrics_from_record;
 use super::timestamps::{RawTimestamp, format_created_at, normalize_created_at};
 use super::trace::{build_traces_payload, record_to_v2_span, record_to_v2_trace};
@@ -51,6 +53,27 @@ fn check_message_normalization() {
             val(r#"{"role": "assistant", "content": "ab"}"#),
         ],
     );
+}
+
+// A message whose role is present but falsy (null, here) is dropped entirely, not kept with an empty-string role.
+fn check_message_falsy_role_dropped() {
+    let messages = val(r#"[
+            {"role": null, "content": "dropped"},
+            {"role": "user", "content": "kept"}
+        ]"#);
+    assert_eq!(
+        galileo_input_messages(Some(&messages), "fallback"),
+        vec![val(r#"{"role": "user", "content": "kept"}"#)],
+    );
+}
+
+// The reverse-order user/human search in input_text_from_messages picks the last user-role message over a later-in-reverse-order assistant message, proving the role check actually filters rather than taking whichever message comes first.
+fn check_input_text_from_messages_role_priority() {
+    let messages = val(r#"[
+            {"role": "assistant", "content": "assistant message"},
+            {"role": "user", "content": "user message"}
+        ]"#);
+    assert_eq!(input_text_from_messages(&messages), "user message");
 }
 
 // A tool message's search_results content counts source, title, block text and a present, non-null citations value, serialized back as JSON.
@@ -247,10 +270,65 @@ fn check_generic_dict_tool_call_reordering() {
     );
 }
 
+// Rerank uses its own langfuse-style prompt (just the messages, no functions/tools) rather than the shared build_prompt, and that prompt is echoed as the span's messages_for_span.
+fn check_rerank_content() {
+    let kwargs = GalileoKwargs {
+        call_type: None,
+        messages: Some(val(r#"[{"role": "user", "content": "rerank query"}]"#)),
+        functions: None,
+        tools: None,
+        input: None,
+    };
+    let results = val(r#"[{"index": 0, "relevance_score": 0.9}]"#);
+    let (_, output_text, messages_for_span) = galileo_input_output_content(
+        &kwargs,
+        Some(&ResponseObj::Rerank {
+            results: results.clone(),
+        }),
+        Level::Default,
+        None,
+    );
+    assert_eq!(
+        messages_for_span,
+        val(r#"{"messages": [{"role": "user", "content": "rerank query"}]}"#)
+    );
+    assert_eq!(output_text, serialize_galileo_output(Some(&results)));
+}
+
+// messages_for_span carries the caller's messages verbatim when they are present and truthy, and falls back to an empty list for a present-but-falsy value (not the falsy value itself).
+fn check_messages_or_empty_guard() {
+    let truthy_kwargs = GalileoKwargs {
+        call_type: None,
+        messages: Some(val(r#"[{"role": "user", "content": "hi"}]"#)),
+        functions: None,
+        tools: None,
+        input: None,
+    };
+    let (_, _, truthy_messages_for_span) =
+        galileo_input_output_content(&truthy_kwargs, None, Level::Default, None);
+    assert_eq!(
+        truthy_messages_for_span,
+        truthy_kwargs.messages.expect("messages present")
+    );
+
+    let falsy_kwargs = GalileoKwargs {
+        call_type: None,
+        messages: Some(Json::Text(String::new())),
+        functions: None,
+        tools: None,
+        input: None,
+    };
+    let (_, _, falsy_messages_for_span) =
+        galileo_input_output_content(&falsy_kwargs, None, Level::Default, None);
+    assert_eq!(falsy_messages_for_span, Json::List(Vec::new()));
+}
+
 #[test]
 fn galileo_payload_construction() {
     check_message_fallback();
     check_message_normalization();
+    check_message_falsy_role_dropped();
+    check_input_text_from_messages_role_priority();
     check_search_results_citations();
     check_token_metrics();
     check_trace_envelope();
@@ -259,6 +337,8 @@ fn galileo_payload_construction() {
     check_embedding_call_type_precedence();
     check_error_level_short_circuit();
     check_generic_dict_tool_call_reordering();
+    check_rerank_content();
+    check_messages_or_empty_guard();
 }
 
 fn sample_naive_datetime() -> chrono::NaiveDateTime {
