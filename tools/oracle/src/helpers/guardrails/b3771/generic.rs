@@ -41,25 +41,14 @@ pub(super) fn call(input: &serde_json::Value) -> crate::helpers::HelperResult {
         .unwrap_or_else(|| json!({}));
     run_call(&request)
 }
-fn run_call(request: &serde_json::Value) -> crate::helpers::HelperResult {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|error| failure_with_class("GuardrailError", None, error.to_string()))?;
-    let settings = settings(request);
+fn mock_base(
+    request: &serde_json::Value,
+) -> Result<(String, Option<MockProvider>), Box<crate::helpers::HelperError>> {
     let answer: Option<UpstreamAnswer> = parse_json_field(request, "answer")?;
-    let silent = TcpListener::bind(("127.0.0.1", 0))
-        .map_err(|error| failure_with_class("GuardrailError", None, error.to_string()))?;
-    let base;
-    let mock = if let Some(reply) = &answer {
-        let script = MockScript::try_from(std::slice::from_ref(reply))
+    let Some(reply) = &answer else {
+        let silent = TcpListener::bind(("127.0.0.1", 0))
             .map_err(|error| failure_with_class("GuardrailError", None, error.to_string()))?;
-        let provider = MockProvider::start(script)
-            .map_err(|error| failure_with_class("GuardrailError", None, error.to_string()))?;
-        base = provider.base_url.clone();
-        Some(provider)
-    } else {
-        base = format!(
+        let base = format!(
             "http://{}",
             silent.local_addr().map_err(|error| failure_with_class(
                 "GuardrailError",
@@ -67,8 +56,22 @@ fn run_call(request: &serde_json::Value) -> crate::helpers::HelperResult {
                 error.to_string()
             ))?
         );
-        None
+        return Ok((base, None));
     };
+    let script = MockScript::try_from(std::slice::from_ref(reply))
+        .map_err(|error| failure_with_class("GuardrailError", None, error.to_string()))?;
+    let provider = MockProvider::start(script)
+        .map_err(|error| failure_with_class("GuardrailError", None, error.to_string()))?;
+    let base = provider.base_url.clone();
+    Ok((base, Some(provider)))
+}
+fn run_call(request: &serde_json::Value) -> crate::helpers::HelperResult {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| failure_with_class("GuardrailError", None, error.to_string()))?;
+    let settings = settings(request);
+    let (base, mock) = mock_base(request)?;
     let guardrail = GenericGuardrailAPI {
         api_key: None,
         api_base: base,
