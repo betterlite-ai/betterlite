@@ -21,6 +21,10 @@ pub(crate) fn extract(
     capture: &Capture,
 ) -> Result<CapturedValue, BrowserFlowError> {
     let index = context.index;
+    let missing = || BrowserFlowError::MissingCapture {
+        index,
+        name: capture.name.clone(),
+    };
     let text = match &capture.source {
         CaptureSource::Body { pointer } => context
             .response
@@ -28,26 +32,15 @@ pub(crate) fn extract(
             .pointer(pointer)
             .and_then(serde_json::Value::as_str)
             .map(str::to_owned)
-            .ok_or_else(|| BrowserFlowError::MissingCapture {
-                index,
-                name: capture.name.clone(),
-            })?,
+            .ok_or_else(missing)?,
         CaptureSource::Header { name } => context
             .response
             .headers
             .get(&name.to_ascii_lowercase())
             .cloned()
-            .ok_or_else(|| BrowserFlowError::MissingCapture {
-                index,
-                name: capture.name.clone(),
-            })?,
+            .ok_or_else(missing)?,
         CaptureSource::Cookie { name } => {
-            context.jar.cookies.get(name).cloned().ok_or_else(|| {
-                BrowserFlowError::MissingCapture {
-                    index,
-                    name: capture.name.clone(),
-                }
-            })?
+            context.jar.cookies.get(name).cloned().ok_or_else(missing)?
         }
         CaptureSource::LocationQuery { name } => location_query(context, capture, name)?,
         CaptureSource::Form { control } => form_control(index, capture, context.form, control)?,
