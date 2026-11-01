@@ -1,0 +1,34 @@
+task: B3753
+deviations:
+  - what: >-
+      When APORIO_API_KEY or APORIO_API_BASE is missing from environment and not
+      provided to __init__, LiteLLM raises an uncaught KeyError from __init__
+      (not caught by init_guardrails.py's ValueError/TypeError handler). Betterlite's
+      behavior differs in how that error is surfaced and handled during initialization.
+    why: >-
+      Framework initialization is unresolved (F); betterlite's error handling
+      strategy during guardrail construction differs from LiteLLM's uncaught propagation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/aporia_ai/aporia_ai.py#L47-L52
+  - what: >-
+      When should_proceed_based_on_metadata is not available, betterlite skips the
+      during_call validation entirely, whereas LiteLLM still evaluates the guardrail.
+    why: >-
+      Metadata routing framework is unresolved (M); the decision to run is delegated
+      to the framework until this helper is owned and called.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/aporia_ai/aporia_ai.py#L189-L206
+  - what: >-
+      When GUARDRAILS_AI_API_BASE is missing from environment, betterlite uses the
+      default http://0.0.0.0:8000, same as LiteLLM, but betterlite requires guard_name
+      at construction time and raises if not provided.
+    why: >-
+      Framework initialization requires guard_name; LiteLLM allows deferred lookup
+      but betterlite enforces upfront validation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/guardrails_ai/guardrails_ai.py#L51-L67
+  - what: >-
+      GuardrailsAI.make_guardrails_ai_api_request_pre_call_request includes a comment
+      that this branch does not work with current GuardrailsAI API version and is
+      retained for backward compatibility only.
+    why: >-
+      Legacy API support is retained per LiteLLM at the pinned commit; the "inputs"
+      format may not work but is preserved as configured.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/guardrails_ai/guardrails_ai.py#L100-L102
