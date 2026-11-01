@@ -8,65 +8,50 @@ use crate::python_json;
 fn rerank_content(kwargs: &GalileoKwargs, results: &Json) -> (String, String, Json) {
     let rerank_prompt = langfuse_style_rerank_prompt(kwargs);
     let input_text = python_json::dumps_object(&rerank_prompt);
+    let output_text = serialize_galileo_output(Some(results));
+    (input_text, output_text, Json::Object(rerank_prompt))
+}
+
+// Every family but rerank and the realtime list reads its input text from the same echoed prompt.
+fn echoed_prompt_triple(
+    prompt: &IndexMap<String, Json>,
+    output_text: String,
+    messages_for_span: Json,
+) -> (String, String, Json) {
+    let input_text = super::prompt_to_input_text(prompt);
+    (input_text, output_text, messages_for_span)
+}
+
+fn realtime_list_content(kwargs: &GalileoKwargs, items: &[Json]) -> (String, String, Json) {
+    let input_val = kwargs.input.clone().unwrap_or(Json::Null);
+    let output_text = serialize_galileo_output(Some(&Json::List(items.to_vec())));
     (
-        input_text,
-        serialize_galileo_output(Some(results)),
-        Json::Object(rerank_prompt),
+        serialize_galileo_output(Some(&input_val)),
+        output_text,
+        input_val,
     )
 }
 
+// The Responses API echoes its own output back, gated by has_value like Python's `if response is not None`.
 fn responses_api_content(
     prompt: &IndexMap<String, Json>,
     kwargs: &GalileoKwargs,
     output: &Json,
 ) -> (String, String, Json) {
     let present_output = super::super::support::has_value(output).then_some(output);
-    (
-        super::prompt_to_input_text(prompt),
+    echoed_prompt_triple(
+        prompt,
         serialize_galileo_output(present_output),
         super::messages_or_empty(kwargs),
     )
 }
 
-fn realtime_list_content(kwargs: &GalileoKwargs, items: &[Json]) -> (String, String, Json) {
-    let input_val = kwargs.input.clone().unwrap_or(Json::Null);
-    let output_val = Json::List(items.to_vec());
-    (
-        serialize_galileo_output(Some(&input_val)),
-        serialize_galileo_output(Some(&output_val)),
-        input_val,
-    )
-}
-
-// The pass-through dict's "response" key, a generic dict read through content_from_dict_response, or neither.
-enum DictKind<'val> {
-    PassThrough(&'val IndexMap<String, Json>),
-    Generic(&'val IndexMap<String, Json>),
-    Unknown,
-}
-
-fn dict_response_content(
+fn pass_through_dict_content(
     prompt: &IndexMap<String, Json>,
-    kwargs: &GalileoKwargs,
-    kind: &DictKind<'_>,
+    value: &IndexMap<String, Json>,
 ) -> (String, String, Json) {
-    match kind {
-        DictKind::PassThrough(value) => (
-            super::prompt_to_input_text(prompt),
-            serialize_galileo_output(value.get("response")),
-            Json::Object(prompt.clone()),
-        ),
-        DictKind::Generic(value) => (
-            super::prompt_to_input_text(prompt),
-            content_from_dict_response(value),
-            super::messages_or_empty(kwargs),
-        ),
-        DictKind::Unknown => (
-            super::prompt_to_input_text(prompt),
-            String::new(),
-            super::messages_or_empty(kwargs),
-        ),
-    }
+    let output_text = serialize_galileo_output(value.get("response"));
+    echoed_prompt_triple(prompt, output_text, Json::Object(prompt.clone()))
 }
 
 // The families whose messages_for_span is always the echoed request prompt, never the chat history.
@@ -89,11 +74,7 @@ fn marker_family_content(
             serialize_galileo_output(text.cloned().map(Json::Text).as_ref())
         }
     };
-    (
-        super::prompt_to_input_text(prompt),
-        output_text,
-        Json::Object(prompt.clone()),
-    )
+    echoed_prompt_triple(prompt, output_text, Json::Object(prompt.clone()))
 }
 
 pub(super) fn response_content(
@@ -110,25 +91,27 @@ pub(super) fn response_content(
         ResponseObj::Transcription { text } => {
             marker_family_content(prompt, &MarkerFamily::Transcription(text.as_ref()))
         }
-        ResponseObj::Chat { message } => (
-            super::prompt_to_input_text(prompt),
+        ResponseObj::Chat { message } => echoed_prompt_triple(
+            prompt,
             serialize_galileo_output(message.as_ref()),
             super::messages_or_empty(kwargs),
         ),
-        ResponseObj::TextCompletion { text } => (
-            super::prompt_to_input_text(prompt),
+        ResponseObj::TextCompletion { text } => echoed_prompt_triple(
+            prompt,
             serialize_galileo_output(text.clone().map(Json::Text).as_ref()),
             super::messages_or_empty(kwargs),
         ),
         ResponseObj::Rerank { results } => rerank_content(kwargs, results),
         ResponseObj::ResponsesApi { output } => responses_api_content(prompt, kwargs, output),
         ResponseObj::RealtimeList { items } => realtime_list_content(kwargs, items),
-        ResponseObj::PassThroughDict { value } => {
-            dict_response_content(prompt, kwargs, &DictKind::PassThrough(value))
+        ResponseObj::PassThroughDict { value } => pass_through_dict_content(prompt, value),
+        ResponseObj::GenericDict { value } => echoed_prompt_triple(
+            prompt,
+            content_from_dict_response(value),
+            super::messages_or_empty(kwargs),
+        ),
+        ResponseObj::Unknown => {
+            echoed_prompt_triple(prompt, String::new(), super::messages_or_empty(kwargs))
         }
-        ResponseObj::GenericDict { value } => {
-            dict_response_content(prompt, kwargs, &DictKind::Generic(value))
-        }
-        ResponseObj::Unknown => dict_response_content(prompt, kwargs, &DictKind::Unknown),
     }
 }

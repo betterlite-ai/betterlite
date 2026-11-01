@@ -261,39 +261,34 @@ fn galileo_payload_construction() {
     check_generic_dict_tool_call_reordering();
 }
 
-// A naive datetime from kwargs.standard_logging_object is assumed to be local time (the caller's own injected offset) and converted to UTC, not treated as already-UTC.
-fn check_naive_timestamp_uses_local_offset() {
-    let naive = NaiveDate::from_ymd_opt(2024, 6, 1)
-        .expect("valid date")
-        .and_hms_opt(10, 0, 0)
-        .expect("valid time");
+fn sample_naive_datetime() -> chrono::NaiveDateTime {
+    let date = NaiveDate::from_ymd_opt(2024, 6, 1).expect("valid date");
+    date.and_hms_opt(10, 0, 0).expect("valid time")
+}
 
+fn sample_offsets() -> (FixedOffset, FixedOffset) {
     let plus_three = FixedOffset::east_opt(3 * 3600).expect("valid offset");
+    let minus_five = FixedOffset::west_opt(5 * 3600).expect("valid offset");
+    (plus_three, minus_five)
+}
+
+// A naive datetime is assumed to be local time (the caller's own injected offset) and converted to UTC; an already-aware datetime converts from its own offset directly, ignoring the caller's local offset.
+fn check_timestamp_offset_handling() {
+    let naive = sample_naive_datetime();
+    let (plus_three, minus_five) = sample_offsets();
     assert_eq!(
         format_created_at(RawTimestamp::Naive(naive), plus_three),
         "2024-06-01T07:00:00Z"
     );
-
-    let minus_five = FixedOffset::west_opt(5 * 3600).expect("valid offset");
     assert_eq!(
         format_created_at(RawTimestamp::Naive(naive), minus_five),
         "2024-06-01T15:00:00Z"
     );
-}
 
-// A start_time/end_time fallback datetime that already carries tzinfo converts from its own offset directly, ignoring the caller's local offset.
-fn check_aware_timestamp_ignores_local_offset() {
-    let naive = NaiveDate::from_ymd_opt(2024, 6, 1)
-        .expect("valid date")
-        .and_hms_opt(10, 0, 0)
-        .expect("valid time");
-    let plus_three = FixedOffset::east_opt(3 * 3600).expect("valid offset");
     let aware = plus_three
         .from_local_datetime(&naive)
         .single()
         .expect("a fixed offset has no ambiguous local time");
-
-    let minus_five = FixedOffset::west_opt(5 * 3600).expect("valid offset");
     assert_eq!(
         format_created_at(RawTimestamp::Aware(aware), minus_five),
         "2024-06-01T07:00:00Z"
@@ -323,7 +318,6 @@ fn check_normalize_created_at_suffixes() {
 
 #[test]
 fn galileo_timestamp_handling() {
-    check_naive_timestamp_uses_local_offset();
-    check_aware_timestamp_ignores_local_offset();
+    check_timestamp_offset_handling();
     check_normalize_created_at_suffixes();
 }

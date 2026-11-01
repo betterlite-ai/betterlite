@@ -21,8 +21,16 @@ pub fn galileo_input_messages(messages: Option<&Json>, input_text: &str) -> Vec<
             let Json::Object(fields) = message else {
                 return None;
             };
+            // str(role): a role is declared as a string on every message schema this task's cases send, so this reads it back without porting Python's repr formatting for other types.
             let role = match fields.get("role") {
-                Some(role) if has_value(role) => role_text(role),
+                Some(role) if has_value(role) => match role {
+                    Json::Text(text) => text.clone(),
+                    Json::Null
+                    | Json::Bool(_)
+                    | Json::Number(_)
+                    | Json::List(_)
+                    | Json::Object(_) => String::new(),
+                },
                 _ => return None,
             };
             let mut entry = IndexMap::new();
@@ -49,33 +57,14 @@ fn fallback_message(input_text: &str) -> Json {
     Json::Object(entry)
 }
 
-// str(role): a role is declared as a string on every message schema this task's cases send, so this reads it back without porting Python's repr formatting for other types.
-fn role_text(role: &Json) -> String {
-    match role {
-        Json::Text(text) => text.clone(),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-            String::new()
-        }
-    }
-}
-
 // litellm.litellm_core_utils.prompt_templates.common_utils.convert_content_list_to_str.
 #[must_use]
 pub fn convert_content_list_to_str(message: &IndexMap<String, Json>) -> String {
     let mut text = match message.get("content") {
         Some(Json::List(blocks)) => blocks
             .iter()
-            .filter_map(|block| match block {
-                Json::Object(fields) => match fields.get("text") {
-                    Some(Json::Text(block_text)) if !block_text.is_empty() => {
-                        Some(block_text.as_str())
-                    }
-                    _ => None,
-                },
-                Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-                    None
-                }
-            })
+            .map(block_text_or_default)
+            .filter(|block_text| !block_text.is_empty())
             .collect(),
         Some(Json::Text(content)) => content.clone(),
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Object(_)) | None => {
@@ -84,6 +73,19 @@ pub fn convert_content_list_to_str(message: &IndexMap<String, Json>) -> String {
     };
     text.push_str(&extract_search_results_text(message.get("search_results")));
     text
+}
+
+// The "text" field of a content block, read back as given with no missing-field fallback text.
+fn block_text_or_default(block: &Json) -> String {
+    match block {
+        Json::Object(fields) => match fields.get("text") {
+            Some(Json::Text(text)) => text.clone(),
+            _ => String::new(),
+        },
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+            String::new()
+        }
+    }
 }
 
 fn push_block_text(text: &mut String, block: &Json) {
@@ -167,23 +169,17 @@ fn find_role_content<'items>(
 }
 
 fn message_content_text(fields: &IndexMap<String, Json>) -> String {
-    match fields.get("content") {
-        Some(Json::List(blocks)) => blocks.iter().map(block_text).collect::<Vec<_>>().join(" "),
-        Some(Json::Text(text)) => text.clone(),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Object(_)) | None => {
-            String::new()
-        }
-    }
-}
-
-fn block_text(block: &Json) -> String {
-    match block {
-        Json::Object(fields) => match fields.get("text") {
-            Some(Json::Text(text)) => text.clone(),
-            _ => String::new(),
-        },
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-            String::new()
-        }
-    }
+    let Some(content) = fields.get("content") else {
+        return String::new();
+    };
+    let Json::List(blocks) = content else {
+        return match content {
+            Json::Text(text) => text.clone(),
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+                String::new()
+            }
+        };
+    };
+    let parts: Vec<String> = blocks.iter().map(block_text_or_default).collect();
+    parts.join(" ")
 }
