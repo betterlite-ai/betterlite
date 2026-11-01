@@ -1,0 +1,8 @@
+kind: helper
+name: provider-identity-azure-claude
+call:
+  provider_identity:
+    check: azure_claude
+    model: azure/claude-3-opus
+env: {}
+compare: {ignore: []}

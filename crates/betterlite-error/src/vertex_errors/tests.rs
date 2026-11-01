@@ -127,6 +127,12 @@ fn facts(status_code: Option<u16>) -> ProviderErrorFacts {
 #[case::envelope_missing_error_key(r#"{"foo":"bar"}"#, Some(501), None, None)]
 #[case::envelope_error_not_object(r#"{"error":"boom"}"#, Some(501), None, None)]
 #[case::envelope_code_not_integer(r#"{"error":{"code":"unreachable"}}"#, Some(501), None, None)]
+#[case::envelope_message_wrong_type(
+    r#"{"message":42,"error":{"code":429}}"#,
+    Some(503),
+    Some("rate_limit"),
+    Some(429)
+)]
 // branch-1272: the two internal-server phrases
 #[case::internal_server_literal(
     "500 Internal Server Error",
