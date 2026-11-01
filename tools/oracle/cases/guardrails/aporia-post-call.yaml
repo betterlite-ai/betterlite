@@ -1,0 +1,14 @@
+kind: helper
+name: aporia-post-call
+call:
+  b3753:
+    aporia_post_call:
+      api_key: test-key
+      messages:
+        - {role: tool, content: "tool output", tool_call_id: call_1}
+        - {role: user, content: "question"}
+      response_string: "the final answer"
+      dynamic_params: {}
+      answer: {status: 200, headers: {}, body: {action: passthrough}}
+env: {}
+compare: {ignore: []}

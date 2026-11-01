@@ -1,0 +1,15 @@
+kind: helper
+name: guardrails-ai-blocked
+call:
+  b3753:
+    guardrails_ai_process_input:
+      guard_name: my-guard
+      input_format: llmOutput
+      last_user_message: "bad text"
+      dynamic_params: {}
+      answer:
+        status: 200
+        headers: {}
+        body: {callId: "abc", rawLlmOutput: "bad text", validatedOutput: null, validationPassed: false}
+env: {}
+compare: {ignore: []}

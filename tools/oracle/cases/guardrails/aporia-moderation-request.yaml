@@ -1,0 +1,14 @@
+kind: helper
+name: aporia-moderation-request
+call:
+  b3753:
+    aporia_moderation:
+      api_key: test-key
+      messages:
+        - {role: system, content: "be nice"}
+        - {role: tool, content: "tool output", tool_call_id: call_1}
+        - {role: user, content: "hello there"}
+      dynamic_params: {}
+      answer: {status: 200, headers: {}, body: {action: passthrough}}
+env: {}
+compare: {ignore: []}

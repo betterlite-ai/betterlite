@@ -1,0 +1,15 @@
+kind: helper
+name: guardrails-ai-llmoutput
+call:
+  b3753:
+    guardrails_ai_process_input:
+      guard_name: my-guard
+      input_format: llmOutput
+      last_user_message: "original text"
+      dynamic_params: {}
+      answer:
+        status: 200
+        headers: {}
+        body: {callId: "abc", rawLlmOutput: "original text", validatedOutput: "validated text", validationPassed: true}
+env: {}
+compare: {ignore: []}

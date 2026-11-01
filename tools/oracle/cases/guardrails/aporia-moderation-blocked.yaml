@@ -1,0 +1,12 @@
+kind: helper
+name: aporia-moderation-blocked
+call:
+  b3753:
+    aporia_moderation:
+      api_key: test-key
+      messages:
+        - {role: user, content: "attack prompt"}
+      dynamic_params: {}
+      answer: {status: 200, headers: {}, body: {action: block, explanation: "policy violation"}}
+env: {}
+compare: {ignore: []}

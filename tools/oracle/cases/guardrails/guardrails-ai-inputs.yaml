@@ -1,0 +1,15 @@
+kind: helper
+name: guardrails-ai-inputs
+call:
+  b3753:
+    guardrails_ai_process_input:
+      guard_name: my-guard
+      input_format: inputs
+      last_user_message: "original text"
+      dynamic_params: {}
+      answer:
+        status: 200
+        headers: {}
+        body: {modelname: "guard", modelversion: "1", outputs: [{name: text, shape: [1], data: ["cleaned text"], datatype: BYTES}]}
+env: {}
+compare: {ignore: []}
