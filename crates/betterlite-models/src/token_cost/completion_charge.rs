@@ -6,7 +6,6 @@ use crate::modality_cost::completion::{CompletionTokensDetailsResult, parse_comp
 use crate::modality_cost::pricing::price_for_key;
 use crate::token_rates::{EffectiveRates, ModelInfo};
 
-// When text is zero and there is a positive reasoning/audio/image/video breakdown, text becomes a clamped residual; otherwise every completion token is text and is_text_tokens_total disables per-modality charging below.
 pub(super) fn completion_tokens_details(
     usage: &CostUsage,
 ) -> Result<(CompletionTokensDetailsResult, bool), TokenCostError> {
@@ -34,14 +33,13 @@ pub(super) fn completion_tokens_details(
         result.text_tokens = usage.completion_tokens;
         return Ok((result, true));
     }
-    let overflow = || TokenCostError::Overflow;
     result.text_tokens = usage
         .completion_tokens
         .checked_sub(result.reasoning_tokens)
         .and_then(|value| value.checked_sub(result.audio_tokens))
         .and_then(|value| value.checked_sub(result.image_tokens))
         .and_then(|value| value.checked_sub(result.video_tokens))
-        .ok_or_else(overflow)?
+        .ok_or(TokenCostError::Overflow)?
         .max(0);
     Ok((result, false))
 }
@@ -64,7 +62,6 @@ fn add_modality_charge(
     cost.checked_add(charge).ok_or_else(overflow)
 }
 
-// Positive audio/image/video each use their dedicated output price, or the completion rate when absent; positive reasoning uses the already-resolved billed reasoning rate.
 pub(super) fn completion_cost(
     details: &CompletionTokensDetailsResult,
     is_text_tokens_total: bool,

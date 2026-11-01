@@ -89,7 +89,7 @@ fn details(fixture: DetailsFixture) -> PromptTokensDetailsResult {
 #[test]
 fn absent_prompt_details_become_all_text() {
     let usage = usage_without_details(42);
-    let result = prompt_tokens_details(&usage, None).expect("no overflow");
+    let result = prompt_tokens_details(&usage, &empty_extras()).expect("no overflow");
     assert_eq!(result.text_tokens, 42);
     assert_eq!(result.audio_tokens, 0);
     assert_eq!(result.image_tokens, 0);
@@ -108,7 +108,7 @@ fn present_prompt_details_route_through_extras() {
         image_count: Some(1),
         ..empty_extras()
     };
-    let result = prompt_tokens_details(&usage, Some(&extras)).expect("no overflow");
+    let result = prompt_tokens_details(&usage, &extras).expect("no overflow");
     assert_eq!(result.image_tokens, 6);
     assert_eq!(result.image_count, 1);
 }

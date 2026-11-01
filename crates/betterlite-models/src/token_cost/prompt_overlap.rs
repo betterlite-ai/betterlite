@@ -7,7 +7,6 @@ use crate::cost_usage::modality_projection::{
 };
 use crate::modality_cost::prompt::{PromptTokensDetailsResult, parse_prompt_tokens_details};
 
-// The counters PromptModalityUsage needs beyond CostUsage's own prompt_details and cache_read_tokens.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct PromptExtras {
     pub cache_write_tokens: Option<i64>,
@@ -21,10 +20,9 @@ pub struct PromptExtras {
     pub query_count: Option<i64>,
 }
 
-// Prompt usage begins as all text when prompt_details is absent; otherwise it uses B1671's parsed details.
 pub fn prompt_tokens_details(
     usage: &CostUsage,
-    extras: Option<&PromptExtras>,
+    extras: &PromptExtras,
 ) -> Result<PromptTokensDetailsResult, TokenCostError> {
     let Some(base) = usage.prompt_details else {
         return Ok(PromptTokensDetailsResult {
@@ -46,15 +44,15 @@ pub fn prompt_tokens_details(
     let modality_usage = PromptModalityUsage {
         base,
         cached_tokens: usage.cache_read_tokens,
-        cache_write_tokens: extras.and_then(|fields| fields.cache_write_tokens),
-        cache_creation_tokens: extras.and_then(|fields| fields.cache_creation_tokens),
-        cache_creation_token_details: extras.and_then(|fields| fields.cache_creation_token_details),
-        cached_tokens_details: extras.and_then(|fields| fields.cached_tokens_details),
-        character_count: extras.and_then(|fields| fields.character_count),
-        image_count: extras.and_then(|fields| fields.image_count),
-        video_length_seconds: extras.and_then(|fields| fields.video_length_seconds),
-        audio_length_seconds: extras.and_then(|fields| fields.audio_length_seconds),
-        query_count: extras.and_then(|fields| fields.query_count),
+        cache_write_tokens: extras.cache_write_tokens,
+        cache_creation_tokens: extras.cache_creation_tokens,
+        cache_creation_token_details: extras.cache_creation_token_details,
+        cached_tokens_details: extras.cached_tokens_details,
+        character_count: extras.character_count,
+        image_count: extras.image_count,
+        video_length_seconds: extras.video_length_seconds,
+        audio_length_seconds: extras.audio_length_seconds,
+        query_count: extras.query_count,
     };
     Ok(parse_prompt_tokens_details(&modality_usage)?)
 }
@@ -96,7 +94,6 @@ fn infer_text_residual(
     mut details: PromptTokensDetailsResult,
     prompt_tokens: i64,
 ) -> Result<PromptTokensDetailsResult, TokenCostError> {
-    let overflow = || TokenCostError::Overflow;
     if details.text_tokens == 0 && details.image_count == 0 {
         details.text_tokens = prompt_tokens
             .checked_sub(details.cache_hit_tokens)
@@ -104,18 +101,16 @@ fn infer_text_residual(
             .and_then(|value| value.checked_sub(details.cache_creation_tokens))
             .and_then(|value| value.checked_sub(details.image_tokens))
             .and_then(|value| value.checked_sub(details.video_tokens))
-            .ok_or_else(overflow)?
+            .ok_or(TokenCostError::Overflow)?
             .max(0);
     }
     Ok(details)
 }
 
-// Constrains noncached audio/image/video to the cache-free budget when they overlap the cache; otherwise infers a zero text as the residual unless image_count blocks it.
 pub fn repair_prompt_overlap(
     details: PromptTokensDetailsResult,
     prompt_tokens: i64,
 ) -> Result<PromptTokensDetailsResult, TokenCostError> {
-    let overflow = || TokenCostError::Overflow;
     let total_details = details
         .text_tokens
         .checked_add(details.cache_hit_tokens)
@@ -123,7 +118,7 @@ pub fn repair_prompt_overlap(
         .and_then(|sum| sum.checked_add(details.cache_creation_tokens))
         .and_then(|sum| sum.checked_add(details.image_tokens))
         .and_then(|sum| sum.checked_add(details.video_tokens))
-        .ok_or_else(overflow)?;
+        .ok_or(TokenCostError::Overflow)?;
     let has_double_counting = (details.cache_hit_tokens > 0 || details.cache_creation_tokens > 0)
         && total_details > prompt_tokens;
 

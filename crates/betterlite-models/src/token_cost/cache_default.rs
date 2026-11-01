@@ -39,7 +39,6 @@ pub fn provider_cache_read_default(
     }
 }
 
-// An explicit nonnull cache price wins; otherwise half the valid non-boolean input rate covers the model and, when its own key is absent, the off-peak block too.
 pub fn with_default_cache_read_rate(
     model_info: &ModelInfo,
     off_peak: Option<&OffPeakBlock>,

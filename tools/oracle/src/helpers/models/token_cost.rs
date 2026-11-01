@@ -60,12 +60,15 @@ impl crate::helpers::Helper for Op {
 fn run_generic(fields: &GenericInput) -> crate::helpers::HelperResult {
     let database = TimeZoneDatabase::from_env();
     let usage = CostUsage::from(fields.usage.clone());
-    let prompt_extras: Option<PromptExtras> = fields.prompt_extras.clone().map(PromptExtras::from);
+    let prompt_extras = fields
+        .prompt_extras
+        .clone()
+        .map_or_else(PromptExtras::default, PromptExtras::from);
     let request = GenericCostRequest {
         model: "oracle-model",
         custom_llm_provider: fields.custom_llm_provider.as_deref(),
         usage: &usage,
-        prompt_extras: prompt_extras.as_ref(),
+        prompt_extras: &prompt_extras,
         supplied_model_info: fields.supplied_model_info.as_ref(),
         service_tier: fields.service_tier.as_deref(),
         data_residency: fields.data_residency.as_deref(),
@@ -138,7 +141,8 @@ fn scalar_to_value(value: &Scalar) -> Option<serde_json::Value> {
 fn token_cost_error(error: &TokenCostError) -> Box<HelperError> {
     let class = match error {
         TokenCostError::UnknownModel => "UnknownModel",
-        TokenCostError::InvalidGeoMultiplier => "InvalidGeoMultiplier",
+        TokenCostError::InvalidGeoMultiplier { .. } => "InvalidGeoMultiplier",
+        TokenCostError::UnsupportedGeoMultiplierShape { .. } => "UnsupportedGeoMultiplierShape",
         TokenCostError::Overflow => "Overflow",
         TokenCostError::Rate(_) => "RateError",
         TokenCostError::Modality(_) => "ModalityError",

@@ -79,12 +79,13 @@ impl PriceLookup for CountingLookup {
 fn base_request<'fixture>(
     usage: &'fixture CostUsage,
     model_info: &'fixture ModelInfo,
+    prompt_extras: &'fixture PromptExtras,
 ) -> GenericCostRequest<'fixture> {
     GenericCostRequest {
         model: "fixture-model",
         custom_llm_provider: None,
         usage,
-        prompt_extras: None,
+        prompt_extras,
         supplied_model_info: Some(model_info),
         service_tier: None,
         data_residency: None,
@@ -101,7 +102,8 @@ fn an_unregistered_model_without_supplied_pricing_errors() {
     let database = TimeZoneDatabase::from_env();
     let usage = fixture_usage(10, 5);
     let model_info = ModelInfo::new();
-    let mut request = base_request(&usage, &model_info);
+    let extras = PromptExtras::default();
+    let mut request = base_request(&usage, &model_info, &extras);
     request.supplied_model_info = None;
     let result = generic_cost_per_token(&request, &NullLookup, &database);
     assert!(matches!(result, Err(TokenCostError::UnknownModel)));
@@ -112,7 +114,8 @@ fn a_supplied_empty_model_record_bypasses_the_catalog_lookup() {
     let database = TimeZoneDatabase::from_env();
     let usage = fixture_usage(10, 5);
     let model_info = ModelInfo::new();
-    let request = base_request(&usage, &model_info);
+    let extras = PromptExtras::default();
+    let request = base_request(&usage, &model_info, &extras);
     let lookup = CountingLookup {
         answer: Some(model(&[("input_cost_per_token", "\"1.0\"")])),
         calls: Cell::new(0),
@@ -134,7 +137,8 @@ fn exact_totals_apply_the_residency_then_vertex_uplift_to_both_sides() {
         ("regional_processing_uplift_multiplier_us", "\"1.1\""),
         ("regional_endpoint_uplift_multiplier", "\"1.05\""),
     ]);
-    let mut request = base_request(&usage, &model_info);
+    let extras = PromptExtras::default();
+    let mut request = base_request(&usage, &model_info, &extras);
     request.data_residency = Some("us");
     request.vertex_location = Some("us-central1");
 
@@ -159,7 +163,8 @@ fn an_unrecognized_residency_leaves_totals_unmultiplied() {
         ("output_cost_per_token", "\"0.01\""),
         ("regional_processing_uplift_multiplier_us", "\"2.0\""),
     ]);
-    let mut request = base_request(&usage, &model_info);
+    let extras = PromptExtras::default();
+    let mut request = base_request(&usage, &model_info, &extras);
     request.data_residency = Some("ca");
 
     let result = generic_cost_per_token(&request, &NullLookup, &database)

@@ -31,7 +31,6 @@ fn warn_invalid(key: &str) -> Decimal {
     Decimal::ONE
 }
 
-// OpenAI's regional-processing uplift: only lowercased "us"/"eu" are recognized, with no trimming.
 #[must_use]
 pub fn regional_uplift_multiplier(model: &ModelInfo, data_residency: Option<&str>) -> Decimal {
     let Some(residency) = data_residency else {
@@ -45,7 +44,6 @@ pub fn regional_uplift_multiplier(model: &ModelInfo, data_residency: Option<&str
     parse_uplift_multiplier(model.get(&key), &key)
 }
 
-// Vertex AI's non-global endpoint uplift: absent or case-insensitive "global" means no uplift.
 #[must_use]
 pub fn vertex_endpoint_uplift(model: &ModelInfo, vertex_location: Option<&str>) -> Decimal {
     let is_global = vertex_location.is_none_or(|location| location.eq_ignore_ascii_case("global"));
@@ -76,13 +74,22 @@ pub fn provider_geo_multiplier(
     match entry.get(&lowered) {
         None => Ok(Decimal::ONE),
         Some(Scalar::Bool(flag)) => Ok(Decimal::from(u8::from(*flag))),
-        Some(Scalar::Number(number)) => parse_decimal_lexeme(&number.to_string())
-            .map_err(|_error| TokenCostError::InvalidGeoMultiplier),
-        Some(Scalar::Text(text)) => {
-            parse_decimal_lexeme(text.trim()).map_err(|_error| TokenCostError::InvalidGeoMultiplier)
+        Some(Scalar::Number(number)) => {
+            parse_decimal_lexeme(&number.to_string()).map_err(|source| {
+                TokenCostError::InvalidGeoMultiplier {
+                    geo: lowered,
+                    source,
+                }
+            })
         }
+        Some(Scalar::Text(text)) => parse_decimal_lexeme(text.trim()).map_err(|source| {
+            TokenCostError::InvalidGeoMultiplier {
+                geo: lowered,
+                source,
+            }
+        }),
         Some(Scalar::Null | Scalar::Array(_) | Scalar::Object(_)) => {
-            Err(TokenCostError::InvalidGeoMultiplier)
+            Err(TokenCostError::UnsupportedGeoMultiplierShape { geo: lowered })
         }
     }
 }

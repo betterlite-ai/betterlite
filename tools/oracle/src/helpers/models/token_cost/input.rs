@@ -13,7 +13,6 @@ use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
-// Generates the From impl for a plain field-by-field XInput -> domain-type conversion.
 macro_rules! copy_fields {
     ($from:ty => $to:ty, |$input:ident| { $($field:ident: $value:expr),+ $(,)? }) => {
         impl From<$from> for $to {

@@ -27,7 +27,7 @@ pub struct GenericCostRequest<'request> {
     pub model: &'request str,
     pub custom_llm_provider: Option<&'request str>,
     pub usage: &'request CostUsage,
-    pub prompt_extras: Option<&'request PromptExtras>,
+    pub prompt_extras: &'request PromptExtras,
     pub supplied_model_info: Option<&'request ModelInfo>,
     pub service_tier: Option<&'request str>,
     pub data_residency: Option<&'request str>,
@@ -118,7 +118,7 @@ fn prompt_side_cost(
     .map_err(TokenCostError::from)
 }
 
-// Ports generic_cost_per_token: resolves one rate set, repairs prompt-side double counting, bills the completion side by its own breakdown, then applies the residency and Vertex uplifts to both totals in that order. regional::provider_geo_multiplier is deliberately not applied here; only the billed-rate call sites that need it invoke it directly.
+// regional::provider_geo_multiplier is deliberately not applied to these totals; only the billed-rate call sites that need it invoke it directly.
 pub fn generic_cost_per_token(
     request: &GenericCostRequest<'_>,
     lookup: &dyn PriceLookup,
