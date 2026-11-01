@@ -1,8 +1,10 @@
 #![cfg(test)]
 
 use std::any::TypeId;
+use std::fs;
 use std::future::IntoFuture as _;
 use std::io;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -457,4 +459,15 @@ async fn registration_adds_guardrail_to_callback_registry() {
     .expect("guard name is present");
     assert_eq!(registry.registered.len(), 1);
     assert!(Arc::ptr_eq(&registry.registered[0], &guardrail));
+}
+
+#[test]
+fn javelin_guardrail_replays_the_javelin_wire_corpus() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/javelin_wire");
+    let paths: Vec<_> = fs::read_dir(corpus).unwrap().collect();
+    assert!(!paths.is_empty());
+    assert!(paths.into_iter().all(|entry| {
+        let bytes = fs::read(entry.unwrap().path()).unwrap();
+        serde_json::from_slice::<JavelinGuardResponse>(&bytes).is_ok()
+    }));
 }
