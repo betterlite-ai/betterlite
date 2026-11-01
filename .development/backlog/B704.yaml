@@ -1,7 +1,7 @@
 id: B704
 milestone: M4 keys, spend and management
 title: Postgres migrations for managed resources
-status: todo
+status: done
 depends_on: [B700, B703, B860]
 file: tasks/B704-schema-managed-resources.yaml
 covers:
@@ -36,7 +36,7 @@ covers:
   - "litellm-proxy-extras/litellm_proxy_extras/migrations/20251211100212_schema_sync/migration.sql"
 parent: B051
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 454
