@@ -569,23 +569,6 @@ fn fixture_database_names(url: &str) -> Vec<String> {
     })
 }
 
-fn fixture_cleanup_steps() -> Vec<Step> {
-    vec![
-        step("/health/liveliness", BTreeMap::new(), Vec::new(), false),
-        step(
-            "/health/liveliness",
-            BTreeMap::new(),
-            vec![capture(
-                "missing",
-                CaptureSource::Header {
-                    name: "x-missing".to_owned(),
-                },
-            )],
-            false,
-        ),
-    ]
-}
-
 fn fresh_oracle_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/oracle")
@@ -601,7 +584,17 @@ fn drops_the_fixture_databases_after_a_late_step_failure_with_a_database_fixture
         .postgres_test_url
         .expect("POSTGRES_TEST_URL is set for this test");
     let mut before = fixture_database_names(secret.expose_secret());
-    let mut case = steps_case(fixture_cleanup_steps());
+    let missing = capture(
+        "missing",
+        CaptureSource::Header {
+            name: "x-missing".to_owned(),
+        },
+    );
+    let steps = vec![
+        step("/health/liveliness", BTreeMap::new(), Vec::new(), false),
+        step("/health/liveliness", BTreeMap::new(), vec![missing], false),
+    ];
+    let mut case = steps_case(steps);
     case.database = Some(DatabaseFixture::default());
     let options = Options {
         self_check: true,
