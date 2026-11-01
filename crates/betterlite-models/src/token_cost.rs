@@ -17,9 +17,7 @@ use regional::{regional_uplift_multiplier, vertex_endpoint_uplift};
 
 use crate::cost_usage::CostUsage;
 use crate::modality_cost::input_cost::{InputCostRates, calculate_input_cost};
-use crate::off_peak::schema::OffPeakBlock;
-use crate::price_lookup::PriceLookup;
-use crate::tiered_pricing::Tier;
+use crate::price_lookup::{PriceLookup, PricedModel};
 use crate::token_rates::base_cost::get_token_base_cost;
 use crate::token_rates::{EffectiveRates, ModelInfo, ModelPricing, RequestContext, Usage};
 
@@ -28,14 +26,11 @@ pub struct GenericCostRequest<'request> {
     pub custom_llm_provider: Option<&'request str>,
     pub usage: &'request CostUsage,
     pub prompt_extras: &'request PromptExtras,
-    pub supplied_model_info: Option<&'request ModelInfo>,
+    pub supplied_pricing: Option<&'request PricedModel>,
     pub service_tier: Option<&'request str>,
     pub data_residency: Option<&'request str>,
     pub vertex_location: Option<&'request str>,
     pub moment: DateTime<Utc>,
-    pub tiered_pricing: &'request [Tier],
-    pub off_peak_pricing: Option<&'request OffPeakBlock>,
-    pub off_peak_cache_read_present: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,15 +39,15 @@ pub struct GenericCostResult {
     pub completion_cost: Decimal,
 }
 
-fn resolve_model_info(
+fn resolve_priced_model(
     request: &GenericCostRequest<'_>,
     lookup: &dyn PriceLookup,
-) -> Result<ModelInfo, TokenCostError> {
-    if let Some(supplied) = request.supplied_model_info {
+) -> Result<PricedModel, TokenCostError> {
+    if let Some(supplied) = request.supplied_pricing {
         return Ok(supplied.clone());
     }
     lookup
-        .effective_model_info(request.model, request.custom_llm_provider)
+        .effective_priced_model(request.model, request.custom_llm_provider)
         .ok_or(TokenCostError::UnknownModel)
 }
 
@@ -66,17 +61,17 @@ fn resolve_pricing(
     lookup: &dyn PriceLookup,
     database: &TimeZoneDatabase,
 ) -> Result<ResolvedPricing, TokenCostError> {
-    let resolved_model_info = resolve_model_info(request, lookup)?;
+    let priced_model = resolve_priced_model(request, lookup)?;
     let (model_info, off_peak_pricing) = provider_cache_read_default(
-        &resolved_model_info,
+        &priced_model.record,
         request.custom_llm_provider,
-        request.off_peak_pricing,
-        request.off_peak_cache_read_present,
+        priced_model.off_peak_pricing.as_ref(),
+        priced_model.off_peak_cache_read_present,
     )?;
 
     let pricing = ModelPricing {
         model: &model_info,
-        tiered_pricing: request.tiered_pricing,
+        tiered_pricing: &priced_model.tiered_pricing,
         off_peak_pricing: off_peak_pricing.as_ref(),
     };
     let context = RequestContext {
