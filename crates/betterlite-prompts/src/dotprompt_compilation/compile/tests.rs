@@ -115,6 +115,34 @@ fn an_unknown_prompt_id_is_wrapped_with_the_exact_compile_error_message() {
 }
 
 #[test]
+fn a_missing_prompt_with_a_nonzero_version_names_it_in_the_message() {
+    let manager = manager_with_one_template("User: hi", Object::new());
+
+    let error = manager
+        .compile_prompt_helper(Some("missing"), None, Some(3))
+        .expect_err("the prompt does not exist");
+
+    assert_eq!(
+        error.to_string(),
+        "Error compiling prompt 'missing': Prompt 'missing' (version 3) not found in prompt directory"
+    );
+}
+
+#[test]
+fn a_missing_prompt_with_version_zero_omits_the_version_from_the_message() {
+    let manager = manager_with_one_template("User: hi", Object::new());
+
+    let error = manager
+        .compile_prompt_helper(Some("missing"), None, Some(0))
+        .expect_err("the prompt does not exist");
+
+    assert_eq!(
+        error.to_string(),
+        "Error compiling prompt 'missing': Prompt 'missing' not found in prompt directory"
+    );
+}
+
+#[test]
 fn a_render_failure_is_wrapped_with_the_exact_compile_error_message() {
     let mut fields = Object::new();
     fields.insert("age".to_owned(), Json::Text("number".to_owned()));
