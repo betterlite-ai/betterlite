@@ -136,5 +136,5 @@ fn warn_if_mode_surface_mismatch_names_the_unused_hooks_for_mixed_configuration(
     let written = fs::read_to_string(&log_path).expect("log contents");
     fs::remove_file(&log_path).expect("remove log");
     assert!(written.contains("firewall"));
-    assert!(written.contains("PreMcpCall"));
+    assert!(written.contains("{PreMcpCall}"));
 }
