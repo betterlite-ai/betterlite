@@ -354,6 +354,55 @@ const KEY_HISTORY_TABLES: [&str; 2] = [
     "LiteLLM_VerificationToken",
 ];
 
+const VECTOR_STORE_OWNERSHIP_COLUMNS: [ColumnSpec; 2] = [
+    ("team_id", "text", true, None),
+    ("user_id", "text", true, None),
+];
+
+const VECTOR_STORE_OWNERSHIP_INDEXES: [IndexSpec; 2] = [
+    (
+        "LiteLLM_ManagedVectorStoresTable_team_id_idx",
+        &["team_id"],
+        false,
+    ),
+    (
+        "LiteLLM_ManagedVectorStoresTable_user_id_idx",
+        &["user_id"],
+        false,
+    ),
+];
+
+const MANAGED_VECTOR_STORE_INDEXES: [IndexSpec; 2] = [
+    (
+        "LiteLLM_ManagedVectorStoreTable_unified_resource_id_key",
+        &["unified_resource_id"],
+        true,
+    ),
+    (
+        "LiteLLM_ManagedVectorStoreTable_unified_resource_id_idx",
+        &["unified_resource_id"],
+        false,
+    ),
+];
+
+const DEPRECATED_TOKEN_INDEXES: [IndexSpec; 3] = [
+    (
+        "LiteLLM_DeprecatedVerificationToken_token_key",
+        &["token"],
+        true,
+    ),
+    (
+        "LiteLLM_DeprecatedVerificationToken_token_revoke_at_idx",
+        &["token", "revoke_at"],
+        false,
+    ),
+    (
+        "LiteLLM_DeprecatedVerificationToken_revoke_at_idx",
+        &["revoke_at"],
+        false,
+    ),
+];
+
 const KEY_LOOKUP_INDEXES: [IndexSpec; 3] = [
     (
         "LiteLLM_VerificationToken_user_id_team_id_idx",
@@ -446,89 +495,6 @@ async fn assert_policy_storage(client: &Client) {
     .await;
 }
 
-async fn assert_vector_store_ownership(client: &Client) {
-    assert_columns(
-        client,
-        "LiteLLM_ManagedVectorStoresTable",
-        &[
-            ("team_id", "text", true, None),
-            ("user_id", "text", true, None),
-        ],
-    )
-    .await;
-    assert_indexes(
-        client,
-        &[
-            (
-                "LiteLLM_ManagedVectorStoresTable_team_id_idx",
-                &["team_id"][..],
-                false,
-            ),
-            (
-                "LiteLLM_ManagedVectorStoresTable_user_id_idx",
-                &["user_id"][..],
-                false,
-            ),
-        ],
-    )
-    .await;
-}
-
-async fn assert_managed_vector_store_catalog(client: &Client) {
-    assert_columns(
-        client,
-        "LiteLLM_ManagedVectorStoreTable",
-        &MANAGED_VECTOR_STORE_TABLE_COLUMNS,
-    )
-    .await;
-    assert_indexes(
-        client,
-        &[
-            (
-                "LiteLLM_ManagedVectorStoreTable_unified_resource_id_key",
-                &["unified_resource_id"][..],
-                true,
-            ),
-            (
-                "LiteLLM_ManagedVectorStoreTable_unified_resource_id_idx",
-                &["unified_resource_id"][..],
-                false,
-            ),
-        ],
-    )
-    .await;
-}
-
-async fn assert_deprecated_token_catalog(client: &Client) {
-    assert_columns(
-        client,
-        "LiteLLM_DeprecatedVerificationToken",
-        &DEPRECATED_VERIFICATION_TOKEN_COLUMNS,
-    )
-    .await;
-    assert_indexes(
-        client,
-        &[
-            (
-                "LiteLLM_DeprecatedVerificationToken_token_key",
-                &["token"][..],
-                true,
-            ),
-            (
-                "LiteLLM_DeprecatedVerificationToken_token_revoke_at_idx",
-                &["token", "revoke_at"][..],
-                false,
-            ),
-            (
-                "LiteLLM_DeprecatedVerificationToken_revoke_at_idx",
-                &["revoke_at"][..],
-                false,
-            ),
-        ],
-    )
-    .await;
-}
-
 async fn assert_access_group_history(client: &Client) {
     assert_single_column(
         client,
@@ -554,10 +520,6 @@ async fn assert_access_group_history(client: &Client) {
         migration_sql_of("20260213170952_access_group_change_to_model_name"),
     )
     .await;
-    assert_access_group_history_after_change(client).await;
-}
-
-async fn assert_access_group_history_after_change(client: &Client) {
     assert!(!column_exists(client, "LiteLLM_AccessGroupTable", "access_model_ids").await);
     assert_columns(
         client,
@@ -603,12 +565,15 @@ enum Cohort {
     DeletedHistoryDefaults,
     TableColumns(&'static str, &'static str, &'static [ColumnSpec]),
     SingleColumn(&'static str, &'static [&'static str], ColumnSpec),
+    TableCatalog(
+        &'static str,
+        &'static str,
+        &'static [ColumnSpec],
+        &'static [IndexSpec],
+    ),
     DailyEndpointIndexes,
     LowerEmailExpression,
     PolicyStorage,
-    VectorStoreOwnership,
-    ManagedVectorStoreCatalog,
-    DeprecatedTokenCatalog,
     KeyLookupIndexes,
     AccessGroupHistory,
     EndUserPermissionFk,
@@ -623,12 +588,10 @@ fn checkpoint_for(cohort: Cohort) -> &'static str {
         Cohort::TableColumns(checkpoint, _, _) | Cohort::SingleColumn(checkpoint, _, _) => {
             checkpoint
         }
+        Cohort::TableCatalog(checkpoint, _, _, _) => checkpoint,
         Cohort::DailyEndpointIndexes => "20260106155622_add_endpoint_to_daily_activity_tables",
         Cohort::LowerEmailExpression => "20260108_add_user_email_lower_idx",
         Cohort::PolicyStorage => "20260214163027_add_pipeline_to_policy_table",
-        Cohort::VectorStoreOwnership => "20260131150814_add_team_user_to_vector_stores",
-        Cohort::ManagedVectorStoreCatalog => "20260213105436_add_managed_vector_store_table",
-        Cohort::DeprecatedTokenCatalog => "20260203120000_add_deprecated_verification_token_table",
         Cohort::KeyLookupIndexes => "20260209085821_add_verificationtoken_indexes",
         Cohort::AccessGroupHistory => "20260212143306_add_access_group_table",
         Cohort::EndUserPermissionFk => "20260214185341_object_permissions_for_end_users",
@@ -641,12 +604,12 @@ async fn run_cohort_check(client: &Client, cohort: Cohort) {
         Cohort::DeletedHistoryDefaults => assert_deleted_history_defaults(client).await,
         Cohort::TableColumns(_, table, columns) => assert_columns(client, table, columns).await,
         Cohort::SingleColumn(_, tables, spec) => assert_single_column(client, tables, spec).await,
+        Cohort::TableCatalog(_, table, columns, indexes) => {
+            assert_table_catalog(client, table, columns, indexes).await;
+        }
         Cohort::DailyEndpointIndexes => assert_daily_endpoint_indexes(client).await,
         Cohort::LowerEmailExpression => assert_lower_email_expression(client).await,
         Cohort::PolicyStorage => assert_policy_storage(client).await,
-        Cohort::VectorStoreOwnership => assert_vector_store_ownership(client).await,
-        Cohort::ManagedVectorStoreCatalog => assert_managed_vector_store_catalog(client).await,
-        Cohort::DeprecatedTokenCatalog => assert_deprecated_token_catalog(client).await,
         Cohort::KeyLookupIndexes => assert_indexes(client, &KEY_LOOKUP_INDEXES).await,
         Cohort::AccessGroupHistory => assert_access_group_history(client).await,
         Cohort::EndUserPermissionFk => assert_end_user_permission_fk(client).await,
@@ -675,6 +638,10 @@ const GUARDRAIL_OWNER_SPEC: ColumnSpec = ("team_id", "text", true, None);
 const SKILLS_STORAGE_CHECKPOINT: &str = "20251220144550_schema_update";
 const MCP_METADATA_CHECKPOINT: &str =
     "20260207093506_add_available_on_public_internet_to_mcp_servers";
+
+const VECTOR_STORE_OWNERSHIP_CHECKPOINT: &str = "20260131150814_add_team_user_to_vector_stores";
+const MANAGED_VECTOR_STORE_CHECKPOINT: &str = "20260213105436_add_managed_vector_store_table";
+const DEPRECATED_TOKEN_CHECKPOINT: &str = "20260203120000_add_deprecated_verification_token_table";
 
 #[rstest]
 #[case::deleted_history_defaults(Cohort::DeletedHistoryDefaults)]
@@ -706,9 +673,24 @@ const MCP_METADATA_CHECKPOINT: &str =
 #[case::daily_endpoint_indexes(Cohort::DailyEndpointIndexes)]
 #[case::lower_email_expression(Cohort::LowerEmailExpression)]
 #[case::policy_storage(Cohort::PolicyStorage)]
-#[case::vector_store_ownership(Cohort::VectorStoreOwnership)]
-#[case::managed_vector_store_catalog(Cohort::ManagedVectorStoreCatalog)]
-#[case::deprecated_token_catalog(Cohort::DeprecatedTokenCatalog)]
+#[case::vector_store_ownership(Cohort::TableCatalog(
+    VECTOR_STORE_OWNERSHIP_CHECKPOINT,
+    "LiteLLM_ManagedVectorStoresTable",
+    &VECTOR_STORE_OWNERSHIP_COLUMNS,
+    &VECTOR_STORE_OWNERSHIP_INDEXES
+))]
+#[case::managed_vector_store_catalog(Cohort::TableCatalog(
+    MANAGED_VECTOR_STORE_CHECKPOINT,
+    "LiteLLM_ManagedVectorStoreTable",
+    &MANAGED_VECTOR_STORE_TABLE_COLUMNS,
+    &MANAGED_VECTOR_STORE_INDEXES
+))]
+#[case::deprecated_token_catalog(Cohort::TableCatalog(
+    DEPRECATED_TOKEN_CHECKPOINT,
+    "LiteLLM_DeprecatedVerificationToken",
+    &DEPRECATED_VERIFICATION_TOKEN_COLUMNS,
+    &DEPRECATED_TOKEN_INDEXES
+))]
 #[case::key_lookup_indexes(Cohort::KeyLookupIndexes)]
 #[case::access_group_history(Cohort::AccessGroupHistory)]
 #[case::guardrail_owner(Cohort::SingleColumn(

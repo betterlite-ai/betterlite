@@ -374,6 +374,16 @@ async fn assert_indexes(client: &Client, specs: &[IndexSpec]) {
     }
 }
 
+async fn assert_table_catalog(
+    client: &Client,
+    table: &str,
+    columns: &[ColumnSpec],
+    indexes: &[IndexSpec],
+) {
+    assert_columns(client, table, columns).await;
+    assert_indexes(client, indexes).await;
+}
+
 async fn assert_rule(client: &Client, conname: &str, update_rule: char, delete_rule: char) {
     let row = query_one_row(
         client,
