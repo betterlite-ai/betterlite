@@ -4,6 +4,7 @@ use crate::types::{
     AsymmetricSessionKeys, SessionKeys, SessionPrincipal, SessionRotatedPublicKey,
     SessionSigningKeys, SessionTokenKind,
 };
+use betterlite_config::sections::mcp_bearer_credentials::defect::SigningConfigDefect;
 use betterlite_config::sections::mcp_bearer_credentials::{
     ResolvedSigning, Settings as SigningConfig,
 };
@@ -47,9 +48,14 @@ pub fn scrypt_hex(master_key: &str, domain: &[u8]) -> Result<String, SessionKeyD
 }
 
 // returned rather than raised so issuance and admission fail closed instead of falling back to HS256.
-#[derive(Debug, Clone)]
-pub struct SessionSigningConfigError {
-    pub detail: String,
+#[derive(Debug, Error)]
+pub enum SessionSigningConfigError {
+    #[error("deriving the session signing key from the master key failed")]
+    Derivation(#[source] SessionKeyDerivationError),
+    #[error("the configured signing keys are invalid")]
+    Keys(#[source] SessionKeyError),
+    #[error("mcp_session_token_signing is misconfigured")]
+    Config(#[source] SigningConfigDefect),
 }
 
 // never substitutes HS256 for a broken RS256 configuration; a resolution defect is passed through, not swallowed.
@@ -60,17 +66,11 @@ pub fn resolve_session_signing_keys(
     match settings {
         SigningConfig::Absent => session_keys_from_master_key(master_key)
             .map(SessionSigningKeys::Symmetric)
-            .map_err(|source| SessionSigningConfigError {
-                detail: source.to_string(),
-            }),
-        SigningConfig::Invalid(detail) => Err(SessionSigningConfigError {
-            detail: detail.clone(),
-        }),
+            .map_err(SessionSigningConfigError::Derivation),
+        SigningConfig::Invalid(defect) => Err(SessionSigningConfigError::Config(defect.clone())),
         SigningConfig::Resolved(resolved) => build_asymmetric_keys(resolved)
             .map(SessionSigningKeys::Asymmetric)
-            .map_err(|source| SessionSigningConfigError {
-                detail: source.to_string(),
-            }),
+            .map_err(SessionSigningConfigError::Keys),
     }
 }
 

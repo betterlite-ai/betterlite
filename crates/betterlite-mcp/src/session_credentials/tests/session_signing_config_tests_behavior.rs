@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use betterlite_config::sections::mcp_bearer_credentials::defect::SigningConfigDefect;
 use betterlite_config::sections::mcp_bearer_credentials::{
     ResolvedPreviousKey, ResolvedSigning, Settings as SigningConfig,
 };
@@ -12,7 +13,7 @@ use crate::bridge_credentials::{
     SIGNING_KEY_DOMAIN as BRIDGE_SIGNING_KEY_DOMAIN, scrypt_hex as bridge_scrypt_hex,
 };
 use crate::session_credentials::{
-    SessionBearerResult, SessionRefreshResult, is_session_bearer_shaped,
+    SessionBearerResult, SessionRefreshResult, SessionSigningConfigError, is_session_bearer_shaped,
     open_session_refresh_bearer, resolve_session_bearer, resolve_session_signing_keys,
     session_keys_from_master_key,
 };
@@ -235,10 +236,13 @@ fn resolve_session_signing_keys_defaults_to_hs256_when_settings_absent() {
 #[test]
 fn resolve_session_signing_keys_passes_through_an_invalid_configuration_as_an_error() {
     let master_key = SecretString::from("a-sufficiently-long-master-key");
-    let settings = SigningConfig::Invalid(String::from("mcp_session_token_signing is malformed"));
+    let settings = SigningConfig::Invalid(SigningConfigDefect::Malformed);
     let error = resolve_session_signing_keys(&master_key, &settings)
         .expect_err("expected a SessionSigningConfigError");
-    assert_eq!(error.detail, "mcp_session_token_signing is malformed");
+    assert!(matches!(
+        error,
+        SessionSigningConfigError::Config(SigningConfigDefect::Malformed)
+    ));
 }
 
 #[test]
