@@ -20,6 +20,8 @@ pub struct OpenaiExceptionInput {
     pub custom_llm_provider: String,
     pub error_str: String,
     pub status_code: Option<u16>,
+    #[serde(default)]
+    pub status_code_is_synthesized: bool,
     pub message: Option<String>,
     #[serde(default)]
     pub body: Option<OpenaiErrorBody>,
@@ -114,7 +116,12 @@ fn status_text(provider: &str, status: Option<u16>, message: &str) -> String {
 
 // the status-code fallback _map_openai_exception reaches once every error-string predicate above misses
 fn status_branch(input: &OpenaiExceptionInput, provider: &str, message: &str) -> ErrorClass {
-    let status = input.status_code;
+    // hasattr(original_exception, "status_code") is false for a synthesized status, so it must read as None here too
+    let status = if input.status_code_is_synthesized {
+        None
+    } else {
+        input.status_code
+    };
     let text = status_text(provider, status, message);
     let body = if matches!(status, Some(400 | 422 | 429 | 500)) {
         flat_body(input)

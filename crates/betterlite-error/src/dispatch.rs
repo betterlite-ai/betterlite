@@ -100,6 +100,7 @@ fn dispatch_raw(raw: &RawException) -> ErrorClass {
             custom_llm_provider: raw.custom_llm_provider.clone(),
             error_str: error_str.to_owned(),
             status_code: raw.status_code,
+            status_code_is_synthesized: raw.status_code_is_synthesized,
             message: raw.message.clone(),
             body: raw.body.clone(),
         });

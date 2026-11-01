@@ -41,6 +41,7 @@ fn input(error_str: &str, status_code: Option<u16>) -> OpenaiExceptionInput {
         custom_llm_provider: "openai".to_owned(),
         error_str: error_str.to_owned(),
         status_code,
+        status_code_is_synthesized: false,
         message: None,
         body: None,
     }
@@ -138,6 +139,18 @@ fn timeout_string_preamble_check_uses_a_different_phrase_than_the_branch_check()
     // the preamble (dispatch.rs) checks "Request timed out"; this branch only recognizes "A timeout occurred"
     let class = map_openai_exception(&input("Request timed out waiting for a response", None));
     assert!(!matches!(class, ErrorClass::Timeout(_)));
+}
+
+#[test]
+fn a_synthesized_status_falls_back_to_api_connection_instead_of_its_own_family() {
+    let mut request = input("boom", Some(500));
+    request.status_code_is_synthesized = true;
+    let class = map_openai_exception(&request);
+    assert_eq!(
+        describe(&class).0,
+        "api_connection",
+        "hasattr(original_exception, \"status_code\") is false for a synthesized status"
+    );
 }
 
 #[test]
