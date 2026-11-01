@@ -1,0 +1,13 @@
+kind: helper
+name: native-errors-a-competing-message-status
+call:
+  native_errors_a:
+    provider: ai21
+    model: ai21/model-a
+    message: "Prompt has too many tokens for this model"
+    status_code: 429
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

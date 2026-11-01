@@ -1,0 +1,14 @@
+kind: helper
+name: anthropic-replicate-errors-generic-fallback
+call:
+  anthropic_replicate_errors:
+    provider: replicate
+    model: replicate/some-model
+    error_str: "totally unrelated failure text"
+    exception_type: APIError
+    status_code: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/context/message
+      why: betterlite writes its own message

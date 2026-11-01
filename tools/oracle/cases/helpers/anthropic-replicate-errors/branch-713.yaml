@@ -1,0 +1,14 @@
+kind: helper
+name: anthropic-replicate-errors-branch-713
+call:
+  anthropic_replicate_errors:
+    provider: replicate
+    model: replicate/some-model
+    error_str: "generic failure"
+    exception_type: APIError
+    status_code: 500
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

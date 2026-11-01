@@ -42,6 +42,7 @@ scope:
     - crates/betterlite-config/src/sections/grayswan/**
     - tools/oracle/helpers/b3771.py
     - tools/oracle/helpers/b3771/**
+    - tools/oracle/src/helpers/guardrails/b3767.rs
     - tools/oracle/src/helpers/guardrails/b3771.rs
     - tools/oracle/src/helpers/guardrails/b3771/**
     - "tools/oracle/cases/guardrails/grayswan/**"
