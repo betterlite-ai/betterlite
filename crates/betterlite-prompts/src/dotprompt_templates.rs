@@ -6,7 +6,6 @@ use indexmap::IndexMap;
 use minijinja::value::Serde;
 
 use crate::arguments::json::{Json, Object};
-use frontmatter::FrontmatterError;
 use loading::PromptManagerError;
 use render::RenderError;
 use template::{PromptTemplate, TemplateError};
@@ -204,8 +203,11 @@ impl PromptManager {
         }
     }
 
-    pub fn prompt_file_to_json(file_path: &Path) -> Result<Object, FrontmatterError> {
-        let content = fs::read_to_string(file_path).unwrap_or_default();
+    pub fn prompt_file_to_json(file_path: &Path) -> Result<Object, PromptManagerError> {
+        let content = fs::read_to_string(file_path).map_err(|source| PromptManagerError::Read {
+            path: file_path.display().to_string(),
+            source,
+        })?;
         let (metadata, template_content) = frontmatter::parse_frontmatter(&content)?;
         Ok(conversion::file_json(template_content.trim(), metadata))
     }
