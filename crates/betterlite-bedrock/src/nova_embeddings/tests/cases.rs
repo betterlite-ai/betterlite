@@ -127,6 +127,10 @@ fn nova_default_purpose_dimensions() {
         Some(&text("SEGMENTED_EMBEDDING"))
     );
 
+    assert_dimension_mapping_defaults();
+}
+
+fn assert_dimension_mapping_defaults() {
     let dimension_only = params(&[("embedding_dimension", int(128))]);
     let dimension_only_request =
         transform_request("hello", &dimension_only, false, None, None).unwrap();

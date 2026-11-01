@@ -100,18 +100,24 @@ fn retained_vectors(response: &Params) -> Result<Vec<(Field, u64)>, NovaEmbeddin
 }
 
 fn embeddings_list_entry(item: &Field) -> Option<Result<(Field, u64), NovaEmbeddingsError>> {
-    match item {
-        Field::Mapping(mapping) => {
-            let embedding_field = mapping.get("embedding")?;
-            Some(embedding_list_item(mapping, embedding_field))
-        }
-        Field::List(_) | Field::Text(_) => None,
-        Field::Null | Field::Bool(_) | Field::Int(_) | Field::Float(_) => {
-            Some(Err(NovaEmbeddingsError::MalformedField {
-                field: "embeddings",
-            }))
-        }
+    if let Field::Mapping(mapping) = item {
+        let embedding_field = mapping.get("embedding")?;
+        return Some(embedding_list_item(mapping, embedding_field));
     }
+    if is_non_membership_testable(item) {
+        return Some(Err(NovaEmbeddingsError::MalformedField {
+            field: "embeddings",
+        }));
+    }
+    None
+}
+
+// Python's `in` operator never raises for a list or a string, only for a non-container.
+const fn is_non_membership_testable(field: &Field) -> bool {
+    matches!(
+        field,
+        Field::Null | Field::Bool(_) | Field::Int(_) | Field::Float(_)
+    )
 }
 
 fn embedding_list_item(
@@ -137,10 +143,9 @@ fn embedding_length(field: &Field) -> Result<u64, NovaEmbeddingsError> {
             return Err(NovaEmbeddingsError::MalformedField { field: "embedding" });
         }
     };
-    Ok(u64::try_from(length)
-        .map_err(|_source| NovaEmbeddingsError::TokenOverflow)?
-        .checked_div(4)
-        .unwrap_or(0))
+    u64::try_from(length)
+        .map(|value| value.checked_div(4).unwrap_or(0))
+        .map_err(|_source| NovaEmbeddingsError::TokenOverflow)
 }
 
 fn as_u64(field: &Field, name: &'static str) -> Result<u64, NovaEmbeddingsError> {
