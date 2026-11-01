@@ -60,27 +60,18 @@ pub enum ArgumentsValue {
 #[must_use]
 pub fn build_request_payload(data: &Fields) -> Option<RequestPayload> {
     if matches!(Json::field(data, "jsonrpc"), Json::Text(version) if version == "2.0") {
-        return Some(request_from_jsonrpc(data));
+        let id = default_id(data, &["id", "litellm_call_id"]);
+        let method = first_nonfalsy_raw(data, &["method"])
+            .map_or(MethodValue::Default("tools/call"), MethodValue::Given);
+        let params = first_nonfalsy_raw(data, &["params"])
+            .map_or(ParamsValue::Empty(Fields::new()), ParamsValue::Given);
+        return Some(RequestPayload {
+            jsonrpc: "2.0",
+            id,
+            method,
+            params,
+        });
     }
-    request_from_call_data(data)
-}
-
-fn request_from_jsonrpc(data: &Fields) -> RequestPayload {
-    let id = first_nonfalsy_raw(data, &["id", "litellm_call_id"])
-        .map_or(IdValue::Default("litellm-mcp"), IdValue::Given);
-    let method = first_nonfalsy_raw(data, &["method"])
-        .map_or(MethodValue::Default("tools/call"), MethodValue::Given);
-    let params = first_nonfalsy_raw(data, &["params"])
-        .map_or(ParamsValue::Empty(Fields::new()), ParamsValue::Given);
-    RequestPayload {
-        jsonrpc: "2.0",
-        id,
-        method,
-        params,
-    }
-}
-
-fn request_from_call_data(data: &Fields) -> Option<RequestPayload> {
     let name = first_nonfalsy_raw(data, &["mcp_tool_name", "tool_name", "name"])?;
     let given_arguments =
         present_raw(data, "mcp_arguments").or_else(|| present_raw(data, "arguments"));
@@ -90,14 +81,17 @@ fn request_from_call_data(data: &Fields) -> Option<RequestPayload> {
         }
         _ => ArgumentsValue::Empty(Fields::new()),
     };
-    let id = first_nonfalsy_raw(data, &["litellm_call_id"])
-        .map_or(IdValue::Default("litellm-mcp"), IdValue::Given);
     Some(RequestPayload {
         jsonrpc: "2.0",
-        id,
+        id: default_id(data, &["litellm_call_id"]),
         method: MethodValue::Default("tools/call"),
         params: ParamsValue::Built { name, arguments },
     })
+}
+
+fn default_id(data: &Fields, keys: &[&str]) -> IdValue {
+    let raw = first_nonfalsy_raw(data, keys);
+    raw.map_or(IdValue::Default("litellm-mcp"), IdValue::Given)
 }
 
 #[must_use]

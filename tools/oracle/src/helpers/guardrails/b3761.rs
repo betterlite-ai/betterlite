@@ -56,50 +56,56 @@ fn fields_to_value(source: &Fields) -> Value {
 
 fn outcome(input: &Input) -> Value {
     match input {
-        Input::RequestEnvelope { data } => {
-            let fields: Fields =
-                serde_json::from_value(Value::Object(data.clone())).unwrap_or_default();
-            envelope::build_request_payload(&fields)
-                .map_or(Value::Null, |payload| to_value(&payload))
-        }
+        Input::RequestEnvelope { data } => request_envelope(data),
         Input::ResponseEnvelope {
             request_data,
             response,
-        } => {
-            let fields: Fields =
-                serde_json::from_value(Value::Object(request_data.clone())).unwrap_or_default();
-            let parsed = Json::parse(&response.to_string());
-            envelope::build_response_payload(&fields, &parsed)
-                .map_or(Value::Null, |payload| to_value(&payload))
-        }
-        Input::HydrateContext { request_data } => {
-            let mut data: Fields =
-                serde_json::from_value(Value::Object(request_data.clone())).unwrap_or_default();
-            context::hydrate_tool_context(&mut data);
-            fields_to_value(&data)
-        }
+        } => response_envelope(request_data, response),
+        Input::HydrateContext { request_data } => hydrate_context(request_data),
         Input::NormalizeDict { response } | Input::NormalizeModel { response } => {
-            let parsed = Json::parse(&response.to_string());
-            normalize::normalize_response(&parsed)
-                .map_or(Value::Null, |normalized| normalized_to_value(&normalized))
+            normalize_response(response)
         }
-        Input::NormalizeFieldTuples { pairs } => {
-            let parsed = Json::parse(&pairs.to_string());
-            normalize::normalize_response(&parsed)
-                .map_or(Value::Null, |normalized| normalized_to_value(&normalized))
-        }
-        Input::BlockingResponse { detail } => {
-            let parsed = Json::parse(&detail.to_string());
-            let response = blocking::build_blocking_response(
-                &parsed,
-                "cisco_ai_defense",
-                Some("cisco-ai-defense"),
-                None,
-            );
-            to_value(&response)
-        }
+        Input::NormalizeFieldTuples { pairs } => normalize_response(pairs),
+        Input::BlockingResponse { detail } => blocking_response(detail),
         Input::RewriteText { response, text } => rewrite_text(response, text),
     }
+}
+
+fn request_envelope(data: &Map<String, Value>) -> Value {
+    let fields: Fields = serde_json::from_value(Value::Object(data.clone())).unwrap_or_default();
+    envelope::build_request_payload(&fields).map_or(Value::Null, |payload| to_value(&payload))
+}
+
+fn response_envelope(request_data: &Map<String, Value>, response: &Value) -> Value {
+    let fields: Fields =
+        serde_json::from_value(Value::Object(request_data.clone())).unwrap_or_default();
+    let parsed = Json::parse(&response.to_string());
+    envelope::build_response_payload(&fields, &parsed)
+        .map_or(Value::Null, |payload| to_value(&payload))
+}
+
+fn hydrate_context(request_data: &Map<String, Value>) -> Value {
+    let mut data: Fields =
+        serde_json::from_value(Value::Object(request_data.clone())).unwrap_or_default();
+    context::hydrate_tool_context(&mut data);
+    fields_to_value(&data)
+}
+
+fn normalize_response(response: &Value) -> Value {
+    let parsed = Json::parse(&response.to_string());
+    normalize::normalize_response(&parsed)
+        .map_or(Value::Null, |normalized| normalized_to_value(&normalized))
+}
+
+fn blocking_response(detail: &Value) -> Value {
+    let parsed = Json::parse(&detail.to_string());
+    let response = blocking::build_blocking_response(
+        &parsed,
+        "cisco_ai_defense",
+        Some("cisco-ai-defense"),
+        None,
+    );
+    to_value(&response)
 }
 
 fn to_value<T>(value: &T) -> Value
