@@ -1,0 +1,10 @@
+kind: helper
+name: cost-adjustments-legacy
+call:
+  cost_adjustments:
+    base_cost: "0.10"
+    provider: provider
+    discount_config: {global: 0.5, provider: "0.2"}
+    margin_config: {provider: [], global: {percentage: "0.1", fixed_amount: "0.001", ignored: true}}
+env: {}
+compare: {ignore: []}
