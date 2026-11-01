@@ -187,45 +187,31 @@ where
     ))
 }
 
-fn resolve_outcome(
-    operation: BridgeOperation,
-    candidate: &str,
-    keys: &EnvelopeKeys,
-    now: DateTime<Utc>,
-    expected_server_id: &str,
-) -> serde_json::Value {
-    match operation {
-        BridgeOperation::Envelope => {
-            match resolve_bridge_envelope(candidate, keys, now, expected_server_id) {
-                BridgeEnvelopeResult::NotBridgeEnvelope => {
-                    json!({ "tag": "not_bridge_envelope" })
-                }
-                BridgeEnvelopeResult::BridgeEnvelopeAdmitted {
-                    identity,
-                    upstream_authorization,
-                } => json!({
-                    "tag": "admitted",
-                    "identity": identity,
-                    "upstream_authorization": upstream_authorization.expose_secret(),
-                }),
-                BridgeEnvelopeResult::BridgeEnvelopeInvalid => json!({ "tag": "invalid" }),
-            }
-        }
-        BridgeOperation::Refresh => {
-            match open_bridge_refresh_envelope(candidate, keys, now, expected_server_id) {
-                BridgeRefreshResult::BridgeRefreshOpened { identity, refresh } => json!({
-                    "tag": "opened",
-                    "identity": identity,
-                    "refresh": {
-                        "refresh_token": refresh.refresh_token.expose_secret(),
-                        "scope": refresh.scope,
-                        "expires_in": refresh.expires_in,
-                    },
-                }),
-                BridgeRefreshResult::BridgeRefreshInvalid => json!({ "tag": "invalid" }),
-            }
-        }
+fn bridge_envelope_json(result: BridgeEnvelopeResult) -> serde_json::Value {
+    match result {
+        BridgeEnvelopeResult::NotBridgeEnvelope => json!({ "tag": "not_bridge_envelope" }),
+        BridgeEnvelopeResult::BridgeEnvelopeAdmitted {
+            identity,
+            upstream_authorization,
+        } => json!({
+            "tag": "admitted",
+            "identity": identity,
+            "upstream_authorization": upstream_authorization.expose_secret(),
+        }),
+        BridgeEnvelopeResult::BridgeEnvelopeInvalid => json!({ "tag": "invalid" }),
     }
+}
+
+fn bridge_refresh_json(result: BridgeRefreshResult) -> serde_json::Value {
+    let BridgeRefreshResult::BridgeRefreshOpened { identity, refresh } = result else {
+        return json!({ "tag": "invalid" });
+    };
+    let refresh_json = json!({
+        "refresh_token": refresh.refresh_token.expose_secret(),
+        "scope": refresh.scope,
+        "expires_in": refresh.expires_in,
+    });
+    json!({ "tag": "opened", "identity": identity, "refresh": refresh_json })
 }
 
 pub(crate) fn run_bridge(fields: &EnvelopeFields, operation: BridgeOperation) -> HelperResult {
@@ -242,8 +228,9 @@ pub(crate) fn run_bridge(fields: &EnvelopeFields, operation: BridgeOperation) ->
                 expires_in: mint.expires_in,
             },
             mint_envelope,
-            |cand, keys, at, srv| resolve_outcome(BridgeOperation::Envelope, cand, keys, at, srv),
-        ),
+            resolve_bridge_envelope,
+        )
+        .map(bridge_envelope_json),
         BridgeOperation::Refresh => open_credential(
             fields,
             now,
@@ -253,8 +240,9 @@ pub(crate) fn run_bridge(fields: &EnvelopeFields, operation: BridgeOperation) ->
                 expires_in: mint.expires_in,
             },
             mint_refresh_envelope,
-            |cand, keys, at, srv| resolve_outcome(BridgeOperation::Refresh, cand, keys, at, srv),
-        ),
+            open_bridge_refresh_envelope,
+        )
+        .map(bridge_refresh_json),
     };
     Ok(result?)
 }
