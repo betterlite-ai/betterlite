@@ -151,7 +151,6 @@ impl PriceLookup for CountingLookup {
         _model: &str,
         _custom_llm_provider: Option<&str>,
     ) -> Option<PricedModel> {
-        self.calls.set(self.calls.get().saturating_add(1));
         self.answer.clone().map(no_tables)
     }
 }

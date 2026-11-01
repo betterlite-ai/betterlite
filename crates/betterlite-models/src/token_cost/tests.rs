@@ -38,9 +38,9 @@ fn model(entries: &[(&str, &str)]) -> ModelInfo {
         .collect()
 }
 
-fn priced(entries: &[(&str, &str)]) -> PricedModel {
+fn priced(record: ModelInfo) -> PricedModel {
     PricedModel {
-        record: model(entries),
+        record,
         tiered_pricing: Vec::new(),
         off_peak_pricing: None,
         off_peak_cache_read_present: false,
@@ -134,7 +134,7 @@ fn base_request<'fixture>(
 fn an_unregistered_model_without_supplied_pricing_errors() {
     let database = TimeZoneDatabase::from_env();
     let usage = fixture_usage(10, 5);
-    let pricing = priced(&[]);
+    let pricing = priced(model(&[]));
     let extras = PromptExtras::default();
     let mut request = base_request(&usage, &pricing, &extras);
     request.supplied_pricing = None;
@@ -146,10 +146,10 @@ fn an_unregistered_model_without_supplied_pricing_errors() {
 fn a_supplied_empty_model_record_bypasses_the_catalog_lookup() {
     let database = TimeZoneDatabase::from_env();
     let usage = fixture_usage(10, 5);
-    let pricing = priced(&[]);
+    let pricing = priced(model(&[]));
     let extras = PromptExtras::default();
     let request = base_request(&usage, &pricing, &extras);
-    let lookup = CountingLookup::new(Some(priced(&[("input_cost_per_token", "\"1.0\"")])));
+    let lookup = CountingLookup::new(Some(priced(model(&[("input_cost_per_token", "\"1.0\"")]))));
     let result = generic_cost_per_token(&request, &lookup, &database)
         .expect("an empty record is still usable");
     assert_eq!(lookup.calls.get(), 0, "the catalog lookup must never run");
@@ -162,7 +162,7 @@ fn a_catalog_resolved_model_bills_its_tier_and_off_peak_rates() {
     let database = TimeZoneDatabase::from_env();
     let usage = fixture_usage(500, 100);
     let extras = PromptExtras::default();
-    let unused_pricing = priced(&[]);
+    let unused_pricing = priced(model(&[]));
     let mut request = base_request(&usage, &unused_pricing, &extras);
     request.supplied_pricing = None;
 
@@ -202,12 +202,12 @@ fn a_catalog_resolved_model_bills_its_tier_and_off_peak_rates() {
 fn exact_totals_apply_the_residency_then_vertex_uplift_to_both_sides() {
     let database = TimeZoneDatabase::from_env();
     let usage = fixture_usage(100, 50);
-    let pricing = priced(&[
+    let pricing = priced(model(&[
         ("input_cost_per_token", "\"0.001\""),
         ("output_cost_per_token", "\"0.002\""),
         ("regional_processing_uplift_multiplier_us", "\"1.1\""),
         ("regional_endpoint_uplift_multiplier", "\"1.05\""),
-    ]);
+    ]));
     let extras = PromptExtras::default();
     let mut request = base_request(&usage, &pricing, &extras);
     request.data_residency = Some("us");
@@ -229,11 +229,11 @@ fn exact_totals_apply_the_residency_then_vertex_uplift_to_both_sides() {
 fn an_unrecognized_residency_leaves_totals_unmultiplied() {
     let database = TimeZoneDatabase::from_env();
     let usage = fixture_usage(10, 10);
-    let pricing = priced(&[
+    let pricing = priced(model(&[
         ("input_cost_per_token", "\"0.01\""),
         ("output_cost_per_token", "\"0.01\""),
         ("regional_processing_uplift_multiplier_us", "\"2.0\""),
-    ]);
+    ]));
     let extras = PromptExtras::default();
     let mut request = base_request(&usage, &pricing, &extras);
     request.data_residency = Some("ca");
