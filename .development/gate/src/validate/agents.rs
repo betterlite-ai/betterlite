@@ -175,6 +175,7 @@ fn vendor_problems(agents: &Agents) -> Vec<String> {
     let reviewers = [
         ("reviewer", &agents.roles.reviewer),
         ("security reviewer", &agents.roles.security_reviewer),
+        ("parity reviewer", &agents.roles.parity_reviewer),
     ];
     for rung in &agents.roles.worker.ladder {
         let worker_vendor = vendor(&rung.runner);
@@ -210,6 +211,7 @@ pub(crate) fn problems(folder: &Path, agents: &Agents) -> Vec<String> {
         ("worker", &agents.roles.worker),
         ("reviewer", &agents.roles.reviewer),
         ("security reviewer", &agents.roles.security_reviewer),
+        ("parity reviewer", &agents.roles.parity_reviewer),
         ("planner", &agents.roles.planner),
     ];
     for (name, role) in roles {

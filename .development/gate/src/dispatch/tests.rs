@@ -5,18 +5,19 @@ use std::ops::ControlFlow;
 use std::path::Path;
 
 use crate::dispatch::attempt::remove_extra_targets;
-use crate::dispatch::progress::{NextRun, Progress, ReviewerPin, WorkerSession};
+use crate::dispatch::progress::{NextRun, Panel, Progress, ReviewerPin, WorkerSession};
 use crate::dispatch::prompt::Brief;
-use crate::dispatch::review::reviewer_rungs;
+use crate::dispatch::review::{Bench, PARITY_RULES, review, reviewer_rungs};
 use crate::dispatch::vendor::mark;
 use crate::dispatch::{
-    EarlierReview, Places, Round, Step, apply_step, climb_rung, find_runner, note_blocked,
+    Attempt, EarlierReview, Places, Round, Step, apply_step, climb_rung, find_runner, note_blocked,
     overflow_rung, pick_rung, run_ladder,
 };
 use crate::error::GateError;
 use crate::git::git;
 use crate::spec::agents::{Agents, OutputMode};
 use crate::spec::review::ReviewVerdict;
+use crate::spec::rules::Rules;
 use crate::spec::task::{ReviewLevel, Task};
 use crate::yaml::read_yaml;
 
@@ -68,7 +69,8 @@ fn a_saved_progress_comes_back_with_the_new_notes_added() {
     saved.granted = 2;
     saved.reviewer = Some(ReviewerPin {
         runner: "claude-reviewer".to_owned(),
-        model: "sonnet".to_owned(),
+        model: "opus".to_owned(),
+        panel: Panel::Parity,
     });
     saved.save(folder.path()).unwrap();
     let notes = vec!["fix the parser".to_owned(), "a new note".to_owned()];
@@ -352,7 +354,11 @@ fn the_reviewer_on_the_other_vendor_comes_first() {
     let (agents, _) = fixtures();
     let order = |worker: &str, level| {
         let runner = find_runner(&agents, worker).unwrap();
-        reviewer_rungs(&agents, level, runner, None)
+        let bench = Bench {
+            panel: Panel::Standard,
+            pinned: None,
+        };
+        reviewer_rungs(&agents, level, bench, runner)
             .into_iter()
             .map(|rung| rung.model.clone())
             .collect::<Vec<String>>()
@@ -379,8 +385,13 @@ fn the_reviewer_of_the_last_round_comes_first() {
         let pin = ReviewerPin {
             runner: runner.to_owned(),
             model: model.to_owned(),
+            panel: Panel::Standard,
         };
-        reviewer_rungs(&agents, ReviewLevel::Standard, codex, Some(&pin))
+        let bench = Bench {
+            panel: Panel::Standard,
+            pinned: Some(&pin),
+        };
+        reviewer_rungs(&agents, ReviewLevel::Standard, bench, codex)
             .into_iter()
             .map(|rung| rung.model.clone())
             .collect::<Vec<String>>()
@@ -478,6 +489,7 @@ fn pin() -> ReviewerPin {
     ReviewerPin {
         runner: "claude-reviewer".to_owned(),
         model: "sonnet".to_owned(),
+        panel: Panel::Standard,
     }
 }
 
@@ -833,4 +845,206 @@ fn a_session_from_another_model_starts_a_new_one() {
     .unwrap();
     let resumed = fs::read_to_string(folder.path().join("resumed")).unwrap();
     assert!(!resumed.contains("s0"), "{resumed}");
+}
+
+#[test]
+fn a_pin_saved_before_the_parity_pass_loads_as_standard() {
+    let folder = tempfile::tempdir().unwrap();
+    fs::write(
+        folder.path().join("progress.json"),
+        r#"{"feedback":[],"number":1,"used":1,"rung":0,"rung_used":1,"limited":false,"review_rounds":1,"blocked_reports":0,"last_blocked":0,"earlier":null,"litellm":[],"reviewer":{"runner":"claude-reviewer","model":"sonnet"}}"#,
+    )
+    .unwrap();
+    let loaded = Progress::load(folder.path(), Vec::new()).unwrap();
+    assert_eq!(loaded.reviewer, Some(pin()));
+}
+
+#[test]
+fn the_parity_ladder_ignores_a_standard_pin() {
+    let (agents, _) = fixtures();
+    let claude = find_runner(&agents, "claude-worker").unwrap();
+    let order = |pinned: Option<&ReviewerPin>| {
+        let bench = Bench {
+            panel: Panel::Parity,
+            pinned,
+        };
+        reviewer_rungs(&agents, ReviewLevel::Standard, bench, claude)
+            .into_iter()
+            .map(|rung| rung.model.clone())
+            .collect::<Vec<String>>()
+    };
+    assert_eq!(order(None), ["gpt-6-astra", "opus"]);
+    let standard = ReviewerPin {
+        runner: "claude-reviewer".to_owned(),
+        model: "opus".to_owned(),
+        panel: Panel::Standard,
+    };
+    assert_eq!(order(Some(&standard)), ["gpt-6-astra", "opus"]);
+    let parity = ReviewerPin {
+        panel: Panel::Parity,
+        ..standard
+    };
+    assert_eq!(order(Some(&parity)), ["opus", "gpt-6-astra"]);
+}
+
+#[test]
+fn the_parity_pass_counts_its_review_rounds_from_zero() {
+    let (agents, task) = fixtures();
+    let folder = tempfile::tempdir().unwrap();
+    let mut progress = progress();
+    progress.review_rounds = agents.policy.max_review_rounds;
+    progress.reviewer = Some(pin());
+    for expected in [1, 2] {
+        let step = Step::Reviewed(Round {
+            verdict: ReviewVerdict::Changes,
+            review: EarlierReview {
+                commit: "def456".to_owned(),
+                findings: vec!["a parity finding".to_owned()],
+            },
+            reviewer: ReviewerPin {
+                panel: Panel::Parity,
+                ..pin()
+            },
+            litellm: Vec::new(),
+        });
+        let flow = apply_step(
+            &agents,
+            &brief(&task),
+            &places(folder.path()),
+            &mut progress,
+            step,
+        )
+        .unwrap();
+        assert_eq!(flow, ControlFlow::Continue(()));
+        assert_eq!(progress.review_rounds, expected);
+    }
+}
+
+#[test]
+fn the_parity_rules_are_reviewed_rules() {
+    let development = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let rules: Rules = read_yaml(&development.join("rules.yaml")).unwrap();
+    for id in PARITY_RULES {
+        assert!(
+            rules
+                .rules
+                .iter()
+                .any(|rule| rule.id == id && rule.reviewed),
+            "{id}"
+        );
+    }
+}
+
+const APPROVE: &str = r#"{"task":"B000","verdict":"approve","findings":[]}"#;
+
+fn review_answers(agents: &mut Agents, parity: &str) {
+    for runner in &mut agents.runners {
+        "sh".clone_into(&mut runner.program);
+        runner.args = vec![
+            "-c".to_owned(),
+            format!(
+                "cat > /dev/null; basename '{{output}}' .json >> '{{home}}/seats'; case '{{output}}' in *parity-reviewer*) printf '{parity}' ;; *) printf '{APPROVE}' ;; esac > '{{output}}'"
+            ),
+        ];
+        runner.output = OutputMode::File;
+    }
+}
+
+fn run_review(
+    agents: &Agents,
+    task: &Task,
+    pinned: Option<&ReviewerPin>,
+) -> (Result<Step, GateError>, String) {
+    let folder = tempfile::tempdir().unwrap();
+    worktree(folder.path());
+    git(folder.path(), &["update-ref", "refs/heads/main", "HEAD"]).unwrap();
+    let development = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    fs::copy(
+        development.join("rules.yaml"),
+        folder.path().join(".development/rules.yaml"),
+    )
+    .unwrap();
+    fs::copy(
+        development.join("schema/review.schema.json"),
+        folder.path().join(".development/schema/review.schema.json"),
+    )
+    .unwrap();
+    let brief = brief(task);
+    let places = places(folder.path());
+    let attempt = Attempt {
+        agents,
+        brief: &brief,
+        places: &places,
+        number: 1,
+        earlier: None,
+        reviewer: pinned,
+        resume: None,
+    };
+    let worker = find_runner(agents, "claude-worker").unwrap();
+    let step = review(&attempt, worker, folder.path());
+    let seats = fs::read_to_string(folder.path().join("seats")).unwrap();
+    (step, seats)
+}
+
+#[test]
+fn a_standard_approval_of_a_task_that_cites_litellm_gets_a_parity_pass() {
+    let (mut agents, task) = fixtures();
+    review_answers(&mut agents, APPROVE);
+    let (step, seats) = run_review(&agents, &task, None);
+    assert_eq!(seats, "attempt-1-reviewer\nattempt-1-parity-reviewer\n");
+    let Ok(Step::Reviewed(round)) = step else {
+        panic!("the review should end in a round");
+    };
+    assert_eq!(round.verdict, ReviewVerdict::Approve);
+    assert_eq!(round.reviewer.panel, Panel::Parity);
+}
+
+#[test]
+fn a_task_without_references_gets_one_review() {
+    let (mut agents, mut task) = fixtures();
+    task.references.clear();
+    review_answers(&mut agents, APPROVE);
+    let (step, seats) = run_review(&agents, &task, None);
+    assert_eq!(seats, "attempt-1-reviewer\n");
+    let Ok(Step::Reviewed(round)) = step else {
+        panic!("the review should end in a round");
+    };
+    assert_eq!(round.reviewer.panel, Panel::Standard);
+}
+
+#[test]
+fn a_round_after_the_parity_pass_goes_to_the_parity_reviewer() {
+    let (mut agents, task) = fixtures();
+    review_answers(&mut agents, APPROVE);
+    let pinned = ReviewerPin {
+        runner: "claude-reviewer".to_owned(),
+        model: "opus".to_owned(),
+        panel: Panel::Parity,
+    };
+    let (step, seats) = run_review(&agents, &task, Some(&pinned));
+    assert_eq!(seats, "attempt-1-parity-reviewer\n");
+    let Ok(Step::Reviewed(round)) = step else {
+        panic!("the review should end in a round");
+    };
+    assert_eq!(round.reviewer, pinned);
+}
+
+#[test]
+fn a_parity_finding_under_another_rule_goes_back_once_then_fails() {
+    let (mut agents, task) = fixtures();
+    let style = r#"{"task":"B000","verdict":"changes","findings":[{"rule":"clear-names","origin":"ours","location":".development/rules.yaml:1","problem":"a vague name","fix":"rename it"}]}"#;
+    review_answers(&mut agents, style);
+    let (step, seats) = run_review(&agents, &task, None);
+    assert_eq!(
+        seats,
+        "attempt-1-reviewer\nattempt-1-parity-reviewer\nattempt-1-parity-reviewer-again\n"
+    );
+    let Err(error) = step else {
+        panic!("the review should fail");
+    };
+    assert!(
+        error
+            .to_string()
+            .contains("cites clear-names, and the parity review reports only")
+    );
 }

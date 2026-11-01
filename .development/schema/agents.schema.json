@@ -146,6 +146,10 @@
     "Roles": {
       "type": "object",
       "properties": {
+        "parity_reviewer": {
+          "description": "Reads a standard task that cites LiteLLM once the reviewer approves it, for LiteLLM parity, tests that can fail and bounded inputs. Later review rounds of that task stay with it.",
+          "$ref": "#/$defs/Role"
+        },
         "planner": {
           "$ref": "#/$defs/Role"
         },
@@ -165,6 +169,7 @@
         "worker",
         "reviewer",
         "security_reviewer",
+        "parity_reviewer",
         "planner"
       ]
     },

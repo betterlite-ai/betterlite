@@ -1,0 +1,45 @@
+{
+  "kind": "helper",
+  "name": "websearch-gates-chat-basic",
+  "call": {
+    "b4117": {
+      "surface": "chat_completions",
+      "response": {
+        "choices": [
+          {
+            "message": {
+              "tool_calls": [
+                {
+                  "type": "function",
+                  "id": "one",
+                  "function": {
+                    "name": "litellm_web_search",
+                    "arguments": {
+                      "query": "rust"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "litellm_web_search"
+          }
+        }
+      ],
+      "custom_llm_provider": "openai",
+      "enabled_providers": [
+        "openai"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
