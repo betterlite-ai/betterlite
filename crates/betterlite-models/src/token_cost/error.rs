@@ -20,6 +20,14 @@ pub enum TokenCostError {
     UnsupportedGeoMultiplierShape { geo: String },
     #[error("generic token cost arithmetic overflowed")]
     Overflow,
+    #[error(
+        "the resolved model info declares a nonempty tiered_pricing table that was not also supplied as a decoded tier table"
+    )]
+    UndecodedTieredPricing,
+    #[error(
+        "the resolved model info declares an off_peak_pricing object that was not also supplied as a decoded off-peak block"
+    )]
+    UndecodedOffPeakPricing,
     #[error(transparent)]
     Rate(#[from] TokenRateError),
     #[error(transparent)]

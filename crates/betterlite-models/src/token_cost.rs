@@ -19,7 +19,7 @@ use crate::cost_usage::CostUsage;
 use crate::modality_cost::input_cost::{InputCostRates, calculate_input_cost};
 use crate::off_peak::schema::OffPeakBlock;
 use crate::price_lookup::PriceLookup;
-use crate::tiered_pricing::Tier;
+use crate::tiered_pricing::{Scalar, Tier};
 use crate::token_rates::base_cost::get_token_base_cost;
 use crate::token_rates::{EffectiveRates, ModelInfo, ModelPricing, RequestContext, Usage};
 
@@ -44,16 +44,36 @@ pub struct GenericCostResult {
     pub completion_cost: Decimal,
 }
 
+// Scalar::Array/Object discard nested content, so a resolved compound pricing key without a matching decoded value is a typed error, not a silent plain-rate bill (docs/deviations/B1672.yaml).
+fn reject_lost_compound_pricing(
+    model_info: &ModelInfo,
+    request: &GenericCostRequest<'_>,
+) -> Result<(), TokenCostError> {
+    let tiered_pricing_lost = request.tiered_pricing.is_empty()
+        && matches!(model_info.get("tiered_pricing"), Some(Scalar::Array(items)) if !items.is_empty());
+    if tiered_pricing_lost {
+        return Err(TokenCostError::UndecodedTieredPricing);
+    }
+    let off_peak_pricing_lost = request.off_peak_pricing.is_none()
+        && matches!(model_info.get("off_peak_pricing"), Some(Scalar::Object(_)));
+    if off_peak_pricing_lost {
+        return Err(TokenCostError::UndecodedOffPeakPricing);
+    }
+    Ok(())
+}
+
 fn resolve_model_info(
     request: &GenericCostRequest<'_>,
     lookup: &dyn PriceLookup,
 ) -> Result<ModelInfo, TokenCostError> {
-    if let Some(supplied) = request.supplied_model_info {
-        return Ok(supplied.clone());
-    }
-    lookup
-        .effective_model_info(request.model, request.custom_llm_provider)
-        .ok_or(TokenCostError::UnknownModel)
+    let model_info = match request.supplied_model_info {
+        Some(supplied) => supplied.clone(),
+        None => lookup
+            .effective_model_info(request.model, request.custom_llm_provider)
+            .ok_or(TokenCostError::UnknownModel)?,
+    };
+    reject_lost_compound_pricing(&model_info, request)?;
+    Ok(model_info)
 }
 
 struct ResolvedPricing {
