@@ -5,7 +5,8 @@ use rstest::rstest;
 use crate::cisco_conversation::Fields;
 use crate::cisco_conversation::json::Json;
 use crate::cisco_redaction::chat_input::redact_chat_input;
-use crate::cisco_redaction::chat_output::{ListField, redact_list_field, redact_model_response};
+use crate::cisco_redaction::chat_output::list_field::{ListField, redact_list_field};
+use crate::cisco_redaction::chat_output::{redact_chat_output, redact_model_response};
 use crate::cisco_redaction::mcp::{apply_redaction_mcp_input, apply_redaction_mcp_output};
 use crate::cisco_verdict;
 
@@ -62,6 +63,10 @@ fn apply_redaction_mcp_input_rewrites_single_string_argument(
         }
     };
     assert_eq!(text_field(&rewritten, "question"), "redacted");
+    let Json::Object(modified_arguments) = Json::field(&request_data, "modified_arguments") else {
+        panic!("modified_arguments missing");
+    };
+    assert_eq!(text_field(&modified_arguments, "question"), "redacted");
 }
 
 #[test]
@@ -130,6 +135,40 @@ fn apply_redaction_chat_input_strips_synthetic_tool_definition_message() {
         panic!("messages missing");
     };
     assert_eq!(messages.len(), 1);
+    let remaining = obj(messages[0].get());
+    assert_eq!(text_field(&remaining, "role"), "user");
+    assert_eq!(text_field(&remaining, "content"), "hi");
+}
+
+#[test]
+fn apply_redaction_chat_input_falls_back_to_sanitized_text_for_instructions_blocked_by_input() {
+    let mut request_data = obj(r#"{"instructions": "old", "input": "hi"}"#);
+    let applied = redact_chat_input(&mut request_data, Some("new text"), None);
+    assert!(!applied);
+    assert_eq!(text_field(&request_data, "instructions"), "old");
+    assert_eq!(text_field(&request_data, "input"), "hi");
+}
+
+#[test]
+fn apply_redaction_chat_input_instructions_from_system_message_rewrites_input_from_user_only() {
+    let mut request_data = obj(r#"{"instructions": "old", "input": "hi"}"#);
+    let sanitized_messages = objects(
+        r#"[{"role": "system", "content": "system text"}, {"role": "user", "content": "user text"}]"#,
+    );
+    let applied = redact_chat_input(&mut request_data, None, Some(&sanitized_messages));
+    assert!(applied);
+    assert_eq!(text_field(&request_data, "instructions"), "system text");
+    let Json::List(input) = Json::field(&request_data, "input") else {
+        panic!("input missing");
+    };
+    assert_eq!(input.len(), 1);
+    let item = obj(input[0].get());
+    assert_eq!(text_field(&item, "role"), "user");
+    let Json::List(content) = Json::field(&item, "content") else {
+        panic!("content missing");
+    };
+    let part = obj(content[0].get());
+    assert_eq!(text_field(&part, "text"), "user text");
 }
 
 #[test]
@@ -254,6 +293,201 @@ fn redact_model_response_returns_false_without_choices() {
         None
     ));
     assert!(!redact_model_response(None, Some("redacted"), None));
+}
+
+#[test]
+fn redact_model_response_clears_tool_call_arguments_on_sanitized_messages_path() {
+    let mut response = obj(r#"{"choices": [{"message": {
+            "content": "old",
+            "tool_calls": [{"function": {"name": "f", "arguments": "{\"x\":1}"}}],
+            "function_call": {"name": "g", "arguments": "{\"y\":2}"}
+        }}]}"#);
+    let sanitized_messages = objects(r#"[{"role": "assistant", "content": "redacted"}]"#);
+    let applied = redact_model_response(Some(&mut response), None, Some(&sanitized_messages));
+    assert!(applied);
+    let Json::List(choices) = Json::field(&response, "choices") else {
+        panic!("choices missing");
+    };
+    let choice = obj(choices[0].get());
+    let Json::Object(message) = Json::field(&choice, "message") else {
+        panic!("message missing");
+    };
+    let Json::List(tool_calls) = Json::field(&message, "tool_calls") else {
+        panic!("tool_calls missing");
+    };
+    let call = obj(tool_calls[0].get());
+    let Json::Object(function) = Json::field(&call, "function") else {
+        panic!("function missing");
+    };
+    assert_eq!(text_field(&function, "arguments"), "{}");
+    let Json::Object(function_call) = Json::field(&message, "function_call") else {
+        panic!("function_call missing");
+    };
+    assert_eq!(text_field(&function_call, "arguments"), "{}");
+}
+
+#[test]
+fn redact_model_response_clears_tool_call_arguments_on_sanitized_text_path() {
+    let mut response = obj(r#"{"choices": [{"message": {
+            "content": "old",
+            "tool_calls": [{"function": {"name": "f", "arguments": "{\"x\":1}"}}],
+            "function_call": {"name": "g", "arguments": "{\"y\":2}"}
+        }}]}"#);
+    let applied = redact_model_response(Some(&mut response), Some("redacted"), None);
+    assert!(applied);
+    let Json::List(choices) = Json::field(&response, "choices") else {
+        panic!("choices missing");
+    };
+    let choice = obj(choices[0].get());
+    let Json::Object(message) = Json::field(&choice, "message") else {
+        panic!("message missing");
+    };
+    let Json::List(tool_calls) = Json::field(&message, "tool_calls") else {
+        panic!("tool_calls missing");
+    };
+    let call = obj(tool_calls[0].get());
+    let Json::Object(function) = Json::field(&call, "function") else {
+        panic!("function missing");
+    };
+    assert_eq!(text_field(&function, "arguments"), "{}");
+    let Json::Object(function_call) = Json::field(&message, "function_call") else {
+        panic!("function_call missing");
+    };
+    assert_eq!(text_field(&function_call, "arguments"), "{}");
+}
+
+#[test]
+fn redact_model_response_falls_back_to_redacted_default_for_extra_choices() {
+    let mut response = obj(r#"{"choices": [
+            {"message": {"content": "old one"}},
+            {"message": {"content": "old two"}}
+        ]}"#);
+    let sanitized_messages = objects(r#"[{"role": "assistant", "content": "from message"}]"#);
+    let applied = redact_model_response(Some(&mut response), None, Some(&sanitized_messages));
+    assert!(applied);
+    let Json::List(choices) = Json::field(&response, "choices") else {
+        panic!("choices missing");
+    };
+    let first = obj(choices[0].get());
+    let Json::Object(first_message) = Json::field(&first, "message") else {
+        panic!("message missing");
+    };
+    assert_eq!(text_field(&first_message, "content"), "from message");
+    let second = obj(choices[1].get());
+    let Json::Object(second_message) = Json::field(&second, "message") else {
+        panic!("message missing");
+    };
+    assert_eq!(text_field(&second_message, "content"), "[REDACTED]");
+}
+
+#[test]
+fn redact_model_response_falls_back_to_sanitized_text_for_extra_choices() {
+    let mut response = obj(r#"{"choices": [
+            {"message": {"content": "old one"}},
+            {"message": {"content": "old two"}}
+        ]}"#);
+    let sanitized_messages = objects(r#"[{"role": "assistant", "content": "from message"}]"#);
+    let applied = redact_model_response(
+        Some(&mut response),
+        Some("custom"),
+        Some(&sanitized_messages),
+    );
+    assert!(applied);
+    let Json::List(choices) = Json::field(&response, "choices") else {
+        panic!("choices missing");
+    };
+    let first = obj(choices[0].get());
+    let Json::Object(first_message) = Json::field(&first, "message") else {
+        panic!("message missing");
+    };
+    assert_eq!(text_field(&first_message, "content"), "from message");
+    let second = obj(choices[1].get());
+    let Json::Object(second_message) = Json::field(&second, "message") else {
+        panic!("message missing");
+    };
+    assert_eq!(text_field(&second_message, "content"), "custom");
+}
+
+#[test]
+fn redact_model_response_removes_reasoning_fields_on_sanitized_text_path() {
+    let mut response = obj(
+        r#"{"choices": [{"message": {"content": "old", "reasoning_content": "secret thought"}}]}"#,
+    );
+    let applied = redact_model_response(Some(&mut response), Some("redacted"), None);
+    assert!(applied);
+    let Json::List(choices) = Json::field(&response, "choices") else {
+        panic!("choices missing");
+    };
+    let choice = obj(choices[0].get());
+    let Json::Object(message) = Json::field(&choice, "message") else {
+        panic!("message missing");
+    };
+    assert_eq!(text_field(&message, "content"), "redacted");
+    assert!(!message.contains_key("reasoning_content"));
+}
+
+#[test]
+fn redact_chat_output_dispatches_text_completion_by_object_field() {
+    let mut response = obj(r#"{"object": "text_completion", "choices": [{"text": "old"}]}"#);
+    let applied = redact_chat_output(Some(&mut response), Some("redacted"), None);
+    assert!(applied);
+    let Json::List(choices) = Json::field(&response, "choices") else {
+        panic!("choices missing");
+    };
+    let choice = obj(choices[0].get());
+    assert_eq!(text_field(&choice, "text"), "redacted");
+}
+
+#[test]
+fn redact_chat_output_text_completion_object_would_fail_on_model_response_path() {
+    let mut response = obj(r#"{"object": "text_completion", "choices": [{"text": "old"}]}"#);
+    assert!(!redact_model_response(
+        Some(&mut response),
+        Some("redacted"),
+        None
+    ));
+}
+
+#[test]
+fn redact_chat_output_dispatches_model_response_by_choices_list() {
+    let mut response = obj(r#"{"choices": [{"message": {"content": "old"}}]}"#);
+    let applied = redact_chat_output(Some(&mut response), Some("redacted"), None);
+    assert!(applied);
+    let Json::List(choices) = Json::field(&response, "choices") else {
+        panic!("choices missing");
+    };
+    let choice = obj(choices[0].get());
+    let Json::Object(message) = Json::field(&choice, "message") else {
+        panic!("message missing");
+    };
+    assert_eq!(text_field(&message, "content"), "redacted");
+}
+
+#[test]
+fn redact_chat_output_dispatches_responses_output_by_output_list() {
+    let mut response = obj(r#"{"output": [{"content": [{"type": "text", "text": "old"}]}]}"#);
+    let applied = redact_chat_output(Some(&mut response), Some("redacted"), None);
+    assert!(applied);
+    let Json::List(output) = Json::field(&response, "output") else {
+        panic!("output missing");
+    };
+    let item = obj(output[0].get());
+    let Json::List(content) = Json::field(&item, "content") else {
+        panic!("content missing");
+    };
+    let part = obj(content[0].get());
+    assert_eq!(text_field(&part, "text"), "redacted");
+}
+
+#[test]
+fn redact_chat_output_returns_false_for_unrecognized_shape() {
+    let mut response = obj("{}");
+    assert!(!redact_chat_output(
+        Some(&mut response),
+        Some("redacted"),
+        None
+    ));
+    assert!(!redact_chat_output(None, Some("redacted"), None));
 }
 
 #[test]
