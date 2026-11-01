@@ -238,11 +238,11 @@ fn steps_case(steps: Vec<Step>) -> Case {
     }
 }
 
-fn case_invalid_message(error: &OracleError) -> &str {
-    let OracleError::CaseInvalid { message, .. } = error else {
-        panic!("expected a case-invalid error, got {error:?}");
+fn browser_flow_error_message(error: &OracleError) -> String {
+    let OracleError::BrowserFlow(source) = error else {
+        panic!("expected a browser-flow error, got {error:?}");
     };
-    message
+    source.to_string()
 }
 
 fn interpolation_start_captures() -> Vec<Capture> {
@@ -375,7 +375,7 @@ fn missing_header_capture_fails_the_case() {
         &steps,
     )
     .expect_err("a missing capture fails the case");
-    assert!(case_invalid_message(&error).contains("did not match any value"));
+    assert!(browser_flow_error_message(&error).contains("did not match any value"));
 }
 
 #[test]
@@ -401,7 +401,7 @@ fn ambiguous_form_capture_fails_the_case() {
         &steps,
     )
     .expect_err("an ambiguous form capture fails the case");
-    assert!(case_invalid_message(&error).contains("matched more than one value"));
+    assert!(browser_flow_error_message(&error).contains("matched more than one value"));
 }
 
 #[test]
@@ -497,7 +497,7 @@ fn stops_sending_requests_after_a_capture_fails_mid_transcript() {
         &steps,
     )
     .expect_err("a step 2 failure stops the transcript");
-    assert!(case_invalid_message(&error).contains("did not match any value"));
+    assert!(browser_flow_error_message(&error).contains("did not match any value"));
     assert_eq!(server.received_count(), 2);
 }
 
@@ -602,7 +602,7 @@ fn drops_the_fixture_databases_after_a_late_step_failure_with_a_database_fixture
     };
     let error = run_group_with_url(&options, &fresh_oracle_root(), &[case], Some(&secret))
         .expect_err("a missing capture at the second step fails the whole run");
-    assert!(matches!(error, OracleError::CaseInvalid { .. }));
+    assert!(matches!(error, OracleError::BrowserFlow(_)));
     let mut after = fixture_database_names(secret.expose_secret());
     before.sort();
     after.sort();

@@ -61,7 +61,7 @@ pub(crate) struct PlaceholderRef {
 }
 
 #[derive(Debug, Error)]
-pub(crate) enum PlaceholderError {
+pub enum PlaceholderError {
     #[error("unterminated capture placeholder")]
     Unterminated,
     #[error("malformed capture placeholder \"{0}\"")]
@@ -132,8 +132,13 @@ fn validate_step(
     let decoded =
         request_body(&step.request.body, step.request.body_kind).map_err(OracleError::Multipart)?;
     validate_ignores(path, &step.compare.ignore)?;
-    let refs = step_placeholder_refs(step, &decoded)
-        .map_err(|source| invalid(format!("step {index}: {source}")))?;
+    let refs = step_placeholder_refs(step, &decoded).map_err(|source| {
+        OracleError::CaseBrowserFlowPlaceholder {
+            path: path.to_owned(),
+            index,
+            source,
+        }
+    })?;
     for reference in &refs {
         if !known_names.contains(&reference.name) {
             return Err(invalid(format!(

@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 use std::fmt::{self, Debug, Formatter};
-use std::path::PathBuf;
 use std::str::Utf8Error;
 use std::time::Instant;
 
@@ -22,7 +21,7 @@ mod interpolate;
 pub(crate) mod tests;
 
 #[derive(Debug, Error)]
-pub(crate) enum BrowserFlowError {
+pub enum BrowserFlowError {
     #[error("the gateway base url is invalid: {0}")]
     BaseUrl(#[source] url::ParseError),
     #[error("step {index} capture \"{name}\" did not match any value")]
@@ -83,10 +82,7 @@ pub(crate) enum BrowserFlowError {
 
 impl From<BrowserFlowError> for OracleError {
     fn from(error: BrowserFlowError) -> Self {
-        Self::CaseInvalid {
-            path: PathBuf::from("<browser-flow>"),
-            message: error.to_string(),
-        }
+        Self::BrowserFlow(error)
     }
 }
 

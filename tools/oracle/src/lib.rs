@@ -35,6 +35,8 @@ use std::time::{Duration, SystemTimeError};
 
 use axum::http::status::InvalidStatusCode;
 use betterlite_postgres_fixture::error::FixtureError;
+use case::browser_flow::PlaceholderError;
+use http::browser_flow::BrowserFlowError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -55,6 +57,13 @@ pub enum OracleError {
     },
     #[error("invalid case {path}: {message}")]
     CaseInvalid { path: PathBuf, message: String },
+    #[error("invalid case {path} step {index}: {source}")]
+    CaseBrowserFlowPlaceholder {
+        path: PathBuf,
+        index: usize,
+        #[source]
+        source: PlaceholderError,
+    },
     #[error("case is not valid UTF-8: {source}")]
     CaseUtf8 {
         #[source]
@@ -67,6 +76,8 @@ pub enum OracleError {
     },
     #[error("HTTP request failed: {0}")]
     HttpRequest(#[source] reqwest::Error),
+    #[error("{0}")]
+    BrowserFlow(#[source] BrowserFlowError),
     #[error("HTTP I/O failed: {0}")]
     HttpIo(#[source] io::Error),
     #[error("HTTP response exceeded 16 MiB")]
