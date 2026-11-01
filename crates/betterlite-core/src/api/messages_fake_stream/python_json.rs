@@ -55,27 +55,33 @@ fn write_string(out: &mut String, text: &str) {
     out.push('"');
 }
 
+const SIMPLE_ESCAPES: [(char, &str); 7] = [
+    ('"', "\\\""),
+    ('\\', "\\\\"),
+    ('\n', "\\n"),
+    ('\r', "\\r"),
+    ('\t', "\\t"),
+    ('\u{8}', "\\b"),
+    ('\u{c}', "\\f"),
+];
+
 fn write_char(out: &mut String, character: char) {
-    match character {
-        '"' => out.push_str("\\\""),
-        '\\' => out.push_str("\\\\"),
-        '\n' => out.push_str("\\n"),
-        '\r' => out.push_str("\\r"),
-        '\t' => out.push_str("\\t"),
-        '\u{8}' => out.push_str("\\b"),
-        '\u{c}' => out.push_str("\\f"),
-        ' '..='~' => out.push(character),
-        other => {
-            let mut units = [0_u16; 2];
-            for unit in other.encode_utf16(&mut units) {
-                let code = *unit;
-                out.push_str("\\u");
-                out.push(hex_digit(code >> 12));
-                out.push(hex_digit(code >> 8));
-                out.push(hex_digit(code >> 4));
-                out.push(hex_digit(code));
-            }
-        }
+    if let Some((_, escaped)) = SIMPLE_ESCAPES.iter().find(|(from, _)| *from == character) {
+        out.push_str(escaped);
+        return;
+    }
+    if (' '..='~').contains(&character) {
+        out.push(character);
+        return;
+    }
+    let mut units = [0_u16; 2];
+    for unit in character.encode_utf16(&mut units) {
+        let code = *unit;
+        out.push_str("\\u");
+        out.push(hex_digit(code >> 12));
+        out.push(hex_digit(code >> 8));
+        out.push(hex_digit(code >> 4));
+        out.push(hex_digit(code));
     }
 }
 

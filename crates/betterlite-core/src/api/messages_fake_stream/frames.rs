@@ -55,30 +55,30 @@ pub(super) fn message_start(response: &Json) -> Json {
     let role = response
         .get("role")
         .map_or_else(|| Json::from("assistant"), Json::clone);
+    let message = starting_message(response, role, input_tokens);
     object(vec![
         ("type", Json::from("message_start")),
+        ("message", message),
+    ])
+}
+
+fn starting_message(response: &Json, role: Json, input_tokens: Json) -> Json {
+    let usage = object(vec![
+        ("input_tokens", input_tokens),
+        ("output_tokens", Json::from(0_i64)),
+    ]);
+    object(vec![
+        ("id", response.get("id").cloned().unwrap_or(Json::Null)),
+        ("type", Json::from("message")),
+        ("role", role),
         (
-            "message",
-            object(vec![
-                ("id", response.get("id").cloned().unwrap_or(Json::Null)),
-                ("type", Json::from("message")),
-                ("role", role),
-                (
-                    "model",
-                    response.get("model").cloned().unwrap_or(Json::Null),
-                ),
-                ("content", Json::Array(vec![])),
-                ("stop_reason", Json::Null),
-                ("stop_sequence", Json::Null),
-                (
-                    "usage",
-                    object(vec![
-                        ("input_tokens", input_tokens),
-                        ("output_tokens", Json::from(0_i64)),
-                    ]),
-                ),
-            ]),
+            "model",
+            response.get("model").cloned().unwrap_or(Json::Null),
         ),
+        ("content", Json::Array(vec![])),
+        ("stop_reason", Json::Null),
+        ("stop_sequence", Json::Null),
+        ("usage", usage),
     ])
 }
 
@@ -91,48 +91,58 @@ pub(super) fn content_block_frames(
         return Err(MessagesFakeStreamError::ContentBlockNotMapping);
     }
     match block.get("type").and_then(Json::as_str) {
-        Some("text") => text_block(frames, block, index),
-        Some("thinking") => thinking_block(frames, block, index),
-        Some("redacted_thinking") => frames.push(indexed_frame(
-            "content_block_start",
+        Some("text") => {
+            let text = block.get("text").cloned().unwrap_or_else(|| Json::from(""));
+            let start = object(vec![("type", Json::from("text")), ("text", Json::from(""))]);
+            let delta = object(vec![("type", Json::from("text_delta")), ("text", text)]);
+            block_frames(frames, index, start, Some(delta));
+        }
+        Some("thinking") => thinking_frames(frames, block, index),
+        Some("redacted_thinking") => block_frames(
+            frames,
             index,
-            vec![(
-                "content_block",
-                object(vec![("type", Json::from("redacted_thinking"))]),
-            )],
-        )),
-        Some("tool_use") => tool_use_block(frames, block, index),
-        Some(_) | None => frames.push(indexed_frame(
-            "content_block_start",
-            index,
-            vec![("content_block", block.clone())],
-        )),
+            object(vec![("type", Json::from("redacted_thinking"))]),
+            None,
+        ),
+        Some("tool_use") => {
+            let input_data = block
+                .get("input")
+                .cloned()
+                .unwrap_or_else(|| object(vec![]));
+            let start = object(vec![
+                ("type", Json::from("tool_use")),
+                ("id", block.get("id").cloned().unwrap_or(Json::Null)),
+                ("name", block.get("name").cloned().unwrap_or(Json::Null)),
+                ("input", object(vec![])),
+            ]);
+            let delta = object(vec![
+                ("type", Json::from("input_json_delta")),
+                ("partial_json", Json::from(json_dumps_defaults(&input_data))),
+            ]);
+            block_frames(frames, index, start, Some(delta));
+        }
+        Some(_) | None => block_frames(frames, index, block.clone(), None),
     }
     frames.push(indexed_frame("content_block_stop", index, vec![]));
     Ok(())
 }
 
-fn text_block(frames: &mut Vec<Vec<u8>>, block: &Json, index: usize) {
+fn block_frames(frames: &mut Vec<Vec<u8>>, index: usize, content_block: Json, delta: Option<Json>) {
     frames.push(indexed_frame(
         "content_block_start",
         index,
-        vec![(
-            "content_block",
-            object(vec![("type", Json::from("text")), ("text", Json::from(""))]),
-        )],
+        vec![("content_block", content_block)],
     ));
-    let text = block.get("text").cloned().unwrap_or_else(|| Json::from(""));
-    frames.push(indexed_frame(
-        "content_block_delta",
-        index,
-        vec![(
-            "delta",
-            object(vec![("type", Json::from("text_delta")), ("text", text)]),
-        )],
-    ));
+    if let Some(delta_value) = delta {
+        frames.push(indexed_frame(
+            "content_block_delta",
+            index,
+            vec![("delta", delta_value)],
+        ));
+    }
 }
 
-fn thinking_block(frames: &mut Vec<Vec<u8>>, block: &Json, index: usize) {
+fn thinking_frames(frames: &mut Vec<Vec<u8>>, block: &Json, index: usize) {
     frames.push(indexed_frame(
         "content_block_start",
         index,
@@ -169,37 +179,6 @@ fn push_thinking_delta(
     }
 }
 
-fn tool_use_block(frames: &mut Vec<Vec<u8>>, block: &Json, index: usize) {
-    frames.push(indexed_frame(
-        "content_block_start",
-        index,
-        vec![(
-            "content_block",
-            object(vec![
-                ("type", Json::from("tool_use")),
-                ("id", block.get("id").cloned().unwrap_or(Json::Null)),
-                ("name", block.get("name").cloned().unwrap_or(Json::Null)),
-                ("input", object(vec![])),
-            ]),
-        )],
-    ));
-    let input_data = block
-        .get("input")
-        .cloned()
-        .unwrap_or_else(|| object(vec![]));
-    frames.push(indexed_frame(
-        "content_block_delta",
-        index,
-        vec![(
-            "delta",
-            object(vec![
-                ("type", Json::from("input_json_delta")),
-                ("partial_json", Json::from(json_dumps_defaults(&input_data))),
-            ]),
-        )],
-    ));
-}
-
 fn extra_usage_fields(usage: &Json) -> Vec<(&'static str, Json)> {
     let mut fields = Vec::new();
     for key in [
@@ -216,6 +195,14 @@ fn extra_usage_fields(usage: &Json) -> Vec<(&'static str, Json)> {
     fields
 }
 
+fn stop_delta(response: &Json) -> Json {
+    let mut fields = Vec::new();
+    for key in ["stop_reason", "stop_sequence"] {
+        fields.push((key, response.get(key).cloned().unwrap_or(Json::Null)));
+    }
+    object(fields)
+}
+
 pub(super) fn message_delta(response: &Json) -> Json {
     let usage = usage_value(response);
     let mut delta_fields: Vec<(&str, Json)> = vec![(
@@ -228,21 +215,10 @@ pub(super) fn message_delta(response: &Json) -> Json {
     if let Some(value) = usage {
         delta_fields.extend(extra_usage_fields(value));
     }
+    let delta = stop_delta(response);
     object(vec![
         ("type", Json::from("message_delta")),
-        (
-            "delta",
-            object(vec![
-                (
-                    "stop_reason",
-                    response.get("stop_reason").cloned().unwrap_or(Json::Null),
-                ),
-                (
-                    "stop_sequence",
-                    response.get("stop_sequence").cloned().unwrap_or(Json::Null),
-                ),
-            ]),
-        ),
+        ("delta", delta),
         ("usage", object(delta_fields)),
     ])
 }
