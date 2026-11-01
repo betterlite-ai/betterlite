@@ -1,0 +1,10 @@
+kind: helper
+name: numeric-layering-skips-string-but-keeps-zero
+call:
+  ocr_pricing:
+    kind: layering
+    sources:
+      - {ocr_cost_per_page: "5"}
+      - {ocr_cost_per_page: 0}
+compare: {ignore: []}
+env: {}

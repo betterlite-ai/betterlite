@@ -1,0 +1,11 @@
+kind: helper
+name: null-and-false-spend-flags
+call:
+  guardrail_costs:
+    guardrail_information:
+      - guardrail_cost: 5.0
+        guardrail_cost_in_spend: false
+      - guardrail_cost: null
+        guardrail_cost_in_spend: null
+compare: {ignore: []}
+env: {}

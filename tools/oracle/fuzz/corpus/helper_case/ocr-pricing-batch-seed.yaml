@@ -1,0 +1,5 @@
+kind: helper
+name: ocr-pricing-batch-seed
+call: {ocr_pricing: {kind: batch, model: fixture/missing, custom_llm_provider: null, model_info: {ocr_cost_per_page_batches: 2, annotation_cost_per_page_batches: 3}, usage: {pages_processed: 4, pages_processed_annotation: 5}, catalog: null}}
+env: {}
+compare: {ignore: []}

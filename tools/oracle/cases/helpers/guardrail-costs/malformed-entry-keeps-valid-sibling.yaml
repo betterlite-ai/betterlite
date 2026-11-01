@@ -1,0 +1,9 @@
+kind: helper
+name: malformed-entry-keeps-valid-sibling
+call:
+  guardrail_costs:
+    guardrail_information:
+      - guardrail_cost_in_spend: nonsense
+      - guardrail_cost: 2.5
+compare: {ignore: []}
+env: {}

@@ -1,0 +1,15 @@
+kind: helper
+name: format-search-response-with-results
+call:
+  b4113:
+    operation: format_search_response
+    search_response:
+      results:
+        - title: Rust Programming Language
+          url: https://www.rust-lang.org
+          snippet: A language empowering everyone to build reliable software.
+        - title: The Rust Book
+          url: https://doc.rust-lang.org/book/
+          snippet: The official book on the Rust programming language.
+env: {}
+compare: {ignore: []}

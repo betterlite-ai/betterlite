@@ -1,0 +1,9 @@
+kind: helper
+name: fake-content-not-iterable
+call:
+  messages_fake_stream:
+    response:
+      content: null
+env: {}
+compare:
+  ignore: []
