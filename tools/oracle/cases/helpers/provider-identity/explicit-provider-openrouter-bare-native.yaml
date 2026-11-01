@@ -1,0 +1,11 @@
+kind: helper
+name: provider-identity-explicit-provider-openrouter-bare-native
+call:
+  provider_identity:
+    check: explicit_provider
+    model: auto
+    custom_llm_provider: openrouter
+    configured_model_names: []
+    catalog: {}
+env: {}
+compare: {ignore: []}

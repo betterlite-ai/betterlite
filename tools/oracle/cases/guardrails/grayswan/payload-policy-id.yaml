@@ -1,0 +1,9 @@
+kind: helper
+name: payload-policy-id
+call:
+  b3771:
+    grayswan_payload:
+      config: {policy_id: policy-default}
+      dynamic: {policy_id: policy-xyz}
+env: {}
+compare: {ignore: []}
