@@ -1,5 +1,3 @@
-use strum::VariantArray as _;
-
 #[derive(
     Debug,
     Clone,
@@ -214,10 +212,6 @@ pub enum ProviderId {
     Cursor,
     BedrockMantle,
     Gdc,
-}
-
-impl ProviderId {
-    pub const ALL: &'static [Self] = Self::VARIANTS;
 }
 
 mod tests;

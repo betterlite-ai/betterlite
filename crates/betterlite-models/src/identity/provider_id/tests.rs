@@ -2,10 +2,11 @@
 
 use super::ProviderId;
 use rstest::rstest;
+use strum::VariantArray as _;
 
 #[test]
 fn every_variant_round_trips_through_its_wire_slug() {
-    assert!(ProviderId::ALL.iter().all(|provider| {
+    assert!(ProviderId::VARIANTS.iter().all(|provider| {
         let slug = <&str>::from(*provider);
         slug.parse::<ProviderId>() == Ok(*provider)
     }));
@@ -13,7 +14,7 @@ fn every_variant_round_trips_through_its_wire_slug() {
 
 #[test]
 fn has_the_full_llm_providers_count_plus_the_json_registry_only_slugs() {
-    assert_eq!(ProviderId::ALL.len(), 165 + 8);
+    assert_eq!(ProviderId::VARIANTS.len(), 165 + 8);
 }
 
 #[rstest]

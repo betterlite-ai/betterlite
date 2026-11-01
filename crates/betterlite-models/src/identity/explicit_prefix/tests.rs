@@ -106,6 +106,15 @@ fn classify(
         needs_provider_defaults: true,
     }
 )]
+#[case::an_openrouter_prefix_without_the_openrouter_flag_resolves_as_a_provider_prefix(
+    "openrouter/anthropic/claude-3.5-sonnet",
+    None,
+    PrefixClassification::ExplicitProvider {
+        provider: ProviderId::Openrouter,
+        model: "anthropic/claude-3.5-sonnet".to_owned(),
+        needs_provider_defaults: true,
+    }
+)]
 fn provider_identity_behavior_tests_behavior(
     #[case] model: &str,
     #[case] custom_llm_provider: Option<&str>,
@@ -124,6 +133,20 @@ fn a_provider_prefix_that_is_also_a_configured_model_name_does_not_need_defaults
         PrefixClassification::ExplicitProvider {
             provider: ProviderId::Mistral,
             model: "mistral-small".to_owned(),
+            needs_provider_defaults: false,
+        }
+    );
+}
+
+#[test]
+fn a_declared_provider_also_in_the_configured_model_names_resolves_without_defaults() {
+    let mut configured = BTreeSet::new();
+    configured.insert("groq".to_owned());
+    assert_eq!(
+        classify("llama", Some("groq"), &configured),
+        PrefixClassification::ExplicitProvider {
+            provider: ProviderId::Groq,
+            model: "llama".to_owned(),
             needs_provider_defaults: false,
         }
     );

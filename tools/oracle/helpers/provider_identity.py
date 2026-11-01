@@ -78,6 +78,20 @@ def _catalog_sets(catalog: dict[str, CatalogEntry]) -> tuple[set[str], set[str]]
     return cohere_models, mistral_models
 
 
+def _normalize_declared_provider(
+    model: str, custom_llm_provider: str | None
+) -> tuple[str, str | None]:
+    model, custom_llm_provider = handle_cohere_chat_model_custom_llm_provider(
+        model, custom_llm_provider
+    )
+    model, custom_llm_provider = handle_anthropic_text_model_custom_llm_provider(
+        model, custom_llm_provider
+    )
+    if custom_llm_provider and model.split("/", 1)[0] != custom_llm_provider:
+        model = f"{custom_llm_provider}/{model}"
+    return model, custom_llm_provider
+
+
 def _run_explicit_provider(input_value: ExplicitProviderInput) -> Json:
     model = input_value["model"]
     custom_llm_provider = input_value["custom_llm_provider"]
@@ -105,6 +119,9 @@ def _run_explicit_provider(input_value: ExplicitProviderInput) -> Json:
             provider_logic, "_get_openai_compatible_provider_info", _record_reached
         ),
     ):
+        normalized_model, normalized_provider = _normalize_declared_provider(
+            model, custom_llm_provider
+        )
         try:
             resolved_model, resolved_provider, _key, _base = (
                 provider_logic.get_llm_provider(model, custom_llm_provider)
@@ -112,25 +129,36 @@ def _run_explicit_provider(input_value: ExplicitProviderInput) -> Json:
         except litellm.exceptions.BadRequestError:
             return {
                 "kind": "unresolved",
-                "model": model,
-                "custom_llm_provider": custom_llm_provider,
+                "model": normalized_model,
+                "custom_llm_provider": normalized_provider,
             }
 
     model_prefix = model.split("/", 1)[0]
     if resolved_provider == "openai" and resolved_model == model and model_prefix == "azure":
         return {"kind": "non_openai_azure", "model": resolved_model}
-    if resolved_provider == "openrouter":
-        is_native = resolved_model.startswith("openrouter/")
-        kind = "openrouter_native" if is_native else "openrouter_nested"
-        return {"kind": kind, "model": resolved_model}
-    if reached_openai_compatible or resolved_model != model:
+    if reached_openai_compatible:
         return {
             "kind": "explicit_provider",
             "provider": resolved_provider,
             "model": resolved_model,
-            "needs_provider_defaults": reached_openai_compatible,
+            "needs_provider_defaults": True,
         }
-    return {"kind": "unresolved", "model": resolved_model, "custom_llm_provider": resolved_provider}
+    if custom_llm_provider == "openrouter" and model.startswith("openrouter/"):
+        is_native = resolved_model.startswith("openrouter/")
+        kind = "openrouter_native" if is_native else "openrouter_nested"
+        return {"kind": kind, "model": resolved_model}
+    if resolved_model != normalized_model:
+        return {
+            "kind": "explicit_provider",
+            "provider": resolved_provider,
+            "model": resolved_model,
+            "needs_provider_defaults": False,
+        }
+    return {
+        "kind": "unresolved",
+        "model": normalized_model,
+        "custom_llm_provider": normalized_provider,
+    }
 
 
 def _run_cohere(input_value: CohereInput) -> Json:
