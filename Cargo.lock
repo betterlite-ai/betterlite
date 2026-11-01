@@ -1449,7 +1449,9 @@ dependencies = [
  "minijinja-contrib",
  "rstest",
  "serde",
+ "serde-saphyr",
  "serde_json",
+ "tempfile",
  "thiserror",
  "tracing",
 ]

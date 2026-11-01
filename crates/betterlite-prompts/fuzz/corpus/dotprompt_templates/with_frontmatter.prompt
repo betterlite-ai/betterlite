@@ -1,0 +1,9 @@
+---
+model: gpt-4
+input:
+  schema:
+    name: string
+output:
+  format: text
+---
+Hello {{ name }}!
