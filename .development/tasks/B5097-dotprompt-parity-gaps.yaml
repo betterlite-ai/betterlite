@@ -172,8 +172,8 @@ pitfalls:
   - Changing render()'s prompt_variables or add_prompt's metadata away from Option touches every caller in dotprompt_templates/tests.rs, conversion/tests.rs, reload/tests.rs, render/tests.rs and the fuzz target; cargo check finds each one.
   - The byte cap in jinja/bounds.rs is pub(super), scoped to the jinja module; dotprompt_templates needs its own bounds module, not a cross-module call into jinja::bounds.
   - An integer past u64 only reaches validate_input as a Json::Number under serde_json's arbitrary_precision feature; is_i64, is_u64 and is_f64 all return false for it, so the fix has to classify it by its text shape, not by asking serde_json what kind of number it is.
-  - "serde's #[serde(default)] only fires when a key is absent, not when it is present and null, so a typed PromptRecord with plain #[serde(default)] fields would still fail to deserialize an explicit null instead of falling back. The typed shape for insert_prompt_record has to treat Json::Null the same as a missing key by hand."
-  - render.rs gains new RenderError variants for the size cap, and B5094 separately renames format_available's generic parameter in the same file. Rebase against main after B5094 merges, and keep format_available as B5094 leaves it rather than inlining it here.
+  - "serde's #[serde(default)] only fires when a key is absent, not when it is present and null, so a typed PromptRecord with plain #[serde(default)] fields would still fail to deserialize an explicit null instead of falling back. The typed shape for insert_prompt_record treats Json::Null the same as a missing key with serde_with's DefaultOnNull (serde_with 3.24.0 is already a workspace dependency), not with a hand-written deserializer."
+  - render.rs gains new RenderError variants for the size cap. Leave format_available as it is; B5094 owns its fix, and the dispatcher never runs two tasks whose scope overlaps.
 review_level: standard
 budget:
   max_changed_lines: 600
