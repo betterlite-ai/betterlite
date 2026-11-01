@@ -4,10 +4,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
+use itertools::Itertools as _;
+
 use crate::error::GateError;
 use crate::ids::task_id_problem;
 use crate::spec::backlog::{Backlog, BacklogEntry, Resolution, Status};
-use crate::validate::duplicates;
 
 fn link_problems(entry: &BacklogEntry, ids: &[&str]) -> Vec<String> {
     let mut problems = Vec::new();
@@ -189,8 +190,9 @@ pub(crate) fn problems(root: &Path, backlog: &Backlog) -> Result<Vec<String>, Ga
         .iter()
         .map(|entry| entry.id.as_str())
         .collect();
-    let mut problems: Vec<String> = duplicates(&ids)
-        .into_iter()
+    let mut problems: Vec<String> = ids
+        .iter()
+        .duplicates()
         .map(|id| format!("the backlog lists {id} twice"))
         .collect();
     problems.extend(
