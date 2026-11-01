@@ -1,7 +1,5 @@
-use std::borrow::Cow;
 use std::collections::BTreeSet;
 use std::io::{Cursor, Read as _, Write as _};
-use std::str;
 
 use regex::Regex;
 use serde::Deserialize;
@@ -27,6 +25,7 @@ pub struct SkillArchive {
 #[must_use]
 pub fn build_skill_archive(stored_content: &[u8]) -> Option<SkillArchive> {
     let mut uploaded = ZipArchive::new(Cursor::new(stored_content)).ok()?;
+    uploaded.validate_header_consistency().ok()?;
     let members = flattened_members(&mut uploaded)?;
     let manifest = members
         .iter()
@@ -46,19 +45,19 @@ fn flattened_members(uploaded: &mut ZipArchive<Cursor<&[u8]>>) -> Option<Vec<(St
     let mut entries = Vec::new();
     let mut unpacked_bytes = 0_u64;
     for index in 0..uploaded.len() {
-        let mut info = uploaded.by_index(index).ok()?;
-        if info.is_dir() {
+        let raw_name = uploaded.name_for_index(index)?.ok()?.into_owned();
+        if raw_name.ends_with('/') {
             continue;
         }
         if entries.len() >= MAX_ARCHIVE_ENTRIES {
             return None;
         }
+        let path = normalize_path(&raw_name)?;
+        let mut info = uploaded.by_index(index).ok()?;
         unpacked_bytes = unpacked_bytes.checked_add(info.size())?;
         if unpacked_bytes > MAX_ARCHIVE_UNPACKED_BYTES {
             return None;
         }
-        let raw_name = info.name().ok()?;
-        let path = normalize_path(raw_name.as_ref())?;
         let mut data = Vec::new();
         info.read_to_end(&mut data).ok()?;
         entries.push((path, data));
@@ -139,7 +138,11 @@ enum FrontmatterField {
 }
 
 fn manifest_frontmatter(manifest: &[u8]) -> (Option<String>, Option<String>) {
-    let text = decode_utf8_replacing(manifest);
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "LiteLLM decodes SKILL.md with errors=replace"
+    )]
+    let text = String::from_utf8_lossy(manifest).into_owned();
     let Ok(pattern) = Regex::new(FRONTMATTER_PATTERN) else {
         return (None, None);
     };
@@ -149,7 +152,12 @@ fn manifest_frontmatter(manifest: &[u8]) -> (Option<String>, Option<String>) {
     let Some(yaml) = captures.get(1) else {
         return (None, None);
     };
-    let Ok(frontmatter) = serde_saphyr::from_str::<Frontmatter>(yaml.as_str()) else {
+    let options = serde_saphyr::options! {
+        duplicate_keys: serde_saphyr::DuplicateKeyPolicy::LastWins,
+    };
+    let Ok(frontmatter) =
+        serde_saphyr::from_str_with_options::<Frontmatter>(yaml.as_str(), options)
+    else {
         return (None, None);
     };
     (
@@ -163,33 +171,6 @@ fn frontmatter_text(field: Option<FrontmatterField>) -> Option<String> {
         FrontmatterField::Text(text) => clean_frontmatter_text(&text),
         FrontmatterField::Other(_) => None,
     }
-}
-
-fn decode_utf8_replacing(input: &[u8]) -> String {
-    let mut remaining = input;
-    let mut output = String::new();
-    while !remaining.is_empty() {
-        match str::from_utf8(remaining) {
-            Ok(valid) => {
-                output.push_str(valid);
-                break;
-            }
-            Err(error) => {
-                let valid_length = error.valid_up_to();
-                if let Some(valid) = remaining.get(..valid_length) {
-                    output.push_str(str::from_utf8(valid).unwrap_or_default());
-                }
-                output.push('\u{FFFD}');
-                let invalid_length = error
-                    .error_len()
-                    .unwrap_or_else(|| remaining.len().saturating_sub(valid_length));
-                remaining = remaining
-                    .get(valid_length.saturating_add(invalid_length)..)
-                    .unwrap_or_default();
-            }
-        }
-    }
-    output
 }
 
 fn clean_frontmatter_text(text: &str) -> Option<String> {
@@ -206,10 +187,7 @@ fn repack(members: &[(String, Vec<u8>)]) -> ZipResult<Vec<u8>> {
     let mut writer = ZipWriter::new(&mut output);
     let options = SimpleFileOptions::default()
         .compression_method(CompressionMethod::Deflated)
-        .last_modified_time(
-            DateTime::from_date_and_time(1980, 1, 1, 0, 0, 0)
-                .map_err(|error| ZipError::InvalidArchive(Cow::Owned(error.to_string())))?,
-        )
+        .last_modified_time(DateTime::DEFAULT)
         .external_attributes(0o644 << 16);
     for (name, data) in members {
         writer.start_file(name, options)?;
