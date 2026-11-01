@@ -128,64 +128,64 @@ checks:
   commands:
     - id: cache-key-none-cases
       why: cache_key does not return None for missing/empty head SHA, missing body, or missing/empty login
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::cache_key_none_cases($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::cache_key_none_cases($|::)/) - test(/replays_the_/)'
     - id: cache-key-hash
       why: cache_key does not hash the correct JSON tuple or returns wrong format
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::cache_key_hash($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::cache_key_hash($|::)/) - test(/replays_the_/)'
     - id: settings-fingerprint-includes
       why: settings_fingerprint does not include all required fields
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::settings_fingerprint_includes($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::settings_fingerprint_includes($|::)/) - test(/replays_the_/)'
     - id: settings-fingerprint-slash-insensitive
       why: settings_fingerprint does not normalize trailing slashes
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::settings_fingerprint_slash_insensitive($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::settings_fingerprint_slash_insensitive($|::)/) - test(/replays_the_/)'
     - id: fallback-estimate-error
       why: _estimate_with_fallback does not catch SourceError or return correct fallback estimate
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::fallback_estimate_error($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::fallback_estimate_error($|::)/) - test(/replays_the_/)'
     - id: unavailable-record-deleted-user
       why: _unavailable_record does not fall back to "deleted-user" when user or login is missing/falsy
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::unavailable_record_deleted_user($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::unavailable_record_deleted_user($|::)/) - test(/replays_the_/)'
     - id: unavailable-record-estimate
       why: _unavailable_record estimate does not have correct status, hours or reasoning message
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::unavailable_record_estimate($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::unavailable_record_estimate($|::)/) - test(/replays_the_/)'
     - id: read-repository-error
       why: _read_repository does not call github.pulls or does not catch SourceError
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::read_repository_error($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::read_repository_error($|::)/) - test(/replays_the_/)'
     - id: repos-total-failure
       why: _read_repositories does not raise SourceError when all repos are unavailable
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::repos_total_failure($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::repos_total_failure($|::)/) - test(/replays_the_/)'
     - id: repos-no-pulls-failure
       why: _read_repositories does not raise SourceError when no accessible repos have pulls
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::repos_no_pulls_failure($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::repos_no_pulls_failure($|::)/) - test(/replays_the_/)'
     - id: repos-partial-warning
       why: _read_repositories does not include partial-read warning message for unavailable repos
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::repos_partial_warning($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::repos_partial_warning($|::)/) - test(/replays_the_/)'
     - id: records-all-unavailable
       why: _processed_records does not raise SourceError when all items are metadata_unavailable
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::records_all_unavailable($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::records_all_unavailable($|::)/) - test(/replays_the_/)'
     - id: records-estimator-failure
       why: _processed_records does not raise SourceError when all estimates fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::records_estimator_failure($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::records_estimator_failure($|::)/) - test(/replays_the_/)'
     - id: records-mapping
       why: _processed_records does not return immutable mapping of position to ROIPullRecord
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::records_mapping($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::records_mapping($|::)/) - test(/replays_the_/)'
     - id: cache-no-write-conditions
       why: _cache_estimated_pull writes when it should not (None key, non-estimated status, or unchanged emails)
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::cache_no_write_conditions($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::cache_no_write_conditions($|::)/) - test(/replays_the_/)'
     - id: cache-write-condition
       why: _cache_estimated_pull does not write when key exists, estimate succeeded and emails changed
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::cache_write_condition($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::cache_write_condition($|::)/) - test(/replays_the_/)'
     - id: previous-report-read
       why: _previous_report does not read cached report correctly or does not return None on validation error
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::previous_report_read($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::previous_report_read($|::)/) - test(/replays_the_/)'
     - id: cached-record-transform
       why: _cached_record does not add cached=True or does not preserve all fields correctly
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::cached_record_transform($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::cached_record_transform($|::)/) - test(/replays_the_/)'
     - id: report-record-construct
       why: _report_record does not construct ROIPullRecord with all fields from evidence, estimate and cache key
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::report_record_construct($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::report_record_construct($|::)/) - test(/replays_the_/)'
     - id: behavior-tests
       why: the required behavior tests fail or the filter selects no tests
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache_behavior($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache_behavior($|::)/) - test(/replays_the_/)'
 
 oracle_cases: []
 
