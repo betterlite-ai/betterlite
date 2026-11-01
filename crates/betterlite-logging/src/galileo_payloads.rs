@@ -10,8 +10,8 @@ mod tests;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive as _;
 use serde::{Deserialize, Serialize};
+use std::str::FromStr as _;
 
 // litellm.integrations.galileo.LLMResponse, the typed record a success callback appends to in_memory_records.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
@@ -77,8 +77,7 @@ impl LlmResponse {
 
     fn insert_optional_fields(&self, record: &mut IndexMap<String, Json>) {
         if let Some(cost) = self.cost
-            && let Some(as_f64) = cost.to_f64()
-            && let Some(number) = serde_json::Number::from_f64(as_f64)
+            && let Ok(number) = serde_json::Number::from_str(&cost.to_string())
         {
             record.insert("cost".to_owned(), Json::Number(number));
         }

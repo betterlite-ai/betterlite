@@ -2,7 +2,7 @@ use betterlite_models::decisions::Json;
 use betterlite_models::price_fields::decimal_lexeme::parse_decimal_lexeme;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive as _;
+use std::str::FromStr as _;
 
 use super::support::record_i64;
 
@@ -53,8 +53,7 @@ pub fn token_metrics_json(metrics: TokenMetrics) -> IndexMap<String, Json> {
         Json::Number(serde_json::Number::from(metrics.num_total_tokens)),
     );
     if let Some(cost) = metrics.cost
-        && let Some(as_f64) = cost.to_f64()
-        && let Some(number) = serde_json::Number::from_f64(as_f64)
+        && let Ok(number) = serde_json::Number::from_str(&cost.to_string())
     {
         object.insert("cost".to_owned(), Json::Number(number));
     }

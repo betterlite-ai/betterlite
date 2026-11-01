@@ -12,7 +12,7 @@ use super::content::{
 use super::messages::{
     convert_content_list_to_str, galileo_input_messages, input_text_from_messages,
 };
-use super::metrics::token_metrics_from_record;
+use super::metrics::{TokenMetrics, token_metrics_from_record, token_metrics_json};
 use super::support::has_value;
 use super::timestamps::{RawTimestamp, format_created_at, normalize_created_at};
 use super::trace::{build_traces_payload, record_to_v2_span, record_to_v2_trace};
@@ -132,6 +132,39 @@ fn check_token_metrics() {
         token_metrics_from_record(&record_output_only).num_total_tokens,
         5
     );
+}
+
+// A small cost must serialize with its exact decimal digits, not a lossy f64 round-trip: a naive Decimal-to-f64-to-JSON-number path turns 0.00000123 into scientific notation (1.23e-6) instead of preserving the source text.
+fn check_cost_precision_preserved() {
+    let metrics = TokenMetrics {
+        num_input_tokens: 0,
+        num_output_tokens: 0,
+        num_total_tokens: 0,
+        cost: Some(Decimal::from_str_exact("0.00000123").expect("valid decimal literal")),
+    };
+    assert_eq!(
+        object_field(&token_metrics_json(metrics), "cost"),
+        val("0.00000123")
+    );
+
+    let record = LlmResponse {
+        latency_ms: 0,
+        status_code: 200,
+        input_text: String::new(),
+        output_text: String::new(),
+        node_type: "llm".to_owned(),
+        model: "gpt-4".to_owned(),
+        num_input_tokens: 0,
+        num_output_tokens: 0,
+        num_total_tokens: 0,
+        cost: Some(Decimal::from_str_exact("0.00000123").expect("valid decimal literal")),
+        output_logprobs: None,
+        created_at: "2024-01-01T00:00:00".to_owned(),
+        tags: None,
+        user_metadata: None,
+    }
+    .to_record(None);
+    assert_eq!(object_field(&record, "cost"), val("0.00000123"));
 }
 
 // Each Json variant's own emptiness rule: zero and the empty number, string, list and object are falsy, everything else is truthy.
@@ -388,6 +421,7 @@ fn galileo_payload_construction() {
     check_input_text_from_messages_human_role();
     check_search_results_citations();
     check_token_metrics();
+    check_cost_precision_preserved();
     check_has_value();
     check_trace_envelope();
     check_traces_payload();
