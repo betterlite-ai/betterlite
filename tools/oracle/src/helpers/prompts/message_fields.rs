@@ -125,16 +125,18 @@ fn migration_error(
     error: &betterlite_prompts::message_fields::file_migration::FileMigrationError,
 ) -> Box<HelperError> {
     use betterlite_prompts::message_fields::file_migration::FileMigrationError;
-    let (class, status) = match error {
-        FileMigrationError::MissingFile => ("BadRequestError", Some(400)),
-        FileMigrationError::MissingFileReference => ("ValueError", None),
+    let class = match error {
+        FileMigrationError::MissingFile => "BadRequestError",
+        FileMigrationError::MissingFileReference => "ValueError",
     };
     Box::new(HelperError {
         class: class.to_owned(),
-        status,
+        status: None,
         error_type: None,
         param: None,
         code: None,
         message: error.to_string(),
     })
 }
+
+mod tests;

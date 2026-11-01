@@ -1,0 +1,10 @@
+kind: helper
+name: message-fields-migrate-file-missing-file
+call:
+  message_fields:
+    operation: migrate_file_to_image_url
+    part:
+      type: file
+env: {}
+compare:
+  ignore: []
