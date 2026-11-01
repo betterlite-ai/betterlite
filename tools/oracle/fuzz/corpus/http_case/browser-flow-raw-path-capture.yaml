@@ -1,0 +1,19 @@
+name: browser-flow-raw-path-capture
+config: |
+  general_settings:
+    master_key: oracle-master
+env: {}
+upstream: []
+steps:
+  - request:
+      method: GET
+      path: "/callback?code={{capture:code:raw}}"
+      headers: {}
+      body: null
+    compare:
+      headers: []
+      headers_present: []
+      upstream_headers: []
+      ignore: []
+    captures: []
+    form: false

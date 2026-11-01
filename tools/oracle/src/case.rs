@@ -12,6 +12,7 @@ use serde_json::Value;
 use crate::multipart_oracle::error::MultipartError;
 use crate::multipart_oracle::request::{answer_body, request_body};
 
+pub mod browser_flow;
 mod config_inspection;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -22,9 +23,13 @@ pub struct Case {
     pub(crate) env: BTreeMap<String, String>,
     #[serde(default)]
     pub(crate) native_feature_eligibility: bool,
+    #[serde(default)]
     pub(crate) request: Box<Request>,
     pub(crate) upstream: Vec<UpstreamAnswer>,
+    #[serde(default)]
     pub(crate) compare: Box<Compare>,
+    #[serde(default)]
+    pub(crate) steps: Option<Vec<browser_flow::Step>>,
     #[serde(default)]
     #[serde(alias = "database_fixture")]
     pub(crate) database: Option<DatabaseFixture>,
@@ -65,7 +70,7 @@ pub(crate) struct HelperCompare {
     pub(crate) ignore: Vec<Ignore>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct Request {
     pub(crate) method: String,
@@ -105,7 +110,7 @@ pub(crate) struct UpstreamAnswer {
     pub(crate) events: Option<Vec<String>>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Compare {
     pub(crate) headers: Vec<String>,
@@ -114,7 +119,7 @@ pub(crate) struct Compare {
     pub(crate) ignore: Vec<Ignore>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Ignore {
     pub(crate) pointer: String,
@@ -170,6 +175,13 @@ pub fn decode_http_body(bytes: &[u8]) -> Result<RequestBody, MultipartError> {
     let request: Request = serde_saphyr::from_str(text)
         .map_err(|source| MultipartError::RequestSpecification(Box::new(source)))?;
     request_body(&request.body, request.body_kind)
+}
+
+pub fn decode_html_form_capture(
+    bytes: &[u8],
+) -> Result<browser_flow::FormProjection, browser_flow::FormCaptureError> {
+    let text = str::from_utf8(bytes).map_err(browser_flow::FormCaptureError::Utf8)?;
+    browser_flow::parse_form_projection(text)
 }
 
 fn decode_case(path: &Path, bytes: &[u8]) -> Result<HttpCase, OracleError> {
@@ -229,9 +241,10 @@ pub(crate) fn validate(path: &Path, case: &Case) -> Result<(), OracleError> {
         path: path.to_owned(),
         message: message.to_owned(),
     };
-    if case.name.is_empty() || case.config.is_empty() || case.request.path.is_empty() {
-        return Err(invalid("name, config, and request.path cannot be empty"));
+    if case.name.is_empty() || case.config.is_empty() {
+        return Err(invalid("name and config cannot be empty"));
     }
+    validate_request_or_steps(path, case)?;
     if case.env.contains_key("LITELLM_LICENSE") {
         return Err(invalid("env cannot set LITELLM_LICENSE"));
     }
@@ -260,7 +273,24 @@ pub(crate) fn validate(path: &Path, case: &Case) -> Result<(), OracleError> {
         }
         answer_body(answer).map_err(OracleError::Multipart)?;
     }
-    // the request body decodes here once so a bad specification stops the run before any gateway starts
+    Ok(())
+}
+
+// Serde defaults the unused side of request/compare or steps, so emptiness stands in for absence.
+fn validate_request_or_steps(path: &Path, case: &Case) -> Result<(), OracleError> {
+    let invalid = |message: &str| OracleError::CaseInvalid {
+        path: path.to_owned(),
+        message: message.to_owned(),
+    };
+    if let Some(steps) = &case.steps {
+        if *case.request != Request::default() || *case.compare != Compare::default() {
+            return Err(invalid("a case cannot set both request/compare and steps"));
+        }
+        return browser_flow::validate_steps(path, steps);
+    }
+    if case.request.path.is_empty() {
+        return Err(invalid("request.path cannot be empty"));
+    }
     request_body(&case.request.body, case.request.body_kind).map_err(OracleError::Multipart)?;
     validate_ignores(path, &case.compare.ignore)
 }

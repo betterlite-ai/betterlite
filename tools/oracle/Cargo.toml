@@ -44,9 +44,11 @@ futures-util = { version = "0.3.34", default-features = false }
 hex = "0.4.3"
 indexmap = { version = "2.14.2", features = ["serde"] }
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
+percent-encoding.workspace = true
 quick-xml.workspace = true
 reqwest = { version = "0.13.5", default-features = false, features = ["blocking"] }
 rust_decimal.workspace = true
+scraper = "0.29.0"
 secrecy = "0.10.3"
 serde = { version = "1.0.228", features = ["derive"] }
 serde-saphyr = "2.0.0"

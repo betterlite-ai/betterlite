@@ -64,4 +64,11 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "browser_form"
+path = "fuzz_targets/browser_form.rs"
+test = false
+doc = false
+bench = false
+
 [workspace]

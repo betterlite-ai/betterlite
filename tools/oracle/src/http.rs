@@ -10,6 +10,7 @@ use reqwest::blocking::{Client, ClientBuilder, RequestBuilder};
 use reqwest::redirect::Policy;
 use serde_json::Value;
 
+pub mod browser_flow;
 #[path = "http/native_feature_eligibility/native_feature_eligibility.rs"]
 pub mod native_feature_eligibility;
 pub mod postgres;
@@ -42,6 +43,17 @@ pub(crate) fn send(
     base: &str,
     request: &Request,
 ) -> Result<Response, OracleError> {
+    let body = request_body(&request.body, request.body_kind).map_err(OracleError::Multipart)?;
+    send_with_body(client, base, request, body)
+}
+
+// Browser-flow steps build the RequestBody themselves instead of decoding request.body again.
+pub(crate) fn send_with_body(
+    client: &Client,
+    base: &str,
+    request: &Request,
+    body: RequestBody,
+) -> Result<Response, OracleError> {
     let method = reqwest::Method::from_bytes(request.method.as_bytes())
         .map_err(Error::other)
         .map_err(OracleError::HttpIo)?;
@@ -49,7 +61,6 @@ pub(crate) fn send(
     for (name, value) in &request.headers {
         outgoing = outgoing.header(name, value);
     }
-    let body = request_body(&request.body, request.body_kind).map_err(OracleError::Multipart)?;
     let incoming = with_body(outgoing, body)
         .send()
         .map_err(OracleError::HttpRequest)?;

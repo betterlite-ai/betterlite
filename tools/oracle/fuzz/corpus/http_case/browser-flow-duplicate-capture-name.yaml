@@ -1,0 +1,39 @@
+name: browser-flow-duplicate-capture-name
+config: |
+  general_settings:
+    master_key: oracle-master
+env: {}
+upstream: []
+steps:
+  - request:
+      method: GET
+      path: "/start"
+      headers: {}
+      body: null
+    compare:
+      headers: []
+      headers_present: []
+      upstream_headers: []
+      ignore: []
+    captures:
+      - name: token
+        source:
+          header:
+            name: x-token
+    form: false
+  - request:
+      method: GET
+      path: "/next"
+      headers: {}
+      body: null
+    compare:
+      headers: []
+      headers_present: []
+      upstream_headers: []
+      ignore: []
+    captures:
+      - name: token
+        source:
+          header:
+            name: x-token-2
+    form: false
