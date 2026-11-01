@@ -7,7 +7,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use thiserror::Error;
 
-use super::{BodyKind, Compare, Request, RequestBody, validate_ignores};
+use super::{BodyKind, Case, Compare, Request, RequestBody, validate_ignores};
 use crate::OracleError;
 use crate::multipart_oracle::request::request_body;
 
@@ -104,6 +104,25 @@ pub(crate) fn parse_form_projection(text: &str) -> Result<FormProjection, FormCa
         action,
         controls,
     })
+}
+
+// Serde defaults the unused side of request/compare or steps, so emptiness stands in for absence.
+pub(crate) fn validate_request_or_steps(path: &Path, case: &Case) -> Result<(), OracleError> {
+    let invalid = |message: &str| OracleError::CaseInvalid {
+        path: path.to_owned(),
+        message: message.to_owned(),
+    };
+    if let Some(steps) = &case.steps {
+        if *case.request != Request::default() || *case.compare != Compare::default() {
+            return Err(invalid("a case cannot set both request/compare and steps"));
+        }
+        return validate_steps(path, steps);
+    }
+    if case.request.path.is_empty() {
+        return Err(invalid("request.path cannot be empty"));
+    }
+    request_body(&case.request.body, case.request.body_kind).map_err(OracleError::Multipart)?;
+    validate_ignores(path, &case.compare.ignore)
 }
 
 pub(crate) fn validate_steps(path: &Path, steps: &[Step]) -> Result<(), OracleError> {

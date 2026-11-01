@@ -244,7 +244,7 @@ pub(crate) fn validate(path: &Path, case: &Case) -> Result<(), OracleError> {
     if case.name.is_empty() || case.config.is_empty() {
         return Err(invalid("name and config cannot be empty"));
     }
-    validate_request_or_steps(path, case)?;
+    browser_flow::validate_request_or_steps(path, case)?;
     if case.env.contains_key("LITELLM_LICENSE") {
         return Err(invalid("env cannot set LITELLM_LICENSE"));
     }
@@ -276,26 +276,7 @@ pub(crate) fn validate(path: &Path, case: &Case) -> Result<(), OracleError> {
     Ok(())
 }
 
-// Serde defaults the unused side of request/compare or steps, so emptiness stands in for absence.
-fn validate_request_or_steps(path: &Path, case: &Case) -> Result<(), OracleError> {
-    let invalid = |message: &str| OracleError::CaseInvalid {
-        path: path.to_owned(),
-        message: message.to_owned(),
-    };
-    if let Some(steps) = &case.steps {
-        if *case.request != Request::default() || *case.compare != Compare::default() {
-            return Err(invalid("a case cannot set both request/compare and steps"));
-        }
-        return browser_flow::validate_steps(path, steps);
-    }
-    if case.request.path.is_empty() {
-        return Err(invalid("request.path cannot be empty"));
-    }
-    request_body(&case.request.body, case.request.body_kind).map_err(OracleError::Multipart)?;
-    validate_ignores(path, &case.compare.ignore)
-}
-
-fn validate_ignores(path: &Path, ignores: &[Ignore]) -> Result<(), OracleError> {
+pub(crate) fn validate_ignores(path: &Path, ignores: &[Ignore]) -> Result<(), OracleError> {
     let invalid = |message: &str| OracleError::CaseInvalid {
         path: path.to_owned(),
         message: message.to_owned(),
