@@ -178,7 +178,7 @@ dod:
   - text: >-
       zip is pinned to 9.1.0 with its bzip2-rs and lzma features, not zip's plain bzip2 feature,
       and libz-sys is pinned to 1.1.30; both are the newest release of each that had cleared seven
-      days when B3210 added them, and neither pin reintroduces libbz2-rs-sys into Cargo.lock. These
+      days on 2026-11-01, and neither pin reintroduces libbz2-rs-sys into Cargo.lock. These
       pins are the architect's decision from 2026-11-01 and stay as written even if a newer zip or
       libz-sys release later clears seven days.
     proof: [archive-pinned-dependencies]
