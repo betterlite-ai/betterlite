@@ -349,6 +349,7 @@ fn check_generic_dict_tool_call_reordering() {
         r#"dict response content{"function":{"arguments":"{}","name":"foo"},"id":"call_1","type":"function"}"#
     );
 
+    // ModelResponse(**response) turns a dict choice into Choices(**choice), which always builds a Message even when the dict has no "message" key; a delta-only choice never reaches a StreamingChoices branch, so it contributes nothing.
     let delta_value = obj(r#"{"choices": [{"delta": {"content": "streamed text"}}]}"#);
     let (_, delta_output, _) = galileo_input_output_content(
         &kwargs,
@@ -356,7 +357,107 @@ fn check_generic_dict_tool_call_reordering() {
         Level::Default,
         None,
     );
-    assert_eq!(delta_output, "streamed text");
+    assert_eq!(delta_output, "");
+}
+
+// chat_completion_tool_call_from_dict dumps a custom tool call as {id, type: "custom", custom: {name, input}}, never the function shape, and takes the custom branch for a "custom" type even without a sibling "custom" key's presence driving it (type alone is enough).
+fn check_custom_tool_call_dump() {
+    let kwargs = GalileoKwargs::default();
+    let value = obj(r#"{"choices": [{"message": {"tool_calls": [
+            {"id": "call_1", "type": "custom", "custom": {"name": "exec", "input": "ls -la"}}
+        ]}}]}"#);
+    let (_, output, _) = galileo_input_output_content(
+        &kwargs,
+        Some(&ResponseObj::GenericDict { value }),
+        Level::Default,
+        None,
+    );
+    assert_eq!(
+        output,
+        r#"{"id":"call_1","type":"custom","custom":{"name":"exec","input":"ls -la"}}"#
+    );
+}
+
+// Function.__init__ turns a dict `arguments` into its JSON text and reads a missing or explicitly null `arguments` as "", never as a nested object or a literal null.
+fn check_function_arguments_normalization() {
+    let kwargs = GalileoKwargs::default();
+    let value = obj(r#"{"choices": [{"message": {"tool_calls": [
+            {"id": "call_1", "type": "function", "function": {"name": "f", "arguments": {"x": 1}}},
+            {"id": "call_2", "type": "function", "function": {"name": "g", "arguments": null}}
+        ]}}]}"#);
+    let (_, output, _) = galileo_input_output_content(
+        &kwargs,
+        Some(&ResponseObj::GenericDict { value }),
+        Level::Default,
+        None,
+    );
+    assert_eq!(
+        output,
+        concat!(
+            r#"{"function":{"arguments":"{\"x\": 1}","name":"f"},"id":"call_1","type":"function"}"#,
+            r#"{"function":{"arguments":"","name":"g"},"id":"call_2","type":"function"}"#,
+        )
+    );
+}
+
+// galileo.py only takes the realtime-list branch when call_type == "_arealtime" and the pass-through branch when call_type == "pass_through_endpoint"; any other call_type falls through (a list to the final fallback, a dict to the generic dict branch), ignoring the response's own shape.
+fn check_call_type_mismatch_falls_through() {
+    let realtime_kwargs = GalileoKwargs {
+        call_type: Some("acompletion".to_owned()),
+        messages: None,
+        functions: None,
+        tools: None,
+        input: Some(val(r#"{"type": "response.create"}"#)),
+    };
+    let (_, realtime_output, _) = galileo_input_output_content(
+        &realtime_kwargs,
+        Some(&ResponseObj::RealtimeList {
+            items: vec![val(r#"{"type": "response.done"}"#)],
+        }),
+        Level::Default,
+        None,
+    );
+    assert_eq!(realtime_output, "");
+
+    let pass_through_kwargs = GalileoKwargs {
+        call_type: Some("completion".to_owned()),
+        messages: None,
+        functions: None,
+        tools: None,
+        input: None,
+    };
+    let mut pass_through_value = IndexMap::new();
+    pass_through_value.insert("response".to_owned(), val(r#"{"should": "be-ignored"}"#));
+    let (_, pass_through_output, _) = galileo_input_output_content(
+        &pass_through_kwargs,
+        Some(&ResponseObj::PassThroughDict {
+            value: pass_through_value,
+        }),
+        Level::Default,
+        None,
+    );
+    assert_eq!(pass_through_output, "");
+}
+
+// _get_chat_content_for_galileo serializes message.json(), which is Message.model_dump(): content, role, tool_calls, function_call and provider_specific_fields always appear, nulls included, even for a raw provider message that supplied none of them.
+fn check_chat_message_projection() {
+    let kwargs = GalileoKwargs::default();
+    let message = val(r#"{"role": "assistant", "content": "Hi there"}"#);
+    let (_, output, _) = galileo_input_output_content(
+        &kwargs,
+        Some(&ResponseObj::Chat {
+            message: Some(message),
+        }),
+        Level::Default,
+        None,
+    );
+    assert_eq!(
+        output,
+        concat!(
+            r#"{"content": "Hi there", "role": "assistant", "tool_calls": null, "#,
+            r#""function_call": null, "provider_specific_fields": null}"#,
+        )
+    );
 }
 
 // Rerank uses its own langfuse-style prompt (just the messages, no functions/tools) rather than the shared build_prompt, and that prompt is echoed as the span's messages_for_span.
@@ -429,6 +530,10 @@ fn galileo_payload_construction() {
     check_embedding_call_type_precedence();
     check_error_level_short_circuit();
     check_generic_dict_tool_call_reordering();
+    check_custom_tool_call_dump();
+    check_function_arguments_normalization();
+    check_call_type_mismatch_falls_through();
+    check_chat_message_projection();
     check_rerank_content();
     check_messages_or_empty_guard();
 }

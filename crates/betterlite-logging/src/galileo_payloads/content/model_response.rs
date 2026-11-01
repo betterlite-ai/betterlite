@@ -29,19 +29,18 @@ fn compact_json(value: &Json) -> String {
     }
 }
 
-// litellm.types.utils.Function/FunctionCall's declared pydantic field order (arguments, then name), which model_dump_json() serializes by regardless of the caller's own key order.
+// litellm.types.utils.Function.__init__ (types/utils.py:1186-1203): object arguments become their json.dumps string, a missing or null arguments reads as "", and the declared field order (arguments, then name) holds regardless of the caller's own key order.
 fn ordered_function_fields(function: &Json) -> Json {
     let Json::Object(fields) = function else {
         return function.clone();
     };
     let mut ordered = IndexMap::new();
-    ordered.insert(
-        "arguments".to_owned(),
-        fields
-            .get("arguments")
-            .cloned()
-            .unwrap_or_else(|| Json::Text(String::new())),
-    );
+    let arguments = match fields.get("arguments") {
+        Some(dict @ Json::Object(_)) => Json::Text(python_json::dumps(dict)),
+        Some(Json::Null) | None => Json::Text(String::new()),
+        Some(other) => other.clone(),
+    };
+    ordered.insert("arguments".to_owned(), arguments);
     ordered.insert(
         "name".to_owned(),
         fields.get("name").cloned().unwrap_or(Json::Null),
@@ -49,11 +48,42 @@ fn ordered_function_fields(function: &Json) -> Json {
     Json::Object(ordered)
 }
 
-// litellm.types.utils.ChatCompletionMessageToolCall.__init__'s attribute-assignment order (function, then id, then type), which model_dump_json() serializes these extra="allow" fields by.
-fn ordered_tool_call_fields(tool_call: &Json) -> Json {
-    let Json::Object(fields) = tool_call else {
-        return tool_call.clone();
+// litellm.types.utils.is_custom_tool_call_dict: a tool call is custom when its type is "custom" or it carries a non-null "custom" payload.
+fn is_custom_tool_call(fields: &IndexMap<String, Json>) -> bool {
+    matches!(fields.get("type"), Some(Json::Text(kind)) if kind == "custom")
+        || fields
+            .get("custom")
+            .is_some_and(|value| !matches!(value, Json::Null))
+}
+
+// litellm.types.utils.ChatCompletionMessageCustomToolCall's declared field order (id, type, custom with name and input).
+fn custom_tool_call_fields(fields: &IndexMap<String, Json>) -> Json {
+    let mut ordered = IndexMap::new();
+    if let Some(id) = fields.get("id") {
+        ordered.insert("id".to_owned(), id.clone());
+    }
+    ordered.insert("type".to_owned(), Json::Text("custom".to_owned()));
+    let custom = match fields.get("custom") {
+        Some(Json::Object(custom_fields)) => {
+            let mut ordered_custom = IndexMap::new();
+            ordered_custom.insert(
+                "name".to_owned(),
+                custom_fields.get("name").cloned().unwrap_or(Json::Null),
+            );
+            ordered_custom.insert(
+                "input".to_owned(),
+                custom_fields.get("input").cloned().unwrap_or(Json::Null),
+            );
+            Json::Object(ordered_custom)
+        }
+        _ => Json::Object(IndexMap::new()),
     };
+    ordered.insert("custom".to_owned(), custom);
+    Json::Object(ordered)
+}
+
+// litellm.types.utils.ChatCompletionMessageToolCall.__init__'s attribute-assignment order (function, then id, then type), which model_dump_json() serializes these extra="allow" fields by.
+fn function_tool_call_fields(fields: &IndexMap<String, Json>) -> Json {
     let mut ordered = IndexMap::new();
     let function = fields
         .get("function")
@@ -70,6 +100,18 @@ fn ordered_tool_call_fields(tool_call: &Json) -> Json {
             .unwrap_or_else(|| Json::Text("function".to_owned())),
     );
     Json::Object(ordered)
+}
+
+// litellm.types.utils.chat_completion_tool_call_from_dict dispatches between the function-shaped and the custom-shaped tool call dump.
+fn ordered_tool_call_fields(tool_call: &Json) -> Json {
+    let Json::Object(fields) = tool_call else {
+        return tool_call.clone();
+    };
+    if is_custom_tool_call(fields) {
+        custom_tool_call_fields(fields)
+    } else {
+        function_tool_call_fields(fields)
+    }
 }
 
 // litellm's get_content_from_model_response rebuilds the raw dict into a ModelResponse pydantic object before reading it back, so tool_calls/function_call come back in that class's field order, not the caller's.
@@ -89,21 +131,13 @@ fn push_message_content(content: &mut String, message: &IndexMap<String, Json>) 
     }
 }
 
-fn push_delta_content(content: &mut String, fields: &IndexMap<String, Json>) {
-    if let Some(Json::Object(delta)) = fields.get("delta")
-        && let Some(Json::Text(text)) = delta.get("content")
-    {
-        content.push_str(text);
-    }
-}
-
+// litellm's ModelResponse(**response) turns every dict choice into Choices(**choice) with an empty Message() when no "message" key is given, so a StreamingChoices delta never contributes content through this raw-dict path.
 fn push_choice_content(content: &mut String, choice: &Json) {
     let Json::Object(fields) = choice else {
         return;
     };
-    match fields.get("message") {
-        Some(Json::Object(message)) => push_message_content(content, message),
-        _ => push_delta_content(content, fields),
+    if let Some(Json::Object(message)) = fields.get("message") {
+        push_message_content(content, message);
     }
 }
 
@@ -116,4 +150,79 @@ pub(super) fn content_from_dict_response(value: &IndexMap<String, Json>) -> Stri
         push_choice_content(&mut content, choice);
     }
     content
+}
+
+// litellm.types.utils.Message.model_dump()/.json(): content, role, tool_calls, function_call and provider_specific_fields are always explicitly set, so exclude_unset keeps them (nulls included) in this declared order.
+pub(super) fn message_model_dump(message: &Json) -> Json {
+    let empty = IndexMap::new();
+    let fields = match message {
+        Json::Object(fields) => fields,
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => &empty,
+    };
+    let mut ordered = IndexMap::new();
+    ordered.insert(
+        "content".to_owned(),
+        fields.get("content").cloned().unwrap_or(Json::Null),
+    );
+    ordered.insert(
+        "role".to_owned(),
+        fields
+            .get("role")
+            .filter(|value| super::super::support::has_value(value))
+            .cloned()
+            .unwrap_or_else(|| Json::Text("assistant".to_owned())),
+    );
+    let tool_calls = match fields.get("tool_calls") {
+        Some(Json::List(items)) if !items.is_empty() => {
+            Json::List(items.iter().map(ordered_tool_call_fields).collect())
+        }
+        _ => Json::Null,
+    };
+    ordered.insert("tool_calls".to_owned(), tool_calls);
+    let function_call = match fields.get("function_call") {
+        Some(value) if super::super::support::has_value(value) => ordered_function_fields(value),
+        _ => Json::Null,
+    };
+    ordered.insert("function_call".to_owned(), function_call);
+    ordered.insert(
+        "provider_specific_fields".to_owned(),
+        fields
+            .get("provider_specific_fields")
+            .cloned()
+            .unwrap_or(Json::Null),
+    );
+    Json::Object(ordered)
+}
+
+// litellm.types.utils.ImageObject.json() calls model_dump() directly (not the exclude_unset default), so its declared fields (b64_json, url, revised_prompt, provider_specific_fields) are always present, nulls included.
+fn image_object_model_dump(image: &Json) -> Json {
+    let empty = IndexMap::new();
+    let fields = match image {
+        Json::Object(fields) => fields,
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => &empty,
+    };
+    let mut ordered = IndexMap::new();
+    for key in [
+        "b64_json",
+        "url",
+        "revised_prompt",
+        "provider_specific_fields",
+    ] {
+        ordered.insert(
+            key.to_owned(),
+            fields.get(key).cloned().unwrap_or(Json::Null),
+        );
+    }
+    Json::Object(ordered)
+}
+
+// litellm.integrations.galileo.GalileoObserve's ImageResponse branch reads "data": a list of ImageObject, each serialized through this same dump.
+pub(super) fn image_response_data_model_dump(data: &Json) -> Json {
+    match data {
+        Json::List(items) => Json::List(items.iter().map(image_object_model_dump).collect()),
+        other
+        @ (Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
+            other.clone()
+        }
+    }
 }

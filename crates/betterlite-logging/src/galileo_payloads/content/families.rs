@@ -1,7 +1,9 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
-use super::model_response::content_from_dict_response;
+use super::model_response::{
+    content_from_dict_response, image_response_data_model_dump, message_model_dump,
+};
 use super::{GalileoKwargs, ResponseObj, langfuse_style_rerank_prompt, serialize_galileo_output};
 use crate::python_json;
 
@@ -51,7 +53,9 @@ fn marker_family_content(
     let output_text = match family {
         MarkerFamily::Embedding => "embedding-output".to_owned(),
         MarkerFamily::Speech => "speech-output".to_owned(),
-        MarkerFamily::Image(data) => serialize_galileo_output(*data),
+        MarkerFamily::Image(data) => {
+            serialize_galileo_output(data.map(image_response_data_model_dump).as_ref())
+        }
         MarkerFamily::Transcription(text) => {
             serialize_galileo_output(text.cloned().map(Json::Text).as_ref())
         }
@@ -61,6 +65,51 @@ fn marker_family_content(
         output_text,
         Json::Object(prompt.clone()),
     )
+}
+
+fn unknown_content(
+    prompt: &IndexMap<String, Json>,
+    kwargs: &GalileoKwargs,
+) -> (String, String, Json) {
+    (
+        super::prompt_to_input_text(prompt),
+        String::new(),
+        super::messages_or_empty(kwargs),
+    )
+}
+
+// litellm only takes this branch when call_type == "_arealtime" (galileo.py:601); any other call_type falls through to the final fallback.
+fn realtime_list_or_fallback(
+    prompt: &IndexMap<String, Json>,
+    kwargs: &GalileoKwargs,
+    items: &[Json],
+) -> (String, String, Json) {
+    if kwargs.call_type.as_deref() == Some("_arealtime") {
+        realtime_list_content(kwargs, items)
+    } else {
+        unknown_content(prompt, kwargs)
+    }
+}
+
+// litellm only takes this branch when call_type == "pass_through_endpoint" (galileo.py:609); any other call_type falls through to the generic dict branch.
+fn pass_through_or_fallback(
+    prompt: &IndexMap<String, Json>,
+    kwargs: &GalileoKwargs,
+    value: &IndexMap<String, Json>,
+) -> (String, String, Json) {
+    if kwargs.call_type.as_deref() == Some("pass_through_endpoint") {
+        (
+            super::prompt_to_input_text(prompt),
+            serialize_galileo_output(value.get("response")),
+            Json::Object(prompt.clone()),
+        )
+    } else {
+        (
+            super::prompt_to_input_text(prompt),
+            content_from_dict_response(value),
+            super::messages_or_empty(kwargs),
+        )
+    }
 }
 
 pub(super) fn response_content(
@@ -79,7 +128,7 @@ pub(super) fn response_content(
         }
         ResponseObj::Chat { message } => (
             super::prompt_to_input_text(prompt),
-            serialize_galileo_output(message.as_ref()),
+            serialize_galileo_output(message.as_ref().map(message_model_dump).as_ref()),
             super::messages_or_empty(kwargs),
         ),
         ResponseObj::TextCompletion { text } => (
@@ -89,21 +138,13 @@ pub(super) fn response_content(
         ),
         ResponseObj::Rerank { results } => rerank_content(kwargs, results),
         ResponseObj::ResponsesApi { output } => responses_api_content(prompt, kwargs, output),
-        ResponseObj::RealtimeList { items } => realtime_list_content(kwargs, items),
-        ResponseObj::PassThroughDict { value } => (
-            super::prompt_to_input_text(prompt),
-            serialize_galileo_output(value.get("response")),
-            Json::Object(prompt.clone()),
-        ),
+        ResponseObj::RealtimeList { items } => realtime_list_or_fallback(prompt, kwargs, items),
+        ResponseObj::PassThroughDict { value } => pass_through_or_fallback(prompt, kwargs, value),
         ResponseObj::GenericDict { value } => (
             super::prompt_to_input_text(prompt),
             content_from_dict_response(value),
             super::messages_or_empty(kwargs),
         ),
-        ResponseObj::Unknown => (
-            super::prompt_to_input_text(prompt),
-            String::new(),
-            super::messages_or_empty(kwargs),
-        ),
+        ResponseObj::Unknown => unknown_content(prompt, kwargs),
     }
 }
