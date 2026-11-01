@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use secrecy::SecretString;
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 
@@ -33,7 +34,7 @@ pub(super) struct RawDeployment {
 pub(super) struct RawParams {
     pub(super) model: Option<String>,
     pub(super) api_base: Option<String>,
-    pub(super) api_key: Option<String>,
+    pub(super) api_key: Option<SecretString>,
     pub(super) api_version: Option<String>,
     pub(super) timeout: Option<RawNumber>,
     pub(super) stream_timeout: Option<RawNumber>,
@@ -50,7 +51,7 @@ pub(super) struct RawInfo {
 
 #[derive(Debug, Deserialize, Default)]
 pub(super) struct RawGeneral {
-    pub(super) master_key: Option<String>,
+    pub(super) master_key: Option<SecretString>,
     pub(super) encryption_algorithm: Option<RawAlgorithm>,
 }
 
@@ -94,3 +95,5 @@ pub(super) enum RawNumber {
     Boolean(bool),
     Text(String),
 }
+
+mod tests;

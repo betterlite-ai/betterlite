@@ -1,0 +1,5 @@
+kind: helper
+name: mcp-context-hydration-from-metadata
+call: {b3761: {function: hydrate_context, request_data: {metadata: {mcp_tool_call_metadata: {name: search_docs, arguments: {q: x}, mcp_server_name: docs-server}}}}}
+env: {}
+compare: {ignore: []}

@@ -39,4 +39,11 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "billed_at"
+path = "fuzz_targets/billed_at.rs"
+test = false
+doc = false
+bench = false
+
 [workspace]
