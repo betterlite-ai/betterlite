@@ -54,6 +54,10 @@ fn config_priority_reads_the_file_last() {
         get_config_variable("missing", None, &BTreeMap::new(), Some(file), None),
         Ok(None)
     );
+}
+
+#[test]
+fn config_falls_back_to_the_default_with_no_config_file() {
     assert_eq!(
         get_config_variable(
             "url_override",
