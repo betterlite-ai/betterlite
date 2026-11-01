@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::str::Utf8Error;
 use std::time::Instant;
 
-use cookie_store::CookieStore;
+use cookie_store::{CookieError, CookieStore};
 use reqwest::blocking::Client;
 use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
@@ -43,6 +43,12 @@ pub(crate) enum BrowserFlowError {
     },
     #[error("step {index} declares its own cookie header while the jar is in use")]
     CookieConflict { index: usize },
+    #[error("step {index} set-cookie header is invalid: {source}")]
+    CookieInsert {
+        index: usize,
+        #[source]
+        source: CookieError,
+    },
     #[error("step {index}: {source}")]
     Placeholder {
         index: usize,
@@ -121,12 +127,22 @@ impl Debug for CookieJar {
 }
 
 impl CookieJar {
-    fn update_from_response(&mut self, base: &Url, raw_headers: &[(String, String)]) {
+    fn update_from_response(
+        &mut self,
+        index: usize,
+        base: &Url,
+        raw_headers: &[(String, String)],
+    ) -> Result<(), BrowserFlowError> {
         for (name, value) in raw_headers {
-            if name.eq_ignore_ascii_case("set-cookie") {
-                let _parsed = self.store.parse(value, base);
+            if !name.eq_ignore_ascii_case("set-cookie") {
+                continue;
+            }
+            match self.store.parse(value, base) {
+                Ok(_) | Err(CookieError::Expired) => {}
+                Err(source) => return Err(BrowserFlowError::CookieInsert { index, source }),
             }
         }
+        Ok(())
     }
 
     fn header_value(&self, base: &Url) -> Option<String> {
@@ -215,7 +231,9 @@ fn run_step(
         body_kind: step.request.body_kind,
     };
     let (response, raw_headers) = send_with_raw_headers(client, base, &request, body)?;
-    state.jar.update_from_response(state.base_url, &raw_headers);
+    state
+        .jar
+        .update_from_response(index, state.base_url, &raw_headers)?;
     apply_captures(index, step, &response, &raw_headers, state)?;
     Ok(response)
 }
