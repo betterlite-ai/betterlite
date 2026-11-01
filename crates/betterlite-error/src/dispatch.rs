@@ -72,15 +72,18 @@ pub fn dispatch(input: &DispatchInput, redactor: &Redactor) -> ErrorClass {
 fn dispatch_raw(raw: &RawException) -> ErrorClass {
     // exception_type() overwrites error_str with str(original_exception.message) whenever that attribute exists
     let error_str = raw.message.as_deref().unwrap_or(&raw.error_str);
+    // exception_type() nests every branch below under `if model or custom_llm_provider:`
+    let has_model_or_provider = !raw.model.is_empty() || !raw.custom_llm_provider.is_empty();
     // the four literal phrases exception_type() checks before any provider-specific branch runs
-    if error_str.contains("Request Timeout Error")
-        || error_str.contains("Request timed out")
-        || error_str.contains("Timed out generating response")
-        || error_str.contains("The read operation timed out")
+    if has_model_or_provider
+        && (error_str.contains("Request Timeout Error")
+            || error_str.contains("Request timed out")
+            || error_str.contains("Timed out generating response")
+            || error_str.contains("The read operation timed out"))
     {
         return timeout_preamble_class(raw, error_str);
     }
-    if raw.custom_llm_provider == "litellm_proxy" {
+    if has_model_or_provider && raw.custom_llm_provider == "litellm_proxy" {
         match litellm_proxy_branch(raw, error_str) {
             LitellmProxyOutcome::Raised(class) => return class,
             // not a regex match for "litellm.*Error": litellm_proxy also belongs to openai_compatible_providers

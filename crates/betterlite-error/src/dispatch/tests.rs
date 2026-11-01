@@ -143,6 +143,25 @@ fn a_synthetic_response_status_never_overrides_the_timeout_preamble() {
 }
 
 #[test]
+fn an_empty_model_and_provider_skip_the_timeout_preamble_and_reach_the_catchall() {
+    let input = DispatchInput::Raw(Box::new(RawException {
+        model: String::new(),
+        custom_llm_provider: String::new(),
+        error_str: "Request timed out".to_owned(),
+        status_code: None,
+        status_code_is_synthesized: false,
+        message: None,
+        body: None,
+    }));
+    let class = dispatch(&input, &redactor());
+    assert_eq!(
+        family(&class),
+        "api_connection",
+        "exception_type() nests the timeout preamble under `if model or custom_llm_provider:`"
+    );
+}
+
+#[test]
 fn malformed_litellm_proxy_body_falls_through_instead_of_panicking() {
     let mut request = raw(
         "litellm_proxy",
