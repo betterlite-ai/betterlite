@@ -1,8 +1,19 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
+
 use rstest::rstest;
+use secrecy::{ExposeSecret, SecretString};
 
 use super::{TokenEndpointAuthMethod, build_token_client_auth, normalize_token_auth_method};
+
+fn secret(value: &str) -> SecretString {
+    SecretString::from(value.to_owned())
+}
+
+fn exposed<'map>(map: &'map BTreeMap<String, SecretString>, key: &str) -> Option<&'map str> {
+    map.get(key).map(ExposeSecret::expose_secret)
+}
 
 #[rstest]
 fn token_endpoint_auth_method_as_str_matches_litellm_values() {
@@ -45,12 +56,12 @@ fn build_token_client_auth_basic_quote_plus_encoding() {
     let auth = build_token_client_auth(
         Some(TokenEndpointAuthMethod::ClientSecretBasic),
         Some("client id+1"),
-        Some("s3cr3t:val/ue"),
+        Some(&secret("s3cr3t:val/ue")),
     )
     .expect("both credentials are present");
     assert!(auth.body.is_empty());
     assert_eq!(
-        auth.headers.get("Authorization").map(String::as_str),
+        exposed(&auth.headers, "Authorization"),
         Some("Basic Y2xpZW50K2lkJTJCMTpzM2NyM3QlM0F2YWwlMkZ1ZQ==")
     );
 }
@@ -60,18 +71,12 @@ fn build_token_client_auth_post_body() {
     let auth = build_token_client_auth(
         Some(TokenEndpointAuthMethod::ClientSecretPost),
         Some("my-client"),
-        Some("my-secret"),
+        Some(&secret("my-secret")),
     )
     .expect("post never fails on present credentials");
     assert!(auth.headers.is_empty());
-    assert_eq!(
-        auth.body.get("client_id").map(String::as_str),
-        Some("my-client")
-    );
-    assert_eq!(
-        auth.body.get("client_secret").map(String::as_str),
-        Some("my-secret")
-    );
+    assert_eq!(exposed(&auth.body, "client_id"), Some("my-client"));
+    assert_eq!(exposed(&auth.body, "client_secret"), Some("my-secret"));
 }
 
 #[rstest]
@@ -83,7 +88,8 @@ fn build_token_client_auth_post_partial_credentials(
     #[case] expect_client_id: bool,
     #[case] expect_client_secret: bool,
 ) {
-    let auth = build_token_client_auth(None, client_id, client_secret)
+    let client_secret_value = client_secret.map(secret);
+    let auth = build_token_client_auth(None, client_id, client_secret_value.as_ref())
         .expect("post never fails on a missing credential");
     assert_eq!(auth.body.contains_key("client_id"), expect_client_id);
     assert_eq!(
@@ -109,10 +115,11 @@ fn build_token_client_auth_missing_secret_raises(
     #[case] client_id: Option<&str>,
     #[case] client_secret: Option<&str>,
 ) {
+    let client_secret_value = client_secret.map(secret);
     let error = build_token_client_auth(
         Some(TokenEndpointAuthMethod::ClientSecretBasic),
         client_id,
-        client_secret,
+        client_secret_value.as_ref(),
     )
     .unwrap_err();
     assert_eq!(

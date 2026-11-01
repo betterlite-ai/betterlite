@@ -15,14 +15,14 @@ use betterlite_mcp::credential_contracts::auth_config::oauth::{
 };
 use betterlite_mcp::credential_contracts::auth_config::simple::{NoneConfig, PassthroughConfig};
 use betterlite_mcp::credential_contracts::auth_spec::parse_auth_spec_kind;
-use betterlite_mcp::credential_contracts::byok_cache::byok_credential_cache_key;
+use betterlite_mcp::credential_contracts::byok_cache::CACHE_KEY_PREFIX;
 use betterlite_mcp::credential_contracts::errors::{CredError, CredResult};
 use betterlite_mcp::credential_contracts::header_carrier::HeaderCarrier;
 use betterlite_mcp::credential_contracts::token_endpoint_auth::{
     TokenEndpointAuthConfigError, TokenEndpointAuthMethod, build_token_client_auth,
     normalize_token_auth_method,
 };
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::json;
 use thiserror::Error;
@@ -135,25 +135,30 @@ fn result_union(ok: bool, value: &str) -> serde_json::Value {
         "is_ok": result.is_ok(),
         "is_error": result.is_err(),
         "ok": result.as_ref().ok(),
-        "error_summary": result.as_ref().err().map(CredError::summary),
+        "error_summary": result.as_ref().err().map(ToString::to_string),
     })
 }
 
 fn auth_spec_kind(raw: &str) -> serde_json::Value {
     match parse_auth_spec_kind(raw) {
         Ok(kind) => json!({ "ok": true, "value": kind.to_string() }),
-        Err(error) => json!({ "ok": false, "error_summary": error.summary() }),
+        Err(error) => json!({ "ok": false, "error_summary": error.to_string() }),
     }
 }
 
 fn token_auth_build(
     auth_method: Option<&str>,
     client_id: Option<&str>,
-    client_secret: Option<&str>,
+    client_secret: Option<&SecretString>,
 ) -> Result<serde_json::Value, Failure> {
     let method = auth_method.and_then(normalize_token_auth_method);
     let built = build_token_client_auth(method, client_id, client_secret)?;
-    Ok(json!({ "headers": built.headers, "body": built.body }))
+    let expose = |map: std::collections::BTreeMap<String, SecretString>| {
+        map.into_iter()
+            .map(|(key, value)| (key, value.expose_secret().to_owned()))
+            .collect::<std::collections::BTreeMap<_, _>>()
+    };
+    Ok(json!({ "headers": expose(built.headers), "body": expose(built.body) }))
 }
 
 impl Helper for Op {
@@ -174,14 +179,17 @@ impl Helper for Op {
                 auth_method,
                 client_id,
                 client_secret,
-            } => Ok(token_auth_build(
-                auth_method.as_deref(),
-                client_id.as_deref(),
-                client_secret.as_deref(),
-            )?),
-            Input::ByokCacheKey { user_id, server_id } => {
-                Ok(json!({ "key": byok_credential_cache_key(user_id, server_id) }))
+            } => {
+                let client_secret_value = client_secret.clone().map(SecretString::from);
+                Ok(token_auth_build(
+                    auth_method.as_deref(),
+                    client_id.as_deref(),
+                    client_secret_value.as_ref(),
+                )?)
             }
+            Input::ByokCacheKey { user_id, server_id } => Ok(json!({
+                "key": format!("{CACHE_KEY_PREFIX}:{user_id}:{server_id}"),
+            })),
         }
     }
 }

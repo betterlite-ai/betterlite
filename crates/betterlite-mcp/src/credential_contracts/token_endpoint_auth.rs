@@ -1,11 +1,12 @@
 mod tests;
 
 use std::collections::BTreeMap;
-
+use std::fmt;
 use std::fmt::Write as _;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
+use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,10 +34,20 @@ pub fn normalize_token_auth_method(value: &str) -> Option<TokenEndpointAuthMetho
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone)]
 pub struct TokenEndpointClientAuth {
-    pub headers: BTreeMap<String, String>,
-    pub body: BTreeMap<String, String>,
+    pub headers: BTreeMap<String, SecretString>,
+    pub body: BTreeMap<String, SecretString>,
+}
+
+impl fmt::Debug for TokenEndpointClientAuth {
+    // Redacts every value: a header carries the Basic-encoded secret, and the body can carry client_secret.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TokenEndpointClientAuth")
+            .field("header_names", &self.headers.keys().collect::<Vec<_>>())
+            .field("body_keys", &self.body.keys().collect::<Vec<_>>())
+            .finish()
+    }
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -63,7 +74,7 @@ fn quote_plus(value: &str) -> String {
 pub fn build_token_client_auth(
     auth_method: Option<TokenEndpointAuthMethod>,
     client_id: Option<&str>,
-    client_secret: Option<&str>,
+    client_secret: Option<&SecretString>,
 ) -> Result<TokenEndpointClientAuth, TokenEndpointAuthConfigError> {
     if matches!(
         auth_method,
@@ -71,15 +82,16 @@ pub fn build_token_client_auth(
     ) {
         let (Some(id), Some(secret)) = (
             client_id.filter(|value| !value.is_empty()),
-            client_secret.filter(|value| !value.is_empty()),
+            client_secret.filter(|value| !value.expose_secret().is_empty()),
         ) else {
             return Err(TokenEndpointAuthConfigError);
         };
-        let userpass = format!("{}:{}", quote_plus(id), quote_plus(secret));
+        // The secret is exposed here only to build the Basic-encoded header value that the token request actually sends.
+        let userpass = format!("{}:{}", quote_plus(id), quote_plus(secret.expose_secret()));
         let mut headers = BTreeMap::new();
         headers.insert(
             "Authorization".to_owned(),
-            format!("Basic {}", STANDARD.encode(userpass.as_bytes())),
+            SecretString::from(format!("Basic {}", STANDARD.encode(userpass.as_bytes()))),
         );
         return Ok(TokenEndpointClientAuth {
             headers,
@@ -88,10 +100,10 @@ pub fn build_token_client_auth(
     }
     let mut body = BTreeMap::new();
     if let Some(id) = client_id.filter(|value| !value.is_empty()) {
-        body.insert("client_id".to_owned(), id.to_owned());
+        body.insert("client_id".to_owned(), SecretString::from(id.to_owned()));
     }
-    if let Some(secret) = client_secret.filter(|value| !value.is_empty()) {
-        body.insert("client_secret".to_owned(), secret.to_owned());
+    if let Some(secret) = client_secret.filter(|value| !value.expose_secret().is_empty()) {
+        body.insert("client_secret".to_owned(), secret.clone());
     }
     Ok(TokenEndpointClientAuth {
         headers: BTreeMap::new(),
