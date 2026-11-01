@@ -1,0 +1,9 @@
+kind: helper
+name: usage-sum-seed
+call:
+  usage_sum:
+    usages:
+      - prompt_tokens: 1
+        completion_tokens: 1
+compare: {ignore: []}
+env: {}

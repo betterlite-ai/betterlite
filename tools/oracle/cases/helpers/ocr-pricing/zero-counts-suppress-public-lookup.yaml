@@ -1,0 +1,12 @@
+kind: helper
+name: zero-counts-suppress-public-lookup
+call:
+  ocr_pricing:
+    kind: batch
+    model: fixture/missing
+    custom_llm_provider: null
+    model_info: null
+    usage: {pages_processed: 0, pages_processed_annotation: 0}
+    catalog: null
+compare: {ignore: []}
+env: {}

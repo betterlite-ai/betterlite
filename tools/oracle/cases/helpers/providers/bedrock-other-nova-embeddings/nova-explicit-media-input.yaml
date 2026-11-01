@@ -1,0 +1,13 @@
+kind: helper
+name: nova-explicit-media-input
+call:
+  bedrock_other_nova_embeddings:
+    nova_explicit_modality:
+      input: "data:badformat_no_comma"
+      inference_params:
+        text: null
+        image: {format: png, source: {bytes: xyz}}
+      async_invoke_route: false
+env: {}
+compare:
+  ignore: []

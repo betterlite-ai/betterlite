@@ -1,7 +1,7 @@
 id: B4113
 milestone: M7 observability
 title: Search result messages and native citation blocks
-status: todo
+status: done
 depends_on: [B4111, B4112, B184]
 file: tasks/B4113-websearch-result-blocks.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/integrations/websearch_interception/handler.py"
 parent: B119
 split_from: B119
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 437

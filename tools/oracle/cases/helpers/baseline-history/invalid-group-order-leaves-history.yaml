@@ -1,0 +1,49 @@
+kind: helper
+name: invalid_group_order_leaves_history
+call:
+  baseline_history:
+    groups:
+      - - request_id: "r1"
+          started_at: 100.0
+          available_at: 100.0
+          outcome: complete
+          baseline_equivalent: true
+          usage:
+            prompt_tokens: 10
+            completion_tokens: 1
+            total_tokens: 11
+            prompt_tokens_details:
+              text_tokens: 10
+              cached_tokens: 0
+              cache_creation_tokens: 0
+              cache_creation_token_details: {ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 0}
+      - - request_id: "decreasing"
+          started_at: 50.0
+          available_at: 50.0
+          outcome: complete
+          baseline_equivalent: false
+          usage:
+            prompt_tokens: 10
+            completion_tokens: 1
+            total_tokens: 11
+            prompt_tokens_details:
+              text_tokens: 10
+              cached_tokens: 0
+              cache_creation_tokens: 0
+              cache_creation_token_details: {ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 0}
+      - - request_id: "available-before-started"
+          started_at: 150.0
+          available_at: 140.0
+          outcome: complete
+          baseline_equivalent: false
+          usage:
+            prompt_tokens: 10
+            completion_tokens: 1
+            total_tokens: 11
+            prompt_tokens_details:
+              text_tokens: 10
+              cached_tokens: 0
+              cache_creation_tokens: 0
+              cache_creation_token_details: {ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 0}
+compare: {ignore: []}
+env: {}

@@ -1,0 +1,13 @@
+kind: helper
+name: native-errors-a-branch-1518
+call:
+  native_errors_a:
+    provider: huggingface
+    model: hf/model-a
+    error_str: "unrecognized failure"
+    status_code: 401
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

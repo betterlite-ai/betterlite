@@ -5,7 +5,4 @@ call:
     function: auth
     value: {rpm_limit_per_model: {gpt-4: 1.5}}
 env: {}
-compare:
-  ignore:
-    - pointer: /error/message
-      why: betterlite writes its own validation message
+compare: {ignore: []}

@@ -1,0 +1,8 @@
+kind: helper
+name: frontmatter-empty-string-to-none
+call:
+  skill_discovery_archives:
+    stored_content: UEsDBBQAAAAIAAAAIQDk3WKGKQAAACgAAAAIAAAAU0tJTEwubWTT1dXlykvMTbVSUFdQUFDnSkktTi7KLCjJzM+zUsjP5tIFyiflp1QCAFBLAQIUAxQAAAAIAAAAIQDk3WKGKQAAACgAAAAIAAAAAAAAAAAAAACkgQAAAABTS0lMTC5tZFBLBQYAAAAAAQABADYAAABPAAAAAAA=
+env: {}
+compare:
+  ignore: []

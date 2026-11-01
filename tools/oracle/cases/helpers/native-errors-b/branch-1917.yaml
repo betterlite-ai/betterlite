@@ -1,0 +1,13 @@
+kind: helper
+name: native-errors-b-branch-1917
+call:
+  native_errors_b:
+    provider: vllm
+    model: vllm/mistral-7b
+    status_code: 0
+    message: "boom"
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

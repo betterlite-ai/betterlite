@@ -3,4 +3,4 @@ name: structured-ambiguous-json
 call: {structured_redaction: {function: redact_credentials_in_payload, data: {}, data_json: "{}"}}
 env: {}
 compare:
-  ignore: [{pointer: /error/message, why: betterlite writes its own message}]
+  ignore: []

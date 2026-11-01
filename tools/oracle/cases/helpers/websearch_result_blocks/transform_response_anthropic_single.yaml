@@ -1,0 +1,17 @@
+kind: helper
+name: transform-response-anthropic-single
+call:
+  b4113:
+    operation: transform_response
+    format: anthropic
+    response:
+      content:
+        - type: tool_use
+          id: toolu_01
+          name: web_search
+          input:
+            query: rust programming
+    search_results:
+      - "Title: Rust\nURL: https://www.rust-lang.org\nSnippet: A systems language"
+env: {}
+compare: {ignore: []}

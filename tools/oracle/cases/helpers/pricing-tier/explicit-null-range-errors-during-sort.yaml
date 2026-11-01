@@ -10,9 +10,5 @@ call:
     cost_key: input_cost_per_token
     fallback_cost_key: null
 compare:
-  ignore:
-    - pointer: /error/class
-      why: betterlite raises a typed TieredPricingError where LiteLLM raises a native TypeError
-    - pointer: /error/message
-      why: betterlite writes its own message
+  ignore: []
 env: {}
