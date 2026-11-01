@@ -234,6 +234,7 @@ fn steps_case(steps: Vec<Step>) -> Case {
         upstream: Vec::new(),
         compare: Box::new(Compare::default()),
         steps: Some(steps),
+        scenario: None,
         database: None,
     }
 }

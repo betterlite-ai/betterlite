@@ -10,6 +10,7 @@ use serde_json::Value;
 
 use crate::multipart_oracle::error::MultipartError;
 use crate::multipart_oracle::request::{answer_body, request_body};
+use crate::routing_scenarios;
 
 pub mod browser_flow;
 mod config_inspection;
@@ -32,6 +33,8 @@ pub struct Case {
     pub(crate) compare: Box<Compare>,
     #[serde(default)]
     pub(crate) steps: Option<Vec<browser_flow::Step>>,
+    #[serde(default)]
+    pub(crate) scenario: Option<routing_scenarios::Scenario>,
     #[serde(default)]
     #[serde(alias = "database_fixture")]
     pub(crate) database: Option<DatabaseFixture>,
@@ -242,23 +245,39 @@ pub(crate) fn validate(path: &Path, case: &Case) -> Result<(), OracleError> {
     Ok(())
 }
 
-// Serde defaults the unused side of request/compare or steps, so emptiness stands in for absence.
+// Serde defaults the unused side of request/compare, steps or scenario, so emptiness stands in for absence.
 fn validate_request_or_steps(path: &Path, case: &Case) -> Result<(), OracleError> {
     let invalid = |message: &str| OracleError::CaseInvalid {
         path: path.to_owned(),
         message: message.to_owned(),
     };
-    if let Some(steps) = &case.steps {
-        if *case.request != Request::default() || *case.compare != Compare::default() {
-            return Err(invalid("a case cannot set both request/compare and steps"));
+    let plain_request_unset =
+        *case.request == Request::default() && *case.compare == Compare::default();
+    match (&case.steps, &case.scenario) {
+        (Some(_), Some(_)) => Err(invalid("a case cannot set both steps and scenario")),
+        (Some(steps), None) => {
+            if !plain_request_unset {
+                return Err(invalid("a case cannot set both request/compare and steps"));
+            }
+            browser_flow::validate_steps(path, steps)
         }
-        return browser_flow::validate_steps(path, steps);
+        (None, Some(scenario)) => {
+            if !plain_request_unset {
+                return Err(invalid(
+                    "a case cannot set both request/compare and scenario",
+                ));
+            }
+            routing_scenarios::validate_in_case(path, scenario)
+        }
+        (None, None) => {
+            if case.request.path.is_empty() {
+                return Err(invalid("request.path cannot be empty"));
+            }
+            request_body(&case.request.body, case.request.body_kind)
+                .map_err(OracleError::Multipart)?;
+            validate_ignores(path, &case.compare.ignore)
+        }
     }
-    if case.request.path.is_empty() {
-        return Err(invalid("request.path cannot be empty"));
-    }
-    request_body(&case.request.body, case.request.body_kind).map_err(OracleError::Multipart)?;
-    validate_ignores(path, &case.compare.ignore)
 }
 
 pub(crate) fn validate_ignores(path: &Path, ignores: &[Ignore]) -> Result<(), OracleError> {

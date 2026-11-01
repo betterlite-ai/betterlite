@@ -15,13 +15,14 @@ use crate::http::{self, Response};
 use crate::mock::{MockProvider, ProviderRequest};
 use crate::paths::artifact_root;
 use crate::process::Gateway;
-use crate::routing_mock_scripts::MockScript;
+use crate::routing_mock_scripts::{MockScript, Outcome, ScriptSpec, ScriptedReply, Wait};
+use crate::routing_scenarios;
 
 pub(crate) mod browser_flow_group;
 pub(crate) mod compare_cases;
 mod config;
 mod fixtures;
-mod native_feature_eligibility;
+pub(crate) mod native_feature_eligibility;
 
 #[derive(Debug, clap::Parser)]
 pub(crate) struct DatabaseEnvironment {
@@ -93,12 +94,10 @@ pub(crate) fn run_group_with_url(
     if cases.is_empty() {
         return Err(OracleError::MissingCapture(0));
     }
-    let upstream_answers = cases
-        .iter()
-        .flat_map(|case| case.upstream.iter())
-        .cloned()
-        .collect::<Vec<_>>();
-    let mock = MockProvider::start(MockScript::try_from(upstream_answers.as_slice())?)?;
+    let mock = MockProvider::start(MockScript::try_from(ScriptSpec {
+        deadline_ms: http::REQUEST_TIMEOUT_MS,
+        replies: scripted_replies(cases),
+    })?)?;
     let first_case = cases.first().ok_or(OracleError::MissingCapture(0))?;
     let fixtures = fixtures::provision(cases, configured_url)?;
     let operation_result = run_group_capture(GroupCaptureInput {
@@ -119,6 +118,23 @@ pub(crate) fn run_group_with_url(
             cleanup: cleanup_error,
         }),
     }
+}
+
+fn scripted_replies(cases: &[Case]) -> Vec<ScriptedReply> {
+    cases
+        .iter()
+        .flat_map(|case| {
+            let waits = case.scenario.as_ref().map_or_else(
+                || vec![Wait::None; case.upstream.len()],
+                |scenario| routing_scenarios::upstream_waits(&case.name, scenario),
+            );
+            waits.into_iter().zip(case.upstream.iter().cloned())
+        })
+        .map(|(wait, answer)| ScriptedReply {
+            wait,
+            then: Outcome::Answer(answer),
+        })
+        .collect()
 }
 
 struct GroupCaptureInput<'input> {
@@ -215,6 +231,12 @@ pub(crate) fn capture_gateway(
                 client,
                 &gateway.base_url,
                 steps,
+            )?);
+        } else if let Some(scenario) = &case.scenario {
+            captures.extend(routing_scenarios::run::run_scenario(
+                client,
+                &gateway.base_url,
+                scenario,
             )?);
         } else {
             captures.push(http::send(client, &gateway.base_url, &case.request)?);
