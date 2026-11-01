@@ -1,0 +1,122 @@
+id: B5098
+title: Bedrock Nova embedding reply checks and oracle error classes
+description: >-
+  B628 built Bedrock Nova multimodal embeddings. An Opus review after merge found two behavior gaps
+  and two test gaps inside it. This task closes them in the same crate and oracle helper, without
+  touching B628's request-building code.
+
+
+  Gap one. embedding_list_item in crates/betterlite-bedrock/src/nova_embeddings/response.rs reads
+  truncatedCharLength before it checks the embedding value's type. A reply entry
+  {"embedding": null, "truncatedCharLength": 8} returns a null vector today. LiteLLM builds an
+  Embedding(embedding=item["embedding"], ...) for every entry, in both the embeddings-list path and
+  the direct "embedding" fallback (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/amazon_nova_transformation.py#L264-L291).
+  Embedding declares embedding: list | str
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2280-L2283),
+  so pydantic raises ValidationError for a null, a number, a bool or a mapping. The fix runs the
+  existing embedding_length type check before reading truncatedCharLength, on both paths. Separately,
+  the already-merged oracle adapter's From<Failure> impl maps every MalformedField case to error class
+  TypeError; that is right for a bad embeddings-list entry and a bad truncatedCharLength, but a bad
+  embedding value itself must map to ValidationError, matching the class pydantic actually raises. While
+  this file is open, fold length_u64 into one expression, since it only repeats its own type in its
+  name.
+
+
+  Gap two. A non-object entry in an embeddings list (null, a number, a bool) is skipped today with no
+  error. LiteLLM evaluates "embedding" in item for each entry (same link, L268); for a non-dict item
+  this raises TypeError, the same way Python's in operator does for null, a number or a bool. A list
+  or a string entry does not raise there, since Python's in returns false for those without error, so
+  only Null, Bool, Int and Float entries become NovaEmbeddingsError::MalformedField { field:
+  "embeddings" }; List and Text entries keep being skipped.
+
+
+  Gap three. No test sends embedding_dimension alone, without dimensions, and none pins the
+  embeddingDimension=3072 default. LiteLLM maps embedding_dimension to embeddingDimension on its own
+  branch and only falls back to 3072 when neither key is present
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/amazon_nova_transformation.py#L124-L136).
+  request.rs already does this correctly; only the test coverage is missing, so deleting or changing
+  that code today leaves every existing test and oracle case green.
+
+
+  Gap four. nova_invocation_arn in tools/oracle/src/helpers/bedrock/other_nova_embeddings.rs throws
+  away a conversion failure with unwrap_or_default() and unwrap_or(Value::Null), turning a failure
+  into a success answer of an empty response or a null. Every sibling handler in this file passes the
+  same Failure up with ?; nova_invocation_arn returns Result<Value, Failure> and does the same, and
+  the Input::NovaInvocationArn match arm drops its extra Ok(...) wrap.
+scope:
+  paths:
+    - crates/betterlite-bedrock/src/nova_embeddings/response.rs
+    - crates/betterlite-bedrock/src/nova_embeddings/tests/cases.rs
+    - tools/oracle/src/helpers/bedrock/other_nova_embeddings.rs
+    - tools/oracle/cases/helpers/providers/bedrock-other-nova-embeddings/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/amazon_nova_transformation.py#L264-L291
+    why: The embeddings-list loop raising TypeError at "embedding" in item, and the Embedding(...) construction in both the list-entry and direct-fallback paths, which raises ValidationError for a malformed value.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2280-L2283
+    why: Embedding declares embedding as list | str, the field pydantic validates when a Nova reply builds one.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/amazon_nova_transformation.py#L124-L136
+    why: embedding_dimension maps to embeddingDimension on its own branch, and 3072 is the default only when neither key is present.
+dod:
+  - text: >-
+      A reply entry {"embedding": null, "truncatedCharLength": 8} raises NovaEmbeddingsError::MalformedField
+      { field: "embedding" } instead of returning a null vector, on both the embeddings-list path and the
+      direct "embedding" fallback. The oracle adapter reports that error as class ValidationError, not
+      TypeError, matching the class LiteLLM's pydantic model actually raises.
+    proof:
+      - case-nova-embedding-type-validation
+      - oracle
+  - text: >-
+      A non-object entry in an embeddings list (null, a number, a bool) raises
+      NovaEmbeddingsError::MalformedField { field: "embeddings" } instead of being skipped. A list or a
+      string entry still gets skipped, matching Python's in operator.
+    proof:
+      - case-nova-embeddings-non-object-entry
+      - oracle
+  - text: >-
+      nova_default_purpose_dimensions has an assertion that fails if embedding_dimension alone (without
+      dimensions) stops mapping to embeddingDimension, and an assertion that fails if the bare
+      embeddingDimension=3072 default changes.
+    proof:
+      - case-nova-dimension-defaults
+      - oracle
+  - text: >-
+      nova_invocation_arn returns Result<Value, Failure> and propagates a map_to_params or
+      embedding_response_json failure with ?, instead of turning it into a success answer with
+      unwrap_or_default() or unwrap_or(Value::Null).
+    proof:
+      - no-swallowed-invocation-arn-errors
+checks:
+  optional: [mutants]
+  commands:
+    - id: case-nova-embedding-type-validation
+      why: a list entry with truncatedCharLength skips type validation on its embedding value, or the oracle adapter reports the wrong error class for a malformed embedding value
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/providers/bedrock-other-nova-embeddings/nova-embeddings-list-null-embedding.yaml tools/oracle/cases/helpers/providers/bedrock-other-nova-embeddings/nova-direct-embedding-malformed-value.yaml)" && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::nova_embeddings_cases::case_[0-9]+_nova_result_index_token_estimate$/)'
+    - id: case-nova-embeddings-non-object-entry
+      why: a non-object entry in an embeddings list is skipped instead of raising MalformedField
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/providers/bedrock-other-nova-embeddings/nova-embeddings-list-non-object-entry.yaml)" && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::nova_embeddings_cases::case_[0-9]+_nova_result_index_token_estimate$/)'
+    - id: case-nova-dimension-defaults
+      why: embedding_dimension alone, or the bare 3072 default, has no test that fails if that mapping breaks
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/providers/bedrock-other-nova-embeddings/nova-embedding-dimension-only.yaml tools/oracle/cases/helpers/providers/bedrock-other-nova-embeddings/nova-default-dimension-3072.yaml)" && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::nova_embeddings_cases::case_[0-9]+_nova_default_purpose_dimensions$/)'
+    - id: no-swallowed-invocation-arn-errors
+      why: nova_invocation_arn turns a conversion failure into a success answer with unwrap_or_default or unwrap_or(Value::Null) instead of returning it with ?
+      run: '! grep -qE "unwrap_or_default\(\)|unwrap_or\(Value::Null\)" tools/oracle/src/helpers/bedrock/other_nova_embeddings.rs && grep -q "fn nova_invocation_arn(call: &InvocationArnCall) -> Result<Value, Failure>" tools/oracle/src/helpers/bedrock/other_nova_embeddings.rs'
+oracle_cases:
+  - tools/oracle/cases/helpers/providers/bedrock-other-nova-embeddings/nova-embeddings-list-null-embedding.yaml
+  - tools/oracle/cases/helpers/providers/bedrock-other-nova-embeddings/nova-direct-embedding-malformed-value.yaml
+  - tools/oracle/cases/helpers/providers/bedrock-other-nova-embeddings/nova-embeddings-list-non-object-entry.yaml
+  - tools/oracle/cases/helpers/providers/bedrock-other-nova-embeddings/nova-embedding-dimension-only.yaml
+  - tools/oracle/cases/helpers/providers/bedrock-other-nova-embeddings/nova-default-dimension-3072.yaml
+deviations: []
+out_of_scope:
+  - Padded one-line functions, including map_to_params and params_to_map in the oracle adapter. They belong to B5094, which clears the no-one-line-functions and no-padded-one-line-functions legacy lists. This task does not touch .ast-grep/rules/.
+  - Typed request and reply structs for the whole Nova envelope that Opus's typed-wire findings suggested. Once gaps one and two are fixed, no client or operator sees a different result from reading Params by string key, so the rest of that rewrite stays out.
+  - request.rs and async_invoke.rs. Their envelope-building code has no finding kept by this task.
+pitfalls:
+  - A non-object embeddings-list entry only raises for Null, Bool, Int and Float. List and Text entries keep being skipped, matching Python's in operator.
+  - embedding_length must run before truncatedCharLength is read, on both the list-entry path and the direct fallback, so a malformed value is caught either way.
+  - as_u64 also rejects a Field::Bool for truncatedCharLength, but Python's bool is an int subtype so True // 4 succeeds there. That gap is not one of this task's findings and stays open.
+budget:
+  max_changed_lines: 220
+  max_new_expects: 0
+review_level: standard

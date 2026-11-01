@@ -125,6 +125,7 @@ pub mod content_filter_records;
 pub mod context_placement;
 pub mod cooldown_decisions;
 pub mod cooldown_state;
+pub mod cost_adjustments;
 pub mod cost_routing;
 pub mod current_spend;
 pub mod custom_auth;
@@ -447,7 +448,7 @@ sections! {
     complexity_turn_overrides, component_contracts, compresr_writeback,
     compression_interception_state, content_category, content_filter_catalog,
     content_filter_inputs, content_filter_records, context_placement, cooldown_decisions,
-    cooldown_state, cost_routing, current_spend, custom_auth, custom_dimensions,
+    cooldown_state, cost_adjustments, cost_routing, current_spend, custom_auth, custom_dimensions,
     database_availability, database_diagnostics, database_failures, database_reencryption,
     database_refresh_loop, database_startup, database_tls, database_tokens, database_urls,
     deepkeep_firewall, default_user_teams, deployment_affinity, deployment_catalog,

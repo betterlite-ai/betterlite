@@ -1,0 +1,13 @@
+id: B5097
+milestone: M7 observability
+title: Dotprompt sandbox parity and a rendered-output limit
+status: todo
+depends_on: [B4051]
+file: tasks/B5097-dotprompt-parity-gaps.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

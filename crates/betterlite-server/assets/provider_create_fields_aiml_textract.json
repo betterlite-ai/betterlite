@@ -1,0 +1,300 @@
+[
+  {
+    "provider": "AIML",
+    "provider_display_name": "AI/ML API",
+    "litellm_provider": "aiml",
+    "credential_fields": [
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "aiml/flux-pro/v1.1"
+  },
+  {
+    "provider": "AI21",
+    "provider_display_name": "Ai21",
+    "litellm_provider": "ai21",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "AI21_CHAT",
+    "provider_display_name": "Ai21 Chat",
+    "litellm_provider": "ai21_chat",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "AIOHTTP_OPENAI",
+    "provider_display_name": "Aiohttp Openai",
+    "litellm_provider": "aiohttp_openai",
+    "credential_fields": [
+      {
+        "key": "api_base",
+        "label": "API Base",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": null,
+        "tooltip": null,
+        "required": false,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "gpt-3.5-turbo"
+  },
+  {
+    "provider": "Bedrock",
+    "provider_display_name": "Amazon Bedrock",
+    "litellm_provider": "bedrock",
+    "credential_fields": [
+      {
+        "key": "aws_access_key_id",
+        "label": "AWS Access Key ID",
+        "placeholder": null,
+        "tooltip": "You can provide the raw key or the environment variable (e.g. `os.environ/MY_SECRET_KEY`).",
+        "required": false,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "aws_secret_access_key",
+        "label": "AWS Secret Access Key",
+        "placeholder": null,
+        "tooltip": "You can provide the raw key or the environment variable (e.g. `os.environ/MY_SECRET_KEY`).",
+        "required": false,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_key",
+        "label": "AWS Bedrock API Key",
+        "placeholder": null,
+        "tooltip": "You can provide the API Key for accessing the Bedrock API.",
+        "required": false,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "aws_session_token",
+        "label": "AWS Session Token",
+        "placeholder": null,
+        "tooltip": "Temporary credentials session token. You can provide the raw token or the environment variable (e.g. `os.environ/MY_SESSION_TOKEN`).",
+        "required": false,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "aws_region_name",
+        "label": "AWS Region Name",
+        "placeholder": "us-east-1",
+        "tooltip": "You can provide the raw key or the environment variable (e.g. `os.environ/MY_SECRET_KEY`).",
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "aws_session_name",
+        "label": "AWS Session Name",
+        "placeholder": "my-session",
+        "tooltip": "Name for the AWS session. You can provide the raw value or the environment variable (e.g. `os.environ/MY_SESSION_NAME`).",
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "aws_profile_name",
+        "label": "AWS Profile Name",
+        "placeholder": "default",
+        "tooltip": "AWS profile name to use for authentication. You can provide the raw value or the environment variable (e.g. `os.environ/MY_PROFILE_NAME`).",
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "aws_role_name",
+        "label": "AWS Role Name",
+        "placeholder": "MyRole",
+        "tooltip": "AWS IAM role name to assume. You can provide the raw value or the environment variable (e.g. `os.environ/MY_ROLE_NAME`).",
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "aws_web_identity_token",
+        "label": "AWS Web Identity Token",
+        "placeholder": null,
+        "tooltip": "Web identity token for OIDC authentication. You can provide the raw token or the environment variable (e.g. `os.environ/MY_WEB_IDENTITY_TOKEN`).",
+        "required": false,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "aws_bedrock_runtime_endpoint",
+        "label": "AWS Bedrock Runtime Endpoint",
+        "placeholder": "https://bedrock-runtime.us-east-1.amazonaws.com",
+        "tooltip": "Custom Bedrock runtime endpoint URL. You can provide the raw value or the environment variable (e.g. `os.environ/MY_BEDROCK_ENDPOINT`).",
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "claude-3-opus"
+  },
+  {
+    "provider": "AWS_Textract",
+    "provider_display_name": "Amazon Textract",
+    "litellm_provider": "aws_textract",
+    "credential_fields": [
+      {
+        "key": "aws_access_key_id",
+        "label": "AWS Access Key ID",
+        "placeholder": null,
+        "tooltip": "You can provide the raw key or the environment variable (e.g. `os.environ/MY_SECRET_KEY`).",
+        "required": false,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "aws_secret_access_key",
+        "label": "AWS Secret Access Key",
+        "placeholder": null,
+        "tooltip": "You can provide the raw key or the environment variable (e.g. `os.environ/MY_SECRET_KEY`).",
+        "required": false,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "aws_session_token",
+        "label": "AWS Session Token",
+        "placeholder": null,
+        "tooltip": "Temporary credentials session token. You can provide the raw token or the environment variable (e.g. `os.environ/MY_SESSION_TOKEN`).",
+        "required": false,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "aws_region_name",
+        "label": "AWS Region Name",
+        "placeholder": "us-east-1",
+        "tooltip": "You can provide the raw key or the environment variable (e.g. `os.environ/MY_SECRET_KEY`).",
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "aws_session_name",
+        "label": "AWS Session Name",
+        "placeholder": "my-session",
+        "tooltip": "Name for the AWS session. You can provide the raw value or the environment variable (e.g. `os.environ/MY_SESSION_NAME`).",
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "aws_profile_name",
+        "label": "AWS Profile Name",
+        "placeholder": "default",
+        "tooltip": "AWS profile name to use for authentication. You can provide the raw value or the environment variable (e.g. `os.environ/MY_PROFILE_NAME`).",
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "aws_role_name",
+        "label": "AWS Role Name",
+        "placeholder": "MyRole",
+        "tooltip": "AWS IAM role name to assume. You can provide the raw value or the environment variable (e.g. `os.environ/MY_ROLE_NAME`).",
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "aws_web_identity_token",
+        "label": "AWS Web Identity Token",
+        "placeholder": null,
+        "tooltip": "Web identity token for OIDC authentication. You can provide the raw token or the environment variable (e.g. `os.environ/MY_WEB_IDENTITY_TOKEN`).",
+        "required": false,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      }
+    ],
+    "default_model_placeholder": "detect-document-text"
+  }
+]
