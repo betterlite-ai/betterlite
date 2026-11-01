@@ -39,12 +39,4 @@ pub fn recorded_autorouter_savings(metadata: &Metadata) -> Option<Decimal> {
     numeric_savings(metadata.autorouter_savings.as_ref())
 }
 
-#[must_use]
-pub fn classifier_cost_from_decision(
-    routing_decision: Option<&RoutingDecision>,
-) -> Option<Decimal> {
-    let decision = routing_decision?;
-    numeric_savings(decision.classifier_cost.as_ref())
-}
-
 mod tests;

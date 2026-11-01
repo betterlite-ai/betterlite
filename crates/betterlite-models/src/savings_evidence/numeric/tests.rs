@@ -3,9 +3,7 @@
 use rstest::rstest;
 use rust_decimal::Decimal;
 
-use super::{
-    RoutingDecision, classifier_cost_from_decision, numeric_savings, recorded_autorouter_savings,
-};
+use super::{RoutingDecision, numeric_savings, recorded_autorouter_savings};
 use crate::savings_evidence::metadata::Metadata;
 use crate::tiered_pricing::Scalar;
 
@@ -72,16 +70,20 @@ fn recorded_autorouter_savings_is_none_without_an_estimate() {
 }
 
 #[test]
-fn classifier_cost_from_decision_reads_a_mapping() {
+fn numeric_savings_reads_a_routing_decisions_classifier_cost() {
     let decision: RoutingDecision = serde_json::from_str(r#"{"classifier_cost": 0.002}"#)
         .expect("the fixture decision deserializes");
     assert_eq!(
-        classifier_cost_from_decision(Some(&decision)),
+        numeric_savings(Some(&decision).and_then(|value| value.classifier_cost.as_ref())),
         Some(decimal("0.002"))
     );
 }
 
 #[test]
-fn classifier_cost_from_decision_treats_a_missing_decision_as_empty() {
-    assert_eq!(classifier_cost_from_decision(None), None);
+fn numeric_savings_treats_a_missing_routing_decision_as_empty() {
+    let routing_decision: Option<&RoutingDecision> = None;
+    assert_eq!(
+        numeric_savings(routing_decision.and_then(|value| value.classifier_cost.as_ref())),
+        None
+    );
 }
