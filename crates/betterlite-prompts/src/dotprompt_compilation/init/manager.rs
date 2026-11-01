@@ -54,7 +54,13 @@ impl DotpromptManager {
         };
 
         Ok(Self {
-            prompt_directory: prompt_directory.or_else(|| global_prompt_directory.get()),
+            prompt_directory: prompt_directory.or_else(|| {
+                global_prompt_directory
+                    .0
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .clone()
+            }),
             prompt_file,
             prompt_data: decoded_prompt_data,
             prompt_id,
@@ -62,10 +68,13 @@ impl DotpromptManager {
         })
     }
 
-    pub(crate) fn with_prompt_manager<Output>(
+    pub(crate) fn with_prompt_manager<Output, Action>(
         &self,
-        action: impl FnOnce(&PromptManager) -> Output,
-    ) -> Result<Output, DotpromptManagerError> {
+        action: Action,
+    ) -> Result<Output, DotpromptManagerError>
+    where
+        Action: FnOnce(&PromptManager) -> Output,
+    {
         let mut guard = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
         if guard.is_none() {
             if self.prompt_directory.is_none()

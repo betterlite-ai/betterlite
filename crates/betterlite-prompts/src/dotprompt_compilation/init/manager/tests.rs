@@ -1,10 +1,12 @@
 #![cfg(test)]
 
+use std::sync::{Arc, Mutex};
+
 use rstest::rstest;
 
 use super::{DotpromptManager, DotpromptManagerError, PromptDataInput};
 use crate::arguments::json::{Json, Object};
-use crate::dotprompt_compilation::global::{GlobalPromptDirectory, set_global_prompt_directory};
+use crate::dotprompt_compilation::global::GlobalPromptDirectory;
 
 #[test]
 fn integration_name_is_dotprompt() {
@@ -14,8 +16,9 @@ fn integration_name_is_dotprompt() {
 #[test]
 fn prompt_directory_defaults_to_the_global_setting_when_not_given() {
     let global_directory = tempfile::tempdir().expect("creates a temp directory");
-    let global = GlobalPromptDirectory::default();
-    set_global_prompt_directory(&global, global_directory.path().display().to_string());
+    let global = GlobalPromptDirectory(Arc::new(Mutex::new(Some(
+        global_directory.path().display().to_string(),
+    ))));
 
     let manager =
         DotpromptManager::new(None, None, None, None, &global).expect("no prompt_data to decode");
@@ -28,8 +31,9 @@ fn prompt_directory_defaults_to_the_global_setting_when_not_given() {
 #[test]
 fn an_explicit_prompt_directory_overrides_the_global_setting() {
     let explicit_directory = tempfile::tempdir().expect("creates a temp directory");
-    let global = GlobalPromptDirectory::default();
-    set_global_prompt_directory(&global, "/does/not/exist/at/all".to_owned());
+    let global = GlobalPromptDirectory(Arc::new(Mutex::new(Some(
+        "/does/not/exist/at/all".to_owned(),
+    ))));
 
     let manager = DotpromptManager::new(
         Some(explicit_directory.path().display().to_string()),
