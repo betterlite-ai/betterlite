@@ -1,0 +1,388 @@
+id: B5102
+title: Error classes answer the provider's status when LiteLLM passes its response
+description: >-
+  LiteLLM's response classes answer the status of the response they are given. BadRequestError sets status_code 400,
+  keeps the passed response when it is an httpx.Response with a _request, falls back to _get_minimal_error_response
+  (a 400) otherwise, and hands that response to openai.BadRequestError
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L119-L251).
+  openai.APIStatusError.__init__ then sets status_code from response.status_code, so the passed status wins
+  (https://github.com/openai/openai-python/blob/v2.54.0/src/openai/_exceptions.py#L93-L104). AuthenticationError and
+  NotFoundError keep any passed response and build a 401 or 404 one only when none is passed (same lines).
+  ContextWindowExceededError, ContentPolicyViolationError and ImageFetchError hand their response to BadRequestError
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L535-L554,
+  https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L619-L645,
+  https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L270-L290).
+  PermissionDeniedError and UnprocessableEntityError require a response
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L403-L423,
+  https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L317-L338).
+  The other classes keep a fixed status. RateLimitError, ServiceUnavailableError, BadGatewayError and
+  InternalServerError build their own 429, 503, 502 and 500 response
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L442-L790).
+  Timeout answers exception_status_code or 408, APIError the status it is given, and InvalidRequestError builds its
+  own 400 response
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L1028-L1041).
+  So this task changes seven ErrorClass variants: Authentication, NotFound, PermissionDenied, BadRequest,
+  UnprocessableEntity, ContextWindowExceeded and ContentPolicyViolation.
+
+
+  On the real path the original exception always carries a response. BaseLLMException builds
+  httpx.Response(status_code=status_code, request=self.request) when none is given
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L41-L64),
+  and openai SDK errors carry the HTTP response. The chat route hands the mapped exception to
+  _handle_llm_api_exception
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12096-L12100).
+  That handler answers the exception's status_code when it is an int from 400 to 599
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3740-L3774).
+  So an upstream 422 mapped to BadRequestError reaches the client as 422, and context window text on an upstream 500
+  stays 500. The same handler takes error.type from openai_error_type. It falls back to the status when the exception
+  carries no type: 401 authentication_error, 403 permission_error, 429 rate_limit_error, any other 4xx
+  invalid_request_error
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/openai_error_payload.py#L16-L50).
+  The seven classes carry type None unless a body sets one, so their client type follows the status too. betterlite
+  derives that type in the gateway, so ErrorClass::metadata keeps error_type as it is, and only status_code and code
+  change here.
+
+
+  betterlite answers one fixed status per class today. ErrorClass::metadata in crates/betterlite-error/src/error.rs
+  answers 401, 404, 403, 400, 422, 400 and 400 for the seven variants whatever the provider sent. The mappers
+  betterlite ported from exception_mapping_utils.py raise these classes 109 times: 84 raises pass
+  original_exception.response, 7 pass an explicit httpx.Response or _response_or_stub, and 18 pass nothing. A raise
+  that passes nothing keeps the class default in LiteLLM too.
+
+
+  Branch by branch. _map_openai_exception passes its response on the context window, model_not_found, content
+  policy, 400, 401, 404 and 422 branches
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L275-L463).
+  _map_replicate_exception passes it on every branch of these classes, so replicate 413 answers 413 and 422 answers
+  UnprocessableEntityError with 422
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L640-L698).
+  _map_bedrock_exception passes it on every branch of these classes, the AccessDeniedException
+  PermissionDeniedError included
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L872-L1008),
+  and so does _map_sagemaker_exception
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1036-L1116).
+  _map_azure_exception and _map_openrouter_exception pass it on every branch of these classes
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1926-L2190),
+  and so does Azure's content policy raise
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/exception_mapping.py#L37-L42).
+  _map_cloudflare_exception, _map_cohere_exception, _map_huggingface_exception and _map_ai21_exception pass
+  getattr(original_exception, "response", None) on all of theirs
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1366-L1607).
+  _map_nlp_cloud_exception, _map_together_ai_exception and _map_aleph_alpha_exception do the same, except
+  aleph_alpha's 401 AuthenticationError
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1625-L1857).
+  _map_ollama_exception passes it on both BadRequestError branches. A dict cause has no response, and a text cause
+  from an OllamaError has one
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1863-L1897).
+  _map_openai_like_exception passes it on the "authorization denied for" and context window branches and a stub on
+  403. Its 400, 401, 404 and 422 or 424 branches pass nothing
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L742-L830).
+  _map_anthropic_exception passes a response only on 403, where the status is 403 anyway, so anthropic keeps every
+  default
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L537-L598).
+
+
+  _map_vertex_exception passes explicit responses, and only one differs from its class. The "403" rule raises
+  BadRequestError with httpx.Response(status_code=403)
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1195-L1212).
+  B5099 left that rule to this task, and case::forbidden_string in crates/betterlite-error/src/vertex_errors/tests.rs
+  asserts 400 today. _map_exception_by_status passes the original response on 401, on 404 and on the BadRequestError
+  for any other 4xx, and _response_or_stub on 403
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2236-L2345).
+  exception_type's catchall calls it with the original exception, so an unmapped provider's 409 answers 409
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2670-L2683).
+  For litellm_proxy, extract_and_raise_litellm_exception re-raises the class named in the text and passes
+  response=_litellm_proxy_response(...) when the constructor takes it
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L213-L272,
+  called at
+  https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2459-L2468).
+  BadRequestError, ImageFetchError and every other response class it names follow it. InvalidRequestError takes no
+  response and stays 400.
+
+
+  The type. In crates/betterlite-error/src/error/details.rs, next to TimeoutStatus, add ResponseStatus<const DEFAULT:
+  u16>(pub u16), serde transparent, whose Default is DEFAULT. Add ResponseDetails<const DEFAULT: u16> with
+  #[serde(flatten)] context: ErrorContext and #[serde(default)] status: ResponseStatus<DEFAULT>. The seven variants
+  hold Box<ResponseDetails<401>> (Authentication), <404> (NotFound), <403> (PermissionDenied), <400> (BadRequest,
+  ContextWindowExceeded, ContentPolicyViolation) and <422> (UnprocessableEntity). ErrorClass::metadata answers
+  details.status.0 as status_code, and code follows it. The wire JSON stays flat with one more key, "status", and
+  JSON without it decodes to the class default. This keeps ErrorContext and its struct literals as they are, keeps
+  each default in the type instead of at the call site, and needs no Option, since every branch knows its status.
+  Five named status newtypes would do the same with five types, and a status on ErrorContext would touch every other
+  family.
+
+
+  Where the status comes from. A mapper whose typed input has status_code (openai, replicate, bedrock, sagemaker,
+  azure, openrouter, nlp_cloud, together_ai, aleph_alpha) answers that status on a branch that passes the response,
+  and the class default when status_code is None. map_cloudflare_exception gains a status_code: Option<u16>
+  argument. OllamaOriginalException::Text gains #[serde(default)] status_code: Option<u16>, and Dict keeps the
+  default. The mappers that read ProviderErrorFacts (cohere, huggingface, ai21, openai_like and status.rs) answer
+  facts.response's status when that response has a request, and the default otherwise, the way BadRequestError drops
+  a response without _request. PermissionDenied on 403 keeps response_or_stub. anthropic, aleph_alpha's 401 and
+  every branch that passes nothing build ResponseStatus::default(). vertex's "403" rule answers 403. In dispatch.rs,
+  catchall gives its facts the stub response response_or_stub builds (POST https://docs.litellm.ai/docs) whenever
+  raw.status_code is set. dispatch/litellm_proxy.rs passes raw.status_code to every response class but
+  InvalidRequestError. dispatch's caller reads the status from ErrorMetadata.status_code, and B5095 (planned) needs
+  exactly that when it moves chat.rs and embeddings.rs onto dispatch. crates/betterlite-azure/src/azure_content_policy.rs
+  builds ContentPolicyViolation on its own path and only changes its constructor; it keeps the default 400.
+
+
+  The oracle helpers hide the gap today. provider_error.py and azure_openrouter_errors.py compare status_code but give
+  the fake exception no response, so BadRequestError falls back to 400. aws_errors.py always attaches
+  httpx.Response(status_code or 500), and anthropic_replicate_errors.py attaches one when a status is given, but
+  neither reports the status. vertex_errors.py, openai_like_errors.py, native_errors_a.py and native_errors_b.py
+  neither attach nor report it. Every one of the eight adapters attaches httpx.Response(status_code,
+  request=httpx.Request("POST", "https://docs.litellm.ai/docs")) exactly when the case gives a status, the way
+  BaseLLMException builds one. The six adapters that answer {"family", **context} add "status" with the raised
+  exception's status_code for the seven families; the Rust side gets that key from serde on its own.
+  native_errors_a.py's CloudflareInput and native_errors_b.py's OllamaTextException gain status_code:
+  NotRequired[int | None], and an ollama text with a status becomes a _ProviderCauseError carrying a response. In
+  tools/oracle/src/helpers/error, native_errors_a.rs (CloudflareInput, cohere, huggingface, ai21) and
+  openai_like_errors.rs build that stub response from status_code instead of response: None. Keep each adapter's
+  style. These helpers belong to B185 and B237 to B245, all done, so this task scopes them the way B5092 did.
+
+
+  Cases. New cases, each failing on main: openai-errors/unprocessable-status.yaml (raw, openai, gpt-4, error_str "an
+  unmatched failure", status_code 422: BadRequestError 422), openai-errors/context-on-server-status.yaml (raw,
+  openai, "This model's maximum context length is 4096 tokens", 500: ContextWindowExceededError 500),
+  openai-errors/catchall-status.yaml (raw, triton, "an unmatched failure", 409: BadRequestError 409),
+  openai-errors/proxy-unprocessable.yaml (raw, litellm_proxy, "litellm.BadRequestError: bad input", 422:
+  BadRequestError 422), azure-openrouter-errors/azure-context-on-server-status.yaml (azure, exception_provider Azure,
+  "This model's maximum context length is 4096 tokens", 500), azure-openrouter-errors/openrouter-unprocessable.yaml
+  (openrouter, exception_provider OpenRouterException, "an unmatched failure", 422, not synthesized),
+  anthropic-replicate-errors/replicate-context-on-server-status.yaml (replicate, exception_type APIError, "input is
+  too long", 500), aws-errors/bedrock-access-denied-status.yaml (bedrock, "AccessDeniedException: no permission",
+  400: PermissionDeniedError 400), native-errors-a/cohere-498-status.yaml (cohere, exception_type "", "unrecognized
+  failure", 498), native-errors-a/cloudflare-auth-status.yaml (cloudflare, "Authentication error: invalid token",
+  403), native-errors-b/nlp-cloud-406-status.yaml and native-errors-b/nlp-cloud-403-status.yaml (nlp_cloud,
+  error_str and message "boom"), native-errors-b/ollama-text-status.yaml (text "no such file or directory",
+  status_code 500) and openai-like-errors/context-on-server-status.yaml (my_provider, "this model's maximum context
+  length is 4096 tokens", 500). Existing cases that flip: anthropic-replicate-errors/branch-686.yaml (413),
+  aws-errors/branch-1001.yaml and branch-1109.yaml (422), vertex-errors/branch-1199.yaml (403),
+  native-errors-a/branch-1601.yaml (ai21 422), native-errors-b/branch-1776.yaml (together_ai 422) and
+  openai-like-errors/auth.yaml (403). aws-errors/branch-936.yaml sends AccessDeniedException with status_code null,
+  and PermissionDeniedError cannot build without a response, so the case sends status_code 403. A new case copies
+  its folder's model names and compare block.
+scope:
+  paths:
+  - crates/betterlite-error/src/error.rs
+  - crates/betterlite-error/src/error/**
+  - crates/betterlite-error/src/dispatch.rs
+  - crates/betterlite-error/src/dispatch/**
+  - crates/betterlite-error/src/status.rs
+  - crates/betterlite-error/src/status/**
+  - crates/betterlite-error/src/openai.rs
+  - crates/betterlite-error/src/openai/**
+  - crates/betterlite-error/src/openai_like.rs
+  - crates/betterlite-error/src/openai_like/**
+  - crates/betterlite-error/src/vertex_errors.rs
+  - crates/betterlite-error/src/vertex_errors/**
+  - crates/betterlite-error/src/anthropic_replicate_errors/**
+  - crates/betterlite-error/src/aws_errors/**
+  - crates/betterlite-error/src/azure_openrouter/**
+  - crates/betterlite-error/src/native_errors_a/**
+  - crates/betterlite-error/src/native_errors_b/**
+  - crates/betterlite-azure/src/azure_content_policy.rs
+  - crates/betterlite-azure/src/azure_content_policy/tests.rs
+  - tools/oracle/helpers/provider_error.py
+  - tools/oracle/helpers/azure_openrouter_errors.py
+  - tools/oracle/helpers/aws_errors.py
+  - tools/oracle/helpers/anthropic_replicate_errors.py
+  - tools/oracle/helpers/vertex_errors.py
+  - tools/oracle/helpers/openai_like_errors.py
+  - tools/oracle/helpers/native_errors_a.py
+  - tools/oracle/helpers/native_errors_b.py
+  - tools/oracle/src/helpers/error/native_errors_a.rs
+  - tools/oracle/src/helpers/error/openai_like_errors.rs
+  - tools/oracle/cases/helpers/openai-errors/**
+  - tools/oracle/cases/helpers/azure-openrouter-errors/**
+  - tools/oracle/cases/helpers/anthropic-replicate-errors/**
+  - tools/oracle/cases/helpers/aws-errors/**
+  - tools/oracle/cases/helpers/vertex-errors/**
+  - tools/oracle/cases/helpers/native-errors-a/**
+  - tools/oracle/cases/helpers/native-errors-b/**
+  - tools/oracle/cases/helpers/openai-like-errors/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L119-L251
+  why: _get_minimal_error_response (L119-L129), AuthenticationError and NotFoundError keep a passed response, BadRequestError keeps one with a _request (L219-L251).
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L270-L290
+  why: ImageFetchError hands its response to BadRequestError.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L317-L338
+  why: UnprocessableEntityError requires a response.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L403-L423
+  why: PermissionDeniedError requires a response.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L535-L554
+  why: ContextWindowExceededError hands its response to BadRequestError.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L619-L645
+  why: ContentPolicyViolationError hands its response to BadRequestError.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L442-L790
+  why: RateLimitError, ServiceUnavailableError, BadGatewayError and InternalServerError build their own response, so their status stays fixed.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L1028-L1041
+  why: InvalidRequestError builds its own 400 response and takes none.
+- url: https://github.com/openai/openai-python/blob/v2.54.0/src/openai/_exceptions.py#L93-L104
+  why: APIStatusError sets status_code from response.status_code; v2.54.0 is the openai version in tools/oracle/litellm/uv.lock.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L41-L64
+  why: BaseLLMException always carries a response with its status_code.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12096-L12100
+  why: chat_completion hands the exception to _handle_llm_api_exception.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3740-L3774
+  why: The client status is the exception's status_code from 400 to 599, and the type comes from openai_error_type.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/openai_error_payload.py#L16-L50
+  why: openai_error_type falls back to the status when the exception carries no type.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L213-L272
+  why: extract_and_raise_litellm_exception passes the response only to constructors that take it, and _litellm_proxy_response.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L275-L463
+  why: _map_openai_exception's response branches, the 422 one included.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L537-L598
+  why: _map_anthropic_exception passes a response only on 403.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L640-L698
+  why: _map_replicate_exception's response branches.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L742-L830
+  why: _map_openai_like_exception passes a response on its text branches and a stub on 403, and nothing on 400, 401, 404, 422 and 424.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L872-L1008
+  why: _map_bedrock_exception response branches, AccessDeniedException included.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1036-L1116
+  why: _map_sagemaker_exception response branches.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1195-L1212
+  why: vertex's "403" rule raises BadRequestError with a 403 response.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1366-L1607
+  why: cloudflare, cohere, huggingface and ai21 response branches.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1625-L1857
+  why: nlp_cloud, together_ai and aleph_alpha response branches; aleph_alpha's 401 passes none.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1863-L1897
+  why: _map_ollama_exception's two BadRequestError branches.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1926-L2190
+  why: azure and openrouter response branches.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/exception_mapping.py#L37-L42
+  why: Azure's ContentPolicyViolationError passes the original response.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2236-L2345
+  why: _response_or_stub and _map_exception_by_status.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2459-L2468
+  why: The litellm_proxy branch calls extract_and_raise_litellm_exception with the response.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2670-L2683
+  why: The catchall runs _map_exception_by_status on the original exception.
+dod:
+- text: >-
+    ResponseStatus and ResponseDetails carry the status of the seven classes.
+    error::tests::metadata_answers_the_carried_response_status shows a BadRequest with status 422 answers status_code
+    422 and code "422". error::tests::response_class_wire_input_without_a_status_keeps_the_class_default decodes each
+    of the seven families from JSON without "status" and gets 401, 404, 403, 400, 422, 400 and 400.
+  proof:
+  - status-type
+- text: >-
+    Every ported mapper branch that passes a response answers the provider's status. Each mapper module has a test
+    response_branches_answer_the_provider_status that sends each such branch a status other than the class default:
+    openai 422 and context text on 500, replicate 413 and "input is too long" on 500, bedrock AccessDeniedException on
+    400 and 422, sagemaker 422, azure context text on 500, openrouter 422, cloudflare "Authentication error" on 403,
+    cohere 498, huggingface "length limit exceeded" on 500, ai21 422, nlp_cloud 406 and 403, together_ai 422,
+    aleph_alpha context text on 500, ollama text "no such file or directory" on 500, openai_like "authorization denied
+    for" on 403 and context text on 500, and status.rs 409 with a response. anthropic and openai_like have
+    branches_without_a_response_keep_the_class_status: anthropic "prompt is too long" on 500 and 413 answer 400, and
+    openai_like 422 answers 400. Every rstest case that pinned a default on such a branch flips, and vertex's
+    case::forbidden_string expects 403.
+  proof:
+  - mapper-tests
+  - vertex-forbidden
+- text: >-
+    dispatch hands the status to its caller in ErrorMetadata.status_code. dispatch::tests::catchall_answers_the_provider_status
+    maps a triton 409 to BadRequest 409, dispatch::tests::litellm_proxy_answers_the_provider_status maps
+    "litellm.BadRequestError" with 422 to BadRequest 422, and dispatch::tests::litellm_proxy_invalid_request_keeps_400
+    maps "litellm.InvalidRequestError" with 422 to 400.
+  proof:
+  - dispatch-status
+- text: >-
+    The eight adapters attach a response exactly when the case gives a status, the six class JSON adapters report
+    "status" for the seven families, and ruff and basedpyright pass on the helpers.
+  proof:
+  - helper-python
+  - oracle
+- text: >-
+    The new cases named in the description, the seven flipped cases and branch-936.yaml with status 403 match LiteLLM,
+    and so does every other case in the eight folders.
+  proof:
+  - status-cases
+  - oracle
+checks:
+  optional: [mutants]
+  commands:
+  - id: status-type
+    why: the seven classes still answer a fixed status, or JSON without a status no longer decodes
+    run: >-
+      list=$(cargo nextest list --locked -p betterlite-error -E 'test(/^error::tests::/)' --message-format oneline) &&
+      for name in metadata_answers_the_carried_response_status response_class_wire_input_without_a_status_keeps_the_class_default; do grep -qE " error::tests::$name(::case_|$)" <<< "$list" || { echo "missing test $name"; exit 1; }; done &&
+      cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(/^error::tests::/)'
+  - id: mapper-tests
+    why: a mapper branch that passes a response still answers the class default, or a branch without one stopped answering it
+    run: >-
+      list=$(cargo nextest list --locked -p betterlite-error --message-format oneline) &&
+      for name in openai::tests::response_branches_answer_the_provider_status anthropic_replicate_errors::anthropic::tests::branches_without_a_response_keep_the_class_status anthropic_replicate_errors::replicate::tests::response_branches_answer_the_provider_status aws_errors::bedrock::tests::response_branches_answer_the_provider_status aws_errors::sagemaker::tests::response_branches_answer_the_provider_status azure_openrouter::azure::tests::response_branches_answer_the_provider_status azure_openrouter::openrouter::tests::response_branches_answer_the_provider_status native_errors_a::cloudflare::tests::response_branches_answer_the_provider_status native_errors_a::cohere::tests::response_branches_answer_the_provider_status native_errors_a::huggingface::tests::response_branches_answer_the_provider_status native_errors_a::ai21::tests::response_branches_answer_the_provider_status native_errors_b::nlp_cloud::tests::response_branches_answer_the_provider_status native_errors_b::together_ai::tests::response_branches_answer_the_provider_status native_errors_b::aleph_alpha::tests::response_branches_answer_the_provider_status native_errors_b::ollama::tests::response_branches_answer_the_provider_status openai_like::tests::response_branches_answer_the_provider_status openai_like::tests::branches_without_a_response_keep_the_class_status status::tests::response_branches_answer_the_provider_status; do grep -qE " $name(::case_|$)" <<< "$list" || { echo "missing test $name"; exit 1; }; done &&
+      cargo nextest run --locked -p betterlite-error --no-tests=fail
+  - id: vertex-forbidden
+    why: vertex's "403" rule still answers 400
+    run: >-
+      grep -A5 'case::forbidden_string(' crates/betterlite-error/src/vertex_errors/tests.rs | grep -q 'Some(403)' &&
+      cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(/^vertex_errors::tests::/)'
+  - id: dispatch-status
+    why: dispatch drops the provider's status on the catchall or the litellm_proxy branch
+    run: >-
+      list=$(cargo nextest list --locked -p betterlite-error -E 'test(/^dispatch::tests::/)' --message-format oneline) &&
+      for name in catchall_answers_the_provider_status litellm_proxy_answers_the_provider_status litellm_proxy_invalid_request_keeps_400; do grep -qE " dispatch::tests::$name(::case_|$)" <<< "$list" || { echo "missing test $name"; exit 1; }; done &&
+      cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(/^dispatch::tests::/)'
+  - id: helper-python
+    why: the changed adapters fail ruff or basedpyright
+    run: |-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: status-cases
+    why: a new status case is missing, or branch-936 still sends no status
+    run: >-
+      for case in openai-errors/unprocessable-status openai-errors/context-on-server-status openai-errors/catchall-status openai-errors/proxy-unprocessable azure-openrouter-errors/azure-context-on-server-status azure-openrouter-errors/openrouter-unprocessable anthropic-replicate-errors/replicate-context-on-server-status aws-errors/bedrock-access-denied-status native-errors-a/cohere-498-status native-errors-a/cloudflare-auth-status native-errors-b/nlp-cloud-406-status native-errors-b/nlp-cloud-403-status native-errors-b/ollama-text-status openai-like-errors/context-on-server-status; do test -f "tools/oracle/cases/helpers/$case.yaml" || { echo "missing case $case"; exit 1; }; done &&
+      grep -qx '    status_code: 403' tools/oracle/cases/helpers/aws-errors/branch-936.yaml
+oracle_cases:
+- tools/oracle/cases/helpers/openai-errors
+- tools/oracle/cases/helpers/azure-openrouter-errors
+- tools/oracle/cases/helpers/anthropic-replicate-errors
+- tools/oracle/cases/helpers/aws-errors
+- tools/oracle/cases/helpers/vertex-errors
+- tools/oracle/cases/helpers/native-errors-a
+- tools/oracle/cases/helpers/native-errors-b
+- tools/oracle/cases/helpers/openai-like-errors
+deviations:
+- link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L41-L64
+  what: >-
+    A mapper with a typed status_code input (openai, replicate, bedrock, sagemaker, azure, openrouter, cloudflare,
+    nlp_cloud, together_ai, aleph_alpha, ollama, the litellm_proxy branch and the catchall) answers that status on a
+    branch that passes a response, though the input carries no response object. LiteLLM answers it only when the
+    exception has a response with a request. Without one, BadRequestError and its subclasses answer 400,
+    AuthenticationError and NotFoundError answer 401 and 404, and PermissionDeniedError and UnprocessableEntityError
+    fail to build. A facts mapper given a response without a request answers the class default, where LiteLLM's
+    AuthenticationError and NotFoundError fail on response.request.
+  why: >-
+    On the real path every original exception carries a response with a request and its own status, since
+    BaseLLMException builds one and openai SDK errors carry theirs. So a status without a response, or a response
+    without a request, never reaches a mapper there, and the status betterlite answers is the one LiteLLM answers on
+    that path.
+out_of_scope:
+- crates/betterlite-openai/src/chat/provider_error.rs and the client error type derived from the status; the gateway keeps its own classify until B5095 (planned) moves chat.rs and embeddings.rs onto dispatch.
+- azure_content_policy.rs's own guardrail path; it keeps the default 400 and changes only its constructor.
+- The response model in parse.rs, the facts helper's status operation and error_facts.py.
+- The BadRequestError branch for the openai SDK's missing param bug (exception_mapping_utils.py L2660-L2668); dispatch does not port it.
+- UnsupportedParamsError, InvalidRequestError, RateLimitError, Timeout, InternalServerError, ServiceUnavailableError, BadGatewayError and APIError, whose status LiteLLM already fixes or carries.
+- TimeoutStatus and MidStreamStatus; they stay as they are.
+- The error class helper (class.rs, error_class.py); its cases send no status and keep the default.
+pitfalls:
+- azure.rs has 254 lines and dispatch.rs 268 against the 300 line limit for source files, so new code there goes into a child module.
+- anthropic's 403 branch reads original_exception.response directly, so anthropic_replicate_errors.py must attach a response whenever a case gives a status.
+- The websearch tests, the anthropic messages_errors tests, tools/oracle/src/helpers/oracle/b4113.rs and the error class helper decode ErrorClass from JSON without "status", so the serde default must stay.
+- serde does not support deny_unknown_fields together with flatten, so neither ErrorContext nor ResponseDetails gains it.
+- Rust serializes "status" for the seven families as soon as the variants change, so every case in the six class JSON folders fails until its adapter adds the key.
+- PermissionDeniedError and UnprocessableEntityError need a response, so a litellm_proxy case that names them without a status crashes in Python; add none.
+- extract_and_raise_litellm_exception filters its kwargs by the constructor, so litellm.InvalidRequestError stays 400 with any status.
+- openai_like's 422 and 424 branch passes no response and answers 400 while its text branches answer the status.
+- openrouter skips its status branches when status_code_is_synthesized is true, so openrouter-fallback.yaml keeps its class and status.
+- vertex's "403" rule builds its own response, so branch-1199.yaml answers 403 with status_code null.
+- A missing status takes ResponseStatus's Default; no call site writes a literal 400 or 401 as a fallback.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -161,7 +161,7 @@ fn answered(
     if !failing.is_empty() {
         return Ok(Some(Step::Fix(failing)));
     }
-    review::review(attempt, runner, &worktree).map(Some)
+    review::review(attempt, runner, &worktree.root).map(Some)
 }
 
 pub(crate) struct Turn {

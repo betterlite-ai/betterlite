@@ -12,11 +12,13 @@ betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-secrets = { path = "../betterlite-secrets" }
 chrono = { version = "0.4.45", default-features = false }
 hex.workspace = true
+http = "1.5.0"
 pem = "4.0.0"
 secrecy.workspace = true
 serde.workspace = true
 serde_json = "1.0.154"
 sha2.workspace = true
+strum = { version = "0.28.0", features = ["derive"] }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["time"] }
 tracing.workspace = true

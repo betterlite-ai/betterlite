@@ -1,0 +1,10 @@
+kind: helper
+name: injection-all-deployments-and-sibling-leg
+call:
+  savings_evidence:
+    operation: injection
+    metadata:
+      litellm_gateway_injected_cache: ""
+    model_id: model-B
+compare: {ignore: []}
+env: {}

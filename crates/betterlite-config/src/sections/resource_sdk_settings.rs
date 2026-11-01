@@ -16,9 +16,9 @@ pub struct Raw {
 pub struct RawSettings {
     pub api_base: Option<String>,
     pub api_version: Option<String>,
-    pub api_key: Option<String>,
-    pub openai_key: Option<String>,
-    pub azure_key: Option<String>,
+    pub api_key: Option<SecretString>,
+    pub openai_key: Option<SecretString>,
+    pub azure_key: Option<SecretString>,
     pub organization: Option<String>,
     pub vertex_project: Option<String>,
     pub vertex_location: Option<String>,
