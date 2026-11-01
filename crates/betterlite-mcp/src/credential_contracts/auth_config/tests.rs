@@ -66,32 +66,6 @@ fn each_auth_config_kind(#[case] config: AuthConfig, #[case] expected: AuthSpecK
 }
 
 // kind() matches one arm per variant with no wildcard, so a cross-mode config fails to compile.
-fn as_aws_sigv4(config: AuthConfig) -> Option<AwsSigV4Config> {
-    match config {
-        AuthConfig::AwsSigv4(inner) => Some(inner),
-        AuthConfig::AuthorizationCode(_)
-        | AuthConfig::ClientCredentials(_)
-        | AuthConfig::TokenExchange(_)
-        | AuthConfig::IdJag(_)
-        | AuthConfig::ApiKey(_)
-        | AuthConfig::Passthrough(_)
-        | AuthConfig::None(_) => None,
-    }
-}
-
-fn as_id_jag(config: AuthConfig) -> Option<IdJagConfig> {
-    match config {
-        AuthConfig::IdJag(inner) => Some(inner),
-        AuthConfig::AuthorizationCode(_)
-        | AuthConfig::ClientCredentials(_)
-        | AuthConfig::TokenExchange(_)
-        | AuthConfig::ApiKey(_)
-        | AuthConfig::Passthrough(_)
-        | AuthConfig::None(_)
-        | AuthConfig::AwsSigv4(_) => None,
-    }
-}
-
 #[rstest]
 fn illegal_state_unrepresentable() {
     let aws = AuthConfig::AwsSigv4(AwsSigV4Config {
@@ -99,11 +73,29 @@ fn illegal_state_unrepresentable() {
         service: DEFAULT_AWS_SIGV4_SERVICE.to_owned(),
         credentials: AwsCredentialSource::default(),
     });
-    let config = as_aws_sigv4(aws).expect("constructed as AwsSigv4");
+    let config = match aws {
+        AuthConfig::AwsSigv4(inner) => inner,
+        AuthConfig::AuthorizationCode(_)
+        | AuthConfig::ClientCredentials(_)
+        | AuthConfig::TokenExchange(_)
+        | AuthConfig::IdJag(_)
+        | AuthConfig::ApiKey(_)
+        | AuthConfig::Passthrough(_)
+        | AuthConfig::None(_) => panic!("constructed as AwsSigv4"),
+    };
     assert_eq!(config.region, "eu-west-1");
     assert_eq!(config.service, DEFAULT_AWS_SIGV4_SERVICE);
 
     let id_jag = AuthConfig::IdJag(id_jag_config());
-    let jag_config = as_id_jag(id_jag).expect("constructed as IdJag");
+    let jag_config = match id_jag {
+        AuthConfig::IdJag(inner) => inner,
+        AuthConfig::AuthorizationCode(_)
+        | AuthConfig::ClientCredentials(_)
+        | AuthConfig::TokenExchange(_)
+        | AuthConfig::ApiKey(_)
+        | AuthConfig::Passthrough(_)
+        | AuthConfig::None(_)
+        | AuthConfig::AwsSigv4(_) => panic!("constructed as IdJag"),
+    };
     assert_eq!(jag_config.client_id, "gateway-client");
 }
