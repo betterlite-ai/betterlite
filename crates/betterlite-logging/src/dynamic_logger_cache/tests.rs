@@ -42,32 +42,27 @@ fn capturing_removal(log: &Arc<Mutex<Vec<FixtureLogger>>>) -> RemovalEffect<Fixt
     })
 }
 
-fn cache_with(
+fn cache_with_capacity(
     default_ttl: f64,
+    capacity: usize,
     time: &Arc<Mutex<f64>>,
     stopped: &Arc<Mutex<Vec<FixtureLogger>>>,
 ) -> DynamicLoggerCache<FixtureLogger> {
     DynamicLoggerCache {
         default_ttl,
-        capacity: DEFAULT_MAX_SIZE_IN_MEMORY,
+        capacity,
         clock: fake_clock(time),
         on_remove: capturing_removal(stopped),
         entries: Mutex::new(BTreeMap::new()),
     }
 }
 
-fn cache_with_capacity(
-    capacity: usize,
+fn cache_with(
+    default_ttl: f64,
     time: &Arc<Mutex<f64>>,
     stopped: &Arc<Mutex<Vec<FixtureLogger>>>,
 ) -> DynamicLoggerCache<FixtureLogger> {
-    DynamicLoggerCache {
-        default_ttl: 100.0_f64,
-        capacity,
-        clock: fake_clock(time),
-        on_remove: capturing_removal(stopped),
-        entries: Mutex::new(BTreeMap::new()),
-    }
+    cache_with_capacity(default_ttl, DEFAULT_MAX_SIZE_IN_MEMORY, time, stopped)
 }
 
 #[test]
@@ -335,7 +330,7 @@ fn set_cache_evicts_and_stops_an_expired_entry_without_ever_reading_it() {
 fn set_cache_evicts_the_earliest_expiry_entry_once_capacity_is_full() {
     let time = Arc::new(Mutex::new(0.0_f64));
     let stopped = Arc::new(Mutex::new(Vec::new()));
-    let cache = cache_with_capacity(2, &time, &stopped);
+    let cache = cache_with_capacity(100.0_f64, 2, &time, &stopped);
     let first = credentials(&[("api_key", "first")]);
     let second = credentials(&[("api_key", "second")]);
     let third = credentials(&[("api_key", "third")]);
