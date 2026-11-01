@@ -1,0 +1,15 @@
+kind: helper
+name: message-fields-system-insertion
+call:
+  message_fields:
+    operation: add_system_prompt_to_messages
+    messages:
+      - role: system
+        content: Existing instructions.
+      - role: user
+        content: Hello there.
+    system_prompt: New instructions.
+    merge_with_first_system: true
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,13 @@
+kind: helper
+name: message-fields-migrate-file
+call:
+  message_fields:
+    operation: migrate_file_to_image_url
+    part:
+      type: file
+      file:
+        file_id: file-abc123
+        format: application/pdf
+env: {}
+compare:
+  ignore: []

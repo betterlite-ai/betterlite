@@ -1,0 +1,17 @@
+kind: helper
+name: message-fields-system-runs
+call:
+  message_fields:
+    operation: merge_consecutive_system_messages
+    messages:
+      - role: system
+        content: Rule one.
+      - role: system
+        content: Rule two.
+      - role: user
+        content: Hello.
+      - role: developer
+        content: Developer note.
+env: {}
+compare:
+  ignore: []

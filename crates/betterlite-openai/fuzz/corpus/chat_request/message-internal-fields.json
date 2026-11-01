@@ -1,0 +1,1 @@
+{"model":"claude-3-5-sonnet","messages":[{"role":"user","content":"What is 2+2?"},{"role":"assistant","content":"4","thinking_blocks":[{"type":"thinking","thinking":"2+2 is 4"}],"reasoning_content":"2+2 is 4","provider_specific_fields":{"anthropic":{"cache_control":{"type":"ephemeral"}}}}]}

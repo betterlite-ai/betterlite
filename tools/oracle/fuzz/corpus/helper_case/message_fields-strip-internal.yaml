@@ -1,0 +1,21 @@
+kind: helper
+name: message-fields-strip-internal
+call:
+  message_fields:
+    operation: strip_litellm_internal_message_fields
+    message:
+      role: assistant
+      content: The capital of France is Paris.
+      thinking_blocks:
+        - type: thinking
+          thinking: The user wants a capital city.
+      reasoning_content: Paris is the capital of France.
+      provider_specific_fields:
+        anthropic:
+          cache_control:
+            type: ephemeral
+      cache_control:
+        type: ephemeral
+env: {}
+compare:
+  ignore: []

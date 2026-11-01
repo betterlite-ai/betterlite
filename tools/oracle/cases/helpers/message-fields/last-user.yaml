@@ -1,0 +1,19 @@
+kind: helper
+name: message-fields-last-user
+call:
+  message_fields:
+    operation: get_last_user_message
+    messages:
+      - role: system
+        content: You are a helpful assistant.
+      - role: user
+        content: First question.
+      - role: assistant
+        content: First answer.
+      - role: user
+        content: Second question, part A.
+      - role: user
+        content: Second question, part B.
+env: {}
+compare:
+  ignore: []

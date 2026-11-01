@@ -1,0 +1,17 @@
+kind: helper
+name: message-fields-filter-dict
+call:
+  message_fields:
+    operation: filter_value_from_dict
+    dictionary:
+      keep: value
+      cache_control:
+        type: ephemeral
+      nested:
+        cache_control:
+          type: ephemeral
+    key: cache_control
+    depth: 0
+env: {}
+compare:
+  ignore: []

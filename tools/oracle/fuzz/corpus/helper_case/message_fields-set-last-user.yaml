@@ -1,0 +1,14 @@
+kind: helper
+name: message-fields-set-last-user
+call:
+  message_fields:
+    operation: set_last_user_message
+    messages:
+      - role: system
+        content: You are a helpful assistant.
+      - role: user
+        content: Old question.
+    content: New question.
+env: {}
+compare:
+  ignore: []
