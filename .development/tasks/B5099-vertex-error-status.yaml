@@ -1,21 +1,9 @@
 id: B5099
-title: Vertex 403 status and body error code reuse
+title: Vertex body error code reuse
 description: >-
   B240 built the Vertex and Gemini error classifiers in crates/betterlite-error/src/vertex_errors.rs. An Opus audit
-  of the merged task found two behavior gaps and one comment that only restates its own code. This task fixes all
-  three, in that file, its tests, its oracle case and its Python helper adapter.
-
-
-  The "403" phrase rule in MID_PHRASE_RULES tags its match as Family::BadRequest, so map_vertex_exception answers
-  status 400. LiteLLM raises BadRequestError for this branch, but it passes an httpx.Response of status_code 403
-  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1199-L1212).
-  openai.APIStatusError.__init__ overwrites the exception's own status_code with the response's status_code right
-  after it runs. The live exception ends up with status_code 403 even though its class name stays BadRequestError.
-  A run against the pinned litellm and openai packages confirms this directly: the raised exception is
-  BadRequestError with status_code 403, type None and param None. Betterlite's PermissionDenied family already
-  reports exactly that shape (403, null type, null param), so the fix retags this one phrase rule from
-  Family::BadRequest to Family::PermissionDenied. No change to the shared taxonomy in error.rs is needed, and no
-  deviation entry is needed either, since this brings betterlite into line with LiteLLM rather than away from it.
+  of the merged task found one behavior gap and one comment that only restates its own code. This task fixes both,
+  in that file, its tests and its oracle case.
 
 
   body_error_code in the same file reimplements _get_body_error_code
@@ -35,42 +23,19 @@ description: >-
 
   The comment above PhraseRule's type alias restates what phrase_family's any() call already shows. It names no
   hidden constraint, so delete it.
-
-
-  The oracle's Python adapter for vertex_errors (tools/oracle/helpers/vertex_errors.py) reports family by the raised
-  exception's class name alone. It answers bad_request for the "403" branch today no matter what the exception's
-  real status_code is. That is why oracle case branch-1199.yaml passes today even though betterlite's status is
-  wrong: the adapter never compares status_code against betterlite's metadata().status_code. Add one narrow case:
-  when the raised exception is BadRequestError with status_code 403, report family permission_denied instead of
-  bad_request. No other family in this adapter carries the same openai status-copy quirk, so leave the rest of the
-  comparison as it stands.
 scope:
   paths:
   - crates/betterlite-error/src/vertex_errors.rs
   - crates/betterlite-error/src/vertex_errors/**
-  - tools/oracle/helpers/vertex_errors.py
   - tools/oracle/cases/helpers/vertex-errors/**
   - "tools/oracle/fuzz/corpus/helper_case/vertex_errors-*"
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1199-L1212
-  why: Raises BadRequestError for the "403" phrase with an httpx.Response of status_code 403, so openai.APIStatusError overwrites the exception's status_code to 403.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L183-L190
   why: _get_body_error_code reads only error.code from the JSON body, the function crate::parse::get_body_error_code already ports for B236.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1250-L1254
   why: The 5xx-wrapped-429 envelope check calls _get_body_error_code, the same call classify_envelope must make instead of its own copy.
 dod:
-- text: >-
-    The "403" phrase rule in MID_PHRASE_RULES reports family permission_denied, so the resulting class has
-    metadata().status_code 403 instead of 400. case::forbidden_string in tests.rs asserts bad_request and 400
-    today; change it to assert permission_denied and 403. The Python adapter in vertex_errors.py must report
-    permission_denied for the same BadRequestError-with-status-403 case. Oracle case branch-1199.yaml passes today
-    only because the adapter ignores status_code; it must still pass once both the Rust family and the Python
-    adapter change.
-  proof:
-  - behavior-tests
-  - oracle
-  - helper-python
 - text: >-
     classify_envelope calls crate::parse::get_body_error_code in place of the deleted body_error_code. Add rstest
     case envelope_message_wrong_type for error_str {"message":42,"error":{"code":429}} with status_code 503: it
@@ -95,11 +60,6 @@ checks:
     run: >-
       cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(/::vertex_errors_behavior_tests_behavior($|::)/)
       - test(/replays_the_/)'
-  - id: helper-python
-    why: the changed adapter fails ruff or basedpyright
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: the new helper seed is missing or fails replay
     run: >-
@@ -141,9 +101,8 @@ oracle_cases:
 - tools/oracle/cases/helpers/vertex-errors/competing-message-status.yaml
 deviations: []
 out_of_scope:
-- crates/betterlite-error/src/error.rs and its ErrorClass::metadata mapping. PermissionDenied already reports
-  status 403 with null type and param there, so retagging the phrase rule's family is enough. No shared taxonomy
-  change and no block on B184 is needed.
+- The "403" phrase rule's status. LiteLLM answers BadRequestError with status 403 there, which B5102 covers by
+  carrying the response status for every response-carrying class.
 - classify_envelope's own one-expression shape (no-one-line-functions, no-padded-one-line-functions). B5094 owns
   every padded one-line function in the repository, including this one. This task only changes which function
   classify_envelope calls, not its shape.
@@ -152,11 +111,9 @@ pitfalls:
   matching its case file under tools/oracle/cases/helpers/vertex-errors. The rest of that folder belongs to other
   tasks.
 - The vertex_errors operation is already registered. Change only the existing Input and run in
-  tools/oracle/src/helpers/error/vertex_errors.rs's module if the new case needs it, and tools/oracle/helpers/vertex_errors.py.
-  helpers/mod.rs, the group files and dispatch.py are not this task's to edit.
-- The Python adapter keys family on type(error).__name__ alone today. Add the status_code 403 special case for
-  BadRequestError without changing how any other family is read; no other family here has the same quirk.
+  tools/oracle/src/helpers/error/vertex_errors.rs's module if the new case needs it. helpers/mod.rs, the group
+  files, dispatch.py and tools/oracle/helpers/vertex_errors.py are not this task's to edit.
 review_level: standard
 budget:
-  max_changed_lines: 150
+  max_changed_lines: 90
   max_new_expects: 0
