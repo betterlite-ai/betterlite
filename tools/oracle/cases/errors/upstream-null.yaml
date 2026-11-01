@@ -1,0 +1,22 @@
+name: errors-upstream-null
+config: |
+  model_list:
+    - model_name: null-error-model
+      litellm_params: {model: openai/gpt-null-upstream, api_base: "{{upstream}}", api_key: oracle-key}
+  router_settings: {num_retries: 0}
+env: {}
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers: {content-type: application/json, authorization: Bearer oracle-master, x-litellm-call-id: oracle-call-null}
+  body: {model: null-error-model, messages: [{role: user, content: hi}]}
+upstream:
+  - status: 500
+    headers: {content-type: application/json}
+    events: []
+compare:
+  headers: [content-type, llm_provider-content-type, x-litellm-call-id, x-litellm-timeout]
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore:
+    - {pointer: /error/message, why: betterlite writes its own message}

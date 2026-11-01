@@ -1,0 +1,11 @@
+kind: helper
+name: provider-error-already-mapped
+call:
+  provider_error:
+    kind: mapped
+    family: authentication
+    message: boom
+    model: gpt-4
+    provider: openai
+env: {}
+compare: {ignore: []}
