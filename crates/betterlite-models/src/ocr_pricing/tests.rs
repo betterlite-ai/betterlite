@@ -4,7 +4,7 @@ use super::{
     OcrBatchUsage, OcrBilling, OcrCostError, OcrPricingField, OcrResponseKind, OcrUsage,
     first_ocr_price, first_price, layered_ocr_pricing, ocr_batch_cost, ocr_cost, single_log_line,
 };
-use crate::price_lookup::{PriceLookup, PriceRecord};
+use crate::price_lookup::{PriceLookup, PriceRecord, PricedModel};
 use crate::tiered_pricing::Scalar;
 use rstest::rstest;
 use rust_decimal::Decimal;
@@ -59,6 +59,16 @@ fn deployment(
     record(&pairs)
 }
 
+// OCR pricing never reads tiers or off-peak tables, so a record-only fixture carries none.
+fn no_tables(record: PriceRecord) -> PricedModel {
+    PricedModel {
+        record,
+        tiered_pricing: Vec::new(),
+        off_peak_pricing: None,
+        off_peak_cache_read_present: false,
+    }
+}
+
 struct NullLookup;
 
 impl PriceLookup for NullLookup {
@@ -71,6 +81,14 @@ impl PriceLookup for NullLookup {
     }
 
     fn raw_cost_map_entry(&self, _key: &str) -> Option<PriceRecord> {
+        None
+    }
+
+    fn effective_priced_model(
+        &self,
+        _model: &str,
+        _custom_llm_provider: Option<&str>,
+    ) -> Option<PricedModel> {
         None
     }
 }
@@ -88,6 +106,14 @@ impl PriceLookup for StaticLookup {
 
     fn raw_cost_map_entry(&self, _key: &str) -> Option<PriceRecord> {
         None
+    }
+
+    fn effective_priced_model(
+        &self,
+        _model: &str,
+        _custom_llm_provider: Option<&str>,
+    ) -> Option<PricedModel> {
+        self.0.clone().map(no_tables)
     }
 }
 
@@ -118,6 +144,15 @@ impl PriceLookup for CountingLookup {
 
     fn raw_cost_map_entry(&self, _key: &str) -> Option<PriceRecord> {
         None
+    }
+
+    fn effective_priced_model(
+        &self,
+        _model: &str,
+        _custom_llm_provider: Option<&str>,
+    ) -> Option<PricedModel> {
+        self.calls.set(self.calls.get().saturating_add(1));
+        self.answer.clone().map(no_tables)
     }
 }
 
