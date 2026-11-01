@@ -1,0 +1,5 @@
+task: B1671
+deviations:
+  - what: Usage arithmetic and monetary products fail with typed overflow errors rather than unbounded integers or rounded/infinite floats.
+    why: Billing keeps signed source semantics within checked counter and Decimal bounds.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L1073-L1173

@@ -1,14 +1,14 @@
 id: B1671
 milestone: M4 keys, spend and management
 title: Separate cached modalities and price input usage without double charging
-status: todo
+status: done
 depends_on: [B171, B204, B1668, B1670]
 file: tasks/B1671-modality-cost-details.yaml
 covers:
   - "litellm/litellm_core_utils/llm_cost_calc/utils.py"
 parent: B068
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 441
