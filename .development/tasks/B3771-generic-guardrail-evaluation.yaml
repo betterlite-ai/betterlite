@@ -198,5 +198,5 @@ pitfalls:
   - Both api_key parameters must never appear in logs or Debug output; mark as SecretString.
 review_level: security
 budget:
-  max_changed_lines: 2000
+  max_changed_lines: 2100
   max_new_expects: 0
