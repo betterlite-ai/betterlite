@@ -210,7 +210,8 @@ fn configure(
                 | ConfigError::Unsupported { .. }
                 | ConfigError::InvalidFloat { .. }
                 | ConfigError::InvalidInteger { .. }
-                | ConfigError::InvalidScalar { .. } => "ConfigError",
+                | ConfigError::InvalidScalar { .. }
+                | ConfigError::InvalidDuration { .. } => "ConfigError",
             };
             (class, error.to_string())
         }

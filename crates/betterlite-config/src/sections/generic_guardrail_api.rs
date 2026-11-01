@@ -9,8 +9,7 @@ use serde::Deserialize;
 mod tests;
 pub const UI_FRIENDLY_NAME: &str = "Generic Guardrail API";
 const GUARDRAIL_PATH: &str = "/beta/litellm_basic_guardrail_api";
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum UnreachableFallback {
     #[default]
     FailClosed,
@@ -32,7 +31,7 @@ struct Parameters {
     guardrail: String,
     api_key: Option<SecretString>,
     api_base: Option<String>,
-    unreachable_fallback: Option<UnreachableFallback>,
+    unreachable_fallback: Option<String>,
     fail_on_error: Option<bool>,
     #[serde(rename = "additional_provider_specific_params")]
     provider_params: Option<BTreeMap<String, GuardrailValue>>,
@@ -103,9 +102,28 @@ impl Entry {
             guardrail_name: self.guardrail_name,
             api_key,
             api_base,
-            unreachable_fallback: parameters.unreachable_fallback.unwrap_or_default(),
+            unreachable_fallback: resolve_unreachable_fallback(
+                parameters.unreachable_fallback.as_deref(),
+            ),
             fail_on_error: parameters.fail_on_error.unwrap_or(true),
             provider_params: parameters.provider_params.unwrap_or_default(),
         })
+    }
+}
+fn resolve_unreachable_fallback(value: Option<&str>) -> UnreachableFallback {
+    let Some(text) = value else {
+        return UnreachableFallback::default();
+    };
+    match text.to_ascii_lowercase().as_str() {
+        "fail_closed" => UnreachableFallback::FailClosed,
+        "fail_open" => UnreachableFallback::FailOpen,
+        _ => {
+            tracing::warn!(
+                unreachable_fallback = text,
+                default = ?UnreachableFallback::default(),
+                "Generic Guardrail API: unsupported unreachable_fallback, defaulting"
+            );
+            UnreachableFallback::default()
+        }
     }
 }
