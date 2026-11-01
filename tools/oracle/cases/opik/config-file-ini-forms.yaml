@@ -1,0 +1,16 @@
+kind: helper
+name: opik-config-file-ini-forms
+call:
+  b3973:
+    function: config
+    environment: {}
+    config_file: "[DEFAULT]\nproject_name = base\n\n[OPIK]\nignored = true\n\n[opik]\nURL_OVERRIDE: https://host/api\napi_key = first\n; a comment line\n    second\nnote = 100%% %(project_name)s\n# another comment\n"
+    lookups:
+      - key: url_override
+      - key: api_key
+      - key: note
+      - key: project_name
+      - key: URL_OVERRIDE
+env: {}
+compare:
+  ignore: []
