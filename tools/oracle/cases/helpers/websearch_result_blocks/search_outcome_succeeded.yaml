@@ -1,0 +1,13 @@
+kind: helper
+name: search-outcome-succeeded
+call:
+  b4113:
+    operation: search_outcome
+    text: "Rust is a systems programming language."
+    search_response:
+      results:
+        - title: Rust Programming Language
+          url: https://www.rust-lang.org
+          snippet: A language empowering everyone to build reliable software.
+env: {}
+compare: {ignore: []}

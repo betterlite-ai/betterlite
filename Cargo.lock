@@ -916,6 +916,7 @@ dependencies = [
  "futures-util",
  "indexmap 2.14.2",
  "mime",
+ "percent-encoding",
  "rstest",
  "secrecy",
  "serde",
@@ -1046,7 +1047,10 @@ version = "0.1.0"
 dependencies = [
  "betterlite-auth",
  "betterlite-config",
+ "betterlite-logging",
+ "betterlite-models",
  "chrono",
+ "indexmap 2.14.2",
  "lopdf",
  "rstest",
  "rust_decimal",
@@ -1455,7 +1459,9 @@ dependencies = [
  "minijinja-contrib",
  "rstest",
  "serde",
+ "serde-saphyr",
  "serde_json",
+ "tempfile",
  "thiserror",
  "tracing",
 ]
@@ -1651,12 +1657,14 @@ version = "0.1.0"
 name = "betterlite-websearch"
 version = "0.1.0"
 dependencies = [
+ "betterlite-error",
  "betterlite-openai",
  "indexmap 2.14.2",
  "serde",
  "serde_json",
  "thiserror",
  "tracing",
+ "uuid",
 ]
 
 [[package]]
