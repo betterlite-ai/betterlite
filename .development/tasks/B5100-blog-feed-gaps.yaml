@@ -1,0 +1,210 @@
+id: B5100
+title: Close the B4264 blog feed audit gaps
+description: >-
+  Fix the gaps an Opus review found in B4264's blog feed helper after it merged. LiteLLM's
+  parse_rss_to_posts parses RSS text with Python's ElementTree (expat), which turns CRLF and a lone CR
+  inside element text into "\n" per XML 1.0 section 2.11 before title, link and description reach the
+  caller (get_blog_posts.py#L68-L111). betterlite's run_events pushes quick-xml's raw text and CDATA
+  straight through, so a feed with Windows line endings gives the client a different string; the fix
+  calls xml10_content() in handle_text and handle_cdata instead of decode(), and leaves the GeneralRef
+  branch on plain decode() so a numeric reference such as "&#13;" still gives a literal "\r", matching
+  LiteLLM, which only normalizes line-end bytes in source text, not character references.
+
+  LiteLLM wraps pubDate parsing in parsedate_to_datetime and keeps the raw text on any exception
+  (get_blog_posts.py#L95-L100); that function reads a zone it doesn't recognize by name as a signed
+  integer, splits it into hours (n / 100) and minutes (n % 100), and rejects it only once the offset
+  reaches 24 hours. date_parse.rs's valid_timezone instead demands exactly four digits after a sign and
+  treats anything else as having no zone at all, so "+0099" and "+100" wrongly stay raw text and an
+  unsigned "2500" wrongly produces a date. The fix ports the integer-and-bound check: an unparseable
+  zone token means no zone (still valid), and a parseable one is valid only below 86400 seconds.
+
+  LiteLLM's fetch_rss_feed takes the timeout it is given straight to httpx.get (get_blog_posts.py#L57-
+  L66, line 64), so a caller's timeout reaches the HTTP request. betterlite's fetch_rss_feed takes a
+  timeout and drops it, and the Python adapter builds a request record it never returns, so the
+  fetch-5sec-timeout and fetch-timeout-override oracle cases pass today whatever timeout either side
+  used. The fix has fetch_rss_feed return the request it sent (url and timeout) next to the text on
+  both sides, including on the connect-error path, and has run_sequence and get_blog_posts_sequence
+  build their requests list and fetch_count from those returned records instead of a second cache_hit
+  check that duplicates the one get_blog_posts already makes.
+
+  LiteLLM's root.find("channel") returns only the first direct <channel> child, and an empty element is
+  not None, so parse_rss_to_posts iterates zero items and returns an empty list rather than raising
+  (get_blog_posts.py#L68-L91). parser/tests.rs's first_empty_channel_stops_channel_selection currently
+  builds two root elements, so it passes on the unrelated "outside root" error from the second root, not
+  on channel selection; the fix rewrites it to one root with an empty first channel and a filled second
+  channel, the shape the empty-first-channel oracle case already uses, asserting Ok(vec![]).
+
+  LiteLLM parses RSS with its own standard library (get_blog_posts.py#L75), so betterlite's one
+  substitute crate only needs to resolve to one version. Cargo.lock currently carries quick-xml 0.41.0,
+  locked by the typespec crate in the azure_core dependency chain, next to 0.42.0 from this task's own
+  Cargo.toml pin, hidden behind a skip entry in deny.toml. quick-xml 0.41.0 already has the
+  xml10_content, xml11_content and html_content methods that 0.42.0 added, so one version covers both
+  needs. The fix reverts e9fce563 (the str-API port), pinning quick-xml back to 0.41.0 in Cargo.toml and
+  tools/oracle/fuzz/Cargo.toml, folding the CRLF fix above into the restored byte-based handle_text and
+  handle_cdata helpers, and drops the now-unneeded skip entry and its comment from deny.toml.
+
+  Four findings are style, kept because every file they touch is already in scope for one of the fixes
+  above. blog_feed.rs's own BlogPost struct repeats parser::BlogPost field for field and its From impl
+  only forwards four fields across; parser::BlogPost becomes the one type, gaining Deserialize,
+  deny_unknown_fields and Clone, used directly for cached_posts and every output. date_parse.rs's
+  parsed_fields destructures into dd, mm, yy, tm and tz, and split_time separately reuses mm for the
+  minute while parsed_fields uses it for the month; both become day, month, year, time and zone, and
+  split_time's own locals become hour, minute and second. logic.rs's comment on the TTL bound blames
+  mul_add on an unsigned subtraction, but both operands are f64; the real constraint is clippy's
+  float-arithmetic lint, the same reason crates/betterlite-db/src/database_url_policy/policy.rs gives
+  for the same pattern, so the comment states that instead. deny.toml's comment above the sources table
+  restates what the licenses and sources tables already enforce and only gives the old dependency-check
+  grep something to match; it comes out with the skip entry.
+
+  The no-one-line-functions finding on handle_start (parser.rs) is left out: it belongs to B5094, which
+  owns the padded one-line function lists under .ast-grep/rules/.
+scope:
+  paths:
+  - Cargo.toml
+  - Cargo.lock
+  - deny.toml
+  - tools/oracle/fuzz/Cargo.toml
+  - tools/oracle/src/helpers/server/blog_feed.rs
+  - tools/oracle/src/helpers/server/blog_feed/parser.rs
+  - tools/oracle/src/helpers/server/blog_feed/parser/tests.rs
+  - tools/oracle/src/helpers/server/blog_feed/date_parse.rs
+  - tools/oracle/src/helpers/server/blog_feed/date_parse/tests.rs
+  - tools/oracle/src/helpers/server/blog_feed/logic.rs
+  - tools/oracle/helpers/blog_feed.py
+  - tools/oracle/cases/helpers/blog_feed/crlf-in-description-normalizes.yaml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_blog_posts.py#L68-L111
+  why: Owns parse_rss_to_posts, whose expat parser normalizes CRLF and a lone CR in element text, and whose root.find("channel") takes only the first direct channel child
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_blog_posts.py#L95-L100
+  why: Owns the pubDate parse and fallback, whose timezone handling comes from parsedate_to_datetime
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_blog_posts.py#L57-L66
+  why: Owns fetch_rss_feed, whose timeout argument reaches httpx.get on line 64
+dod:
+- text: >-
+    A feed whose description holds "\r\n" and a lone "\r" gives the same string betterlite and LiteLLM
+    both give today once run through expat's EOL normalization: both become plain "\n". The new
+    crlf-in-description-normalizes.yaml oracle case fails on today's main, where the raw bytes survive,
+    and passes once handle_text and handle_cdata call xml10_content() instead of decode(); a reference
+    such as "&#13;" still comes out as "\r" through the unchanged GeneralRef branch.
+  proof: [blog-feed-helpers, oracle, crlf-case]
+- text: >-
+    date_parse.rs's valid_timezone accepts any signed integer zone below 86400 seconds and treats an
+    unparseable zone token as no zone at all, matching parsedate_to_datetime. New rstest cases for
+    "+0099", "+100" and "+12a4" in formats_valid_dates, and for a bare "2500" in
+    keeps_raw_text_on_failure, fail on today's main (the first two wrongly stay raw, the bare zone
+    wrongly parses) and pass once valid_timezone parses the signed integer and checks the bound.
+  proof: [blog-feed-helpers, oracle]
+- text: >-
+    fetch_rss_feed returns the request it sent (url and timeout) next to the fetched text, on both the
+    Rust and Python sides, and run_sequence and get_blog_posts_sequence build fetch_count and requests
+    from those records rather than a second cache_hit check. fetch-5sec-timeout.yaml and
+    fetch-timeout-override.yaml pass today with any timeout on either side; once the comparison checks
+    the returned timeout they fail on today's main and pass once the real value is threaded through.
+    cache-sequential-expiry.yaml keeps matching once its three calls report the same recorded requests.
+  proof: [blog-feed-helpers, helper-python, oracle]
+- text: >-
+    parser/tests.rs's first_empty_channel_stops_channel_selection uses one root with an empty first
+    channel and a filled second channel, the same shape as the empty-first-channel oracle case, and
+    asserts Ok(vec![]). On today's main the test uses two root elements and passes on the unrelated
+    "outside root" error; the rewrite fails for that reason until the assertion exercises channel
+    selection itself, then passes once collector.rs still picks the first channel and finds it empty.
+  proof: [blog-feed-helpers, oracle]
+- text: >-
+    Cargo.toml and tools/oracle/fuzz/Cargo.toml pin quick-xml = "0.41.0", Cargo.lock resolves one
+    quick-xml package instead of two, and deny.toml carries no quick-xml skip entry or comment.
+  proof: [dependency-check, blog-feed-helpers, oracle]
+- text: >-
+    blog_feed.rs declares no BlogPost struct or From impl of its own; parser::BlogPost (with Deserialize,
+    deny_unknown_fields and Clone added) is the only BlogPost type and serializes cached_posts and every
+    output directly.
+  proof: [blog-feed-helpers, blogpost-dedup]
+- text: >-
+    date_parse.rs's parsed_fields destructures into day, month, year, time and zone, and split_time's
+    own locals are hour, minute and second; no dd, mm, yy, tm or tz token remains in the file.
+  proof: [blog-feed-helpers, clear-names]
+- text: >-
+    logic.rs's comment on the TTL bound names the real constraint (clippy's float-arithmetic lint) or is
+    dropped, and deny.toml's sources comment about quick-xml's license is gone along with the skip entry.
+  proof: [style-comments]
+checks:
+  optional: []
+  commands:
+  - id: blog-feed-helpers
+    why: every blog feed helper test and the pinned oracle case must still match LiteLLM behavior
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::server::blog_feed::/) - test(/::replays_corpus$/)'
+  - id: helper-python
+    why: the blog feed Python adapter must stay lint- and type-clean after the request-record change
+    run: test -f tools/oracle/helpers/blog_feed.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: crlf-case
+    why: the CRLF normalization fix needs a new oracle case, not just a code change
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/blog_feed/crlf-in-description-normalizes.yaml)"
+  - id: dependency-check
+    why: quick-xml must resolve to one version, with no skip entry left to hide a duplicate
+    run: grep -q 'quick-xml = "0.41.0"' Cargo.toml && grep -q 'quick-xml = "0.41.0"' tools/oracle/fuzz/Cargo.toml && ! grep -q 'quick-xml' deny.toml && test "$(grep -c 'name = "quick-xml"' Cargo.lock)" = "1"
+  - id: blogpost-dedup
+    why: blog_feed.rs must stop keeping its own copy of BlogPost
+    run: '! grep -q "struct BlogPost" tools/oracle/src/helpers/server/blog_feed.rs && ! grep -q "From<parser::BlogPost>" tools/oracle/src/helpers/server/blog_feed.rs'
+  - id: clear-names
+    why: date_parse.rs must not keep the dd, mm, yy, tm, tz or mm-for-minute names
+    run: '! grep -wE "dd|mm|yy|tm|tz" tools/oracle/src/helpers/server/blog_feed/date_parse.rs'
+  - id: style-comments
+    why: the two comments-say-why findings must be fixed, not reworded around
+    run: '! grep -q "unsigned subtraction" tools/oracle/src/helpers/server/blog_feed/logic.rs && ! grep -q "quick-xml is sourced from crates.io" deny.toml'
+oracle_cases:
+- tools/oracle/cases/helpers/blog_feed/cache-hit-ttl.yaml
+- tools/oracle/cases/helpers/blog_feed/cache-miss-fetch.yaml
+- tools/oracle/cases/helpers/blog_feed/cache-sequential-expiry.yaml
+- tools/oracle/cases/helpers/blog_feed/crlf-in-description-normalizes.yaml
+- tools/oracle/cases/helpers/blog_feed/empty-first-channel.yaml
+- tools/oracle/cases/helpers/blog_feed/fetch-5sec-timeout.yaml
+- tools/oracle/cases/helpers/blog_feed/fetch-failure-fallback.yaml
+- tools/oracle/cases/helpers/blog_feed/fetch-timeout-override.yaml
+- tools/oracle/cases/helpers/blog_feed/invalid-date-raw.yaml
+- tools/oracle/cases/helpers/blog_feed/local-only-override.yaml
+- tools/oracle/cases/helpers/blog_feed/local-posts-load.yaml
+- tools/oracle/cases/helpers/blog_feed/malformed-document-fallback.yaml
+- tools/oracle/cases/helpers/blog_feed/missing-title-url-skipped.yaml
+- tools/oracle/cases/helpers/blog_feed/multiple-items-limited.yaml
+- tools/oracle/cases/helpers/blog_feed/namespace-channel.yaml
+- tools/oracle/cases/helpers/blog_feed/parse-failure-fallback.yaml
+- tools/oracle/cases/helpers/blog_feed/parse-nested-tail.yaml
+- tools/oracle/cases/helpers/blog_feed/parse-rss-items.yaml
+- tools/oracle/cases/helpers/blog_feed/validate-empty-list.yaml
+- tools/oracle/cases/helpers/blog_feed/validate-nonempty-list.yaml
+- tools/oracle/cases/helpers/blog_feed/validate-non-list.yaml
+- tools/oracle/cases/helpers/blog_feed/validate-object.yaml
+- tools/oracle/cases/helpers/blog_feed/validate-scalar.yaml
+- tools/oracle/cases/helpers/blog_feed/validation-failure-fallback.yaml
+deviations: []
+out_of_scope:
+- >-
+    The no-one-line-functions finding on handle_start in parser.rs stays open; it belongs to B5094,
+    which owns the padded one-line function lists under .ast-grep/rules/.
+pitfalls:
+- >-
+    The CRLF fix only exists inside handle_text and handle_cdata once quick-xml goes back to 0.41.0;
+    those byte-based helpers return after e9fce563 is reverted, and the fix is the one-method swap from
+    decode() to xml10_content() inside them, not a change to any str-native match arm, since those arms
+    disappear with the revert.
+- >-
+    GeneralRef keeps using plain decode(), unchanged: XML 1.0 EOL normalization only applies to literal
+    line-end bytes in source text, not to character references like "&#13;", so a reference still gives
+    "\r" after the fix.
+- >-
+    typespec, by way of the azure_core dependency chain, pins quick-xml to "0.41.0" in its own Cargo.toml;
+    reverting betterlite's own pin to the same version removes the Cargo.lock duplicate without touching
+    typespec.
+- >-
+    Python's zone parsing treats a token that fails int() as "no zone", not as invalid; only a token that
+    parses as an integer can fail the 86400-second bound, which is why "+12a4" stays valid while a bare
+    "2500" becomes invalid.
+- >-
+    run_sequence and get_blog_posts_sequence currently recompute the same cache_hit check that
+    get_blog_posts already makes, so no input today can make the two disagree; the fix removes the
+    duplicate check itself; it is not provable as a standalone red-before-green case.
+- The blog feed oracle helper operation stays named blog_feed in the server group; this task adds no new operation and touches no registry file.
+review_level: standard
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0
