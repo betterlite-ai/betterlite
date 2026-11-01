@@ -1,0 +1,321 @@
+id: B5103
+title: Helper errors carry the exception's status
+description: >-
+  B5091 made helper comparisons skip /error/class and /error/message and compare /error/status, /error/type,
+  /error/param and /error/code instead. But the except block near the end of main in tools/oracle/helpers/dispatch.py
+  writes status, type, param and code as None for every Python exception, and the native helpers write None too. So a
+  helper case where LiteLLM raises compares only ok:false. tools/oracle/cases/guardrails/lasso/block-action-raises-400.yaml
+  is one. LiteLLM's Lasso hook raises HTTPException(status_code=400) there (lasso.py L855-L864), and the case still
+  passes when betterlite fails with an error the proxy would answer with 500. This task makes both sides write the
+  status the exception carries.
+
+
+  What the proxy reads. _handle_llm_api_exception builds the client error (common_request_processing.py L3700-L3772).
+  A ProxyException passes through. An HTTPException becomes one with its own status_code (L601-L614). Any other
+  exception gives its status_code when that is an int from 400 to 599, and 500 otherwise. type is the exception's own
+  type string, else it follows from the status. param is the exception's own param string, else None
+  (openai_error_payload.py L29-L57). ProxyException then writes code as str(status) (_types.py L4325-L4371), and the
+  handler in proxy_server.py L1892-L1910 sends those four fields. So code always follows from the status. type and
+  param would only differ for an exception that carries its own strings, and none of the exceptions these helpers
+  raise does. HTTPException, GuardrailRaisedException, BedrockError and GraySwanGuardrailAPIError have no such
+  attributes. litellm.BadRequestError is built without a body here, so openai's APIError sets type, param and code to
+  None (openai-python _exceptions.py L67-L80). This task fills status only. type, param and code stay None on both
+  sides.
+
+
+  dispatch.py. The except block writes status as the exception's status_code attribute when that is an int and not a
+  bool, and None otherwise. error_status_code in openai_error_payload.py makes the same int and bool test. It writes
+  the raw value, not the proxy's 500 fallback: the helper reports what the exception carries, and a native helper
+  with no status writes None the same way. getattr returns Any and basedpyright runs with reportAny as an error, so
+  the value is declared object and narrowed with isinstance, the way object_value and string_value do in the same
+  file. class, type, param, code and message stay as they are. dispatch.py is a shared registry file that worker.md
+  says a helper task leaves alone. This task is the named exception, for this except block only.
+
+
+  Native side. HelperError.status stays Option<u16>, the wire field, and no new type comes in. A helper writes the
+  status the betterlite error already holds when it holds one. Otherwise it writes the code it mirrors as a
+  reqwest::StatusCode constant with as_u16(), the way b3779.rs writes error.status().as_u16(). reqwest is already an
+  oracle dependency. Only the oracle helpers change, and no product crate gains a status method.
+
+
+  Lasso, in tools/oracle/src/helpers/guardrails/b3778.rs. lasso_failure maps LassoError::Blocked to HTTPException,
+  and it gets 400 from LiteLLM's raise (lasso.py L855-L864). Every other variant mirrors
+  LassoGuardrailMissingSecrets or LassoGuardrailAPIError. Those are plain Exception subclasses (L65-L71) raised by
+  _handle_api_error (L589-L622), so they keep None. The shared failure(class_name, message) builder gains a status
+  argument, and its other callers pass None.
+
+
+  DeepKeep, in tools/oracle/src/helpers/guardrails/b3767.rs. deepkeep_failure maps DeepKeepError::Blocked to
+  GuardrailRaisedException. LiteLLM raises it on a BLOCKED action without a status_code (deepkeep.py L407-L414), so
+  the constructor default of 400 applies (exceptions.py L1079-L1104), and the helper writes 400. The other variants
+  mirror DeepKeepGuardrailMissingSecrets and DeepKeepGuardrailAPIError, plain Exception subclasses (L83-L89), and keep
+  None. So do the OSError, ConfigError and MissingSecrets failures elsewhere in b3767.rs.
+
+
+  Builtin prompts, in tools/oracle/src/helpers/prompts/builtin_prompts.rs. failure maps PromptError::Role to
+  BadRequestError. ollama_pt raises litellm.BadRequestError when no role matches (factory.py L278-L283), and
+  BadRequestError sets status_code to 400 (exceptions.py L219-L251). So Role gets 400 and every other PromptError
+  keeps None.
+
+
+  Prompt factory, in tools/oracle/src/helpers/prompts/prompt_factory.rs. prompt_factory sends an ollama model to
+  ollama_pt (factory.py L5272-L5275), so FactoryError::Prompt(PromptError::Role { .. }) is the same raise and gets
+  400. Its class stays Exception, since compare skips the class. Render, NoChatTemplate and every other Prompt error
+  keep None.
+
+
+  Bedrock image models, in tools/oracle/src/helpers/bedrock/other_image_models.rs. From<Failure> maps
+  ImageModelsError::Provider { status, .. } to BedrockError. LiteLLM's Stability 3 transformation raises
+  BedrockError(status_code=400) for a failed finish reason (amazon_stability3_transformation.py L95-L98). The helper
+  writes Some(status) from the variant, and other failures keep None.
+
+
+  Gray Swan, in B3771's tools/oracle/src/helpers/guardrails/b3771/grayswan.rs. Its failure maps a block to
+  HTTPException and every other error to GraySwanGuardrailAPIError. A block raises HTTPException(status_code=400)
+  (grayswan.py L420-L436 and L538-L552) and gets 400. A failed monitor call raises GraySwanGuardrailAPIError with the
+  status_code of the error it wraps (L86-L93 and L470-L487), and apply raises it again when fail_open is false
+  (L315-L335). For a timeout that status is 408: the HTTP handler raises litellm.Timeout (http_handler.py L852-L870),
+  and Timeout sets status_code to 408 (exceptions.py L357-L374). For an error response it is the upstream status,
+  from MaskedHTTPStatusError (http_handler.py L556-L604). For a connection failure, a bad header, a body that is too
+  large or a body that is not JSON it is None. B3771's product GraySwanGuardrailAPIError::status_code() answers 400
+  for every variant, so the helper maps the variant itself and leaves that method alone. Timeout writes
+  StatusCode::REQUEST_TIMEOUT, HttpStatus { status } writes status.as_u16(), Blocked writes 400, and Request,
+  InvalidHeader, ResponseTooLarge and ResponseJson write None.
+
+
+  Generic guardrail API, in B3771's b3771/generic.rs. A BLOCKED verdict raises GuardrailRaisedException
+  (generic_guardrail_api.py L490-L500) and gets 400. A failed call raises a plain Exception (L372-L391) and keeps
+  None. b3771/support.rs builds both failures in error_failure and failure_with_class, and gains a status argument
+  where a caller needs one.
+
+
+  Cases. With the status filled, these cases compare it: lasso/block-action-raises-400.yaml,
+  deepkeep/blocked-action.yaml, helpers/providers/bedrock-other-image-models/image-provider-error.yaml, and B3771's
+  grayswan/violation-block-action.yaml, grayswan/error-timeout.yaml, grayswan/error-fail-open-false.yaml (500) and
+  generic_guardrail_api/blocked-verdict.yaml. lasso/api-429-rate-limit.yaml, deepkeep/unreachable-fail-closed.yaml,
+  grayswan/error-connection-failure.yaml and generic_guardrail_api/error-5xx-fail-closed.yaml stay None on both
+  sides. Each status case fails once dispatch.py writes the status and passes once the native helper writes the same
+  one. Thirteen JSON-flow helper cases still list {"pointer": "/error/message", ...} under compare.ignore. They are
+  claude21-empty, claude-empty, default-parts, ollama-bad-arguments, ollama-ignore-parts, ollama-image-malformed,
+  ollama-role, ollama-trailing-arguments, system-map-parts and titan-empty in tools/oracle/cases/helpers/builtin-prompts,
+  plus jinja-prompts/real-render-error, schema-definitions/expansion-limit and tool-arguments/unrepairable.
+  B5091's check matched only the block style, so they stayed, and compare_helper rejects such an ignore before it
+  compares anything. So they fail on main. Each loses that entry and keeps its call. After that, ollama-role.yaml
+  proves the builtin prompts status. New tools/oracle/cases/helpers/prompt-template/factory-ollama-role.yaml calls
+  prompt_factory with mode factory, model llama3, custom_llm_provider ollama and messages [{role: other, content: x}],
+  in the one-line JSON style of factory-default.yaml, with compare.ignore empty. Both sides fail with status 400.
+
+
+  Tests. helper_comparison_compares_error_codes in tools/oracle/src/tests.rs already has a status case: the same class
+  on both sides, 400 against 401, pointer /error/status. It passes on main, because the comparator already compares
+  status and the gap is in what each side writes. So the proof is the tests below and the cases above. Each new test
+  is a plain #[test], not an rstest, so the exact filters in checks find it.
+  python_failures_carry_the_exception_status in tools/oracle/src/helpers/tests.rs runs the real Python through a
+  scratch Answers, the way answer_cache_stores_a_miss_in_the_write_layer_only does. It asserts status Some(400) for
+  the call `builtin_prompts: {family: ollama, messages: [{role: other, content: x}], model: injected-model}` and None
+  for `url_path: {function: segment, value: "..", field_name: file_id}`, a ValueError. Each native test asserts the
+  status of every variant named above for its helper: lasso_failures_carry_the_python_status in a new
+  tools/oracle/src/helpers/guardrails/b3778/tests.rs, deepkeep_failures_carry_the_python_status in a new b3767/tests.rs,
+  grayswan_failures_carry_the_python_status and generic_block_carries_status_400 in a new b3771/tests.rs,
+  role_error_carries_status_400 in builtin_prompts/tests.rs, factory_role_error_carries_status_400 in
+  prompt_factory/tests.rs and provider_error_carries_its_status in other_image_models/tests.rs. role_error_carries_status_400
+  replaces errors_keep_the_python_class and keeps its class and message asserts. b3778.rs, b3767.rs and b3771.rs each
+  gain a mod tests; line at the end, the way builtin_prompts.rs has one.
+
+
+  Warnings. helper_comparison_skips_warning_messages gives each side one warning, so it would pass if only
+  /warnings/0/message were stripped. Its different_subject case never checks the Difference pointer either. Replace
+  it with two tests. helper_comparison_skips_every_warning_message gives each side two warnings with equal subjects
+  and different messages at both indexes, and expects no difference. helper_comparison_names_the_differing_warning_subject
+  gives each side two warnings, equal at index 0 and with different subjects at index 1, and asserts the pointer
+  /warnings/1/subject. warning_output takes a slice of (subject, message) pairs.
+scope:
+  paths:
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/tests.rs
+  - tools/oracle/src/helpers/tests.rs
+  - tools/oracle/src/helpers/guardrails/b3778.rs
+  - tools/oracle/src/helpers/guardrails/b3778/**
+  - tools/oracle/src/helpers/guardrails/b3767.rs
+  - tools/oracle/src/helpers/guardrails/b3767/**
+  - tools/oracle/src/helpers/guardrails/b3771.rs
+  - tools/oracle/src/helpers/guardrails/b3771/**
+  - tools/oracle/src/helpers/prompts/builtin_prompts.rs
+  - tools/oracle/src/helpers/prompts/builtin_prompts/tests.rs
+  - tools/oracle/src/helpers/prompts/prompt_factory.rs
+  - tools/oracle/src/helpers/prompts/prompt_factory/tests.rs
+  - tools/oracle/src/helpers/bedrock/other_image_models.rs
+  - tools/oracle/src/helpers/bedrock/other_image_models/tests.rs
+  - tools/oracle/cases/helpers/builtin-prompts/claude21-empty.yaml
+  - tools/oracle/cases/helpers/builtin-prompts/claude-empty.yaml
+  - tools/oracle/cases/helpers/builtin-prompts/default-parts.yaml
+  - tools/oracle/cases/helpers/builtin-prompts/ollama-bad-arguments.yaml
+  - tools/oracle/cases/helpers/builtin-prompts/ollama-ignore-parts.yaml
+  - tools/oracle/cases/helpers/builtin-prompts/ollama-image-malformed.yaml
+  - tools/oracle/cases/helpers/builtin-prompts/ollama-role.yaml
+  - tools/oracle/cases/helpers/builtin-prompts/ollama-trailing-arguments.yaml
+  - tools/oracle/cases/helpers/builtin-prompts/system-map-parts.yaml
+  - tools/oracle/cases/helpers/builtin-prompts/titan-empty.yaml
+  - tools/oracle/cases/helpers/jinja-prompts/real-render-error.yaml
+  - tools/oracle/cases/helpers/schema-definitions/expansion-limit.yaml
+  - tools/oracle/cases/helpers/tool-arguments/unrepairable.yaml
+  - tools/oracle/cases/helpers/prompt-template/factory-ollama-role.yaml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3700-L3772
+  why: _handle_llm_api_exception passes a ProxyException through, routes an HTTPException, and takes an int status_code from 400 to 599 or 500 for any other exception.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L601-L614
+  why: proxy_exception_from_http_exception keeps the HTTPException's status_code.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/openai_error_payload.py#L29-L57
+  why: error_status_code skips bools, type and param come from the exception's own strings, else type follows from the status and param is None.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325-L4371
+  why: ProxyException writes code as str(status).
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1892-L1910
+  why: The ProxyException handler answers the client with status, type, param and code.
+- url: https://github.com/openai/openai-python/blob/v2.54.0/src/openai/_exceptions.py#L67-L80
+  why: APIError sets code, param and type to None when it has no body, as litellm.BadRequestError builds it here.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L855-L864
+  why: A blocking Lasso finding raises HTTPException(status_code=400).
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L65-L71
+  why: LassoGuardrailMissingSecrets and LassoGuardrailAPIError are plain Exception subclasses with no status.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L589-L622
+  why: _handle_api_error raises the plain Lasso exceptions for timeouts, auth, rate limits and other API errors.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/deepkeep/deepkeep.py#L407-L414
+  why: A BLOCKED DeepKeep action raises GuardrailRaisedException without a status_code.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/deepkeep/deepkeep.py#L83-L89
+  why: DeepKeepGuardrailMissingSecrets and DeepKeepGuardrailAPIError are plain Exception subclasses with no status.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L1079-L1104
+  why: GuardrailRaisedException's status_code defaults to 400.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L219-L251
+  why: litellm.BadRequestError sets status_code to 400 and passes body None by default.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L357-L374
+  why: litellm.Timeout sets status_code to 408 unless given another.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L278-L283
+  why: ollama_pt raises litellm.BadRequestError when no role matches.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L5272-L5275
+  why: prompt_factory sends an ollama model to ollama_pt.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/amazon_stability3_transformation.py#L95-L98
+  why: A failed Stability 3 finish reason raises BedrockError(status_code=400).
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L86-L93
+  why: GraySwanGuardrailAPIError keeps the status_code it is given, None by default.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L470-L487
+  why: _call_grayswan_api wraps any error in GraySwanGuardrailAPIError with that error's status_code or exception_status_code.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L315-L335
+  why: apply raises the GraySwanGuardrailAPIError again when fail_open is false.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L420-L436
+  why: A Gray Swan block raises HTTPException(status_code=400).
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L538-L552
+  why: The second Gray Swan block path raises HTTPException(status_code=400) too.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L852-L870
+  why: The async HTTP handler turns an httpx timeout into litellm.Timeout and an error status into a masked HTTPStatusError.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L556-L604
+  why: MaskedHTTPStatusError sets status_code to the upstream response status.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/generic_guardrail_api/generic_guardrail_api.py#L490-L500
+  why: A BLOCKED generic guardrail verdict raises GuardrailRaisedException.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/generic_guardrail_api/generic_guardrail_api.py#L372-L391
+  why: A failed generic guardrail call raises a plain Exception with no status.
+dod:
+- text: >-
+    dispatch.py writes /error/status from the exception's status_code when it is an int and not a bool, and None
+    otherwise. type, param and code stay None, and ruff and basedpyright pass. python_failures_carry_the_exception_status
+    proves 400 for the ollama role call and None for the url_path ValueError.
+  proof:
+  - python-status
+  - helper-python
+- text: >-
+    Each native helper named in the description writes the status of the exception it mirrors and None where that
+    exception has none. lasso_failures_carry_the_python_status, deepkeep_failures_carry_the_python_status,
+    role_error_carries_status_400, factory_role_error_carries_status_400, provider_error_carries_its_status,
+    grayswan_failures_carry_the_python_status and generic_block_carries_status_400 prove it.
+  proof:
+  - native-status
+- text: >-
+    The status cases match LiteLLM: lasso/block-action-raises-400, deepkeep/blocked-action,
+    bedrock-other-image-models/image-provider-error, builtin-prompts/ollama-role, prompt-template/factory-ollama-role,
+    grayswan/violation-block-action, grayswan/error-timeout, grayswan/error-fail-open-false and
+    generic_guardrail_api/blocked-verdict. So do the None cases lasso/api-429-rate-limit,
+    deepkeep/unreachable-fail-closed, grayswan/error-connection-failure and generic_guardrail_api/error-5xx-fail-closed.
+  proof:
+  - oracle
+- text: >-
+    helper_comparison_skips_every_warning_message strips the message of both warnings on each side, and
+    helper_comparison_names_the_differing_warning_subject asserts the pointer /warnings/1/subject.
+    helper_comparison_skips_warning_messages is gone.
+  proof:
+  - warning-comparison
+- text: >-
+    No helper case ignores /error/class or /error/message in block or JSON style, and the thirteen cleaned cases match
+    LiteLLM.
+  proof:
+  - no-skipped-ignores
+  - oracle
+checks:
+  optional: []
+  commands:
+  - id: python-status
+    why: dispatch.py still writes None for a Python exception that carries a status
+    run: |-
+      cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(=helpers::tests::python_failures_carry_the_exception_status)'
+  - id: helper-python
+    why: dispatch.py fails ruff or basedpyright
+    run: |-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: native-status
+    why: a native helper still writes None where the Python exception carries a status
+    run: |-
+      list=$(cargo nextest list --locked -p betterlite-oracle -E 'test(/^helpers::(guardrails|prompts|bedrock)::/)' --message-format oneline) && for name in guardrails::b3778::tests::lasso_failures_carry_the_python_status guardrails::b3767::tests::deepkeep_failures_carry_the_python_status guardrails::b3771::tests::grayswan_failures_carry_the_python_status guardrails::b3771::tests::generic_block_carries_status_400 prompts::builtin_prompts::tests::role_error_carries_status_400 prompts::prompt_factory::tests::factory_role_error_carries_status_400 bedrock::other_image_models::tests::provider_error_carries_its_status; do grep -q "helpers::$name$" <<< "$list" || { echo "missing test $name"; exit 1; }; done && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::(guardrails::(b3778|b3767|b3771)|prompts::(builtin_prompts|prompt_factory)|bedrock::other_image_models)::tests::/)'
+  - id: warning-comparison
+    why: a warning message past index 0 is still compared, or a subject difference names the wrong pointer
+    run: |-
+      ! grep -q 'fn helper_comparison_skips_warning_messages' tools/oracle/src/tests.rs && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(=tests::helper_comparison_skips_every_warning_message)' && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(=tests::helper_comparison_names_the_differing_warning_subject)'
+  - id: no-skipped-ignores
+    why: a helper case still ignores /error/class or /error/message, in block or JSON style
+    run: |-
+      test -z "$(grep -rlE 'pointer"?: "?/error/(class|message)([^a-z_/]|$)' tools/oracle/cases | xargs -r grep -lE '^kind: helper|"kind": "helper"')" && grep -qE 'pointer"?: "?/error/(class|message)([^a-z_/]|$)' tools/oracle/cases/chat/upstream-429.yaml
+oracle_cases:
+- tools/oracle/cases/guardrails/lasso/block-action-raises-400.yaml
+- tools/oracle/cases/guardrails/lasso/api-429-rate-limit.yaml
+- tools/oracle/cases/guardrails/deepkeep/blocked-action.yaml
+- tools/oracle/cases/guardrails/deepkeep/unreachable-fail-closed.yaml
+- tools/oracle/cases/guardrails/grayswan/violation-block-action.yaml
+- tools/oracle/cases/guardrails/grayswan/error-timeout.yaml
+- tools/oracle/cases/guardrails/grayswan/error-fail-open-false.yaml
+- tools/oracle/cases/guardrails/grayswan/error-connection-failure.yaml
+- tools/oracle/cases/guardrails/generic_guardrail_api/blocked-verdict.yaml
+- tools/oracle/cases/guardrails/generic_guardrail_api/error-5xx-fail-closed.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-image-models/image-provider-error.yaml
+- tools/oracle/cases/helpers/prompt-template/factory-ollama-role.yaml
+- tools/oracle/cases/helpers/builtin-prompts/claude21-empty.yaml
+- tools/oracle/cases/helpers/builtin-prompts/claude-empty.yaml
+- tools/oracle/cases/helpers/builtin-prompts/default-parts.yaml
+- tools/oracle/cases/helpers/builtin-prompts/ollama-bad-arguments.yaml
+- tools/oracle/cases/helpers/builtin-prompts/ollama-ignore-parts.yaml
+- tools/oracle/cases/helpers/builtin-prompts/ollama-image-malformed.yaml
+- tools/oracle/cases/helpers/builtin-prompts/ollama-role.yaml
+- tools/oracle/cases/helpers/builtin-prompts/ollama-trailing-arguments.yaml
+- tools/oracle/cases/helpers/builtin-prompts/system-map-parts.yaml
+- tools/oracle/cases/helpers/builtin-prompts/titan-empty.yaml
+- tools/oracle/cases/helpers/jinja-prompts/real-render-error.yaml
+- tools/oracle/cases/helpers/schema-definitions/expansion-limit.yaml
+- tools/oracle/cases/helpers/tool-arguments/unrepairable.yaml
+deviations: []
+out_of_scope:
+- The provider error mapper helpers (provider_error.py, aws_errors.py, azure_openrouter_errors.py, native_errors_a.py, native_errors_b.py, openai_like_errors.py, vertex_errors.py, anthropic_replicate_errors.py) return the mapped exception as a value. B5102 covers their status, and none of them raises through dispatch.py's except block.
+- type, param and code on the helper wire stay None, for the reasons in the description.
+- Adapters that catch a status exception and return it as a value keep their output (b3779.py, bedrock_request_policy.py, azure_content_policy.py, bedrock_services_file_content.py, provider_base_helpers.py, database_faults.py, messages_errors.py, error_class.py, error_facts.py, openai_base_config.py).
+- tools/oracle/src/helpers/bedrock/request_policy.rs already writes the BedrockError status.
+- httpx.HTTPStatusError has no status_code attribute, so dispatch.py writes None for it. blog_feed's fetch_rss_feed could raise one, but no case gives it an error status.
+- A status method on product error types, and B3771's GraySwanGuardrailAPIError::status_code() answering 400 for every variant. The helper maps the variants itself.
+- HTTP cases. Their status already goes through the proxy and belongs to each feature's own task.
+pitfalls:
+- Editing dispatch.py changes the answer cache key of every helper case (KEYED_FILES in tools/oracle/src/helpers/answers.rs), so the first oracle run asks LiteLLM again for all of them and takes long.
+- bool is a subclass of int in Python, so isinstance(value, int) alone lets True through as status 1.
+- getattr returns Any and reportAny is an error here, so declare the value as object before narrowing it.
+- A stale /error/message ignore fails a case before its status is compared; remove the entry before reading a status difference.
+- GuardrailRaisedException gets its 400 from the constructor default, so deepkeep.py and generic_guardrail_api.py never write status_code=400.
+- Gray Swan's 408 comes from litellm.Timeout inside the HTTP handler, not from GraySwanGuardrailAPIError and not from B3771's status_code().
+- The proxy answers 500 for an exception with no status, but the helper wire keeps None for it on both sides; never write 500 for a status-less exception.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,13 @@
+id: B5103
+milestone: M0 foundation
+title: Helper errors carry the exception's status
+status: todo
+depends_on: [B5091, B3771]
+file: tasks/B5103-helper-error-status.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
