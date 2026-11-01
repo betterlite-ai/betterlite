@@ -1,3 +1,4 @@
+use betterlite_error::error::ErrorClass;
 use betterlite_openai::search::records::SearchResponse;
 use serde::Serialize;
 use serde_json::value::to_raw_value;
@@ -5,13 +6,6 @@ use serde_json::value::to_raw_value;
 use super::TransformationError;
 use super::arguments::{Budget, quote, text};
 use crate::records::{SearchOutcome, WebSearchToolResultErrorCode};
-
-#[derive(Debug, Clone, Copy)]
-pub enum SearchErrorKind {
-    RateLimit,
-    BadRequest,
-    Other,
-}
 
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -90,11 +84,29 @@ pub fn outcome_block(id: &str, outcome: &SearchOutcome) -> ResultBlock {
 }
 
 #[must_use]
-pub const fn search_error_code(kind: SearchErrorKind) -> WebSearchToolResultErrorCode {
-    match kind {
-        SearchErrorKind::RateLimit => WebSearchToolResultErrorCode::TooManyRequests,
-        SearchErrorKind::BadRequest => WebSearchToolResultErrorCode::InvalidToolInput,
-        SearchErrorKind::Other => WebSearchToolResultErrorCode::Unavailable,
+pub const fn search_error_code(class: &ErrorClass) -> WebSearchToolResultErrorCode {
+    match class {
+        ErrorClass::RateLimit(_) => WebSearchToolResultErrorCode::TooManyRequests,
+        ErrorClass::BadRequest(_) => WebSearchToolResultErrorCode::InvalidToolInput,
+        ErrorClass::Authentication(_)
+        | ErrorClass::NotFound(_)
+        | ErrorClass::PermissionDenied(_)
+        | ErrorClass::UnprocessableEntity(_)
+        | ErrorClass::Timeout(_)
+        | ErrorClass::BudgetExceeded(_)
+        | ErrorClass::ContextWindowExceeded(_)
+        | ErrorClass::ContentPolicyViolation(_)
+        | ErrorClass::ServiceUnavailable(_)
+        | ErrorClass::BadGateway(_)
+        | ErrorClass::InternalServer(_)
+        | ErrorClass::Api(_)
+        | ErrorClass::ApiConnection(_)
+        | ErrorClass::ApiResponseValidation(_)
+        | ErrorClass::JsonSchemaValidation(_)
+        | ErrorClass::UnsupportedParams(_)
+        | ErrorClass::GuardrailRaised(_)
+        | ErrorClass::MidStreamFallback(_)
+        | ErrorClass::Unclassified(_) => WebSearchToolResultErrorCode::Unavailable,
     }
 }
 
