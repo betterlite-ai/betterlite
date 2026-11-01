@@ -23,8 +23,11 @@ description: >-
   use B860's actual PostgreSQL lifecycle throughout. Extend decode_http_case for the typed
   transcript; add decode_html_form_capture for response bytes and a browser_form fuzz target.
   Regression tests must detect a changed status at step two, cookies crossing between proxies,
-  a failed capture, unsafe URL interpolation and cleanup after a late failure. This is a
-  prerequisite test adapter split from B063: it owns no LiteLLM production functions, whose
+  a failed capture, unsafe URL interpolation and cleanup after a late failure. The late-failure
+  test runs without a database fixture. LiteLLM exits at boot whenever its config carries
+  general_settings.database_url, since the oracle's LiteLLM venv has no prisma package, so a
+  database-fixture test only proves the fixture databases are dropped after a failed run,
+  whatever error ends it. This is a prerequisite test adapter split from B063: it owns no LiteLLM production functions, whose
   login/cache code supplies the flow requirements. Estimate 300 driver/schema, 100 HTML
   projection, 230 tests and 80 fuzz/wiring lines, capped at 800.
 scope:
@@ -72,6 +75,7 @@ oracle_cases: []
 deviations: []
 out_of_scope:
   - Product CLI routes are B1613/B1614, browser callbacks are B063/B1615 and SAML routes are B1625/B1626; their task cases use this driver after their services exist.
+  - Booting LiteLLM with a database needs prisma in tools/oracle/litellm; that belongs to B5076, and browser flows against a database wait for it.
 pitfalls:
   - Feeding a secret captured from LiteLLM into the betterlite run would test shared credentials instead of two independent implementations.
   - A Location header is observed data, not permission for the oracle to follow an arbitrary remote redirect.
