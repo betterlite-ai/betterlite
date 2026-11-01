@@ -1,0 +1,14 @@
+kind: helper
+name: top-level-zero-and-write-alias-precedence
+call:
+  savings_evidence:
+    operation: cache_extraction
+    usage_object:
+      cache_read_input_tokens: 0
+      cache_creation_input_tokens: 0
+      prompt_tokens_details:
+        cached_tokens: 6
+        cache_write_tokens: 9
+        cache_creation_tokens: 4
+compare: {ignore: []}
+env: {}

@@ -1,0 +1,17 @@
+kind: helper
+name: snapshot-strictness-and-tuple-basis
+call:
+  savings_evidence:
+    operation: snapshot
+    snapshot:
+      model: gpt-4
+      provider: openai
+      prices: null
+      basis: [flex, null, null]
+      actual_spend: true
+      classifier_cost: 0.01
+compare:
+  ignore:
+    - pointer: /error/message
+      why: Native typed validation uses its own error wording
+env: {}
