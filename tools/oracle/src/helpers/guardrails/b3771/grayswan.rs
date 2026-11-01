@@ -115,7 +115,10 @@ fn parse_request(request: &serde_json::Value) -> Result<Request, Box<crate::help
         .cloned()
         .unwrap_or_else(|| request.clone());
     let settings = parse_settings(&settings_source, OnFlaggedAction::Monitor)?;
-    let (dynamic_params, messages) = parse_dynamic_and_messages(request)?;
+    let dynamic = request.get("dynamic").cloned().unwrap_or_else(|| json!({}));
+    let dynamic_params: GraySwanDynamicParams = serde_json::from_value(dynamic)
+        .map_err(|error| failure_with_class("GuardrailError", error.to_string()))?;
+    let messages = parse_messages(request)?;
     let tools = parse_json_field(request, "tools")?.unwrap_or_default();
     let (input_type, fail) = request_flags(request);
     let texts = parse_json_field(request, "texts")?.unwrap_or_default();
@@ -135,12 +138,9 @@ fn parse_request(request: &serde_json::Value) -> Result<Request, Box<crate::help
         fail,
     })
 }
-fn parse_dynamic_and_messages(
+fn parse_messages(
     request: &serde_json::Value,
-) -> Result<(GraySwanDynamicParams, Vec<GuardrailMessage>), Box<crate::helpers::HelperError>> {
-    let dynamic = request.get("dynamic").cloned().unwrap_or_else(|| json!({}));
-    let dynamic_params: GraySwanDynamicParams = serde_json::from_value(dynamic)
-        .map_err(|error| failure_with_class("GuardrailError", error.to_string()))?;
+) -> Result<Vec<GuardrailMessage>, Box<crate::helpers::HelperError>> {
     let fallback_message = || {
         Ok(vec![GuardrailMessage {
             role: "user".to_owned(),
@@ -150,13 +150,12 @@ fn parse_dynamic_and_messages(
             )]),
         }])
     };
-    let messages = request
+    request
         .get("messages")
         .map_or_else(fallback_message, |value| {
             serde_json::from_value(value.clone())
                 .map_err(|error| failure_with_class("GuardrailError", error.to_string()))
-        })?;
-    Ok((dynamic_params, messages))
+        })
 }
 fn request_flags(request: &serde_json::Value) -> (GuardrailInputType, String) {
     let input_type = match request
