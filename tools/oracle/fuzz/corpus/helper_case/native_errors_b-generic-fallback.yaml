@@ -1,0 +1,12 @@
+kind: helper
+name: native-errors-b-generic-fallback
+call:
+  native_errors_b:
+    provider: nlp_cloud
+    model: nlp_cloud/dolphin
+    error_str: "boom, no detail here"
+    status_code: null
+    message: null
+env: {}
+compare:
+  ignore: []

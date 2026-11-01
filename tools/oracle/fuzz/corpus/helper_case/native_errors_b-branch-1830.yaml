@@ -1,0 +1,12 @@
+kind: helper
+name: native-errors-b-branch-1830
+call:
+  native_errors_b:
+    provider: aleph_alpha
+    model: aleph_alpha/luminous-base
+    error_str: "boom"
+    status_code: 999
+    message: null
+env: {}
+compare:
+  ignore: []
