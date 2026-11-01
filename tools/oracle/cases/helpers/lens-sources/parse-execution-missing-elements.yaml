@@ -6,8 +6,4 @@ call:
       value: WyJ0cmFjZXMiLCJ0ZWFtLTEiXQ==
 env: {}
 compare:
-  ignore:
-    - pointer: /error/class
-      why: betterlite raises a typed ParseExecutionError where LiteLLM raises pydantic's ValidationError
-    - pointer: /error/message
-      why: betterlite writes its own message
+  ignore: []

@@ -1,0 +1,11 @@
+kind: helper
+name: cached-modality-none-and-explicit-zero
+call:
+  usage_sum:
+    usages:
+      - prompt_tokens_details:
+          cached_tokens_details: {audio_tokens: 2, image_tokens: 0}
+      - prompt_tokens_details:
+          cached_tokens_details: {text_tokens: 3, image_tokens: 4}
+compare: {ignore: []}
+env: {}
