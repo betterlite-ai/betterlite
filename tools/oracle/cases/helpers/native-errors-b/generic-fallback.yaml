@@ -4,7 +4,7 @@ call:
   native_errors_b:
     provider: nlp_cloud
     model: nlp_cloud/dolphin
-    error_str: "boom, no detail here"
+    error_str: "boom, nothing matches"
     status_code: null
     message: null
 env: {}
