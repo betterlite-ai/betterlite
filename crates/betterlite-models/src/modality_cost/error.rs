@@ -5,8 +5,6 @@ use crate::token_rates::TokenRateError;
 
 #[derive(Debug, Error)]
 pub enum ModalityCostError {
-    #[error("billable input token subtraction overflowed")]
-    BillableInputOverflow,
     #[error("cache allocation across modalities overflowed")]
     CacheAllocationOverflow,
     #[error("completion reasoning-removal arithmetic overflowed")]
