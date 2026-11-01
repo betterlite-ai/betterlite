@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 
 pub enum BilledAt {
     Missing,
@@ -6,13 +6,36 @@ pub enum BilledAt {
     Text(String),
 }
 
-// Mirrors datetime.fromisoformat(value.replace("Z", "+00:00")), requiring an explicit offset.
+// Mirrors fromisoformat(value.replace("Z", "+00:00")): a naive datetime or a bare date is read as UTC.
 #[must_use]
 pub fn decode_billed_at(text: &str) -> Option<DateTime<Utc>> {
     let normalized = text.replace('Z', "+00:00");
-    DateTime::parse_from_rfc3339(&normalized)
-        .ok()
-        .map(|parsed| parsed.with_timezone(&Utc))
+    for format in [
+        "%Y-%m-%dT%H:%M:%S%.f%z",
+        "%Y-%m-%dT%H:%M:%S%z",
+        "%Y%m%dT%H%M%S%.f%z",
+        "%Y%m%dT%H%M%S%z",
+    ] {
+        if let Ok(parsed) = DateTime::parse_from_str(&normalized, format) {
+            return Some(parsed.with_timezone(&Utc));
+        }
+    }
+    for format in [
+        "%Y-%m-%dT%H:%M:%S%.f",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y%m%dT%H%M%S%.f",
+        "%Y%m%dT%H%M%S",
+    ] {
+        if let Ok(parsed) = NaiveDateTime::parse_from_str(&normalized, format) {
+            return Some(parsed.and_utc());
+        }
+    }
+    for format in ["%Y-%m-%d", "%Y%m%d"] {
+        if let Ok(parsed) = NaiveDate::parse_from_str(&normalized, format) {
+            return Some(parsed.and_time(NaiveTime::MIN).and_utc());
+        }
+    }
+    None
 }
 
 #[must_use]

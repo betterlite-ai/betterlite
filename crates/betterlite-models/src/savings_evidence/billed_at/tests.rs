@@ -14,7 +14,10 @@ use super::{BilledAt, coerce_billed_at, decode_billed_at};
 #[case::fractional_seconds("2024-03-01T10:00:00.5Z", Some("2024-03-01T10:00:00.500+00:00"))]
 #[case::empty("", None)]
 #[case::not_a_date("not-a-date", None)]
-#[case::naive_without_offset("2024-03-01T10:00:00", None)]
+#[case::naive_without_offset("2024-03-01T10:00:00", Some("2024-03-01T10:00:00+00:00"))]
+#[case::date_only("2024-03-01", Some("2024-03-01T00:00:00+00:00"))]
+#[case::offset_without_colon("2024-03-01T10:00:00+0200", Some("2024-03-01T08:00:00+00:00"))]
+#[case::basic_format("20240301T100000", Some("2024-03-01T10:00:00+00:00"))]
 #[case::doubled_marker("2024-03-01T10:00:00ZZ", None)]
 fn decode_billed_at_matches_coerced_iso_offsets(
     #[case] text: &str,
