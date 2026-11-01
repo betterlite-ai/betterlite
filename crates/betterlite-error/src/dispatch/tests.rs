@@ -129,6 +129,24 @@ fn native_errors_native_error_tests_behavior(
 }
 
 #[test]
+fn openai_family_body_fields_survive_the_raw_exception_to_openai_body_conversion() {
+    let mut input = raw("groq", "boom", Some(400));
+    input.body = Some(RawExceptionBody {
+        kind: Some("invalid_request_error".to_owned()),
+        param: Some("messages".to_owned()),
+        code: Some("missing_field".to_owned()),
+        message: None,
+        error: None,
+    });
+    let ErrorClass::BadRequest(context) = dispatch(&DispatchInput::Raw(input), &redactor()) else {
+        panic!("expected BadRequest");
+    };
+    assert_eq!(context.body_type.as_deref(), Some("invalid_request_error"));
+    assert_eq!(context.body_param.as_deref(), Some("messages"));
+    assert_eq!(context.body_code.as_deref(), Some("missing_field"));
+}
+
+#[test]
 fn litellm_proxy_unconstructible_name_short_circuits_to_the_empty_identity_fallback() {
     let input = DispatchInput::Raw(raw(
         "litellm_proxy",
