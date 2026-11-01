@@ -73,6 +73,19 @@ roles:
         effort: xhigh
         attempts: 1
         timeout_minutes: 45
+  parity_reviewer:
+    instructions: roles/parity-reviewer.md
+    ladder:
+      - runner: claude-reviewer
+        model: opus
+        effort: high
+        attempts: 1
+        timeout_minutes: 45
+      - runner: codex-reviewer
+        model: gpt-6-astra
+        effort: xhigh
+        attempts: 1
+        timeout_minutes: 45
   planner:
     instructions: roles/planner.md
     ladder:
