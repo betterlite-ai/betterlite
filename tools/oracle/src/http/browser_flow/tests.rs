@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, VecDeque};
 use std::fs;
 use std::io::Error;
 use std::net::TcpListener;
+use std::str;
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
@@ -73,7 +74,7 @@ impl StubServer {
             .build()
             .expect("stub runtime builds");
         let state = Arc::new(StubState {
-            answers: Mutex::new(answers.into()),
+            answers: Mutex::new(VecDeque::from(answers)),
             received: Mutex::new(Vec::new()),
         });
         let router = Router::new()
@@ -150,7 +151,7 @@ async fn respond(
         .map(|(name, value)| {
             (
                 name.to_string(),
-                std::str::from_utf8(value.as_bytes())
+                str::from_utf8(value.as_bytes())
                     .unwrap_or_default()
                     .to_owned(),
             )
@@ -161,8 +162,7 @@ async fn respond(
         .lock()
         .expect("stub state lock")
         .push((path, headers));
-    let mut answers = state.answers.lock().expect("stub state lock");
-    let Some(answer) = answers.pop_front() else {
+    let Some(answer) = state.answers.lock().expect("stub state lock").pop_front() else {
         return AxumResponse::builder()
             .status(StatusCode::INTERNAL_SERVER_ERROR)
             .body(Body::empty())
@@ -210,10 +210,60 @@ fn capture(name: &str, source: CaptureSource) -> Capture {
 }
 
 fn case_invalid_message(error: &OracleError) -> &str {
-    match error {
-        OracleError::CaseInvalid { message, .. } => message,
-        other => panic!("expected a case-invalid error, got {other:?}"),
-    }
+    let OracleError::CaseInvalid { message, .. } = error else {
+        panic!("expected a case-invalid error, got {error:?}");
+    };
+    message
+}
+
+fn interpolation_start_step() -> Step {
+    step(
+        "/start",
+        BTreeMap::new(),
+        vec![
+            capture(
+                "cookie_value",
+                CaptureSource::Cookie {
+                    name: "session".to_owned(),
+                },
+            ),
+            capture(
+                "header_value",
+                CaptureSource::Header {
+                    name: "x-flow-token".to_owned(),
+                },
+            ),
+            capture(
+                "nonce",
+                CaptureSource::Body {
+                    pointer: "/flow/nonce".to_owned(),
+                },
+            ),
+        ],
+        false,
+    )
+}
+
+fn interpolation_next_step() -> Step {
+    step(
+        "/next?n={{capture:nonce:query}}",
+        BTreeMap::from([
+            (
+                "x-echo".to_owned(),
+                "{{capture:header_value:raw}}".to_owned(),
+            ),
+            (
+                "cookie-check".to_owned(),
+                "{{capture:cookie_value:form}}".to_owned(),
+            ),
+        ]),
+        Vec::new(),
+        false,
+    )
+}
+
+fn interpolation_steps() -> Vec<Step> {
+    vec![interpolation_start_step(), interpolation_next_step()]
 }
 
 #[test]
@@ -225,56 +275,14 @@ fn interpolates_captures_into_a_later_step_with_each_encoding() {
                 ("set-cookie", "session=abc123; Path=/".to_owned()),
                 ("x-flow-token", "xyz789".to_owned()),
             ],
-            r#"{"flow":{"nonce":"non-ce-7"}}"#,
+            r#"{"flow":{"nonce":"nonceabc7"}}"#,
         ),
         answer(200, vec![], "done"),
     ]);
-    let steps = vec![
-        step(
-            "/start",
-            BTreeMap::new(),
-            vec![
-                capture(
-                    "cookie_value",
-                    CaptureSource::Cookie {
-                        name: "session".to_owned(),
-                    },
-                ),
-                capture(
-                    "header_value",
-                    CaptureSource::Header {
-                        name: "x-flow-token".to_owned(),
-                    },
-                ),
-                capture(
-                    "nonce",
-                    CaptureSource::Body {
-                        pointer: "/flow/nonce".to_owned(),
-                    },
-                ),
-            ],
-            false,
-        ),
-        step(
-            "/next?n={{capture:nonce:query}}",
-            BTreeMap::from([
-                (
-                    "x-echo".to_owned(),
-                    "{{capture:header_value:raw}}".to_owned(),
-                ),
-                (
-                    "cookie-check".to_owned(),
-                    "{{capture:cookie_value:form}}".to_owned(),
-                ),
-            ]),
-            Vec::new(),
-            false,
-        ),
-    ];
     let responses = run_case_steps(
         &client().expect("test client builds"),
         &server.base_url,
-        &steps,
+        &interpolation_steps(),
     )
     .expect("steps run");
     assert_eq!(responses.len(), 2);
@@ -287,7 +295,10 @@ fn interpolates_captures_into_a_later_step_with_each_encoding() {
         server.received_header(1, "cookie-check"),
         Some("abc123".to_owned())
     );
-    assert_eq!(server.received_path(1), Some("/next?n=non-ce-7".to_owned()));
+    assert_eq!(
+        server.received_path(1),
+        Some("/next?n=nonceabc7".to_owned())
+    );
     let cookie_header = server
         .received_header(1, "cookie")
         .expect("jar sends the cookie back");
