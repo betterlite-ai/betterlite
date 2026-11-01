@@ -1,0 +1,13 @@
+id: B5099
+milestone: M1 openai data plane
+title: Vertex 403 status and body error code reuse
+status: todo
+depends_on: [B240]
+file: tasks/B5099-vertex-error-status.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
