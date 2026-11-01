@@ -48,6 +48,12 @@ pub(crate) struct WithRowEmailArgs {
 }
 
 #[derive(serde::Deserialize)]
+pub(crate) struct RawIdentity {
+    user_id: Option<String>,
+    user_email: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
 #[serde(tag = "operation")]
 pub(crate) enum Input {
     #[serde(rename = "validate")]
@@ -61,7 +67,7 @@ pub(crate) enum Input {
     #[serde(rename = "with_row_email")]
     WithRowEmail(WithRowEmailArgs),
     #[serde(rename = "duplicate_indexes")]
-    DuplicateIndexes { requests: Vec<MemberIdentity> },
+    DuplicateIndexes { requests: Vec<RawIdentity> },
     #[serde(rename = "eq_filter")]
     EqFilter { field: String, value: String },
     #[serde(rename = "in_filter")]
@@ -142,8 +148,12 @@ fn run_with_row_email(args: &WithRowEmailArgs) -> crate::helpers::HelperResult {
     to_json(&with_row_email(request, &args.email_of))
 }
 
-fn run_duplicate_indexes(requests: &[MemberIdentity]) -> crate::helpers::HelperResult {
-    let indexes = duplicate_member_indexes(requests);
+fn run_duplicate_indexes(requests: &[RawIdentity]) -> crate::helpers::HelperResult {
+    let identities = requests
+        .iter()
+        .map(|raw| build_identity(raw.user_id.as_deref(), raw.user_email.as_deref()))
+        .collect::<Result<Vec<MemberIdentity>, _>>()?;
+    let indexes = duplicate_member_indexes(&identities);
     to_json(&indexes.into_iter().collect::<Vec<usize>>())
 }
 

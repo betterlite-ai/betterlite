@@ -235,10 +235,14 @@ fn or_clause_order_empty() {
     let first = eq_filter("user_id", "u1".to_owned());
     let second = eq_filter("user_id", "u2".to_owned());
     let any = AnyFilter {
-        or: vec![first.clone(), second.clone()],
+        or: vec![first, second],
     };
-    assert_eq!(any.or, vec![first, second]);
+    let encoded = serde_json::to_value(&any).expect("serializable");
+    assert_eq!(encoded["OR"][0]["user_id"], "u1");
+    assert_eq!(encoded["OR"][1]["user_id"], "u2");
+    assert_eq!(encoded["OR"].as_array().expect("array").len(), 2);
 
     let empty = AnyFilter { or: Vec::new() };
-    assert!(empty.or.is_empty());
+    let empty_encoded = serde_json::to_value(&empty).expect("serializable");
+    assert_eq!(empty_encoded["OR"].as_array().expect("array").len(), 0);
 }
