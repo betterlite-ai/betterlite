@@ -15,7 +15,7 @@ pub struct AlephAlphaExceptionInput {
     pub message: Option<String>,
 }
 
-// a status present but unmatched, and a missing status_code attribute, both crash with AttributeError in LiteLLM; betterlite has nothing typed to hand back in either case, so both fall through as None
+// a status present but unmatched, and a missing status_code attribute, both re-raise the original provider exception unmodified in LiteLLM; betterlite has no typed class for that, so both fall through as None
 #[must_use]
 pub fn map_aleph_alpha_exception(input: &AlephAlphaExceptionInput) -> Option<ErrorClass> {
     if let Some(class) = text_classification(input) {
