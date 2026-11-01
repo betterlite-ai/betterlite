@@ -67,24 +67,19 @@ impl WebSearchInterceptionState {
         stream: bool,
         custom_llm_provider: &str,
     ) -> Result<Option<ToolsDict>, LoopEligibilityError> {
-        let has_search_tool = tools.unwrap_or(&[]).iter().any(is_web_search_tool);
-        if !self.provider_allowed(custom_llm_provider) || !has_search_tool {
-            return Ok(None);
-        }
-        let response: Response = serde_json::from_str(response_json)?;
-        let (should_intercept, tool_calls) =
-            WebSearchTransformation::transform_request(&response, stream, "anthropic")?;
-        if !should_intercept {
-            return Ok(None);
-        }
-        let raw: ResponseJson = serde_json::from_str(response_json)?;
-        Ok(Some(ToolsDict {
-            tool_calls,
-            tool_type: WEBSEARCH_TOOL_TYPE,
-            provider: custom_llm_provider.to_owned(),
+        let request = GateRequest {
+            response_json,
+            tools,
+            stream,
+            custom_llm_provider,
+        };
+        let spec = GateSpec {
+            has_tool: is_web_search_tool,
+            dialect: "anthropic",
             response_format: "anthropic",
-            thinking_blocks: Some(extract_thinking_blocks(&raw)),
-        }))
+            include_thinking: true,
+        };
+        self.run_gate(request, spec)
     }
 
     pub fn chat_completion_gate(
@@ -94,23 +89,19 @@ impl WebSearchInterceptionState {
         stream: bool,
         custom_llm_provider: &str,
     ) -> Result<Option<ToolsDict>, LoopEligibilityError> {
-        let has_search_tool = tools.unwrap_or(&[]).iter().any(is_chat_web_search_tool);
-        if !self.provider_allowed(custom_llm_provider) || !has_search_tool {
-            return Ok(None);
-        }
-        let response: Response = serde_json::from_str(response_json)?;
-        let (should_intercept, tool_calls) =
-            WebSearchTransformation::transform_request(&response, stream, "openai")?;
-        if !should_intercept {
-            return Ok(None);
-        }
-        Ok(Some(ToolsDict {
-            tool_calls,
-            tool_type: WEBSEARCH_TOOL_TYPE,
-            provider: custom_llm_provider.to_owned(),
+        let request = GateRequest {
+            response_json,
+            tools,
+            stream,
+            custom_llm_provider,
+        };
+        let spec = GateSpec {
+            has_tool: is_chat_web_search_tool,
+            dialect: "openai",
             response_format: "openai",
-            thinking_blocks: None,
-        }))
+            include_thinking: false,
+        };
+        self.run_gate(request, spec)
     }
 
     pub fn responses_gate(
@@ -120,25 +111,48 @@ impl WebSearchInterceptionState {
         stream: bool,
         custom_llm_provider: &str,
     ) -> Result<Option<ToolsDict>, LoopEligibilityError> {
-        let has_search_tool = tools
-            .unwrap_or(&[])
-            .iter()
-            .any(is_web_search_tool_responses);
-        if !self.provider_allowed(custom_llm_provider) || !has_search_tool {
+        let request = GateRequest {
+            response_json,
+            tools,
+            stream,
+            custom_llm_provider,
+        };
+        let spec = GateSpec {
+            has_tool: is_web_search_tool_responses,
+            dialect: "responses",
+            response_format: "responses",
+            include_thinking: false,
+        };
+        self.run_gate(request, spec)
+    }
+
+    fn run_gate(
+        &self,
+        request: GateRequest<'_>,
+        spec: GateSpec,
+    ) -> Result<Option<ToolsDict>, LoopEligibilityError> {
+        let has_search_tool = request.tools.unwrap_or(&[]).iter().any(spec.has_tool);
+        if !self.provider_allowed(request.custom_llm_provider) || !has_search_tool {
             return Ok(None);
         }
-        let response: Response = serde_json::from_str(response_json)?;
+        let response: Response = serde_json::from_str(request.response_json)?;
         let (should_intercept, tool_calls) =
-            WebSearchTransformation::transform_request(&response, stream, "responses")?;
+            WebSearchTransformation::transform_request(&response, request.stream, spec.dialect)?;
         if !should_intercept {
             return Ok(None);
         }
+        let thinking_blocks = if spec.include_thinking {
+            let raw: ResponseJson = serde_json::from_str(request.response_json)?;
+            Some(extract_thinking_blocks(&raw))
+        } else {
+            None
+        };
         Ok(Some(ToolsDict {
             tool_calls,
             tool_type: WEBSEARCH_TOOL_TYPE,
-            provider: custom_llm_provider.to_owned(),
-            response_format: "responses",
-            thinking_blocks: None,
+            provider: request.custom_llm_provider.to_owned(),
+            response_format: spec.response_format,
+            thinking_blocks,
         }))
     }
 
@@ -150,6 +164,22 @@ impl WebSearchInterceptionState {
             .iter()
             .any(|provider| provider == custom_llm_provider)
     }
+}
+
+#[derive(Clone, Copy)]
+struct GateRequest<'gate> {
+    response_json: &'gate str,
+    tools: Option<&'gate [Tool]>,
+    stream: bool,
+    custom_llm_provider: &'gate str,
+}
+
+#[derive(Clone, Copy)]
+struct GateSpec {
+    has_tool: fn(&Tool) -> bool,
+    dialect: &'static str,
+    response_format: &'static str,
+    include_thinking: bool,
 }
 
 fn extract_thinking_blocks(response: &ResponseJson) -> Vec<ResponseJson> {
