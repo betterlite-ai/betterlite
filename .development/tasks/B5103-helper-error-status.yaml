@@ -35,7 +35,8 @@ description: >-
   Native side. HelperError.status stays Option<u16>, the wire field, and no new type comes in. A helper writes the
   status the betterlite error already holds when it holds one. Otherwise it writes the code it mirrors as a
   reqwest::StatusCode constant with as_u16(), the way b3779.rs writes error.status().as_u16(). reqwest is already an
-  oracle dependency. Only the oracle helpers change, and no product crate gains a status method.
+  oracle dependency. No product crate gains a status method. The one product change is B3771's existing
+  GraySwanGuardrailAPIError::status_code(), in the Gray Swan paragraph below.
 
 
   Lasso, in tools/oracle/src/helpers/guardrails/b3778.rs. lasso_failure maps LassoError::Blocked to HTTPException,
@@ -77,10 +78,16 @@ description: >-
   (L315-L335). For a timeout that status is 408: the HTTP handler raises litellm.Timeout (http_handler.py L852-L870),
   and Timeout sets status_code to 408 (exceptions.py L357-L374). For an error response it is the upstream status,
   from MaskedHTTPStatusError (http_handler.py L556-L604). For a connection failure, a bad header, a body that is too
-  large or a body that is not JSON it is None. B3771's product GraySwanGuardrailAPIError::status_code() answers 400
-  for every variant, so the helper maps the variant itself and leaves that method alone. Timeout writes
-  StatusCode::REQUEST_TIMEOUT, HttpStatus { status } writes status.as_u16(), Blocked writes 400, and Request,
-  InvalidHeader, ResponseTooLarge and ResponseJson write None.
+  large or a body that is not JSON it is None. B3771's GraySwanGuardrailAPIError::status_code() in
+  crates/betterlite-guardrails/src/grayswan/error.rs answers 400 for every variant, so a timeout would reach the
+  client as 400 where LiteLLM answers 408. Fix it to answer what the proxy sends: the proxy takes an int status_code
+  from 400 to 599 and answers 500 for anything else, None included (common_request_processing.py L3700-L3772). So
+  Timeout answers REQUEST_TIMEOUT, HttpStatus { status } answers status when it is from 400 to 599 and
+  INTERNAL_SERVER_ERROR otherwise, Blocked answers BAD_REQUEST, and Request, InvalidHeader, ResponseTooLarge and
+  ResponseJson answer INTERNAL_SERVER_ERROR. grayswan_error_status_follows_litellm in
+  crates/betterlite-guardrails/src/grayswan/tests.rs asserts each variant. The helper writes the raw status the
+  Python exception carries: 408 for Timeout, status.as_u16() for HttpStatus, 400 for Blocked, and None for Request,
+  InvalidHeader, ResponseTooLarge and ResponseJson.
 
 
   Generic guardrail API, in B3771's b3771/generic.rs. A BLOCKED verdict raises GuardrailRaisedException
@@ -160,6 +167,8 @@ scope:
   - tools/oracle/cases/helpers/schema-definitions/expansion-limit.yaml
   - tools/oracle/cases/helpers/tool-arguments/unrepairable.yaml
   - tools/oracle/cases/helpers/prompt-template/factory-ollama-role.yaml
+  - crates/betterlite-guardrails/src/grayswan/error.rs
+  - crates/betterlite-guardrails/src/grayswan/tests.rs
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3700-L3772
@@ -230,6 +239,12 @@ dod:
   proof:
   - native-status
 - text: >-
+    GraySwanGuardrailAPIError::status_code() answers 408 for Timeout, the upstream status for HttpStatus (500 outside
+    400 to 599), 400 for Blocked and 500 for Request, InvalidHeader, ResponseTooLarge and ResponseJson.
+    grayswan_error_status_follows_litellm proves each variant.
+  proof:
+  - grayswan-status
+- text: >-
     The status cases match LiteLLM: lasso/block-action-raises-400, deepkeep/blocked-action,
     bedrock-other-image-models/image-provider-error, builtin-prompts/ollama-role, prompt-template/factory-ollama-role,
     grayswan/violation-block-action, grayswan/error-timeout, grayswan/error-fail-open-false and
@@ -264,6 +279,10 @@ checks:
     why: a native helper still writes None where the Python exception carries a status
     run: |-
       list=$(cargo nextest list --locked -p betterlite-oracle -E 'test(/^helpers::(guardrails|prompts|bedrock)::/)' --message-format oneline) && for name in guardrails::b3778::tests::lasso_failures_carry_the_python_status guardrails::b3767::tests::deepkeep_failures_carry_the_python_status guardrails::b3771::tests::grayswan_failures_carry_the_python_status guardrails::b3771::tests::generic_block_carries_status_400 prompts::builtin_prompts::tests::role_error_carries_status_400 prompts::prompt_factory::tests::factory_role_error_carries_status_400 bedrock::other_image_models::tests::provider_error_carries_its_status; do grep -q "helpers::$name$" <<< "$list" || { echo "missing test $name"; exit 1; }; done && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::(guardrails::(b3778|b3767|b3771)|prompts::(builtin_prompts|prompt_factory)|bedrock::other_image_models)::tests::/)'
+  - id: grayswan-status
+    why: a Gray Swan error still answers 400 where LiteLLM's proxy answers 408, the upstream status or 500
+    run: |-
+      cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan::tests::grayswan_error_status_follows_litellm/)'
   - id: warning-comparison
     why: a warning message past index 0 is still compared, or a subject difference names the wrong pointer
     run: |-
@@ -305,7 +324,7 @@ out_of_scope:
 - Adapters that catch a status exception and return it as a value keep their output (b3779.py, bedrock_request_policy.py, azure_content_policy.py, bedrock_services_file_content.py, provider_base_helpers.py, database_faults.py, messages_errors.py, error_class.py, error_facts.py, openai_base_config.py).
 - tools/oracle/src/helpers/bedrock/request_policy.rs already writes the BedrockError status.
 - httpx.HTTPStatusError has no status_code attribute, so dispatch.py writes None for it. blog_feed's fetch_rss_feed could raise one, but no case gives it an error status.
-- A status method on product error types, and B3771's GraySwanGuardrailAPIError::status_code() answering 400 for every variant. The helper maps the variants itself.
+- A status method on any product error type other than GraySwanGuardrailAPIError.
 - HTTP cases. Their status already goes through the proxy and belongs to each feature's own task.
 pitfalls:
 - Editing dispatch.py changes the answer cache key of every helper case (KEYED_FILES in tools/oracle/src/helpers/answers.rs), so the first oracle run asks LiteLLM again for all of them and takes long.
@@ -313,7 +332,8 @@ pitfalls:
 - getattr returns Any and reportAny is an error here, so declare the value as object before narrowing it.
 - A stale /error/message ignore fails a case before its status is compared; remove the entry before reading a status difference.
 - GuardrailRaisedException gets its 400 from the constructor default, so deepkeep.py and generic_guardrail_api.py never write status_code=400.
-- Gray Swan's 408 comes from litellm.Timeout inside the HTTP handler, not from GraySwanGuardrailAPIError and not from B3771's status_code().
+- Gray Swan's 408 comes from litellm.Timeout inside the HTTP handler and reaches GraySwanGuardrailAPIError through _call_grayswan_api.
+- status_code() answers 500 for a status-less Gray Swan variant because the proxy does, but the helper wire writes None for it. Don't feed status_code() into the helper for those four.
 - The proxy answers 500 for an exception with no status, but the helper wire keeps None for it on both sides; never write 500 for a status-less exception.
 review_level: standard
 budget:
