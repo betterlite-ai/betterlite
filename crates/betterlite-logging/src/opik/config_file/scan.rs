@@ -39,9 +39,7 @@ fn split_lines(contents: &str) -> Vec<&str> {
             _ => {}
         }
     }
-    if start < contents.len() {
-        lines.push(contents.get(start..).unwrap_or_default());
-    }
+    lines.push(contents.get(start..).unwrap_or_default());
     lines
 }
 
