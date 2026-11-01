@@ -19,11 +19,12 @@ Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Js
 def run_uuid() -> Json:
     created = opik_utils.create_uuid7()
     parsed = uuid.UUID(created)
-    return {
+    result = {
         "version": parsed.version,
         "variant": parsed.bytes[8] >> 6,
         "canonical": str(parsed) == created,
     }
+    return cast("Json", json.loads(json.dumps(result)))
 
 
 def run_config(input_value: dict[str, Json]) -> Json:
@@ -48,7 +49,7 @@ def run_config(input_value: dict[str, Json]) -> Json:
                 )
                 for lookup in lookups
             ]
-    return cast("Json", {"values": values})
+    return cast("Json", json.loads(json.dumps({"values": values})))
 
 
 def run_metadata(input_value: dict[str, Json]) -> Json:
