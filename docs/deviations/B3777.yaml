@@ -1,0 +1,8 @@
+task: B3777
+deviations:
+  - what: betterlite raises HTTPException with status 500 (matching LiteLLM) and detail containing error, javelin_guardrail_response and reject_prompt, but error messages are betterlite's own wording.
+    why: Error messages are betterlite's own per rule errors-match-litellm; status code and structure match LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/javelin/javelin.py#L260-L267
+  - what: Javelin does not parse response fields like language or other assessment types; unrecognized assessment types are silently passed over without raising an error.
+    why: LiteLLM's implementation iterates through assessment types without validation and only raises on request_reject true; betterlite follows the same pattern.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/javelin/javelin.py#L216-L242
