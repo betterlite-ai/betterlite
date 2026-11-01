@@ -22,8 +22,10 @@ description: >-
   margins remain calculable when directly configured, as in the pinned helpers.
   Use B204's checked Decimal conversion and checked arithmetic for base * discount,
   base - saved, base * percentage + fixed, and base + margin; expose typed overflow errors.
-  Return every component even when zero. Do not bake discount-before-margin ordering into
-  this leaf's independent functions; B068's caller owns the order. loads_cost_adjustments
+  Return every component even when zero. Discount and margin share one entry type, one
+  entry parser and one apply function that takes the adjustment kind, so neither repeats
+  the other's code. Do not bake discount-before-margin ordering into it: B068's caller
+  calls it once per kind and owns the order. loads_cost_adjustments
   must exercise both settings, provider-presence precedence, unsupported legacy shapes and
   absent defaults through the real loader. Extend config_yaml replay seeds rather than
   introducing another config parser. Add the cost_adjustments pure helper adapter that
