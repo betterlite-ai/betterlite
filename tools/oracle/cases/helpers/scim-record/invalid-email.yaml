@@ -8,6 +8,4 @@ call:
       emails: [{value: ada@localhost}]
 env: {}
 compare:
-  ignore:
-    - pointer: /error/message
-      why: betterlite writes its own error message
+  ignore: []

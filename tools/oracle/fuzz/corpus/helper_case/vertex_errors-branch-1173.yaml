@@ -1,0 +1,13 @@
+kind: helper
+name: vertex-errors-branch-1173
+call:
+  vertex_errors:
+    model: gemini-1.5-pro
+    custom_llm_provider: vertex_ai
+    error_str: "This model's maximum context length is 32760 tokens, however you requested 40000 tokens"
+    status_code: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

@@ -7,6 +7,4 @@ call:
       optional_params: {prompt: already set, aspect_ratio: "16:9"}
 env: {}
 compare:
-  ignore:
-    - pointer: /error/message
-      why: Python's message embeds the TypedDict constructor's fully qualified name
+  ignore: []

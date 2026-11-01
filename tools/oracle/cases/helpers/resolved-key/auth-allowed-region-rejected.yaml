@@ -5,7 +5,4 @@ call:
     function: auth
     value: {allowed_model_region: global}
 env: {}
-compare:
-  ignore:
-    - pointer: /error/message
-      why: betterlite writes its own validation message
+compare: {ignore: []}
