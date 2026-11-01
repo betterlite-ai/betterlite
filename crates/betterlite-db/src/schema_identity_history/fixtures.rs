@@ -141,19 +141,19 @@ const PINNED_POLICY_PIPELINE: MigrationFile = MigrationFile {
 const PINNED_END_USER_PERMISSIONS: MigrationFile = MigrationFile {
     directory: "20260214185341_object_permissions_for_end_users",
     bytes: include_bytes!("fixtures/20260214185341_object_permissions_for_end_users.sql"),
-    sha256: "be60adf5a2b5cee92eed4e17e2d213d0a12c1debd55a637e7ba05e3a234bb2b3",
+    sha256: "982686895ff5a4603a92f5e44f706e6644fd0f7451e6bf551bf6fb62bf00a87f",
 };
 
 const PINNED_KEY_LAST_ACTIVE: MigrationFile = MigrationFile {
     directory: "20260218231534_add_last_active_to_key_table",
     bytes: include_bytes!("fixtures/20260218231534_add_last_active_to_key_table.sql"),
-    sha256: "7f63ab0118b1e6582eb284dd957c708ff77efe0463219f895a2dee48f0beb6e3",
+    sha256: "e70be91b037e49aa8b9af5715858d4c61744543d571719c4c49d4195202ab72a",
 };
 
 const PINNED_DELETED_KEY_PROJECT_ID: MigrationFile = MigrationFile {
     directory: "20260219105005_add_project_id_to_deleted_keys",
     bytes: include_bytes!("fixtures/20260219105005_add_project_id_to_deleted_keys.sql"),
-    sha256: "a8a34c4f3f2e5db16ee907152ebf836f5a63aea777798a66069c8af7997869a4",
+    sha256: "1695c1dc949d9859eaed984dbf6e06cb5972b5efafffb83ed567b7385d2dd5bc",
 };
 
 pub(super) const PINNED_MIGRATION_CATALOG: MigrationCatalog = MigrationCatalog {

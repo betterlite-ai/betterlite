@@ -438,7 +438,7 @@ async fn assert_rule(client: &Client, conname: &str, update_rule: char, delete_r
     assert_eq!(char::from(u8::try_from(delete).unwrap()), delete_rule);
 }
 
-fn migration_sql_through(directory: &str) -> String {
+fn baseline_prefix_sql() -> String {
     let mut sql = str::from_utf8(BASELINE_MIGRATION.bytes).unwrap().to_owned();
     for file in DAILY_USAGE_CATALOG.files {
         sql.push_str(str::from_utf8(file.bytes).unwrap());
@@ -446,6 +446,11 @@ fn migration_sql_through(directory: &str) -> String {
     for file in MANAGED_RESOURCES_CATALOG.files {
         sql.push_str(str::from_utf8(file.bytes).unwrap());
     }
+    sql
+}
+
+fn migration_sql_through(directory: &str) -> String {
+    let mut sql = baseline_prefix_sql();
     for file in MIGRATION_CATALOG.files {
         sql.push_str(str::from_utf8(file.bytes).unwrap());
         if file.directory == directory {
@@ -461,13 +466,7 @@ fn migration_sql_all() -> String {
 }
 
 fn pinned_migration_sql_all() -> String {
-    let mut sql = str::from_utf8(BASELINE_MIGRATION.bytes).unwrap().to_owned();
-    for file in DAILY_USAGE_CATALOG.files {
-        sql.push_str(str::from_utf8(file.bytes).unwrap());
-    }
-    for file in MANAGED_RESOURCES_CATALOG.files {
-        sql.push_str(str::from_utf8(file.bytes).unwrap());
-    }
+    let mut sql = baseline_prefix_sql();
     for file in PINNED_MIGRATION_CATALOG.files {
         sql.push_str(str::from_utf8(file.bytes).unwrap());
     }
