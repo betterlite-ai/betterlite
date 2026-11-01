@@ -59,6 +59,14 @@ macro_rules! provider_of {
     Some("context_window_exceeded"),
     Some("bedrock_mantle")
 )]
+// the "validation_error" keyword alone satisfies the first mantle guard just as "invalid_request_error" does
+#[case::mantle_validation_error_keyword(
+    "bedrock_mantle",
+    "validation_error: prompt tokens (500) exceed model maximum (400)",
+    None,
+    Some("context_window_exceeded"),
+    Some("bedrock_mantle")
+)]
 #[case::branch_891_context_window_text(
     "bedrock",
     "too many tokens were supplied",
@@ -217,6 +225,21 @@ fn aws_errors_behavior_tests_behavior(
             assert_eq!(provider_of!(value), Some(expected));
         }
     }
+}
+
+#[test]
+fn message_carries_the_family_specific_reason() {
+    let mapped = map_bedrock_exception(&input(
+        "bedrock",
+        "AccessDeniedException: no permission",
+        None,
+    ))
+    .expect("AccessDeniedException matches the permission_denied predicate");
+    let value = serde_json::to_value(&mapped).expect("ErrorClass always serializes");
+    assert_eq!(
+        value["message"],
+        serde_json::json!("bedrock: the provider denied permission for the request")
+    );
 }
 
 #[test]

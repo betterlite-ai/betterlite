@@ -162,6 +162,21 @@ fn aws_errors_behavior_tests_behavior(
 }
 
 #[test]
+fn message_carries_the_family_specific_reason() {
+    let mapped = map_sagemaker_exception(&input(
+        "sagemaker",
+        "Unable to locate credentials for this request",
+        None,
+    ))
+    .expect("the missing-credentials predicate matches");
+    let value = serde_json::to_value(&mapped).expect("ErrorClass always serializes");
+    assert_eq!(
+        value["message"],
+        serde_json::json!("sagemaker: the provider rejected the request body")
+    );
+}
+
+#[test]
 fn text_predicate_wins_over_a_competing_status_code() {
     let mapped = map_sagemaker_exception(&input(
         "my_sagemaker_proxy",
