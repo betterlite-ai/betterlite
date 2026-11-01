@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::fs;
 use std::sync::{Arc, Mutex};
 
 use rstest::rstest;
@@ -104,6 +105,27 @@ fn lazy_prompt_manager_reports_missing_source_with_the_exact_message(
         error.to_string(),
         "Either prompt_directory or prompt_data must be set before using dotprompt manager. Set litellm.global_prompt_directory, initialize with prompt_directory parameter, or provide prompt_data."
     );
+}
+
+#[test]
+fn the_prompt_manager_is_built_once_and_not_reloaded_on_later_calls() {
+    let directory = tempfile::tempdir().expect("creates a temp directory");
+
+    let manager = DotpromptManager::new(
+        Some(directory.path().display().to_string()),
+        None,
+        None,
+        None,
+        &GlobalPromptDirectory::default(),
+    )
+    .expect("no prompt_data to decode");
+
+    manager.should_run_prompt_management(Some("late"));
+
+    fs::write(directory.path().join("late.prompt"), "User: hi")
+        .expect("writes a file after the manager was already built");
+
+    assert!(!manager.should_run_prompt_management(Some("late")));
 }
 
 #[test]

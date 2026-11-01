@@ -31,6 +31,14 @@ fn message(role: &str, content: &str) -> AllMessageValues {
     vec![message("user", ""), message("assistant", "hi")]
 )]
 #[case::trailing_empty_content_is_dropped("User: hi\nAssistant:", vec![message("user", "hi")])]
+#[case::a_lone_role_prefix_with_no_content_becomes_a_single_user_message(
+    "System:",
+    vec![message("user", "System:")]
+)]
+#[case::indented_lines_are_trimmed_before_the_prefix_check(
+    "System: a\n  User: b\n   more",
+    vec![message("system", "a"), message("user", "b\nmore")]
+)]
 #[case::empty_input_produces_no_messages("", vec![])]
 #[case::whitespace_only_input_produces_no_messages("   \n  ", vec![])]
 fn converts_rendered_content_to_messages(

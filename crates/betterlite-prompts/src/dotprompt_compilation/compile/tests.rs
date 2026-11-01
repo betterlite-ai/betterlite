@@ -36,6 +36,50 @@ fn manager_with_one_template(content: &str, metadata: Object) -> DotpromptManage
     .expect("valid prompt data")
 }
 
+fn manager_with_two_versions() -> DotpromptManager {
+    let mut base_metadata = Object::new();
+    base_metadata.insert("model".to_owned(), Json::Text("base-model".to_owned()));
+    let mut base_record = Object::new();
+    base_record.insert("content".to_owned(), Json::Text("User: base".to_owned()));
+    base_record.insert("metadata".to_owned(), Json::Object(base_metadata));
+
+    let mut versioned_metadata = Object::new();
+    versioned_metadata.insert("model".to_owned(), Json::Text("v2-model".to_owned()));
+    let mut versioned_record = Object::new();
+    versioned_record.insert("content".to_owned(), Json::Text("User: v2".to_owned()));
+    versioned_record.insert("metadata".to_owned(), Json::Object(versioned_metadata));
+
+    let mut data = Object::new();
+    data.insert("greeting".to_owned(), Json::Object(base_record));
+    data.insert("greeting.v2".to_owned(), Json::Object(versioned_record));
+
+    DotpromptManager::new(
+        None,
+        None,
+        Some(PromptDataInput::Object(data)),
+        None,
+        &GlobalPromptDirectory::default(),
+    )
+    .expect("valid prompt data")
+}
+
+#[test]
+fn a_requested_version_compiles_the_versioned_template_not_the_base() {
+    let manager = manager_with_two_versions();
+
+    let versioned = manager
+        .compile_prompt_helper(Some("greeting"), None, Some(2))
+        .expect("the v2 template exists");
+    assert_eq!(versioned.prompt_template, vec![message("user", "v2")]);
+    assert_eq!(versioned.prompt_template_model, Some("v2-model".to_owned()));
+
+    let base = manager
+        .compile_prompt_helper(Some("greeting"), None, None)
+        .expect("the base template exists without a version");
+    assert_eq!(base.prompt_template, vec![message("user", "base")]);
+    assert_eq!(base.prompt_template_model, Some("base-model".to_owned()));
+}
+
 #[test]
 fn sync_rejects_a_missing_prompt_id_with_the_exact_message() {
     let manager = manager_with_one_template("User: hi", Object::new());

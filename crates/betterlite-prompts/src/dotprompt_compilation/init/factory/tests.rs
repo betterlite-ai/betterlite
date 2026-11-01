@@ -1,11 +1,14 @@
 #![cfg(test)]
 
+use std::fs;
+
 use betterlite_models::decisions::Json as ContractJson;
 use betterlite_models::prompt_spec::{PromptInfo, PromptLiteLLMParams, PromptSpec};
 use indexmap::IndexMap;
 
 use super::{DotpromptInitializerError, prompt_initializer};
 use crate::dotprompt_compilation::global::GlobalPromptDirectory;
+use crate::dotprompt_compilation::messages::convert_to_messages;
 
 fn litellm_params(
     prompt_id: Option<&str>,
@@ -147,6 +150,91 @@ fn uses_the_registry_id_directly_when_it_has_no_version_suffix() {
         &GlobalPromptDirectory::default(),
     )
     .expect("dotprompt_content alone is a valid source");
+
+    assert!(manager.should_run_prompt_management(Some("greeting")));
+}
+
+#[test]
+fn prompt_file_wins_over_dotprompt_content_when_both_are_given() {
+    let directory = tempfile::tempdir().expect("creates a temp directory");
+    let prompt_path = directory.path().join("greeting.prompt");
+    fs::write(&prompt_path, "User: from file").expect("writes the file content");
+
+    let mut extra = IndexMap::new();
+    extra.insert(
+        "prompt_file".to_owned(),
+        ContractJson::Text(prompt_path.display().to_string()),
+    );
+    let params = litellm_params(None, Some("User: from db"), extra);
+    let spec = prompt_spec("greeting", params);
+
+    let manager = prompt_initializer(
+        &spec.litellm_params,
+        &spec,
+        &GlobalPromptDirectory::default(),
+    )
+    .expect("prompt_file alone is a valid source");
+
+    let client = manager
+        .compile_prompt_helper(Some("greeting"), None, None)
+        .expect("the file template compiles");
+    assert_eq!(
+        client.prompt_template,
+        convert_to_messages("User: from file")
+    );
+}
+
+#[test]
+fn extra_prompt_data_wins_over_dotprompt_content_when_both_are_given() {
+    let mut record = IndexMap::new();
+    record.insert(
+        "content".to_owned(),
+        ContractJson::Text("User: from extra".to_owned()),
+    );
+    let mut prompt_data = IndexMap::new();
+    prompt_data.insert("greeting".to_owned(), ContractJson::Object(record));
+    let mut extra = IndexMap::new();
+    extra.insert("prompt_data".to_owned(), ContractJson::Object(prompt_data));
+
+    let params = litellm_params(None, Some("User: from db"), extra);
+    let spec = prompt_spec("greeting", params);
+
+    let manager = prompt_initializer(
+        &spec.litellm_params,
+        &spec,
+        &GlobalPromptDirectory::default(),
+    )
+    .expect("extra.prompt_data alone is a valid source");
+
+    let client = manager
+        .compile_prompt_helper(Some("greeting"), None, None)
+        .expect("the extra.prompt_data template compiles");
+    assert_eq!(
+        client.prompt_template,
+        convert_to_messages("User: from extra")
+    );
+}
+
+#[test]
+fn prompt_file_alone_is_loaded_under_the_registration_id() {
+    let directory = tempfile::tempdir().expect("creates a temp directory");
+    let prompt_path = directory.path().join("greeting.prompt");
+    fs::write(&prompt_path, "User: hi").expect("writes the file content");
+
+    let mut extra = IndexMap::new();
+    extra.insert(
+        "prompt_file".to_owned(),
+        ContractJson::Text(prompt_path.display().to_string()),
+    );
+    let params = litellm_params(None, None, extra);
+    let spec = prompt_spec("greeting", params);
+
+    let manager = prompt_initializer(
+        &spec.litellm_params,
+        &spec,
+        &GlobalPromptDirectory::default(),
+    )
+    .expect("prompt_file alone is a valid source");
 
     assert!(manager.should_run_prompt_management(Some("greeting")));
 }

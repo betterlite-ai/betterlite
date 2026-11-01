@@ -1,66 +1,23 @@
 #![cfg(test)]
 
-use std::sync::{Arc, Mutex, PoisonError};
+use std::fs;
+use std::sync::PoisonError;
 
 use super::GlobalPromptDirectory;
+use crate::dotprompt_compilation::init::manager::DotpromptManager;
 
 #[test]
-fn fresh_handle_has_no_directory() {
-    let global = GlobalPromptDirectory::default();
+fn a_directory_set_through_a_cloned_handle_is_used_by_a_manager_built_from_the_original() {
+    let directory = tempfile::tempdir().expect("creates a temp directory");
+    fs::write(directory.path().join("greeting.prompt"), "User: hi").expect("writes the seed file");
 
-    assert_eq!(
-        global
-            .0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone(),
-        None
-    );
-}
-
-#[test]
-fn set_then_get_returns_the_directory() {
-    let global = GlobalPromptDirectory(Arc::new(Mutex::new(Some("/prompts".to_owned()))));
-
-    assert_eq!(
-        global
-            .0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone(),
-        Some("/prompts".to_owned())
-    );
-}
-
-#[test]
-fn clones_of_a_handle_share_the_same_directory() {
     let global = GlobalPromptDirectory::default();
     let shared = global.clone();
+    *shared.0.lock().unwrap_or_else(PoisonError::into_inner) =
+        Some(directory.path().display().to_string());
 
-    *shared.0.lock().unwrap_or_else(PoisonError::into_inner) = Some("/other".to_owned());
+    let manager =
+        DotpromptManager::new(None, None, None, None, &global).expect("no prompt_data to decode");
 
-    assert_eq!(
-        global
-            .0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone(),
-        Some("/other".to_owned())
-    );
-}
-
-#[test]
-fn setting_again_overwrites_the_previous_directory() {
-    let global = GlobalPromptDirectory(Arc::new(Mutex::new(Some("/first".to_owned()))));
-
-    *global.0.lock().unwrap_or_else(PoisonError::into_inner) = Some("/second".to_owned());
-
-    assert_eq!(
-        global
-            .0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone(),
-        Some("/second".to_owned())
-    );
+    assert!(manager.should_run_prompt_management(Some("greeting")));
 }
