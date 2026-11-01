@@ -1,0 +1,5 @@
+task: B3761
+deviations:
+  - what: Blocking response synthesizes JSON-serialized error payload, not returning raw detail string.
+    why: Cisco inspection returns structured verdicts; MCP tool output is JSON text content.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L188-L199
