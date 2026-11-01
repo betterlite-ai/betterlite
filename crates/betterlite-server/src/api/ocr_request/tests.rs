@@ -1,9 +1,41 @@
 #![cfg(test)]
 
+use std::fs;
+use std::path::Path;
+
 use betterlite_ocr::json::Json;
 use betterlite_ocr::request_format::RequestFormat;
 
 use super::{FormField, FormValue, OcrDocument, RawOcrRequest, parse_ocr_request};
+
+async fn replay_corpus(dir_name: &str, content_type: &str) -> usize {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("fuzz/corpus")
+        .join(dir_name);
+    let mut count = 0_usize;
+    for entry in fs::read_dir(&root).unwrap() {
+        let body = fs::read(entry.unwrap().path()).unwrap();
+        let raw = RawOcrRequest {
+            content_type: Some(content_type.to_owned()),
+            body,
+            header_req_format: None,
+            cached_form: None,
+        };
+        drop(parse_ocr_request(&raw).await);
+        count = count.saturating_add(1);
+    }
+    count
+}
+
+#[tokio::test]
+async fn replays_the_ocr_json_body_corpus() {
+    assert!(replay_corpus("ocr_json_body", "application/json").await > 0);
+}
+
+#[tokio::test]
+async fn replays_the_ocr_multipart_form_corpus() {
+    assert!(replay_corpus("ocr_multipart_form", "multipart/form-data; boundary=FUZZ").await > 0);
+}
 
 #[tokio::test]
 async fn json_body_is_parsed_when_content_type_is_not_multipart() {

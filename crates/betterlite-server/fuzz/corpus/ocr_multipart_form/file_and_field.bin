@@ -1,0 +1,10 @@
+--FUZZ
+Content-Disposition: form-data; name="file"; filename="a.pdf"
+Content-Type: application/pdf
+
+%PDF-1.4
+--FUZZ
+Content-Disposition: form-data; name="model"
+
+mistral-ocr
+--FUZZ--
