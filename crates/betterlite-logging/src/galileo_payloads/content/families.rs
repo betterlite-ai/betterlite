@@ -61,46 +61,35 @@ fn marker_family_content(
     standard_content(prompt, output_text, Json::Object(prompt.clone()))
 }
 
-// The families whose dump reads straight from the raw request/response dicts rather than a typed object, and whose shape depends on kwargs.call_type.
-enum CallTypeFamily<'val> {
-    RealtimeList(&'val [Json]),
-    PassThroughDict(&'val IndexMap<String, Json>),
-    GenericDict(&'val IndexMap<String, Json>),
-    Unknown,
-}
-
-fn call_type_family_content(
+// litellm only takes the realtime-list branch when call_type == "_arealtime" (galileo.py:601); any other call_type falls through to the final fallback, which an Unknown response also takes.
+fn realtime_list_or_fallback(
     prompt: &IndexMap<String, Json>,
     kwargs: &GalileoKwargs,
-    family: &CallTypeFamily<'_>,
+    items: &[Json],
 ) -> (String, String, Json) {
-    match family {
-        // litellm only takes this branch when call_type == "_arealtime" (galileo.py:601); any other call_type falls through to the final fallback.
-        CallTypeFamily::RealtimeList(items)
-            if kwargs.call_type.as_deref() == Some("_arealtime") =>
-        {
-            realtime_list_content(kwargs, items)
-        }
-        // litellm only takes this branch when call_type == "pass_through_endpoint" (galileo.py:609); any other call_type falls through to the generic dict branch.
-        CallTypeFamily::PassThroughDict(value)
-            if kwargs.call_type.as_deref() == Some("pass_through_endpoint") =>
-        {
-            standard_content(
-                prompt,
-                serialize_galileo_output(value.get("response")),
-                Json::Object(prompt.clone()),
-            )
-        }
-        CallTypeFamily::PassThroughDict(value) | CallTypeFamily::GenericDict(value) => {
-            standard_content(
-                prompt,
-                content_from_dict_response(value),
-                super::messages_or_empty(kwargs),
-            )
-        }
-        CallTypeFamily::RealtimeList(_) | CallTypeFamily::Unknown => {
-            standard_content(prompt, String::new(), super::messages_or_empty(kwargs))
-        }
+    if kwargs.call_type.as_deref() == Some("_arealtime") {
+        return realtime_list_content(kwargs, items);
+    }
+    standard_content(prompt, String::new(), super::messages_or_empty(kwargs))
+}
+
+// litellm only takes the pass-through branch when call_type == "pass_through_endpoint" (galileo.py:609); every other call_type, and a plain GenericDict response, reads straight out of the raw dict instead.
+fn pass_through_or_generic(
+    prompt: &IndexMap<String, Json>,
+    kwargs: &GalileoKwargs,
+    value: &IndexMap<String, Json>,
+) -> (String, String, Json) {
+    match kwargs.call_type.as_deref() {
+        Some("pass_through_endpoint") => standard_content(
+            prompt,
+            serialize_galileo_output(value.get("response")),
+            Json::Object(prompt.clone()),
+        ),
+        _ => standard_content(
+            prompt,
+            content_from_dict_response(value),
+            super::messages_or_empty(kwargs),
+        ),
     }
 }
 
@@ -138,15 +127,12 @@ pub(super) fn response_content(
                 super::messages_or_empty(kwargs),
             )
         }
-        ResponseObj::RealtimeList { items } => {
-            call_type_family_content(prompt, kwargs, &CallTypeFamily::RealtimeList(items))
+        ResponseObj::RealtimeList { items } => realtime_list_or_fallback(prompt, kwargs, items),
+        ResponseObj::PassThroughDict { value } | ResponseObj::GenericDict { value } => {
+            pass_through_or_generic(prompt, kwargs, value)
         }
-        ResponseObj::PassThroughDict { value } => {
-            call_type_family_content(prompt, kwargs, &CallTypeFamily::PassThroughDict(value))
+        ResponseObj::Unknown => {
+            standard_content(prompt, String::new(), super::messages_or_empty(kwargs))
         }
-        ResponseObj::GenericDict { value } => {
-            call_type_family_content(prompt, kwargs, &CallTypeFamily::GenericDict(value))
-        }
-        ResponseObj::Unknown => call_type_family_content(prompt, kwargs, &CallTypeFamily::Unknown),
     }
 }
