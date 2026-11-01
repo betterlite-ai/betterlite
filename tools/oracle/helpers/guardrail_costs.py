@@ -30,6 +30,9 @@ _DECIMAL_BREAKDOWN_FIELDS: Final = (
     "margin_fixed_amount",
     "margin_total_amount",
 )
+_KNOWN_BREAKDOWN_FIELDS: Final = frozenset(
+    (*_STRING_BREAKDOWN_FIELDS, *_DECIMAL_BREAKDOWN_FIELDS, "additional_costs")
+)
 
 
 def _decimal_str(value: float) -> str:
@@ -87,6 +90,12 @@ def _breakdown_json(breakdown: CostBreakdown | None) -> Json:
         if additional_costs is None
         else {key: _decimal_str(value) for key, value in additional_costs.items()}
     )
+    extra: dict[str, Json] = {
+        key: cast("Json", value)
+        for key, value in breakdown.items()
+        if key not in _KNOWN_BREAKDOWN_FIELDS
+    }
+    result["extra"] = extra
     return result
 
 

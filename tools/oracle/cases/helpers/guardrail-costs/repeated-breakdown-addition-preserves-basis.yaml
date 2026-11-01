@@ -8,6 +8,7 @@ call:
         input_cost: 1.0
         output_cost: 2.0
         total_cost: 3.0
+        cache_write_cost: 0.25
       guardrail_costs: [0.5, 1.5]
 compare: {ignore: []}
 env: {}
