@@ -1,8 +1,9 @@
 #![cfg(test)]
 
+use betterlite_models::decisions::Json;
 use rstest::rstest;
+use serde_json::Number;
 
-use super::value::Json;
 use super::{MessagesFakeStream, MessagesFakeStreamError};
 
 fn obj(pairs: Vec<(&str, Json)>) -> Json {
@@ -14,15 +15,34 @@ fn obj(pairs: Vec<(&str, Json)>) -> Json {
 }
 
 fn arr(items: Vec<Json>) -> Json {
-    Json::Array(items)
+    Json::List(items)
 }
 
 fn str_val(value: &str) -> Json {
-    Json::String(value.to_owned())
+    Json::Text(value.to_owned())
 }
 
 fn num(value: i64) -> Json {
-    Json::from(value)
+    Json::Number(Number::from(value))
+}
+
+fn field<'value>(value: &'value Json, key: &str) -> &'value Json {
+    const NULL: Json = Json::Null;
+    match value {
+        Json::Object(fields) => fields.get(key).unwrap_or(&NULL),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => &NULL,
+    }
+}
+
+fn index_matches(data: &Json, index: i64) -> bool {
+    *field(data, "index") == num(index)
+}
+
+fn as_i64(value: &Json) -> Option<i64> {
+    match value {
+        Json::Number(number) => number.as_i64(),
+        Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => None,
+    }
 }
 
 fn parse_frame(frame: &[u8]) -> (String, Json) {
@@ -57,7 +77,7 @@ fn find_block<'frames>(
 ) -> &'frames Json {
     frames
         .iter()
-        .find(|(name, data, _)| name == event && data.get("index") == Some(&Json::from(index)))
+        .find(|(name, data, _)| name == event && index_matches(data, index))
         .map_or_else(
             || panic!("missing {event} at index {index}"),
             |(_, data, _)| data,
@@ -67,10 +87,8 @@ fn find_block<'frames>(
 fn deltas_at(frames: &[(String, Json, Vec<u8>)], index: i64) -> Vec<Json> {
     frames
         .iter()
-        .filter(|(name, data, _)| {
-            name == "content_block_delta" && data.get("index") == Some(&Json::from(index))
-        })
-        .map(|(_, data, _)| data["delta"].clone())
+        .filter(|(name, data, _)| name == "content_block_delta" && index_matches(data, index))
+        .map(|(_, data, _)| field(data, "delta").clone())
         .collect()
 }
 
@@ -215,13 +233,13 @@ fn usage_projection(
     let frames = capture(&response).expect("usage fixture builds frames");
     assert_eq!(frames.len(), 3);
     let (_, start, _) = &frames[0];
-    assert_eq!(start["message"]["id"], expected_id);
-    assert_eq!(start["message"]["role"], expected_role);
-    assert_eq!(start["message"]["usage"], start_usage);
+    assert_eq!(*field(field(start, "message"), "id"), expected_id);
+    assert_eq!(*field(field(start, "message"), "role"), expected_role);
+    assert_eq!(*field(field(start, "message"), "usage"), start_usage);
     let (_, delta, _) = &frames[1];
-    assert_eq!(delta["usage"], delta_usage);
+    assert_eq!(*field(delta, "usage"), delta_usage);
     let (_, stop, _) = &frames[2];
-    assert_eq!(stop["usage"], stop_usage);
+    assert_eq!(*field(stop, "usage"), stop_usage);
 }
 
 fn tool_use_start(id: Json, name: Json) -> Json {
@@ -330,7 +348,10 @@ fn content_block_variants(
     let response = obj(vec![("content", arr(vec![block]))]);
     let frames = capture(&response).expect("content block fixture builds frames");
     assert_eq!(
-        find_block(&frames, "content_block_start", 0)["content_block"],
+        *field(
+            find_block(&frames, "content_block_start", 0),
+            "content_block"
+        ),
         expected_start
     );
     assert_eq!(deltas_at(&frames, 0), expected_deltas);
@@ -353,16 +374,73 @@ fn content_block_variants_index_by_position() {
     let stop_indexes: Vec<i64> = frames
         .iter()
         .filter(|(name, _, _)| name == "content_block_stop")
-        .map(|(_, data, _)| data["index"].as_i64().expect("index is a number"))
+        .map(|(_, data, _)| as_i64(field(data, "index")).expect("index is a number"))
         .collect();
     assert_eq!(stop_indexes, vec![0, 1, 2, 3, 4, 5, 6, 7]);
     assert_eq!(
-        find_block(&frames, "content_block_start", 0)["content_block"]["type"],
+        *field(
+            field(
+                find_block(&frames, "content_block_start", 0),
+                "content_block"
+            ),
+            "type"
+        ),
         str_val("text")
     );
     assert_eq!(
-        find_block(&frames, "content_block_start", 7)["content_block"]["type"],
+        *field(
+            field(
+                find_block(&frames, "content_block_start", 7),
+                "content_block"
+            ),
+            "type"
+        ),
         str_val("tool_use")
+    );
+}
+
+fn assert_passthrough_blocks(frames: &[(String, Json, Vec<u8>)]) {
+    assert_eq!(
+        *field(
+            find_block(frames, "content_block_start", 0),
+            "content_block"
+        ),
+        obj(vec![("type", str_val("future")), ("x", num(1))])
+    );
+    assert_eq!(deltas_at(frames, 0), Vec::<Json>::new());
+
+    assert_eq!(
+        *field(
+            find_block(frames, "content_block_start", 1),
+            "content_block"
+        ),
+        obj(vec![("x", num(1))])
+    );
+    assert_eq!(deltas_at(frames, 1), Vec::<Json>::new());
+}
+
+fn assert_text_escaping(frames: &[(String, Json, Vec<u8>)]) {
+    let (_, _, text_delta_bytes) = frames
+        .iter()
+        .find(|(name, data, _)| name == "content_block_delta" && index_matches(data, 2))
+        .expect("text delta frame exists");
+    let text_delta_text = String::from_utf8(text_delta_bytes.clone()).expect("frame is ascii");
+    assert!(text_delta_text.contains("\\u00e9"));
+    assert!(!text_delta_text.contains('\u{e9}'));
+}
+
+fn assert_invalid_content_errors() {
+    assert_eq!(
+        MessagesFakeStream::new(&obj(vec![("content", Json::Null)])).err(),
+        Some(MessagesFakeStreamError::ContentNotIterable)
+    );
+    assert_eq!(
+        MessagesFakeStream::new(&obj(vec![])).map(Iterator::count),
+        Ok(3)
+    );
+    assert_eq!(
+        MessagesFakeStream::new(&obj(vec![("content", arr(vec![Json::Null]))])).err(),
+        Some(MessagesFakeStreamError::ContentBlockNotMapping)
     );
 }
 
@@ -377,41 +455,9 @@ fn passthrough_and_invalid_content() {
         ]),
     )]);
     let frames = capture(&response).expect("passthrough content builds frames");
-
-    assert_eq!(
-        find_block(&frames, "content_block_start", 0)["content_block"],
-        obj(vec![("type", str_val("future")), ("x", num(1))])
-    );
-    assert_eq!(deltas_at(&frames, 0), Vec::<Json>::new());
-
-    assert_eq!(
-        find_block(&frames, "content_block_start", 1)["content_block"],
-        obj(vec![("x", num(1))])
-    );
-    assert_eq!(deltas_at(&frames, 1), Vec::<Json>::new());
-
-    let (_, _, text_delta_bytes) = frames
-        .iter()
-        .find(|(name, data, _)| {
-            name == "content_block_delta" && data.get("index") == Some(&Json::from(2_i64))
-        })
-        .expect("text delta frame exists");
-    let text_delta_text = String::from_utf8(text_delta_bytes.clone()).expect("frame is ascii");
-    assert!(text_delta_text.contains("\\u00e9"));
-    assert!(!text_delta_text.contains('\u{e9}'));
-
-    assert_eq!(
-        MessagesFakeStream::new(&obj(vec![("content", Json::Null)])).err(),
-        Some(MessagesFakeStreamError::ContentNotIterable)
-    );
-    assert_eq!(
-        MessagesFakeStream::new(&obj(vec![])).map(Iterator::count),
-        Ok(3)
-    );
-    assert_eq!(
-        MessagesFakeStream::new(&obj(vec![("content", arr(vec![Json::Null]))])).err(),
-        Some(MessagesFakeStreamError::ContentBlockNotMapping)
-    );
+    assert_passthrough_blocks(&frames);
+    assert_text_escaping(&frames);
+    assert_invalid_content_errors();
 }
 
 #[test]
