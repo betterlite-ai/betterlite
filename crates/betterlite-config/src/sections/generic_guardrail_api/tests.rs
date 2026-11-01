@@ -1,8 +1,12 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::fs;
+use std::sync::Arc;
 
 use secrecy::ExposeSecret as _;
+use tempfile::NamedTempFile;
+use tracing::subscriber::with_default;
 
 use crate::loader::{ConfigError, ConfigLoader, parse_view};
 use crate::sections::Section as _;
@@ -15,6 +19,19 @@ fn resolve(
 ) -> Result<super::Settings, ConfigError> {
     let (raw, _ignored) = parse_view::<super::Raw>(source)?;
     raw.convert(lookup)
+}
+
+fn logged<T, F>(action: F) -> (T, String)
+where
+    F: FnOnce() -> T,
+{
+    let log = NamedTempFile::new().unwrap();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_writer(Arc::new(log.reopen().unwrap()))
+        .finish();
+    let result = with_default(subscriber, action);
+    (result, fs::read_to_string(log.path()).unwrap())
 }
 
 #[test]
@@ -183,6 +200,13 @@ fn generic_guardrail_api_config_accepts_unreachable_fallback_case_insensitively(
         configured.unreachable_fallback,
         super::UnreachableFallback::FailOpen
     );
+}
+
+#[test]
+fn generic_guardrail_api_config_resolves_fail_closed_without_a_warning() {
+    let (fallback, log) = logged(|| super::resolve_unreachable_fallback(Some("fail_closed")));
+    assert_eq!(fallback, super::UnreachableFallback::FailClosed);
+    assert!(!log.contains("unsupported unreachable_fallback"));
 }
 
 #[test]
