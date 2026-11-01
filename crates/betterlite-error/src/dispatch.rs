@@ -3,6 +3,7 @@ use betterlite_redact::secret::Redactor;
 use crate::error::details::{TimeoutDetails, TimeoutStatus};
 use crate::error::{ErrorClass, ErrorContext};
 use crate::facts::ProviderErrorFacts;
+use crate::native::dispatch_native;
 use crate::openai::body::{OpenaiErrorBody, OpenaiErrorDetail};
 use crate::openai::{self, OpenaiExceptionInput};
 use crate::status::status_error_class;
@@ -31,6 +32,9 @@ pub struct RawException {
     pub message: Option<String>,
     #[serde(default)]
     pub body: Option<OpenaiErrorBody>,
+    // type(original_exception).__name__, read only by _map_replicate_exception and _map_cohere_exception
+    #[serde(default)]
+    pub exception_type: String,
 }
 
 #[must_use]
@@ -63,6 +67,7 @@ pub fn dispatch(input: &DispatchInput, redactor: &Redactor) -> ErrorClass {
                             .map(|message| redactor.redact_string(message)),
                     }),
                 }),
+                exception_type: raw.exception_type.clone(),
             };
             dispatch_raw(&redacted)
         }
@@ -104,6 +109,9 @@ fn dispatch_raw(raw: &RawException) -> ErrorClass {
             message: raw.message.clone(),
             body: raw.body.clone(),
         });
+    }
+    if let Some(class) = dispatch_native(raw, error_str) {
+        return class;
     }
     catchall(raw, error_str)
 }
@@ -177,7 +185,7 @@ fn catchall(raw: &RawException, error_str: &str) -> ErrorClass {
 }
 
 // exception_provider = custom_llm_provider[0].upper() + custom_llm_provider[1:] + "Exception"
-fn exception_provider_label(custom_llm_provider: &str) -> String {
+pub(crate) fn exception_provider_label(custom_llm_provider: &str) -> String {
     let mut chars = custom_llm_provider.chars();
     chars.next().map_or_else(
         || "Exception".to_owned(),

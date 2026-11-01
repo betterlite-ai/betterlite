@@ -22,6 +22,7 @@ fn raw(provider: &str, error_str: &str, status_code: Option<u16>) -> Box<RawExce
         status_code_is_synthesized: false,
         message: None,
         body: None,
+        exception_type: String::new(),
     })
 }
 
@@ -152,6 +153,7 @@ fn a_model_alone_without_a_provider_still_reaches_the_timeout_preamble() {
         status_code_is_synthesized: false,
         message: None,
         body: None,
+        exception_type: String::new(),
     }));
     let ErrorClass::Timeout(_) = dispatch(&input, &redactor()) else {
         panic!("expected Timeout: `if model or custom_llm_provider:` only needs one side set");
@@ -168,6 +170,7 @@ fn an_empty_model_and_provider_skip_the_timeout_preamble_and_reach_the_catchall(
         status_code_is_synthesized: false,
         message: None,
         body: None,
+        exception_type: String::new(),
     }));
     let class = dispatch(&input, &redactor());
     assert_eq!(
