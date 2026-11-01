@@ -19,6 +19,10 @@ use super::{BilledAt, coerce_billed_at, decode_billed_at};
 #[case::offset_without_colon("2024-03-01T10:00:00+0200", Some("2024-03-01T08:00:00+00:00"))]
 #[case::basic_format("20240301T100000", Some("2024-03-01T10:00:00+00:00"))]
 #[case::doubled_marker("2024-03-01T10:00:00ZZ", None)]
+#[case::space_separator("2024-03-01 10:00:00+00:00", Some("2024-03-01T10:00:00+00:00"))]
+#[case::hour_and_minute("2024-03-01T10:00", Some("2024-03-01T10:00:00+00:00"))]
+#[case::hour_only("2024-03-01T10", Some("2024-03-01T10:00:00+00:00"))]
+#[case::hour_and_minute_with_offset("2024-03-01T10:00+02:00", Some("2024-03-01T08:00:00+00:00"))]
 fn decode_billed_at_matches_coerced_iso_offsets(
     #[case] text: &str,
     #[case] expected: Option<&str>,
