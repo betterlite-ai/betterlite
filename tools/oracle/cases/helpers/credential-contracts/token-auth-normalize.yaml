@@ -1,0 +1,8 @@
+kind: helper
+name: token-auth-normalize
+call:
+  b4650:
+    function: token_auth_normalize
+    value: client_secret_basic
+env: {}
+compare: {ignore: []}

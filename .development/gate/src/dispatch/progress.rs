@@ -18,11 +18,22 @@ pub(crate) enum NextRun {
     Fix,
 }
 
+#[derive(Serialize, Deserialize, Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum Panel {
+    #[default]
+    Standard,
+    Parity,
+}
+
+// panel defaults, so a pin saved before the parity pass existed loads as standard
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ReviewerPin {
     pub(crate) runner: String,
     pub(crate) model: String,
+    #[serde(default)]
+    pub(crate) panel: Panel,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]

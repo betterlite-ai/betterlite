@@ -1,0 +1,9 @@
+kind: helper
+name: result-union
+call:
+  b4650:
+    function: result_union
+    ok: false
+    value: missing client_id
+env: {}
+compare: {ignore: []}

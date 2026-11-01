@@ -1,3 +1,5 @@
+use secrecy::ExposeSecret as _;
+
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::resolve::resolve_string;
 
@@ -58,7 +60,11 @@ fn azure_ad_token_enabled<L>(settings: &RawSettings, lookup: &L) -> Result<bool,
 where
     L: EnvironmentLookup,
 {
-    let configured = non_empty(settings.azure_redis_ad_token.clone())
+    let configured_text = settings
+        .azure_redis_ad_token
+        .as_ref()
+        .map(|secret| secret.expose_secret().to_owned());
+    let configured = non_empty(configured_text)
         .map(|value| {
             resolve_string(
                 value,

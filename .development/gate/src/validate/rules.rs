@@ -1,12 +1,15 @@
+use itertools::Itertools as _;
+
 use crate::ids::check_id_problem;
 use crate::spec::catalog::Catalog;
 use crate::spec::rules::Rules;
-use crate::validate::{catalog, duplicates};
+use crate::validate::catalog;
 
 pub(crate) fn problems(rules: &Rules, catalog: &Catalog) -> Vec<String> {
     let ids: Vec<&str> = rules.rules.iter().map(|rule| rule.id.as_str()).collect();
-    let mut problems: Vec<String> = duplicates(&ids)
-        .into_iter()
+    let mut problems: Vec<String> = ids
+        .iter()
+        .duplicates()
         .map(|id| format!("rules.yaml defines {id} twice"))
         .collect();
     let checks = catalog::ids(catalog);
