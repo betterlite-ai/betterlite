@@ -10,9 +10,8 @@ use betterlite_models::savings_evidence::numeric::recorded_autorouter_savings;
 use betterlite_models::savings_evidence::snapshot::{
     BaselineCostSnapshot, CostBreakdown, pricing_basis_from_breakdown, recorded_token_cost,
 };
-use betterlite_models::savings_evidence::usage::{
-    RawUsageObject, baseline_usage, usage_from_spend_log,
-};
+use betterlite_models::savings_evidence::usage::baseline::baseline_usage;
+use betterlite_models::savings_evidence::usage::{RawUsageObject, usage_from_spend_log};
 use betterlite_models::token_rates::ModelInfo;
 use rust_decimal::Decimal;
 
