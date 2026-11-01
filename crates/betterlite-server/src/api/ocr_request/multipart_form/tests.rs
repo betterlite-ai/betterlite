@@ -231,6 +231,37 @@ async fn charset_param_picks_the_decoding() {
 }
 
 #[tokio::test]
+async fn charset_defaults_to_utf8_when_absent() {
+    let mut body = Vec::new();
+    body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.pdf\"\r\nContent-Type: application/pdf\r\n\r\ndata\r\n");
+    body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n");
+    body.extend_from_slice("\u{e9}\u{e8}".as_bytes());
+    body.extend_from_slice(b"\r\n--B--\r\n");
+    let form = parse_body(&body, "multipart/form-data; boundary=B")
+        .await
+        .unwrap();
+    let (_, fields) = build(&form).unwrap();
+    assert_eq!(
+        fields.get("model"),
+        Some(&Json::Text("\u{e9}\u{e8}".to_owned()))
+    );
+}
+
+#[tokio::test]
+async fn explicit_charset_decodes_a_multi_byte_sequence() {
+    let mut body = Vec::new();
+    body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.pdf\"\r\nContent-Type: application/pdf\r\n\r\ndata\r\n");
+    body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n");
+    body.extend_from_slice(&[0x41, 0x00]);
+    body.extend_from_slice(b"\r\n--B--\r\n");
+    let form = parse_body(&body, "multipart/form-data; boundary=B; charset=utf-16le")
+        .await
+        .unwrap();
+    let (_, fields) = build(&form).unwrap();
+    assert_eq!(fields.get("model"), Some(&Json::Text("A".to_owned())));
+}
+
+#[tokio::test]
 async fn a_part_without_a_name_is_rejected() {
     let body = b"--B\r\nContent-Disposition: form-data\r\n\r\nvalue\r\n--B--\r\n".to_vec();
     parse_body(&body, "multipart/form-data; boundary=B")
