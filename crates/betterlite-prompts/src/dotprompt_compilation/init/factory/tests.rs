@@ -112,6 +112,31 @@ fn falls_back_to_the_version_stripped_registry_id_when_no_nested_id_is_given() {
 }
 
 #[test]
+fn extra_prompt_data_is_loaded_when_dotprompt_content_is_absent() {
+    let mut record = IndexMap::new();
+    record.insert(
+        "content".to_owned(),
+        ContractJson::Text("User: hi".to_owned()),
+    );
+    let mut prompt_data = IndexMap::new();
+    prompt_data.insert("greeting".to_owned(), ContractJson::Object(record));
+    let mut extra = IndexMap::new();
+    extra.insert("prompt_data".to_owned(), ContractJson::Object(prompt_data));
+
+    let params = litellm_params(None, None, extra);
+    let spec = prompt_spec("greeting", params);
+
+    let manager = prompt_initializer(
+        &spec.litellm_params,
+        &spec,
+        &GlobalPromptDirectory::default(),
+    )
+    .expect("extra.prompt_data alone is a valid source");
+
+    assert!(manager.should_run_prompt_management(Some("greeting")));
+}
+
+#[test]
 fn uses_the_registry_id_directly_when_it_has_no_version_suffix() {
     let params = litellm_params(None, Some("User: hi"), IndexMap::new());
     let spec = prompt_spec("greeting", params);
