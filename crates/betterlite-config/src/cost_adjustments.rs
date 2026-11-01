@@ -113,6 +113,14 @@ where
     }
 }
 
+fn parse_adjustment_decimal(lexeme: &str, path: &str, paths: &mut Vec<String>) -> Option<Decimal> {
+    let Ok(value) = parse_decimal_lexeme(lexeme) else {
+        paths.push(path.to_owned());
+        return None;
+    };
+    Some(value)
+}
+
 pub fn discount_entry(
     path: &str,
     value: &CostAdjustmentValue,
@@ -121,13 +129,8 @@ pub fn discount_entry(
     let CostAdjustmentValue::Number(number) = value else {
         return Some(DiscountEntry::Unsupported);
     };
-    parse_decimal_lexeme(&number.to_string()).map_or_else(
-        |_| {
-            paths.push(path.to_owned());
-            None
-        },
-        |percent| Some(DiscountEntry::Percent(percent)),
-    )
+    let percent = parse_adjustment_decimal(&number.to_string(), path, paths)?;
+    Some(DiscountEntry::Percent(percent))
 }
 
 pub fn margin_entry(
@@ -136,14 +139,10 @@ pub fn margin_entry(
     paths: &mut Vec<String>,
 ) -> Option<MarginEntry> {
     match value {
-        CostAdjustmentValue::Number(number) => parse_decimal_lexeme(&number.to_string())
-            .map_or_else(
-                |_| {
-                    paths.push(path.to_owned());
-                    None
-                },
-                |percent| Some(MarginEntry::Percent(percent)),
-            ),
+        CostAdjustmentValue::Number(number) => {
+            let percent = parse_adjustment_decimal(&number.to_string(), path, paths)?;
+            Some(MarginEntry::Percent(percent))
+        }
         CostAdjustmentValue::Object(entries) => Some(MarginEntry::Split {
             percentage: margin_field(path, entries, AdjustmentField::Percentage, paths),
             fixed_amount: margin_field(path, entries, AdjustmentField::FixedAmount, paths),
@@ -164,21 +163,14 @@ fn margin_field(
     let field_path = || format!("{path}.{field}");
     match entries.get(field.to_string().as_str()) {
         None | Some(CostAdjustmentValue::Boolean(_)) => MarginFieldEntry::Absent,
-        Some(CostAdjustmentValue::Number(number)) => parse_decimal_lexeme(&number.to_string())
-            .map_or_else(
-                |_| {
-                    paths.push(field_path());
-                    MarginFieldEntry::Absent
-                },
-                MarginFieldEntry::Number,
-            ),
-        Some(CostAdjustmentValue::Text(text)) => parse_decimal_lexeme(text.trim()).map_or_else(
-            |_| {
-                paths.push(field_path());
-                MarginFieldEntry::Absent
-            },
-            MarginFieldEntry::Number,
-        ),
+        Some(CostAdjustmentValue::Number(number)) => {
+            parse_adjustment_decimal(&number.to_string(), &field_path(), paths)
+                .map_or(MarginFieldEntry::Absent, MarginFieldEntry::Number)
+        }
+        Some(CostAdjustmentValue::Text(text)) => {
+            parse_adjustment_decimal(text.trim(), &field_path(), paths)
+                .map_or(MarginFieldEntry::Absent, MarginFieldEntry::Number)
+        }
         Some(
             CostAdjustmentValue::Null
             | CostAdjustmentValue::Object(_)

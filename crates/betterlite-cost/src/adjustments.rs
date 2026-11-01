@@ -18,6 +18,17 @@ pub enum AdjustmentOperation {
     BasePlusMargin,
 }
 
+impl AdjustmentOperation {
+    fn apply(self, left: Decimal, right: Decimal) -> Result<Decimal, AdjustmentError> {
+        let result = match self {
+            Self::BaseTimesDiscount | Self::BaseTimesPercentage => left.checked_mul(right),
+            Self::BaseMinusSaved => left.checked_sub(right),
+            Self::PercentagePlusFixed | Self::BasePlusMargin => left.checked_add(right),
+        };
+        result.ok_or(AdjustmentError::Overflow { operation: self })
+    }
+}
+
 #[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
 pub enum AdjustmentError {
     #[error("cost adjustment overflow while calculating {operation}")]
@@ -88,17 +99,8 @@ pub fn apply_cost_discount(
     config: &BTreeMap<String, DiscountEntry>,
 ) -> Result<DiscountResult, AdjustmentError> {
     let discount_percent = discount_percent(selected_entry(provider, config, None));
-    let saved_amount =
-        base_cost
-            .checked_mul(discount_percent)
-            .ok_or(AdjustmentError::Overflow {
-                operation: AdjustmentOperation::BaseTimesDiscount,
-            })?;
-    let final_cost = base_cost
-        .checked_sub(saved_amount)
-        .ok_or(AdjustmentError::Overflow {
-            operation: AdjustmentOperation::BaseMinusSaved,
-        })?;
+    let saved_amount = AdjustmentOperation::BaseTimesDiscount.apply(base_cost, discount_percent)?;
+    let final_cost = AdjustmentOperation::BaseMinusSaved.apply(base_cost, saved_amount)?;
     Ok(DiscountResult {
         final_cost,
         discount_percent,
@@ -114,22 +116,10 @@ pub fn apply_cost_margin(
     let (margin_percent, fixed_amount) =
         margin_percent_and_fixed(selected_entry(provider, config, Some("global")));
     let percentage_amount =
-        base_cost
-            .checked_mul(margin_percent)
-            .ok_or(AdjustmentError::Overflow {
-                operation: AdjustmentOperation::BaseTimesPercentage,
-            })?;
+        AdjustmentOperation::BaseTimesPercentage.apply(base_cost, margin_percent)?;
     let total_amount =
-        percentage_amount
-            .checked_add(fixed_amount)
-            .ok_or(AdjustmentError::Overflow {
-                operation: AdjustmentOperation::PercentagePlusFixed,
-            })?;
-    let final_cost = base_cost
-        .checked_add(total_amount)
-        .ok_or(AdjustmentError::Overflow {
-            operation: AdjustmentOperation::BasePlusMargin,
-        })?;
+        AdjustmentOperation::PercentagePlusFixed.apply(percentage_amount, fixed_amount)?;
+    let final_cost = AdjustmentOperation::BasePlusMargin.apply(base_cost, total_amount)?;
     Ok(MarginResult {
         final_cost,
         margin_percent,
