@@ -62,14 +62,11 @@ impl Helper for Op {
                 model,
                 custom_llm_provider,
                 catalog,
-            } => {
-                let catalog = parse_catalog(catalog)?;
-                to_json(&cohere_chat_provider(
-                    model,
-                    custom_llm_provider.as_deref(),
-                    &catalog,
-                ))
-            }
+            } => to_json(&cohere_chat_provider(
+                model,
+                custom_llm_provider.as_deref(),
+                &parse_catalog(catalog)?,
+            )),
             Input::AnthropicText {
                 model,
                 custom_llm_provider,
