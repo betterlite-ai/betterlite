@@ -1,14 +1,14 @@
 id: B1649
 milestone: M4 keys, spend and management
 title: Apply provider discounts and provider-or-global margins with exact money
-status: todo
+status: done
 depends_on: [B002, B171, B204]
 file: tasks/B1649-cost-adjustments.yaml
 covers:
   - "litellm/cost_calculator.py"
 parent: B068
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 455

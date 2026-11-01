@@ -1,0 +1,11 @@
+task: B1649
+deviations:
+  - what: Adjustment totals use exact Decimal arithmetic, so trailing digits may differ from LiteLLM's binary-float results; unrepresentable monetary values fail with a typed error.
+    why: The repository requires Decimal from initial parsing through every money operation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1135-L1218
+  - what: A non-numeric discount config entry (a string, list or object) is treated as an absent discount instead of crashing the request.
+    why: LiteLLM multiplies the configured value into the base cost without converting it first, so a type that cannot multiply a float raises TypeError for every request to that provider; no caller relies on that crash.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1140-L1141
+  - what: Boolean adjustment entries, whether the top-level scalar entry or a percentage/fixed_amount field inside it, remain unsupported and unapplied instead of becoming the numeric 1.0/0.0 Python's float(bool) would produce.
+    why: B1649 requires unsupported legacy variants to remain explicit unapplied entries, while Python's bool subclass behavior is not a supported configuration shape.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1194-L1204

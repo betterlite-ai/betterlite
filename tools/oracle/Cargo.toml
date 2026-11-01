@@ -16,6 +16,7 @@ betterlite-bedrock = { path = "../../crates/betterlite-bedrock" }
 betterlite-config = { path = "../../crates/betterlite-config" }
 betterlite-context = { path = "../../crates/betterlite-context" }
 betterlite-core = { path = "../../crates/betterlite-core" }
+betterlite-cost = { path = "../../crates/betterlite-cost" }
 betterlite-db = { path = "../../crates/betterlite-db" }
 betterlite-error = { path = "../../crates/betterlite-error" }
 betterlite-guardrails = { path = "../../crates/betterlite-guardrails" }

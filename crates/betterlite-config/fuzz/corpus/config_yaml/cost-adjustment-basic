@@ -1,0 +1,3 @@
+litellm_settings:
+  cost_discount_config: {provider: 0.2}
+  cost_margin_config: {provider: {percentage: "0.1", fixed_amount: 0.001}}
