@@ -1,0 +1,12 @@
+kind: helper
+name: native-errors-a-branch-1376
+call:
+  native_errors_a:
+    provider: cloudflare
+    model: cf/model-a
+    error_str: "Authentication error: invalid token"
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

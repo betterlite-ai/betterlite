@@ -1,0 +1,24 @@
+task: B4323
+deviations:
+  - what: >-
+      Pool timeout and socket timeout are resolved once at client creation, not per-connection.
+      Changes to environment variables after client creation do not apply.
+    why: >-
+      LiteLLM also reads these once at startup; betterlite defers resolution to
+      client/pool construction time.
+    link: ""
+  - what: >-
+      Sentinel socket_timeout defaults to 0.1 seconds, hardcoded from REDIS_SOCKET_TIMEOUT,
+      not per-environment override at this layer.
+    why: >-
+      Monitor connections are internal and short-lived; data-node socket settings do not
+      apply to monitors.
+    link: ""
+  - what: >-
+      A Sentinel target never gets a connection pool, where LiteLLM's get_redis_connection_pool
+      falls through to building a BlockingConnectionPool from Sentinel kwargs.
+    why: >-
+      BlockingConnectionPool does not accept sentinel_nodes or service_name, so that fallthrough
+      raises a TypeError in LiteLLM itself; no working setup can rely on reaching it, and
+      betterlite returns None for Sentinel instead of reproducing the crash.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L906-L932

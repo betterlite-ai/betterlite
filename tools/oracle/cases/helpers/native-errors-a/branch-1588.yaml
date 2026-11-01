@@ -1,0 +1,12 @@
+kind: helper
+name: native-errors-a-branch-1588
+call:
+  native_errors_a:
+    provider: ai21
+    model: ai21/model-a
+    status_code: 401
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

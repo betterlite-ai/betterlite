@@ -1,0 +1,13 @@
+kind: helper
+name: anthropic-replicate-errors-branch-537
+call:
+  anthropic_replicate_errors:
+    provider: anthropic
+    model: claude-3-opus
+    error_str: "prompt is too long: 205000 tokens > 200000 maximum"
+    status_code: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message
