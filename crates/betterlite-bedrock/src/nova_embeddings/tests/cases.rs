@@ -503,6 +503,32 @@ fn assert_non_object_list_entries() {
     )]);
     let skipped_result = transform_response(&[skipped], "nova-model", None).unwrap();
     assert_eq!(skipped_result.data.len(), 0);
+
+    assert_text_and_list_entries_with_embedding_key();
+}
+
+// A str holding "embedding" as a substring, or a list holding it as an element, raises too: item["embedding"] fails on both the same way it does on null, a number or a bool.
+fn assert_text_and_list_entries_with_embedding_key() {
+    let text_entry = params(&[("embeddings", Field::List(vec![text("an embedding")]))]);
+    let text_error = transform_response(&[text_entry], "nova-model", None).unwrap_err();
+    assert!(matches!(
+        text_error,
+        NovaEmbeddingsError::MalformedField {
+            field: "embeddings"
+        }
+    ));
+
+    let list_entry = params(&[(
+        "embeddings",
+        Field::List(vec![list_field(&[text("embedding")])]),
+    )]);
+    let list_error = transform_response(&[list_entry], "nova-model", None).unwrap_err();
+    assert!(matches!(
+        list_error,
+        NovaEmbeddingsError::MalformedField {
+            field: "embeddings"
+        }
+    ));
 }
 
 fn nova_invocation_arn() {

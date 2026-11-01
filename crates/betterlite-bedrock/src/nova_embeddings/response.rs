@@ -104,7 +104,7 @@ fn embeddings_list_entry(item: &Field) -> Option<Result<(Field, u64), NovaEmbedd
         let embedding_field = mapping.get("embedding")?;
         return Some(embedding_list_item(mapping, embedding_field));
     }
-    if is_non_membership_testable(item) {
+    if contains_embedding_key(item) {
         return Some(Err(NovaEmbeddingsError::MalformedField {
             field: "embeddings",
         }));
@@ -112,12 +112,16 @@ fn embeddings_list_entry(item: &Field) -> Option<Result<(Field, u64), NovaEmbedd
     None
 }
 
-// Python's `in` operator never raises for a list or a string, only for a non-container.
-const fn is_non_membership_testable(field: &Field) -> bool {
-    matches!(
-        field,
-        Field::Null | Field::Bool(_) | Field::Int(_) | Field::Float(_)
-    )
+// "embedding" in item is true for a non-container, a str holding that substring or a list holding that element, and item["embedding"] then raises TypeError in each case.
+fn contains_embedding_key(item: &Field) -> bool {
+    match item {
+        Field::Null | Field::Bool(_) | Field::Int(_) | Field::Float(_) => true,
+        Field::Text(text) => text.contains("embedding"),
+        Field::List(items) => items
+            .iter()
+            .any(|entry| matches!(entry, Field::Text(text) if text == "embedding")),
+        Field::Mapping(_) => false,
+    }
 }
 
 fn embedding_list_item(
