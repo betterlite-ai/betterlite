@@ -201,7 +201,7 @@ async fn assert_idempotent_reapplication(client: &Client) {
 async fn cohort_preserves_rows() {
     harness(|[client]| async move {
         assert_access_group_destructive_change(&client).await;
-        batch_execute(&client, &migration_sql_all()).await;
+        batch_execute(&client, &identity_history_sql()).await;
         assert_daily_endpoint_uniqueness(&client).await;
         assert_end_user_fk_actions(&client).await;
         assert_idempotent_reapplication(&client).await;
