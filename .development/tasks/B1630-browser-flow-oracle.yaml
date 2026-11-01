@@ -30,6 +30,7 @@ description: >-
 scope:
   paths:
     - tools/oracle/Cargo.toml
+    - tools/oracle/src/lib.rs
     - tools/oracle/src/case.rs
     - tools/oracle/src/case/**
     - tools/oracle/src/http.rs
