@@ -1,4 +1,5 @@
 pub mod admin_setup;
+#[path = "api/mod.rs"]
 pub mod api;
 pub mod auth;
 mod error_body;

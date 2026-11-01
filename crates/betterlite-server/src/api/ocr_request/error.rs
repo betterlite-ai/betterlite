@@ -5,7 +5,7 @@ use betterlite_ocr::request_format::RequestFormatError;
 #[derive(Debug, thiserror::Error)]
 pub enum OcrRequestError {
     #[error("failed to parse multipart form data")]
-    MultipartParse(#[source] multer::Error),
+    MultipartParse(#[source] multipart_rs::MultipartError),
     #[error("OCR request body must be a JSON object")]
     InvalidJson(#[source] serde_json::Error),
     #[error("OCR request body is not a JSON object")]

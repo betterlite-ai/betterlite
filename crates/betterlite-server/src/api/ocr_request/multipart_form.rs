@@ -1,9 +1,8 @@
-use std::convert::Infallible;
+use std::io::Error as IoError;
 
 use betterlite_ocr::json::{Json, Object};
-use bytes::Bytes;
-use futures_util::stream;
-use multer::Multipart;
+use futures_util::StreamExt as _;
+use multipart_rs::{MultipartItem, MultipartReader};
 
 use super::error::OcrRequestError;
 use super::upload::{Upload, read_upload};
@@ -15,39 +14,43 @@ pub(super) async fn parse_body(
     body: &[u8],
     content_type: &str,
 ) -> Result<ParsedForm, OcrRequestError> {
-    let boundary = multer::parse_boundary(content_type).map_err(OcrRequestError::MultipartParse)?;
-    let owned_body = Bytes::copy_from_slice(body);
-    let body_stream = stream::once(async move { Ok::<Bytes, Infallible>(owned_body) });
-    let mut multipart = Multipart::new(body_stream, boundary);
+    let headers = [("content-type".to_owned(), content_type.to_owned())];
+    let mut reader = MultipartReader::<IoError>::from_data_with_headers(body, &headers)
+        .map_err(OcrRequestError::MultipartParse)?;
     let mut form = ParsedForm::new();
-    while let Some(field) = multipart
-        .next_field()
-        .await
-        .map_err(OcrRequestError::MultipartParse)?
-    {
-        form.push(read_field(field).await?);
+    while let Some(item) = reader.next().await {
+        form.push(read_item(&item.map_err(OcrRequestError::MultipartParse)?)?);
     }
     Ok(form)
 }
 
-async fn read_field(field: multer::Field<'static>) -> Result<FormField, OcrRequestError> {
-    let name = field.name().unwrap_or_default().to_owned();
-    let filename = field.file_name().map(str::to_owned);
-    let content_type = field.content_type().map(ToString::to_string);
-    let bytes = field
-        .bytes()
-        .await
-        .map_err(OcrRequestError::MultipartParse)?;
+fn disposition_param(disposition: &str, key: &str) -> Option<String> {
+    disposition.split(';').map(str::trim).find_map(|part| {
+        let (part_key, part_value) = part.split_once('=')?;
+        (part_key == key).then(|| part_value.trim_matches('"').to_owned())
+    })
+}
+
+fn read_item(item: &MultipartItem) -> Result<FormField, OcrRequestError> {
+    let header = |key: &str| {
+        item.headers
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case(key))
+            .map(|(_, value)| value.as_str())
+    };
+    let disposition = header("content-disposition").unwrap_or_default();
+    let name = disposition_param(disposition, "name").unwrap_or_default();
+    let filename = disposition_param(disposition, "filename");
+    let content_type = header("content-type").map(ToOwned::to_owned);
+    let bytes = item.data.to_vec();
     let value = if filename.is_some() || content_type.is_some() {
         FormValue::File {
             filename,
             content_type,
-            bytes: bytes.to_vec(),
+            bytes,
         }
     } else {
-        FormValue::Text(
-            String::from_utf8(bytes.to_vec()).map_err(OcrRequestError::InvalidTextEncoding)?,
-        )
+        FormValue::Text(String::from_utf8(bytes).map_err(OcrRequestError::InvalidTextEncoding)?)
     };
     Ok(FormField { name, value })
 }

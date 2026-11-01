@@ -58,6 +58,6 @@ fn invalid_json_is_betterlites_own() {
 
 #[test]
 fn multipart_parse_is_betterlites_own() {
-    let error = OcrRequestError::MultipartParse(multer::Error::IncompleteStream);
+    let error = OcrRequestError::MultipartParse(multipart_rs::MultipartError::InvalidBoundary);
     assert_eq!(error.to_string(), "failed to parse multipart form data");
 }
