@@ -1,0 +1,21 @@
+kind: helper
+name: overlap-consumes-audio-before-image-video
+call:
+  token_cost:
+    operation: generic
+    usage:
+      prompt_tokens: 20
+      completion_tokens: 5
+      total_tokens: 25
+      prompt_details:
+        text_tokens: 0
+        audio_tokens: 15
+        image_tokens: 5
+        video_tokens: 5
+      cache_read_tokens: 10
+    supplied_model_info:
+      input_cost_per_token: 0.1
+      output_cost_per_token: 0.1
+    moment: "2024-01-01T00:00:00Z"
+compare: {ignore: []}
+env: {}

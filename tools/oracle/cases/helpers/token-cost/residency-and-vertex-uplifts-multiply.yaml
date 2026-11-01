@@ -1,0 +1,19 @@
+kind: helper
+name: residency-and-vertex-uplifts-multiply
+call:
+  token_cost:
+    operation: generic
+    usage:
+      prompt_tokens: 100
+      completion_tokens: 50
+      total_tokens: 150
+    supplied_model_info:
+      input_cost_per_token: 0.01
+      output_cost_per_token: 0.02
+      regional_processing_uplift_multiplier_us: 1.5
+      regional_endpoint_uplift_multiplier: 1.5
+    data_residency: "us"
+    vertex_location: "us-central1"
+    moment: "2024-01-01T00:00:00Z"
+compare: {ignore: []}
+env: {}
