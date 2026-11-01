@@ -13,7 +13,6 @@ use axum::Router;
 use axum::body::Body;
 use axum::extract::{Request as AxumRequest, State};
 use axum::http::{Response as AxumResponse, StatusCode};
-use betterlite_postgres_fixture::seed::DatabaseFixture;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::sync::oneshot;
 use tokio::task::JoinSet;
@@ -576,7 +575,7 @@ fn fresh_oracle_root() -> PathBuf {
 }
 
 #[test]
-fn drops_the_fixture_databases_after_a_late_step_failure_with_a_database_fixture() {
+fn drops_the_fixture_databases_after_a_late_step_failure() {
     let environment =
         <DatabaseEnvironment as clap::Parser>::try_parse_from([env!("CARGO_PKG_NAME")])
             .expect("database environment parses");
@@ -594,8 +593,7 @@ fn drops_the_fixture_databases_after_a_late_step_failure_with_a_database_fixture
         step("/health/liveliness", BTreeMap::new(), Vec::new(), false),
         step("/health/liveliness", BTreeMap::new(), vec![missing], false),
     ];
-    let mut case = steps_case(steps);
-    case.database = Some(DatabaseFixture::default());
+    let case = steps_case(steps);
     let options = Options {
         self_check: true,
         paths: Vec::new(),
