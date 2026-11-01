@@ -2,8 +2,6 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::Serialize;
 
-use crate::rubrik::compact_json::compact_json;
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct FlattenedModerationMessage {
     pub role: Option<String>,
@@ -119,7 +117,7 @@ fn text_segment(value: Option<&Json>) -> String {
     match value {
         None | Some(Json::Null) => String::new(),
         Some(Json::Text(text)) => text.clone(),
-        Some(other) => compact_json(other),
+        Some(other) => serde_json::to_string(other).unwrap_or_default(),
     }
 }
 
@@ -164,7 +162,7 @@ fn extract_search_results_text(search_results: Option<&Json>) -> String {
         if let Some(citations) = fields.get("citations")
             && !matches!(citations, Json::Null)
         {
-            texts.push_str(&compact_json(citations));
+            texts.push_str(&serde_json::to_string(citations).unwrap_or_default());
         }
     }
     texts
