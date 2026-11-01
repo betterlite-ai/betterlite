@@ -60,7 +60,7 @@ pub(crate) fn invoke(
         ),
     };
     let instructions = role.instructions.as_str();
-    let seat_name: &str = seat.into();
+    let seat_name = <&str>::from(seat);
     let stem = attempt
         .places
         .journal
