@@ -366,6 +366,7 @@ scope:
   - tools/oracle/src/helpers/mcp/b4740.rs
   - tools/oracle/src/helpers/models/catalog_generalizations/tests.rs
   - tools/oracle/src/helpers/models/model_metadata_projection/tests.rs
+  - tools/oracle/src/helpers/models/savings_evidence.rs
   - tools/oracle/src/helpers/models/token_rates.rs
   - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers/openai/base_config.rs

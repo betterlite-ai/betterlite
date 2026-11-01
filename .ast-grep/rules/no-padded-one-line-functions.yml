@@ -101,6 +101,7 @@ ignores:
   - tools/oracle/src/helpers/guardrails/b3779.rs
   - tools/oracle/src/helpers/lens/b4502.rs
   - tools/oracle/src/helpers/logging/otel_vocabulary.rs
+  - tools/oracle/src/helpers/models/savings_evidence.rs
   - tools/oracle/src/helpers/models/token_rates.rs
   - tools/oracle/src/helpers/openai/provider_base_helpers.rs
   - tools/oracle/src/helpers/oracle/b4113.rs
