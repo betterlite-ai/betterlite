@@ -107,6 +107,27 @@ fn openai_errors_openai_error_tests_behavior(
     assert_eq!(family(&class), expected_family, "produced {class:?}");
 }
 
+#[rstest]
+#[case::bad_request_sdk_bug_outranks_the_status_table(
+    DispatchInput::Raw(raw(
+        "some-unknown-provider",
+        "BadRequestError.__init__() missing 1 required positional argument: 'param'",
+        Some(429),
+    )),
+    "bad_request"
+)]
+#[case::bedrock_text_predicate_outranks_the_generic_status_catchall(
+    DispatchInput::Raw(raw("bedrock", "AccessDeniedException", Some(429))),
+    "permission_denied"
+)]
+fn native_errors_native_error_tests_behavior(
+    #[case] input: DispatchInput,
+    #[case] expected_family: &str,
+) {
+    let class = dispatch(&input, &redactor());
+    assert_eq!(family(&class), expected_family, "produced {class:?}");
+}
+
 #[test]
 fn litellm_proxy_unconstructible_name_short_circuits_to_the_empty_identity_fallback() {
     let input = DispatchInput::Raw(raw(
@@ -187,7 +208,7 @@ fn malformed_litellm_proxy_body_falls_through_instead_of_panicking() {
         "litellm.ContextWindowExceededError: too many tokens",
         None,
     );
-    request.body = Some(OpenaiErrorBody {
+    request.body = Some(RawExceptionBody {
         kind: None,
         param: None,
         code: Some("not actually json {{{".to_owned()),
@@ -201,7 +222,7 @@ fn malformed_litellm_proxy_body_falls_through_instead_of_panicking() {
 #[test]
 fn a_secret_looking_body_message_is_redacted_before_it_reaches_the_client() {
     let mut request = raw("openai", "boom", Some(401));
-    request.body = Some(OpenaiErrorBody {
+    request.body = Some(RawExceptionBody {
         kind: None,
         param: None,
         code: None,
@@ -368,7 +389,7 @@ fn the_litellm_proxy_branch_forwards_the_raw_bodys_code_into_the_raised_exceptio
         "litellm.BadRequestError: invalid request",
         None,
     );
-    request.body = Some(OpenaiErrorBody {
+    request.body = Some(RawExceptionBody {
         kind: None,
         param: None,
         code: Some("content_filter".to_owned()),

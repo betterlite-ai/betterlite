@@ -4,8 +4,8 @@ call:
   native_error:
     kind: raw
     model: claude-3
-    custom_llm_provider: bedrock
-    error_str: "Vertex AI API has not been used in project"
+    custom_llm_provider: anthropic
+    error_str: "Invalid API Key"
     status_code: 429
 env: {}
 compare: {ignore: []}

@@ -2,10 +2,10 @@ use crate::anthropic_replicate_errors::anthropic::{self, AnthropicExceptionInput
 use crate::anthropic_replicate_errors::replicate::{self, ReplicateExceptionInput};
 use crate::aws_errors::bedrock::{self, BedrockExceptionInput};
 use crate::aws_errors::sagemaker::{self, SagemakerExceptionInput};
-use crate::azure_openrouter::azure::body::{AzureErrorBody, AzureErrorDetail};
+use crate::azure_openrouter::azure::body::{AzureErrorBody, AzureErrorDetail, AzureInnerError};
 use crate::azure_openrouter::azure::{self, AzureExceptionInput};
 use crate::azure_openrouter::openrouter::{self, OpenrouterExceptionInput};
-use crate::dispatch::{RawException, exception_provider_label};
+use crate::dispatch::{RawException, RawExceptionBody, exception_provider_label};
 use crate::error::ErrorClass;
 use crate::facts::ProviderErrorFacts;
 use crate::native_errors_a::{ai21, cloudflare, cohere, huggingface};
@@ -14,7 +14,6 @@ use crate::native_errors_b::nlp_cloud::{self, NlpCloudExceptionInput};
 use crate::native_errors_b::ollama::{self, OllamaExceptionInput, OllamaOriginalException};
 use crate::native_errors_b::together_ai::{self, TogetherAiExceptionInput};
 use crate::native_errors_b::vllm::{self, VllmExceptionInput};
-use crate::openai::body::OpenaiErrorBody;
 use crate::{openai_like, vertex_errors};
 
 mod tests;
@@ -35,8 +34,7 @@ const fn facts(raw: &RawException, message: Option<String>) -> ProviderErrorFact
     }
 }
 
-// inner_error/innererror are never captured by RawException's flattened body, so they stay None here
-fn azure_body(body: Option<&OpenaiErrorBody>) -> Option<AzureErrorBody> {
+fn azure_body(body: Option<&RawExceptionBody>) -> Option<AzureErrorBody> {
     let fields = body?;
     Some(AzureErrorBody {
         kind: fields.kind.clone(),
@@ -44,12 +42,16 @@ fn azure_body(body: Option<&OpenaiErrorBody>) -> Option<AzureErrorBody> {
         code: fields.code.clone(),
         message: fields.message.clone(),
         error: fields.error.as_ref().map(|detail| AzureErrorDetail {
-            kind: None,
-            param: None,
-            code: None,
+            kind: detail.kind.clone(),
+            param: detail.param.clone(),
+            code: detail.code.clone(),
             message: detail.message.clone(),
-            inner_error: None,
-            innererror: None,
+            inner_error: detail.inner_error.as_ref().map(|inner| AzureInnerError {
+                code: inner.code.clone(),
+            }),
+            innererror: detail.innererror.as_ref().map(|inner| AzureInnerError {
+                code: inner.code.clone(),
+            }),
         }),
     })
 }

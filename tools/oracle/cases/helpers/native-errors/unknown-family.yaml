@@ -5,6 +5,7 @@ call:
     kind: raw
     model: some-model
     custom_llm_provider: some-unknown-provider
-    error_str: "an unrecognized provider error"
+    error_str: "BadRequestError.__init__() missing 1 required positional argument: 'param'"
+    status_code: 429
 env: {}
 compare: {ignore: []}

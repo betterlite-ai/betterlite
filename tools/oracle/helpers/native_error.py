@@ -12,8 +12,17 @@ litellm.suppress_debug_info = True
 JsonValue: TypeAlias = None | bool | int | float | str | list["JsonValue"] | dict[str, "JsonValue"]
 
 
+class RawErrorInnerErrorInput(TypedDict):
+    code: NotRequired[str | None]
+
+
 class RawErrorDetailInput(TypedDict):
+    type: NotRequired[str | None]
+    param: NotRequired[str | None]
+    code: NotRequired[str | None]
     message: NotRequired[str | None]
+    inner_error: NotRequired[RawErrorInnerErrorInput | None]
+    innererror: NotRequired[RawErrorInnerErrorInput | None]
 
 
 class RawErrorBodyInput(TypedDict):

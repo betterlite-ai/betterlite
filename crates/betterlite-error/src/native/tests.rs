@@ -3,9 +3,10 @@
 use rstest::rstest;
 
 use super::dispatch_native;
-use crate::dispatch::RawException;
+use crate::dispatch::{
+    RawException, RawExceptionBody, RawExceptionBodyDetail, RawExceptionInnerError,
+};
 use crate::error::ErrorClass;
-use crate::openai::body::{OpenaiErrorBody, OpenaiErrorDetail};
 
 fn raw(provider: &str, error_str: &str, status_code: Option<u16>) -> Box<RawException> {
     Box::new(RawException {
@@ -18,6 +19,27 @@ fn raw(provider: &str, error_str: &str, status_code: Option<u16>) -> Box<RawExce
         body: None,
         exception_type: String::new(),
     })
+}
+
+// azure_error_code() promotes a generic top-level code to content_policy_violation only once innererror.code carries Azure's ResponsibleAIPolicyViolation marker
+fn azure_body_with_inner_error(top_code: &str, inner_code: &str) -> RawExceptionBody {
+    let detail = RawExceptionBodyDetail {
+        kind: None,
+        param: None,
+        code: Some(top_code.to_owned()),
+        message: None,
+        inner_error: None,
+        innererror: Some(RawExceptionInnerError {
+            code: Some(inner_code.to_owned()),
+        }),
+    };
+    RawExceptionBody {
+        kind: None,
+        param: None,
+        code: None,
+        message: None,
+        error: Some(detail),
+    }
 }
 
 fn family(class: &ErrorClass) -> &'static str {
@@ -129,6 +151,17 @@ fn family(class: &ErrorClass) -> &'static str {
 )]
 #[case::openrouter_arm(raw("openrouter", "boom", Some(404)), Some("not_found"))]
 #[case::unrecognized_provider_is_not_native(raw("some-unknown-provider", "boom", None), None)]
+#[case::azure_innererror_promotes_a_generic_code_to_content_policy_violation(
+    {
+        let mut azure_input = raw("azure", "blocked", Some(400));
+        azure_input.body = Some(azure_body_with_inner_error(
+            "content_filter",
+            "ResponsibleAIPolicyViolation",
+        ));
+        azure_input
+    },
+    Some("content_policy_violation")
+)]
 fn native_errors_native_error_tests_behavior(
     #[case] input: Box<RawException>,
     #[case] expected_family: Option<&str>,
@@ -184,17 +217,13 @@ fn ollama_original_exception_is_always_the_text_variant_never_the_dict_variant()
 }
 
 #[test]
-fn azure_body_is_converted_from_the_openai_shaped_raw_exception_body() {
-    let mut input = raw("azure", "content_policy_violation", None);
-    input.body = Some(OpenaiErrorBody {
-        kind: Some("invalid_request_error".to_owned()),
-        param: None,
-        code: Some("content_policy_violation".to_owned()),
-        message: None,
-        error: Some(OpenaiErrorDetail {
-            message: Some("blocked by policy".to_owned()),
-        }),
-    });
+fn azure_body_is_converted_from_the_raw_exception_body() {
+    // "boom" matches no azure text checker, so only a correctly converted nested error.code can drive this
+    let mut input = raw("azure", "boom", None);
+    input.body = Some(azure_body_with_inner_error(
+        "content_filter",
+        "ResponsibleAIPolicyViolation",
+    ));
     let class = dispatch_native(&input, &input.error_str).expect("azure always classifies");
     let ErrorClass::ContentPolicyViolation(context) = class else {
         panic!(
@@ -203,7 +232,8 @@ fn azure_body_is_converted_from_the_openai_shaped_raw_exception_body() {
     };
     assert_eq!(
         context.body_code.as_deref(),
-        Some("content_policy_violation")
+        Some("content_filter"),
+        "content_policy_fields reads the nested error.code verbatim, not the promoted content_policy_violation marker"
     );
 }
 
@@ -220,7 +250,7 @@ fn azure_body_conversion_is_none_when_the_raw_exception_carries_no_body() {
 #[test]
 fn azure_body_top_level_code_alone_drives_content_policy_classification() {
     let mut input = raw("azure", "boom underlying failure", None);
-    input.body = Some(OpenaiErrorBody {
+    input.body = Some(RawExceptionBody {
         kind: Some("custom_kind_xyz".to_owned()),
         param: None,
         code: Some("content_policy_violation".to_owned()),
