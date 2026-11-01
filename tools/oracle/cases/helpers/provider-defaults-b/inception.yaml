@@ -1,0 +1,12 @@
+kind: helper
+name: provider-defaults-b-inception
+call:
+  provider_defaults_b:
+    provider: inception
+    model: inception-model
+    api_base: https://explicit.inception.example/v1
+    inception_key: global-inception-key
+    environment:
+      INCEPTION_API_KEY: env-inception-key
+env: {}
+compare: {ignore: []}

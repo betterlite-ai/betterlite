@@ -1,0 +1,10 @@
+kind: helper
+name: provider-defaults-b-fal-ai
+call:
+  provider_defaults_b:
+    provider: fal_ai
+    model: fal-model
+    environment:
+      FAL_AI_API_KEY: env-fal-key
+env: {}
+compare: {ignore: []}

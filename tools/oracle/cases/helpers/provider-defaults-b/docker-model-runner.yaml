@@ -1,0 +1,8 @@
+kind: helper
+name: provider-defaults-b-docker-model-runner
+call:
+  provider_defaults_b:
+    provider: docker_model_runner
+    model: docker-model
+env: {}
+compare: {ignore: []}

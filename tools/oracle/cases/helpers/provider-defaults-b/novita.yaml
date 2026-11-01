@@ -1,0 +1,8 @@
+kind: helper
+name: provider-defaults-b-novita
+call:
+  provider_defaults_b:
+    provider: novita
+    model: novita-model
+env: {}
+compare: {ignore: []}

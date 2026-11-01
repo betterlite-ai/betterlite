@@ -1,0 +1,8 @@
+kind: helper
+name: provider-defaults-b-friendliai
+call:
+  provider_defaults_b:
+    provider: friendliai
+    model: friendliai-model
+env: {}
+compare: {ignore: []}
