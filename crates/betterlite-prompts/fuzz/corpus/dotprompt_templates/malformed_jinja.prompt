@@ -1,0 +1,4 @@
+---
+model: gpt-4
+---
+{% for item in items %}{{ item.append(1) }}{% endfor

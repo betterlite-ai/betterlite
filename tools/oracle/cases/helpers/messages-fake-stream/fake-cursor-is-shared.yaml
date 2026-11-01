@@ -1,0 +1,10 @@
+kind: helper
+name: fake-cursor-is-shared
+call:
+  messages_fake_stream:
+    response:
+      content:
+        - {type: text, text: A}
+env: {}
+compare:
+  ignore: []

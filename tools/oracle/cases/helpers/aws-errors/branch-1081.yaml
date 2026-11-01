@@ -1,0 +1,14 @@
+kind: helper
+name: aws-errors-branch-1081
+call:
+  aws_errors:
+    provider: sagemaker
+    model: huggingface-llama
+    custom_llm_provider: my_sagemaker_proxy
+    error_str: "an unmatched failure"
+    status_code: 401
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

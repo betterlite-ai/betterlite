@@ -1,0 +1,25 @@
+kind: helper
+name: transform-response-openai-multiple
+call:
+  b4113:
+    operation: transform_response
+    format: openai
+    response:
+      choices:
+        - message:
+            tool_calls:
+              - type: function
+                id: call_01
+                function:
+                  name: web_search
+                  arguments: '{"query": "rust programming"}'
+              - type: function
+                id: call_02
+                function:
+                  name: web_search
+                  arguments: '{"query": "rust ownership"}'
+    search_results:
+      - "Title: Rust\nURL: https://www.rust-lang.org\nSnippet: A systems language"
+      - "Title: Ownership\nURL: https://doc.rust-lang.org/book/ch04-00-understanding-ownership.html\nSnippet: Explains ownership"
+env: {}
+compare: {ignore: []}

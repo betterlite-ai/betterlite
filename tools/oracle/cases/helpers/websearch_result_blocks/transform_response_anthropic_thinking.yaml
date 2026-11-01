@@ -1,0 +1,21 @@
+kind: helper
+name: transform-response-anthropic-thinking
+call:
+  b4113:
+    operation: transform_response
+    format: anthropic
+    response:
+      content:
+        - type: tool_use
+          id: toolu_01
+          name: web_search
+          input:
+            query: rust programming
+    search_results:
+      - "Title: Rust\nURL: https://www.rust-lang.org\nSnippet: A systems language"
+    thinking:
+      - type: thinking
+        thinking: "I should search for information about Rust."
+        signature: sig-abc123
+env: {}
+compare: {ignore: []}
