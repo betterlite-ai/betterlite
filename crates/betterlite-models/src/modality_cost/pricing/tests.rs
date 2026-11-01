@@ -2,7 +2,7 @@
 
 use rust_decimal::Decimal;
 
-use super::{key_has_price, price_for_key, service_tier_cost_key};
+use super::{price_for_key, service_tier_cost_key};
 use crate::tiered_pricing::Scalar;
 use crate::token_rates::ModelInfo;
 
@@ -83,17 +83,4 @@ fn an_explicit_null_base_key_with_no_fallback_is_none() {
     let model = model(&[("input_cost_per_token_flex", Scalar::Null)]);
     let price = price_for_key(&model, "input_cost_per_token_flex").expect("no fallback");
     assert_eq!(price, None);
-}
-
-#[test]
-fn key_has_price_is_false_for_null_and_missing() {
-    let model = model(&[("a", Scalar::Null)]);
-    assert!(!key_has_price(&model, "a"));
-    assert!(!key_has_price(&model, "b"));
-}
-
-#[test]
-fn key_has_price_is_true_for_an_explicit_zero() {
-    let model = model(&[("a", Scalar::Number(serde_json::Number::from(0_i64)))]);
-    assert!(key_has_price(&model, "a"));
 }

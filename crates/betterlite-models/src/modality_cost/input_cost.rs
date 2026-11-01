@@ -2,8 +2,9 @@ use rust_decimal::Decimal;
 
 use super::cache_write::calculate_cache_writing_cost;
 use super::error::ModalityCostError;
-use super::pricing::{key_has_price, price_for_key, service_tier_cost_key};
+use super::pricing::{price_for_key, service_tier_cost_key};
 use super::prompt::PromptTokensDetailsResult;
+use crate::tiered_pricing::Scalar;
 use crate::token_rates::ModelInfo;
 use crate::token_rates::component::calculate_cost_component;
 
@@ -14,32 +15,14 @@ pub struct InputCostRates {
     pub cache_creation_cost_above_1hr: Decimal,
 }
 
-// A nonzero per-unit price suppresses the matching token charge even when that price is explicitly zero.
-fn suppressed_by_per_unit_price(model: &ModelInfo, units: Decimal, price_key: &str) -> bool {
-    if units.is_zero() {
-        false
-    } else {
-        key_has_price(model, price_key)
-    }
-}
-
-// A nonnull per-image price suppresses image-token charging whenever image_count is also positive.
-fn suppressed_by_image_count(model: &ModelInfo, image_count: i64) -> bool {
-    if image_count == 0 {
-        false
-    } else {
-        key_has_price(model, "input_cost_per_image")
-    }
-}
-
 fn token_cost_key_with_fallback<'preferred>(
     model: &ModelInfo,
     preferred: &'preferred str,
 ) -> &'preferred str {
-    if key_has_price(model, preferred) {
-        preferred
-    } else {
+    if matches!(model.get(preferred), None | Some(Scalar::Null)) {
         "input_cost_per_token"
+    } else {
+        preferred
     }
 }
 
@@ -75,29 +58,35 @@ fn add_modality_token_costs(
     service_tier: Option<&str>,
 ) -> Result<Decimal, ModalityCostError> {
     let overflow = || ModalityCostError::PromptCostOverflow;
-    if !suppressed_by_per_unit_price(
-        model,
-        details.audio_length_seconds,
-        "input_cost_per_audio_per_second",
-    ) {
+    // A nonnull per-unit price, zero included, suppresses the token charge whenever the unit quantity is nonzero.
+    if details.audio_length_seconds.is_zero()
+        || matches!(
+            model.get("input_cost_per_audio_per_second"),
+            None | Some(Scalar::Null)
+        )
+    {
         let key = service_tier_cost_key("input_cost_per_audio_token", service_tier);
         let component =
             calculate_cost_component(model, &key, Some(Decimal::from(details.audio_tokens)))?;
         prompt_cost = prompt_cost.checked_add(component).ok_or_else(overflow)?;
     }
 
-    if !suppressed_by_per_unit_price(
-        model,
-        details.video_length_seconds,
-        "input_cost_per_video_per_second",
-    ) {
+    if details.video_length_seconds.is_zero()
+        || matches!(
+            model.get("input_cost_per_video_per_second"),
+            None | Some(Scalar::Null)
+        )
+    {
         let key = token_cost_key_with_fallback(model, "input_cost_per_video_token");
         let component =
             calculate_cost_component(model, key, Some(Decimal::from(details.video_tokens)))?;
         prompt_cost = prompt_cost.checked_add(component).ok_or_else(overflow)?;
     }
 
-    if !suppressed_by_image_count(model, details.image_count) {
+    // A nonnull per-image price suppresses image-token charging whenever image_count is also nonzero.
+    if details.image_count == 0
+        || matches!(model.get("input_cost_per_image"), None | Some(Scalar::Null))
+    {
         let key = token_cost_key_with_fallback(model, "input_cost_per_image_token");
         let component =
             calculate_cost_component(model, key, Some(Decimal::from(details.image_tokens)))?;
