@@ -112,46 +112,46 @@ checks:
   commands:
     - id: estimator-types
       why: CompletionCaller protocol or Estimator struct is missing or incorrectly defined
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_estimator::estimator_init_fields($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_estimator::estimator_init_fields($|::)/) - test(/replays_the_/)'
     - id: metadata-evidence
       why: metadata_evidence function is missing or does not preserve exact field mapping from ROIPullEvidence
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_estimator::metadata_evidence($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_estimator::metadata_evidence($|::)/) - test(/replays_the_/)'
     - id: estimator-options-all-support
       why: "estimator_options does not return {\"reasoning_effort\": \"none\"} when all models support it"
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_estimator::estimator_options_all_support($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_estimator::estimator_options_all_support($|::)/) - test(/replays_the_/)'
     - id: estimator-options-empty-tuple
       why: "estimator_options returns reasoning_effort for empty models tuple instead of empty dict {}"
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_estimator::estimator_options_empty_tuple($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_estimator::estimator_options_empty_tuple($|::)/) - test(/replays_the_/)'
     - id: configured-models
       why: _configured_models does not return models unchanged when not None, or does not substitute default correctly
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_estimator::configured_models($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_estimator::configured_models($|::)/) - test(/replays_the_/)'
     - id: cache-context
       why: cache_context does not produce consistent SHA256 hash or includes wrong fields
-      run: cargo nextest run --locked -p betterlite-roi --no-tests=fail -E 'test(/^estimator::cache_context($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-roi --no-tests=fail -E 'test(/^estimator::cache_context($|::)/) - test(/replays_the_/)'
     - id: estimate-gating
       why: evidence gating does not cover 160,000 character or incomplete metadata paths
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_estimator::estimate_gating($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_estimator::estimate_gating($|::)/) - test(/replays_the_/)'
     - id: estimate-request
       why: request construction does not verify exact prompt, temperature, max_tokens or reasoning_effort
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_estimator::estimate_request($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_estimator::estimate_request($|::)/) - test(/replays_the_/)'
     - id: estimate-metadata
       why: "completion request metadata does not have exact tags tuple (\"litellm-roi-estimator\",) and litellm_roi_estimator bool true"
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_estimator::estimate_metadata($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_estimator::estimate_metadata($|::)/) - test(/replays_the_/)'
     - id: estimate-parsing
       why: response parsing does not verify extract_classifier_json usage or response validation
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_estimator::estimate_parsing($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_estimator::estimate_parsing($|::)/) - test(/replays_the_/)'
     - id: result-validation
       why: ROIEstimatorResult validation does not cover finite/nonnegative hours and non-empty reasoning
-      run: cargo nextest run --locked -p betterlite-roi --no-tests=fail -E 'test(/^estimator::result_validation($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-roi --no-tests=fail -E 'test(/^estimator::result_validation($|::)/) - test(/replays_the_/)'
     - id: estimate-success
       why: complete estimate tests do not verify status, model, evidence_source, effort_basis and reasoning truncation
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_estimator::estimate_success($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_estimator::estimate_success($|::)/) - test(/replays_the_/)'
     - id: estimate-error
       why: error handling does not verify SourceError is raised on HTTP/parse/validation failures with exact message
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_estimator::estimate_error($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_estimator::estimate_error($|::)/) - test(/replays_the_/)'
     - id: behavior-tests
       why: the required behavior tests fail or the filter selects no tests
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_estimator_behavior($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_estimator_behavior($|::)/) - test(/replays_the_/)'
 
 oracle_cases:
   - tools/oracle/cases/roi-estimator/metadata-evidence-mapping.yaml
