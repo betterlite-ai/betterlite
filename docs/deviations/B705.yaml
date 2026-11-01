@@ -1,0 +1,65 @@
+task: B705
+deviations:
+  - what: 20251219110931_add_deleted_keys_and_deleted_teams_tables/migration.sql omits LiteLLM's final blank line after the final SQL statement.
+    why: Repository whitespace hooks reject blank lines at EOF; SQL statements and behavior are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20251219110931_add_deleted_keys_and_deleted_teams_tables/migration.sql#L117
+  - what: 20251220144550_schema_update/migration.sql omits LiteLLM's final blank line after the final SQL statement.
+    why: Repository whitespace hooks reject blank lines at EOF; SQL statements and behavior are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20251220144550_schema_update/migration.sql#L20
+  - what: 20260102131258_add_metadata_urls_to_mcp_servers/migration.sql omits LiteLLM's final blank line after the final SQL statement.
+    why: Repository whitespace hooks reject blank lines at EOF; SQL statements and behavior are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260102131258_add_metadata_urls_to_mcp_servers/migration.sql#L5
+  - what: 20260105151539_add_allow_all_keys_to_mcp_servers/migration.sql omits LiteLLM's final blank line after the final SQL statement.
+    why: Repository whitespace hooks reject blank lines at EOF; SQL statements and behavior are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260105151539_add_allow_all_keys_to_mcp_servers/migration.sql#L3
+  - what: 20260106155622_add_endpoint_to_daily_activity_tables/migration.sql omits LiteLLM's final blank line after the final SQL statement.
+    why: Repository whitespace hooks reject blank lines at EOF; SQL statements and behavior are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260106155622_add_endpoint_to_daily_activity_tables/migration.sql#L72
+  - what: 20260107111013_add_router_settings_to_keys_teams/migration.sql omits LiteLLM's final blank line after the final SQL statement.
+    why: Repository whitespace hooks reject blank lines at EOF; SQL statements and behavior are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260107111013_add_router_settings_to_keys_teams/migration.sql#L6
+  - what: 20260108_add_user_email_lower_idx/migration.sql drops the trailing space after "--" on the fourth comment line.
+    why: The repository's trailing-whitespace hook strips trailing spaces from every tracked line; the comment text and SQL statement are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260108_add_user_email_lower_idx/migration.sql#L4
+  - what: 20260116142756_update_deleted_keys_teams_table_routing_settings/migration.sql omits LiteLLM's final blank line after the final SQL statement.
+    why: Repository whitespace hooks reject blank lines at EOF; SQL statements and behavior are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260116142756_update_deleted_keys_teams_table_routing_settings/migration.sql#L6
+  - what: 20260123131407_add_policy_tables_and_policies_field/migration.sql omits LiteLLM's final blank line after the final SQL statement.
+    why: Repository whitespace hooks reject blank lines at EOF; SQL statements and behavior are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260123131407_add_policy_tables_and_policies_field/migration.sql#L51
+  - what: 20260131150814_add_team_user_to_vector_stores/migration.sql omits LiteLLM's final blank line after the final SQL statement.
+    why: Repository whitespace hooks reject blank lines at EOF; SQL statements and behavior are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260131150814_add_team_user_to_vector_stores/migration.sql#L13
+  - what: 20260205091235_allow_team_guardrail_config/migration.sql omits LiteLLM's final blank line after the final SQL statement.
+    why: Repository whitespace hooks reject blank lines at EOF; SQL statements and behavior are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260205091235_allow_team_guardrail_config/migration.sql#L6
+  - what: 20260205144610_add_soft_budget_to_team_table/migration.sql omits LiteLLM's final blank line after the final SQL statement.
+    why: Repository whitespace hooks reject blank lines at EOF; SQL statements and behavior are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260205144610_add_soft_budget_to_team_table/migration.sql#L3
+  - what: 20260207093506_add_available_on_public_internet_to_mcp_servers/migration.sql omits LiteLLM's final blank line after the final SQL statement.
+    why: Repository whitespace hooks reject blank lines at EOF; SQL statements and behavior are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260207093506_add_available_on_public_internet_to_mcp_servers/migration.sql#L3
+  - what: 20260207110613_add_soft_budget_to_deleted_teams_table/migration.sql omits LiteLLM's final blank line after the final SQL statement.
+    why: Repository whitespace hooks reject blank lines at EOF; SQL statements and behavior are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260207110613_add_soft_budget_to_deleted_teams_table/migration.sql#L3
+  - what: 20260212103349_adjust_tags_policy_table/migration.sql omits LiteLLM's final blank line after the final SQL statement.
+    why: Repository whitespace hooks reject blank lines at EOF; SQL statements and behavior are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260212103349_adjust_tags_policy_table/migration.sql#L3
+  - what: 20260212143306_add_access_group_table/migration.sql omits LiteLLM's final blank line after the final SQL statement.
+    why: Repository whitespace hooks reject blank lines at EOF; SQL statements and behavior are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260212143306_add_access_group_table/migration.sql#L33
+  - what: 20260214094754_schema_sync/migration.sql omits LiteLLM's final blank line after the final SQL statement.
+    why: Repository whitespace hooks reject blank lines at EOF; SQL statements and behavior are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260214094754_schema_sync/migration.sql#L3
+  - what: 20260214163027_add_pipeline_to_policy_table/migration.sql omits LiteLLM's final blank line after the final SQL statement.
+    why: Repository whitespace hooks reject blank lines at EOF; SQL statements and behavior are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260214163027_add_pipeline_to_policy_table/migration.sql#L3
+  - what: 20260214185341_object_permissions_for_end_users/migration.sql omits LiteLLM's final blank line after the final SQL statement.
+    why: Repository whitespace hooks reject blank lines at EOF; SQL statements and behavior are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260214185341_object_permissions_for_end_users/migration.sql#L11
+  - what: 20260218231534_add_last_active_to_key_table/migration.sql omits LiteLLM's final blank line after the final SQL statement.
+    why: Repository whitespace hooks reject blank lines at EOF; SQL statements and behavior are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260218231534_add_last_active_to_key_table/migration.sql#L6
+  - what: 20260219105005_add_project_id_to_deleted_keys/migration.sql omits LiteLLM's final blank line after the final SQL statement.
+    why: Repository whitespace hooks reject blank lines at EOF; SQL statements and behavior are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260219105005_add_project_id_to_deleted_keys/migration.sql#L3

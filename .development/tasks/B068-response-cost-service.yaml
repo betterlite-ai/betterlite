@@ -7,7 +7,8 @@ description: >-
   intervening branches. Expose one CostCalculator with explicit catalog, provider-policy,
   clock, adjustments and request-local breakdown context. Bind B1678 PriceLookup.effective
   to B205's public model-info resolver and raw to B193's immutable price map; do not implement
-  public lookup as direct raw-map indexing. Install supported native price policies and
+  public lookup as direct raw-map indexing. Bind B1672's effective_priced_model to the same
+  resolution, decoding the entry's tiered_pricing and off_peak_pricing into Tier and OffPeakBlock. Install supported native price policies and
   the B1687 tool/grounding adapter, allowing each later provider to register its own B1686
   policy without importing a provider umbrella or substituting generic formulas for an
   unsupported specialized policy.
