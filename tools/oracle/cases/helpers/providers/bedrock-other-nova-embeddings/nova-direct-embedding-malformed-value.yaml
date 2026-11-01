@@ -1,0 +1,10 @@
+kind: helper
+name: nova-direct-embedding-malformed-value
+call:
+  bedrock_other_nova_embeddings:
+    nova_result_index_token_estimate:
+      response_list:
+        - embedding: 42
+env: {}
+compare:
+  ignore: []

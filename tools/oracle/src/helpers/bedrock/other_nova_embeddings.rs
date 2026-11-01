@@ -52,7 +52,7 @@ impl Helper for Op {
             | Input::NovaAsyncOutputS3Required(call) => run_transform_request(call),
             Input::NovaDataUrlJpg(call) => nova_data_url_jpg(call),
             Input::NovaResultIndexTokenEstimate(call) => nova_result_tokens(call),
-            Input::NovaInvocationArn(call) => Ok(nova_invocation_arn(call)),
+            Input::NovaInvocationArn(call) => nova_invocation_arn(call),
         };
         Ok(output?)
     }
@@ -119,10 +119,10 @@ fn nova_result_tokens(call: &TransformResponseCall) -> Result<Value, Failure> {
     embedding_response_json(&result)
 }
 
-fn nova_invocation_arn(call: &InvocationArnCall) -> Value {
-    let response = map_to_params(&call.response).unwrap_or_default();
+fn nova_invocation_arn(call: &InvocationArnCall) -> Result<Value, Failure> {
+    let response = map_to_params(&call.response)?;
     let result = transform_invoke_response(&response, "nova-model");
-    embedding_response_json(&result).unwrap_or(Value::Null)
+    embedding_response_json(&result)
 }
 
 fn embedding_response_json(
@@ -172,6 +172,9 @@ impl From<Failure> for Box<HelperError> {
                 | NovaEmbeddingsError::MissingComma { .. }
                 | NovaEmbeddingsError::OutputS3UriRequired,
             ) => "ValueError",
+            Failure::NovaEmbeddings(NovaEmbeddingsError::MalformedField { field: "embedding" }) => {
+                "ValidationError"
+            }
             Failure::NovaEmbeddings(NovaEmbeddingsError::MalformedField { .. }) => "TypeError",
             Failure::NovaEmbeddings(NovaEmbeddingsError::TokenOverflow) => "OverflowError",
             Failure::Json(_) => "KeyError",

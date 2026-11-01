@@ -126,6 +126,22 @@ fn nova_default_purpose_dimensions() {
         explicit_request.get("taskType"),
         Some(&text("SEGMENTED_EMBEDDING"))
     );
+
+    let dimension_only = params(&[("embedding_dimension", int(128))]);
+    let dimension_only_request =
+        transform_request("hello", &dimension_only, false, None, None).unwrap();
+    let dimension_only_params = single_params(&dimension_only_request);
+    assert_eq!(
+        dimension_only_params.get("embeddingDimension"),
+        Some(&int(128))
+    );
+    assert!(!dimension_only_params.contains_key("embedding_dimension"));
+
+    let bare_request = transform_request("hello", &Params::new(), false, None, None).unwrap();
+    assert_eq!(
+        single_params(&bare_request).get("embeddingDimension"),
+        Some(&int(3072))
+    );
 }
 
 fn nova_text_image_audio_video() {
@@ -444,6 +460,45 @@ fn nova_result_index_token_estimate() {
 
     let no_images = transform_response(&[Params::new()], "nova-model", None).unwrap();
     assert_eq!(no_images.usage.prompt_tokens_details, None);
+
+    assert_list_entry_type_checked_before_truncation();
+    assert_non_object_list_entries();
+}
+
+// LiteLLM builds Embedding(embedding=item["embedding"], ...) before it reads truncatedCharLength.
+fn assert_list_entry_type_checked_before_truncation() {
+    let null_embedding = params(&[(
+        "embeddings",
+        Field::List(vec![mapping_field(&[
+            ("embedding", Field::Null),
+            ("truncatedCharLength", int(8)),
+        ])]),
+    )]);
+    let error = transform_response(&[null_embedding], "nova-model", None).unwrap_err();
+    assert!(matches!(
+        error,
+        NovaEmbeddingsError::MalformedField { field: "embedding" }
+    ));
+}
+
+fn assert_non_object_list_entries() {
+    for entry in [Field::Null, Field::Bool(true), int(1), float_field(1.5)] {
+        let response = params(&[("embeddings", Field::List(vec![entry]))]);
+        let error = transform_response(&[response], "nova-model", None).unwrap_err();
+        assert!(matches!(
+            error,
+            NovaEmbeddingsError::MalformedField {
+                field: "embeddings"
+            }
+        ));
+    }
+
+    let skipped = params(&[(
+        "embeddings",
+        Field::List(vec![list_field(&[]), text("not a mapping")]),
+    )]);
+    let skipped_result = transform_response(&[skipped], "nova-model", None).unwrap();
+    assert_eq!(skipped_result.data.len(), 0);
 }
 
 fn nova_invocation_arn() {

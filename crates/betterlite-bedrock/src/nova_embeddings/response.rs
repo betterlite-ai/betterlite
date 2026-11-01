@@ -100,22 +100,30 @@ fn retained_vectors(response: &Params) -> Result<Vec<(Field, u64)>, NovaEmbeddin
 }
 
 fn embeddings_list_entry(item: &Field) -> Option<Result<(Field, u64), NovaEmbeddingsError>> {
-    let Field::Mapping(mapping) = item else {
-        return None;
-    };
-    let embedding_field = mapping.get("embedding")?;
-    Some(embedding_list_item(mapping, embedding_field))
+    match item {
+        Field::Mapping(mapping) => {
+            let embedding_field = mapping.get("embedding")?;
+            Some(embedding_list_item(mapping, embedding_field))
+        }
+        Field::List(_) | Field::Text(_) => None,
+        Field::Null | Field::Bool(_) | Field::Int(_) | Field::Float(_) => {
+            Some(Err(NovaEmbeddingsError::MalformedField {
+                field: "embeddings",
+            }))
+        }
+    }
 }
 
 fn embedding_list_item(
     item: &Params,
     embedding_field: &Field,
 ) -> Result<(Field, u64), NovaEmbeddingsError> {
+    let length_estimate = embedding_length(embedding_field)?;
     let estimate = match item.get("truncatedCharLength") {
         Some(field) => as_u64(field, "truncatedCharLength")?
             .checked_div(4)
             .unwrap_or(0),
-        None => embedding_length(embedding_field)?,
+        None => length_estimate,
     };
     Ok((embedding_field.clone(), estimate))
 }
@@ -129,8 +137,10 @@ fn embedding_length(field: &Field) -> Result<u64, NovaEmbeddingsError> {
             return Err(NovaEmbeddingsError::MalformedField { field: "embedding" });
         }
     };
-    let length_u64 = u64::try_from(length).map_err(|_source| NovaEmbeddingsError::TokenOverflow)?;
-    Ok(length_u64.checked_div(4).unwrap_or(0))
+    Ok(u64::try_from(length)
+        .map_err(|_source| NovaEmbeddingsError::TokenOverflow)?
+        .checked_div(4)
+        .unwrap_or(0))
 }
 
 fn as_u64(field: &Field, name: &'static str) -> Result<u64, NovaEmbeddingsError> {
