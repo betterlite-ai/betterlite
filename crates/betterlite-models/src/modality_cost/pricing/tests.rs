@@ -66,7 +66,7 @@ fn a_missing_suffixed_key_falls_back_to_the_base_key() {
 }
 
 #[test]
-fn an_explicit_null_suffixed_key_does_not_fall_back() {
+fn an_explicit_null_suffixed_key_falls_back_like_a_missing_one() {
     let model = model(&[
         ("input_cost_per_token_flex", Scalar::Null),
         (
@@ -74,7 +74,14 @@ fn an_explicit_null_suffixed_key_does_not_fall_back() {
             Scalar::Number(serde_json::Number::from(3_i64)),
         ),
     ]);
-    let price = price_for_key(&model, "input_cost_per_token_flex").expect("explicit null");
+    let price = price_for_key(&model, "input_cost_per_token_flex").expect("fell back");
+    assert_eq!(price, Some(Decimal::from(3_i64)));
+}
+
+#[test]
+fn an_explicit_null_base_key_with_no_fallback_is_none() {
+    let model = model(&[("input_cost_per_token_flex", Scalar::Null)]);
+    let price = price_for_key(&model, "input_cost_per_token_flex").expect("no fallback");
     assert_eq!(price, None);
 }
 

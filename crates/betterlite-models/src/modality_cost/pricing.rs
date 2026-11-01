@@ -24,17 +24,18 @@ pub fn service_tier_cost_key(base: &str, service_tier: Option<&str>) -> String {
     format!("{base}{suffix}")
 }
 
-// Mirrors _get_cost_per_unit: a present key, even an explicit null, is used as given; only a wholly missing key falls back through its service-tier suffix.
+// Mirrors _get_cost_per_unit: dict.get cannot tell an explicit null from a missing key, so both fall back through the first service-tier suffix found anywhere in the key.
 pub fn price_for_key(model: &ModelInfo, key: &str) -> Result<Option<Decimal>, ModalityCostError> {
     match model.get(key) {
         Some(scalar @ (Scalar::Bool(_) | Scalar::Number(_) | Scalar::Text(_))) => {
             Ok(Some(coerce_cost_per_token(Some(scalar))?))
         }
-        Some(Scalar::Array(_) | Scalar::Object(_) | Scalar::Null) => Ok(None),
-        None => {
+        Some(Scalar::Array(_) | Scalar::Object(_)) => Ok(None),
+        Some(Scalar::Null) | None => {
             for suffix in SERVICE_TIER_SUFFIXES {
-                if let Some(base) = key.strip_suffix(suffix) {
-                    return price_for_key(model, base);
+                if key.contains(suffix) {
+                    let base = key.replacen(suffix, "", 1);
+                    return price_for_key(model, &base);
                 }
             }
             Ok(None)
