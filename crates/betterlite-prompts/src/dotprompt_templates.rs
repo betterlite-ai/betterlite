@@ -4,12 +4,15 @@ use std::path::{Path, PathBuf};
 
 use indexmap::IndexMap;
 use minijinja::value::Serde;
+use serde::Deserialize;
+use serde_with::{DefaultOnNull, serde_as};
 
 use crate::arguments::json::{Json, Object};
 use loading::PromptManagerError;
 use render::RenderError;
 use template::{PromptTemplate, TemplateError};
 
+mod bounds;
 pub mod content;
 mod conversion;
 pub mod frontmatter;
@@ -20,6 +23,17 @@ mod sandbox;
 pub mod template;
 pub mod validation;
 pub mod version;
+
+#[serde_as]
+#[derive(Deserialize)]
+struct PromptRecord {
+    #[serde(default)]
+    #[serde_as(deserialize_as = "DefaultOnNull")]
+    content: String,
+    #[serde(default)]
+    #[serde_as(deserialize_as = "DefaultOnNull")]
+    metadata: Object,
+}
 
 #[derive(Debug, Default)]
 pub struct PromptManager {
@@ -64,7 +78,7 @@ impl PromptManager {
     }
 
     fn load_prompts_from_directory(&mut self) -> Result<(), PromptManagerError> {
-        let Some(directory) = self.prompt_directory.clone() else {
+        let Some(directory) = self.prompt_directory.as_deref() else {
             return Ok(());
         };
         if !directory.exists() {
@@ -73,20 +87,18 @@ impl PromptManager {
             });
         }
 
-        let entries = fs::read_dir(&directory).map_err(|source| PromptManagerError::Read {
+        let entries = fs::read_dir(directory).map_err(|source| PromptManagerError::Read {
             path: directory.display().to_string(),
             source,
         })?;
 
         for entry in entries.flatten() {
             let path = entry.path();
-            let Some(file_name) = path.file_name().and_then(OsStr::to_str) else {
-                continue;
-            };
-            if file_name.starts_with('.') {
-                continue;
-            }
-            if path.extension().and_then(OsStr::to_str) != Some("prompt") {
+            let is_prompt_file = path
+                .file_name()
+                .and_then(OsStr::to_str)
+                .is_some_and(|name| name.ends_with(".prompt"));
+            if !is_prompt_file {
                 continue;
             }
             let Some(entry_id) = path.file_stem().and_then(OsStr::to_str) else {
@@ -101,17 +113,15 @@ impl PromptManager {
     }
 
     fn insert_prompt_record(&mut self, template_id: String, prompt_info: &Object) {
-        let content = match prompt_info.get("content") {
-            None => String::new(),
-            Some(Json::Text(text)) => text.clone(),
-            Some(_) => return,
+        let Ok(value) = serde_json::to_value(prompt_info) else {
+            return;
         };
-        let metadata = match prompt_info.get("metadata") {
-            None => Object::new(),
-            Some(Json::Object(metadata)) => metadata.clone(),
-            Some(_) => return,
+        let Ok(record) = serde_json::from_value::<PromptRecord>(value) else {
+            return;
         };
-        let Ok(template) = PromptTemplate::new(content, metadata, Some(template_id.clone())) else {
+        let Ok(template) =
+            PromptTemplate::new(record.content, record.metadata, Some(template_id.clone()))
+        else {
             return;
         };
         self.prompts.insert(template_id, template);
@@ -137,7 +147,7 @@ impl PromptManager {
     pub fn render(
         &self,
         prompt_id: &str,
-        prompt_variables: Option<&Object>,
+        prompt_variables: &Object,
         version: Option<i64>,
     ) -> Result<String, RenderError> {
         let Some(template) = self.get_prompt(prompt_id, version) else {
@@ -155,19 +165,20 @@ impl PromptManager {
             });
         };
 
-        let empty = Object::new();
-        let variables = prompt_variables.unwrap_or(&empty);
-
         if !template.input_schema.is_empty() {
-            validation::validate_input(variables, &template.input_schema)?;
+            validation::validate_input(prompt_variables, &template.input_schema)?;
         }
 
+        bounds::check_template(&template.content)?;
+
         let env = sandbox::build();
-        env.render_str(&template.content, Serde(variables))
+        let rendered = env
+            .render_str(&template.content, Serde(prompt_variables))
             .map_err(|source| RenderError::Template {
                 prompt_id: prompt_id.to_owned(),
                 source,
-            })
+            })?;
+        bounds::check_output(rendered)
     }
 
     pub fn reload_prompts(&mut self) -> Result<(), PromptManagerError> {
@@ -182,24 +193,19 @@ impl PromptManager {
         &mut self,
         prompt_id: &str,
         content: String,
-        metadata: Option<Object>,
+        metadata: Object,
     ) -> Result<(), TemplateError> {
-        let template = PromptTemplate::new(
-            content,
-            metadata.unwrap_or_default(),
-            Some(prompt_id.to_owned()),
-        )?;
+        let template = PromptTemplate::new(content, metadata, Some(prompt_id.to_owned()))?;
         self.prompts.insert(prompt_id.to_owned(), template);
         Ok(())
     }
 
     pub fn load_prompts_from_json_data(&mut self, prompt_data: &Object) {
-        for (template_id, prompt_info) in prompt_data.iter().filter_map(|(key, value)| {
-            value
-                .as_object()
-                .map(|object| (key.clone(), object.clone()))
-        }) {
-            self.insert_prompt_record(template_id, &prompt_info);
+        for (template_id, prompt_info) in prompt_data
+            .iter()
+            .filter_map(|(key, value)| value.as_object().map(|object| (key.clone(), object)))
+        {
+            self.insert_prompt_record(template_id, prompt_info);
         }
     }
 

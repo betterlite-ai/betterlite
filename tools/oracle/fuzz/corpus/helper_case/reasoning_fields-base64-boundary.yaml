@@ -1,0 +1,9 @@
+kind: helper
+name: reasoning-fields-base64-boundary
+call:
+  reasoning_fields:
+    operation: extract_base64_data
+    image_url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg=="
+env: {}
+compare:
+  ignore: []

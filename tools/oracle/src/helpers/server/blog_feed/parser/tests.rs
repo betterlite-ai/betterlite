@@ -65,9 +65,10 @@ fn nested_child_tail_matches_element_text() {
 
 #[test]
 fn first_empty_channel_stops_channel_selection() {
-    let xml = "<rss><channel/></rss><rss><channel><item><title>Later</title>\
+    let xml = "<rss><channel/><channel><item><title>Later</title>\
         <link>https://later</link></item></channel></rss>";
-    drop(parse_rss_to_posts(xml, 1).unwrap_err());
+    let posts = parse_rss_to_posts(xml, 1).unwrap();
+    assert_eq!(posts, Vec::new());
 }
 
 #[test]
