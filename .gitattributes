@@ -1,1 +1,1 @@
-**/fuzz/corpus/** -whitespace
+**/fuzz/corpus/** -whitespace -text
