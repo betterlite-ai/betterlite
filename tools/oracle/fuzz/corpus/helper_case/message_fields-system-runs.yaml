@@ -8,10 +8,10 @@ call:
         content: Rule one.
       - role: system
         content: Rule two.
-      - role: user
-        content: Hello.
       - role: developer
         content: Developer note.
+      - role: user
+        content: Hello.
 env: {}
 compare:
   ignore: []

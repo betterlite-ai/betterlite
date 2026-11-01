@@ -7,6 +7,7 @@ fn message_fields_behavior_tests_behavior() {
     asserts_a_mixed_text_and_parts_run_is_promoted_to_parts();
     asserts_a_contentless_run_keeps_only_its_first_message();
     asserts_a_non_system_run_passes_through_unchanged();
+    asserts_a_developer_message_after_system_stays_separate();
 }
 
 fn asserts_a_text_run_is_joined_with_a_blank_line() {
@@ -74,5 +75,14 @@ fn asserts_a_non_system_run_passes_through_unchanged() {
     assert_eq!(
         merge_adjacent_system_messages(&non_system_run),
         non_system_run
+    );
+}
+
+fn asserts_a_developer_message_after_system_stays_separate() {
+    let system_then_developer = [text_message("system", "a"), text_message("developer", "b")];
+    assert_eq!(
+        merge_adjacent_system_messages(&system_then_developer),
+        system_then_developer,
+        "merging groups only on role == system, so a developer message keeps its own slot"
     );
 }
