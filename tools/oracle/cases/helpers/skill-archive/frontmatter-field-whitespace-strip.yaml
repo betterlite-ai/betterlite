@@ -1,0 +1,8 @@
+kind: helper
+name: frontmatter-field-whitespace-strip
+call:
+  skill_discovery_archives:
+    stored_content: UEsDBBQAAAAIAAAAIQAFSxTlNwAAADgAAAAIAAAAU0tJTEwubWTT1dXlykvMTbVSUHBJzc1XKM7OzMlR4EpJLU4uyiwoyczPs1JQV3BUSAFJqitw6QLVJ+WnVAIAUEsBAhQDFAAAAAgAAAAhAAVLFOU3AAAAOAAAAAgAAAAAAAAAAAAAAKSBAAAAAFNLSUxMLm1kUEsFBgAAAAABAAEANgAAAF0AAAAAAA==
+env: {}
+compare:
+  ignore: []

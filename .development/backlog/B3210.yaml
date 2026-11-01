@@ -1,14 +1,14 @@
 id: B3210
 milestone: M4 keys, spend and management
 title: Build reproducible installable skill archives
-status: todo
+status: done
 depends_on: [B171]
 file: tasks/B3210-skill-discovery-archives.yaml
 covers:
   - "litellm/proxy/discovery_endpoints/agent_skills_archive.py"
 parent: B078
 split_from: B078
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 432
