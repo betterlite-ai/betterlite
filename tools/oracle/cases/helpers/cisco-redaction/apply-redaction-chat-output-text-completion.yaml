@@ -1,0 +1,12 @@
+kind: helper
+name: apply-redaction-chat-output-text-completion
+call:
+  b3757:
+    function: apply_redaction_chat_output_text_completion
+    choices:
+      - {text: secret data here, index: 0, finish_reason: stop}
+    sanitized_text: "[REDACTED]"
+    sanitized_messages: null
+env: {}
+compare:
+  ignore: []

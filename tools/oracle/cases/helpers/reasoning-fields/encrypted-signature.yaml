@@ -1,0 +1,9 @@
+kind: helper
+name: reasoning-fields-encrypted-signature
+call:
+  reasoning_fields:
+    operation: encrypted_reasoning_signature
+    encrypted_content: opaque-anthropic-payload
+env: {}
+compare:
+  ignore: []

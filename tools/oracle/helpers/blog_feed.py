@@ -9,7 +9,6 @@ from litellm.litellm_core_utils.get_blog_posts import GetBlogPosts
 from litellm.litellm_core_utils.get_blog_posts import get_blog_posts as public_get_blog_posts
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
-BLOG_POSTS_TTL_SECONDS = 3600
 
 
 class WarningCapture(logging.Filter):
@@ -30,6 +29,10 @@ def responder_for(
         raise ValueError("response must be an object")
     if response.get("error", False):
         def raise_connect_error(*_args: object, **_kwargs: object) -> httpx.Response:
+            if requests is not None:
+                requests.append(
+                    {"url": url, "timeout": cast(Json, _kwargs.get("timeout"))}
+                )
             raise httpx.ConnectError("mock transport failure")
 
         return raise_connect_error
@@ -60,7 +63,8 @@ def fetch_rss_feed(input_value: dict[str, Json]) -> Json:
         raise ValueError("url must be a string and timeout must be an int")
     requests: list[Json] = []
     with mock.patch.object(httpx, "get", side_effect=responder_for(response, url, requests)):
-        return GetBlogPosts.fetch_rss_feed(url, timeout=timeout)
+        text = GetBlogPosts.fetch_rss_feed(url, timeout=timeout)
+    return {"text": text, "request": requests[0] if requests else None}
 
 
 def parse_rss_to_posts(input_value: dict[str, Json]) -> Json:
@@ -138,13 +142,7 @@ def get_blog_posts_sequence(input_value: dict[str, Json]) -> Json:
             raise ValueError("call url and now have invalid types")
         if not isinstance(local_only, bool):
             raise ValueError("call local_only must be a bool")
-        cached = GetBlogPosts._cached_posts  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-        last_fetch = GetBlogPosts._last_fetch_time  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-        cache_hit = (
-            not local_only
-            and cached is not None
-            and float(now) - last_fetch < BLOG_POSTS_TTL_SECONDS
-        )
+        requests_before = len(requests)
         capture = WarningCapture()
         logger = logging.getLogger("LiteLLM")
         logger.filters.insert(0, capture)
@@ -156,7 +154,7 @@ def get_blog_posts_sequence(input_value: dict[str, Json]) -> Json:
                 posts = public_get_blog_posts(url=url)
         finally:
             logger.removeFilter(capture)
-        if not cache_hit and not local_only:
+        if len(requests) > requests_before:
             fetch_count += 1
         results.append({"posts": cast(list[Json], posts), "warnings": capture.warnings})
         snapshots.append(
