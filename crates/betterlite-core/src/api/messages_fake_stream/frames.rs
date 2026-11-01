@@ -86,6 +86,13 @@ fn starting_message(response: &Json, role: Json, input_tokens: Json) -> Json {
     ])
 }
 
+fn block_kind(fields: &IndexMap<String, Json>) -> Option<&str> {
+    match fields.get("type") {
+        Some(Json::Text(value)) => Some(value.as_str()),
+        _ => None,
+    }
+}
+
 pub(super) fn content_block_frames(
     frames: &mut Vec<Vec<u8>>,
     block: &Json,
@@ -94,11 +101,7 @@ pub(super) fn content_block_frames(
     let Json::Object(fields) = block else {
         return Err(MessagesFakeStreamError::ContentBlockNotMapping);
     };
-    let kind = match fields.get("type") {
-        Some(Json::Text(value)) => Some(value.as_str()),
-        _ => None,
-    };
-    match kind {
+    match block_kind(fields) {
         Some("text") => {
             let value = fields
                 .get("text")
@@ -120,34 +123,19 @@ pub(super) fn content_block_frames(
                 None,
             );
         }
-        Some("tool_use") => tool_use_frames(frames, fields, index),
+        Some("tool_use") => {
+            let id = fields.get("id").cloned().unwrap_or(Json::Null);
+            let name = fields.get("name").cloned().unwrap_or(Json::Null);
+            let input = fields
+                .get("input")
+                .cloned()
+                .unwrap_or_else(|| object(vec![]));
+            tool_use_frames(frames, index, id, name, &input);
+        }
         Some(_) | None => block_frames(frames, index, block.clone(), None),
     }
     frames.push(indexed_frame("content_block_stop", index, vec![]));
     Ok(())
-}
-
-fn tool_use_frames(frames: &mut Vec<Vec<u8>>, fields: &IndexMap<String, Json>, index: usize) {
-    let input_data = fields
-        .get("input")
-        .cloned()
-        .unwrap_or_else(|| object(vec![]));
-    content_block_with_delta(
-        frames,
-        index,
-        (
-            "tool_use",
-            vec![
-                ("id", fields.get("id").cloned().unwrap_or(Json::Null)),
-                ("name", fields.get("name").cloned().unwrap_or(Json::Null)),
-                ("input", object(vec![])),
-            ],
-        ),
-        (
-            "input_json_delta",
-            vec![("partial_json", Json::Text(dumps(&input_data)))],
-        ),
-    );
 }
 
 fn block_frames(frames: &mut Vec<Vec<u8>>, index: usize, content_block: Json, delta: Option<Json>) {
@@ -176,6 +164,22 @@ fn content_block_with_delta(
     let content_block = typed_object(start_kind, start_extra);
     let delta_value = typed_object(delta_kind, delta_extra);
     block_frames(frames, index, content_block, Some(delta_value));
+}
+
+fn tool_use_frames(frames: &mut Vec<Vec<u8>>, index: usize, id: Json, name: Json, input: &Json) {
+    let partial_json = dumps(input);
+    content_block_with_delta(
+        frames,
+        index,
+        (
+            "tool_use",
+            vec![("id", id), ("name", name), ("input", object(vec![]))],
+        ),
+        (
+            "input_json_delta",
+            vec![("partial_json", Json::Text(partial_json))],
+        ),
+    );
 }
 
 fn thinking_frames(frames: &mut Vec<Vec<u8>>, fields: &IndexMap<String, Json>, index: usize) {
