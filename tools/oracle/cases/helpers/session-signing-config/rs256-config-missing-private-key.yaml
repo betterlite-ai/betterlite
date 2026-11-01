@@ -1,0 +1,14 @@
+kind: helper
+name: rs256-config-missing-private-key
+call:
+  b4653:
+    function: signing_config
+    master_key: "sk-test-master-key-0123456789abcdef"
+    general_settings:
+      algorithm: RS256
+      kid: current
+      private_key: "os.environ/B4653_MISSING_PRIVATE_KEY"
+    environment: {}
+env: {}
+compare:
+  ignore: []

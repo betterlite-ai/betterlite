@@ -1,0 +1,16 @@
+kind: helper
+name: session-bearer-invalid-expired
+call:
+  b4653:
+    function: session_bearer
+    signing_key: "session-signing-key-0123456789abcdef"
+    mint:
+      principal:
+        user_id: user-1
+        client_id: client-1
+      kind: session
+      mint_now: 1700000000
+    open_now: 1700003700
+env: {}
+compare:
+  ignore: []

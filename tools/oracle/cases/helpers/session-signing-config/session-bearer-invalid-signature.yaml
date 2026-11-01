@@ -1,0 +1,17 @@
+kind: helper
+name: session-bearer-invalid-signature
+call:
+  b4653:
+    function: session_bearer
+    signing_key: "session-signing-key-0123456789abcdef"
+    open_signing_key: "different-signing-key-fedcba9876543210"
+    mint:
+      principal:
+        user_id: user-1
+        client_id: client-1
+      kind: session
+      mint_now: 1700000000
+    open_now: 1700000100
+env: {}
+compare:
+  ignore: []

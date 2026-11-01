@@ -107,6 +107,11 @@ impl AsymmetricSessionKeys {
         ))
     }
 
+    pub fn kid_and_public_key_pem(&self) -> Result<(String, String), KeyError> {
+        let public_key_pem = self.public_key_pem()?;
+        Ok((self.kid.clone(), public_key_pem))
+    }
+
     pub(crate) fn verification_key(&self, kid: Option<&str>) -> Result<&[u8], OpenError> {
         if kid == Some(self.kid.as_str()) {
             return Ok(self.signer.public_key().as_ref());

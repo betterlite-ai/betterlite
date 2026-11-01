@@ -1,0 +1,10 @@
+kind: helper
+name: hs256-config-absent
+call:
+  b4653:
+    function: signing_config
+    master_key: "sk-test-master-key-0123456789abcdef"
+    environment: {}
+env: {}
+compare:
+  ignore: []

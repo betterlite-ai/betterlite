@@ -1,0 +1,20 @@
+kind: helper
+name: bridge-envelope-invalid-expired
+call:
+  b4653:
+    function: bridge_envelope
+    signing_key: "0123456789abcdef0123456789abcdef"
+    encryption_key: "fedcba9876543210fedcba9876543210"
+    mint:
+      server_id: server-1
+      subject_type: key_hash
+      subject: hashed-key-abc
+      access_token: upstream-access-token-value
+      token_type: Bearer
+      expires_in: 3600
+      mint_now: 1700000000
+    open_now: 1700003700
+    expected_server_id: server-1
+env: {}
+compare:
+  ignore: []

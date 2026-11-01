@@ -1,0 +1,14 @@
+kind: helper
+name: rs256-config-malformed
+call:
+  b4653:
+    function: signing_config
+    master_key: "sk-test-master-key-0123456789abcdef"
+    general_settings:
+      algorithm: ES256
+      kid: current
+      private_key: "some-inline-string"
+    environment: {}
+env: {}
+compare:
+  ignore: []
