@@ -34,10 +34,16 @@ async fn parses_a_file_field_into_an_upload_document() {
         .await
         .unwrap();
     let (document, fields) = build(&form).unwrap();
-    let Some(OcrDocument::Upload { bytes, mime_type }) = document else {
+    let Some(OcrDocument::Upload {
+        bytes,
+        filename,
+        mime_type,
+    }) = document
+    else {
         panic!("expected an upload document");
     };
     assert_eq!(bytes, b"%PDF-1.4");
+    assert_eq!(filename, Some("a.pdf".to_owned()));
     assert_eq!(mime_type, Some("application/pdf".to_owned()));
     assert_eq!(
         fields.get("model"),
@@ -194,15 +200,144 @@ async fn non_json_field_is_kept_as_text() {
 }
 
 #[tokio::test]
-async fn non_utf8_text_field_is_rejected() {
+async fn non_utf8_text_field_falls_back_to_latin1() {
     let mut body = Vec::new();
     body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.pdf\"\r\nContent-Type: application/pdf\r\n\r\ndata\r\n");
     body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n");
     body.extend_from_slice(&[0xFF, 0xFE]);
     body.extend_from_slice(b"\r\n--B--\r\n");
+    let form = parse_body(&body, "multipart/form-data; boundary=B")
+        .await
+        .unwrap();
+    let (_, fields) = build(&form).unwrap();
+    assert_eq!(
+        fields.get("model"),
+        Some(&Json::Text("\u{ff}\u{fe}".to_owned()))
+    );
+}
+
+#[tokio::test]
+async fn charset_param_picks_the_decoding() {
+    let mut body = Vec::new();
+    body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.pdf\"\r\nContent-Type: application/pdf\r\n\r\ndata\r\n");
+    body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n");
+    body.extend_from_slice(&[0xE9]);
+    body.extend_from_slice(b"\r\n--B--\r\n");
+    let form = parse_body(&body, "multipart/form-data; boundary=B; charset=iso-8859-1")
+        .await
+        .unwrap();
+    let (_, fields) = build(&form).unwrap();
+    assert_eq!(fields.get("model"), Some(&Json::Text("\u{e9}".to_owned())));
+}
+
+#[tokio::test]
+async fn a_part_without_a_name_is_rejected() {
+    let body = b"--B\r\nContent-Disposition: form-data\r\n\r\nvalue\r\n--B--\r\n".to_vec();
     parse_body(&body, "multipart/form-data; boundary=B")
         .await
         .unwrap_err();
+}
+
+#[tokio::test]
+async fn a_text_part_over_one_mebibyte_is_rejected() {
+    let mut body = Vec::new();
+    body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n");
+    body.extend_from_slice(&vec![b'a'; 1024 * 1024 + 1]);
+    body.extend_from_slice(b"\r\n--B--\r\n");
+    parse_body(&body, "multipart/form-data; boundary=B")
+        .await
+        .unwrap_err();
+}
+
+#[tokio::test]
+async fn a_text_part_at_one_mebibyte_is_accepted() {
+    let mut body = Vec::new();
+    body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n");
+    body.extend_from_slice(&vec![b'a'; 1024 * 1024]);
+    body.extend_from_slice(b"\r\n--B--\r\n");
+    parse_body(&body, "multipart/form-data; boundary=B")
+        .await
+        .unwrap();
+}
+
+fn parts_body(boundary: &str, count: usize, filename: Option<&str>) -> Vec<u8> {
+    let disposition_suffix =
+        filename.map_or_else(String::new, |name| format!("; filename=\"{name}\""));
+    let mut body = Vec::new();
+    for index in 0..count {
+        body.extend_from_slice(
+            format!(
+                "--{boundary}\r\nContent-Disposition: form-data; name=\"f{index}\"{disposition_suffix}\r\n\r\nv\r\n"
+            )
+            .as_bytes(),
+        );
+    }
+    body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
+    body
+}
+
+#[tokio::test]
+async fn one_thousand_fields_are_accepted() {
+    let body = parts_body("B", 1000, None);
+    parse_body(&body, "multipart/form-data; boundary=B")
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn one_thousand_and_one_fields_are_rejected() {
+    let body = parts_body("B", 1001, None);
+    parse_body(&body, "multipart/form-data; boundary=B")
+        .await
+        .unwrap_err();
+}
+
+#[tokio::test]
+async fn one_thousand_files_are_accepted() {
+    let body = parts_body("B", 1000, Some("a.bin"));
+    parse_body(&body, "multipart/form-data; boundary=B")
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn one_thousand_and_one_files_are_rejected() {
+    let body = parts_body("B", 1001, Some("a.bin"));
+    parse_body(&body, "multipart/form-data; boundary=B")
+        .await
+        .unwrap_err();
+}
+
+#[tokio::test]
+async fn the_last_field_named_file_wins() {
+    let mut body = Vec::new();
+    body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"first.pdf\"\r\n\r\nfirst\r\n");
+    body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"second.pdf\"\r\n\r\nsecond\r\n--B--\r\n");
+    let form = parse_body(&body, "multipart/form-data; boundary=B")
+        .await
+        .unwrap();
+    let (document, _) = build(&form).unwrap();
+    let Some(OcrDocument::Upload { bytes, .. }) = document else {
+        panic!("expected an upload document");
+    };
+    assert_eq!(bytes, b"second");
+}
+
+#[tokio::test]
+async fn a_text_part_followed_by_an_upload_part_both_named_file_uses_the_upload() {
+    let mut body = Vec::new();
+    body.extend_from_slice(
+        b"--B\r\nContent-Disposition: form-data; name=\"file\"\r\n\r\nnot a file\r\n",
+    );
+    body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.pdf\"\r\n\r\ndata\r\n--B--\r\n");
+    let form = parse_body(&body, "multipart/form-data; boundary=B")
+        .await
+        .unwrap();
+    let (document, _) = build(&form).unwrap();
+    let Some(OcrDocument::Upload { bytes, .. }) = document else {
+        panic!("expected an upload document");
+    };
+    assert_eq!(bytes, b"data");
 }
 
 #[tokio::test]

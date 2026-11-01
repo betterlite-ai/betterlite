@@ -132,6 +132,30 @@ async fn req_format_body_value_overrides_header() {
 }
 
 #[tokio::test]
+async fn null_req_format_body_value_falls_back_to_header() {
+    let raw = RawOcrRequest {
+        content_type: Some("application/json".to_owned()),
+        body: br#"{"model": "mistral/mistral-ocr-latest", "req_format": null}"#.to_vec(),
+        header_req_format: Some("native".to_owned()),
+        cached_form: None,
+    };
+    let parsed = parse_ocr_request(&raw).await.unwrap();
+    assert_eq!(parsed.req_format, Some(RequestFormat::Native));
+}
+
+#[tokio::test]
+async fn null_req_format_body_value_without_header_leaves_format_unset() {
+    let raw = RawOcrRequest {
+        content_type: Some("application/json".to_owned()),
+        body: br#"{"model": "mistral/mistral-ocr-latest", "req_format": null}"#.to_vec(),
+        header_req_format: None,
+        cached_form: None,
+    };
+    let parsed = parse_ocr_request(&raw).await.unwrap();
+    assert_eq!(parsed.req_format, None);
+}
+
+#[tokio::test]
 async fn invalid_req_format_is_rejected() {
     let raw = RawOcrRequest {
         content_type: Some("application/json".to_owned()),

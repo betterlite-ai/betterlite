@@ -89,6 +89,26 @@ fn ocr_response_renames_key_value_pairs_field() {
 }
 
 #[test]
+fn ocr_response_serializes_defaults_as_null() {
+    let response: OCRResponse = serde_json::from_str(r#"{"pages": [], "model": "m"}"#).unwrap();
+    let value = serde_json::to_value(&response).unwrap();
+    let expected: Json = serde_json::from_str(
+        r#"{
+            "pages": [],
+            "model": "m",
+            "document_annotation": null,
+            "usage_info": null,
+            "content": null,
+            "tables": null,
+            "keyValuePairs": null,
+            "object": "ocr"
+        }"#,
+    )
+    .unwrap();
+    assert_eq!(value, serde_json::to_value(&expected).unwrap());
+}
+
+#[test]
 fn ocr_response_never_serializes_provider_native_response() {
     let mut response: OCRResponse =
         serde_json::from_str(r#"{"pages": [], "model": "mistral/mistral-ocr-latest"}"#).unwrap();

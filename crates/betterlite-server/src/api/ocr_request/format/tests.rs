@@ -34,3 +34,21 @@ fn invalid_body_value_is_rejected() {
     fields.insert("req_format".to_owned(), Json::Text("yaml".to_owned()));
     resolve(fields, None).unwrap_err();
 }
+
+#[test]
+fn null_body_value_falls_back_to_header() {
+    let mut fields = Object::new();
+    fields.insert("req_format".to_owned(), Json::Null);
+    let (remaining, format) = resolve(fields, Some("native")).unwrap();
+    assert_eq!(format, Some(RequestFormat::Native));
+    assert!(!remaining.contains_key("req_format"));
+}
+
+#[test]
+fn null_body_value_without_header_leaves_format_unset() {
+    let mut fields = Object::new();
+    fields.insert("req_format".to_owned(), Json::Null);
+    let (remaining, format) = resolve(fields, None).unwrap();
+    assert_eq!(format, None);
+    assert!(!remaining.contains_key("req_format"));
+}

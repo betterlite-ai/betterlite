@@ -14,6 +14,7 @@ use error::OcrRequestError;
 pub enum OcrDocument {
     Upload {
         bytes: Vec<u8>,
+        filename: Option<String>,
         mime_type: Option<String>,
     },
     Inline(Object),

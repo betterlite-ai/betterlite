@@ -1623,6 +1623,7 @@ dependencies = [
  "betterlite-ocr",
  "betterlite-openai",
  "email_address",
+ "encoding_rs",
  "form_urlencoded",
  "futures-util",
  "hyper-util",

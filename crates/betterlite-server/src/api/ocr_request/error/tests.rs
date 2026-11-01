@@ -43,13 +43,6 @@ fn invalid_request_format_is_transparent_to_its_source() {
 }
 
 #[test]
-fn invalid_text_encoding_is_betterlites_own() {
-    let source = String::from_utf8(vec![0xFF]).unwrap_err();
-    let error = OcrRequestError::InvalidTextEncoding(source);
-    assert_eq!(error.to_string(), "multipart text field is not valid UTF-8");
-}
-
-#[test]
 fn invalid_json_is_betterlites_own() {
     let source = serde_json::from_str::<Json>("{").unwrap_err();
     let error = OcrRequestError::InvalidJson(source);

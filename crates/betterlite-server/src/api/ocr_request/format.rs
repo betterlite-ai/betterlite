@@ -10,7 +10,9 @@ pub(super) fn resolve(
     mut fields: Object,
     header_value: Option<&str>,
 ) -> Result<(Object, Option<RequestFormat>), OcrRequestError> {
-    let body_value = fields.shift_remove(OCR_REQUEST_FORMAT_PARAM);
+    let body_value = fields
+        .shift_remove(OCR_REQUEST_FORMAT_PARAM)
+        .filter(|value| !matches!(value, Json::Null));
     let format_source =
         body_value.or_else(|| header_value.map(|header| Json::Text(header.to_owned())));
     let Some(format_value) = format_source else {

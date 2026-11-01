@@ -2,7 +2,7 @@ import asyncio
 import base64
 import io
 import json
-from typing import TypeAlias, cast
+from typing import Protocol, TypeAlias, cast
 
 from litellm.proxy.ocr_endpoints.endpoints import (
     _parse_ocr_request,  # pyright: ignore[reportPrivateUsage]
@@ -11,6 +11,12 @@ from starlette.datastructures import FormData, Headers, UploadFile
 from starlette.requests import Request
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
+
+
+class _NamedBytesIO(Protocol):
+    name: str | None
+
+    def getvalue(self) -> bytes: ...
 
 _BOUNDARY = "OracleB3300Boundary"
 
@@ -104,11 +110,12 @@ def _request_for(input_value: dict[str, Json]) -> Request:
 
 def _document_value(document_raw: dict[str, object]) -> Json:
     if document_raw.get("type") == "file":
-        upload = cast(io.BytesIO, document_raw["file"])
+        upload = cast(_NamedBytesIO, document_raw["file"])
         mime_type = cast("str | None", document_raw.get("mime_type"))
         return {
             "kind": "upload",
             "bytes_base64": base64.b64encode(upload.getvalue()).decode(),
+            "filename": upload.name,
             "mime_type": mime_type,
         }
     # document_raw is the caller's own JSON document object, so its values are Json-shaped.

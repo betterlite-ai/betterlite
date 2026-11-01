@@ -1,5 +1,3 @@
-use std::string::FromUtf8Error;
-
 use betterlite_ocr::request_format::RequestFormatError;
 
 #[derive(Debug, thiserror::Error)]
@@ -22,8 +20,6 @@ pub enum OcrRequestError {
     FileTooLarge,
     #[error("empty request body")]
     EmptyBody,
-    #[error("multipart text field is not valid UTF-8")]
-    InvalidTextEncoding(#[source] FromUtf8Error),
     #[error(transparent)]
     InvalidRequestFormat(#[from] RequestFormatError),
 }

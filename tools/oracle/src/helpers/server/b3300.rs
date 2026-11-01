@@ -160,9 +160,14 @@ const fn wire_format(format: RequestFormat) -> &'static str {
 
 fn document_value(document: OcrDocument) -> Value {
     match document {
-        OcrDocument::Upload { bytes, mime_type } => json!({
+        OcrDocument::Upload {
+            bytes,
+            filename,
+            mime_type,
+        } => json!({
             "kind": "upload",
             "bytes_base64": BASE64.encode(bytes),
+            "filename": filename,
             "mime_type": mime_type,
         }),
         OcrDocument::Inline(object) => {
