@@ -63,8 +63,8 @@ class _OriginalError(Exception):
         if status_code is not None:
             self.status_code = status_code
         self.status_code_is_synthesized = status_code_is_synthesized
-        if message is not None:
-            self.message = message
+        # a real SDK exception always carries .message; the native elif chain reads it unguarded
+        self.message = message if message is not None else error_str
         if body is not None:
             self.body = body
         self._error_str = error_str
