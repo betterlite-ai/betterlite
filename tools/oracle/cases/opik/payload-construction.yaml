@@ -3,7 +3,25 @@ name: opik-payload-construction
 call:
   b3973:
     function: payload
-    response: {model: test-model, usage: {prompt_tokens: 3, completion_tokens: null}}
+    project_name: p
+    trace_id: trace
+    parent_span_id: parent
+    response:
+      model: test-model
+      object: chat.completion
+      created: 42
+      usage:
+        prompt_tokens: 3
+        completion_tokens: null
+    input:
+      q: 1
+    output:
+      a: 2
+    metadata:
+      k: v
+    tags: [t]
+    provider: openai
+    cost: 0.5
 env: {}
 compare:
   ignore: []

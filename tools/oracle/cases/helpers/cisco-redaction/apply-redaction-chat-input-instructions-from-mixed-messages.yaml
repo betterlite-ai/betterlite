@@ -1,0 +1,15 @@
+kind: helper
+name: apply-redaction-chat-input-instructions-from-mixed-messages
+call:
+  b3757:
+    function: apply_redaction_chat_input
+    request_data:
+      instructions: old
+      input: hi
+    sanitized_text: null
+    sanitized_messages:
+      - {role: system, content: system text}
+      - {role: user, content: user text}
+env: {}
+compare:
+  ignore: []

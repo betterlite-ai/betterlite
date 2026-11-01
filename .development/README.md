@@ -89,6 +89,8 @@ Max's product decisions so far. A task that contradicts one of them is wrong, no
 - 2026-11-01: a standard task that cites LiteLLM gets one Opus read after the Sonnet reviewer approves it, limited to owned-behavior-is-built, errors-match-litellm, red-before-green and bounded-inputs. An Opus re-read of 10 Sonnet-approved merges found 21 client-visible gaps in 7 of them and 6 tests that couldn't fail. Its findings go back as a review round, the rounds after it stay with it, and style stays with the reviewer and the hooks (Max).
 - 2026-11-01: B5094 inlines the padded one-line methods and opens the private fields they wrap. A method that guards an invariant stays on its rule's ignores list for the architect to decide, and methods get no exemption from no-one-line-functions (Max).
 - 2026-11-01: Claude runs up to 16 agents, and at most 12 of them are workers, so its reviewers always have 4 seats. With 12 shared seats, the reviews of 4 finished tasks waited 22 to 37 minutes behind 12 workers. Reviewers only read the diff and used 6% of Claude's tokens in the last day (Max).
+- 2026-11-01: a release that fixes a RustSec advisory may enter the lock before it is 7 days old when the releases before it carry the advisory. libz-sys stays at 1.1.31 for RUSTSEC-2026-0418 (Max).
+- 2026-11-01: deny.toml allows the bzip2-1.0.6 license, so zip's bzip2 feature can use the pure Rust libbz2-rs-sys, pinned to 0.2.5 in B5096 (Max).
 
 ## Writing a task
 

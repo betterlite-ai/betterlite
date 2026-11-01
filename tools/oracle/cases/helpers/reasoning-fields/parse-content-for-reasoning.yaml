@@ -1,0 +1,9 @@
+kind: helper
+name: reasoning-fields-parse-content-for-reasoning
+call:
+  reasoning_fields:
+    operation: parse_content_for_reasoning
+    message_text: "<budget:thinking>weighing the options</budget:thinking>here is the answer"
+env: {}
+compare:
+  ignore: []
