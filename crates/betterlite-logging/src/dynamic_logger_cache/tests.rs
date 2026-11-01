@@ -6,7 +6,9 @@ use std::sync::{Arc, Mutex};
 use rstest::rstest;
 use secrecy::SecretString;
 
-use super::{DynamicLoggerCache, Entry, RemovalEffect, get_cache_key};
+use super::{
+    DEFAULT_TTL_FOR_HTTPX_CLIENTS, DynamicLoggerCache, Entry, RemovalEffect, get_cache_key,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct FixtureLogger {
@@ -104,6 +106,30 @@ fn set_cache_keeps_the_original_expiry_when_overwriting_a_live_entry() {
             .expect("fixture capture lock is not poisoned")
             .as_slice(),
         [FixtureLogger { name: "second" }]
+    );
+}
+
+#[test]
+fn default_ttl_for_httpx_clients_matches_litellms_one_hour_default() {
+    let time = Arc::new(Mutex::new(0.0_f64));
+    let stopped = Arc::new(Mutex::new(Vec::new()));
+    let cache = cache_with(DEFAULT_TTL_FOR_HTTPX_CLIENTS, &time, &stopped);
+    let creds = credentials(&[("api_key", "k")]);
+
+    cache
+        .set_cache(&creds, "langfuse", FixtureLogger { name: "client" })
+        .expect("set succeeds");
+
+    *time.lock().expect("fixture clock lock is not poisoned") = 3600.0_f64;
+    assert_eq!(
+        cache.get_cache(&creds, "langfuse").expect("get succeeds"),
+        Some(FixtureLogger { name: "client" })
+    );
+
+    *time.lock().expect("fixture clock lock is not poisoned") = 3600.5_f64;
+    assert_eq!(
+        cache.get_cache(&creds, "langfuse").expect("get succeeds"),
+        None
     );
 }
 
