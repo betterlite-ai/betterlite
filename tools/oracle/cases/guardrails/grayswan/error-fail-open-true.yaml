@@ -1,0 +1,10 @@
+kind: helper
+name: error-fail-open-true
+call:
+  b3771:
+    grayswan_call:
+      texts: ["hello"]
+      fail_open: true
+      answer: {status: 500, headers: {}, body: {detail: "gray swan is down"}}
+env: {}
+compare: {ignore: []}

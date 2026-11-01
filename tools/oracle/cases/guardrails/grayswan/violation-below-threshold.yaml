@@ -1,0 +1,5 @@
+kind: helper
+name: violation-below-threshold
+call: {b3771: {action: BLOCK, score: 0.1}}
+env: {}
+compare: {ignore: []}

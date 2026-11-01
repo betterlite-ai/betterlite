@@ -1,0 +1,7 @@
+kind: helper
+name: metadata-token-aliases-hash
+call:
+  b3771:
+    metadata: {user_api_key_hash: old, user_api_key_token: token}
+env: {}
+compare: {ignore: []}

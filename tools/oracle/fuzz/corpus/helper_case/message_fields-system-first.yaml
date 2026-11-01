@@ -1,0 +1,15 @@
+kind: helper
+name: message-fields-system-first
+call:
+  message_fields:
+    operation: system_messages_first
+    messages:
+      - role: user
+        content: Hello.
+      - role: developer
+        content: Developer note.
+      - role: system
+        content: System note.
+env: {}
+compare:
+  ignore: []

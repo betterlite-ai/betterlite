@@ -1,0 +1,15 @@
+kind: helper
+name: opik-config-file-unread-when-answered
+call:
+  b3973:
+    function: config
+    environment:
+      OPIK_API_KEY: env_value
+    config_file: "[other]\nbroken = 50%\n\n[opik]\nurl_override = file\n"
+    lookups:
+      - key: url_override
+        user: u
+      - key: api_key
+env: {}
+compare:
+  ignore: []
