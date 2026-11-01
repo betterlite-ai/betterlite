@@ -6,7 +6,7 @@ call:
     block:
       type: thinking
       thinking: "   "
-      signature: ""
+      signature: "anthropic-signed"
 env: {}
 compare:
   ignore: []

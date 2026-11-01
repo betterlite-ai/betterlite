@@ -1,38 +1,45 @@
 use super::*;
+use rstest::rstest;
 
-#[test]
-fn reasoning_fields_behavior_tests_behavior() {
-    let with_reasoning_content = message(
-        Some(Content::Text("<think>ignored</think>visible".to_owned())),
-        Object::from_iter([(
-            "reasoning_content".to_owned(),
-            Json::Text("because".to_owned()),
-        )]),
+#[rstest]
+#[case::reasoning_content_key(
+    Some(Content::Text("<think>ignored</think>visible".to_owned())),
+    &[("reasoning_content", Json::Text("because".to_owned()))],
+    Some("because")
+)]
+#[case::null_reasoning_content_key_wins_over_tag_parsing(
+    Some(Content::Text("<think>ignored</think>visible".to_owned())),
+    &[("reasoning_content", Json::Null)],
+    None
+)]
+#[case::reasoning_key(
+    None,
+    &[("reasoning", Json::Text("why".to_owned()))],
+    Some("why")
+)]
+#[case::both_keys_reasoning_content_wins(
+    None,
+    &[
+        ("reasoning_content", Json::Text("because".to_owned())),
+        ("reasoning", Json::Text("why".to_owned())),
+    ],
+    Some("because")
+)]
+fn reasoning_fields_behavior_tests_behavior(
+    #[case] content: Option<Content>,
+    #[case] fields: &[(&str, Json)],
+    #[case] expected_reasoning: Option<&str>,
+) {
+    let provider_specific_fields = Object::from_iter(
+        fields
+            .iter()
+            .map(|(key, value)| ((*key).to_owned(), value.clone())),
     );
-    assert_eq!(
-        extract_reasoning_content(&with_reasoning_content),
-        (
-            Some("because".to_owned()),
-            with_reasoning_content.content.clone()
-        )
-    );
+    let input = message(content, provider_specific_fields);
+    let expected_content = input.content.clone();
 
-    let with_null_reasoning_content = message(
-        Some(Content::Text("<think>ignored</think>visible".to_owned())),
-        Object::from_iter([("reasoning_content".to_owned(), Json::Null)]),
-    );
     assert_eq!(
-        extract_reasoning_content(&with_null_reasoning_content),
-        (None, with_null_reasoning_content.content.clone()),
-        "a present reasoning_content key wins even when its value is null"
-    );
-
-    let with_reasoning = message(
-        None,
-        Object::from_iter([("reasoning".to_owned(), Json::Text("why".to_owned()))]),
-    );
-    assert_eq!(
-        extract_reasoning_content(&with_reasoning),
-        (Some("why".to_owned()), None)
+        extract_reasoning_content(&input),
+        (expected_reasoning.map(str::to_owned), expected_content)
     );
 }

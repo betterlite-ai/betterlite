@@ -30,6 +30,11 @@ use rstest::rstest;
 )]
 #[case::empty_string(Some(""), None, Some(""))]
 #[case::none_input(None, None, None)]
+#[case::second_closing_tag_stays_in_content(
+    Some("<think>a</think>b</think>c"),
+    Some("a"),
+    Some("b</think>c")
+)]
 fn reasoning_fields_behavior_tests_behavior(
     #[case] message_text: Option<&str>,
     #[case] expected_reasoning: Option<&str>,

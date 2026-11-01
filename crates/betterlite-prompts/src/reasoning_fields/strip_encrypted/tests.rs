@@ -23,6 +23,10 @@ fn encrypted_block() -> ContentPart {
     thinking_part(None, "litellm_encrypted_reasoning:abc")
 }
 
+fn encrypted_block_two() -> ContentPart {
+    thinking_part(None, "litellm_encrypted_reasoning:xyz")
+}
+
 fn plain_block() -> ContentPart {
     thinking_part(Some("because"), "anthropic-signed")
 }
