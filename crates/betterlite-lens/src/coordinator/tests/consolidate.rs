@@ -4,6 +4,24 @@ use super::fixtures::{candidate, echo_model, observation};
 use crate::analysis::ObservationKind;
 
 #[tokio::test]
+async fn drafts_a_title_cut_at_160_characters_and_a_kind_prefixed_hypothesis() {
+    let (model, _calls) = echo_model();
+    let prefix = "\u{e9}".repeat(165);
+    let summary = format!("{prefix} trailing text that goes past the title cutoff");
+    let batch = vec![observation(
+        "a",
+        ObservationKind::Pattern,
+        &summary,
+        vec!["r0"],
+    )];
+    let result = consolidate(batch, Vec::new(), &model).await.unwrap();
+    assert_eq!(result.len(), 1);
+    let expected_title: String = summary.chars().take(160).collect();
+    assert_eq!(result[0].title, expected_title);
+    assert_eq!(result[0].hypothesis, format!("pattern: {summary}"));
+}
+
+#[tokio::test]
 async fn with_no_previous_candidates_keeps_every_incoming_candidate() {
     let (model, calls) = echo_model();
     let batch = vec![

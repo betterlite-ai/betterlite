@@ -30,6 +30,10 @@ struct Schema {
     max_length: Option<usize>,
     #[serde(rename = "enum", skip_serializing_if = "Vec::is_empty")]
     choices: Vec<&'static str>,
+    #[serde(rename = "anyOf", skip_serializing_if = "Vec::is_empty")]
+    any_of: Vec<Self>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    default: Option<()>,
 }
 
 pub(super) fn cluster_request(candidates: Vec<Candidate>) -> Result<String, AnalysisError> {
@@ -53,6 +57,8 @@ fn candidate_list_schema() -> Schema {
         ))),
         max_length: None,
         choices: Vec::new(),
+        any_of: Vec::new(),
+        default: None,
     };
     object_schema(BTreeMap::from([("candidates", items)]), Vec::new())
 }
@@ -69,10 +75,25 @@ fn object_schema(
         items: None,
         max_length: None,
         choices: Vec::new(),
+        any_of: Vec::new(),
+        default: None,
     };
     Schema {
         additional_properties: Some(false),
         ..base
+    }
+}
+
+fn nullable_string_field(string_base: &Schema) -> Schema {
+    let null_branch = Schema {
+        kind: Some("null"),
+        ..string_base.clone()
+    };
+    Schema {
+        kind: None,
+        any_of: vec![string_base.clone(), null_branch],
+        default: Some(()),
+        ..string_base.clone()
     }
 }
 
@@ -85,6 +106,8 @@ fn candidate_properties() -> BTreeMap<&'static str, Schema> {
         items: None,
         max_length: None,
         choices: Vec::new(),
+        any_of: Vec::new(),
+        default: None,
     };
     let kind_field = Schema {
         choices: vec!["issue", "pattern"],
@@ -103,11 +126,13 @@ fn candidate_properties() -> BTreeMap<&'static str, Schema> {
         items: Some(Box::new(string_base.clone())),
         ..string_base.clone()
     };
+    let existing_finding_id_field = nullable_string_field(&string_base);
     BTreeMap::from([
         ("check_id", string_base),
         ("kind", kind_field),
         ("title", title_field),
         ("hypothesis", hypothesis_field),
         ("execution_ids", execution_ids_field),
+        ("existing_finding_id", existing_finding_id_field),
     ])
 }

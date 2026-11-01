@@ -1,5 +1,5 @@
 #![cfg(test)]
-use super::fixtures::{candidate, echo_model};
+use super::fixtures::{candidate, echo_model, model};
 use super::merge::merge_candidates;
 use crate::analysis::ObservationKind;
 
@@ -15,6 +15,25 @@ async fn splits_prior_candidates_as_settled_and_new_candidates_as_active() {
     assert_eq!(settled[0].check_id, "a");
     assert_eq!(active.len(), 1);
     assert_eq!(active[0].check_id, "b");
+}
+
+#[tokio::test]
+async fn a_merged_group_with_one_prior_and_one_incoming_reference_counts_as_active() {
+    let response = String::from(
+        r#"{"candidates":[{"check_id":"a","kind":"issue","title":"merged","hypothesis":"merged","execution_ids":["p0","p1"]}]}"#,
+    );
+    let model_call = model(vec![response]);
+    let prior = candidate("a", ObservationKind::Issue, "prior", "prior", vec!["r0"]);
+    let incoming = candidate("a", ObservationKind::Issue, "new", "new", vec!["r1"]);
+    let (active, settled) = merge_candidates(vec![prior, incoming], 1, &model_call)
+        .await
+        .unwrap();
+    assert!(settled.is_empty());
+    assert_eq!(active.len(), 1);
+    assert_eq!(
+        active[0].execution_ids,
+        vec![String::from("r0"), String::from("r1")]
+    );
 }
 
 #[tokio::test]

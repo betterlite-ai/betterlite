@@ -1,6 +1,6 @@
 use super::super::fixtures::{
-    capture_progress, claim, execution, extraction_observation, no_extraction_observation, page,
-    part, pipeline_model, reader, submit_decision,
+    capture_progress, claim, execution, extraction_observation, inconclusive_decision,
+    no_extraction_observation, page, part, pipeline_model, reader, submit_decision,
 };
 use super::super::orchestrate::run;
 use crate::analysis::ReadContent;
@@ -55,4 +55,38 @@ async fn drives_extraction_clustering_and_investigation_into_a_final_result() {
     assert_eq!(result.coverage.candidates, 1);
     assert_eq!(result.coverage.investigated, 1);
     assert_eq!(result.coverage.inconclusive, 0);
+    assert_eq!(result.coverage.grouping_batches, 1);
+    assert_eq!(result.coverage.grouped_batches, 1);
+}
+
+#[tokio::test]
+async fn counts_an_investigation_without_a_finding_as_inconclusive() {
+    let mut input = claim();
+    input.job.settings.concurrency = 1;
+    let (progress, _log) = capture_progress();
+    let sample = Sample {
+        executions: vec![execution("r0"), execution("r1")],
+        eligible: 2,
+        selected: 2,
+        next_offset: None,
+        next_cursor: None,
+    };
+    let read = reader(vec![
+        page(part("r0", "s0", "content-a")),
+        page(part("r1", "s1", "content-b")),
+    ]);
+    let extraction = vec![
+        extraction_observation("r0", "s0", "expected_behavior", "content-a"),
+        extraction_observation("r1", "s1", "expected_behavior", "content-b"),
+    ];
+    let investigation = vec![
+        submit_decision("r0", "s0", "expected_behavior", "content-a"),
+        inconclusive_decision(),
+    ];
+    let model = pipeline_model(extraction, investigation);
+    let result = run(input, sample, read, model, progress).await.unwrap();
+    assert_eq!(result.coverage.candidates, 2);
+    assert_eq!(result.coverage.investigated, 2);
+    assert_eq!(result.coverage.inconclusive, 1);
+    assert_eq!(result.findings.len(), 1);
 }

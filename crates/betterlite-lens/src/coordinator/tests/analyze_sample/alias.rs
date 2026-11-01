@@ -2,13 +2,25 @@ use super::super::fixtures::{
     capture_progress, claim, execution, extraction_observation, inconclusive_decision,
     no_extraction_observation, page, part, reader, submit_decision,
 };
-use crate::analysis::{ModelCall, ReadContent};
-use crate::models::execution::Sample;
+use crate::analysis::{ModelCall, ReadContent, ReadFuture};
+use crate::models::execution::{ExecutionContent, Sample};
 use crate::models::messages::{ModelResult, Purpose};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
-fn two_execution_setup() -> (Sample, ReadContent) {
+fn recording_reader(pages: Vec<ExecutionContent>) -> (ReadContent, Arc<Mutex<Vec<String>>>) {
+    let pending = Mutex::new(VecDeque::from(pages));
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let handle = Arc::clone(&calls);
+    let read: ReadContent = Arc::new(move |execution_id, _cursor, _offset| -> ReadFuture {
+        handle.lock().unwrap().push(execution_id);
+        let result = pending.lock().unwrap().pop_front().unwrap();
+        Box::pin(async move { Ok(result) })
+    });
+    (read, calls)
+}
+
+fn two_execution_setup() -> (Sample, ReadContent, Arc<Mutex<Vec<String>>>) {
     let sample = Sample {
         executions: vec![execution("exec-a"), execution("exec-b")],
         eligible: 2,
@@ -16,11 +28,11 @@ fn two_execution_setup() -> (Sample, ReadContent) {
         next_offset: None,
         next_cursor: None,
     };
-    let read = reader(vec![
+    let (read, calls) = recording_reader(vec![
         page(part("exec-a", "s0", "first content")),
         page(part("exec-b", "s1", "second content")),
     ]);
-    (sample, read)
+    (sample, read, calls)
 }
 
 fn capturing_model(responses: Vec<String>) -> (ModelCall, Arc<Mutex<Vec<String>>>) {
@@ -48,7 +60,7 @@ async fn maps_executions_to_run_aliases_and_restores_original_ids() {
     let mut input = claim();
     input.job.settings.concurrency = 1;
     let (progress, _log) = capture_progress();
-    let (sample, read) = two_execution_setup();
+    let (sample, read, read_calls) = two_execution_setup();
     let responses = vec![
         extraction_observation("r0", "s0", "expected_behavior", "first content"),
         no_extraction_observation(),
@@ -76,6 +88,12 @@ async fn maps_executions_to_run_aliases_and_restores_original_ids() {
     );
     assert_eq!(result.findings.len(), 1);
     assert_eq!(result.findings[0].evidence[0].execution_id, "exec-a");
+    let mut read_ids: Vec<String> = read_calls.lock().unwrap().clone();
+    read_ids.sort();
+    assert_eq!(
+        read_ids,
+        vec![String::from("exec-a"), String::from("exec-b")]
+    );
 }
 
 #[tokio::test]
