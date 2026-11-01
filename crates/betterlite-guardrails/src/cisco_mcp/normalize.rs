@@ -41,7 +41,7 @@ pub enum ContentItem {
 pub fn normalize_response(response: &Json) -> Option<NormalizedResponse> {
     match response {
         Json::Object(fields) => normalize_object(fields),
-        Json::List(items) => Some(normalize_list(items)),
+        Json::List(items) => normalize_list(items),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => None,
     }
 }
@@ -73,29 +73,23 @@ fn normalize_object(fields: &Fields) -> Option<NormalizedResponse> {
     None
 }
 
-fn normalize_list(items: &[Box<RawValue>]) -> NormalizedResponse {
+fn normalize_list(items: &[Box<RawValue>]) -> Option<NormalizedResponse> {
     if is_pair_list(items) {
         let fields = pairs_to_fields(items);
-        return match Json::field(&fields, "content") {
-            Json::List(content) => NormalizedResponse {
-                id_override: None,
-                result: Some(ResultValue::Built(build_result(&content, Some(&fields)))),
-                error: None,
-            },
-            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => {
-                NormalizedResponse {
-                    id_override: None,
-                    result: None,
-                    error: None,
-                }
-            }
+        let Json::List(content) = Json::field(&fields, "content") else {
+            return None;
         };
+        return Some(NormalizedResponse {
+            id_override: None,
+            result: Some(ResultValue::Built(build_result(&content, Some(&fields)))),
+            error: None,
+        });
     }
-    NormalizedResponse {
+    Some(NormalizedResponse {
         id_override: None,
         result: Some(ResultValue::Built(build_result(items, None))),
         error: None,
-    }
+    })
 }
 
 #[must_use]

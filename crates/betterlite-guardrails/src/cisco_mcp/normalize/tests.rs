@@ -111,9 +111,8 @@ fn normalize_builds_result_from_pair_list_with_nested_content() {
 }
 
 #[test]
-fn normalize_pair_list_without_content_key_yields_no_result() {
-    let response = normalize(r#"[["other", 1]]"#);
-    assert!(response.result.is_none());
+fn normalize_pair_list_without_content_key_yields_no_envelope() {
+    assert!(normalize::normalize_response(&Json::parse(r#"[["other", 1]]"#)).is_none());
 }
 
 #[test]
