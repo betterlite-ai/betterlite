@@ -82,21 +82,19 @@ pub(crate) enum PrefixFamily {
     Session,
 }
 
-pub(crate) fn helper_error(class: &str, message: &impl ToString) -> Box<HelperError> {
-    let error = HelperError {
+pub(crate) fn helper_error<M>(class: &str, value: &M) -> Box<HelperError>
+where
+    M: ToString,
+{
+    let message = value.to_string();
+    Box::new(HelperError {
         class: class.to_owned(),
         status: None,
         error_type: None,
         param: None,
         code: None,
-        message: message.to_string(),
-    };
-    Box::new(error)
-}
-
-pub(crate) fn at(seconds: i64) -> Result<chrono::DateTime<chrono::Utc>, Box<HelperError>> {
-    let parsed = chrono::DateTime::from_timestamp(seconds, 0);
-    parsed.ok_or_else(|| helper_error("ValueError", &"timestamp out of range"))
+        message,
+    })
 }
 
 fn run_scrypt(master_key: &str, domains: &[ScryptDomain]) -> Result<Value, Box<HelperError>> {

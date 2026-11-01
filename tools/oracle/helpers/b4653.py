@@ -91,7 +91,9 @@ def _require_candidate(candidate: str | None) -> str:
 
 
 def _envelope_keys(signing_key: str, encryption_key: str) -> envelope.EnvelopeKeys:
-    return envelope.EnvelopeKeys(signing_key=signing_key, encryption_key=encryption_key)  # type: ignore[arg-type]
+    return envelope.EnvelopeKeys(
+        signing_key=SecretStr(signing_key), encryption_key=SecretStr(encryption_key)
+    )
 
 
 def _envelope_identity(mint: EnvelopeMintInput) -> envelope.EnvelopeIdentity:
@@ -144,7 +146,7 @@ def _mint_bridge_refresh_candidate(
 
 
 def _session_keys(signing_key: str) -> tokens.SessionKeys:
-    return tokens.SessionKeys(signing_key=signing_key)  # type: ignore[arg-type]
+    return tokens.SessionKeys(signing_key=SecretStr(signing_key))
 
 
 def _principal(fields: dict[str, object]) -> tokens.SessionPrincipal:

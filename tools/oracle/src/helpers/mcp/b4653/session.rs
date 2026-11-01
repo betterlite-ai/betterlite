@@ -1,3 +1,4 @@
+use chrono::DateTime;
 use serde::Deserialize;
 use serde_json::json;
 
@@ -8,7 +9,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::helpers::{HelperError, HelperResult};
 
-use super::{at, helper_error};
+use super::helper_error;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -30,17 +31,12 @@ pub(crate) struct SessionMint {
     mint_now: i64,
 }
 
-fn session_keys(signing_key: &str) -> Result<SessionSigningKeys, Box<HelperError>> {
-    let keys = SessionKeys::new(SecretString::from(signing_key));
-    keys.map(SessionSigningKeys::Symmetric)
-        .map_err(|error| helper_error("SessionKeyError", &error))
-}
-
 fn mint_session_candidate(
     mint: &SessionMint,
     keys: &SessionSigningKeys,
 ) -> Result<String, Box<HelperError>> {
-    let now = at(mint.mint_now)?;
+    let now = DateTime::from_timestamp(mint.mint_now, 0)
+        .ok_or_else(|| helper_error("ValueError", &"timestamp out of range"))?;
     let minted = mint_session_token(&mint.principal, mint.kind, keys, now, || Ok([0_u8; 16]))
         .map_err(|error| helper_error("SessionMintError", &error))?;
     Ok(minted.token.expose_secret().to_owned())
@@ -49,7 +45,9 @@ fn mint_session_candidate(
 fn candidate_and_open_keys(
     fields: &SessionFields,
 ) -> Result<(String, SessionSigningKeys), Box<HelperError>> {
-    let mint_keys = session_keys(&fields.signing_key)?;
+    let mint_keys = SessionKeys::new(SecretString::from(fields.signing_key.as_str()))
+        .map(SessionSigningKeys::Symmetric)
+        .map_err(|error| helper_error("SessionKeyError", &error))?;
     let candidate = match (&fields.mint, &fields.candidate) {
         (Some(mint), _) => mint_session_candidate(mint, &mint_keys)?,
         (None, Some(literal)) => literal.clone(),
@@ -61,7 +59,9 @@ fn candidate_and_open_keys(
         }
     };
     let open_keys = match &fields.open_signing_key {
-        Some(signing) => session_keys(signing)?,
+        Some(signing) => SessionKeys::new(SecretString::from(signing.as_str()))
+            .map(SessionSigningKeys::Symmetric)
+            .map_err(|error| helper_error("SessionKeyError", &error))?,
         None => mint_keys,
     };
     Ok((candidate, open_keys))
@@ -75,7 +75,8 @@ pub(crate) enum SessionOperation {
 
 pub(crate) fn run_session(fields: &SessionFields, operation: SessionOperation) -> HelperResult {
     let (candidate, open_keys) = candidate_and_open_keys(fields)?;
-    let now = at(fields.open_now)?;
+    let now = DateTime::from_timestamp(fields.open_now, 0)
+        .ok_or_else(|| helper_error("ValueError", &"timestamp out of range"))?;
     match operation {
         SessionOperation::Bearer => {
             let result = session_credentials::resolve_session_bearer(&candidate, &open_keys, now);

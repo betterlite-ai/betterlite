@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::json;
 
 use betterlite_mcp::bridge_credentials::{self, BridgeEnvelopeResult, BridgeRefreshResult};
 use betterlite_mcp::envelope::{
@@ -12,7 +12,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::helpers::{HelperError, HelperResult};
 
-use super::{at, helper_error};
+use super::helper_error;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -33,8 +33,10 @@ pub(crate) struct EnvelopeMint {
     server_id: String,
     subject_type: SubjectTypeInput,
     subject: String,
-    access_token: Option<String>,
-    token_type: Option<String>,
+    #[serde(default)]
+    access_token: String,
+    #[serde(default)]
+    token_type: String,
     refresh_token: Option<String>,
     scope: Option<String>,
     expires_in: Option<i64>,
@@ -46,11 +48,6 @@ pub(crate) struct EnvelopeMint {
 pub(crate) enum SubjectTypeInput {
     KeyHash,
     UserId,
-}
-
-fn envelope_keys(signing: &str, encryption: &str) -> Result<EnvelopeKeys, Box<HelperError>> {
-    let keys = EnvelopeKeys::new(SecretString::from(signing), SecretString::from(encryption));
-    keys.map_err(|error| helper_error("EnvelopeMintError", &error))
 }
 
 fn identity(mint: &EnvelopeMint) -> EnvelopeIdentity {
@@ -65,19 +62,23 @@ fn identity(mint: &EnvelopeMint) -> EnvelopeIdentity {
     }
 }
 
-fn seal_candidate<P>(
+fn seal_candidate<P, S>(
     mint: &EnvelopeMint,
     keys: &EnvelopeKeys,
     payload: P,
-    seal: impl FnOnce(
+    seal: S,
+) -> Result<String, Box<HelperError>>
+where
+    S: FnOnce(
         EnvelopeIdentity,
         P,
         &EnvelopeKeys,
         DateTime<Utc>,
         &OsNonces,
     ) -> Result<SealedEnvelope, EnvelopeMintError>,
-) -> Result<String, Box<HelperError>> {
-    let now = at(mint.mint_now)?;
+{
+    let now = DateTime::from_timestamp(mint.mint_now, 0)
+        .ok_or_else(|| helper_error("ValueError", &"timestamp out of range"))?;
     let sealed = seal(identity(mint), payload, keys, now, &OsNonces)
         .map_err(|error| helper_error("EnvelopeMintError", &error))?;
     Ok(sealed.token.expose_secret().to_owned())
@@ -89,40 +90,28 @@ pub(crate) enum BridgeOperation {
     Refresh,
 }
 
-fn mint_candidate(
-    mint: &EnvelopeMint,
-    keys: &EnvelopeKeys,
-    operation: BridgeOperation,
-) -> Result<String, Box<HelperError>> {
-    match operation {
-        BridgeOperation::Envelope => {
-            let grant = UpstreamTokenGrant {
-                access_token: SecretString::from(mint.access_token.clone().unwrap_or_default()),
-                token_type: mint.token_type.clone().unwrap_or_default(),
-                refresh_token: mint.refresh_token.clone().map(SecretString::from),
-                scope: mint.scope.clone(),
-                expires_in: mint.expires_in,
-            };
-            seal_candidate(mint, keys, grant, mint_envelope)
-        }
-        BridgeOperation::Refresh => {
-            let refresh = RefreshCredential {
-                refresh_token: SecretString::from(mint.refresh_token.clone().unwrap_or_default()),
-                scope: mint.scope.clone(),
-                expires_in: mint.expires_in,
-            };
-            seal_candidate(mint, keys, refresh, mint_refresh_envelope)
-        }
-    }
-}
-
-fn candidate_and_open_keys(
+fn candidate_and_open_keys<P, F, S>(
     fields: &EnvelopeFields,
-    operation: BridgeOperation,
-) -> Result<(String, EnvelopeKeys), Box<HelperError>> {
-    let mint_keys = envelope_keys(&fields.signing_key, &fields.encryption_key)?;
+    build_payload: F,
+    seal: S,
+) -> Result<(String, EnvelopeKeys), Box<HelperError>>
+where
+    F: FnOnce(&EnvelopeMint) -> P,
+    S: FnOnce(
+        EnvelopeIdentity,
+        P,
+        &EnvelopeKeys,
+        DateTime<Utc>,
+        &OsNonces,
+    ) -> Result<SealedEnvelope, EnvelopeMintError>,
+{
+    let mint_keys = EnvelopeKeys::new(
+        SecretString::from(fields.signing_key.as_str()),
+        SecretString::from(fields.encryption_key.as_str()),
+    )
+    .map_err(|error| helper_error("EnvelopeMintError", &error))?;
     let candidate = match (&fields.mint, &fields.candidate) {
-        (Some(mint), _) => mint_candidate(mint, &mint_keys, operation)?,
+        (Some(mint), _) => seal_candidate(mint, &mint_keys, build_payload(mint), seal)?,
         (None, Some(literal)) => literal.clone(),
         (None, None) => {
             return Err(helper_error(
@@ -132,67 +121,99 @@ fn candidate_and_open_keys(
         }
     };
     let open_keys = match (&fields.open_signing_key, &fields.open_encryption_key) {
-        (Some(signing), Some(encryption)) => envelope_keys(signing, encryption)?,
+        (Some(signing), Some(encryption)) => EnvelopeKeys::new(
+            SecretString::from(signing.as_str()),
+            SecretString::from(encryption.as_str()),
+        )
+        .map_err(|error| helper_error("EnvelopeMintError", &error))?,
         _ => mint_keys,
     };
     Ok((candidate, open_keys))
 }
 
-enum BridgeOutcome {
-    Envelope(BridgeEnvelopeResult),
-    Refresh(BridgeRefreshResult),
+fn envelope_result_json(result: BridgeEnvelopeResult) -> serde_json::Value {
+    match result {
+        BridgeEnvelopeResult::NotBridgeEnvelope => json!({ "tag": "not_bridge_envelope" }),
+        BridgeEnvelopeResult::BridgeEnvelopeAdmitted {
+            identity,
+            upstream_authorization,
+        } => json!({
+            "tag": "admitted",
+            "identity": identity,
+            "upstream_authorization": upstream_authorization.expose_secret(),
+        }),
+        BridgeEnvelopeResult::BridgeEnvelopeInvalid => json!({ "tag": "invalid" }),
+    }
 }
 
-fn bridge_response(outcome: BridgeOutcome) -> Value {
-    match outcome {
-        BridgeOutcome::Envelope(result) => match result {
-            BridgeEnvelopeResult::NotBridgeEnvelope => json!({ "tag": "not_bridge_envelope" }),
-            BridgeEnvelopeResult::BridgeEnvelopeAdmitted {
-                identity,
-                upstream_authorization,
-            } => json!({
-                "tag": "admitted",
-                "identity": identity,
-                "upstream_authorization": upstream_authorization.expose_secret(),
-            }),
-            BridgeEnvelopeResult::BridgeEnvelopeInvalid => json!({ "tag": "invalid" }),
-        },
-        BridgeOutcome::Refresh(result) => match result {
-            BridgeRefreshResult::BridgeRefreshOpened { identity, refresh } => json!({
-                "tag": "opened",
-                "identity": identity,
-                "refresh": {
-                    "refresh_token": refresh.refresh_token.expose_secret(),
-                    "scope": refresh.scope,
-                    "expires_in": refresh.expires_in,
-                },
-            }),
-            BridgeRefreshResult::BridgeRefreshInvalid => json!({ "tag": "invalid" }),
-        },
+fn refresh_result_json(result: BridgeRefreshResult) -> serde_json::Value {
+    match result {
+        BridgeRefreshResult::BridgeRefreshOpened { identity, refresh } => json!({
+            "tag": "opened",
+            "identity": identity,
+            "refresh": {
+                "refresh_token": refresh.refresh_token.expose_secret(),
+                "scope": refresh.scope,
+                "expires_in": refresh.expires_in,
+            },
+        }),
+        BridgeRefreshResult::BridgeRefreshInvalid => json!({ "tag": "invalid" }),
+    }
+}
+
+impl From<&EnvelopeMint> for UpstreamTokenGrant {
+    fn from(mint: &EnvelopeMint) -> Self {
+        Self {
+            access_token: SecretString::from(mint.access_token.clone()),
+            token_type: mint.token_type.clone(),
+            refresh_token: mint.refresh_token.clone().map(SecretString::from),
+            scope: mint.scope.clone(),
+            expires_in: mint.expires_in,
+        }
+    }
+}
+
+impl From<&EnvelopeMint> for RefreshCredential {
+    fn from(mint: &EnvelopeMint) -> Self {
+        Self {
+            refresh_token: SecretString::from(mint.refresh_token.clone().unwrap_or_default()),
+            scope: mint.scope.clone(),
+            expires_in: mint.expires_in,
+        }
     }
 }
 
 pub(crate) fn run_bridge(fields: &EnvelopeFields, operation: BridgeOperation) -> HelperResult {
-    let (candidate, open_keys) = candidate_and_open_keys(fields, operation)?;
-    let now = at(fields.open_now)?;
+    let now = DateTime::from_timestamp(fields.open_now, 0)
+        .ok_or_else(|| helper_error("ValueError", &"timestamp out of range"))?;
     match operation {
         BridgeOperation::Envelope => {
+            let (candidate, open_keys) = candidate_and_open_keys(
+                fields,
+                |mint: &EnvelopeMint| UpstreamTokenGrant::from(mint),
+                mint_envelope,
+            )?;
             let result = bridge_credentials::resolve_bridge_envelope(
                 &candidate,
                 &open_keys,
                 now,
                 &fields.expected_server_id,
             );
-            Ok(bridge_response(BridgeOutcome::Envelope(result)))
+            Ok(envelope_result_json(result))
         }
         BridgeOperation::Refresh => {
+            let (candidate, open_keys) = candidate_and_open_keys(
+                fields,
+                |mint: &EnvelopeMint| RefreshCredential::from(mint),
+                mint_refresh_envelope,
+            )?;
             let result = bridge_credentials::open_bridge_refresh_envelope(
                 &candidate,
                 &open_keys,
                 now,
                 &fields.expected_server_id,
             );
-            Ok(bridge_response(BridgeOutcome::Refresh(result)))
+            Ok(refresh_result_json(result))
         }
     }
 }

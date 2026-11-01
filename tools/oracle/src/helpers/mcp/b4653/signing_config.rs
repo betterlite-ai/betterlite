@@ -4,7 +4,6 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use betterlite_config::loader::ConfigLoader;
-use betterlite_config::sections::mcp_bearer_credentials::Settings as SigningConfig;
 use betterlite_mcp::session_credentials;
 use betterlite_mcp::types::SessionSigningKeys;
 use secrecy::SecretString;
@@ -32,7 +31,7 @@ pub(crate) fn run_signing_config(fields: &SigningConfigFields) -> Value {
     let Ok(config) = loaded else {
         return json!({ "tag": "invalid" });
     };
-    let settings: SigningConfig = config.sections.mcp_bearer_credentials;
+    let settings = config.sections.mcp_bearer_credentials;
     let resolved = session_credentials::resolve_session_signing_keys(
         &SecretString::from(fields.master_key.as_str()),
         &settings,
