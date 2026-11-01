@@ -1,3 +1,12 @@
+async fn insert_simple_row(client: &Client, table: &str, id_column: &str, id: &str) {
+    exec_params(
+        client,
+        &format!("INSERT INTO \"{table}\" ({id_column}) VALUES ($1)"),
+        &[&id],
+    )
+    .await;
+}
+
 async fn insert_budget(client: &Client, budget_id: &str) {
     exec_params(
         client,
@@ -9,19 +18,15 @@ async fn insert_budget(client: &Client, budget_id: &str) {
 }
 
 async fn insert_team(client: &Client, team_id: &str) {
-    exec_params(
-        client,
-        "INSERT INTO \"LiteLLM_TeamTable\" (team_id) VALUES ($1)",
-        &[&team_id],
-    )
-    .await;
+    insert_simple_row(client, "LiteLLM_TeamTable", "team_id", team_id).await;
 }
 
 async fn insert_object_permission(client: &Client, object_permission_id: &str) {
-    exec_params(
+    insert_simple_row(
         client,
-        "INSERT INTO \"LiteLLM_ObjectPermissionTable\" (object_permission_id) VALUES ($1)",
-        &[&object_permission_id],
+        "LiteLLM_ObjectPermissionTable",
+        "object_permission_id",
+        object_permission_id,
     )
     .await;
 }
