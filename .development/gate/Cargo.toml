@@ -18,6 +18,7 @@ clap = { version = "4.6.7", features = ["derive"] }
 determinator = "0.13.0"
 globset = "0.4.20"
 guppy = "0.19.1"
+itertools = "0.15.0"
 nextest-filtering = "0.23.0"
 schemars = "1.2.3"
 serde = { version = "1.0.229", features = ["derive"] }

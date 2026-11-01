@@ -16,7 +16,16 @@ use super::azure::{
 };
 use super::gcp::{Clock, GcpIamCredentialProvider, GcpTokenCache, GcpTokenFetcher};
 use super::{Provider, ProviderWarning};
-use crate::loader::{ConfigError, ConfigLoader};
+use crate::loader::{ConfigError, ConfigLoader, parse_view};
+
+#[test]
+fn raw_settings_debug_hides_azure_ad_token() {
+    let source =
+        "litellm_settings:\n  cache_params:\n    azure_redis_ad_token: marker-azure-ad-token\n";
+    let (raw, _ignored) = parse_view::<super::Raw>(source).expect("settings parse");
+    let debug = format!("{raw:?}");
+    assert!(!debug.contains("marker-azure-ad-token"));
+}
 
 fn load(source: &str, environment: BTreeMap<String, String>) -> super::Settings {
     ConfigLoader {

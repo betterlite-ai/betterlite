@@ -1,0 +1,5 @@
+kind: helper
+name: mcp-request-envelope-from-jsonrpc
+call: {b3761: {function: request_envelope, data: {jsonrpc: "2.0", id: 7, method: tools/call, params: {name: search_docs}}}}
+env: {}
+compare: {ignore: []}

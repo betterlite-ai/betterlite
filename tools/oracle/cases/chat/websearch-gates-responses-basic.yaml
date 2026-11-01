@@ -1,0 +1,36 @@
+{
+  "kind": "helper",
+  "name": "websearch-gates-responses-basic",
+  "call": {
+    "b4117": {
+      "surface": "responses",
+      "response": {
+        "output": [
+          {
+            "type": "function_call",
+            "call_id": "one",
+            "id": "item",
+            "name": "litellm_web_search",
+            "arguments": {
+              "query": "rust"
+            }
+          }
+        ]
+      },
+      "tools": [
+        {
+          "type": "function",
+          "name": "litellm_web_search"
+        }
+      ],
+      "custom_llm_provider": "openai",
+      "enabled_providers": [
+        "openai"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

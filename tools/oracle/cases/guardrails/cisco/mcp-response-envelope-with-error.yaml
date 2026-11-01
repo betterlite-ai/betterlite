@@ -1,0 +1,5 @@
+kind: helper
+name: mcp-response-envelope-with-error
+call: {b3761: {function: response_envelope, request_data: {mcp_tool_name: search_docs}, response: {jsonrpc: "2.0", id: 9, error: {code: -1, message: no}}}}
+env: {}
+compare: {ignore: []}

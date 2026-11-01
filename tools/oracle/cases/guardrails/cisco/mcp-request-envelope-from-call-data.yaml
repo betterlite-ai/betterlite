@@ -1,0 +1,5 @@
+kind: helper
+name: mcp-request-envelope-from-call-data
+call: {b3761: {function: request_envelope, data: {mcp_tool_name: search_docs, mcp_arguments: {query: foo}, litellm_call_id: call-123}}}
+env: {}
+compare: {ignore: []}

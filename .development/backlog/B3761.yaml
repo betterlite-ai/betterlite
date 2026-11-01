@@ -1,14 +1,14 @@
 id: B3761
 milestone: M6 guardrails
 title: Cisco MCP envelopes and output replacement
-status: todo
+status: done
 depends_on: [B3756, B3758]
 file: tasks/B3761-cisco-mcp-envelopes.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py"
 parent: B107
 split_from: B107
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 445

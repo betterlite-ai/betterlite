@@ -23,7 +23,7 @@ struct RawLitellmSettings {
 struct RawSettings {
     gcp_service_account: Option<String>,
     gcp_ssl_ca_certs: Option<String>,
-    azure_redis_ad_token: Option<String>,
+    azure_redis_ad_token: Option<SecretString>,
     azure_client_id: Option<String>,
     azure_tenant_id: Option<String>,
     azure_client_secret: Option<SecretString>,

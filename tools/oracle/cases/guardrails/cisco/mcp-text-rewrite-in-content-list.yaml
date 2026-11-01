@@ -1,0 +1,5 @@
+kind: helper
+name: mcp-text-rewrite-in-content-list
+call: {b3761: {function: rewrite_text, response: [{type: text, text: old}, {type: image, data: x}], text: new}}
+env: {}
+compare: {ignore: []}

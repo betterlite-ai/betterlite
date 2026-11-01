@@ -1,0 +1,163 @@
+id: B5101
+title: Responses reasoning merge gaps
+description: >-
+  B910 merged the reasoning and trailing-assistant merge (PR #398, commit c9d8f198) with six
+  gaps an Opus review found after merge. One is a real behavior gap: LiteLLM's own merge only
+  ever reads an attribute record through getattr and writes it through setattr when there is
+  pending text or blocks to add, never clearing or defaulting a field it isn't touching
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L809-L833).
+  betterlite's two adapters disagree on what that untouched field looks like once it round-trips
+  through JSON: tools/oracle/src/helpers/core_ops/responses_reasoning_merge.rs's serialize_record
+  keeps an explicit null, tools/oracle/helpers/responses_reasoning_merge.py's
+  _from_attribute_record drops the key. The B910 worker only ran the oracle with --self-check
+  (Python against Python), so cases reasoning-attribute-null-optionals and
+  reasoning-attribute-missing-content never ran the Rust adapter against LiteLLM at all. The
+  other five gaps sit in the same files this fix already touches: tool_calls still measured by
+  Python truthiness under a renamed function, two dead match arms left by a serde round trip, a
+  public Value-in-Value-out function made only for the oracle, betterlite's own chat types
+  (KnownRole, ChatRecord) repeating B004's shapes with no recorded comparison, and three
+  comments that restate their code. A seventh finding, padding in trailing.rs's ToolCalls enum
+  and its two one-line functions, belongs to B5094's ast-grep sweep and is out of scope here;
+  this task changes their inner type but not their shape.
+scope:
+  paths:
+  - crates/betterlite-core/src/api/responses_reasoning_merge.rs
+  - crates/betterlite-core/src/api/responses_reasoning_merge/content.rs
+  - crates/betterlite-core/src/api/responses_reasoning_merge/record.rs
+  - crates/betterlite-core/src/api/responses_reasoning_merge/trailing.rs
+  - crates/betterlite-core/src/api/responses_reasoning_merge/tests.rs
+  - tools/oracle/src/helpers/core_ops/responses_reasoning_merge.rs
+  - tools/oracle/helpers/responses_reasoning_merge.py
+  - tools/oracle/cases/helpers/responses-reasoning-merge/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L809-L833
+  why: _apply_pending reads an attribute's reasoning_content/thinking_blocks with getattr and writes them with setattr only when there is pending text or blocks, so an untouched field is never cleared or defaulted.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L804-L807
+  why: _tool_calls reads the field through isinstance/getattr with no coercion.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L850-L856
+  why: the pending check only asks "not _tool_calls(msg)" after that plain read.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L908-L909
+  why: GenericChatCompletionMessage declares role as a plain, open string with no closed set, unlike B004's Role.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L889-L892
+  why: the trailing merge only evaluates a single new message once messages[-1] is already known to be a dict.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L874-L886
+  why: _merged_trailing_assistant_message takes and returns typed message objects, never a bare untyped blob.
+dod:
+- text: >-
+    LiteLLM's real merge mutates an attribute record's own fields in place and never fills in
+    one it isn't writing. Here, record_kind: attribute case reasoning-attribute-null-optionals
+    (assistant content=null,reasoning_content=a then user content=q,reasoning_content=null,
+    thinking_blocks=null) and case reasoning-attribute-missing-content (assistant with content
+    key absent, reasoning_content=a, then a second assistant that absorbs it) both produce a
+    record whose reasoning_content/thinking_blocks were never touched by the merge and were
+    explicit null on input. serialize_record in the Rust adapter serializes that record with
+    reasoning_content and thinking_blocks present as literal null; _from_attribute_record in the
+    Python adapter drops both keys because the collapsed value "is None" either way. Neither
+    case is wired into any task's oracle_cases today, so the gate's real oracle check (no
+    --self-check) has never run either of them. Add all 16 case files under
+    tools/oracle/cases/helpers/responses-reasoning-merge/ to this task's oracle_cases, run the
+    oracle for real, and make the two adapters agree with each other and with LiteLLM's
+    in-place-mutation semantics above; these two cases fail today under a real run and must
+    pass once the adapters agree.
+  proof: [oracle]
+- text: >-
+    tool_calls is read by LiteLLM through getattr with no coercion, and its declared type
+    (GenericChatCompletionMessage, ChatCompletionResponseMessage) is a list or null, never a
+    bool, a number or an object. is_empty_value in responses_reasoning_merge.rs still runs every
+    JSON type through Python truthiness (false, 0 and {} count as empty); it is the same logic
+    two earlier names (is_falsy, is_present_and_truthy) carried before the no-python-habits hook
+    started matching those names, so only the name moved. Type ChatRecord.tool_calls and
+    TrailingRecord.tool_calls as Option<Option<Vec<Value>>> so a bool, a number or an object
+    fails to parse into a MergeError, and keep only the null and empty-list cases for "has tool
+    calls" (for example .is_some_and(|calls| !calls.is_empty())). docs/compatibility.md forbids
+    an oracle case that sends a value outside tool_calls' declared type, so the proof is a new
+    Rust test, tool_calls_wrong_type_is_rejected, in
+    crates/betterlite-core/src/api/responses_reasoning_merge/tests.rs: it builds a ChatRecord
+    and a TrailingRecord with tool_calls: true and asserts the deserialize fails. Today that
+    same input deserializes cleanly and merges without complaint; once tool_calls is a typed
+    list it must fail to parse.
+  proof: [merge-tests]
+- text: >-
+    merge_trailing's new-message guard runs serde_json::from_value::<Map<String, Value>> on a
+    value it already knows is not an object, only to recover a serde error for a shape LiteLLM's
+    own trailing merge never reaches once messages[-1] is confirmed a dict. The Ok(_) =>
+    Ok(None) arm, the TrailingInput::Record(_) match arm and the map_or(Value::Null, ...)
+    fallback at trailing.rs:99-109 can never run, since line 93 already guarantees exactly one
+    new message and every JSON object parses into a Record. Add a unit MergeError variant (for
+    example InvalidNewMessage) and return it directly from the let-else instead. Separately,
+    merge_trailing_values (trailing.rs:122-142) is a public betterlite-core function whose only
+    callers are the oracle and tests.rs, which goes past the opaque-JSON passthrough the
+    module's #![expect(clippy::disallowed_types)] licenses. Move its Value-to-TrailingInput
+    conversion and its serialization into
+    tools/oracle/src/helpers/core_ops/responses_reasoning_merge.rs, point tests.rs at
+    merge_trailing with typed TrailingRecord fixtures, and drop merge_trailing_values from
+    betterlite-core. The existing rstest case new_message_not_dict_raises already passes today
+    through the dead path; it must keep passing once the path is direct and merge_trailing_values
+    is gone, which proves the simplification changed no observable output.
+  proof: [merge-tests, merge-adapter]
+- text: >-
+    LiteLLM declares an assistant message's role as a plain, open string with no closed set
+    (GenericChatCompletionMessage.role: Required[str]) and no required presence at the type
+    level. betterlite_openai::chat::Role (crates/betterlite-openai/src/chat.rs) is a closed enum
+    with no catch-all variant and no missing state, and ChatMessage.content is a plain Option
+    that collapses a missing key and an explicit null into the same absent output. Neither can
+    hold what KnownRole/Role/ChatRecord in responses_reasoning_merge.rs need: an unmapped role
+    string, a message with no role key, and a content key that is explicitly null versus one
+    never sent. B910's report recorded prior_art for double_option and rstest but never compared
+    these types against B004's. Add a one-line comment above KnownRole naming the two states
+    B004's Role can't hold, and one above ChatRecord.content naming the state ChatMessage.content
+    can't hold, so the comparison survives in the code and not only in a report. There is no
+    check that can fail on a missing comparison; the reviewer reads the comment against
+    reuse-before-building and the worker's own prior_art entry.
+  proof: [merge-tests]
+- text: >-
+    The comments at responses_reasoning_merge.rs:66 (above the Reasoning trait), :89 (above
+    apply_pending) and :114 (above merge_reasoning), and the ones above Content,
+    Content::into_blocks, ThinkingBlocks and ReasoningText in content.rs, each restate the
+    item's name in prose and stand in for the doc comments the rules already ban. Delete them.
+    Keep exactly one comment where a constraint survives: merge_reasoning's target record
+    mutates in place, matching how LiteLLM's _apply_pending mutates its msg argument in place
+    rather than returning a new message (see the first reference above), so state that on
+    merge_reasoning or apply_pending, not what either does line by line. No check can fail on a
+    comment's wording; the reviewer reads the diff against comments-say-why.
+  proof: [merge-tests]
+checks:
+  optional: []
+  commands:
+  - id: merge-tests
+    why: tool_calls still accepts any JSON type and the trailing dead arms still compile only because nothing exercises them
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_reasoning_merge::/)'
+  - id: merge-adapter
+    why: moving merge_trailing_values' conversion into the oracle adapter and fixing the None handling must not break its lint or its types
+    run: test -f tools/oracle/helpers/responses_reasoning_merge.py && grep -qE '^[[:space:]]+responses_reasoning_merge:' tools/oracle/fuzz/corpus/helper_case/responses_reasoning_merge-* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/responses-reasoning-merge/reasoning-attribute-extra-fields.yaml
+- tools/oracle/cases/helpers/responses-reasoning-merge/reasoning-attribute-missing-content.yaml
+- tools/oracle/cases/helpers/responses-reasoning-merge/reasoning-attribute-non-pending-missing-content.yaml
+- tools/oracle/cases/helpers/responses-reasoning-merge/reasoning-attribute-null-optionals.yaml
+- tools/oracle/cases/helpers/responses-reasoning-merge/reasoning-attribute-records.yaml
+- tools/oracle/cases/helpers/responses-reasoning-merge/reasoning-attribute-shapes.yaml
+- tools/oracle/cases/helpers/responses-reasoning-merge/reasoning-before-answer.yaml
+- tools/oracle/cases/helpers/responses-reasoning-merge/reasoning-boundaries.yaml
+- tools/oracle/cases/helpers/responses-reasoning-merge/reasoning-explicit-null-fields.yaml
+- tools/oracle/cases/helpers/responses-reasoning-merge/reasoning-mixed-records.yaml
+- tools/oracle/cases/helpers/responses-reasoning-merge/reasoning-non-list-thinking-blocks-attribute.yaml
+- tools/oracle/cases/helpers/responses-reasoning-merge/reasoning-non-list-thinking-blocks.yaml
+- tools/oracle/cases/helpers/responses-reasoning-merge/trailing-assistant.yaml
+- tools/oracle/cases/helpers/responses-reasoning-merge/trailing-hosted-search-null-tool-calls.yaml
+- tools/oracle/cases/helpers/responses-reasoning-merge/trailing-new-message-not-dict.yaml
+- tools/oracle/cases/helpers/responses-reasoning-merge/trailing-non-text-block.yaml
+- tools/oracle/cases/helpers/responses-reasoning-merge/trailing-rejections.yaml
+deviations: []
+out_of_scope:
+- The ToolCalls enum, tool_calls() and has_nonempty_tool_calls() in trailing.rs stay as functions; only their Value payload becomes a list. Deleting them and inlining their expression is B5094's padded-one-line-function sweep, not this task.
+- Content::Other and is_empty_value's Bool/Number/Object arms stay. The kept finding only asks to type tool_calls as a list; content's own "any other JSON value LiteLLM stores unexamined" fallback is untouched.
+pitfalls:
+- "record_kind attribute is the only path through serialize_record that forces a key present; dict-kind records pass straight through ChatRecord's own serde with no adapter logic, so fixing the None handling must not touch the Dict branch or reasoning-explicit-null-fields (dict-kind) starts failing instead."
+- "tool_calls stays double_option (Option<Option<Vec<Value>>>): only the inner type changes from Value to Vec<Value>, not the missing-vs-null shape, or trailing_assistant_hosted_search_preserves_explicit_null_tool_calls breaks."
+- docs/compatibility.md forbids an oracle case that sends tool_calls a value outside its declared type, so the rejection test for finding two is a plain Rust test, not a helper case.
+review_level: standard
+budget:
+  max_changed_lines: 350
+  max_new_expects: 0
