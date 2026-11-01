@@ -4,6 +4,7 @@ use rust_decimal::prelude::ToPrimitive as _;
 use serde::Deserialize;
 
 use super::error::SavingsEvidenceError;
+use crate::cost_usage::CompletionDetails;
 use crate::price_fields::decimal_lexeme::parse_decimal_lexeme;
 use crate::tiered_pricing::Scalar;
 use crate::token_rates::ModelInfo;
@@ -18,7 +19,7 @@ pub struct RawUsageObject {
     pub cache_read_input_tokens: Option<Scalar>,
     pub cache_creation_input_tokens: Option<Scalar>,
     pub prompt_cache_hit_tokens: Option<Scalar>,
-    pub completion_tokens_details: Option<Scalar>,
+    pub completion_tokens_details: Option<RawCompletionTokensDetails>,
     pub prompt_tokens_details: Option<RawPromptTokensDetails>,
     #[serde(flatten)]
     pub extra: BTreeMap<String, Scalar>,
@@ -37,6 +38,16 @@ pub struct RawPromptTokensDetails {
     pub cache_creation_token_details: Option<Scalar>,
 }
 
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct RawCompletionTokensDetails {
+    pub reasoning_tokens: Option<Scalar>,
+    pub audio_tokens: Option<Scalar>,
+    pub text_tokens: Option<Scalar>,
+    pub image_tokens: Option<Scalar>,
+    pub video_tokens: Option<Scalar>,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct LoggedUsage {
     pub prompt_tokens: i64,
@@ -45,7 +56,7 @@ pub struct LoggedUsage {
     pub cache_read_input_tokens: i64,
     pub cache_creation_input_tokens: i64,
     pub prompt_tokens_details: Option<PromptTokensDetails>,
-    pub completion_tokens_details: Option<Scalar>,
+    pub completion_tokens_details: Option<CompletionDetails>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -95,6 +106,11 @@ fn coerce_logged_usage(raw: &RawUsageObject) -> Result<LoggedUsage, SavingsEvide
         .map(coerce_prompt_tokens_details)
         .transpose()?;
     apply_cache_overrides(raw, &mut prompt_tokens_details)?;
+    let completion_tokens_details = raw
+        .completion_tokens_details
+        .as_ref()
+        .map(coerce_completion_details)
+        .transpose()?;
     Ok(LoggedUsage {
         prompt_tokens,
         completion_tokens,
@@ -102,7 +118,7 @@ fn coerce_logged_usage(raw: &RawUsageObject) -> Result<LoggedUsage, SavingsEvide
         cache_read_input_tokens,
         cache_creation_input_tokens,
         prompt_tokens_details,
-        completion_tokens_details: raw.completion_tokens_details.clone(),
+        completion_tokens_details,
     })
 }
 
@@ -176,6 +192,31 @@ fn coerce_prompt_tokens_details(
         video_tokens,
         cache_creation_token_details: raw.cache_creation_token_details.clone(),
     })
+}
+
+fn coerce_completion_details(
+    raw: &RawCompletionTokensDetails,
+) -> Result<CompletionDetails, SavingsEvidenceError> {
+    let text_tokens = optional_numeric_field(raw.text_tokens.as_ref())?;
+    let audio_tokens = optional_numeric_field(raw.audio_tokens.as_ref())?;
+    let image_tokens = optional_numeric_field(raw.image_tokens.as_ref())?;
+    let video_tokens = optional_numeric_field(raw.video_tokens.as_ref())?;
+    let reasoning_tokens = optional_numeric_field(raw.reasoning_tokens.as_ref())?;
+    Ok(CompletionDetails {
+        text_tokens,
+        audio_tokens,
+        image_tokens,
+        video_tokens,
+        reasoning_tokens,
+    })
+}
+
+// A missing key stays absent rather than becoming zero, since callers must tell "unset" from "0" here.
+fn optional_numeric_field(value: Option<&Scalar>) -> Result<Option<i64>, SavingsEvidenceError> {
+    match value {
+        None => Ok(None),
+        Some(_) => numeric_field(value).map(Some),
+    }
 }
 
 // A missing key defaults to zero; a present value that is neither number nor bool fails the whole record.
@@ -287,7 +328,7 @@ fn rebuild_baseline_usage(
             video_tokens: details.video_tokens,
             cache_creation_token_details,
         }),
-        completion_tokens_details: usage.completion_tokens_details.clone(),
+        completion_tokens_details: usage.completion_tokens_details,
     }
 }
 
