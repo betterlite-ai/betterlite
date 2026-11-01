@@ -1,0 +1,51 @@
+kind: helper
+name: tied_tokens_refresh_picks_the_first_match
+call:
+  baseline_history:
+    history:
+      first_at: 0.0
+      last_at: 0.0
+      equivalent: true
+      uncertain_before: 0.0
+      entries:
+        - fingerprint: "a"
+          content_fingerprint: "cfp"
+          tokens: 80
+          ttl_seconds: 3600
+          available_at: 0.0
+          expires_at: 3600.0
+          uncertain: false
+        - fingerprint: "b"
+          content_fingerprint: "cfp"
+          tokens: 80
+          ttl_seconds: 3600
+          available_at: 0.0
+          expires_at: 3600.0
+          uncertain: false
+      blocked_until: 0.0
+    groups:
+      - - request_id: "r1"
+          started_at: 10.0
+          available_at: 10.0
+          outcome: complete
+          baseline_equivalent: false
+          usage:
+            prompt_tokens: 80
+            completion_tokens: 5
+            total_tokens: 85
+            prompt_tokens_details:
+              text_tokens: 80
+              cached_tokens: 0
+              cache_creation_tokens: 0
+              cache_creation_token_details: {ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 0}
+          plan:
+            total_tokens: 80
+            breakpoints:
+              - fingerprint: "b"
+                ttl_seconds: 3600
+                prefix_tokens: 80
+                lookback_fingerprints: ["a", "b"]
+                content_fingerprint: "cfp"
+                lookback_content_fingerprints: ["cfp"]
+compare: {ignore: []}
+env: {}

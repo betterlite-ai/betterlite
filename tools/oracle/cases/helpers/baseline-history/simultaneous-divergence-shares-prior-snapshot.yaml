@@ -1,0 +1,35 @@
+kind: helper
+name: simultaneous_divergence_shares_prior_snapshot
+call:
+  baseline_history:
+    groups:
+      - - request_id: "r1"
+          started_at: 500.0
+          available_at: 500.0
+          outcome: complete
+          baseline_equivalent: true
+          usage:
+            prompt_tokens: 50
+            completion_tokens: 5
+            total_tokens: 55
+            prompt_tokens_details:
+              text_tokens: 50
+              cached_tokens: 0
+              cache_creation_tokens: 0
+              cache_creation_token_details: {ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 0}
+        - request_id: "r2"
+          started_at: 500.0
+          available_at: 500.0
+          outcome: complete
+          baseline_equivalent: false
+          usage:
+            prompt_tokens: 60
+            completion_tokens: 6
+            total_tokens: 66
+            prompt_tokens_details:
+              text_tokens: 60
+              cached_tokens: 0
+              cache_creation_tokens: 0
+              cache_creation_token_details: {ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 0}
+compare: {ignore: []}
+env: {}
