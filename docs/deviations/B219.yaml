@@ -1,0 +1,8 @@
+task: B219
+deviations:
+  - what: migrate_file_to_image_url returns a typed MissingFile error when a file content part's "file" field is present but not an object, instead of crashing.
+    why: LiteLLM calls file_sub.get(...) on that value without checking its type, so a working setup cannot rely on the crash; betterlite reports the same error it uses for a wholly missing "file" field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L1754-L1756
+  - what: extract_images_from_message skips an image_url content part whose "url" is present but not a string, instead of crashing.
+    why: LiteLLM's _extract_base64_data calls str.startswith on that value without checking its type, so a working setup cannot rely on the crash; betterlite treats the part as contributing no image.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L2141-L2163
