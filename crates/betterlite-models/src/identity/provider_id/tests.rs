@@ -5,16 +5,15 @@ use rstest::rstest;
 
 #[test]
 fn every_variant_round_trips_through_its_wire_slug() {
-    assert!(
-        ProviderId::ALL
-            .iter()
-            .all(|provider| ProviderId::parse(provider.as_str()) == Some(*provider))
-    );
+    assert!(ProviderId::ALL.iter().all(|provider| {
+        let slug = <&str>::from(*provider);
+        slug.parse::<ProviderId>() == Ok(*provider)
+    }));
 }
 
 #[test]
-fn has_the_full_llm_providers_count() {
-    assert_eq!(ProviderId::ALL.len(), 165);
+fn has_the_full_llm_providers_count_plus_the_json_registry_only_slugs() {
+    assert_eq!(ProviderId::ALL.len(), 165 + 8);
 }
 
 #[rstest]
@@ -38,7 +37,7 @@ fn provider_identity_behavior_tests_behavior(
     #[case] slug: &str,
     #[case] expected: Option<ProviderId>,
 ) {
-    assert_eq!(ProviderId::parse(slug), expected);
+    assert_eq!(slug.parse::<ProviderId>().ok(), expected);
 }
 
 #[test]

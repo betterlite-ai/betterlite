@@ -6,7 +6,6 @@ from litellm.litellm_core_utils import get_llm_provider_logic as provider_logic
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
-_is_non_openai_azure_model = provider_logic._is_non_openai_azure_model  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
 _is_azure_claude_model = provider_logic._is_azure_claude_model  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
 _endpoint_matches_api_base = provider_logic._endpoint_matches_api_base  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
 handle_cohere_chat_model_custom_llm_provider = (
@@ -84,34 +83,54 @@ def _run_explicit_provider(input_value: ExplicitProviderInput) -> Json:
     custom_llm_provider = input_value["custom_llm_provider"]
     configured_names = set(input_value["configured_model_names"])
     cohere_models, mistral_models = _catalog_sets(input_value["catalog"])
+    reached_openai_compatible = False
+
+    def _record_reached(
+        model: str,
+        api_base: str | None,
+        api_key: str | None,  # noqa: ARG001
+        dynamic_api_key: str | None,
+        litellm_params: object | None = None,  # noqa: ARG001
+    ) -> tuple[str, str, str | None, str | None]:
+        nonlocal reached_openai_compatible
+        reached_openai_compatible = True
+        prefix, rest = model.split("/", 1)
+        return rest, prefix, dynamic_api_key, api_base
+
     with (
         patch.object(litellm, "cohere_chat_models", cohere_models),
         patch.object(litellm, "mistral_chat_models", mistral_models),
+        patch.object(litellm, "model_list_set", configured_names),
+        patch.object(
+            provider_logic, "_get_openai_compatible_provider_info", _record_reached
+        ),
     ):
-        if model.split("/", 1)[0] == "azure" and _is_non_openai_azure_model(model):
-            return {"kind": "non_openai_azure", "model": model}
-        model, custom_llm_provider = handle_cohere_chat_model_custom_llm_provider(
-            model, custom_llm_provider
-        )
-    model, custom_llm_provider = handle_anthropic_text_model_custom_llm_provider(
-        model, custom_llm_provider
-    )
-    if custom_llm_provider and model.split("/")[0] != custom_llm_provider:
-        model = f"{custom_llm_provider}/{model}"
-    if custom_llm_provider == "openrouter" and model.startswith("openrouter/"):
-        remainder = model[len("openrouter/") :]
-        if "/" in remainder:
-            return {"kind": "openrouter_nested", "model": remainder}
-        return {"kind": "openrouter_native", "model": model}
-    prefix, slash, rest = model.partition("/")
-    if not slash or prefix not in litellm.provider_list:
-        return {"kind": "unresolved", "model": model, "custom_llm_provider": custom_llm_provider}
-    return {
-        "kind": "explicit_provider",
-        "provider": prefix,
-        "model": rest,
-        "needs_provider_defaults": prefix not in configured_names,
-    }
+        try:
+            resolved_model, resolved_provider, _key, _base = (
+                provider_logic.get_llm_provider(model, custom_llm_provider)
+            )
+        except litellm.exceptions.BadRequestError:
+            return {
+                "kind": "unresolved",
+                "model": model,
+                "custom_llm_provider": custom_llm_provider,
+            }
+
+    model_prefix = model.split("/", 1)[0]
+    if resolved_provider == "openai" and resolved_model == model and model_prefix == "azure":
+        return {"kind": "non_openai_azure", "model": resolved_model}
+    if resolved_provider == "openrouter":
+        is_native = resolved_model.startswith("openrouter/")
+        kind = "openrouter_native" if is_native else "openrouter_nested"
+        return {"kind": kind, "model": resolved_model}
+    if reached_openai_compatible or resolved_model != model:
+        return {
+            "kind": "explicit_provider",
+            "provider": resolved_provider,
+            "model": resolved_model,
+            "needs_provider_defaults": reached_openai_compatible,
+        }
+    return {"kind": "unresolved", "model": resolved_model, "custom_llm_provider": resolved_provider}
 
 
 def _run_cohere(input_value: CohereInput) -> Json:
@@ -140,12 +159,14 @@ def _run_azure_claude(input_value: AzureClaudeInput) -> Json:
 def _run_openrouter(input_value: OpenrouterInput) -> Json:
     model = input_value["model"]
     custom_llm_provider = input_value["custom_llm_provider"]
-    if custom_llm_provider == "openrouter" and model.startswith("openrouter/"):
-        remainder = model[len("openrouter/") :]
-        if "/" in remainder:
-            return {"kind": "nested", "model": remainder}
-        return {"kind": "native", "model": model}
-    return {"kind": "not_applicable"}
+    if custom_llm_provider != "openrouter" or not model.startswith("openrouter/"):
+        return {"kind": "not_applicable"}
+    resolved_model, _provider, _dynamic_api_key, _api_base = provider_logic.get_llm_provider(
+        model, custom_llm_provider
+    )
+    if resolved_model.startswith("openrouter/"):
+        return {"kind": "native", "model": resolved_model}
+    return {"kind": "nested", "model": resolved_model}
 
 
 def _run_endpoint(input_value: EndpointInput) -> Json:

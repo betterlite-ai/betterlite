@@ -97,6 +97,15 @@ fn classify(
         custom_llm_provider: None,
     }
 )]
+#[case::a_json_registered_provider_prefix_needs_defaults(
+    "crusoe/llama-3",
+    None,
+    PrefixClassification::ExplicitProvider {
+        provider: ProviderId::Crusoe,
+        model: "llama-3".to_owned(),
+        needs_provider_defaults: true,
+    }
+)]
 fn provider_identity_behavior_tests_behavior(
     #[case] model: &str,
     #[case] custom_llm_provider: Option<&str>,

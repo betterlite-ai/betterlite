@@ -16,7 +16,7 @@ pub fn authenticating_provider(
         let (prefix, _) = declared_model.split_once('/')?;
         prefix
     };
-    let declared = ProviderId::parse(declared_slug)?;
+    let declared = declared_slug.parse::<ProviderId>().ok()?;
     OAUTH_VIA_PROVIDER_INFO
         .contains(&declared)
         .then_some(declared)
