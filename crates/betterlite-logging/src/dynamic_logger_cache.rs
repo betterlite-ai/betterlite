@@ -7,6 +7,7 @@ use sha2::{Digest as _, Sha256};
 use thiserror::Error;
 
 pub const DEFAULT_TTL_FOR_HTTPX_CLIENTS: f64 = 3600.0;
+pub const DEFAULT_MAX_SIZE_IN_MEMORY: usize = 200;
 
 pub type RemovalEffect<V> = Arc<dyn Fn(V) + Send + Sync>;
 
@@ -30,6 +31,7 @@ pub struct Entry<V> {
 
 pub struct DynamicLoggerCache<V> {
     pub default_ttl: f64,
+    pub capacity: usize,
     pub clock: Arc<dyn Fn() -> f64 + Send + Sync>,
     pub on_remove: RemovalEffect<V>,
     pub entries: Mutex<BTreeMap<String, Entry<V>>>,
@@ -90,6 +92,8 @@ impl<V: Clone> DynamicLoggerCache<V> {
             .entries
             .lock()
             .map_err(|_poisoned| DynamicLoggerCacheError::Unavailable)?;
+        let mut evicted = Self::prune_expired(&mut entries, now);
+        evicted.extend(self.evict_over_capacity(&mut entries));
         let fresh_expiry = now.mul_add(1.0_f64, self.default_ttl);
         let expiry = match entries.get(&key) {
             Some(entry) if entry.expiry >= now => entry.expiry,
@@ -97,7 +101,50 @@ impl<V: Clone> DynamicLoggerCache<V> {
         };
         entries.insert(key, Entry { value, expiry });
         drop(entries);
+        for stopped_value in evicted {
+            self.stop(stopped_value);
+        }
         Ok(())
+    }
+
+    // Mirrors InMemoryCache.evict_cache step 1: prune every expired entry before the capacity check.
+    fn prune_expired(entries: &mut BTreeMap<String, Entry<V>>, now: f64) -> Vec<V> {
+        let expired_keys: Vec<String> = entries
+            .iter()
+            .filter(|(_key, entry)| entry.expiry <= now)
+            .map(|(key, _entry)| key.clone())
+            .collect();
+        let mut evicted = Vec::with_capacity(expired_keys.len());
+        for key in expired_keys {
+            if let Some(entry) = entries.remove(&key) {
+                evicted.push(entry.value);
+            }
+        }
+        evicted
+    }
+
+    // Mirrors InMemoryCache.evict_cache step 2: evict the earliest expiry while still at capacity.
+    fn evict_over_capacity(&self, entries: &mut BTreeMap<String, Entry<V>>) -> Vec<V> {
+        let mut evicted = Vec::new();
+        while entries.len() >= self.capacity {
+            let Some(oldest_key) = entries
+                .iter()
+                .min_by(|(left_key, left_entry), (right_key, right_entry)| {
+                    left_entry
+                        .expiry
+                        .total_cmp(&right_entry.expiry)
+                        .then_with(|| left_key.cmp(right_key))
+                })
+                .map(|(key, _entry)| key.clone())
+            else {
+                break;
+            };
+            let Some(entry) = entries.remove(&oldest_key) else {
+                break;
+            };
+            evicted.push(entry.value);
+        }
+        evicted
     }
 
     pub fn evict(

@@ -7,7 +7,8 @@ use rstest::rstest;
 use secrecy::SecretString;
 
 use super::{
-    DEFAULT_TTL_FOR_HTTPX_CLIENTS, DynamicLoggerCache, Entry, RemovalEffect, get_cache_key,
+    DEFAULT_MAX_SIZE_IN_MEMORY, DEFAULT_TTL_FOR_HTTPX_CLIENTS, DynamicLoggerCache, RemovalEffect,
+    get_cache_key,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -48,6 +49,21 @@ fn cache_with(
 ) -> DynamicLoggerCache<FixtureLogger> {
     DynamicLoggerCache {
         default_ttl,
+        capacity: DEFAULT_MAX_SIZE_IN_MEMORY,
+        clock: fake_clock(time),
+        on_remove: capturing_removal(stopped),
+        entries: Mutex::new(BTreeMap::new()),
+    }
+}
+
+fn cache_with_capacity(
+    capacity: usize,
+    time: &Arc<Mutex<f64>>,
+    stopped: &Arc<Mutex<Vec<FixtureLogger>>>,
+) -> DynamicLoggerCache<FixtureLogger> {
+    DynamicLoggerCache {
+        default_ttl: 100.0_f64,
+        capacity,
         clock: fake_clock(time),
         on_remove: capturing_removal(stopped),
         entries: Mutex::new(BTreeMap::new()),
@@ -200,6 +216,7 @@ fn explicit_eviction_survives_a_panicking_stop_without_propagating() {
     let time = Arc::new(Mutex::new(0.0_f64));
     let cache = DynamicLoggerCache {
         default_ttl: 100.0_f64,
+        capacity: DEFAULT_MAX_SIZE_IN_MEMORY,
         clock: fake_clock(&time),
         on_remove: Arc::new(|_value: FixtureLogger| panic!("stop() is broken")),
         entries: Mutex::new(BTreeMap::new()),
@@ -278,17 +295,79 @@ fn cache_holds_an_arbitrary_value_type_with_no_reference_to_any_logger_crate() {
     let stopped = Arc::new(Mutex::new(Vec::new()));
     let cache = cache_with(100.0_f64, &time, &stopped);
     let creds = credentials(&[("api_key", "k")]);
-    let entry = Entry {
-        value: FixtureLogger { name: "direct" },
-        expiry: 100.0_f64,
-    };
-    assert!((entry.expiry - 100.0_f64).abs() < f64::EPSILON);
 
     cache
-        .set_cache(&creds, "langfuse", entry.value)
+        .set_cache(&creds, "langfuse", FixtureLogger { name: "direct" })
         .expect("set succeeds");
     assert_eq!(
         cache.get_cache(&creds, "langfuse").expect("get succeeds"),
         Some(FixtureLogger { name: "direct" })
+    );
+}
+
+#[test]
+fn set_cache_evicts_and_stops_an_expired_entry_without_ever_reading_it() {
+    let time = Arc::new(Mutex::new(0.0_f64));
+    let stopped = Arc::new(Mutex::new(Vec::new()));
+    let cache = cache_with(10.0_f64, &time, &stopped);
+    let first = credentials(&[("api_key", "a")]);
+    let second = credentials(&[("api_key", "b")]);
+
+    cache
+        .set_cache(&first, "datadog", FixtureLogger { name: "a" })
+        .expect("set succeeds");
+    *time.lock().expect("fixture clock lock is not poisoned") = 11.0_f64;
+
+    cache
+        .set_cache(&second, "datadog", FixtureLogger { name: "b" })
+        .expect("set succeeds");
+
+    assert_eq!(
+        stopped
+            .lock()
+            .expect("fixture capture lock is not poisoned")
+            .as_slice(),
+        [FixtureLogger { name: "a" }]
+    );
+}
+
+#[test]
+fn set_cache_evicts_the_earliest_expiry_entry_once_capacity_is_full() {
+    let time = Arc::new(Mutex::new(0.0_f64));
+    let stopped = Arc::new(Mutex::new(Vec::new()));
+    let cache = cache_with_capacity(2, &time, &stopped);
+    let first = credentials(&[("api_key", "first")]);
+    let second = credentials(&[("api_key", "second")]);
+    let third = credentials(&[("api_key", "third")]);
+
+    cache
+        .set_cache(&first, "langfuse", FixtureLogger { name: "first" })
+        .expect("set succeeds");
+    *time.lock().expect("fixture clock lock is not poisoned") = 10.0_f64;
+    cache
+        .set_cache(&second, "langfuse", FixtureLogger { name: "second" })
+        .expect("set succeeds");
+    cache
+        .set_cache(&third, "langfuse", FixtureLogger { name: "third" })
+        .expect("set succeeds");
+
+    assert_eq!(
+        cache.get_cache(&first, "langfuse").expect("get succeeds"),
+        None
+    );
+    assert_eq!(
+        stopped
+            .lock()
+            .expect("fixture capture lock is not poisoned")
+            .as_slice(),
+        [FixtureLogger { name: "first" }]
+    );
+    assert_eq!(
+        cache.get_cache(&second, "langfuse").expect("get succeeds"),
+        Some(FixtureLogger { name: "second" })
+    );
+    assert_eq!(
+        cache.get_cache(&third, "langfuse").expect("get succeeds"),
+        Some(FixtureLogger { name: "third" })
     );
 }
