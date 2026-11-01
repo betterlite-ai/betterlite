@@ -1,0 +1,13 @@
+kind: helper
+name: vertex-errors-branch-1250
+call:
+  vertex_errors:
+    model: gemini-1.5-pro
+    custom_llm_provider: vertex_ai
+    error_str: '{"error": {"code": 429, "message": "rate limited upstream"}}'
+    status_code: 503
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/context/message
+      why: betterlite writes its own message

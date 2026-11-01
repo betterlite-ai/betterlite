@@ -1,0 +1,12 @@
+kind: helper
+name: native-errors-a-branch-1383
+call:
+  native_errors_a:
+    provider: cloudflare
+    model: cf/model-a
+    error_str: "payload must have required property 'model'"
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message
