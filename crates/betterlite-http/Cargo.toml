@@ -28,6 +28,7 @@ uuid.workspace = true
 zip = { version = "9.1.0", default-features = false, features = ["bzip2-rs", "deflate-flate2-zlib", "lzma"] }
 
 [dev-dependencies]
+base64 = "0.23.1"
 rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem"] }
 rstest = "=0.27.0"
 tempfile = "3.27.0"

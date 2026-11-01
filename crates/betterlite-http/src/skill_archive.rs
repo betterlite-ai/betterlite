@@ -138,10 +138,7 @@ enum FrontmatterField {
 }
 
 fn manifest_frontmatter(manifest: &[u8]) -> (Option<String>, Option<String>) {
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "LiteLLM decodes SKILL.md with errors=replace"
-    )]
+    #[expect(clippy::disallowed_methods, reason = "LiteLLM uses errors=replace")]
     let text = String::from_utf8_lossy(manifest).into_owned();
     let Ok(pattern) = Regex::new(FRONTMATTER_PATTERN) else {
         return (None, None);
