@@ -2,14 +2,15 @@ use betterlite_redact::secret::Redactor;
 
 use crate::error::details::{TimeoutDetails, TimeoutStatus};
 use crate::error::{ErrorClass, ErrorContext};
-use crate::facts::ProviderErrorFacts;
+use crate::native::dispatch_native;
 use crate::openai::body::{OpenaiErrorBody, OpenaiErrorDetail};
 use crate::openai::{self, OpenaiExceptionInput};
-use crate::status::status_error_class;
 
+mod catchall;
 mod litellm_proxy;
 mod tests;
 
+use catchall::catchall;
 use litellm_proxy::{LitellmProxyOutcome, litellm_proxy_branch};
 
 // exception_type()'s preamble passes an already-classified exception, or a guardrail block, straight through
@@ -30,7 +31,60 @@ pub struct RawException {
     pub status_code_is_synthesized: bool,
     pub message: Option<String>,
     #[serde(default)]
-    pub body: Option<OpenaiErrorBody>,
+    pub body: Option<RawExceptionBody>,
+    // type(original_exception).__name__, read only by _map_replicate_exception and _map_cohere_exception
+    #[serde(default)]
+    pub exception_type: String,
+}
+
+// original_exception.body, widened past OpenaiErrorBody's shape so the azure arm can also read error.type/code and inner_error/innererror.code
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct RawExceptionBody {
+    #[serde(default, rename = "type")]
+    pub kind: Option<String>,
+    #[serde(default)]
+    pub param: Option<String>,
+    #[serde(default)]
+    pub code: Option<String>,
+    #[serde(default)]
+    pub message: Option<String>,
+    #[serde(default)]
+    pub error: Option<RawExceptionBodyDetail>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct RawExceptionBodyDetail {
+    #[serde(default, rename = "type")]
+    pub kind: Option<String>,
+    #[serde(default)]
+    pub param: Option<String>,
+    #[serde(default)]
+    pub code: Option<String>,
+    #[serde(default)]
+    pub message: Option<String>,
+    #[serde(default)]
+    pub inner_error: Option<RawExceptionInnerError>,
+    #[serde(default)]
+    pub innererror: Option<RawExceptionInnerError>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct RawExceptionInnerError {
+    #[serde(default)]
+    pub code: Option<String>,
+}
+
+// down-converts to the flat shape _map_openai_exception's body kwarg accepts; inner_error/innererror have no openai.APIError counterpart
+fn to_openai_body(body: &RawExceptionBody) -> OpenaiErrorBody {
+    OpenaiErrorBody {
+        kind: body.kind.clone(),
+        param: body.param.clone(),
+        code: body.code.clone(),
+        message: body.message.clone(),
+        error: body.error.as_ref().map(|detail| OpenaiErrorDetail {
+            message: detail.message.clone(),
+        }),
+    }
 }
 
 #[must_use]
@@ -48,7 +102,7 @@ pub fn dispatch(input: &DispatchInput, redactor: &Redactor) -> ErrorClass {
                     .message
                     .as_deref()
                     .map(|message| redactor.redact_string(message)),
-                body: raw.body.as_ref().map(|body| OpenaiErrorBody {
+                body: raw.body.as_ref().map(|body| RawExceptionBody {
                     kind: body.kind.clone(),
                     param: body.param.clone(),
                     code: body.code.clone(),
@@ -56,13 +110,19 @@ pub fn dispatch(input: &DispatchInput, redactor: &Redactor) -> ErrorClass {
                         .message
                         .as_deref()
                         .map(|message| redactor.redact_string(message)),
-                    error: body.error.as_ref().map(|detail| OpenaiErrorDetail {
+                    error: body.error.as_ref().map(|detail| RawExceptionBodyDetail {
+                        kind: detail.kind.clone(),
+                        param: detail.param.clone(),
+                        code: detail.code.clone(),
                         message: detail
                             .message
                             .as_deref()
                             .map(|message| redactor.redact_string(message)),
+                        inner_error: detail.inner_error.clone(),
+                        innererror: detail.innererror.clone(),
                     }),
                 }),
+                exception_type: raw.exception_type.clone(),
             };
             dispatch_raw(&redacted)
         }
@@ -102,8 +162,11 @@ fn dispatch_raw(raw: &RawException) -> ErrorClass {
             status_code: raw.status_code,
             status_code_is_synthesized: raw.status_code_is_synthesized,
             message: raw.message.clone(),
-            body: raw.body.clone(),
+            body: raw.body.as_ref().map(to_openai_body),
         });
+    }
+    if let Some(class) = dispatch_native(raw, error_str) {
+        return class;
     }
     catchall(raw, error_str)
 }
@@ -140,44 +203,8 @@ fn unmappable_identity(raw: &RawException) -> ErrorClass {
     ErrorClass::ApiConnection(Box::new(context))
 }
 
-// the unconditional raise at the end of exception_type()'s try block, reached once no provider branch raises
-fn catchall(raw: &RawException, error_str: &str) -> ErrorClass {
-    let exception_provider = exception_provider_label(&raw.custom_llm_provider);
-    // _map_exception_by_status runs first; a synthetic status never outranks this, since it bails out early
-    let facts = ProviderErrorFacts {
-        status_code: raw.status_code,
-        status_code_is_synthesized: raw.status_code_is_synthesized,
-        message: None,
-        body: None,
-        headers: None,
-        response: None,
-        litellm_response_headers: None,
-        request: None,
-    };
-    if let Some(class) = status_error_class(
-        &facts,
-        error_str,
-        &exception_provider,
-        Some(raw.model.clone()),
-        Some(raw.custom_llm_provider.clone()),
-    ) {
-        return class;
-    }
-    let context = ErrorContext {
-        message: format!("{exception_provider} - {error_str}"),
-        model: Some(raw.model.clone()),
-        provider: Some(raw.custom_llm_provider.clone()),
-        max_retries: None,
-        num_retries: None,
-        body_type: None,
-        body_param: None,
-        body_code: None,
-    };
-    ErrorClass::ApiConnection(Box::new(context))
-}
-
 // exception_provider = custom_llm_provider[0].upper() + custom_llm_provider[1:] + "Exception"
-fn exception_provider_label(custom_llm_provider: &str) -> String {
+pub(crate) fn exception_provider_label(custom_llm_provider: &str) -> String {
     let mut chars = custom_llm_provider.chars();
     chars.next().map_or_else(
         || "Exception".to_owned(),

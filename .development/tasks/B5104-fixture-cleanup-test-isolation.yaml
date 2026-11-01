@@ -1,0 +1,79 @@
+id: B5104
+title: The fixture cleanup test checks only its own databases
+description: >-
+  B1630's drops_the_fixture_databases_after_a_late_step_failure in tools/oracle/src/http/browser_flow/tests.rs
+  lists every database named like 'betterlite_fixture_%' before and after a failed run and asserts the two lists
+  match. The fixture names each database betterlite_fixture_ plus a random UUID (RandomDatabaseName in
+  tools/postgres-fixture/src/connection.rs), and every oracle test and gate run on the machine shares one postgres
+  through POSTGRES_TEST_URL. So any other run that holds a fixture database during the test's 58 seconds fails it.
+  The oracle warm-up at 2e3ebc76 failed that way: "left: [\"betterlite_fixture_191d3805ef78452b9bbadebb49d6b2ec\"]",
+  a database that was gone a minute later. CI runs the package's tests in parallel processes too, so main can fail
+  the same way.
+
+
+  The fix gives the run its database names. PostgresFixture::provision_with_name_generator already takes a
+  DatabaseNameGenerator; provision_from_url hard-codes RandomDatabaseName. run_group_with_url takes the generator as
+  an argument and hands it to runner::fixtures::provision, which provisions both databases through it. run_group
+  passes RandomDatabaseName, so the normal oracle run names databases exactly as today. The other test callers of
+  run_group_with_url (http::postgres::tests, http::native_feature_eligibility::tests) pass RandomDatabaseName too.
+  If the oracle needs a blocking wrapper around provision_with_name_generator, add one beside provision_from_url in
+  connection.rs and make provision_from_url call it with RandomDatabaseName, rather than building a second runtime
+  in the oracle.
+
+
+  The test then uses a generator whose names start with betterlite_fixture_, then the test's own unique_id() with its hyphen turned into an underscore (a hyphen needs quoting in a postgres name), then
+  an underscore and a counter, and after the failed run it asserts that no database starting with that prefix
+  remains. It filters the names in Rust with starts_with, since _ is a wildcard in LIKE. As a regression guard, the
+  test provisions one foreign fixture database with provision_from_url (so RandomDatabaseName) before the run and closes it only after the
+  assertion: the old before/after comparison fails on it every time, the new prefix check passes.
+scope:
+  paths:
+    - tools/oracle/src/runner.rs
+    - tools/oracle/src/runner/fixtures.rs
+    - tools/oracle/src/http/browser_flow/tests.rs
+    - tools/oracle/src/http/postgres/tests.rs
+    - tools/oracle/src/http/native_feature_eligibility/tests.rs
+    - tools/postgres-fixture/src/connection.rs
+  lint_tables: false
+references:
+  - url: https://github.com/betterlite-ai/betterlite/blob/2e3ebc7611be246e07a9de010e0853f39ccc7041/tools/oracle/src/http/browser_flow/tests.rs#L578-L612
+    why: The test compares every betterlite_fixture_ database on the server before and after its run.
+  - url: https://github.com/betterlite-ai/betterlite/blob/2e3ebc7611be246e07a9de010e0853f39ccc7041/tools/postgres-fixture/src/connection.rs#L29-L40
+    why: DatabaseNameGenerator and RandomDatabaseName, the existing way to choose fixture names.
+  - url: https://github.com/betterlite-ai/betterlite/blob/2e3ebc7611be246e07a9de010e0853f39ccc7041/tools/postgres-fixture/src/connection.rs#L120-L151
+    why: provision_from_url hard-codes RandomDatabaseName; provision_with_name_generator takes any generator.
+  - url: https://github.com/betterlite-ai/betterlite/blob/2e3ebc7611be246e07a9de010e0853f39ccc7041/tools/oracle/src/runner/fixtures.rs#L12-L47
+    why: The runner provisions both fixture databases through provision_from_url.
+dod:
+  - text: The cleanup test checks only the databases its own run named, and passes while a foreign fixture database stays open through the whole run.
+    proof: [fixture-cleanup-test, no-global-listing]
+  - text: The normal oracle run and the other run_group_with_url callers still name fixture databases with RandomDatabaseName and still pass.
+    proof: [oracle-postgres-tests]
+checks:
+  optional: []
+  commands:
+    - id: fixture-cleanup-test
+      why: The cleanup test is missing, fails, or does not hold a foreign fixture database open during its run.
+      run: |-
+        grep -q -E 'RandomDatabaseName|provision_from_url' tools/oracle/src/http/browser_flow/tests.rs && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(=http::browser_flow::tests::drops_the_fixture_databases_after_a_late_step_failure)'
+    - id: no-global-listing
+      why: The test still compares every betterlite_fixture_ database on the server.
+      run: |-
+        ! grep -n "like 'betterlite_fixture_%'" tools/oracle/src/http/browser_flow/tests.rs
+    - id: oracle-postgres-tests
+      why: Passing the generator through broke a postgres-backed oracle test.
+      run: |-
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http::(postgres|native_feature_eligibility|browser_flow)::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - Booting LiteLLM with a database needs prisma in tools/oracle/litellm; that belongs to B5076.
+  - Fixture naming for any other crate's tests.
+pitfalls:
+  - A postgres identifier holds at most 63 bytes. betterlite_fixture_ is 19 and unique_id() is the process id and the nanoseconds since the epoch, about 27, so the counter fits in the rest.
+  - A generator kept in a static or a thread local would leak between tests in one process; it comes in as an argument.
+  - Closing the foreign fixture before the assertion would let the old global comparison pass too, and the test would prove nothing.
+budget:
+  max_changed_lines: 200
+  max_new_expects: 0
+review_level: standard

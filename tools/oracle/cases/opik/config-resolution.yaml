@@ -3,11 +3,21 @@ name: opik-config-resolution
 call:
   b3973:
     function: config
-    key: url_override
-    user: user
-    environment: {OPIK_URL_OVERRIDE: env}
-    config: {url_override: file}
-    default: default
+    environment:
+      OPIK_URL_OVERRIDE: env
+      OPIK_WORKSPACE: ""
+    config_file: "[opik]\nurl_override = file\nproject_name = team\n"
+    lookups:
+      - key: url_override
+        user: user
+      - key: url_override
+      - key: workspace
+        default: d
+      - key: project_name
+        default: d
+      - key: api_key
+        default: d
+      - key: api_key
 env: {}
 compare:
   ignore: []
