@@ -1,7 +1,7 @@
 use betterlite_models::cost_usage::CostUsage;
 use betterlite_models::off_peak::schema::OffPeakBlock;
 use betterlite_models::off_peak::schema::RateField;
-use betterlite_models::price_lookup::{PriceLookup, PriceRecord};
+use betterlite_models::price_lookup::{PriceLookup, PriceRecord, PricedModel};
 use betterlite_models::tiered_pricing::Scalar;
 use betterlite_models::token_cost::cache_default::provider_cache_read_default;
 use betterlite_models::token_cost::error::TokenCostError;
@@ -31,6 +31,14 @@ impl PriceLookup for NullLookup {
     }
 
     fn raw_cost_map_entry(&self, _key: &str) -> Option<PriceRecord> {
+        None
+    }
+
+    fn effective_priced_model(
+        &self,
+        _model: &str,
+        _custom_llm_provider: Option<&str>,
+    ) -> Option<PricedModel> {
         None
     }
 }
@@ -64,19 +72,25 @@ fn run_generic(fields: &GenericInput) -> crate::helpers::HelperResult {
         .prompt_extras
         .clone()
         .map_or_else(PromptExtras::default, PromptExtras::from);
+    let supplied_pricing = fields
+        .supplied_model_info
+        .as_ref()
+        .map(|record| PricedModel {
+            record: record.clone(),
+            tiered_pricing: fields.tiered_pricing.clone(),
+            off_peak_pricing: fields.off_peak_pricing.clone(),
+            off_peak_cache_read_present: fields.off_peak_cache_read_present,
+        });
     let request = GenericCostRequest {
         model: "oracle-model",
         custom_llm_provider: fields.custom_llm_provider.as_deref(),
         usage: &usage,
         prompt_extras: &prompt_extras,
-        supplied_model_info: fields.supplied_model_info.as_ref(),
+        supplied_pricing: supplied_pricing.as_ref(),
         service_tier: fields.service_tier.as_deref(),
         data_residency: fields.data_residency.as_deref(),
         vertex_location: fields.vertex_location.as_deref(),
         moment: fields.moment,
-        tiered_pricing: &fields.tiered_pricing,
-        off_peak_pricing: fields.off_peak_pricing.as_ref(),
-        off_peak_cache_read_present: fields.off_peak_cache_read_present,
     };
     let result = generic_cost_per_token(&request, &NullLookup, &database)
         .map_err(|error| token_cost_error(&error))?;
