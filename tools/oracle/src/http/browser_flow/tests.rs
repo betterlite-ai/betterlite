@@ -593,7 +593,8 @@ fn drops_the_fixture_databases_after_a_late_step_failure() {
         step("/health/liveliness", BTreeMap::new(), Vec::new(), false),
         step("/health/liveliness", BTreeMap::new(), vec![missing], false),
     ];
-    let case = steps_case(steps);
+    let mut case = steps_case(steps);
+    case.config = "model_list: []".to_owned();
     let options = Options {
         self_check: true,
         paths: Vec::new(),
