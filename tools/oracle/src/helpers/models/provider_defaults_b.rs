@@ -49,9 +49,9 @@ impl Helper for Op {
         let globals = GlobalCredentials {
             api_key: input.global_api_key.clone().map(SecretString::from),
             api_base: input.global_api_base.clone(),
-            xai_key: input.xai_key.clone(),
-            inception_key: input.inception_key.clone(),
-            lemonade_key: input.lemonade_key.clone(),
+            xai_key: input.xai_key.clone().map(SecretString::from),
+            inception_key: input.inception_key.clone().map(SecretString::from),
+            lemonade_key: input.lemonade_key.clone().map(SecretString::from),
         };
         let resolved =
             resolve_provider_defaults(request, &globals, &input.environment).map_err(|error| {

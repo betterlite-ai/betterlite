@@ -31,7 +31,12 @@ pub const SPECIAL_TABLE: &[(ProviderId, SpecialDefaults)] = &[
             base_env_var: "XAI_API_BASE",
             default_base: "https://api.x.ai/v1",
             key_env_var: "XAI_API_KEY",
-            global_key: |globals| globals.xai_key.as_deref(),
+            global_key: |globals| {
+                globals
+                    .xai_key
+                    .as_ref()
+                    .map(secrecy::ExposeSecret::expose_secret)
+            },
             guard_key_on_base: false,
             default_key: None,
         },
@@ -42,7 +47,12 @@ pub const SPECIAL_TABLE: &[(ProviderId, SpecialDefaults)] = &[
             base_env_var: "INCEPTION_API_BASE",
             default_base: "https://api.inceptionlabs.ai/v1",
             key_env_var: "INCEPTION_API_KEY",
-            global_key: |globals| globals.inception_key.as_deref(),
+            global_key: |globals| {
+                globals
+                    .inception_key
+                    .as_ref()
+                    .map(secrecy::ExposeSecret::expose_secret)
+            },
             guard_key_on_base: true,
             default_key: None,
         },
@@ -53,7 +63,12 @@ pub const SPECIAL_TABLE: &[(ProviderId, SpecialDefaults)] = &[
             base_env_var: "LEMONADE_API_BASE",
             default_base: "http://localhost:8000/api/v1",
             key_env_var: "LEMONADE_API_KEY",
-            global_key: |globals| globals.lemonade_key.as_deref(),
+            global_key: |globals| {
+                globals
+                    .lemonade_key
+                    .as_ref()
+                    .map(secrecy::ExposeSecret::expose_secret)
+            },
             guard_key_on_base: true,
             default_key: Some("lemonade"),
         },
