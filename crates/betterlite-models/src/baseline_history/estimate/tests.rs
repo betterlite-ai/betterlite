@@ -2,10 +2,7 @@
 
 use rstest::rstest;
 
-use super::{
-    BaselineEstimate, Provenance, entry_ambiguous, entry_matches, estimate_for, is_plan_valid,
-    markers_for,
-};
+use super::{BaselineEstimate, Provenance, entry_status, estimate_for, is_plan_valid, markers_for};
 use crate::baseline_history::cache_plan::{CountedBreakpoint, CountedPromptCachePlan};
 use crate::baseline_history::model::{BaselineHistory, BaselineObservation, CacheEntry, Outcome};
 use crate::baseline_history::usage::{CacheCreationTokenDetails, PromptTokensDetails, Usage};
@@ -119,20 +116,20 @@ fn markers_for_drops_breakpoints_below_the_minimum() {
 }
 
 #[test]
-fn entry_matches_requires_the_window_the_fingerprint_and_the_ttl() {
+fn entry_status_requires_the_window_the_fingerprint_and_the_ttl_to_match() {
     let fp = breakpoint("fp", 300, 100);
     let markers = vec![&fp];
     let hit = entry("fp", 50, 300, 0.0, 10.0);
-    assert!(entry_matches(&hit, &markers, 5.0));
-    assert!(!entry_matches(&hit, &markers, 20.0));
+    assert!(entry_status(&hit, &markers, 5.0).matches);
+    assert!(!entry_status(&hit, &markers, 20.0).matches);
 }
 
 #[test]
-fn entry_ambiguous_flags_a_changed_ttl_on_the_same_content() {
+fn entry_status_flags_a_changed_ttl_on_the_same_content_as_ambiguous() {
     let fp = breakpoint("fp", 3600, 100);
     let markers = vec![&fp];
     let changed_ttl = entry("fp", 50, 300, 0.0, 10.0);
-    assert!(entry_ambiguous(&changed_ttl, &markers, 5.0));
+    assert!(entry_status(&changed_ttl, &markers, 5.0).ambiguous);
 }
 
 #[test]

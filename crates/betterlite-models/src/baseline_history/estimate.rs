@@ -64,35 +64,34 @@ pub(crate) fn markers_for(
     markers
 }
 
-pub(crate) fn entry_matches(
+pub(crate) struct EntryStatus {
+    pub matches: bool,
+    pub ambiguous: bool,
+}
+
+pub(crate) fn entry_status(
     entry: &CacheEntry,
     markers: &[&CountedBreakpoint],
     started: f64,
-) -> bool {
+) -> EntryStatus {
     if entry.available_at > started || started >= entry.expires_at {
-        return false;
+        return EntryStatus {
+            matches: false,
+            ambiguous: false,
+        };
     }
-    markers.iter().any(|marker| {
+    let matches = markers.iter().any(|marker| {
         marker.lookback_fingerprints.contains(&entry.fingerprint)
             && entry.tokens <= marker.prefix_tokens
             && entry.ttl_seconds == marker.ttl_seconds
-    })
-}
-
-pub(crate) fn entry_ambiguous(
-    entry: &CacheEntry,
-    markers: &[&CountedBreakpoint],
-    started: f64,
-) -> bool {
-    if entry.available_at > started || started >= entry.expires_at {
-        return false;
-    }
-    markers.iter().any(|marker| {
+    });
+    let ambiguous = markers.iter().any(|marker| {
         marker
             .lookback_content_fingerprints
             .contains(&entry.content_fingerprint)
             && (entry.uncertain || entry.ttl_seconds != marker.ttl_seconds)
-    })
+    });
+    EntryStatus { matches, ambiguous }
 }
 
 struct EstimateContext<'ctx> {
@@ -179,7 +178,7 @@ fn plan_estimate(
     if history
         .entries
         .iter()
-        .any(|entry| entry_ambiguous(entry, &markers, observation.started_at))
+        .any(|entry| entry_status(entry, &markers, observation.started_at).ambiguous)
     {
         return Ok(BaselineEstimate {
             request_id: observation.request_id.clone(),
@@ -195,16 +194,7 @@ fn plan_estimate(
         plan,
         markers,
     };
-    let read = ctx
-        .history
-        .entries
-        .iter()
-        .filter(|entry| {
-            !entry.uncertain && entry_matches(entry, &ctx.markers, ctx.observation.started_at)
-        })
-        .map(|entry| entry.tokens)
-        .max()
-        .unwrap_or(0);
+    let read = matched_read_tokens(&ctx);
     let end = ctx.markers.last().map_or(0, |marker| marker.prefix_tokens);
     if is_history_unavailable(&ctx, read, end)? {
         return Ok(BaselineEstimate {
@@ -215,6 +205,19 @@ fn plan_estimate(
         });
     }
     cache_hit_estimate(&ctx, read, end)
+}
+
+fn matched_read_tokens(ctx: &EstimateContext<'_>) -> i64 {
+    let mut read = 0;
+    for entry in &ctx.history.entries {
+        if entry.uncertain {
+            continue;
+        }
+        if entry_status(entry, &ctx.markers, ctx.observation.started_at).matches {
+            read = read.max(entry.tokens);
+        }
+    }
+    read
 }
 
 fn is_history_unavailable(

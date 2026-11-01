@@ -3,9 +3,7 @@ use std::ops::Sub as _;
 
 use crate::baseline_history::cache_plan::CountedBreakpoint;
 use crate::baseline_history::error::BaselineHistoryError;
-use crate::baseline_history::estimate::{
-    entry_ambiguous, entry_matches, is_plan_valid, markers_for,
-};
+use crate::baseline_history::estimate::{entry_status, is_plan_valid, markers_for};
 use crate::baseline_history::model::{BaselineHistory, BaselineObservation, CacheEntry, Outcome};
 use crate::baseline_history::time::{checked_add_timestamp, ttl_seconds_as_f64};
 use crate::baseline_history::usage::is_usage_complete;
@@ -33,7 +31,7 @@ pub(crate) fn writes_for(
     let ambiguous: Vec<&CacheEntry> = history
         .entries
         .iter()
-        .filter(|entry| entry_ambiguous(entry, &markers, observation.started_at))
+        .filter(|entry| entry_status(entry, &markers, observation.started_at).ambiguous)
         .collect();
     let mut entries = Vec::new();
     if let Some(entry) = refresh_entry(history, observation, &markers, &ambiguous)? {
@@ -55,7 +53,9 @@ fn refresh_entry(
     let Some(hit) = history
         .entries
         .iter()
-        .filter(|entry| !entry.uncertain && entry_matches(entry, markers, observation.started_at))
+        .filter(|entry| {
+            !entry.uncertain && entry_status(entry, markers, observation.started_at).matches
+        })
         .max_by_key(|entry| entry.tokens)
     else {
         return Ok(None);
