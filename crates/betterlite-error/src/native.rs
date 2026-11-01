@@ -54,141 +54,138 @@ fn azure_body(body: Option<&OpenaiErrorBody>) -> Option<AzureErrorBody> {
     })
 }
 
-// exception_type()'s native-family elif chain, in its exact source order, falling through to the catchall
-#[must_use]
-pub fn dispatch_native(raw: &RawException, error_str: &str) -> Option<ErrorClass> {
-    let provider = raw.custom_llm_provider.as_str();
-    match provider {
-        "anthropic" | "anthropic_text" | "replicate" => {
-            dispatch_anthropic_replicate(raw, error_str, provider)
-        }
-        _ if OPENAI_LIKE_PROVIDERS.contains(&provider) => openai_like::map_openai_like_exception(
-            &facts(raw, None),
-            error_str,
-            provider,
-            Some(raw.model.clone()),
-        ),
-        "bedrock" | "bedrock_mantle" | "sagemaker" | "sagemaker_chat" => {
-            dispatch_aws(raw, error_str, provider)
-        }
-        "vertex_ai" | "vertex_ai_beta" | "gemini" => vertex_errors::map_vertex_exception(
-            &facts(raw, None),
-            error_str,
-            provider,
-            Some(raw.model.clone()),
-        ),
-        "cloudflare" | "cohere" | "cohere_chat" | "huggingface" | "ai21" => {
-            dispatch_native_a(raw, error_str, provider)
-        }
-        "nlp_cloud" | "together_ai" | "aleph_alpha" | "ollama" | "ollama_chat" | "vllm" => {
-            dispatch_native_b(raw, error_str, provider)
-        }
-        "azure" | "azure_text" | "openrouter" => {
-            Some(dispatch_azure_openrouter(raw, error_str, provider))
-        }
-        _ => None,
-    }
-}
+// one closure per provider family, not a named fn, since each closure only builds one Input struct
+type NativeMapper = fn(&RawException, &str, &str) -> Option<ErrorClass>;
+type NativeMapperEntry = (&'static [&'static str], NativeMapper);
 
-fn dispatch_anthropic_replicate(
-    raw: &RawException,
-    error_str: &str,
-    provider: &str,
-) -> Option<ErrorClass> {
-    match provider {
-        "anthropic" | "anthropic_text" => {
+// exception_type()'s native-family elif chain, in its exact source order; first match wins
+const NATIVE_DISPATCH_TABLE: &[NativeMapperEntry] = &[
+    (
+        &["anthropic", "anthropic_text"],
+        |raw, error_str, _provider| {
             anthropic::map_anthropic_exception(&AnthropicExceptionInput {
                 model: raw.model.clone(),
                 error_str: error_str.to_owned(),
                 status_code: raw.status_code,
             })
-        }
-        _ => Some(replicate::map_replicate_exception(
+        },
+    ),
+    (&["replicate"], |raw, error_str, _provider| {
+        Some(replicate::map_replicate_exception(
             &ReplicateExceptionInput {
                 model: raw.model.clone(),
                 error_str: error_str.to_owned(),
                 exception_type: raw.exception_type.clone(),
                 status_code: raw.status_code,
             },
-        )),
-    }
-}
-
-fn dispatch_aws(raw: &RawException, error_str: &str, provider: &str) -> Option<ErrorClass> {
-    match provider {
-        "bedrock" | "bedrock_mantle" => bedrock::map_bedrock_exception(&BedrockExceptionInput {
-            model: raw.model.clone(),
-            custom_llm_provider: raw.custom_llm_provider.clone(),
-            error_str: error_str.to_owned(),
-            status_code: raw.status_code,
-        }),
-        _ => sagemaker::map_sagemaker_exception(&SagemakerExceptionInput {
-            model: raw.model.clone(),
-            custom_llm_provider: raw.custom_llm_provider.clone(),
-            error_str: error_str.to_owned(),
-            status_code: raw.status_code,
-        }),
-    }
-}
-
-fn dispatch_native_a(raw: &RawException, error_str: &str, provider: &str) -> Option<ErrorClass> {
-    match provider {
-        "cloudflare" => cloudflare::map_cloudflare_exception(error_str, Some(raw.model.clone())),
-        "cohere" | "cohere_chat" => cohere::map_cohere_exception(
+        ))
+    }),
+    (OPENAI_LIKE_PROVIDERS, |raw, error_str, provider| {
+        openai_like::map_openai_like_exception(
+            &facts(raw, None),
+            error_str,
+            provider,
+            Some(raw.model.clone()),
+        )
+    }),
+    (
+        &["bedrock", "bedrock_mantle"],
+        |raw, error_str, _provider| {
+            bedrock::map_bedrock_exception(&BedrockExceptionInput {
+                model: raw.model.clone(),
+                custom_llm_provider: raw.custom_llm_provider.clone(),
+                error_str: error_str.to_owned(),
+                status_code: raw.status_code,
+            })
+        },
+    ),
+    (
+        &["sagemaker", "sagemaker_chat"],
+        |raw, error_str, _provider| {
+            sagemaker::map_sagemaker_exception(&SagemakerExceptionInput {
+                model: raw.model.clone(),
+                custom_llm_provider: raw.custom_llm_provider.clone(),
+                error_str: error_str.to_owned(),
+                status_code: raw.status_code,
+            })
+        },
+    ),
+    (
+        &["vertex_ai", "vertex_ai_beta", "gemini"],
+        |raw, error_str, provider| {
+            vertex_errors::map_vertex_exception(
+                &facts(raw, None),
+                error_str,
+                provider,
+                Some(raw.model.clone()),
+            )
+        },
+    ),
+    (&["cloudflare"], |raw, error_str, _provider| {
+        cloudflare::map_cloudflare_exception(error_str, Some(raw.model.clone()))
+    }),
+    (&["cohere", "cohere_chat"], |raw, error_str, _provider| {
+        cohere::map_cohere_exception(
             &facts(raw, None),
             error_str,
             &raw.exception_type,
             Some(raw.model.clone()),
-        ),
-        "huggingface" => huggingface::map_huggingface_exception(
+        )
+    }),
+    (&["huggingface"], |raw, error_str, _provider| {
+        huggingface::map_huggingface_exception(
             &facts(raw, None),
             error_str,
             Some(raw.model.clone()),
-        ),
-        // dead in the full dispatch() pipeline: is_openai_family() already intercepts "ai21"/"ai21_chat"
-        _ => ai21::map_ai21_exception(&facts(raw, raw.message.clone()), Some(raw.model.clone())),
-    }
-}
-
-fn dispatch_native_b(raw: &RawException, error_str: &str, provider: &str) -> Option<ErrorClass> {
-    match provider {
-        "nlp_cloud" => nlp_cloud::map_nlp_cloud_exception(&NlpCloudExceptionInput {
+        )
+    }),
+    // dead in the full dispatch() pipeline: is_openai_family() already intercepts "ai21"/"ai21_chat"
+    (&["ai21"], |raw, _error_str, _provider| {
+        ai21::map_ai21_exception(&facts(raw, raw.message.clone()), Some(raw.model.clone()))
+    }),
+    (&["nlp_cloud"], |raw, error_str, _provider| {
+        nlp_cloud::map_nlp_cloud_exception(&NlpCloudExceptionInput {
             model: raw.model.clone(),
             error_str: error_str.to_owned(),
             status_code: raw.status_code,
             message: raw.message.clone(),
-        }),
-        // dead in the full dispatch() pipeline, for the same reason as "ai21" above
-        "together_ai" => together_ai::map_together_ai_exception(&TogetherAiExceptionInput {
+        })
+    }),
+    // dead in the full dispatch() pipeline, for the same reason as "ai21" above
+    (&["together_ai"], |raw, error_str, _provider| {
+        together_ai::map_together_ai_exception(&TogetherAiExceptionInput {
             model: raw.model.clone(),
             error_str: error_str.to_owned(),
             status_code: raw.status_code,
             message: raw.message.clone(),
-        }),
-        "aleph_alpha" => aleph_alpha::map_aleph_alpha_exception(&AlephAlphaExceptionInput {
+        })
+    }),
+    (&["aleph_alpha"], |raw, error_str, _provider| {
+        aleph_alpha::map_aleph_alpha_exception(&AlephAlphaExceptionInput {
             model: raw.model.clone(),
             error_str: error_str.to_owned(),
             status_code: raw.status_code,
             message: raw.message.clone(),
-        }),
-        // original_exception is never a dict once it has already been flattened into RawException's string fields
-        "ollama" | "ollama_chat" => ollama::map_ollama_exception(&OllamaExceptionInput {
+        })
+    }),
+    // original_exception is never a dict once it has already been flattened into RawException's string fields
+    (&["ollama", "ollama_chat"], |raw, error_str, _provider| {
+        ollama::map_ollama_exception(&OllamaExceptionInput {
             model: raw.model.clone(),
             original_exception: OllamaOriginalException::Text {
                 text: error_str.to_owned(),
             },
-        }),
-        _ => vllm::map_vllm_exception(&VllmExceptionInput {
+        })
+    }),
+    (&["vllm"], |raw, _error_str, _provider| {
+        vllm::map_vllm_exception(&VllmExceptionInput {
             model: raw.model.clone(),
             status_code: raw.status_code,
             message: raw.message.clone(),
-        }),
-    }
-}
-
-fn dispatch_azure_openrouter(raw: &RawException, error_str: &str, provider: &str) -> ErrorClass {
-    match provider {
-        "azure" | "azure_text" => azure::map_azure_exception(&AzureExceptionInput {
+        })
+    }),
+    (&["azure", "azure_text"], |raw, error_str, _provider| {
+        Some(azure::map_azure_exception(&AzureExceptionInput {
             model: raw.model.clone(),
             custom_llm_provider: raw.custom_llm_provider.clone(),
             error_str: error_str.to_owned(),
@@ -196,14 +193,27 @@ fn dispatch_azure_openrouter(raw: &RawException, error_str: &str, provider: &str
             status_code: raw.status_code,
             message: raw.message.clone(),
             body: azure_body(raw.body.as_ref()),
-        }),
-        _ => openrouter::map_openrouter_exception(&OpenrouterExceptionInput {
-            model: raw.model.clone(),
-            custom_llm_provider: raw.custom_llm_provider.clone(),
-            error_str: error_str.to_owned(),
-            exception_provider: exception_provider_label(&raw.custom_llm_provider),
-            status_code: raw.status_code,
-            status_code_is_synthesized: raw.status_code_is_synthesized,
-        }),
-    }
+        }))
+    }),
+    (&["openrouter"], |raw, error_str, _provider| {
+        Some(openrouter::map_openrouter_exception(
+            &OpenrouterExceptionInput {
+                model: raw.model.clone(),
+                custom_llm_provider: raw.custom_llm_provider.clone(),
+                error_str: error_str.to_owned(),
+                exception_provider: exception_provider_label(&raw.custom_llm_provider),
+                status_code: raw.status_code,
+                status_code_is_synthesized: raw.status_code_is_synthesized,
+            },
+        ))
+    }),
+];
+
+#[must_use]
+pub fn dispatch_native(raw: &RawException, error_str: &str) -> Option<ErrorClass> {
+    let provider = raw.custom_llm_provider.as_str();
+    let (_, mapper) = NATIVE_DISPATCH_TABLE
+        .iter()
+        .find(|(providers, _)| providers.contains(&provider))?;
+    mapper(raw, error_str, provider)
 }
