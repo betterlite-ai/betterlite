@@ -33,6 +33,27 @@ fn unclassified_error() -> ErrorClass {
     .unwrap()
 }
 
+fn context_window_exceeded_error() -> ErrorClass {
+    serde_json::from_str(
+        r#"{"family":"context_window_exceeded","message":"too long","model":null,"provider":null}"#,
+    )
+    .unwrap()
+}
+
+fn content_policy_violation_error() -> ErrorClass {
+    serde_json::from_str(
+        r#"{"family":"content_policy_violation","message":"blocked","model":null,"provider":null}"#,
+    )
+    .unwrap()
+}
+
+fn unsupported_params_error() -> ErrorClass {
+    serde_json::from_str(
+        r#"{"family":"unsupported_params","message":"bad param","model":null,"provider":null}"#,
+    )
+    .unwrap()
+}
+
 #[test]
 fn search_error_classifies_rate_limit_as_too_many_requests() {
     assert_eq!(
@@ -54,6 +75,22 @@ fn search_error_classifies_other_errors_as_unavailable() {
     assert_eq!(
         native::search_error_code(&unclassified_error()),
         WebSearchToolResultErrorCode::Unavailable
+    );
+}
+
+#[test]
+fn search_error_classifies_bad_request_subclasses_as_invalid_tool_input() {
+    assert_eq!(
+        native::search_error_code(&context_window_exceeded_error()),
+        WebSearchToolResultErrorCode::InvalidToolInput
+    );
+    assert_eq!(
+        native::search_error_code(&content_policy_violation_error()),
+        WebSearchToolResultErrorCode::InvalidToolInput
+    );
+    assert_eq!(
+        native::search_error_code(&unsupported_params_error()),
+        WebSearchToolResultErrorCode::InvalidToolInput
     );
 }
 

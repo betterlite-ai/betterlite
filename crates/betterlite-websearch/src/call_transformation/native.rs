@@ -87,15 +87,17 @@ pub fn outcome_block(id: &str, outcome: &SearchOutcome) -> ResultBlock {
 pub const fn search_error_code(class: &ErrorClass) -> WebSearchToolResultErrorCode {
     match class {
         ErrorClass::RateLimit(_) => WebSearchToolResultErrorCode::TooManyRequests,
-        ErrorClass::BadRequest(_) => WebSearchToolResultErrorCode::InvalidToolInput,
+        // BadRequestError's Python subclasses also match `case BadRequestError():` by isinstance.
+        ErrorClass::BadRequest(_)
+        | ErrorClass::ContextWindowExceeded(_)
+        | ErrorClass::ContentPolicyViolation(_)
+        | ErrorClass::UnsupportedParams(_) => WebSearchToolResultErrorCode::InvalidToolInput,
         ErrorClass::Authentication(_)
         | ErrorClass::NotFound(_)
         | ErrorClass::PermissionDenied(_)
         | ErrorClass::UnprocessableEntity(_)
         | ErrorClass::Timeout(_)
         | ErrorClass::BudgetExceeded(_)
-        | ErrorClass::ContextWindowExceeded(_)
-        | ErrorClass::ContentPolicyViolation(_)
         | ErrorClass::ServiceUnavailable(_)
         | ErrorClass::BadGateway(_)
         | ErrorClass::InternalServer(_)
@@ -103,7 +105,6 @@ pub const fn search_error_code(class: &ErrorClass) -> WebSearchToolResultErrorCo
         | ErrorClass::ApiConnection(_)
         | ErrorClass::ApiResponseValidation(_)
         | ErrorClass::JsonSchemaValidation(_)
-        | ErrorClass::UnsupportedParams(_)
         | ErrorClass::GuardrailRaised(_)
         | ErrorClass::MidStreamFallback(_)
         | ErrorClass::Unclassified(_) => WebSearchToolResultErrorCode::Unavailable,
