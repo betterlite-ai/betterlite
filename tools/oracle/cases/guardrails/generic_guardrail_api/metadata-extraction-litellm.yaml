@@ -1,0 +1,8 @@
+kind: helper
+name: metadata-extraction-litellm
+call:
+  b3771:
+    litellm_metadata: {user_api_key_hash: preferred, user_api_key_team_id: team}
+    metadata: {user_api_key_hash: old}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,11 @@
+kind: helper
+name: provider-identity-explicit-provider-json-registry
+call:
+  provider_identity:
+    check: explicit_provider
+    model: crusoe/some-model
+    custom_llm_provider: null
+    configured_model_names: [crusoe]
+    catalog: {}
+env: {}
+compare: {ignore: []}

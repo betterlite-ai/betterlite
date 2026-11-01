@@ -100,22 +100,40 @@ fn retained_vectors(response: &Params) -> Result<Vec<(Field, u64)>, NovaEmbeddin
 }
 
 fn embeddings_list_entry(item: &Field) -> Option<Result<(Field, u64), NovaEmbeddingsError>> {
-    let Field::Mapping(mapping) = item else {
-        return None;
-    };
-    let embedding_field = mapping.get("embedding")?;
-    Some(embedding_list_item(mapping, embedding_field))
+    if let Field::Mapping(mapping) = item {
+        let embedding_field = mapping.get("embedding")?;
+        return Some(embedding_list_item(mapping, embedding_field));
+    }
+    if contains_embedding_key(item) {
+        return Some(Err(NovaEmbeddingsError::MalformedField {
+            field: "embeddings",
+        }));
+    }
+    None
+}
+
+// "embedding" in item is true for a non-container, a str holding that substring or a list holding that element, and item["embedding"] then raises TypeError in each case.
+fn contains_embedding_key(item: &Field) -> bool {
+    match item {
+        Field::Null | Field::Bool(_) | Field::Int(_) | Field::Float(_) => true,
+        Field::Text(text) => text.contains("embedding"),
+        Field::List(items) => items
+            .iter()
+            .any(|entry| matches!(entry, Field::Text(text) if text == "embedding")),
+        Field::Mapping(_) => false,
+    }
 }
 
 fn embedding_list_item(
     item: &Params,
     embedding_field: &Field,
 ) -> Result<(Field, u64), NovaEmbeddingsError> {
+    let length_estimate = embedding_length(embedding_field)?;
     let estimate = match item.get("truncatedCharLength") {
         Some(field) => as_u64(field, "truncatedCharLength")?
             .checked_div(4)
             .unwrap_or(0),
-        None => embedding_length(embedding_field)?,
+        None => length_estimate,
     };
     Ok((embedding_field.clone(), estimate))
 }
@@ -129,8 +147,9 @@ fn embedding_length(field: &Field) -> Result<u64, NovaEmbeddingsError> {
             return Err(NovaEmbeddingsError::MalformedField { field: "embedding" });
         }
     };
-    let length_u64 = u64::try_from(length).map_err(|_source| NovaEmbeddingsError::TokenOverflow)?;
-    Ok(length_u64.checked_div(4).unwrap_or(0))
+    u64::try_from(length)
+        .map(|value| value.checked_div(4).unwrap_or(0))
+        .map_err(|_source| NovaEmbeddingsError::TokenOverflow)
 }
 
 fn as_u64(field: &Field, name: &'static str) -> Result<u64, NovaEmbeddingsError> {

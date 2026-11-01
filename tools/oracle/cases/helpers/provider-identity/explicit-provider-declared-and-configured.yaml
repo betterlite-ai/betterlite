@@ -1,0 +1,11 @@
+kind: helper
+name: provider-identity-explicit-provider-declared-and-configured
+call:
+  provider_identity:
+    check: explicit_provider
+    model: llama
+    custom_llm_provider: groq
+    configured_model_names: [groq]
+    catalog: {}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,11 @@
+kind: helper
+name: nova-embeddings-list-text-entry-with-embedding-substring
+call:
+  bedrock_other_nova_embeddings:
+    nova_result_index_token_estimate:
+      response_list:
+        - embeddings:
+            - an embedding
+env: {}
+compare:
+  ignore: []

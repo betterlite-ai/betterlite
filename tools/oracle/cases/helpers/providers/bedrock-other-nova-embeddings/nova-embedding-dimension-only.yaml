@@ -1,0 +1,13 @@
+kind: helper
+name: nova-embedding-dimension-only
+call:
+  bedrock_other_nova_embeddings:
+    nova_default_purpose_dimensions:
+      non_default: {}
+      optional_params: {}
+      input: hello
+      inference_params: {embedding_dimension: 128}
+      async_invoke_route: false
+env: {}
+compare:
+  ignore: []

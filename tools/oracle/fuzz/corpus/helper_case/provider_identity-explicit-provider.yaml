@@ -1,0 +1,11 @@
+kind: helper
+name: provider-identity-explicit-provider
+call:
+  provider_identity:
+    check: explicit_provider
+    model: groq/llama-3.1-70b
+    custom_llm_provider: null
+    configured_model_names: []
+    catalog: {}
+env: {}
+compare: {ignore: []}

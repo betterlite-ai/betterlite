@@ -1,0 +1,10 @@
+kind: helper
+name: pre-call-texts
+call:
+  b3771:
+    grayswan_call:
+      input_type: request
+      texts: ["hello world"]
+      answer: {status: 200, headers: {}, body: {violation: 0.1}}
+env: {}
+compare: {ignore: []}

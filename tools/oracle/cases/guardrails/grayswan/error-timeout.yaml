@@ -1,0 +1,10 @@
+kind: helper
+name: error-timeout
+call:
+  b3771:
+    grayswan_call:
+      texts: ["hello"]
+      fail_open: false
+      fail: timeout
+env: {}
+compare: {ignore: []}

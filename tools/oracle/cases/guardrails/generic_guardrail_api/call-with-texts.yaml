@@ -1,0 +1,9 @@
+kind: helper
+name: call-with-texts
+call:
+  b3771:
+    generic_call:
+      inputs: {texts: ["first message", "second message"]}
+      answer: {status: 200, headers: {}, body: {action: NONE}}
+env: {}
+compare: {ignore: []}

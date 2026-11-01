@@ -1,0 +1,11 @@
+kind: helper
+name: provider-identity-explicit-provider-openrouter-without-flag
+call:
+  provider_identity:
+    check: explicit_provider
+    model: openrouter/anthropic/claude-3.5-sonnet
+    custom_llm_provider: null
+    configured_model_names: []
+    catalog: {}
+env: {}
+compare: {ignore: []}

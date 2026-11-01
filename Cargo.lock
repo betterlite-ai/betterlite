@@ -1319,8 +1319,10 @@ dependencies = [
  "serde_repr",
  "serde_with",
  "speedate",
+ "strum",
  "thiserror",
  "tracing",
+ "url",
 ]
 
 [[package]]
