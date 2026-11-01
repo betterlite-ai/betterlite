@@ -1,6 +1,7 @@
 use crate::schema_baseline::{BASELINE_MIGRATION, MigrationFile};
 use crate::schema_daily_usage::MIGRATION_CATALOG as DAILY_USAGE_CATALOG;
 use crate::schema_identity_history::MIGRATION_CATALOG;
+use crate::schema_identity_history::fixtures::PINNED_MIGRATION_CATALOG;
 use crate::schema_managed_resources::MIGRATION_CATALOG as MANAGED_RESOURCES_CATALOG;
 use betterlite_postgres_fixture::connection::{PostgresFixture, RandomDatabaseName};
 use betterlite_postgres_fixture::error::FixtureError;
@@ -252,6 +253,8 @@ struct ColumnInfo {
     data_type: String,
     is_nullable: bool,
     default: Option<String>,
+    udt_name: String,
+    datetime_precision: Option<i32>,
 }
 
 async fn column(client: &Client, table: &str, name: &str) -> ColumnInfo {
@@ -264,6 +267,8 @@ async fn column(client: &Client, table: &str, name: &str) -> ColumnInfo {
         data_type: row.get(2),
         is_nullable: row.get::<_, String>(3) == "YES",
         default: row.get(4),
+        udt_name: row.get(5),
+        datetime_precision: row.get(6),
     }
 }
 
@@ -277,13 +282,21 @@ async fn column_exists(client: &Client, table: &str, name: &str) -> bool {
 async fn columns_in(client: &Client, table: &str) -> Vec<Row> {
     client
         .query(
-            "SELECT ordinal_position, column_name, data_type, is_nullable, column_default \
+            "SELECT ordinal_position, column_name, data_type, is_nullable, column_default, \
+             udt_name, datetime_precision \
              FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1 \
              ORDER BY ordinal_position",
             &[&table],
         )
         .await
         .unwrap()
+}
+
+async fn assert_column_order(client: &Client, table: &str, names: &[&str]) {
+    let rows = columns_in(client, table).await;
+    let actual: Vec<String> = rows.iter().map(|row| row.get::<_, String>(1)).collect();
+    let expected: Vec<String> = names.iter().map(ToString::to_string).collect();
+    assert_eq!(actual, expected, "{table} column order");
 }
 
 async fn query_one_row(client: &Client, sql: &str, params: &[&(dyn ToSql + Sync)]) -> Row {
@@ -331,20 +344,26 @@ async fn index_facts(client: &Client, index: &str) -> IndexFacts {
     IndexFacts { columns, unique }
 }
 
-type ColumnSpec = (&'static str, &'static str, bool, Option<&'static str>);
+type ColumnSpec = (
+    &'static str,
+    &'static str,
+    bool,
+    Option<&'static str>,
+    &'static str,
+    Option<i32>,
+);
 
 async fn assert_column(client: &Client, table: &str, spec: ColumnSpec) {
-    let (name, data_type, nullable, default) = spec;
+    let (name, data_type, nullable, default, udt_name, datetime_precision) = spec;
     let info = column(client, table, name).await;
     assert_eq!(info.data_type, data_type, "{table}.{name} type");
     assert_eq!(info.is_nullable, nullable, "{table}.{name} nullable");
-    match default {
-        Some(expected) => assert!(
-            info.default.as_deref().unwrap().contains(expected),
-            "{table}.{name} default"
-        ),
-        None => assert_eq!(info.default, None, "{table}.{name} default"),
-    }
+    assert_eq!(info.default.as_deref(), default, "{table}.{name} default");
+    assert_eq!(info.udt_name, udt_name, "{table}.{name} udt_name");
+    assert_eq!(
+        info.datetime_precision, datetime_precision,
+        "{table}.{name} datetime_precision"
+    );
 }
 
 async fn assert_columns(client: &Client, table: &str, specs: &[ColumnSpec]) {
@@ -384,6 +403,28 @@ async fn assert_table_catalog(
     assert_indexes(client, indexes).await;
 }
 
+async fn catalog_snapshot(client: &Client) -> Vec<String> {
+    let mut snapshot = string_rows(
+        client,
+        "SELECT table_name || ':' || ordinal_position || ':' || column_name || ':' \
+         || data_type || ':' || udt_name || ':' || coalesce(datetime_precision::text, '') \
+         || ':' || is_nullable || ':' || coalesce(column_default, '') \
+         FROM information_schema.columns \
+         WHERE table_schema = 'public' ORDER BY table_name, ordinal_position",
+        &[],
+    )
+    .await;
+    let mut indexes = string_rows(
+        client,
+        "SELECT indexname || ':' || indexdef FROM pg_indexes \
+         WHERE schemaname = 'public' ORDER BY indexname",
+        &[],
+    )
+    .await;
+    snapshot.append(&mut indexes);
+    snapshot
+}
+
 async fn assert_rule(client: &Client, conname: &str, update_rule: char, delete_rule: char) {
     let row = query_one_row(
         client,
@@ -417,6 +458,20 @@ fn migration_sql_through(directory: &str) -> String {
 fn migration_sql_all() -> String {
     let last = MIGRATION_CATALOG.files.last().unwrap();
     migration_sql_through(last.directory)
+}
+
+fn pinned_migration_sql_all() -> String {
+    let mut sql = str::from_utf8(BASELINE_MIGRATION.bytes).unwrap().to_owned();
+    for file in DAILY_USAGE_CATALOG.files {
+        sql.push_str(str::from_utf8(file.bytes).unwrap());
+    }
+    for file in MANAGED_RESOURCES_CATALOG.files {
+        sql.push_str(str::from_utf8(file.bytes).unwrap());
+    }
+    for file in PINNED_MIGRATION_CATALOG.files {
+        sql.push_str(str::from_utf8(file.bytes).unwrap());
+    }
+    sql
 }
 
 fn identity_history_sql() -> String {

@@ -1,42 +1,108 @@
 use rstest::rstest;
 
 const DELETED_TEAM_TABLE_COLUMNS: [ColumnSpec; 28] = [
-    ("id", "text", false, None),
-    ("team_id", "text", false, None),
-    ("team_alias", "text", true, None),
-    ("organization_id", "text", true, None),
-    ("object_permission_id", "text", true, None),
-    ("admins", "ARRAY", true, None),
-    ("members", "ARRAY", true, None),
-    ("members_with_roles", "jsonb", false, Some("{}")),
-    ("metadata", "jsonb", false, Some("{}")),
-    ("max_budget", "double precision", true, None),
-    ("spend", "double precision", false, Some("0.0")),
-    ("models", "ARRAY", true, None),
-    ("max_parallel_requests", "integer", true, None),
-    ("tpm_limit", "bigint", true, None),
-    ("rpm_limit", "bigint", true, None),
-    ("budget_duration", "text", true, None),
-    ("budget_reset_at", "timestamp without time zone", true, None),
-    ("blocked", "boolean", false, Some("false")),
-    ("model_spend", "jsonb", false, Some("{}")),
-    ("model_max_budget", "jsonb", false, Some("{}")),
-    ("team_member_permissions", "ARRAY", true, Some("ARRAY")),
-    ("model_id", "integer", true, None),
-    ("created_at", "timestamp without time zone", true, None),
-    ("updated_at", "timestamp without time zone", true, None),
+    ("id", "text", false, None, "text", None),
+    ("team_id", "text", false, None, "text", None),
+    ("team_alias", "text", true, None, "text", None),
+    ("organization_id", "text", true, None, "text", None),
+    ("object_permission_id", "text", true, None, "text", None),
+    ("admins", "ARRAY", true, None, "_text", None),
+    ("members", "ARRAY", true, None, "_text", None),
+    (
+        "members_with_roles",
+        "jsonb",
+        false,
+        Some("'{}'::jsonb"),
+        "jsonb",
+        None,
+    ),
+    (
+        "metadata",
+        "jsonb",
+        false,
+        Some("'{}'::jsonb"),
+        "jsonb",
+        None,
+    ),
+    ("max_budget", "double precision", true, None, "float8", None),
+    (
+        "spend",
+        "double precision",
+        false,
+        Some("0.0"),
+        "float8",
+        None,
+    ),
+    ("models", "ARRAY", true, None, "_text", None),
+    ("max_parallel_requests", "integer", true, None, "int4", None),
+    ("tpm_limit", "bigint", true, None, "int8", None),
+    ("rpm_limit", "bigint", true, None, "int8", None),
+    ("budget_duration", "text", true, None, "text", None),
+    (
+        "budget_reset_at",
+        "timestamp without time zone",
+        true,
+        None,
+        "timestamp",
+        Some(3_i32),
+    ),
+    ("blocked", "boolean", false, Some("false"), "bool", None),
+    (
+        "model_spend",
+        "jsonb",
+        false,
+        Some("'{}'::jsonb"),
+        "jsonb",
+        None,
+    ),
+    (
+        "model_max_budget",
+        "jsonb",
+        false,
+        Some("'{}'::jsonb"),
+        "jsonb",
+        None,
+    ),
+    (
+        "team_member_permissions",
+        "ARRAY",
+        true,
+        Some("ARRAY[]::text[]"),
+        "_text",
+        None,
+    ),
+    ("model_id", "integer", true, None, "int4", None),
+    (
+        "created_at",
+        "timestamp without time zone",
+        true,
+        None,
+        "timestamp",
+        Some(3_i32),
+    ),
+    (
+        "updated_at",
+        "timestamp without time zone",
+        true,
+        None,
+        "timestamp",
+        Some(3_i32),
+    ),
     (
         "deleted_at",
         "timestamp without time zone",
         false,
         Some("CURRENT_TIMESTAMP"),
+        "timestamp",
+        Some(3_i32),
     ),
-    ("deleted_by", "text", true, None),
-    ("deleted_by_api_key", "text", true, None),
-    ("litellm_changed_by", "text", true, None),
+    ("deleted_by", "text", true, None, "text", None),
+    ("deleted_by_api_key", "text", true, None, "text", None),
+    ("litellm_changed_by", "text", true, None, "text", None),
 ];
 
-const DELETED_TEAM_TABLE_INDEXES: [IndexSpec; 5] = [
+const DELETED_TEAM_TABLE_INDEXES: [IndexSpec; 6] = [
+    ("LiteLLM_DeletedTeamTable_pkey", &["id"], true),
     ("LiteLLM_DeletedTeamTable_team_id_idx", &["team_id"], false),
     (
         "LiteLLM_DeletedTeamTable_deleted_at_idx",
@@ -61,60 +127,163 @@ const DELETED_TEAM_TABLE_INDEXES: [IndexSpec; 5] = [
 ];
 
 const DELETED_VERIFICATION_TOKEN_COLUMNS: [ColumnSpec; 41] = [
-    ("id", "text", false, None),
-    ("token", "text", false, None),
-    ("key_name", "text", true, None),
-    ("key_alias", "text", true, None),
-    ("soft_budget_cooldown", "boolean", false, Some("false")),
-    ("spend", "double precision", false, Some("0.0")),
-    ("expires", "timestamp without time zone", true, None),
-    ("models", "ARRAY", true, None),
-    ("aliases", "jsonb", false, Some("{}")),
-    ("config", "jsonb", false, Some("{}")),
-    ("user_id", "text", true, None),
-    ("team_id", "text", true, None),
-    ("permissions", "jsonb", false, Some("{}")),
-    ("max_parallel_requests", "integer", true, None),
-    ("metadata", "jsonb", false, Some("{}")),
-    ("blocked", "boolean", true, None),
-    ("tpm_limit", "bigint", true, None),
-    ("rpm_limit", "bigint", true, None),
-    ("max_budget", "double precision", true, None),
-    ("budget_duration", "text", true, None),
-    ("budget_reset_at", "timestamp without time zone", true, None),
-    ("allowed_cache_controls", "ARRAY", true, Some("ARRAY")),
-    ("allowed_routes", "ARRAY", true, Some("ARRAY")),
-    ("model_spend", "jsonb", false, Some("{}")),
-    ("model_max_budget", "jsonb", false, Some("{}")),
-    ("budget_id", "text", true, None),
-    ("organization_id", "text", true, None),
-    ("object_permission_id", "text", true, None),
-    ("created_at", "timestamp without time zone", true, None),
-    ("created_by", "text", true, None),
-    ("updated_at", "timestamp without time zone", true, None),
-    ("updated_by", "text", true, None),
-    ("rotation_count", "integer", true, Some("0")),
-    ("auto_rotate", "boolean", true, Some("false")),
-    ("rotation_interval", "text", true, None),
+    ("id", "text", false, None, "text", None),
+    ("token", "text", false, None, "text", None),
+    ("key_name", "text", true, None, "text", None),
+    ("key_alias", "text", true, None, "text", None),
+    (
+        "soft_budget_cooldown",
+        "boolean",
+        false,
+        Some("false"),
+        "bool",
+        None,
+    ),
+    (
+        "spend",
+        "double precision",
+        false,
+        Some("0.0"),
+        "float8",
+        None,
+    ),
+    (
+        "expires",
+        "timestamp without time zone",
+        true,
+        None,
+        "timestamp",
+        Some(3_i32),
+    ),
+    ("models", "ARRAY", true, None, "_text", None),
+    (
+        "aliases",
+        "jsonb",
+        false,
+        Some("'{}'::jsonb"),
+        "jsonb",
+        None,
+    ),
+    ("config", "jsonb", false, Some("'{}'::jsonb"), "jsonb", None),
+    ("user_id", "text", true, None, "text", None),
+    ("team_id", "text", true, None, "text", None),
+    (
+        "permissions",
+        "jsonb",
+        false,
+        Some("'{}'::jsonb"),
+        "jsonb",
+        None,
+    ),
+    ("max_parallel_requests", "integer", true, None, "int4", None),
+    (
+        "metadata",
+        "jsonb",
+        false,
+        Some("'{}'::jsonb"),
+        "jsonb",
+        None,
+    ),
+    ("blocked", "boolean", true, None, "bool", None),
+    ("tpm_limit", "bigint", true, None, "int8", None),
+    ("rpm_limit", "bigint", true, None, "int8", None),
+    ("max_budget", "double precision", true, None, "float8", None),
+    ("budget_duration", "text", true, None, "text", None),
+    (
+        "budget_reset_at",
+        "timestamp without time zone",
+        true,
+        None,
+        "timestamp",
+        Some(3_i32),
+    ),
+    (
+        "allowed_cache_controls",
+        "ARRAY",
+        true,
+        Some("ARRAY[]::text[]"),
+        "_text",
+        None,
+    ),
+    (
+        "allowed_routes",
+        "ARRAY",
+        true,
+        Some("ARRAY[]::text[]"),
+        "_text",
+        None,
+    ),
+    (
+        "model_spend",
+        "jsonb",
+        false,
+        Some("'{}'::jsonb"),
+        "jsonb",
+        None,
+    ),
+    (
+        "model_max_budget",
+        "jsonb",
+        false,
+        Some("'{}'::jsonb"),
+        "jsonb",
+        None,
+    ),
+    ("budget_id", "text", true, None, "text", None),
+    ("organization_id", "text", true, None, "text", None),
+    ("object_permission_id", "text", true, None, "text", None),
+    (
+        "created_at",
+        "timestamp without time zone",
+        true,
+        None,
+        "timestamp",
+        Some(3_i32),
+    ),
+    ("created_by", "text", true, None, "text", None),
+    (
+        "updated_at",
+        "timestamp without time zone",
+        true,
+        None,
+        "timestamp",
+        Some(3_i32),
+    ),
+    ("updated_by", "text", true, None, "text", None),
+    ("rotation_count", "integer", true, Some("0"), "int4", None),
+    ("auto_rotate", "boolean", true, Some("false"), "bool", None),
+    ("rotation_interval", "text", true, None, "text", None),
     (
         "last_rotation_at",
         "timestamp without time zone",
         true,
         None,
+        "timestamp",
+        Some(3_i32),
     ),
-    ("key_rotation_at", "timestamp without time zone", true, None),
+    (
+        "key_rotation_at",
+        "timestamp without time zone",
+        true,
+        None,
+        "timestamp",
+        Some(3_i32),
+    ),
     (
         "deleted_at",
         "timestamp without time zone",
         false,
         Some("CURRENT_TIMESTAMP"),
+        "timestamp",
+        Some(3_i32),
     ),
-    ("deleted_by", "text", true, None),
-    ("deleted_by_api_key", "text", true, None),
-    ("litellm_changed_by", "text", true, None),
+    ("deleted_by", "text", true, None, "text", None),
+    ("deleted_by_api_key", "text", true, None, "text", None),
+    ("litellm_changed_by", "text", true, None, "text", None),
 ];
 
-const DELETED_VERIFICATION_TOKEN_INDEXES: [IndexSpec; 7] = [
+const DELETED_VERIFICATION_TOKEN_INDEXES: [IndexSpec; 8] = [
+    ("LiteLLM_DeletedVerificationToken_pkey", &["id"], true),
     (
         "LiteLLM_DeletedVerificationToken_token_idx",
         &["token"],
@@ -153,42 +322,71 @@ const DELETED_VERIFICATION_TOKEN_INDEXES: [IndexSpec; 7] = [
 ];
 
 const SKILLS_TABLE_COLUMNS: [ColumnSpec; 14] = [
-    ("skill_id", "text", false, None),
-    ("display_title", "text", true, None),
-    ("description", "text", true, None),
-    ("instructions", "text", true, None),
-    ("source", "text", false, Some("'custom'")),
-    ("latest_version", "text", true, None),
-    ("file_content", "bytea", true, None),
-    ("file_name", "text", true, None),
-    ("file_type", "text", true, None),
-    ("metadata", "jsonb", true, Some("{}")),
+    ("skill_id", "text", false, None, "text", None),
+    ("display_title", "text", true, None, "text", None),
+    ("description", "text", true, None, "text", None),
+    ("instructions", "text", true, None, "text", None),
+    (
+        "source",
+        "text",
+        false,
+        Some("'custom'::text"),
+        "text",
+        None,
+    ),
+    ("latest_version", "text", true, None, "text", None),
+    ("file_content", "bytea", true, None, "bytea", None),
+    ("file_name", "text", true, None, "text", None),
+    ("file_type", "text", true, None, "text", None),
+    (
+        "metadata",
+        "jsonb",
+        true,
+        Some("'{}'::jsonb"),
+        "jsonb",
+        None,
+    ),
     (
         "created_at",
         "timestamp without time zone",
         false,
         Some("CURRENT_TIMESTAMP"),
+        "timestamp",
+        Some(3_i32),
     ),
-    ("created_by", "text", true, None),
+    ("created_by", "text", true, None, "text", None),
     (
         "updated_at",
         "timestamp without time zone",
         false,
         Some("CURRENT_TIMESTAMP"),
+        "timestamp",
+        Some(3_i32),
     ),
-    ("updated_by", "text", true, None),
+    ("updated_by", "text", true, None, "text", None),
 ];
 
+const SKILLS_TABLE_INDEXES: [IndexSpec; 1] = [("LiteLLM_SkillsTable_pkey", &["skill_id"], true)];
+
 const MCP_SERVER_TABLE_COLUMNS: [ColumnSpec; 5] = [
-    ("authorization_url", "text", true, None),
-    ("registration_url", "text", true, None),
-    ("token_url", "text", true, None),
-    ("allow_all_keys", "boolean", false, Some("false")),
+    ("authorization_url", "text", true, None, "text", None),
+    ("registration_url", "text", true, None, "text", None),
+    ("token_url", "text", true, None, "text", None),
+    (
+        "allow_all_keys",
+        "boolean",
+        false,
+        Some("false"),
+        "bool",
+        None,
+    ),
     (
         "available_on_public_internet",
         "boolean",
         false,
         Some("false"),
+        "bool",
+        None,
     ),
 ];
 
@@ -247,83 +445,165 @@ const POLICY_COHORT_TABLES: [&str; 5] = [
 ];
 
 const POLICY_TABLE_COLUMNS: [ColumnSpec; 12] = [
-    ("policy_id", "text", false, None),
-    ("policy_name", "text", false, None),
-    ("inherit", "text", true, None),
-    ("description", "text", true, None),
-    ("guardrails_add", "ARRAY", true, Some("ARRAY")),
-    ("guardrails_remove", "ARRAY", true, Some("ARRAY")),
-    ("condition", "jsonb", true, Some("{}")),
+    ("policy_id", "text", false, None, "text", None),
+    ("policy_name", "text", false, None, "text", None),
+    ("inherit", "text", true, None, "text", None),
+    ("description", "text", true, None, "text", None),
+    (
+        "guardrails_add",
+        "ARRAY",
+        true,
+        Some("ARRAY[]::text[]"),
+        "_text",
+        None,
+    ),
+    (
+        "guardrails_remove",
+        "ARRAY",
+        true,
+        Some("ARRAY[]::text[]"),
+        "_text",
+        None,
+    ),
+    (
+        "condition",
+        "jsonb",
+        true,
+        Some("'{}'::jsonb"),
+        "jsonb",
+        None,
+    ),
     (
         "created_at",
         "timestamp without time zone",
         false,
         Some("CURRENT_TIMESTAMP"),
+        "timestamp",
+        Some(3_i32),
     ),
-    ("created_by", "text", true, None),
+    ("created_by", "text", true, None, "text", None),
     (
         "updated_at",
         "timestamp without time zone",
         false,
         Some("CURRENT_TIMESTAMP"),
+        "timestamp",
+        Some(3_i32),
     ),
-    ("updated_by", "text", true, None),
-    ("pipeline", "jsonb", true, None),
+    ("updated_by", "text", true, None, "text", None),
+    ("pipeline", "jsonb", true, None, "jsonb", None),
 ];
 
 const POLICY_ATTACHMENT_TABLE_COLUMNS: [ColumnSpec; 11] = [
-    ("attachment_id", "text", false, None),
-    ("policy_name", "text", false, None),
-    ("scope", "text", true, None),
-    ("teams", "ARRAY", true, Some("ARRAY")),
-    ("keys", "ARRAY", true, Some("ARRAY")),
-    ("models", "ARRAY", true, Some("ARRAY")),
+    ("attachment_id", "text", false, None, "text", None),
+    ("policy_name", "text", false, None, "text", None),
+    ("scope", "text", true, None, "text", None),
+    (
+        "teams",
+        "ARRAY",
+        true,
+        Some("ARRAY[]::text[]"),
+        "_text",
+        None,
+    ),
+    (
+        "keys",
+        "ARRAY",
+        true,
+        Some("ARRAY[]::text[]"),
+        "_text",
+        None,
+    ),
+    (
+        "models",
+        "ARRAY",
+        true,
+        Some("ARRAY[]::text[]"),
+        "_text",
+        None,
+    ),
     (
         "created_at",
         "timestamp without time zone",
         false,
         Some("CURRENT_TIMESTAMP"),
+        "timestamp",
+        Some(3_i32),
     ),
-    ("created_by", "text", true, None),
+    ("created_by", "text", true, None, "text", None),
     (
         "updated_at",
         "timestamp without time zone",
         false,
         Some("CURRENT_TIMESTAMP"),
+        "timestamp",
+        Some(3_i32),
     ),
-    ("updated_by", "text", true, None),
-    ("tags", "ARRAY", true, Some("ARRAY")),
+    ("updated_by", "text", true, None, "text", None),
+    (
+        "tags",
+        "ARRAY",
+        true,
+        Some("ARRAY[]::text[]"),
+        "_text",
+        None,
+    ),
 ];
 
 const MANAGED_VECTOR_STORE_TABLE_COLUMNS: [ColumnSpec; 11] = [
-    ("id", "text", false, None),
-    ("unified_resource_id", "text", false, None),
-    ("resource_object", "jsonb", true, None),
-    ("model_mappings", "jsonb", false, None),
-    ("flat_model_resource_ids", "ARRAY", true, Some("ARRAY")),
-    ("storage_backend", "text", true, None),
-    ("storage_url", "text", true, None),
+    ("id", "text", false, None, "text", None),
+    ("unified_resource_id", "text", false, None, "text", None),
+    ("resource_object", "jsonb", true, None, "jsonb", None),
+    ("model_mappings", "jsonb", false, None, "jsonb", None),
+    (
+        "flat_model_resource_ids",
+        "ARRAY",
+        true,
+        Some("ARRAY[]::text[]"),
+        "_text",
+        None,
+    ),
+    ("storage_backend", "text", true, None, "text", None),
+    ("storage_url", "text", true, None, "text", None),
     (
         "created_at",
         "timestamp without time zone",
         false,
         Some("CURRENT_TIMESTAMP"),
+        "timestamp",
+        Some(3_i32),
     ),
-    ("created_by", "text", true, None),
-    ("updated_at", "timestamp without time zone", false, None),
-    ("updated_by", "text", true, None),
+    ("created_by", "text", true, None, "text", None),
+    (
+        "updated_at",
+        "timestamp without time zone",
+        false,
+        None,
+        "timestamp",
+        Some(3_i32),
+    ),
+    ("updated_by", "text", true, None, "text", None),
 ];
 
 const DEPRECATED_VERIFICATION_TOKEN_COLUMNS: [ColumnSpec; 5] = [
-    ("id", "text", false, None),
-    ("token", "text", false, None),
-    ("active_token_id", "text", false, None),
-    ("revoke_at", "timestamp without time zone", false, None),
+    ("id", "text", false, None, "text", None),
+    ("token", "text", false, None, "text", None),
+    ("active_token_id", "text", false, None, "text", None),
+    (
+        "revoke_at",
+        "timestamp without time zone",
+        false,
+        None,
+        "timestamp",
+        Some(3_i32),
+    ),
     (
         "created_at",
         "timestamp without time zone",
         false,
         Some("CURRENT_TIMESTAMP"),
+        "timestamp",
+        Some(3_i32),
     ),
 ];
 
@@ -335,26 +615,65 @@ const ACCESS_GROUP_HISTORY_TABLES: [&str; 4] = [
 ];
 
 const ACCESS_GROUP_TABLE_COLUMNS: [ColumnSpec; 11] = [
-    ("access_group_id", "text", false, None),
-    ("access_group_name", "text", false, None),
-    ("description", "text", true, None),
-    ("access_model_ids", "ARRAY", true, Some("ARRAY")),
-    ("access_mcp_server_ids", "ARRAY", true, Some("ARRAY")),
-    ("access_agent_ids", "ARRAY", true, Some("ARRAY")),
-    ("assigned_team_ids", "ARRAY", true, Some("ARRAY")),
-    ("assigned_key_ids", "ARRAY", true, Some("ARRAY")),
+    ("access_group_id", "text", false, None, "text", None),
+    ("access_group_name", "text", false, None, "text", None),
+    ("description", "text", true, None, "text", None),
+    (
+        "access_model_ids",
+        "ARRAY",
+        true,
+        Some("ARRAY[]::text[]"),
+        "_text",
+        None,
+    ),
+    (
+        "access_mcp_server_ids",
+        "ARRAY",
+        true,
+        Some("ARRAY[]::text[]"),
+        "_text",
+        None,
+    ),
+    (
+        "access_agent_ids",
+        "ARRAY",
+        true,
+        Some("ARRAY[]::text[]"),
+        "_text",
+        None,
+    ),
+    (
+        "assigned_team_ids",
+        "ARRAY",
+        true,
+        Some("ARRAY[]::text[]"),
+        "_text",
+        None,
+    ),
+    (
+        "assigned_key_ids",
+        "ARRAY",
+        true,
+        Some("ARRAY[]::text[]"),
+        "_text",
+        None,
+    ),
     (
         "created_at",
         "timestamp without time zone",
         false,
         Some("CURRENT_TIMESTAMP"),
+        "timestamp",
+        Some(3_i32),
     ),
-    ("created_by", "text", true, None),
+    ("created_by", "text", true, None, "text", None),
     (
         "updated_at",
         "timestamp without time zone",
         false,
         Some("CURRENT_TIMESTAMP"),
+        "timestamp",
+        Some(3_i32),
     ),
 ];
 
@@ -364,8 +683,8 @@ const KEY_HISTORY_TABLES: [&str; 2] = [
 ];
 
 const VECTOR_STORE_OWNERSHIP_COLUMNS: [ColumnSpec; 2] = [
-    ("team_id", "text", true, None),
-    ("user_id", "text", true, None),
+    ("team_id", "text", true, None, "text", None),
+    ("user_id", "text", true, None, "text", None),
 ];
 
 const VECTOR_STORE_OWNERSHIP_INDEXES: [IndexSpec; 2] = [
@@ -381,7 +700,8 @@ const VECTOR_STORE_OWNERSHIP_INDEXES: [IndexSpec; 2] = [
     ),
 ];
 
-const MANAGED_VECTOR_STORE_INDEXES: [IndexSpec; 2] = [
+const MANAGED_VECTOR_STORE_INDEXES: [IndexSpec; 3] = [
+    ("LiteLLM_ManagedVectorStoreTable_pkey", &["id"], true),
     (
         "LiteLLM_ManagedVectorStoreTable_unified_resource_id_key",
         &["unified_resource_id"],
@@ -394,7 +714,8 @@ const MANAGED_VECTOR_STORE_INDEXES: [IndexSpec; 2] = [
     ),
 ];
 
-const DEPRECATED_TOKEN_INDEXES: [IndexSpec; 3] = [
+const DEPRECATED_TOKEN_INDEXES: [IndexSpec; 4] = [
+    ("LiteLLM_DeprecatedVerificationToken_pkey", &["id"], true),
     (
         "LiteLLM_DeprecatedVerificationToken_token_key",
         &["token"],
@@ -426,11 +747,21 @@ const KEY_LOOKUP_INDEXES: [IndexSpec; 3] = [
     ),
 ];
 
+fn column_names(columns: &[ColumnSpec]) -> Vec<&'static str> {
+    columns.iter().map(|spec| spec.0).collect()
+}
+
 async fn assert_deleted_history_defaults(client: &Client) {
     assert_columns(
         client,
         "LiteLLM_DeletedTeamTable",
         &DELETED_TEAM_TABLE_COLUMNS,
+    )
+    .await;
+    assert_column_order(
+        client,
+        "LiteLLM_DeletedTeamTable",
+        &column_names(&DELETED_TEAM_TABLE_COLUMNS),
     )
     .await;
     assert_indexes(client, &DELETED_TEAM_TABLE_INDEXES).await;
@@ -440,12 +771,23 @@ async fn assert_deleted_history_defaults(client: &Client) {
         &DELETED_VERIFICATION_TOKEN_COLUMNS,
     )
     .await;
+    assert_column_order(
+        client,
+        "LiteLLM_DeletedVerificationToken",
+        &column_names(&DELETED_VERIFICATION_TOKEN_COLUMNS),
+    )
+    .await;
     assert_indexes(client, &DELETED_VERIFICATION_TOKEN_INDEXES).await;
 }
 
 async fn assert_daily_endpoint_indexes(client: &Client) {
     for (table, unique_index, entity) in DAILY_ENDPOINT_COHORT {
-        assert_columns(client, table, &[("endpoint", "text", true, None)]).await;
+        assert_columns(
+            client,
+            table,
+            &[("endpoint", "text", true, None, "text", None)],
+        )
+        .await;
         assert_index(
             client,
             &format!("{table}_endpoint_idx"),
@@ -486,9 +828,22 @@ async fn assert_lower_email_expression(client: &Client) {
 
 async fn assert_policy_storage(client: &Client) {
     for table in POLICY_COHORT_TABLES {
-        assert_columns(client, table, &[("policies", "ARRAY", true, Some("ARRAY"))]).await;
+        assert_columns(
+            client,
+            table,
+            &[(
+                "policies",
+                "ARRAY",
+                true,
+                Some("ARRAY[]::text[]"),
+                "_text",
+                None,
+            )],
+        )
+        .await;
     }
     assert_columns(client, "LiteLLM_PolicyTable", &POLICY_TABLE_COLUMNS).await;
+    assert_index(client, "LiteLLM_PolicyTable_pkey", &["policy_id"], true).await;
     assert_index(
         client,
         "LiteLLM_PolicyTable_policy_name_key",
@@ -502,13 +857,27 @@ async fn assert_policy_storage(client: &Client) {
         &POLICY_ATTACHMENT_TABLE_COLUMNS,
     )
     .await;
+    assert_index(
+        client,
+        "LiteLLM_PolicyAttachmentTable_pkey",
+        &["attachment_id"],
+        true,
+    )
+    .await;
 }
 
-async fn assert_access_group_history(client: &Client) {
+async fn assert_access_group_catalog(client: &Client) {
     assert_single_column(
         client,
         &ACCESS_GROUP_HISTORY_TABLES,
-        ("access_group_ids", "ARRAY", true, Some("ARRAY")),
+        (
+            "access_group_ids",
+            "ARRAY",
+            true,
+            Some("ARRAY[]::text[]"),
+            "_text",
+            None,
+        ),
     )
     .await;
     assert_columns(
@@ -519,11 +888,21 @@ async fn assert_access_group_history(client: &Client) {
     .await;
     assert_index(
         client,
+        "LiteLLM_AccessGroupTable_pkey",
+        &["access_group_id"],
+        true,
+    )
+    .await;
+    assert_index(
+        client,
         "LiteLLM_AccessGroupTable_access_group_name_key",
         &["access_group_name"],
         true,
     )
     .await;
+}
+
+async fn assert_access_group_model_names_migration(client: &Client) {
     batch_execute(
         client,
         migration_sql_of("20260213170952_access_group_change_to_model_name"),
@@ -533,16 +912,28 @@ async fn assert_access_group_history(client: &Client) {
     assert_columns(
         client,
         "LiteLLM_AccessGroupTable",
-        &[("access_model_names", "ARRAY", true, Some("ARRAY"))],
+        &[(
+            "access_model_names",
+            "ARRAY",
+            true,
+            Some("ARRAY[]::text[]"),
+            "_text",
+            None,
+        )],
     )
     .await;
+}
+
+async fn assert_access_group_history(client: &Client) {
+    assert_access_group_catalog(client).await;
+    assert_access_group_model_names_migration(client).await;
 }
 
 async fn assert_end_user_permission_fk(client: &Client) {
     assert_columns(
         client,
         "LiteLLM_EndUserTable",
-        &[("object_permission_id", "text", true, None)],
+        &[("object_permission_id", "text", true, None, "text", None)],
     )
     .await;
     assert_rule(
@@ -558,13 +949,20 @@ async fn assert_key_history_additions(client: &Client) {
     assert_single_column(
         client,
         &KEY_HISTORY_TABLES,
-        ("last_active", "timestamp without time zone", true, None),
+        (
+            "last_active",
+            "timestamp without time zone",
+            true,
+            None,
+            "timestamp",
+            Some(3_i32),
+        ),
     )
     .await;
     assert_columns(
         client,
         "LiteLLM_DeletedVerificationToken",
-        &[("project_id", "text", true, None)],
+        &[("project_id", "text", true, None, "text", None)],
     )
     .await;
 }
@@ -628,7 +1026,14 @@ async fn run_cohort_check(client: &Client, cohort: Cohort) {
 
 const ROUTER_SETTINGS_CHECKPOINT: &str =
     "20260116142756_update_deleted_keys_teams_table_routing_settings";
-const ROUTER_SETTINGS_SPEC: ColumnSpec = ("router_settings", "jsonb", true, Some("{}"));
+const ROUTER_SETTINGS_SPEC: ColumnSpec = (
+    "router_settings",
+    "jsonb",
+    true,
+    Some("'{}'::jsonb"),
+    "jsonb",
+    None,
+);
 
 const TEAM_GUARDRAIL_CHECKPOINT: &str = "20260205091235_allow_team_guardrail_config";
 const TEAM_GUARDRAIL_SPEC: ColumnSpec = (
@@ -636,13 +1041,22 @@ const TEAM_GUARDRAIL_SPEC: ColumnSpec = (
     "boolean",
     false,
     Some("false"),
+    "bool",
+    None,
 );
 
 const TEAM_SOFT_BUDGET_CHECKPOINT: &str = "20260207110613_add_soft_budget_to_deleted_teams_table";
-const TEAM_SOFT_BUDGET_SPEC: ColumnSpec = ("soft_budget", "double precision", true, None);
+const TEAM_SOFT_BUDGET_SPEC: ColumnSpec = (
+    "soft_budget",
+    "double precision",
+    true,
+    None,
+    "float8",
+    None,
+);
 
 const GUARDRAIL_OWNER_CHECKPOINT: &str = "20260214094754_schema_sync";
-const GUARDRAIL_OWNER_SPEC: ColumnSpec = ("team_id", "text", true, None);
+const GUARDRAIL_OWNER_SPEC: ColumnSpec = ("team_id", "text", true, None, "text", None);
 
 const SKILLS_STORAGE_CHECKPOINT: &str = "20251220144550_schema_update";
 const MCP_METADATA_CHECKPOINT: &str =
@@ -654,10 +1068,11 @@ const DEPRECATED_TOKEN_CHECKPOINT: &str = "20260203120000_add_deprecated_verific
 
 #[rstest]
 #[case::deleted_history_defaults(Cohort::DeletedHistoryDefaults)]
-#[case::skills_storage(Cohort::TableColumns(
+#[case::skills_storage(Cohort::TableCatalog(
     SKILLS_STORAGE_CHECKPOINT,
     "LiteLLM_SkillsTable",
-    &SKILLS_TABLE_COLUMNS
+    &SKILLS_TABLE_COLUMNS,
+    &SKILLS_TABLE_INDEXES
 ))]
 #[case::mcp_metadata_defaults(Cohort::TableColumns(
     MCP_METADATA_CHECKPOINT,

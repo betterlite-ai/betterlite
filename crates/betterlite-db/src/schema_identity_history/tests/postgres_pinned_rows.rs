@@ -1,29 +1,8 @@
-async fn catalog_snapshot(client: &Client) -> Vec<String> {
-    let mut snapshot = string_rows(
-        client,
-        "SELECT table_name || ':' || column_name || ':' || data_type || ':' || is_nullable \
-         || ':' || coalesce(column_default, '') FROM information_schema.columns \
-         WHERE table_schema = 'public' ORDER BY table_name, ordinal_position",
-        &[],
-    )
-    .await;
-    let mut indexes = string_rows(
-        client,
-        "SELECT indexname || ':' || indexdef FROM pg_indexes \
-         WHERE schemaname = 'public' ORDER BY indexname",
-        &[],
-    )
-    .await;
-    snapshot.append(&mut indexes);
-    snapshot
-}
-
 #[tokio::test]
 async fn postgres_pinned_rows() {
     Box::pin(harness(|[native, pinned]| async move {
-        let sql = migration_sql_all();
-        batch_execute(&native, &sql).await;
-        batch_execute(&pinned, &sql).await;
+        batch_execute(&native, &migration_sql_all()).await;
+        batch_execute(&pinned, &pinned_migration_sql_all()).await;
 
         assert_rule(
             &native,

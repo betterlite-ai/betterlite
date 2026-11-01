@@ -182,7 +182,7 @@ async fn assert_idempotent_reapplication(client: &Client) {
     )
     .await;
     assert_eq!(fk_count_before, 1);
-    let column_count_before = columns_in(client, "LiteLLM_AccessGroupTable").await.len();
+    let snapshot_before = catalog_snapshot(client).await;
 
     batch_execute(client, &identity_history_sql()).await;
 
@@ -193,8 +193,8 @@ async fn assert_idempotent_reapplication(client: &Client) {
     )
     .await;
     assert_eq!(fk_count_after, 1);
-    let column_count_after = columns_in(client, "LiteLLM_AccessGroupTable").await.len();
-    assert_eq!(column_count_after, column_count_before);
+    let snapshot_after = catalog_snapshot(client).await;
+    assert_eq!(snapshot_after, snapshot_before);
 }
 
 #[tokio::test]
