@@ -31,17 +31,6 @@ pub(crate) struct SessionMint {
     mint_now: i64,
 }
 
-fn mint_session_candidate(
-    mint: &SessionMint,
-    keys: &SessionSigningKeys,
-) -> Result<String, Box<HelperError>> {
-    let now = DateTime::from_timestamp(mint.mint_now, 0)
-        .ok_or_else(|| helper_error("ValueError", &"timestamp out of range"))?;
-    let minted = mint_session_token(&mint.principal, mint.kind, keys, now, || Ok([0_u8; 16]))
-        .map_err(|error| helper_error("SessionMintError", &error))?;
-    Ok(minted.token.expose_secret().to_owned())
-}
-
 fn candidate_and_open_keys(
     fields: &SessionFields,
 ) -> Result<(String, SessionSigningKeys), Box<HelperError>> {
@@ -49,7 +38,15 @@ fn candidate_and_open_keys(
         .map(SessionSigningKeys::Symmetric)
         .map_err(|error| helper_error("SessionKeyError", &error))?;
     let candidate = match (&fields.mint, &fields.candidate) {
-        (Some(mint), _) => mint_session_candidate(mint, &mint_keys)?,
+        (Some(mint), _) => {
+            let now = DateTime::from_timestamp(mint.mint_now, 0)
+                .ok_or_else(|| helper_error("ValueError", &"timestamp out of range"))?;
+            let minted = mint_session_token(&mint.principal, mint.kind, &mint_keys, now, || {
+                Ok([0_u8; 16])
+            })
+            .map_err(|error| helper_error("SessionMintError", &error))?;
+            minted.token.expose_secret().to_owned()
+        }
         (None, Some(literal)) => literal.clone(),
         (None, None) => {
             return Err(helper_error(

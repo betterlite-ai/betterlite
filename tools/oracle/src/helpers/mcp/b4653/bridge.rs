@@ -131,34 +131,49 @@ where
     Ok((candidate, open_keys))
 }
 
+fn tagged_identity(
+    tag: &str,
+    identity: &EnvelopeIdentity,
+    extra_key: &str,
+    extra_value: serde_json::Value,
+) -> serde_json::Value {
+    let mut fields = serde_json::Map::new();
+    fields.insert("tag".to_owned(), json!(tag));
+    fields.insert("identity".to_owned(), json!(identity));
+    fields.insert(extra_key.to_owned(), extra_value);
+    serde_json::Value::Object(fields)
+}
+
 fn envelope_result_json(result: BridgeEnvelopeResult) -> serde_json::Value {
     match result {
         BridgeEnvelopeResult::NotBridgeEnvelope => json!({ "tag": "not_bridge_envelope" }),
         BridgeEnvelopeResult::BridgeEnvelopeAdmitted {
             identity,
             upstream_authorization,
-        } => json!({
-            "tag": "admitted",
-            "identity": identity,
-            "upstream_authorization": upstream_authorization.expose_secret(),
-        }),
+        } => tagged_identity(
+            "admitted",
+            &identity,
+            "upstream_authorization",
+            json!(upstream_authorization.expose_secret()),
+        ),
         BridgeEnvelopeResult::BridgeEnvelopeInvalid => json!({ "tag": "invalid" }),
     }
 }
 
 fn refresh_result_json(result: BridgeRefreshResult) -> serde_json::Value {
-    match result {
-        BridgeRefreshResult::BridgeRefreshOpened { identity, refresh } => json!({
-            "tag": "opened",
-            "identity": identity,
-            "refresh": {
-                "refresh_token": refresh.refresh_token.expose_secret(),
-                "scope": refresh.scope,
-                "expires_in": refresh.expires_in,
-            },
+    let BridgeRefreshResult::BridgeRefreshOpened { identity, refresh } = result else {
+        return json!({ "tag": "invalid" });
+    };
+    tagged_identity(
+        "opened",
+        &identity,
+        "refresh",
+        json!({
+            "refresh_token": refresh.refresh_token.expose_secret(),
+            "scope": refresh.scope,
+            "expires_in": refresh.expires_in,
         }),
-        BridgeRefreshResult::BridgeRefreshInvalid => json!({ "tag": "invalid" }),
-    }
+    )
 }
 
 impl From<&EnvelopeMint> for UpstreamTokenGrant {
