@@ -1,5 +1,6 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use serde::Deserialize;
 
 use super::messages::input_text_from_messages;
 use super::support::has_value;
@@ -9,34 +10,67 @@ mod families;
 mod model_response;
 
 // Mirrors the level string _get_galileo_input_output_content receives from the callback dispatch.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Level {
     Default,
     Error,
 }
 
-// Python resolves the response family with isinstance; the caller names it explicitly instead.
+// Python resolves the response family with isinstance; the oracle helper names it explicitly through the `family` tag instead.
+#[derive(Deserialize)]
+#[serde(tag = "family", rename_all = "snake_case")]
 pub enum ResponseObj {
-    Chat { message: Option<Json> },
+    Chat {
+        #[serde(default)]
+        message: Option<Json>,
+    },
     Embedding,
     Speech,
-    TextCompletion { text: Option<String> },
-    Image { data: Option<Json> },
-    Transcription { text: Option<String> },
-    Rerank { results: Json },
-    ResponsesApi { output: Json },
-    RealtimeList { items: Vec<Json> },
-    PassThroughDict { value: IndexMap<String, Json> },
-    GenericDict { value: IndexMap<String, Json> },
+    TextCompletion {
+        #[serde(default)]
+        text: Option<String>,
+    },
+    Image {
+        #[serde(default)]
+        data: Option<Json>,
+    },
+    Transcription {
+        #[serde(default)]
+        text: Option<String>,
+    },
+    Rerank {
+        results: Json,
+    },
+    ResponsesApi {
+        output: Json,
+    },
+    RealtimeList {
+        #[serde(default)]
+        items: Vec<Json>,
+    },
+    PassThroughDict {
+        #[serde(default)]
+        value: IndexMap<String, Json>,
+    },
+    GenericDict {
+        #[serde(default)]
+        value: IndexMap<String, Json>,
+    },
     Unknown,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 pub struct GalileoKwargs {
+    #[serde(default)]
     pub call_type: Option<String>,
+    #[serde(default)]
     pub messages: Option<Json>,
+    #[serde(default)]
     pub functions: Option<Json>,
+    #[serde(default)]
     pub tools: Option<Json>,
+    #[serde(default)]
     pub input: Option<Json>,
 }
 

@@ -13,121 +13,6 @@ use crate::helpers::{Helper, HelperError, HelperResult};
 
 pub(crate) struct Op;
 
-#[derive(Deserialize, Default)]
-pub(crate) struct KwargsInput {
-    #[serde(default)]
-    call_type: Option<String>,
-    #[serde(default)]
-    messages: Option<Json>,
-    #[serde(default)]
-    functions: Option<Json>,
-    #[serde(default)]
-    tools: Option<Json>,
-    #[serde(default)]
-    input: Option<Json>,
-}
-
-impl From<&KwargsInput> for GalileoKwargs {
-    fn from(value: &KwargsInput) -> Self {
-        Self {
-            call_type: value.call_type.clone(),
-            messages: value.messages.clone(),
-            functions: value.functions.clone(),
-            tools: value.tools.clone(),
-            input: value.input.clone(),
-        }
-    }
-}
-
-#[derive(Deserialize)]
-#[serde(tag = "family", rename_all = "snake_case")]
-pub(crate) enum ResponseInput {
-    Chat {
-        #[serde(default)]
-        message: Option<Json>,
-    },
-    Embedding,
-    Speech,
-    TextCompletion {
-        #[serde(default)]
-        text: Option<String>,
-    },
-    Image {
-        #[serde(default)]
-        data: Option<Json>,
-    },
-    Transcription {
-        #[serde(default)]
-        text: Option<String>,
-    },
-    Rerank {
-        results: Json,
-    },
-    ResponsesApi {
-        output: Json,
-    },
-    RealtimeList {
-        #[serde(default)]
-        items: Vec<Json>,
-    },
-    PassThroughDict {
-        #[serde(default)]
-        value: IndexMap<String, Json>,
-    },
-    GenericDict {
-        #[serde(default)]
-        value: IndexMap<String, Json>,
-    },
-    Unknown,
-}
-
-impl From<&ResponseInput> for ResponseObj {
-    fn from(response: &ResponseInput) -> Self {
-        match response {
-            ResponseInput::Chat { message } => Self::Chat {
-                message: message.clone(),
-            },
-            ResponseInput::Embedding => Self::Embedding,
-            ResponseInput::Speech => Self::Speech,
-            ResponseInput::TextCompletion { text } => Self::TextCompletion { text: text.clone() },
-            ResponseInput::Image { data } => Self::Image { data: data.clone() },
-            ResponseInput::Transcription { text } => Self::Transcription { text: text.clone() },
-            ResponseInput::Rerank { results } => Self::Rerank {
-                results: results.clone(),
-            },
-            ResponseInput::ResponsesApi { output } => Self::ResponsesApi {
-                output: output.clone(),
-            },
-            ResponseInput::RealtimeList { items } => Self::RealtimeList {
-                items: items.clone(),
-            },
-            ResponseInput::PassThroughDict { value } => Self::PassThroughDict {
-                value: value.clone(),
-            },
-            ResponseInput::GenericDict { value } => Self::GenericDict {
-                value: value.clone(),
-            },
-            ResponseInput::Unknown => Self::Unknown,
-        }
-    }
-}
-
-#[derive(Deserialize, Clone, Copy)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum LevelInput {
-    Default,
-    Error,
-}
-
-impl From<LevelInput> for Level {
-    fn from(value: LevelInput) -> Self {
-        match value {
-            LevelInput::Default => Self::Default,
-            LevelInput::Error => Self::Error,
-        }
-    }
-}
-
 #[derive(Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]
 pub(crate) enum Input {
@@ -154,11 +39,11 @@ pub(crate) enum Input {
     },
     ContentSelection {
         #[serde(default)]
-        kwargs: Box<KwargsInput>,
+        kwargs: Box<GalileoKwargs>,
         #[serde(default)]
-        response: Option<ResponseInput>,
+        response: Option<ResponseObj>,
         #[serde(default)]
-        level: Option<LevelInput>,
+        level: Option<Level>,
         #[serde(default)]
         status_message: Option<String>,
     },
@@ -203,7 +88,7 @@ impl Helper for Op {
             } => Ok(content_selection(
                 kwargs,
                 response.as_ref(),
-                level.map_or(Level::Default, Level::from),
+                level.unwrap_or(Level::Default),
                 status_message.as_deref(),
             )),
         }
@@ -239,19 +124,13 @@ fn timestamp_formats(
 }
 
 fn content_selection(
-    kwargs: &KwargsInput,
-    response: Option<&ResponseInput>,
+    kwargs: &GalileoKwargs,
+    response: Option<&ResponseObj>,
     level: Level,
     status_message: Option<&str>,
 ) -> serde_json::Value {
-    let galileo_kwargs = GalileoKwargs::from(kwargs);
-    let response_obj = response.map(ResponseObj::from);
-    let (input_text, output_text, messages_for_span) = content::galileo_input_output_content(
-        &galileo_kwargs,
-        response_obj.as_ref(),
-        level,
-        status_message,
-    );
+    let (input_text, output_text, messages_for_span) =
+        content::galileo_input_output_content(kwargs, response, level, status_message);
     json!({
         "input_text": input_text,
         "output_text": output_text,
