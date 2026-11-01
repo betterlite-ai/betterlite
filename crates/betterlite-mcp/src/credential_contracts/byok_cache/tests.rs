@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use rstest::rstest;
 
@@ -57,6 +57,42 @@ fn get_cached_type_check() {
     assert_eq!(
         cache.get_cached_byok_credential("user-2", "server-1"),
         Some(CachedByokCredential { credential: None })
+    );
+}
+
+// A stored_at past "now" makes elapsed() saturate to zero, so a zero ttl must still read as expired.
+#[rstest]
+fn cache_treats_a_zero_ttl_window_as_already_stale() {
+    let cache = cache_with_limits(8, Duration::ZERO);
+    let key = byok_credential_cache_key("user-1", "server-1");
+    cache.entries.lock().unwrap().insert(
+        key,
+        (
+            CachedByokCredential {
+                credential: Some("api-key".to_owned()),
+            },
+            Instant::now() + Duration::from_secs(3600),
+        ),
+    );
+    assert_eq!(cache.get_cached_byok_credential("user-1", "server-1"), None);
+}
+
+#[rstest]
+fn cache_keeps_entries_below_capacity() {
+    let cache = cache_with_limits(2, Duration::from_secs(60));
+    cache.cache_byok_credential("user-1", "server-1", Some("first".to_owned()));
+    cache.cache_byok_credential("user-2", "server-1", Some("second".to_owned()));
+    assert_eq!(
+        cache.get_cached_byok_credential("user-1", "server-1"),
+        Some(CachedByokCredential {
+            credential: Some("first".to_owned())
+        })
+    );
+    assert_eq!(
+        cache.get_cached_byok_credential("user-2", "server-1"),
+        Some(CachedByokCredential {
+            credential: Some("second".to_owned())
+        })
     );
 }
 
