@@ -6,4 +6,4 @@ call:
       settings: {api_key: key, api_base: "http://lasso.test"}
       answer: {status: 401, headers: {}, body: {detail: invalid key}}
 env: {}
-compare: {ignore: [{pointer: /error/message, why: "betterlite writes its own message"}]}
+compare: {ignore: []}

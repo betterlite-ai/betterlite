@@ -1,13 +1,13 @@
 id: B5091
 milestone: M0 foundation
 title: Helper oracle cases compare the value and the error codes
-status: todo
+status: done
 depends_on: [B171, B856]
 file: tasks/B5091-helper-compare-contract.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 425
