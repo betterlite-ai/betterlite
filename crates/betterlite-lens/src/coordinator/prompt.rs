@@ -51,7 +51,7 @@ fn candidate_list_schema() -> Schema {
         max_length: None,
         choices: Vec::new(),
     };
-    object_schema(BTreeMap::from([("candidates", items)]), vec!["candidates"])
+    object_schema(BTreeMap::from([("candidates", items)]), Vec::new())
 }
 
 fn candidate_schema() -> Schema {
