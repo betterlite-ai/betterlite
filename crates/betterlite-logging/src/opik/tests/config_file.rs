@@ -125,6 +125,12 @@ fn config_file_deeper_indented_bracket_continues_value() {
 }
 
 #[test]
+fn config_file_reads_a_final_line_with_no_trailing_newline() {
+    let values = read_config_section("[opik]\nkey = value").expect("valid configuration");
+    assert_eq!(values.get("key"), Some(&String::from("value")));
+}
+
+#[test]
 fn config_file_accepts_lone_cr_line_ending() {
     let values = read_config_section("[opik]\rkey = value\r").expect("valid configuration");
     assert_eq!(values.get("key"), Some(&String::from("value")));
