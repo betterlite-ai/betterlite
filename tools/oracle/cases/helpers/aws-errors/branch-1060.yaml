@@ -1,0 +1,14 @@
+kind: helper
+name: aws-errors-branch-1060
+call:
+  aws_errors:
+    provider: sagemaker
+    model: huggingface-llama
+    custom_llm_provider: sagemaker
+    error_str: "`inputs` tokens + `max_new_tokens` must be <= 2048"
+    status_code: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message
