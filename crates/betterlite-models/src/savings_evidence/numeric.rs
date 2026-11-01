@@ -20,33 +20,38 @@ pub fn numeric_savings(value: Option<&Scalar>) -> Option<Decimal> {
     }
 }
 
+// The lexeme's raw text, not its mathematical value, decides "exact integer": "2" and "2.0" stay distinct.
 #[must_use]
 pub fn recorded_autorouter_savings(metadata: &Metadata) -> Option<Decimal> {
     let estimate = metadata
         .autorouter_savings_estimate
         .as_ref()?
         .as_mapping()?;
-    if !is_estimated_and_versioned(estimate) {
+    let exact_version = matches!(
+        &estimate.version,
+        Some(Scalar::Number(number)) if matches!(number.as_i64(), Some(1..=3))
+    );
+    let is_estimated =
+        matches!(&estimate.status, Some(Scalar::Text(status)) if status == "estimated");
+    if !exact_version || !is_estimated {
         return None;
     }
     numeric_savings(metadata.autorouter_savings.as_ref())
 }
 
-// The lexeme's raw text, not its mathematical value, decides "exact integer": "2" and "2.0" stay distinct.
-fn is_estimated_and_versioned(estimate: &super::metadata::AutorouterEstimate) -> bool {
-    let exact_version = matches!(
-        &estimate.version,
-        Some(Scalar::Number(number)) if matches!(number.as_i64(), Some(1..=3))
-    );
-    exact_version && matches!(&estimate.status, Some(Scalar::Text(status)) if status == "estimated")
-}
-
+// The match, not a combinator, keeps this a named function rather than a one-line call-site inline.
 #[must_use]
+#[expect(
+    clippy::option_if_let_else,
+    reason = "a match is the sanctioned escape from no-one-line-functions, not a style pick"
+)]
 pub fn classifier_cost_from_decision(
     routing_decision: Option<&RoutingDecision>,
 ) -> Option<Decimal> {
-    let classifier_cost = routing_decision.and_then(|decision| decision.classifier_cost.as_ref());
-    numeric_savings(classifier_cost)
+    match routing_decision {
+        Some(decision) => numeric_savings(decision.classifier_cost.as_ref()),
+        None => None,
+    }
 }
 
 mod tests;
