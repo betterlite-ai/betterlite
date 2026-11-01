@@ -1,0 +1,5 @@
+kind: helper
+name: baseline-history-seed
+call: {baseline_history: {groups: [[{request_id: seed, started_at: 0.0, available_at: 0.0, outcome: complete, baseline_equivalent: true, usage: {prompt_tokens: 1, completion_tokens: 0, total_tokens: 1, prompt_tokens_details: {text_tokens: 1, cached_tokens: 0, cache_creation_tokens: 0, cache_creation_token_details: {ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 0}}}}]]}}
+env: {}
+compare: {ignore: []}

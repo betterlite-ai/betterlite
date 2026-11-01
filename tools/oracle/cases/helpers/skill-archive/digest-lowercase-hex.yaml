@@ -1,0 +1,8 @@
+kind: helper
+name: digest-lowercase-hex
+call:
+  skill_discovery_archives:
+    stored_content: UEsDBBQAAAAIAAAAIQCyC6jbBgAAAAQAAAAIAAAAU0tJTEwubWRLyk+pBABQSwECFAMUAAAACAAAACEAsguo2wYAAAAEAAAACAAAAAAAAAAAAAAApIEAAAAAU0tJTEwubWRQSwUGAAAAAAEAAQA2AAAALAAAAAAA
+env: {}
+compare:
+  ignore: []

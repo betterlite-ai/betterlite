@@ -1,0 +1,23 @@
+task: B4051
+deviations:
+  - what: >-
+      Per-file load errors during directory scan are caught and skipped silently rather
+      than stopping the load or warning.
+    why: >-
+      LiteLLM behavior at the pinned commit; strict error handling is a future refinement
+      controlled by configuration.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/dotprompt/prompt_manager.py#L109-L124
+  - what: >-
+      Invalid YAML in frontmatter raises an error during parsing instead of being logged
+      and skipped.
+    why: >-
+      LiteLLM behavior at the pinned commit; inline YAML errors surface during parse, not
+      silently.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/dotprompt/prompt_manager.py#L179-L198
+  - what: >-
+      Every render runs against a fresh minijinja Environment capped with a fuel budget,
+      so a template-authored infinite loop terminates with an error instead of hanging.
+    why: >-
+      LiteLLM's ImmutableSandboxedEnvironment has no such cap; a fuel limit is a DoS
+      protection that no working setup relies on being absent.
+    link: ""
