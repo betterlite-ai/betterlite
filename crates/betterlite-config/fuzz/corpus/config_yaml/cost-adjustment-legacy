@@ -1,0 +1,7 @@
+litellm_settings:
+  cost_discount_config:
+    provider: null
+    global: 0.5
+  cost_margin_config:
+    provider: []
+    global: {percentage: "0.1", fixed_amount: "0.001", ignored: true}
