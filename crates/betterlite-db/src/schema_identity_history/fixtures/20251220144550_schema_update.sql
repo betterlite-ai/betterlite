@@ -17,4 +17,3 @@ CREATE TABLE IF NOT EXISTS "LiteLLM_SkillsTable" (
 
     CONSTRAINT "LiteLLM_SkillsTable_pkey" PRIMARY KEY ("skill_id")
 );
-

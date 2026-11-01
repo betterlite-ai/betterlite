@@ -10,4 +10,3 @@ CREATE INDEX IF NOT EXISTS "LiteLLM_ManagedVectorStoresTable_team_id_idx"
 -- CreateIndex
 CREATE INDEX IF NOT EXISTS "LiteLLM_ManagedVectorStoresTable_user_id_idx"
     ON "LiteLLM_ManagedVectorStoresTable"("user_id");
-

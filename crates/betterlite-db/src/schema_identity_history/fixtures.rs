@@ -5,43 +5,43 @@ use crate::schema_baseline::{MigrationCatalog, MigrationFile};
 const PINNED_DELETED_KEYS_TEAMS: MigrationFile = MigrationFile {
     directory: "20251219110931_add_deleted_keys_and_deleted_teams_tables",
     bytes: include_bytes!("fixtures/20251219110931_add_deleted_keys_and_deleted_teams_tables.sql"),
-    sha256: "3b3de59c965b5fec61886f09fa0c3e406c1d1194b8674353ea4b7baac3cba3af",
+    sha256: "4b73b74abadffbf68ef2506300d2c6c939939b15649ac304b676521c29a65888",
 };
 
 const PINNED_SCHEMA_UPDATE: MigrationFile = MigrationFile {
     directory: "20251220144550_schema_update",
     bytes: include_bytes!("fixtures/20251220144550_schema_update.sql"),
-    sha256: "8e219b15b4e476b22c1716992fd513152039de1c5951a0ac694d1ffba26111b3",
+    sha256: "f39d63a4a4e8ded020521d9f219d1df7b56a65add66ad838b5c0c3ee23ec6591",
 };
 
 const PINNED_MCP_METADATA_URLS: MigrationFile = MigrationFile {
     directory: "20260102131258_add_metadata_urls_to_mcp_servers",
     bytes: include_bytes!("fixtures/20260102131258_add_metadata_urls_to_mcp_servers.sql"),
-    sha256: "eee02bb2a33b6bdf324081d9006f8da5f1298a0c7f8fa4ae52391d4b3fdd2d2e",
+    sha256: "e737c214e6369e38c11e555e292476106edd0b244ff75cfbfbc94141507c1a28",
 };
 
 const PINNED_MCP_ALLOW_ALL_KEYS: MigrationFile = MigrationFile {
     directory: "20260105151539_add_allow_all_keys_to_mcp_servers",
     bytes: include_bytes!("fixtures/20260105151539_add_allow_all_keys_to_mcp_servers.sql"),
-    sha256: "b28ffa7014e196d4b1a8e7d52371be91d5633a6b661f0e5e6346b3fc18fd6456",
+    sha256: "760590190fb672c360834f9ab213613293b219e04f7e35ae53d686a413a6d868",
 };
 
 const PINNED_DAILY_ENDPOINT: MigrationFile = MigrationFile {
     directory: "20260106155622_add_endpoint_to_daily_activity_tables",
     bytes: include_bytes!("fixtures/20260106155622_add_endpoint_to_daily_activity_tables.sql"),
-    sha256: "ccfeb894b1fab623593531f189dcd0c098352f9c65c407cb70d2ea9a6086a656",
+    sha256: "3517dbffaa550d73e596ed11c802e78699c72861d45d61ed4c70c9fd3959d62f",
 };
 
 const PINNED_ROUTER_SETTINGS: MigrationFile = MigrationFile {
     directory: "20260107111013_add_router_settings_to_keys_teams",
     bytes: include_bytes!("fixtures/20260107111013_add_router_settings_to_keys_teams.sql"),
-    sha256: "9aebf31dd752cf36c8f084d00053ff83af52bf45845549cbb9cb901147d8f2d5",
+    sha256: "a5e4b095c0631bbed46c5b7104b64211368dab8307c22e46fab44933c6bf18de",
 };
 
 const PINNED_USER_EMAIL_LOWER_IDX: MigrationFile = MigrationFile {
     directory: "20260108_add_user_email_lower_idx",
     bytes: include_bytes!("fixtures/20260108_add_user_email_lower_idx.sql"),
-    sha256: "3cb5404a0f325ccf199bb63b283e4da752d97c5012c736cb9cd00755f8ebae03",
+    sha256: "9abb5570fcdda9d2ec39a645eef6f66d3b9308f2b49005afbdbb8f22b1598aa7",
 };
 
 const PINNED_UPDATE_DELETED_ROUTING: MigrationFile = MigrationFile {
@@ -49,19 +49,19 @@ const PINNED_UPDATE_DELETED_ROUTING: MigrationFile = MigrationFile {
     bytes: include_bytes!(
         "fixtures/20260116142756_update_deleted_keys_teams_table_routing_settings.sql"
     ),
-    sha256: "b73e82dcb5dd5607c3635a651f7fbc7d7b9d943504e28e4ae58384d3c970706f",
+    sha256: "73c0ba24922dcd5c6f5190e6f398c018fd46d839d6e06664515c834e2545b912",
 };
 
 const PINNED_POLICY_TABLES_FIELD: MigrationFile = MigrationFile {
     directory: "20260123131407_add_policy_tables_and_policies_field",
     bytes: include_bytes!("fixtures/20260123131407_add_policy_tables_and_policies_field.sql"),
-    sha256: "45714f4a2e87eb33b7ef53a5320235b5cafc8a0cc307b00743e74dae6719ea67",
+    sha256: "57159c9d6bbb50b4dc95770c13d440cb48993047c8fd6d2dc695ef57554dea02",
 };
 
 const PINNED_VECTOR_STORE_TEAM_USER: MigrationFile = MigrationFile {
     directory: "20260131150814_add_team_user_to_vector_stores",
     bytes: include_bytes!("fixtures/20260131150814_add_team_user_to_vector_stores.sql"),
-    sha256: "547773d84d26f9f215bd7d2674ed404811e541358755220bb716c0b97c81fe86",
+    sha256: "e4d95f60000cf3dac78e96c50155df471c1789eaab7d71eb548ac38278f441e2",
 };
 
 const PINNED_DEPRECATED_TOKEN: MigrationFile = MigrationFile {
@@ -73,13 +73,13 @@ const PINNED_DEPRECATED_TOKEN: MigrationFile = MigrationFile {
 const PINNED_TEAM_GUARDRAIL_CONFIG: MigrationFile = MigrationFile {
     directory: "20260205091235_allow_team_guardrail_config",
     bytes: include_bytes!("fixtures/20260205091235_allow_team_guardrail_config.sql"),
-    sha256: "1d364b454c528c4662780cc4a0ddb12f4c18e82b5eebc83a72fd4429ff367aa1",
+    sha256: "cf43910b69216944802af825fdf1a3c1085bd21f2ac30b9e79224730246f5aae",
 };
 
 const PINNED_TEAM_SOFT_BUDGET: MigrationFile = MigrationFile {
     directory: "20260205144610_add_soft_budget_to_team_table",
     bytes: include_bytes!("fixtures/20260205144610_add_soft_budget_to_team_table.sql"),
-    sha256: "f1f3c7982ff5ff7f55b064d247cc39ce39e882c7d02abf621669e1b76e437442",
+    sha256: "49e247bb4aeaca831caf22a0cff33119a366aec31e88630a2425542747748860",
 };
 
 const PINNED_MCP_PUBLIC_INTERNET: MigrationFile = MigrationFile {
@@ -87,13 +87,13 @@ const PINNED_MCP_PUBLIC_INTERNET: MigrationFile = MigrationFile {
     bytes: include_bytes!(
         "fixtures/20260207093506_add_available_on_public_internet_to_mcp_servers.sql"
     ),
-    sha256: "bdb5f1a12ad5eb20c962d03bfd05d6aee6fce92cfd50972d61864856753b0e3a",
+    sha256: "179eef2551a83baeb9a3b40c284af21b886172ff89697094e8c268df5ad68ba1",
 };
 
 const PINNED_DELETED_TEAMS_BUDGET: MigrationFile = MigrationFile {
     directory: "20260207110613_add_soft_budget_to_deleted_teams_table",
     bytes: include_bytes!("fixtures/20260207110613_add_soft_budget_to_deleted_teams_table.sql"),
-    sha256: "f7c32024cf470b46700be73100dc1e08010942989e908ceb12a5b0e72f95fb5f",
+    sha256: "8547050096d31b885a4935db66884594d034c66657df0355f307895807052aea",
 };
 
 const PINNED_VERIFICATION_TOKEN_IDX: MigrationFile = MigrationFile {
@@ -105,13 +105,13 @@ const PINNED_VERIFICATION_TOKEN_IDX: MigrationFile = MigrationFile {
 const PINNED_ADJUST_POLICY_TAGS: MigrationFile = MigrationFile {
     directory: "20260212103349_adjust_tags_policy_table",
     bytes: include_bytes!("fixtures/20260212103349_adjust_tags_policy_table.sql"),
-    sha256: "a782f25b1d9fef4048b24e768f076cabee428060151761cbb9331efa78686ee7",
+    sha256: "ee6a07ff48beb4b06199219103883ce2ae460b137881a35b91ee563fb21738d9",
 };
 
 const PINNED_ACCESS_GROUP_TABLE: MigrationFile = MigrationFile {
     directory: "20260212143306_add_access_group_table",
     bytes: include_bytes!("fixtures/20260212143306_add_access_group_table.sql"),
-    sha256: "c245f807fcfd72bf80d438f1459fa60c9d4fb445990b154b5ed1bb0fa9ba1872",
+    sha256: "8d69bc93f40c5d200480d899e321e5d1b07f9a7e7ab04df1e58064161740c762",
 };
 
 const PINNED_VECTOR_STORE_TABLE: MigrationFile = MigrationFile {
@@ -129,13 +129,13 @@ const PINNED_GROUP_MODEL_NAMES: MigrationFile = MigrationFile {
 const PINNED_SCHEMA_SYNC: MigrationFile = MigrationFile {
     directory: "20260214094754_schema_sync",
     bytes: include_bytes!("fixtures/20260214094754_schema_sync.sql"),
-    sha256: "7269a6d0c0734aced27e3cbcc5841fce76f2f9990b2d44dbcba886f0188e7171",
+    sha256: "c95be2b4dcb0820216d2e42015c30ee72a4425bfeb1ccc60dee3c23ecddf61bd",
 };
 
 const PINNED_POLICY_PIPELINE: MigrationFile = MigrationFile {
     directory: "20260214163027_add_pipeline_to_policy_table",
     bytes: include_bytes!("fixtures/20260214163027_add_pipeline_to_policy_table.sql"),
-    sha256: "ec5ae74d2da8fcc40a42d7f48b2e4ad951677f4e4988a5d52af3665ad54b5e72",
+    sha256: "9473a420afca0ba8bde0655c98441a7a3a6e7650a41f72e9b68fee066dd16dd9",
 };
 
 const PINNED_END_USER_PERMISSIONS: MigrationFile = MigrationFile {

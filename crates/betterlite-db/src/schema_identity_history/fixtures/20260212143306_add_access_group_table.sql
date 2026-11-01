@@ -30,4 +30,3 @@ CREATE TABLE IF NOT EXISTS "LiteLLM_AccessGroupTable" (
 
 -- CreateIndex
 CREATE UNIQUE INDEX IF NOT EXISTS "LiteLLM_AccessGroupTable_access_group_name_key" ON "LiteLLM_AccessGroupTable"("access_group_name");
-

@@ -114,4 +114,3 @@ CREATE INDEX IF NOT EXISTS "LiteLLM_DeletedVerificationToken_key_alias_idx" ON "
 
 -- CreateIndex
 CREATE INDEX IF NOT EXISTS "LiteLLM_DeletedVerificationToken_created_at_idx" ON "LiteLLM_DeletedVerificationToken"("created_at");
-
