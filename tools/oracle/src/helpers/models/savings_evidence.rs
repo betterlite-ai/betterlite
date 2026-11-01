@@ -31,7 +31,7 @@ pub(crate) enum Input {
     CacheExtraction { usage_object: Option<UsageObject> },
     #[serde(rename = "baseline_usage")]
     BaselineUsage {
-        usage_object: RawUsageObject,
+        usage_object: Box<RawUsageObject>,
         baseline_info: Option<ModelInfo>,
     },
     #[serde(rename = "injection")]

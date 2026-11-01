@@ -129,6 +129,18 @@ fn apply_cache_overrides(
     Ok(())
 }
 
+fn decimal_to_i64(
+    number: &serde_json::Number,
+    truncate: bool,
+) -> Result<i64, SavingsEvidenceError> {
+    let parsed = parse_decimal_lexeme(&number.to_string())
+        .map_err(|source| SavingsEvidenceError::AmountOutOfRange { source })?;
+    let decimal = if truncate { parsed.trunc() } else { parsed };
+    decimal
+        .to_i64()
+        .ok_or(SavingsEvidenceError::SavedTokensOverflow)
+}
+
 // Mirrors Python's isinstance(x, int): a bool or an integer lexeme overrides a detail, a float lexeme never does.
 fn integer_like_cache_count(value: Option<&Scalar>) -> Result<Option<i64>, SavingsEvidenceError> {
     match value {
@@ -138,12 +150,7 @@ fn integer_like_cache_count(value: Option<&Scalar>) -> Result<Option<i64>, Savin
             if lexeme.contains(['.', 'e', 'E']) {
                 return Ok(None);
             }
-            let decimal = parse_decimal_lexeme(&lexeme)
-                .map_err(|source| SavingsEvidenceError::AmountOutOfRange { source })?;
-            decimal
-                .to_i64()
-                .map(Some)
-                .ok_or(SavingsEvidenceError::SavedTokensOverflow)
+            decimal_to_i64(number, false).map(Some)
         }
         _ => Ok(None),
     }
@@ -173,19 +180,16 @@ fn coerce_prompt_tokens_details(
 
 // A missing key defaults to zero; a present value that is neither number nor bool fails the whole record.
 fn numeric_field(value: Option<&Scalar>) -> Result<i64, SavingsEvidenceError> {
-    match value {
-        None => Ok(0),
-        Some(Scalar::Bool(flag)) => Ok(i64::from(*flag)),
-        Some(Scalar::Number(number)) => {
-            let decimal = parse_decimal_lexeme(&number.to_string())
-                .map_err(|source| SavingsEvidenceError::AmountOutOfRange { source })?;
-            decimal
-                .trunc()
-                .to_i64()
-                .ok_or(SavingsEvidenceError::SavedTokensOverflow)
-        }
-        _ => Err(SavingsEvidenceError::NonNumericAmount),
+    let Some(scalar) = value else {
+        return Ok(0);
+    };
+    if let Scalar::Bool(flag) = scalar {
+        return Ok(i64::from(*flag));
     }
+    let Scalar::Number(number) = scalar else {
+        return Err(SavingsEvidenceError::NonNumericAmount);
+    };
+    decimal_to_i64(number, true)
 }
 
 // Unlike the logged extractors, this typed split prefers cache_creation_tokens over cache_write_tokens.
