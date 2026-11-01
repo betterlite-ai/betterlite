@@ -20,6 +20,10 @@ fn huge_int() -> Json {
     Json::Number(serde_json::from_str("18446744073709551616").unwrap())
 }
 
+fn overflowing_exponent() -> Json {
+    Json::Number(serde_json::from_str("1e400").unwrap())
+}
+
 #[rstest]
 #[case::string("string", Json::Text("a".to_owned()))]
 #[case::str_alias("str", Json::Text("a".to_owned()))]
@@ -29,6 +33,7 @@ fn huge_int() -> Json {
 #[case::number_accepts_int("number", int(5))]
 #[case::number_accepts_float("number", float(5.5))]
 #[case::float("float", float(5.5))]
+#[case::overflowing_exponent_satisfies_float("float", overflowing_exponent())]
 #[case::boolean("boolean", Json::Bool(true))]
 #[case::bool_alias("bool", Json::Bool(true))]
 #[case::bool_satisfies_int("integer", Json::Bool(true))]
@@ -56,6 +61,15 @@ fn rejects_a_mismatched_type() {
 fn a_float_does_not_satisfy_integer() {
     let schema = object(r#"{"age": "integer"}"#);
     let variables = object(r#"{"age": 5.5}"#);
+    let error = validate_input(&variables, &schema).unwrap_err();
+    assert!(error.to_string().contains("expected int, got float"));
+}
+
+#[rstest]
+fn an_overflowing_exponent_does_not_satisfy_integer() {
+    let schema = object(r#"{"n": "integer"}"#);
+    let mut variables = Object::new();
+    variables.insert("n".to_owned(), overflowing_exponent());
     let error = validate_input(&variables, &schema).unwrap_err();
     assert!(error.to_string().contains("expected int, got float"));
 }

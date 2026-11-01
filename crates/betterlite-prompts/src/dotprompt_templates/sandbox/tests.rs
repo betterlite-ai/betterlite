@@ -51,6 +51,18 @@ fn escapes_html_special_characters_with_markupsafes_exact_table() {
 }
 
 #[rstest]
+fn marked_safe_values_pass_through_markupsafe_escaping_unescaped() {
+    let env = build();
+    let mut variables = Object::new();
+    variables.insert("v".to_owned(), Json::Text("<b>".to_owned()));
+    variables.insert("w".to_owned(), Json::Text("&".to_owned()));
+    let rendered = env
+        .render_str("{{ v|safe }}{{ w|e }}", Serde(variables))
+        .unwrap();
+    assert_eq!(rendered, "<b>&amp;");
+}
+
+#[rstest]
 fn calling_a_known_non_mutating_method_renders() {
     let env = build();
     let mut variables = Object::new();
@@ -61,7 +73,8 @@ fn calling_a_known_non_mutating_method_renders() {
     assert_eq!(upper, "ADA");
 
     let mut dict = Object::new();
-    dict.insert("a".to_owned(), Json::Text("one".to_owned()));
+    dict.insert("b".to_owned(), Json::Text("one".to_owned()));
+    dict.insert("a".to_owned(), Json::Text("two".to_owned()));
     let mut pairs = Object::new();
     pairs.insert("d".to_owned(), Json::Object(dict));
     let items = env
@@ -70,7 +83,7 @@ fn calling_a_known_non_mutating_method_renders() {
             Serde(pairs),
         )
         .unwrap();
-    assert_eq!(items, "a=one");
+    assert_eq!(items, "b=onea=two");
 }
 
 #[rstest]

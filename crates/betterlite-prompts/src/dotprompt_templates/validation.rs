@@ -60,16 +60,18 @@ impl SchemaType {
         }
     }
 
-    // Python's bool is an int subclass, so isinstance(True, int) is true but isinstance(True, float) is false.
+    // Python's bool is an int subclass; json.loads reads any literal with '.', 'e' or 'E' as a float.
     fn matches(self, value: &Json) -> bool {
         match self {
             Self::Str => matches!(value, Json::Text(_)),
             Self::Bool => matches!(value, Json::Bool(_)),
             Self::Int => {
                 matches!(value, Json::Bool(_))
-                    || matches!(value, Json::Number(number) if !number.is_f64())
+                    || matches!(value, Json::Number(number) if !number.to_string().contains(['.', 'e', 'E']))
             }
-            Self::Float => matches!(value, Json::Number(number) if number.is_f64()),
+            Self::Float => {
+                matches!(value, Json::Number(number) if number.to_string().contains(['.', 'e', 'E']))
+            }
             Self::Number => matches!(value, Json::Bool(_) | Json::Number(_)),
             Self::List => matches!(value, Json::List(_)),
             Self::Dict => matches!(value, Json::Object(_)),
@@ -94,7 +96,7 @@ fn kind_name(value: &Json) -> &'static str {
     match value {
         Json::Null => "NoneType",
         Json::Bool(_) => "bool",
-        Json::Number(number) if number.is_f64() => "float",
+        Json::Number(number) if number.to_string().contains(['.', 'e', 'E']) => "float",
         Json::Number(_) => "int",
         Json::Text(_) => "str",
         Json::List(_) => "list",

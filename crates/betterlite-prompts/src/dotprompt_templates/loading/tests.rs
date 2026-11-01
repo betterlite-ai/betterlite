@@ -42,6 +42,18 @@ fn a_dotfile_prompt_loads_under_its_leading_dot_prompt_id() {
 }
 
 #[rstest]
+fn a_file_named_exactly_dot_prompt_loads_under_that_id() {
+    let directory = tempfile::tempdir().unwrap();
+    fs::write(directory.path().join(".prompt"), "bare dotfile").unwrap();
+
+    let manager = PromptManager::new(None, Some(directory.path()), None, None).unwrap();
+    assert_eq!(
+        manager.get_prompt(".prompt", None).unwrap().content,
+        "bare dotfile"
+    );
+}
+
+#[rstest]
 fn a_malformed_prompt_file_is_skipped_without_failing_the_load() {
     let directory = tempfile::tempdir().unwrap();
     fs::write(

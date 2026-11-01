@@ -94,7 +94,11 @@ impl PromptManager {
 
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().and_then(OsStr::to_str) != Some("prompt") {
+            let is_prompt_file = path
+                .file_name()
+                .and_then(OsStr::to_str)
+                .is_some_and(|name| name.ends_with(".prompt"));
+            if !is_prompt_file {
                 continue;
             }
             let Some(entry_id) = path.file_stem().and_then(OsStr::to_str) else {
