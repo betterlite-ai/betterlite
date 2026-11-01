@@ -51,7 +51,16 @@ fn rejects_a_mismatched_type() {
 fn a_float_does_not_satisfy_integer() {
     let schema = object(r#"{"age": "integer"}"#);
     let variables = object(r#"{"age": 5.5}"#);
-    validate_input(&variables, &schema).unwrap_err();
+    let error = validate_input(&variables, &schema).unwrap_err();
+    assert!(error.to_string().contains("got float"));
+}
+
+#[rstest]
+fn an_int_does_not_satisfy_string() {
+    let schema = object(r#"{"age": "string"}"#);
+    let variables = object(r#"{"age": 5}"#);
+    let error = validate_input(&variables, &schema).unwrap_err();
+    assert!(error.to_string().contains("got int"));
 }
 
 #[rstest]
