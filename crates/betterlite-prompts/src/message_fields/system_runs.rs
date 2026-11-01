@@ -5,22 +5,11 @@ use crate::message_content::{Content, ContentPart, Message};
 
 #[must_use]
 pub fn system_messages_first(messages: &[Message]) -> Vec<Message> {
-    let is_instruction =
-        |message: &Message| matches!(message.role.as_str(), "system" | "developer");
-    let mut result = Vec::with_capacity(messages.len());
-    result.extend(
-        messages
-            .iter()
-            .filter(|message| is_instruction(message))
-            .cloned(),
-    );
-    result.extend(
-        messages
-            .iter()
-            .filter(|message| !is_instruction(message))
-            .cloned(),
-    );
-    result
+    let (instructions, rest): (Vec<Message>, Vec<Message>) = messages
+        .iter()
+        .cloned()
+        .partition(|message| matches!(message.role.as_str(), "system" | "developer"));
+    instructions.into_iter().chain(rest).collect()
 }
 
 fn system_content_as_text_parts(content: &Content) -> Vec<ContentPart> {

@@ -20,26 +20,26 @@ pub fn filter_value_from_dict(dictionary: &Object, key: &str, depth: u32) -> Obj
         .collect()
 }
 
+// LiteLLM only recurses into dict items a list carries; other items pass through untouched.
 fn filter_value_at_depth(value: &Json, key: &str, depth: u32) -> Json {
     match value {
         Json::Object(object) => Json::Object(filter_value_from_dict(object, key, depth)),
         Json::List(items) => Json::List(
             items
                 .iter()
-                .map(|item| filter_list_item_at_depth(item, key, depth))
+                .map(|item| match item {
+                    Json::Object(object) => {
+                        Json::Object(filter_value_from_dict(object, key, depth))
+                    }
+                    Json::Null
+                    | Json::Bool(_)
+                    | Json::Number(_)
+                    | Json::Text(_)
+                    | Json::List(_) => item.clone(),
+                })
                 .collect(),
         ),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => value.clone(),
-    }
-}
-
-// LiteLLM only recurses into dict items a list carries; other items pass through untouched.
-fn filter_list_item_at_depth(item: &Json, key: &str, depth: u32) -> Json {
-    match item {
-        Json::Object(object) => Json::Object(filter_value_from_dict(object, key, depth)),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-            item.clone()
-        }
     }
 }
 
