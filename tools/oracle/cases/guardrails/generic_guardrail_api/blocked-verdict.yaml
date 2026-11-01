@@ -5,4 +5,4 @@ call:
     generic_call:
       answer: {status: 200, headers: {}, body: {action: BLOCKED, blocked_reason: "nope"}}
 env: {}
-compare: {ignore: [{pointer: /error/message, why: "betterlite writes its own message"}]}
+compare: {ignore: []}

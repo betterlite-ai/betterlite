@@ -7,4 +7,4 @@ call:
       fail_on_error: true
       answer: {status: 502, headers: {}, body: {}}
 env: {}
-compare: {ignore: [{pointer: /error/message, why: "betterlite writes its own message"}]}
+compare: {ignore: []}

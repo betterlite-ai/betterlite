@@ -7,4 +7,4 @@ call:
       fail_open: false
       fail: timeout
 env: {}
-compare: {ignore: [{pointer: /error/message, why: "betterlite writes its own message"}]}
+compare: {ignore: []}

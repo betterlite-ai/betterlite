@@ -6,4 +6,4 @@ call:
       unreachable_fallback: fail_closed
       fail_on_error: true
 env: {}
-compare: {ignore: [{pointer: /error/message, why: "betterlite writes its own message"}]}
+compare: {ignore: []}
