@@ -26,7 +26,7 @@ fn dec(value: &str) -> Decimal {
     Decimal::from_str_exact(value).expect("test literal parses")
 }
 
-fn usage(credits: Option<i64>, pages: Option<i64>, annotation_pages: Option<i64>) -> OcrUsage {
+fn usage(credits: Option<i64>, pages: Option<i64>, annotation_pages: i64) -> OcrUsage {
     OcrUsage {
         credits: credits.map(Decimal::from),
         pages_processed: pages,
@@ -137,7 +137,7 @@ fn first_ocr_price_layers_numeric_sources_and_skips_strings(
 ) {
     let refs: Vec<Option<&PriceRecord>> = sources.iter().map(Option::as_ref).collect();
     assert_eq!(
-        first_ocr_price(OcrPricingField::OcrCostPerPage, &refs),
+        first_ocr_price(OcrPricingField::OcrCostPerPage, &refs).unwrap(),
         expected
     );
 }
@@ -148,7 +148,7 @@ fn layered_ocr_pricing_resolves_each_field_independently() {
     let catalog_record = record(&[("ocr_cost_per_credit", number(3))]);
     let sources = [Some(&deployment_record), Some(&catalog_record)];
 
-    let pricing = layered_ocr_pricing(&sources);
+    let pricing = layered_ocr_pricing(&sources).unwrap();
 
     assert_eq!(pricing.ocr_cost_per_page, Some(Decimal::ONE));
     assert_eq!(pricing.annotation_cost_per_page, Some(Decimal::from(2_i32)));
@@ -168,7 +168,8 @@ fn first_price_checks_each_key_in_order(
         first_price(
             Some(&source),
             &["ocr_cost_per_page_batches", "ocr_cost_per_page"]
-        ),
+        )
+        .unwrap(),
         expected
     );
 }
@@ -210,52 +211,52 @@ enum Expected {
 
 #[rstest]
 #[case::credit_precedence_wins_even_at_zero_credits(
-    usage(Some(0), Some(100), None),
+    usage(Some(0), Some(100), 0),
     deployment(Some(1), Some(5), None),
     Expected::Cost("0")
 )]
 #[case::credit_precedence_wins_even_at_zero_rate(
-    usage(Some(3), None, None),
+    usage(Some(3), None, 0),
     deployment(None, Some(0), None),
     Expected::Cost("0")
 )]
 #[case::annotation_rate_falls_back_to_page_rate(
-    usage(None, Some(2), Some(3)),
+    usage(None, Some(2), 3),
     deployment(Some(10), None, None),
     Expected::Cost("50")
 )]
 #[case::explicit_annotation_rate_used_when_present(
-    usage(None, Some(2), Some(3)),
+    usage(None, Some(2), 3),
     deployment(Some(10), None, Some(4)),
     Expected::Cost("32")
 )]
 #[case::missing_ordinary_pages_permitted_by_billable_annotation(
-    usage(None, None, Some(5)),
+    usage(None, None, 5),
     deployment(Some(10), None, None),
     Expected::Cost("50")
 )]
 #[case::missing_pages_no_billable_annotation_credit_priced_warns_zero(
-    usage(None, None, None),
+    usage(None, None, 0),
     deployment(Some(10), Some(1), None),
     Expected::Cost("0")
 )]
 #[case::missing_pages_no_billable_annotation_unpriced_warns_zero(
-    usage(None, None, None),
+    usage(None, None, 0),
     deployment(None, None, None),
     Expected::Cost("0")
 )]
 #[case::missing_pages_no_billable_annotation_page_priced_errors(
-    usage(None, None, None),
+    usage(None, None, 0),
     deployment(Some(10), None, None),
     Expected::MissingPages
 )]
 #[case::present_pages_no_rate_no_annotation_warns_zero(
-    usage(None, Some(5), None),
+    usage(None, Some(5), 0),
     deployment(None, None, None),
     Expected::Cost("0")
 )]
 #[case::negative_pages_retain_arithmetic_sign(
-    usage(None, Some(-5), None), deployment(Some(2), None, None), Expected::Cost("-10")
+    usage(None, Some(-5), 0), deployment(Some(2), None, None), Expected::Cost("-10")
 )]
 fn ocr_cost_follows_credit_and_page_precedence(
     #[case] usage: OcrUsage,
@@ -285,7 +286,7 @@ fn partial_override_falls_back_field_by_field_to_effective_prices() {
         ("annotation_cost_per_page", number(7)),
     ])));
     let deployment_override = deployment(Some(100), None, None);
-    let billing = billing(usage(None, Some(2), Some(1)));
+    let billing = billing(usage(None, Some(2), 1));
 
     let cost = ocr_cost("model", None, &billing, Some(&deployment_override), &lookup).unwrap();
 
@@ -296,8 +297,8 @@ fn partial_override_falls_back_field_by_field_to_effective_prices() {
 fn batch_cost_suppresses_lookup_when_zero_counts_need_no_family() {
     let lookup = CountingLookup::new(None);
     let usage = OcrBatchUsage {
-        pages_processed: Some(0),
-        pages_processed_annotation: Some(0),
+        pages_processed: 0,
+        pages_processed_annotation: 0,
     };
 
     let cost = ocr_batch_cost("model", None, &usage, None, &lookup).unwrap();
@@ -310,8 +311,8 @@ fn batch_cost_suppresses_lookup_when_zero_counts_need_no_family() {
 fn batch_cost_retains_sign_and_suppresses_lookup_for_negative_counts() {
     let lookup = CountingLookup::new(None);
     let usage = OcrBatchUsage {
-        pages_processed: Some(-5),
-        pages_processed_annotation: None,
+        pages_processed: -5,
+        pages_processed_annotation: 0,
     };
     let deployment_info = deployment(Some(2), None, None);
 
@@ -326,8 +327,8 @@ fn batch_cost_resolves_page_and_annotation_families_independently() {
     let page_batch_record = record(&[("ocr_cost_per_page_batches", number(10))]);
     let lookup = CountingLookup::new(Some(record(&[("annotation_cost_per_page", number(4))])));
     let usage = OcrBatchUsage {
-        pages_processed: Some(2),
-        pages_processed_annotation: Some(3),
+        pages_processed: 2,
+        pages_processed_annotation: 3,
     };
 
     let cost = ocr_batch_cost("model", None, &usage, Some(&page_batch_record), &lookup).unwrap();
@@ -341,8 +342,8 @@ fn batch_cost_prefers_deployment_synchronous_rate_over_public_batch_rate() {
     let deployment_sync_record = record(&[("ocr_cost_per_page", number(5))]);
     let lookup = CountingLookup::new(Some(record(&[("ocr_cost_per_page_batches", number(99))])));
     let usage = OcrBatchUsage {
-        pages_processed: Some(2),
-        pages_processed_annotation: None,
+        pages_processed: 2,
+        pages_processed_annotation: 0,
     };
 
     let cost = ocr_batch_cost(
@@ -363,8 +364,8 @@ fn batch_cost_still_fetches_public_annotation_price_when_deployment_only_prices_
     let deployment_page_record = record(&[("ocr_cost_per_page", number(5))]);
     let lookup = CountingLookup::new(Some(record(&[])));
     let usage = OcrBatchUsage {
-        pages_processed: Some(0),
-        pages_processed_annotation: Some(3),
+        pages_processed: 0,
+        pages_processed_annotation: 3,
     };
 
     let cost = ocr_batch_cost(
@@ -385,8 +386,8 @@ fn batch_cost_still_fetches_public_annotation_price_when_deployment_only_prices_
 fn batch_cost_bills_only_the_families_that_remain_priced_after_a_failed_lookup() {
     let lookup = CountingLookup::new(None);
     let usage = OcrBatchUsage {
-        pages_processed: Some(2),
-        pages_processed_annotation: None,
+        pages_processed: 2,
+        pages_processed_annotation: 0,
     };
 
     let cost = ocr_batch_cost("model", None, &usage, None, &lookup).unwrap();
@@ -402,7 +403,7 @@ fn ocr_cost_rejects_an_unrepresentable_product_instead_of_rounding_through_a_flo
         serde_json::from_str("79228162514264337593543950335").expect("Decimal::MAX parses"),
     );
     let deployment_override = record(&[("ocr_cost_per_page", max_rate)]);
-    let billing = billing(usage(None, Some(2), None));
+    let billing = billing(usage(None, Some(2), 0));
 
     let result = ocr_cost(
         "model",
@@ -413,4 +414,22 @@ fn ocr_cost_rejects_an_unrepresentable_product_instead_of_rounding_through_a_flo
     );
 
     assert!(matches!(result, Err(OcrCostError::Overflow)));
+}
+
+// docs/deviations/B1678.yaml: a price Decimal cannot hold exactly is a typed failure, not a skip to the next source.
+#[test]
+fn first_ocr_price_errors_on_an_unrepresentable_number_instead_of_falling_through() {
+    let unrepresentable = Scalar::Number(
+        serde_json::from_str("0.1234567890123456789012345678901").expect("JSON number parses"),
+    );
+    let bad_source = record(&[("ocr_cost_per_page", unrepresentable)]);
+    let good_source = record(&[("ocr_cost_per_page", number(5))]);
+    let sources = [Some(&bad_source), Some(&good_source)];
+
+    let result = first_ocr_price(OcrPricingField::OcrCostPerPage, &sources);
+
+    assert!(matches!(
+        result,
+        Err(OcrCostError::UnrepresentablePrice { .. })
+    ));
 }
