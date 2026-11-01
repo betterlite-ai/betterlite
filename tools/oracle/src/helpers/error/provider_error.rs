@@ -9,7 +9,7 @@ use crate::helpers::{Helper, HelperError, HelperResult};
 #[derive(Debug, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Input {
-    Raw(RawException),
+    Raw(Box<RawException>),
     Mapped(ErrorClass),
 }
 
@@ -30,7 +30,7 @@ impl Helper for Op {
             })
         })?;
         let dispatch_input = match input {
-            Input::Raw(raw) => DispatchInput::Raw(Box::new(raw.clone())),
+            Input::Raw(raw) => DispatchInput::Raw(raw.clone()),
             Input::Mapped(class) => DispatchInput::Mapped(class.clone()),
         };
         let class = dispatch(&dispatch_input, &redactor);
