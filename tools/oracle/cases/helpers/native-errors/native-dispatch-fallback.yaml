@@ -1,0 +1,10 @@
+kind: helper
+name: native-errors-native-dispatch-fallback
+call:
+  native_error:
+    kind: raw
+    model: some-model
+    custom_llm_provider: huggingface
+    error_str: "an unrelated huggingface message"
+env: {}
+compare: {ignore: []}

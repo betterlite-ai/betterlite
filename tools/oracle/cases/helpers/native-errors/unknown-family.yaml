@@ -1,0 +1,10 @@
+kind: helper
+name: native-errors-unknown-family
+call:
+  native_error:
+    kind: raw
+    model: some-model
+    custom_llm_provider: some-unknown-provider
+    error_str: "an unrecognized provider error"
+env: {}
+compare: {ignore: []}
