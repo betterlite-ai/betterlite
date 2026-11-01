@@ -543,7 +543,7 @@ async fn slow_server(path: &'static str, delay: Duration) -> (String, JoinSet<io
         path,
         post(move || async move {
             sleep(delay).await;
-            (StatusCode::OK, r#"{"assessments":[]}"#)
+            (StatusCode::OK, rejecting_response_body("blocked by policy"))
         }),
     );
     let mut server = JoinSet::new();
