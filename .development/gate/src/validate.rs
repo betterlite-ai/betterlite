@@ -7,7 +7,7 @@ mod rules;
 mod task;
 mod tests;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use serde::de::DeserializeOwned;
@@ -126,9 +126,4 @@ pub(crate) fn validate(root: &Path) -> Result<Vec<String>, GateError> {
     problems.extend(deviations::log_problems(root, &backlog)?);
     problems.extend(schema::stale(root)?);
     Ok(problems)
-}
-
-pub(crate) fn duplicates<'ids>(ids: &[&'ids str]) -> BTreeSet<&'ids str> {
-    let mut seen = BTreeSet::new();
-    ids.iter().copied().filter(|id| !seen.insert(*id)).collect()
 }

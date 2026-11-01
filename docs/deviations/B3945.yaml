@@ -1,0 +1,5 @@
+task: B3945
+deviations:
+  - what: Cache removal effects are injected through a closure (RemovalEffect<V>) rather than calling logger constructors or importing logger crates, preventing circular dependencies with B3944 and B113.
+    why: Exporters register themselves into the cache; the cache must not depend on exporter code.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/specialty_caches/dynamic_logging_cache.py#L30-L50

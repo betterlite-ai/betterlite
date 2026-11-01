@@ -1,0 +1,11 @@
+kind: helper
+name: openai-errors-content-policy
+call:
+  provider_error:
+    kind: raw
+    model: gpt-4
+    custom_llm_provider: openai
+    error_str: "invalid_request_error raised: content_policy_violation detected"
+    status_code: 400
+env: {}
+compare: {ignore: []}

@@ -1,7 +1,8 @@
+use itertools::Itertools as _;
+
 use crate::builtins::globs::glob_set;
 use crate::ids::check_id_problem;
 use crate::spec::catalog::Catalog;
-use crate::validate::duplicates;
 
 pub(crate) fn ids(catalog: &Catalog) -> Vec<&str> {
     let builtin = catalog
@@ -19,8 +20,9 @@ pub(crate) fn ids(catalog: &Catalog) -> Vec<&str> {
 }
 
 pub(crate) fn problems(catalog: &Catalog) -> Vec<String> {
-    let mut problems: Vec<String> = duplicates(&ids(catalog))
+    let mut problems: Vec<String> = ids(catalog)
         .into_iter()
+        .duplicates()
         .map(|id| format!("checks.yaml defines {id} twice"))
         .collect();
     problems.extend(
