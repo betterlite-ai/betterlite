@@ -26,10 +26,18 @@ impl Helper for Op {
                 domains,
             } => Ok(run_scrypt(master_key, domains)?),
             Input::BearerPrefixStrip { checks } => Ok(run_prefix_strip(checks)),
-            Input::BridgeEnvelope(fields) => bridge::run_bridge_envelope(fields),
-            Input::BridgeRefresh(fields) => bridge::run_bridge_refresh(fields),
-            Input::SessionBearer(fields) => session::run_session_bearer(fields),
-            Input::SessionRefresh(fields) => session::run_session_refresh(fields),
+            Input::BridgeEnvelope(fields) => {
+                bridge::run_bridge(fields, bridge::BridgeOperation::Envelope)
+            }
+            Input::BridgeRefresh(fields) => {
+                bridge::run_bridge(fields, bridge::BridgeOperation::Refresh)
+            }
+            Input::SessionBearer(fields) => {
+                session::run_session(fields, session::SessionOperation::Bearer)
+            }
+            Input::SessionRefresh(fields) => {
+                session::run_session(fields, session::SessionOperation::Refresh)
+            }
             Input::SigningConfig(fields) => Ok(signing_config::run_signing_config(fields)),
         }
     }

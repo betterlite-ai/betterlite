@@ -46,7 +46,9 @@ fn mint_session_candidate(
     Ok(minted.token.expose_secret().to_owned())
 }
 
-pub(crate) fn run_session_bearer(fields: &SessionFields) -> HelperResult {
+fn candidate_and_open_keys(
+    fields: &SessionFields,
+) -> Result<(String, SessionSigningKeys), Box<HelperError>> {
     let mint_keys = session_keys(&fields.signing_key)?;
     let candidate = match (&fields.mint, &fields.candidate) {
         (Some(mint), _) => mint_session_candidate(mint, &mint_keys)?,
@@ -62,54 +64,52 @@ pub(crate) fn run_session_bearer(fields: &SessionFields) -> HelperResult {
         Some(signing) => session_keys(signing)?,
         None => mint_keys,
     };
-    let now = at(fields.open_now)?;
-    let result = session_credentials::resolve_session_bearer(&candidate, &open_keys, now);
-    Ok(match result {
-        SessionBearerResult::NotSessionBearer => json!({ "tag": "not_session_bearer" }),
-        SessionBearerResult::SessionBearerAdmitted { principal, .. } => json!({
-            "tag": "admitted",
-            "principal": principal,
-        }),
-        SessionBearerResult::SessionBearerInvalid { expired } => json!({
-            "tag": "invalid",
-            "expired": expired,
-        }),
-    })
+    Ok((candidate, open_keys))
 }
 
-pub(crate) fn run_session_refresh(fields: &SessionFields) -> HelperResult {
-    let mint_keys = session_keys(&fields.signing_key)?;
-    let candidate = match (&fields.mint, &fields.candidate) {
-        (Some(mint), _) => mint_session_candidate(mint, &mint_keys)?,
-        (None, Some(literal)) => literal.clone(),
-        (None, None) => {
-            return Err(helper_error(
-                "ValueError",
-                &"either mint or candidate is required",
-            ));
-        }
-    };
-    let open_keys = match &fields.open_signing_key {
-        Some(signing) => session_keys(signing)?,
-        None => mint_keys,
-    };
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum SessionOperation {
+    Bearer,
+    Refresh,
+}
+
+pub(crate) fn run_session(fields: &SessionFields, operation: SessionOperation) -> HelperResult {
+    let (candidate, open_keys) = candidate_and_open_keys(fields)?;
     let now = at(fields.open_now)?;
-    let expected_client_id = fields
-        .expected_client_id
-        .clone()
-        .ok_or_else(|| helper_error("ValueError", &"expected_client_id is required"))?;
-    let result = session_credentials::open_session_refresh_bearer(
-        &candidate,
-        &open_keys,
-        now,
-        &expected_client_id,
-    );
-    Ok(match result {
-        SessionRefreshResult::SessionRefreshOpened { principal, jti } => json!({
-            "tag": "opened",
-            "principal": principal,
-            "jti": jti,
-        }),
-        SessionRefreshResult::SessionRefreshInvalid => json!({ "tag": "invalid" }),
-    })
+    match operation {
+        SessionOperation::Bearer => {
+            let result = session_credentials::resolve_session_bearer(&candidate, &open_keys, now);
+            Ok(match result {
+                SessionBearerResult::NotSessionBearer => json!({ "tag": "not_session_bearer" }),
+                SessionBearerResult::SessionBearerAdmitted { principal, .. } => json!({
+                    "tag": "admitted",
+                    "principal": principal,
+                }),
+                SessionBearerResult::SessionBearerInvalid { expired } => json!({
+                    "tag": "invalid",
+                    "expired": expired,
+                }),
+            })
+        }
+        SessionOperation::Refresh => {
+            let expected_client_id = fields
+                .expected_client_id
+                .clone()
+                .ok_or_else(|| helper_error("ValueError", &"expected_client_id is required"))?;
+            let result = session_credentials::open_session_refresh_bearer(
+                &candidate,
+                &open_keys,
+                now,
+                &expected_client_id,
+            );
+            Ok(match result {
+                SessionRefreshResult::SessionRefreshOpened { principal, jti } => json!({
+                    "tag": "opened",
+                    "principal": principal,
+                    "jti": jti,
+                }),
+                SessionRefreshResult::SessionRefreshInvalid => json!({ "tag": "invalid" }),
+            })
+        }
+    }
 }

@@ -1,10 +1,11 @@
+use chrono::{DateTime, Utc};
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
 
 use betterlite_mcp::bridge_credentials::{self, BridgeEnvelopeResult, BridgeRefreshResult};
 use betterlite_mcp::envelope::{
-    EnvelopeIdentity, EnvelopeKeys, RefreshCredential, UpstreamTokenGrant, mint_envelope,
-    mint_refresh_envelope,
+    EnvelopeIdentity, EnvelopeKeys, EnvelopeMintError, RefreshCredential, SealedEnvelope,
+    UpstreamTokenGrant, mint_envelope, mint_refresh_envelope,
 };
 use betterlite_secrets::secret_codec::OsNonces;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -64,42 +65,64 @@ fn identity(mint: &EnvelopeMint) -> EnvelopeIdentity {
     }
 }
 
-fn mint_access_candidate(
+fn seal_candidate<P>(
     mint: &EnvelopeMint,
     keys: &EnvelopeKeys,
+    payload: P,
+    seal: impl FnOnce(
+        EnvelopeIdentity,
+        P,
+        &EnvelopeKeys,
+        DateTime<Utc>,
+        &OsNonces,
+    ) -> Result<SealedEnvelope, EnvelopeMintError>,
 ) -> Result<String, Box<HelperError>> {
-    let grant = UpstreamTokenGrant {
-        access_token: SecretString::from(mint.access_token.clone().unwrap_or_default()),
-        token_type: mint.token_type.clone().unwrap_or_default(),
-        refresh_token: mint.refresh_token.clone().map(SecretString::from),
-        scope: mint.scope.clone(),
-        expires_in: mint.expires_in,
-    };
     let now = at(mint.mint_now)?;
-    let sealed = mint_envelope(identity(mint), grant, keys, now, &OsNonces)
+    let sealed = seal(identity(mint), payload, keys, now, &OsNonces)
         .map_err(|error| helper_error("EnvelopeMintError", &error))?;
     Ok(sealed.token.expose_secret().to_owned())
 }
 
-fn mint_refresh_candidate(
-    mint: &EnvelopeMint,
-    keys: &EnvelopeKeys,
-) -> Result<String, Box<HelperError>> {
-    let refresh = RefreshCredential {
-        refresh_token: SecretString::from(mint.refresh_token.clone().unwrap_or_default()),
-        scope: mint.scope.clone(),
-        expires_in: mint.expires_in,
-    };
-    let now = at(mint.mint_now)?;
-    let sealed = mint_refresh_envelope(identity(mint), refresh, keys, now, &OsNonces)
-        .map_err(|error| helper_error("EnvelopeMintError", &error))?;
-    Ok(sealed.token.expose_secret().to_owned())
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum BridgeOperation {
+    Envelope,
+    Refresh,
 }
 
-pub(crate) fn run_bridge_envelope(fields: &EnvelopeFields) -> HelperResult {
+fn mint_candidate(
+    mint: &EnvelopeMint,
+    keys: &EnvelopeKeys,
+    operation: BridgeOperation,
+) -> Result<String, Box<HelperError>> {
+    match operation {
+        BridgeOperation::Envelope => {
+            let grant = UpstreamTokenGrant {
+                access_token: SecretString::from(mint.access_token.clone().unwrap_or_default()),
+                token_type: mint.token_type.clone().unwrap_or_default(),
+                refresh_token: mint.refresh_token.clone().map(SecretString::from),
+                scope: mint.scope.clone(),
+                expires_in: mint.expires_in,
+            };
+            seal_candidate(mint, keys, grant, mint_envelope)
+        }
+        BridgeOperation::Refresh => {
+            let refresh = RefreshCredential {
+                refresh_token: SecretString::from(mint.refresh_token.clone().unwrap_or_default()),
+                scope: mint.scope.clone(),
+                expires_in: mint.expires_in,
+            };
+            seal_candidate(mint, keys, refresh, mint_refresh_envelope)
+        }
+    }
+}
+
+fn candidate_and_open_keys(
+    fields: &EnvelopeFields,
+    operation: BridgeOperation,
+) -> Result<(String, EnvelopeKeys), Box<HelperError>> {
     let mint_keys = envelope_keys(&fields.signing_key, &fields.encryption_key)?;
     let candidate = match (&fields.mint, &fields.candidate) {
-        (Some(mint), _) => mint_access_candidate(mint, &mint_keys)?,
+        (Some(mint), _) => mint_candidate(mint, &mint_keys, operation)?,
         (None, Some(literal)) => literal.clone(),
         (None, None) => {
             return Err(helper_error(
@@ -112,60 +135,64 @@ pub(crate) fn run_bridge_envelope(fields: &EnvelopeFields) -> HelperResult {
         (Some(signing), Some(encryption)) => envelope_keys(signing, encryption)?,
         _ => mint_keys,
     };
-    let now = at(fields.open_now)?;
-    let result = bridge_credentials::resolve_bridge_envelope(
-        &candidate,
-        &open_keys,
-        now,
-        &fields.expected_server_id,
-    );
-    Ok(match result {
-        BridgeEnvelopeResult::NotBridgeEnvelope => json!({ "tag": "not_bridge_envelope" }),
-        BridgeEnvelopeResult::BridgeEnvelopeAdmitted {
-            identity,
-            upstream_authorization,
-        } => json!({
-            "tag": "admitted",
-            "identity": identity,
-            "upstream_authorization": upstream_authorization.expose_secret(),
-        }),
-        BridgeEnvelopeResult::BridgeEnvelopeInvalid => json!({ "tag": "invalid" }),
-    })
+    Ok((candidate, open_keys))
 }
 
-pub(crate) fn run_bridge_refresh(fields: &EnvelopeFields) -> HelperResult {
-    let mint_keys = envelope_keys(&fields.signing_key, &fields.encryption_key)?;
-    let candidate = match (&fields.mint, &fields.candidate) {
-        (Some(mint), _) => mint_refresh_candidate(mint, &mint_keys)?,
-        (None, Some(literal)) => literal.clone(),
-        (None, None) => {
-            return Err(helper_error(
-                "ValueError",
-                &"either mint or candidate is required",
-            ));
-        }
-    };
-    let open_keys = match (&fields.open_signing_key, &fields.open_encryption_key) {
-        (Some(signing), Some(encryption)) => envelope_keys(signing, encryption)?,
-        _ => mint_keys,
-    };
+enum BridgeOutcome {
+    Envelope(BridgeEnvelopeResult),
+    Refresh(BridgeRefreshResult),
+}
+
+fn bridge_response(outcome: BridgeOutcome) -> Value {
+    match outcome {
+        BridgeOutcome::Envelope(result) => match result {
+            BridgeEnvelopeResult::NotBridgeEnvelope => json!({ "tag": "not_bridge_envelope" }),
+            BridgeEnvelopeResult::BridgeEnvelopeAdmitted {
+                identity,
+                upstream_authorization,
+            } => json!({
+                "tag": "admitted",
+                "identity": identity,
+                "upstream_authorization": upstream_authorization.expose_secret(),
+            }),
+            BridgeEnvelopeResult::BridgeEnvelopeInvalid => json!({ "tag": "invalid" }),
+        },
+        BridgeOutcome::Refresh(result) => match result {
+            BridgeRefreshResult::BridgeRefreshOpened { identity, refresh } => json!({
+                "tag": "opened",
+                "identity": identity,
+                "refresh": {
+                    "refresh_token": refresh.refresh_token.expose_secret(),
+                    "scope": refresh.scope,
+                    "expires_in": refresh.expires_in,
+                },
+            }),
+            BridgeRefreshResult::BridgeRefreshInvalid => json!({ "tag": "invalid" }),
+        },
+    }
+}
+
+pub(crate) fn run_bridge(fields: &EnvelopeFields, operation: BridgeOperation) -> HelperResult {
+    let (candidate, open_keys) = candidate_and_open_keys(fields, operation)?;
     let now = at(fields.open_now)?;
-    let result = bridge_credentials::open_bridge_refresh_envelope(
-        &candidate,
-        &open_keys,
-        now,
-        &fields.expected_server_id,
-    );
-    Ok(match result {
-        BridgeRefreshResult::BridgeRefreshOpened { identity, refresh } => json!({
-            "tag": "opened",
-            "identity": identity,
-            "refresh": {
-                "refresh_token": refresh.refresh_token.expose_secret(),
-                "scope": refresh.scope,
-                "expires_in": refresh.expires_in,
-            },
-        }),
-        BridgeRefreshResult::BridgeRefreshInvalid => json!({ "tag": "invalid" }),
-    })
+    match operation {
+        BridgeOperation::Envelope => {
+            let result = bridge_credentials::resolve_bridge_envelope(
+                &candidate,
+                &open_keys,
+                now,
+                &fields.expected_server_id,
+            );
+            Ok(bridge_response(BridgeOutcome::Envelope(result)))
+        }
+        BridgeOperation::Refresh => {
+            let result = bridge_credentials::open_bridge_refresh_envelope(
+                &candidate,
+                &open_keys,
+                now,
+                &fields.expected_server_id,
+            );
+            Ok(bridge_response(BridgeOutcome::Refresh(result)))
+        }
+    }
 }

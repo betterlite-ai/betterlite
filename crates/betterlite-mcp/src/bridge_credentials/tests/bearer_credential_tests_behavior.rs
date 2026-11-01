@@ -99,44 +99,53 @@ fn envelope_keys() -> EnvelopeKeys {
     .expect("valid keys")
 }
 
-fn minted_access(keys: &EnvelopeKeys, server_id: &str, expires_in: i64) -> SecretString {
-    mint_envelope(
-        identity(server_id),
-        UpstreamTokenGrant {
-            access_token: SecretString::from("upstream-access-token"),
-            token_type: String::from("bearer"),
-            refresh_token: None,
-            scope: None,
-            expires_in: Some(expires_in),
-        },
-        keys,
-        now(),
-        &OsNonces,
-    )
-    .expect("mint")
-    .token
+#[derive(Clone, Copy)]
+enum MintedKind {
+    Access,
+    Refresh,
 }
 
-fn minted_refresh(keys: &EnvelopeKeys, server_id: &str, expires_in: i64) -> SecretString {
-    mint_refresh_envelope(
-        identity(server_id),
-        RefreshCredential {
-            refresh_token: SecretString::from("upstream-refresh-token"),
-            scope: None,
-            expires_in: Some(expires_in),
-        },
-        keys,
-        now(),
-        &OsNonces,
-    )
-    .expect("mint")
-    .token
+fn minted(keys: &EnvelopeKeys, server_id: &str, expires_in: i64, kind: MintedKind) -> SecretString {
+    match kind {
+        MintedKind::Access => {
+            mint_envelope(
+                identity(server_id),
+                UpstreamTokenGrant {
+                    access_token: SecretString::from("upstream-access-token"),
+                    token_type: String::from("bearer"),
+                    refresh_token: None,
+                    scope: None,
+                    expires_in: Some(expires_in),
+                },
+                keys,
+                now(),
+                &OsNonces,
+            )
+            .expect("mint")
+            .token
+        }
+        MintedKind::Refresh => {
+            mint_refresh_envelope(
+                identity(server_id),
+                RefreshCredential {
+                    refresh_token: SecretString::from("upstream-refresh-token"),
+                    scope: None,
+                    expires_in: Some(expires_in),
+                },
+                keys,
+                now(),
+                &OsNonces,
+            )
+            .expect("mint")
+            .token
+        }
+    }
 }
 
 #[test]
 fn resolve_bridge_envelope_admits_a_valid_envelope_and_normalizes_the_scheme() {
     let keys = envelope_keys();
-    let token = minted_access(&keys, "server-a", 60);
+    let token = minted(&keys, "server-a", 60, MintedKind::Access);
     let authorization = format!("Bearer {}", token.expose_secret());
     match resolve_bridge_envelope(&authorization, &keys, now(), "server-a") {
         BridgeEnvelopeResult::BridgeEnvelopeAdmitted {
@@ -171,7 +180,7 @@ fn resolve_bridge_envelope_is_not_bridge_envelope_for_a_plain_bearer() {
 #[test]
 fn resolve_bridge_envelope_is_invalid_once_expired() {
     let keys = envelope_keys();
-    let token = minted_access(&keys, "server-a", 60);
+    let token = minted(&keys, "server-a", 60, MintedKind::Access);
     let far_future = now() + chrono::Duration::seconds(3_600);
     match resolve_bridge_envelope(token.expose_secret(), &keys, far_future, "server-a") {
         BridgeEnvelopeResult::BridgeEnvelopeInvalid => {}
@@ -190,7 +199,7 @@ fn resolve_bridge_envelope_is_invalid_for_a_bad_signature() {
         SecretString::from("a-different-encryption-key"),
     )
     .expect("valid keys");
-    let token = minted_access(&other_keys, "server-a", 60);
+    let token = minted(&other_keys, "server-a", 60, MintedKind::Access);
     match resolve_bridge_envelope(token.expose_secret(), &keys, now(), "server-a") {
         BridgeEnvelopeResult::BridgeEnvelopeInvalid => {}
         other @ (BridgeEnvelopeResult::NotBridgeEnvelope
@@ -203,7 +212,7 @@ fn resolve_bridge_envelope_is_invalid_for_a_bad_signature() {
 #[test]
 fn resolve_bridge_envelope_rejects_a_mismatched_server_id() {
     let keys = envelope_keys();
-    let token = minted_access(&keys, "server-a", 60);
+    let token = minted(&keys, "server-a", 60, MintedKind::Access);
     match resolve_bridge_envelope(token.expose_secret(), &keys, now(), "server-b") {
         BridgeEnvelopeResult::BridgeEnvelopeInvalid => {}
         other @ (BridgeEnvelopeResult::NotBridgeEnvelope
@@ -216,7 +225,7 @@ fn resolve_bridge_envelope_rejects_a_mismatched_server_id() {
 #[test]
 fn resolve_bridge_envelope_rejects_a_refresh_envelope_presented_as_access() {
     let keys = envelope_keys();
-    let token = minted_refresh(&keys, "server-a", 60);
+    let token = minted(&keys, "server-a", 60, MintedKind::Refresh);
     match resolve_bridge_envelope(token.expose_secret(), &keys, now(), "server-a") {
         BridgeEnvelopeResult::BridgeEnvelopeInvalid => {}
         other @ (BridgeEnvelopeResult::NotBridgeEnvelope
@@ -229,7 +238,7 @@ fn resolve_bridge_envelope_rejects_a_refresh_envelope_presented_as_access() {
 #[test]
 fn open_bridge_refresh_envelope_opens_a_valid_refresh_envelope() {
     let keys = envelope_keys();
-    let token = minted_refresh(&keys, "server-a", 1_000);
+    let token = minted(&keys, "server-a", 1_000, MintedKind::Refresh);
     match open_bridge_refresh_envelope(token.expose_secret(), &keys, now(), "server-a") {
         BridgeRefreshResult::BridgeRefreshOpened { identity, refresh } => {
             assert_eq!(identity.server_id, "server-a");
@@ -247,7 +256,7 @@ fn open_bridge_refresh_envelope_opens_a_valid_refresh_envelope() {
 #[test]
 fn open_bridge_refresh_envelope_rejects_a_non_refresh_shaped_value() {
     let keys = envelope_keys();
-    let token = minted_access(&keys, "server-a", 60);
+    let token = minted(&keys, "server-a", 60, MintedKind::Access);
     match open_bridge_refresh_envelope(token.expose_secret(), &keys, now(), "server-a") {
         BridgeRefreshResult::BridgeRefreshInvalid => {}
         other @ BridgeRefreshResult::BridgeRefreshOpened { .. } => {
@@ -259,7 +268,7 @@ fn open_bridge_refresh_envelope_rejects_a_non_refresh_shaped_value() {
 #[test]
 fn open_bridge_refresh_envelope_rejects_a_mismatched_server_id() {
     let keys = envelope_keys();
-    let token = minted_refresh(&keys, "server-a", 1_000);
+    let token = minted(&keys, "server-a", 1_000, MintedKind::Refresh);
     match open_bridge_refresh_envelope(token.expose_secret(), &keys, now(), "server-b") {
         BridgeRefreshResult::BridgeRefreshInvalid => {}
         other @ BridgeRefreshResult::BridgeRefreshOpened { .. } => {
