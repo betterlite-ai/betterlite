@@ -63,8 +63,8 @@ fn constructor_resolves_env_defaults_and_overrides(
 fn constructor_keeps_configured_category_thresholds() {
     let params = LegacyLakeraModerationParams {
         category_thresholds: Some(LakeraCategoryThresholds {
-            prompt_injection: Some(0.5),
-            jailbreak: Some(0.9),
+            prompt_injection: Some(0.5_f64),
+            jailbreak: Some(0.9_f64),
         }),
         moderation_check: None,
         api_base: None,
@@ -74,8 +74,8 @@ fn constructor_keeps_configured_category_thresholds() {
     assert_eq!(
         lakera.category_thresholds,
         Some(LakeraCategoryThresholds {
-            prompt_injection: Some(0.5),
-            jailbreak: Some(0.9),
+            prompt_injection: Some(0.5_f64),
+            jailbreak: Some(0.9_f64),
         })
     );
 }

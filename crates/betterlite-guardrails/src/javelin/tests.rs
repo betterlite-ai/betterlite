@@ -188,7 +188,7 @@ async fn hook_extraction_returns_early_without_messages_or_text(
     let result = guardrail
         .async_pre_call_hook(messages.as_deref(), &mut applied)
         .await;
-    assert!(result.is_ok());
+    result.unwrap();
     assert!(applied.recorded.is_empty());
 }
 
@@ -212,15 +212,16 @@ async fn capturing_server(
     let router = Router::new().route(
         path,
         post(move |headers: HeaderMap, request_body: String| {
-            let tx = tx.clone();
+            let request_tx = tx.clone();
             let reply = body.clone();
             async move {
                 drop(
-                    tx.send(CapturedRequest {
-                        headers,
-                        body: request_body,
-                    })
-                    .await,
+                    request_tx
+                        .send(CapturedRequest {
+                            headers,
+                            body: request_body,
+                        })
+                        .await,
                 );
                 (status, reply)
             }
@@ -263,7 +264,7 @@ async fn api_call_sends_headers_to_versioned_guardrail_path(
     let result = guardrail
         .async_pre_call_hook(Some(&[user_message("hello")]), &mut applied)
         .await;
-    assert!(result.is_ok());
+    result.unwrap();
     let captured = rx.recv().await.expect("the guard API was called");
     assert_eq!(
         captured.headers.get("x-javelin-apikey").unwrap(),
@@ -323,7 +324,13 @@ async fn rejection_stops_at_first_request_reject_assessment(
         JavelinError::Rejected { reject_prompt, .. } => {
             assert_eq!(reject_prompt, expected_prompt);
         }
-        other => panic!("unexpected error: {other}"),
+        other @ (JavelinError::InvalidApiKeyHeader { .. }
+        | JavelinError::InvalidApplicationHeader { .. }
+        | JavelinError::Timeout { .. }
+        | JavelinError::Request { .. }
+        | JavelinError::HttpStatus { .. }
+        | JavelinError::ResponseTooLarge { .. }
+        | JavelinError::ResponseJson { .. }) => panic!("unexpected error: {other}"),
     }
     assert!(applied.recorded.is_empty());
     server.shutdown().await;
@@ -347,7 +354,13 @@ fn rejection_status_500_detail_includes_reject_prompt_and_response() {
             assert_eq!(reject_prompt, "blocked");
             assert!(javelin_guardrail_response.assessments.is_empty());
         }
-        other => panic!("unexpected error: {other}"),
+        other @ (JavelinError::InvalidApiKeyHeader { .. }
+        | JavelinError::InvalidApplicationHeader { .. }
+        | JavelinError::Timeout { .. }
+        | JavelinError::Request { .. }
+        | JavelinError::HttpStatus { .. }
+        | JavelinError::ResponseTooLarge { .. }
+        | JavelinError::ResponseJson { .. }) => panic!("unexpected error: {other}"),
     }
     assert!(error.to_string().contains("blocked"));
 }
@@ -406,7 +419,7 @@ async fn fail_open_returns_empty_assessments_on_connection_error() {
     let result = guardrail
         .async_pre_call_hook(Some(&[user_message("hello")]), &mut applied)
         .await;
-    assert!(result.is_ok());
+    result.unwrap();
     assert_eq!(applied.recorded, vec!["trustsafety".to_owned()]);
 }
 
