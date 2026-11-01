@@ -64,24 +64,20 @@ pub(crate) fn resolve_body(
     step: &Step,
     captures: &BTreeMap<String, CapturedValue>,
 ) -> Result<RequestBody, BrowserFlowError> {
-    match step.request.body_kind {
-        BodyKind::Json => {
-            let value = resolve_value(index, &step.request.body, captures)?;
-            request_body(&value, BodyKind::Json).map_err(|source| BrowserFlowError::Interpolate {
-                index,
-                reason: source.to_string(),
-            })
-        }
-        BodyKind::Multipart => {
-            request_body(&step.request.body, BodyKind::Multipart).map_err(|source| {
-                BrowserFlowError::Interpolate {
-                    index,
-                    reason: source.to_string(),
-                }
-            })
-        }
-        BodyKind::Bytes => resolve_bytes_body(index, step, captures),
+    if step.request.body_kind == BodyKind::Bytes {
+        return resolve_bytes_body(index, step, captures);
     }
+    let resolved = if step.request.body_kind == BodyKind::Json {
+        resolve_value(index, &step.request.body, captures)?
+    } else {
+        step.request.body.clone()
+    };
+    request_body(&resolved, step.request.body_kind).map_err(|source| {
+        BrowserFlowError::Interpolate {
+            index,
+            reason: source.to_string(),
+        }
+    })
 }
 
 fn resolve_bytes_body(

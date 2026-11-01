@@ -106,23 +106,22 @@ impl StubServer {
         self.state.received.lock().expect("stub state lock").len()
     }
 
-    fn received_path(&self, index: usize) -> Option<String> {
+    fn received(&self, index: usize) -> Option<(String, BTreeMap<String, String>)> {
         self.state
             .received
             .lock()
             .expect("stub state lock")
             .get(index)
-            .map(|(path, _headers)| path.clone())
+            .cloned()
+    }
+
+    fn received_path(&self, index: usize) -> Option<String> {
+        self.received(index).map(|(path, _headers)| path)
     }
 
     fn received_header(&self, index: usize, name: &str) -> Option<String> {
-        self.state
-            .received
-            .lock()
-            .expect("stub state lock")
-            .get(index)
-            .and_then(|(_path, headers)| headers.get(name))
-            .cloned()
+        let (_path, headers) = self.received(index)?;
+        headers.get(name).cloned()
     }
 }
 
@@ -216,54 +215,53 @@ fn case_invalid_message(error: &OracleError) -> &str {
     message
 }
 
-fn interpolation_start_step() -> Step {
-    step(
-        "/start",
-        BTreeMap::new(),
-        vec![
-            capture(
-                "cookie_value",
-                CaptureSource::Cookie {
-                    name: "session".to_owned(),
-                },
-            ),
-            capture(
-                "header_value",
-                CaptureSource::Header {
-                    name: "x-flow-token".to_owned(),
-                },
-            ),
-            capture(
-                "nonce",
-                CaptureSource::Body {
-                    pointer: "/flow/nonce".to_owned(),
-                },
-            ),
-        ],
-        false,
-    )
-}
-
-fn interpolation_next_step() -> Step {
-    step(
-        "/next?n={{capture:nonce:query}}",
-        BTreeMap::from([
-            (
-                "x-echo".to_owned(),
-                "{{capture:header_value:raw}}".to_owned(),
-            ),
-            (
-                "cookie-check".to_owned(),
-                "{{capture:cookie_value:form}}".to_owned(),
-            ),
-        ]),
-        Vec::new(),
-        false,
-    )
+fn interpolation_start_captures() -> Vec<Capture> {
+    vec![
+        capture(
+            "cookie_value",
+            CaptureSource::Cookie {
+                name: "session".to_owned(),
+            },
+        ),
+        capture(
+            "header_value",
+            CaptureSource::Header {
+                name: "x-flow-token".to_owned(),
+            },
+        ),
+        capture(
+            "nonce",
+            CaptureSource::Body {
+                pointer: "/flow/nonce".to_owned(),
+            },
+        ),
+    ]
 }
 
 fn interpolation_steps() -> Vec<Step> {
-    vec![interpolation_start_step(), interpolation_next_step()]
+    let start = step(
+        "/start",
+        BTreeMap::new(),
+        interpolation_start_captures(),
+        false,
+    );
+    let next_headers = BTreeMap::from([
+        (
+            "x-echo".to_owned(),
+            "{{capture:header_value:raw}}".to_owned(),
+        ),
+        (
+            "cookie-check".to_owned(),
+            "{{capture:cookie_value:form}}".to_owned(),
+        ),
+    ]);
+    let next = step(
+        "/next?n={{capture:nonce:query}}",
+        next_headers,
+        Vec::new(),
+        false,
+    );
+    vec![start, next]
 }
 
 #[test]
