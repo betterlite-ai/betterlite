@@ -54,8 +54,12 @@ pub(super) async fn consolidate(
     previous: Vec<Candidate>,
     model: &ModelCall,
 ) -> Result<Vec<Candidate>, AnalysisError> {
-    let drafted: Vec<Candidate> = batch.iter().map(observation_to_candidate).collect();
-    paginate_merge(previous, drafted, model).await
+    paginate_merge(
+        previous,
+        batch.iter().map(observation_to_candidate).collect(),
+        model,
+    )
+    .await
 }
 
 async fn paginate_merge(

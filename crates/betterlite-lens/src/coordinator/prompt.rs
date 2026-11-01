@@ -47,16 +47,14 @@ fn candidate_list_schema() -> Schema {
         properties: BTreeMap::new(),
         required: Vec::new(),
         additional_properties: None,
-        items: Some(Box::new(candidate_schema())),
+        items: Some(Box::new(object_schema(
+            candidate_properties(),
+            vec!["check_id", "title", "hypothesis", "execution_ids"],
+        ))),
         max_length: None,
         choices: Vec::new(),
     };
     object_schema(BTreeMap::from([("candidates", items)]), Vec::new())
-}
-
-fn candidate_schema() -> Schema {
-    let required = vec!["check_id", "title", "hypothesis", "execution_ids"];
-    object_schema(candidate_properties(), required)
 }
 
 fn object_schema(
