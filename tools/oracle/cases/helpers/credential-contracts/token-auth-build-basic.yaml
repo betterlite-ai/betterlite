@@ -1,0 +1,10 @@
+kind: helper
+name: token-auth-build-basic
+call:
+  b4650:
+    function: token_auth_build
+    auth_method: client_secret_basic
+    client_id: a client/id
+    client_secret: a secret value
+env: {}
+compare: {ignore: []}

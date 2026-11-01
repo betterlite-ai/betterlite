@@ -98,6 +98,10 @@ pub(crate) struct Roles {
     pub(crate) reviewer: Role,
     #[schemars(description = "Reviews tasks whose review_level is security.")]
     pub(crate) security_reviewer: Role,
+    #[schemars(
+        description = "Reads a standard task that cites LiteLLM once the reviewer approves it, for LiteLLM parity, tests that can fail and bounded inputs. Later review rounds of that task stay with it."
+    )]
+    pub(crate) parity_reviewer: Role,
     pub(crate) planner: Role,
 }
 

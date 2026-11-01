@@ -1,8 +1,9 @@
 use std::path::Path;
 
+use itertools::Itertools as _;
+
 use crate::ids::check_id_problem;
 use crate::spec::agents::{Agents, PLACEHOLDERS, Role, Runner, Vendor};
-use crate::validate::duplicates;
 
 fn placeholders<'list>(
     runner: &str,
@@ -135,8 +136,9 @@ fn vendor_list_problems(agents: &Agents) -> Vec<String> {
         .iter()
         .map(|vendor| vendor.id.as_str())
         .collect();
-    let mut problems: Vec<String> = duplicates(&vendor_ids)
-        .into_iter()
+    let mut problems: Vec<String> = vendor_ids
+        .iter()
+        .duplicates()
         .map(|id| format!("agents.yaml defines vendor {id} twice"))
         .collect();
     problems.extend(agents.vendors.iter().flat_map(vendor_entry_problems));
@@ -173,6 +175,7 @@ fn vendor_problems(agents: &Agents) -> Vec<String> {
     let reviewers = [
         ("reviewer", &agents.roles.reviewer),
         ("security reviewer", &agents.roles.security_reviewer),
+        ("parity reviewer", &agents.roles.parity_reviewer),
     ];
     for rung in &agents.roles.worker.ladder {
         let worker_vendor = vendor(&rung.runner);
@@ -198,8 +201,9 @@ pub(crate) fn problems(folder: &Path, agents: &Agents) -> Vec<String> {
         .iter()
         .map(|runner| runner.id.as_str())
         .collect();
-    let mut problems: Vec<String> = duplicates(&runner_ids)
-        .into_iter()
+    let mut problems: Vec<String> = runner_ids
+        .iter()
+        .duplicates()
         .map(|id| format!("agents.yaml defines runner {id} twice"))
         .collect();
     problems.extend(agents.runners.iter().flat_map(runner_problems));
@@ -207,6 +211,7 @@ pub(crate) fn problems(folder: &Path, agents: &Agents) -> Vec<String> {
         ("worker", &agents.roles.worker),
         ("reviewer", &agents.roles.reviewer),
         ("security reviewer", &agents.roles.security_reviewer),
+        ("parity reviewer", &agents.roles.parity_reviewer),
         ("planner", &agents.roles.planner),
     ];
     for (name, role) in roles {

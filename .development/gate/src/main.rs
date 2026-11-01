@@ -168,7 +168,7 @@ fn path_report(development: &Development) -> Result<(Vec<String>, bool), GateErr
 
 fn dispatch_command(command: Command) -> Result<(Vec<String>, bool), GateError> {
     let directory = env::current_dir().map_err(|source| GateError::Read {
-        path: ".".into(),
+        path: PathBuf::from("."),
         source,
     })?;
     if matches!(command, Command::Hook) {
@@ -176,7 +176,7 @@ fn dispatch_command(command: Command) -> Result<(Vec<String>, bool), GateError> 
         io::stdin()
             .read_to_string(&mut input)
             .map_err(|source| GateError::Read {
-                path: "stdin".into(),
+                path: PathBuf::from("stdin"),
                 source,
             })?;
         return Ok((hook::hook(&input)?, true));

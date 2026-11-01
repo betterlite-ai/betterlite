@@ -1,0 +1,14 @@
+kind: helper
+name: recorded-token-cost-excludes-cache-components
+call:
+  savings_evidence:
+    operation: recorded_token_cost
+    cost_breakdown:
+      service_tier: flex
+      data_residency: us
+      input_cost: 0.002
+      output_cost: 0.001
+      cache_read_cost: 0.0005
+      cache_creation_cost: 0.0003
+compare: {ignore: []}
+env: {}

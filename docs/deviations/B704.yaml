@@ -1,0 +1,13 @@
+task: B704
+deviations:
+  - what: 20250918083359_drop_spec_version_column_from_mcp_table/migration.sql moves the
+      `-- AlterTable` / `ALTER TABLE ... DROP COLUMN` statement before the `/* Warnings */`
+      block comment; LiteLLM's original file opens with the comment block and places the
+      statement after it. Postgres ignores comments either way, so the migration drops the
+      same column in the same order and spec_version_drop_loses_only_that_column passes
+      unchanged.
+    why: The repo's no-file-start-comments pre-commit hook rejects any tracked file whose
+      first non-blank line opens a comment. Reordering the two blocks is the only way to
+      keep this file registered byte-for-byte everywhere except that one line order while
+      satisfying the hook; .pre-commit-config.yaml is outside this task's scope.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20250918083359_drop_spec_version_column_from_mcp_table/migration.sql#L1-L8

@@ -1,0 +1,27 @@
+id: exempt-function
+language: rust
+rule:
+  any:
+    - has:
+        field: name
+        regex: ^main$
+    - all:
+        - has:
+            field: name
+            regex: ^default_
+        - has:
+            field: parameters
+            not:
+              has:
+                any:
+                  - kind: parameter
+                  - kind: self_parameter
+    - inside:
+        kind: impl_item
+        has:
+          field: trait
+          regex: .
+        stopBy: end
+    - inside:
+        kind: trait_item
+        stopBy: end

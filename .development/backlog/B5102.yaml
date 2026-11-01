@@ -1,0 +1,13 @@
+id: B5102
+milestone: M1 openai data plane
+title: Error classes answer the provider's status when LiteLLM passes its response
+status: todo
+depends_on: [B184, B185, B237, B238, B239, B240, B241, B242, B245, B5099]
+file: tasks/B5102-error-response-status.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

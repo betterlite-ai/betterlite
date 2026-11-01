@@ -1,0 +1,119 @@
+id: B5099
+title: Vertex body error code reuse
+description: >-
+  B240 built the Vertex and Gemini error classifiers in crates/betterlite-error/src/vertex_errors.rs. An Opus audit
+  of the merged task found one behavior gap and one comment that only restates its own code. This task fixes both,
+  in that file, its tests and its oracle case.
+
+
+  body_error_code in the same file reimplements _get_body_error_code
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L183-L190).
+  B236 already ported that function as crate::parse::get_body_error_code. Grep crates/betterlite-error/src/parse.rs
+  for get_body_error_code to find it; it is bounded at 64 KiB and has its own parity tests. The local copy in
+  vertex_errors.rs deserializes the whole error body as ProviderErrorBody. That type requires message to type-check
+  as a string, so a body with an extraneous, wrongly typed message field fails to parse at all. Take error_str
+  {"message":42,"error":{"code":429}} with status_code 503. A run against the pinned litellm package confirms
+  LiteLLM raises RateLimitError with status_code 429 for this input, since _get_body_error_code only reads
+  error.code and ignores message. Betterlite's local copy finds no match on this input, so classify_envelope falls
+  through and classify_by_status answers ServiceUnavailable at 503 instead. The fix deletes body_error_code and has
+  classify_envelope call crate::parse::get_body_error_code in its place. That is the same function the branch-1250
+  check already relies on for every other envelope case
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1250-L1254).
+
+
+  The comment above PhraseRule's type alias restates what phrase_family's any() call already shows. It names no
+  hidden constraint, so delete it.
+scope:
+  paths:
+  - crates/betterlite-error/src/vertex_errors.rs
+  - crates/betterlite-error/src/vertex_errors/**
+  - tools/oracle/cases/helpers/vertex-errors/**
+  - "tools/oracle/fuzz/corpus/helper_case/vertex_errors-*"
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L183-L190
+  why: _get_body_error_code reads only error.code from the JSON body, the function crate::parse::get_body_error_code already ports for B236.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1250-L1254
+  why: The 5xx-wrapped-429 envelope check calls _get_body_error_code, the same call classify_envelope must make instead of its own copy.
+dod:
+- text: >-
+    classify_envelope calls crate::parse::get_body_error_code in place of the deleted body_error_code. Add rstest
+    case envelope_message_wrong_type for error_str {"message":42,"error":{"code":429}} with status_code 503: it
+    answers service_unavailable and 503 today and must answer rate_limit and 429 once fixed. Add oracle case
+    tools/oracle/cases/helpers/vertex-errors/branch-1250-message-wrong-type.yaml with the same input, and its corpus
+    seed tools/oracle/fuzz/corpus/helper_case/vertex_errors-branch-1250-message-wrong-type.yaml, so the Rust and
+    Python sides are proven to agree on it.
+  proof:
+  - behavior-tests
+  - oracle
+  - helper-case-corpus
+  - reuse-body-error-code
+- text: The comment above PhraseRule's type alias is gone.
+  proof:
+  - comment-removed
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: the changed and new behavior tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(/::vertex_errors_behavior_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: helper-case-corpus
+    why: the new helper seed is missing or fails replay
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/vertex_errors-*")" &&
+      grep -lq 'vertex_errors' tools/oracle/fuzz/corpus/helper_case/vertex_errors-* && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: reuse-body-error-code
+    why: vertex_errors.rs still defines its own body_error_code instead of calling the shared B236 function
+    run: >-
+      ! grep -q 'fn body_error_code' crates/betterlite-error/src/vertex_errors.rs && grep -q 'get_body_error_code'
+      crates/betterlite-error/src/vertex_errors.rs
+  - id: comment-removed
+    why: the restated PhraseRule comment is still in vertex_errors.rs
+    run: "! grep -q 'a group of literal phrases that all mean the same family' crates/betterlite-error/src/vertex_errors.rs"
+oracle_cases:
+- tools/oracle/cases/helpers/vertex-errors/branch-1153.yaml
+- tools/oracle/cases/helpers/vertex-errors/branch-1167.yaml
+- tools/oracle/cases/helpers/vertex-errors/branch-1173.yaml
+- tools/oracle/cases/helpers/vertex-errors/branch-1180.yaml
+- tools/oracle/cases/helpers/vertex-errors/branch-1192.yaml
+- tools/oracle/cases/helpers/vertex-errors/branch-1199.yaml
+- tools/oracle/cases/helpers/vertex-errors/branch-1213.yaml
+- tools/oracle/cases/helpers/vertex-errors/branch-1230.yaml
+- tools/oracle/cases/helpers/vertex-errors/branch-1250.yaml
+- tools/oracle/cases/helpers/vertex-errors/branch-1250-message-wrong-type.yaml
+- tools/oracle/cases/helpers/vertex-errors/branch-1272.yaml
+- tools/oracle/cases/helpers/vertex-errors/branch-1279.yaml
+- tools/oracle/cases/helpers/vertex-errors/branch-1280.yaml
+- tools/oracle/cases/helpers/vertex-errors/branch-1294.yaml
+- tools/oracle/cases/helpers/vertex-errors/branch-1300.yaml
+- tools/oracle/cases/helpers/vertex-errors/branch-1313.yaml
+- tools/oracle/cases/helpers/vertex-errors/branch-1319.yaml
+- tools/oracle/cases/helpers/vertex-errors/branch-1326.yaml
+- tools/oracle/cases/helpers/vertex-errors/branch-1340.yaml
+- tools/oracle/cases/helpers/vertex-errors/branch-1352.yaml
+- tools/oracle/cases/helpers/vertex-errors/branch-1358.yaml
+- tools/oracle/cases/helpers/vertex-errors/generic-fallback.yaml
+- tools/oracle/cases/helpers/vertex-errors/competing-message-status.yaml
+deviations: []
+out_of_scope:
+- The "403" phrase rule's status. LiteLLM answers BadRequestError with status 403 there, which B5102 covers by
+  carrying the response status for every response-carrying class.
+- classify_envelope's own one-expression shape (no-one-line-functions, no-padded-one-line-functions). B5094 owns
+  every padded one-line function in the repository, including this one. This task only changes which function
+  classify_envelope calls, not its shape.
+pitfalls:
+- Name the new corpus seed tools/oracle/fuzz/corpus/helper_case/vertex_errors-branch-1250-message-wrong-type.yaml,
+  matching its case file under tools/oracle/cases/helpers/vertex-errors. The rest of that folder belongs to other
+  tasks.
+- The vertex_errors operation is already registered. Change only the existing Input and run in
+  tools/oracle/src/helpers/error/vertex_errors.rs's module if the new case needs it. helpers/mod.rs, the group
+  files, dispatch.py and tools/oracle/helpers/vertex_errors.py are not this task's to edit.
+review_level: standard
+budget:
+  max_changed_lines: 90
+  max_new_expects: 0

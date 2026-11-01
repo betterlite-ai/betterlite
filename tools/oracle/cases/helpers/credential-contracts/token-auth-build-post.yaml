@@ -1,0 +1,10 @@
+kind: helper
+name: token-auth-build-post
+call:
+  b4650:
+    function: token_auth_build
+    auth_method: client_secret_post
+    client_id: gateway-client
+    client_secret: gateway-secret
+env: {}
+compare: {ignore: []}

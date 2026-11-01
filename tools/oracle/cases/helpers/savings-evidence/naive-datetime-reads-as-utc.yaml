@@ -1,0 +1,8 @@
+kind: helper
+name: naive-datetime-reads-as-utc
+call:
+  savings_evidence:
+    operation: billed_at
+    text: "2024-03-01T10:00:00"
+compare: {ignore: []}
+env: {}

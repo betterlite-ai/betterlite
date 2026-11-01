@@ -1,0 +1,11 @@
+kind: helper
+name: openai-errors-timeout-before-status
+call:
+  provider_error:
+    kind: raw
+    model: gpt-4
+    custom_llm_provider: openai
+    error_str: "Request timed out while calling upstream"
+    status_code: 500
+env: {}
+compare: {ignore: []}

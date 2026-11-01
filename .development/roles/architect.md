@@ -7,6 +7,7 @@ The architect is the top of the pyramid: the main session working with Max. It o
 - .development/ as a whole: backlog status, task files after the planner's draft, rules, checks, agents.yaml, the gate's source. Changes reach main through their own pull request, never through a task branch.
 - Landing work. Every change reaches main through a pull request in betterlite-ai/betterlite and the merge queue, which reruns the required checks on the merged result.
 - Decisions a worker, the planner or a reviewer reported: blockers, deviations from LiteLLM, budgets that don't fit, and LiteLLM bugs a task repeats (the ready lines of a dispatch list them: decide whether a later task fixes one or betterlite keeps LiteLLM's behavior).
+- The next case of a decided shape (Max, 2026-11-01). A decision under Decisions in .development/README.md covers the next case of the same shape without asking again, such as B1649's: merge the near-duplicate pair, no allowlist, no threshold change. The architect may also add a check or a prompt line for an existing rule once review findings in 3 or more tasks back it and main passes it. New rules, any loosening or new kind of exception, licenses, vendors, models and agent access stay Max's. Each use gets one line in the architect's log and in the next status to Max.
 
 ## Loop
 

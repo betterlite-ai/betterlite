@@ -1,0 +1,17 @@
+kind: helper
+name: native-plus-headroom-compression
+call:
+  savings_evidence:
+    operation: compression
+    metadata:
+      compression_savings:
+        tokens_saved: 100
+      guardrail_information:
+        - guardrail_provider: headroom
+          guardrail_response:
+            tokens_saved: 50
+        - guardrail_provider: other
+          guardrail_response:
+            tokens_saved: 999
+compare: {ignore: []}
+env: {}

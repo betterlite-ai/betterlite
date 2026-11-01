@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 
 use strum::IntoStaticStr;
 
+use crate::dispatch::progress::Panel;
 use crate::dispatch::runner::{self, Invocation};
 use crate::dispatch::{Attempt, Places, reviewer_role, sandbox, vendor};
 use crate::error::GateError;
@@ -14,6 +15,8 @@ pub(crate) enum Seat {
     Worker,
     Reviewer,
     ReviewerAgain,
+    ParityReviewer,
+    ParityReviewerAgain,
 }
 
 pub(crate) enum Run {
@@ -47,20 +50,20 @@ pub(crate) fn invoke(
     seat: Seat,
     prompt: &str,
 ) -> Result<Run, GateError> {
+    let roles = &attempt.agents.roles;
+    let level = attempt.brief.task.review_level;
     let (schema, role, session) = match seat {
         Seat::Reviewer | Seat::ReviewerAgain => (
             "review.schema.json",
-            reviewer_role(attempt.agents, attempt.brief.task.review_level),
+            reviewer_role(attempt.agents, level, Panel::Standard),
             None,
         ),
-        Seat::Worker => (
-            "report.schema.json",
-            &attempt.agents.roles.worker,
-            attempt.resume,
-        ),
+        Seat::ParityReviewer | Seat::ParityReviewerAgain => {
+            ("review.schema.json", &roles.parity_reviewer, None)
+        }
+        Seat::Worker => ("report.schema.json", &roles.worker, attempt.resume),
     };
-    let instructions = role.instructions.as_str();
-    let seat_name: &str = seat.into();
+    let seat_name = <&str>::from(seat);
     let stem = attempt
         .places
         .journal
@@ -78,7 +81,7 @@ pub(crate) fn invoke(
         writable_roots: &writable_roots,
         schema: &folder.join("schema").join(schema),
         output: &output,
-        instructions: &folder.join(instructions),
+        instructions: &folder.join(&role.instructions),
         log: &log,
         prompt,
         session,

@@ -35,7 +35,11 @@ pub(crate) fn fix_turn(feedback: &[String]) -> String {
     )
 }
 
-pub(crate) fn reviewer(brief: &Brief<'_>, earlier: Option<&EarlierReview>) -> String {
+pub(crate) fn reviewer(
+    brief: &Brief<'_>,
+    instructions: &str,
+    earlier: Option<&EarlierReview>,
+) -> String {
     let rounds = earlier.map_or_else(String::new, |review| {
         if review.findings.is_empty() {
             return format!(
@@ -55,7 +59,7 @@ pub(crate) fn reviewer(brief: &Brief<'_>, earlier: Option<&EarlierReview>) -> St
         )
     });
     format!(
-        "You are the betterlite reviewer for task {id}: {title}.\nRead .development/roles/reviewer.md first and follow it. The rules are in .development/rules.yaml and the task is .development/{file}.\nReview branch {branch} against its base {base} with git diff {base}...HEAD. Change nothing.\nYour final answer is the review JSON described in .development/schema/review.schema.json.\n{rounds}",
+        "You are the betterlite reviewer for task {id}: {title}.\nRead .development/{instructions} first and follow it. The rules are in .development/rules.yaml and the task is .development/{file}.\nReview branch {branch} against its base {base} with git diff {base}...HEAD. Change nothing.\nYour final answer is the review JSON described in .development/schema/review.schema.json.\n{rounds}",
         id = brief.task.id,
         title = brief.task.title,
         file = brief.file,

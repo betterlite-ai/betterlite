@@ -1,0 +1,10 @@
+kind: helper
+name: openai-errors-model-not-found
+call:
+  provider_error:
+    kind: raw
+    model: gpt-4
+    custom_llm_provider: openai
+    error_str: "invalid_request_error: model_not_found - no such model"
+env: {}
+compare: {ignore: []}

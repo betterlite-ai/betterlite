@@ -2,20 +2,39 @@ use std::str::FromStr as _;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::raw::RawNumber;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 
 type Lookup<'lookup> = &'lookup dyn EnvironmentLookup;
 
-pub(super) fn resolve_secret(
-    value: Option<String>,
+pub(super) trait SecretText {
+    fn secret_text(self) -> String;
+}
+
+impl SecretText for String {
+    fn secret_text(self) -> String {
+        self
+    }
+}
+
+impl SecretText for SecretString {
+    fn secret_text(self) -> String {
+        self.expose_secret().to_owned()
+    }
+}
+
+pub(super) fn resolve_secret<T>(
+    value: Option<T>,
     path: &str,
     lookup: Lookup<'_>,
-) -> Result<Option<SecretString>, ConfigError> {
-    let Some(text) = value else {
+) -> Result<Option<SecretString>, ConfigError>
+where
+    T: SecretText,
+{
+    let Some(text) = value.map(SecretText::secret_text) else {
         return Ok(None);
     };
-    let secret = SecretString::from(resolve_string(text, path, lookup)?);
-    Ok(Some(secret))
+    let resolved = resolve_string(text, path, lookup)?;
+    Ok(Some(SecretString::from(resolved)))
 }
 
 pub(super) fn resolve_string(

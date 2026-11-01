@@ -22,6 +22,8 @@ use crate::tools::{
 };
 use betterlite_openai::search::records::SearchResponse;
 
+mod loop_eligibility;
+
 #[test]
 fn web_search_builders_have_expected_dialects() {
     let anthropic = serde_json::to_value(get_litellm_web_search_tool()).unwrap();

@@ -1,0 +1,14 @@
+task: B4650
+deviations:
+  - what: "betterlite's Result[T, E] type uses Rust's generic type system with covariance, rather than Python's expression library. The narrowing semantics are preserved through match expressions and type guards."
+    why: "Rust's type system provides compile-time exhaustiveness checking that Python cannot match. The contract is identical: Ok and Error are separate variants, narrowable via pattern matching."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/result.py
+  - what: "betterlite's CredError is a Rust enum, not a Python tagged union. The tag property is replaced with Rust's exhaustive pattern matching on enum variants."
+    why: "Rust's type system proves exhaustiveness at compile time, catching missing arms before deployment. The observable behavior (which arm is constructed, which error is returned) is identical."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/types.py#L111-L202
+  - what: "AuthConfig and its variants use Rust's enum discriminant (kind field) rather than Pydantic's Field(discriminator=...). The wire format and serialization stay identical."
+    why: "Rust traits require exhaustive matching; Pydantic discriminators are runtime-only. The config still contains exactly one mode per server, and deserialization enforces it."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/types.py#L452-L462
+  - what: "NoOpAuth and StaticHeaderAuth are Rust structs implementing a local Auth trait (compatible with httpx2's interface), not httpx2.Auth subclasses."
+    why: "Rust requires explicit trait implementation. The auth_flow contract is preserved: mutate the request in-place and yield it."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/httpx_auth.py

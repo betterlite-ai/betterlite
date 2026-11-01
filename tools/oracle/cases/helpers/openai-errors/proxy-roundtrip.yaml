@@ -1,0 +1,10 @@
+kind: helper
+name: openai-errors-proxy-roundtrip
+call:
+  provider_error:
+    kind: raw
+    model: gpt-4
+    custom_llm_provider: litellm_proxy
+    error_str: "litellm.ContextWindowExceededError: too many tokens"
+env: {}
+compare: {ignore: []}

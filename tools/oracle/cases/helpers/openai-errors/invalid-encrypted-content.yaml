@@ -1,0 +1,11 @@
+kind: helper
+name: openai-errors-invalid-encrypted-content
+call:
+  provider_error:
+    kind: raw
+    model: gpt-4
+    custom_llm_provider: openai
+    error_str: "invalid_encrypted_content supplied in request"
+    status_code: 400
+env: {}
+compare: {ignore: []}

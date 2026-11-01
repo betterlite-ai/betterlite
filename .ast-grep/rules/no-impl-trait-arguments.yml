@@ -1,0 +1,19 @@
+id: no-impl-trait-arguments
+language: rust
+severity: error
+message: an impl Trait argument hides the type a caller passes; name it as a generic parameter with a where clause
+note: rule explicit-not-verbose
+ignores:
+  - crates/betterlite-cli/src/pkce_login/wire.rs
+  - crates/betterlite-guardrails/src/cisco_mcp/context.rs
+  - crates/betterlite-logging/src/opik/payload/support.rs
+  - crates/betterlite-logging/src/rubrik/block_decision.rs
+  - crates/betterlite-logging/src/s3_v2/connection.rs
+  - crates/betterlite-prompts/src/dotprompt_templates/render.rs
+  - crates/betterlite-redact/src/secret/pattern.rs
+  - crates/betterlite-redact/src/sentry/scrub/tests.rs
+rule:
+  kind: abstract_type
+  inside:
+    kind: parameter
+    stopBy: end

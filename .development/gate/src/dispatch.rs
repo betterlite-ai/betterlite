@@ -25,7 +25,7 @@ use crate::spec::review::ReviewVerdict;
 use crate::spec::task::{ReviewLevel, Task};
 use crate::yaml::read_yaml;
 
-use progress::{NextRun, Progress, ReviewerPin, WorkerSession};
+use progress::{NextRun, Panel, Progress, ReviewerPin, WorkerSession};
 use prompt::Brief;
 use seat::Seat;
 use serde::{Deserialize, Serialize};
@@ -101,10 +101,11 @@ fn writable_dirs(
         .collect())
 }
 
-pub(crate) const fn reviewer_role(agents: &Agents, level: ReviewLevel) -> &Role {
-    match level {
-        ReviewLevel::Standard => &agents.roles.reviewer,
-        ReviewLevel::Security => &agents.roles.security_reviewer,
+pub(crate) const fn reviewer_role(agents: &Agents, level: ReviewLevel, panel: Panel) -> &Role {
+    match (panel, level) {
+        (Panel::Parity, _) => &agents.roles.parity_reviewer,
+        (Panel::Standard, ReviewLevel::Standard) => &agents.roles.reviewer,
+        (Panel::Standard, ReviewLevel::Security) => &agents.roles.security_reviewer,
     }
 }
 
@@ -178,22 +179,24 @@ fn apply_round(
     brief: &Brief<'_>,
     places: &Places<'_>,
     progress: &mut Progress,
-    round: Round,
+    mut round: Round,
 ) -> Result<ControlFlow<Option<Vec<String>>>, GateError> {
-    let Round {
-        verdict,
-        review,
-        reviewer,
-        mut litellm,
-    } = round;
-    progress.litellm.append(&mut litellm);
-    progress.reviewer = Some(reviewer);
+    progress.litellm.append(&mut round.litellm);
+    // the parity pass gets max_review_rounds of its own, so a long standard review still leaves it rounds
+    if progress
+        .reviewer
+        .as_ref()
+        .is_some_and(|pin| pin.panel != round.reviewer.panel)
+    {
+        progress.review_rounds = 0;
+    }
+    progress.reviewer = Some(round.reviewer);
     progress.next = NextRun::Fix;
     progress.fix_turns = 0;
-    match verdict {
+    match round.verdict {
         ReviewVerdict::Approve => {
             progress.feedback.clear();
-            progress.earlier = Some(review);
+            progress.earlier = Some(round.review);
             let mut lines = vec![format!(
                 "{} is ready to merge: branch {} in {}",
                 brief.task.id,
@@ -204,8 +207,8 @@ fn apply_round(
             Ok(ControlFlow::Break(Some(lines)))
         }
         ReviewVerdict::Changes => {
-            progress.feedback.clone_from(&review.findings);
-            progress.earlier = Some(review);
+            progress.feedback.clone_from(&round.review.findings);
+            progress.earlier = Some(round.review);
             if progress.review_rounds >= agents.policy.max_review_rounds {
                 let reason = format!("review rounds ran out: {}", progress.feedback.join("; "));
                 return Err(GateError::Dispatch {

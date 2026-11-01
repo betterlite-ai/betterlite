@@ -1,0 +1,37 @@
+{
+  "kind": "helper",
+  "name": "websearch-gates-anthropic-redacted-thinking",
+  "call": {
+    "b4117": {
+      "response": {
+        "content": [
+          {
+            "type": "redacted_thinking",
+            "data": "opaque"
+          },
+          {
+            "type": "tool_use",
+            "id": "one",
+            "name": "litellm_web_search",
+            "input": {
+              "query": "rust"
+            }
+          }
+        ]
+      },
+      "tools": [
+        {
+          "name": "litellm_web_search"
+        }
+      ],
+      "custom_llm_provider": "anthropic",
+      "enabled_providers": [
+        "anthropic"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

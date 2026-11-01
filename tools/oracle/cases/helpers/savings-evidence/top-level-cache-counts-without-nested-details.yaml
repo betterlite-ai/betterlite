@@ -1,0 +1,12 @@
+kind: helper
+name: top-level-cache-counts-without-nested-details
+call:
+  savings_evidence:
+    operation: baseline_usage
+    usage_object:
+      prompt_tokens: 100
+      cache_read_input_tokens: 5
+      cache_creation_input_tokens: 3
+    baseline_info: null
+compare: {ignore: []}
+env: {}

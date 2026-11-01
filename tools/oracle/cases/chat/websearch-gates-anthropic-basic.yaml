@@ -1,0 +1,33 @@
+{
+  "kind": "helper",
+  "name": "websearch-gates-anthropic-basic",
+  "call": {
+    "b4117": {
+      "response": {
+        "content": [
+          {
+            "type": "tool_use",
+            "id": "one",
+            "name": "litellm_web_search",
+            "input": {
+              "query": "rust"
+            }
+          }
+        ]
+      },
+      "tools": [
+        {
+          "name": "litellm_web_search"
+        }
+      ],
+      "custom_llm_provider": "anthropic",
+      "enabled_providers": [
+        "anthropic"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

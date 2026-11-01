@@ -1,0 +1,5 @@
+task: B3975
+deviations:
+  - what: _sanitize_proxy_server_request is not built; extract_request_data never forwards a proxy_server_request body, so its only caller in LiteLLM becomes dead code at the pin.
+    why: The source function filters the proxy_server_request after the LiteLLM version at the pin; betterlite skips it entirely for security, since proxy_server_request can carry provider credentials.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L684-L692

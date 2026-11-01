@@ -1,0 +1,10 @@
+kind: helper
+name: null-provider-margin-shadows-global
+call:
+  cost_adjustments:
+    base_cost: "0.10"
+    provider: provider
+    discount_config: {}
+    margin_config: {provider: null, global: 0.5}
+env: {}
+compare: {ignore: []}

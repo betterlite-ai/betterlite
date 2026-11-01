@@ -112,6 +112,7 @@ dependencies = [
  "determinator",
  "globset",
  "guppy",
+ "itertools 0.15.0",
  "nextest-filtering",
  "schemars",
  "serde",

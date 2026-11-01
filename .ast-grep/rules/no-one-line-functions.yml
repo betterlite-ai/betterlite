@@ -1,8 +1,8 @@
 id: no-one-line-functions
 language: rust
 severity: error
-message: a function whose body is a single statement or expression is only a name for it; write that code where the function is called. Padding the body to pass this check (a throwaway let, a constant spelled as math, a branch whose arms give the same value, a move into a trait impl, an identity conversion) is the same defect
-note: trait impls, trait default methods, main, a serde default (a function named default_<field> with no parameters), and a body that is one match, if or loop are exempt
+message: a function whose body fits on one line is only a name for that line; write it where the function is called. Padding the body to pass this check (a throwaway let, a constant spelled as math, a branch whose arms give the same value, a move into a trait impl, an identity conversion) is the same defect
+note: trait impls, trait default methods, main, a serde default (a function named default_<field> with no parameters), a body that is one match, if or loop, and a body rustfmt spreads over several lines are exempt
 ignores:
   - "**/tests.rs"
   - "**/tests/**"
@@ -13,6 +13,7 @@ rule:
     all:
       - has:
           nthChild: 1
+          regex: "^[^\\n]*$"
           not:
             any:
               - kind: match_expression
@@ -31,27 +32,4 @@ rule:
           has:
             nthChild: 2
   not:
-    any:
-      - has:
-          field: name
-          regex: ^main$
-      - all:
-          - has:
-              field: name
-              regex: ^default_
-          - has:
-              field: parameters
-              not:
-                has:
-                  any:
-                    - kind: parameter
-                    - kind: self_parameter
-      - inside:
-          kind: impl_item
-          has:
-            field: trait
-            regex: .
-          stopBy: end
-      - inside:
-          kind: trait_item
-          stopBy: end
+    matches: exempt-function
