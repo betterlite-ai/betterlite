@@ -136,6 +136,10 @@ def _run_explicit_provider(input_value: ExplicitProviderInput) -> Json:
     model_prefix = model.split("/", 1)[0]
     if resolved_provider == "openai" and resolved_model == model and model_prefix == "azure":
         return {"kind": "non_openai_azure", "model": resolved_model}
+    if normalized_provider == "openrouter" and normalized_model.startswith("openrouter/"):
+        is_native = resolved_model.startswith("openrouter/")
+        kind = "openrouter_native" if is_native else "openrouter_nested"
+        return {"kind": kind, "model": resolved_model}
     if reached_openai_compatible:
         return {
             "kind": "explicit_provider",
@@ -143,10 +147,6 @@ def _run_explicit_provider(input_value: ExplicitProviderInput) -> Json:
             "model": resolved_model,
             "needs_provider_defaults": True,
         }
-    if custom_llm_provider == "openrouter" and model.startswith("openrouter/"):
-        is_native = resolved_model.startswith("openrouter/")
-        kind = "openrouter_native" if is_native else "openrouter_nested"
-        return {"kind": kind, "model": resolved_model}
     if resolved_model != normalized_model:
         return {
             "kind": "explicit_provider",

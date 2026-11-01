@@ -115,6 +115,16 @@ fn classify(
         needs_provider_defaults: true,
     }
 )]
+#[case::a_bare_nested_model_with_the_openrouter_flag_is_normalized_before_the_openrouter_check(
+    "anthropic/claude-3.5-sonnet",
+    Some("openrouter"),
+    PrefixClassification::OpenRouterNested { model: "anthropic/claude-3.5-sonnet".to_owned() }
+)]
+#[case::a_bare_native_model_with_the_openrouter_flag_is_normalized_before_the_openrouter_check(
+    "auto",
+    Some("openrouter"),
+    PrefixClassification::OpenRouterNative { model: "openrouter/auto".to_owned() }
+)]
 fn provider_identity_behavior_tests_behavior(
     #[case] model: &str,
     #[case] custom_llm_provider: Option<&str>,
