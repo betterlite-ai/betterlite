@@ -1,0 +1,13 @@
+kind: helper
+name: native-errors-a-branch-1416
+call:
+  native_errors_a:
+    provider: cohere
+    model: command-r
+    error_str: "too many tokens in prompt"
+    exception_type: ""
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

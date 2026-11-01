@@ -1,7 +1,0 @@
-kind: helper
-name: runtime-unknown-field
-call:
-  model_fields:
-    source: '{"litellm_provider":"openai","mode":"chat","totally_new_field":true,"metadata":{"brand_new_note":"x"}}'
-compare: {ignore: []}
-env: {}

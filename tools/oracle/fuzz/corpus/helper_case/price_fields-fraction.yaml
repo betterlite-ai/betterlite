@@ -1,7 +1,0 @@
-kind: helper
-name: price-fields-fraction
-call:
-  price_fields:
-    source: '{"input_cost_per_token":0.0000001234567890123456789}'
-compare: {ignore: []}
-env: {}

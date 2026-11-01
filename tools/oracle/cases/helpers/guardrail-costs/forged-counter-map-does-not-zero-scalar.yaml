@@ -1,0 +1,10 @@
+kind: helper
+name: forged-counter-map-does-not-zero-scalar
+call:
+  guardrail_costs:
+    guardrail_information:
+      guardrail_cost: 3.0
+      guardrail_cost_by_unit:
+        bad: not-a-number
+compare: {ignore: []}
+env: {}

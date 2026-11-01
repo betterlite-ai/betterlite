@@ -1,0 +1,10 @@
+kind: helper
+name: duplicate_indexes_rejects_a_member_without_an_identifier
+call:
+  member_removal_identity:
+    operation: duplicate_indexes
+    requests:
+      - {user_id: null, user_email: null}
+env: {}
+compare:
+  ignore: []

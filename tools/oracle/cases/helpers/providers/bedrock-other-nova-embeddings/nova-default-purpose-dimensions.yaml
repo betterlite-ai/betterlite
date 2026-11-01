@@ -1,0 +1,13 @@
+kind: helper
+name: nova-default-purpose-dimensions
+call:
+  bedrock_other_nova_embeddings:
+    nova_default_purpose_dimensions:
+      non_default: {dimensions: 512, other: ignored}
+      optional_params: {}
+      input: hello world
+      inference_params: {dimensions: 256, embedding_dimension: 999, output_s3_uri: s3://unused, custom: keep}
+      async_invoke_route: false
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,13 @@
+kind: helper
+name: incoming-ttl-detail-is-not-copied
+call:
+  usage_sum:
+    usages:
+      - prompt_tokens_details:
+          cache_write_tokens: 4
+          cache_creation_token_details: {ephemeral_5m_input_tokens: 2, ephemeral_1h_input_tokens: 2}
+      - prompt_tokens_details:
+          cache_creation_tokens: 5
+          cache_creation_token_details: {ephemeral_5m_input_tokens: 5}
+compare: {ignore: []}
+env: {}

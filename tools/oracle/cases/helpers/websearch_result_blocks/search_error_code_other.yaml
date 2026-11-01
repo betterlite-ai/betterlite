@@ -1,0 +1,12 @@
+kind: helper
+name: search-error-code-other
+call:
+  b4113:
+    operation: search_error_code
+    error:
+      family: unclassified
+      message: unexpected provider failure
+      model: null
+      provider: null
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,9 @@
+# the digest must start with the literal "sha256:" prefix
+kind: helper
+name: digest-sha256-prefix-format
+call:
+  skill_discovery_archives:
+    stored_content: UEsDBBQAAAAIAAAAIQCyC6jbBgAAAAQAAAAIAAAAU0tJTEwubWRLyk+pBABQSwECFAMUAAAACAAAACEAsguo2wYAAAAEAAAACAAAAAAAAAAAAAAApIEAAAAAU0tJTEwubWRQSwUGAAAAAAEAAQA2AAAALAAAAAAA
+env: {}
+compare:
+  ignore: []

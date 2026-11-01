@@ -5,7 +5,4 @@ call:
     function: auth
     value: {api_key: 123}
 env: {}
-compare:
-  ignore:
-    - pointer: /error/message
-      why: betterlite writes its own error message for the unwrapped TypeError
+compare: {ignore: []}

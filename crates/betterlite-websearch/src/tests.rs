@@ -8,7 +8,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use tracing::span::{Attributes, Id, Record};
 use tracing::subscriber::with_default;
 
-use crate::call_transformation::native::{self, SearchErrorKind};
+use betterlite_error::error::ErrorClass;
+
+use crate::call_transformation::native;
 use crate::call_transformation::wire::{Response, Thinking};
 use crate::call_transformation::{TransformationError, WebSearchTransformation};
 use crate::records::{SearchFailed, SearchOutcome, SearchSucceeded, WebSearchToolResultErrorCode};
@@ -446,9 +448,30 @@ fn call_transformation_result_blocks_error_codes_and_format_search_response() {
         "Title: Rust\nURL: https://rust-lang.org\nSnippet: safe"
     );
     assert_eq!(
-        native::search_error_code(SearchErrorKind::RateLimit),
+        native::search_error_code(&rate_limit_error()),
         WebSearchToolResultErrorCode::TooManyRequests
     );
+}
+
+fn rate_limit_error() -> ErrorClass {
+    serde_json::from_str(
+        r#"{"family":"rate_limit","context":{"message":"slow down","model":null,"provider":null},"category":"vendor_rate_limit"}"#,
+    )
+    .unwrap()
+}
+
+fn bad_request_error() -> ErrorClass {
+    serde_json::from_str(
+        r#"{"family":"bad_request","message":"bad input","model":null,"provider":null}"#,
+    )
+    .unwrap()
+}
+
+fn unclassified_error() -> ErrorClass {
+    serde_json::from_str(
+        r#"{"family":"unclassified","message":"boom","model":null,"provider":null}"#,
+    )
+    .unwrap()
 }
 
 #[test]
@@ -461,11 +484,11 @@ fn call_transformation_result_block_empty_date() {
 #[test]
 fn call_transformation_error_codes() {
     assert_eq!(
-        native::search_error_code(SearchErrorKind::BadRequest),
+        native::search_error_code(&bad_request_error()),
         WebSearchToolResultErrorCode::InvalidToolInput
     );
     assert_eq!(
-        native::search_error_code(SearchErrorKind::Other),
+        native::search_error_code(&unclassified_error()),
         WebSearchToolResultErrorCode::Unavailable
     );
     let error = native::result_error_block("failed", WebSearchToolResultErrorCode::TooManyRequests);

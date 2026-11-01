@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-other-nova-embeddings-explicit
+call:
+  bedrock_other_nova_embeddings:
+    nova_explicit_modality:
+      input: plain text ignored
+      inference_params:
+        video: {format: mp4, source: {bytes: xyz}}
+      async_invoke_route: false
+env: {}
+compare:
+  ignore: []
