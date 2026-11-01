@@ -1,0 +1,5 @@
+kind: helper
+name: mcp-text-rewrite-structured-content
+call: {b3761: {function: rewrite_text, response: {structuredContent: {result: old}}, text: new}}
+env: {}
+compare: {ignore: []}

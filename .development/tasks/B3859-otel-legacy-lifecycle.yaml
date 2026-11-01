@@ -100,7 +100,7 @@ checks:
   commands:
     - id: legacy-lifecycle-tests
       why: Legacy lifecycle, tracer selection, dynamic config/headers, proxy span management, guardrail span creation or dedup tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^legacy_lifecycle|^tracer_selection|^dynamic_|^guardrail_|^proxy_span/)' - test(replays_the_legacy_lifecycle_corpus)
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^legacy_lifecycle|^tracer_selection|^dynamic_|^guardrail_|^proxy_span/) - test(replays_the_legacy_lifecycle_corpus)'
 
 oracle_cases:
   - tools/oracle/cases/helpers/legacy_lifecycle/success-with-primary-span.yaml

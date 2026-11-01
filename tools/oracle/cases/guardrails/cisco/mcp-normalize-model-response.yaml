@@ -1,0 +1,5 @@
+kind: helper
+name: mcp-normalize-model-response
+call: {b3761: {function: normalize_model, response: {content: [{type: text, text: hi}], isError: false}}}
+env: {}
+compare: {ignore: []}
