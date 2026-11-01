@@ -22,6 +22,8 @@ fn formats_valid_dates(#[case] raw: &str, #[case] expected: &str) {
 #[case::invalid_hour("Thu, 12 Mar 2026 25:00:00 GMT")]
 #[case::invalid_timezone("Thu, 12 Mar 2026 10:00:00 +2500")]
 #[case::unsigned_invalid_timezone("Thu, 12 Mar 2026 10:00:00 2500")]
+#[case::timezone_overflows_i64("Thu, 12 Mar 2026 10:00:00 +99999999999999999999")]
+#[case::timezone_with_underscores("Thu, 12 Mar 2026 10:00:00 +1_0000")]
 #[case::year_outside_python_range("Thu, 12 Mar 12026 10:00:00 GMT")]
 #[case::empty_string("")]
 fn keeps_raw_text_on_failure(#[case] raw: &str) {

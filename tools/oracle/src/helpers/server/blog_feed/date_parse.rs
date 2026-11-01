@@ -89,12 +89,14 @@ fn parsed_fields(raw: &str) -> Option<Fields> {
     })
 }
 
-// Ports `email._parseaddr._parsedate_tz`'s zone handling: an unparsable token means no zone.
+// Ports `email._parseaddr._parsedate_tz`'s zone handling: a token Python's int() rejects means no zone.
 fn valid_timezone(zone: &str) -> bool {
-    let Ok(offset) = zone.parse::<i64>() else {
+    let Some(digits) = python_int_digits(zone) else {
         return true;
     };
-    let magnitude = offset.unsigned_abs();
+    let Ok(magnitude) = digits.parse::<u64>() else {
+        return false;
+    };
     let Some(hours) = magnitude.checked_div(100) else {
         return false;
     };
@@ -111,6 +113,33 @@ fn valid_timezone(zone: &str) -> bool {
         return false;
     };
     seconds < 86_400
+}
+
+// Mirrors `int()`'s literal grammar: an optional sign, then digits with single underscores allowed only between two digits.
+fn python_int_digits(token: &str) -> Option<String> {
+    let unsigned = token
+        .strip_prefix('+')
+        .or_else(|| token.strip_prefix('-'))
+        .unwrap_or(token);
+    let characters: Vec<char> = unsigned.chars().collect();
+    let first = *characters.first()?;
+    let last = *characters.last()?;
+    if !first.is_ascii_digit() || !last.is_ascii_digit() {
+        return None;
+    }
+    let mut digits = String::new();
+    let mut previous_was_underscore = false;
+    for character in characters {
+        if character.is_ascii_digit() {
+            digits.push(character);
+            previous_was_underscore = false;
+        } else if character == '_' && !previous_was_underscore {
+            previous_was_underscore = true;
+        } else {
+            return None;
+        }
+    }
+    Some(digits)
 }
 
 fn strip_trailing_comma(token: &mut String) {
