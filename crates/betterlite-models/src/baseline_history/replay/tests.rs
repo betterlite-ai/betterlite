@@ -33,6 +33,8 @@ fn usage(prompt: i64, completion: i64) -> Usage {
             cache_write_tokens: None,
             extra: Extra::default(),
         }),
+        cache_read_input_tokens: None,
+        cache_creation_input_tokens: None,
         extra: Extra::default(),
     }
 }

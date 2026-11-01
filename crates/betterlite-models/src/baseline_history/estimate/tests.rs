@@ -46,6 +46,8 @@ fn usage(prompt: i64, completion: i64, text: i64, cached: i64, creation: i64) ->
             cache_write_tokens: None,
             extra: Extra::default(),
         }),
+        cache_read_input_tokens: None,
+        cache_creation_input_tokens: None,
         extra: Extra::default(),
     }
 }

@@ -1,8 +1,7 @@
 use serde::{Deserialize, Serialize};
-use serde_json::Number;
 
 use crate::baseline_history::error::BaselineHistoryError;
-use crate::decisions::{Extra, Json};
+use crate::decisions::Extra;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub struct CacheCreationTokenDetails {
@@ -60,6 +59,10 @@ pub struct Usage {
     pub total_tokens: i64,
     #[serde(default)]
     pub prompt_tokens_details: Option<PromptTokensDetails>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_read_input_tokens: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_creation_input_tokens: Option<i64>,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -147,21 +150,14 @@ pub(crate) fn usage_with_cache(
         ephemeral_1h_input_tokens: Some(write_long_ttl),
     });
     details.cache_write_tokens = Some(writes);
-    let mut extra = usage.extra.clone();
-    extra.insert(
-        "cache_read_input_tokens".to_owned(),
-        Json::Number(Number::from(read)),
-    );
-    extra.insert(
-        "cache_creation_input_tokens".to_owned(),
-        Json::Number(Number::from(writes)),
-    );
     Ok(Usage {
         prompt_tokens: total,
         completion_tokens: usage.completion_tokens,
         total_tokens,
         prompt_tokens_details: Some(details),
-        extra,
+        cache_read_input_tokens: Some(read),
+        cache_creation_input_tokens: Some(writes),
+        extra: usage.extra.clone(),
     })
 }
 

@@ -49,14 +49,15 @@ fn refresh_entry(
     if !ambiguous.is_empty() {
         return Ok(None);
     }
-    let Some(hit) = history
-        .entries
-        .iter()
-        .filter(|entry| {
-            !entry.uncertain && entry_status(entry, markers, observation.started_at).matches
-        })
-        .max_by_key(|entry| entry.tokens)
-    else {
+    let mut best_hit: Option<&CacheEntry> = None;
+    for entry in history.entries.iter().filter(|entry| {
+        !entry.uncertain && entry_status(entry, markers, observation.started_at).matches
+    }) {
+        if best_hit.is_none_or(|current| entry.tokens > current.tokens) {
+            best_hit = Some(entry);
+        }
+    }
+    let Some(hit) = best_hit else {
         return Ok(None);
     };
     if markers
@@ -131,11 +132,13 @@ pub(crate) fn compact_entries(entries: &[CacheEntry], started: f64) -> Vec<Cache
 
 fn retained_from_group(group: &[CacheEntry], started: f64) -> Vec<CacheEntry> {
     let mut retained = Vec::new();
-    if let Some(entry) = group
-        .iter()
-        .filter(|entry| entry.available_at <= started)
-        .max_by(|left, right| left.expires_at.total_cmp(&right.expires_at))
-    {
+    let mut longest_lived: Option<&CacheEntry> = None;
+    for entry in group.iter().filter(|entry| entry.available_at <= started) {
+        if longest_lived.is_none_or(|current| entry.expires_at > current.expires_at) {
+            longest_lived = Some(entry);
+        }
+    }
+    if let Some(entry) = longest_lived {
         retained.push(entry.clone());
     }
     retained.extend(
