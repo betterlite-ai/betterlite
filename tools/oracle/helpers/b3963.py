@@ -1,28 +1,23 @@
-import json
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
-from types import SimpleNamespace
-from typing import TypeAlias, cast
+from typing import TYPE_CHECKING, TypeAlias, cast
 from unittest.mock import patch
 from uuid import UUID
 
 import httpx
+import litellm
 from litellm.integrations.galileo import GalileoObserve
-from litellm.types.llms.openai import HttpxBinaryResponseContent
+from litellm.types.llms.openai import (
+    HttpxBinaryResponseContent,
+    ResponseOutputItem,
+    ResponsesAPIResponse,
+)
+
+if TYPE_CHECKING:
+    from litellm.types.rerank import RerankResponseResult
+    from litellm.types.utils import ImageObject
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
-
-
-class _AttrDict:
-    """A minimal stand-in for a litellm response object that supports both
-    attribute access (`.choices`) and subscript access (`["message"]`), the
-    way `_get_chat_content_for_galileo` reads its argument."""
-
-    def __init__(self, **fields: object) -> None:
-        self.__dict__.update(fields)
-
-    def __getitem__(self, key: str) -> object:
-        return cast(object, getattr(self, key))
 
 
 def run(input_value: dict[str, Json]) -> Json:
@@ -134,32 +129,73 @@ def _content_selection(input_value: dict[str, Json]) -> Json:
         return _invoke_full(kwargs, None, level, status_message)
 
     family = cast(str, response["family"])
-    named = {
-        "chat": _chat_selection,
-        "text_completion": _text_completion_selection,
-        "image": _image_selection,
-        "transcription": _transcription_selection,
-        "rerank": _rerank_selection,
-        "responses_api": _responses_api_selection,
-    }
-    if family in named:
-        return named[family](response, kwargs)
-
     response_obj = _dispatchable_response(family, response)
     return _invoke_full(kwargs, response_obj, level, status_message)
 
 
+def _speech_response(_response: dict[str, Json]) -> object:
+    return HttpxBinaryResponseContent(httpx.Response(200, content=b"speech-bytes"))
+
+
+def _chat_response(response: dict[str, Json]) -> object:
+    return litellm.ModelResponse(choices=[{"message": response.get("message")}])
+
+
+def _text_completion_response(response: dict[str, Json]) -> object:
+    return litellm.TextCompletionResponse(choices=[{"text": response.get("text")}])
+
+
+def _image_response(response: dict[str, Json]) -> object:
+    return litellm.ImageResponse(data=cast("list[ImageObject] | None", response.get("data")))
+
+
+def _transcription_response(response: dict[str, Json]) -> object:
+    return litellm.TranscriptionResponse(text=cast("str | None", response.get("text")))
+
+
+def _rerank_response(response: dict[str, Json]) -> object:
+    return litellm.RerankResponse(
+        results=cast("list[RerankResponseResult] | None", response.get("results"))
+    )
+
+
+def _responses_api_response(response: dict[str, Json]) -> object:
+    return ResponsesAPIResponse(
+        id="resp_1",
+        created_at=0,
+        output=cast("list[ResponseOutputItem | dict[str, Json]]", response.get("output") or []),
+    )
+
+
+def _dict_response(response: dict[str, Json]) -> object:
+    return cast("dict[str, Json]", response.get("value") or {})
+
+
+def _realtime_list_response(response: dict[str, Json]) -> object:
+    return cast("list[Json]", response.get("items") or [])
+
+
+_RESPONSE_BUILDERS: dict[str, Callable[[dict[str, Json]], object]] = {
+    "embedding": lambda _response: object(),
+    "speech": _speech_response,
+    "chat": _chat_response,
+    "text_completion": _text_completion_response,
+    "image": _image_response,
+    "transcription": _transcription_response,
+    "rerank": _rerank_response,
+    "responses_api": _responses_api_response,
+    "pass_through_dict": _dict_response,
+    "generic_dict": _dict_response,
+    "realtime_list": _realtime_list_response,
+}
+
+
 def _dispatchable_response(family: str, response: dict[str, Json]) -> object:
-    if family == "embedding":
-        return object()
-    if family == "speech":
-        return HttpxBinaryResponseContent(httpx.Response(200, content=b"speech-bytes"))
-    if family in ("pass_through_dict", "generic_dict"):
-        return cast("dict[str, Json]", response.get("value") or {})
-    if family == "realtime_list":
-        return cast("list[Json]", response.get("items") or [])
-    message = f"unsupported dispatchable family: {family}"
-    raise ValueError(message)
+    builder = _RESPONSE_BUILDERS.get(family)
+    if builder is None:
+        message = f"unsupported dispatchable family: {family}"
+        raise ValueError(message)
+    return builder(response)
 
 
 def _invoke_full(
@@ -172,91 +208,3 @@ def _invoke_full(
     )
     input_text, output_text, messages_for_span = invoke(kwargs, response_obj, level, status_message)
     return _selection_result(input_text, output_text, messages_for_span)
-
-
-def _build_prompt(kwargs: dict[str, Json]) -> dict[str, Json]:
-    logger = object.__new__(GalileoObserve)
-    build = cast(
-        Callable[[dict[str, Json]], dict[str, Json]],
-        logger._build_prompt,  # pyright: ignore[reportPrivateUsage]
-    )
-    return build(kwargs)
-
-
-def _prompt_to_input_text(prompt: dict[str, Json]) -> str:
-    logger = object.__new__(GalileoObserve)
-    to_text = cast(
-        Callable[[dict[str, Json]], str],
-        logger._prompt_to_input_text,  # pyright: ignore[reportPrivateUsage]
-    )
-    return to_text(prompt)
-
-
-def _serialize(value: Json) -> str:
-    logger = object.__new__(GalileoObserve)
-    serialize = cast(
-        Callable[[Json], str],
-        logger._serialize_galileo_output,  # pyright: ignore[reportPrivateUsage]
-    )
-    return serialize(value)
-
-
-def _chat_selection(response: dict[str, Json], kwargs: dict[str, Json]) -> Json:
-    prompt = _build_prompt(kwargs)
-    choice = _AttrDict(message=response.get("message"))
-    response_obj = _AttrDict(choices=[choice])
-    logger = object.__new__(GalileoObserve)
-    extract = cast(
-        Callable[[object], Json],
-        logger._get_chat_content_for_galileo,  # pyright: ignore[reportPrivateUsage]
-    )
-    output = _serialize(extract(response_obj))
-    return _selection_result(_prompt_to_input_text(prompt), output, kwargs.get("messages") or [])
-
-
-def _text_completion_selection(response: dict[str, Json], kwargs: dict[str, Json]) -> Json:
-    prompt = _build_prompt(kwargs)
-    stub = SimpleNamespace(choices=[SimpleNamespace(text=response.get("text"))])
-    logger = object.__new__(GalileoObserve)
-    extract = cast(
-        Callable[[object], "str | None"],
-        logger._get_text_completion_content_for_galileo,  # pyright: ignore[reportPrivateUsage]
-    )
-    output = _serialize(extract(stub))
-    return _selection_result(_prompt_to_input_text(prompt), output, kwargs.get("messages") or [])
-
-
-def _image_selection(response: dict[str, Json], kwargs: dict[str, Json]) -> Json:
-    prompt = _build_prompt(kwargs)
-    output = _serialize(response.get("data"))
-    return _selection_result(_prompt_to_input_text(prompt), output, prompt)
-
-
-def _transcription_selection(response: dict[str, Json], kwargs: dict[str, Json]) -> Json:
-    prompt = _build_prompt(kwargs)
-    output = _serialize(response.get("text"))
-    return _selection_result(_prompt_to_input_text(prompt), output, prompt)
-
-
-def _rerank_selection(response: dict[str, Json], kwargs: dict[str, Json]) -> Json:
-    logger = object.__new__(GalileoObserve)
-    rerank_prompt_fn = cast(
-        Callable[[dict[str, Json]], dict[str, Json]],
-        logger._langfuse_style_rerank_prompt,  # pyright: ignore[reportPrivateUsage]
-    )
-    rerank_prompt = rerank_prompt_fn(kwargs)
-    output = _serialize(response.get("results"))
-    input_text = json.dumps(rerank_prompt, default=str)
-    return _selection_result(input_text, output, rerank_prompt)
-
-
-def _responses_api_selection(response: dict[str, Json], kwargs: dict[str, Json]) -> Json:
-    prompt = _build_prompt(kwargs)
-    stub = SimpleNamespace(output=response.get("output"))
-    logger = object.__new__(GalileoObserve)
-    extract = cast(
-        Callable[[object], Json],
-        logger._get_responses_api_content_for_galileo,  # pyright: ignore[reportPrivateUsage]
-    )
-    output = _serialize(extract(stub))
-    return _selection_result(_prompt_to_input_text(prompt), output, kwargs.get("messages") or [])

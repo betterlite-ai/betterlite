@@ -1,0 +1,5 @@
+kind: helper
+name: generic-dict-delta-only
+call: {"b3963": {"operation": "content_selection", "kwargs": {"call_type": "something_else", "messages": [{"role": "user", "content": "hi"}]}, "response": {"family": "generic_dict", "value": {"choices": [{"delta": {"content": "streamed text"}}]}}}}
+env: {}
+compare: {ignore: []}
