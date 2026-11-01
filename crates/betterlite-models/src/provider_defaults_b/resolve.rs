@@ -7,9 +7,7 @@ use crate::provider_defaults_b::environment::EnvironmentLookup;
 use crate::provider_defaults_b::error::ProviderDefaultsError;
 use crate::provider_defaults_b::globals::GlobalCredentials;
 use crate::provider_defaults_b::model::{ProviderDefaultsRequest, ResolvedProvider};
-use crate::provider_defaults_b::special::{
-    SPECIAL_TABLE, resolve_mistral, resolve_ragflow, resolve_special,
-};
+use crate::provider_defaults_b::special::{SPECIAL_TABLE, resolve_ragflow, resolve_special};
 use crate::provider_defaults_b::table::{SIMPLE_TABLE, SimpleDefaults};
 
 fn resolve_simple<E>(
@@ -61,9 +59,7 @@ where
         .iter()
         .find_map(|(id, defaults)| (*id == provider).then_some(defaults));
 
-    let (resolved_base, resolved_key) = if provider == ProviderId::Mistral {
-        resolve_mistral(base_in, key_in, env)
-    } else if let Some(defaults) = special {
+    let (mut resolved_base, resolved_key) = if let Some(defaults) = special {
         resolve_special(base_in, key_in, defaults, globals, env)
     } else {
         let defaults = SIMPLE_TABLE
@@ -72,6 +68,14 @@ where
             .ok_or(ProviderDefaultsError::UnknownProvider { provider })?;
         resolve_simple(defaults, base_in, key_in, env)
     };
+
+    // Mirrors MistralConfig._get_openai_compatible_provider_info: the base always ends with /v1.
+    if provider == ProviderId::Mistral
+        && let Some(base) = resolved_base.as_mut()
+        && !base.ends_with("/v1")
+    {
+        base.push_str("/v1");
+    }
 
     Ok(ResolvedProvider {
         model: request.model,

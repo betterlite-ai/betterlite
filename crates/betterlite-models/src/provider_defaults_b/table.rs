@@ -9,6 +9,15 @@ pub struct SimpleDefaults {
 
 pub const SIMPLE_TABLE: &[(ProviderId, SimpleDefaults)] = &[
     (
+        ProviderId::Mistral,
+        SimpleDefaults {
+            base_env: &["MISTRAL_AZURE_API_BASE"],
+            base_default: Some("https://api.mistral.ai/v1"),
+            key_env: &["MISTRAL_AZURE_API_KEY", "MISTRAL_API_KEY"],
+            key_default: None,
+        },
+    ),
+    (
         ProviderId::JinaAi,
         SimpleDefaults {
             base_env: &["JINA_AI_API_BASE"],

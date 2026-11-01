@@ -3,8 +3,6 @@ use crate::provider_defaults_b::environment::EnvironmentLookup;
 use crate::provider_defaults_b::error::ProviderDefaultsError;
 use crate::provider_defaults_b::globals::GlobalCredentials;
 
-const MISTRAL_DEFAULT_BASE: &str = "https://api.mistral.ai/v1";
-
 fn chain<E>(explicit: Option<&str>, global: Option<&str>, env_var: &str, env: &E) -> Option<String>
 where
     E: EnvironmentLookup,
@@ -89,26 +87,6 @@ where
         .flatten()
         .or_else(|| defaults.default_key.map(ToOwned::to_owned));
     (base, key)
-}
-
-pub fn resolve_mistral<E>(
-    api_base: Option<&str>,
-    api_key: Option<&str>,
-    env: &E,
-) -> (Option<String>, Option<String>)
-where
-    E: EnvironmentLookup,
-{
-    let mut base = chain(api_base, None, "MISTRAL_AZURE_API_BASE", env)
-        .unwrap_or_else(|| MISTRAL_DEFAULT_BASE.to_owned());
-    if !base.ends_with("/v1") {
-        base.push_str("/v1");
-    }
-    let key = api_key
-        .map(ToOwned::to_owned)
-        .or_else(|| env.lookup("MISTRAL_AZURE_API_KEY"))
-        .or_else(|| env.lookup("MISTRAL_API_KEY"));
-    (Some(base), key)
 }
 
 // Mirrors RAGFlowConfig._parse_ragflow_model: a valid model is ragflow/{chat|agent}/{id}/{model...}.
