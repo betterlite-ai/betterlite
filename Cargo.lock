@@ -916,6 +916,7 @@ dependencies = [
  "futures-util",
  "indexmap 2.14.2",
  "mime",
+ "percent-encoding",
  "rstest",
  "secrecy",
  "serde",
