@@ -1399,6 +1399,7 @@ dependencies = [
  "thiserror",
  "tl",
  "tokio",
+ "tokio-postgres",
  "tracing",
  "tracing-subscriber",
  "ulid",

@@ -66,6 +66,7 @@ uuid = { version = "1.28.0", default-features = false }
 
 [dev-dependencies]
 rstest = "=0.27.0"
+tokio-postgres.workspace = true
 
 [[test]]
 name = "otlp_normalization"

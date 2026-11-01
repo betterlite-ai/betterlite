@@ -13,18 +13,23 @@ use axum::Router;
 use axum::body::Body;
 use axum::extract::{Request as AxumRequest, State};
 use axum::http::{Response as AxumResponse, StatusCode};
-use secrecy::SecretString;
+use betterlite_postgres_fixture::seed::DatabaseFixture;
+use secrecy::{ExposeSecret as _, SecretString};
 use tokio::sync::oneshot;
+use tokio::task::JoinSet;
 use tokio::{net, runtime};
+use tokio_postgres::NoTls;
 
 use super::{CapturedValue, run_case_steps};
 use crate::OracleError;
 use crate::case::browser_flow::{Capture, CaptureSource, Step};
 use crate::case::{BodyKind, Case, Compare, Request, decode_html_form_capture};
+use crate::cli::Options;
 use crate::http::client;
+use crate::paths::unique_id;
 use crate::process::{Gateway, GatewaySpec};
 use crate::runner::browser_flow_group::compare_steps;
-use crate::runner::capture_gateway;
+use crate::runner::{DatabaseEnvironment, capture_gateway, run_group_with_url};
 
 #[test]
 fn replays_the_browser_form_corpus() {
@@ -538,4 +543,78 @@ fn stops_and_cleans_up_the_gateway_after_a_late_step_failure() {
         .expect_err("a missing capture at the second step fails the whole gateway capture");
     fs::metadata(format!("/proc/{pid}")).expect_err("the gateway process is gone");
     let _removed = fs::remove_file(&log_path);
+}
+
+fn fixture_database_names(url: &str) -> Vec<String> {
+    let runtime = runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("postgres admin runtime builds");
+    runtime.block_on(async {
+        let (admin, connection) = tokio_postgres::connect(url, NoTls)
+            .await
+            .expect("admin connection to postgres succeeds");
+        let mut driver = JoinSet::new();
+        driver.spawn(connection);
+        admin
+            .query(
+                "select datname from pg_database where datname like 'betterlite_fixture_%'",
+                &[],
+            )
+            .await
+            .expect("pg_database query succeeds")
+            .into_iter()
+            .map(|row| row.get(0))
+            .collect()
+    })
+}
+
+fn fixture_cleanup_steps() -> Vec<Step> {
+    vec![
+        step("/health/liveliness", BTreeMap::new(), Vec::new(), false),
+        step(
+            "/health/liveliness",
+            BTreeMap::new(),
+            vec![capture(
+                "missing",
+                CaptureSource::Header {
+                    name: "x-missing".to_owned(),
+                },
+            )],
+            false,
+        ),
+    ]
+}
+
+fn fresh_oracle_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/oracle")
+        .join(unique_id().expect("unique id generates"))
+}
+
+#[test]
+fn drops_the_fixture_databases_after_a_late_step_failure_with_a_database_fixture() {
+    let environment =
+        <DatabaseEnvironment as clap::Parser>::try_parse_from([env!("CARGO_PKG_NAME")])
+            .expect("database environment parses");
+    let secret = environment
+        .postgres_test_url
+        .expect("POSTGRES_TEST_URL is set for this test");
+    let mut before = fixture_database_names(secret.expose_secret());
+    let mut case = steps_case(fixture_cleanup_steps());
+    case.database = Some(DatabaseFixture::default());
+    let options = Options {
+        self_check: true,
+        paths: Vec::new(),
+    };
+    let error = run_group_with_url(&options, &fresh_oracle_root(), &[case], Some(&secret))
+        .expect_err("a missing capture at the second step fails the whole run");
+    assert!(matches!(error, OracleError::CaseInvalid { .. }));
+    let mut after = fixture_database_names(secret.expose_secret());
+    before.sort();
+    after.sort();
+    assert_eq!(
+        before, after,
+        "no betterlite_fixture_ database should remain after cleanup"
+    );
 }
