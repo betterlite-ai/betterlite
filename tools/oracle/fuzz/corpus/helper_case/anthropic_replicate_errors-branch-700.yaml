@@ -1,0 +1,14 @@
+kind: helper
+name: anthropic-replicate-errors-branch-700
+call:
+  anthropic_replicate_errors:
+    provider: replicate
+    model: replicate/some-model
+    error_str: "generic failure"
+    exception_type: APIError
+    status_code: 408
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/context/message
+      why: betterlite writes its own message

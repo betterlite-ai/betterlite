@@ -11,8 +11,4 @@ call:
     fallback_cost_key: null
 env: {}
 compare:
-  ignore:
-    - pointer: /error/class
-      why: betterlite raises a typed TieredPricingError where LiteLLM's unguarded index lookup raises a native IndexError
-    - pointer: /error/message
-      why: betterlite writes its own message
+  ignore: []

@@ -6,6 +6,4 @@ call:
     value: {schemas: [u], emails: [{value: ada@example.test}]}
 env: {}
 compare:
-  ignore:
-    - pointer: /error/message
-      why: betterlite writes its own error message
+  ignore: []
