@@ -13,6 +13,7 @@ use super::messages::{
     convert_content_list_to_str, galileo_input_messages, input_text_from_messages,
 };
 use super::metrics::token_metrics_from_record;
+use super::support::has_value;
 use super::timestamps::{RawTimestamp, format_created_at, normalize_created_at};
 use super::trace::{build_traces_payload, record_to_v2_span, record_to_v2_trace};
 
@@ -126,6 +127,26 @@ fn check_token_metrics() {
         token_metrics_from_record(&record_input_only).num_total_tokens,
         5
     );
+    let record_output_only = obj(r#"{"num_output_tokens": 5}"#);
+    assert_eq!(
+        token_metrics_from_record(&record_output_only).num_total_tokens,
+        5
+    );
+}
+
+// Each Json variant's own emptiness rule: zero and the empty number, string, list and object are falsy, everything else is truthy.
+fn check_has_value() {
+    assert!(!has_value(&Json::Null));
+    assert!(!has_value(&val("false")));
+    assert!(has_value(&val("true")));
+    assert!(!has_value(&val("0")));
+    assert!(has_value(&val("1")));
+    assert!(!has_value(&val(r#""""#)));
+    assert!(has_value(&val(r#""x""#)));
+    assert!(!has_value(&val("[]")));
+    assert!(has_value(&val("[1]")));
+    assert!(!has_value(&val("{}")));
+    assert!(has_value(&val(r#"{"k": 1}"#)));
 }
 
 fn sample_record() -> IndexMap<String, Json> {
@@ -355,6 +376,7 @@ fn galileo_payload_construction() {
     check_input_text_from_messages_human_role();
     check_search_results_citations();
     check_token_metrics();
+    check_has_value();
     check_trace_envelope();
     check_traces_payload();
     check_content_selection();
