@@ -21,29 +21,50 @@ pub(super) fn local_posts() -> Vec<BlogPost> {
     vec![post]
 }
 
-// `timeout` is accepted but never mocked: the oracle never actually waits on the clock.
-pub(super) fn fetch_rss_feed(
-    url: &str,
-    _timeout: u64,
-    response: &MockResponse,
-) -> Result<String, Failure> {
-    if response.error {
-        return Err(Failure::Connect {
-            url: url.to_owned(),
-        });
-    }
-    if !(200..=299).contains(&response.status) {
-        return Err(Failure::Status {
-            status: response.status,
-        });
-    }
-    Ok(response.text.clone())
+#[derive(Debug, Clone, serde::Serialize)]
+pub(super) struct FetchRequest {
+    pub(super) url: String,
+    pub(super) timeout: u64,
 }
 
-fn fetch_and_parse(url: &str, response: &MockResponse) -> Result<Vec<BlogPost>, Failure> {
-    let xml = fetch_rss_feed(url, default_timeout(), response)?;
-    let posts = parser::parse_rss_to_posts(&xml, default_max_posts())?;
-    Ok(posts.into_iter().map(BlogPost::from).collect())
+// The oracle never actually waits on the clock; `timeout` is only recorded for observability.
+pub(super) fn fetch_rss_feed(
+    url: &str,
+    timeout: u64,
+    response: &MockResponse,
+) -> (FetchRequest, Result<String, Failure>) {
+    let request = FetchRequest {
+        url: url.to_owned(),
+        timeout,
+    };
+    if response.error {
+        return (
+            request,
+            Err(Failure::Connect {
+                url: url.to_owned(),
+            }),
+        );
+    }
+    if !(200..=299).contains(&response.status) {
+        return (
+            request,
+            Err(Failure::Status {
+                status: response.status,
+            }),
+        );
+    }
+    (request, Ok(response.text.clone()))
+}
+
+fn fetch_and_parse(
+    url: &str,
+    response: &MockResponse,
+) -> (FetchRequest, Result<Vec<BlogPost>, Failure>) {
+    let (request, fetched) = fetch_rss_feed(url, default_timeout(), response);
+    let parsed = fetched.and_then(|xml| {
+        parser::parse_rss_to_posts(&xml, default_max_posts()).map_err(Failure::from)
+    });
+    (request, parsed)
 }
 
 pub(super) fn validate_blog_posts(posts: &Value) -> (bool, Vec<Warning>) {
@@ -78,19 +99,20 @@ pub(super) fn get_blog_posts(
     now: f64,
     local_only: bool,
     response: &MockResponse,
-) -> (Vec<BlogPost>, Vec<Warning>) {
+) -> (Vec<BlogPost>, Vec<Warning>, Option<FetchRequest>) {
     if local_only {
-        return (local_posts(), Vec::new());
+        return (local_posts(), Vec::new(), None);
     }
-    // Uses `mul_add` for the TTL bound, as `local_ttl_cache.rs` does, to avoid an unsigned subtraction.
+    // mul_add avoids clippy's float-arithmetic-operator restriction, as `local_ttl_cache.rs` does.
     let cache_hit = cache
         .posts
         .clone()
         .filter(|_| now < cache.last_fetch_time.mul_add(1.0, BLOG_POSTS_TTL_SECONDS));
     if let Some(posts) = cache_hit {
-        return (posts, Vec::new());
+        return (posts, Vec::new(), None);
     }
-    match fetch_and_parse(url, response) {
+    let (request, fetched) = fetch_and_parse(url, response);
+    match fetched {
         Err(failure) => {
             let warning = Warning {
                 subject: url.to_owned(),
@@ -98,7 +120,7 @@ pub(super) fn get_blog_posts(
                     "LiteLLM: Failed to fetch blog posts from {url}: {failure}. Falling back to local backup."
                 ),
             };
-            (local_posts(), vec![warning])
+            (local_posts(), vec![warning], Some(request))
         }
         Ok(posts) if posts.is_empty() => {
             let warning = Warning {
@@ -107,11 +129,11 @@ pub(super) fn get_blog_posts(
                     "LiteLLM: Parsed RSS feed has no valid posts. Falling back to local backup."
                         .to_owned(),
             };
-            (local_posts(), vec![warning])
+            (local_posts(), vec![warning], Some(request))
         }
         Ok(posts) => {
             cache.store(posts.clone(), now);
-            (posts, Vec::new())
+            (posts, Vec::new(), Some(request))
         }
     }
 }

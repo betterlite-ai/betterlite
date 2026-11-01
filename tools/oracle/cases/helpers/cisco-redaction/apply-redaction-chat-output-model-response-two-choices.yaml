@@ -1,0 +1,14 @@
+kind: helper
+name: apply-redaction-chat-output-model-response-two-choices
+call:
+  b3757:
+    function: apply_redaction_chat_output_model_response
+    choices:
+      - {finish_reason: stop, index: 0, message: {role: assistant, content: secret data one}}
+      - {finish_reason: stop, index: 1, message: {role: assistant, content: secret data two}}
+    sanitized_text: null
+    sanitized_messages:
+      - {role: assistant, content: from message}
+env: {}
+compare:
+  ignore: []
