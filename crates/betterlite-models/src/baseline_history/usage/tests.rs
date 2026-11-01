@@ -61,6 +61,18 @@ fn usage_with_cache_rebuilds_the_prompt_split_and_keeps_completion_tokens() {
     let split = details.cache_creation_token_details.expect("split");
     assert_eq!(split.ephemeral_5m_input_tokens, Some(30));
     assert_eq!(split.ephemeral_1h_input_tokens, Some(10));
+    assert_eq!(
+        details.extra.get("cache_write_tokens"),
+        Some(&Json::Number(serde_json::Number::from(40_i64)))
+    );
+    assert_eq!(
+        rebuilt.extra.get("cache_read_input_tokens"),
+        Some(&Json::Number(serde_json::Number::from(20_i64)))
+    );
+    assert_eq!(
+        rebuilt.extra.get("cache_creation_input_tokens"),
+        Some(&Json::Number(serde_json::Number::from(40_i64)))
+    );
 }
 
 #[test]
