@@ -1,0 +1,8 @@
+kind: helper
+name: frontmatter-scalar-not-dict
+call:
+  skill_discovery_archives:
+    stored_content: UEsDBBQAAAAIAAAAIQAjuBZ+GwAAABoAAAAIAAAAU0tJTEwubWTT1dXlyiotLtFN1C0uKcrMS+fSBYok5adUAgBQSwECFAMUAAAACAAAACEAI7gWfhsAAAAaAAAACAAAAAAAAAAAAAAApIEAAAAAU0tJTEwubWRQSwUGAAAAAAEAAQA2AAAAQQAAAAAA
+env: {}
+compare:
+  ignore: []
