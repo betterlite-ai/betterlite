@@ -22,7 +22,7 @@ fn saved_tokens_or_zero(value: Option<&Scalar>) -> Result<i64, SavingsEvidenceEr
         return Ok(0);
     };
     let decimal = parse_decimal_lexeme(&number.to_string())
-        .map_err(|_source| SavingsEvidenceError::SavedTokensOverflow)?;
+        .map_err(|source| SavingsEvidenceError::TokenCount { source })?;
     if decimal.is_sign_negative() {
         return Ok(0);
     }

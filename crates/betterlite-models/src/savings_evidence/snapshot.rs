@@ -58,7 +58,7 @@ impl TryFrom<Number> for StrictDecimal {
     fn try_from(number: Number) -> Result<Self, Self::Error> {
         parse_decimal_lexeme(&number.to_string())
             .map(Self)
-            .map_err(|_source| SavingsEvidenceError::NonNumericAmount)
+            .map_err(|source| SavingsEvidenceError::AmountOutOfRange { source })
     }
 }
 

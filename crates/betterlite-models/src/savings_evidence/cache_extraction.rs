@@ -87,7 +87,7 @@ fn scalar_to_i64(
     let decimal = match value {
         Some(Scalar::Bool(flag)) => Decimal::from(i64::from(*flag)),
         Some(Scalar::Number(number)) => parse_decimal_lexeme(&number.to_string())
-            .map_err(|_source| SavingsEvidenceError::SavedTokensOverflow)?,
+            .map_err(|source| SavingsEvidenceError::TokenCount { source })?,
         _ => return Ok(None),
     };
     if matches!(truthiness, Truthiness::NonzeroOnly) && decimal.is_zero() {
