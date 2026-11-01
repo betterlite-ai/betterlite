@@ -56,14 +56,9 @@ fn is_custom_tool_call(fields: &IndexMap<String, Json>) -> bool {
             .is_some_and(|value| !matches!(value, Json::Null))
 }
 
-// litellm.types.utils.ChatCompletionMessageCustomToolCall's declared field order (id, type, custom with name and input).
-fn custom_tool_call_fields(fields: &IndexMap<String, Json>) -> Json {
-    let mut ordered = IndexMap::new();
-    if let Some(id) = fields.get("id") {
-        ordered.insert("id".to_owned(), id.clone());
-    }
-    ordered.insert("type".to_owned(), Json::Text("custom".to_owned()));
-    let custom = match fields.get("custom") {
+// litellm.types.utils.ChatCompletionMessageCustomToolCall.custom's declared field order (name, input).
+fn custom_name_input_fields(custom_value: Option<&Json>) -> Json {
+    match custom_value {
         Some(Json::Object(custom_fields)) => {
             let mut ordered_custom = IndexMap::new();
             ordered_custom.insert(
@@ -77,14 +72,26 @@ fn custom_tool_call_fields(fields: &IndexMap<String, Json>) -> Json {
             Json::Object(ordered_custom)
         }
         _ => Json::Object(IndexMap::new()),
-    };
-    ordered.insert("custom".to_owned(), custom);
-    Json::Object(ordered)
+    }
 }
 
-// litellm.types.utils.ChatCompletionMessageToolCall.__init__'s attribute-assignment order (function, then id, then type), which model_dump_json() serializes these extra="allow" fields by.
-fn function_tool_call_fields(fields: &IndexMap<String, Json>) -> Json {
+// litellm.types.utils.chat_completion_tool_call_from_dict dispatches between the custom-shaped dump (ChatCompletionMessageCustomToolCall's declared field order: id, type, custom with name and input) and the function-shaped dump (ChatCompletionMessageToolCall.__init__'s attribute-assignment order: function, then id, then type).
+fn ordered_tool_call_fields(tool_call: &Json) -> Json {
+    let Json::Object(fields) = tool_call else {
+        return tool_call.clone();
+    };
     let mut ordered = IndexMap::new();
+    if is_custom_tool_call(fields) {
+        if let Some(id) = fields.get("id") {
+            ordered.insert("id".to_owned(), id.clone());
+        }
+        ordered.insert("type".to_owned(), Json::Text("custom".to_owned()));
+        ordered.insert(
+            "custom".to_owned(),
+            custom_name_input_fields(fields.get("custom")),
+        );
+        return Json::Object(ordered);
+    }
     let function = fields
         .get("function")
         .map_or_else(|| Json::Object(IndexMap::new()), ordered_function_fields);
@@ -100,18 +107,6 @@ fn function_tool_call_fields(fields: &IndexMap<String, Json>) -> Json {
             .unwrap_or_else(|| Json::Text("function".to_owned())),
     );
     Json::Object(ordered)
-}
-
-// litellm.types.utils.chat_completion_tool_call_from_dict dispatches between the function-shaped and the custom-shaped tool call dump.
-fn ordered_tool_call_fields(tool_call: &Json) -> Json {
-    let Json::Object(fields) = tool_call else {
-        return tool_call.clone();
-    };
-    if is_custom_tool_call(fields) {
-        custom_tool_call_fields(fields)
-    } else {
-        function_tool_call_fields(fields)
-    }
 }
 
 // litellm's get_content_from_model_response rebuilds the raw dict into a ModelResponse pydantic object before reading it back, so tool_calls/function_call come back in that class's field order, not the caller's.
