@@ -1,7 +1,0 @@
-kind: helper
-name: nested-tier
-call:
-  price_fields:
-    source: '{"input_cost_per_token":0.1,"provider_specific_entry":{"us":0.000000000000000001},"tiered_pricing":[{"input_cost_per_token":0.00000005,"output_cost_per_token":0.0000004,"range":[0,256000],"cache_read_input_token_cost":0.00000001,"input_cost_per_query":0.002,"cache_creation_input_token_cost":0.00000003}]}'
-compare: {ignore: []}
-env: {}

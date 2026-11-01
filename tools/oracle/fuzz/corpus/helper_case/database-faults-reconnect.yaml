@@ -1,0 +1,32 @@
+{
+  "kind": "helper",
+  "name": "database-faults-reconnect-effects",
+  "call": {
+    "database_faults": {
+      "scenarios": [
+        {
+          "name": "unsafe_transport_no_replay",
+          "reads": [
+            {
+              "Err": {
+                "error_type": "read_timeout",
+                "message": "first read failed"
+              }
+            }
+          ],
+          "reconnect": {
+            "Ok": true
+          },
+          "reason": "unsafe_transport_no_replay",
+          "retry_safe_error_types": [
+            "connect"
+          ]
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

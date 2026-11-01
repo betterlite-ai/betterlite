@@ -1,0 +1,18 @@
+kind: helper
+name: cache-audio-first-then-text-image
+call:
+  modality_cost:
+    operation: prompt
+    prompt_tokens: 100
+    cached_tokens: 10
+    text_tokens: 50
+    audio_tokens: 5
+    image_tokens: 5
+    cached_tokens_details: {audio_tokens: 3, text_tokens: 4, image_tokens: 2}
+    model_info: {input_cost_per_token: "0.00001"}
+    prompt_base_cost: "0.00001"
+    cache_read_cost: "0.000005"
+    cache_creation_cost: "0.00002"
+    cache_creation_cost_above_1hr: "0.00004"
+compare: {ignore: []}
+env: {}

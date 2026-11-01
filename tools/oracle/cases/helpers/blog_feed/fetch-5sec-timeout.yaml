@@ -1,0 +1,6 @@
+kind: helper
+name: fetch-5sec-timeout
+call:
+  blog_feed: {function: fetch_rss_feed, url: https://example.test/feed, response: {status: 200, text: '<rss><channel/></rss>'}}
+env: {}
+compare: {ignore: []}

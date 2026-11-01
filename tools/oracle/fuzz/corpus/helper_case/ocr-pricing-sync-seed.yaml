@@ -1,0 +1,5 @@
+kind: helper
+name: ocr-pricing-sync-seed
+call: {ocr_pricing: {kind: sync, model: fixture-missing, custom_llm_provider: openai, model_info: {ocr_cost_per_page: 2}, usage: {credits: null, pages_processed: -5, pages_processed_annotation: null}, catalog: null}}
+env: {}
+compare: {ignore: []}

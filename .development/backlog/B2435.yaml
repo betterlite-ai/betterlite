@@ -1,14 +1,14 @@
 id: B2435
 milestone: M5 API families
 title: Legacy fake Messages stream rendering
-status: todo
+status: done
 depends_on: [B171, B958]
 file: tasks/B2435-messages-fake-stream.yaml
 covers:
   - "litellm/llms/anthropic/pass_through/messages/fake_stream_iterator.py"
 parent: B081
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 434

@@ -1,0 +1,9 @@
+kind: helper
+name: bedrock-other-nova-embeddings-data-url
+call:
+  bedrock_other_nova_embeddings:
+    nova_data_url_jpg:
+      data_url: "data:image/JPG;base64,ZZZ=="
+env: {}
+compare:
+  ignore: []

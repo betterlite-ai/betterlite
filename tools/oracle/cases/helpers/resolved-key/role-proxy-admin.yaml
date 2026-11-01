@@ -1,0 +1,9 @@
+kind: helper
+name: role-proxy-admin-ui-label
+call:
+  resolved_key:
+    function: role
+    value: proxy_admin
+env: {}
+compare:
+  ignore: []

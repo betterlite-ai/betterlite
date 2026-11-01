@@ -1,0 +1,10 @@
+kind: helper
+name: in_filter_sorts_and_keeps_duplicates
+call:
+  member_removal_identity:
+    operation: in_filter
+    field: user_id
+    values: ["b", "a", "a"]
+env: {}
+compare:
+  ignore: []

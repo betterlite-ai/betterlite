@@ -1,0 +1,59 @@
+kind: helper
+name: long_ttl_prefix_before_short_write
+call:
+  baseline_history:
+    groups:
+      - - request_id: "settle"
+          started_at: 0.0
+          available_at: 0.0
+          outcome: complete
+          baseline_equivalent: false
+          usage:
+            prompt_tokens: 10
+            completion_tokens: 1
+            total_tokens: 11
+            prompt_tokens_details:
+              text_tokens: 10
+              cached_tokens: 0
+              cache_creation_tokens: 0
+              cache_creation_token_details: {ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 0}
+          plan:
+            total_tokens: 10
+            breakpoints:
+              - fingerprint: "fpX"
+                ttl_seconds: 300
+                prefix_tokens: 10
+                lookback_fingerprints: ["fpX"]
+                content_fingerprint: "cfpX"
+                lookback_content_fingerprints: ["cfpX"]
+      - - request_id: "split"
+          started_at: 3700.0
+          available_at: 3700.0
+          outcome: complete
+          baseline_equivalent: false
+          usage:
+            prompt_tokens: 500
+            completion_tokens: 20
+            total_tokens: 520
+            prompt_tokens_details:
+              text_tokens: 500
+              cached_tokens: 0
+              cache_creation_tokens: 0
+              cache_creation_token_details: {ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 0}
+          plan:
+            total_tokens: 500
+            breakpoints:
+              - fingerprint: "fp3600"
+                ttl_seconds: 3600
+                prefix_tokens: 200
+                lookback_fingerprints: ["fp3600"]
+                content_fingerprint: "cfp3600"
+                lookback_content_fingerprints: ["cfp3600"]
+              - fingerprint: "fp300"
+                ttl_seconds: 300
+                prefix_tokens: 500
+                lookback_fingerprints: ["fp300"]
+                content_fingerprint: "cfp300"
+                lookback_content_fingerprints: ["cfp300"]
+compare: {ignore: []}
+env: {}

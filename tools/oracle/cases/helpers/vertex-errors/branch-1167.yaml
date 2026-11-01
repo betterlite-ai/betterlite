@@ -1,0 +1,13 @@
+kind: helper
+name: vertex-errors-branch-1167
+call:
+  vertex_errors:
+    model: gemini-1.5-pro
+    custom_llm_provider: vertex_ai
+    error_str: "400 Request payload size exceeds the maximum limit of 20971520 bytes"
+    status_code: 400
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

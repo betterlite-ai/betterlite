@@ -1,0 +1,18 @@
+kind: helper
+name: unreachable-502
+call:
+  b3767:
+    apply:
+      settings:
+        api_key: key
+        api_base: "https://deepkeep.test"
+        deepkeep_firewall_id: fixed
+        unreachable_fallback: FAIL_OPEN
+      inputs: {texts: [hello]}
+      input_type: request
+      answer: {status: 502, headers: {}, body: {}}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/model
+      why: "LiteLLM's _build_return_inputs never echoes model back; betterlite's Inputs carries it through for internal callers"
