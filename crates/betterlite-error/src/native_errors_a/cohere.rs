@@ -24,56 +24,37 @@ enum Outcome {
     Unclassified,
 }
 
-// the four elif branches checked before status_code is ever consulted
-fn classify_by_text(error_str: &str) -> Option<(Family, &'static str)> {
-    if error_str.contains("invalid api token") || error_str.contains("No API key provided.") {
-        return Some((
-            Family::Authentication,
-            "the provider rejected the request as unauthorized",
-        ));
-    }
-    if error_str.contains("invalid type: parameter") {
-        return Some((
-            Family::BadRequest,
-            "the request parameter has an invalid type",
-        ));
-    }
-    if error_str.contains("too many tokens") {
-        return Some((
-            Family::ContextWindowExceeded,
-            "the request exceeded the model's context window",
-        ));
-    }
-    if error_str.to_lowercase().contains("internal server error") {
-        return Some((
-            Family::InternalServer,
-            "the provider reported an internal server error",
-        ));
-    }
-    None
+// the first matching clause wins, mirroring an elif chain
+fn first_match(clauses: &[(bool, Family, &'static str)]) -> Option<(Family, &'static str)> {
+    let hit = clauses.iter().find(|(matched, _, _)| *matched);
+    hit.map(|(_, family, reason)| (*family, *reason))
 }
 
-// the three elif branches checked only once hasattr(status_code) and classify_by_text both missed
-fn classify_by_tail(error_str: &str, exception_type: &str) -> Option<(Family, &'static str)> {
-    if exception_type.contains("CohereConnectionError") {
-        return Some((
-            Family::RateLimit,
-            "repeated connection errors were treated as a rate limit",
-        ));
-    }
-    if error_str.contains("invalid type:") {
-        return Some((
+// the four elif branches checked before status_code is ever consulted
+fn classify_by_text(error_str: &str) -> Option<(Family, &'static str)> {
+    let clauses = [
+        (
+            error_str.contains("invalid api token") || error_str.contains("No API key provided."),
+            Family::Authentication,
+            "the provider rejected the request as unauthorized",
+        ),
+        (
+            error_str.contains("invalid type: parameter"),
             Family::BadRequest,
             "the request parameter has an invalid type",
-        ));
-    }
-    if error_str.contains("Unexpected server error") {
-        return Some((
+        ),
+        (
+            error_str.contains("too many tokens"),
+            Family::ContextWindowExceeded,
+            "the request exceeded the model's context window",
+        ),
+        (
+            error_str.to_lowercase().contains("internal server error"),
             Family::InternalServer,
             "the provider reported an internal server error",
-        ));
-    }
-    None
+        ),
+    ];
+    first_match(&clauses)
 }
 
 fn classify(facts: &ProviderErrorFacts, error_str: &str, exception_type: &str) -> Outcome {
@@ -81,7 +62,7 @@ fn classify(facts: &ProviderErrorFacts, error_str: &str, exception_type: &str) -
         return Outcome::Classified(family, reason);
     }
     if let Some(status) = facts.status_code {
-        // this elif branch is the only one consulted once status_code is present; an unmatched status falls to NoMatch, never to classify_by_tail
+        // this elif branch is the only one consulted once status_code is present; an unmatched status falls to NoMatch, never to the clauses below
         return match status {
             400 | 498 => {
                 Outcome::Classified(Family::BadRequest, "the provider rejected the request")
@@ -94,7 +75,25 @@ fn classify(facts: &ProviderErrorFacts, error_str: &str, exception_type: &str) -
             _ => Outcome::NoMatch,
         };
     }
-    classify_by_tail(error_str, exception_type).map_or(Outcome::Unclassified, |(family, reason)| {
+    // the three elif branches checked only once hasattr(status_code) and classify_by_text both missed
+    let tail_clauses = [
+        (
+            exception_type.contains("CohereConnectionError"),
+            Family::RateLimit,
+            "repeated connection errors were treated as a rate limit",
+        ),
+        (
+            error_str.contains("invalid type:"),
+            Family::BadRequest,
+            "the request parameter has an invalid type",
+        ),
+        (
+            error_str.contains("Unexpected server error"),
+            Family::InternalServer,
+            "the provider reported an internal server error",
+        ),
+    ];
+    first_match(&tail_clauses).map_or(Outcome::Unclassified, |(family, reason)| {
         Outcome::Classified(family, reason)
     })
 }

@@ -57,45 +57,41 @@ impl crate::helpers::Helper for Op {
             Input::Cloudflare(fields) => {
                 map_cloudflare_exception(&fields.error_str, fields.model.clone())
             }
-            Input::Cohere(fields) => run_cohere(fields),
-            Input::Huggingface(fields) => run_huggingface(fields),
+            Input::Cohere(fields) => {
+                let facts = ProviderErrorFacts {
+                    status_code: fields.status_code,
+                    status_code_is_synthesized: false,
+                    message: None,
+                    body: None,
+                    headers: None,
+                    response: None,
+                    litellm_response_headers: None,
+                    request: None,
+                };
+                map_cohere_exception(
+                    &facts,
+                    &fields.error_str,
+                    &fields.exception_type,
+                    fields.model.clone(),
+                )
+            }
+            Input::Huggingface(fields) => {
+                let facts = ProviderErrorFacts {
+                    status_code: fields.status_code,
+                    status_code_is_synthesized: false,
+                    message: None,
+                    body: None,
+                    headers: None,
+                    response: None,
+                    litellm_response_headers: None,
+                    request: None,
+                };
+                map_huggingface_exception(&facts, &fields.error_str, fields.model.clone())
+            }
             Input::Ai21(fields) => run_ai21(fields),
         };
         Ok(serde_json::json!({"result": mapped}))
     }
-}
-
-fn run_cohere(fields: &CohereInput) -> Option<ErrorClass> {
-    let facts = ProviderErrorFacts {
-        status_code: fields.status_code,
-        status_code_is_synthesized: false,
-        message: None,
-        body: None,
-        headers: None,
-        response: None,
-        litellm_response_headers: None,
-        request: None,
-    };
-    map_cohere_exception(
-        &facts,
-        &fields.error_str,
-        &fields.exception_type,
-        fields.model.clone(),
-    )
-}
-
-fn run_huggingface(fields: &HuggingfaceInput) -> Option<ErrorClass> {
-    let facts = ProviderErrorFacts {
-        status_code: fields.status_code,
-        status_code_is_synthesized: false,
-        message: None,
-        body: None,
-        headers: None,
-        response: None,
-        litellm_response_headers: None,
-        request: None,
-    };
-    map_huggingface_exception(&facts, &fields.error_str, fields.model.clone())
 }
 
 fn run_ai21(fields: &Ai21Input) -> Option<ErrorClass> {
