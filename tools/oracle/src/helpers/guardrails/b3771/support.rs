@@ -12,7 +12,8 @@ where
     let Some(value) = request.get(name).cloned() else {
         return Ok(None);
     };
-    let parsed = serde_json::from_value(value).map_err(guardrail_error)?;
+    let parsed = serde_json::from_value(value)
+        .map_err(|error| failure_with_class("GuardrailError", error.to_string()))?;
     Ok(Some(parsed))
 }
 pub(super) fn error_failure(
@@ -41,13 +42,6 @@ pub(super) fn failure_with_class(
         code: None,
         message,
     })
-}
-pub(super) fn guardrail_error<E>(error: E) -> Box<crate::helpers::HelperError>
-where
-    E: std::fmt::Display,
-{
-    let message = error.to_string();
-    failure_with_class("GuardrailError", message)
 }
 // "closed" drops the connection immediately; "timeout" delays past the client's timeout.
 pub(super) fn disconnection_script(fail: &str) -> MockScript {

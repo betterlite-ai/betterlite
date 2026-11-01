@@ -15,23 +15,24 @@ use crate::case::UpstreamAnswer;
 use crate::mock::MockProvider;
 use crate::routing_mock_scripts::MockScript;
 
-use super::support::{guardrail_error, parse_json_field};
+use super::support::{failure_with_class, parse_json_field};
 
 pub(super) fn metadata(input: &serde_json::Value) -> crate::helpers::HelperResult {
-    let litellm_values = metadata_field(input, "litellm_metadata")?;
-    let metadata_values = metadata_field(input, "metadata")?;
+    let litellm_field = input
+        .get("litellm_metadata")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let litellm_values: BTreeMap<String, Option<String>> = serde_json::from_value(litellm_field)
+        .map_err(|error| failure_with_class("GuardrailError", error.to_string()))?;
+    let metadata_field = input.get("metadata").cloned().unwrap_or_else(|| json!({}));
+    let metadata_values: BTreeMap<String, Option<String>> = serde_json::from_value(metadata_field)
+        .map_err(|error| failure_with_class("GuardrailError", error.to_string()))?;
     let merged = extract_user_api_key_metadata(&litellm_values, &metadata_values);
-    let serialized = serde_json::to_value(merged).map_err(guardrail_error)?;
+    let serialized = serde_json::to_value(merged)
+        .map_err(|error| failure_with_class("GuardrailError", error.to_string()))?;
     let mut object = serialized.as_object().cloned().unwrap_or_default();
     object.retain(|_, item| !item.is_null());
     Ok(serde_json::Value::Object(object))
-}
-fn metadata_field(
-    input: &serde_json::Value,
-    key: &str,
-) -> Result<BTreeMap<String, Option<String>>, Box<crate::helpers::HelperError>> {
-    let field = input.get(key).cloned().unwrap_or_else(|| json!({}));
-    serde_json::from_value(field).map_err(guardrail_error)
 }
 pub(super) fn call(input: &serde_json::Value) -> crate::helpers::HelperResult {
     let request = input
@@ -44,18 +45,26 @@ fn run_call(request: &serde_json::Value) -> crate::helpers::HelperResult {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-        .map_err(guardrail_error)?;
+        .map_err(|error| failure_with_class("GuardrailError", error.to_string()))?;
     let settings = settings(request);
     let answer: Option<UpstreamAnswer> = parse_json_field(request, "answer")?;
-    let silent = TcpListener::bind(("127.0.0.1", 0)).map_err(guardrail_error)?;
+    let silent = TcpListener::bind(("127.0.0.1", 0))
+        .map_err(|error| failure_with_class("GuardrailError", error.to_string()))?;
     let base;
     let mock = if let Some(reply) = &answer {
-        let script = MockScript::try_from(std::slice::from_ref(reply)).map_err(guardrail_error)?;
-        let provider = MockProvider::start(script).map_err(guardrail_error)?;
+        let script = MockScript::try_from(std::slice::from_ref(reply))
+            .map_err(|error| failure_with_class("GuardrailError", error.to_string()))?;
+        let provider = MockProvider::start(script)
+            .map_err(|error| failure_with_class("GuardrailError", error.to_string()))?;
         base = provider.base_url.clone();
         Some(provider)
     } else {
-        base = format!("http://{}", silent.local_addr().map_err(guardrail_error)?);
+        base = format!(
+            "http://{}",
+            silent
+                .local_addr()
+                .map_err(|error| failure_with_class("GuardrailError", error.to_string()))?
+        );
         None
     };
     let guardrail = GenericGuardrailAPI {
@@ -68,7 +77,9 @@ fn run_call(request: &serde_json::Value) -> crate::helpers::HelperResult {
     };
     let result = runtime.block_on(guardrail.apply_guardrail(request_payload(request)?));
     if let Some(provider) = mock {
-        provider.finish().map_err(guardrail_error)?;
+        provider
+            .finish()
+            .map_err(|error| failure_with_class("GuardrailError", error.to_string()))?;
     }
     result_payload(result)
 }

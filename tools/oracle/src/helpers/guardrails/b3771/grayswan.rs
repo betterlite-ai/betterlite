@@ -17,7 +17,7 @@ use crate::case::UpstreamAnswer;
 use crate::mock::MockProvider;
 use crate::routing_mock_scripts::MockScript;
 
-use super::support::{disconnection_script, error_failure, guardrail_error, parse_json_field};
+use super::support::{disconnection_script, error_failure, failure_with_class, parse_json_field};
 
 pub(super) fn verdict(input: &serde_json::Value) -> crate::helpers::HelperResult {
     let response = GraySwanResponse {
@@ -115,24 +115,8 @@ fn parse_request(request: &serde_json::Value) -> Result<Request, Box<crate::help
         .cloned()
         .unwrap_or_else(|| request.clone());
     let settings = parse_settings(&settings_source, OnFlaggedAction::Monitor)?;
-    let dynamic = request.get("dynamic").cloned().unwrap_or_else(|| json!({}));
-    let dynamic_params: GraySwanDynamicParams =
-        serde_json::from_value(dynamic).map_err(guardrail_error)?;
+    let (dynamic_params, messages) = parse_dynamic_and_messages(request)?;
     let tools = parse_json_field(request, "tools")?.unwrap_or_default();
-    let fallback_message = || {
-        Ok(vec![GuardrailMessage {
-            role: "user".to_owned(),
-            extra: BTreeMap::from([(
-                "content".to_owned(),
-                GuardrailExtraValue::Text("hello".to_owned()),
-            )]),
-        }])
-    };
-    let messages = request
-        .get("messages")
-        .map_or_else(fallback_message, |value| {
-            serde_json::from_value(value.clone()).map_err(guardrail_error)
-        })?;
     let (input_type, fail) = request_flags(request);
     let texts = parse_json_field(request, "texts")?.unwrap_or_default();
     let tool_calls = parse_json_field(request, "tool_calls")?.unwrap_or_default();
@@ -150,6 +134,29 @@ fn parse_request(request: &serde_json::Value) -> Result<Request, Box<crate::help
         answer,
         fail,
     })
+}
+fn parse_dynamic_and_messages(
+    request: &serde_json::Value,
+) -> Result<(GraySwanDynamicParams, Vec<GuardrailMessage>), Box<crate::helpers::HelperError>> {
+    let dynamic = request.get("dynamic").cloned().unwrap_or_else(|| json!({}));
+    let dynamic_params: GraySwanDynamicParams = serde_json::from_value(dynamic)
+        .map_err(|error| failure_with_class("GuardrailError", error.to_string()))?;
+    let fallback_message = || {
+        Ok(vec![GuardrailMessage {
+            role: "user".to_owned(),
+            extra: BTreeMap::from([(
+                "content".to_owned(),
+                GuardrailExtraValue::Text("hello".to_owned()),
+            )]),
+        }])
+    };
+    let messages = request
+        .get("messages")
+        .map_or_else(fallback_message, |value| {
+            serde_json::from_value(value.clone())
+                .map_err(|error| failure_with_class("GuardrailError", error.to_string()))
+        })?;
+    Ok((dynamic_params, messages))
 }
 fn request_flags(request: &serde_json::Value) -> (GuardrailInputType, String) {
     let input_type = match request
@@ -185,7 +192,8 @@ fn run_payload(parsed: Request) -> crate::helpers::HelperResult {
         litellm_metadata: BTreeMap::new(),
     };
     let payload = guardrail.prepare_payload(&prepared, parsed.messages, parsed.tools);
-    serde_json::to_value(payload).map_err(guardrail_error)
+    serde_json::to_value(payload)
+        .map_err(|error| failure_with_class("GuardrailError", error.to_string()))
 }
 pub(super) fn call(input: &serde_json::Value) -> crate::helpers::HelperResult {
     let found = input.get("grayswan_call").cloned();
@@ -194,12 +202,12 @@ pub(super) fn call(input: &serde_json::Value) -> crate::helpers::HelperResult {
 }
 fn run_call(call: Request) -> crate::helpers::HelperResult {
     let script = match &call.answer {
-        Some(reply) => {
-            MockScript::try_from(std::slice::from_ref(reply)).map_err(guardrail_error)?
-        }
+        Some(reply) => MockScript::try_from(std::slice::from_ref(reply))
+            .map_err(|error| failure_with_class("GuardrailError", error.to_string()))?,
         None => disconnection_script(&call.fail),
     };
-    let mock = MockProvider::start(script).map_err(guardrail_error)?;
+    let mock = MockProvider::start(script)
+        .map_err(|error| failure_with_class("GuardrailError", error.to_string()))?;
     let mut settings = call.settings;
     settings.api_base.clone_from(&mock.base_url);
     settings.guardrail_timeout = Duration::from_millis(200);
@@ -218,9 +226,11 @@ fn run_call(call: Request) -> crate::helpers::HelperResult {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-        .map_err(guardrail_error)?;
+        .map_err(|error| failure_with_class("GuardrailError", error.to_string()))?;
     let result = runtime.block_on(guardrail.apply_guardrail(prepared, call.input_type));
-    let calls = mock.finish().map_err(guardrail_error)?;
+    let calls = mock
+        .finish()
+        .map_err(|error| failure_with_class("GuardrailError", error.to_string()))?;
     let payload = calls
         .into_iter()
         .next()
