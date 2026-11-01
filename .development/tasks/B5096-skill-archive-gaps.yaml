@@ -10,9 +10,14 @@ description: >-
   crates/betterlite-http/Cargo.toml builds the zip crate with only its deflate-flate2-zlib feature.
   A member compressed with bzip2 (method 12) or LZMA (method 14) fails to open, so
   flattened_members returns None and build_skill_archive drops the whole upload, while LiteLLM's
-  zipfile module decodes both and serves the archive. The fix turns on the zip crate's own bzip2
-  and lzma features instead of hand-written decompression; a bzip2-member and an lzma-member oracle
-  case each build an archive readable only through one of those methods.
+  zipfile module decodes both and serves the archive. The fix turns on zip's bzip2-rs feature, not
+  its plain bzip2 feature: bzip2 0.6 defaults to the libbz2-rs-sys backend, whose bzip2-1.0.6
+  license is not on deny.toml's allow list and whose newest release is only days old, while
+  bzip2-rs links the same C libbzip2 1.0.8 through bzip2-sys, the way CPython's own bz2 module
+  links that library. The fix also turns on zip's lzma feature; its lzma-rust2 dependency needs
+  sha2 at a version Cargo.lock already carries, so nothing new enters the dependency tree there. A
+  bzip2-member and an lzma-member oracle case each build an archive readable only through one of
+  those methods.
 
 
   manifest_frontmatter parses SKILL.md's frontmatter with serde_saphyr::from_str, whose default
@@ -74,7 +79,10 @@ description: >-
   zip 9.1.3 and libz-sys 1.1.31, the dependency its deflate-flate2-zlib feature pulls in, were both
   under seven days old when B3210 added them on 2026-10-30, and both are still under seven days old
   today. The fix pins zip to 9.1.0 and libz-sys to 1.1.30 in Cargo.lock, the newest release of each
-  that had already cleared seven days.
+  that had already cleared seven days. These two pins are the architect's decision from 2026-11-01
+  and stay as written even if a newer zip or libz-sys release clears seven days before this task
+  lands; zip 9.2.0 and 9.2.1 are newer than the version this task was scoped against and are not a
+  reason to move the pin.
 
 
   Two style fixes land in the same file this task already touches. repack builds its fixed
@@ -119,7 +127,8 @@ references:
 dod:
   - text: >-
       A member compressed with bzip2 or LZMA builds an archive the same way LiteLLM's zipfile
-      module does, through the zip crate's own bzip2 and lzma features. A new
+      module does, through zip's bzip2-rs and lzma features, not zip's plain bzip2 feature whose
+      libbz2-rs-sys backend fails deny.toml's license allow list. A new
       skill_archive_reads_a_bzip2_compressed_member test and a new
       skill_archive_reads_an_lzma_compressed_member test fail on today's main, where either method
       returns None, and pass once the features are on.
@@ -167,9 +176,11 @@ dod:
       these ten cases ignores pointer /value today; all ten do on today's main.
     proof: [archive-weak-ignores-gone, archive-wrapped-helper-value]
   - text: >-
-      zip and libz-sys are pinned to the newest release of each that had cleared seven days when
-      this task lands (zip 9.1.0, libz-sys 1.1.30), not the releases B3210 added at four and five
-      days old.
+      zip is pinned to 9.1.0 with its bzip2-rs and lzma features, not zip's plain bzip2 feature,
+      and libz-sys is pinned to 1.1.30; both are the newest release of each that had cleared seven
+      days when B3210 added them, and neither pin reintroduces libbz2-rs-sys into Cargo.lock. These
+      pins are the architect's decision from 2026-11-01 and stay as written even if a newer zip or
+      libz-sys release later clears seven days.
     proof: [archive-pinned-dependencies]
   - text: >-
       repack builds its fixed timestamp with DateTime::DEFAULT instead of a fallible
@@ -202,10 +213,11 @@ checks:
         grep -q 'String::from_utf8_lossy' crates/betterlite-http/src/skill_archive.rs &&
         grep -q 'expect(clippy::disallowed_methods' crates/betterlite-http/src/skill_archive.rs
     - id: archive-pinned-dependencies
-      why: zip or libz-sys still resolves to the release that was under seven days old when B3210 added it
+      why: zip or libz-sys is not pinned to the architect's exact 2026-11-01 release, or zip's bzip2-rs feature pulled libbz2-rs-sys back into the lock
       run: >-
-        ! grep -A1 '^name = "zip"' Cargo.lock | grep -q '9.1.3' &&
-        ! grep -A1 '^name = "libz-sys"' Cargo.lock | grep -q '1.1.31'
+        grep -A1 '^name = "zip"' Cargo.lock | grep -q '^version = "9.1.0"' &&
+        grep -A1 '^name = "libz-sys"' Cargo.lock | grep -q '^version = "1.1.30"' &&
+        ! grep -q '^name = "libbz2-rs-sys"' Cargo.lock
     - id: archive-wrapped-helper-value
       why: either oracle helper adapter still answers a bare top-level value instead of a wrapped archive object
       run: >-
@@ -261,7 +273,8 @@ pitfalls:
   - "Python's os.path.altsep is None on the Linux host both LiteLLM and betterlite run on, so a trailing-backslash name only gets rejected once it reaches normalize_path's existing backslash check, not by any directory logic."
   - "ZipArchive::validate_header_consistency checks every entry at once; call it right after ZipArchive::new and propagate its error with .ok()?, not inside the existing per-entry loop."
   - "serde_saphyr's duplicate_keys option is built with the options! macro and passed to from_str_with_options by value, not by reference."
-  - "Confirm the zip crate's bzip2 and lzma features exist on 9.1.0 before pinning there; fall back to 9.0.5 if either feature moved or its own transitive bzip2 or lzma-rust2 pin fails cargo deny."
+  - "zip's bzip2 feature defaults to bzip2 0.6's libbz2-rs-sys backend, whose bzip2-1.0.6 license fails deny.toml's allow list; use zip's bzip2-rs feature instead, which links the C libbzip2 1.0.8 through bzip2-sys, already MIT/Apache-2.0, the way CPython's own bz2 module links that same library."
+  - "zip's lzma feature pulls in lzma-rust2 0.23.0, whose xz feature needs sha2 ^0.11; sha2 0.11.1 is already in Cargo.lock, so this adds no duplicate version."
   - "libz-sys 1.1.30 is pinned with cargo update --precise, not by editing a version in Cargo.toml; the deflate-flate2-zlib feature choice itself is untouched."
   - "The ten cases dropping their ignore on /value must still compare the whole value, not only ok; check each one actually asserts None or the full archive object once the wrap is in place, not just that ok still matches."
   - "docs/deviations/B3210.yaml already exists with deviations: []; add the two new entries to that list without changing its task: B3210 line."
