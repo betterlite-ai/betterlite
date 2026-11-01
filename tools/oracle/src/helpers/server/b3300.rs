@@ -58,11 +58,10 @@ impl Helper for Op {
 
 fn build_raw_request(input: &Input) -> Result<RawOcrRequest, Box<HelperError>> {
     if let Some(multipart) = &input.multipart {
-        let content_type = Some(format!("multipart/form-data; boundary={BOUNDARY}"));
         if input.use_cached_form {
             let cached_form = build_cached_form(multipart)?;
             return Ok(RawOcrRequest {
-                content_type,
+                content_type: Some("application/json".to_owned()),
                 body: Vec::new(),
                 header_req_format: input.header_req_format.clone(),
                 cached_form: Some(cached_form),
@@ -70,7 +69,7 @@ fn build_raw_request(input: &Input) -> Result<RawOcrRequest, Box<HelperError>> {
         }
         let body = build_multipart_body(multipart)?;
         return Ok(RawOcrRequest {
-            content_type,
+            content_type: Some(format!("multipart/form-data; boundary={BOUNDARY}")),
             body,
             header_req_format: input.header_req_format.clone(),
             cached_form: None,
