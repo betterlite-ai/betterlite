@@ -2,12 +2,11 @@ id: helper-imports-litellm
 language: python
 severity: error
 message: an oracle helper adapter imports litellm (or litellm_proxy_extras) and calls it, so its cases compare betterlite with LiteLLM and not with Python written for the oracle
-note: dispatch.py routes requests and is exempt; the other files listed under ignores predate this rule, and a task that moves one onto LiteLLM takes it off the list
+note: dispatch.py routes requests and is exempt
 files:
   - tools/oracle/helpers/*.py
 ignores:
   - tools/oracle/helpers/dispatch.py
-  - tools/oracle/helpers/b3973.py
 rule:
   kind: module
   not:
