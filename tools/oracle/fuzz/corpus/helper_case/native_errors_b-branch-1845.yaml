@@ -1,0 +1,14 @@
+kind: helper
+name: native-errors-b-branch-1845
+call:
+  native_errors_b:
+    provider: aleph_alpha
+    model: aleph_alpha/luminous-base
+    error_str: "boom"
+    status_code: 429
+    message: "boom"
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/context/message
+      why: betterlite writes its own message

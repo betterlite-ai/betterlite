@@ -1,0 +1,14 @@
+kind: helper
+name: aws-errors-branch-884
+call:
+  aws_errors:
+    provider: bedrock
+    model: claude-3
+    custom_llm_provider: bedrock_mantle
+    error_str: "invalid_request_error: prompt tokens (500) exceed model maximum (400)"
+    status_code: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

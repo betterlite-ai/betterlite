@@ -1,0 +1,8 @@
+kind: helper
+name: frontmatter-yaml-decode-error
+call:
+  skill_discovery_archives:
+    stored_content: UEsDBBQAAAAIAAAAIQA1o8SPFAAAABQAAAAIAAAAU0tJTEwubWTT1dXlykvMTbVSiObSBbKT8lMqAVBLAQIUAxQAAAAIAAAAIQA1o8SPFAAAABQAAAAIAAAAAAAAAAAAAACkgQAAAABTS0lMTC5tZFBLBQYAAAAAAQABADYAAAA6AAAAAAA=
+env: {}
+compare:
+  ignore: []

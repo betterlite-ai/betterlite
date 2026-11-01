@@ -1,0 +1,11 @@
+task: B4113
+deviations:
+  - what: transform_response returns typed Rust structs for the assistant and tool/user messages instead of dicts.
+    why: Rust's type system requires an explicit message shape; the serialized wire form matches LiteLLM's dicts field for field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/transformation.py#L324-L372
+  - what: Thinking blocks are prepended to assistant content via a dedicated prepend_thinking step on the typed assistant message rather than list concatenation ahead of a dict literal.
+    why: The Anthropic API requires thinking blocks first in the content list; a typed prepend keeps that order explicit instead of relying on list-building order.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/transformation.py#L330-L339
+  - what: format_search_response falls back to a hand-built "results=[] object=... field=value" string of the SearchResponse's object tag and extra fields when it has no results, standing in for Python's str(result) on the pydantic model.
+    why: Rust has no str() equivalent for an arbitrary model; a field-by-field rendering is the closest analog and only triggers on the same empty-results case LiteLLM falls back on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/transformation.py#L530-L550

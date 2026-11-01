@@ -1,0 +1,26 @@
+kind: helper
+name: response_cache_does_not_invalidate
+call:
+  baseline_history:
+    history:
+      first_at: 0.0
+      last_at: 0.0
+      equivalent: true
+      uncertain_before: 0.0
+      entries:
+        - fingerprint: "fpA"
+          content_fingerprint: "cfpA"
+          tokens: 50
+          ttl_seconds: 300
+          available_at: 0.0
+          expires_at: 100000.0
+          uncertain: false
+      blocked_until: 0.0
+    groups:
+      - - request_id: "r1"
+          started_at: 10.0
+          available_at: 10.0
+          outcome: response_cache
+          baseline_equivalent: false
+compare: {ignore: []}
+env: {}

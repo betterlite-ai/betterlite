@@ -1,0 +1,16 @@
+kind: helper
+name: fake-block-variants
+call:
+  messages_fake_stream:
+    response:
+      content:
+        - {type: text}
+        - {type: text, text: null}
+        - {type: thinking, thinking: Thought, signature: sig}
+        - {type: thinking, thinking: "", signature: ""}
+        - {type: redacted_thinking, data: cipher}
+        - {type: tool_use, id: tool_1, name: lookup, input: {x: 1}}
+        - {type: tool_use, input: null}
+env: {}
+compare:
+  ignore: []
