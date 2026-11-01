@@ -2,6 +2,7 @@ mod arguments;
 mod detection;
 mod messages;
 pub mod native;
+pub mod outcome;
 pub mod wire;
 
 use thiserror::Error;
@@ -16,6 +17,8 @@ pub enum TransformationError {
     MissingResults { calls: usize, results: usize },
     #[error("search arguments exceed the nesting or size limit")]
     ArgumentsTooComplex,
+    #[error("tool_calls count {calls} does not match search_outcomes count {outcomes}")]
+    MismatchedOutcomes { calls: usize, outcomes: usize },
 }
 
 pub struct WebSearchTransformation;

@@ -3,6 +3,7 @@
 use super::generalizations::FallbackGeneralizations;
 use super::{ModelFieldError, ModelFields};
 use crate::metadata::identity::Mode;
+use crate::metadata::levels::ReasoningEffort;
 use rstest::rstest;
 use serde_json::value::RawValue;
 use std::collections::BTreeMap;
@@ -52,6 +53,31 @@ fn model_metadata_types_model_field_tests_behavior(#[case] source: &str, #[case]
             assert!(error.to_string().contains(expected));
         }
     }
+}
+
+#[test]
+fn reasoning_levels_keep_values() {
+    let raw: Box<RawValue> = serde_json::from_str(
+        r#"{"litellm_provider":"anthropic","default_reasoning_effort":"low","reasoning_effort_levels":["low","medium","high"],"bedrock_output_config_effort_ceiling":"xhigh"}"#,
+    )
+    .unwrap();
+    let (fields, _) = ModelFields::parse(raw.as_ref()).unwrap();
+    assert_eq!(
+        fields.metadata.default_reasoning_effort,
+        Some(ReasoningEffort::Low)
+    );
+    assert_eq!(
+        fields.metadata.reasoning_effort_levels,
+        vec![
+            ReasoningEffort::Low,
+            ReasoningEffort::Medium,
+            ReasoningEffort::High
+        ]
+    );
+    assert_eq!(
+        fields.metadata.bedrock_output_ceiling,
+        Some(ReasoningEffort::Xhigh)
+    );
 }
 
 #[test]

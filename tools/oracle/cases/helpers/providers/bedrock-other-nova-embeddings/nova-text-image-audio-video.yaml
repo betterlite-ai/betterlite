@@ -1,0 +1,11 @@
+kind: helper
+name: nova-text-image-audio-video
+call:
+  bedrock_other_nova_embeddings:
+    nova_text_image_audio_video:
+      input: "data:video/MP4,RAWBYTES"
+      inference_params: {}
+      async_invoke_route: false
+env: {}
+compare:
+  ignore: []

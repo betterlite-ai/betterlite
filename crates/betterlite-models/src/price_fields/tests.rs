@@ -2,12 +2,14 @@
 
 use super::PriceFieldError;
 use super::PriceFields;
-use super::nested::Weekday;
+use super::nested::{HoursUtc, Weekday};
 use rstest::rstest;
+use rust_decimal::Decimal;
 use serde_json::value::RawValue;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
+use std::str::FromStr as _;
 
 #[rstest]
 #[case::absent("{}", "absent")]
@@ -210,6 +212,185 @@ fn assert_decimal_value(source: &str, parsed_value: &PriceFields, expected: &str
             .to_string(),
         expected
     );
+}
+
+#[test]
+fn price_case_absent_optional_fields_stay_default() {
+    let raw: Box<RawValue> = serde_json::from_str(r#"{"input_cost_per_token":0.1}"#).unwrap();
+    let parsed = PriceFields::parse(raw.as_ref()).unwrap();
+    let mut expected = PriceFields::default();
+    expected.values.input.input_token = Some(Decimal::from_str("0.1").unwrap());
+    assert_eq!(parsed, expected);
+}
+
+#[test]
+fn price_case_exponent_and_trailing_zero_keep_their_value() {
+    let raw: Box<RawValue> =
+        serde_json::from_str(r#"{"output_cost_per_token":1.2e-7,"cost_per_second":0.0050}"#)
+            .unwrap();
+    let parsed = PriceFields::parse(raw.as_ref()).unwrap();
+    assert_eq!(
+        parsed.values.output.output_token.unwrap().to_string(),
+        "0.00000012"
+    );
+    assert_eq!(
+        parsed.values.other.per_second.unwrap().to_string(),
+        "0.0050"
+    );
+}
+
+fn assert_nested_sample_amounts(parsed: &PriceFields) {
+    assert_eq!(
+        parsed.values.other.computer_input_1k.unwrap().to_string(),
+        "0.00001"
+    );
+    assert_eq!(
+        parsed.values.other.computer_output_1k.unwrap().to_string(),
+        "0.00002"
+    );
+    assert_eq!(
+        parsed
+            .values
+            .other
+            .file_search_1k_calls
+            .unwrap()
+            .to_string(),
+        "0.003"
+    );
+    assert_eq!(
+        parsed.values.other.file_search_gb_day.unwrap().to_string(),
+        "0.0001"
+    );
+    assert_eq!(
+        parsed.values.other.vector_store_gb_day.unwrap().to_string(),
+        "0.0001"
+    );
+}
+
+fn assert_nested_sample_metadata(parsed: &PriceFields) {
+    assert_eq!(parsed.metadata.per_hour.unwrap().to_string(), "1.25");
+    assert_eq!(
+        parsed.metadata.per_minute.unwrap().to_string(),
+        "0.020833333333333333"
+    );
+    assert_eq!(parsed.provider_specific.us.unwrap().to_string(), "1.1");
+    assert_eq!(parsed.provider_specific.fast.unwrap().to_string(), "2.0");
+    assert_eq!(parsed.guardrail_units.len(), 1);
+    assert_eq!(
+        parsed.guardrail_units["custom"].to_string(),
+        "0.000000000000000001"
+    );
+}
+
+#[test]
+fn price_case_nested_and_sample_prices_keep_every_field() {
+    let raw: Box<RawValue> = serde_json::from_str(
+        r#"{"computer_use_input_cost_per_1k_tokens":0.00001,"computer_use_output_cost_per_1k_tokens":0.00002,"file_search_cost_per_1k_calls":0.003,"file_search_cost_per_gb_per_day":0.0001,"vector_store_cost_per_gb_per_day":0.0001,"metadata":{"original_pricing_per_hour":1.25,"original_pricing_per_minute":0.020833333333333333},"provider_specific_entry":{"us":1.1,"fast":2.0},"guardrail_cost_per_unit":{"custom":0.000000000000000001}}"#,
+    )
+    .unwrap();
+    let parsed = PriceFields::parse(raw.as_ref()).unwrap();
+    assert_nested_sample_amounts(&parsed);
+    assert_nested_sample_metadata(&parsed);
+}
+
+#[test]
+fn price_case_tier_keeps_every_price_and_range() {
+    let raw: Box<RawValue> = serde_json::from_str(
+        r#"{"input_cost_per_token":0.1,"provider_specific_entry":{"us":0.000000000000000001},"tiered_pricing":[{"input_cost_per_token":0.00000005,"output_cost_per_token":0.0000004,"range":[0,256000],"cache_read_input_token_cost":0.00000001,"input_cost_per_query":0.002,"cache_creation_input_token_cost":0.00000003}]}"#,
+    )
+    .unwrap();
+    let parsed = PriceFields::parse(raw.as_ref()).unwrap();
+    assert_eq!(parsed.values.input.input_token.unwrap().to_string(), "0.1");
+    assert_eq!(
+        parsed.provider_specific.us.unwrap().to_string(),
+        "0.000000000000000001"
+    );
+    assert_eq!(parsed.tiers.len(), 1);
+    let tier = &parsed.tiers[0];
+    assert_eq!(tier.input_token.unwrap().to_string(), "0.00000005");
+    assert_eq!(tier.output_token.unwrap().to_string(), "0.0000004");
+    let range = tier.range.as_ref().unwrap();
+    assert_eq!(range.len(), 2);
+    assert_eq!(range[0].to_string(), "0");
+    assert_eq!(range[1].to_string(), "256000");
+    assert_eq!(
+        tier.cache_read_input_token_cost.unwrap().to_string(),
+        "0.00000001"
+    );
+    assert_eq!(tier.input_cost_per_query.unwrap().to_string(), "0.002");
+    assert_eq!(tier.cache_create_token.unwrap().to_string(), "0.00000003");
+}
+
+fn assert_off_peak_prices(off_peak: &super::nested::OffPeakPricing) {
+    assert_eq!(
+        off_peak.input_cost_per_token.unwrap().to_string(),
+        "0.00000015"
+    );
+    assert_eq!(
+        off_peak.output_cost_per_token.unwrap().to_string(),
+        "0.0000006"
+    );
+    assert_eq!(
+        off_peak.cache_read_input_token_cost.unwrap().to_string(),
+        "0.000000003"
+    );
+    assert_eq!(
+        off_peak.cache_create_token.unwrap().to_string(),
+        "0.00000003"
+    );
+    assert_eq!(
+        off_peak.output_reasoning_token.unwrap().to_string(),
+        "0.000002"
+    );
+    assert_eq!(
+        off_peak.hours_utc,
+        Some(HoursUtc::One("00:00-01:00".to_owned()))
+    );
+    assert_eq!(off_peak.weekday_timezone, Some("Asia/Shanghai".to_owned()));
+}
+
+fn assert_off_peak_windows(off_peak: &super::nested::OffPeakPricing) {
+    assert_eq!(off_peak.windows.len(), 3);
+    assert_eq!(
+        off_peak.windows[0].hours_utc,
+        HoursUtc::Many(vec!["00:00-01:00".to_owned(), "04:00-06:00".to_owned()])
+    );
+    assert_eq!(
+        off_peak.windows[0].weekdays,
+        Some(vec![
+            Weekday::Monday,
+            Weekday::Tuesday,
+            Weekday::Wednesday,
+            Weekday::Thursday,
+            Weekday::Friday
+        ])
+    );
+    assert_eq!(
+        off_peak.windows[1].hours_utc,
+        HoursUtc::One("00:00-00:00".to_owned())
+    );
+    assert_eq!(
+        off_peak.windows[1].weekdays,
+        Some(vec![Weekday::Saturday, Weekday::Sunday])
+    );
+    assert_eq!(
+        off_peak.windows[2].hours_utc,
+        HoursUtc::One("12:00-13:00".to_owned())
+    );
+    assert_eq!(off_peak.windows[2].weekdays, None);
+}
+
+#[test]
+fn price_case_off_peak_keeps_windows_and_prices() {
+    let raw: Box<RawValue> = serde_json::from_str(
+        r#"{"input_cost_per_token":0.1,"off_peak_pricing":{"input_cost_per_token":0.00000015,"output_cost_per_token":0.0000006,"cache_read_input_token_cost":0.000000003,"cache_creation_input_token_cost":0.00000003,"output_cost_per_reasoning_token":0.000002,"hours_utc":"00:00-01:00","weekday_timezone":"Asia/Shanghai","windows":[{"hours_utc":["00:00-01:00","04:00-06:00"],"weekdays":[1,2,3,4,5]},{"hours_utc":"00:00-00:00","weekdays":[6,7]},{"hours_utc":"12:00-13:00"}]}}"#,
+    )
+    .unwrap();
+    let parsed = PriceFields::parse(raw.as_ref()).unwrap();
+    assert_eq!(parsed.values.input.input_token.unwrap().to_string(), "0.1");
+    let off_peak = parsed.off_peak.as_ref().unwrap();
+    assert_off_peak_prices(off_peak);
+    assert_off_peak_windows(off_peak);
 }
 
 #[path = "inventory/tests.rs"]

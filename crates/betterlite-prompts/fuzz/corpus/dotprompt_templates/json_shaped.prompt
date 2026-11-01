@@ -1,0 +1,1 @@
+{"greeting": {"content": "Hi {{ name }}", "metadata": {"model": "gpt-4"}}}

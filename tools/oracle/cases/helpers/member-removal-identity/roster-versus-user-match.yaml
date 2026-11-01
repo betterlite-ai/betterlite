@@ -1,0 +1,11 @@
+kind: helper
+name: roster_entry_without_id_falls_back_to_email
+call:
+  member_removal_identity:
+    operation: addresses_member
+    member: {user_email: "a@example.com", role: "user"}
+    user_id: "u1"
+    user_email: "a@example.com"
+env: {}
+compare:
+  ignore: []

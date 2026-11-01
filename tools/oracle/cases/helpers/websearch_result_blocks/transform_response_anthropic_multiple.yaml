@@ -1,0 +1,23 @@
+kind: helper
+name: transform-response-anthropic-multiple
+call:
+  b4113:
+    operation: transform_response
+    format: anthropic
+    response:
+      content:
+        - type: tool_use
+          id: toolu_01
+          name: web_search
+          input:
+            query: rust programming
+        - type: tool_use
+          id: toolu_02
+          name: web_search
+          input:
+            query: rust ownership
+    search_results:
+      - "Title: Rust\nURL: https://www.rust-lang.org\nSnippet: A systems language"
+      - "Title: Ownership\nURL: https://doc.rust-lang.org/book/ch04-00-understanding-ownership.html\nSnippet: Explains ownership"
+env: {}
+compare: {ignore: []}
