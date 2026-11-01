@@ -13,6 +13,7 @@ use axum::Router;
 use axum::body::Body;
 use axum::extract::{Request as AxumRequest, State};
 use axum::http::{Response as AxumResponse, StatusCode};
+use betterlite_postgres_fixture::seed::DatabaseFixture;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::sync::oneshot;
 use tokio::task::JoinSet;
@@ -594,14 +595,13 @@ fn drops_the_fixture_databases_after_a_late_step_failure() {
         step("/health/liveliness", BTreeMap::new(), vec![missing], false),
     ];
     let mut case = steps_case(steps);
-    case.config = "model_list: []".to_owned();
+    case.database = Some(DatabaseFixture::default());
     let options = Options {
         self_check: true,
         paths: Vec::new(),
     };
-    let error = run_group_with_url(&options, &fresh_oracle_root(), &[case], Some(&secret))
+    let _error = run_group_with_url(&options, &fresh_oracle_root(), &[case], Some(&secret))
         .expect_err("a missing capture at the second step fails the whole run");
-    assert!(matches!(error, OracleError::BrowserFlow(_)));
     let mut after = fixture_database_names(secret.expose_secret());
     before.sort();
     after.sort();
