@@ -6,3 +6,9 @@ deviations:
   - what: Javelin does not parse response fields like language or other assessment types; unrecognized assessment types are silently passed over without raising an error.
     why: LiteLLM's implementation iterates through assessment types without validation and only raises on request_reject true; betterlite follows the same pattern.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/javelin/javelin.py#L216-L242
+  - what: DEFAULT_TIMEOUT matches LiteLLM's 600 second read/write fallback, but sets a single reqwest per-request timeout rather than httpx's separate 5 second connect timeout.
+    why: Building a connect-only sub-timeout needs a client built with its own connect_timeout, and client construction belongs to the unresolved transport owner (H); the 600 second total bound is the part that matters for fail-open behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L164-L167
+  - what: betterlite trims trailing slashes from api_base before building the guardrail URL, so a trailing slash in api_base does not produce a double slash before the version segment.
+    why: LiteLLM concatenates api_base and api_version unchanged, so a trailing slash in api_base reaches the Javelin guard API as a double slash; trimming it is a deliberate fix, not a port of that quirk.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/javelin/javelin.py#L108

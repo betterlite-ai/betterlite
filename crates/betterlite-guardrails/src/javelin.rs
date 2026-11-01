@@ -2,10 +2,12 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use betterlite_config::sections::guardrail_identity::config_models::GuardrailConfigModelIdentity;
 use betterlite_prompts::message_content::Message;
 use betterlite_prompts::message_fields::last_user::get_last_user_message;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
+use serde::{Deserialize, Serialize};
 
 pub mod error;
 pub mod wire;
@@ -18,7 +20,8 @@ use wire::{
 pub const DEFAULT_API_BASE: &str = "https://api-dev.javelin.live";
 pub const DEFAULT_API_VERSION: &str = "v1";
 pub const DEFAULT_GUARDRAIL_NAME: &str = "trustsafety";
-pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
+// LiteLLM's AsyncHTTPHandler falls back to httpx's 600s read/write timeout when no guardrail timeout is configured; see docs/deviations/B3777.yaml for the connect-timeout sub-component this doesn't model.
+pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
 const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 // LiteLLM strips this logging-only key out of metadata before forwarding it to Javelin.
 const LOGGING_METADATA_KEY: &str = "standard_logging_guardrail_information";
@@ -30,8 +33,33 @@ pub enum JavelinEventHook {
 
 pub const SUPPORTED_EVENT_HOOKS: [JavelinEventHook; 1] = [JavelinEventHook::PreCall];
 
-// Stands in for LiteLLM's JavelinGuardrailConfigModel, owned by the unbuilt base guardrail framework (F); see cisco_configuration::CiscoConfigModel for the same pattern.
-pub struct JavelinConfigModel;
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct JavelinConfigModel {
+    pub guard_name: Option<String>,
+    pub api_version: Option<String>,
+    pub metadata: Option<BTreeMap<String, JavelinExtraValue>>,
+    pub application: Option<String>,
+    pub config: Option<BTreeMap<String, JavelinExtraValue>>,
+}
+
+impl Default for JavelinConfigModel {
+    fn default() -> Self {
+        Self {
+            guard_name: None,
+            api_version: Some(DEFAULT_API_VERSION.to_owned()),
+            metadata: None,
+            application: None,
+            config: None,
+        }
+    }
+}
+
+impl GuardrailConfigModelIdentity for JavelinConfigModel {
+    fn ui_friendly_name() -> &'static str {
+        "Javelin Guardrails"
+    }
+}
 
 pub trait CallbackRegistry {
     fn add_litellm_callback(&mut self, guardrail: Arc<JavelinGuardrail>);
@@ -244,8 +272,14 @@ where
     if params.javelin_guard_name.is_none() {
         return Err(JavelinInitializationError::MissingGuardName);
     }
+    // LiteLLM's initialize_guardrail resolves default_on to False when unset, unlike the constructor's own True default.
+    let default_on = Some(params.default_on.unwrap_or(false));
+    let resolved_params = JavelinGuardrailParams {
+        default_on,
+        ..params
+    };
     let guardrail = Arc::new(JavelinGuardrail::new(
-        params,
+        resolved_params,
         get_secret_str,
         client,
         timeout,

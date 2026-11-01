@@ -6,12 +6,12 @@ use serde::{Deserialize, Serialize};
 
 pub type JavelinExtraValue = GuardrailValue;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JavelinGuardInput {
     pub text: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct JavelinGuardRequest {
     pub input: JavelinGuardInput,
     pub config: BTreeMap<String, JavelinExtraValue>,
