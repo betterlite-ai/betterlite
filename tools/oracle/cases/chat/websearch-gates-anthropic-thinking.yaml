@@ -1,0 +1,38 @@
+{
+  "kind": "helper",
+  "name": "websearch-gates-anthropic-thinking",
+  "call": {
+    "b4117": {
+      "response": {
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "reason",
+            "signature": "signed"
+          },
+          {
+            "type": "tool_use",
+            "id": "one",
+            "name": "litellm_web_search",
+            "input": {
+              "query": "rust"
+            }
+          }
+        ]
+      },
+      "tools": [
+        {
+          "name": "litellm_web_search"
+        }
+      ],
+      "custom_llm_provider": "anthropic",
+      "enabled_providers": [
+        "anthropic"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

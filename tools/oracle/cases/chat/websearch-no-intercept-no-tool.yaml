@@ -1,0 +1,29 @@
+{
+  "kind": "helper",
+  "name": "websearch-no-intercept-no-tool",
+  "call": {
+    "b4117": {
+      "response": {
+        "content": [
+          {
+            "type": "tool_use",
+            "id": "one",
+            "name": "litellm_web_search",
+            "input": {
+              "query": "rust"
+            }
+          }
+        ]
+      },
+      "tools": [],
+      "custom_llm_provider": "anthropic",
+      "enabled_providers": [
+        "anthropic"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
