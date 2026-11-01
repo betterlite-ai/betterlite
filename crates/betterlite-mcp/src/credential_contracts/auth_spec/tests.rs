@@ -22,7 +22,7 @@ fn parse_auth_spec_kind_success(#[case] raw: &str, #[case] expected: AuthSpecKin
 #[rstest]
 fn parse_auth_spec_kind_unknown_mode_fail_closed() {
     let error = parse_auth_spec_kind("bogus").unwrap_err();
-    assert_eq!(error.summary(), "unknown auth_spec_kind: 'bogus'");
+    assert_eq!(error.to_string(), "unknown auth_spec_kind: 'bogus'");
 }
 
 #[rstest]

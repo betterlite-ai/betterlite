@@ -42,7 +42,7 @@ fn unauthorized_challenge_fields() {
         })
     );
     assert_eq!(
-        error.summary(),
+        error.to_string(),
         "unauthorized: no stored credential for this server"
     );
 }
@@ -84,5 +84,5 @@ fn unauthorized_challenge_fields() {
     "not implemented: token_exchange"
 )]
 fn cred_error_summary_matches_arm(#[case] error: CredError, #[case] expected: &str) {
-    assert_eq!(error.summary(), expected);
+    assert_eq!(error.to_string(), expected);
 }
