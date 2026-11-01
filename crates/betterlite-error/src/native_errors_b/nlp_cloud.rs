@@ -17,8 +17,9 @@ pub struct NlpCloudExceptionInput {
 
 #[must_use]
 pub fn map_nlp_cloud_exception(input: &NlpCloudExceptionInput) -> Option<ErrorClass> {
-    if let Some(class) = detail_classification(input) {
-        return Some(class);
+    // "detail" in error_str always raises, independent of status_code, ahead of the status chain below
+    if input.error_str.contains("detail") {
+        return Some(detail_classification(input));
     }
     status_classification(input)
 }
@@ -40,24 +41,31 @@ fn context(input: &NlpCloudExceptionInput) -> ErrorContext {
     }
 }
 
-// "detail" in error_str always raises, independent of status_code, and runs before the status chain below
-fn detail_classification(input: &NlpCloudExceptionInput) -> Option<ErrorClass> {
-    if !input.error_str.contains("detail") {
-        return None;
+type TextPredicate = fn(&str) -> bool;
+type ErrorClassBuilder = fn(Box<ErrorContext>) -> ErrorClass;
+
+const DETAIL_CANDIDATES: [(TextPredicate, ErrorClassBuilder); 2] = [
+    (
+        |error_str| error_str.contains("Input text length should not exceed"),
+        ErrorClass::ContextWindowExceeded,
+    ),
+    (
+        |error_str| error_str.contains("value is not a valid"),
+        ErrorClass::BadRequest,
+    ),
+];
+
+fn detail_classification(input: &NlpCloudExceptionInput) -> ErrorClass {
+    let found = DETAIL_CANDIDATES
+        .into_iter()
+        .find(|(matches, _)| matches(&input.error_str));
+    match found {
+        Some((_, build)) => build(Box::new(context(input))),
+        None => ErrorClass::Api(Box::new(ApiDetails {
+            context: context(input),
+            status: 500,
+        })),
     }
-    if input
-        .error_str
-        .contains("Input text length should not exceed")
-    {
-        return Some(ErrorClass::ContextWindowExceeded(Box::new(context(input))));
-    }
-    if input.error_str.contains("value is not a valid") {
-        return Some(ErrorClass::BadRequest(Box::new(context(input))));
-    }
-    Some(ErrorClass::Api(Box::new(ApiDetails {
-        context: context(input),
-        status: 500,
-    })))
 }
 
 // https://docs.nlpcloud.com/?shell#errors; every status reaching this chain raises something, even the trailing else

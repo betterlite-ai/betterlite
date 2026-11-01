@@ -41,17 +41,25 @@ fn context(input: &AlephAlphaExceptionInput) -> ErrorContext {
     }
 }
 
+type TextPredicate = fn(&str) -> bool;
+type ErrorClassBuilder = fn(Box<ErrorContext>) -> ErrorClass;
+
+const TEXT_CANDIDATES: [(TextPredicate, ErrorClassBuilder); 2] = [
+    (
+        |error_str| error_str.contains("This is longer than the model's maximum context length"),
+        ErrorClass::ContextWindowExceeded,
+    ),
+    (
+        |error_str| error_str.contains("InvalidToken") || error_str.contains("No token provided"),
+        ErrorClass::BadRequest,
+    ),
+];
+
 fn text_classification(input: &AlephAlphaExceptionInput) -> Option<ErrorClass> {
-    if input
-        .error_str
-        .contains("This is longer than the model's maximum context length")
-    {
-        return Some(ErrorClass::ContextWindowExceeded(Box::new(context(input))));
-    }
-    if input.error_str.contains("InvalidToken") || input.error_str.contains("No token provided") {
-        return Some(ErrorClass::BadRequest(Box::new(context(input))));
-    }
-    None
+    let (_, build) = TEXT_CANDIDATES
+        .into_iter()
+        .find(|(matches, _)| matches(&input.error_str))?;
+    Some(build(Box::new(context(input))))
 }
 
 fn status_classification(input: &AlephAlphaExceptionInput) -> Option<ErrorClass> {
