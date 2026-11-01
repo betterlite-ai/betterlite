@@ -1,0 +1,204 @@
+id: B5095
+title: "OpenAI errors: route the gateway through dispatch"
+description: >-
+  B185 built crates/betterlite-error/src/dispatch.rs as the one mapping for OpenAI-family provider errors, but no
+  gateway route calls it. crates/betterlite-server/src/routes/chat.rs's failure function and routes/embeddings.rs's
+  embedding_failure still render ChatError::Provider and EmbeddingError::Provider through
+  crates/betterlite-openai/src/chat/provider_error.rs's own classify, text_rule and status_rule, which keep the
+  upstream status unchanged instead of normalizing it. LiteLLM's BadRequestError and ContextWindowExceededError both
+  hardcode status_code to 400 in their constructors
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L219-L249
+  and
+  https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L535-L554),
+  reached from _map_openai_exception's 422 branch and its context-window branch
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L422-L462
+  and
+  https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L317-L324).
+  So an upstream 422 reaches a betterlite client as 422, and context-window text on an upstream 500 stays 500, where
+  LiteLLM answers 400 for both. ErrorClass::metadata in crates/betterlite-error/src/error.rs already hardcodes 400
+  for BadRequest and ContextWindowExceeded, so routing through dispatch fixes both without a change to error.rs
+  itself. This task routes chat.rs, embeddings.rs and the stream failure before the first chunk through dispatch and
+  ErrorClass::metadata, and deletes the duplicate classify, text_rule, status_rule and their predicates along with
+  the test that exercises them, maps_provider_errors_like_litellm. betterlite-openai gains betterlite-error and
+  betterlite-redact as dependencies; crates/betterlite-server/src/server/chat_setup.rs builds one Redactor with
+  Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH) and crates/betterlite-openai/src/chat/execution.rs carries it in
+  ChatExecutor, since dispatch needs a redactor and the project keeps dependencies in constructors instead of
+  rebuilding one per request. embeddings.rs keeps passing no structured body into dispatch for the Provider arm, the
+  same way ErrorBodyKind::MessageOnly behaves today, so the locked-in test
+  embedding_provider_failure_preserves_message still sees param as null.
+
+
+  crates/betterlite-error/src/openai.rs's status_branch reads a synthesized status as None, with a comment saying
+  hasattr(original_exception, "status_code") is false for a synthesized status. That is wrong: LiteLLM's
+  BaseLLMException.__init__ always sets self.status_code and self.status_code_is_synthesized
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L41-L53),
+  so the hasattr check in _map_openai_exception is always true and the function always picks a family by the numeric
+  status, synthesized or not. This task sends the synthesized status through the same table a real status uses and
+  corrects the comment.
+
+
+  crates/betterlite-error/src/dispatch/litellm_proxy.rs's proxy_body keeps only message and code from the raw body,
+  and classify_facts hardcodes body_type and body_param to None. LiteLLM's extract_and_raise_litellm_exception passes
+  body straight to whichever exception class accepts it
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L213-L242),
+  and BadRequestError, ContentPolicyViolationError, ImageFetchError, InternalServerError and RateLimitError all take
+  one. crates/betterlite-error/src/openai/body.rs's OpenaiErrorBody already carries kind and param; this task threads
+  them from raw.body into ErrorContext for the litellm_proxy branch.
+
+
+  classify_facts in litellm_proxy.rs matches facts.name as a plain String and falls back to
+  ErrorClass::Unclassified on a wildcard arm. The set of names is closed: parse.rs's extract_exception only ever
+  returns Ok(Some(_)) for the sixteen names parse/constructors.rs maps to Constructor::Response, BodyResponse or
+  Plain, and classify_facts already lists exactly those sixteen by hand. A seventeenth name added to constructors.rs
+  without a matching arm here would still compile and silently land in Unclassified. This task changes
+  LitellmExceptionFacts.name from String to an enum of those sixteen names and makes classify_facts match it
+  exhaustively, with no wildcard. facts.name is read nowhere else in the codebase, so the change stays inside
+  parse.rs, parse/constructors.rs and litellm_proxy.rs.
+
+
+  dispatch/tests.rs's rate_limit_classifications_never_carry_vendor_response_headers cannot fail: nothing in the
+  codebase ever fills RateLimit's headers map, and its own input carries none, so it proves nothing about the DoD
+  item on cookies, authorization and query secrets. openai_errors_openai_error_tests_behavior has no named case for
+  an Authorization header value, a query-string credential or a cookie-shaped secret going through dispatch in
+  error_str, message or body. This task deletes the test that cannot fail and adds named cases for a Bearer value, a
+  query-string credential shaped like url_query_cred and an auth_token-shaped cookie value, each asserting the raw
+  secret is absent from the exposed message while the typed family still classifies. A CORS header value carries no
+  secret shape in any input dispatch reads, so that part of the audit note is left out; see out_of_scope.
+scope:
+  paths:
+  - crates/betterlite-server/src/routes/chat.rs
+  - crates/betterlite-server/src/routes/chat/tests.rs
+  - crates/betterlite-server/src/routes/embeddings.rs
+  - crates/betterlite-server/src/routes/embeddings/tests.rs
+  - crates/betterlite-server/src/server/chat_setup.rs
+  - crates/betterlite-openai/src/chat/execution.rs
+  - crates/betterlite-openai/src/chat/provider_error.rs
+  - crates/betterlite-openai/src/chat/provider_error/tests.rs
+  - crates/betterlite-openai/Cargo.toml
+  - crates/betterlite-error/src/openai.rs
+  - crates/betterlite-error/src/openai/tests.rs
+  - crates/betterlite-error/src/dispatch/litellm_proxy.rs
+  - crates/betterlite-error/src/dispatch/tests.rs
+  - crates/betterlite-error/src/parse.rs
+  - crates/betterlite-error/src/parse/constructors.rs
+  - tools/oracle/cases/chat/upstream-422.yaml
+  - tools/oracle/cases/errors/context-window-500.yaml
+  - tools/oracle/cases/helpers/openai-errors/synthesized-status.yaml
+  - tools/oracle/cases/helpers/openai-errors/proxy-body-fields.yaml
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L422-L462
+  why: The hasattr(status_code) fallback chain in _map_openai_exception, including its 400 and 422 branches, both of which raise BadRequestError.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L317-L324
+  why: The context-window-exceeded text check raising ContextWindowExceededError ahead of the status fallback.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L219-L249
+  why: BadRequestError.__init__ hardcodes status_code to 400 and forwards body to the base openai exception.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L535-L554
+  why: ContextWindowExceededError.__init__ hardcodes status_code to 400 regardless of the upstream status.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L41-L53
+  why: BaseLLMException.__init__ always sets status_code and status_code_is_synthesized, so hasattr(original_exception, "status_code") is always true.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L213-L242
+  why: extract_and_raise_litellm_exception passes body through _accepted_init_kwargs to whichever exception class accepts it.
+dod:
+- text: >-
+    chat.rs and embeddings.rs render ChatError::Provider and EmbeddingError::Provider, and a stream failure before
+    the first chunk, through betterlite_error::dispatch::dispatch and ErrorClass::metadata, not through the
+    duplicate classify, text_rule and status_rule this task deletes from provider_error.rs. New gateway cases
+    tools/oracle/cases/chat/upstream-422.yaml and tools/oracle/cases/errors/context-window-500.yaml fail on main
+    today, since an upstream 422 reaches the client as 422 and context-window text on an upstream 500 stays 500; both
+    pass once dispatch answers 400 for each.
+  proof:
+  - oracle
+  - openai-error-tests
+  - gateway-wiring-removed-duplicate
+- text: >-
+    openai.rs's status_branch sends a synthesized status through the same table a real status uses. A new case in
+    openai/tests.rs's openai_errors_openai_error_tests_behavior, with status_code_is_synthesized true and status 500,
+    fails on main today (classifies api_connection with a null type) and passes once fixed (classifies
+    internal_server with type internal_server_error). New helper case
+    tools/oracle/cases/helpers/openai-errors/synthesized-status.yaml carries the same input through the oracle.
+  proof:
+  - openai-error-tests
+  - oracle
+- text: >-
+    litellm_proxy.rs carries the raw body's kind and param into ErrorContext.body_type and body_param for
+    BadRequestError, ContentPolicyViolationError, ImageFetchError, InternalServerError and RateLimitError, instead of
+    hardcoding both to None. New helper case tools/oracle/cases/helpers/openai-errors/proxy-body-fields.yaml, a
+    litellm.BadRequestError with a body carrying type and param, fails on main today (betterlite answers null for
+    both) and passes once proxy_body and classify_facts thread them through.
+  proof:
+  - oracle
+- text: >-
+    classify_facts in litellm_proxy.rs matches a closed enum of the sixteen exception names extract_exception can
+    ever return, with no wildcard arm, after LitellmExceptionFacts.name changes from String to that enum. The test
+    an_unrecognized_facts_name_never_panics_and_classifies_as_unclassified, which constructs a name extract_exception
+    can never produce, is deleted. classify_facts_maps_every_litellm_proxy_exception_name_to_its_family moves its
+    cases onto the enum and keeps passing.
+  proof:
+  - openai-error-tests
+- text: >-
+    dispatch/tests.rs's rate_limit_classifications_never_carry_vendor_response_headers, which no code path can fail,
+    is deleted. New named cases in openai_errors_openai_error_tests_behavior feed an Authorization Bearer value, a
+    query-string credential and an auth_token-shaped cookie value through dispatch in error_str, message and body,
+    each asserting the raw secret is absent from the exposed message while the typed family still classifies.
+  proof:
+  - openai-error-tests
+checks:
+  optional: [mutants]
+  commands:
+  - id: openai-error-tests
+    why: the required named behavior tests fail or the filter selects no tests
+    run: >-
+      cargo nextest run --locked -p betterlite-error -p betterlite-openai -p betterlite-server --no-tests=fail -E
+      'test(/::openai_errors_openai_error_tests_behavior($|::)/) - test(/replays_the_/)'
+  - id: gateway-wiring-removed-duplicate
+    why: the gateway still reaches the duplicate classify, text_rule or status_rule path instead of dispatch
+    run: |-
+      ! grep -q "fn classify(status: u16" crates/betterlite-openai/src/chat/provider_error.rs && ! grep -q "provider_error::.*classify" crates/betterlite-server/src/routes/chat.rs crates/betterlite-server/src/routes/embeddings.rs
+oracle_cases:
+- tools/oracle/cases/chat/upstream-400.yaml
+- tools/oracle/cases/chat/upstream-401.yaml
+- tools/oracle/cases/chat/upstream-422.yaml
+- tools/oracle/cases/chat/upstream-429.yaml
+- tools/oracle/cases/chat/upstream-500.yaml
+- tools/oracle/cases/errors/upstream-html.yaml
+- tools/oracle/cases/errors/upstream-null.yaml
+- tools/oracle/cases/errors/upstream-504.yaml
+- tools/oracle/cases/errors/stream-upstream-500.yaml
+- tools/oracle/cases/errors/context-window-500.yaml
+- tools/oracle/cases/helpers/openai-errors/proxy-roundtrip.yaml
+- tools/oracle/cases/helpers/openai-errors/proxy-body-fields.yaml
+- tools/oracle/cases/helpers/openai-errors/synthesized-status.yaml
+- tools/oracle/cases/helpers/openai-errors/context-before-status.yaml
+- tools/oracle/cases/helpers/openai-errors/already-mapped.yaml
+deviations: []
+out_of_scope:
+- Padded one-line functions and the legacy lists in .ast-grep/rules/ are B5094.
+- >-
+  openai/phrase.rs's phrase_family_midrange split (one-responsibility-per-file) stays out. No other finding this
+  task keeps touches that file, so there is no in-scope file to attach the style fix to.
+- >-
+  tools/oracle/helpers/provider_error.py's docstring and two-line comments (comments-say-why) stay out. Neither kept
+  finding needs a Python helper edit: the synthesized-status case and the proxy body fields both reach the oracle
+  through RawInput fields the adapter already forwards generically.
+- A CORS header value with no secret shape, left out of the new redaction cases for the reason stated above.
+- Native non-OpenAI classifiers, retries and fallback stay out, as they were in B185.
+pitfalls:
+- >-
+  embeddings.rs must keep param null for the Provider arm even once it calls dispatch; pass no structured body
+  there, the way ErrorBodyKind::MessageOnly behaves today, or embedding_provider_failure_preserves_message breaks.
+- Redactor is built once in chat_setup.rs and carried in ChatExecutor. Never construct one per request.
+- >-
+  ChatError::failure() in provider_error.rs still has to match every ChatError variant once Self::Provider no longer
+  delegates to the deleted classify; give it a path that does not depend on the removed functions.
+- parse.rs's LitellmExceptionFacts.name is read only in dispatch/litellm_proxy.rs, so the enum change stays contained.
+review_level: standard
+budget:
+  max_changed_lines: 900
+  max_new_expects: 0
