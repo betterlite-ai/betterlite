@@ -88,14 +88,21 @@ async fn prior_rows_unchanged_by_constraint_replacement() {
     harness(|[client]| async move {
         batch_execute(&client, &migration_sql_through(ADD_DAILY_USER_TABLE)).await;
         seed_membership(&client, "u1", "t1", "b1").await;
-        batch_execute(&client, migration_sql_of(CASCADE_BUDGET_CHANGES)).await;
+        batch_execute(
+            &client,
+            &migration_sql_between(ADD_DAILY_USER_TABLE, CASCADE_BUDGET_CHANGES),
+        )
+        .await;
         assert_eq!(
             membership_budget_id(&client, "u1", "t1").await,
             Some("b1".to_owned())
         );
         batch_execute(
             &client,
-            migration_sql_of(CASCADE_BUDGET_AND_LOOSEN_MANAGED_FILE_JSON),
+            &migration_sql_between(
+                CASCADE_BUDGET_CHANGES,
+                CASCADE_BUDGET_AND_LOOSEN_MANAGED_FILE_JSON,
+            ),
         )
         .await;
         assert_eq!(
