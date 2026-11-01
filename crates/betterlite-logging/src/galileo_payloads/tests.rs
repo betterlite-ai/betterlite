@@ -294,37 +294,36 @@ fn check_error_level_short_circuit() {
     assert_eq!(output, "boom");
 }
 
-// litellm's get_content_from_model_response reconstructs the raw dict into a ModelResponse pydantic object, re-serializing tool_calls/function_call in that class's field order, not the caller's.
+// litellm's get_content_from_model_response reconstructs the raw dict into a ModelResponse pydantic object, re-serializing tool_calls/function_call in that class's field order, not the caller's; a streaming chunk's choice has no "message" key, only "delta", and its text still reaches the output.
 fn check_generic_dict_tool_call_reordering() {
     let kwargs = GalileoKwargs::default();
-    let value = obj(
+
+    let message_value = obj(
         r#"{"choices": [{"message": {"content": "dict response content",
             "tool_calls": [{"id": "call_1", "type": "function",
                 "function": {"name": "foo", "arguments": "{}"}}]}}]}"#,
     );
-    let (_, output, _) = galileo_input_output_content(
+    let (_, message_output, _) = galileo_input_output_content(
         &kwargs,
-        Some(&ResponseObj::GenericDict { value }),
+        Some(&ResponseObj::GenericDict {
+            value: message_value,
+        }),
         Level::Default,
         None,
     );
     assert_eq!(
-        output,
+        message_output,
         r#"dict response content{"function":{"arguments":"{}","name":"foo"},"id":"call_1","type":"function"}"#
     );
-}
 
-// A streaming chunk's choice has no "message" key, only "delta", and its text still reaches the output.
-fn check_generic_dict_delta_content() {
-    let kwargs = GalileoKwargs::default();
-    let value = obj(r#"{"choices": [{"delta": {"content": "streamed text"}}]}"#);
-    let (_, output, _) = galileo_input_output_content(
+    let delta_value = obj(r#"{"choices": [{"delta": {"content": "streamed text"}}]}"#);
+    let (_, delta_output, _) = galileo_input_output_content(
         &kwargs,
-        Some(&ResponseObj::GenericDict { value }),
+        Some(&ResponseObj::GenericDict { value: delta_value }),
         Level::Default,
         None,
     );
-    assert_eq!(output, "streamed text");
+    assert_eq!(delta_output, "streamed text");
 }
 
 // Rerank uses its own langfuse-style prompt (just the messages, no functions/tools) rather than the shared build_prompt, and that prompt is echoed as the span's messages_for_span.
@@ -396,7 +395,6 @@ fn galileo_payload_construction() {
     check_embedding_call_type_precedence();
     check_error_level_short_circuit();
     check_generic_dict_tool_call_reordering();
-    check_generic_dict_delta_content();
     check_rerank_content();
     check_messages_or_empty_guard();
 }
