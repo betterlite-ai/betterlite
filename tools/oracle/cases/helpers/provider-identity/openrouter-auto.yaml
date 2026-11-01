@@ -1,0 +1,9 @@
+kind: helper
+name: provider-identity-openrouter-auto
+call:
+  provider_identity:
+    check: openrouter
+    model: openrouter/auto
+    custom_llm_provider: openrouter
+env: {}
+compare: {ignore: []}
