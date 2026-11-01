@@ -114,7 +114,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^reload_schedule::(validation_errors|timezone_handling)/)'
     - id: behavior-tests
       why: The named behavior tests are absent or the pinned behaviors fail
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^reload_schedule::/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^reload_schedule::/) - test(/replays_the_/)'
 
 pitfalls:
   - "parse_reload_schedule accepts param_value as either a JSON string or an already-decoded dict, mirroring how different database drivers return the Json? column type."

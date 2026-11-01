@@ -83,67 +83,67 @@ checks:
   commands:
     - id: request-retry
       why: _request does not retry GET requests on 429/502/503/504 with correct sleep delays
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::request_retry_behavior($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::request_retry_behavior($|::)/) - test(/replays_the_/)'
     - id: request-no-retry
       why: _request retries non-GET methods or non-retryable status codes
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::request_no_retry_behavior($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::request_no_retry_behavior($|::)/) - test(/replays_the_/)'
     - id: pagination-link-header
       why: _fetch_page does not detect Link-header pagination correctly
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::pagination_link_header_behavior($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::pagination_link_header_behavior($|::)/) - test(/replays_the_/)'
     - id: pagination-parsing
       why: _fetch_page does not parse JSON through TypeAdapter or validate required fields
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::pagination_parsing_behavior($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::pagination_parsing_behavior($|::)/) - test(/replays_the_/)'
     - id: pagination-extra-fields
       why: _fetch_page does not ignore extra fields in responses
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::pagination_extra_fields_behavior($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::pagination_extra_fields_behavior($|::)/) - test(/replays_the_/)'
     - id: pages-limit
       why: _pages does not enforce the page limit
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::pages_limit_behavior($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::pages_limit_behavior($|::)/) - test(/replays_the_/)'
     - id: pages-stop
       why: _pages does not stop when hasNextPage is false
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::pages_stop_behavior($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::pages_stop_behavior($|::)/) - test(/replays_the_/)'
     - id: github-init-timeout
       why: GitHub.__init__ does not set 45-second timeout
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::github_init_timeout_behavior($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::github_init_timeout_behavior($|::)/) - test(/replays_the_/)'
     - id: github-init-redirects
       why: GitHub.__init__ does not disable redirects
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::github_init_redirects_behavior($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::github_init_redirects_behavior($|::)/) - test(/replays_the_/)'
     - id: github-init-token
       why: GitHub.__init__ does not include the Bearer token in Authorization header
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::github_init_token_behavior($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::github_init_token_behavior($|::)/) - test(/replays_the_/)'
     - id: github-init-httpx-client
       why: GitHub.__init__ does not call get_async_httpx_client correctly
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::github_init_httpx_client_behavior($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::github_init_httpx_client_behavior($|::)/) - test(/replays_the_/)'
     - id: repositories-list
       why: GitHub.repositories without query does not return user repos correctly
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::repositories_list_behavior($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::repositories_list_behavior($|::)/) - test(/replays_the_/)'
     - id: repositories-search
       why: GitHub.repositories with query does not filter by case-insensitive substring
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::repositories_search_behavior($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::repositories_search_behavior($|::)/) - test(/replays_the_/)'
     - id: repositories-search-depth
       why: GitHub.repositories search does not respect ten-page depth limit
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::repositories_search_depth_behavior($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::repositories_search_depth_behavior($|::)/) - test(/replays_the_/)'
     - id: test-repositories
       why: GitHub.test_repositories does not call the correct endpoints
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::test_repositories_behavior($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::test_repositories_behavior($|::)/) - test(/replays_the_/)'
     - id: profile-email-cache
       why: GitHub.profile_email does not cache results correctly
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::profile_email_cache_behavior($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::profile_email_cache_behavior($|::)/) - test(/replays_the_/)'
     - id: profile-email-fetch
       why: GitHub.profile_email does not fetch from the correct endpoint
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::profile_email_fetch_behavior($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::profile_email_fetch_behavior($|::)/) - test(/replays_the_/)'
     - id: profile-email-errors
       why: GitHub.profile_email does not handle HTTP errors correctly
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::profile_email_errors_behavior($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::profile_email_errors_behavior($|::)/) - test(/replays_the_/)'
     - id: http-errors
       why: HTTP error status codes do not map to the correct labeled messages
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::http_errors_behavior($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::http_errors_behavior($|::)/) - test(/replays_the_/)'
     - id: helper-adapters
       why: Helper adapters do not construct ROI records correctly
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::helper_adapters_behavior($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::helper_adapters_behavior($|::)/) - test(/replays_the_/)'
     - id: behavior-tests
       why: the required behavior tests fail or the filter selects no tests
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github_behavior($|::)/)' - test(/replays_the_/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github_behavior($|::)/) - test(/replays_the_/)'
 
 oracle_cases:
   - tools/oracle/cases/roi-github/init-timeout.yaml

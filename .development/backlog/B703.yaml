@@ -1,7 +1,7 @@
 id: B703
 milestone: M4 keys, spend and management
 title: Postgres migrations for daily usage
-status: todo
+status: done
 depends_on: [B700, B702, B860]
 file: tasks/B703-schema-daily-usage.yaml
 covers:
@@ -35,7 +35,7 @@ covers:
   - "litellm-proxy-extras/litellm_proxy_extras/migrations/20250707212517_add_mcp_info_column_mcp_servers/migration.sql"
 parent: B051
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 440

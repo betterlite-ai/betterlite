@@ -1,0 +1,14 @@
+kind: helper
+name: search-error-code-rate-limit
+call:
+  b4113:
+    operation: search_error_code
+    error:
+      family: rate_limit
+      context:
+        message: slow down
+        model: gpt-4
+        provider: openai
+      category: vendor_rate_limit
+env: {}
+compare: {ignore: []}

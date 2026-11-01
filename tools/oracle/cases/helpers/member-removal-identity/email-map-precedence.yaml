@@ -1,0 +1,11 @@
+kind: helper
+name: explicit_empty_email_wins_over_row_map
+call:
+  member_removal_identity:
+    operation: with_row_email
+    user_id: "u1"
+    user_email: ""
+    email_of: {u1: "a@example.com"}
+env: {}
+compare:
+  ignore: []

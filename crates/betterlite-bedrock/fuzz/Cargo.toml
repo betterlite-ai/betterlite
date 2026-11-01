@@ -1,0 +1,21 @@
+[package]
+name = "betterlite-bedrock-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+betterlite-bedrock = { path = ".." }
+libfuzzer-sys = "0.4.9"
+
+[[bin]]
+name = "nova_data_url"
+path = "fuzz_targets/nova_data_url.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
