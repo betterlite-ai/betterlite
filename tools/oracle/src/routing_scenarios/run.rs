@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use reqwest::blocking::Client;
 
-use super::{HttpStep, JoinPoint, Scenario, ScenarioStep};
+use super::{HttpStep, JoinPoint, MAX_DEADLINE_MS, Scenario, ScenarioStep};
 use crate::OracleError;
 use crate::http::{self, Response};
 
@@ -39,7 +39,7 @@ fn run_concurrent(
     requests: &[HttpStep],
     join: &JoinPoint,
 ) -> Result<Vec<Response>, OracleError> {
-    let deadline = Duration::from_millis(join.deadline_ms.unwrap_or(http::REQUEST_TIMEOUT_MS));
+    let deadline = Duration::from_millis(join.deadline_ms.unwrap_or(MAX_DEADLINE_MS));
     let (sender, receiver) = mpsc::sync_channel::<ConcurrentResult>(requests.len());
     thread::scope(|scope| {
         for (index, step) in requests.iter().enumerate() {

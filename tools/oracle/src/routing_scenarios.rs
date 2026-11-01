@@ -14,6 +14,8 @@ mod tests;
 
 pub(crate) const MAX_STEPS: usize = 256;
 pub(crate) const MAX_CONCURRENT: usize = 32;
+// Mirrors http::REQUEST_TIMEOUT (30s) in milliseconds; http.rs is outside this task's scope to edit.
+pub(crate) const MAX_DEADLINE_MS: u64 = 30_000;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -142,10 +144,9 @@ fn validate_concurrent_step(step: &ConcurrentStep) -> Result<(), String> {
 fn validate_join_point(join: &JoinPoint) -> Result<(), String> {
     match join.deadline_ms {
         None => Ok(()),
-        Some(millis) if (1..=http::REQUEST_TIMEOUT_MS).contains(&millis) => Ok(()),
+        Some(millis) if (1..=MAX_DEADLINE_MS).contains(&millis) => Ok(()),
         Some(millis) => Err(format!(
-            "join.deadline_ms {millis} is outside 1 to {}",
-            http::REQUEST_TIMEOUT_MS
+            "join.deadline_ms {millis} is outside 1 to {MAX_DEADLINE_MS}"
         )),
     }
 }

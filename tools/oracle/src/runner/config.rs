@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use super::fixtures::FixtureGuard;
 use crate::OracleError;
 use crate::artifacts;
-use crate::case::Case;
+use crate::case::GroupCase;
 use secrecy::ExposeSecret as _;
 use serde::{Deserialize, Serialize};
 
@@ -29,19 +29,20 @@ struct GeneralSettings {
 
 pub(super) fn prepare_gateway_configs(
     root: &Path,
-    first_case: &Case,
+    first_case: &GroupCase,
     fixtures: &FixtureGuard,
     upstream: &str,
 ) -> Result<(PathBuf, PathBuf, PathBuf), OracleError> {
+    let case = first_case.as_case();
     if let Some((first, second)) = &fixtures.databases {
         let first_url = first.options.url.expose_secret();
         let second_url = second.options.url.expose_secret();
-        let (group_dir, base_config) = artifacts::prepare(root, first_case, upstream)?;
+        let (group_dir, base_config) = artifacts::prepare(root, &case, upstream)?;
         let first_config = with_database(&base_config, first_url, "config-first.yaml")?;
         let second_config = with_database(&base_config, second_url, "config-second.yaml")?;
         Ok((group_dir, first_config, second_config))
     } else {
-        let (group_dir, config) = artifacts::prepare(root, first_case, upstream)?;
+        let (group_dir, config) = artifacts::prepare(root, &case, upstream)?;
         Ok((group_dir, config.clone(), config))
     }
 }

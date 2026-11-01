@@ -19,8 +19,6 @@ pub(crate) const MAX_BODY: usize = 16 * 1024 * 1024;
 
 // Steps reuse this as the deadline for a whole transcript, not only a single request.
 pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
-// Mirrors REQUEST_TIMEOUT in milliseconds, since some bounds are easiest to express as integers.
-pub(crate) const REQUEST_TIMEOUT_MS: u64 = 30_000;
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub(crate) struct Response {

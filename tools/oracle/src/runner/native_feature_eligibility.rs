@@ -5,7 +5,7 @@ use std::path::Path;
 use serde::Serialize;
 
 use crate::OracleError;
-use crate::case::Case;
+use crate::case::GroupCase;
 
 #[derive(Serialize)]
 struct ArtifactMarker {
@@ -19,16 +19,16 @@ const FIXTURE_DIRECTORY: &str = concat!(
 );
 
 pub(super) fn child_environment(
-    case: &Case,
+    case: &GroupCase,
     litellm_child: bool,
     upstream: &str,
 ) -> BTreeMap<String, String> {
     let mut environment = case
-        .env
+        .env()
         .iter()
         .map(|(name, value)| (name.clone(), value.replace("{{upstream}}", upstream)))
         .collect::<BTreeMap<_, _>>();
-    if case.native_feature_eligibility && litellm_child {
+    if case.native_feature_eligibility() && litellm_child {
         environment.insert(
             "LITELLM_WORKER_STARTUP_HOOKS".to_owned(),
             "startup:set_premium_user".to_owned(),

@@ -4,7 +4,7 @@ use std::path::Path;
 use super::{HttpStep, Scenario, ScenarioStep};
 use crate::OracleError;
 use crate::artifacts;
-use crate::case::{Case, Compare};
+use crate::case::{Compare, ScenarioCase};
 use crate::compare::{self, Difference};
 use crate::http::Response;
 use crate::mock::ProviderRequest;
@@ -12,7 +12,7 @@ use crate::runner::native_feature_eligibility;
 
 pub(crate) struct ScenarioCompareInput<'input> {
     pub(crate) root: &'input Path,
-    pub(crate) case: &'input Case,
+    pub(crate) case: &'input ScenarioCase,
     pub(crate) scenario: &'input Scenario,
     pub(crate) first: &'input [Response],
     pub(crate) second: &'input [Response],
@@ -47,9 +47,10 @@ pub(crate) fn compare_scenario_case(input: &ScenarioCompareInput<'_>) -> Result<
         .second
         .get(last)
         .ok_or(OracleError::MissingCapture(last))?;
+    let case = input.case.as_case();
     let artifact_directory = artifacts::write(artifacts::ArtifactInput {
         root: input.root,
-        case: input.case,
+        case: &case,
         first: first_last,
         second: second_last,
         first_requests: input.first_requests,

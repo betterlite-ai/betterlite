@@ -3,22 +3,22 @@ use betterlite_postgres_fixture::error::FixtureError;
 use secrecy::SecretString;
 
 use crate::OracleError;
-use crate::case::Case;
+use crate::case::GroupCase;
 
 pub(super) struct FixtureGuard {
     pub(super) databases: Option<(PostgresFixture, PostgresFixture)>,
 }
 
 pub(super) fn provision(
-    cases: &[Case],
+    cases: &[GroupCase],
     configured_url: Option<&SecretString>,
 ) -> Result<FixtureGuard, OracleError> {
     let first_case = cases.first().ok_or(OracleError::MissingCapture(0))?;
-    let fixture_definition = &first_case.database;
+    let fixture_definition = first_case.database();
     for current_case in cases {
-        if current_case.database != *fixture_definition {
+        if current_case.database() != fixture_definition {
             return Err(OracleError::DatabaseFixturesDiffer {
-                cases: cases.iter().map(|item| item.name.clone()).collect(),
+                cases: cases.iter().map(|item| item.name().to_owned()).collect(),
             });
         }
     }
