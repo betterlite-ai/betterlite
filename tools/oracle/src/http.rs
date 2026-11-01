@@ -99,12 +99,12 @@ pub(crate) fn send_with_raw_headers(
     if bytes.len() > MAX_BODY {
         return Err(OracleError::HttpTooLarge);
     }
-    let body = parse_body(&headers, &bytes)?;
+    let parsed_body = parse_body(&headers, &bytes)?;
     Ok((
         Response {
             status,
-            body,
             headers,
+            body: parsed_body,
         },
         raw_headers,
     ))

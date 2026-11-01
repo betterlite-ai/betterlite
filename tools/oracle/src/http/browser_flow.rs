@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use cookie_store::CookieStore;
 use reqwest::blocking::Client;
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
 use url::Url;
 
@@ -154,13 +154,17 @@ pub(crate) fn run_case_steps(
     steps: &[Step],
 ) -> Result<Vec<Response>, OracleError> {
     let base_url = Url::parse(base).map_err(BrowserFlowError::BaseUrl)?;
-    let deadline = Instant::now() + REQUEST_TIMEOUT;
+    let deadline = Instant::now()
+        .checked_add(REQUEST_TIMEOUT)
+        .ok_or(BrowserFlowError::DeadlineExceeded { index: 0 })?;
     let mut jar = CookieJar::default();
     let mut captures = BTreeMap::new();
     let mut responses = Vec::with_capacity(steps.len());
     for (index, step) in steps.iter().enumerate() {
         if Instant::now() >= deadline {
-            return Err(BrowserFlowError::DeadlineExceeded { index }.into());
+            return Err(OracleError::from(BrowserFlowError::DeadlineExceeded {
+                index,
+            }));
         }
         let mut state = StepState {
             base_url: &base_url,
@@ -196,7 +200,9 @@ fn run_step(
             .keys()
             .any(|name| name.eq_ignore_ascii_case("cookie"))
         {
-            return Err(BrowserFlowError::CookieConflict { index }.into());
+            return Err(OracleError::from(BrowserFlowError::CookieConflict {
+                index,
+            }));
         }
         headers.insert("cookie".to_owned(), cookie_header);
     }

@@ -1,16 +1,14 @@
 use reqwest::blocking::Client;
 use secrecy::SecretString;
 use std::collections::BTreeMap;
-use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+pub(crate) use self::compare_cases::compare_group;
 use super::gateway::{GatewayInput, start as start_gateway};
 use crate::OracleError;
-use crate::artifacts;
 use crate::case::{Case, LoadedCase};
 use crate::cli::Options;
-use crate::compare;
 use crate::helpers;
 use crate::http::browser_flow;
 use crate::http::{self, Response};
@@ -20,6 +18,7 @@ use crate::process::Gateway;
 use crate::routing_mock_scripts::MockScript;
 
 pub(crate) mod browser_flow_group;
+pub(crate) mod compare_cases;
 mod config;
 mod fixtures;
 mod native_feature_eligibility;
@@ -204,148 +203,6 @@ pub(crate) struct GroupCapture {
     pub(crate) second_requests: Vec<ProviderRequest>,
 }
 
-pub(crate) fn compare_group(
-    root: &Path,
-    cases: &[Case],
-    captures: &GroupCapture,
-) -> Result<Vec<bool>, OracleError> {
-    let mut outcomes = Vec::with_capacity(cases.len());
-    let mut request_offset = 0;
-    let mut response_offset = 0;
-    for case in cases {
-        outcomes.push(compare_one_case(
-            root,
-            case,
-            captures,
-            response_offset,
-            request_offset,
-        )?);
-        // A steps-based case contributes one response per step, so the offset stays flat.
-        let response_count = case.steps.as_ref().map_or(1, Vec::len);
-        response_offset = response_offset.saturating_add(response_count);
-        request_offset = request_offset.saturating_add(case.upstream.len());
-    }
-    Ok(outcomes)
-}
-
-struct CaseSlices<'slices> {
-    first_responses: &'slices [Response],
-    second_responses: &'slices [Response],
-    first_requests: &'slices [ProviderRequest],
-    second_requests: &'slices [ProviderRequest],
-}
-
-fn case_slices<'slices>(
-    case: &Case,
-    captures: &'slices GroupCapture,
-    response_offset: usize,
-    request_offset: usize,
-) -> CaseSlices<'slices> {
-    let response_count = case.steps.as_ref().map_or(1, Vec::len);
-    CaseSlices {
-        first_responses: response_slice(&captures.first, response_offset, response_count),
-        second_responses: response_slice(&captures.second, response_offset, response_count),
-        first_requests: request_slice(
-            &captures.first_requests,
-            request_offset,
-            case.upstream.len(),
-        ),
-        second_requests: request_slice(
-            &captures.second_requests,
-            request_offset,
-            case.upstream.len(),
-        ),
-    }
-}
-
-// A steps-based case delegates to browser_flow_group; a single-request case compares directly.
-fn compare_one_case(
-    root: &Path,
-    case: &Case,
-    captures: &GroupCapture,
-    response_offset: usize,
-    request_offset: usize,
-) -> Result<bool, OracleError> {
-    let slices = case_slices(case, captures, response_offset, request_offset);
-    if let Some(steps) = &case.steps {
-        browser_flow_group::compare_case_steps(browser_flow_group::StepsCompareInput {
-            root,
-            case,
-            steps,
-            first: slices.first_responses,
-            second: slices.second_responses,
-            first_requests: slices.first_requests,
-            second_requests: slices.second_requests,
-            first_log: &captures.first_log,
-            second_log: &captures.second_log,
-        })
-    } else {
-        let first = slices
-            .first_responses
-            .first()
-            .ok_or(OracleError::MissingCapture(response_offset))?;
-        let second = slices
-            .second_responses
-            .first()
-            .ok_or(OracleError::MissingCapture(response_offset))?;
-        compare_case(artifacts::ArtifactInput {
-            root,
-            case,
-            first,
-            second,
-            first_requests: slices.first_requests,
-            second_requests: slices.second_requests,
-            first_log: &captures.first_log,
-            second_log: &captures.second_log,
-            result: None,
-        })
-    }
-}
-
-fn response_slice(responses: &[Response], offset: usize, count: usize) -> &[Response] {
-    let end = offset.saturating_add(count);
-    responses.get(offset..end).unwrap_or_default()
-}
-
-fn compare_case(input: artifacts::ArtifactInput<'_>) -> Result<bool, OracleError> {
-    let result = compare::compare(
-        input.first,
-        input.second,
-        input.first_requests,
-        input.second_requests,
-        &input.case.compare,
-    );
-    let artifact_directory = artifacts::write(artifacts::ArtifactInput {
-        result: result.as_ref().err(),
-        ..input
-    })?;
-    native_feature_eligibility::write_marker(
-        &artifact_directory,
-        input.case.native_feature_eligibility,
-    )?;
-    let name = &input.case.name;
-    match result {
-        Ok(()) => {
-            writeln!(io::stdout().lock(), "PASS {name}").map_err(OracleError::Output)?;
-            Ok(false)
-        }
-        Err(error) => {
-            writeln!(io::stdout().lock(), "FAIL {name}: {}", error.pointer)
-                .map_err(OracleError::Output)?;
-            Ok(true)
-        }
-    }
-}
-
-pub(crate) fn request_slice(
-    requests: &[ProviderRequest],
-    offset: usize,
-    count: usize,
-) -> &[ProviderRequest] {
-    let end = offset.saturating_add(count);
-    requests.get(offset..end).unwrap_or_default()
-}
-
 pub(crate) fn capture_gateway(
     client: &Client,
     mut gateway: Gateway,
@@ -365,4 +222,13 @@ pub(crate) fn capture_gateway(
     }
     gateway.stop()?;
     Ok(captures)
+}
+
+pub(crate) fn request_slice(
+    requests: &[ProviderRequest],
+    offset: usize,
+    count: usize,
+) -> &[ProviderRequest] {
+    let end = offset.saturating_add(count);
+    requests.get(offset..end).unwrap_or_default()
 }

@@ -1,18 +1,19 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, VecDeque};
-use std::fs;
 use std::io::Error;
 use std::net::{SocketAddr, TcpListener};
 use std::path::PathBuf;
 use std::str;
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
+use std::{env, fs, process};
 
 use axum::Router;
 use axum::body::Body;
 use axum::extract::{Request as AxumRequest, State};
 use axum::http::{Response as AxumResponse, StatusCode};
+use secrecy::SecretString;
 use tokio::sync::oneshot;
 use tokio::{net, runtime};
 
@@ -42,7 +43,7 @@ fn replays_the_browser_form_corpus() {
 #[test]
 fn redacts_a_secret_capture_from_debug_output() {
     let value = CapturedValue {
-        text: "shhh".to_owned().into(),
+        text: SecretString::from("shhh".to_owned()),
         secret: true,
     };
     assert_eq!(format!("{value:?}"), "CapturedValue(redacted)");
@@ -504,14 +505,14 @@ fn stops_and_cleans_up_the_gateway_after_a_late_step_failure() {
         .expect("stub base url has an http prefix")
         .parse()
         .expect("stub base url has a valid socket address");
-    let log_path = std::env::temp_dir().join(format!(
+    let log_path = env::temp_dir().join(format!(
         "betterlite-oracle-browser-flow-cleanup-{}.log",
-        std::process::id()
+        process::id()
     ));
     let gateway = Gateway::start(GatewaySpec {
         command: PathBuf::from("/bin/sh"),
         args: vec!["-c".to_owned(), "exec sleep 10".to_owned()],
-        cwd: std::env::temp_dir(),
+        cwd: env::temp_dir(),
         env: Vec::new(),
         port: address.port(),
         log_path: log_path.clone(),

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::str::{self, Utf8Error};
 
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
-use secrecy::ExposeSecret;
+use secrecy::ExposeSecret as _;
 use serde_json::Value;
 use url::form_urlencoded;
 
@@ -54,45 +54,36 @@ fn encode(encoding: Encoding, text: &str) -> String {
     }
 }
 
-// A JSON body is interpolated leaf by leaf so a captured value can never break JSON syntax.
+// A JSON body is interpolated leaf by leaf so a captured value can never break JSON syntax; a bytes body is decoded to UTF-8 first.
 pub(crate) fn resolve_body(
     index: usize,
     step: &Step,
     captures: &BTreeMap<String, CapturedValue>,
 ) -> Result<RequestBody, BrowserFlowError> {
+    let multipart = |source| BrowserFlowError::Multipart { index, source };
     match step.request.body_kind {
-        Bytes => resolve_bytes_body(index, step, captures),
+        Bytes => {
+            let RequestBody::Raw {
+                content_type,
+                bytes,
+            } = request_body(&step.request.body, Bytes).map_err(multipart)?
+            else {
+                return Err(BrowserFlowError::BytesBody { index });
+            };
+            let text = str::from_utf8(&bytes)
+                .map_err(|source: Utf8Error| BrowserFlowError::BodyUtf8 { index, source })?;
+            let interpolated = resolve_text(index, text, captures)?;
+            Ok(RequestBody::Raw {
+                content_type,
+                bytes: interpolated.into_bytes(),
+            })
+        }
         Json => {
             let resolved = resolve_value(index, &step.request.body, captures)?;
-            request_body(&resolved, Json)
-                .map_err(|source| BrowserFlowError::Multipart { index, source })
+            request_body(&resolved, Json).map_err(multipart)
         }
-        Multipart => request_body(&step.request.body, Multipart)
-            .map_err(|source| BrowserFlowError::Multipart { index, source }),
+        Multipart => request_body(&step.request.body, Multipart).map_err(multipart),
     }
-}
-
-fn resolve_bytes_body(
-    index: usize,
-    step: &Step,
-    captures: &BTreeMap<String, CapturedValue>,
-) -> Result<RequestBody, BrowserFlowError> {
-    let decoded = request_body(&step.request.body, Bytes)
-        .map_err(|source| BrowserFlowError::Multipart { index, source })?;
-    let RequestBody::Raw {
-        content_type,
-        bytes,
-    } = decoded
-    else {
-        return Err(BrowserFlowError::BytesBody { index });
-    };
-    let text = str::from_utf8(&bytes)
-        .map_err(|source: Utf8Error| BrowserFlowError::BodyUtf8 { index, source })?;
-    let interpolated = resolve_text(index, text, captures)?;
-    Ok(RequestBody::Raw {
-        content_type,
-        bytes: interpolated.into_bytes(),
-    })
 }
 
 fn resolve_value(
@@ -102,16 +93,20 @@ fn resolve_value(
 ) -> Result<Value, BrowserFlowError> {
     match value {
         Value::String(text) => Ok(Value::String(resolve_text(index, text, captures)?)),
-        Value::Array(items) => items
-            .iter()
-            .map(|item| resolve_value(index, item, captures))
-            .collect::<Result<Vec<_>, _>>()
-            .map(Value::Array),
-        Value::Object(fields) => fields
-            .iter()
-            .map(|(key, item)| Ok((key.clone(), resolve_value(index, item, captures)?)))
-            .collect::<Result<serde_json::Map<_, _>, BrowserFlowError>>()
-            .map(Value::Object),
+        Value::Array(items) => {
+            let mut resolved = Vec::with_capacity(items.len());
+            for item in items {
+                resolved.push(resolve_value(index, item, captures)?);
+            }
+            Ok(Value::Array(resolved))
+        }
+        Value::Object(fields) => {
+            let mut resolved = serde_json::Map::new();
+            for (key, item) in fields {
+                resolved.insert(key.clone(), resolve_value(index, item, captures)?);
+            }
+            Ok(Value::Object(resolved))
+        }
         Value::Null | Value::Bool(_) | Value::Number(_) => Ok(value.clone()),
     }
 }

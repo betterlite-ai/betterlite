@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 use std::str;
 
 use crate::OracleError;
-use crate::helpers::HelperCall;
 use betterlite_postgres_fixture::seed::DatabaseFixture;
 use serde::Deserialize;
 use serde_json::Value;
@@ -14,6 +13,9 @@ use crate::multipart_oracle::request::{answer_body, request_body};
 
 pub mod browser_flow;
 mod config_inspection;
+mod helper;
+
+pub(crate) use helper::HelperCase;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -43,31 +45,9 @@ pub(crate) enum LoadedCase {
     Helper(HelperCase),
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct HelperCase {
-    pub(crate) kind: HelperKind,
-    pub(crate) name: String,
-    pub(crate) call: HelperCall,
-    pub(crate) env: BTreeMap<String, String>,
-    pub(crate) compare: HelperCompare,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum HelperKind {
-    Helper,
-}
-
 #[derive(Deserialize)]
 struct CaseKind {
-    kind: Option<HelperKind>,
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct HelperCompare {
-    pub(crate) ignore: Vec<Ignore>,
+    kind: Option<helper::HelperKind>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
@@ -158,11 +138,16 @@ pub(crate) fn parse_case(path: &Path, text: &str) -> Result<LoadedCase, OracleEr
     let probe: CaseKind = serde_saphyr::from_str(text).map_err(parse_error)?;
     if probe.kind.is_some() {
         let case: HelperCase = serde_saphyr::from_str(text).map_err(parse_error)?;
-        validate_helper(path, &case)?;
+        helper::validate_helper(path, &case)?;
         return Ok(LoadedCase::Helper(case));
     }
     let case = decode_case(path, text.as_bytes())?;
     Ok(LoadedCase::Http(case))
+}
+
+pub fn parse_helper_case(source: &str) -> Result<(), String> {
+    let case: HelperCase = serde_saphyr::from_str(source).map_err(|error| error.to_string())?;
+    helper::validate_helper(Path::new("<helper>"), &case).map_err(|error| error.to_string())
 }
 
 pub fn decode_http_case(bytes: &[u8]) -> Result<HttpCase, OracleError> {
@@ -194,11 +179,6 @@ fn decode_case(path: &Path, bytes: &[u8]) -> Result<HttpCase, OracleError> {
     Ok(case)
 }
 
-pub fn parse_helper_case(source: &str) -> Result<(), String> {
-    let case: HelperCase = serde_saphyr::from_str(source).map_err(|error| error.to_string())?;
-    validate_helper(Path::new("<helper>"), &case).map_err(|error| error.to_string())
-}
-
 fn collect_yaml(path: &Path, files: &mut Vec<PathBuf>) -> Result<(), OracleError> {
     let read_error = |source| OracleError::CaseRead {
         path: path.to_owned(),
@@ -220,20 +200,6 @@ fn collect_yaml(path: &Path, files: &mut Vec<PathBuf>) -> Result<(), OracleError
         collect_yaml(&entry.path(), files)?;
     }
     Ok(())
-}
-
-fn validate_helper(path: &Path, case: &HelperCase) -> Result<(), OracleError> {
-    let invalid = |message: &str| OracleError::CaseInvalid {
-        path: path.to_owned(),
-        message: message.to_owned(),
-    };
-    if !matches!(&case.kind, HelperKind::Helper) {
-        return Err(invalid("helper cases must have kind: helper"));
-    }
-    if case.name.is_empty() {
-        return Err(invalid("name cannot be empty"));
-    }
-    validate_ignores(path, &case.compare.ignore)
 }
 
 pub(crate) fn validate(path: &Path, case: &Case) -> Result<(), OracleError> {
