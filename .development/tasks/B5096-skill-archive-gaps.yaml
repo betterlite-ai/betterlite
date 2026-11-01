@@ -1,0 +1,284 @@
+id: B5096
+title: Close the B3210 skill archive audit gaps
+description: >-
+  An Opus-model review of merged task B3210 found gaps between betterlite's skill archive reader
+  and LiteLLM's, two deliberate gaps with no deviation entry, eleven oracle cases that cannot fail
+  on the behavior they claim to test, one dependency pinned too close to its release, and two style
+  fixes in the same file. This task closes all of them.
+
+
+  crates/betterlite-http/Cargo.toml builds the zip crate with only its deflate-flate2-zlib feature.
+  A member compressed with bzip2 (method 12) or LZMA (method 14) fails to open, so
+  flattened_members returns None and build_skill_archive drops the whole upload, while LiteLLM's
+  zipfile module decodes both and serves the archive. The fix turns on zip's bzip2-rs feature, not
+  its plain bzip2 feature: bzip2 0.6 defaults to the libbz2-rs-sys backend, whose bzip2-1.0.6
+  license is not on deny.toml's allow list and whose newest release is only days old, while
+  bzip2-rs links the same C libbzip2 1.0.8 through bzip2-sys, the way CPython's own bz2 module
+  links that library. The fix also turns on zip's lzma feature; its lzma-rust2 dependency needs
+  sha2 at a version Cargo.lock already carries, so nothing new enters the dependency tree there. A
+  bzip2-member and an lzma-member oracle case each build an archive readable only through one of
+  those methods.
+
+
+  manifest_frontmatter parses SKILL.md's frontmatter with serde_saphyr::from_str, whose default
+  duplicate_keys policy is Error, so a frontmatter with any repeated key fails the whole parse and
+  both declared_name and declared_description become None. LiteLLM's yaml.safe_load keeps the last
+  value for a repeated key, so the same upload still gets a name and a description there. The fix
+  switches to from_str_with_options with DuplicateKeyPolicy::LastWins, and a
+  duplicate-frontmatter-key case repeats one key with two different values and expects the second.
+
+
+  flattened_members decides a member is a directory by opening it and calling is_dir, and the zip
+  crate's is_dir also treats a name ending in a backslash as a directory. On the Linux host both
+  LiteLLM and betterlite run on, Python's own is_dir only checks for a trailing forward slash,
+  because its backslash branch only runs when os.path.altsep is set, and that is None on Linux. A
+  member named skill/notes\ is silently dropped here, while LiteLLM's backslash check rejects the
+  whole upload for the same name. The same code path opens every entry before checking is_dir, so a
+  directory-shaped entry with an unsupported compression method can fail the whole upload where
+  Python, which reads directory status from stored metadata without opening anything, never does.
+  The fix reads each raw name through name_for_index first, decides is_dir from that name ending in
+  a single forward slash, and only opens an entry once it is known to be a file. A
+  trailing-backslash-directory case proves the whole upload is now rejected the way LiteLLM rejects
+  it.
+
+
+  normalize_path rejects a member name containing a NUL byte. Python truncates a name at its first
+  NUL byte while building it, so LiteLLM's own NUL check never fires and the archive builds under
+  the truncated name instead. betterlite's stricter rejection is the one worth keeping: truncating a
+  name on a NUL byte is a path-construction trick, not a behavior to copy. This stays a deliberate
+  difference, recorded as a new entry in docs/deviations/B3210.yaml, and the
+  unsafe-path-null-byte oracle case stops hiding it behind an ignore on /value.
+
+
+  LiteLLM's build_skill_archive catches only BadZipFile, OSError and RuntimeError around reading an
+  upload. A corrupted or truncated DEFLATE member raises zlib.error or EOFError instead, neither of
+  which that except clause catches, so the exception reaches the route call site and becomes an
+  unhandled 500 on both the index and the archive endpoint. betterlite's flattened_members already
+  turns the same read failure into None through its existing error propagation, so the skill is left
+  out of the index instead of 500ing the whole discovery endpoint. That is a real improvement with
+  no deviation entry today; it gets a second new entry in docs/deviations/B3210.yaml, and a new
+  corrupt-deflate-member oracle case keeps the difference on record from the day it is added instead
+  of letting a /value ignore hide it.
+
+
+  Eleven rejection cases (unsafe-path-backslash, empty-archive-fails, missing-skill-manifest,
+  multi-folder-no-common-root, duplicate-flattened-names, unsafe-path-null-byte,
+  unsafe-path-absolute, unsafe-path-dot-segment, windows-drive-letter, entry-count-1000-limit,
+  zip-crc-mismatch) ignore pointer /value today, so only ok is compared; if betterlite built an
+  archive where LiteLLM returns None, every one of them would still pass. The ignore exists because
+  the oracle's Option<Value> round trip collapses a bare top-level null answer on the Python side
+  while the native side keeps it present. The fix is to stop answering a bare value at all: both
+  oracle helper adapters for this operation answer {"archive": value} instead, the way
+  aws_errors.py and aws_errors.rs already answer {"result": value}, so the compared value is always
+  a JSON object and never collapses. Ten of the eleven cases drop their ignore entirely once value
+  is a wrapped object. unsafe-path-null-byte keeps one ignore, now pointer "" with an honest why,
+  since it covers the genuine NUL-byte difference from the paragraph above instead of a false
+  agreement.
+
+
+  zip 9.1.3 and libz-sys 1.1.31, the dependency its deflate-flate2-zlib feature pulls in, were both
+  under seven days old when B3210 added them on 2026-10-30, and both are still under seven days old
+  today. The fix pins zip to 9.1.0 and libz-sys to 1.1.30 in Cargo.lock, the newest release of each
+  that had already cleared seven days. These two pins are the architect's decision from 2026-11-01
+  and stay as written even if a newer zip or libz-sys release clears seven days before this task
+  lands; zip 9.2.0 and 9.2.1 are newer than the version this task was scoped against and are not a
+  reason to move the pin.
+
+
+  Two style fixes land in the same file this task already touches. repack builds its fixed
+  1980-01-01 timestamp with a fallible DateTime::from_date_and_time call, whose DateTimeRangeError
+  is flattened into a string inside ZipError::InvalidArchive even though the date is never actually
+  invalid; DateTime::DEFAULT is the same timestamp with no fallible call, and the fix also drops the
+  use std::borrow::Cow import that becomes dead once that call is gone. decode_utf8_replacing is a
+  hand-written copy of String::from_utf8_lossy, written only to get past clippy's disallowed-methods
+  ban with no recorded reason the library call is wrong here; the fix calls from_utf8_lossy directly
+  under one #[expect(clippy::disallowed_methods, reason = "LiteLLM decodes SKILL.md with
+  errors=replace")], which raises this task's expect budget from 0 to 1.
+
+
+  zip's default read options never compare a member's local file header name against its central
+  directory name, so betterlite accepts an archive where the two differ. Python's zipfile raises
+  BadZipFile for that exact mismatch, and LiteLLM's build_skill_archive turns it into the same None
+  any other corrupt archive gets. The fix calls ZipArchive::validate_header_consistency once, right
+  after opening the upload, and a header-name-mismatch case proves betterlite now rejects what it
+  used to accept.
+scope:
+  paths:
+    - crates/betterlite-http/Cargo.toml
+    - crates/betterlite-http/src/skill_archive.rs
+    - crates/betterlite-http/src/skill_archive/**
+    - Cargo.lock
+    - tools/oracle/helpers/skill_discovery_archives.py
+    - tools/oracle/src/helpers/http/skill_discovery_archives.rs
+    - tools/oracle/cases/helpers/skill-archive/**
+    - docs/deviations/B3210.yaml
+  lint_tables: false
+references:
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/agent_skills_archive.py#L39-L57"
+    why: build_skill_archive's try/except catches only BadZipFile, OSError and RuntimeError, so a corrupt deflate stream or a truncated member reaches the caller instead of returning None.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/agent_skills_archive.py#L60-L77"
+    why: _flattened_members filters directories with info.is_dir() before opening anything, and reads member bytes only once, in its final sorted pass.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/agent_skills_archive.py#L87-L95"
+    why: _normalized_path's single check for a NUL byte or a backslash runs after Python has already truncated a name at its first NUL byte, and on a host where os.path.altsep is None only a trailing forward slash marks a directory.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/agent_skills_archive.py#L98-L108"
+    why: _manifest_frontmatter calls yaml.safe_load, which keeps the last value for a repeated frontmatter key instead of raising.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/agent_skills_endpoints.py#L148"
+    why: _archive_for calls build_skill_archive with no try/except of its own, so an exception that escapes build_skill_archive's own except clause reaches the route as an unhandled 500.
+dod:
+  - text: >-
+      A member compressed with bzip2 or LZMA builds an archive the same way LiteLLM's zipfile
+      module does, through zip's bzip2-rs and lzma features, not zip's plain bzip2 feature whose
+      libbz2-rs-sys backend fails deny.toml's license allow list. A new
+      skill_archive_reads_a_bzip2_compressed_member test and a new
+      skill_archive_reads_an_lzma_compressed_member test fail on today's main, where either method
+      returns None, and pass once the features are on.
+    proof: [archive-structure-tests]
+  - text: >-
+      A repeated frontmatter key keeps its last value instead of failing the whole parse, matching
+      yaml.safe_load. A new skill_archive_keeps_the_last_duplicate_frontmatter_key test fails on
+      today's main, where any duplicate key makes declared_name and declared_description both None,
+      and passes once DuplicateKeyPolicy::LastWins is in place.
+    proof: [archive-structure-tests]
+  - text: >-
+      A member name ending in a backslash is read as a file, not silently dropped as a directory,
+      and its name then fails the existing backslash check, so the whole upload is rejected the way
+      LiteLLM rejects it. A new skill_archive_rejects_an_upload_with_a_trailing_backslash_member
+      test fails on today's main, where the member is dropped and the rest of the upload still
+      builds, and passes once directories are decided from the raw name before anything is opened.
+    proof: [archive-structure-tests]
+  - text: >-
+      A member whose local file header name differs from its central directory name is rejected,
+      matching the BadZipFile LiteLLM raises for the same archive. A new
+      skill_archive_rejects_a_local_and_central_header_name_mismatch test fails on today's main,
+      where betterlite accepts the archive, and passes once validate_header_consistency runs after
+      opening the upload.
+    proof: [archive-structure-tests]
+  - text: >-
+      A member name with a NUL byte stays rejected, recorded as a deliberate difference in
+      docs/deviations/B3210.yaml with a link to _normalized_path, and the unsafe-path-null-byte
+      oracle case compares the whole value instead of hiding the difference behind an ignore on
+      /value.
+    proof: [archive-deviation-cases-recorded]
+  - text: >-
+      A corrupt or truncated DEFLATE member stays a None return instead of LiteLLM's unhandled 500,
+      recorded as a second deliberate difference in docs/deviations/B3210.yaml with links to
+      build_skill_archive's except clause and to _archive_for. A new
+      skill_archive_returns_none_for_a_corrupted_deflate_member test does not exist on today's main
+      and passes once added, and a new corrupt-deflate-member oracle case compares the whole value
+      from the day it is added.
+    proof: [archive-structure-tests, archive-deviation-cases-recorded]
+  - text: >-
+      The ten cases that only ever agreed on ok (unsafe-path-backslash, empty-archive-fails,
+      missing-skill-manifest, multi-folder-no-common-root, duplicate-flattened-names,
+      unsafe-path-absolute, unsafe-path-dot-segment, windows-drive-letter, entry-count-1000-limit,
+      zip-crc-mismatch) now compare the whole value, because both oracle helper adapters answer
+      {"archive": value} instead of a bare value that can collapse through Option<Value>. None of
+      these ten cases ignores pointer /value today; all ten do on today's main.
+    proof: [archive-weak-ignores-gone, archive-wrapped-helper-value]
+  - text: >-
+      zip is pinned to 9.1.0 with its bzip2-rs and lzma features, not zip's plain bzip2 feature,
+      and libz-sys is pinned to 1.1.30; both are the newest release of each that had cleared seven
+      days on 2026-11-01, and neither pin reintroduces libbz2-rs-sys into Cargo.lock. These
+      pins are the architect's decision from 2026-11-01 and stay as written even if a newer zip or
+      libz-sys release later clears seven days.
+    proof: [archive-pinned-dependencies]
+  - text: >-
+      repack builds its fixed timestamp with DateTime::DEFAULT instead of a fallible
+      from_date_and_time call wrapped in a string error, and the now-dead Cow import is gone.
+      decode_utf8_replacing's hand-written replace loop is gone in favor of calling
+      String::from_utf8_lossy directly under one documented
+      #[expect(clippy::disallowed_methods)].
+    proof: [archive-code-style]
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: archive-structure-tests
+      why: a skill archive test proving one of today's gaps is missing, or any skill archive test fails
+      run: >-
+        grep -q 'fn skill_archive_reads_a_bzip2_compressed_member' crates/betterlite-http/src/skill_archive/tests.rs &&
+        grep -q 'fn skill_archive_reads_an_lzma_compressed_member' crates/betterlite-http/src/skill_archive/tests.rs &&
+        grep -q 'fn skill_archive_keeps_the_last_duplicate_frontmatter_key' crates/betterlite-http/src/skill_archive/tests.rs &&
+        grep -q 'fn skill_archive_rejects_an_upload_with_a_trailing_backslash_member' crates/betterlite-http/src/skill_archive/tests.rs &&
+        grep -q 'fn skill_archive_rejects_a_local_and_central_header_name_mismatch' crates/betterlite-http/src/skill_archive/tests.rs &&
+        grep -q 'fn skill_archive_returns_none_for_a_corrupted_deflate_member' crates/betterlite-http/src/skill_archive/tests.rs &&
+        cargo nextest run --locked -p betterlite-http --no-tests=fail -E
+        'test(/^skill_archive::/) - test(/replays_the_/)'
+    - id: archive-code-style
+      why: repack still builds its timestamp with the fallible from_date_and_time call, or decode_utf8_replacing still hand-copies from_utf8_lossy
+      run: >-
+        ! grep -q 'from_date_and_time' crates/betterlite-http/src/skill_archive.rs &&
+        grep -q 'DateTime::DEFAULT' crates/betterlite-http/src/skill_archive.rs &&
+        ! grep -q '^use std::borrow::Cow;' crates/betterlite-http/src/skill_archive.rs &&
+        grep -q 'String::from_utf8_lossy' crates/betterlite-http/src/skill_archive.rs &&
+        grep -q 'expect(clippy::disallowed_methods' crates/betterlite-http/src/skill_archive.rs
+    - id: archive-pinned-dependencies
+      why: zip or libz-sys is not pinned to the architect's exact 2026-11-01 release, or zip's bzip2-rs feature pulled libbz2-rs-sys back into the lock
+      run: >-
+        grep -A1 '^name = "zip"' Cargo.lock | grep -q '^version = "9.1.0"' &&
+        grep -A1 '^name = "libz-sys"' Cargo.lock | grep -q '^version = "1.1.30"' &&
+        ! grep -q '^name = "libbz2-rs-sys"' Cargo.lock
+    - id: archive-wrapped-helper-value
+      why: either oracle helper adapter still answers a bare top-level value instead of a wrapped archive object
+      run: >-
+        grep -q '"archive"' tools/oracle/helpers/skill_discovery_archives.py &&
+        grep -q '"archive"' tools/oracle/src/helpers/http/skill_discovery_archives.rs
+    - id: archive-weak-ignores-gone
+      why: a rejection case still ignores pointer /value, so it cannot fail when betterlite silently accepts what LiteLLM rejects
+      run: >-
+        ! grep -rl 'pointer: /value' tools/oracle/cases/helpers/skill-archive
+    - id: archive-deviation-cases-recorded
+      why: the NUL-byte or corrupt-deflate case does not compare the whole value, or docs/deviations/B3210.yaml does not list both new gaps
+      run: >-
+        grep -q 'pointer: ""' tools/oracle/cases/helpers/skill-archive/unsafe-path-null-byte.yaml &&
+        test -f tools/oracle/cases/helpers/skill-archive/corrupt-deflate-member.yaml &&
+        grep -q 'pointer: ""' tools/oracle/cases/helpers/skill-archive/corrupt-deflate-member.yaml &&
+        test "$(grep -c '^  - what:' docs/deviations/B3210.yaml)" = "2"
+oracle_cases:
+  - tools/oracle/cases/helpers/skill-archive/unsafe-path-backslash.yaml
+  - tools/oracle/cases/helpers/skill-archive/empty-archive-fails.yaml
+  - tools/oracle/cases/helpers/skill-archive/missing-skill-manifest.yaml
+  - tools/oracle/cases/helpers/skill-archive/multi-folder-no-common-root.yaml
+  - tools/oracle/cases/helpers/skill-archive/duplicate-flattened-names.yaml
+  - tools/oracle/cases/helpers/skill-archive/unsafe-path-null-byte.yaml
+  - tools/oracle/cases/helpers/skill-archive/unsafe-path-absolute.yaml
+  - tools/oracle/cases/helpers/skill-archive/unsafe-path-dot-segment.yaml
+  - tools/oracle/cases/helpers/skill-archive/windows-drive-letter.yaml
+  - tools/oracle/cases/helpers/skill-archive/entry-count-1000-limit.yaml
+  - tools/oracle/cases/helpers/skill-archive/zip-crc-mismatch.yaml
+  - tools/oracle/cases/helpers/skill-archive/bzip2-member.yaml
+  - tools/oracle/cases/helpers/skill-archive/lzma-member.yaml
+  - tools/oracle/cases/helpers/skill-archive/duplicate-frontmatter-key.yaml
+  - tools/oracle/cases/helpers/skill-archive/trailing-backslash-directory.yaml
+  - tools/oracle/cases/helpers/skill-archive/header-name-mismatch.yaml
+  - tools/oracle/cases/helpers/skill-archive/corrupt-deflate-member.yaml
+deviations:
+  - what: >-
+      A member name containing a NUL byte stays rejected, even though LiteLLM truncates the name at
+      its first NUL byte and builds the archive under the truncated name instead.
+    why: Truncating a name on a NUL byte is a path-construction trick, not a behavior worth copying; rejecting the whole upload is the safer, intended answer.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/agent_skills_archive.py#L87-L95"
+  - what: >-
+      A corrupt or truncated DEFLATE member returns None, so the skill is left out of the index and
+      its archive route answers 404, where LiteLLM's own except clause lets the read error escape
+      and the route answers an unhandled 500.
+    why: LiteLLM's try/except around build_skill_archive catches only BadZipFile, OSError and RuntimeError; the matching zlib.error or EOFError reaches _archive_for uncaught, which has no except of its own.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/agent_skills_archive.py#L39-L57"
+out_of_scope:
+  - None of today's ten findings is about a padded one-line function; B5094's legacy .ast-grep/rules/ lists are untouched.
+  - Archive serving, discovery routes and index composition (B078), URL composition and manifest text joining (B3211), and stored skill reads and database queries (B3212) are unaffected by any of these findings.
+  - The ZIP/frontmatter fuzz target and its committed corpus are unaffected; none of today's findings asks for a new fuzz seed, and adding one is a choice for a later task, not a gap this one leaves open.
+pitfalls:
+  - "zip's is_dir on an opened entry treats a trailing backslash as a directory the same as a trailing slash; name_for_index gives the raw name before opening, so decide the file-or-directory split there and call by_index only for files."
+  - "Python's os.path.altsep is None on the Linux host both LiteLLM and betterlite run on, so a trailing-backslash name only gets rejected once it reaches normalize_path's existing backslash check, not by any directory logic."
+  - "ZipArchive::validate_header_consistency checks every entry at once; call it right after ZipArchive::new and propagate its error with .ok()?, not inside the existing per-entry loop."
+  - "serde_saphyr's duplicate_keys option is built with the options! macro and passed to from_str_with_options by value, not by reference."
+  - "zip's bzip2 feature defaults to bzip2 0.6's libbz2-rs-sys backend, whose bzip2-1.0.6 license fails deny.toml's allow list; use zip's bzip2-rs feature instead, which links the C libbzip2 1.0.8 through bzip2-sys, already MIT/Apache-2.0, the way CPython's own bz2 module links that same library."
+  - "zip's lzma feature pulls in lzma-rust2 0.23.0, whose xz feature needs sha2 ^0.11; sha2 0.11.1 is already in Cargo.lock, so this adds no duplicate version."
+  - "libz-sys 1.1.30 is pinned with cargo update --precise, not by editing a version in Cargo.toml; the deflate-flate2-zlib feature choice itself is untouched."
+  - "The ten cases dropping their ignore on /value must still compare the whole value, not only ok; check each one actually asserts None or the full archive object once the wrap is in place, not just that ok still matches."
+  - "docs/deviations/B3210.yaml already exists with deviations: []; add the two new entries to that list without changing its task: B3210 line."
+review_level: standard
+budget:
+  max_changed_lines: 550
+  max_new_expects: 1
