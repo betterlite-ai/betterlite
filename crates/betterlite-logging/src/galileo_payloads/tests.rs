@@ -76,6 +76,15 @@ fn check_input_text_from_messages_role_priority() {
     assert_eq!(input_text_from_messages(&messages), "user message");
 }
 
+// "human" is accepted by the same reverse-order search as "user", and a later assistant message in reverse order is still skipped in its favor.
+fn check_input_text_from_messages_human_role() {
+    let messages = val(r#"[
+            {"role": "assistant", "content": "assistant message"},
+            {"role": "human", "content": "human message"}
+        ]"#);
+    assert_eq!(input_text_from_messages(&messages), "human message");
+}
+
 // A tool message's search_results content counts source, title, block text and a present, non-null citations value, serialized back as JSON.
 fn check_search_results_citations() {
     let message = obj(r#"{"role": "tool", "content": "", "search_results": [
@@ -103,6 +112,20 @@ fn check_token_metrics() {
     assert_eq!(metrics_with_cost.num_input_tokens, 0);
     assert_eq!(metrics_with_cost.num_total_tokens, 9);
     assert_eq!(metrics_with_cost.cost, Some(Decimal::new(5, 1)));
+
+    // A total the record already gave, nonzero, is never recomputed, even when the per-token counts are also nonzero.
+    let record_total_already_set = obj(r#"{"num_total_tokens": 5, "num_input_tokens": 2}"#);
+    assert_eq!(
+        token_metrics_from_record(&record_total_already_set).num_total_tokens,
+        5
+    );
+
+    // The total is computed once either per-token count alone is nonzero, not only when both are.
+    let record_input_only = obj(r#"{"num_input_tokens": 5}"#);
+    assert_eq!(
+        token_metrics_from_record(&record_input_only).num_total_tokens,
+        5
+    );
 }
 
 fn sample_record() -> IndexMap<String, Json> {
@@ -329,6 +352,7 @@ fn galileo_payload_construction() {
     check_message_normalization();
     check_message_falsy_role_dropped();
     check_input_text_from_messages_role_priority();
+    check_input_text_from_messages_human_role();
     check_search_results_citations();
     check_token_metrics();
     check_trace_envelope();
