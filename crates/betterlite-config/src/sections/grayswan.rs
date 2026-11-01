@@ -8,6 +8,8 @@ use crate::resolve::{parse_float, resolve_number, resolve_string};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
 mod tests;
+mod timeout;
+use timeout::GuardrailTimeout;
 pub const UI_FRIENDLY_NAME: &str = "Gray Swan Cygnal";
 const DEFAULT_API_BASE: &str = "https://api.grayswan.ai";
 const DEFAULT_GUARDRAIL_TIMEOUT: Duration = Duration::from_secs(30);
@@ -57,7 +59,7 @@ struct Parameters {
     categories: Option<BTreeMap<String, String>>,
     policy_id: Option<String>,
     fail_open: Option<bool>,
-    guardrail_timeout: Option<f64>,
+    guardrail_timeout: Option<GuardrailTimeout>,
     streaming_end_of_stream_only: Option<bool>,
     streaming_sampling_rate: Option<u32>,
 }
@@ -130,10 +132,9 @@ impl Entry {
             categories: parameters.categories.unwrap_or_default(),
             policy_id: parameters.policy_id.unwrap_or_default(),
             fail_open: parameters.fail_open.unwrap_or(true),
-            guardrail_timeout: resolve_guardrail_timeout(
-                parameters.guardrail_timeout,
-                &format!("{prefix}.guardrail_timeout"),
-            )?,
+            guardrail_timeout: parameters
+                .guardrail_timeout
+                .map_or(DEFAULT_GUARDRAIL_TIMEOUT, |value| value.0),
             streaming_end_of_stream_only: parameters.streaming_end_of_stream_only.unwrap_or(false),
             streaming_sampling_rate: parameters.streaming_sampling_rate.unwrap_or(5),
         })
@@ -151,18 +152,6 @@ where
         return Ok(DEFAULT_VIOLATION_THRESHOLD);
     }
     parse_float(trimmed, "GRAYSWAN_VIOLATION_THRESHOLD")
-}
-fn resolve_guardrail_timeout(
-    guardrail_timeout: Option<f64>,
-    path: &str,
-) -> Result<Duration, ConfigError> {
-    let Some(secs) = guardrail_timeout else {
-        return Ok(DEFAULT_GUARDRAIL_TIMEOUT);
-    };
-    Duration::try_from_secs_f64(secs).map_err(|_error| ConfigError::InvalidDuration {
-        path: path.to_owned(),
-        value: secs,
-    })
 }
 fn resolve_api_key<L>(
     api_key: Option<SecretString>,

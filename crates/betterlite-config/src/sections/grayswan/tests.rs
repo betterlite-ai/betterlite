@@ -181,24 +181,21 @@ fn grayswan_config_parses_reasoning_mode_thinking() {
 fn grayswan_config_rejects_a_negative_guardrail_timeout() {
     let source = format!("{GRAYSWAN_CONFIG}      guardrail_timeout: -1\n");
     let error = resolve(&source, &BTreeMap::new()).unwrap_err();
-    assert!(matches!(error, ConfigError::InvalidDuration { path, .. }
-        if path == "guardrails.0.litellm_params.guardrail_timeout"));
+    assert!(matches!(error, ConfigError::Yaml { .. }));
 }
 
 #[test]
 fn grayswan_config_rejects_a_nan_guardrail_timeout() {
     let source = format!("{GRAYSWAN_CONFIG}      guardrail_timeout: .nan\n");
     let error = resolve(&source, &BTreeMap::new()).unwrap_err();
-    assert!(matches!(error, ConfigError::InvalidDuration { path, .. }
-        if path == "guardrails.0.litellm_params.guardrail_timeout"));
+    assert!(matches!(error, ConfigError::Yaml { .. }));
 }
 
 #[test]
 fn grayswan_config_rejects_a_too_large_guardrail_timeout() {
     let source = format!("{GRAYSWAN_CONFIG}      guardrail_timeout: 1e300\n");
     let error = resolve(&source, &BTreeMap::new()).unwrap_err();
-    assert!(matches!(error, ConfigError::InvalidDuration { path, .. }
-        if path == "guardrails.0.litellm_params.guardrail_timeout"));
+    assert!(matches!(error, ConfigError::Yaml { .. }));
 }
 
 #[test]

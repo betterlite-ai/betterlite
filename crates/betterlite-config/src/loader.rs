@@ -52,12 +52,9 @@ pub enum ConfigError {
         #[source]
         source: ParseIntError,
     },
-    #[error("invalid duration at {path}: {value}")]
-    InvalidDuration { path: String, value: f64 },
     #[error("invalid scalar at {path}")]
     InvalidScalar { path: String, value: bool },
 }
-
 pub struct ConfigLoader<L> {
     pub lookup: L,
 }
