@@ -83,7 +83,8 @@ fn dispatch_raw(raw: &RawException) -> ErrorClass {
     {
         return timeout_preamble_class(raw, error_str);
     }
-    if has_model_or_provider && raw.custom_llm_provider == "litellm_proxy" {
+    // custom_llm_provider == "litellm_proxy" is itself non-empty, so has_model_or_provider is already implied here
+    if raw.custom_llm_provider == "litellm_proxy" {
         match litellm_proxy_branch(raw, error_str) {
             LitellmProxyOutcome::Raised(class) => return class,
             // not a regex match for "litellm.*Error": litellm_proxy also belongs to openai_compatible_providers
