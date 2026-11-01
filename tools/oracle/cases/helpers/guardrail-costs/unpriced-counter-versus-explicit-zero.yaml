@@ -1,0 +1,10 @@
+kind: helper
+name: unpriced-counter-versus-explicit-zero
+call:
+  guardrail_costs:
+    guardrail_information:
+      guardrail_cost_by_unit:
+        records: null
+        flags: 0
+compare: {ignore: []}
+env: {}
