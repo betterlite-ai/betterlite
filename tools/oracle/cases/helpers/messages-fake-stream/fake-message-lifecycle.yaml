@@ -1,0 +1,17 @@
+kind: helper
+name: fake-message-lifecycle
+call:
+  messages_fake_stream:
+    response:
+      type: message
+      id: msg_a
+      model: claude-sonnet-4-20250514
+      role: assistant
+      content:
+        - {type: text, text: Hi}
+      usage: {input_tokens: 5, output_tokens: 2}
+      stop_reason: end_turn
+      extra: 7
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,14 @@
+kind: helper
+name: native-errors-b-branch-1635
+call:
+  native_errors_b:
+    provider: nlp_cloud
+    model: nlp_cloud/dolphin
+    error_str: "detail: something else entirely went wrong"
+    status_code: null
+    message: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/context/message
+      why: betterlite writes its own message

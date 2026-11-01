@@ -1,14 +1,14 @@
 id: B1678
 milestone: M4 keys, spend and management
 title: Calculate OCR credits, page annotations and batch family overrides
-status: todo
+status: done
 depends_on: [B171, B193, B204, B205]
 file: tasks/B1678-ocr-page-and-credit-cost.yaml
 covers:
   - "litellm/cost_calculator.py"
 parent: B068
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 435

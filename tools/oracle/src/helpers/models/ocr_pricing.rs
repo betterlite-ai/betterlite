@@ -1,9 +1,159 @@
+use betterlite_models::ocr_pricing::{
+    OcrBatchUsage, OcrBilling, OcrCostError, OcrResponseKind, OcrUsage, layered_ocr_pricing,
+    ocr_batch_cost, ocr_cost,
+};
+use betterlite_models::price_lookup::{PriceLookup, PriceRecord};
+use rust_decimal::Decimal;
+use serde::Deserialize;
+
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
-    type Input = serde_json::Value;
+#[derive(Deserialize)]
+pub(crate) struct UsageInput {
+    credits: Option<Decimal>,
+    pages_processed: Option<i64>,
+    pages_processed_annotation: Option<i64>,
+}
 
-    fn run(_input: &Self::Input) -> crate::helpers::HelperResult {
-        Self::not_built("ocr_pricing")
+#[derive(Deserialize)]
+pub(crate) struct BatchUsageInput {
+    pages_processed: Option<i64>,
+    pages_processed_annotation: Option<i64>,
+}
+
+// Mirrors the Python adapter's one-entry swap of litellm.model_cost for any model or provider asked.
+#[derive(Clone, Deserialize)]
+pub(crate) struct CatalogInput {
+    #[serde(rename = "key")]
+    _key: String,
+    entry: PriceRecord,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "kind")]
+pub(crate) enum Input {
+    #[serde(rename = "layering")]
+    Layering { sources: Vec<Option<PriceRecord>> },
+    #[serde(rename = "sync")]
+    Sync {
+        model: String,
+        custom_llm_provider: Option<String>,
+        model_info: Option<PriceRecord>,
+        usage: UsageInput,
+        catalog: Option<CatalogInput>,
+    },
+    #[serde(rename = "batch")]
+    Batch {
+        model: String,
+        custom_llm_provider: Option<String>,
+        model_info: Option<PriceRecord>,
+        usage: BatchUsageInput,
+        catalog: Option<CatalogInput>,
+    },
+}
+
+impl From<&UsageInput> for OcrBilling {
+    fn from(usage: &UsageInput) -> Self {
+        Self {
+            kind: OcrResponseKind::Ocr,
+            usage: Some(OcrUsage {
+                credits: usage.credits,
+                pages_processed: usage.pages_processed,
+                pages_processed_annotation: usage.pages_processed_annotation.unwrap_or(0),
+            }),
+        }
     }
 }
+
+impl From<&BatchUsageInput> for OcrBatchUsage {
+    fn from(usage: &BatchUsageInput) -> Self {
+        Self {
+            pages_processed: usage.pages_processed.unwrap_or(0),
+            pages_processed_annotation: usage.pages_processed_annotation.unwrap_or(0),
+        }
+    }
+}
+
+struct CaseLookup {
+    catalog: Option<CatalogInput>,
+}
+
+impl PriceLookup for CaseLookup {
+    fn effective_model_info(
+        &self,
+        _model: &str,
+        _custom_llm_provider: Option<&str>,
+    ) -> Option<PriceRecord> {
+        self.catalog.as_ref().map(|catalog| catalog.entry.clone())
+    }
+
+    fn raw_cost_map_entry(&self, _key: &str) -> Option<PriceRecord> {
+        None
+    }
+}
+
+impl crate::helpers::Helper for Op {
+    type Input = Input;
+
+    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+        run_inner(input).map_err(|error| {
+            Box::new(crate::helpers::HelperError {
+                class: "OcrCostError".to_owned(),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+                message: error.to_string(),
+            })
+        })
+    }
+}
+
+fn layering_response(sources: &[Option<PriceRecord>]) -> Result<serde_json::Value, OcrCostError> {
+    let refs: Vec<Option<&PriceRecord>> = sources.iter().map(Option::as_ref).collect();
+    let pricing = layered_ocr_pricing(&refs)?;
+    Ok(serde_json::json!({
+        "ocr_cost_per_page": pricing.ocr_cost_per_page.map(|price| price.normalize().to_string()),
+        "ocr_cost_per_credit": pricing.ocr_cost_per_credit.map(|price| price.normalize().to_string()),
+        "annotation_cost_per_page": pricing.annotation_cost_per_page.map(|price| price.normalize().to_string()),
+    }))
+}
+
+fn run_inner(input: &Input) -> Result<serde_json::Value, OcrCostError> {
+    let cost = match input {
+        Input::Layering { sources } => return layering_response(sources),
+        Input::Sync {
+            model,
+            custom_llm_provider,
+            model_info,
+            usage,
+            catalog,
+        } => ocr_cost(
+            model,
+            custom_llm_provider.as_deref(),
+            &OcrBilling::from(usage),
+            model_info.as_ref(),
+            &CaseLookup {
+                catalog: catalog.clone(),
+            },
+        )?,
+        Input::Batch {
+            model,
+            custom_llm_provider,
+            model_info,
+            usage,
+            catalog,
+        } => ocr_batch_cost(
+            model,
+            custom_llm_provider.as_deref(),
+            &OcrBatchUsage::from(usage),
+            model_info.as_ref(),
+            &CaseLookup {
+                catalog: catalog.clone(),
+            },
+        )?,
+    };
+    Ok(serde_json::json!({ "cost": cost.normalize().to_string() }))
+}
+
+mod tests;

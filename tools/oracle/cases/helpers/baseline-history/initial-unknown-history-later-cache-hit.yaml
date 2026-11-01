@@ -1,0 +1,53 @@
+kind: helper
+name: initial_unknown_history_later_cache_hit
+call:
+  baseline_history:
+    groups:
+      - - request_id: "r1"
+          started_at: 100.0
+          available_at: 100.0
+          outcome: complete
+          baseline_equivalent: false
+          usage:
+            prompt_tokens: 200
+            completion_tokens: 10
+            total_tokens: 210
+            prompt_tokens_details:
+              text_tokens: 200
+              cached_tokens: 0
+              cache_creation_tokens: 0
+              cache_creation_token_details: {ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 0}
+          plan:
+            total_tokens: 200
+            breakpoints:
+              - fingerprint: "fp1"
+                ttl_seconds: 300
+                prefix_tokens: 200
+                lookback_fingerprints: ["fp1"]
+                content_fingerprint: "cfp1"
+                lookback_content_fingerprints: ["cfp1"]
+      - - request_id: "r2"
+          started_at: 150.0
+          available_at: 150.0
+          outcome: complete
+          baseline_equivalent: false
+          usage:
+            prompt_tokens: 200
+            completion_tokens: 15
+            total_tokens: 215
+            prompt_tokens_details:
+              text_tokens: 200
+              cached_tokens: 0
+              cache_creation_tokens: 0
+              cache_creation_token_details: {ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 0}
+          plan:
+            total_tokens: 200
+            breakpoints:
+              - fingerprint: "fp1"
+                ttl_seconds: 300
+                prefix_tokens: 200
+                lookback_fingerprints: ["fp1"]
+                content_fingerprint: "cfp1"
+                lookback_content_fingerprints: ["cfp1"]
+compare: {ignore: []}
+env: {}
