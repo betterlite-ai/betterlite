@@ -148,22 +148,22 @@ async fn file_field_without_a_content_type_header_is_still_a_file() {
 }
 
 #[tokio::test]
-async fn field_without_a_filename_but_with_a_content_type_is_still_a_file() {
+async fn field_without_a_filename_but_with_a_content_type_is_kept_as_text() {
     let mut body = Vec::new();
     body.extend_from_slice(
-        b"--B\r\nContent-Disposition: form-data; name=\"thumbnail\"\r\nContent-Type: image/png\r\n\r\ndata\r\n--B--\r\n",
+        b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.pdf\"\r\nContent-Type: application/pdf\r\n\r\ndata\r\n",
+    );
+    body.extend_from_slice(
+        b"--B\r\nContent-Disposition: form-data; name=\"thumbnail\"\r\nContent-Type: image/png\r\n\r\ninline\r\n--B--\r\n",
     );
     let form = parse_body(&body, "multipart/form-data; boundary=B")
         .await
         .unwrap();
-    let Some(FormField {
-        value: FormValue::File { filename, .. },
-        ..
-    }) = form.first()
-    else {
-        panic!("expected a file field even without a filename");
-    };
-    assert_eq!(*filename, None);
+    let (_, fields) = build(&form).unwrap();
+    assert_eq!(
+        fields.get("thumbnail"),
+        Some(&Json::Text("inline".to_owned()))
+    );
 }
 
 #[tokio::test]

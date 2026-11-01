@@ -43,7 +43,7 @@ fn read_item(item: &MultipartItem) -> Result<FormField, OcrRequestError> {
     let filename = disposition_param(disposition, "filename");
     let content_type = header("content-type").map(ToOwned::to_owned);
     let bytes = item.data.to_vec();
-    let value = if filename.is_some() || content_type.is_some() {
+    let value = if filename.is_some() {
         FormValue::File {
             filename,
             content_type,
