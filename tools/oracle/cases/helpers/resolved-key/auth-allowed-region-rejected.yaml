@@ -1,0 +1,8 @@
+kind: helper
+name: allowed-region-global-rejected
+call:
+  resolved_key:
+    function: auth
+    value: {allowed_model_region: global}
+env: {}
+compare: {ignore: []}

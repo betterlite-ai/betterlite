@@ -1,0 +1,9 @@
+kind: helper
+name: config_requires_dict_without_string_decode
+call:
+  resource_rows:
+    operation: config
+    row: {param_name: p, param_value: '{}'}
+env: {}
+compare:
+  ignore: []

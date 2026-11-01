@@ -1,0 +1,13 @@
+kind: helper
+name: anthropic-replicate-errors-branch-598
+call:
+  anthropic_replicate_errors:
+    provider: anthropic
+    model: claude-3-opus
+    error_str: "generic failure"
+    status_code: 408
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/context/message
+      why: betterlite writes its own message

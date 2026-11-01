@@ -1,0 +1,14 @@
+kind: helper
+name: malformed-response
+call:
+  b3767:
+    apply:
+      settings:
+        api_key: key
+        api_base: "https://deepkeep.test"
+        deepkeep_firewall_id: fixed
+        unreachable_fallback: fail_open
+      inputs: {texts: [hello]}
+      answer: {status: 200, headers: {}, body: "not an object"}
+env: {}
+compare: {ignore: []}

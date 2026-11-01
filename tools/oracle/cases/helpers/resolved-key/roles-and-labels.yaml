@@ -1,0 +1,9 @@
+kind: helper
+name: org-admin-labels-empty
+call:
+  resolved_key:
+    function: role
+    value: org_admin
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,5 @@
+kind: helper
+name: message-content-search-results-seed
+call: {message_content: {operation: extract_search_results_text, search_results: [{source: s, title: t}]}}
+env: {}
+compare: {ignore: []}

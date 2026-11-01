@@ -1,0 +1,9 @@
+kind: helper
+name: organization_project_nulls_not_normalized
+call:
+  resource_rows:
+    operation: organization
+    row: {budget_id: b, created_by: c, updated_by: u, spend: null}
+env: {}
+compare:
+  ignore: []

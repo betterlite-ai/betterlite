@@ -49,6 +49,8 @@ When the task cannot be finished inside its scope and budgets, stop and answer w
 
 The Claude sandbox mounts /dev/null over dotfiles in your worktree (.bashrc, .bash_profile, .profile, .zshrc, .zprofile, .gitconfig, .gitmodules, .mcp.json, .ripgreprc, .idea, .vscode and .claude/commands). .gitignore lists them, so committed, scope, hooks and diff-budget skip them. If a check still fails only on those paths inside the sandbox, that alone is not a blocker: the dispatcher runs the gate again outside the sandbox. Report done when every other check passes, and say in notes which checks failed only on those paths.
 
+The Claude sandbox also has its own network, so it can't reach the test Postgres at POSTGRES_TEST_URL on the host's loopback. Every test that provisions a PostgresFixture fails there with "configured PostgreSQL server is unreachable", in tests, behavior-tests and postgres-tests alike. That is not a blocker either: the dispatcher's gate run reaches Postgres and sends back any real failure. Make sure those tests compile, report done when every other check passes, and name in notes the checks that failed only on the unreachable server.
+
 ## Final answer
 
 Your final answer is one JSON object that matches .development/schema/report.schema.json, and nothing else. Give it once, after `cargo gate run <ID>` passes or when you are blocked, and never as a test or a draft: a Claude run ends at its first final answer, before the hook can send it back. Every field is required; use an empty string or list when there is nothing to say. The report covers the whole branch, not only your attempt: keep every prior_art entry from earlier attempts that still holds.

@@ -1,0 +1,9 @@
+kind: helper
+name: model_scalar_array_and_double_encoded_text_rejected
+call:
+  resource_rows:
+    operation: model
+    row: {model_id: m, model_name: 'n', litellm_params: '[1,2]'}
+env: {}
+compare:
+  ignore: []

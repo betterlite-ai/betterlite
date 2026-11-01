@@ -1,0 +1,12 @@
+kind: helper
+name: reasoning-before-answer
+call:
+  responses_reasoning_merge:
+    mode: reasoning
+    messages:
+      - {role: assistant, content: null, reasoning_content: a, thinking_blocks: [{text: A}]}
+      - {role: assistant, content: null, reasoning_content: b, thinking_blocks: [{text: B}]}
+      - {role: assistant, content: answer, reasoning_content: c, thinking_blocks: [{text: C}], tool_calls: [{id: call-1}], extra: retained}
+env: {}
+compare:
+  ignore: []

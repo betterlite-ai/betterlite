@@ -1,0 +1,12 @@
+kind: helper
+name: trailing-new-message-not-dict
+call:
+  responses_reasoning_merge:
+    mode: trailing
+    messages:
+      - {role: assistant, content: a, tool_calls: [{id: call-1}]}
+    new_messages:
+      - not-a-dict
+env: {}
+compare:
+  ignore: []

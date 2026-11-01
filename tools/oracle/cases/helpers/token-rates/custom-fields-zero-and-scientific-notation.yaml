@@ -1,0 +1,12 @@
+kind: helper
+name: custom-fields-zero-and-scientific-notation
+call:
+  token_rates:
+    operation: deployment
+    model_info:
+      input_cost_per_token: 0
+      output_cost_per_token: "3e-7"
+      unrelated_setting: "5"
+      tiered_pricing: [1]
+compare: {ignore: []}
+env: {}

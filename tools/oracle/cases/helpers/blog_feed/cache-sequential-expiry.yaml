@@ -1,0 +1,11 @@
+kind: helper
+name: cache-sequential-expiry
+call:
+  blog_feed:
+    function: get_blog_posts_sequence
+    calls:
+      - {url: https://example.test/feed, now: 100, response: {status: 200, text: '<rss><channel><item><title>Fresh</title><link>https://fresh</link></item></channel></rss>'}}
+      - {url: https://example.test/feed, now: 200, response: {status: 503}}
+      - {url: https://example.test/feed, now: 3701, response: {status: 503}}
+env: {}
+compare: {ignore: [{pointer: /value/results/2/warnings/0/message, why: "betterlite writes its own fetch-failure message"}]}

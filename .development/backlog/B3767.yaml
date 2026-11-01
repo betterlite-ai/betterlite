@@ -1,7 +1,7 @@
 id: B3767
 milestone: M6 guardrails
 title: DeepKeep firewall evaluation
-status: todo
+status: done
 depends_on: []
 file: tasks/B3767-deepkeep-firewall.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/proxy/guardrails/guardrail_hooks/deepkeep.py"
 parent: B107
 split_from: B107
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 411

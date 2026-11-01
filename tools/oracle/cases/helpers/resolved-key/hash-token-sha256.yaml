@@ -1,0 +1,9 @@
+kind: helper
+name: sha256-utf8-lowercase-hex
+call:
+  resolved_key:
+    function: hash_token
+    value: sk-test123
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,5 @@
+kind: helper
+name: validate-scalar
+call: {blog_feed: {function: validate_blog_posts, posts: 7}}
+env: {}
+compare: {ignore: []}

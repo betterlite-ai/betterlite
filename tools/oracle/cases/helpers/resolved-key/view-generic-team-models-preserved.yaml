@@ -1,0 +1,9 @@
+kind: helper
+name: generic-team-models-preserved
+call:
+  resolved_key:
+    function: view
+    value: {team_models: [gpt-4, {model: claude}, 1]}
+env: {}
+compare:
+  ignore: []

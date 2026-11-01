@@ -1,0 +1,72 @@
+id: B5087
+title: Hugging Face cache downloads like hf_hub_download
+description: >-
+  This task builds hf_hub_download from huggingface_hub 1.32.0 for the one call LiteLLM makes through tokenizers: a model repo, one filename, a revision and the token choice from B5085, with the cache folder from B5085's hub_cache, no subfolder, no local_dir and no force_download (tokenizers v0.23.1 tokenizer.rs L786-L812). It lives in crates/betterlite-http/src/hub_download.rs and hub_download/** and uses B5086's HubClient for the HEAD and the GET. It returns the path of the file in the snapshot folder, so a second process with huggingface_hub sees the same cache and the other way round.
+
+
+  What to match. Port hf_hub_download and _hf_hub_download_to_cache_dir with the helpers in the references for that path: repo id and filename checks (validate_repo_id, the relative filename check), the folder name "models--{org}--{name}" (repo_folder_name), the shortcut when the revision is a commit hash already in the cache, the HEAD with B5085's etag_timeout, the error classes _get_metadata_or_catch_error catches and the ones it lets through, the one retry it makes, the fallback to refs/{revision} and the snapshot when the HEAD fails or B5085's offline flag is set, the .no_exist marker for a missing entry, refs written through a temp file and a rename, the lock file under .locks with its wait log, the ".incomplete" temp file, the disk space warning, the move and chmod, and the relative symlink from snapshots to blobs with the copy fallback when symlinks don't work or disable_symlinks is set, including the one-time warning unless disable_symlinks_warning is set. When nothing in the cache helps, return _raise_on_head_call_error's error class as a typed error.
+
+
+  Blocking work. File locks and the symlink probe block, so they run through the blocking facility the caller passes in; tokio's spawn_blocking is banned by clippy.toml. Other file work uses tokio::fs.
+
+
+  Tests. The tests run a local Hub on 127.0.0.1 and a temp cache folder. hub_download::tests::cache_follows_huggingface_hub checks the folder layout and file names against a cache huggingface_hub wrote (commit a small fixture tree), a second call that sends only the HEAD, the commit hash shortcut, the copy when symlinks are off, and the .no_exist marker. hub_download::tests::fallbacks_follow_huggingface_hub covers offline with and without a cached file, a Hub that is down with and without a cached file, a revision or repo that is not found (these propagate), a bad repo id, a filename with "..", and two downloads of the same file that wait on one lock.
+scope:
+  paths:
+    - crates/betterlite-http/src/hub_download.rs
+    - crates/betterlite-http/src/hub_download/**
+    - crates/betterlite-http/Cargo.toml
+    - Cargo.toml
+    - Cargo.lock
+  lint_tables: false
+references:
+  - url: https://github.com/huggingface/tokenizers/blob/v0.23.1/bindings/python/src/tokenizer.rs#L786-L812
+    why: The arguments LiteLLM's tokenizer path passes to hf_hub_download.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/file_download.py#L853-L1061
+    why: hf_hub_download, its argument checks and the call into the cache path.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/file_download.py#L1064-L1306
+    why: _hf_hub_download_to_cache_dir, the cache layout, the lock and the fallbacks.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/file_download.py#L1688-L1850
+    why: _get_metadata_or_catch_error with the errors that fall back to the cache and the one retry.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/file_download.py#L1927-L2039
+    why: _raise_on_head_call_error and _download_to_tmp_and_move.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/file_download.py#L2042-L2155
+    why: _chmod_and_move, _replace_no_matter_what, _copy_no_matter_what and _get_pointer_path.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/file_download.py#L92-L152
+    why: are_symlinks_supported and its warning.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/file_download.py#L624-L776
+    why: The symlink helpers, the refs writer, repo_folder_name and _check_disk_space.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/utils/_validators.py#L96-L151
+    why: validate_repo_id and its messages.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/utils/_fixes.py#L76-L123
+    why: WeakFileLock, the lock with its wait log.
+dod:
+  - text: A download writes the same cache layout huggingface_hub writes, reuses it on the next call, and honors the commit hash shortcut, the symlink switches and the .no_exist marker.
+    proof: [hub-cache]
+  - text: Offline mode, a Hub that is down, missing repos or revisions, bad names and concurrent downloads behave as in huggingface_hub, with typed errors where it raises.
+    proof: [hub-fallbacks]
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: hub-cache
+      why: the cache test is missing or the layout, reuse or symlink handling differs from huggingface_hub
+      run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^hub_download::tests::cache_follows_huggingface_hub($|::)/)'
+    - id: hub-fallbacks
+      why: the fallback test is missing or an offline, error or lock path differs from huggingface_hub
+      run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^hub_download::tests::fallbacks_follow_huggingface_hub($|::)/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - Settings, paths and the token lookup belong to B5085; requests, retries, Hub errors, metadata and the GET belong to B5086.
+  - local_dir downloads, subfolders, dataset and space repos, dry_run, force_download and the Xet tree cache are not reached by tokenizers' call and are not built.
+  - try_to_load_from_cache and the cache scan commands are not reached by LiteLLM.
+pitfalls:
+  - A ProxyError, a missing repo and a missing revision propagate from the HEAD even when a cached file exists; only connection errors, timeouts, offline mode and other Hub HTTP errors fall back to the cache.
+  - A filename with ".." fails with a typed error and never writes outside the snapshot folder, as _get_pointer_path checks.
+  - The blob name is the etag and the lock name is the etag too, so two revisions that point to the same blob share one lock.
+  - When a file was cached under a commit hash and the call passes a branch name, the HEAD still runs unless offline mode is set.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

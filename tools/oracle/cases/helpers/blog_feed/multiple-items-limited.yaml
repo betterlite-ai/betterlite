@@ -1,0 +1,9 @@
+kind: helper
+name: multiple-items-limited
+call:
+  blog_feed:
+    function: parse_rss_to_posts
+    max_posts: 2
+    xml: '<rss><channel><item><title>One</title><link>https://one</link></item><item><title>Two</title><link>https://two</link></item><item><title>Three</title><link>https://three</link></item></channel></rss>'
+env: {}
+compare: {ignore: []}

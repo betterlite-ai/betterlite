@@ -1,0 +1,5 @@
+kind: helper
+name: verbose-active
+call: {verbose_hooks: {function: active, set_verbose: false, logger_debug_enabled: true}}
+env: {}
+compare: {ignore: []}

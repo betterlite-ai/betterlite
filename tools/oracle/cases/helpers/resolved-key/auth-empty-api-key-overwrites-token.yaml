@@ -1,0 +1,9 @@
+kind: helper
+name: empty-api-key-overwrites-token
+call:
+  resolved_key:
+    function: auth
+    value: {api_key: '', token: stale}
+env: {}
+compare:
+  ignore: []
