@@ -5,6 +5,18 @@ use rstest::rstest;
 use super::{TokenEndpointAuthMethod, build_token_client_auth, normalize_token_auth_method};
 
 #[rstest]
+fn token_endpoint_auth_method_as_str_matches_litellm_values() {
+    assert_eq!(
+        TokenEndpointAuthMethod::ClientSecretBasic.as_str(),
+        "client_secret_basic"
+    );
+    assert_eq!(
+        TokenEndpointAuthMethod::ClientSecretPost.as_str(),
+        "client_secret_post"
+    );
+}
+
+#[rstest]
 fn normalize_token_auth_method_basic() {
     assert_eq!(
         normalize_token_auth_method("client_secret_basic"),
