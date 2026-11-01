@@ -1,0 +1,5 @@
+kind: helper
+name: mime-lookup-unknown-extension
+call: {file_type_records: {function: mime_extension_table, extensions: [exe], mimes: [], file_types: []}}
+env: {}
+compare: {ignore: []}

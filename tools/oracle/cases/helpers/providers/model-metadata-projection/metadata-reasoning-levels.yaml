@@ -1,0 +1,5 @@
+kind: helper
+name: metadata-reasoning-levels
+call: {model_metadata_projection: {key: fixture/model, model: fixture/model, provider: fixture, entry: {default_reasoning_effort: low, reasoning_effort_levels: [low, medium, high], bedrock_output_config_effort_ceiling: xhigh}}}
+env: {}
+compare: {ignore: []}
