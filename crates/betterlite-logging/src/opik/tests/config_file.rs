@@ -57,6 +57,24 @@ fn config_file_fails_on_nesting_past_ten() {
 }
 
 #[test]
+fn config_file_resolves_a_chain_nested_exactly_ten_deep() {
+    let text = "[opik]\n\
+                a0 = %(a1)s\n\
+                a1 = %(a2)s\n\
+                a2 = %(a3)s\n\
+                a3 = %(a4)s\n\
+                a4 = %(a5)s\n\
+                a5 = %(a6)s\n\
+                a6 = %(a7)s\n\
+                a7 = %(a8)s\n\
+                a8 = %(a9)s\n\
+                a9 = %(a10)s\n\
+                a10 = end\n";
+    let values = read_config_section(text).expect("ten levels of nesting is not too deep");
+    assert_eq!(values.get("a0"), Some(&String::from("end")));
+}
+
+#[test]
 fn config_file_fails_on_missing_name() {
     let error = read_config_section("[opik]\na = %(missing)s\n").unwrap_err();
     let text = error.to_string();
@@ -70,6 +88,12 @@ fn config_file_fails_on_trailing_percent() {
     let text = error.to_string();
     assert!(text.contains("malformed"));
     assert!(!text.contains("value"));
+}
+
+#[test]
+fn config_file_double_percent_escapes_to_one_percent() {
+    let values = read_config_section("[opik]\na = 100%% full\n").expect("valid configuration");
+    assert_eq!(values.get("a"), Some(&String::from("100% full")));
 }
 
 #[test]
