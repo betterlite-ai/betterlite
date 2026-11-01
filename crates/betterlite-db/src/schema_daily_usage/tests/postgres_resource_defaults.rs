@@ -27,7 +27,7 @@ async fn cron_inactive_and_required_ttl() {
         .await;
         let status = scalar_text(
             &client,
-            r#"SELECT status FROM "LiteLLM_CronJob" WHERE cronjob_id = 'c1'"#,
+            r#"SELECT status::text FROM "LiteLLM_CronJob" WHERE cronjob_id = 'c1'"#,
         )
         .await;
         assert_eq!(status, "INACTIVE");
