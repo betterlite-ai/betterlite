@@ -1,8 +1,8 @@
 use betterlite_config::cost_adjustments::{
-    CostAdjustmentMap, discount_entry, margin_entry, resolve_adjustment_entries,
+    AdjustmentKind, CostAdjustmentMap, adjustment_entry, resolve_adjustment_entries,
 };
 use betterlite_config::loader::ConfigError;
-use betterlite_cost::adjustments::{apply_cost_discount, apply_cost_margin};
+use betterlite_cost::adjustments::apply_cost_adjustment;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
 use serde::Deserialize;
@@ -40,26 +40,32 @@ impl crate::helpers::Helper for Op {
         let discount_config = resolve_adjustment_entries(
             "litellm_settings.cost_discount_config",
             input.discount_config.clone(),
-            discount_entry,
+            |path, value, paths| adjustment_entry(AdjustmentKind::Discount, path, value, paths),
         )
         .map_err(|error| Box::<crate::helpers::HelperError>::from(Failure::Config(error)))?;
         let margin_config = resolve_adjustment_entries(
             "litellm_settings.cost_margin_config",
             input.margin_config.clone(),
-            margin_entry,
+            |path, value, paths| adjustment_entry(AdjustmentKind::Margin, path, value, paths),
         )
         .map_err(|error| Box::<crate::helpers::HelperError>::from(Failure::Config(error)))?;
-        let discount = apply_cost_discount(base_cost, input.provider.as_deref(), &discount_config)
-            .map_err(|error| {
-                Box::<crate::helpers::HelperError>::from(Failure::Adjustment(error))
-            })?;
-        let margin = apply_cost_margin(base_cost, input.provider.as_deref(), &margin_config)
-            .map_err(|error| {
-                Box::<crate::helpers::HelperError>::from(Failure::Adjustment(error))
-            })?;
+        let discount = apply_cost_adjustment(
+            AdjustmentKind::Discount,
+            base_cost,
+            input.provider.as_deref(),
+            &discount_config,
+        )
+        .map_err(|error| Box::<crate::helpers::HelperError>::from(Failure::Adjustment(error)))?;
+        let margin = apply_cost_adjustment(
+            AdjustmentKind::Margin,
+            base_cost,
+            input.provider.as_deref(),
+            &margin_config,
+        )
+        .map_err(|error| Box::<crate::helpers::HelperError>::from(Failure::Adjustment(error)))?;
         let mut output = json!({
-            "discount": {"final_cost": discount.final_cost, "discount_percent": discount.discount_percent, "saved_amount": discount.saved_amount},
-            "margin": {"final_cost": margin.final_cost, "margin_percent": margin.margin_percent, "fixed_amount": margin.fixed_amount, "total_amount": margin.total_amount}
+            "discount": {"final_cost": discount.final_cost, "discount_percent": discount.percent, "saved_amount": discount.amount},
+            "margin": {"final_cost": margin.final_cost, "margin_percent": margin.percent, "fixed_amount": margin.fixed_amount, "total_amount": margin.amount}
         });
         canonical_numbers(&mut output);
         Ok(output)

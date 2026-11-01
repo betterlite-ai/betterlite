@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use rstest::rstest;
 use rust_decimal::Decimal;
 
-use crate::cost_adjustments::{DiscountEntry, MarginEntry, MarginFieldEntry};
+use crate::cost_adjustments::{AdjustmentEntry, MarginFieldEntry};
 use crate::loader::{ConfigError, ConfigLoader};
 
 #[test]
@@ -20,16 +20,16 @@ fn loads_cost_adjustments() {
     let settings = &config.sections.cost_adjustments;
     assert_eq!(
         settings.cost_discount_config["vertex_ai"],
-        DiscountEntry::Percent(Decimal::new(2, 1))
+        AdjustmentEntry::Percent(Decimal::new(2, 1))
     );
     assert_eq!(
         settings.cost_margin_config["vertex_ai"],
-        MarginEntry::Unsupported,
+        AdjustmentEntry::Unsupported,
         "a null provider entry stays an explicit unapplied entry instead of falling through to global"
     );
     assert_eq!(
         settings.cost_margin_config["global"],
-        MarginEntry::Split {
+        AdjustmentEntry::Split {
             percentage: MarginFieldEntry::Number(Decimal::new(1, 1)),
             fixed_amount: MarginFieldEntry::Number(Decimal::new(1, 2)),
         }
@@ -56,7 +56,7 @@ fn loader_keeps_an_integer_fixed_amount_exact_past_f64_range() {
     let settings = &config.sections.cost_adjustments;
     assert_eq!(
         settings.cost_margin_config["global"],
-        MarginEntry::Split {
+        AdjustmentEntry::Split {
             percentage: MarginFieldEntry::Absent,
             fixed_amount: MarginFieldEntry::Number(
                 Decimal::from_str_exact("9007199254740993").unwrap()
@@ -78,7 +78,7 @@ fn loader_keeps_quoted_text_exact_instead_of_rounding_a_float_lexeme() {
     let settings = &config.sections.cost_adjustments;
     assert_eq!(
         settings.cost_margin_config["global"],
-        MarginEntry::Split {
+        AdjustmentEntry::Split {
             percentage: MarginFieldEntry::Absent,
             fixed_amount: MarginFieldEntry::Number(
                 Decimal::from_str_exact("9007199254740993").unwrap()
@@ -107,7 +107,7 @@ fn discount_text_list_and_object_entries_are_unsupported_instead_of_crashing(
     let settings = &config.sections.cost_adjustments;
     assert_eq!(
         settings.cost_discount_config[provider],
-        DiscountEntry::Unsupported
+        AdjustmentEntry::Unsupported
     );
 }
 
@@ -119,8 +119,14 @@ fn margin_scalar_text_and_boolean_do_not_become_a_percentage() {
     .load("litellm_settings:\n  cost_margin_config:\n    a: \"0.5\"\n    b: true\n")
     .unwrap();
     let settings = &config.sections.cost_adjustments;
-    assert_eq!(settings.cost_margin_config["a"], MarginEntry::Unsupported);
-    assert_eq!(settings.cost_margin_config["b"], MarginEntry::Unsupported);
+    assert_eq!(
+        settings.cost_margin_config["a"],
+        AdjustmentEntry::Unsupported
+    );
+    assert_eq!(
+        settings.cost_margin_config["b"],
+        AdjustmentEntry::Unsupported
+    );
 }
 
 #[test]
@@ -133,7 +139,7 @@ fn margin_object_field_ignores_a_boolean_value_and_unrelated_keys() {
     let settings = &config.sections.cost_adjustments;
     assert_eq!(
         settings.cost_margin_config["global"],
-        MarginEntry::Split {
+        AdjustmentEntry::Split {
             percentage: MarginFieldEntry::Absent,
             fixed_amount: MarginFieldEntry::Absent,
         }
@@ -150,7 +156,7 @@ fn margin_object_field_trims_whitespace_before_converting() {
     let settings = &config.sections.cost_adjustments;
     assert_eq!(
         settings.cost_margin_config["global"],
-        MarginEntry::Split {
+        AdjustmentEntry::Split {
             percentage: MarginFieldEntry::Number(Decimal::new(25, 2)),
             fixed_amount: MarginFieldEntry::Absent,
         }

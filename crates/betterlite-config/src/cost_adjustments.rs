@@ -27,25 +27,25 @@ pub enum AdjustmentField {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DiscountEntry {
-    Percent(Decimal),
-    Unsupported,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MarginFieldEntry {
     Absent,
     Number(Decimal),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MarginEntry {
+pub enum AdjustmentEntry {
     Percent(Decimal),
     Split {
         percentage: MarginFieldEntry,
         fixed_amount: MarginFieldEntry,
     },
     Unsupported,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AdjustmentKind {
+    Discount,
+    Margin,
 }
 
 #[derive(Debug, Default, serde::Deserialize)]
@@ -64,8 +64,8 @@ pub struct Global {
 
 #[derive(Debug, Clone, Default)]
 pub struct Settings {
-    pub cost_discount_config: BTreeMap<String, DiscountEntry>,
-    pub cost_margin_config: BTreeMap<String, MarginEntry>,
+    pub cost_discount_config: BTreeMap<String, AdjustmentEntry>,
+    pub cost_margin_config: BTreeMap<String, AdjustmentEntry>,
 }
 
 impl Section for Raw {
@@ -79,12 +79,12 @@ impl Section for Raw {
             cost_discount_config: resolve_adjustment_entries(
                 "litellm_settings.cost_discount_config",
                 self.litellm_settings.cost_discount_config,
-                discount_entry,
+                |path, value, paths| adjustment_entry(AdjustmentKind::Discount, path, value, paths),
             )?,
             cost_margin_config: resolve_adjustment_entries(
                 "litellm_settings.cost_margin_config",
                 self.litellm_settings.cost_margin_config,
-                margin_entry,
+                |path, value, paths| adjustment_entry(AdjustmentKind::Margin, path, value, paths),
             )?,
         })
     }
@@ -121,36 +121,28 @@ fn parse_adjustment_decimal(lexeme: &str, path: &str, paths: &mut Vec<String>) -
     Some(value)
 }
 
-pub fn discount_entry(
+pub fn adjustment_entry(
+    kind: AdjustmentKind,
     path: &str,
     value: &CostAdjustmentValue,
     paths: &mut Vec<String>,
-) -> Option<DiscountEntry> {
-    let CostAdjustmentValue::Number(number) = value else {
-        return Some(DiscountEntry::Unsupported);
-    };
-    let percent = parse_adjustment_decimal(&number.to_string(), path, paths)?;
-    Some(DiscountEntry::Percent(percent))
-}
-
-pub fn margin_entry(
-    path: &str,
-    value: &CostAdjustmentValue,
-    paths: &mut Vec<String>,
-) -> Option<MarginEntry> {
+) -> Option<AdjustmentEntry> {
     match value {
         CostAdjustmentValue::Number(number) => {
             let percent = parse_adjustment_decimal(&number.to_string(), path, paths)?;
-            Some(MarginEntry::Percent(percent))
+            Some(AdjustmentEntry::Percent(percent))
         }
-        CostAdjustmentValue::Object(entries) => Some(MarginEntry::Split {
-            percentage: margin_field(path, entries, AdjustmentField::Percentage, paths),
-            fixed_amount: margin_field(path, entries, AdjustmentField::FixedAmount, paths),
-        }),
+        CostAdjustmentValue::Object(entries) if matches!(kind, AdjustmentKind::Margin) => {
+            Some(AdjustmentEntry::Split {
+                percentage: margin_field(path, entries, AdjustmentField::Percentage, paths),
+                fixed_amount: margin_field(path, entries, AdjustmentField::FixedAmount, paths),
+            })
+        }
         CostAdjustmentValue::Null
         | CostAdjustmentValue::Boolean(_)
         | CostAdjustmentValue::Text(_)
-        | CostAdjustmentValue::Array(_) => Some(MarginEntry::Unsupported),
+        | CostAdjustmentValue::Object(_)
+        | CostAdjustmentValue::Array(_) => Some(AdjustmentEntry::Unsupported),
     }
 }
 

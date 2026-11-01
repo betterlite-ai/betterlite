@@ -1,29 +1,27 @@
 use std::collections::BTreeMap;
 
-use betterlite_config::cost_adjustments::{DiscountEntry, MarginEntry, MarginFieldEntry};
+use betterlite_config::cost_adjustments::{AdjustmentEntry, AdjustmentKind, MarginFieldEntry};
 use rust_decimal::Decimal;
 use thiserror::Error;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, strum::Display)]
 pub enum AdjustmentOperation {
-    #[strum(serialize = "base * discount")]
-    BaseTimesDiscount,
-    #[strum(serialize = "base - saved")]
-    BaseMinusSaved,
-    #[strum(serialize = "base * percentage")]
-    BaseTimesPercentage,
+    #[strum(serialize = "base * percent")]
+    BaseTimesPercent,
     #[strum(serialize = "percentage + fixed")]
     PercentagePlusFixed,
-    #[strum(serialize = "base + margin")]
-    BasePlusMargin,
+    #[strum(serialize = "base - amount")]
+    BaseMinusAmount,
+    #[strum(serialize = "base + amount")]
+    BasePlusAmount,
 }
 
 impl AdjustmentOperation {
     fn apply(self, left: Decimal, right: Decimal) -> Result<Decimal, AdjustmentError> {
         let result = match self {
-            Self::BaseTimesDiscount | Self::BaseTimesPercentage => left.checked_mul(right),
-            Self::BaseMinusSaved => left.checked_sub(right),
-            Self::PercentagePlusFixed | Self::BasePlusMargin => left.checked_add(right),
+            Self::BaseTimesPercent => left.checked_mul(right),
+            Self::PercentagePlusFixed | Self::BasePlusAmount => left.checked_add(right),
+            Self::BaseMinusAmount => left.checked_sub(right),
         };
         result.ok_or(AdjustmentError::Overflow { operation: self })
     }
@@ -36,25 +34,18 @@ pub enum AdjustmentError {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DiscountResult {
+pub struct AdjustmentResult {
     pub final_cost: Decimal,
-    pub discount_percent: Decimal,
-    pub saved_amount: Decimal,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct MarginResult {
-    pub final_cost: Decimal,
-    pub margin_percent: Decimal,
+    pub percent: Decimal,
     pub fixed_amount: Decimal,
-    pub total_amount: Decimal,
+    pub amount: Decimal,
 }
 
-fn selected_entry<'config, T>(
+fn selected_entry<'config>(
     provider: Option<&str>,
-    config: &'config BTreeMap<String, T>,
+    config: &'config BTreeMap<String, AdjustmentEntry>,
     fallback_key: Option<&str>,
-) -> Option<&'config T> {
+) -> Option<&'config AdjustmentEntry> {
     let selected = provider
         .filter(|name| !name.is_empty())
         .and_then(|name| config.get(name));
@@ -72,59 +63,44 @@ const fn margin_field_amount(entry: MarginFieldEntry) -> Decimal {
     }
 }
 
-const fn margin_percent_and_fixed(entry: Option<&MarginEntry>) -> (Decimal, Decimal) {
+const fn percent_and_fixed(entry: Option<&AdjustmentEntry>) -> (Decimal, Decimal) {
     match entry {
-        Some(MarginEntry::Percent(percent)) => (*percent, Decimal::ZERO),
-        Some(MarginEntry::Split {
+        Some(AdjustmentEntry::Percent(percent)) => (*percent, Decimal::ZERO),
+        Some(AdjustmentEntry::Split {
             percentage,
             fixed_amount,
         }) => (
             margin_field_amount(*percentage),
             margin_field_amount(*fixed_amount),
         ),
-        Some(MarginEntry::Unsupported) | None => (Decimal::ZERO, Decimal::ZERO),
+        Some(AdjustmentEntry::Unsupported) | None => (Decimal::ZERO, Decimal::ZERO),
     }
 }
 
-const fn discount_percent(entry: Option<&DiscountEntry>) -> Decimal {
-    match entry {
-        Some(DiscountEntry::Percent(percent)) => *percent,
-        Some(DiscountEntry::Unsupported) | None => Decimal::ZERO,
-    }
-}
-
-pub fn apply_cost_discount(
+pub fn apply_cost_adjustment(
+    kind: AdjustmentKind,
     base_cost: Decimal,
     provider: Option<&str>,
-    config: &BTreeMap<String, DiscountEntry>,
-) -> Result<DiscountResult, AdjustmentError> {
-    let discount_percent = discount_percent(selected_entry(provider, config, None));
-    let saved_amount = AdjustmentOperation::BaseTimesDiscount.apply(base_cost, discount_percent)?;
-    let final_cost = AdjustmentOperation::BaseMinusSaved.apply(base_cost, saved_amount)?;
-    Ok(DiscountResult {
+    config: &BTreeMap<String, AdjustmentEntry>,
+) -> Result<AdjustmentResult, AdjustmentError> {
+    let fallback_key = match kind {
+        AdjustmentKind::Discount => None,
+        AdjustmentKind::Margin => Some("global"),
+    };
+    let (percent, fixed_amount) = percent_and_fixed(selected_entry(provider, config, fallback_key));
+    let percentage_amount = AdjustmentOperation::BaseTimesPercent.apply(base_cost, percent)?;
+    let amount = AdjustmentOperation::PercentagePlusFixed.apply(percentage_amount, fixed_amount)?;
+    let final_cost = match kind {
+        AdjustmentKind::Discount => {
+            AdjustmentOperation::BaseMinusAmount.apply(base_cost, amount)?
+        }
+        AdjustmentKind::Margin => AdjustmentOperation::BasePlusAmount.apply(base_cost, amount)?,
+    };
+    Ok(AdjustmentResult {
         final_cost,
-        discount_percent,
-        saved_amount,
-    })
-}
-
-pub fn apply_cost_margin(
-    base_cost: Decimal,
-    provider: Option<&str>,
-    config: &BTreeMap<String, MarginEntry>,
-) -> Result<MarginResult, AdjustmentError> {
-    let (margin_percent, fixed_amount) =
-        margin_percent_and_fixed(selected_entry(provider, config, Some("global")));
-    let percentage_amount =
-        AdjustmentOperation::BaseTimesPercentage.apply(base_cost, margin_percent)?;
-    let total_amount =
-        AdjustmentOperation::PercentagePlusFixed.apply(percentage_amount, fixed_amount)?;
-    let final_cost = AdjustmentOperation::BasePlusMargin.apply(base_cost, total_amount)?;
-    Ok(MarginResult {
-        final_cost,
-        margin_percent,
+        percent,
         fixed_amount,
-        total_amount,
+        amount,
     })
 }
 
