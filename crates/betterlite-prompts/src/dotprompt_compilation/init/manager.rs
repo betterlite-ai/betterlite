@@ -126,10 +126,8 @@ impl DotpromptManager {
         prompt_variables: Option<&Object>,
         version: Option<i64>,
     ) -> impl Future<Output = Result<PromptManagementClient, Box<CompileError>>> {
-        if prompt_id.is_none() {
-            return ready(Err(Box::new(CompileError::PromptIdRequired)));
-        }
-        ready(self.compile_prompt_helper(prompt_id, prompt_variables, version))
+        let result = self.compile_prompt_helper(prompt_id, prompt_variables, version);
+        ready(result)
     }
 }
 

@@ -67,12 +67,22 @@ pub fn prompt_initializer(
     .map_err(DotpromptInitializerError::from)
 }
 
+fn extra_field<'extra>(
+    extra: &'extra IndexMap<String, ContractJson>,
+    field: &str,
+) -> Option<&'extra ContractJson> {
+    match extra.get(field) {
+        None | Some(ContractJson::Null) => None,
+        Some(value) => Some(value),
+    }
+}
+
 fn extra_text(
     extra: &IndexMap<String, ContractJson>,
     field: &str,
 ) -> Result<Option<String>, DotpromptInitializerError> {
-    match extra.get(field) {
-        None | Some(ContractJson::Null) => Ok(None),
+    match extra_field(extra, field) {
+        None => Ok(None),
         Some(ContractJson::Text(text)) => Ok(Some(text.clone())),
         Some(_) => Err(DotpromptInitializerError::WrongType {
             field: field.to_owned(),
@@ -83,8 +93,8 @@ fn extra_text(
 fn extra_prompt_data(
     extra: &IndexMap<String, ContractJson>,
 ) -> Result<Option<PromptDataInput>, DotpromptInitializerError> {
-    match extra.get("prompt_data") {
-        None | Some(ContractJson::Null) => Ok(None),
+    match extra_field(extra, "prompt_data") {
+        None => Ok(None),
         Some(ContractJson::Text(text)) => Ok(Some(PromptDataInput::Text(text.clone()))),
         Some(ContractJson::Object(object)) => {
             Ok(Some(PromptDataInput::Object(from_contract_params(object))))
