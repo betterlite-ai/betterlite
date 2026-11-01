@@ -3,9 +3,18 @@ name: opik-metadata-merging
 call:
   b3973:
     function: metadata
-    auth: {project_name: auth}
-    request: {project_name: request}
-    requester: {project_name: requester}
+    litellm_metadata:
+      opik:
+        project_name: request
+        tags: [r]
+    standard_logging_metadata:
+      user_api_key_auth_metadata:
+        opik:
+          project_name: auth
+          auth_only: a
+      requester_metadata:
+        opik:
+          project_name: requester
 env: {}
 compare:
   ignore: []
