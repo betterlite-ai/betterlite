@@ -189,7 +189,7 @@ pub(super) fn message_model_dump(message: &Json) -> Json {
     Json::Object(ordered)
 }
 
-// litellm.types.utils.ImageObject.json() calls model_dump() directly (not the exclude_unset default), so its declared fields (b64_json, url, revised_prompt, provider_specific_fields) are always present, nulls included.
+// litellm.types.utils.ImageObject.json() calls model_dump() directly (not the exclude_unset default), so its fields are always present, nulls included, in the order ImageObject's base class (openai.types.image.Image) declares b64_json and revised_prompt before url, then ImageObject itself adds provider_specific_fields.
 fn image_object_model_dump(image: &Json) -> Json {
     let empty = IndexMap::new();
     let fields = match image {
@@ -199,8 +199,8 @@ fn image_object_model_dump(image: &Json) -> Json {
     let mut ordered = IndexMap::new();
     for key in [
         "b64_json",
-        "url",
         "revised_prompt",
+        "url",
         "provider_specific_fields",
     ] {
         ordered.insert(
