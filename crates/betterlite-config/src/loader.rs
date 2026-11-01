@@ -58,19 +58,6 @@ pub enum ConfigError {
     InvalidScalar { path: String, value: bool },
 }
 
-#[must_use]
-pub const fn error_category(error: &ConfigError) -> &'static str {
-    match error {
-        ConfigError::Yaml { .. } => "yaml",
-        ConfigError::Unsupported { .. } => "unsupported_key",
-        ConfigError::MissingEnvironment { .. } => "missing_environment",
-        ConfigError::InvalidFloat { .. } => "invalid_float",
-        ConfigError::InvalidInteger { .. } => "invalid_integer",
-        ConfigError::InvalidDuration { .. } => "invalid_duration",
-        ConfigError::InvalidScalar { .. } => "invalid_scalar",
-    }
-}
-
 pub struct ConfigLoader<L> {
     pub lookup: L,
 }
