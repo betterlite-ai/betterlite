@@ -1,0 +1,22 @@
+kind: helper
+name: apply-redaction-chat-output-model-response-tool-calls
+call:
+  b3757:
+    function: apply_redaction_chat_output_model_response
+    choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          role: assistant
+          content: secret data here
+          tool_calls:
+            - id: call_1
+              type: function
+              function: {name: lookup, arguments: '{"query": "secret"}'}
+          function_call: {name: lookup, arguments: '{"query": "secret"}'}
+    sanitized_text: null
+    sanitized_messages:
+      - {role: assistant, content: "[REDACTED]"}
+env: {}
+compare:
+  ignore: []

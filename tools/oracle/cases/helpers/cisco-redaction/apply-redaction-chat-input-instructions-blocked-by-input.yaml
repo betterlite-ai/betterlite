@@ -1,0 +1,13 @@
+kind: helper
+name: apply-redaction-chat-input-instructions-blocked-by-input
+call:
+  b3757:
+    function: apply_redaction_chat_input
+    request_data:
+      instructions: old
+      input: hi
+    sanitized_text: new text
+    sanitized_messages: null
+env: {}
+compare:
+  ignore: []
