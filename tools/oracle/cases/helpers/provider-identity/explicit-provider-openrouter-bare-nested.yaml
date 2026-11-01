@@ -1,0 +1,11 @@
+kind: helper
+name: provider-identity-explicit-provider-openrouter-bare-nested
+call:
+  provider_identity:
+    check: explicit_provider
+    model: anthropic/claude-3.5-sonnet
+    custom_llm_provider: openrouter
+    configured_model_names: []
+    catalog: {}
+env: {}
+compare: {ignore: []}
