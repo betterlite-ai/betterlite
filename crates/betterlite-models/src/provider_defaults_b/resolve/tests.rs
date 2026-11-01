@@ -6,6 +6,7 @@ use rstest::rstest;
 use secrecy::SecretString;
 
 use crate::identity::provider_id::ProviderId;
+use crate::provider_defaults_b::error::ProviderDefaultsError;
 use crate::provider_defaults_b::globals::GlobalCredentials;
 use crate::provider_defaults_b::model::ProviderDefaultsRequest;
 use crate::provider_defaults_b::resolve::resolve_provider_defaults;
@@ -30,6 +31,7 @@ enum Expected {
         api_key: Option<&'static str>,
     },
     UnknownProvider,
+    InvalidRagflowModel,
 }
 
 fn env_map(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -84,8 +86,22 @@ fn env_map(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
 #[case::inception_explicit_base_with_explicit_key_still_resolves(ProviderId::Inception, "inception-model", Inputs { api_base: Some("https://custom.example"), api_key: Some("explicit-key"), env: &[] }, GlobalCredentials::default(), Expected::Resolved { model: "inception-model", api_base: Some("https://custom.example"), api_key: Some("explicit-key") })]
 #[case::lemonade_default_literal_key(ProviderId::Lemonade, "lemonade-model", NO_INPUTS, GlobalCredentials::default(), Expected::Resolved { model: "lemonade-model", api_base: Some("http://localhost:8000/api/v1"), api_key: Some("lemonade") })]
 #[case::lemonade_explicit_base_without_key_keeps_literal(ProviderId::Lemonade, "lemonade-model", Inputs { api_base: Some("https://custom.example"), api_key: None, env: &[("LEMONADE_API_KEY", "env-key")] }, GlobalCredentials::default(), Expected::Resolved { model: "lemonade-model", api_base: Some("https://custom.example"), api_key: Some("lemonade") })]
-#[case::ragflow_rewrites_model_with_no_defaults(ProviderId::Ragflow, "chat/abc123", NO_INPUTS, GlobalCredentials::default(), Expected::Resolved { model: "ragflow/chat/abc123", api_base: None, api_key: None })]
-#[case::ragflow_uses_global_credentials(ProviderId::Ragflow, "chat/abc123", NO_INPUTS, GlobalCredentials { api_base: Some("https://ragflow.example".to_owned()), api_key: Some(SecretString::from("global-key")), ..GlobalCredentials::default() }, Expected::Resolved { model: "ragflow/chat/abc123", api_base: Some("https://ragflow.example"), api_key: Some("global-key") })]
+#[case::ragflow_rewrites_model_with_no_defaults(ProviderId::Ragflow, "chat/abc123/mymodel", NO_INPUTS, GlobalCredentials::default(), Expected::Resolved { model: "ragflow/chat/abc123/mymodel", api_base: None, api_key: None })]
+#[case::ragflow_uses_global_credentials(ProviderId::Ragflow, "chat/abc123/mymodel", NO_INPUTS, GlobalCredentials { api_base: Some("https://ragflow.example".to_owned()), api_key: Some(SecretString::from("global-key")), ..GlobalCredentials::default() }, Expected::Resolved { model: "ragflow/chat/abc123/mymodel", api_base: Some("https://ragflow.example"), api_key: Some("global-key") })]
+#[case::ragflow_rejects_model_with_too_few_segments(
+    ProviderId::Ragflow,
+    "chat/abc123",
+    NO_INPUTS,
+    GlobalCredentials::default(),
+    Expected::InvalidRagflowModel
+)]
+#[case::ragflow_rejects_model_with_unknown_kind(
+    ProviderId::Ragflow,
+    "workflow/abc123/mymodel",
+    NO_INPUTS,
+    GlobalCredentials::default(),
+    Expected::InvalidRagflowModel
+)]
 #[case::unknown_provider_errors(
     ProviderId::Openai,
     "gpt-4",
@@ -126,7 +142,16 @@ fn provider_defaults_b_behavior_tests_behavior(
             );
         }
         Expected::UnknownProvider => {
-            result.unwrap_err();
+            assert!(matches!(
+                result.unwrap_err(),
+                ProviderDefaultsError::UnknownProvider { .. }
+            ));
+        }
+        Expected::InvalidRagflowModel => {
+            assert!(matches!(
+                result.unwrap_err(),
+                ProviderDefaultsError::InvalidRagflowModel { .. }
+            ));
         }
     }
 }

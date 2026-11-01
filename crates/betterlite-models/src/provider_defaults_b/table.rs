@@ -1,5 +1,4 @@
 use crate::identity::provider_id::ProviderId;
-use crate::provider_defaults_b::environment::EnvironmentLookup;
 
 pub struct SimpleDefaults {
     pub base_env: &'static [&'static str],
@@ -285,23 +284,3 @@ pub const SIMPLE_TABLE: &[(ProviderId, SimpleDefaults)] = &[
         },
     ),
 ];
-
-pub fn resolve_simple<E>(
-    defaults: &SimpleDefaults,
-    api_base: Option<&str>,
-    api_key: Option<&str>,
-    env: &E,
-) -> (Option<String>, Option<String>)
-where
-    E: EnvironmentLookup,
-{
-    let base = api_base
-        .map(ToOwned::to_owned)
-        .or_else(|| defaults.base_env.iter().find_map(|name| env.lookup(name)))
-        .or_else(|| defaults.base_default.map(ToOwned::to_owned));
-    let key = api_key
-        .map(ToOwned::to_owned)
-        .or_else(|| defaults.key_env.iter().find_map(|name| env.lookup(name)))
-        .or_else(|| defaults.key_default.map(ToOwned::to_owned));
-    (base, key)
-}

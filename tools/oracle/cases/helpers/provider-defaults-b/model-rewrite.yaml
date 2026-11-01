@@ -3,7 +3,7 @@ name: provider-defaults-b-model-rewrite
 call:
   provider_defaults_b:
     provider: ragflow
-    model: ragflow-model
+    model: chat/abc123/mymodel
     api_base: https://explicit.example.com
     api_key: explicit-key
 env: {}

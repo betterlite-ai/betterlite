@@ -3,7 +3,7 @@ name: provider-defaults-b-ragflow
 call:
   provider_defaults_b:
     provider: ragflow
-    model: ragflow-basic
+    model: agent/abc123/ragflow-basic
     environment:
       RAGFLOW_API_BASE: https://env.ragflow.example
       RAGFLOW_API_KEY: env-ragflow-key

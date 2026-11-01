@@ -8,9 +8,29 @@ use crate::provider_defaults_b::error::ProviderDefaultsError;
 use crate::provider_defaults_b::globals::GlobalCredentials;
 use crate::provider_defaults_b::model::{ProviderDefaultsRequest, ResolvedProvider};
 use crate::provider_defaults_b::special::{
-    resolve_inception, resolve_lemonade, resolve_mistral, resolve_ragflow, resolve_xai,
+    SPECIAL_TABLE, resolve_mistral, resolve_ragflow, resolve_special,
 };
-use crate::provider_defaults_b::table::{SIMPLE_TABLE, resolve_simple};
+use crate::provider_defaults_b::table::{SIMPLE_TABLE, SimpleDefaults};
+
+fn resolve_simple<E>(
+    defaults: &SimpleDefaults,
+    api_base: Option<&str>,
+    api_key: Option<&str>,
+    env: &E,
+) -> (Option<String>, Option<String>)
+where
+    E: EnvironmentLookup,
+{
+    let base = api_base
+        .map(ToOwned::to_owned)
+        .or_else(|| defaults.base_env.iter().find_map(|name| env.lookup(name)))
+        .or_else(|| defaults.base_default.map(ToOwned::to_owned));
+    let key = api_key
+        .map(ToOwned::to_owned)
+        .or_else(|| defaults.key_env.iter().find_map(|name| env.lookup(name)))
+        .or_else(|| defaults.key_default.map(ToOwned::to_owned));
+    (base, key)
+}
 
 pub fn resolve_provider_defaults<E>(
     request: ProviderDefaultsRequest,
@@ -29,7 +49,7 @@ where
 
     if provider == ProviderId::Ragflow {
         let (model, resolved_base, resolved_key) =
-            resolve_ragflow(&request.model, base_in, key_in, globals, env);
+            resolve_ragflow(&request.model, base_in, key_in, globals, env)?;
         return Ok(ResolvedProvider {
             model,
             api_base: resolved_base,
@@ -37,14 +57,14 @@ where
         });
     }
 
+    let special = SPECIAL_TABLE
+        .iter()
+        .find_map(|(id, defaults)| (*id == provider).then_some(defaults));
+
     let (resolved_base, resolved_key) = if provider == ProviderId::Mistral {
         resolve_mistral(base_in, key_in, env)
-    } else if provider == ProviderId::Xai {
-        resolve_xai(base_in, key_in, globals, env)
-    } else if provider == ProviderId::Inception {
-        resolve_inception(base_in, key_in, globals, env)
-    } else if provider == ProviderId::Lemonade {
-        resolve_lemonade(base_in, key_in, globals, env)
+    } else if let Some(defaults) = special {
+        resolve_special(base_in, key_in, defaults, globals, env)
     } else {
         let defaults = SIMPLE_TABLE
             .iter()

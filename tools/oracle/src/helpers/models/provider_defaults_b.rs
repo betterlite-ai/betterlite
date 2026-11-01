@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_models::identity::provider_id::ProviderId;
+use betterlite_models::provider_defaults_b::error::ProviderDefaultsError;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::provider_defaults_b::model::ProviderDefaultsRequest;
 use betterlite_models::provider_defaults_b::resolve::resolve_provider_defaults;
@@ -54,8 +55,12 @@ impl Helper for Op {
         };
         let resolved =
             resolve_provider_defaults(request, &globals, &input.environment).map_err(|error| {
+                let class = match error {
+                    ProviderDefaultsError::UnknownProvider { .. } => "UnknownProvider",
+                    ProviderDefaultsError::InvalidRagflowModel { .. } => "ValueError",
+                };
                 Box::new(HelperError {
-                    class: "UnknownProvider".to_owned(),
+                    class: class.to_owned(),
                     status: None,
                     error_type: None,
                     param: None,
