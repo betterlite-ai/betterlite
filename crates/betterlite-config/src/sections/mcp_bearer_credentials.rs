@@ -5,6 +5,10 @@ use serde::de::IgnoredAny;
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
 
+#[path = "mcp_bearer_credentials/defect.rs"]
+pub mod defect;
+use defect::SigningConfigDefect;
+
 #[derive(Debug, Default, Deserialize)]
 pub struct Raw {
     #[serde(default)]
@@ -48,7 +52,7 @@ pub enum Settings {
     #[default]
     Absent,
     Resolved(ResolvedSigning),
-    Invalid(String),
+    Invalid(SigningConfigDefect),
 }
 
 #[derive(Debug, Clone)]
@@ -73,9 +77,7 @@ impl Section for Raw {
     {
         Ok(match self.general_settings.mcp_session_token_signing {
             None => Settings::Absent,
-            Some(RawSigningNode::Other(_)) => {
-                Settings::Invalid("mcp_session_token_signing is malformed".to_owned())
-            }
+            Some(RawSigningNode::Other(_)) => Settings::Invalid(SigningConfigDefect::Malformed),
             Some(RawSigningNode::Fields(fields)) => resolve(&fields, lookup),
         })
     }
@@ -89,19 +91,17 @@ where
         || fields.kid.is_empty()
         || fields.private_key.expose_secret().is_empty()
     {
-        return Settings::Invalid("mcp_session_token_signing is malformed".to_owned());
+        return Settings::Invalid(SigningConfigDefect::Malformed);
     }
     if fields
         .previous_public_keys
         .iter()
         .any(|key| key.kid.is_empty() || key.public_key.is_empty())
     {
-        return Settings::Invalid("mcp_session_token_signing is malformed".to_owned());
+        return Settings::Invalid(SigningConfigDefect::Malformed);
     }
     let Some(private_key_pem) = resolve_material(fields.private_key.expose_secret(), lookup) else {
-        return Settings::Invalid(
-            "mcp_session_token_signing.private_key reference did not resolve".to_owned(),
-        );
+        return Settings::Invalid(SigningConfigDefect::UnresolvedPrivateKey);
     };
     let mut previous_public_keys = Vec::with_capacity(fields.previous_public_keys.len());
     let mut unresolved = Vec::new();
@@ -115,10 +115,7 @@ where
         }
     }
     if !unresolved.is_empty() {
-        return Settings::Invalid(format!(
-            "mcp_session_token_signing.previous_public_keys reference did not resolve for kid(s): {}",
-            unresolved.join(", ")
-        ));
+        return Settings::Invalid(SigningConfigDefect::UnresolvedPreviousKeys { kids: unresolved });
     }
     Settings::Resolved(ResolvedSigning {
         kid: fields.kid.clone(),

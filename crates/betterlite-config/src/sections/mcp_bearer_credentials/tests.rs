@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use crate::loader::ConfigLoader;
 
 use super::Settings;
+use super::defect::SigningConfigDefect;
 
 fn load(source: &str, environment: BTreeMap<String, String>) -> Settings {
     ConfigLoader {
@@ -103,9 +104,67 @@ general_settings:
 ";
     let settings = load(source, environment);
     match settings {
-        Settings::Invalid(detail) => assert!(detail.contains("key-0")),
-        Settings::Absent | Settings::Resolved(_) => panic!("expected Invalid, got {settings:?}"),
+        Settings::Invalid(SigningConfigDefect::UnresolvedPreviousKeys { kids }) => {
+            assert!(kids.contains(&"key-0".to_owned()));
+        }
+        other @ (Settings::Absent | Settings::Resolved(_) | Settings::Invalid(_)) => {
+            panic!("expected UnresolvedPreviousKeys, got {other:?}")
+        }
     }
+}
+
+#[test]
+fn invalid_when_private_key_is_empty() {
+    let source = "
+general_settings:
+  mcp_session_token_signing:
+    algorithm: RS256
+    kid: key-1
+    private_key: \"\"
+";
+    let settings = load(source, BTreeMap::new());
+    assert!(matches!(
+        settings,
+        Settings::Invalid(SigningConfigDefect::Malformed)
+    ));
+}
+
+#[test]
+fn invalid_when_a_previous_public_key_kid_is_empty() {
+    let source = "
+general_settings:
+  mcp_session_token_signing:
+    algorithm: RS256
+    kid: key-1
+    private_key: inline-pem
+    previous_public_keys:
+      - kid: \"\"
+        public_key: inline-public-pem
+";
+    let settings = load(source, BTreeMap::new());
+    assert!(matches!(
+        settings,
+        Settings::Invalid(SigningConfigDefect::Malformed)
+    ));
+}
+
+#[test]
+fn invalid_when_a_previous_public_key_value_is_empty() {
+    let source = "
+general_settings:
+  mcp_session_token_signing:
+    algorithm: RS256
+    kid: key-1
+    private_key: inline-pem
+    previous_public_keys:
+      - kid: key-0
+        public_key: \"\"
+";
+    let settings = load(source, BTreeMap::new());
+    assert!(matches!(
+        settings,
+        Settings::Invalid(SigningConfigDefect::Malformed)
+    ));
 }
 
 #[test]
