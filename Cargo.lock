@@ -1484,6 +1484,7 @@ dependencies = [
  "serde",
  "serde-saphyr",
  "serde_json",
+ "serde_with",
  "tempfile",
  "thiserror",
  "tokio",
@@ -3807,6 +3808,7 @@ version = "3.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f384a3e3726ee69716c351e921b72138104afd1e5362561733c8a656fc8c6a9a"
 dependencies = [
+ "indexmap 2.14.2",
  "serde",
 ]
 
