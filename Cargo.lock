@@ -1046,7 +1046,10 @@ version = "0.1.0"
 dependencies = [
  "betterlite-auth",
  "betterlite-config",
+ "betterlite-logging",
+ "betterlite-models",
  "chrono",
+ "indexmap 2.14.2",
  "lopdf",
  "rstest",
  "rust_decimal",
