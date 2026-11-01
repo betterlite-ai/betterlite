@@ -1,0 +1,13 @@
+kind: helper
+name: vertex-errors-branch-1192
+call:
+  vertex_errors:
+    model: gemini-1.5-pro
+    custom_llm_provider: vertex_ai
+    error_str: "API key not valid. Please pass a valid API key."
+    status_code: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

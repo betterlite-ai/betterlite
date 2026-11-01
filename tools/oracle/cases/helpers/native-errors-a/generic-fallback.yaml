@@ -1,0 +1,9 @@
+kind: helper
+name: native-errors-a-generic-fallback
+call:
+  native_errors_a:
+    provider: cloudflare
+    model: cf/model-a
+    error_str: "some other failure unrelated to either predicate"
+env: {}
+compare: {ignore: []}
