@@ -1,0 +1,13 @@
+kind: helper
+name: vertex-errors-branch-1230
+call:
+  vertex_errors:
+    model: gemini-1.5-pro
+    custom_llm_provider: vertex_ai
+    error_str: "429 Quota exceeded for aiplatform.googleapis.com/generate_content_requests_per_minute"
+    status_code: 429
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/context/message
+      why: betterlite writes its own message
