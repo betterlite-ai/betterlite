@@ -20,8 +20,11 @@ pub enum MergeError {
         #[source]
         source: serde_json::Error,
     },
+    #[error("new message must be a JSON object")]
+    InvalidNewMessage,
 }
 
+// betterlite_openai::chat::Role has no catch-all variant and no missing state, but GenericChatCompletionMessage.role is an open string with no required presence.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum KnownRole {
@@ -63,7 +66,6 @@ pub trait Reasoning: Sized {
     fn set_text(&mut self, text: String);
     fn set_blocks(&mut self, blocks: Vec<Value>);
 
-    // A blank, standalone assistant record built from just-merged reasoning text/blocks.
     #[must_use]
     fn blank(text: Option<String>, blocks: Option<Vec<Value>>) -> Self;
 }
@@ -86,7 +88,7 @@ fn text_block(text: &str) -> Value {
     Value::Object(fields)
 }
 
-// Prepends pending reasoning ahead of the target's own text/blocks, mutating it in place.
+// Mutates target in place, matching how LiteLLM's _apply_pending mutates its msg argument rather than returning a new message.
 fn apply_pending<T>(target: &mut T, texts: &[Option<String>], block_lists: &[Option<Vec<Value>>])
 where
     T: Reasoning,
@@ -111,7 +113,6 @@ where
     }
 }
 
-// Merges pending reasoning-only turns into the next assistant message (mutated in place), else rebuilds them standalone.
 #[must_use]
 pub fn merge_reasoning<T>(messages: &mut [T]) -> Vec<T>
 where

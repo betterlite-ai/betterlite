@@ -1,6 +1,6 @@
 use betterlite_core::api::responses_reasoning_merge::merge_reasoning;
 use betterlite_core::api::responses_reasoning_merge::record::{ChatRecord, Record};
-use betterlite_core::api::responses_reasoning_merge::trailing::merge_trailing_values;
+use betterlite_core::api::responses_reasoning_merge::trailing::{TrailingInput, merge_trailing};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -129,6 +129,50 @@ fn serialize_record(record: &Record) -> Result<Value, serde_json::Error> {
     }
 }
 
+fn helper_error<T>(message: T) -> Box<crate::helpers::HelperError>
+where
+    T: std::fmt::Display,
+{
+    Box::new(crate::helpers::HelperError {
+        class: "InvalidInput".to_owned(),
+        status: None,
+        error_type: None,
+        param: None,
+        code: None,
+        message: message.to_string(),
+    })
+}
+
+fn to_trailing_inputs(
+    values: &[Value],
+) -> Result<Vec<TrailingInput>, Box<crate::helpers::HelperError>> {
+    values
+        .iter()
+        .cloned()
+        .map(TrailingInput::from_value)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(helper_error)
+}
+
+fn merge_trailing_records(
+    messages: &[Value],
+    new_messages: &[Value],
+    hosted_search: bool,
+) -> crate::helpers::HelperResult {
+    let typed_messages = to_trailing_inputs(messages)?;
+    let typed_new_messages = to_trailing_inputs(new_messages)?;
+    let merged = merge_trailing(&typed_messages, &typed_new_messages, hosted_search)
+        .map_err(helper_error)?;
+    let value = merged
+        .map(serde_json::to_value)
+        .transpose()
+        .map_err(helper_error)?;
+    // keep the "merged" key present so a null result round-trips, not a missing key
+    let mut object = serde_json::Map::new();
+    object.insert("merged".to_owned(), value.unwrap_or(Value::Null));
+    Ok(Value::Object(object))
+}
+
 impl crate::helpers::Helper for Op {
     type Input = Input;
 
@@ -139,23 +183,7 @@ impl crate::helpers::Helper for Op {
                 merge_reasoning_records(&input.messages, &kinds)
             }
             Mode::Trailing => {
-                merge_trailing_values(&input.messages, &input.new_messages, input.hosted_search)
-                    .map(|merged| {
-                        // keep the "merged" key present so a null result round-trips, not a missing key
-                        let mut object = serde_json::Map::new();
-                        object.insert("merged".to_owned(), merged.unwrap_or(Value::Null));
-                        Value::Object(object)
-                    })
-                    .map_err(|error| {
-                        Box::new(crate::helpers::HelperError {
-                            class: "InvalidInput".to_owned(),
-                            status: None,
-                            error_type: None,
-                            param: None,
-                            code: None,
-                            message: error.to_string(),
-                        })
-                    })
+                merge_trailing_records(&input.messages, &input.new_messages, input.hosted_search)
             }
         }
     }
