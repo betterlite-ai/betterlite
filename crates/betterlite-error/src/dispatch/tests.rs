@@ -143,6 +143,22 @@ fn a_synthetic_response_status_never_overrides_the_timeout_preamble() {
 }
 
 #[test]
+fn a_model_alone_without_a_provider_still_reaches_the_timeout_preamble() {
+    let input = DispatchInput::Raw(Box::new(RawException {
+        model: "gpt-4".to_owned(),
+        custom_llm_provider: String::new(),
+        error_str: "Request timed out".to_owned(),
+        status_code: None,
+        status_code_is_synthesized: false,
+        message: None,
+        body: None,
+    }));
+    let ErrorClass::Timeout(_) = dispatch(&input, &redactor()) else {
+        panic!("expected Timeout: `if model or custom_llm_provider:` only needs one side set");
+    };
+}
+
+#[test]
 fn an_empty_model_and_provider_skip_the_timeout_preamble_and_reach_the_catchall() {
     let input = DispatchInput::Raw(Box::new(RawException {
         model: String::new(),
