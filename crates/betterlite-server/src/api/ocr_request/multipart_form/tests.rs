@@ -116,7 +116,7 @@ async fn oversized_file_is_rejected() {
 
 #[tokio::test]
 async fn file_well_under_the_cap_is_accepted() {
-    let bytes = vec![0_u8; 4096];
+    let bytes = vec![0_u8; 2_000_000];
     let form = vec![FormField {
         name: "file".to_owned(),
         value: FormValue::File {
