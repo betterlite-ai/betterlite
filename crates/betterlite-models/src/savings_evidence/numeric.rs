@@ -39,19 +39,12 @@ pub fn recorded_autorouter_savings(metadata: &Metadata) -> Option<Decimal> {
     numeric_savings(metadata.autorouter_savings.as_ref())
 }
 
-// The match, not a combinator, keeps this a named function rather than a one-line call-site inline.
 #[must_use]
-#[expect(
-    clippy::option_if_let_else,
-    reason = "a match is the sanctioned escape from no-one-line-functions, not a style pick"
-)]
 pub fn classifier_cost_from_decision(
     routing_decision: Option<&RoutingDecision>,
 ) -> Option<Decimal> {
-    match routing_decision {
-        Some(decision) => numeric_savings(decision.classifier_cost.as_ref()),
-        None => None,
-    }
+    let decision = routing_decision?;
+    numeric_savings(decision.classifier_cost.as_ref())
 }
 
 mod tests;
