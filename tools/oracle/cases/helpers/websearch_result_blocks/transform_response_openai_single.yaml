@@ -1,0 +1,19 @@
+kind: helper
+name: transform-response-openai-single
+call:
+  b4113:
+    operation: transform_response
+    format: openai
+    response:
+      choices:
+        - message:
+            tool_calls:
+              - type: function
+                id: call_01
+                function:
+                  name: web_search
+                  arguments: '{"query": "rust programming"}'
+    search_results:
+      - "Title: Rust\nURL: https://www.rust-lang.org\nSnippet: A systems language"
+env: {}
+compare: {ignore: []}

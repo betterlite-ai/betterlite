@@ -1,0 +1,51 @@
+kind: helper
+name: tied_expiry_compaction_keeps_the_first_entry
+call:
+  baseline_history:
+    history:
+      first_at: 0.0
+      last_at: 0.0
+      equivalent: true
+      uncertain_before: 0.0
+      entries:
+        - fingerprint: "x"
+          content_fingerprint: "cfpX"
+          tokens: 50
+          ttl_seconds: 300
+          available_at: 5.0
+          expires_at: 1000.0
+          uncertain: false
+        - fingerprint: "x"
+          content_fingerprint: "cfpX"
+          tokens: 50
+          ttl_seconds: 300
+          available_at: 7.0
+          expires_at: 1000.0
+          uncertain: false
+      blocked_until: 0.0
+    groups:
+      - - request_id: "r1"
+          started_at: 10.0
+          available_at: 10.0
+          outcome: complete
+          baseline_equivalent: false
+          usage:
+            prompt_tokens: 30
+            completion_tokens: 2
+            total_tokens: 32
+            prompt_tokens_details:
+              text_tokens: 30
+              cached_tokens: 0
+              cache_creation_tokens: 0
+              cache_creation_token_details: {ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 0}
+          plan:
+            total_tokens: 30
+            breakpoints:
+              - fingerprint: "m"
+                ttl_seconds: 300
+                prefix_tokens: 30
+                lookback_fingerprints: ["m"]
+                content_fingerprint: "cfpM"
+                lookback_content_fingerprints: ["cfpM"]
+compare: {ignore: []}
+env: {}

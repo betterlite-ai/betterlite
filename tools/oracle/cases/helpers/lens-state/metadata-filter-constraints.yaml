@@ -19,6 +19,4 @@ call:
           - {key: shard, value: "7"}
 env: {}
 compare:
-  ignore:
-    - pointer: /error/message
-      why: betterlite writes its own error message
+  ignore: []

@@ -1,0 +1,9 @@
+kind: helper
+name: build-web-search-tool-result-error-block
+call:
+  b4113:
+    operation: build_web_search_tool_result_error_block
+    tool_use_id: toolu_01
+    error_code: too_many_requests
+env: {}
+compare: {ignore: []}

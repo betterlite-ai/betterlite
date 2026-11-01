@@ -1,0 +1,13 @@
+kind: helper
+name: anthropic-replicate-errors-branch-565
+call:
+  anthropic_replicate_errors:
+    provider: anthropic
+    model: claude-3-opus
+    error_str: "Client error '400 Bad Request' for url https://api.anthropic.com"
+    status_code: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

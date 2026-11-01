@@ -1,0 +1,5 @@
+task: B1678
+deviations:
+  - what: OCR prices and products use checked Decimal money while preserving the source's numeric-versus-string layering distinction.
+    why: Exact billing cannot round through floats; an unrepresentable monetary value is a typed pricing failure, not a new accepted override.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2114-L2126

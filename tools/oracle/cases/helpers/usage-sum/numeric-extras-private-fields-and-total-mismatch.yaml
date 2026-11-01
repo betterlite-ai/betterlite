@@ -1,0 +1,20 @@
+kind: helper
+name: numeric-extras-private-fields-and-total-mismatch
+call:
+  usage_sum:
+    usages:
+      - prompt_tokens: 2
+        completion_tokens: 3
+        total_tokens: 99
+        numeric_extras: {duration: 1.5, flag: true}
+      - prompt_tokens: 5
+        completion_tokens: 7
+        total_tokens: 1
+        numeric_extras: {duration: 2.5, flag: false}
+compare:
+  ignore:
+    - pointer: /value/numeric_extras/duration
+      why: betterlite sums the duration extra; LiteLLM's combine_usage_objects loses every extra because dir(usage) never lists a pydantic extra="allow" field (docs/deviations/B1680.yaml)
+    - pointer: /value/numeric_extras/flag
+      why: betterlite sums the flag extra as Python addition would; LiteLLM's combine_usage_objects loses every extra because dir(usage) never lists a pydantic extra="allow" field (docs/deviations/B1680.yaml)
+env: {}

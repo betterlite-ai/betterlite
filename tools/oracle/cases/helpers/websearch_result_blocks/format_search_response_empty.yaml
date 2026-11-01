@@ -1,0 +1,11 @@
+kind: helper
+name: format-search-response-empty
+call:
+  b4113:
+    operation: format_search_response
+    search_response:
+      results: []
+      object: search
+      note: empty
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,13 @@
+kind: helper
+name: vertex-errors-branch-1199
+call:
+  vertex_errors:
+    model: gemini-1.5-pro
+    custom_llm_provider: vertex_ai
+    error_str: "403 PERMISSION_DENIED: the caller does not have permission"
+    status_code: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

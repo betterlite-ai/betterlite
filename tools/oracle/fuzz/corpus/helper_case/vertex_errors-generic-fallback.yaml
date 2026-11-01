@@ -1,0 +1,11 @@
+kind: helper
+name: vertex-errors-generic-fallback
+call:
+  vertex_errors:
+    model: gemini-1.5-pro
+    custom_llm_provider: vertex_ai
+    error_str: "an entirely unrelated failure with no matching phrase or status"
+    status_code: null
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,8 @@
+kind: helper
+name: skill_archive
+call:
+  skill_discovery_archives:
+    stored_content: UE9
+env: {}
+compare:
+  ignore: []

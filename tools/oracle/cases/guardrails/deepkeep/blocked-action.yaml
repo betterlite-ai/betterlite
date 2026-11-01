@@ -8,7 +8,4 @@ call:
       input_type: request
       answer: {status: 200, headers: {}, body: {action: BLOCKED, blocked_reason: "banned content"}}
 env: {}
-compare:
-  ignore:
-    - pointer: /error/message
-      why: "betterlite writes its own message"
+compare: {ignore: []}

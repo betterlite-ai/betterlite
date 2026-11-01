@@ -1,0 +1,11 @@
+kind: helper
+name: bedrock-other-nova-embeddings-modality
+call:
+  bedrock_other_nova_embeddings:
+    nova_text_image_audio_video:
+      input: "data:audio/MPEG,RAWBYTES"
+      inference_params: {}
+      async_invoke_route: false
+env: {}
+compare:
+  ignore: []

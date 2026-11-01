@@ -1,0 +1,13 @@
+kind: helper
+name: build-web-search-tool-result-block
+call:
+  b4113:
+    operation: build_web_search_tool_result_block
+    tool_use_id: toolu_01
+    search_response:
+      results:
+        - title: Rust Programming Language
+          url: https://www.rust-lang.org
+          snippet: A language empowering everyone to build reliable software.
+env: {}
+compare: {ignore: []}
