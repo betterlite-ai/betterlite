@@ -1,0 +1,180 @@
+id: B5097
+title: Dotprompt sandbox parity and a rendered-output limit
+description: >-
+  An Opus-model review of merged task B4051 found six gaps a client or operator can see, and five smaller
+  style fixes in the same files. This task closes all of them.
+
+
+  LiteLLM builds its Jinja2 sandbox with select_autoescape(["html", "xml"]) and default_for_string=True, so
+  every from_string render escapes HTML characters with markupsafe's table: & < > ' " become &amp; &lt;
+  &gt; &#39; &#34;. betterlite's sandbox.rs always picks AutoEscape::None for a string template, so a name
+  like O'Brien renders unescaped, and the existing test at sandbox/tests.rs:21 locks in that wrong answer.
+  The same sandbox has no unknown-method callback. A template calling {{ name.upper() }} or iterating
+  {% for k, v in d.items() %} fails to render in betterlite today. Jinja2's ImmutableSandboxedEnvironment
+  allows both there, since neither method mutates its target.
+
+
+  LiteLLM's _load_prompts scans a directory with Path.glob("*.prompt"). That call also matches a hidden
+  file, so one named .draft.prompt loads under prompt id ".draft". betterlite's directory scan skips any
+  file name starting with a dot before the extension check, so the same file never loads. In the same
+  area, a JSON record with "content": null or "metadata": null reaches _load_prompts_from_json's try block
+  without raising, so LiteLLM keeps the record. betterlite's insert_prompt_record treats that null as an
+  unexpected shape and drops the whole prompt. That also breaks the absent-or-null-takes-its-default rule
+  in docs/compatibility.md.
+
+
+  LiteLLM's _validate_input calls isinstance(value, int), and Python's int has no upper bound, so a number
+  like 18446744073709551616 satisfies an "integer" field. betterlite's validation.rs classifies a value as
+  Int only when serde_json reports is_i64 or is_u64, so the same number is neither, and validation fails
+  with a message that claims the value isn't an int at all.
+
+
+  Rendering already caps instruction count with a fuel budget, but nothing caps the size of the template
+  text or the rendered output, so a short template can still build an output of unbounded size well under
+  the fuel limit. LiteLLM has no such cap either, so this is new behavior for betterlite, not a parity fix.
+  It gets a byte limit on both the template and the render, recorded in docs/deviations/B5097.yaml. The
+  limit matches what crates/betterlite-prompts/src/jinja/bounds.rs already sets for the chat-template
+  renderer: 65536 bytes in, 1048576 bytes out.
+
+
+  Five more findings land in files this task already touches, so they come along: render()'s
+  prompt_variables and add_prompt's metadata take their value directly instead of an Option that every
+  caller already unwraps to the same empty default; load_prompts_from_json_data and
+  load_prompts_from_directory borrow prompt_data and prompt_directory instead of cloning them; and
+  insert_prompt_record reads its record through a typed shape instead of matching Json variants by hand,
+  which is also where the null fix above lands.
+scope:
+  paths:
+    - crates/betterlite-prompts/src/dotprompt_templates.rs
+    - crates/betterlite-prompts/src/dotprompt_templates/tests.rs
+    - crates/betterlite-prompts/src/dotprompt_templates/sandbox.rs
+    - crates/betterlite-prompts/src/dotprompt_templates/sandbox/tests.rs
+    - crates/betterlite-prompts/src/dotprompt_templates/validation.rs
+    - crates/betterlite-prompts/src/dotprompt_templates/validation/tests.rs
+    - crates/betterlite-prompts/src/dotprompt_templates/render.rs
+    - crates/betterlite-prompts/src/dotprompt_templates/render/tests.rs
+    - crates/betterlite-prompts/src/dotprompt_templates/loading/tests.rs
+    - crates/betterlite-prompts/src/dotprompt_templates/conversion/tests.rs
+    - crates/betterlite-prompts/src/dotprompt_templates/reload/tests.rs
+    - crates/betterlite-prompts/src/dotprompt_templates/bounds.rs
+    - crates/betterlite-prompts/src/dotprompt_templates/bounds/tests.rs
+    - crates/betterlite-prompts/fuzz/fuzz_targets/dotprompt_templates.rs
+    - docs/deviations/B5097.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/dotprompt/prompt_manager.py#L82-L92
+    why: Builds the Jinja2 environment with select_autoescape(["html", "xml"]), whose default_for_string=True escapes every from_string render with markupsafe's table.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/dotprompt/prompt_manager.py#L82-L92
+    why: Builds an ImmutableSandboxedEnvironment, which allows a template to call a non-mutating method such as .upper() or .items(); it blocks only a method that would modify a caller-supplied object.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/dotprompt/prompt_manager.py#L109-L124
+    why: _load_prompts scans the directory with Path.glob("*.prompt"), which matches a hidden file such as .draft.prompt the same as any other.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/dotprompt/prompt_manager.py#L39-L41
+    why: PromptTemplate.__init__ stores content and metadata without dropping the record for either; metadata falls back to an empty dict when the value is falsy, content is stored as given.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/dotprompt/prompt_manager.py#L149-L161
+    why: _load_prompts_from_json reads content and metadata with dict.get and only drops a record when building or storing it raises; a null value passes through untouched.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/dotprompt/prompt_manager.py#L243-L254
+    why: _validate_input calls isinstance(value, expected_type); Python's int has no upper bound.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/dotprompt/prompt_manager.py#L256-L273
+    why: _get_python_type maps the schema string "integer" to the bare int type, with no size limit of any kind.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/dotprompt/prompt_manager.py#L200-L241
+    why: render() has no limit on template length or rendered output size; betterlite's cap is new behavior, not a parity fix, recorded as a deviation.
+dod:
+  - text: >-
+      Rendering a string template with characters & < > ' " escapes them with markupsafe's exact table
+      (&amp; &lt; &gt; &#39; &#34;), not minijinja's own table, which also escapes / and spells the quote
+      entities differently. The case string_template("<string>", AutoEscape::None) in sandbox/tests.rs:21
+      asserts the opposite of this today and must change, and a new render test proves the exact escaped
+      output.
+    proof: [dotprompt-sandbox-tests]
+  - text: >-
+      A template that calls a known safe method, such as {{ name.upper() }} or {% for k, v in d.items() %},
+      renders instead of failing. A mutating call such as {{ items.append(4) }} still fails, unchanged from
+      the existing rejects_calling_an_unknown_mutating_method_on_a_caller_supplied_list test.
+    proof: [dotprompt-sandbox-tests]
+  - text: >-
+      A hidden file such as .draft.prompt in the prompt directory loads under prompt id ".draft". No test
+      on main loads a dotfile today; loading/tests.rs gets a case that writes one and asserts it is present
+      after PromptManager::new.
+    proof: [dotprompt-loading-tests]
+  - text: >-
+      A JSON record with content: null or metadata: null keeps its prompt, taking the empty default for
+      that field instead of being dropped, matching the absent-or-null rule in docs/compatibility.md.
+      insert_prompt_record reads the record through a typed shape instead of matching Json variants by
+      hand, with the same accept-or-drop decision as today for every other input. No test on main sends a
+      null content or metadata value; loading/tests.rs gets a case for each.
+    proof: [dotprompt-loading-tests]
+  - text: >-
+      An integer literal past u64, such as 18446744073709551616, satisfies an "integer" schema field, and
+      a mismatch against a different type still reports it as "int". No test on main uses a number this
+      large; validation/tests.rs gets a case in accepts_matching_types and one asserting the mismatch
+      message.
+    proof: [dotprompt-validation-tests]
+  - text: >-
+      render() rejects a template text or a rendered output past a fixed byte limit, each with its own
+      RenderError variant, before fuel exhaustion could matter. The limit and its error are recorded as a
+      new entry in docs/deviations/B5097.yaml, since LiteLLM's render has no such cap. No test on main
+      exercises a template or an output over any size limit; a new bounds/tests.rs covers both.
+    proof: [dotprompt-bounds-tests]
+  - text: >-
+      render()'s prompt_variables and add_prompt's metadata take an Object directly instead of an Option
+      every caller already unwraps to the same empty default. load_prompts_from_json_data and
+      load_prompts_from_directory borrow prompt_data and prompt_directory instead of cloning them. None of
+      this changes what a caller observes; every existing test keeps passing once its call sites move off
+      the Option arguments.
+    proof: [dotprompt-render-tests, dotprompt-reload-tests, dotprompt-conversion-tests, dotprompt-loading-tests, dotprompt-fuzz-corpus]
+  - text: Every mutant in the files this task touches is caught by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: dotprompt-sandbox-tests
+      why: autoescaping, the pycompat method callback, or the existing mutating-method rejection fails or does not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^dotprompt_templates::sandbox/)'
+    - id: dotprompt-loading-tests
+      why: the dotfile scan or the null content/metadata handling fails or does not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^dotprompt_templates::loading/)'
+    - id: dotprompt-validation-tests
+      why: the u64-overflow integer case fails or does not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^dotprompt_templates::validation/)'
+    - id: dotprompt-bounds-tests
+      why: the template or output byte cap fails or does not exist
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^dotprompt_templates::bounds/)'
+    - id: dotprompt-render-tests
+      why: render()'s non-Option prompt_variables, the new size-cap error variants, or an existing render test breaks
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^dotprompt_templates::render/)'
+    - id: dotprompt-reload-tests
+      why: add_prompt's non-Option metadata or an existing reload/add_prompt test breaks
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^dotprompt_templates::reload/)'
+    - id: dotprompt-conversion-tests
+      why: an existing conversion test breaks after the add_prompt signature change
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^dotprompt_templates::conversion/)'
+    - id: dotprompt-fuzz-corpus
+      why: the corpus-replay test fails to compile or run after the call-site signature changes
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(replays_the_dotprompt_templates_corpus)'
+oracle_cases: []
+deviations:
+  - what: >-
+      Rendering now rejects a template or a rendered output past a fixed byte limit, matching the cap
+      crates/betterlite-prompts/src/jinja/bounds.rs already applies to the chat-template renderer (65536
+      bytes in, 1048576 bytes out).
+    why: LiteLLM's render() has no limit on template length or output size; fuel only counts instructions, so a short template can still build an unbounded output.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/dotprompt/prompt_manager.py#L200-L241
+out_of_scope:
+  - "template.rs:22 making template_id a plain String instead of Option<String>: template.rs is not otherwise touched by this task."
+  - "template.rs:86 inlining schema_field: this finding is a no-one-line-functions case, and that rule's findings belong to B5094, which owns the legacy list and every file on it."
+  - "conversion.rs:3 and content.rs:6-8 sharing one Serialize struct for the {content, metadata} shape: neither file's own code is otherwise touched; only a conversion/tests.rs call site needs a signature-compatibility edit for the add_prompt change above."
+  - "reload.rs:1 moving reload_prompts, add_prompt and load_prompts_from_json_data into the file named for each: reload.rs's own code is empty regardless, and that reorganization is a bigger structural change than this fix's budget covers."
+  - "render.rs:23 inlining format_available at its call site: B5094's own scope already lists render.rs and render/** for a no-impl-trait-arguments fix that renames format_available's generic parameter instead of deleting it. Fixing both here would collide with B5094's diff on the same function."
+pitfalls:
+  - "minijinja's built-in Html escaping differs from markupsafe's table: it also escapes / to &#x2f; and uses &quot;/&#x27; instead of &#34;/&#39;. Picking AutoEscape::Html as-is still mismatches LiteLLM; the fix needs markupsafe's exact four extra characters."
+  - render_str always names its template "<string>" internally, so the existing extension-based auto_escape_for_name callback never sees a real file extension on any path this crate renders. The fix has to make the string-template branch escape on its own, not rely on an extension match that never fires.
+  - minijinja-contrib's pycompat::unknown_method_callback does not implement a mutating method such as list.append, so wiring it in must not change the outcome of the existing rejects_calling_an_unknown_mutating_method_on_a_caller_supplied_list test.
+  - Changing render()'s prompt_variables or add_prompt's metadata away from Option touches every caller in dotprompt_templates/tests.rs, conversion/tests.rs, reload/tests.rs, render/tests.rs and the fuzz target; cargo check finds each one.
+  - The byte cap in jinja/bounds.rs is pub(super), scoped to the jinja module; dotprompt_templates needs its own bounds module, not a cross-module call into jinja::bounds.
+  - An integer past u64 only reaches validate_input as a Json::Number under serde_json's arbitrary_precision feature; is_i64, is_u64 and is_f64 all return false for it, so the fix has to classify it by its text shape, not by asking serde_json what kind of number it is.
+  - "serde's #[serde(default)] only fires when a key is absent, not when it is present and null, so a typed PromptRecord with plain #[serde(default)] fields would still fail to deserialize an explicit null instead of falling back. The typed shape for insert_prompt_record has to treat Json::Null the same as a missing key by hand."
+  - render.rs gains new RenderError variants for the size cap, and B5094 separately renames format_available's generic parameter in the same file. Rebase against main after B5094 merges, and keep format_available as B5094 leaves it rather than inlining it here.
+review_level: standard
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0
