@@ -23,8 +23,8 @@ pub fn validate_header_name(raw: &str) -> CredResult<String> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HeaderCarrier {
-    pub header_name: String,
-    pub value_prefix: String,
+    header_name: String,
+    value_prefix: String,
 }
 
 impl Default for HeaderCarrier {
@@ -37,6 +37,14 @@ impl Default for HeaderCarrier {
 }
 
 impl HeaderCarrier {
+    pub fn new(header_name: &str, value_prefix: &str) -> CredResult<Self> {
+        let validated_name = validate_header_name(header_name)?;
+        Ok(Self {
+            header_name: validated_name,
+            value_prefix: value_prefix.to_owned(),
+        })
+    }
+
     #[must_use]
     pub fn header(&self, value: &str) -> (String, String) {
         let formatted = if self.value_prefix.is_empty() {
