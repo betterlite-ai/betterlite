@@ -77,12 +77,12 @@ fn parsed_fields(raw: &str) -> Option<Fields> {
     if !valid_timezone(&zone) {
         return None;
     }
-    let year = normalize_year(year.parse().ok()?)?;
-    let day = day.parse().ok()?;
+    let parsed_year = normalize_year(year.parse().ok()?)?;
+    let parsed_day = day.parse().ok()?;
     Some(Fields {
-        year,
+        year: parsed_year,
         month: month_number,
-        day,
+        day: parsed_day,
         hour,
         minute,
         second,
@@ -95,7 +95,21 @@ fn valid_timezone(zone: &str) -> bool {
         return true;
     };
     let magnitude = offset.unsigned_abs();
-    let seconds = (magnitude / 100) * 3600 + (magnitude % 100) * 60;
+    let Some(hours) = magnitude.checked_div(100) else {
+        return false;
+    };
+    let Some(minutes) = magnitude.checked_rem(100) else {
+        return false;
+    };
+    let Some(hour_seconds) = hours.checked_mul(3600) else {
+        return false;
+    };
+    let Some(minute_seconds) = minutes.checked_mul(60) else {
+        return false;
+    };
+    let Some(seconds) = hour_seconds.checked_add(minute_seconds) else {
+        return false;
+    };
     seconds < 86_400
 }
 
