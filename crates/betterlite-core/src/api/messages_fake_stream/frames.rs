@@ -104,9 +104,12 @@ pub(super) fn content_block_frames(
                 .get("text")
                 .cloned()
                 .unwrap_or_else(|| Json::Text(String::new()));
-            let start = typed_object("text", vec![("text", Json::Text(String::new()))]);
-            let delta = typed_object("text_delta", vec![("text", value)]);
-            block_frames(frames, index, start, Some(delta));
+            content_block_with_delta(
+                frames,
+                index,
+                ("text", vec![("text", Json::Text(String::new()))]),
+                ("text_delta", vec![("text", value)]),
+            );
         }
         Some("thinking") => thinking_frames(frames, fields, index),
         Some("redacted_thinking") => {
@@ -129,19 +132,22 @@ fn tool_use_frames(frames: &mut Vec<Vec<u8>>, fields: &IndexMap<String, Json>, i
         .get("input")
         .cloned()
         .unwrap_or_else(|| object(vec![]));
-    let start = typed_object(
-        "tool_use",
-        vec![
-            ("id", fields.get("id").cloned().unwrap_or(Json::Null)),
-            ("name", fields.get("name").cloned().unwrap_or(Json::Null)),
-            ("input", object(vec![])),
-        ],
+    content_block_with_delta(
+        frames,
+        index,
+        (
+            "tool_use",
+            vec![
+                ("id", fields.get("id").cloned().unwrap_or(Json::Null)),
+                ("name", fields.get("name").cloned().unwrap_or(Json::Null)),
+                ("input", object(vec![])),
+            ],
+        ),
+        (
+            "input_json_delta",
+            vec![("partial_json", Json::Text(dumps(&input_data)))],
+        ),
     );
-    let delta = typed_object(
-        "input_json_delta",
-        vec![("partial_json", Json::Text(dumps(&input_data)))],
-    );
-    block_frames(frames, index, start, Some(delta));
 }
 
 fn block_frames(frames: &mut Vec<Vec<u8>>, index: usize, content_block: Json, delta: Option<Json>) {
@@ -157,6 +163,19 @@ fn block_frames(frames: &mut Vec<Vec<u8>>, index: usize, content_block: Json, de
             vec![("delta", delta_value)],
         ));
     }
+}
+
+fn content_block_with_delta(
+    frames: &mut Vec<Vec<u8>>,
+    index: usize,
+    start: (&str, Vec<(&str, Json)>),
+    delta: (&str, Vec<(&str, Json)>),
+) {
+    let (start_kind, start_extra) = start;
+    let (delta_kind, delta_extra) = delta;
+    let content_block = typed_object(start_kind, start_extra);
+    let delta_value = typed_object(delta_kind, delta_extra);
+    block_frames(frames, index, content_block, Some(delta_value));
 }
 
 fn thinking_frames(frames: &mut Vec<Vec<u8>>, fields: &IndexMap<String, Json>, index: usize) {
