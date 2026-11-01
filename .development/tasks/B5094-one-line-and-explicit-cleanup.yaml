@@ -1,0 +1,435 @@
+id: B5094
+title: Clear the legacy lists of the one-line, impl Trait and into rules
+description: >-
+  Three ast-grep rules landed with the code already on main listed under their ignores, so new code is checked at
+  once: no-padded-one-line-functions (145 functions in 102 files), no-impl-trait-arguments (9 arguments in 8
+  files) and no-unnamed-into (3 calls in 2 files). This task fixes that code and empties the three lists, leaving
+  only the "**/tests.rs" and "**/tests/**" globs that no-padded-one-line-functions shares with no-one-line-functions.
+  Run `ast-grep scan --filter '^no-(padded-one-line-functions|impl-trait-arguments|unnamed-into)$'` after taking a
+  file off a list to see what it holds.
+
+
+  A padded function is a one-line let followed by a one-line tail that uses it, which rule no-one-line-functions
+  calls a throwaway let. Delete the function and write its two lines where it's called, as one expression when that
+  reads well, at every caller, tests included. Don't move the body into another wrapper, a trait impl, a match or a
+  closure, and don't pad it differently: the review treats that as the same defect. When the body reads a private
+  field from another module, give the field the visibility its callers need (pub(super), pub(crate) or pub), the way
+  the rule already makes callers write a struct literal instead of calling a constructor. When a function's callers
+  can't reach what its body uses without exposing a field that guards an invariant (a Mutex taken with its poison
+  handling, a lock held across two calls), leave that function and its file on the list and name each one in notes
+  with the reason; the architect decides those.
+
+
+  An impl Trait argument becomes a named generic parameter with a where clause, as rule explicit-not-verbose says. An
+  unnamed .into() names its target: Target::from(value). Neither changes behavior or a caller.
+
+
+  Nothing a user can observe changes. Every existing test keeps passing unchanged apart from calls to a deleted
+  function, and no test is deleted.
+scope:
+  paths:
+  - .ast-grep/rules/no-padded-one-line-functions.yml
+  - .ast-grep/rules/no-impl-trait-arguments.yml
+  - .ast-grep/rules/no-unnamed-into.yml
+  - crates/betterlite-a2a/fuzz/fuzz_targets/normalize_protocol_version.rs
+  - crates/betterlite-a2a/src/agent_card/merge.rs
+  - crates/betterlite-a2a/src/agent_card/tests.rs
+  - crates/betterlite-a2a/src/agent_card/version_parser.rs
+  - crates/betterlite-anthropic/src/api/messages_errors/fields.rs
+  - crates/betterlite-anthropic/src/api/messages_errors.rs
+  - crates/betterlite-anthropic/src/api/messages_errors/wire.rs
+  - crates/betterlite-anthropic/src/cache_plan/json.rs
+  - crates/betterlite-anthropic/src/cache_plan.rs
+  - crates/betterlite-anthropic/src/cache_plan/tests.rs
+  - crates/betterlite-anthropic/src/output_schema.rs
+  - "crates/betterlite-auth/src/identity/**"
+  - crates/betterlite-auth/src/identity.rs
+  - "crates/betterlite-auth/src/resolved_key/**"
+  - crates/betterlite-auth/src/resolved_key/auth.rs
+  - "crates/betterlite-auth/src/resolved_key/credential/**"
+  - crates/betterlite-auth/src/resolved_key/credential.rs
+  - crates/betterlite-auth/src/resolved_key/credential/tests.rs
+  - crates/betterlite-auth/src/resolved_key.rs
+  - crates/betterlite-auth/src/resolved_key/tests.rs
+  - crates/betterlite-auth/src/resolved_key/view.rs
+  - "crates/betterlite-azure/src/azure_content_policy/**"
+  - crates/betterlite-azure/src/azure_content_policy.rs
+  - crates/betterlite-bedrock/src/image_models/family.rs
+  - crates/betterlite-bedrock/src/image_models/params.rs
+  - crates/betterlite-bedrock/src/image_models.rs
+  - crates/betterlite-bedrock/src/image_models/tests.rs
+  - crates/betterlite-bedrock/src/image_models/titan.rs
+  - "crates/betterlite-bedrock/src/request_policy/**"
+  - crates/betterlite-bedrock/src/request_policy.rs
+  - crates/betterlite-bedrock/src/request_policy/tests.rs
+  - "crates/betterlite-billing/src/active_recorder/**"
+  - crates/betterlite-billing/src/active_recorder.rs
+  - crates/betterlite-billing/src/active_recorder/tests.rs
+  - crates/betterlite-billing/src/lifecycle.rs
+  - crates/betterlite-billing/src/lifecycle/tests.rs
+  - crates/betterlite-billing/src/meter_provider.rs
+  - "crates/betterlite-cache/src/azure_blob_cache/**"
+  - crates/betterlite-cache/src/azure_blob_cache.rs
+  - crates/betterlite-cache/src/azure_blob_cache/tests.rs
+  - crates/betterlite-cache/src/s3_cache.rs
+  - crates/betterlite-cache/src/s3_cache/tests.rs
+  - crates/betterlite-cli/src/pkce_login/callback.rs
+  - crates/betterlite-cli/src/pkce_login/loopback.rs
+  - crates/betterlite-cli/src/pkce_login/oauth.rs
+  - crates/betterlite-cli/src/pkce_login/tests.rs
+  - crates/betterlite-cli/src/pkce_login/wire.rs
+  - crates/betterlite-compression/src/message_normalization.rs
+  - crates/betterlite-config/src/sections/includes.rs
+  - crates/betterlite-config/src/sections/rag_records_and_chunking/rag/document/tests.rs
+  - "crates/betterlite-config/src/sections/redis_credentials/**"
+  - crates/betterlite-config/src/sections/redis_credentials/aws.rs
+  - crates/betterlite-config/src/sections/redis_credentials.rs
+  - crates/betterlite-config/src/sections.rs
+  - crates/betterlite-context/src/local_ttl_cache.rs
+  - "crates/betterlite-context/src/request_records/**"
+  - crates/betterlite-context/src/request_records.rs
+  - crates/betterlite-core/fuzz/fuzz_targets/agent_provider.rs
+  - crates/betterlite-core/src/agents/provider/a2a.rs
+  - crates/betterlite-core/src/agents/provider/tests.rs
+  - "crates/betterlite-core/src/api/codex_history_tools/**"
+  - crates/betterlite-core/src/api/codex_history_tools.rs
+  - crates/betterlite-core/src/api/resource_sdk_settings/tests.rs
+  - crates/betterlite-core/src/api/resource_sdk_settings/timeout.rs
+  - "crates/betterlite-core/src/api/responses_input_content/**"
+  - crates/betterlite-core/src/api/responses_input_content.rs
+  - crates/betterlite-core/src/api/responses_input_content/tests.rs
+  - crates/betterlite-core/src/diagnostic_snapshots/process.rs
+  - crates/betterlite-core/src/diagnostic_snapshots/tests.rs
+  - crates/betterlite-core/src/diagnostic_snapshots/unsupported.rs
+  - crates/betterlite-db/src/daily_activity_export.rs
+  - "crates/betterlite-db/src/database_faults/**"
+  - crates/betterlite-db/src/database_faults/native/tests.rs
+  - crates/betterlite-db/src/database_faults.rs
+  - crates/betterlite-db/src/database_url_policy/policy.rs
+  - crates/betterlite-db/src/database_url_policy/query.rs
+  - crates/betterlite-db/src/database_url_policy/tests.rs
+  - crates/betterlite-db/src/encryption_scan.rs
+  - "crates/betterlite-db/src/encryption_scan/storage/**"
+  - crates/betterlite-db/src/encryption_scan/storage.rs
+  - crates/betterlite-db/src/encryption_scan/storage/tests.rs
+  - "crates/betterlite-db/src/identity_rows/**"
+  - crates/betterlite-db/src/identity_rows.rs
+  - crates/betterlite-db/src/identity_rows/user.rs
+  - crates/betterlite-db/src/mcp_stored_contracts/decode.rs
+  - crates/betterlite-db/src/migration_deploy/catalog.rs
+  - "crates/betterlite-db/src/migration_deploy/fixtures/**"
+  - crates/betterlite-db/src/migration_deploy/fixtures.rs
+  - crates/betterlite-db/src/migration_deploy/ledger.rs
+  - crates/betterlite-db/src/migration_deploy.rs
+  - crates/betterlite-db/src/postgres_store/tests.rs
+  - crates/betterlite-db/src/request_log_index_catalog/definitions.rs
+  - crates/betterlite-db/src/schema_baseline/tests/identity.rs
+  - crates/betterlite-db/src/schema_daily_usage/tests/pinned_sql_checksums.rs
+  - crates/betterlite-db/src/spend_reset_unit_of_work/batch.rs
+  - crates/betterlite-db/src/spend_reset_unit_of_work/queue.rs
+  - crates/betterlite-db/src/spend_reset_unit_of_work.rs
+  - "crates/betterlite-error/src/native_errors_a/cohere/**"
+  - crates/betterlite-error/src/native_errors_a/cohere.rs
+  - "crates/betterlite-guardrails/src/bedrock_chunking/**"
+  - crates/betterlite-guardrails/src/bedrock_chunking.rs
+  - crates/betterlite-guardrails/src/bedrock_chunking/tests.rs
+  - crates/betterlite-guardrails/src/cisco_conversation/json.rs
+  - crates/betterlite-guardrails/src/cisco_conversation/request.rs
+  - crates/betterlite-guardrails/src/cisco_conversation/response.rs
+  - crates/betterlite-guardrails/src/cisco_conversation/rewrite.rs
+  - crates/betterlite-guardrails/src/cisco_conversation.rs
+  - crates/betterlite-guardrails/src/cisco_mcp/blocking.rs
+  - crates/betterlite-guardrails/src/cisco_mcp/context.rs
+  - crates/betterlite-guardrails/src/cisco_mcp/context/tests.rs
+  - "crates/betterlite-guardrails/src/cisco_mcp/envelope/**"
+  - crates/betterlite-guardrails/src/cisco_mcp/envelope.rs
+  - "crates/betterlite-guardrails/src/cisco_mcp/normalize/**"
+  - crates/betterlite-guardrails/src/cisco_mcp/normalize.rs
+  - crates/betterlite-guardrails/src/cisco_mcp/redact.rs
+  - crates/betterlite-guardrails/src/cisco_verdict.rs
+  - crates/betterlite-guardrails/src/cisco_verdict/tests.rs
+  - crates/betterlite-guardrails/src/content_filter/competitor_intent_airline.rs
+  - crates/betterlite-guardrails/src/content_filter/competitor_intent_airline/tests/action_hint.rs
+  - crates/betterlite-guardrails/src/content_filter/competitor_intent_airline/tests/airline_init.rs
+  - crates/betterlite-guardrails/src/content_filter/competitor_intent_airline/tests/classify_ambiguous_base.rs
+  - crates/betterlite-guardrails/src/content_filter/competitor_intent_airline/tests/find_matches.rs
+  - crates/betterlite-guardrails/src/content_filter/competitor_intent_airline/tests/load_competitors.rs
+  - crates/betterlite-guardrails/src/content_filter/competitor_intent_airline/tests/run_log_only.rs
+  - crates/betterlite-guardrails/src/content_filter/competitor_intent_base/classification.rs
+  - crates/betterlite-guardrails/src/content_filter/competitor_intent_base.rs
+  - crates/betterlite-guardrails/src/content_filter/competitor_intent_base/run/tests.rs
+  - "crates/betterlite-guardrails/src/content_filter/detection_metrics/**"
+  - crates/betterlite-guardrails/src/content_filter/detection_metrics.rs
+  - crates/betterlite-guardrails/src/deepkeep/tests.rs
+  - crates/betterlite-guardrails/src/lasso/tests.rs
+  - crates/betterlite-guardrails/src/mcp_guardrail_translation/nesting_depth.rs
+  - crates/betterlite-harness/src/cli_handler/io.rs
+  - crates/betterlite-harness/src/providers/claude_code/config.rs
+  - crates/betterlite-harness/src/providers/claude_code.rs
+  - crates/betterlite-harness/src/providers/claude_code/stream.rs
+  - crates/betterlite-harness/src/providers/claude_code/wire.rs
+  - crates/betterlite-harness/src/session/skills.rs
+  - crates/betterlite-harness/src/snapshots.rs
+  - crates/betterlite-harness/src/snapshots/tests.rs
+  - "crates/betterlite-http/src/otlp_client/**"
+  - crates/betterlite-http/src/otlp_client.rs
+  - crates/betterlite-http/src/otlp_client/tests.rs
+  - "crates/betterlite-http/src/passthrough/**"
+  - crates/betterlite-http/src/passthrough.rs
+  - crates/betterlite-http/src/passthrough/tests.rs
+  - "crates/betterlite-http/src/proxy/**"
+  - crates/betterlite-http/src/proxy.rs
+  - crates/betterlite-http/src/proxy/tests.rs
+  - crates/betterlite-http/src/skill_archive.rs
+  - crates/betterlite-http/src/skill_archive/tests.rs
+  - crates/betterlite-lens/fuzz/fuzz_targets/lens_sources.rs
+  - crates/betterlite-lens/src/investigation/loop_state/preparation.rs
+  - crates/betterlite-lens/src/investigation/loop_state.rs
+  - crates/betterlite-lens/src/investigation/prompt.rs
+  - crates/betterlite-lens/src/investigation.rs
+  - crates/betterlite-lens/src/sources/activity_availability.rs
+  - crates/betterlite-lens/src/sources/count_row.rs
+  - crates/betterlite-lens/src/sources/execution_row.rs
+  - crates/betterlite-lens/src/sources/part_row.rs
+  - "crates/betterlite-lens/src/sources/row_decode/**"
+  - crates/betterlite-lens/src/sources/row_decode.rs
+  - crates/betterlite-lens/src/sources/row_decode/tests.rs
+  - "crates/betterlite-lens/src/sources/source_reader/**"
+  - crates/betterlite-lens/src/sources/source_reader.rs
+  - crates/betterlite-lens/src/sources/tests/corpus.rs
+  - "crates/betterlite-lens/src/state/finding_identity/**"
+  - crates/betterlite-lens/src/state/finding_identity.rs
+  - crates/betterlite-logging/src/focus_records/serializers/parquet.rs
+  - crates/betterlite-logging/src/opik/payload/support.rs
+  - crates/betterlite-logging/src/rubrik/block_decision.rs
+  - crates/betterlite-logging/src/s3_transport/naming.rs
+  - crates/betterlite-logging/src/s3_v2/connection.rs
+  - "crates/betterlite-logging/src/ui_content/**"
+  - crates/betterlite-logging/src/ui_content.rs
+  - crates/betterlite-mcp/src/credentials.rs
+  - crates/betterlite-mcp/src/credentials_tests/tests.rs
+  - crates/betterlite-mcp/src/envelope/crypto.rs
+  - crates/betterlite-mcp/src/envelope.rs
+  - crates/betterlite-mcp/src/tools/tests/tool_call_behavior_tests.rs
+  - crates/betterlite-mcp/src/tools/tool_calls.rs
+  - "crates/betterlite-models/src/catalog/**"
+  - crates/betterlite-models/src/catalog.rs
+  - crates/betterlite-models/src/catalog/tests.rs
+  - "crates/betterlite-models/src/cost_usage/interactions/modality/**"
+  - crates/betterlite-models/src/cost_usage/interactions/modality.rs
+  - "crates/betterlite-models/src/cost_usage/interactions/search/**"
+  - crates/betterlite-models/src/cost_usage/interactions/search.rs
+  - crates/betterlite-models/src/entry/unknown.rs
+  - crates/betterlite-models/src/guardrail_pricing/entries.rs
+  - "crates/betterlite-models/src/ocr_pricing/**"
+  - crates/betterlite-models/src/ocr_pricing.rs
+  - crates/betterlite-models/src/ocr_pricing/tests.rs
+  - crates/betterlite-models/src/price_fields/deserialize.rs
+  - crates/betterlite-models/src/price_fields/nested.rs
+  - crates/betterlite-models/src/price_fields.rs
+  - "crates/betterlite-models/src/tiered_pricing/**"
+  - crates/betterlite-models/src/tiered_pricing.rs
+  - crates/betterlite-models/src/token_rates/batch.rs
+  - crates/betterlite-models/src/token_rates/rates.rs
+  - crates/betterlite-models/src/token_rates.rs
+  - crates/betterlite-models/src/token_rates/threshold.rs
+  - "crates/betterlite-openai/src/api/file_type_records/**"
+  - crates/betterlite-openai/src/api/file_type_records.rs
+  - crates/betterlite-openai/src/api/file_type_records/tests.rs
+  - crates/betterlite-openai/src/base_helpers.rs
+  - crates/betterlite-openai/src/chat/execution.rs
+  - crates/betterlite-openai/src/chat/execution/tests.rs
+  - crates/betterlite-openai/src/embedding/tests.rs
+  - "crates/betterlite-openai/src/openai_base_config/**"
+  - crates/betterlite-openai/src/openai_base_config.rs
+  - crates/betterlite-openai/src/openai_base_config/tests.rs
+  - "crates/betterlite-openai/src/search/credentials/**"
+  - crates/betterlite-openai/src/search/credentials.rs
+  - crates/betterlite-paths/src/paths/delete.rs
+  - crates/betterlite-prompts/fuzz/fuzz_targets/tool_schema.rs
+  - crates/betterlite-prompts/src/arguments/repair.rs
+  - "crates/betterlite-prompts/src/arguments/shapes/**"
+  - crates/betterlite-prompts/src/arguments/shapes.rs
+  - crates/betterlite-prompts/src/arguments/shapes/tests.rs
+  - "crates/betterlite-prompts/src/builtin/**"
+  - crates/betterlite-prompts/src/builtin.rs
+  - crates/betterlite-prompts/src/builtin/tests.rs
+  - crates/betterlite-prompts/src/definitions/estimate.rs
+  - crates/betterlite-prompts/src/definitions/expand.rs
+  - "crates/betterlite-prompts/src/dotprompt_templates/render/**"
+  - crates/betterlite-prompts/src/dotprompt_templates/render.rs
+  - crates/betterlite-prompts/src/dotprompt_templates.rs
+  - "crates/betterlite-prompts/src/dotprompt_templates/template/**"
+  - crates/betterlite-prompts/src/dotprompt_templates/template.rs
+  - crates/betterlite-prompts/src/factory/bedrock.rs
+  - crates/betterlite-prompts/src/factory/bedrock/tests.rs
+  - "crates/betterlite-prompts/src/message_content/any_messages/**"
+  - crates/betterlite-prompts/src/message_content/any_messages.rs
+  - "crates/betterlite-prompts/src/schema/**"
+  - crates/betterlite-prompts/src/schema/budget.rs
+  - crates/betterlite-prompts/src/schema/budget/tests.rs
+  - "crates/betterlite-prompts/src/schema/flatten/**"
+  - crates/betterlite-prompts/src/schema/flatten.rs
+  - crates/betterlite-prompts/src/schema/flatten/tests.rs
+  - crates/betterlite-prompts/src/schema/regex_walk/tests.rs
+  - crates/betterlite-prompts/src/schema.rs
+  - "crates/betterlite-redact/src/secret/pattern/**"
+  - crates/betterlite-redact/src/secret/pattern.rs
+  - "crates/betterlite-redact/src/sentry/pattern/**"
+  - crates/betterlite-redact/src/sentry/pattern.rs
+  - crates/betterlite-redact/src/sentry/pattern/tests.rs
+  - "crates/betterlite-redact/src/sentry/scrub/**"
+  - crates/betterlite-redact/src/sentry/scrub.rs
+  - crates/betterlite-redact/src/sentry/scrub/tests.rs
+  - "crates/betterlite-redact/src/sentry/settings/**"
+  - crates/betterlite-redact/src/sentry/settings.rs
+  - crates/betterlite-redact/src/sentry/settings/tests.rs
+  - "crates/betterlite-redis/src/redis_connection_settings/os_environ/**"
+  - crates/betterlite-redis/src/redis_connection_settings/os_environ.rs
+  - crates/betterlite-redis/src/redis_connection_settings/resolve/lookup.rs
+  - crates/betterlite-redis/src/redis_connection_settings/resolve.rs
+  - crates/betterlite-reporting/src/bug_report/eligibility.rs
+  - crates/betterlite-reporting/src/bug_report/tests.rs
+  - crates/betterlite-roi/src/summary/identity.rs
+  - crates/betterlite-roi/src/summary/tests.rs
+  - crates/betterlite-secrets/fuzz/fuzz_targets/secret_value.rs
+  - crates/betterlite-secrets/fuzz/fuzz_targets/stored_secret.rs
+  - crates/betterlite-secrets/src/master_key.rs
+  - crates/betterlite-secrets/src/master_key/tests.rs
+  - "crates/betterlite-secrets/src/secret_codec/**"
+  - crates/betterlite-secrets/src/secret_codec.rs
+  - crates/betterlite-secrets/src/secret_codec/sealing.rs
+  - crates/betterlite-secrets/src/secret_codec/secret_map.rs
+  - crates/betterlite-secrets/src/secret_codec/tests.rs
+  - crates/betterlite-secrets/src/stored_cipher/tests.rs
+  - crates/betterlite-server/src/routes/chat/tests.rs
+  - crates/betterlite-server/src/routes/chat/tests/stream/tests.rs
+  - crates/betterlite-server/src/server.rs
+  - crates/betterlite-server/src/tests.rs
+  - "crates/betterlite/src/scheduled_job_stagger/timing/**"
+  - crates/betterlite/src/scheduled_job_stagger/timing.rs
+  - crates/betterlite/src/scheduled_job_stagger/timing/tests.rs
+  - crates/betterlite/tests/tests.rs
+  - "crates/betterlite-tracing/src/cursor/**"
+  - crates/betterlite-tracing/src/cursor.rs
+  - crates/betterlite-tracing/src/cursor/tests.rs
+  - crates/betterlite-tracing/src/storage/trace_store.rs
+  - tools/oracle/fuzz/fuzz_targets/helper_case.rs
+  - tools/oracle/fuzz/fuzz_targets/http_case.rs
+  - "tools/oracle/src/case/**"
+  - tools/oracle/src/case.rs
+  - tools/oracle/src/compare/helper.rs
+  - tools/oracle/src/helpers/answers.rs
+  - tools/oracle/src/helpers/anthropic/cache_plan.rs
+  - tools/oracle/src/helpers/anthropic/output_schema/tests.rs
+  - tools/oracle/src/helpers/anthropic/tool_names/tests.rs
+  - "tools/oracle/src/helpers/auth/carried_policy_records/**"
+  - tools/oracle/src/helpers/auth/carried_policy_records.rs
+  - tools/oracle/src/helpers/auth/resolved_key.rs
+  - tools/oracle/src/helpers/azure/content_policy/tests.rs
+  - tools/oracle/src/helpers/bedrock/message_usage/tests.rs
+  - tools/oracle/src/helpers/bedrock/other_image_models.rs
+  - tools/oracle/src/helpers/bedrock/other_image_models/tests.rs
+  - tools/oracle/src/helpers/bedrock/other_nova_embeddings/tests.rs
+  - tools/oracle/src/helpers/bedrock/request_policy.rs
+  - tools/oracle/src/helpers/bedrock/request_policy/tests.rs
+  - tools/oracle/src/helpers/bedrock/services_file_content/tests.rs
+  - "tools/oracle/src/helpers/bedrock/settings/**"
+  - tools/oracle/src/helpers/bedrock/settings.rs
+  - tools/oracle/src/helpers/bedrock/settings/tests.rs
+  - tools/oracle/src/helpers/context/a2a_text/tests.rs
+  - tools/oracle/src/helpers/context/cloud_storage/tests.rs
+  - tools/oracle/src/helpers/context/local_ttl_cache/tests.rs
+  - tools/oracle/src/helpers/context/owned_parameter_names/tests.rs
+  - tools/oracle/src/helpers/context/provider_message_primitives/tests.rs
+  - tools/oracle/src/helpers/context/request_records/tests.rs
+  - tools/oracle/src/helpers/core_ops/b3450.rs
+  - tools/oracle/src/helpers/core_ops/codex_history_tools.rs
+  - tools/oracle/src/helpers/core_ops/resource_sdk_settings.rs
+  - tools/oracle/src/helpers/core_ops/responses_input_content.rs
+  - tools/oracle/src/helpers/db/database_url_policy.rs
+  - tools/oracle/src/helpers/db/mcp_stored_contracts.rs
+  - tools/oracle/src/helpers/db/member_removal_identity.rs
+  - tools/oracle/src/helpers/guardrails/b3758.rs
+  - tools/oracle/src/helpers/guardrails/b3761.rs
+  - tools/oracle/src/helpers/guardrails/b3767.rs
+  - tools/oracle/src/helpers/guardrails/b3778.rs
+  - tools/oracle/src/helpers/guardrails/b3779.rs
+  - tools/oracle/src/helpers/guardrails/bedrock_chunking.rs
+  - tools/oracle/src/helpers/http/openai_mock_transport/tests.rs
+  - tools/oracle/src/helpers/http/skill_discovery_archives.rs
+  - "tools/oracle/src/helpers/lens/b4502/**"
+  - tools/oracle/src/helpers/lens/b4502.rs
+  - "tools/oracle/src/helpers/logging/otel_vocabulary/**"
+  - tools/oracle/src/helpers/logging/otel_vocabulary.rs
+  - tools/oracle/src/helpers/logging/verbose_hooks/tests.rs
+  - tools/oracle/src/helpers/mcp/b4740.rs
+  - tools/oracle/src/helpers/models/catalog_generalizations/tests.rs
+  - tools/oracle/src/helpers/models/model_metadata_projection/tests.rs
+  - tools/oracle/src/helpers/models/savings_evidence.rs
+  - tools/oracle/src/helpers/models/token_rates.rs
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/openai/base_config.rs
+  - tools/oracle/src/helpers/openai/base_config/tests.rs
+  - tools/oracle/src/helpers/openai/file_type_records.rs
+  - "tools/oracle/src/helpers/openai/provider_base_helpers/**"
+  - tools/oracle/src/helpers/openai/provider_base_helpers.rs
+  - tools/oracle/src/helpers/openai/provider_base_helpers/tests.rs
+  - tools/oracle/src/helpers/oracle/b4113.rs
+  - tools/oracle/src/helpers/oracle/management_oracle.rs
+  - tools/oracle/src/helpers/oracle/management_oracle/tests.rs
+  - tools/oracle/src/helpers/prompts/builtin_prompts.rs
+  - tools/oracle/src/helpers/prompts/tool_arguments.rs
+  - tools/oracle/src/helpers/prompts/tool_schema.rs
+  - tools/oracle/src/helpers/python.rs
+  - tools/oracle/src/helpers/redact/sentry_scrubbing.rs
+  - tools/oracle/src/helpers/secrets/secret_codec.rs
+  - "tools/oracle/src/helpers/server/blog_feed/parser/**"
+  - tools/oracle/src/helpers/server/blog_feed/parser/collector.rs
+  - tools/oracle/src/helpers/server/blog_feed/parser.rs
+  - tools/oracle/src/helpers/streaming/stream_content_assembly/tests.rs
+  - tools/oracle/src/helpers/streaming/stream_tool_assembly/tests.rs
+  - tools/oracle/src/helpers/tests.rs
+  - tools/oracle/src/helpers/websearch/tool_records.rs
+  - tools/oracle/src/http/native_feature_eligibility/tests.rs
+  - tools/oracle/src/http/postgres/tests.rs
+  - tools/oracle/src/mock.rs
+  - tools/oracle/src/multipart_oracle/tests.rs
+  - tools/oracle/src/paths.rs
+  - "tools/oracle/src/runner/**"
+  - tools/oracle/src/runner.rs
+  - tools/oracle/src/tests.rs
+  lint_tables: false
+references: []
+dod:
+- text: >-
+    The three rules list no file under crates/ or tools/, no-impl-trait-arguments and no-unnamed-into have no ignores
+    at all, and ast-grep finds nothing for any of the four one-line, impl Trait and into rules.
+  proof:
+  - legacy-lists-empty
+  - hooks
+- text: Every existing test still passes, and the workspace builds without new warnings.
+  proof:
+  - tests
+  - clippy
+checks:
+  optional: [mutants]
+  commands:
+  - id: legacy-lists-empty
+    why: a rule still lists legacy code, or code on the branch breaks one of the rules
+    run: |-
+      ! grep -qE '^  - "?(crates|tools)/' .ast-grep/rules/no-padded-one-line-functions.yml .ast-grep/rules/no-impl-trait-arguments.yml .ast-grep/rules/no-unnamed-into.yml && ! grep -q '^ignores:' .ast-grep/rules/no-impl-trait-arguments.yml .ast-grep/rules/no-unnamed-into.yml && ast-grep scan --filter '^no-(one-line-functions|padded-one-line-functions|impl-trait-arguments|unnamed-into)$'
+oracle_cases: []
+deviations: []
+out_of_scope:
+- Multi-line bodies with a single expression; no-one-line-functions allows them since 2026-11-01.
+- Any other rule's findings in the touched files.
+- Behavior changes of any kind, and new tests beyond the calls a deleted function forces.
+pitfalls:
+- A name like value, take, build or commit has callers that grep can't tell apart from other methods of the same name. `cargo check` finds every real caller once the function is gone.
+- A function in this list may have callers outside scope.paths that grep missed. Report blocked with the paths; the architect widens the scope.
+- tests.rs files are exempt from the padded rule but not from the other two, and redact/sentry/scrub/tests.rs has an impl Trait argument.
+review_level: standard
+budget:
+  max_changed_lines: 3000
+  max_new_expects: 0

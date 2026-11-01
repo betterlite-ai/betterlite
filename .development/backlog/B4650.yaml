@@ -1,7 +1,7 @@
 id: B4650
 milestone: M9 agents and mcp
 title: MCP credential contracts, header carriers and BYOK cache
-status: todo
+status: done
 depends_on: [B2226, B2305]
 file: tasks/B4650-mcp-credential-contracts.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/proxy/_experimental/mcp_server/byok_credential_cache.py"
 parent: B137
 split_from: B137
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 448

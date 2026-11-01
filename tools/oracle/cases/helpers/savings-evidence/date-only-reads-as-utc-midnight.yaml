@@ -1,0 +1,8 @@
+kind: helper
+name: date-only-reads-as-utc-midnight
+call:
+  savings_evidence:
+    operation: billed_at
+    text: "2024-03-01"
+compare: {ignore: []}
+env: {}
