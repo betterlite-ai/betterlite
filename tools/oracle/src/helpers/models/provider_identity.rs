@@ -62,7 +62,14 @@ impl Helper for Op {
                 model,
                 custom_llm_provider,
                 catalog,
-            } => run_cohere(model, custom_llm_provider.as_deref(), catalog),
+            } => {
+                let catalog = parse_catalog(catalog)?;
+                to_json(&cohere_chat_provider(
+                    model,
+                    custom_llm_provider.as_deref(),
+                    &catalog,
+                ))
+            }
             Input::AnthropicText {
                 model,
                 custom_llm_provider,
@@ -100,15 +107,6 @@ fn run_explicit_provider(
         catalog: &catalog,
     });
     to_json(&classification)
-}
-
-fn run_cohere(
-    model: &str,
-    custom_llm_provider: Option<&str>,
-    catalog_json: &serde_json::Value,
-) -> HelperResult {
-    let catalog = parse_catalog(catalog_json)?;
-    to_json(&cohere_chat_provider(model, custom_llm_provider, &catalog))
 }
 
 fn parse_catalog(source: &serde_json::Value) -> Result<ModelCatalog, Box<HelperError>> {
