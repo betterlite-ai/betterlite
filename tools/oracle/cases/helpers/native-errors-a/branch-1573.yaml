@@ -1,0 +1,12 @@
+kind: helper
+name: native-errors-a-branch-1573
+call:
+  native_errors_a:
+    provider: ai21
+    model: ai21/model-a
+    message: "Prompt has too many tokens for this model"
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

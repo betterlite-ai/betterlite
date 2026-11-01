@@ -1,7 +1,7 @@
 id: B4051
 milestone: M7 observability
 title: Dotprompt loading and sandboxed template rendering
-status: todo
+status: done
 depends_on: []
 file: tasks/B4051-dotprompt-templates.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/integrations/dotprompt/README.md"
 parent: B117
 split_from: B117
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 436

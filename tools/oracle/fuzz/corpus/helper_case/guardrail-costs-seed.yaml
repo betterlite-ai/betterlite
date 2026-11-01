@@ -1,0 +1,5 @@
+kind: helper
+name: guardrail-costs-seed
+call: {guardrail_costs: {guardrail_information: {guardrail_cost: 1.0, guardrail_cost_by_unit: {text_records: 2}}}}
+env: {}
+compare: {ignore: []}

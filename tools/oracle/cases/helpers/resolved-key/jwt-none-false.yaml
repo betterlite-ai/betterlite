@@ -1,0 +1,9 @@
+kind: helper
+name: jwt-none-false
+call:
+  resolved_key:
+    function: is_jwt
+    value: null
+env: {}
+compare:
+  ignore: []

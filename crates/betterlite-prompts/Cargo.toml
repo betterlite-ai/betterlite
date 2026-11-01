@@ -13,12 +13,14 @@ indexmap = { version = "2.14.2", features = ["serde"] }
 minijinja = { version = "3.0.4", features = ["builtins", "fuel", "serde"] }
 minijinja-contrib = { version = "3.0.4", default-features = false, features = ["pycompat"] }
 serde.workspace = true
+serde-saphyr.workspace = true
 serde_json = { version = "1.0.145", features = ["arbitrary_precision"] }
 thiserror.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
 rstest = "=0.27.0"
+tempfile = "3.27.0"
 
 [lints]
 workspace = true
