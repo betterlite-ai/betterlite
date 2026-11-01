@@ -65,23 +65,23 @@ fn parsed_fields(raw: &str) -> Option<Fields> {
     }
     tokens.truncate(5);
     let fields: [String; 5] = tokens.try_into().ok()?;
-    let [mut dd, mut mm, mut yy, mut tm, mut tz] = fields;
-    if dd.is_empty() || mm.is_empty() || yy.is_empty() {
+    let [mut day, mut month, mut year, mut time, mut zone] = fields;
+    if day.is_empty() || month.is_empty() || year.is_empty() {
         return None;
     }
-    let month = resolve_month(&mut dd, &mut mm)?;
-    strip_trailing_comma(&mut dd);
-    reorder_year_time_zone(&mut yy, &mut tm, &mut tz)?;
-    strip_trailing_comma(&mut tm);
-    let (hour, minute, second) = split_time(&tm)?;
-    if !valid_timezone(&tz) {
+    let month_number = resolve_month(&mut day, &mut month)?;
+    strip_trailing_comma(&mut day);
+    reorder_year_time_zone(&mut year, &mut time, &mut zone)?;
+    strip_trailing_comma(&mut time);
+    let (hour, minute, second) = split_time(&time)?;
+    if !valid_timezone(&zone) {
         return None;
     }
-    let year = normalize_year(yy.parse().ok()?)?;
-    let day = dd.parse().ok()?;
+    let year = normalize_year(year.parse().ok()?)?;
+    let day = day.parse().ok()?;
     Some(Fields {
         year,
-        month,
+        month: month_number,
         day,
         hour,
         minute,
@@ -89,20 +89,14 @@ fn parsed_fields(raw: &str) -> Option<Fields> {
     })
 }
 
-fn valid_timezone(timezone: &str) -> bool {
-    let Some(sign) = timezone.as_bytes().first() else {
+// Ports `email._parseaddr._parsedate_tz`'s zone handling: an unparsable token means no zone.
+fn valid_timezone(zone: &str) -> bool {
+    let Ok(offset) = zone.parse::<i64>() else {
         return true;
     };
-    if *sign != b'+' && *sign != b'-' {
-        return true;
-    }
-    let digits = timezone.get(1..).unwrap_or_default();
-    if digits.len() != 4 || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
-        return false;
-    }
-    let hours = digits.get(..2).and_then(|value| value.parse::<u32>().ok());
-    let minutes = digits.get(2..).and_then(|value| value.parse::<u32>().ok());
-    hours.is_some_and(|value| value < 24) && minutes.is_some_and(|value| value < 60)
+    let magnitude = offset.unsigned_abs();
+    let seconds = (magnitude / 100) * 3600 + (magnitude % 100) * 60;
+    seconds < 86_400
 }
 
 fn strip_trailing_comma(token: &mut String) {
@@ -172,18 +166,18 @@ fn split_glued_timezone(tokens: &mut Vec<String>) {
     }
 }
 
-fn resolve_month(dd: &mut String, mm: &mut String) -> Option<u32> {
-    let lowered = mm.to_lowercase();
+fn resolve_month(day: &mut String, month: &mut String) -> Option<u32> {
+    let lowered = month.to_lowercase();
     if MONTHNAMES.contains(&lowered.as_str()) {
-        lowered.clone_into(mm);
+        lowered.clone_into(month);
     } else {
-        std::mem::swap(mm, dd);
-        *mm = mm.to_lowercase();
-        if !MONTHNAMES.contains(&mm.as_str()) {
+        std::mem::swap(month, day);
+        *month = month.to_lowercase();
+        if !MONTHNAMES.contains(&month.as_str()) {
             return None;
         }
     }
-    month_number_from_name(mm)
+    month_number_from_name(month)
 }
 
 fn month_number_from_name(name: &str) -> Option<u32> {
@@ -197,38 +191,42 @@ fn month_number_from_name(name: &str) -> Option<u32> {
     }
 }
 
-fn reorder_year_time_zone(yy: &mut String, tm: &mut String, tz: &mut String) -> Option<()> {
-    if yy.find(':').is_some_and(|position| position > 0) {
-        std::mem::swap(yy, tm);
+fn reorder_year_time_zone(year: &mut String, time: &mut String, zone: &mut String) -> Option<()> {
+    if year.find(':').is_some_and(|position| position > 0) {
+        std::mem::swap(year, time);
     }
-    if let Some(stripped) = yy.strip_suffix(',') {
+    if let Some(stripped) = year.strip_suffix(',') {
         if stripped.is_empty() {
             return None;
         }
-        stripped.to_owned().clone_into(yy);
+        stripped.to_owned().clone_into(year);
     }
-    if !yy.starts_with(|character: char| character.is_ascii_digit()) {
-        std::mem::swap(yy, tz);
+    if !year.starts_with(|character: char| character.is_ascii_digit()) {
+        std::mem::swap(year, zone);
     }
     Some(())
 }
 
-fn split_time(tm: &str) -> Option<(u32, u32, u32)> {
-    let colon_parts: Vec<&str> = tm.split(':').collect();
-    let (hh, mm, ss) = match colon_parts.as_slice() {
-        [hh, mm] => (*hh, *mm, "0"),
-        [hh, mm, ss] => (*hh, *mm, *ss),
+fn split_time(time: &str) -> Option<(u32, u32, u32)> {
+    let colon_parts: Vec<&str> = time.split(':').collect();
+    let (hour, minute, second) = match colon_parts.as_slice() {
+        [hour, minute] => (*hour, *minute, "0"),
+        [hour, minute, second] => (*hour, *minute, *second),
         [single] if single.contains('.') => {
             let dot_parts: Vec<&str> = single.split('.').collect();
             match dot_parts.as_slice() {
-                [hh, mm] => (*hh, *mm, "0"),
-                [hh, mm, ss] => (*hh, *mm, *ss),
+                [hour, minute] => (*hour, *minute, "0"),
+                [hour, minute, second] => (*hour, *minute, *second),
                 _ => return None,
             }
         }
         _ => return None,
     };
-    Some((hh.parse().ok()?, mm.parse().ok()?, ss.parse().ok()?))
+    Some((
+        hour.parse().ok()?,
+        minute.parse().ok()?,
+        second.parse().ok()?,
+    ))
 }
 
 const fn normalize_year(year: i32) -> Option<i32> {
