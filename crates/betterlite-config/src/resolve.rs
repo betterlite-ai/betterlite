@@ -6,26 +6,34 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 type Lookup<'lookup> = &'lookup dyn EnvironmentLookup;
 
-pub(super) fn resolve_secret(
-    value: Option<String>,
-    path: &str,
-    lookup: Lookup<'_>,
-) -> Result<Option<SecretString>, ConfigError> {
-    match value {
-        Some(text) => resolve_secret_value(Some(SecretString::from(text)), path, lookup),
-        None => Ok(None),
+pub(super) trait SecretText {
+    fn secret_text(self) -> String;
+}
+
+impl SecretText for String {
+    fn secret_text(self) -> String {
+        self
     }
 }
 
-pub(super) fn resolve_secret_value(
-    value: Option<SecretString>,
+impl SecretText for SecretString {
+    fn secret_text(self) -> String {
+        self.expose_secret().to_owned()
+    }
+}
+
+pub(super) fn resolve_secret<T>(
+    value: Option<T>,
     path: &str,
     lookup: Lookup<'_>,
-) -> Result<Option<SecretString>, ConfigError> {
-    let Some(secret) = value else {
+) -> Result<Option<SecretString>, ConfigError>
+where
+    T: SecretText,
+{
+    let Some(text) = value.map(SecretText::secret_text) else {
         return Ok(None);
     };
-    let resolved = resolve_string(secret.expose_secret().to_owned(), path, lookup)?;
+    let resolved = resolve_string(text, path, lookup)?;
     Ok(Some(SecretString::from(resolved)))
 }
 
