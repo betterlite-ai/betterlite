@@ -1,0 +1,10 @@
+id: no-unnamed-into
+language: rust
+severity: error
+message: .into() hides the target type; call the target's From, such as RequestId::from(raw)
+note: rule explicit-not-verbose
+ignores:
+  - tools/oracle/src/helpers/oracle/management_oracle.rs
+  - tools/oracle/src/helpers/server/blog_feed/parser.rs
+rule:
+  pattern: $X.into()

@@ -1,0 +1,135 @@
+id: no-padded-one-line-functions
+language: rust
+severity: error
+message: a one-line let followed by a one-line tail that uses it is still a one-line function; write the code where the function is called instead of padding the body
+note: the same exemptions as no-one-line-functions apply
+ignores:
+  - "**/tests.rs"
+  - "**/tests/**"
+  - crates/betterlite-a2a/src/agent_card/merge.rs
+  - crates/betterlite-a2a/src/agent_card/version_parser.rs
+  - crates/betterlite-anthropic/src/api/messages_errors/fields.rs
+  - crates/betterlite-anthropic/src/cache_plan/json.rs
+  - crates/betterlite-auth/src/identity.rs
+  - crates/betterlite-auth/src/resolved_key/credential.rs
+  - crates/betterlite-auth/src/resolved_key.rs
+  - crates/betterlite-azure/src/azure_content_policy.rs
+  - crates/betterlite-bedrock/src/request_policy.rs
+  - crates/betterlite-billing/src/active_recorder.rs
+  - crates/betterlite-cache/src/azure_blob_cache.rs
+  - crates/betterlite-cli/src/pkce_login/callback.rs
+  - crates/betterlite-config/src/sections/redis_credentials.rs
+  - crates/betterlite-context/src/request_records.rs
+  - crates/betterlite-core/src/agents/provider/a2a.rs
+  - crates/betterlite-core/src/api/codex_history_tools.rs
+  - crates/betterlite-core/src/api/resource_sdk_settings/timeout.rs
+  - crates/betterlite-core/src/api/responses_input_content.rs
+  - crates/betterlite-core/src/diagnostic_snapshots/process.rs
+  - crates/betterlite-core/src/diagnostic_snapshots/unsupported.rs
+  - crates/betterlite-db/src/database_faults.rs
+  - crates/betterlite-db/src/database_url_policy/policy.rs
+  - crates/betterlite-db/src/database_url_policy/query.rs
+  - crates/betterlite-db/src/encryption_scan/storage.rs
+  - crates/betterlite-db/src/identity_rows.rs
+  - crates/betterlite-db/src/mcp_stored_contracts/decode.rs
+  - crates/betterlite-db/src/migration_deploy/fixtures.rs
+  - crates/betterlite-db/src/spend_reset_unit_of_work/batch.rs
+  - crates/betterlite-db/src/spend_reset_unit_of_work/queue.rs
+  - crates/betterlite-error/src/native_errors_a/cohere.rs
+  - crates/betterlite-guardrails/src/bedrock_chunking.rs
+  - crates/betterlite-guardrails/src/cisco_conversation/json.rs
+  - crates/betterlite-guardrails/src/cisco_mcp/envelope.rs
+  - crates/betterlite-guardrails/src/cisco_mcp/normalize.rs
+  - crates/betterlite-guardrails/src/content_filter/competitor_intent_base/classification.rs
+  - crates/betterlite-guardrails/src/content_filter/detection_metrics.rs
+  - crates/betterlite-harness/src/providers/claude_code/wire.rs
+  - crates/betterlite-http/src/otlp_client.rs
+  - crates/betterlite-http/src/passthrough.rs
+  - crates/betterlite-http/src/proxy.rs
+  - crates/betterlite-lens/src/investigation/loop_state/preparation.rs
+  - crates/betterlite-lens/src/investigation/prompt.rs
+  - crates/betterlite-lens/src/sources/row_decode.rs
+  - crates/betterlite-lens/src/sources/source_reader.rs
+  - crates/betterlite-lens/src/state/finding_identity.rs
+  - crates/betterlite-logging/src/focus_records/serializers/parquet.rs
+  - crates/betterlite-logging/src/ui_content.rs
+  - crates/betterlite-mcp/src/credentials.rs
+  - crates/betterlite-mcp/src/envelope/crypto.rs
+  - crates/betterlite-mcp/src/tools/tool_calls.rs
+  - crates/betterlite-models/src/catalog.rs
+  - crates/betterlite-models/src/cost_usage/interactions/modality.rs
+  - crates/betterlite-models/src/cost_usage/interactions/search.rs
+  - crates/betterlite-models/src/entry/unknown.rs
+  - crates/betterlite-models/src/guardrail_pricing/entries.rs
+  - crates/betterlite-models/src/ocr_pricing.rs
+  - crates/betterlite-models/src/price_fields/deserialize.rs
+  - crates/betterlite-models/src/tiered_pricing.rs
+  - crates/betterlite-models/src/token_rates/rates.rs
+  - crates/betterlite-models/src/token_rates/threshold.rs
+  - crates/betterlite-openai/src/api/file_type_records.rs
+  - crates/betterlite-openai/src/openai_base_config.rs
+  - crates/betterlite-openai/src/search/credentials.rs
+  - crates/betterlite-prompts/src/arguments/shapes.rs
+  - crates/betterlite-prompts/src/builtin.rs
+  - crates/betterlite-prompts/src/dotprompt_templates/render.rs
+  - crates/betterlite-prompts/src/dotprompt_templates/template.rs
+  - crates/betterlite-prompts/src/message_content/any_messages.rs
+  - crates/betterlite-prompts/src/schema/flatten.rs
+  - crates/betterlite-prompts/src/schema.rs
+  - crates/betterlite-redact/src/secret/pattern.rs
+  - crates/betterlite-redact/src/sentry/pattern.rs
+  - crates/betterlite-redact/src/sentry/scrub.rs
+  - crates/betterlite-redact/src/sentry/settings.rs
+  - crates/betterlite-redis/src/redis_connection_settings/os_environ.rs
+  - crates/betterlite-redis/src/redis_connection_settings/resolve/lookup.rs
+  - crates/betterlite-reporting/src/bug_report/eligibility.rs
+  - crates/betterlite-secrets/src/secret_codec.rs
+  - crates/betterlite-secrets/src/secret_codec/sealing.rs
+  - crates/betterlite/src/scheduled_job_stagger/timing.rs
+  - crates/betterlite-tracing/src/cursor.rs
+  - tools/oracle/src/case.rs
+  - tools/oracle/src/compare/helper.rs
+  - tools/oracle/src/helpers/auth/carried_policy_records.rs
+  - tools/oracle/src/helpers/auth/resolved_key.rs
+  - tools/oracle/src/helpers/bedrock/settings.rs
+  - tools/oracle/src/helpers/core_ops/b3450.rs
+  - tools/oracle/src/helpers/core_ops/codex_history_tools.rs
+  - tools/oracle/src/helpers/db/mcp_stored_contracts.rs
+  - tools/oracle/src/helpers/db/member_removal_identity.rs
+  - tools/oracle/src/helpers/guardrails/b3758.rs
+  - tools/oracle/src/helpers/guardrails/b3761.rs
+  - tools/oracle/src/helpers/guardrails/b3779.rs
+  - tools/oracle/src/helpers/lens/b4502.rs
+  - tools/oracle/src/helpers/logging/otel_vocabulary.rs
+  - tools/oracle/src/helpers/models/token_rates.rs
+  - tools/oracle/src/helpers/openai/provider_base_helpers.rs
+  - tools/oracle/src/helpers/oracle/b4113.rs
+  - tools/oracle/src/helpers/python.rs
+  - tools/oracle/src/helpers/server/blog_feed/parser.rs
+  - tools/oracle/src/helpers/websearch/tool_records.rs
+  - tools/oracle/src/runner.rs
+rule:
+  kind: function_item
+  has:
+    field: body
+    all:
+      - has:
+          nthChild: 1
+          kind: let_declaration
+          regex: "^[^\\n]*$"
+          has:
+            field: pattern
+            pattern: $X
+      - has:
+          nthChild: 2
+          regex: "^[^\\n]*$"
+          not:
+            kind: let_declaration
+          has:
+            pattern: $X
+            stopBy: end
+      - not:
+          has:
+            nthChild: 3
+  not:
+    matches: exempt-function
