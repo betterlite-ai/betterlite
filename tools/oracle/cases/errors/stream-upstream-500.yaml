@@ -1,0 +1,22 @@
+name: errors-stream-upstream-500
+config: |
+  model_list:
+    - model_name: content-policy-stream-model
+      litellm_params: {model: openai/gpt-content-policy-stream, api_base: "{{upstream}}", api_key: oracle-key}
+  router_settings: {num_retries: 0}
+env: {}
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers: {content-type: application/json, authorization: Bearer oracle-master, x-litellm-call-id: oracle-call-stream-policy}
+  body: {model: content-policy-stream-model, messages: [{role: user, content: hi}], stream: true}
+upstream:
+  - status: 400
+    headers: {content-type: application/json}
+    body: {error: {message: "invalid_request_error raised: content_policy_violation detected", type: invalid_request_error, param: null, code: content_policy_violation}}
+compare:
+  headers: [content-type, llm_provider-content-type, x-litellm-call-id, x-litellm-timeout]
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore:
+    - {pointer: /error/message, why: betterlite writes its own message}
