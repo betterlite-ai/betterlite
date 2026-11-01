@@ -1,0 +1,10 @@
+kind: helper
+name: nova-invocation-arn
+call:
+  bedrock_other_nova_embeddings:
+    nova_invocation_arn:
+      response:
+        invocationArn: "arn:aws:bedrock:us-east-1:123:async-invoke/abc"
+env: {}
+compare:
+  ignore: []
