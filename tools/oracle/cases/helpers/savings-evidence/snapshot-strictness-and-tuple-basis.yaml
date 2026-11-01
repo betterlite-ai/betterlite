@@ -11,7 +11,5 @@ call:
       actual_spend: true
       classifier_cost: 0.01
 compare:
-  ignore:
-    - pointer: /error/message
-      why: Native typed validation uses its own error wording
+  ignore: []
 env: {}
