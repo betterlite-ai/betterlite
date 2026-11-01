@@ -144,8 +144,6 @@ fn token_cost_error(error: &TokenCostError) -> Box<HelperError> {
         TokenCostError::InvalidGeoMultiplier { .. } => "InvalidGeoMultiplier",
         TokenCostError::UnsupportedGeoMultiplierShape { .. } => "UnsupportedGeoMultiplierShape",
         TokenCostError::Overflow => "Overflow",
-        TokenCostError::UndecodedTieredPricing => "UndecodedTieredPricing",
-        TokenCostError::UndecodedOffPeakPricing => "UndecodedOffPeakPricing",
         TokenCostError::Rate(_) => "RateError",
         TokenCostError::Modality(_) => "ModalityError",
     };
