@@ -1,9 +1,9 @@
 #![cfg(test)]
 
-use super::{auto_escape_for_name, build};
+use super::{auto_escape_for_name, build, format_value};
 use crate::arguments::json::{Json, Object};
-use minijinja::AutoEscape;
 use minijinja::value::Serde;
+use minijinja::{AutoEscape, Environment};
 use rstest::rstest;
 use std::borrow::Cow;
 
@@ -25,8 +25,17 @@ fn uses_handlebars_style_delimiters_matching_the_dotprompt_spec() {
 #[case::xml("feed.xml", markupsafe())]
 #[case::string_template("<string>", markupsafe())]
 #[case::text("notes.txt", AutoEscape::None)]
+#[case::extensionless("Dockerfile", AutoEscape::None)]
 fn selects_autoescape_for_html_and_xml_only(#[case] name: &str, #[case] expected: AutoEscape) {
     assert_eq!(auto_escape_for_name(name), expected);
+}
+
+#[rstest]
+fn format_value_rejects_a_custom_auto_escape_name_other_than_markupsafe() {
+    let mut env = Environment::new();
+    env.set_auto_escape_callback(|_: &str| AutoEscape::Custom(Cow::Borrowed("other")));
+    env.set_formatter(format_value);
+    env.render_str("{{ 1 }}", ()).unwrap_err();
 }
 
 #[rstest]
