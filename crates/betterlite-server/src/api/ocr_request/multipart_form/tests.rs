@@ -115,6 +115,58 @@ async fn oversized_file_is_rejected() {
 }
 
 #[tokio::test]
+async fn file_well_under_the_cap_is_accepted() {
+    let bytes = vec![0_u8; 4096];
+    let form = vec![FormField {
+        name: "file".to_owned(),
+        value: FormValue::File {
+            filename: Some("a.bin".to_owned()),
+            content_type: None,
+            bytes,
+        },
+    }];
+    build(&form).unwrap();
+}
+
+#[tokio::test]
+async fn file_field_without_a_content_type_header_is_still_a_file() {
+    let mut body = Vec::new();
+    body.extend_from_slice(
+        b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.bin\"\r\n\r\ndata\r\n--B--\r\n",
+    );
+    let form = parse_body(&body, "multipart/form-data; boundary=B")
+        .await
+        .unwrap();
+    let Some(FormField {
+        value: FormValue::File { content_type, .. },
+        ..
+    }) = form.first()
+    else {
+        panic!("expected a file field even without a content-type header");
+    };
+    assert_eq!(*content_type, None);
+}
+
+#[tokio::test]
+async fn field_without_a_filename_but_with_a_content_type_is_still_a_file() {
+    let mut body = Vec::new();
+    body.extend_from_slice(
+        b"--B\r\nContent-Disposition: form-data; name=\"thumbnail\"\r\nContent-Type: image/png\r\n\r\ndata\r\n--B--\r\n",
+    );
+    let form = parse_body(&body, "multipart/form-data; boundary=B")
+        .await
+        .unwrap();
+    let Some(FormField {
+        value: FormValue::File { filename, .. },
+        ..
+    }) = form.first()
+    else {
+        panic!("expected a file field even without a filename");
+    };
+    assert_eq!(*filename, None);
+}
+
+#[tokio::test]
 async fn document_form_field_is_ignored() {
     let mut body = Vec::new();
     body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.pdf\"\r\nContent-Type: application/pdf\r\n\r\ndata\r\n");
