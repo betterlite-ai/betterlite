@@ -1,10 +1,11 @@
 use betterlite_models::cost_breakdown::{
     CostBreakdown, CostBreakdownError, cost_breakdown_with_guardrail,
 };
-use betterlite_models::guardrail_pricing::{
-    GuardrailInformation, GuardrailInformationEntry, azure_prompt_shield_cost,
-    billed_guardrail_cost_by_unit, guardrail_cost_total, guardrail_information_cost,
+use betterlite_models::guardrail_pricing::entries::{
+    GuardrailInformation, GuardrailInformationEntry, billed_guardrail_cost_by_unit,
+    guardrail_information_cost,
 };
+use betterlite_models::guardrail_pricing::{azure_prompt_shield_cost, guardrail_cost_total};
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde_json::{Value, json};
