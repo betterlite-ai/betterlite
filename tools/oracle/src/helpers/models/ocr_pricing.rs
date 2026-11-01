@@ -78,6 +78,14 @@ struct CaseLookup {
     catalog: Option<CatalogInput>,
 }
 
+impl From<Option<&CatalogInput>> for CaseLookup {
+    fn from(catalog: Option<&CatalogInput>) -> Self {
+        Self {
+            catalog: catalog.cloned(),
+        }
+    }
+}
+
 impl PriceLookup for CaseLookup {
     fn effective_model_info(
         &self,
@@ -109,71 +117,36 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn run_layering(sources: &[Option<PriceRecord>]) -> Result<serde_json::Value, OcrCostError> {
-    let refs: Vec<Option<&PriceRecord>> = sources.iter().map(Option::as_ref).collect();
-    let pricing = layered_ocr_pricing(&refs)?;
-    Ok(serde_json::json!({
-        "ocr_cost_per_page": pricing.ocr_cost_per_page.map_or(serde_json::Value::Null, |decimal| {
-            serde_json::Value::String(decimal.normalize().to_string())
-        }),
-        "ocr_cost_per_credit": pricing.ocr_cost_per_credit.map_or(serde_json::Value::Null, |decimal| {
-            serde_json::Value::String(decimal.normalize().to_string())
-        }),
-        "annotation_cost_per_page": pricing.annotation_cost_per_page.map_or(serde_json::Value::Null, |decimal| {
-            serde_json::Value::String(decimal.normalize().to_string())
-        }),
-    }))
-}
-
-fn run_sync(
-    model: &str,
-    custom_llm_provider: Option<&str>,
-    model_info: Option<&PriceRecord>,
-    usage: &UsageInput,
-    catalog: Option<&CatalogInput>,
-) -> Result<Decimal, OcrCostError> {
-    let billing = OcrBilling::from(usage);
-    let lookup = CaseLookup {
-        catalog: catalog.cloned(),
+fn decimal_to_json(value: Option<Decimal>) -> serde_json::Value {
+    let Some(decimal) = value else {
+        return serde_json::Value::Null;
     };
-    ocr_cost(model, custom_llm_provider, &billing, model_info, &lookup)
-}
-
-fn run_batch(
-    model: &str,
-    custom_llm_provider: Option<&str>,
-    model_info: Option<&PriceRecord>,
-    usage: &BatchUsageInput,
-    catalog: Option<&CatalogInput>,
-) -> Result<Decimal, OcrCostError> {
-    let batch_usage = OcrBatchUsage::from(usage);
-    let lookup = CaseLookup {
-        catalog: catalog.cloned(),
-    };
-    ocr_batch_cost(
-        model,
-        custom_llm_provider,
-        &batch_usage,
-        model_info,
-        &lookup,
-    )
+    serde_json::Value::String(decimal.normalize().to_string())
 }
 
 fn run_inner(input: &Input) -> Result<serde_json::Value, OcrCostError> {
     let cost = match input {
-        Input::Layering { sources } => return run_layering(sources),
+        Input::Layering { sources } => {
+            let refs: Vec<Option<&PriceRecord>> = sources.iter().map(Option::as_ref).collect();
+            let pricing = layered_ocr_pricing(&refs)?;
+            return Ok(serde_json::json!({
+                "ocr_cost_per_page": decimal_to_json(pricing.ocr_cost_per_page),
+                "ocr_cost_per_credit": decimal_to_json(pricing.ocr_cost_per_credit),
+                "annotation_cost_per_page": decimal_to_json(pricing.annotation_cost_per_page),
+            }));
+        }
         Input::Sync {
             model,
             custom_llm_provider,
             model_info,
             usage,
             catalog,
-        } => run_sync(
+        } => ocr_cost(
             model,
             custom_llm_provider.as_deref(),
+            &OcrBilling::from(usage),
             model_info.as_ref(),
-            usage,
-            catalog.as_ref(),
+            &CaseLookup::from(catalog.as_ref()),
         )?,
         Input::Batch {
             model,
@@ -181,12 +154,12 @@ fn run_inner(input: &Input) -> Result<serde_json::Value, OcrCostError> {
             model_info,
             usage,
             catalog,
-        } => run_batch(
+        } => ocr_batch_cost(
             model,
             custom_llm_provider.as_deref(),
+            &OcrBatchUsage::from(usage),
             model_info.as_ref(),
-            usage,
-            catalog.as_ref(),
+            &CaseLookup::from(catalog.as_ref()),
         )?,
     };
     Ok(serde_json::json!({ "cost": cost.normalize().to_string() }))

@@ -98,19 +98,29 @@ fn numeric_value(scalar: &Scalar) -> Result<Option<Decimal>, OcrCostError> {
     }
 }
 
-pub fn first_ocr_price(
-    field: OcrPricingField,
-    sources: &[Option<&PriceRecord>],
-) -> Result<Option<Decimal>, OcrCostError> {
-    for source in sources.iter().flatten() {
-        let Some(scalar) = source.get(field.wire_name()) else {
-            continue;
-        };
+// Each pair is tried in order; the first present source whose key holds a numeric value wins.
+fn first_numeric(pairs: &[(Option<&PriceRecord>, &str)]) -> Result<Option<Decimal>, OcrCostError> {
+    let scalars = pairs.iter().filter_map(|&(source, key)| {
+        let record = source?;
+        record.get(key)
+    });
+    for scalar in scalars {
         if let Some(value) = numeric_value(scalar)? {
             return Ok(Some(value));
         }
     }
     Ok(None)
+}
+
+pub fn first_ocr_price(
+    field: OcrPricingField,
+    sources: &[Option<&PriceRecord>],
+) -> Result<Option<Decimal>, OcrCostError> {
+    let pairs: Vec<(Option<&PriceRecord>, &str)> = sources
+        .iter()
+        .map(|source| (*source, field.wire_name()))
+        .collect();
+    first_numeric(&pairs)
 }
 
 pub fn layered_ocr_pricing(sources: &[Option<&PriceRecord>]) -> Result<OcrPricing, OcrCostError> {
@@ -129,18 +139,8 @@ pub fn first_price(
     source: Option<&PriceRecord>,
     keys: &[&str],
 ) -> Result<Option<Decimal>, OcrCostError> {
-    let Some(present_source) = source else {
-        return Ok(None);
-    };
-    for key in keys {
-        let Some(scalar) = present_source.get(*key) else {
-            continue;
-        };
-        if let Some(value) = numeric_value(scalar)? {
-            return Ok(Some(value));
-        }
-    }
-    Ok(None)
+    let pairs: Vec<(Option<&PriceRecord>, &str)> = keys.iter().map(|key| (source, *key)).collect();
+    first_numeric(&pairs)
 }
 
 // An absent provider is spelled "None" to match Python's str(None) in the same log line.
