@@ -23,13 +23,13 @@ pub(super) fn metadata(input: &serde_json::Value) -> crate::helpers::HelperResul
         .cloned()
         .unwrap_or_else(|| json!({}));
     let litellm_values: BTreeMap<String, Option<String>> = serde_json::from_value(litellm_field)
-        .map_err(|error| failure_with_class("GuardrailError", error.to_string()))?;
+        .map_err(|error| failure_with_class("GuardrailError", None, error.to_string()))?;
     let metadata_field = input.get("metadata").cloned().unwrap_or_else(|| json!({}));
     let metadata_values: BTreeMap<String, Option<String>> = serde_json::from_value(metadata_field)
-        .map_err(|error| failure_with_class("GuardrailError", error.to_string()))?;
+        .map_err(|error| failure_with_class("GuardrailError", None, error.to_string()))?;
     let merged = extract_user_api_key_metadata(&litellm_values, &metadata_values);
     let serialized = serde_json::to_value(merged)
-        .map_err(|error| failure_with_class("GuardrailError", error.to_string()))?;
+        .map_err(|error| failure_with_class("GuardrailError", None, error.to_string()))?;
     let mut object = serialized.as_object().cloned().unwrap_or_default();
     object.retain(|_, item| !item.is_null());
     Ok(serde_json::Value::Object(object))
@@ -45,25 +45,27 @@ fn run_call(request: &serde_json::Value) -> crate::helpers::HelperResult {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-        .map_err(|error| failure_with_class("GuardrailError", error.to_string()))?;
+        .map_err(|error| failure_with_class("GuardrailError", None, error.to_string()))?;
     let settings = settings(request);
     let answer: Option<UpstreamAnswer> = parse_json_field(request, "answer")?;
     let silent = TcpListener::bind(("127.0.0.1", 0))
-        .map_err(|error| failure_with_class("GuardrailError", error.to_string()))?;
+        .map_err(|error| failure_with_class("GuardrailError", None, error.to_string()))?;
     let base;
     let mock = if let Some(reply) = &answer {
         let script = MockScript::try_from(std::slice::from_ref(reply))
-            .map_err(|error| failure_with_class("GuardrailError", error.to_string()))?;
+            .map_err(|error| failure_with_class("GuardrailError", None, error.to_string()))?;
         let provider = MockProvider::start(script)
-            .map_err(|error| failure_with_class("GuardrailError", error.to_string()))?;
+            .map_err(|error| failure_with_class("GuardrailError", None, error.to_string()))?;
         base = provider.base_url.clone();
         Some(provider)
     } else {
         base = format!(
             "http://{}",
-            silent
-                .local_addr()
-                .map_err(|error| failure_with_class("GuardrailError", error.to_string()))?
+            silent.local_addr().map_err(|error| failure_with_class(
+                "GuardrailError",
+                None,
+                error.to_string()
+            ))?
         );
         None
     };
@@ -79,11 +81,11 @@ fn run_call(request: &serde_json::Value) -> crate::helpers::HelperResult {
     if let Some(provider) = mock {
         provider
             .finish()
-            .map_err(|error| failure_with_class("GuardrailError", error.to_string()))?;
+            .map_err(|error| failure_with_class("GuardrailError", None, error.to_string()))?;
     }
     result_payload(result)
 }
-fn result_payload(
+pub(super) fn result_payload(
     result: Result<GenericGuardrailAPIResponse, GenericGuardrailAPIError>,
 ) -> crate::helpers::HelperResult {
     match result {
@@ -96,10 +98,12 @@ fn result_payload(
         })),
         Err(error) => {
             let is_blocked = matches!(error, GenericGuardrailAPIError::Blocked { .. });
+            let status = is_blocked.then_some(400);
             Err(super::support::error_failure(
                 is_blocked,
                 "GuardrailRaisedException",
                 "Exception",
+                status,
                 error.to_string(),
             ))
         }

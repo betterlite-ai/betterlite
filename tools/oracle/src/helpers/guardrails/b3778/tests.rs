@@ -7,7 +7,6 @@ use betterlite_guardrails::lasso::error::LassoError;
 use betterlite_guardrails::lasso::wire::LassoResponse;
 use reqwest::StatusCode;
 use reqwest::header::HeaderValue;
-use rstest::rstest;
 
 use super::lasso_failure;
 
@@ -42,8 +41,7 @@ fn response_timeout() -> reqwest::Error {
     result.unwrap_err()
 }
 
-#[rstest]
-#[case::blocked(
+fn blocked() -> LassoError {
     LassoError::Blocked {
         deputies: vec!["toxicity".to_owned()],
         response: LassoResponse {
@@ -51,33 +49,53 @@ fn response_timeout() -> reqwest::Error {
             deputies: BTreeMap::new(),
             findings: BTreeMap::new(),
         },
-    },
-    Some(400)
-)]
-#[case::invalid_api_key(LassoError::InvalidApiKey, None)]
-#[case::rate_limited(LassoError::RateLimited, None)]
-#[case::http_status(
+    }
+}
+
+fn http_status() -> LassoError {
     LassoError::HttpStatus {
         status: StatusCode::INTERNAL_SERVER_ERROR,
-    },
-    None
-)]
-#[case::response_too_large(LassoError::ResponseTooLarge { limit: 10 }, None)]
-#[case::invalid_header(
+    }
+}
+
+fn invalid_header() -> LassoError {
     LassoError::InvalidHeader {
         name: "lasso-api-key",
         source: HeaderValue::from_str("\u{0}").unwrap_err(),
-    },
-    None
-)]
-#[case::response_json(
+    }
+}
+
+fn response_json() -> LassoError {
     LassoError::ResponseJson {
         source: serde_json::from_str::<serde_json::Value>("not json").unwrap_err(),
-    },
-    None
-)]
-#[case::request(LassoError::Request { source: connection_refused() }, None)]
-#[case::timeout(LassoError::Timeout { source: response_timeout() }, None)]
-fn lasso_failures_carry_the_python_status(#[case] error: LassoError, #[case] status: Option<u16>) {
-    assert_eq!(lasso_failure(&error).status, status);
+    }
+}
+
+fn response_too_large() -> LassoError {
+    LassoError::ResponseTooLarge { limit: 10 }
+}
+
+fn request() -> LassoError {
+    LassoError::Request {
+        source: connection_refused(),
+    }
+}
+
+fn timeout() -> LassoError {
+    LassoError::Timeout {
+        source: response_timeout(),
+    }
+}
+
+#[test]
+fn lasso_failures_carry_the_python_status() {
+    assert_eq!(lasso_failure(&blocked()).status, Some(400));
+    assert_eq!(lasso_failure(&LassoError::InvalidApiKey).status, None);
+    assert_eq!(lasso_failure(&LassoError::RateLimited).status, None);
+    assert_eq!(lasso_failure(&http_status()).status, None);
+    assert_eq!(lasso_failure(&response_too_large()).status, None);
+    assert_eq!(lasso_failure(&invalid_header()).status, None);
+    assert_eq!(lasso_failure(&response_json()).status, None);
+    assert_eq!(lasso_failure(&request()).status, None);
+    assert_eq!(lasso_failure(&timeout()).status, None);
 }
