@@ -2,7 +2,10 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::json;
 
-use betterlite_mcp::bridge_credentials::{self, BridgeEnvelopeResult, BridgeRefreshResult};
+use betterlite_mcp::bridge_credentials::{
+    BridgeEnvelopeResult, BridgeRefreshResult, open_bridge_refresh_envelope,
+    resolve_bridge_envelope,
+};
 use betterlite_mcp::envelope::{
     EnvelopeIdentity, EnvelopeKeys, EnvelopeMintError, RefreshCredential, SealedEnvelope,
     UpstreamTokenGrant, mint_envelope, mint_refresh_envelope,
@@ -11,8 +14,6 @@ use betterlite_secrets::secret_codec::OsNonces;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::helpers::{HelperError, HelperResult};
-
-use super::helper_error;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -50,6 +51,52 @@ pub(crate) enum SubjectTypeInput {
     UserId,
 }
 
+pub(crate) struct TimestampOutOfRange;
+
+impl From<TimestampOutOfRange> for Box<HelperError> {
+    fn from(_timestamp_out_of_range: TimestampOutOfRange) -> Self {
+        Self::new(HelperError {
+            class: "ValueError".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: "timestamp out of range".to_owned(),
+        })
+    }
+}
+
+impl From<EnvelopeMintError> for Box<HelperError> {
+    fn from(error: EnvelopeMintError) -> Self {
+        Self::new(HelperError {
+            class: "EnvelopeMintError".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: error.to_string(),
+        })
+    }
+}
+
+fn envelope_grant_payload(mint: &EnvelopeMint) -> UpstreamTokenGrant {
+    UpstreamTokenGrant {
+        access_token: SecretString::from(mint.access_token.clone()),
+        token_type: mint.token_type.clone(),
+        refresh_token: mint.refresh_token.clone().map(SecretString::from),
+        scope: mint.scope.clone(),
+        expires_in: mint.expires_in,
+    }
+}
+
+fn refresh_grant_payload(mint: &EnvelopeMint) -> RefreshCredential {
+    RefreshCredential {
+        refresh_token: SecretString::from(mint.refresh_token.clone().unwrap_or_default()),
+        scope: mint.scope.clone(),
+        expires_in: mint.expires_in,
+    }
+}
+
 fn identity(mint: &EnvelopeMint) -> EnvelopeIdentity {
     let subject_type = match mint.subject_type {
         SubjectTypeInput::KeyHash => betterlite_mcp::envelope::models::SubjectType::KeyHash,
@@ -77,10 +124,8 @@ where
         &OsNonces,
     ) -> Result<SealedEnvelope, EnvelopeMintError>,
 {
-    let now = DateTime::from_timestamp(mint.mint_now, 0)
-        .ok_or_else(|| helper_error("ValueError", &"timestamp out of range"))?;
-    let sealed = seal(identity(mint), payload, keys, now, &OsNonces)
-        .map_err(|error| helper_error("EnvelopeMintError", &error))?;
+    let now = DateTime::from_timestamp(mint.mint_now, 0).ok_or(TimestampOutOfRange)?;
+    let sealed = seal(identity(mint), payload, keys, now, &OsNonces)?;
     Ok(sealed.token.expose_secret().to_owned())
 }
 
@@ -108,127 +153,94 @@ where
     let mint_keys = EnvelopeKeys::new(
         SecretString::from(fields.signing_key.as_str()),
         SecretString::from(fields.encryption_key.as_str()),
-    )
-    .map_err(|error| helper_error("EnvelopeMintError", &error))?;
+    )?;
     let candidate = match (&fields.mint, &fields.candidate) {
         (Some(mint), _) => seal_candidate(mint, &mint_keys, build_payload(mint), seal)?,
         (None, Some(literal)) => literal.clone(),
         (None, None) => {
-            return Err(helper_error(
-                "ValueError",
-                &"either mint or candidate is required",
-            ));
+            return Err(Box::new(HelperError {
+                class: "ValueError".to_owned(),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+                message: "either mint or candidate is required".to_owned(),
+            }));
         }
     };
     let open_keys = match (&fields.open_signing_key, &fields.open_encryption_key) {
         (Some(signing), Some(encryption)) => EnvelopeKeys::new(
             SecretString::from(signing.as_str()),
             SecretString::from(encryption.as_str()),
-        )
-        .map_err(|error| helper_error("EnvelopeMintError", &error))?,
+        )?,
         _ => mint_keys,
     };
     Ok((candidate, open_keys))
 }
 
-fn tagged_identity(
-    tag: &str,
-    identity: &EnvelopeIdentity,
-    extra_key: &str,
-    extra_value: serde_json::Value,
-) -> serde_json::Value {
-    let mut fields = serde_json::Map::new();
-    fields.insert("tag".to_owned(), json!(tag));
-    fields.insert("identity".to_owned(), json!(identity));
-    fields.insert(extra_key.to_owned(), extra_value);
-    serde_json::Value::Object(fields)
-}
-
-fn envelope_result_json(result: BridgeEnvelopeResult) -> serde_json::Value {
-    match result {
-        BridgeEnvelopeResult::NotBridgeEnvelope => json!({ "tag": "not_bridge_envelope" }),
-        BridgeEnvelopeResult::BridgeEnvelopeAdmitted {
-            identity,
-            upstream_authorization,
-        } => tagged_identity(
-            "admitted",
-            &identity,
-            "upstream_authorization",
-            json!(upstream_authorization.expose_secret()),
-        ),
-        BridgeEnvelopeResult::BridgeEnvelopeInvalid => json!({ "tag": "invalid" }),
-    }
-}
-
-fn refresh_result_json(result: BridgeRefreshResult) -> serde_json::Value {
-    let BridgeRefreshResult::BridgeRefreshOpened { identity, refresh } = result else {
-        return json!({ "tag": "invalid" });
-    };
-    tagged_identity(
-        "opened",
-        &identity,
-        "refresh",
-        json!({
-            "refresh_token": refresh.refresh_token.expose_secret(),
-            "scope": refresh.scope,
-            "expires_in": refresh.expires_in,
-        }),
-    )
-}
-
-impl From<&EnvelopeMint> for UpstreamTokenGrant {
-    fn from(mint: &EnvelopeMint) -> Self {
-        Self {
-            access_token: SecretString::from(mint.access_token.clone()),
-            token_type: mint.token_type.clone(),
-            refresh_token: mint.refresh_token.clone().map(SecretString::from),
-            scope: mint.scope.clone(),
-            expires_in: mint.expires_in,
-        }
-    }
-}
-
-impl From<&EnvelopeMint> for RefreshCredential {
-    fn from(mint: &EnvelopeMint) -> Self {
-        Self {
-            refresh_token: SecretString::from(mint.refresh_token.clone().unwrap_or_default()),
-            scope: mint.scope.clone(),
-            expires_in: mint.expires_in,
-        }
-    }
+fn open_credential<P, S, R>(
+    fields: &EnvelopeFields,
+    now: DateTime<Utc>,
+    build_payload: fn(&EnvelopeMint) -> P,
+    seal: S,
+    resolve: fn(&str, &EnvelopeKeys, DateTime<Utc>, &str) -> R,
+) -> Result<R, Box<HelperError>>
+where
+    S: FnOnce(
+        EnvelopeIdentity,
+        P,
+        &EnvelopeKeys,
+        DateTime<Utc>,
+        &OsNonces,
+    ) -> Result<SealedEnvelope, EnvelopeMintError>,
+{
+    let (candidate, open_keys) = candidate_and_open_keys(fields, build_payload, seal)?;
+    Ok(resolve(
+        &candidate,
+        &open_keys,
+        now,
+        &fields.expected_server_id,
+    ))
 }
 
 pub(crate) fn run_bridge(fields: &EnvelopeFields, operation: BridgeOperation) -> HelperResult {
-    let now = DateTime::from_timestamp(fields.open_now, 0)
-        .ok_or_else(|| helper_error("ValueError", &"timestamp out of range"))?;
-    match operation {
-        BridgeOperation::Envelope => {
-            let (candidate, open_keys) = candidate_and_open_keys(
-                fields,
-                |mint: &EnvelopeMint| UpstreamTokenGrant::from(mint),
-                mint_envelope,
-            )?;
-            let result = bridge_credentials::resolve_bridge_envelope(
-                &candidate,
-                &open_keys,
-                now,
-                &fields.expected_server_id,
-            );
-            Ok(envelope_result_json(result))
-        }
-        BridgeOperation::Refresh => {
-            let (candidate, open_keys) = candidate_and_open_keys(
-                fields,
-                |mint: &EnvelopeMint| RefreshCredential::from(mint),
-                mint_refresh_envelope,
-            )?;
-            let result = bridge_credentials::open_bridge_refresh_envelope(
-                &candidate,
-                &open_keys,
-                now,
-                &fields.expected_server_id,
-            );
-            Ok(refresh_result_json(result))
-        }
-    }
+    let now = DateTime::from_timestamp(fields.open_now, 0).ok_or(TimestampOutOfRange)?;
+    Ok(match operation {
+        BridgeOperation::Envelope => match open_credential(
+            fields,
+            now,
+            envelope_grant_payload,
+            mint_envelope,
+            resolve_bridge_envelope,
+        )? {
+            BridgeEnvelopeResult::NotBridgeEnvelope => json!({ "tag": "not_bridge_envelope" }),
+            BridgeEnvelopeResult::BridgeEnvelopeAdmitted {
+                identity,
+                upstream_authorization,
+            } => json!({
+                "tag": "admitted",
+                "identity": identity,
+                "upstream_authorization": upstream_authorization.expose_secret(),
+            }),
+            BridgeEnvelopeResult::BridgeEnvelopeInvalid => json!({ "tag": "invalid" }),
+        },
+        BridgeOperation::Refresh => match open_credential(
+            fields,
+            now,
+            refresh_grant_payload,
+            mint_refresh_envelope,
+            open_bridge_refresh_envelope,
+        )? {
+            BridgeRefreshResult::BridgeRefreshOpened { identity, refresh } => json!({
+                "tag": "opened",
+                "identity": identity,
+                "refresh": {
+                    "refresh_token": refresh.refresh_token.expose_secret(),
+                    "scope": refresh.scope,
+                    "expires_in": refresh.expires_in,
+                },
+            }),
+            BridgeRefreshResult::BridgeRefreshInvalid => json!({ "tag": "invalid" }),
+        },
+    })
 }

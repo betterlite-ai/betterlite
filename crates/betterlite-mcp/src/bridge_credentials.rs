@@ -103,8 +103,8 @@ fn strip_bearer(value: &str) -> &str {
 // a plain upstream bearer falls through to normal oauth2 admission instead of matching here.
 #[must_use]
 pub fn is_bridge_envelope_shaped(authorization_value: &str) -> bool {
-    let candidate = strip_bearer(authorization_value);
-    candidate.is_envelope() || candidate.is_refresh_envelope()
+    strip_bearer(authorization_value).is_envelope()
+        || strip_bearer(authorization_value).is_refresh_envelope()
 }
 
 // a refresh envelope is BridgeEnvelopeInvalid here too: it authenticates nothing but a token-endpoint call.

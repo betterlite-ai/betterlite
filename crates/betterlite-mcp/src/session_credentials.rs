@@ -33,8 +33,10 @@ pub enum SessionKeyDerivationError {
 pub fn session_keys_from_master_key(
     master_key: &SecretString,
 ) -> Result<SessionKeys, SessionKeyDerivationError> {
-    let signing = scrypt_hex(master_key.expose_secret(), SESSION_SIGNING_KEY_DOMAIN)?;
-    Ok(SessionKeys::new(SecretString::from(signing))?)
+    Ok(SessionKeys::new(SecretString::from(scrypt_hex(
+        master_key.expose_secret(),
+        SESSION_SIGNING_KEY_DOMAIN,
+    )?))?)
 }
 
 // exposed so the oracle can compare it against LiteLLM's hashlib.scrypt(...).hex().
@@ -105,8 +107,8 @@ fn strip_bearer(value: &str) -> &str {
 // a plain OAuth2 bearer falls through to normal admission instead of matching here.
 #[must_use]
 pub fn is_session_bearer_shaped(authorization_value: &str) -> bool {
-    let candidate = strip_bearer(authorization_value);
-    candidate.is_session_token() || candidate.is_session_refresh_token()
+    strip_bearer(authorization_value).is_session_token()
+        || strip_bearer(authorization_value).is_session_refresh_token()
 }
 
 #[derive(Debug, Clone)]

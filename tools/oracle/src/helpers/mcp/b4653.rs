@@ -82,21 +82,6 @@ pub(crate) enum PrefixFamily {
     Session,
 }
 
-pub(crate) fn helper_error<M>(class: &str, value: &M) -> Box<HelperError>
-where
-    M: ToString,
-{
-    let message = value.to_string();
-    Box::new(HelperError {
-        class: class.to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
-    })
-}
-
 fn run_scrypt(master_key: &str, domains: &[ScryptDomain]) -> Result<Value, Box<HelperError>> {
     let hex = domains
         .iter()
@@ -106,8 +91,16 @@ fn run_scrypt(master_key: &str, domains: &[ScryptDomain]) -> Result<Value, Box<H
                 ScryptDomain::EnvelopeEncryption => ENCRYPTION_KEY_DOMAIN,
                 ScryptDomain::SessionSigning => SESSION_SIGNING_KEY_DOMAIN,
             };
-            bridge_credentials::scrypt_hex(master_key, salt)
-                .map_err(|error| helper_error("ScryptError", &error))
+            bridge_credentials::scrypt_hex(master_key, salt).map_err(|error| {
+                Box::new(HelperError {
+                    class: "ScryptError".to_owned(),
+                    status: None,
+                    error_type: None,
+                    param: None,
+                    code: None,
+                    message: error.to_string(),
+                })
+            })
         })
         .collect::<Result<Vec<_>, _>>()?;
     Ok(json!({ "hex": hex }))

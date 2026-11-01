@@ -4,6 +4,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use betterlite_config::loader::ConfigLoader;
+use betterlite_config::sections::mcp_bearer_credentials::Settings as SigningConfig;
 use betterlite_mcp::session_credentials;
 use betterlite_mcp::types::SessionSigningKeys;
 use secrecy::SecretString;
@@ -36,15 +37,19 @@ pub(crate) fn run_signing_config(fields: &SigningConfigFields) -> Value {
         &SecretString::from(fields.master_key.as_str()),
         &settings,
     );
-    match resolved {
-        Ok(SessionSigningKeys::Symmetric(_)) => json!({ "tag": "symmetric" }),
-        Ok(SessionSigningKeys::Asymmetric(asymmetric)) => match asymmetric.kid_and_public_key_pem()
-        {
-            Ok((kid, public_key_pem)) => {
-                json!({ "tag": "asymmetric", "kid": kid, "public_key_pem": public_key_pem })
-            }
+    match (resolved, &settings) {
+        (Ok(SessionSigningKeys::Symmetric(_)), _) => json!({ "tag": "symmetric" }),
+        (
+            Ok(SessionSigningKeys::Asymmetric(asymmetric)),
+            SigningConfig::Resolved(resolved_signing),
+        ) => match asymmetric.public_key_pem() {
+            Ok(public_key_pem) => json!({
+                "tag": "asymmetric",
+                "kid": resolved_signing.kid,
+                "public_key_pem": public_key_pem,
+            }),
             Err(_error) => json!({ "tag": "invalid" }),
         },
-        Err(_error) => json!({ "tag": "invalid" }),
+        _ => json!({ "tag": "invalid" }),
     }
 }
