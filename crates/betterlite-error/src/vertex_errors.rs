@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use crate::error::details::{RateLimitDetails, TimeoutDetails, TimeoutStatus};
 use crate::error::{ErrorClass, ErrorContext};
 use crate::facts::{ExceptionCheckers, ProviderErrorFacts};
+use crate::parse::get_body_error_code;
 use crate::rate_limit::RateLimitCategory;
 
 mod tests;
@@ -103,7 +104,7 @@ fn phrase_family(error_str: &str, rules: &[PhraseRule]) -> Option<(Family, &'sta
 // branch-1250: a 429 wrapped inside a 5xx envelope, LiteLLM's only predicate that also reads status_code
 fn classify_envelope(error_str: &str, status_code: Option<u16>) -> Option<(Family, &'static str)> {
     let is_5xx_wrapped_429 = status_code.is_some_and(|status| (500..600).contains(&status))
-        && crate::parse::get_body_error_code(error_str) == Some(429);
+        && get_body_error_code(error_str) == Some(429);
     is_5xx_wrapped_429.then_some((
         Family::RateLimit,
         "the gateway wrapped a 429 inside a 5xx envelope",
