@@ -1,0 +1,10 @@
+kind: helper
+name: provider-error-context-before-status
+call:
+  provider_error:
+    kind: raw
+    model: gpt-4
+    custom_llm_provider: openai
+    error_str: "This model's maximum context length is 4096 tokens"
+env: {}
+compare: {ignore: []}

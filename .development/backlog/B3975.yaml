@@ -1,14 +1,14 @@
 id: B3975
 milestone: M7 observability
 title: Rubrik moderation payloads and block decisions
-status: todo
+status: done
 depends_on: [B218]
 file: tasks/B3975-rubrik-payloads.yaml
 covers:
   - "litellm/integrations/rubrik.py"
 parent: B114
 split_from: B114
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 447

@@ -1,0 +1,22 @@
+name: errors-upstream-504
+config: |
+  model_list:
+    - model_name: gateway-timeout-model
+      litellm_params: {model: openai/gpt-504-upstream, api_base: "{{upstream}}", api_key: oracle-key, timeout: 30}
+  router_settings: {num_retries: 0}
+env: {}
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers: {content-type: application/json, authorization: Bearer oracle-master, x-litellm-call-id: oracle-call-504}
+  body: {model: gateway-timeout-model, messages: [{role: user, content: hi}]}
+upstream:
+  - status: 504
+    headers: {content-type: application/json}
+    body: {error: {message: "upstream reported an unexpected gateway fault", type: server_error, param: null, code: null}}
+compare:
+  headers: [content-type, llm_provider-content-type, x-litellm-call-id, x-litellm-timeout]
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore:
+    - {pointer: /error/message, why: betterlite writes its own message}
