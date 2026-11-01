@@ -153,6 +153,9 @@ scope:
   - tools/oracle/src/helpers/prompts/prompt_factory/tests.rs
   - tools/oracle/src/helpers/bedrock/other_image_models.rs
   - tools/oracle/src/helpers/bedrock/other_image_models/tests.rs
+  - tools/oracle/src/helpers/prompts/message_fields.rs
+  - tools/oracle/src/helpers/prompts/message_fields/tests.rs
+  - tools/oracle/cases/helpers/message-fields/migrate-file-missing-file.yaml
   - tools/oracle/cases/helpers/builtin-prompts/claude21-empty.yaml
   - tools/oracle/cases/helpers/builtin-prompts/claude-empty.yaml
   - tools/oracle/cases/helpers/builtin-prompts/default-parts.yaml
@@ -303,6 +306,7 @@ oracle_cases:
 - tools/oracle/cases/guardrails/generic_guardrail_api/blocked-verdict.yaml
 - tools/oracle/cases/guardrails/generic_guardrail_api/error-5xx-fail-closed.yaml
 - tools/oracle/cases/helpers/providers/bedrock-other-image-models/image-provider-error.yaml
+- tools/oracle/cases/helpers/message-fields/migrate-file-missing-file.yaml
 - tools/oracle/cases/helpers/prompt-template/factory-ollama-role.yaml
 - tools/oracle/cases/helpers/builtin-prompts/claude21-empty.yaml
 - tools/oracle/cases/helpers/builtin-prompts/claude-empty.yaml
