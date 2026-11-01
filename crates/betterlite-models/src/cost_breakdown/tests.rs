@@ -2,6 +2,7 @@
 
 use super::{CostBreakdown, CostBreakdownError, cost_breakdown_with_guardrail};
 use rust_decimal::Decimal;
+use std::collections::BTreeMap;
 use std::str::FromStr as _;
 
 fn decimal(text: &str) -> Decimal {
@@ -29,11 +30,15 @@ fn cost_breakdown_with_guardrail_passes_through_unchanged_for_a_nonpositive_cost
         margin_percent: None,
         margin_fixed_amount: None,
         margin_total_amount: None,
+        extra: BTreeMap::new(),
     };
     let unchanged = cost_breakdown_with_guardrail(Some(&existing), Decimal::ZERO)
         .expect("a nonpositive cost never overflows")
         .expect("the existing breakdown passes through");
-    assert_eq!(unchanged, existing);
+    assert_eq!(
+        serde_json::to_string(&unchanged).expect("the breakdown serializes"),
+        serde_json::to_string(&existing).expect("the breakdown serializes")
+    );
 
     let still_none = cost_breakdown_with_guardrail(None, Decimal::ZERO)
         .expect("a nonpositive cost never overflows");
@@ -71,6 +76,7 @@ fn cost_breakdown_with_guardrail_preserves_every_prior_field_and_adds_to_the_tot
         margin_percent: None,
         margin_fixed_amount: None,
         margin_total_amount: None,
+        extra: BTreeMap::new(),
     };
     let merged = cost_breakdown_with_guardrail(Some(&existing), decimal("0.5"))
         .expect("the addition succeeds")
@@ -104,6 +110,7 @@ fn cost_breakdown_with_guardrail_adds_again_on_repeated_calls_without_subtractin
         margin_percent: None,
         margin_fixed_amount: None,
         margin_total_amount: None,
+        extra: BTreeMap::new(),
     };
     let merged = cost_breakdown_with_guardrail(Some(&existing), decimal("1"))
         .expect("the addition succeeds")
@@ -133,6 +140,7 @@ fn cost_breakdown_with_guardrail_treats_a_missing_total_cost_as_zero() {
         margin_percent: None,
         margin_fixed_amount: None,
         margin_total_amount: None,
+        extra: BTreeMap::new(),
     };
     let merged = cost_breakdown_with_guardrail(Some(&existing), decimal("4"))
         .expect("the addition succeeds")
@@ -161,6 +169,7 @@ fn cost_breakdown_with_guardrail_propagates_a_total_cost_overflow() {
         margin_percent: None,
         margin_fixed_amount: None,
         margin_total_amount: None,
+        extra: BTreeMap::new(),
     };
     let error = cost_breakdown_with_guardrail(Some(&existing), decimal("1"))
         .expect_err("the addition overflows Decimal");
@@ -168,9 +177,56 @@ fn cost_breakdown_with_guardrail_propagates_a_total_cost_overflow() {
 }
 
 #[test]
+fn cost_breakdown_with_guardrail_keeps_an_unknown_extension_field() {
+    let existing: CostBreakdown =
+        serde_json::from_str(r#"{"input_cost": 1, "total_cost": 1, "cache_write_cost": 0.25}"#)
+            .expect("a breakdown with an unknown key parses");
+    let merged = cost_breakdown_with_guardrail(Some(&existing), decimal("0.5"))
+        .expect("the addition succeeds")
+        .expect("a positive cost always produces a breakdown");
+    assert_eq!(
+        merged.extra["cache_write_cost"],
+        serde_json::json!(0.25_f64)
+    );
+    assert_eq!(merged.input_cost, existing.input_cost);
+    assert_eq!(merged.guardrail_cost, Some(decimal("0.5")));
+    assert_eq!(merged.total_cost, Some(decimal("1.5")));
+}
+
+#[test]
+fn cost_breakdown_serializes_only_the_fields_that_were_present() {
+    let breakdown = CostBreakdown {
+        service_tier: None,
+        data_residency: None,
+        vertex_location: None,
+        input_cost: Some(decimal("1")),
+        cache_read_cost: None,
+        cache_creation_cost: None,
+        output_cost: None,
+        reasoning_cost: None,
+        total_cost: None,
+        tool_usage_cost: None,
+        guardrail_cost: None,
+        additional_costs: None,
+        original_cost: None,
+        discount_percent: None,
+        discount_amount: None,
+        margin_percent: None,
+        margin_fixed_amount: None,
+        margin_total_amount: None,
+        extra: BTreeMap::new(),
+    };
+    let text = serde_json::to_string(&breakdown).expect("the breakdown serializes");
+    assert_eq!(text, r#"{"input_cost":"1"}"#);
+}
+
+#[test]
 fn cost_breakdown_deserializes_an_empty_object_to_every_field_absent() {
     let empty: CostBreakdown = serde_json::from_str("{}").expect("an empty object parses");
-    assert_eq!(empty, CostBreakdown::default());
+    assert_eq!(
+        serde_json::to_string(&empty).expect("the breakdown serializes"),
+        "{}"
+    );
 }
 
 #[test]

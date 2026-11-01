@@ -1,9 +1,15 @@
-use rust_decimal::Decimal;
-use serde::{Deserialize, Deserializer, Serialize};
-use serde_json::Number;
+#![expect(
+    clippy::disallowed_types,
+    reason = "extra preserves unknown breakdown keys as arbitrary provider JSON, and flatten cannot sit on a RawValue field"
+)]
+
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::BTreeMap;
 
-use crate::price_fields::decimal_lexeme::{DecimalLexemeError, parse_decimal_lexeme};
+use rust_decimal::Decimal;
+
+type Extensions = BTreeMap<String, Value>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum CostBreakdownError {
@@ -11,79 +17,47 @@ pub enum CostBreakdownError {
     GuardrailCostOverflow,
 }
 
-#[derive(Deserialize)]
-#[serde(try_from = "Number")]
-struct ExactDecimal(Decimal);
-
-impl TryFrom<Number> for ExactDecimal {
-    type Error = DecimalLexemeError;
-
-    fn try_from(number: Number) -> Result<Self, Self::Error> {
-        let lexeme = number.to_string();
-        parse_decimal_lexeme(&lexeme).map(Self)
-    }
-}
-
-// service_tier, data_residency and vertex_location record the pricing basis, not what the caller asked for.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default)]
+// extra keeps any key outside this vocabulary, such as a provider-specific cost a newer writer stamped.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CostBreakdown {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub service_tier: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub data_residency: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub vertex_location: Option<String>,
-    #[serde(deserialize_with = "exact_decimal")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub input_cost: Option<Decimal>,
-    #[serde(deserialize_with = "exact_decimal")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub cache_read_cost: Option<Decimal>,
-    #[serde(deserialize_with = "exact_decimal")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub cache_creation_cost: Option<Decimal>,
-    #[serde(deserialize_with = "exact_decimal")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub output_cost: Option<Decimal>,
-    #[serde(deserialize_with = "exact_decimal")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_cost: Option<Decimal>,
-    #[serde(deserialize_with = "exact_decimal")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub total_cost: Option<Decimal>,
-    #[serde(deserialize_with = "exact_decimal")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_usage_cost: Option<Decimal>,
-    #[serde(deserialize_with = "exact_decimal")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub guardrail_cost: Option<Decimal>,
-    #[serde(deserialize_with = "exact_decimal_map")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub additional_costs: Option<BTreeMap<String, Decimal>>,
-    #[serde(deserialize_with = "exact_decimal")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub original_cost: Option<Decimal>,
-    #[serde(deserialize_with = "exact_decimal")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub discount_percent: Option<Decimal>,
-    #[serde(deserialize_with = "exact_decimal")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub discount_amount: Option<Decimal>,
-    #[serde(deserialize_with = "exact_decimal")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub margin_percent: Option<Decimal>,
-    #[serde(deserialize_with = "exact_decimal")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub margin_fixed_amount: Option<Decimal>,
-    #[serde(deserialize_with = "exact_decimal")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub margin_total_amount: Option<Decimal>,
-}
-
-pub(crate) fn exact_decimal<'de, D>(deserializer: D) -> Result<Option<Decimal>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value: Option<ExactDecimal> = Option::deserialize(deserializer)?;
-    Ok(value.map(|ExactDecimal(decimal)| decimal))
-}
-
-pub(crate) fn exact_decimal_map<'de, D>(
-    deserializer: D,
-) -> Result<Option<BTreeMap<String, Decimal>>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value: Option<BTreeMap<String, ExactDecimal>> = Option::deserialize(deserializer)?;
-    Ok(value.map(|entries| {
-        entries
-            .into_iter()
-            .map(|(key, ExactDecimal(decimal))| (key, decimal))
-            .collect()
-    }))
+    #[serde(flatten)]
+    pub extra: Extensions,
 }
 
 // Adds to total_cost without subtracting any prior guardrail amount, so repeated calls add again like the source does.
