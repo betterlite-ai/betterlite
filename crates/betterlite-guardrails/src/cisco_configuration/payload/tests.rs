@@ -1,8 +1,9 @@
 #![cfg(test)]
 
+use betterlite_config::sections::cisco_verdict_contracts::Rule;
+
 use crate::cisco_configuration::payload::{
-    ChatPayloadInputs, RawRule, RequestMetadata, RuleEntry, WireRule, build_chat_payload,
-    normalize_rule,
+    ChatPayloadInputs, RequestMetadata, WireRule, build_chat_payload, normalize_rule,
 };
 use crate::cisco_conversation::{InspectMessage, Role};
 
@@ -92,8 +93,13 @@ fn build_chat_payload_omits_metadata_fields_that_are_absent() {
 }
 
 #[test]
-fn normalize_rule_wraps_a_string_rule_in_rule_name() {
-    let rule = RawRule::Name("pii-detector".to_owned());
+fn normalize_rule_wraps_a_bare_rule_name_with_no_entity_types() {
+    let rule = Rule {
+        rule_name: "pii-detector".to_owned(),
+        entity_types: Vec::new(),
+        rule_id: None,
+        classification: None,
+    };
     assert_eq!(
         normalize_rule(&rule),
         WireRule {
@@ -106,13 +112,13 @@ fn normalize_rule_wraps_a_string_rule_in_rule_name() {
 }
 
 #[test]
-fn normalize_rule_passes_through_a_dict_shaped_rule() {
-    let rule = RawRule::Entry(RuleEntry {
-        rule_name: Some(String::new()),
-        entity_types: Some(vec!["EMAIL".to_owned()]),
+fn normalize_rule_passes_through_a_fully_populated_rule() {
+    let rule = Rule {
+        rule_name: String::new(),
+        entity_types: vec!["EMAIL".to_owned()],
         rule_id: Some("rule-1".to_owned()),
         classification: Some("SEVERE".to_owned()),
-    });
+    };
     assert_eq!(
         normalize_rule(&rule),
         WireRule {
@@ -122,10 +128,4 @@ fn normalize_rule_passes_through_a_dict_shaped_rule() {
             classification: Some("SEVERE".to_owned()),
         }
     );
-}
-
-#[test]
-fn normalize_rule_rejects_malformed_rule_input() {
-    let error = serde_json::from_str::<RawRule>("42").expect_err("not a string or object");
-    assert!(!error.to_string().is_empty());
 }

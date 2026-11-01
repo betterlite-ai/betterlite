@@ -1,4 +1,5 @@
-use serde::{Deserialize, Serialize};
+use betterlite_config::sections::cisco_verdict_contracts::Rule;
+use serde::Serialize;
 
 use crate::cisco_conversation::InspectMessage;
 
@@ -109,37 +110,14 @@ pub fn build_chat_payload(inputs: ChatPayloadInputs) -> ChatPayload {
     }
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(default)]
-pub struct RuleEntry {
-    pub rule_name: Option<String>,
-    pub entity_types: Option<Vec<String>>,
-    pub rule_id: Option<String>,
-    pub classification: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
-pub enum RawRule {
-    Name(String),
-    Entry(RuleEntry),
-}
-
 #[must_use]
-pub fn normalize_rule(rule: &RawRule) -> WireRule {
-    match rule {
-        RawRule::Name(rule_name) => WireRule {
-            rule_name: Some(rule_name.clone()),
-            entity_types: None,
-            rule_id: None,
-            classification: None,
-        },
-        RawRule::Entry(entry) => WireRule {
-            rule_name: entry.rule_name.clone(),
-            entity_types: entry.entity_types.clone(),
-            rule_id: entry.rule_id.clone(),
-            classification: entry.classification.clone(),
-        },
+pub fn normalize_rule(rule: &Rule) -> WireRule {
+    let entity_types = (!rule.entity_types.is_empty()).then(|| rule.entity_types.clone());
+    WireRule {
+        rule_name: Some(rule.rule_name.clone()),
+        entity_types,
+        rule_id: rule.rule_id.clone(),
+        classification: rule.classification.clone(),
     }
 }
 
