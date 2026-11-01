@@ -67,7 +67,10 @@ fn span_payload_links_trace_and_strips_nulls() {
     let span = build_span_payload(scope, sample_window(), empty_content(), details);
     assert_eq!(span["trace_id"], val(r#""trace""#));
     assert!(!span.contains_key("parent_span_id"));
-    assert_eq!(span["usage"], val(r#"{"prompt_tokens":1}"#));
+    assert_eq!(
+        span["usage"],
+        val(r#"{"completion_tokens":0,"prompt_tokens":1,"total_tokens":0}"#)
+    );
     assert_eq!(span["model"], val(r#""m""#));
     assert_eq!(span["name"], val(r#""m_chat.completion_42""#));
 }

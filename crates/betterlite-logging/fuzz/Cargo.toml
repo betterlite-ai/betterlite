@@ -20,6 +20,13 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "opik_config_file"
+path = "fuzz_targets/opik_config_file.rs"
+test = false
+doc = false
+bench = false
+
 [workspace]
 
 [[bin]]
