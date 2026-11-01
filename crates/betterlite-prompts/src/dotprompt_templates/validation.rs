@@ -67,7 +67,7 @@ impl SchemaType {
             Self::Bool => matches!(value, Json::Bool(_)),
             Self::Int => {
                 matches!(value, Json::Bool(_))
-                    || matches!(value, Json::Number(number) if number.is_i64() || number.is_u64())
+                    || matches!(value, Json::Number(number) if !number.is_f64())
             }
             Self::Float => matches!(value, Json::Number(number) if number.is_f64()),
             Self::Number => matches!(value, Json::Bool(_) | Json::Number(_)),

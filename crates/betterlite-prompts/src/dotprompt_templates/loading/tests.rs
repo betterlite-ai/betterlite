@@ -30,6 +30,18 @@ fn loads_every_dot_prompt_file_in_a_directory_nonrecursively() {
 }
 
 #[rstest]
+fn a_dotfile_prompt_loads_under_its_leading_dot_prompt_id() {
+    let directory = tempfile::tempdir().unwrap();
+    fs::write(directory.path().join(".draft.prompt"), "a draft").unwrap();
+
+    let manager = PromptManager::new(None, Some(directory.path()), None, None).unwrap();
+    assert_eq!(
+        manager.get_prompt(".draft", None).unwrap().content,
+        "a draft"
+    );
+}
+
+#[rstest]
 fn a_malformed_prompt_file_is_skipped_without_failing_the_load() {
     let directory = tempfile::tempdir().unwrap();
     fs::write(
@@ -97,6 +109,24 @@ fn keyed_prompt_data_registers_every_entry_under_its_own_key() {
     let manager = PromptManager::new(None, None, Some(&prompt_data), None).unwrap();
     assert_eq!(manager.get_prompt("a", None).unwrap().content, "content a");
     assert_eq!(manager.get_prompt("b", None).unwrap().content, "content b");
+}
+
+#[rstest]
+fn a_null_content_keeps_the_prompt_with_an_empty_string_default() {
+    let prompt_data = object(r#"{"x": {"content": null, "metadata": {"model": "gpt-4"}}}"#);
+    let manager = PromptManager::new(None, None, Some(&prompt_data), None).unwrap();
+    let template = manager.get_prompt("x", None).unwrap();
+    assert_eq!(template.content, "");
+    assert_eq!(template.model, Some("gpt-4".to_owned()));
+}
+
+#[rstest]
+fn a_null_metadata_keeps_the_prompt_with_an_empty_object_default() {
+    let prompt_data = object(r#"{"x": {"content": "hi", "metadata": null}}"#);
+    let manager = PromptManager::new(None, None, Some(&prompt_data), None).unwrap();
+    let template = manager.get_prompt("x", None).unwrap();
+    assert_eq!(template.content, "hi");
+    assert_eq!(template.model, None);
 }
 
 #[rstest]

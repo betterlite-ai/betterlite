@@ -42,7 +42,7 @@ fn add_prompt_stores_a_template_built_from_the_supplied_fields() {
         .add_prompt(
             "greeting",
             "Hi {{ name }}".to_owned(),
-            Some(object(r#"{"model": "gpt-4"}"#)),
+            object(r#"{"model": "gpt-4"}"#),
         )
         .unwrap();
 
@@ -55,7 +55,7 @@ fn add_prompt_stores_a_template_built_from_the_supplied_fields() {
 #[rstest]
 fn add_prompt_rejects_malformed_metadata() {
     let mut manager = PromptManager::new(None, None, None, None).unwrap();
-    let result = manager.add_prompt("greeting", "hi".to_owned(), Some(object(r#"{"model": 4}"#)));
+    let result = manager.add_prompt("greeting", "hi".to_owned(), object(r#"{"model": 4}"#));
     assert!(result.is_err());
 }
 
@@ -63,7 +63,7 @@ fn add_prompt_rejects_malformed_metadata() {
 fn load_prompts_from_json_data_merges_into_the_existing_store() {
     let mut manager = PromptManager::new(None, None, None, None).unwrap();
     manager
-        .add_prompt("existing", "e".to_owned(), None)
+        .add_prompt("existing", "e".to_owned(), Object::new())
         .unwrap();
 
     let prompt_data = object(r#"{"added": {"content": "a", "metadata": {}}}"#);

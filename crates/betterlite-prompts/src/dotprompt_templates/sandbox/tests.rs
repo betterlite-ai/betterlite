@@ -5,6 +5,11 @@ use crate::arguments::json::{Json, Object};
 use minijinja::AutoEscape;
 use minijinja::value::Serde;
 use rstest::rstest;
+use std::borrow::Cow;
+
+fn markupsafe() -> AutoEscape {
+    AutoEscape::Custom(Cow::Borrowed("markupsafe"))
+}
 
 #[rstest]
 fn uses_handlebars_style_delimiters_matching_the_dotprompt_spec() {
@@ -16,12 +21,47 @@ fn uses_handlebars_style_delimiters_matching_the_dotprompt_spec() {
 }
 
 #[rstest]
-#[case::html("page.html", AutoEscape::Html)]
-#[case::xml("feed.xml", AutoEscape::Html)]
-#[case::string_template("<string>", AutoEscape::None)]
+#[case::html("page.html", markupsafe())]
+#[case::xml("feed.xml", markupsafe())]
+#[case::string_template("<string>", markupsafe())]
 #[case::text("notes.txt", AutoEscape::None)]
 fn selects_autoescape_for_html_and_xml_only(#[case] name: &str, #[case] expected: AutoEscape) {
     assert_eq!(auto_escape_for_name(name), expected);
+}
+
+#[rstest]
+fn escapes_html_special_characters_with_markupsafes_exact_table() {
+    let env = build();
+    let mut variables = Object::new();
+    variables.insert(
+        "name".to_owned(),
+        Json::Text("O'Brien & <Sons> \"Ltd\"/Co".to_owned()),
+    );
+    let rendered = env.render_str("{{ name }}", Serde(variables)).unwrap();
+    assert_eq!(rendered, "O&#39;Brien &amp; &lt;Sons&gt; &#34;Ltd&#34;/Co");
+}
+
+#[rstest]
+fn calling_a_known_non_mutating_method_renders() {
+    let env = build();
+    let mut variables = Object::new();
+    variables.insert("name".to_owned(), Json::Text("ada".to_owned()));
+    let upper = env
+        .render_str("{{ name.upper() }}", Serde(variables))
+        .unwrap();
+    assert_eq!(upper, "ADA");
+
+    let mut dict = Object::new();
+    dict.insert("a".to_owned(), Json::Text("one".to_owned()));
+    let mut pairs = Object::new();
+    pairs.insert("d".to_owned(), Json::Object(dict));
+    let items = env
+        .render_str(
+            "{% for k, v in d.items() %}{{ k }}={{ v }}{% endfor %}",
+            Serde(pairs),
+        )
+        .unwrap();
+    assert_eq!(items, "a=one");
 }
 
 #[rstest]

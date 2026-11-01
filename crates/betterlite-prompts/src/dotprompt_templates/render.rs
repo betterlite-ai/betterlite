@@ -18,6 +18,10 @@ pub enum RenderError {
         #[source]
         source: minijinja::Error,
     },
+    #[error("prompt template exceeds its byte budget")]
+    TemplateTooLarge,
+    #[error("rendered output exceeds its byte budget")]
+    OutputTooLarge,
 }
 
 pub(super) fn format_available<'ids>(prompt_ids: impl Iterator<Item = &'ids String>) -> String {
