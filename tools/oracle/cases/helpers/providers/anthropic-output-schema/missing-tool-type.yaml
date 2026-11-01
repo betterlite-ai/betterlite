@@ -2,4 +2,4 @@ kind: helper
 name: missing-tool-type
 call: {anthropic_output_schema: {function: map_tool, value: {response_schema: {}}}}
 env: {}
-compare: {ignore: [{pointer: /error/message, why: betterlite writes its own error message}]}
+compare: {ignore: []}

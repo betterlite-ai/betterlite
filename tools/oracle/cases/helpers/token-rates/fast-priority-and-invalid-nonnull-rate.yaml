@@ -1,0 +1,16 @@
+kind: helper
+name: fast-priority-and-invalid-nonnull-rate
+call:
+  token_rates:
+    operation: base
+    model_info:
+      input_cost_per_token: 0.000001
+      input_cost_per_token_priority: 0.000002
+      output_cost_per_token_priority: invalid
+      cache_read_input_token_cost: 0.0000001
+    usage:
+      prompt_tokens: 10
+    service_tier: FAST
+    provider: openai
+compare: {ignore: []}
+env: {}

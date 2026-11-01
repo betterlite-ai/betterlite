@@ -1,0 +1,14 @@
+kind: helper
+name: aws-errors-branch-957
+call:
+  aws_errors:
+    provider: bedrock
+    model: claude-3
+    custom_llm_provider: bedrock
+    error_str: "Could not process image data"
+    status_code: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

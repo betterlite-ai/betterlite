@@ -1,0 +1,9 @@
+kind: helper
+name: flattened-budget-zero-wins
+call:
+  resolved_key:
+    function: view
+    value: {litellm_budget_table_team_rpm_limit: 10, team_rpm_limit: 0}
+env: {}
+compare:
+  ignore: []
