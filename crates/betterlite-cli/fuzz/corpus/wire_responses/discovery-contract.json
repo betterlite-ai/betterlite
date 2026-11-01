@@ -1,0 +1,1 @@
+{"contract_version":1,"issuer":"https://example.test","authorization_endpoint":"https://example.test/oauth/authorize","token_endpoint":"https://example.test/oauth/token","registration_endpoint":"https://example.test/oauth/register","revocation_endpoint":"https://example.test/oauth/revoke","resource":"https://example.test","code_challenge_methods_supported":["S256"]}

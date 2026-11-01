@@ -1,0 +1,13 @@
+id: B5093
+milestone: M0 foundation
+title: Opik oracle helper calls LiteLLM
+status: todo
+depends_on: [B5092, B5091, B3973]
+file: tasks/B5093-opik-helper-calls-litellm.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

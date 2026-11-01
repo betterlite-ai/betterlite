@@ -1,0 +1,124 @@
+id: B5086
+title: Hugging Face Hub requests and file metadata like huggingface_hub
+description: >-
+  LiteLLM reaches the Hugging Face Hub through one call: tokenizers' Tokenizer.from_pretrained asks huggingface_hub 1.32.0 for hf_hub_download(repo_id, "tokenizer.json", revision, token) (tokenizers v0.23.1 tokenizer.rs L786-L812). This task builds the request layer under that download in crates/betterlite-http/src/hub_client.rs and hub_client/**: the client, headers, the per-request hook, retries, Hub errors, the HEAD that reads file metadata and the streamed GET. B5087 builds the cache folder on top. Port the huggingface_hub functions in the references for the path a tokenizer download reaches and match what they do on the wire: the same requests, headers, retries, sleeps, warnings and logs, and the same error kinds in the same order. Messages are betterlite's own (docs/compatibility.md) but carry the same facts: status, URL, server message and request id.
+
+
+  Client. HubClient::new takes B5085's settings and token lookup, a ProxiedClient from B173 built with the env proxy settings (httpx trusts the environment by default, and LiteLLM's DISABLE_AIOHTTP_TRUST_ENV does not reach huggingface_hub), a clock and a sleeper. Like default_client_factory it follows redirects and takes its timeout per call. When B5085 says hf_transfer_deprecated, log huggingface_hub's FutureWarning text once when the client is built. Before writing the client, compare the hf-hub crate and say in the PR why it does or does not fit; use it only if every check below passes with it.
+
+
+  Headers and hook. Build headers like build_hf_headers and _http_user_agent: authorization "Bearer {token}" when B5085's resolve returns a token, and the user agent (see the deviation). Every request, redirects included, goes through the hook hf_request_event_hook describes: fail with an offline error when B5085's offline flag is set, add X-Amzn-Trace-Id from X-Request-Id or a new uuid4, and log at debug "Request {id}: {method} {url} (authenticated: {bool})". Download calls add the header flag_as_download_call sets. Read X-HF-Warning on every response and log each topic once (_warn_on_warning_headers); the seen set belongs to the client, not to module state.
+
+
+  Retries. Port _http_backoff_base, http_backoff and http_stream_backoff with their defaults, status lists, exception lists, wait doubling, Retry-After handling (digits only, through _parse_retry_after), their log texts and the last-try rule: after the last allowed try a retry status goes through hf_raise_for_status, and a non-retry status is returned. Port parse_ratelimit_headers for the 429 text. Sleeps go through the injected sleeper.
+
+
+  Errors. hf_raise_for_status becomes a typed HubError enum with one variant per error class, checked in the same order: repository not found or gated or disabled, revision not found, entry not found, bad request, forbidden, range not satisfiable, then the generic HTTP error. Bucket and job branches can't be reached from a model file download and are not built. Each variant keeps the status, the URL, the server message from X-Error-Message or the JSON body, and the request id from X-Request-Id, X-Amzn-Trace-Id or X-Amz-Cf-Id.
+
+
+  Metadata and GET. hf_hub_url builds "{endpoint}/{repo_id}/resolve/{revision}/{filename}" with huggingface_hub's quoting. get_hf_file_metadata sends HEAD with Accept-Encoding identity, follows redirects itself through _httpx_follow_hub_redirects_with_backoff (only to the same host or a Hub host, with the same redirect cap), drops authorization when the final location leaves the Hub hosts from B5085's url_hosts, and returns commit hash, normalized etag (_normalize_etag), location and size from the headers it names. http_get streams the file into a writer the caller passes, sends the Range header from _adjust_range_header when resuming, retries a ConnectError, timeout or protocol error the way it does (count, warning text, 1-second sleep, counter reset after data), and checks the byte count against the expected size with the same error.
+
+
+  Tests. The tests run a local Hub on 127.0.0.1 and point B5085's endpoint at it. hub_client::tests::requests_follow_huggingface_hub covers headers, the hook, the trace id, the offline error and the warning header. hub_client::tests::retries_follow_huggingface_hub covers every retry status, Retry-After, the last try and the sleeps. hub_client::tests::errors_follow_huggingface_hub covers every error variant and request id source. hub_client::tests::metadata_and_get_follow_huggingface_hub covers the URL quoting, relative and cross-host redirects, the dropped token, etag normalization, resume and the size check. hub_client::tests::replays_the_hub_response_corpus feeds each corpus file to the header parsers.
+scope:
+  paths:
+    - crates/betterlite-http/src/hub_client.rs
+    - crates/betterlite-http/src/hub_client/**
+    - crates/betterlite-http/Cargo.toml
+    - crates/betterlite-http/fuzz/Cargo.toml
+    - crates/betterlite-http/fuzz/fuzz_targets/hub_response.rs
+    - crates/betterlite-http/fuzz/corpus/hub_response/**
+    - Cargo.toml
+    - Cargo.lock
+  lint_tables: false
+references:
+  - url: https://github.com/huggingface/tokenizers/blob/v0.23.1/bindings/python/src/tokenizer.rs#L786-L812
+    why: from_pretrained calls hf_hub_download for tokenizer.json with the revision and an optional token, and passes no user agent.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/uv.lock#L3372-L3385
+    why: LiteLLM's lock pins huggingface-hub 1.32.0.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/utils/_headers.py#L31-L208
+    why: build_hf_headers, get_token_to_send and the user agent.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/utils/_http.py#L57-L166
+    why: RateLimitInfo, parse_ratelimit_headers and _parse_retry_after.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/utils/_http.py#L171-L307
+    why: The request id headers, the repo URL patterns, flag_as_download_call and hf_request_event_hook.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/utils/_http.py#L331-L349
+    why: default_client_factory follows redirects.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/utils/_http.py#L459-L793
+    why: _http_backoff_base, http_backoff, http_stream_backoff, the Hub redirect follower and the host checks.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/utils/_http.py#L796-L1101
+    why: hf_raise_for_status, _warn_on_warning_headers and _format with every error class and the request id.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/utils/_http.py#L1169-L1203
+    why: _adjust_range_header for resumed downloads.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/file_download.py#L156-L182
+    why: HfFileMetadata, the facts the HEAD returns.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/file_download.py#L212-L491
+    why: hf_hub_url, _get_file_length_from_http_response and http_get with its resume and retry loop.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/file_download.py#L602-L621
+    why: _normalize_etag.
+  - url: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/file_download.py#L1613-L1685
+    why: get_hf_file_metadata with Accept-Encoding identity and the redirect follower.
+  - url: https://docs.rs/hf-hub/latest/hf_hub/
+    why: The existing Rust Hub client to compare before porting.
+dod:
+  - text: Every Hub request carries huggingface_hub's headers and goes through the same hook, with the offline error, the trace id, the debug log and the warning header handled the same way.
+    proof: [hub-requests]
+  - text: Retries, waits, Retry-After and the last-try rule match huggingface_hub's backoff functions.
+    proof: [hub-retries]
+  - text: Every Hub error class comes back as its own typed variant in hf_raise_for_status's order, with status, URL, server message and request id.
+    proof: [hub-errors]
+  - text: File metadata, redirects, the token drop, resume and the size check match get_hf_file_metadata and http_get.
+    proof: [hub-metadata-and-get]
+  - text: The response header parsers have a fuzz target and a committed corpus that replays.
+    proof: [hub-response-corpus]
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: hub-requests
+      why: the request test is missing or a header, hook step or warning differs from huggingface_hub
+      run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^hub_client::tests::requests_follow_huggingface_hub($|::)/)'
+    - id: hub-retries
+      why: the retry test is missing or a retry, wait or last-try result differs from huggingface_hub
+      run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^hub_client::tests::retries_follow_huggingface_hub($|::)/)'
+    - id: hub-errors
+      why: the error test is missing or an error class, its order or its facts differ from huggingface_hub
+      run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^hub_client::tests::errors_follow_huggingface_hub($|::)/)'
+    - id: hub-metadata-and-get
+      why: the metadata and GET test is missing or a URL, redirect, header or byte count differs from huggingface_hub
+      run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^hub_client::tests::metadata_and_get_follow_huggingface_hub($|::)/)'
+    - id: hub-response-corpus
+      why: the fuzz target or a new corpus file is missing, or the replay fails
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-http/fuzz/corpus/hub_response)"
+        && test -f crates/betterlite-http/fuzz/fuzz_targets/hub_response.rs
+        && cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^hub_client::tests::replays_the_hub_response_corpus($|::)/)'
+oracle_cases: []
+deviations:
+  - what: The User-Agent is "betterlite/{version}", plus "; origin/{HF_HUB_USER_AGENT_ORIGIN}" when set, where huggingface_hub sends "unknown/None; hf_hub/1.32.0; python/{version}" and the versions of torch and other installed Python packages.
+    why: >-
+      betterlite has no Python, torch or fastai, so those parts would be made up. The Hub uses the user agent for statistics only.
+    link: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/utils/_headers.py#L157-L201
+  - what: Files stored with Xet download over plain HTTP from the resolve URL, as huggingface_hub does with HF_HUB_DISABLE_XET=1. LiteLLM's lock installs hf-xet on x86_64 and arm64, so there huggingface_hub fetches those files through Xet.
+    why: >-
+      The Hub serves the same bytes over HTTP for every file, and no Rust Xet client is pinned. The file on disk and its etag are the same.
+    link: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/file_download.py#L494-L601
+  - what: The GET sends no Accept-Encoding, where httpx asks for gzip and deflate.
+    why: >-
+      reqwest is built without its gzip feature, so the server sends the file as is. The bytes written to disk are the same, since httpx decodes the body before http_get writes it.
+    link: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/file_download.py#L299-L331
+out_of_scope:
+  - The env settings, paths and token lookup belong to B5085; OIDC and OAuth refresh belong to B5088.
+  - The cache folder, locks, symlinks and the cache fallback belong to B5087.
+  - HF_DEBUG's curl log, the progress bars, telemetry and hf_transfer are not on the tokenizer path and are not built.
+  - close_session after a ConnectError resets a Python client pool; reqwest manages its own pool, so there is nothing to port.
+pitfalls:
+  - _parse_retry_after reads only a value made of digits, so a Retry-After of "1.5" or an HTTP date falls back to the doubling wait.
+  - http_stream_backoff retries only status codes, never exceptions; http_get's own loop retries the connection errors.
+  - get_hf_file_metadata follows a redirect only when it stays on the same host or a Hub host; a redirect to another host, such as the CDN, ends the loop and its Location becomes the metadata location.
+  - _normalize_etag uses lstrip("W/") and so removes any run of the characters "W" and "/" from the left, not just the prefix "W/".
+  - The authorization header must not follow a redirect to a host outside url_hosts, such as the CDN that serves the file.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

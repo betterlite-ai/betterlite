@@ -1,0 +1,5 @@
+kind: helper
+name: invalid-encryption
+call: {b3992: {operation: params, global: {s3_server_side_encryption: 23, s3_sse_kms_key_id: false}}}
+env: {}
+compare: {ignore: []}

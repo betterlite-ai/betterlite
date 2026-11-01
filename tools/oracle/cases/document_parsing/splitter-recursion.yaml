@@ -1,0 +1,11 @@
+kind: helper
+name: splitter-recursion
+call:
+  b3450:
+    mode: split
+    chunk_size: 3
+    chunk_overlap: 0
+    separators: ["\n\n", " ", ""]
+    text: "ab cd\n\nef gh"
+env: {}
+compare: {ignore: []}

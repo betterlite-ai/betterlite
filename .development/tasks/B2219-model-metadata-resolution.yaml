@@ -47,14 +47,26 @@ description: >-
   mode=chat, input/output token prices 0, max_tokens equal to config max_position_embeddings or None; max_input_tokens/max_output_tokens
   and supports_system_messages, supports_response_schema, supports_function_calling, supports_tool_choice, supports_assistant_prefill,
   supports_prompt_caching, supports_prompt_cache_breakpoint, supports_thinking_cache_preservation, supports_computer_use,
-  supports_pdf_input all None. The config helper returns the provided max_position_embeddings value without coercion
-  and catches read/status/JSON/missing-shape failures to None. Pin oracle HTTP at https://huggingface.co/{model}/raw/main/config.json
-  with timeout literal HF_CONFIG_FETCH_TIMEOUT_SECONDS=10.0; native production uses only the injected local asset
-  bytes and never fetches that URL.
+  supports_pdf_input all None. The config helper GETs https://huggingface.co/{model}/raw/main/config.json through
+  B173's shared client, the way B5084 fetches Hugging Face files for chat templates, with timeout literal HF_CONFIG_FETCH_TIMEOUT_SECONDS=10.0
+  seconds. It returns the provided max_position_embeddings value without coercion and catches read, status, JSON
+  and missing-shape failures to None. Native production and the oracle fixture transport share this decoder and
+  this pinned URL and timeout; production builds its client from B173, and an oracle case points the client's base
+  URL at a local server instead of huggingface.co.
 
 
-  Outside-byte boundary: decode_hf_model_config consumes bounded local config.json bytes; the same decoder serves
-  the fixture transport oracle seam and returns max_position_embeddings without implicit coercion in crates/betterlite-models/src/model_metadata_resolution.rs
+  Hugging Face fetch: take the client as a constructor field with an overridable base URL, so tests point it at
+  a local server. A non-200 status, a transport error, a body over B173's buffered-body limit, and a JSON body missing
+  or wrong-shaped for max_position_embeddings all map to None, the same as LiteLLM's blanket except clause. Add
+  test model_metadata_resolution::hf_config::tests::fetch_follows_litellm against a local server covering a 200
+  status, a non-200 status, a bad JSON body and a timeout past HF_CONFIG_FETCH_TIMEOUT_SECONDS. LiteLLM caches the
+  full model info lookup through _cached_get_model_info_helper, not this fetch on its own; that lru cache sits one
+  layer up and stays out of scope under B2225, so this task adds no cache of its own.
+
+
+  Outside-byte boundary: decode_hf_model_config consumes the bounded config.json response body bytes; the same
+  decoder serves the fetch's success path, the fixture transport oracle seam and the cargo-fuzz target, and returns
+  max_position_embeddings without implicit coercion, in crates/betterlite-models/src/model_metadata_resolution.rs
   or its scoped child module. Use that production decoder from the request path, Rust oracle adapter and cargo-fuzz
   target crates/betterlite-models/fuzz/fuzz_targets/hf_model_config.rs. Add valid, malformed, truncated and boundary
   corpus inputs and adjacent test replays_the_hf_model_config_corpus that checks outcome categories through this
@@ -92,11 +104,15 @@ description: >-
 
 
   Budget from 286 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 300 production lines, 260 behavior/config-test lines,
-  115 combined Rust/Python adapter lines, 65 parser target/replay lines, 0 config/loader lines and 35 module/dispatch/shared-seed
-  wiring lines; 775 planned, 775 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 340 production lines, 330 behavior/config-test lines,
+  130 combined Rust/Python adapter lines, 65 parser target/replay lines, 0 config/loader lines and 35 module/dispatch/shared-seed
+  wiring lines; 900 planned, 925 maximum changed lines. Raised from 775/775 for the real Hugging Face fetch: a client
+  wired through B173, the new local-server fetch test, and the oracle adapter change from an injected-bytes seam
+  to a fixture transport at the client's call seam.
 scope:
   paths:
+  - Cargo.toml
+  - Cargo.lock
   - crates/betterlite-models/Cargo.toml
   - crates/betterlite-models/src/model_metadata_resolution.rs
   - crates/betterlite-models/src/model_metadata_resolution/**
@@ -126,6 +142,8 @@ references:
   why: Owned function body checked against the pinned checkout.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L6373-L6377
   why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1713-L1810
+  why: module_level_client setup that the config fetch now reuses through B173.
 dod:
 - text: New model_metadata_resolution seeds parse as the intended call variant and replay through the shared production
     parser.
@@ -197,14 +215,17 @@ dod:
     input/output token prices 0, max_tokens equal to config max_position_embeddings or None; max_input_tokens/max_output_tokens
     and supports_system_messages, supports_response_schema, supports_function_calling, supports_tool_choice, supports_assistant_prefill,
     supports_prompt_caching, supports_prompt_cache_breakpoint, supports_thinking_cache_preservation, supports_computer_use,
-    supports_pdf_input all None. The config helper returns the provided max_position_embeddings value without coercion
-    and catches read/status/JSON/missing-shape failures to None. Pin oracle HTTP at https://huggingface.co/{model}/raw/main/config.json
-    with timeout literal HF_CONFIG_FETCH_TIMEOUT_SECONDS=10.0; native production uses only the injected local asset
-    bytes and never fetches that URL.'
+    supports_pdf_input all None. The config helper GETs https://huggingface.co/{model}/raw/main/config.json via the
+    B173 shared client with timeout literal HF_CONFIG_FETCH_TIMEOUT_SECONDS=10.0 seconds, returns the provided max_position_embeddings
+    value without coercion, and catches read, status, JSON and missing-shape failures to None.'
   proof:
   - case-huggingface-config-metadata
   - oracle
   - helper-python
+- text: The Hugging Face config fetch follows LiteLLM's URL, timeout, status and failure mapping, tested against
+    a local server for a 200 status, a non-200 status, a bad JSON body and a timeout.
+  proof:
+  - hf-config-fetch-test
 - text: decode_hf_model_config has production decoder replay and new malformed/boundary seeds.
   proof:
   - parser-corpus
@@ -275,11 +296,13 @@ checks:
       max_tokens equal to config max_position_embeddings or None; max_input_tokens/max_output_tokens and supports_system_messages,
       supports_response_schema, supports_function_calling, supports_tool_choice, supports_assistant_prefill, supports_prompt_caching,
       supports_prompt_cache_breakpoint, supports_thinking_cache_preservation, supports_computer_use, supports_pdf_input
-      all None. The config helper returns the provided max_position_embeddings value without coercion and catches
-      read/status/JSON/missing-shape failures to None. Pin oracle HTTP at https://huggingface.co/{model}/raw/main/config.json
-      with timeout literal HF_CONFIG_FETCH_TIMEOUT_SECONDS=10.0; native production uses only the injected local
-      asset bytes and never fetches that URL.
+      all None. The config helper GETs https://huggingface.co/{model}/raw/main/config.json via the B173 shared client
+      with timeout literal HF_CONFIG_FETCH_TIMEOUT_SECONDS=10.0 seconds, returns the provided max_position_embeddings
+      value without coercion, and catches read, status, JSON and missing-shape failures to None.
     run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::model_metadata_resolution_cases::case_[0-9]+_huggingface_config_metadata$/)'
+  - id: hf-config-fetch-test
+    why: The fetch test is missing or a status, JSON or timeout path differs from LiteLLM.
+    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^model_metadata_resolution::hf_config::tests::fetch_follows_litellm($|::)/)'
   - id: parser-corpus
     why: Outside bytes lack replay through the actual decoder.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-models/fuzz/corpus/hf_model_config)"
@@ -294,13 +317,7 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/model-metadata-resolution/generalization-only-unknown.yaml
 - tools/oracle/cases/helpers/providers/model-metadata-resolution/unmapped-error-boundary.yaml
 - tools/oracle/cases/helpers/providers/model-metadata-resolution/huggingface-config-metadata.yaml
-deviations:
-- what: Hugging Face model config is read only from already supplied local assets; no https://huggingface.co/{model}/raw/main/config.json
-    download occurs. If no local config exists or it cannot be read/decoded, max_tokens is None and the other zero/None
-    metadata defaults remain, with no remote request.
-  why: Keep local-files-only behavior until Max decides whether Hugging Face downloads are allowed. This matches
-    the source fetch-failure metadata result, while deliberately omitting the network fetch.
-  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5847-L5867
+deviations: []
 out_of_scope:
 - The fixed selected-entry projection L6111-L6373 is B2218. Full get_model_info, its LRU wrapper and the cached
   helper wrapper belong to the full-query/cache task; they are not called here. Other utils.py functions retain
@@ -434,6 +451,8 @@ pitfalls:
 - 'The oracle helper for this task is pre-registered as model_metadata_resolution in the models group. Replace the stub Op in tools/oracle/src/helpers/models/model_metadata_resolution.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/model_metadata_resolution.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A provider-mismatched exact catalog entry still blocks generalization fallback.
 - Dynamic metadata can return an empty dict and bypass all static defaults.
+- The config fetch maps every failure (a non-200 status, a transport error, a timeout, bad JSON, a missing key)
+  to the same None; nothing distinguishes a gated repo from a model that does not exist.
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

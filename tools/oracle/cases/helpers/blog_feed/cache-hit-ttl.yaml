@@ -1,0 +1,6 @@
+kind: helper
+name: cache-hit-ttl
+call:
+  blog_feed: {function: get_blog_posts, url: https://example.test/feed, now: 120, last_fetch_time: 100, cached_posts: [{title: Cached, description: '', date: '', url: https://cached}], response: {status: 503}}
+env: {}
+compare: {ignore: []}

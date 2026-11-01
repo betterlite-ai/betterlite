@@ -1,0 +1,14 @@
+kind: helper
+name: auth-stripped-markers-and-hashed-key
+call:
+  resolved_key:
+    function: auth
+    value:
+      api_key: sk-abc123
+      user_role: proxy_admin
+      mcp_admitted_user_subject: true
+      via_virtual_key: true
+      user_model_max_budget: {gpt-4: not-a-number}
+env: {}
+compare:
+  ignore: []

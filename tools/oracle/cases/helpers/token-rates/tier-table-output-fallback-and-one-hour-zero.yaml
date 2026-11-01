@@ -1,0 +1,18 @@
+kind: helper
+name: tier-table-output-fallback-and-one-hour-zero
+call:
+  token_rates:
+    operation: base
+    model_info:
+      output_cost_per_token: "0.000003"
+    usage:
+      prompt_tokens: 1
+    service_tier: null
+    provider: null
+    tiered_pricing:
+      - range: [0, 1000]
+        input_cost_per_token: "0.000001"
+        cache_creation_input_token_cost: "0.000002"
+        cache_creation_input_token_cost_above_1hr: 0
+compare: {ignore: []}
+env: {}

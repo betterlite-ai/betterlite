@@ -1,0 +1,8 @@
+kind: helper
+name: invalid-date-raw
+call:
+  blog_feed:
+    function: parse_rss_to_posts
+    xml: '<rss><channel><item><title>Raw date</title><pubDate>not-a-date</pubDate><link>https://raw</link></item></channel></rss>'
+env: {}
+compare: {ignore: []}

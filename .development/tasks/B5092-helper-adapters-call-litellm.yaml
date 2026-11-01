@@ -1,0 +1,211 @@
+id: B5092
+title: Oracle helper adapters call LiteLLM
+description: >-
+  Four oracle helper adapters in tools/oracle/helpers are Python written for the oracle and never import litellm:
+  codex_history_tools.py (B2410), file_type_records.py (B1128), model_fields.py (B205) and price_fields.py (B204).
+  Their cases compare betterlite with that Python and prove nothing about LiteLLM, so
+  .ast-grep/rules/helper-imports-litellm.yml lists them under ignores. This task rewrites codex_history_tools.py and
+  file_type_records.py to import litellm and call the LiteLLM functions their cases are about, and deletes the
+  model_fields and price_fields operations, since LiteLLM has no function that does what they test. Behavior that
+  leaves the oracle moves to named Rust unit tests next to the native code. Then the four files come off the ignores
+  list. The fifth listed adapter, b3973.py, moves in B5093.
+
+
+  Rules for every rewritten adapter. Each keeps its operation name and, where it can, its input shape. The Python
+  result goes through json.loads(json.dumps(...)) the way model_metadata_projection.py does, so tuples come back as
+  lists. B5091 lands first, so a helper comparison skips the error class, the error message and warning messages,
+  and compares ok, the value and the error's status, type, param and code. dispatch.py sets all four to null for a
+  Python exception, so every native helper error here keeps them null too. The Rust modules
+  tools/oracle/src/helpers/core_ops/codex_history_tools.rs and openai/file_type_records.rs call the native function
+  that matches the LiteLLM function the Python side calls, and decode their input into typed structs or an enum
+  tagged on the function or operation field instead of reading serde_json::Value by hand.
+
+
+  Codex history (operation codex_history_tools). Python imports normalize_codex_input_items and drop_unsupported_tools
+  from litellm.llms.base_llm.responses.codex_compat and hoist_additional_tools from litellm.responses.additional_tools.
+  normalize answers {input, rewritten_types}, drop_unsupported_tools answers {tools, dropped_types} (supported_types
+  passes as a frozenset), and hoist_additional_tools answers {input, tools, hoisted}, with tools passed as None when
+  the case has none. Both sides parse the arguments string of each function_call item in a normalize answer as JSON
+  before they return it, since json.dumps spacing and escaping are not in the contract. The answer drops debug: LiteLLM's
+  HoistedAdditionalTools has only input, tools and hoisted, its line is a verbose_logger.debug call, and log text is
+  betterlite's own. The native HoistedAdditionalTools keeps its debug field, and its unit test
+  hoists_vendor_tools_and_keeps_existing_order keeps checking it. The Rust Input becomes an enum tagged on operation
+  (normalize {input}, drop_unsupported_tools {tools, supported_types}, hoist_additional_tools {input, tools}).
+  additional-tools.yaml, additional-tools-malformed.yaml, unsupported-tools.yaml and compaction-shell.yaml keep their
+  inputs. agent-history.yaml sends string text only: content [{type: output_text, text: a}, {encrypted_content: b},
+  {text: c, encrypted_content: ignored}, 7] plus an item {type: other, value: kept}, and the message text is abc.
+  regressions.yaml sends an agent_message without content (dropped), a local_shell_call c1 whose action has a command
+  [echo, a word with an accented letter and an emoji] and an env whose LANG value is non-ASCII, a local_shell_call c2
+  without action (arguments {}), a local_shell_call without call_id (dropped), and no stray tools key. The old inputs
+  text: 0, text: [] and the ensure_ascii arguments test Python truthiness and json.dumps formatting. The contract
+  leaves both out, and the native tests normalizes_and_reports_dropped_codex_items,
+  agent_message_uses_fallback_after_empty_container and local_shell_arguments_escape_non_ascii_like_python_json
+  already cover them. The native codex code does not change.
+
+
+  File types (operation file_type_records). Python imports FileType, get_file_mime_type_from_extension,
+  get_file_extension_from_mime_type and is_gemini_1_5_accepted_file_type from litellm.types.files and deletes its
+  copied tables. mime_extension_table answers [{extension, mime}], mime_lookup_edges answers {extensions: [mime per
+  extension], mimes: [extension per mime]}, and gemini_file_acceptance answers [is_gemini_1_5_accepted_file_type(FileType(name))
+  per name]. An unknown extension or mime raises ValueError. The Rust Input takes function as an enum and file_types
+  as Vec<FileType> through FileType's own serde names (3GPP included), so parse_file_type goes away, and a
+  FileTypeError becomes the helper error. The three cases keep their inputs. New mime-lookup-unknown-extension.yaml
+  sends mime_extension_table with extensions [exe] and new mime-lookup-unknown-mime.yaml sends mime_lookup_edges with
+  mimes [application/x-unknown]; both fail on both sides. The native file type code does not change.
+
+
+  Model fields (operation model_fields) has no LiteLLM counterpart: LiteLLM keeps a catalog entry as a plain dict and
+  types nothing. The fields its callers read come out of _get_model_info_helper, and the model_metadata_projection
+  helper already calls it. Delete tools/oracle/helpers/model_fields.py,
+  tools/oracle/src/helpers/models/model_fields.rs and model_fields/tests.rs, the "model_fields" entries in dispatch.py
+  OPERATIONS and in tools/oracle/src/helpers/models.rs (that line also holds model_metadata_projection, keep it), the
+  eight seeds tools/oracle/fuzz/corpus/helper_case/model_fields-*.yaml, and tools/oracle/cases/helpers/model-fields.
+  limits, provider-mode, omitted-false and reasoning-levels move to two new model_metadata_projection cases in
+  tools/oracle/cases/helpers/providers/model-metadata-projection with key fixture/model, model fixture/model and
+  provider fixture: metadata-limits-and-flags.yaml (entry litellm_provider fixture, mode chat, max_input_tokens
+  128000, max_output_tokens 16384, rpm 10000, supports_vision false, supports_function_calling true) and
+  metadata-reasoning-levels.yaml (entry default_reasoning_effort low, reasoning_effort_levels [low, medium, high],
+  bedrock_output_config_effort_ceiling xhigh). documentation-entry is typed parsing LiteLLM never does, and the native
+  test the_documentation_sample_entry_fails_typed_parsing covers it. runtime-unknown-field returns a key list
+  LiteLLM never builds, and runtime_parsing_accepts_an_unknown_field_and_warns_with_its_path covers it.
+  modalities-regions reads supported_modalities, and no LiteLLM reader projects it; regions belong to B2225's
+  get_supported_regions, and the modalities_and_regions rstest case covers the parsing. For fallback-generalizations,
+  LiteLLM's _finalize_model_cost_map pops the block out of the map and hands its rules to the fallback_generalizations
+  module untyped. The catalog-generalizations cases already call that module, and the native test
+  fallback_generalization_rules_type_their_declaration_without_executing_it covers the typed parse. In crates/betterlite-models/src/entry/tests.rs add a test reasoning_levels_keep_values that parses the old
+  reasoning-levels entry and asserts default_reasoning_effort low, reasoning_effort_levels [low, medium, high] and
+  bedrock_output_ceiling xhigh.
+
+
+  Price fields (operation price_fields) has no LiteLLM counterpart either: LiteLLM reads prices as JSON floats, while
+  the old adapter parsed the source lexeme with Decimal to check betterlite's exact decimals against itself. Delete
+  tools/oracle/helpers/price_fields.py, tools/oracle/src/helpers/models/price_fields.rs and price_fields/tests.rs, the
+  "price_fields" entries in dispatch.py OPERATIONS and in models.rs, the seeds price_fields-fraction.yaml and
+  price_fields-nested.yaml, and tools/oracle/cases/helpers/price-fields. Port each of its six cases to
+  crates/betterlite-models/src/price_fields/tests.rs. fraction is already the exact_digits rstest case. Add one test
+  per other case, each asserting every parsed field of its source: price_case_absent_optional_fields_stay_default,
+  price_case_exponent_and_trailing_zero_keep_their_value (output_cost_per_token 1.2e-7 and cost_per_second 0.0050),
+  price_case_nested_and_sample_prices_keep_every_field, price_case_tier_keeps_every_price_and_range and
+  price_case_off_peak_keeps_windows_and_prices, with the source text of the case of the same name. In
+  docs/deviations/B204.yaml, entry 1's why drops the clause about the Python adapter.
+
+
+  The rule. Take the four files off the ignores list of .ast-grep/rules/helper-imports-litellm.yml so only
+  tools/oracle/helpers/dispatch.py and tools/oracle/helpers/b3973.py stay. The note stays as it is. ast-grep scan of
+  tools/oracle/helpers with that rule must find nothing. Run ruff and basedpyright on the helpers.
+
+
+  dispatch.py and models.rs are shared registry files that worker.md says a helper task leaves alone. This task is
+  the named exception: it removes exactly the two operations above from both and changes nothing else in them.
+scope:
+  paths:
+  - .ast-grep/rules/helper-imports-litellm.yml
+  - tools/oracle/helpers/codex_history_tools.py
+  - tools/oracle/helpers/file_type_records.py
+  - tools/oracle/helpers/model_fields.py
+  - tools/oracle/helpers/price_fields.py
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/src/helpers/models.rs
+  - tools/oracle/src/helpers/core_ops/codex_history_tools.rs
+  - tools/oracle/src/helpers/openai/file_type_records.rs
+  - tools/oracle/src/helpers/models/model_fields.rs
+  - tools/oracle/src/helpers/models/model_fields/**
+  - tools/oracle/src/helpers/models/price_fields.rs
+  - tools/oracle/src/helpers/models/price_fields/**
+  - tools/oracle/cases/helpers/codex-history-tools/**
+  - tools/oracle/cases/helpers/file-type-records/**
+  - tools/oracle/cases/helpers/model-fields/**
+  - tools/oracle/cases/helpers/price-fields/**
+  - tools/oracle/cases/helpers/providers/model-metadata-projection/**
+  - tools/oracle/fuzz/corpus/helper_case/model_fields-*.yaml
+  - tools/oracle/fuzz/corpus/helper_case/price_fields-*.yaml
+  - crates/betterlite-models/src/entry/tests.rs
+  - crates/betterlite-models/src/price_fields/tests.rs
+  - docs/deviations/B204.yaml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/responses/codex_compat.py#L57-L154
+  why: normalize_codex_input_items (L114-L134), its item rewrites (L57-L111) and drop_unsupported_tools (L137-L154).
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/additional_tools.py#L21-L60
+  why: HoistedAdditionalTools has input, tools and hoisted only (L21-L25), and the hoist message is a verbose_logger.debug call (L54-L58).
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/files.py#L13-L182
+  why: FileType with THREE_GPP = "3GPP" (L13-L55), the extension and mime tables (L58-L150) and the lookups that raise ValueError (L157-L182).
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/files.py#L253-L288
+  why: GEMINI_1_5_ACCEPTED_FILE_TYPES and is_gemini_1_5_accepted_file_type.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5928-L6377
+  why: >-
+    _get_model_info_helper projects max_input_tokens, max_output_tokens, litellm_provider, mode, the supports_ flags,
+    the reasoning fields and rpm from a catalog entry; the model_metadata_projection cases call it.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L536-L545
+  why: _finalize_model_cost_map pops the fallback_generalizations block and passes its rules on untyped, so the removed fallback-generalizations case has no LiteLLM typed parse to compare.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L236-L277
+  why: The rule functions the catalog-generalizations cases already call.
+dod:
+- text: >-
+    codex_history_tools.py and file_type_records.py import litellm and call the LiteLLM functions named in the
+    description, the four files are off the rule's ignores list, ast-grep finds nothing, and ruff and basedpyright
+    pass on the helpers.
+  proof:
+  - helper-imports
+  - helper-python
+- text: >-
+    The model_fields and price_fields operations are gone: no adapter, no Rust module, no registry or dispatch entry,
+    no seed and no case folder.
+  proof:
+  - removed-operations
+- text: >-
+    The behavior the deleted operations tested lives in named native tests: five price_case_ tests in
+    price_fields/tests.rs and reasoning_levels_keep_values in entry/tests.rs.
+  proof:
+  - model-tests
+- text: Every kept, rewritten and new case under oracle_cases matches LiteLLM.
+  proof:
+  - oracle
+checks:
+  optional: [mutants]
+  commands:
+  - id: helper-imports
+    why: a moved adapter is still on the ignores list, or an adapter does not import litellm
+    run: |-
+      test "$(grep -c '^  - tools/oracle/helpers/[a-z0-9_]*\.py$' .ast-grep/rules/helper-imports-litellm.yml)" = 2 && grep -qx '  - tools/oracle/helpers/dispatch.py' .ast-grep/rules/helper-imports-litellm.yml && grep -qx '  - tools/oracle/helpers/b3973.py' .ast-grep/rules/helper-imports-litellm.yml && ! grep -qE 'codex_history_tools|file_type_records|model_fields|price_fields' .ast-grep/rules/helper-imports-litellm.yml && ast-grep scan --rule .ast-grep/rules/helper-imports-litellm.yml tools/oracle/helpers
+  - id: helper-python
+    why: the rewritten adapters fail ruff or basedpyright
+    run: |-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: removed-operations
+    why: a piece of the model_fields or price_fields operation is still there
+    run: |-
+      ! grep -qE '"(model_fields|price_fields)"' tools/oracle/helpers/dispatch.py tools/oracle/src/helpers/models.rs && test ! -e tools/oracle/helpers/model_fields.py && test ! -e tools/oracle/helpers/price_fields.py && test ! -e tools/oracle/src/helpers/models/model_fields.rs && test ! -e tools/oracle/src/helpers/models/model_fields && test ! -e tools/oracle/src/helpers/models/price_fields.rs && test ! -e tools/oracle/src/helpers/models/price_fields && test ! -e tools/oracle/cases/helpers/model-fields && test ! -e tools/oracle/cases/helpers/price-fields && test -z "$(ls tools/oracle/fuzz/corpus/helper_case | grep -E '^(model|price)_fields-')"
+  - id: model-tests
+    why: a case removed from the oracle has no native test in its place
+    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^price_fields::tests::price_case_/) | test(/^entry::tests::reasoning_levels_keep_values$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/codex-history-tools/additional-tools.yaml
+- tools/oracle/cases/helpers/codex-history-tools/additional-tools-malformed.yaml
+- tools/oracle/cases/helpers/codex-history-tools/agent-history.yaml
+- tools/oracle/cases/helpers/codex-history-tools/compaction-shell.yaml
+- tools/oracle/cases/helpers/codex-history-tools/regressions.yaml
+- tools/oracle/cases/helpers/codex-history-tools/unsupported-tools.yaml
+- tools/oracle/cases/helpers/file-type-records/gemini-file-acceptance.yaml
+- tools/oracle/cases/helpers/file-type-records/mime-extension-table.yaml
+- tools/oracle/cases/helpers/file-type-records/mime-lookup-edges.yaml
+- tools/oracle/cases/helpers/file-type-records/mime-lookup-unknown-extension.yaml
+- tools/oracle/cases/helpers/file-type-records/mime-lookup-unknown-mime.yaml
+- tools/oracle/cases/helpers/providers/model-metadata-projection/metadata-limits-and-flags.yaml
+- tools/oracle/cases/helpers/providers/model-metadata-projection/metadata-reasoning-levels.yaml
+deviations: []
+out_of_scope:
+- b3973.py, its Rust module and the Opik cases; B5093 moves them onto LiteLLM and takes b3973.py off the list.
+- The rule's note; B5093 rewrites it once dispatch.py is the only file left.
+- Python habits in the native codex code (the text 0 and text [] fallbacks, ensure_ascii arguments); the native tests keep them as they are.
+- get_supported_regions and region filtering; B2225 owns them.
+- HTTP cases for codex or file uploads.
+- Any other helper operation, and every dispatch.py or models.rs line besides the two removed operations.
+pitfalls:
+- Compare function_call arguments parsed on both sides, never as text.
+- models.rs line 17 also registers model_metadata_projection; remove only the model_fields pair.
+- B5091 edits tools/oracle/cases/helpers/model-fields/documentation-entry.yaml before this task deletes the folder; delete it anyway.
+review_level: standard
+budget:
+  max_changed_lines: 1600
+  max_new_expects: 0

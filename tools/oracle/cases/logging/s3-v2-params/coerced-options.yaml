@@ -1,0 +1,5 @@
+kind: helper
+name: coerced-options
+call: {"b3992": {"operation": "params", "constructor": {}, "global": {"s3_max_queue_size": "42", "s3_max_retry_age_seconds": "17", "s3_drop_on_terminal_error": "false", "s3_batch_file_upload": "true", "s3_use_key_prefix": "false", "s3_sse_kms_key_id": "key"}}}
+env: {}
+compare: {ignore: []}

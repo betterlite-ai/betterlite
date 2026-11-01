@@ -1,0 +1,12 @@
+kind: helper
+name: reasoning-attribute-records
+call:
+  responses_reasoning_merge:
+    mode: reasoning
+    record_kind: attribute
+    messages:
+      - {role: assistant, content: null, reasoning_content: a, thinking_blocks: [{text: A}]}
+      - {role: assistant, content: answer, tool_calls: [{id: call-1}]}
+env: {}
+compare:
+  ignore: []

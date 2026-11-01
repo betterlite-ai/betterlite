@@ -1,0 +1,11 @@
+kind: helper
+name: splitter-overlap
+call:
+  b3450:
+    mode: split
+    chunk_size: 20
+    chunk_overlap: 5
+    separators: [" ", ""]
+    text: "alpha beta gamma delta epsilon zeta eta theta"
+env: {}
+compare: {ignore: []}

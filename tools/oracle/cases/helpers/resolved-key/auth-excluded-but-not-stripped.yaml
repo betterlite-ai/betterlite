@@ -1,0 +1,9 @@
+kind: helper
+name: excluded-but-not-stripped-fields-accepted
+call:
+  resolved_key:
+    function: auth
+    value: {budget_reservation: {k: v}, matched_model_access_groups: [a, b], budget_throttle_pct: 0.5}
+env: {}
+compare:
+  ignore: []
