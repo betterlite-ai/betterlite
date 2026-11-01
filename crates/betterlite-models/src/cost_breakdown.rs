@@ -1,15 +1,9 @@
-#![expect(
-    clippy::disallowed_types,
-    reason = "extra preserves unknown breakdown keys as arbitrary provider JSON, and flatten cannot sit on a RawValue field"
-)]
-
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::collections::BTreeMap;
 
 use rust_decimal::Decimal;
 
-type Extensions = BTreeMap<String, Value>;
+type Extensions = BTreeMap<String, Decimal>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum CostBreakdownError {

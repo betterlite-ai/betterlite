@@ -184,10 +184,7 @@ fn cost_breakdown_with_guardrail_keeps_an_unknown_extension_field() {
     let merged = cost_breakdown_with_guardrail(Some(&existing), decimal("0.5"))
         .expect("the addition succeeds")
         .expect("a positive cost always produces a breakdown");
-    assert_eq!(
-        merged.extra["cache_write_cost"],
-        serde_json::json!(0.25_f64)
-    );
+    assert_eq!(merged.extra["cache_write_cost"], decimal("0.25"));
     assert_eq!(merged.input_cost, existing.input_cost);
     assert_eq!(merged.guardrail_cost, Some(decimal("0.5")));
     assert_eq!(merged.total_cost, Some(decimal("1.5")));

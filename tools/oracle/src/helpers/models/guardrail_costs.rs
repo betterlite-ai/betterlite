@@ -224,9 +224,11 @@ fn cost_breakdown_json(breakdown: &CostBreakdown) -> Value {
             .collect::<BTreeMap<String, String>>()
     });
     fields.insert("additional_costs".to_owned(), json!(additional_costs));
-    fields.insert(
-        "extra".to_owned(),
-        Value::Object(breakdown.extra.clone().into_iter().collect()),
-    );
+    let extra = breakdown
+        .extra
+        .iter()
+        .map(|(key, value)| (key.clone(), value.normalize().to_string()))
+        .collect::<BTreeMap<String, String>>();
+    fields.insert("extra".to_owned(), json!(extra));
     Value::Object(fields)
 }
