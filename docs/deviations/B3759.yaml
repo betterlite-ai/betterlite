@@ -1,0 +1,8 @@
+task: B3759
+deviations:
+  - what: Timeout values are clamped to 1-60 seconds; LiteLLM does the same.
+    why: Enforce safe defaults; values below 1s are too tight for network calls, values above 60s risk hung requests.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L268-L283
+  - what: Invalid config choices (inspection_type, on_flagged_action, fallback_on_error) fall back to pinned defaults with a log warning; LiteLLM does the same.
+    why: Silent fallback masks typos and misconfigurations; a warning makes them visible at startup.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L246-L266
