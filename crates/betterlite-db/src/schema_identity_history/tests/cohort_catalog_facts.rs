@@ -1,6 +1,6 @@
 use rstest::rstest;
 
-const DELETED_TEAM_TABLE_COLUMNS: [ColumnSpec; 27] = [
+const DELETED_TEAM_TABLE_COLUMNS: [ColumnSpec; 28] = [
     ("id", "text", false, None),
     ("team_id", "text", false, None),
     ("team_alias", "text", true, None),
@@ -33,6 +33,7 @@ const DELETED_TEAM_TABLE_COLUMNS: [ColumnSpec; 27] = [
     ),
     ("deleted_by", "text", true, None),
     ("deleted_by_api_key", "text", true, None),
+    ("litellm_changed_by", "text", true, None),
 ];
 
 const DELETED_TEAM_TABLE_INDEXES: [IndexSpec; 5] = [
@@ -59,7 +60,7 @@ const DELETED_TEAM_TABLE_INDEXES: [IndexSpec; 5] = [
     ),
 ];
 
-const DELETED_VERIFICATION_TOKEN_COLUMNS: [ColumnSpec; 38] = [
+const DELETED_VERIFICATION_TOKEN_COLUMNS: [ColumnSpec; 41] = [
     ("id", "text", false, None),
     ("token", "text", false, None),
     ("key_name", "text", true, None),
@@ -108,9 +109,12 @@ const DELETED_VERIFICATION_TOKEN_COLUMNS: [ColumnSpec; 38] = [
         false,
         Some("CURRENT_TIMESTAMP"),
     ),
+    ("deleted_by", "text", true, None),
+    ("deleted_by_api_key", "text", true, None),
+    ("litellm_changed_by", "text", true, None),
 ];
 
-const DELETED_VERIFICATION_TOKEN_INDEXES: [IndexSpec; 6] = [
+const DELETED_VERIFICATION_TOKEN_INDEXES: [IndexSpec; 7] = [
     (
         "LiteLLM_DeletedVerificationToken_token_idx",
         &["token"],
@@ -139,6 +143,11 @@ const DELETED_VERIFICATION_TOKEN_INDEXES: [IndexSpec; 6] = [
     (
         "LiteLLM_DeletedVerificationToken_key_alias_idx",
         &["key_alias"],
+        false,
+    ),
+    (
+        "LiteLLM_DeletedVerificationToken_created_at_idx",
+        &["created_at"],
         false,
     ),
 ];
