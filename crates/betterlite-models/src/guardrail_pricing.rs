@@ -2,6 +2,8 @@ use rust_decimal::Decimal;
 use std::collections::BTreeMap;
 use std::iter::once;
 
+use crate::price_fields::decimal_lexeme::DecimalLexemeError;
+
 mod coercion;
 pub mod entries;
 
@@ -9,6 +11,11 @@ pub mod entries;
 pub enum GuardrailPricingError {
     #[error("the guardrail cost arithmetic overflowed Decimal's representable range")]
     CostOverflow,
+    #[error("the guardrail cost is not a Decimal-representable number")]
+    UnrepresentableCost {
+        #[source]
+        source: DecimalLexemeError,
+    },
 }
 
 // A present, even empty, Usable map still blocks the regional-then-global fallback; only Malformed or a miss falls through.
@@ -20,7 +27,7 @@ pub enum GuardrailPriceLookup {
 
 const BEDROCK_GUARDRAIL_PRICING_KEY: &str = "bedrock/guardrails";
 
-// LiteLLM logs a warning and falls through on a malformed entry; here the caller gets Malformed instead of a log line.
+// A malformed entry warns and falls through to the next candidate key, same as LiteLLM's lookup loop.
 fn bedrock_guardrail_pricing<F>(
     lookup: F,
     aws_region_name: Option<&str>,
@@ -38,7 +45,10 @@ where
     for key in candidate_keys {
         match lookup(key) {
             Some(GuardrailPriceLookup::Usable(prices)) => return Some(prices),
-            Some(GuardrailPriceLookup::Malformed) | None => {}
+            Some(GuardrailPriceLookup::Malformed) => {
+                tracing::warn!(key, "ignoring malformed guardrail pricing entry");
+            }
+            None => {}
         }
     }
     None

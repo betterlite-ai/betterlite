@@ -63,20 +63,26 @@ enum FieldOutcome<T> {
 // Both billing paths share the object-shape and in_spend check; each still reads only its own field, so a forged map cannot change the other's cost.
 fn parse_validated_field<F, T>(
     raw: &GuardrailInformationEntry,
+    field_kind: &str,
     parse_field: F,
 ) -> Result<Option<(Option<T>, bool)>, GuardrailPricingError>
 where
     F: FnOnce(&GuardrailEntryFields) -> Result<FieldOutcome<T>, GuardrailPricingError>,
 {
     let GuardrailInformationEntry::Object(fields) = raw else {
+        tracing::warn!(field_kind, "ignoring malformed guardrail_information entry");
         return Ok(None);
     };
     let field = match parse_field(fields)? {
-        FieldOutcome::Malformed => return Ok(None),
+        FieldOutcome::Malformed => {
+            tracing::warn!(field_kind, "ignoring malformed guardrail_information entry");
+            return Ok(None);
+        }
         FieldOutcome::Absent => None,
         FieldOutcome::Present(value) => Some(value),
     };
     let Some(in_spend) = parse_in_spend_flag(fields.in_spend.as_ref()) else {
+        tracing::warn!(field_kind, "ignoring malformed guardrail_information entry");
         return Ok(None);
     };
     Ok(Some((field, in_spend)))
@@ -104,7 +110,7 @@ fn parse_scalar_cost_field(
 fn parse_guardrail_cost_entry(
     raw: &GuardrailInformationEntry,
 ) -> Result<Option<GuardrailCostEntry>, GuardrailPricingError> {
-    let parsed = parse_validated_field(raw, parse_scalar_cost_field)?;
+    let parsed = parse_validated_field(raw, "guardrail cost", parse_scalar_cost_field)?;
     Ok(parsed.map(|(cost, in_spend)| GuardrailCostEntry { cost, in_spend }))
 }
 
@@ -190,7 +196,7 @@ fn parse_cost_by_unit_field(
 fn parse_cost_by_unit_entry(
     raw: &GuardrailInformationEntry,
 ) -> Result<Option<GuardrailCostByUnitEntry>, GuardrailPricingError> {
-    let parsed = parse_validated_field(raw, parse_cost_by_unit_field)?;
+    let parsed = parse_validated_field(raw, "guardrail cost rollup", parse_cost_by_unit_field)?;
     Ok(
         parsed.map(|(cost_by_unit, in_spend)| GuardrailCostByUnitEntry {
             cost_by_unit,

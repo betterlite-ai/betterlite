@@ -22,7 +22,7 @@ fn is_nonfinite_literal(text: &str) -> bool {
 fn coerce_finite_lexeme(lexeme: &str) -> Result<Option<CostMagnitude>, GuardrailPricingError> {
     match parse_decimal_lexeme(lexeme) {
         Ok(decimal) => Ok(Some(CostMagnitude::Finite(decimal))),
-        Err(_source) => Err(GuardrailPricingError::CostOverflow),
+        Err(source) => Err(GuardrailPricingError::UnrepresentableCost { source }),
     }
 }
 
