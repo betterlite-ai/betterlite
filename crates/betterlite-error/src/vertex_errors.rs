@@ -22,101 +22,93 @@ enum Family {
     ServiceUnavailable,
 }
 
-// the five "quota or capacity" phrases _map_vertex_exception tries in this order before falling back to status_code
-const QUOTA_PHRASES: [&str; 5] = [
-    "429 Quota exceeded",
-    "Quota exceeded for",
-    "Resource exhausted",
-    "IndexError: list index out of range",
-    "429 Unable to submit request because the service is temporarily out of capacity.",
+// a group of literal phrases that all mean the same family; a predicate matches if error_str contains any of them
+type PhraseRule = (&'static [&'static str], Family, &'static str);
+
+// branch-1153 and branch-1167, tried before the shared context-window checker
+const EARLY_PHRASE_RULES: &[PhraseRule] = &[
+    (
+        &[
+            "Vertex AI API has not been used in project",
+            "Unable to find your project",
+        ],
+        Family::BadRequest,
+        "the Vertex AI project could not be resolved",
+    ),
+    (
+        &["400 Request payload size exceeds"],
+        Family::ContextWindowExceeded,
+        "the request payload exceeds Vertex AI's size limit",
+    ),
 ];
 
-// branch-1153 and branch-1167: the project could not be resolved, or the payload itself was too large
-fn classify_request_shape(error_str: &str) -> Option<(Family, &'static str)> {
-    if error_str.contains("Vertex AI API has not been used in project")
-        || error_str.contains("Unable to find your project")
-    {
-        return Some((
-            Family::BadRequest,
-            "the Vertex AI project could not be resolved",
-        ));
-    }
-    if error_str.contains("400 Request payload size exceeds") {
-        return Some((
-            Family::ContextWindowExceeded,
-            "the request payload exceeds Vertex AI's size limit",
-        ));
+// branch-1180, branch-1192 and branch-1199, tried right after the shared context-window checker
+const MID_PHRASE_RULES: &[PhraseRule] = &[
+    (
+        &["None Unknown Error.", "Content has no parts."],
+        Family::InternalServer,
+        "Vertex AI returned an empty or unparsable response",
+    ),
+    (
+        &["API key not valid."],
+        Family::Authentication,
+        "the Vertex AI API key is not valid",
+    ),
+    (
+        &["403"],
+        Family::BadRequest,
+        "Vertex AI rejected the request",
+    ),
+];
+
+// branch-1213, then branch-1230's five quota-or-capacity phrases
+const LATE_PHRASE_RULES: &[PhraseRule] = &[
+    (
+        &[
+            "The response was blocked.",
+            "Output blocked by content filtering policy",
+        ],
+        Family::ContentPolicyViolation,
+        "Vertex AI blocked the response",
+    ),
+    (
+        &[
+            "429 Quota exceeded",
+            "Quota exceeded for",
+            "Resource exhausted",
+            "IndexError: list index out of range",
+            "429 Unable to submit request because the service is temporarily out of capacity.",
+        ],
+        Family::RateLimit,
+        "Vertex AI's quota for this request was exceeded",
+    ),
+];
+
+// branch-1272, tried last, after the status-dependent envelope check in classify_envelope
+const FINAL_PHRASE_RULES: &[PhraseRule] = &[(
+    &["500 Internal Server Error", "The model is overloaded."],
+    Family::InternalServer,
+    "Vertex AI reported an internal server error",
+)];
+
+// the first rule in the slice whose phrases match wins, mirroring an elif chain over literal substrings
+fn phrase_family(error_str: &str, rules: &[PhraseRule]) -> Option<(Family, &'static str)> {
+    for (phrases, family, reason) in rules {
+        if phrases.iter().any(|phrase| error_str.contains(phrase)) {
+            return Some((*family, reason));
+        }
     }
     None
 }
 
-// branch-1173, branch-1180, branch-1192 and branch-1199: what Vertex AI's response itself said was wrong
-fn classify_response_shape(error_str: &str) -> Option<(Family, &'static str)> {
-    if ExceptionCheckers::context_window(error_str) {
-        return Some((
-            Family::ContextWindowExceeded,
-            "the request exceeded the model's context window",
-        ));
-    }
-    if error_str.contains("None Unknown Error.") || error_str.contains("Content has no parts.") {
-        return Some((
-            Family::InternalServer,
-            "Vertex AI returned an empty or unparsable response",
-        ));
-    }
-    if error_str.contains("API key not valid.") {
-        return Some((Family::Authentication, "the Vertex AI API key is not valid"));
-    }
-    if error_str.contains("403") {
-        return Some((Family::BadRequest, "Vertex AI rejected the request"));
-    }
-    None
-}
-
-// branch-1213 and branch-1230: the response was blocked, or the request was throttled
-fn classify_blocked_or_throttled(error_str: &str) -> Option<(Family, &'static str)> {
-    if error_str.contains("The response was blocked.")
-        || error_str.contains("Output blocked by content filtering policy")
-    {
-        return Some((
-            Family::ContentPolicyViolation,
-            "Vertex AI blocked the response",
-        ));
-    }
-    if QUOTA_PHRASES
-        .iter()
-        .any(|phrase| error_str.contains(phrase))
-    {
-        return Some((
-            Family::RateLimit,
-            "Vertex AI's quota for this request was exceeded",
-        ));
-    }
-    None
-}
-
-// branch-1250 and branch-1272: a 429 wrapped inside a 5xx envelope, or a bare internal server fault
-fn classify_server_fault(
-    error_str: &str,
-    status_code: Option<u16>,
-) -> Option<(Family, &'static str)> {
-    if status_code.is_some_and(|status| (500..600).contains(&status))
-        && body_error_code(error_str) == Some(429)
-    {
-        return Some((
-            Family::RateLimit,
-            "the gateway wrapped a 429 inside a 5xx envelope",
-        ));
-    }
-    if error_str.contains("500 Internal Server Error")
-        || error_str.contains("The model is overloaded.")
-    {
-        return Some((
-            Family::InternalServer,
-            "Vertex AI reported an internal server error",
-        ));
-    }
-    None
+// branch-1250: a 429 wrapped inside a 5xx envelope, LiteLLM's only predicate that also reads status_code
+fn classify_envelope(error_str: &str, status_code: Option<u16>) -> Option<(Family, &'static str)> {
+    let is_5xx_wrapped_429 = status_code.is_some_and(|status| (500..600).contains(&status))
+        && body_error_code(error_str) == Some(429);
+    is_5xx_wrapped_429.then_some((
+        Family::RateLimit,
+        "the gateway wrapped a 429 inside a 5xx envelope",
+    ))
 }
 
 // error.code read off a JSON error body, mirroring _get_body_error_code at exception_mapping_utils.py:183
@@ -168,10 +160,18 @@ pub fn map_vertex_exception(
     model: Option<String>,
 ) -> Option<ErrorClass> {
     // mirrors _map_vertex_exception's elif chain: the error_str predicates run first and win over status_code
-    let (family, reason) = classify_request_shape(error_str)
-        .or_else(|| classify_response_shape(error_str))
-        .or_else(|| classify_blocked_or_throttled(error_str))
-        .or_else(|| classify_server_fault(error_str, error.status_code))
+    let (family, reason) = phrase_family(error_str, EARLY_PHRASE_RULES)
+        .or_else(|| {
+            // branch-1173: the shared context-window checker other tasks' predicates already implement and reuse
+            ExceptionCheckers::context_window(error_str).then_some((
+                Family::ContextWindowExceeded,
+                "the request exceeded the model's context window",
+            ))
+        })
+        .or_else(|| phrase_family(error_str, MID_PHRASE_RULES))
+        .or_else(|| phrase_family(error_str, LATE_PHRASE_RULES))
+        .or_else(|| classify_envelope(error_str, error.status_code))
+        .or_else(|| phrase_family(error_str, FINAL_PHRASE_RULES))
         .or_else(|| classify_by_status(error.status_code?))?;
     let context = ErrorContext {
         message: format!("{custom_llm_provider}: {reason}"),
@@ -183,7 +183,11 @@ pub fn map_vertex_exception(
         body_param: None,
         body_code: None,
     };
-    Some(match family {
+    Some(build_error_class(family, context))
+}
+
+fn build_error_class(family: Family, context: ErrorContext) -> ErrorClass {
+    match family {
         Family::BadRequest => ErrorClass::BadRequest(Box::new(context)),
         Family::ContextWindowExceeded => ErrorClass::ContextWindowExceeded(Box::new(context)),
         Family::InternalServer => ErrorClass::InternalServer(Box::new(context)),
@@ -203,5 +207,5 @@ pub fn map_vertex_exception(
         })),
         Family::ApiConnection => ErrorClass::ApiConnection(Box::new(context)),
         Family::ServiceUnavailable => ErrorClass::ServiceUnavailable(Box::new(context)),
-    })
+    }
 }
