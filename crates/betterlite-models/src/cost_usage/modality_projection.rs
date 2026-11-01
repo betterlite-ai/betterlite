@@ -1,9 +1,10 @@
 use rust_decimal::Decimal;
+use serde::Deserialize;
 
 use super::PromptDetails;
 
 // Mirrors utils.py's CachedTokensDetails: a nested, per-modality cache breakdown.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
 pub struct CachedTokenCounters {
     pub text_tokens: Option<i64>,
     pub audio_tokens: Option<i64>,
@@ -11,7 +12,7 @@ pub struct CachedTokenCounters {
 }
 
 // Mirrors types/utils.py's CacheCreationTokenDetails: ephemeral cache-write TTL buckets.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
 pub struct CacheCreationTokenDetails {
     pub ephemeral_5m_input_tokens: Option<i64>,
     pub ephemeral_1h_input_tokens: Option<i64>,
