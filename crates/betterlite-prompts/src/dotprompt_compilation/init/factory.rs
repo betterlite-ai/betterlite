@@ -81,12 +81,15 @@ fn extra_text(
     extra: &IndexMap<String, ContractJson>,
     field: &str,
 ) -> Result<Option<String>, DotpromptInitializerError> {
-    match extra_field(extra, field) {
-        None => Ok(None),
-        Some(ContractJson::Text(text)) => Ok(Some(text.clone())),
-        Some(_) => Err(DotpromptInitializerError::WrongType {
+    let Some(value) = extra_field(extra, field) else {
+        return Ok(None);
+    };
+    if let ContractJson::Text(text) = value {
+        Ok(Some(text.clone()))
+    } else {
+        Err(DotpromptInitializerError::WrongType {
             field: field.to_owned(),
-        }),
+        })
     }
 }
 
