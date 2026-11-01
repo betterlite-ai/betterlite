@@ -1,0 +1,14 @@
+task: B4509
+deviations:
+  - what: Coordinator uses tokio Semaphore to limit concurrent model invocations across both examination and grouping stages.
+    why: The coordinator must enforce bounded concurrency from claim.job.settings across two separate call sites (examine_executions and cluster_batches); a tokio Semaphore acquired before and released after model calls ensures the limit applies globally to the entire orchestration rather than per-stage.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/analysis.py#L649-L707
+  - what: Execution-ID aliasing uses String format (r0, r1, ...) instead of Python's dict iteration, mapping deterministically in order.
+    why: Rust requires explicit mapping; sorted iteration ensures deterministic alias assignment matching the sample order.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/analysis.py#L602-L603
+  - what: candidate_size sums UTF-8 byte lengths of title, hypothesis and check_id. Python's len() on those str fields counts Unicode code points, so a candidate holding multi-byte characters sizes larger in betterlite than in LiteLLM.
+    why: The size feeds partition_items, which bounds the byte size of the JSON payload sent to the model; counting bytes keeps the partition limit accurate for the actual request size, which code relying on the limit working at all needs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/analysis.py#L758-L759
+  - what: observation_batches sizes each observation by the UTF-8 byte length of its serialized JSON instead of Python's len() on the JSON string, which counts Unicode code points.
+    why: Same rationale as candidate_size, applied to the other partition_items caller this task owns; the partition limit tracks request-body bytes rather than code points.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/analysis.py#L882-L884
