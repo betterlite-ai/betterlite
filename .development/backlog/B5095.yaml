@@ -2,7 +2,7 @@ id: B5095
 milestone: M1 openai data plane
 title: "OpenAI errors: route the gateway through dispatch"
 status: todo
-depends_on: [B185]
+depends_on: [B185, B5102]
 file: tasks/B5095-openai-errors-gateway-wiring.yaml
 covers: []
 parent: null

@@ -4,28 +4,53 @@ description: >-
   B185 built crates/betterlite-error/src/dispatch.rs as the one mapping for OpenAI-family provider errors, but no
   gateway route calls it. crates/betterlite-server/src/routes/chat.rs's failure function and routes/embeddings.rs's
   embedding_failure still render ChatError::Provider and EmbeddingError::Provider through
-  crates/betterlite-openai/src/chat/provider_error.rs's own classify, text_rule and status_rule, which keep the
-  upstream status unchanged instead of normalizing it. LiteLLM's BadRequestError and ContextWindowExceededError both
-  hardcode status_code to 400 in their constructors
-  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L219-L249
-  and
-  https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L535-L554),
-  reached from _map_openai_exception's 422 branch and its context-window branch
-  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L422-L462
-  and
-  https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L317-L324).
-  So an upstream 422 reaches a betterlite client as 422, and context-window text on an upstream 500 stays 500, where
-  LiteLLM answers 400 for both. ErrorClass::metadata in crates/betterlite-error/src/error.rs already hardcodes 400
-  for BadRequest and ContextWindowExceeded, so routing through dispatch fixes both without a change to error.rs
-  itself. This task routes chat.rs, embeddings.rs and the stream failure before the first chunk through dispatch and
-  ErrorClass::metadata, and deletes the duplicate classify, text_rule, status_rule and their predicates along with
-  the test that exercises them, maps_provider_errors_like_litellm. betterlite-openai gains betterlite-error and
-  betterlite-redact as dependencies; crates/betterlite-server/src/server/chat_setup.rs builds one Redactor with
+  crates/betterlite-openai/src/chat/provider_error.rs's own classify, text_rule and status_rule, a second mapping
+  that duplicates what dispatch already does instead of calling it. Two mappings drift apart: the synthesized-status
+  bug, the dropped body type and param, and the open wildcard this task also fixes are all bugs in the mapping
+  dispatch owns, which only the oracle has exercised since B185 merged, while the gateway has run the other one the
+  whole time. This task routes chat.rs, embeddings.rs and the stream failure before the first chunk through dispatch
+  and ErrorClass::metadata, and deletes the duplicate classify, text_rule, status_rule and their predicates along
+  with the test that exercises them, maps_provider_errors_like_litellm, so one mapping serves the gateway and the
+  oracle.
+
+
+  This task depends on B5102, which makes dispatch answer the response's real status for the classes LiteLLM builds
+  a response for, instead of ErrorClass::metadata's fixed 400. On LiteLLM's real gateway path, _map_openai_exception
+  assigns response once from the original exception
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L275-L289),
+  and its 400 and 422 branches both pass that same response into BadRequestError
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L422-L462),
+  as does the context-window branch into ContextWindowExceededError
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L317-L324).
+  BaseLLMException.__init__ always builds that response with the real or synthesized status_code
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L41-L65).
+  BadRequestError.__init__ sets status_code to 400 on itself but keeps that response and forwards it to the base
+  openai exception class
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L219-L251),
+  and the base class then reads its own status_code back off that response, overwriting the 400. So on the real
+  gateway path an upstream 422 reaches the client as 422, and context-window text on an upstream 500 stays 500,
+  matching what betterlite's chat.rs already does today through status_rule's existing Fields::FromBody branch for
+  400 and 422. Routing through dispatch only keeps that match if dispatch itself answers the response's status for
+  BadRequest and ContextWindowExceeded, which is B5102's job, not this task's. betterlite-openai gains
+  betterlite-error and betterlite-redact as dependencies, with no crate cycle since betterlite-error depends only on
+  betterlite-redact; crates/betterlite-server/src/server/chat_setup.rs builds one Redactor with
   Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH) and crates/betterlite-openai/src/chat/execution.rs carries it in
   ChatExecutor, since dispatch needs a redactor and the project keeps dependencies in constructors instead of
   rebuilding one per request. embeddings.rs keeps passing no structured body into dispatch for the Provider arm, the
   same way ErrorBodyKind::MessageOnly behaves today, so the locked-in test
   embedding_provider_failure_preserves_message still sees param as null.
+
+
+  B5102 leaves ErrorClass::metadata's error_type null for most classes, PermissionDenied and NotFound among them,
+  and missing for UnsupportedParams and Unclassified. The client still gets a string. LiteLLM's openai_error_type
+  uses the exception's own type when it is a string other than "None"; otherwise 401 answers authentication_error,
+  403 permission_error, 429 rate_limit_error, any other status below 500 invalid_request_error and the rest
+  internal_server_error
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/openai_error_payload.py#L16-L50).
+  provider_error.rs's fallback_type has the same table without the 429 arm, since text_rule turns every 429 into
+  throttling_error before it gets there. Once the gateway renders ErrorClass::metadata, a 429 with no type can reach
+  the table, for example ErrorClass::Api with status 429. This task keeps fallback_type, adds the 429 arm, and
+  applies it to the status dispatch returns whenever metadata's error_type is null or missing.
 
 
   crates/betterlite-error/src/openai.rs's status_branch reads a synthesized status as None, with a comment saying
@@ -88,35 +113,53 @@ scope:
   lint_tables: false
 references:
 - url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L275-L289
+  why: _map_openai_exception assigns response once from the original exception, before the status fallback chain, and every branch below reuses that same value.
+- url: >-
     https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L422-L462
-  why: The hasattr(status_code) fallback chain in _map_openai_exception, including its 400 and 422 branches, both of which raise BadRequestError.
+  why: The hasattr(status_code) fallback chain's 400 and 422 branches, both raising BadRequestError with response=response and body=getattr(original_exception, "body", None).
 - url: >-
     https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L317-L324
-  why: The context-window-exceeded text check raising ContextWindowExceededError ahead of the status fallback.
+  why: The context-window-exceeded text check, ahead of the status fallback, raising ContextWindowExceededError with response=response.
 - url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L219-L249
-  why: BadRequestError.__init__ hardcodes status_code to 400 and forwards body to the base openai exception.
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L219-L251
+  why: BadRequestError.__init__ sets status_code to 400 on itself, then keeps the response if it has a request and forwards both response and body to the base openai exception class, which reads its own status_code back off that response.
 - url: >-
     https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L535-L554
-  why: ContextWindowExceededError.__init__ hardcodes status_code to 400 regardless of the upstream status.
+  why: ContextWindowExceededError.__init__ also sets status_code to 400 on itself, then forwards the same response into BadRequestError, so the real status still passes through.
 - url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L41-L53
-  why: BaseLLMException.__init__ always sets status_code and status_code_is_synthesized, so hasattr(original_exception, "status_code") is always true.
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L41-L65
+  why: BaseLLMException.__init__ always sets status_code and status_code_is_synthesized, and builds its response from that same status_code when none is given.
 - url: >-
     https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L213-L242
   why: extract_and_raise_litellm_exception passes body through _accepted_init_kwargs to whichever exception class accepts it.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/openai_error_payload.py#L16-L50
+  why: openai_error_type keeps the exception's own type when it is a string other than "None" and otherwise picks the client type from the status, with 429 answering rate_limit_error.
 dod:
 - text: >-
     chat.rs and embeddings.rs render ChatError::Provider and EmbeddingError::Provider, and a stream failure before
     the first chunk, through betterlite_error::dispatch::dispatch and ErrorClass::metadata, not through the
-    duplicate classify, text_rule and status_rule this task deletes from provider_error.rs. New gateway cases
-    tools/oracle/cases/chat/upstream-422.yaml and tools/oracle/cases/errors/context-window-500.yaml fail on main
-    today, since an upstream 422 reaches the client as 422 and context-window text on an upstream 500 stays 500; both
-    pass once dispatch answers 400 for each.
+    duplicate classify, text_rule and status_rule this task deletes from provider_error.rs. The custom check
+    gateway-wiring-removed-duplicate fails on main today, since that duplicate path and its gateway callers are
+    still there, and passes once this task's deletion and rewiring land. New gateway cases
+    tools/oracle/cases/chat/upstream-422.yaml and tools/oracle/cases/errors/context-window-500.yaml are regression
+    guards, not red-before-green cases: LiteLLM's real gateway path keeps the upstream status for both (422 stays
+    422, context-window text on a 500 stays 500), matching what chat.rs's current status_rule already does, and
+    both must keep passing once chat.rs calls dispatch instead, which needs B5102's status passthrough to still
+    answer the real status for BadRequest and ContextWindowExceeded.
   proof:
   - oracle
-  - openai-error-tests
   - gateway-wiring-removed-duplicate
+- text: >-
+    When ErrorClass::metadata's error_type is null or missing, chat.rs and embeddings.rs answer the type LiteLLM's
+    openai_error_type picks from the status dispatch returns, through provider_error.rs's fallback_type with a new
+    429 arm answering rate_limit_error. New named cases in a function named openai_errors_openai_error_tests_behavior
+    in crates/betterlite-server/src/routes/chat/tests.rs: an upstream 403 that dispatch maps to PermissionDenied
+    answers type permission_error, and an ErrorClass::Api with status 429 and no body type answers rate_limit_error.
+    The 429 case fails on main today (fallback_type answers invalid_request_error) and both pass once fixed.
+  proof:
+  - openai-error-tests
 - text: >-
     openai.rs's status_branch sends a synthesized status through the same table a real status uses. A new case in
     openai/tests.rs's openai_errors_openai_error_tests_behavior, with status_code_is_synthesized true and status 500,
@@ -198,7 +241,11 @@ pitfalls:
   ChatError::failure() in provider_error.rs still has to match every ChatError variant once Self::Provider no longer
   delegates to the deleted classify; give it a path that does not depend on the removed functions.
 - parse.rs's LitellmExceptionFacts.name is read only in dispatch/litellm_proxy.rs, so the enum change stays contained.
+- >-
+  B5102's status passthrough has to reach the client through chat.rs and embeddings.rs's new dispatch call. The
+  gateway must render the status dispatch returns for a response-carrying class, never a fixed per-class status, or
+  the 422 and context-window-on-500 oracle cases regress.
 review_level: standard
 budget:
-  max_changed_lines: 900
+  max_changed_lines: 1000
   max_new_expects: 0
