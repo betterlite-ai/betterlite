@@ -1,0 +1,28 @@
+kind: helper
+name: inject-native-blocks-object
+call:
+  b4113:
+    operation: inject_native_blocks
+    as_object: true
+    response:
+      role: assistant
+      content:
+        - type: text
+          text: "Here is what I found."
+    native_blocks:
+      - type: server_tool_use
+        id: srvtoolu_0123456789abcdef0123456789abcdef
+        name: web_search
+        input:
+          query: rust programming
+      - type: web_search_tool_result
+        tool_use_id: srvtoolu_0123456789abcdef0123456789abcdef
+        content:
+          - type: web_search_result
+            url: https://www.rust-lang.org
+            title: Rust Programming Language
+            page_age: null
+            encrypted_content: ""
+            snippet: A language empowering everyone to build reliable software.
+env: {}
+compare: {ignore: []}

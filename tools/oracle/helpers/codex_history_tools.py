@@ -1,114 +1,71 @@
-from __future__ import annotations
-
-# pyright: reportAny=false, reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportOptionalIterable=false, reportGeneralTypeIssues=false, reportReturnType=false
 import json
-from typing import Any
+from typing import TypeAlias, cast
 
-# The adapter intentionally mirrors LiteLLM's untyped JSON boundary.
-# ruff: noqa: ANN401
+from litellm.llms.base_llm.responses.codex_compat import (
+    drop_unsupported_tools,
+    normalize_codex_input_items,
+)
+from litellm.responses.additional_tools import hoist_additional_tools
+from litellm.types.llms.openai import ALL_RESPONSES_API_TOOL_PARAMS, ResponseInputParam
 
-
-def _normalize(value: Any) -> tuple[Any, list[str]]:  # noqa: C901
-    if not isinstance(value, list):
-        return value, []
-    rewritten: set[str] = set()
-    output: list[Any] = []
-    for item in value:
-        if not isinstance(item, dict):
-            output.append(item)
-            continue
-        item_type = item.get("type")
-        if item_type == "agent_message":
-            rewritten.add(item_type)
-            content = item.get("content")
-            text = ""
-            if isinstance(content, list):
-                text = "".join(
-                    str(block.get("text") or block.get("encrypted_content") or "")
-                    for block in content
-                    if isinstance(block, dict)
-                )
-            if text:
-                output.append(
-                    {
-                        "type": "message",
-                        "role": "assistant",
-                        "content": [{"type": "output_text", "text": text}],
-                    }
-                )
-        elif item_type == "context_compaction":
-            rewritten.add(item_type)
-            encrypted = item.get("encrypted_content")
-            if isinstance(encrypted, str) and encrypted:
-                output.append({"type": "compaction", "encrypted_content": encrypted})
-        elif item_type == "local_shell_call":
-            rewritten.add(item_type)
-            call_id = item.get("call_id")
-            if isinstance(call_id, str) and call_id:
-                action = item.get("action") if isinstance(item.get("action"), dict) else {}
-                output.append(
-                    {
-                        "type": "function_call",
-                        "call_id": call_id,
-                        "name": "local_shell",
-                        "arguments": json.dumps(action),
-                    }
-                )
-        else:
-            output.append(item)
-    return output, sorted(rewritten)
+Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
 
-def _drop(tools: list[Any], supported: set[str]) -> tuple[list[Any], list[str]]:
-    kept: list[Any] = []
-    dropped: set[str] = set()
-    for tool in tools:
-        if not isinstance(tool, dict) or tool.get("type") in supported:
-            kept.append(tool)
-        else:
-            dropped.add(str(tool.get("type")))
-    return kept, sorted(dropped)
+class InputError(ValueError):
+    pass
 
 
-def _hoist(value: Any, tools: list[Any] | None) -> dict[str, Any]:
-    existing = tuple(tools or ())
-    if not isinstance(value, list):
-        return {"input": value, "tools": list(existing), "hoisted": [], "debug": None}
-    items = [
-        item
-        for item in value
-        if isinstance(item, dict) and item.get("type") == "additional_tools"
-    ]
-    if not items:
-        return {"input": value, "tools": list(existing), "hoisted": [], "debug": None}
-    hoisted = []
+def _parse_function_call_arguments(items: Json) -> Json:
+    if not isinstance(items, list):
+        return items
+    parsed: list[Json] = []
     for item in items:
-        item_tools = item.get("tools")
-        if isinstance(item_tools, list) and all(isinstance(tool, dict) for tool in item_tools):
-            hoisted.extend(item_tools)
-    remaining = [
-        item
-        for item in value
-        if not (isinstance(item, dict) and item.get("type") == "additional_tools")
-    ]
-    debug = (
-        "Responses API: hoisting "
-        f"{len(hoisted)} tool(s) out of {len(items)} 'additional_tools' input item(s) "
-        "into the top-level tools param."
+        parsed_item = item
+        if isinstance(item, dict) and item.get("type") == "function_call":
+            arguments = item.get("arguments")
+            if isinstance(arguments, str):
+                parsed_item = {**item, "arguments": cast(Json, json.loads(arguments))}
+        parsed.append(parsed_item)
+    return parsed
+
+
+def _normalize(value: Json) -> dict[str, Json]:
+    normalized, rewritten_types = normalize_codex_input_items(cast(ResponseInputParam, value))
+    return {
+        "input": _parse_function_call_arguments(cast(Json, normalized)),
+        "rewritten_types": list(rewritten_types),
+    }
+
+
+def _drop_unsupported_tools(tools: Json, supported_types: Json) -> dict[str, Json]:
+    kept, dropped_types = drop_unsupported_tools(
+        cast("list[Json]", tools), frozenset(cast("list[str]", supported_types))
     )
-    return {"input": remaining, "tools": [*existing, *hoisted], "hoisted": hoisted, "debug": debug}
+    return {"tools": cast(Json, list(kept)), "dropped_types": cast(Json, list(dropped_types))}
 
 
-def run(input_value: dict[str, Any]) -> dict[str, Any]:
+def _hoist(value: Json, tools: Json) -> dict[str, Json]:
+    result = hoist_additional_tools(
+        cast(ResponseInputParam, value),
+        cast("list[ALL_RESPONSES_API_TOOL_PARAMS] | None", tools),
+    )
+    return {
+        "input": cast(Json, result.input),
+        "tools": cast(Json, list(result.tools)),
+        "hoisted": cast(Json, list(result.hoisted)),
+    }
+
+
+def run(input_value: dict[str, Json]) -> Json:
     operation = input_value.get("operation")
     if operation == "normalize":
-        value, rewritten = _normalize(input_value.get("input"))
-        return {"input": value, "rewritten_types": rewritten}
-    if operation == "drop_unsupported_tools":
-        tools, dropped = _drop(
-            input_value.get("tools", []), set(input_value.get("supported_types", []))
+        result = _normalize(input_value.get("input"))
+    elif operation == "drop_unsupported_tools":
+        result = _drop_unsupported_tools(
+            input_value.get("tools", []), input_value.get("supported_types", [])
         )
-        return {"tools": tools, "dropped_types": dropped}
-    if operation == "hoist_additional_tools":
-        return _hoist(input_value.get("input"), input_value.get("tools"))
-    raise ValueError("unknown codex_history_tools operation")
+    elif operation == "hoist_additional_tools":
+        result = _hoist(input_value.get("input"), input_value.get("tools"))
+    else:
+        raise InputError("unknown codex_history_tools operation")
+    return cast(Json, json.loads(json.dumps(result)))

@@ -1,0 +1,13 @@
+kind: helper
+name: bedrock-other-nova-embeddings-async
+call:
+  bedrock_other_nova_embeddings:
+    nova_async_output_s3_required:
+      input: hello
+      inference_params: {}
+      async_invoke_route: true
+      model_id: "async_invoke/model-y"
+      output_s3_uri: "s3://bucket/output"
+env: {}
+compare:
+  ignore: []

@@ -23,7 +23,9 @@ use serde_json::Value;
 
 use crate::OracleError;
 use crate::artifacts;
-use crate::case::{Case, Compare, LoadedCase, UpstreamAnswer, load_cases, parse_helper_case};
+use crate::case::{
+    Case, Compare, Ignore, LoadedCase, UpstreamAnswer, load_cases, parse_helper_case,
+};
 use crate::cli::Options;
 use crate::compare;
 use crate::gateway::{self, GatewayInput};
@@ -534,6 +536,119 @@ fn helper_comparison_reports_differences() {
     let left: HelperOutput = serde_json::from_str(r#"{"ok":true,"value":"left"}"#).unwrap();
     let right: HelperOutput = serde_json::from_str(r#"{"ok":true,"value":"right"}"#).unwrap();
     compare::compare_helper(&left, &right, &[]).unwrap();
+}
+
+#[test]
+fn helper_comparison_skips_error_class_and_message() {
+    let left: HelperOutput = serde_json::from_str(
+        r#"{"ok":false,"error":{"class":"ValueError","status":400,"message":"left message"}}"#,
+    )
+    .unwrap();
+    let right: HelperOutput = serde_json::from_str(
+        r#"{"ok":false,"error":{"class":"TypeError","status":400,"message":"right message"}}"#,
+    )
+    .unwrap();
+    assert!(compare::compare_helper(&left, &right, &[]).is_none());
+}
+
+fn error_output(status: u16, error_type: &str, param: &str, code: &str) -> HelperOutput {
+    HelperOutput {
+        ok: false,
+        value: None,
+        error: Some(compare::helper::HelperError {
+            class: "Error".to_owned(),
+            status: Some(status),
+            error_type: Some(Some(error_type.to_owned())),
+            param: Some(Some(param.to_owned())),
+            code: Some(Some(compare::helper::ErrorCode::Text(code.to_owned()))),
+            message: "failed".to_owned(),
+        }),
+        warnings: Vec::new(),
+        effects: Vec::new(),
+    }
+}
+
+#[rstest::rstest]
+#[case::status(
+    401_u16,
+    "invalid_request_error",
+    "model",
+    "missing_model",
+    "/error/status"
+)]
+#[case::type_field(400_u16, "server_error", "model", "missing_model", "/error/type")]
+#[case::param(
+    400_u16,
+    "invalid_request_error",
+    "messages",
+    "missing_model",
+    "/error/param"
+)]
+#[case::code(
+    400_u16,
+    "invalid_request_error",
+    "model",
+    "missing_messages",
+    "/error/code"
+)]
+fn helper_comparison_compares_error_codes(
+    #[case] status: u16,
+    #[case] error_type: &str,
+    #[case] param: &str,
+    #[case] code: &str,
+    #[case] pointer: &str,
+) {
+    let left = error_output(400_u16, "invalid_request_error", "model", "missing_model");
+    let right = error_output(status, error_type, param, code);
+    let difference = compare::compare_helper(&left, &right, &[]).unwrap();
+    assert_eq!(difference.pointer, pointer);
+}
+
+fn warning_output(subject: &str, message: &str) -> HelperOutput {
+    HelperOutput {
+        ok: true,
+        value: None,
+        error: None,
+        warnings: vec![compare::helper::HelperWarning {
+            subject: subject.to_owned(),
+            message: message.to_owned(),
+        }],
+        effects: Vec::new(),
+    }
+}
+
+#[rstest::rstest]
+#[case::same_subject("alpha", "alpha", true)]
+#[case::different_subject("alpha", "beta", false)]
+fn helper_comparison_skips_warning_messages(
+    #[case] left_subject: &str,
+    #[case] right_subject: &str,
+    #[case] expect_match: bool,
+) {
+    let left = warning_output(left_subject, "left message");
+    let right = warning_output(right_subject, "right message");
+    let matches = compare::compare_helper(&left, &right, &[]).is_none();
+    assert_eq!(matches, expect_match);
+}
+
+#[rstest::rstest]
+#[case::class("/error/class")]
+#[case::message("/error/message")]
+fn helper_comparison_rejects_skipped_ignores(#[case] pointer: &str) {
+    let output: HelperOutput = serde_json::from_str(
+        r#"{"ok":false,"error":{"class":"Error","status":400,"message":"failed"}}"#,
+    )
+    .unwrap();
+    let ignores = vec![Ignore {
+        pointer: pointer.to_owned(),
+        why: "no longer needed".to_owned(),
+    }];
+    let difference = compare::compare_helper(&output, &output, &ignores).unwrap();
+    assert_eq!(
+        difference.message,
+        "compare.ignore names a field helper comparisons skip"
+    );
+    assert_eq!(difference.pointer, pointer);
 }
 
 #[test]

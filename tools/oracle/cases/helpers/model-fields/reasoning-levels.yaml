@@ -1,7 +1,0 @@
-kind: helper
-name: reasoning-levels
-call:
-  model_fields:
-    source: '{"litellm_provider":"anthropic","default_reasoning_effort":"low","reasoning_effort_levels":["low","medium","high"],"bedrock_output_config_effort_ceiling":"xhigh"}'
-compare: {ignore: []}
-env: {}

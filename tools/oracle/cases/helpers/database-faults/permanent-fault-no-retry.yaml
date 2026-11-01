@@ -1,0 +1,13 @@
+kind: helper
+name: database-faults-permanent-fault
+call:
+  database_faults:
+    error:
+      error_type: prisma
+      message: "query engine schema mismatch"
+      code: P2021
+      meta_code: null
+      traceback_modules: []
+env: {}
+compare:
+  ignore: []

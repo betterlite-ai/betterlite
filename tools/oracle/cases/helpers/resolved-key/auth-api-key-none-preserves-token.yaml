@@ -1,0 +1,9 @@
+kind: helper
+name: api-key-none-preserves-token
+call:
+  resolved_key:
+    function: auth
+    value: {api_key: null, token: original}
+env: {}
+compare:
+  ignore: []

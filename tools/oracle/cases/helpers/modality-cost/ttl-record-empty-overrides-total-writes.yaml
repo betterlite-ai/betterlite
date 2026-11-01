@@ -1,0 +1,16 @@
+kind: helper
+name: ttl-record-empty-overrides-total-writes
+call:
+  modality_cost:
+    operation: prompt
+    prompt_tokens: 50
+    text_tokens: 50
+    cache_creation_tokens: 1000
+    cache_creation_token_details: {}
+    model_info: {}
+    prompt_base_cost: "0.00001"
+    cache_read_cost: "0"
+    cache_creation_cost: "0.00003"
+    cache_creation_cost_above_1hr: "0.00006"
+compare: {ignore: []}
+env: {}

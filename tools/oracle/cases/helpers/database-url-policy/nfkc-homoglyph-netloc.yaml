@@ -6,6 +6,4 @@ call:
     database_url: "postgresql://evil：host/db"
 env: {}
 compare:
-  ignore:
-    - pointer: /error/message
-      why: betterlite omits the raw netloc from its message instead of echoing attacker-controlled text back, unlike CPython's _checknetloc
+  ignore: []

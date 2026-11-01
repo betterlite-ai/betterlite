@@ -1,0 +1,9 @@
+kind: helper
+name: fake-usage-fields
+call:
+  messages_fake_stream:
+    response:
+      usage: {input_tokens: null, output_tokens: null, cache_creation_input_tokens: null}
+env: {}
+compare:
+  ignore: []

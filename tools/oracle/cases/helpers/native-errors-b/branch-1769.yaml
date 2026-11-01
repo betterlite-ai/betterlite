@@ -1,0 +1,12 @@
+kind: helper
+name: native-errors-b-branch-1769
+call:
+  native_errors_b:
+    provider: together_ai
+    model: together_ai/llama-3
+    error_str: "boom"
+    status_code: 418
+    message: "boom"
+env: {}
+compare:
+  ignore: []

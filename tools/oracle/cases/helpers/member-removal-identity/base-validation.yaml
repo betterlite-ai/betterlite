@@ -1,0 +1,10 @@
+kind: helper
+name: base_validation_requires_identifier
+call:
+  member_removal_identity:
+    operation: validate
+    user_id: null
+    user_email: null
+env: {}
+compare:
+  ignore: []

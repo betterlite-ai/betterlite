@@ -1,0 +1,14 @@
+kind: helper
+name: native-errors-b-branch-1816
+call:
+  native_errors_b:
+    provider: aleph_alpha
+    model: aleph_alpha/luminous-base
+    error_str: "This is longer than the model's maximum context length allowed"
+    status_code: null
+    message: "boom"
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

@@ -1,0 +1,12 @@
+kind: helper
+name: aws-errors-branch-866
+call:
+  aws_errors:
+    provider: bedrock
+    model: claude-3
+    custom_llm_provider: bedrock_mantle
+    error_str: "invalid_request_error: nothing numeric here"
+    status_code: null
+env: {}
+compare:
+  ignore: []

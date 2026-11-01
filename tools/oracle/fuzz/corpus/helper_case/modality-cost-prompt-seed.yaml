@@ -1,0 +1,5 @@
+kind: helper
+name: modality-cost-prompt-seed
+call: {modality_cost: {operation: prompt, prompt_tokens: 10, model_info: {}, prompt_base_cost: "0.00001", cache_read_cost: "0", cache_creation_cost: "0", cache_creation_cost_above_1hr: "0"}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,11 @@
+kind: helper
+name: any_filter_wraps_clauses_in_order
+call:
+  member_removal_identity:
+    operation: any_filter
+    clauses:
+      - user_id: u1
+      - user_id: u2
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,38 @@
+kind: helper
+name: native-result-pairs
+call:
+  b4113:
+    operation: native_result_pairs
+    format: anthropic
+    response:
+      content:
+        - type: tool_use
+          id: toolu_01
+          name: web_search
+          input:
+            query: rust programming
+        - type: tool_use
+          id: toolu_02
+          name: web_search
+          input:
+            query: rust ownership
+    outcomes:
+      - text: "Rust is a systems programming language."
+        response:
+          results:
+            - title: Rust Programming Language
+              url: https://www.rust-lang.org
+              snippet: A language empowering everyone to build reliable software.
+      - error_code: too_many_requests
+        message: "litellm.RateLimitError: slow down"
+env: {}
+compare:
+  ignore:
+    - pointer: /value/0/id
+      why: fresh random srvtoolu_ uuid minted on every call
+    - pointer: /value/1/tool_use_id
+      why: fresh random srvtoolu_ uuid minted on every call
+    - pointer: /value/2/id
+      why: fresh random srvtoolu_ uuid minted on every call
+    - pointer: /value/3/tool_use_id
+      why: fresh random srvtoolu_ uuid minted on every call

@@ -1,0 +1,13 @@
+kind: helper
+name: vertex-errors-branch-1313
+call:
+  vertex_errors:
+    model: gemini-1.5-pro
+    custom_llm_provider: vertex_ai
+    error_str: "the requested model deployment could not be found"
+    status_code: 404
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

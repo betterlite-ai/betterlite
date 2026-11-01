@@ -1,0 +1,11 @@
+kind: helper
+name: native-errors-b-branch-1916
+call:
+  native_errors_b:
+    provider: vllm
+    model: vllm/mistral-7b
+    status_code: 500
+    message: "boom"
+env: {}
+compare:
+  ignore: []
