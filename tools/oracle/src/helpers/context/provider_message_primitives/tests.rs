@@ -65,7 +65,7 @@ fn function_tool_calls_match_litellm() {
 
 fn matches_litellm(call: &str) {
     let source = format!(
-        "kind: helper\nname: inline\ncall: {{provider_message_primitives: {{{call}}}}}\nenv: {{}}\ncompare: {{ignore: [{{pointer: /error/message, why: betterlite writes its own message}}]}}\n"
+        "kind: helper\nname: inline\ncall: {{provider_message_primitives: {{{call}}}}}\nenv: {{}}\ncompare: {{ignore: []}}\n"
     );
     let case: HelperCase = serde_saphyr::from_str(&source).unwrap();
     let run = crate::helpers::run_case(&case, false).unwrap();

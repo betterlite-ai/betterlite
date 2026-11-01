@@ -6,4 +6,4 @@ call:
     data: []
 env: {}
 compare:
-  ignore: [{pointer: /error/message, why: betterlite writes its own message}]
+  ignore: []

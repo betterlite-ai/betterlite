@@ -1,0 +1,14 @@
+kind: helper
+name: aws-errors-branch-1025
+call:
+  aws_errors:
+    provider: bedrock
+    model: claude-3
+    custom_llm_provider: my_bedrock_proxy
+    error_str: "an unmatched failure"
+    status_code: 504
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/context/message
+      why: betterlite writes its own message

@@ -3,4 +3,4 @@ name: structured-malformed-json
 call: {structured_redaction: {function: redact_credentials_in_payload, data_json: "{"}}
 env: {}
 compare:
-  ignore: [{pointer: /error/message, why: betterlite writes its own message}]
+  ignore: []

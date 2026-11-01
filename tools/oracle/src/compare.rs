@@ -17,41 +17,80 @@ pub(crate) struct Difference {
     pub(crate) pointer: String,
 }
 
+fn rejected_helper_ignore(pointer: &str) -> Option<Difference> {
+    if pointer == "/error/class" || pointer == "/error/message" {
+        return Some(Difference {
+            message: "compare.ignore names a field helper comparisons skip".to_owned(),
+            pointer: pointer.to_owned(),
+        });
+    }
+    None
+}
+
+fn strip_helper_only_fields(
+    left: &HelperOutput,
+    right: &HelperOutput,
+    left_value: &mut serde_json::Value,
+    right_value: &mut serde_json::Value,
+) {
+    remove_pointer(left_value, "/error/class");
+    remove_pointer(left_value, "/error/message");
+    remove_pointer(right_value, "/error/class");
+    remove_pointer(right_value, "/error/message");
+    for index in 0..left.warnings.len() {
+        remove_pointer(left_value, &format!("/warnings/{index}/message"));
+    }
+    for index in 0..right.warnings.len() {
+        remove_pointer(right_value, &format!("/warnings/{index}/message"));
+    }
+}
+
+fn unknown_helper_ignore(
+    ignored: &Ignore,
+    left_value: &serde_json::Value,
+    right_value: &serde_json::Value,
+) -> Option<Difference> {
+    let known = matches!(
+        ignored.pointer.as_str(),
+        "/ok"
+            | "/value"
+            | "/error"
+            | "/error/status"
+            | "/error/type"
+            | "/error/param"
+            | "/error/code"
+            | "/warnings"
+            | "/effects"
+    );
+    let found = left_value.pointer(&ignored.pointer).is_some()
+        || right_value.pointer(&ignored.pointer).is_some();
+    (!found && !known).then(|| Difference {
+        message: "compare.ignore points to no field".to_owned(),
+        pointer: ignored.pointer.clone(),
+    })
+}
+
 pub(crate) fn compare_helper(
     left: &HelperOutput,
     right: &HelperOutput,
     ignores: &[Ignore],
 ) -> Option<Difference> {
+    for ignored in ignores {
+        if let Some(difference) = rejected_helper_ignore(&ignored.pointer) {
+            return Some(difference);
+        }
+    }
     let mut left_value = serde_json::to_value(left).ok()?;
     let mut right_value = serde_json::to_value(right).ok()?;
     for ignored in ignores {
-        let known = matches!(
-            ignored.pointer.as_str(),
-            "/ok"
-                | "/value"
-                | "/error"
-                | "/error/class"
-                | "/error/status"
-                | "/error/type"
-                | "/error/param"
-                | "/error/code"
-                | "/error/message"
-                | "/warnings"
-                | "/effects"
-        );
-        if left_value.pointer(&ignored.pointer).is_none()
-            && right_value.pointer(&ignored.pointer).is_none()
-            && !known
-        {
-            return Some(Difference {
-                message: "compare.ignore points to no field".to_owned(),
-                pointer: ignored.pointer.clone(),
-            });
+        if let Some(difference) = unknown_helper_ignore(ignored, &left_value, &right_value) {
+            return Some(difference);
         }
     }
     if let Some(difference) = compare_effect_secrets(left, right, ignores) {
         return Some(difference);
     }
+    strip_helper_only_fields(left, right, &mut left_value, &mut right_value);
     for ignored in ignores {
         remove_pointer(&mut left_value, &ignored.pointer);
         remove_pointer(&mut right_value, &ignored.pointer);
