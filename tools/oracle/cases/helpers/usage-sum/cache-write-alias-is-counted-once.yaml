@@ -1,0 +1,15 @@
+kind: helper
+name: cache-write-alias-is-counted-once
+call:
+  usage_sum:
+    usages:
+      - prompt_tokens: 1
+        completion_tokens: 2
+        total_tokens: 99
+        prompt_tokens_details: {cache_write_tokens: 4, cache_creation_tokens: 4}
+      - prompt_tokens: 3
+        completion_tokens: 5
+        total_tokens: 1
+        prompt_tokens_details: {cache_write_tokens: 6, cache_creation_tokens: 6}
+compare: {ignore: []}
+env: {}

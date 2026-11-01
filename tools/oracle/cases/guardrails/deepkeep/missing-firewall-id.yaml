@@ -5,4 +5,4 @@ call:
     construct:
       settings: {api_key: key, api_base: "https://deepkeep.test"}
 env: {}
-compare: {ignore: [{pointer: /error/message, why: "betterlite writes its own message"}]}
+compare: {ignore: []}

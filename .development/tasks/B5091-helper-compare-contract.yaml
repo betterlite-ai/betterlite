@@ -5,7 +5,7 @@ description: >-
   and compares every field the case does not list in compare.ignore. That includes HelperError's class (the Python
   exception class name), HelperError's message and each HelperWarning's message. docs/compatibility.md and rule
   errors-match-litellm make the message betterlite's own and put an error's HTTP status, type, param and code in the
-  contract, so 63 helper cases each list /error/message or /error/class in compare.ignore by hand, and a new case that
+  contract, so 74 helper cases each list /error/message or /error/class in compare.ignore by hand, and a new case that
   forgets the line fails on wording alone. The class is a Python detail with no Rust counterpart: the native side
   makes it up to match.
 
@@ -21,10 +21,13 @@ description: >-
   points to no field. Drop both pointers from the known list.
 
 
-  Remove the now redundant /error/class and /error/message entries from the 63 helper cases listed under
+  Remove the now redundant /error/class and /error/message entries from the 74 helper cases listed under
   oracle_cases, and keep every other ignore entry of those cases. A case whose ignore list becomes empty keeps
   compare: {ignore: []} the way other cases write it. HTTP cases (kind: http) keep their /error/message ignores,
-  since the HTTP comparison does not change.
+  since the HTTP comparison does not change. matches_litellm in
+  tools/oracle/src/helpers/context/provider_message_primitives/tests.rs builds an inline helper case whose ignore
+  lists /error/message, so the new Difference fails function_tool_calls_match_litellm and the six
+  response_formats_match_litellm cases; give that inline case compare: {ignore: []} too.
 
 
   Add tests to tools/oracle/src/tests.rs, each named with the helper_comparison_ prefix:
@@ -39,6 +42,14 @@ scope:
   paths:
   - tools/oracle/src/compare.rs
   - tools/oracle/src/tests.rs
+  - tools/oracle/src/helpers/context/provider_message_primitives/tests.rs
+  - tools/oracle/cases/guardrails/deepkeep/blocked-action.yaml
+  - tools/oracle/cases/guardrails/deepkeep/malformed-response.yaml
+  - tools/oracle/cases/guardrails/deepkeep/missing-api-base.yaml
+  - tools/oracle/cases/guardrails/deepkeep/missing-api-key.yaml
+  - tools/oracle/cases/guardrails/deepkeep/missing-firewall-id.yaml
+  - tools/oracle/cases/guardrails/deepkeep/unreachable-fail-closed.yaml
+  - tools/oracle/cases/guardrails/deepkeep/unreachable-fail-open.yaml
   - tools/oracle/cases/guardrails/lasso/api-401-invalid-key.yaml
   - tools/oracle/cases/guardrails/lasso/api-429-rate-limit.yaml
   - tools/oracle/cases/guardrails/lasso/api-timeout.yaml
@@ -78,6 +89,9 @@ scope:
   - tools/oracle/cases/helpers/providers/a2a-text/a2a-wrong-shapes.yaml
   - tools/oracle/cases/helpers/providers/anthropic-output-schema/missing-tool-type.yaml
   - tools/oracle/cases/helpers/providers/bedrock-other-image-models/stability3-prompt.yaml
+  - tools/oracle/cases/helpers/resolved-key/auth-allowed-region-rejected.yaml
+  - tools/oracle/cases/helpers/resolved-key/auth-nonstring-api-key-error.yaml
+  - tools/oracle/cases/helpers/resolved-key/auth-per-model-limits-float-error.yaml
   - tools/oracle/cases/helpers/resource-rows/access-group-all-fields-and-null-lists.yaml
   - tools/oracle/cases/helpers/resource-rows/config-requires-dict-without-string-decode.yaml
   - tools/oracle/cases/helpers/resource-rows/credential-create-update-contracts.yaml
@@ -100,6 +114,7 @@ scope:
   - tools/oracle/cases/helpers/structured-redaction/ambiguous-json.yaml
   - tools/oracle/cases/helpers/structured-redaction/invalid-redact.yaml
   - tools/oracle/cases/helpers/structured-redaction/malformed-json.yaml
+  - tools/oracle/cases/helpers/token-rates/malformed-sort-key-versus-malformed-tier-price.yaml
   - tools/oracle/cases/helpers/url-path/dot-segment.yaml
   - tools/oracle/cases/helpers/url-path/empty-segment.yaml
   lint_tables: false
@@ -123,7 +138,7 @@ dod:
 - text: No helper case lists /error/class or /error/message in compare.ignore, and HTTP cases keep theirs.
   proof:
   - no-skipped-ignores
-- text: The 63 rewritten helper cases still match LiteLLM.
+- text: The 74 rewritten helper cases still match LiteLLM.
   proof:
   - oracle
 checks:
@@ -137,6 +152,13 @@ checks:
     run: |-
       test -z "$(grep -rlE 'pointer: /error/(class|message)' tools/oracle/cases | xargs -r grep -l '^kind: helper')" && grep -q 'pointer: /error/message' tools/oracle/cases/chat/upstream-429.yaml
 oracle_cases:
+- tools/oracle/cases/guardrails/deepkeep/blocked-action.yaml
+- tools/oracle/cases/guardrails/deepkeep/malformed-response.yaml
+- tools/oracle/cases/guardrails/deepkeep/missing-api-base.yaml
+- tools/oracle/cases/guardrails/deepkeep/missing-api-key.yaml
+- tools/oracle/cases/guardrails/deepkeep/missing-firewall-id.yaml
+- tools/oracle/cases/guardrails/deepkeep/unreachable-fail-closed.yaml
+- tools/oracle/cases/guardrails/deepkeep/unreachable-fail-open.yaml
 - tools/oracle/cases/guardrails/lasso/api-401-invalid-key.yaml
 - tools/oracle/cases/guardrails/lasso/api-429-rate-limit.yaml
 - tools/oracle/cases/guardrails/lasso/api-timeout.yaml
@@ -176,6 +198,9 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/a2a-text/a2a-wrong-shapes.yaml
 - tools/oracle/cases/helpers/providers/anthropic-output-schema/missing-tool-type.yaml
 - tools/oracle/cases/helpers/providers/bedrock-other-image-models/stability3-prompt.yaml
+- tools/oracle/cases/helpers/resolved-key/auth-allowed-region-rejected.yaml
+- tools/oracle/cases/helpers/resolved-key/auth-nonstring-api-key-error.yaml
+- tools/oracle/cases/helpers/resolved-key/auth-per-model-limits-float-error.yaml
 - tools/oracle/cases/helpers/resource-rows/access-group-all-fields-and-null-lists.yaml
 - tools/oracle/cases/helpers/resource-rows/config-requires-dict-without-string-decode.yaml
 - tools/oracle/cases/helpers/resource-rows/credential-create-update-contracts.yaml
@@ -198,6 +223,7 @@ oracle_cases:
 - tools/oracle/cases/helpers/structured-redaction/ambiguous-json.yaml
 - tools/oracle/cases/helpers/structured-redaction/invalid-redact.yaml
 - tools/oracle/cases/helpers/structured-redaction/malformed-json.yaml
+- tools/oracle/cases/helpers/token-rates/malformed-sort-key-versus-malformed-tier-price.yaml
 - tools/oracle/cases/helpers/url-path/dot-segment.yaml
 - tools/oracle/cases/helpers/url-path/empty-segment.yaml
 deviations: []
@@ -209,8 +235,8 @@ pitfalls:
 - remove_pointer sets an array element to null instead of removing it, so remove each warning's message key by its full pointer and never the warning itself; the warnings' count and order still count.
 - Reject an ignore of /error/class or /error/message before the "points to no field" check; a failed output has both fields, so that check alone would let the ignore pass.
 - The FAIL line and the artifacts serialize HelperOutput, not the trimmed comparison value, so they keep showing class and messages for debugging.
-- Some of the 63 cases list a second ignore next to /error/message; keep that one and its why.
+- Some of the 74 cases list a second ignore next to /error/message; keep that one and its why.
 review_level: standard
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 1500
   max_new_expects: 0

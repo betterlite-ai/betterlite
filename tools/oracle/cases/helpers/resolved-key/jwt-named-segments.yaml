@@ -1,0 +1,9 @@
+kind: helper
+name: jwt-named-segments-true
+call:
+  resolved_key:
+    function: is_jwt
+    value: a.b.c
+env: {}
+compare:
+  ignore: []

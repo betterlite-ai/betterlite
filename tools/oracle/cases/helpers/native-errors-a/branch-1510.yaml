@@ -1,0 +1,12 @@
+kind: helper
+name: native-errors-a-branch-1510
+call:
+  native_errors_a:
+    provider: huggingface
+    model: hf/model-a
+    error_str: "Rate limit reached for this endpoint"
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/context/message
+      why: betterlite writes its own message

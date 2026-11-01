@@ -1,0 +1,9 @@
+kind: helper
+name: health-principal-all-fields
+call:
+  resolved_key:
+    function: health_principal
+    value: null
+env: {}
+compare:
+  ignore: []
