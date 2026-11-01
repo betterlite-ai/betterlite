@@ -49,79 +49,16 @@ impl WebSearchInterceptionState {
         custom_llm_provider: &str,
         agentic_loop_api_surface: Option<&str>,
     ) -> Result<Option<ToolsDict>, LoopEligibilityError> {
-        match agentic_loop_api_surface {
-            Some(CHAT_COMPLETION_SURFACE) => {
-                self.chat_completion_gate(response_json, tools, stream, custom_llm_provider)
-            }
-            Some(RESPONSES_AGENTIC_SURFACE) => {
-                self.responses_gate(response_json, tools, stream, custom_llm_provider)
-            }
-            _ => self.anthropic_gate(response_json, tools, stream, custom_llm_provider),
-        }
-    }
-
-    pub fn anthropic_gate(
-        &self,
-        response_json: &str,
-        tools: Option<&[Tool]>,
-        stream: bool,
-        custom_llm_provider: &str,
-    ) -> Result<Option<ToolsDict>, LoopEligibilityError> {
+        let spec = match agentic_loop_api_surface {
+            Some(CHAT_COMPLETION_SURFACE) => GateSpec::CHAT_COMPLETION,
+            Some(RESPONSES_AGENTIC_SURFACE) => GateSpec::RESPONSES,
+            _ => GateSpec::ANTHROPIC,
+        };
         let request = GateRequest {
             response_json,
             tools,
             stream,
             custom_llm_provider,
-        };
-        let spec = GateSpec {
-            has_tool: is_web_search_tool,
-            dialect: "anthropic",
-            response_format: "anthropic",
-            include_thinking: true,
-        };
-        self.run_gate(request, spec)
-    }
-
-    pub fn chat_completion_gate(
-        &self,
-        response_json: &str,
-        tools: Option<&[Tool]>,
-        stream: bool,
-        custom_llm_provider: &str,
-    ) -> Result<Option<ToolsDict>, LoopEligibilityError> {
-        let request = GateRequest {
-            response_json,
-            tools,
-            stream,
-            custom_llm_provider,
-        };
-        let spec = GateSpec {
-            has_tool: is_chat_web_search_tool,
-            dialect: "openai",
-            response_format: "openai",
-            include_thinking: false,
-        };
-        self.run_gate(request, spec)
-    }
-
-    pub fn responses_gate(
-        &self,
-        response_json: &str,
-        tools: Option<&[Tool]>,
-        stream: bool,
-        custom_llm_provider: &str,
-    ) -> Result<Option<ToolsDict>, LoopEligibilityError> {
-        let request = GateRequest {
-            response_json,
-            tools,
-            stream,
-            custom_llm_provider,
-        };
-        let spec = GateSpec {
-            has_tool: is_web_search_tool_responses,
-            dialect: "responses",
-            response_format: "responses",
-            include_thinking: false,
         };
         self.run_gate(request, spec)
     }
@@ -180,6 +117,27 @@ struct GateSpec {
     dialect: &'static str,
     response_format: &'static str,
     include_thinking: bool,
+}
+
+impl GateSpec {
+    const ANTHROPIC: Self = Self {
+        has_tool: is_web_search_tool,
+        dialect: "anthropic",
+        response_format: "anthropic",
+        include_thinking: true,
+    };
+    const CHAT_COMPLETION: Self = Self {
+        has_tool: is_chat_web_search_tool,
+        dialect: "openai",
+        response_format: "openai",
+        include_thinking: false,
+    };
+    const RESPONSES: Self = Self {
+        has_tool: is_web_search_tool_responses,
+        dialect: "responses",
+        response_format: "responses",
+        include_thinking: false,
+    };
 }
 
 fn extract_thinking_blocks(response: &ResponseJson) -> Vec<ResponseJson> {
