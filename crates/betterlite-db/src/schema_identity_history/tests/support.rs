@@ -360,6 +360,20 @@ async fn assert_index(client: &Client, name: &str, columns: &[&str], unique: boo
     assert_eq!(facts.unique, unique, "{name} unique");
 }
 
+async fn assert_single_column(client: &Client, tables: &[&str], spec: ColumnSpec) {
+    for table in tables {
+        assert_columns(client, table, &[spec]).await;
+    }
+}
+
+type IndexSpec = (&'static str, &'static [&'static str], bool);
+
+async fn assert_indexes(client: &Client, specs: &[IndexSpec]) {
+    for (name, columns, unique) in specs {
+        assert_index(client, name, columns, *unique).await;
+    }
+}
+
 async fn assert_rule(client: &Client, conname: &str, update_rule: char, delete_rule: char) {
     let row = query_one_row(
         client,

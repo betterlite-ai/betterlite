@@ -35,15 +35,28 @@ const DELETED_TEAM_TABLE_COLUMNS: [ColumnSpec; 27] = [
     ("deleted_by_api_key", "text", true, None),
 ];
 
-const DELETED_TEAM_TABLE_INDEXES: [(&str, &str); 5] = [
-    ("LiteLLM_DeletedTeamTable_team_id_idx", "team_id"),
-    ("LiteLLM_DeletedTeamTable_deleted_at_idx", "deleted_at"),
+const DELETED_TEAM_TABLE_INDEXES: [IndexSpec; 5] = [
+    ("LiteLLM_DeletedTeamTable_team_id_idx", &["team_id"], false),
+    (
+        "LiteLLM_DeletedTeamTable_deleted_at_idx",
+        &["deleted_at"],
+        false,
+    ),
     (
         "LiteLLM_DeletedTeamTable_organization_id_idx",
-        "organization_id",
+        &["organization_id"],
+        false,
     ),
-    ("LiteLLM_DeletedTeamTable_team_alias_idx", "team_alias"),
-    ("LiteLLM_DeletedTeamTable_created_at_idx", "created_at"),
+    (
+        "LiteLLM_DeletedTeamTable_team_alias_idx",
+        &["team_alias"],
+        false,
+    ),
+    (
+        "LiteLLM_DeletedTeamTable_created_at_idx",
+        &["created_at"],
+        false,
+    ),
 ];
 
 const DELETED_VERIFICATION_TOKEN_COLUMNS: [ColumnSpec; 38] = [
@@ -97,21 +110,36 @@ const DELETED_VERIFICATION_TOKEN_COLUMNS: [ColumnSpec; 38] = [
     ),
 ];
 
-const DELETED_VERIFICATION_TOKEN_INDEXES: [(&str, &str); 6] = [
-    ("LiteLLM_DeletedVerificationToken_token_idx", "token"),
+const DELETED_VERIFICATION_TOKEN_INDEXES: [IndexSpec; 6] = [
+    (
+        "LiteLLM_DeletedVerificationToken_token_idx",
+        &["token"],
+        false,
+    ),
     (
         "LiteLLM_DeletedVerificationToken_deleted_at_idx",
-        "deleted_at",
+        &["deleted_at"],
+        false,
     ),
-    ("LiteLLM_DeletedVerificationToken_user_id_idx", "user_id"),
-    ("LiteLLM_DeletedVerificationToken_team_id_idx", "team_id"),
+    (
+        "LiteLLM_DeletedVerificationToken_user_id_idx",
+        &["user_id"],
+        false,
+    ),
+    (
+        "LiteLLM_DeletedVerificationToken_team_id_idx",
+        &["team_id"],
+        false,
+    ),
     (
         "LiteLLM_DeletedVerificationToken_organization_id_idx",
-        "organization_id",
+        &["organization_id"],
+        false,
     ),
     (
         "LiteLLM_DeletedVerificationToken_key_alias_idx",
-        "key_alias",
+        &["key_alias"],
+        false,
     ),
 ];
 
@@ -165,6 +193,8 @@ const ROUTER_SETTINGS_TABLES: [&str; 4] = [
 const TEAM_GUARDRAIL_TABLES: [&str; 2] = ["LiteLLM_DeletedTeamTable", "LiteLLM_TeamTable"];
 
 const TEAM_SOFT_BUDGET_TABLES: [&str; 2] = ["LiteLLM_TeamTable", "LiteLLM_DeletedTeamTable"];
+
+const GUARDRAIL_OWNER_TABLES: [&str; 1] = ["LiteLLM_GuardrailsTable"];
 
 const DAILY_ENDPOINT_COHORT: [(&str, &str, &str); 6] = [
     (
@@ -324,6 +354,20 @@ const KEY_HISTORY_TABLES: [&str; 2] = [
     "LiteLLM_VerificationToken",
 ];
 
+const KEY_LOOKUP_INDEXES: [IndexSpec; 3] = [
+    (
+        "LiteLLM_VerificationToken_user_id_team_id_idx",
+        &["user_id", "team_id"],
+        false,
+    ),
+    ("LiteLLM_VerificationToken_team_id_idx", &["team_id"], false),
+    (
+        "LiteLLM_VerificationToken_budget_reset_at_expires_idx",
+        &["budget_reset_at", "expires"],
+        false,
+    ),
+];
+
 async fn assert_deleted_history_defaults(client: &Client) {
     assert_columns(
         client,
@@ -331,64 +375,14 @@ async fn assert_deleted_history_defaults(client: &Client) {
         &DELETED_TEAM_TABLE_COLUMNS,
     )
     .await;
-    for (name, column) in DELETED_TEAM_TABLE_INDEXES {
-        assert_index(client, name, &[column], false).await;
-    }
+    assert_indexes(client, &DELETED_TEAM_TABLE_INDEXES).await;
     assert_columns(
         client,
         "LiteLLM_DeletedVerificationToken",
         &DELETED_VERIFICATION_TOKEN_COLUMNS,
     )
     .await;
-    for (name, column) in DELETED_VERIFICATION_TOKEN_INDEXES {
-        assert_index(client, name, &[column], false).await;
-    }
-}
-
-async fn assert_skills_storage(client: &Client) {
-    assert_columns(client, "LiteLLM_SkillsTable", &SKILLS_TABLE_COLUMNS).await;
-}
-
-async fn assert_mcp_metadata_defaults(client: &Client) {
-    assert_columns(client, "LiteLLM_MCPServerTable", &MCP_SERVER_TABLE_COLUMNS).await;
-}
-
-async fn assert_router_settings_defaults(client: &Client) {
-    for table in ROUTER_SETTINGS_TABLES {
-        assert_columns(
-            client,
-            table,
-            &[("router_settings", "jsonb", true, Some("{}"))],
-        )
-        .await;
-    }
-}
-
-async fn assert_team_guardrail_defaults(client: &Client) {
-    for table in TEAM_GUARDRAIL_TABLES {
-        assert_columns(
-            client,
-            table,
-            &[(
-                "allow_team_guardrail_config",
-                "boolean",
-                false,
-                Some("false"),
-            )],
-        )
-        .await;
-    }
-}
-
-async fn assert_team_soft_budget_nullable(client: &Client) {
-    for table in TEAM_SOFT_BUDGET_TABLES {
-        assert_columns(
-            client,
-            table,
-            &[("soft_budget", "double precision", true, None)],
-        )
-        .await;
-    }
+    assert_indexes(client, &DELETED_VERIFICATION_TOKEN_INDEXES).await;
 }
 
 async fn assert_daily_endpoint_indexes(client: &Client) {
@@ -462,18 +456,20 @@ async fn assert_vector_store_ownership(client: &Client) {
         ],
     )
     .await;
-    assert_index(
+    assert_indexes(
         client,
-        "LiteLLM_ManagedVectorStoresTable_team_id_idx",
-        &["team_id"],
-        false,
-    )
-    .await;
-    assert_index(
-        client,
-        "LiteLLM_ManagedVectorStoresTable_user_id_idx",
-        &["user_id"],
-        false,
+        &[
+            (
+                "LiteLLM_ManagedVectorStoresTable_team_id_idx",
+                &["team_id"][..],
+                false,
+            ),
+            (
+                "LiteLLM_ManagedVectorStoresTable_user_id_idx",
+                &["user_id"][..],
+                false,
+            ),
+        ],
     )
     .await;
 }
@@ -485,18 +481,20 @@ async fn assert_managed_vector_store_catalog(client: &Client) {
         &MANAGED_VECTOR_STORE_TABLE_COLUMNS,
     )
     .await;
-    assert_index(
+    assert_indexes(
         client,
-        "LiteLLM_ManagedVectorStoreTable_unified_resource_id_key",
-        &["unified_resource_id"],
-        true,
-    )
-    .await;
-    assert_index(
-        client,
-        "LiteLLM_ManagedVectorStoreTable_unified_resource_id_idx",
-        &["unified_resource_id"],
-        false,
+        &[
+            (
+                "LiteLLM_ManagedVectorStoreTable_unified_resource_id_key",
+                &["unified_resource_id"][..],
+                true,
+            ),
+            (
+                "LiteLLM_ManagedVectorStoreTable_unified_resource_id_idx",
+                &["unified_resource_id"][..],
+                false,
+            ),
+        ],
     )
     .await;
 }
@@ -508,62 +506,36 @@ async fn assert_deprecated_token_catalog(client: &Client) {
         &DEPRECATED_VERIFICATION_TOKEN_COLUMNS,
     )
     .await;
-    assert_index(
+    assert_indexes(
         client,
-        "LiteLLM_DeprecatedVerificationToken_token_key",
-        &["token"],
-        true,
-    )
-    .await;
-    assert_index(
-        client,
-        "LiteLLM_DeprecatedVerificationToken_token_revoke_at_idx",
-        &["token", "revoke_at"],
-        false,
-    )
-    .await;
-    assert_index(
-        client,
-        "LiteLLM_DeprecatedVerificationToken_revoke_at_idx",
-        &["revoke_at"],
-        false,
-    )
-    .await;
-}
-
-async fn assert_key_lookup_indexes(client: &Client) {
-    assert_index(
-        client,
-        "LiteLLM_VerificationToken_user_id_team_id_idx",
-        &["user_id", "team_id"],
-        false,
-    )
-    .await;
-    assert_index(
-        client,
-        "LiteLLM_VerificationToken_team_id_idx",
-        &["team_id"],
-        false,
-    )
-    .await;
-    assert_index(
-        client,
-        "LiteLLM_VerificationToken_budget_reset_at_expires_idx",
-        &["budget_reset_at", "expires"],
-        false,
+        &[
+            (
+                "LiteLLM_DeprecatedVerificationToken_token_key",
+                &["token"][..],
+                true,
+            ),
+            (
+                "LiteLLM_DeprecatedVerificationToken_token_revoke_at_idx",
+                &["token", "revoke_at"][..],
+                false,
+            ),
+            (
+                "LiteLLM_DeprecatedVerificationToken_revoke_at_idx",
+                &["revoke_at"][..],
+                false,
+            ),
+        ],
     )
     .await;
 }
 
 async fn assert_access_group_history(client: &Client) {
-    for table in ACCESS_GROUP_HISTORY_TABLES {
-        assert_columns(
-            client,
-            table,
-            &[("access_group_ids", "ARRAY", true, Some("ARRAY"))],
-        )
-        .await;
-    }
+    assert_single_column(
+        client,
+        &ACCESS_GROUP_HISTORY_TABLES,
+        ("access_group_ids", "ARRAY", true, Some("ARRAY")),
+    )
+    .await;
     assert_columns(
         client,
         "LiteLLM_AccessGroupTable",
@@ -595,15 +567,6 @@ async fn assert_access_group_history_after_change(client: &Client) {
     .await;
 }
 
-async fn assert_guardrail_owner(client: &Client) {
-    assert_columns(
-        client,
-        "LiteLLM_GuardrailsTable",
-        &[("team_id", "text", true, None)],
-    )
-    .await;
-}
-
 async fn assert_end_user_permission_fk(client: &Client) {
     assert_columns(
         client,
@@ -621,14 +584,12 @@ async fn assert_end_user_permission_fk(client: &Client) {
 }
 
 async fn assert_key_history_additions(client: &Client) {
-    for table in KEY_HISTORY_TABLES {
-        assert_columns(
-            client,
-            table,
-            &[("last_active", "timestamp without time zone", true, None)],
-        )
-        .await;
-    }
+    assert_single_column(
+        client,
+        &KEY_HISTORY_TABLES,
+        ("last_active", "timestamp without time zone", true, None),
+    )
+    .await;
     assert_columns(
         client,
         "LiteLLM_DeletedVerificationToken",
@@ -640,11 +601,8 @@ async fn assert_key_history_additions(client: &Client) {
 #[derive(Clone, Copy)]
 enum Cohort {
     DeletedHistoryDefaults,
-    SkillsStorage,
-    McpMetadataDefaults,
-    RouterSettingsDefaults,
-    TeamGuardrailDefaults,
-    TeamSoftBudgetNullable,
+    TableColumns(&'static str, &'static str, &'static [ColumnSpec]),
+    SingleColumn(&'static str, &'static [&'static str], ColumnSpec),
     DailyEndpointIndexes,
     LowerEmailExpression,
     PolicyStorage,
@@ -653,7 +611,6 @@ enum Cohort {
     DeprecatedTokenCatalog,
     KeyLookupIndexes,
     AccessGroupHistory,
-    GuardrailOwner,
     EndUserPermissionFk,
     KeyHistoryAdditions,
 }
@@ -663,15 +620,9 @@ fn checkpoint_for(cohort: Cohort) -> &'static str {
         Cohort::DeletedHistoryDefaults => {
             "20251219110931_add_deleted_keys_and_deleted_teams_tables"
         }
-        Cohort::SkillsStorage => "20251220144550_schema_update",
-        Cohort::McpMetadataDefaults => {
-            "20260207093506_add_available_on_public_internet_to_mcp_servers"
+        Cohort::TableColumns(checkpoint, _, _) | Cohort::SingleColumn(checkpoint, _, _) => {
+            checkpoint
         }
-        Cohort::RouterSettingsDefaults => {
-            "20260116142756_update_deleted_keys_teams_table_routing_settings"
-        }
-        Cohort::TeamGuardrailDefaults => "20260205091235_allow_team_guardrail_config",
-        Cohort::TeamSoftBudgetNullable => "20260207110613_add_soft_budget_to_deleted_teams_table",
         Cohort::DailyEndpointIndexes => "20260106155622_add_endpoint_to_daily_activity_tables",
         Cohort::LowerEmailExpression => "20260108_add_user_email_lower_idx",
         Cohort::PolicyStorage => "20260214163027_add_pipeline_to_policy_table",
@@ -680,7 +631,6 @@ fn checkpoint_for(cohort: Cohort) -> &'static str {
         Cohort::DeprecatedTokenCatalog => "20260203120000_add_deprecated_verification_token_table",
         Cohort::KeyLookupIndexes => "20260209085821_add_verificationtoken_indexes",
         Cohort::AccessGroupHistory => "20260212143306_add_access_group_table",
-        Cohort::GuardrailOwner => "20260214094754_schema_sync",
         Cohort::EndUserPermissionFk => "20260214185341_object_permissions_for_end_users",
         Cohort::KeyHistoryAdditions => "20260219105005_add_project_id_to_deleted_keys",
     }
@@ -688,77 +638,71 @@ fn checkpoint_for(cohort: Cohort) -> &'static str {
 
 async fn run_cohort_check(client: &Client, cohort: Cohort) {
     match cohort {
-        Cohort::DeletedHistoryDefaults
-        | Cohort::SkillsStorage
-        | Cohort::McpMetadataDefaults
-        | Cohort::RouterSettingsDefaults
-        | Cohort::TeamGuardrailDefaults
-        | Cohort::TeamSoftBudgetNullable
-        | Cohort::DailyEndpointIndexes
-        | Cohort::LowerEmailExpression
-        | Cohort::PolicyStorage => run_cohort_check_defaults_and_indexes(client, cohort).await,
-        Cohort::VectorStoreOwnership
-        | Cohort::ManagedVectorStoreCatalog
-        | Cohort::DeprecatedTokenCatalog
-        | Cohort::KeyLookupIndexes
-        | Cohort::AccessGroupHistory
-        | Cohort::GuardrailOwner
-        | Cohort::EndUserPermissionFk
-        | Cohort::KeyHistoryAdditions => run_cohort_check_catalog_and_history(client, cohort).await,
-    }
-}
-
-async fn run_cohort_check_defaults_and_indexes(client: &Client, cohort: Cohort) {
-    match cohort {
         Cohort::DeletedHistoryDefaults => assert_deleted_history_defaults(client).await,
-        Cohort::SkillsStorage => assert_skills_storage(client).await,
-        Cohort::McpMetadataDefaults => assert_mcp_metadata_defaults(client).await,
-        Cohort::RouterSettingsDefaults => assert_router_settings_defaults(client).await,
-        Cohort::TeamGuardrailDefaults => assert_team_guardrail_defaults(client).await,
-        Cohort::TeamSoftBudgetNullable => assert_team_soft_budget_nullable(client).await,
+        Cohort::TableColumns(_, table, columns) => assert_columns(client, table, columns).await,
+        Cohort::SingleColumn(_, tables, spec) => assert_single_column(client, tables, spec).await,
         Cohort::DailyEndpointIndexes => assert_daily_endpoint_indexes(client).await,
         Cohort::LowerEmailExpression => assert_lower_email_expression(client).await,
         Cohort::PolicyStorage => assert_policy_storage(client).await,
-        Cohort::VectorStoreOwnership
-        | Cohort::ManagedVectorStoreCatalog
-        | Cohort::DeprecatedTokenCatalog
-        | Cohort::KeyLookupIndexes
-        | Cohort::AccessGroupHistory
-        | Cohort::GuardrailOwner
-        | Cohort::EndUserPermissionFk
-        | Cohort::KeyHistoryAdditions => (),
-    }
-}
-
-async fn run_cohort_check_catalog_and_history(client: &Client, cohort: Cohort) {
-    match cohort {
         Cohort::VectorStoreOwnership => assert_vector_store_ownership(client).await,
         Cohort::ManagedVectorStoreCatalog => assert_managed_vector_store_catalog(client).await,
         Cohort::DeprecatedTokenCatalog => assert_deprecated_token_catalog(client).await,
-        Cohort::KeyLookupIndexes => assert_key_lookup_indexes(client).await,
+        Cohort::KeyLookupIndexes => assert_indexes(client, &KEY_LOOKUP_INDEXES).await,
         Cohort::AccessGroupHistory => assert_access_group_history(client).await,
-        Cohort::GuardrailOwner => assert_guardrail_owner(client).await,
         Cohort::EndUserPermissionFk => assert_end_user_permission_fk(client).await,
         Cohort::KeyHistoryAdditions => assert_key_history_additions(client).await,
-        Cohort::DeletedHistoryDefaults
-        | Cohort::SkillsStorage
-        | Cohort::McpMetadataDefaults
-        | Cohort::RouterSettingsDefaults
-        | Cohort::TeamGuardrailDefaults
-        | Cohort::TeamSoftBudgetNullable
-        | Cohort::DailyEndpointIndexes
-        | Cohort::LowerEmailExpression
-        | Cohort::PolicyStorage => (),
     }
 }
 
+const ROUTER_SETTINGS_CHECKPOINT: &str =
+    "20260116142756_update_deleted_keys_teams_table_routing_settings";
+const ROUTER_SETTINGS_SPEC: ColumnSpec = ("router_settings", "jsonb", true, Some("{}"));
+
+const TEAM_GUARDRAIL_CHECKPOINT: &str = "20260205091235_allow_team_guardrail_config";
+const TEAM_GUARDRAIL_SPEC: ColumnSpec = (
+    "allow_team_guardrail_config",
+    "boolean",
+    false,
+    Some("false"),
+);
+
+const TEAM_SOFT_BUDGET_CHECKPOINT: &str = "20260207110613_add_soft_budget_to_deleted_teams_table";
+const TEAM_SOFT_BUDGET_SPEC: ColumnSpec = ("soft_budget", "double precision", true, None);
+
+const GUARDRAIL_OWNER_CHECKPOINT: &str = "20260214094754_schema_sync";
+const GUARDRAIL_OWNER_SPEC: ColumnSpec = ("team_id", "text", true, None);
+
+const SKILLS_STORAGE_CHECKPOINT: &str = "20251220144550_schema_update";
+const MCP_METADATA_CHECKPOINT: &str =
+    "20260207093506_add_available_on_public_internet_to_mcp_servers";
+
 #[rstest]
 #[case::deleted_history_defaults(Cohort::DeletedHistoryDefaults)]
-#[case::skills_storage(Cohort::SkillsStorage)]
-#[case::mcp_metadata_defaults(Cohort::McpMetadataDefaults)]
-#[case::router_settings_defaults(Cohort::RouterSettingsDefaults)]
-#[case::team_guardrail_defaults(Cohort::TeamGuardrailDefaults)]
-#[case::team_soft_budget_nullable(Cohort::TeamSoftBudgetNullable)]
+#[case::skills_storage(Cohort::TableColumns(
+    SKILLS_STORAGE_CHECKPOINT,
+    "LiteLLM_SkillsTable",
+    &SKILLS_TABLE_COLUMNS
+))]
+#[case::mcp_metadata_defaults(Cohort::TableColumns(
+    MCP_METADATA_CHECKPOINT,
+    "LiteLLM_MCPServerTable",
+    &MCP_SERVER_TABLE_COLUMNS
+))]
+#[case::router_settings_defaults(Cohort::SingleColumn(
+    ROUTER_SETTINGS_CHECKPOINT,
+    &ROUTER_SETTINGS_TABLES,
+    ROUTER_SETTINGS_SPEC
+))]
+#[case::team_guardrail_defaults(Cohort::SingleColumn(
+    TEAM_GUARDRAIL_CHECKPOINT,
+    &TEAM_GUARDRAIL_TABLES,
+    TEAM_GUARDRAIL_SPEC
+))]
+#[case::team_soft_budget_nullable(Cohort::SingleColumn(
+    TEAM_SOFT_BUDGET_CHECKPOINT,
+    &TEAM_SOFT_BUDGET_TABLES,
+    TEAM_SOFT_BUDGET_SPEC
+))]
 #[case::daily_endpoint_indexes(Cohort::DailyEndpointIndexes)]
 #[case::lower_email_expression(Cohort::LowerEmailExpression)]
 #[case::policy_storage(Cohort::PolicyStorage)]
@@ -767,7 +711,11 @@ async fn run_cohort_check_catalog_and_history(client: &Client, cohort: Cohort) {
 #[case::deprecated_token_catalog(Cohort::DeprecatedTokenCatalog)]
 #[case::key_lookup_indexes(Cohort::KeyLookupIndexes)]
 #[case::access_group_history(Cohort::AccessGroupHistory)]
-#[case::guardrail_owner(Cohort::GuardrailOwner)]
+#[case::guardrail_owner(Cohort::SingleColumn(
+    GUARDRAIL_OWNER_CHECKPOINT,
+    &GUARDRAIL_OWNER_TABLES,
+    GUARDRAIL_OWNER_SPEC
+))]
 #[case::end_user_permission_fk(Cohort::EndUserPermissionFk)]
 #[case::key_history_additions(Cohort::KeyHistoryAdditions)]
 #[tokio::test]
