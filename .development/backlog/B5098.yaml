@@ -1,13 +1,13 @@
 id: B5098
 milestone: M3 providers
 title: Bedrock Nova embedding reply checks and oracle error classes
-status: todo
+status: done
 depends_on: [B628]
 file: tasks/B5098-nova-embeddings-gaps.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 460
