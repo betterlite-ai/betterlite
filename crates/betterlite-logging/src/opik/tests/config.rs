@@ -54,6 +54,16 @@ fn config_priority_reads_the_file_last() {
         get_config_variable("missing", None, &BTreeMap::new(), Some(file), None),
         Ok(None)
     );
+    assert_eq!(
+        get_config_variable(
+            "url_override",
+            None,
+            &BTreeMap::new(),
+            None,
+            Some("default")
+        ),
+        Ok(Some(String::from("default")))
+    );
 }
 
 #[test]

@@ -137,6 +137,26 @@ fn config_file_accepts_lone_cr_line_ending() {
 }
 
 #[test]
+fn config_file_accepts_crlf_line_endings_without_an_extra_blank_line() {
+    let values = read_config_section("[opik]\r\nnote = a\r\n  b\r\n").expect("valid configuration");
+    assert_eq!(values.get("note"), Some(&String::from("a\nb")));
+}
+
+#[test]
+fn config_file_options_at_the_same_indent_stay_separate_keys() {
+    let values = read_config_section("[opik]\n  url_override = a\n  api_key = b\n    more\n")
+        .expect("valid configuration");
+    assert_eq!(values.get("url_override"), Some(&String::from("a")));
+    assert_eq!(values.get("api_key"), Some(&String::from("b\nmore")));
+}
+
+#[test]
+fn config_file_empty_line_inside_a_value_stays_in_the_value() {
+    let values = read_config_section("[opik]\nnote = a\n\n  b\n").expect("valid configuration");
+    assert_eq!(values.get("note"), Some(&String::from("a\n\nb")));
+}
+
+#[test]
 fn config_file_treats_uppercase_section_as_different_from_opik() {
     let values = read_config_section("[OPIK]\nkey = value\n").expect("no opik section to build");
     assert!(values.is_empty());
