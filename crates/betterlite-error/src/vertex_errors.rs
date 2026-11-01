@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use crate::error::details::{RateLimitDetails, TimeoutDetails, TimeoutStatus};
 use crate::error::{ErrorClass, ErrorContext};
-use crate::facts::{ErrorCode, ExceptionCheckers, ProviderErrorBody, ProviderErrorFacts};
+use crate::facts::{ExceptionCheckers, ProviderErrorFacts};
 use crate::rate_limit::RateLimitCategory;
 
 mod tests;
@@ -22,7 +22,6 @@ enum Family {
     ServiceUnavailable,
 }
 
-// a group of literal phrases that all mean the same family; a predicate matches if error_str contains any of them
 type PhraseRule = (&'static [&'static str], Family, &'static str);
 
 // branch-1153 and branch-1167, tried before the shared context-window checker
@@ -104,21 +103,11 @@ fn phrase_family(error_str: &str, rules: &[PhraseRule]) -> Option<(Family, &'sta
 // branch-1250: a 429 wrapped inside a 5xx envelope, LiteLLM's only predicate that also reads status_code
 fn classify_envelope(error_str: &str, status_code: Option<u16>) -> Option<(Family, &'static str)> {
     let is_5xx_wrapped_429 = status_code.is_some_and(|status| (500..600).contains(&status))
-        && body_error_code(error_str) == Some(429);
+        && crate::parse::get_body_error_code(error_str) == Some(429);
     is_5xx_wrapped_429.then_some((
         Family::RateLimit,
         "the gateway wrapped a 429 inside a 5xx envelope",
     ))
-}
-
-// error.code read off a JSON error body, mirroring _get_body_error_code at exception_mapping_utils.py:183
-fn body_error_code(error_str: &str) -> Option<i64> {
-    let body: ProviderErrorBody = serde_json::from_str(error_str).ok()?;
-    let nested = body.error.as_ref()?;
-    match nested.code.as_ref()? {
-        ErrorCode::Number(code) => Some(*code),
-        ErrorCode::Text(text) => text.parse().ok(),
-    }
 }
 
 // the status_code fallback LiteLLM only reaches once every error_str predicate above has missed
