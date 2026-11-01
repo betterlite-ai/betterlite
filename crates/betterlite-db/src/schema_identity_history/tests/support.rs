@@ -419,6 +419,14 @@ fn migration_sql_all() -> String {
     migration_sql_through(last.directory)
 }
 
+fn identity_history_sql() -> String {
+    MIGRATION_CATALOG
+        .files
+        .iter()
+        .map(|file| str::from_utf8(file.bytes).unwrap())
+        .collect()
+}
+
 fn migration_sql_of(directory: &str) -> &'static str {
     let file = MIGRATION_CATALOG
         .files

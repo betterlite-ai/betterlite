@@ -184,7 +184,7 @@ async fn assert_idempotent_reapplication(client: &Client) {
     assert_eq!(fk_count_before, 1);
     let column_count_before = columns_in(client, "LiteLLM_AccessGroupTable").await.len();
 
-    batch_execute(client, &migration_sql_all()).await;
+    batch_execute(client, &identity_history_sql()).await;
 
     let fk_count_after = count(
         client,
