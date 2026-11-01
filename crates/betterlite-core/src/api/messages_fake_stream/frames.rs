@@ -13,6 +13,12 @@ fn object(pairs: Vec<(&str, Json)>) -> Json {
     Json::Object(owned_pairs.into_iter().collect())
 }
 
+fn typed_object(kind: &str, extra: Vec<(&str, Json)>) -> Json {
+    let mut pairs = vec![("type", Json::Text(kind.to_owned()))];
+    pairs.extend(extra);
+    object(pairs)
+}
+
 fn field<'value>(value: &'value Json, key: &str) -> Option<&'value Json> {
     match value {
         Json::Object(fields) => fields.get(key),
@@ -21,12 +27,13 @@ fn field<'value>(value: &'value Json, key: &str) -> Option<&'value Json> {
 }
 
 fn indexed_frame(event: &str, index: usize, extra: Vec<(&str, Json)>) -> Vec<u8> {
-    let mut pairs = vec![
-        ("type", Json::Text(event.to_owned())),
-        ("index", Json::Number(Number::from(index))),
-    ];
+    let mut pairs = vec![("index", Json::Number(Number::from(index)))];
     pairs.extend(extra);
-    format!("event: {event}\ndata: {}\n\n", dumps(&object(pairs))).into_bytes()
+    format!(
+        "event: {event}\ndata: {}\n\n",
+        dumps(&typed_object(event, pairs))
+    )
+    .into_bytes()
 }
 
 pub(super) fn content_items(response: &Json) -> Result<&[Json], MessagesFakeStreamError> {
@@ -56,10 +63,7 @@ pub(super) fn message_start(response: &Json) -> Json {
         .cloned()
         .unwrap_or_else(|| Json::Text("assistant".to_owned()));
     let message = starting_message(response, role, input_tokens);
-    object(vec![
-        ("type", Json::Text("message_start".to_owned())),
-        ("message", message),
-    ])
+    typed_object("message_start", vec![("message", message)])
 }
 
 fn starting_message(response: &Json, role: Json, input_tokens: Json) -> Json {
@@ -100,14 +104,8 @@ pub(super) fn content_block_frames(
                 .get("text")
                 .cloned()
                 .unwrap_or_else(|| Json::Text(String::new()));
-            let start = object(vec![
-                ("type", Json::Text("text".to_owned())),
-                ("text", Json::Text(String::new())),
-            ]);
-            let delta = object(vec![
-                ("type", Json::Text("text_delta".to_owned())),
-                ("text", value),
-            ]);
+            let start = typed_object("text", vec![("text", Json::Text(String::new()))]);
+            let delta = typed_object("text_delta", vec![("text", value)]);
             block_frames(frames, index, start, Some(delta));
         }
         Some("thinking") => thinking_frames(frames, fields, index),
@@ -115,7 +113,7 @@ pub(super) fn content_block_frames(
             block_frames(
                 frames,
                 index,
-                object(vec![("type", Json::Text("redacted_thinking".to_owned()))]),
+                typed_object("redacted_thinking", vec![]),
                 None,
             );
         }
@@ -131,16 +129,18 @@ fn tool_use_frames(frames: &mut Vec<Vec<u8>>, fields: &IndexMap<String, Json>, i
         .get("input")
         .cloned()
         .unwrap_or_else(|| object(vec![]));
-    let start = object(vec![
-        ("type", Json::Text("tool_use".to_owned())),
-        ("id", fields.get("id").cloned().unwrap_or(Json::Null)),
-        ("name", fields.get("name").cloned().unwrap_or(Json::Null)),
-        ("input", object(vec![])),
-    ]);
-    let delta = object(vec![
-        ("type", Json::Text("input_json_delta".to_owned())),
-        ("partial_json", Json::Text(dumps(&input_data))),
-    ]);
+    let start = typed_object(
+        "tool_use",
+        vec![
+            ("id", fields.get("id").cloned().unwrap_or(Json::Null)),
+            ("name", fields.get("name").cloned().unwrap_or(Json::Null)),
+            ("input", object(vec![])),
+        ],
+    );
+    let delta = typed_object(
+        "input_json_delta",
+        vec![("partial_json", Json::Text(dumps(&input_data)))],
+    );
     block_frames(frames, index, start, Some(delta));
 }
 
@@ -160,18 +160,14 @@ fn block_frames(frames: &mut Vec<Vec<u8>>, index: usize, content_block: Json, de
 }
 
 fn thinking_frames(frames: &mut Vec<Vec<u8>>, fields: &IndexMap<String, Json>, index: usize) {
-    frames.push(indexed_frame(
-        "content_block_start",
-        index,
-        vec![(
-            "content_block",
-            object(vec![
-                ("type", Json::Text("thinking".to_owned())),
-                ("thinking", Json::Text(String::new())),
-                ("signature", Json::Text(String::new())),
-            ]),
-        )],
-    ));
+    let content_block = typed_object(
+        "thinking",
+        vec![
+            ("thinking", Json::Text(String::new())),
+            ("signature", Json::Text(String::new())),
+        ],
+    );
+    block_frames(frames, index, content_block, None);
     push_thinking_delta(frames, fields, index, "thinking", "thinking_delta");
     push_thinking_delta(frames, fields, index, "signature", "signature_delta");
 }
@@ -188,16 +184,11 @@ fn push_thinking_delta(
         .cloned()
         .unwrap_or_else(|| Json::Text(String::new()));
     if should_emit_delta(&value) {
+        let delta = typed_object(delta_type, vec![(name, value)]);
         frames.push(indexed_frame(
             "content_block_delta",
             index,
-            vec![(
-                "delta",
-                object(vec![
-                    ("type", Json::Text(delta_type.to_owned())),
-                    (name, value),
-                ]),
-            )],
+            vec![("delta", delta)],
         ));
     }
 }
@@ -239,21 +230,17 @@ pub(super) fn message_delta(response: &Json) -> Json {
         delta_fields.extend(extra_usage_fields(fields));
     }
     let delta = stop_delta(response);
-    object(vec![
-        ("type", Json::Text("message_delta".to_owned())),
-        ("delta", delta),
-        ("usage", object(delta_fields)),
-    ])
+    typed_object(
+        "message_delta",
+        vec![("delta", delta), ("usage", object(delta_fields))],
+    )
 }
 
 pub(super) fn message_stop(response: &Json) -> Json {
     let usage_payload = usage_value(response)
         .cloned()
         .map_or_else(|| object(vec![]), Json::Object);
-    object(vec![
-        ("type", Json::Text("message_stop".to_owned())),
-        ("usage", usage_payload),
-    ])
+    typed_object("message_stop", vec![("usage", usage_payload)])
 }
 
 fn should_emit_delta(value: &Json) -> bool {
