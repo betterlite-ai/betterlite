@@ -1266,6 +1266,7 @@ dependencies = [
  "betterlite-secrets",
  "chrono",
  "hex",
+ "http 1.5.0",
  "pem",
  "rstest",
  "secrecy",

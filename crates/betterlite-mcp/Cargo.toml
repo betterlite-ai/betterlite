@@ -12,6 +12,7 @@ betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-secrets = { path = "../betterlite-secrets" }
 chrono = { version = "0.4.45", default-features = false }
 hex.workspace = true
+http = "1.5.0"
 pem = "4.0.0"
 secrecy.workspace = true
 serde.workspace = true

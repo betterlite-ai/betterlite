@@ -1,10 +1,9 @@
 mod tests;
 
-use std::collections::BTreeMap;
-
+use http::{HeaderName, HeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
 
-pub type HeaderMap = BTreeMap<String, String>;
+pub type HeaderMap = http::HeaderMap;
 
 pub trait Auth {
     fn apply(&self, headers: &mut HeaderMap);
@@ -24,10 +23,13 @@ pub struct StaticHeaderAuth {
 }
 
 impl Auth for StaticHeaderAuth {
+    // HeaderName normalizes case and insert() replaces any prior value, so a request that already carries the header never ends up with two.
     fn apply(&self, headers: &mut HeaderMap) {
-        headers.insert(
-            self.header_name.clone(),
-            self.header_value.expose_secret().to_owned(),
-        );
+        if let (Ok(name), Ok(value)) = (
+            HeaderName::from_bytes(self.header_name.as_bytes()),
+            HeaderValue::from_str(self.header_value.expose_secret()),
+        ) {
+            headers.insert(name, value);
+        }
     }
 }

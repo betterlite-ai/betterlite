@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use http::{HeaderName, HeaderValue};
 use rstest::rstest;
 use secrecy::SecretString;
 
@@ -21,7 +22,9 @@ fn static_header_auth_defaults_to_authorization() {
     }
     .apply(&mut headers);
     assert_eq!(
-        headers.get("Authorization").map(String::as_str),
+        headers
+            .get("Authorization")
+            .and_then(|value| value.to_str().ok()),
         Some("bearer-token")
     );
 }
@@ -35,8 +38,31 @@ fn static_header_auth_honors_a_custom_header_name() {
     }
     .apply(&mut headers);
     assert_eq!(
-        headers.get("X-Api-Key").map(String::as_str),
+        headers
+            .get("X-Api-Key")
+            .and_then(|value| value.to_str().ok()),
         Some("api-key-value")
     );
     assert!(!headers.contains_key("Authorization"));
+}
+
+#[rstest]
+fn static_header_auth_overwrites_an_existing_header_regardless_of_case() {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        HeaderName::from_static("authorization"),
+        HeaderValue::from_static("old-value"),
+    );
+    StaticHeaderAuth {
+        header_name: "Authorization".to_owned(),
+        header_value: SecretString::from("new-value".to_owned()),
+    }
+    .apply(&mut headers);
+    assert_eq!(headers.len(), 1);
+    assert_eq!(
+        headers
+            .get("authorization")
+            .and_then(|value| value.to_str().ok()),
+        Some("new-value")
+    );
 }
