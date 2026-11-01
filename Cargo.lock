@@ -1389,6 +1389,7 @@ dependencies = [
  "betterlite-logging",
  "betterlite-mcp",
  "betterlite-models",
+ "betterlite-ocr",
  "betterlite-openai",
  "betterlite-openapi",
  "betterlite-paths",
@@ -1619,11 +1620,14 @@ dependencies = [
  "betterlite-config",
  "betterlite-error",
  "betterlite-http",
+ "betterlite-ocr",
  "betterlite-openai",
+ "bytes",
  "email_address",
  "form_urlencoded",
  "futures-util",
  "hyper-util",
+ "multer",
  "rand 0.10.3",
  "regex",
  "rquickjs",
@@ -2188,7 +2192,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e75b2483e97a5a7da73ac68a05b629f9c53cff58d8ed1c77866079e18b00dba5"
 dependencies = [
  "digest 0.10.7",
- "spin",
+ "spin 0.10.1",
 ]
 
 [[package]]
@@ -3810,6 +3814,23 @@ dependencies = [
  "libc",
  "wasi 0.11.1+wasi-snapshot-preview1",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "multer"
+version = "3.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "83e87776546dc87511aa5ee218730c92b666d7264ab6ed41f9d215af9cd5224b"
+dependencies = [
+ "bytes",
+ "encoding_rs",
+ "futures-util",
+ "http 1.5.0",
+ "httparse",
+ "memchr",
+ "mime",
+ "spin 0.9.9",
+ "version_check",
 ]
 
 [[package]]
@@ -5534,6 +5555,12 @@ dependencies = [
  "strum",
  "strum_macros",
 ]
+
+[[package]]
+name = "spin"
+version = "0.9.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3763264f6b73151db08c50ff20d7d8a0b8796e021cdea7ceedad07b80155fa0e"
 
 [[package]]
 name = "spin"

@@ -1,4 +1,5 @@
 pub mod admin_setup;
+pub mod api;
 pub mod auth;
 mod error_body;
 pub mod jwt_display;

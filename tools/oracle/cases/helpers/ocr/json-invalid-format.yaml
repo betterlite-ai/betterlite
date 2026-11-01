@@ -1,0 +1,10 @@
+kind: helper
+name: json_invalid_format
+call:
+  b3300:
+    json_body:
+      model: mistral/mistral-ocr-latest
+      req_format: yaml
+env: {}
+compare:
+  ignore: []
