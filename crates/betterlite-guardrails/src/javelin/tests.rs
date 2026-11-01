@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::any::TypeId;
 use std::future::IntoFuture as _;
 use std::io;
 use std::sync::Arc;
@@ -19,9 +20,14 @@ use tokio::task::JoinSet;
 use super::error::{JavelinError, JavelinInitializationError};
 use super::wire::JavelinGuardResponse;
 use super::{
-    AppliedGuardrailsHeader, CallbackRegistry, JavelinEventHook, JavelinGuardrail,
-    JavelinGuardrailParams, SUPPORTED_EVENT_HOOKS, initialize_guardrail,
+    AppliedGuardrailsHeader, CallbackRegistry, JavelinConfigModel, JavelinEventHook,
+    JavelinGuardrail, JavelinGuardrailParams, SUPPORTED_EVENT_HOOKS, initialize_guardrail,
 };
+
+#[test]
+fn javelin_config_model_type_id_is_distinct_from_other_types() {
+    assert_ne!(TypeId::of::<JavelinConfigModel>(), TypeId::of::<u8>());
+}
 
 fn empty_env(_key: &str) -> String {
     String::new()
