@@ -83,7 +83,8 @@ impl TryFrom<Raw> for BaselineObservation {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct CacheEntry {
     pub fingerprint: String,
     pub content_fingerprint: String,
@@ -91,10 +92,12 @@ pub struct CacheEntry {
     pub ttl_seconds: i64,
     pub available_at: f64,
     pub expires_at: f64,
+    #[serde(default)]
     pub uncertain: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields, default)]
 pub struct BaselineHistory {
     pub first_at: Option<f64>,
     pub last_at: Option<f64>,
