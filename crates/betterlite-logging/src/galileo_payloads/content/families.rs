@@ -36,20 +36,6 @@ fn realtime_list_content(kwargs: &GalileoKwargs, items: &[Json]) -> (String, Str
     )
 }
 
-// The Responses API echoes its own output back, gated by has_value like Python's `if response is not None`.
-fn responses_api_content(
-    prompt: &IndexMap<String, Json>,
-    kwargs: &GalileoKwargs,
-    output: &Json,
-) -> (String, String, Json) {
-    let present_output = super::super::support::has_value(output).then_some(output);
-    standard_content(
-        prompt,
-        serialize_galileo_output(present_output),
-        super::messages_or_empty(kwargs),
-    )
-}
-
 // The families whose messages_for_span is always the echoed request prompt, never the chat history.
 enum MarkerFamily<'val> {
     Embedding,
@@ -75,29 +61,47 @@ fn marker_family_content(
     standard_content(prompt, output_text, Json::Object(prompt.clone()))
 }
 
-// The pass-through endpoint echoes its own raw "response" value back as both output and messages_for_span.
-fn pass_through_endpoint_content(
-    prompt: &IndexMap<String, Json>,
-    value: &IndexMap<String, Json>,
-) -> (String, String, Json) {
-    standard_content(
-        prompt,
-        serialize_galileo_output(value.get("response")),
-        Json::Object(prompt.clone()),
-    )
+// The families whose dump reads straight from the raw request/response dicts rather than a typed object, and whose shape depends on kwargs.call_type.
+enum CallTypeFamily<'val> {
+    RealtimeList(&'val [Json]),
+    PassThroughDict(&'val IndexMap<String, Json>),
+    GenericDict(&'val IndexMap<String, Json>),
+    Unknown,
 }
 
-// Both an unrecognized pass-through call_type and a plain generic dict read tool-call/message content straight out of the raw dict.
-fn dict_response_content(
+fn call_type_family_content(
     prompt: &IndexMap<String, Json>,
     kwargs: &GalileoKwargs,
-    value: &IndexMap<String, Json>,
+    family: &CallTypeFamily<'_>,
 ) -> (String, String, Json) {
-    standard_content(
-        prompt,
-        content_from_dict_response(value),
-        super::messages_or_empty(kwargs),
-    )
+    match family {
+        // litellm only takes this branch when call_type == "_arealtime" (galileo.py:601); any other call_type falls through to the final fallback.
+        CallTypeFamily::RealtimeList(items)
+            if kwargs.call_type.as_deref() == Some("_arealtime") =>
+        {
+            realtime_list_content(kwargs, items)
+        }
+        // litellm only takes this branch when call_type == "pass_through_endpoint" (galileo.py:609); any other call_type falls through to the generic dict branch.
+        CallTypeFamily::PassThroughDict(value)
+            if kwargs.call_type.as_deref() == Some("pass_through_endpoint") =>
+        {
+            standard_content(
+                prompt,
+                serialize_galileo_output(value.get("response")),
+                Json::Object(prompt.clone()),
+            )
+        }
+        CallTypeFamily::PassThroughDict(value) | CallTypeFamily::GenericDict(value) => {
+            standard_content(
+                prompt,
+                content_from_dict_response(value),
+                super::messages_or_empty(kwargs),
+            )
+        }
+        CallTypeFamily::RealtimeList(_) | CallTypeFamily::Unknown => {
+            standard_content(prompt, String::new(), super::messages_or_empty(kwargs))
+        }
+    }
 }
 
 pub(super) fn response_content(
@@ -125,24 +129,24 @@ pub(super) fn response_content(
             super::messages_or_empty(kwargs),
         ),
         ResponseObj::Rerank { results } => rerank_content(kwargs, results),
-        ResponseObj::ResponsesApi { output } => responses_api_content(prompt, kwargs, output),
-        // litellm only takes this branch when call_type == "_arealtime" (galileo.py:601); any other call_type falls through to the final fallback.
-        ResponseObj::RealtimeList { items }
-            if kwargs.call_type.as_deref() == Some("_arealtime") =>
-        {
-            realtime_list_content(kwargs, items)
+        // The Responses API echoes its own output back, gated by has_value like Python's `if response is not None`.
+        ResponseObj::ResponsesApi { output } => {
+            let present_output = super::super::support::has_value(output).then_some(output);
+            standard_content(
+                prompt,
+                serialize_galileo_output(present_output),
+                super::messages_or_empty(kwargs),
+            )
         }
-        // litellm only takes this branch when call_type == "pass_through_endpoint" (galileo.py:609); any other call_type falls through to the generic dict branch.
-        ResponseObj::PassThroughDict { value }
-            if kwargs.call_type.as_deref() == Some("pass_through_endpoint") =>
-        {
-            pass_through_endpoint_content(prompt, value)
+        ResponseObj::RealtimeList { items } => {
+            call_type_family_content(prompt, kwargs, &CallTypeFamily::RealtimeList(items))
         }
-        ResponseObj::PassThroughDict { value } | ResponseObj::GenericDict { value } => {
-            dict_response_content(prompt, kwargs, value)
+        ResponseObj::PassThroughDict { value } => {
+            call_type_family_content(prompt, kwargs, &CallTypeFamily::PassThroughDict(value))
         }
-        ResponseObj::RealtimeList { .. } | ResponseObj::Unknown => {
-            standard_content(prompt, String::new(), super::messages_or_empty(kwargs))
+        ResponseObj::GenericDict { value } => {
+            call_type_family_content(prompt, kwargs, &CallTypeFamily::GenericDict(value))
         }
+        ResponseObj::Unknown => call_type_family_content(prompt, kwargs, &CallTypeFamily::Unknown),
     }
 }
