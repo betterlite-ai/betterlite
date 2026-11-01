@@ -79,6 +79,28 @@ fn defaults_missing_fields_on_a_dict_shaped_tool_call() {
 }
 
 #[test]
+fn keeps_an_explicit_empty_type_on_a_dict_shaped_tool_call() {
+    let value = raw_tool_call_dict("call_5", "", "lookup", "{}");
+    let source = ToolCallSource::Raw(value);
+    let normalized = normalize_tool_call(&source).expect("normalizes");
+    assert_eq!(normalized.kind, "");
+}
+
+#[test]
+fn collapses_an_explicit_empty_type_to_function_on_a_protocol_object() {
+    let source = ToolCallSource::Protocol {
+        id: Some("call_6".to_owned()),
+        kind: Some(String::new()),
+        function: Function {
+            name: "lookup".to_owned(),
+            arguments: "{}".to_owned(),
+        },
+    };
+    let normalized = normalize_tool_call(&source).expect("normalizes");
+    assert_eq!(normalized.kind, "function");
+}
+
+#[test]
 fn rejects_an_unrecognized_tool_call_shape() {
     let source = ToolCallSource::Raw(Json::Text("not a tool call".to_owned()));
     let result = normalize_tool_call(&source);
