@@ -1,0 +1,14 @@
+kind: helper
+name: native-errors-b-branch-1678
+call:
+  native_errors_b:
+    provider: nlp_cloud
+    model: nlp_cloud/dolphin
+    error_str: "boom"
+    status_code: 522
+    message: "boom"
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/context/message
+      why: betterlite writes its own message

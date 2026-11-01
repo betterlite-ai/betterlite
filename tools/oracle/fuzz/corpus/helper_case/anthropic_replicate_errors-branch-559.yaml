@@ -1,0 +1,13 @@
+kind: helper
+name: anthropic-replicate-errors-branch-559
+call:
+  anthropic_replicate_errors:
+    provider: anthropic
+    model: claude-3-opus
+    error_str: "blocked by the content filtering policy"
+    status_code: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

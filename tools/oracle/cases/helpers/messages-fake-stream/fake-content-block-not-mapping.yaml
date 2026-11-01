@@ -1,0 +1,10 @@
+kind: helper
+name: fake-content-block-not-mapping
+call:
+  messages_fake_stream:
+    response:
+      content:
+        - null
+env: {}
+compare:
+  ignore: []

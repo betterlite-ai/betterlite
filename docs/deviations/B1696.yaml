@@ -1,0 +1,8 @@
+task: B1696
+deviations:
+  - what: Baseline timestamp/counter operations use checked finite arithmetic; values outside the representable domain fail as invalid accounting data.
+    why: Replay must not wrap token counts or admit an infinite cache lifetime into persisted estimates.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/baseline_accounting.py#L142-L169
+  - what: A complete usage with zero cache writes and no cache_creation_token_details is accepted; LiteLLM's own completeness check reads that attribute unconditionally and raises AttributeError before its `writes == 0` short circuit runs.
+    why: No caller can rely on a pure completeness predicate crashing instead of returning a bool, and a working setup always supplies the split whenever it reaches this code, so the crash is unreachable outside a hand-built input.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/baseline_accounting.py#L78

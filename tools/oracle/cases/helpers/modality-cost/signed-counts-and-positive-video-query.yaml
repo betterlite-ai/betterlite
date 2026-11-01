@@ -1,0 +1,20 @@
+kind: helper
+name: signed-counts-and-positive-video-query
+call:
+  modality_cost:
+    operation: prompt
+    prompt_tokens: 100
+    cached_tokens: 20
+    text_tokens: 30
+    audio_tokens: 10
+    image_tokens: 10
+    cached_tokens_details: {audio_tokens: -5, text_tokens: 3, image_tokens: 2}
+    video_tokens: -7
+    query_count: -3
+    model_info: {}
+    prompt_base_cost: "0.00001"
+    cache_read_cost: "0.000005"
+    cache_creation_cost: "0"
+    cache_creation_cost_above_1hr: "0"
+compare: {ignore: []}
+env: {}

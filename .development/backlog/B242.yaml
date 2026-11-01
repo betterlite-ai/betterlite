@@ -1,14 +1,14 @@
 id: B242
 milestone: M1 openai data plane
 title: NLP Cloud, Together, Aleph Alpha, Ollama and vLLM errors
-status: todo
+status: done
 depends_on: [B184, B187, B236]
 file: tasks/B242-native-errors-b.yaml
 covers:
   - "litellm/litellm_core_utils/exception_mapping_utils.py"
 parent: B011
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 431

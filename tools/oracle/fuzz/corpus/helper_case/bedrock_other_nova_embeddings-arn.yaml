@@ -1,0 +1,9 @@
+kind: helper
+name: bedrock-other-nova-embeddings-arn
+call:
+  bedrock_other_nova_embeddings:
+    nova_invocation_arn:
+      response: {}
+env: {}
+compare:
+  ignore: []

@@ -8,7 +8,10 @@ publish.workspace = true
 [dependencies]
 betterlite-auth = { path = "../betterlite-auth" }
 betterlite-config = { path = "../betterlite-config" }
+betterlite-logging = { path = "../betterlite-logging" }
+betterlite-models = { path = "../betterlite-models" }
 chrono = { version = "0.4.45", default-features = false, features = ["serde"] }
+indexmap = { version = "2.14.2", features = ["serde"] }
 lopdf = { version = "0.46.0", default-features = false }
 rust_decimal.workspace = true
 secrecy = { workspace = true, features = ["serde"] }

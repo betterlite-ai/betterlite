@@ -1,0 +1,14 @@
+kind: helper
+name: native-errors-b-branch-1873
+call:
+  native_errors_b:
+    provider: ollama
+    model: ollama/llama2
+    original_exception:
+      kind: dict
+      error: "no such file or directory"
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

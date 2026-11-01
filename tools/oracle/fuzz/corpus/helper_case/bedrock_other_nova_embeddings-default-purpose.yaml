@@ -1,0 +1,13 @@
+kind: helper
+name: bedrock-other-nova-embeddings-default-purpose
+call:
+  bedrock_other_nova_embeddings:
+    nova_default_purpose_dimensions:
+      non_default: {dimensions: 128}
+      optional_params: {}
+      input: fuzz text
+      inference_params: {}
+      async_invoke_route: false
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,14 @@
+kind: helper
+name: native-errors-b-branch-1730
+call:
+  native_errors_b:
+    provider: together_ai
+    model: together_ai/llama-3
+    error_str: '{"error": "`inputs` tokens + `max_new_tokens` must be <= 4096"}'
+    status_code: null
+    message: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

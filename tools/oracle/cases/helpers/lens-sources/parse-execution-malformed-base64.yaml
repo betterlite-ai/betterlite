@@ -6,8 +6,4 @@ call:
       value: "not valid base64!!"
 env: {}
 compare:
-  ignore:
-    - pointer: /error/class
-      why: betterlite raises a typed ParseExecutionError where LiteLLM raises binascii.Error through pydantic's ValidationError
-    - pointer: /error/message
-      why: betterlite writes its own message
+  ignore: []

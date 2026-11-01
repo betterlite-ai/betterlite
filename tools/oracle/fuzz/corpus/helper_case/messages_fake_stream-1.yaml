@@ -1,0 +1,12 @@
+kind: helper
+name: messages-fake-stream-corpus
+call:
+  messages_fake_stream:
+    response:
+      id: msg_seed
+      role: assistant
+      content:
+        - {type: text, text: seeded}
+      usage: {input_tokens: 1, output_tokens: 1}
+env: {}
+compare: {ignore: []}
