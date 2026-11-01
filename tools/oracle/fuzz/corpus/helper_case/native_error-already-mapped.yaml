@@ -1,0 +1,11 @@
+kind: helper
+name: native-error-already-mapped
+call:
+  native_error:
+    kind: mapped
+    family: authentication
+    message: boom
+    model: claude-3
+    provider: anthropic
+env: {}
+compare: {ignore: []}
