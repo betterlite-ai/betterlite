@@ -33,8 +33,11 @@ class AttributeChatRecord:
     role_present: bool = False
     content: Json = None
     reasoning_content: Json = None
+    reasoning_content_present: bool = False
     thinking_blocks: Json = None
+    thinking_blocks_present: bool = False
     tool_calls: Json = None
+    tool_calls_present: bool = False
     extra: dict[str, Json] = field(default_factory=dict)
 
     def __getattr__(self, name: str) -> Json:
@@ -67,8 +70,11 @@ def _to_attribute_record(message: Json) -> AttributeChatRecord:
         role_present=role_present,
         content=fields.get("content"),
         reasoning_content=fields.get("reasoning_content"),
+        reasoning_content_present="reasoning_content" in fields,
         thinking_blocks=fields.get("thinking_blocks"),
+        thinking_blocks_present="thinking_blocks" in fields,
         tool_calls=fields.get("tool_calls"),
+        tool_calls_present="tool_calls" in fields,
         extra=extra,
     )
 
@@ -77,11 +83,11 @@ def _from_attribute_record(record: AttributeChatRecord) -> dict[str, Json]:
     result: dict[str, Json] = {"content": record.content}
     if record.role_present:
         result["role"] = record.role
-    if record.reasoning_content is not None:
+    if record.reasoning_content_present or record.reasoning_content is not None:
         result["reasoning_content"] = record.reasoning_content
-    if record.thinking_blocks is not None:
+    if record.thinking_blocks_present or record.thinking_blocks is not None:
         result["thinking_blocks"] = record.thinking_blocks
-    if record.tool_calls is not None:
+    if record.tool_calls_present or record.tool_calls is not None:
         result["tool_calls"] = record.tool_calls
     result.update(record.extra)
     return result

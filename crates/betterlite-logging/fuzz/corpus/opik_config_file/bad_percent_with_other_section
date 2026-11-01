@@ -1,0 +1,4 @@
+[DEFAULT]
+broken = 50%
+[opik]
+x = 1

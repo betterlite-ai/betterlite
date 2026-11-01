@@ -1,0 +1,5 @@
+kind: helper
+name: violation-passthrough-post-call
+call: {b3771: {action: PASSTHROUGH, score: 0.5, is_output: true}}
+env: {}
+compare: {ignore: []}

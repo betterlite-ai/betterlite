@@ -1,0 +1,13 @@
+id: B5104
+milestone: M4 keys, spend and management
+title: The fixture cleanup test checks only its own databases
+status: todo
+depends_on: [B1630]
+file: tasks/B5104-fixture-cleanup-test-isolation.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
