@@ -3,7 +3,8 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::fs;
 use std::io::Error;
-use std::net::TcpListener;
+use std::net::{SocketAddr, TcpListener};
+use std::path::PathBuf;
 use std::str;
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
@@ -18,8 +19,11 @@ use tokio::{net, runtime};
 use super::{CapturedValue, run_case_steps};
 use crate::OracleError;
 use crate::case::browser_flow::{Capture, CaptureSource, Step};
-use crate::case::{BodyKind, Compare, Request, decode_html_form_capture};
+use crate::case::{BodyKind, Case, Compare, Request, decode_html_form_capture};
 use crate::http::client;
+use crate::process::{Gateway, GatewaySpec};
+use crate::runner::browser_flow_group::compare_steps;
+use crate::runner::capture_gateway;
 
 #[test]
 fn replays_the_browser_form_corpus() {
@@ -38,7 +42,7 @@ fn replays_the_browser_form_corpus() {
 #[test]
 fn redacts_a_secret_capture_from_debug_output() {
     let value = CapturedValue {
-        text: "shhh".to_owned(),
+        text: "shhh".to_owned().into(),
         secret: true,
     };
     assert_eq!(format!("{value:?}"), "CapturedValue(redacted)");
@@ -208,6 +212,26 @@ fn capture(name: &str, source: CaptureSource) -> Capture {
     }
 }
 
+fn steps_case(steps: Vec<Step>) -> Case {
+    Case {
+        name: "cleanup".to_owned(),
+        config: String::new(),
+        env: BTreeMap::new(),
+        native_feature_eligibility: false,
+        request: Box::new(Request {
+            method: "GET".to_owned(),
+            path: "/".to_owned(),
+            headers: BTreeMap::new(),
+            body: serde_json::Value::Null,
+            body_kind: BodyKind::Json,
+        }),
+        upstream: Vec::new(),
+        compare: Box::new(Compare::default()),
+        steps: Some(steps),
+        database: None,
+    }
+}
+
 fn case_invalid_message(error: &OracleError) -> &str {
     let OracleError::CaseInvalid { message, .. } = error else {
         panic!("expected a case-invalid error, got {error:?}");
@@ -320,8 +344,9 @@ fn detects_a_status_change_introduced_at_the_second_step() {
         run_case_steps(&client, &first_server.base_url, &steps).expect("first run succeeds");
     let second =
         run_case_steps(&client, &second_server.base_url, &steps).expect("second run succeeds");
-    assert_eq!(first[0].status, second[0].status);
-    assert_ne!(first[1].status, second[1].status);
+    let difference =
+        compare_steps(&steps, &first, &second).expect_err("the second step's status differs");
+    assert_eq!(difference.pointer, "/steps/1/status");
 }
 
 #[test]
@@ -468,4 +493,48 @@ fn stops_sending_requests_after_a_capture_fails_mid_transcript() {
     .expect_err("a step 2 failure stops the transcript");
     assert!(case_invalid_message(&error).contains("did not match any value"));
     assert_eq!(server.received_count(), 2);
+}
+
+#[test]
+fn stops_and_cleans_up_the_gateway_after_a_late_step_failure() {
+    let server = StubServer::start(vec![answer(200, vec![], "ok"), answer(200, vec![], "ok")]);
+    let address: SocketAddr = server
+        .base_url
+        .strip_prefix("http://")
+        .expect("stub base url has an http prefix")
+        .parse()
+        .expect("stub base url has a valid socket address");
+    let log_path = std::env::temp_dir().join(format!(
+        "betterlite-oracle-browser-flow-cleanup-{}.log",
+        std::process::id()
+    ));
+    let gateway = Gateway::start(GatewaySpec {
+        command: PathBuf::from("/bin/sh"),
+        args: vec!["-c".to_owned(), "exec sleep 10".to_owned()],
+        cwd: std::env::temp_dir(),
+        env: Vec::new(),
+        port: address.port(),
+        log_path: log_path.clone(),
+    })
+    .expect("gateway fixture starts");
+    let pid = gateway.child.id();
+    let steps = vec![
+        step("/one", BTreeMap::new(), Vec::new(), false),
+        step(
+            "/two",
+            BTreeMap::new(),
+            vec![capture(
+                "missing",
+                CaptureSource::Header {
+                    name: "x-missing".to_owned(),
+                },
+            )],
+            false,
+        ),
+    ];
+    let cases = [steps_case(steps)];
+    capture_gateway(&client().expect("test client builds"), gateway, &cases)
+        .expect_err("a missing capture at the second step fails the whole gateway capture");
+    fs::metadata(format!("/proc/{pid}")).expect_err("the gateway process is gone");
+    let _removed = fs::remove_file(&log_path);
 }

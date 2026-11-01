@@ -6,9 +6,11 @@ use serde::Deserialize;
 use serde_json::Value;
 use thiserror::Error;
 
-use super::{BodyKind, Case, Compare, Request, RequestBody, validate_ignores};
+use super::{BodyKind, Compare, Request, RequestBody, validate_ignores};
 use crate::OracleError;
 use crate::multipart_oracle::request::request_body;
+
+pub mod form;
 
 pub(crate) const MAX_STEPS: usize = 64;
 pub(crate) const MAX_CAPTURES: usize = 128;
@@ -59,87 +61,21 @@ pub(crate) struct PlaceholderRef {
 }
 
 #[derive(Debug, Error)]
-pub enum FormCaptureError {
-    #[error("form response is not valid UTF-8: {0}")]
+pub(crate) enum PlaceholderError {
+    #[error("unterminated capture placeholder")]
+    Unterminated,
+    #[error("malformed capture placeholder \"{0}\"")]
+    Malformed(String),
+    #[error("capture name \"{0}\" has unsupported characters")]
+    UnsupportedName(String),
+    #[error("unknown capture encoding \"{0}\"")]
+    UnknownEncoding(String),
+    #[error("path captures must use query encoding")]
+    PathEncoding,
+    #[error("a url-encoded or XML fixture body cannot use raw encoding")]
+    RawFixture,
+    #[error("fixture body is not valid UTF-8: {0}")]
     Utf8(#[source] Utf8Error),
-    #[error("response has {count} form elements, not exactly one")]
-    FormCount { count: usize },
-    #[error("cannot parse selector \"{0}\"")]
-    Selector(String),
-    #[error("cannot parse response as HTML: {0}")]
-    Html(#[source] tl::ParseError),
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct FormProjection {
-    pub method: String,
-    pub action: Option<String>,
-    pub controls: Vec<(String, Option<String>)>,
-}
-
-pub(crate) fn parse_form_projection(text: &str) -> Result<FormProjection, FormCaptureError> {
-    let dom = tl::parse(text, tl::ParserOptions::default()).map_err(FormCaptureError::Html)?;
-    let parser = dom.parser();
-    let forms = dom
-        .query_selector("form")
-        .ok_or_else(|| FormCaptureError::Selector("form".to_owned()))?
-        .collect::<Vec<_>>();
-    let [form] = forms.as_slice() else {
-        return Err(FormCaptureError::FormCount { count: forms.len() });
-    };
-    let form_tag = form
-        .get(parser)
-        .and_then(tl::Node::as_tag)
-        .ok_or(FormCaptureError::FormCount { count: 0 })?;
-    let method = form_tag.attributes().get("method").flatten().map_or_else(
-        || "get".to_owned(),
-        |value| value.as_utf8_str().to_ascii_lowercase(),
-    );
-    let action = form_tag
-        .attributes()
-        .get("action")
-        .flatten()
-        .map(|value| value.as_utf8_str().into_owned());
-    let controls = form_tag
-        .query_selector(parser, "input[name], button[name]")
-        .ok_or_else(|| FormCaptureError::Selector("input[name], button[name]".to_owned()))?
-        .map(|handle| control_pair(handle, parser))
-        .collect();
-    Ok(FormProjection {
-        method,
-        action,
-        controls,
-    })
-}
-
-fn control_pair(handle: tl::NodeHandle, parser: &tl::Parser<'_>) -> (String, Option<String>) {
-    let tag = handle.get(parser).and_then(tl::Node::as_tag);
-    let name = tag
-        .and_then(|element| element.attributes().get("name").flatten())
-        .map_or_else(String::new, |value| value.as_utf8_str().into_owned());
-    let value = tag
-        .and_then(|element| element.attributes().get("value").flatten())
-        .map(|value| value.as_utf8_str().into_owned());
-    (name, value)
-}
-
-// Serde defaults the unused side of request/compare or steps, so emptiness stands in for absence.
-pub(crate) fn validate_request_or_steps(path: &Path, case: &Case) -> Result<(), OracleError> {
-    let invalid = |message: &str| OracleError::CaseInvalid {
-        path: path.to_owned(),
-        message: message.to_owned(),
-    };
-    if let Some(steps) = &case.steps {
-        if *case.request != Request::default() || *case.compare != Compare::default() {
-            return Err(invalid("a case cannot set both request/compare and steps"));
-        }
-        return validate_steps(path, steps);
-    }
-    if case.request.path.is_empty() {
-        return Err(invalid("request.path cannot be empty"));
-    }
-    request_body(&case.request.body, case.request.body_kind).map_err(OracleError::Multipart)?;
-    validate_ignores(path, &case.compare.ignore)
 }
 
 pub(crate) fn validate_steps(path: &Path, steps: &[Step]) -> Result<(), OracleError> {
@@ -197,7 +133,7 @@ fn validate_step(
         request_body(&step.request.body, step.request.body_kind).map_err(OracleError::Multipart)?;
     validate_ignores(path, &step.compare.ignore)?;
     let refs = step_placeholder_refs(step, &decoded)
-        .map_err(|message| invalid(format!("step {index}: {message}")))?;
+        .map_err(|source| invalid(format!("step {index}: {source}")))?;
     for reference in &refs {
         if !known_names.contains(&reference.name) {
             return Err(invalid(format!(
@@ -212,13 +148,13 @@ fn validate_step(
 fn step_placeholder_refs(
     step: &Step,
     decoded_body: &RequestBody,
-) -> Result<Vec<PlaceholderRef>, String> {
+) -> Result<Vec<PlaceholderRef>, PlaceholderError> {
     let mut refs = find_placeholders(&step.request.path)?;
     if refs
         .iter()
         .any(|reference| reference.encoding != Encoding::Query)
     {
-        return Err("path captures must use query encoding".to_owned());
+        return Err(PlaceholderError::PathEncoding);
     }
     for value in step.request.headers.values() {
         refs.extend(find_placeholders(value)?);
@@ -227,21 +163,23 @@ fn step_placeholder_refs(
     if step.request.body_kind == BodyKind::Bytes
         && let RequestBody::Raw { bytes, .. } = decoded_body
     {
-        let text = str::from_utf8(bytes)
-            .map_err(|_source| "fixture body is not valid UTF-8".to_owned())?;
+        let text = str::from_utf8(bytes).map_err(PlaceholderError::Utf8)?;
         let fixture_refs = find_placeholders(text)?;
         if fixture_refs
             .iter()
             .any(|reference| reference.encoding == Encoding::Raw)
         {
-            return Err("a url-encoded or XML fixture body cannot use raw encoding".to_owned());
+            return Err(PlaceholderError::RawFixture);
         }
         refs.extend(fixture_refs);
     }
     Ok(refs)
 }
 
-fn collect_value_placeholders(value: &Value, refs: &mut Vec<PlaceholderRef>) -> Result<(), String> {
+fn collect_value_placeholders(
+    value: &Value,
+    refs: &mut Vec<PlaceholderRef>,
+) -> Result<(), PlaceholderError> {
     match value {
         Value::String(text) => {
             refs.extend(find_placeholders(text)?);
@@ -257,39 +195,44 @@ fn collect_value_placeholders(value: &Value, refs: &mut Vec<PlaceholderRef>) -> 
     }
 }
 
-pub(crate) fn find_placeholders(text: &str) -> Result<Vec<PlaceholderRef>, String> {
-    const PREFIX: &str = "{{capture:";
-    const SUFFIX: &str = "}}";
+pub(crate) const PLACEHOLDER_PREFIX: &str = "{{capture:";
+pub(crate) const PLACEHOLDER_SUFFIX: &str = "}}";
+
+pub(crate) fn find_placeholders(text: &str) -> Result<Vec<PlaceholderRef>, PlaceholderError> {
     let mut found = Vec::new();
     let mut remaining = text;
-    while let Some((_, after_prefix)) = remaining.split_once(PREFIX) {
-        let Some((body, after)) = after_prefix.split_once(SUFFIX) else {
-            return Err("unterminated capture placeholder".to_owned());
+    while let Some((_, after_prefix)) = remaining.split_once(PLACEHOLDER_PREFIX) {
+        let Some((body, after)) = after_prefix.split_once(PLACEHOLDER_SUFFIX) else {
+            return Err(PlaceholderError::Unterminated);
         };
-        let mut parts = body.split(':');
-        let name = parts.next().unwrap_or_default();
-        let encoding = parts.next().unwrap_or_default();
-        if parts.next().is_some() || name.is_empty() || encoding.is_empty() {
-            return Err(format!("malformed capture placeholder \"{body}\""));
-        }
-        if !name.chars().all(|character| {
-            character.is_ascii_alphanumeric() || character == '_' || character == '-'
-        }) {
-            return Err(format!(
-                "capture name \"{name}\" has unsupported characters"
-            ));
-        }
-        let parsed = match encoding {
-            "raw" => Encoding::Raw,
-            "query" => Encoding::Query,
-            "form" => Encoding::Form,
-            _ => return Err(format!("unknown capture encoding \"{encoding}\"")),
-        };
-        found.push(PlaceholderRef {
-            name: name.to_owned(),
-            encoding: parsed,
-        });
+        found.push(parse_placeholder_body(body)?);
         remaining = after;
     }
     Ok(found)
+}
+
+// Shared with interpolate::resolve_text so a placeholder body is parsed only once.
+pub(crate) fn parse_placeholder_body(body: &str) -> Result<PlaceholderRef, PlaceholderError> {
+    let mut parts = body.split(':');
+    let name = parts.next().unwrap_or_default();
+    let encoding = parts.next().unwrap_or_default();
+    if parts.next().is_some() || name.is_empty() || encoding.is_empty() {
+        return Err(PlaceholderError::Malformed(body.to_owned()));
+    }
+    if !name
+        .chars()
+        .all(|character| character.is_ascii_alphanumeric() || character == '_' || character == '-')
+    {
+        return Err(PlaceholderError::UnsupportedName(name.to_owned()));
+    }
+    let parsed = match encoding {
+        "raw" => Encoding::Raw,
+        "query" => Encoding::Query,
+        "form" => Encoding::Form,
+        _ => return Err(PlaceholderError::UnknownEncoding(encoding.to_owned())),
+    };
+    Ok(PlaceholderRef {
+        name: name.to_owned(),
+        encoding: parsed,
+    })
 }

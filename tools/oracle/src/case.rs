@@ -179,9 +179,9 @@ pub fn decode_http_body(bytes: &[u8]) -> Result<RequestBody, MultipartError> {
 
 pub fn decode_html_form_capture(
     bytes: &[u8],
-) -> Result<browser_flow::FormProjection, browser_flow::FormCaptureError> {
-    let text = str::from_utf8(bytes).map_err(browser_flow::FormCaptureError::Utf8)?;
-    browser_flow::parse_form_projection(text)
+) -> Result<browser_flow::form::FormProjection, browser_flow::form::FormCaptureError> {
+    let text = str::from_utf8(bytes).map_err(browser_flow::form::FormCaptureError::Utf8)?;
+    browser_flow::form::parse_form_projection(text)
 }
 
 fn decode_case(path: &Path, bytes: &[u8]) -> Result<HttpCase, OracleError> {
@@ -244,7 +244,7 @@ pub(crate) fn validate(path: &Path, case: &Case) -> Result<(), OracleError> {
     if case.name.is_empty() || case.config.is_empty() {
         return Err(invalid("name and config cannot be empty"));
     }
-    browser_flow::validate_request_or_steps(path, case)?;
+    validate_request_or_steps(path, case)?;
     if case.env.contains_key("LITELLM_LICENSE") {
         return Err(invalid("env cannot set LITELLM_LICENSE"));
     }
@@ -274,6 +274,25 @@ pub(crate) fn validate(path: &Path, case: &Case) -> Result<(), OracleError> {
         answer_body(answer).map_err(OracleError::Multipart)?;
     }
     Ok(())
+}
+
+// Serde defaults the unused side of request/compare or steps, so emptiness stands in for absence.
+fn validate_request_or_steps(path: &Path, case: &Case) -> Result<(), OracleError> {
+    let invalid = |message: &str| OracleError::CaseInvalid {
+        path: path.to_owned(),
+        message: message.to_owned(),
+    };
+    if let Some(steps) = &case.steps {
+        if *case.request != Request::default() || *case.compare != Compare::default() {
+            return Err(invalid("a case cannot set both request/compare and steps"));
+        }
+        return browser_flow::validate_steps(path, steps);
+    }
+    if case.request.path.is_empty() {
+        return Err(invalid("request.path cannot be empty"));
+    }
+    request_body(&case.request.body, case.request.body_kind).map_err(OracleError::Multipart)?;
+    validate_ignores(path, &case.compare.ignore)
 }
 
 pub(crate) fn validate_ignores(path: &Path, ignores: &[Ignore]) -> Result<(), OracleError> {

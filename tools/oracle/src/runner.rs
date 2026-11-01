@@ -19,7 +19,7 @@ use crate::paths::artifact_root;
 use crate::process::Gateway;
 use crate::routing_mock_scripts::MockScript;
 
-mod browser_flow_group;
+pub(crate) mod browser_flow_group;
 mod config;
 mod fixtures;
 mod native_feature_eligibility;
@@ -213,7 +213,7 @@ pub(crate) fn compare_group(
     let mut request_offset = 0;
     let mut response_offset = 0;
     for case in cases {
-        outcomes.push(browser_flow_group::compare_one_case(
+        outcomes.push(compare_one_case(
             root,
             case,
             captures,
@@ -226,6 +226,85 @@ pub(crate) fn compare_group(
         request_offset = request_offset.saturating_add(case.upstream.len());
     }
     Ok(outcomes)
+}
+
+struct CaseSlices<'slices> {
+    first_responses: &'slices [Response],
+    second_responses: &'slices [Response],
+    first_requests: &'slices [ProviderRequest],
+    second_requests: &'slices [ProviderRequest],
+}
+
+fn case_slices<'slices>(
+    case: &Case,
+    captures: &'slices GroupCapture,
+    response_offset: usize,
+    request_offset: usize,
+) -> CaseSlices<'slices> {
+    let response_count = case.steps.as_ref().map_or(1, Vec::len);
+    CaseSlices {
+        first_responses: response_slice(&captures.first, response_offset, response_count),
+        second_responses: response_slice(&captures.second, response_offset, response_count),
+        first_requests: request_slice(
+            &captures.first_requests,
+            request_offset,
+            case.upstream.len(),
+        ),
+        second_requests: request_slice(
+            &captures.second_requests,
+            request_offset,
+            case.upstream.len(),
+        ),
+    }
+}
+
+// A steps-based case delegates to browser_flow_group; a single-request case compares directly.
+fn compare_one_case(
+    root: &Path,
+    case: &Case,
+    captures: &GroupCapture,
+    response_offset: usize,
+    request_offset: usize,
+) -> Result<bool, OracleError> {
+    let slices = case_slices(case, captures, response_offset, request_offset);
+    if let Some(steps) = &case.steps {
+        browser_flow_group::compare_case_steps(browser_flow_group::StepsCompareInput {
+            root,
+            case,
+            steps,
+            first: slices.first_responses,
+            second: slices.second_responses,
+            first_requests: slices.first_requests,
+            second_requests: slices.second_requests,
+            first_log: &captures.first_log,
+            second_log: &captures.second_log,
+        })
+    } else {
+        let first = slices
+            .first_responses
+            .first()
+            .ok_or(OracleError::MissingCapture(response_offset))?;
+        let second = slices
+            .second_responses
+            .first()
+            .ok_or(OracleError::MissingCapture(response_offset))?;
+        compare_case(artifacts::ArtifactInput {
+            root,
+            case,
+            first,
+            second,
+            first_requests: slices.first_requests,
+            second_requests: slices.second_requests,
+            first_log: &captures.first_log,
+            second_log: &captures.second_log,
+            result: None,
+        })
+    }
+}
+
+fn response_slice(responses: &[Response], offset: usize, count: usize) -> &[Response] {
+    let end = offset.saturating_add(count);
+    responses.get(offset..end).unwrap_or_default()
 }
 
 fn compare_case(input: artifacts::ArtifactInput<'_>) -> Result<bool, OracleError> {

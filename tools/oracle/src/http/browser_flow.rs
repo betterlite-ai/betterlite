@@ -1,14 +1,21 @@
 use std::collections::BTreeMap;
 use std::fmt::{self, Debug, Formatter};
 use std::path::PathBuf;
+use std::str::Utf8Error;
+use std::time::Instant;
 
+use cookie_store::CookieStore;
 use reqwest::blocking::Client;
+use secrecy::{ExposeSecret, SecretString};
 use thiserror::Error;
+use url::Url;
 
-use super::Response;
+use super::{REQUEST_TIMEOUT, Response, send_with_raw_headers};
 use crate::OracleError;
 use crate::case::Request;
-use crate::case::browser_flow::{FormCaptureError, Step, parse_form_projection};
+use crate::case::browser_flow::form::{FormCaptureError, parse_form_projection};
+use crate::case::browser_flow::{PlaceholderError, Step};
+use crate::multipart_oracle::error::MultipartError;
 
 mod capture;
 mod interpolate;
@@ -16,6 +23,8 @@ pub(crate) mod tests;
 
 #[derive(Debug, Error)]
 pub(crate) enum BrowserFlowError {
+    #[error("the gateway base url is invalid: {0}")]
+    BaseUrl(#[source] url::ParseError),
     #[error("step {index} capture \"{name}\" did not match any value")]
     MissingCapture { index: usize, name: String },
     #[error("step {index} capture \"{name}\" matched more than one value")]
@@ -26,14 +35,44 @@ pub(crate) enum BrowserFlowError {
         name: String,
         max: usize,
     },
-    #[error("step {index}: {reason}")]
-    Interpolate { index: usize, reason: String },
+    #[error("step {index} location header is not a valid url: {source}")]
+    Location {
+        index: usize,
+        #[source]
+        source: url::ParseError,
+    },
+    #[error("step {index} declares its own cookie header while the jar is in use")]
+    CookieConflict { index: usize },
+    #[error("step {index}: {source}")]
+    Placeholder {
+        index: usize,
+        #[source]
+        source: PlaceholderError,
+    },
+    #[error("step {index}: unterminated capture placeholder")]
+    Interpolate { index: usize },
+    #[error("step {index} body: {source}")]
+    Multipart {
+        index: usize,
+        #[source]
+        source: MultipartError,
+    },
+    #[error("step {index} fixture body is not valid UTF-8: {source}")]
+    BodyUtf8 {
+        index: usize,
+        #[source]
+        source: Utf8Error,
+    },
+    #[error("step {index} bytes body did not decode to raw bytes")]
+    BytesBody { index: usize },
     #[error("step {index} form: {source}")]
     Form {
         index: usize,
         #[source]
         source: FormCaptureError,
     },
+    #[error("the transcript ran past its deadline at step {index}")]
+    DeadlineExceeded { index: usize },
 }
 
 impl From<BrowserFlowError> for OracleError {
@@ -46,7 +85,7 @@ impl From<BrowserFlowError> for OracleError {
 }
 
 pub(crate) struct CapturedValue {
-    text: String,
+    text: SecretString,
     secret: bool,
 }
 
@@ -56,36 +95,45 @@ impl Debug for CapturedValue {
             f.write_str("CapturedValue(redacted)")
         } else {
             f.debug_struct("CapturedValue")
-                .field("text", &self.text)
+                .field("text", &self.text.expose_secret())
                 .finish()
         }
     }
 }
 
-#[derive(Debug, Default)]
+// cookie_store::CookieStore understands Max-Age and Expires, so a logout step's clearing cookie sticks.
 pub(crate) struct CookieJar {
-    cookies: BTreeMap<String, String>,
+    store: CookieStore,
+}
+
+impl Default for CookieJar {
+    fn default() -> Self {
+        Self {
+            store: CookieStore::new(),
+        }
+    }
+}
+
+impl Debug for CookieJar {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str("CookieJar(redacted)")
+    }
 }
 
 impl CookieJar {
-    fn update_from_response(&mut self, response: &Response) {
-        let Some(set_cookie) = response.headers.get("set-cookie") else {
-            return;
-        };
-        let pair = set_cookie.split(';').next().unwrap_or_default();
-        if let Some((name, value)) = pair.split_once('=') {
-            self.cookies
-                .insert(name.trim().to_owned(), value.trim().to_owned());
+    fn update_from_response(&mut self, base: &Url, raw_headers: &[(String, String)]) {
+        for (name, value) in raw_headers {
+            if name.eq_ignore_ascii_case("set-cookie") {
+                let _parsed = self.store.parse(value, base);
+            }
         }
     }
 
-    fn header_value(&self) -> Option<String> {
-        if self.cookies.is_empty() {
-            return None;
-        }
+    fn header_value(&self, base: &Url) -> Option<String> {
+        let mut pairs = self.store.get_request_values(base).peekable();
+        pairs.peek()?;
         Some(
-            self.cookies
-                .iter()
+            pairs
                 .map(|(name, value)| format!("{name}={value}"))
                 .collect::<Vec<_>>()
                 .join("; "),
@@ -94,6 +142,7 @@ impl CookieJar {
 }
 
 struct StepState<'state> {
+    base_url: &'state Url,
     jar: &'state mut CookieJar,
     captures: &'state mut BTreeMap<String, CapturedValue>,
 }
@@ -104,11 +153,17 @@ pub(crate) fn run_case_steps(
     base: &str,
     steps: &[Step],
 ) -> Result<Vec<Response>, OracleError> {
+    let base_url = Url::parse(base).map_err(BrowserFlowError::BaseUrl)?;
+    let deadline = Instant::now() + REQUEST_TIMEOUT;
     let mut jar = CookieJar::default();
     let mut captures = BTreeMap::new();
     let mut responses = Vec::with_capacity(steps.len());
     for (index, step) in steps.iter().enumerate() {
+        if Instant::now() >= deadline {
+            return Err(BrowserFlowError::DeadlineExceeded { index }.into());
+        }
         let mut state = StepState {
+            base_url: &base_url,
             jar: &mut jar,
             captures: &mut captures,
         };
@@ -136,7 +191,13 @@ fn run_step(
             ))
         })
         .collect::<Result<BTreeMap<_, _>, BrowserFlowError>>()?;
-    if let Some(cookie_header) = state.jar.header_value() {
+    if let Some(cookie_header) = state.jar.header_value(state.base_url) {
+        if headers
+            .keys()
+            .any(|name| name.eq_ignore_ascii_case("cookie"))
+        {
+            return Err(BrowserFlowError::CookieConflict { index }.into());
+        }
         headers.insert("cookie".to_owned(), cookie_header);
     }
     let body = interpolate::resolve_body(index, step, state.captures)?;
@@ -147,9 +208,9 @@ fn run_step(
         body: serde_json::Value::Null,
         body_kind: step.request.body_kind,
     };
-    let response = super::send_with_body(client, base, &request, body)?;
-    state.jar.update_from_response(&response);
-    apply_captures(index, step, &response, base, state)?;
+    let (response, raw_headers) = send_with_raw_headers(client, base, &request, body)?;
+    state.jar.update_from_response(state.base_url, &raw_headers);
+    apply_captures(index, step, &response, &raw_headers, state)?;
     Ok(response)
 }
 
@@ -157,7 +218,7 @@ fn apply_captures(
     index: usize,
     step: &Step,
     response: &Response,
-    base: &str,
+    raw_headers: &[(String, String)],
     state: &mut StepState<'_>,
 ) -> Result<(), OracleError> {
     let form = if step.form {
@@ -175,9 +236,10 @@ fn apply_captures(
     let context = capture::StepContext {
         index,
         response,
+        raw_headers,
         jar: state.jar,
         form: form.as_ref(),
-        base,
+        base: state.base_url,
     };
     for capture in &step.captures {
         let value = capture::extract(context, capture)?;

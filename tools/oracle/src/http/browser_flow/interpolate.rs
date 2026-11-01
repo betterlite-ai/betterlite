@@ -1,60 +1,56 @@
 use std::collections::BTreeMap;
-use std::str;
+use std::str::{self, Utf8Error};
 
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
+use secrecy::ExposeSecret;
 use serde_json::Value;
+use url::form_urlencoded;
 
 use super::{BrowserFlowError, CapturedValue};
-use crate::case::browser_flow::Step;
-use crate::case::{BodyKind, RequestBody};
+use crate::case::BodyKind::{Bytes, Json, Multipart};
+use crate::case::RequestBody;
+use crate::case::browser_flow::{
+    Encoding, PLACEHOLDER_PREFIX, PLACEHOLDER_SUFFIX, Step, find_placeholders,
+};
 use crate::multipart_oracle::request::request_body;
 
-// Case loading already rejected an undeclared capture or unknown encoding here.
+// Case loading already validated each placeholder, so find_placeholders is read here, not reparsed.
 pub(crate) fn resolve_text(
     index: usize,
     text: &str,
     captures: &BTreeMap<String, CapturedValue>,
 ) -> Result<String, BrowserFlowError> {
-    const PREFIX: &str = "{{capture:";
-    const SUFFIX: &str = "}}";
+    let placeholders = find_placeholders(text)
+        .map_err(|source| BrowserFlowError::Placeholder { index, source })?;
     let mut output = String::new();
     let mut remaining = text;
-    while let Some((before, after_prefix)) = remaining.split_once(PREFIX) {
+    for placeholder in &placeholders {
+        let (before, after_prefix) = remaining
+            .split_once(PLACEHOLDER_PREFIX)
+            .ok_or(BrowserFlowError::Interpolate { index })?;
         output.push_str(before);
-        let (body, after) =
-            after_prefix
-                .split_once(SUFFIX)
-                .ok_or_else(|| BrowserFlowError::Interpolate {
+        let (_, after) = after_prefix
+            .split_once(PLACEHOLDER_SUFFIX)
+            .ok_or(BrowserFlowError::Interpolate { index })?;
+        let stored =
+            captures
+                .get(&placeholder.name)
+                .ok_or_else(|| BrowserFlowError::MissingCapture {
                     index,
-                    reason: "unterminated capture placeholder".to_owned(),
+                    name: placeholder.name.clone(),
                 })?;
-        let mut parts = body.split(':');
-        let name = parts.next().unwrap_or_default();
-        let encoding = parts.next().unwrap_or_default();
-        let stored = captures
-            .get(name)
-            .ok_or_else(|| BrowserFlowError::MissingCapture {
-                index,
-                name: name.to_owned(),
-            })?;
-        output.push_str(&encode(index, encoding, &stored.text)?);
+        output.push_str(&encode(placeholder.encoding, stored.text.expose_secret()));
         remaining = after;
     }
     output.push_str(remaining);
     Ok(output)
 }
 
-fn encode(index: usize, encoding: &str, text: &str) -> Result<String, BrowserFlowError> {
+fn encode(encoding: Encoding, text: &str) -> String {
     match encoding {
-        "raw" => Ok(text.to_owned()),
-        "query" => Ok(utf8_percent_encode(text, NON_ALPHANUMERIC).to_string()),
-        "form" => Ok(utf8_percent_encode(text, NON_ALPHANUMERIC)
-            .to_string()
-            .replace("%20", "+")),
-        _ => Err(BrowserFlowError::Interpolate {
-            index,
-            reason: format!("unknown capture encoding \"{encoding}\""),
-        }),
+        Encoding::Raw => text.to_owned(),
+        Encoding::Query => utf8_percent_encode(text, NON_ALPHANUMERIC).to_string(),
+        Encoding::Form => form_urlencoded::byte_serialize(text.as_bytes()).collect(),
     }
 }
 
@@ -64,20 +60,16 @@ pub(crate) fn resolve_body(
     step: &Step,
     captures: &BTreeMap<String, CapturedValue>,
 ) -> Result<RequestBody, BrowserFlowError> {
-    if step.request.body_kind == BodyKind::Bytes {
-        return resolve_bytes_body(index, step, captures);
-    }
-    let resolved = if step.request.body_kind == BodyKind::Json {
-        resolve_value(index, &step.request.body, captures)?
-    } else {
-        step.request.body.clone()
-    };
-    request_body(&resolved, step.request.body_kind).map_err(|source| {
-        BrowserFlowError::Interpolate {
-            index,
-            reason: source.to_string(),
+    match step.request.body_kind {
+        Bytes => resolve_bytes_body(index, step, captures),
+        Json => {
+            let resolved = resolve_value(index, &step.request.body, captures)?;
+            request_body(&resolved, Json)
+                .map_err(|source| BrowserFlowError::Multipart { index, source })
         }
-    })
+        Multipart => request_body(&step.request.body, Multipart)
+            .map_err(|source| BrowserFlowError::Multipart { index, source }),
+    }
 }
 
 fn resolve_bytes_body(
@@ -85,26 +77,17 @@ fn resolve_bytes_body(
     step: &Step,
     captures: &BTreeMap<String, CapturedValue>,
 ) -> Result<RequestBody, BrowserFlowError> {
-    let decoded = request_body(&step.request.body, BodyKind::Bytes).map_err(|source| {
-        BrowserFlowError::Interpolate {
-            index,
-            reason: source.to_string(),
-        }
-    })?;
+    let decoded = request_body(&step.request.body, Bytes)
+        .map_err(|source| BrowserFlowError::Multipart { index, source })?;
     let RequestBody::Raw {
         content_type,
         bytes,
     } = decoded
     else {
-        return Err(BrowserFlowError::Interpolate {
-            index,
-            reason: "bytes body did not decode to raw bytes".to_owned(),
-        });
+        return Err(BrowserFlowError::BytesBody { index });
     };
-    let text = str::from_utf8(&bytes).map_err(|_source| BrowserFlowError::Interpolate {
-        index,
-        reason: "fixture body is not valid UTF-8".to_owned(),
-    })?;
+    let text = str::from_utf8(&bytes)
+        .map_err(|source: Utf8Error| BrowserFlowError::BodyUtf8 { index, source })?;
     let interpolated = resolve_text(index, text, captures)?;
     Ok(RequestBody::Raw {
         content_type,

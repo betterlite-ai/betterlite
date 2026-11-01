@@ -17,6 +17,9 @@ pub mod postgres;
 
 pub(crate) const MAX_BODY: usize = 16 * 1024 * 1024;
 
+// Steps reuse this as the deadline for a whole transcript, not only a single request.
+pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub(crate) struct Response {
     pub(crate) status: u16,
@@ -32,7 +35,7 @@ pub(crate) fn client() -> Result<Client, OracleError> {
     let client = ClientBuilder::from(reqwest::Client::builder())
         .no_proxy()
         .redirect(Policy::none())
-        .timeout(Duration::from_secs(30))
+        .timeout(REQUEST_TIMEOUT)
         .build()
         .map_err(OracleError::HttpRequest)?;
     Ok(client)
@@ -54,6 +57,17 @@ pub(crate) fn send_with_body(
     request: &Request,
     body: RequestBody,
 ) -> Result<Response, OracleError> {
+    let (response, _raw_headers) = send_with_raw_headers(client, base, request, body)?;
+    Ok(response)
+}
+
+// Browser-flow steps need every repeated header (Set-Cookie above all), lost in the collapsed map.
+pub(crate) fn send_with_raw_headers(
+    client: &Client,
+    base: &str,
+    request: &Request,
+    body: RequestBody,
+) -> Result<(Response, Vec<(String, String)>), OracleError> {
     let method = reqwest::Method::from_bytes(request.method.as_bytes())
         .map_err(Error::other)
         .map_err(OracleError::HttpIo)?;
@@ -63,9 +77,9 @@ pub(crate) fn send_with_body(
     }
     let incoming = with_body(outgoing, body)
         .send()
-        .map_err(OracleError::HttpRequest)?;
+        .map_err(|source| OracleError::HttpRequest(source.without_url()))?;
     let status = incoming.status().as_u16();
-    let headers = incoming
+    let raw_headers = incoming
         .headers()
         .iter()
         .map(|(name, value)| {
@@ -74,8 +88,9 @@ pub(crate) fn send_with_body(
                 str::from_utf8(value.as_bytes())?.to_owned(),
             ))
         })
-        .collect::<Result<BTreeMap<_, _>, Utf8Error>>()
+        .collect::<Result<Vec<(String, String)>, Utf8Error>>()
         .map_err(OracleError::HttpText)?;
+    let headers = raw_headers.iter().cloned().collect::<BTreeMap<_, _>>();
     let mut bytes = Vec::new();
     incoming
         .take(16 * 1024 * 1024 + 1)
@@ -84,11 +99,15 @@ pub(crate) fn send_with_body(
     if bytes.len() > MAX_BODY {
         return Err(OracleError::HttpTooLarge);
     }
-    Ok(Response {
-        status,
-        body: parse_body(&headers, &bytes)?,
-        headers,
-    })
+    let body = parse_body(&headers, &bytes)?;
+    Ok((
+        Response {
+            status,
+            body,
+            headers,
+        },
+        raw_headers,
+    ))
 }
 
 pub(crate) fn ready(client: &Client, base: &str) -> Result<bool, OracleError> {
