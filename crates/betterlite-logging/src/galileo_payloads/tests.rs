@@ -439,6 +439,30 @@ fn check_call_type_mismatch_falls_through() {
     assert_eq!(pass_through_output, "");
 }
 
+// galileo.py:609 reads value["response"] verbatim for call_type == "pass_through_endpoint" and echoes the built prompt as messages_for_span, never the raw-dict content extraction the fallback branch uses.
+fn check_pass_through_endpoint_content() {
+    let kwargs = GalileoKwargs {
+        call_type: Some("pass_through_endpoint".to_owned()),
+        messages: None,
+        functions: None,
+        tools: None,
+        input: None,
+    };
+    let mut value = IndexMap::new();
+    value.insert(
+        "response".to_owned(),
+        val(r#"{"text": "passthrough output"}"#),
+    );
+    let (_, output, messages_for_span) = galileo_input_output_content(
+        &kwargs,
+        Some(&ResponseObj::PassThroughDict { value }),
+        Level::Default,
+        None,
+    );
+    assert_eq!(output, r#"{"text": "passthrough output"}"#);
+    assert_eq!(messages_for_span, val(r#"{"messages": null}"#));
+}
+
 // _get_chat_content_for_galileo serializes message.json(), which is Message.model_dump(): content, role, tool_calls, function_call and provider_specific_fields always appear, nulls included, even for a raw provider message that supplied none of them.
 fn check_chat_message_projection() {
     let kwargs = GalileoKwargs::default();
@@ -533,6 +557,7 @@ fn galileo_payload_construction() {
     check_custom_tool_call_dump();
     check_function_arguments_normalization();
     check_call_type_mismatch_falls_through();
+    check_pass_through_endpoint_content();
     check_chat_message_projection();
     check_rerank_content();
     check_messages_or_empty_guard();
