@@ -1,19 +1,18 @@
 use std::sync::Arc;
 
-use axum::Json;
 use axum::body::Body;
 use axum::extract::{Request, State};
-use axum::http::StatusCode;
 use axum::middleware::Next;
-use axum::response::{IntoResponse as _, Response};
+use axum::response::Response;
 use betterlite_auth::auth_identity::errors::AuthError;
-use betterlite_auth::auth_identity::records::Principal;
+use betterlite_auth::auth_identity::records::{
+    CredentialRef, NetworkContext, Principal, SourceKey,
+};
 use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType};
-use betterlite_auth::resolved_key::credential::hash_token;
-use betterlite_error::envelope::{ErrorObject, ErrorResponse, WireField};
 use secrecy::{ExposeSecret as _, SecretString};
 use subtle::ConstantTimeEq as _;
 
+use crate::error_body::{AuthenticationFailure, authentication_error};
 use crate::state::AppState;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -47,11 +46,11 @@ pub trait BudgetAdmission {
     ) -> Result<AdmissionLease, AuthError>;
 }
 
-pub fn dispatch(
+pub(crate) fn dispatch(
     backend: AuthBackend,
     input: &StageInput,
-    master_key: Option<&SecretString>,
-) -> Result<AuthContext, AuthError> {
+    master_key: &SecretString,
+) -> Result<AuthContext, AuthenticationFailure> {
     match backend {
         AuthBackend::MasterKey => master_key_stage(input, master_key),
     }
@@ -59,39 +58,50 @@ pub fn dispatch(
 
 fn master_key_stage(
     input: &StageInput,
-    master_key: Option<&SecretString>,
-) -> Result<AuthContext, AuthError> {
+    master_key: &SecretString,
+) -> Result<AuthContext, AuthenticationFailure> {
     let StageInput::MasterKey(presented) = input;
-    let Some(expected) = master_key else {
-        return Ok(master_key_context());
-    };
     let matched = presented.as_ref().is_some_and(|key| {
-        bool::from(
-            key.expose_secret()
-                .as_bytes()
-                .ct_eq(expected.expose_secret().as_bytes()),
-        )
+        !key.expose_secret().is_empty()
+            && bool::from(
+                key.expose_secret()
+                    .as_bytes()
+                    .ct_eq(master_key.expose_secret().as_bytes()),
+            )
     });
     if matched {
-        Ok(master_key_context())
-    } else {
-        Err(AuthError::KeyNotFound {
-            hashed_token: hash_token(presented.as_ref().map_or("", SecretString::expose_secret)),
-        })
+        return Ok(master_key_context());
     }
+    let failure = match presented.as_ref() {
+        Some(key) if !key.expose_secret().is_empty() => AuthenticationFailure::Invalid,
+        Some(_) | None => AuthenticationFailure::Missing,
+    };
+    Err(failure)
 }
 
 fn master_key_context() -> AuthContext {
     AuthContext {
-        principal: Principal::new(
-            PrincipalType::ServiceAccount,
-            "master_key".to_owned(),
-            AuthMethod::ApiKey,
-        ),
+        principal: Principal {
+            principal_type: PrincipalType::ServiceAccount,
+            subject: "master_key".to_owned(),
+            issuer: None,
+            audience: Vec::new(),
+            user: None,
+            organization: None,
+            teams: Vec::new(),
+            project: None,
+            end_user: None,
+            roles: Vec::new(),
+            scopes: Vec::new(),
+            auth_method: AuthMethod::ApiKey,
+            credential_ref: CredentialRef::default(),
+            network: NetworkContext::default(),
+            source_key: SourceKey::default(),
+        },
     }
 }
 
-pub(crate) async fn stage_middleware(
+pub async fn stage_middleware(
     State(state): State<Arc<AppState>>,
     mut request: Request<Body>,
     next: Next,
@@ -102,44 +112,14 @@ pub(crate) async fn stage_middleware(
     let presented = super::extract_key(request.headers());
     for backend in &state.auth_backends {
         let input = StageInput::MasterKey(presented.clone());
-        match dispatch(*backend, &input, Some(master_key)) {
+        match dispatch(*backend, &input, master_key) {
             Ok(context) => {
                 request.extensions_mut().insert(context);
             }
-            Err(error) => return error_response(&error),
+            Err(failure) => return authentication_error(&failure),
         }
     }
     next.run(request).await
-}
-
-fn error_response(error: &AuthError) -> Response {
-    let Some(mapping) = error.http_mapping() else {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(ErrorResponse {
-                error: ErrorObject {
-                    message: error.to_string(),
-                    error_type: WireField::Text(error.kind().to_owned()),
-                    param: WireField::Null,
-                    code: WireField::Null,
-                },
-            }),
-        )
-            .into_response();
-    };
-    let status = StatusCode::from_u16(mapping.status).unwrap_or(StatusCode::UNAUTHORIZED);
-    (
-        status,
-        Json(ErrorResponse {
-            error: ErrorObject {
-                message: error.to_string(),
-                error_type: WireField::Text(mapping.error_type.to_owned()),
-                param: WireField::Text(mapping.param.to_owned()),
-                code: WireField::Text(mapping.code.to_owned()),
-            },
-        }),
-    )
-        .into_response()
 }
 
 mod tests;
