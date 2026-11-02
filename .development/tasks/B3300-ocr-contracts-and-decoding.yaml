@@ -88,6 +88,9 @@ deviations:
   - what: betterlite error messages on request parsing failures are betterlite's own instead of LiteLLM's Python exception messages.
     why: Error wording is not part of the wire contract; clients branch on status and code, not message text. Matching LiteLLM's exception type and code is sufficient (rule errors-match-litellm).
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ocr_endpoints/endpoints.py#L200-213
+  - what: Multipart text fields sent with a charset other than UTF-8 decode with encoding_rs's decoder for that label (the WHATWG Encoding Standard), except labels Python reads as ascii, latin-1 or iso8859-9, which decode byte for byte as Python does. An unknown label or bytes the decoder rejects fall back to latin-1. LiteLLM decodes through Starlette with Python's codecs, so a label only one side knows, or a byte outside Python's strict CJK tables (gbk 0x80, euc-kr 0x81 0x41, shift_jis 0x87 0x40, the unassigned gb2312 cell 0xAA 0xA1), gives different text.
+    why: The difference comes from CPython's codec tables, not from LiteLLM, and only shows for a form field sent in a CJK or WHATWG-only charset with bytes outside the strict tables. Matching it would mean porting Python's alias table and its strict CJK tables for input no OCR client sends.
+    link: https://github.com/encode/starlette/blob/1.9.0/starlette/formparsers.py#L49-L53
 out_of_scope:
   - OCR execution and provider dispatch (owned by a later task after unresolved dependencies resolve).
   - Authentication and request processing common to all routes (owned by B004 and B014).
@@ -99,6 +102,7 @@ pitfalls:
   - "The file upload is rewound before reading to handle cases where auth middleware consumed it. Seek must happen before the read limit check."
   - "MIME-type parameters after semicolon (e.g. \"text/plain; charset=utf-8\") must be stripped; only the base MIME type is stored."
   - "The native response payload is stored in OCRResponse's private _hidden_params dict and must not leak into the normalized JSON serialization."
+  - "Charset decoding stops at the charset deviation above: no Python alias or strict CJK tables beyond the ascii, latin-1 and iso8859-9 labels. A partial strict path such as one for gb2312 goes, so gb2312 decodes through encoding_rs like the other CJK labels."
   - "Test names must contain ocr_request so the filters select them. Helpers that parse bytes without HTTP integration cannot call FastAPI handlers; they must run against pure functions."
 review_level: standard
 budget:

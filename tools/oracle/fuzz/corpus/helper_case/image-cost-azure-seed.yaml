@@ -1,0 +1,14 @@
+kind: helper
+name: image-cost-azure-seed
+call:
+  image_cost:
+    operation: azure
+    model: image-cost-azure-pixel-model
+    model_info:
+      output_cost_per_image: 0
+      input_cost_per_pixel: 0.000002
+    size: "512x512"
+    billing:
+      image_count: 4
+compare: {ignore: []}
+env: {}

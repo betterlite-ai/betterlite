@@ -1,0 +1,17 @@
+kind: helper
+name: image-cost-usage-seed
+call:
+  image_cost:
+    operation: usage
+    model: image-cost-usage-model
+    model_info:
+      input_cost_per_token: 0.00001
+      output_cost_per_token: 0.00002
+      output_cost_per_image_token: 0.00005
+    usage:
+      input_tokens: 50
+      output_tokens: 40
+      total_tokens: 90
+      output_tokens_details: {}
+compare: {ignore: []}
+env: {}
