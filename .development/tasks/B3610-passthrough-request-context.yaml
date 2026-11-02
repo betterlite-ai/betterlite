@@ -67,7 +67,6 @@ description: >-
 
 scope:
   paths:
-  - crates/betterlite-http/src/lib.rs
   - crates/betterlite-http/src/passthrough.rs
   - crates/betterlite-http/src/passthrough/**
   - crates/betterlite-server/src/lib.rs

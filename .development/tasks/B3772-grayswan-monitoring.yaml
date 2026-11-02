@@ -28,6 +28,7 @@ description: >-
 
 scope:
   paths:
+    - crates/betterlite-guardrails/src/grayswan.rs
     - crates/betterlite-guardrails/src/grayswan/**
     - tools/oracle/cases/grayswan/**
   lint_tables: false

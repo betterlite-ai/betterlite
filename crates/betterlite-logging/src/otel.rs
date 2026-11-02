@@ -1,9 +1,11 @@
 pub mod callbacks;
 pub mod config;
+pub mod content_projections;
 pub mod emitter;
 pub mod fan_out;
 pub mod integrations;
 pub mod legacy_lifecycle;
+pub mod legacy_metrics;
 pub mod logger;
 pub mod mappers;
 pub mod model;
