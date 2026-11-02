@@ -62,10 +62,9 @@ impl RouteTable {
             return false;
         }
         let before_index = self
-            .colliding_routes(&path, &methods)
-            .first()
-            .map(|route| route.id)
-            .and_then(|id| self.position_of(id));
+            .routes
+            .iter()
+            .position(|route| route.path == path && !route.methods.is_disjoint(&methods));
         self.install(path, methods, false);
         if let Some(index) = before_index {
             self.reinsert_last(index);
@@ -80,15 +79,6 @@ impl RouteTable {
             ids.push(route.id);
         }
         ids
-    }
-
-    fn position_of(&self, id: RouteId) -> Option<usize> {
-        for (index, route) in self.routes.iter().enumerate() {
-            if route.id == id {
-                return Some(index);
-            }
-        }
-        None
     }
 
     fn reinsert_last(&mut self, index: usize) {

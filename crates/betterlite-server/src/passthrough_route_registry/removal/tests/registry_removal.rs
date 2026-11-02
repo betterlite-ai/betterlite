@@ -2,7 +2,9 @@ use betterlite_auth::pass_through_registry::{
     PassThroughMetadata, PassThroughRegistry, PassThroughRouteType,
 };
 
-use super::super::{registered_route_keys, remove_endpoint_routes};
+use crate::passthrough_route_registry::listing::registered_route_keys;
+
+use super::super::remove_endpoint_routes;
 
 fn metadata(
     endpoint_id: &str,
@@ -16,24 +18,6 @@ fn metadata(
         methods: Vec::new(),
         auth: None,
     }
-}
-
-#[test]
-fn registered_route_keys_lists_every_entry_in_order() {
-    let registrations = vec![
-        (
-            "a:exact:/foo:GET".to_owned(),
-            metadata("a", PassThroughRouteType::Exact, "/foo"),
-        ),
-        (
-            "b:exact:/bar:GET".to_owned(),
-            metadata("b", PassThroughRouteType::Exact, "/bar"),
-        ),
-    ];
-    assert_eq!(
-        registered_route_keys(&registrations),
-        vec!["a:exact:/foo:GET".to_owned(), "b:exact:/bar:GET".to_owned()]
-    );
 }
 
 #[test]

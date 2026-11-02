@@ -20,15 +20,6 @@ pub fn remove_endpoint_routes(
     *registrations = remaining;
 }
 
-#[must_use]
-pub fn registered_route_keys(registrations: &[(String, PassThroughMetadata)]) -> Vec<String> {
-    let mut keys = Vec::new();
-    for (key, _) in registrations {
-        keys.push(key.clone());
-    }
-    keys
-}
-
 fn remove_first(list: &mut Vec<String>, value: &str) {
     if let Some(position) = list.iter().position(|entry| entry == value) {
         list.remove(position);

@@ -1,9 +1,8 @@
 use std::collections::BTreeSet;
 
 use betterlite_auth::pass_through_registry::{PassThroughMetadata, PassThroughRouteType};
-use betterlite_server::passthrough_route_registry::removal::{
-    registered_route_keys, remove_endpoint_routes,
-};
+use betterlite_server::passthrough_route_registry::listing::registered_route_keys;
+use betterlite_server::passthrough_route_registry::removal::remove_endpoint_routes;
 use betterlite_server::passthrough_route_registry::route_table::RouteTable;
 
 use crate::helpers::HelperResult;
