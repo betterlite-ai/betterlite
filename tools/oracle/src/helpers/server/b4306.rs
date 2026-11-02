@@ -66,7 +66,10 @@ impl Helper for Op {
                 Value::Bool(saved_secret_is_reusable(incoming, saved))
             }
             Input::Merge { incoming, saved } => Value::Object(merge_over_saved(incoming, saved)),
-            Input::RedactSettings { settings } => Value::Object(redact_settings(settings.as_ref())),
+            Input::RedactSettings { settings } => {
+                let empty = Map::new();
+                Value::Object(redact_settings(settings.as_ref().unwrap_or(&empty)))
+            }
         };
         Ok(output)
     }

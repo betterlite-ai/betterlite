@@ -157,6 +157,16 @@ fn target_repr_behavior(#[case] value: Value, #[case] expected: &str) {
     obj(r#"{"url": "redis://host"}"#),
     false
 )]
+#[case::null_saved_field_does_not_pin_target(
+    obj(r#"{"host": "a", "port": 6379, "password": "***REDACTED***"}"#),
+    obj(r#"{"host": "a", "port": null, "password": "s"}"#),
+    true
+)]
+#[case::null_incoming_url_keeps_saved(
+    obj(r#"{"host": "a", "url": null}"#),
+    obj(r#"{"host": "a", "url": "redis://host"}"#),
+    true
+)]
 fn saved_secret_is_reusable_behavior(
     #[case] incoming: Map<String, Value>,
     #[case] saved: Map<String, Value>,
@@ -180,6 +190,22 @@ fn merge_over_saved_restores_redacted_marker() {
     let saved = obj(r#"{"host": "a", "password": "secret"}"#);
     let merged = merge_over_saved(&incoming, &saved);
     assert_eq!(merged["password"], "secret");
+}
+
+#[test]
+fn merge_over_saved_restores_password_when_saved_field_is_explicit_null() {
+    let incoming = obj(r#"{"host": "a", "port": 6379, "password": "***REDACTED***"}"#);
+    let saved = obj(r#"{"host": "a", "port": null, "password": "s"}"#);
+    let merged = merge_over_saved(&incoming, &saved);
+    assert_eq!(merged["password"], "s");
+}
+
+#[test]
+fn merge_over_saved_restores_password_when_incoming_url_is_null() {
+    let incoming = obj(r#"{"host": "a", "url": null, "password": "***REDACTED***"}"#);
+    let saved = obj(r#"{"host": "a", "url": "redis://host", "password": "s"}"#);
+    let merged = merge_over_saved(&incoming, &saved);
+    assert_eq!(merged["password"], "s");
 }
 
 #[test]
@@ -217,15 +243,14 @@ fn merge_over_saved_drops_marker_when_nothing_is_stored() {
 #[test]
 fn redact_settings_masks_every_value() {
     let settings = obj(r#"{"host": "a", "password": "secret"}"#);
-    let redacted = redact_settings(Some(&settings));
+    let redacted = redact_settings(&settings);
     assert_eq!(redacted["host"], REDACTED_VALUE);
     assert_eq!(redacted["password"], REDACTED_VALUE);
 }
 
 #[test]
-fn redact_settings_handles_absent_and_empty() {
-    assert_eq!(redact_settings(None), Map::new());
-    assert_eq!(redact_settings(Some(&Map::new())), Map::new());
+fn redact_settings_handles_empty() {
+    assert_eq!(redact_settings(&Map::new()), Map::new());
 }
 
 fn replay_corpus() -> usize {

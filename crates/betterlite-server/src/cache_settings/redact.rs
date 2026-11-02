@@ -35,9 +35,9 @@ pub fn redact_credentials(settings: &Map<String, Value>) -> Map<String, Value> {
 }
 
 #[must_use]
-pub fn redact_settings(settings: Option<&Map<String, Value>>) -> Map<String, Value> {
-    let Some(present) = settings.filter(|map| !map.is_empty()) else {
-        return Map::new();
-    };
-    redact_where(present, |_, _| true)
+pub fn redact_settings(settings: &Map<String, Value>) -> Map<String, Value> {
+    settings
+        .keys()
+        .map(|key| (key.clone(), Value::String(REDACTED_VALUE.to_owned())))
+        .collect()
 }
