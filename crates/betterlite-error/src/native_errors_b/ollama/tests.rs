@@ -93,6 +93,18 @@ fn response_branches_answer_the_provider_status(#[case] text: &str, #[case] stat
 }
 
 #[test]
+fn the_text_variant_native_rs_always_builds_keeps_the_class_default() {
+    let class = map_ollama_exception(&text_input("no such file or directory"))
+        .expect("expected a classification");
+    assert_eq!(
+        class.metadata().status_code,
+        400,
+        "native.rs's dispatch table always builds OllamaOriginalException::Text, which carries no \
+status, so the provider's real status can never reach the class on the live request path"
+    );
+}
+
+#[test]
 fn a_dict_original_exception_ignores_its_str_form() {
     // isinstance(original_exception, dict) reads the "error" key, never str(original_exception)
     let dict = dict_input("Read timed out");

@@ -80,6 +80,18 @@ fn response_branches_answer_the_provider_status(#[case] error_str: &str, #[case]
 }
 
 #[test]
+fn the_two_argument_form_native_rs_calls_always_keeps_the_class_default() {
+    let class =
+        map_cloudflare_exception("Authentication error", None).expect("expected a classification");
+    assert_eq!(
+        class.metadata().status_code,
+        401,
+        "native.rs's dispatch table calls exactly this two-argument form, which has no status \
+parameter, so the provider's real status can never reach the class on the live request path"
+    );
+}
+
+#[test]
 fn matched_bad_request_tolerates_missing_model() {
     let class = map_cloudflare_exception("must have required property 'model'", None)
         .expect("expected a classification");
