@@ -1,5 +1,5 @@
 #![cfg(test)]
-use crate::schema_baseline::MigrationFile;
+use crate::schema_baseline::{MigrationCatalog, MigrationFile};
 const PINNED_AGENT_IDENTITY: MigrationFile = MigrationFile {
     directory: "20260921190000_agent_identity",
     bytes: include_bytes!("fixtures/20260921190000_agent_identity.sql"),
@@ -35,15 +35,14 @@ const PINNED_RENAME_LENS: MigrationFile = MigrationFile {
     bytes: include_bytes!("fixtures/20261001100000_rename_lens.sql"),
     sha256: "ca2c6b8bda8b16381e9b707d43d914c800923c8b476b4da12d3ad0b4179a3603",
 };
-pub(super) const PINNED_MIGRATION_CATALOG: crate::schema_baseline::MigrationCatalog =
-    crate::schema_baseline::MigrationCatalog {
-        files: &[
-            PINNED_AGENT_IDENTITY,
-            PINNED_ADD_AGENT_KILL_SWITCH,
-            PINNED_ADD_MCP_PINNED_TOOLS,
-            PINNED_ADD_DAILY_MODEL_USAGE,
-            PINNED_AGENT_ENGINE,
-            PINNED_LENS_RUN_HISTORY,
-            PINNED_RENAME_LENS,
-        ],
-    };
+pub(super) const PINNED_MIGRATION_CATALOG: MigrationCatalog = MigrationCatalog {
+    files: &[
+        PINNED_AGENT_IDENTITY,
+        PINNED_ADD_AGENT_KILL_SWITCH,
+        PINNED_ADD_MCP_PINNED_TOOLS,
+        PINNED_ADD_DAILY_MODEL_USAGE,
+        PINNED_AGENT_ENGINE,
+        PINNED_LENS_RUN_HISTORY,
+        PINNED_RENAME_LENS,
+    ],
+};
