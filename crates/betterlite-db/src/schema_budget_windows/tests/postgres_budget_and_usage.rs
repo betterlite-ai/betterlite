@@ -102,23 +102,34 @@ async fn check_guardrail_units_zero_cost_null_untracked_zero(client: &Client) {
 }
 
 async fn check_spend_log_timestamp_backfill(client: &Client) {
-    exec_params(
+    batch_execute(client, "BEGIN; SET LOCAL TIME ZONE 'UTC';").await;
+    batch_execute(
         client,
-        r#"INSERT INTO "LiteLLM_SpendLogs" (request_id, call_type, "startTime", "endTime") VALUES ($1, $2, now(), now())"#,
-        &[&"request-a", &"completion"],
+        r#"INSERT INTO "LiteLLM_SpendLogs" (request_id, call_type, "startTime", "endTime") VALUES ('request-a', 'completion', now() - interval '1 day', now() - interval '1 day')"#,
     )
     .await;
     batch_execute(client, migration_sql_of(ADD_SPEND_LOG_TIMESTAMPS.directory)).await;
+    let now: String = scalar_text(client, "SELECT now()::timestamp(3)::text", &[]).await;
     let row = query_one_row(
         client,
-        r#"SELECT created_at, updated_at FROM "LiteLLM_SpendLogs" WHERE request_id = $1"#,
+        r#"SELECT created_at::text, updated_at::text FROM "LiteLLM_SpendLogs" WHERE request_id = $1"#,
         &[&"request-a"],
     )
     .await;
-    let created_at: Option<SystemTime> = row.get(0);
-    let updated_at: Option<SystemTime> = row.get(1);
-    assert!(created_at.is_some());
-    assert!(updated_at.is_some());
+    let created_at: String = row.get(0);
+    let updated_at: String = row.get(1);
+    batch_execute(client, "COMMIT;").await;
+    assert_eq!(created_at, now);
+    assert_eq!(updated_at, now);
+    assert_columns(
+        client,
+        "LiteLLM_SpendLogs",
+        &[
+            timestamp3_now_default("created_at"),
+            timestamp3_now_default("updated_at"),
+        ],
+    )
+    .await;
 }
 
 async fn check_request_index_migrations_are_noops(client: &Client) {
@@ -146,57 +157,98 @@ async fn check_request_index_migrations_are_noops(client: &Client) {
 async fn seed_six_daily_spend_tables(client: &Client) {
     batch_execute(
         client,
-        r#"INSERT INTO "LiteLLM_DailyUserSpend" (id, user_id, model, date, api_key, updated_at) VALUES ('spend-user', 'user-a', 'model-a', 'date-a', 'key-a', now())"#,
+        r#"INSERT INTO "LiteLLM_DailyUserSpend" (id, user_id, model, date, api_key, spend, api_requests, updated_at) VALUES ('spend-user', 'user-a', 'model-a', 'date-a', 'key-a', 10.5, 3, now())"#,
     )
     .await;
     batch_execute(
         client,
-        r#"INSERT INTO "LiteLLM_DailyTeamSpend" (id, team_id, model, date, api_key, updated_at) VALUES ('spend-team', 'team-a', 'model-a', 'date-a', 'key-a', now())"#,
+        r#"INSERT INTO "LiteLLM_DailyTeamSpend" (id, team_id, model, date, api_key, spend, api_requests, updated_at) VALUES ('spend-team', 'team-a', 'model-a', 'date-a', 'key-a', 10.5, 3, now())"#,
     )
     .await;
     batch_execute(
         client,
-        r#"INSERT INTO "LiteLLM_DailyTagSpend" (id, tag, model, date, api_key, updated_at) VALUES ('spend-tag', 'tag-a', 'model-a', 'date-a', 'key-a', now())"#,
+        r#"INSERT INTO "LiteLLM_DailyTagSpend" (id, tag, model, date, api_key, spend, api_requests, updated_at) VALUES ('spend-tag', 'tag-a', 'model-a', 'date-a', 'key-a', 10.5, 3, now())"#,
     )
     .await;
     batch_execute(
         client,
-        r#"INSERT INTO "LiteLLM_DailyOrganizationSpend" (id, date, api_key, updated_at) VALUES ('spend-org', 'date-a', 'key-a', now())"#,
+        r#"INSERT INTO "LiteLLM_DailyOrganizationSpend" (id, date, api_key, spend, api_requests, updated_at) VALUES ('spend-org', 'date-a', 'key-a', 10.5, 3, now())"#,
     )
     .await;
     batch_execute(
         client,
-        r#"INSERT INTO "LiteLLM_DailyEndUserSpend" (id, date, api_key, updated_at) VALUES ('spend-end-user', 'date-a', 'key-a', now())"#,
+        r#"INSERT INTO "LiteLLM_DailyEndUserSpend" (id, date, api_key, spend, api_requests, updated_at) VALUES ('spend-end-user', 'date-a', 'key-a', 10.5, 3, now())"#,
     )
     .await;
     batch_execute(
         client,
-        r#"INSERT INTO "LiteLLM_DailyAgentSpend" (id, date, api_key, updated_at) VALUES ('spend-agent', 'date-a', 'key-a', now())"#,
+        r#"INSERT INTO "LiteLLM_DailyAgentSpend" (id, date, api_key, spend, api_requests, updated_at) VALUES ('spend-agent', 'date-a', 'key-a', 10.5, 3, now())"#,
     )
     .await;
 }
 
-async fn check_six_gateway_savings_and_timing_defaults(client: &Client) {
-    seed_six_daily_spend_tables(client).await;
-    for table in [
-        "LiteLLM_DailyUserSpend",
-        "LiteLLM_DailyOrganizationSpend",
-        "LiteLLM_DailyEndUserSpend",
-        "LiteLLM_DailyAgentSpend",
-        "LiteLLM_DailyTeamSpend",
-        "LiteLLM_DailyTagSpend",
+async fn apply_cache_savings_through_response_time(client: &Client) {
+    for directory in [
+        ADD_CACHE_SAVINGS_SPEND.directory,
+        SHADOW_EVAL_COST_COMPARISON.directory,
+        ADD_ACCESS_GROUP_BUDGET.directory,
+        SHADOW_EVAL_TYPED_TARGETS.directory,
+        ADD_LITELLM_CALL_ID_SPEND_LOGS.directory,
+        SPEND_LOG_CALL_ID_INDEX.directory,
+        SHADOW_EVAL_MULTI_ROUTER.directory,
+        ADD_GUARDRAIL_USAGE_UNITS_COST.directory,
+        ADD_ORG_ID_MANAGED_OBJECT.directory,
+        SHADOW_EVAL_MODEL_SCOPE.directory,
+        ADD_MCP_OAUTH_DISCOVERY.directory,
+        ADD_AUTOROUTER_CLASSIFIER_COST.directory,
+        ADD_AUTOROUTER_BASE_MODELS.directory,
+        SKILLS_ON_OBJECT_PERMISSION.directory,
+        ADD_TPD_LIMIT.directory,
+        ADD_AUTOROUTER_COVERAGE.directory,
+        ADD_DAILY_GLOBAL_SPEND.directory,
+        ADD_DAILY_RESPONSE_TIME.directory,
     ] {
-        assert_columns(
+        batch_execute(client, migration_sql_of(directory)).await;
+    }
+}
+
+async fn assert_six_daily_spend_rows_unchanged(client: &Client) {
+    for (table, id) in [
+        ("LiteLLM_DailyUserSpend", "spend-user"),
+        ("LiteLLM_DailyOrganizationSpend", "spend-org"),
+        ("LiteLLM_DailyEndUserSpend", "spend-end-user"),
+        ("LiteLLM_DailyAgentSpend", "spend-agent"),
+        ("LiteLLM_DailyTeamSpend", "spend-team"),
+        ("LiteLLM_DailyTagSpend", "spend-tag"),
+    ] {
+        let row = query_one_row(
             client,
-            table,
-            &[
-                float8_default("gateway_injected_caching_savings_spend", "0.0"),
-                int8_zero("total_response_time_ms"),
-                int8_zero("timed_requests"),
-            ],
+            &format!(
+                r#"SELECT spend::text, api_requests, gateway_injected_caching_savings_spend::text, total_response_time_ms, timed_requests FROM "{table}" WHERE id = $1"#
+            ),
+            &[&id],
         )
         .await;
+        let spend: String = row.get(0);
+        let api_requests: i64 = row.get(1);
+        let gateway_savings: String = row.get(2);
+        let total_response_time_ms: i64 = row.get(3);
+        let timed_requests: i64 = row.get(4);
+        assert_eq!(spend, "10.5", "{table} spend");
+        assert_eq!(api_requests, 3, "{table} api_requests");
+        assert_eq!(
+            gateway_savings, "0",
+            "{table} gateway_injected_caching_savings_spend"
+        );
+        assert_eq!(total_response_time_ms, 0, "{table} total_response_time_ms");
+        assert_eq!(timed_requests, 0, "{table} timed_requests");
     }
+}
+
+async fn check_six_gateway_savings_and_timing_defaults(client: &Client) {
+    seed_six_daily_spend_tables(client).await;
+    apply_cache_savings_through_response_time(client).await;
+    assert_six_daily_spend_rows_unchanged(client).await;
 }
 
 async fn check_access_group_budget_set_null(client: &Client) {
@@ -329,6 +381,13 @@ async fn check_key_total_spend_zero_not_current_spend(client: &Client) {
         &[&"token-total", &42.5_f64],
     )
     .await;
+    exec_params(
+        client,
+        r#"INSERT INTO "LiteLLM_DeletedVerificationToken" (id, token, spend) VALUES ($1, $2, $3)"#,
+        &[&"deleted-token-total", &"token-total-2", &42.5_f64],
+    )
+    .await;
+    batch_execute(client, migration_sql_of(ADD_KEY_TOTAL_SPEND.directory)).await;
     let row = query_one_row(
         client,
         r#"SELECT spend::text, total_spend::text FROM "LiteLLM_VerificationToken" WHERE token = $1"#,
@@ -339,18 +398,16 @@ async fn check_key_total_spend_zero_not_current_spend(client: &Client) {
     let total_spend: String = row.get(1);
     assert_eq!(spend, "42.5");
     assert_eq!(total_spend, "0");
-    exec_params(
+    let deleted_row = query_one_row(
         client,
-        r#"INSERT INTO "LiteLLM_DeletedVerificationToken" (id, token, spend) VALUES ($1, $2, $3)"#,
-        &[&"deleted-token-total", &"token-total-2", &7.0_f64],
+        r#"SELECT spend::text, total_spend::text FROM "LiteLLM_DeletedVerificationToken" WHERE id = $1"#,
+        &[&"deleted-token-total"],
     )
     .await;
-    assert_column(
-        client,
-        "LiteLLM_DeletedVerificationToken",
-        float8_default("total_spend", "0.0"),
-    )
-    .await;
+    let deleted_spend: String = deleted_row.get(0);
+    let deleted_total_spend: String = deleted_row.get(1);
+    assert_eq!(deleted_spend, "42.5");
+    assert_eq!(deleted_total_spend, "0");
 }
 
 async fn check_policy_priority_null_default_flag_false(client: &Client) {
@@ -434,7 +491,7 @@ fn budget_and_usage_checkpoint_for(cohort: BudgetAndUsageCohort) -> &'static str
         BudgetAndUsageCohort::SpendLogTimestampBackfill => ADD_DAILY_GUARDRAIL_UNITS.directory,
         BudgetAndUsageCohort::RequestIndexMigrationsAreNoops => SHADOW_EVAL_MAX_BUDGET.directory,
         BudgetAndUsageCohort::SixGatewaySavingsAndTimingDefaults => {
-            ADD_DAILY_RESPONSE_TIME.directory
+            ADD_SPEND_LOG_KEY_START_IDX.directory
         }
         BudgetAndUsageCohort::AccessGroupBudgetSetNull => ADD_ACCESS_GROUP_BUDGET.directory,
         BudgetAndUsageCohort::ManagedOrgNoBackfill => ADD_GUARDRAIL_USAGE_UNITS_COST.directory,
@@ -442,7 +499,9 @@ fn budget_and_usage_checkpoint_for(cohort: BudgetAndUsageCohort) -> &'static str
         BudgetAndUsageCohort::SkillAgentEmptyArrays => ADD_AGENT_ACCESS_GROUP_IDS.directory,
         BudgetAndUsageCohort::FiveNullableTpdLimits => ADD_TPD_LIMIT.directory,
         BudgetAndUsageCohort::TemporaryBudgetFieldsNull => ADD_BUDGET_TEMP_INCREASE.directory,
-        BudgetAndUsageCohort::KeyTotalSpendZeroNotCurrentSpend => ADD_KEY_TOTAL_SPEND.directory,
+        BudgetAndUsageCohort::KeyTotalSpendZeroNotCurrentSpend => {
+            ADD_AUTOROUTER_BASELINE_STATE.directory
+        }
         BudgetAndUsageCohort::PolicyPriorityNullDefaultFlagFalse => {
             ADD_POLICY_ATTACHMENT_DEFAULT.directory
         }

@@ -167,13 +167,7 @@ async fn check_issuer_empty_backfill_and_null_rejection(client: &Client) {
     .await;
 }
 
-async fn check_issuer_distinct_claim_pairs_inactive_still_unique(client: &Client) {
-    exec_params(
-        client,
-        r#"INSERT INTO "LiteLLM_VerificationToken" (token) VALUES ($1)"#,
-        &[&"token-distinct"],
-    )
-    .await;
+async fn check_issuer_empty_scope_inactive_still_unique(client: &Client) {
     exec_params(
         client,
         r#"INSERT INTO "LiteLLM_JWTKeyMapping" (id, jwt_claim_name, jwt_claim_value, token, is_active) VALUES ($1, $2, $3, $4, true)"#,
@@ -193,6 +187,45 @@ async fn check_issuer_distinct_claim_pairs_inactive_still_unique(client: &Client
         &[&"mapping-distinct-value", &"claim-a", &"value-b", &"token-distinct"],
     )
     .await;
+}
+
+async fn check_issuer_scoped_pair_still_unique(client: &Client) {
+    exec_params(
+        client,
+        r#"INSERT INTO "LiteLLM_JWTKeyMapping" (id, jwt_claim_name, jwt_claim_value, token, jwt_issuer) VALUES ($1, $2, $3, $4, $5)"#,
+        &[
+            &"mapping-issuer-x",
+            &"claim-a",
+            &"value-a",
+            &"token-distinct",
+            &"issuer-x",
+        ],
+    )
+    .await;
+    assert_exec_params_err_state(
+        client,
+        r#"INSERT INTO "LiteLLM_JWTKeyMapping" (id, jwt_claim_name, jwt_claim_value, token, jwt_issuer) VALUES ($1, $2, $3, $4, $5)"#,
+        &[
+            &"mapping-issuer-x-dup",
+            &"claim-a",
+            &"value-a",
+            &"token-distinct",
+            &"issuer-x",
+        ],
+        SqlState::UNIQUE_VIOLATION,
+    )
+    .await;
+}
+
+async fn check_issuer_distinct_claim_pairs_inactive_still_unique(client: &Client) {
+    exec_params(
+        client,
+        r#"INSERT INTO "LiteLLM_VerificationToken" (token) VALUES ($1)"#,
+        &[&"token-distinct"],
+    )
+    .await;
+    check_issuer_empty_scope_inactive_still_unique(client).await;
+    check_issuer_scoped_pair_still_unique(client).await;
 }
 
 async fn insert_autorouter_baseline(client: &Client, scope: &str) {
@@ -235,13 +268,25 @@ async fn check_baseline_zero_revisions_false_retired(client: &Client) {
     .await;
 }
 
-async fn check_dirty_index_excludes_retired_and_published(client: &Client) {
-    assert!(index_exists(client, "idx_autorouter_baseline_dirty").await);
+async fn assert_dirty_index_shape(client: &Client) {
     let predicate = index_predicate(client, "idx_autorouter_baseline_dirty")
         .await
         .unwrap();
-    assert!(predicate.contains("retired"));
-    assert!(predicate.contains("published_revision"));
+    assert_eq!(
+        predicate,
+        "(NOT retired) AND (revision <> published_revision)"
+    );
+    assert_index(
+        client,
+        "idx_autorouter_baseline_dirty",
+        &["attempted_at", "updated_at", "scope"],
+        false,
+    )
+    .await;
+}
+
+async fn check_dirty_index_excludes_retired_and_published(client: &Client) {
+    assert_dirty_index_shape(client).await;
     exec_params(
         client,
         r#"INSERT INTO "LiteLLM_AutoRouterBaselineComparison" (scope, api_key, session_id, router_name, initial_equivalent, revision, published_revision, retired) VALUES ($1, 'key-a', 'session-a', 'router-a', true, 1, 0, false)"#,

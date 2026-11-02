@@ -348,32 +348,63 @@ async fn check_existing_group_id_preserved(client: &Client) {
     .await;
 }
 
-enum StoppedAtDirection {
-    Future,
-    Expired,
-}
-
-async fn check_stopped_at_offset_backfill(client: &Client, direction: StoppedAtDirection) {
-    let (id, ends_at_offset, expected) = match direction {
-        StoppedAtDirection::Future => ("job-stop-future", "+ interval '1 hour'", Some("unknown")),
-        StoppedAtDirection::Expired => ("job-stop-expired", "- interval '1 hour'", None),
-    };
+async fn seed_stopped_at_offset_rows(client: &Client) {
+    batch_execute(client, "BEGIN; SET LOCAL TIME ZONE 'UTC';").await;
     exec_params(
         client,
-        &format!(
-            r#"INSERT INTO "LiteLLM_ShadowEvalJob" (id, api_key_id, router_name, judge_model, shadow_percentage, max_turns, group_id, stopped_at, ends_at) VALUES ($1, $2, $3, $4, $5, $6, $1, now(), now() {ends_at_offset})"#
-        ),
-        &[&id, &"key-stop", &"router-a", &"judge-a", &10.0_f64, &5_i32],
+        r#"INSERT INTO "LiteLLM_ShadowEvalJob" (id, api_key_id, router_name, judge_model, shadow_percentage, max_turns, group_id, stopped_at, ends_at) VALUES ($1, $2, $3, $4, $5, $6, $1, now(), now() + interval '1 hour')"#,
+        &[&"job-stop-future", &"key-stop", &"router-a", &"judge-a", &10.0_f64, &5_i32],
     )
     .await;
-    check_shadow_eval_scalar_backfill(
+    batch_execute(
         client,
-        id,
-        ADD_SHADOW_EVAL_STOPPED_BY.directory,
-        "stopped_by",
-        expected,
+        r#"INSERT INTO "LiteLLM_ShadowEvalJob" (id, api_key_id, router_name, judge_model, shadow_percentage, max_turns, group_id, stopped_at, ends_at) VALUES ('job-stop-equal', 'key-stop', 'router-a', 'judge-a', 10.0, 5, 'job-stop-equal', now(), now() AT TIME ZONE 'utc')"#,
     )
     .await;
+    exec_params(
+        client,
+        r#"INSERT INTO "LiteLLM_ShadowEvalJob" (id, api_key_id, router_name, judge_model, shadow_percentage, max_turns, group_id, ends_at) VALUES ($1, $2, $3, $4, $5, $6, $1, now() + interval '1 hour')"#,
+        &[
+            &"job-stop-unstopped-future",
+            &"key-stop",
+            &"router-a",
+            &"judge-a",
+            &10.0_f64,
+            &5_i32,
+        ],
+    )
+    .await;
+}
+
+async fn check_stopped_at_offset_backfill(client: &Client) {
+    seed_stopped_at_offset_rows(client).await;
+    batch_execute(
+        client,
+        migration_sql_of(ADD_SHADOW_EVAL_STOPPED_BY.directory),
+    )
+    .await;
+    let future = scalar_opt_text(
+        client,
+        r#"SELECT stopped_by FROM "LiteLLM_ShadowEvalJob" WHERE id = $1"#,
+        &[&"job-stop-future"],
+    )
+    .await;
+    let equal = scalar_opt_text(
+        client,
+        r#"SELECT stopped_by FROM "LiteLLM_ShadowEvalJob" WHERE id = $1"#,
+        &[&"job-stop-equal"],
+    )
+    .await;
+    let unstopped_future = scalar_opt_text(
+        client,
+        r#"SELECT stopped_by FROM "LiteLLM_ShadowEvalJob" WHERE id = $1"#,
+        &[&"job-stop-unstopped-future"],
+    )
+    .await;
+    batch_execute(client, "COMMIT;").await;
+    assert_eq!(future.as_deref(), Some("unknown"));
+    assert_eq!(equal, None);
+    assert_eq!(unstopped_future, None);
 }
 
 async fn run_shadow_history_check(client: &Client, cohort: ShadowHistoryCohort) {
@@ -393,14 +424,9 @@ async fn run_shadow_history_check(client: &Client, cohort: ShadowHistoryCohort) 
         }
         GroupIdNullFillBeforeNotNull => Box::pin(check_group_id_null_fill_before_not_null(client)),
         ExistingGroupIdPreserved => Box::pin(check_existing_group_id_preserved(client)),
-        StoppedFutureOnlyUnknownBackfill => Box::pin(check_stopped_at_offset_backfill(
-            client,
-            StoppedAtDirection::Future,
-        )),
-        StoppedEqualNowOrExpiredUnchanged => Box::pin(check_stopped_at_offset_backfill(
-            client,
-            StoppedAtDirection::Expired,
-        )),
+        StoppedFutureOnlyUnknownBackfill | StoppedEqualNowOrExpiredUnchanged => {
+            Box::pin(check_stopped_at_offset_backfill(client))
+        }
         BudgetAndComparisonCostDefaults => {
             Box::pin(check_budget_and_comparison_cost_defaults(client))
         }

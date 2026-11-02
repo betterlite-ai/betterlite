@@ -338,17 +338,6 @@ struct IndexFacts {
     unique: bool,
 }
 
-async fn index_exists(client: &Client, index: &str) -> bool {
-    scalar_opt_bool(
-        client,
-        "SELECT indisunique FROM pg_index idx \
-         JOIN pg_class ic ON ic.oid = idx.indexrelid WHERE ic.relname = $1",
-        &[&index],
-    )
-    .await
-    .is_some()
-}
-
 async fn index_facts(client: &Client, index: &str) -> IndexFacts {
     let unique = scalar_opt_bool(
         client,
