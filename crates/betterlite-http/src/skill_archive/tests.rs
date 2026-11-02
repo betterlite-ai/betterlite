@@ -609,6 +609,80 @@ fn skill_archive_reads_a_member_with_zip64_central_sizes() {
     assert_eq!(data, b"manifest");
 }
 
+fn raw_central_header_with_zip64_offset(
+    name: &[u8],
+    data: &[u8],
+    local_header_offset: u64,
+) -> Vec<u8> {
+    const SENTINEL: u32 = 0xFFFF_FFFF;
+    let mut extra = Vec::new();
+    extra.extend_from_slice(&0x0001_u16.to_le_bytes());
+    extra.extend_from_slice(&24_u16.to_le_bytes());
+    extra.extend_from_slice(&u64::try_from(data.len()).unwrap().to_le_bytes());
+    extra.extend_from_slice(&u64::try_from(data.len()).unwrap().to_le_bytes());
+    extra.extend_from_slice(&local_header_offset.to_le_bytes());
+
+    let mut header = Vec::new();
+    header.extend_from_slice(&[0x50, 0x4b, 0x01, 0x02]);
+    header.extend_from_slice(&45_u16.to_le_bytes());
+    header.extend_from_slice(&45_u16.to_le_bytes());
+    header.extend_from_slice(&0_u16.to_le_bytes());
+    header.extend_from_slice(&0_u16.to_le_bytes());
+    header.extend_from_slice(&0_u16.to_le_bytes());
+    header.extend_from_slice(&0x21_u16.to_le_bytes());
+    header.extend_from_slice(&crc32fast::hash(data).to_le_bytes());
+    header.extend_from_slice(&SENTINEL.to_le_bytes());
+    header.extend_from_slice(&SENTINEL.to_le_bytes());
+    header.extend_from_slice(&u16::try_from(name.len()).unwrap().to_le_bytes());
+    header.extend_from_slice(&u16::try_from(extra.len()).unwrap().to_le_bytes());
+    header.extend_from_slice(&0_u16.to_le_bytes());
+    header.extend_from_slice(&0_u16.to_le_bytes());
+    header.extend_from_slice(&0_u16.to_le_bytes());
+    header.extend_from_slice(&0_u32.to_le_bytes());
+    header.extend_from_slice(&SENTINEL.to_le_bytes());
+    header.extend_from_slice(name);
+    header.extend_from_slice(&extra);
+    header
+}
+
+#[test]
+fn skill_archive_resolves_a_zip64_local_header_offset() {
+    let manifest_local = raw_local_header(b"skill/SKILL.md", 0, b"manifest");
+    let real_local_offset = u64::try_from(manifest_local.len()).unwrap();
+    let extra_local = raw_local_header(b"skill/extra.txt", 0, b"extra data");
+
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&manifest_local);
+    bytes.extend_from_slice(&extra_local);
+    let central_start = u32::try_from(bytes.len()).unwrap();
+
+    let manifest_central = raw_central_header(b"skill/SKILL.md", 0, b"manifest", 0);
+    let extra_central =
+        raw_central_header_with_zip64_offset(b"skill/extra.txt", b"extra data", real_local_offset);
+    bytes.extend_from_slice(&manifest_central);
+    bytes.extend_from_slice(&extra_central);
+    let central_size = u32::try_from(manifest_central.len() + extra_central.len()).unwrap();
+
+    bytes.extend_from_slice(&[0x50, 0x4b, 0x05, 0x06]);
+    bytes.extend_from_slice(&0_u16.to_le_bytes());
+    bytes.extend_from_slice(&0_u16.to_le_bytes());
+    bytes.extend_from_slice(&2_u16.to_le_bytes());
+    bytes.extend_from_slice(&2_u16.to_le_bytes());
+    bytes.extend_from_slice(&central_size.to_le_bytes());
+    bytes.extend_from_slice(&central_start.to_le_bytes());
+    bytes.extend_from_slice(&0_u16.to_le_bytes());
+
+    let archive = build_skill_archive(&bytes).unwrap();
+    let mut repacked = ZipArchive::new(Cursor::new(archive.content)).unwrap();
+    let mut data = Vec::new();
+    repacked
+        .by_name("extra.txt")
+        .unwrap()
+        .read_to_end(&mut data)
+        .unwrap();
+    assert_eq!(data, b"extra data");
+}
+
 #[test]
 fn skill_archive_reads_an_upload_with_bytes_prepended_to_the_zip() {
     let zip_bytes = upload(&[("skill/SKILL.md", b"manifest")]);
