@@ -35,22 +35,27 @@ async fn assert_rename_preserved_oids(client: &Client, before: (String, String, 
         relation_oid(client, "LiteLLM_LensWorker_token_hash_key").await
     );
 }
-async fn assert_engine_row_preserved(client: &Client) {
-    let version: i32 = query_one_row(
+async fn assert_engine_and_worker_rows_preserved(client: &Client) {
+    let engine = query_one_row(
         client,
-        r#"SELECT version FROM "LiteLLM_Lens" WHERE id = $1"#,
-        &[&"engine-b"],
-    )
-    .await
-    .get(0);
-    assert_eq!(version, 2_i32);
-    let engine_data = scalar_text(
-        client,
-        r#"SELECT data::text FROM "LiteLLM_Lens" WHERE id = $1"#,
+        r#"SELECT version, data::text FROM "LiteLLM_Lens" WHERE id = $1"#,
         &[&"engine-b"],
     )
     .await;
+    let version: i32 = engine.get(0);
+    assert_eq!(version, 2_i32);
+    let engine_data: String = engine.get(1);
     assert_eq!(engine_data, r#"{"engine": "preserved", "nested": [1, 2]}"#);
+    let worker = query_one_row(
+        client,
+        r#"SELECT token_hash, data::text FROM "LiteLLM_LensWorker" WHERE id = $1"#,
+        &[&"worker-b"],
+    )
+    .await;
+    let token_hash: String = worker.get(0);
+    let worker_data: String = worker.get(1);
+    assert_eq!(token_hash, "hash-b");
+    assert_eq!(worker_data, r#"{"active": true, "worker": "payload"}"#);
 }
 
 async fn assert_lens_run_preserved(client: &Client) {
@@ -66,27 +71,9 @@ async fn assert_lens_run_preserved(client: &Client) {
     assert_eq!(data, r#"{"r": 1}"#);
 }
 
-async fn assert_worker_row_preserved(client: &Client) {
-    let token_hash = scalar_text(
-        client,
-        r#"SELECT token_hash FROM "LiteLLM_LensWorker" WHERE id = $1"#,
-        &[&"worker-b"],
-    )
-    .await;
-    assert_eq!(token_hash, "hash-b");
-    let worker_data = scalar_text(
-        client,
-        r#"SELECT data::text FROM "LiteLLM_LensWorker" WHERE id = $1"#,
-        &[&"worker-b"],
-    )
-    .await;
-    assert_eq!(worker_data, r#"{"active": true, "worker": "payload"}"#);
-}
-
 async fn assert_rename_preserved_rows(client: &Client) {
-    assert_engine_row_preserved(client).await;
+    assert_engine_and_worker_rows_preserved(client).await;
     assert_lens_run_preserved(client).await;
-    assert_worker_row_preserved(client).await;
 }
 async fn check_rename_preserves_oids_rows_and_hash_bytes(client: &Client) {
     insert_rename_fixture_rows(client).await;
