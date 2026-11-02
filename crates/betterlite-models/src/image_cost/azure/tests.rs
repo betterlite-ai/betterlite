@@ -238,6 +238,36 @@ fn a_boolean_width_does_not_count_as_an_exact_integer_override() {
 }
 
 #[test]
+fn a_width_too_large_for_i64_is_a_dimension_overflow_error() {
+    let model_info = record(&[("input_cost_per_pixel", "0.001")]);
+    let billing = ImageBilling {
+        image_count: 0,
+        size: None,
+        quality: None,
+        usage: None,
+    };
+    let width = RawValue::from_string("10000000000000000000".to_owned()).expect("valid JSON");
+    let height = RawValue::from_string("5".to_owned()).expect("valid JSON");
+    let result = run(
+        &AzureImageCostRequest {
+            model: "dall-e-3",
+            model_info: Some(&model_info),
+            size: Some("4-x-4"),
+            n_images: Some(1),
+            width: Some(&width),
+            height: Some(&height),
+            response: AzureImageResponse::Image(&billing),
+            moment: moment(),
+        },
+        &empty_lookup(),
+    );
+    assert!(matches!(
+        result,
+        Err(super::ImageCostError::DimensionOverflow)
+    ));
+}
+
+#[test]
 fn an_absent_n_falls_back_to_the_responses_own_returned_image_count() {
     let model_info = record(&[("output_cost_per_image", "2")]);
     let billing = ImageBilling {

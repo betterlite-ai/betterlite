@@ -89,16 +89,6 @@ fn normalized_cost_usage(
     })
 }
 
-// A flat image model_info table carries no tiered or off-peak schedule of its own.
-pub(super) const fn flat_priced_model(record: PriceRecord) -> PricedModel {
-    PricedModel {
-        record,
-        tiered_pricing: Vec::new(),
-        off_peak_pricing: None,
-        off_peak_cache_read_present: false,
-    }
-}
-
 pub struct ChatUsageCostRequest<'request> {
     pub model: &'request str,
     pub custom_llm_provider: Option<&'request str>,
@@ -113,7 +103,13 @@ pub(super) fn chat_usage_cost(
     lookup: &dyn PriceLookup,
     database: &TimeZoneDatabase,
 ) -> Result<Decimal, ImageCostError> {
-    let supplied_pricing = request.model_info.cloned().map(flat_priced_model);
+    // A flat image model_info table carries no tiered or off-peak schedule of its own.
+    let supplied_pricing = request.model_info.cloned().map(|record| PricedModel {
+        record,
+        tiered_pricing: Vec::new(),
+        off_peak_pricing: None,
+        off_peak_cache_read_present: false,
+    });
     let extras = PromptExtras::default();
     let result = generic_cost_per_token(
         &GenericCostRequest {
@@ -195,10 +191,10 @@ fn completion_details_from(
     })
 }
 
-// Duplicated from cost_usage::token_count's RawValue-based projection since that module is private to its own tree: a bool or an int-shaped JSON number counts, a float-shaped number, a string, an array, an object or a missing key does not.
+// Shared with azure's exact-pixel-dimension check: a bool or an int-shaped JSON number counts, a float-shaped number, a string, an array, an object or a missing key does not.
 #[derive(Deserialize)]
 #[serde(untagged)]
-enum TokenDetailCandidate {
+pub(super) enum TokenDetailCandidate {
     Bool(bool),
     Number(Box<Number>),
     Other(Box<IgnoredAny>),

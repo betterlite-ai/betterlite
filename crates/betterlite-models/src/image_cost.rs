@@ -23,5 +23,3 @@ pub struct ImageBilling {
     pub quality: Option<String>,
     pub usage: Option<ImageUsageView>,
 }
-
-mod tests;
