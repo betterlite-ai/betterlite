@@ -43,7 +43,6 @@ scope:
     - crates/betterlite/src/main.rs
     - crates/betterlite/src/collector.rs
     - crates/betterlite/src/collector/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/{collector,callback_replay}.rs
     - crates/betterlite-server/src/{collector,callback_replay}/**
     - crates/betterlite-server/src/routes.rs

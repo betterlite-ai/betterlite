@@ -1,0 +1,6 @@
+kind: helper
+name: cache-reuse
+call:
+  b3190: {function: get_supported_endpoints_twice}
+env: {}
+compare: {ignore: []}

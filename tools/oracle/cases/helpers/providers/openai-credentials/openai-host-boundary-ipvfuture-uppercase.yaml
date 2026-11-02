@@ -1,0 +1,5 @@
+kind: helper
+name: openai-host-boundary-ipvfuture-uppercase
+call: {openai_credentials: {openai_host_boundary: {api_base: 'http://[V1.x]/v1'}}}
+env: {}
+compare: {ignore: []}

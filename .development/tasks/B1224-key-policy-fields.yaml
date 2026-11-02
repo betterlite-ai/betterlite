@@ -111,7 +111,6 @@ scope:
   paths:
     - crates/betterlite-server/src/key_policy_fields.rs
     - crates/betterlite-server/src/key_policy_fields/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/key_policy_json_column.rs

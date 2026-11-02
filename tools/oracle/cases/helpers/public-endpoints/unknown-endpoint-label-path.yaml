@@ -1,0 +1,13 @@
+kind: helper
+name: unknown-endpoint-label-path
+call:
+  b3190:
+    function: build_endpoints
+    raw:
+      providers:
+        demo:
+          display_name: "Demo (`demo`)"
+          endpoints:
+            custom_tool_endpoint: true
+env: {}
+compare: {ignore: []}

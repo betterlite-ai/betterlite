@@ -1,0 +1,12 @@
+kind: helper
+name: json_reducto_id_rejected
+call:
+  b3300:
+    json_body:
+      model: mistral/mistral-ocr-latest
+      document:
+        type: document_url
+        document_url: "reducto://some-other-users-file"
+env: {}
+compare:
+  ignore: []

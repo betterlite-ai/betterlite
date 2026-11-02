@@ -22,7 +22,6 @@ description: >-
   lines plus 77 declarations/options; allow 390 product, 180 tests, 110 fuzz and 70 wiring lines.
 scope:
   paths:
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/routes.rs
     - crates/betterlite-server/src/routes/**
     - crates/betterlite-server/src/tool_reports.rs

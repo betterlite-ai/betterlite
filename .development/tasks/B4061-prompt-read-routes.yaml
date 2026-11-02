@@ -54,19 +54,19 @@ checks:
       run: grep -q "dotprompt_content\|prompt_manager\|PromptTemplateBase" crates/betterlite-server/src/routes/prompts/read.rs
     - id: list-metadata-check
       why: "the list route does not respect metadata prompts allowlist"
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^prompts_read::.*metadata/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routes::prompts::read::.*metadata/)'
     - id: info-admin-check
       why: "the info route does not require admin-view"
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^prompts_read::.*admin/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routes::prompts::read::.*admin/)'
     - id: version-environment-logic
       why: "the versions route does not handle environment filtering or distinction properly"
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^prompts_read::.*environment/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routes::prompts::read::.*environment/)'
     - id: version-suffix-selection
       why: "the info route does not extract and use version suffix from prompt_id"
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^prompts_read::.*(suffix|version)/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routes::prompts::read::.*(suffix|version)/)'
     - id: versions-no-database
       why: "the versions route does not handle the case when no database is configured"
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^prompts_read::.*(no_db|fallback)/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routes::prompts::read::.*(no_db|fallback)/)'
     - id: template-dotprompt-resolve
       why: "templates do not resolve from dotprompt_content"
       run: grep -q "dotprompt_content" crates/betterlite-server/src/routes/prompts/read.rs

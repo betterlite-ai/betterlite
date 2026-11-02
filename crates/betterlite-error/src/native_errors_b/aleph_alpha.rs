@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::error::details::RateLimitDetails;
+use crate::error::details::{RateLimitDetails, ResponseDetails};
 use crate::error::{ErrorClass, ErrorContext};
 use crate::rate_limit::RateLimitCategory;
 
@@ -18,10 +18,9 @@ pub struct AlephAlphaExceptionInput {
 // a status present but unmatched, and a missing status_code attribute, both re-raise the original provider exception unmodified in LiteLLM; betterlite has no typed class for that, so both fall through as None
 #[must_use]
 pub fn map_aleph_alpha_exception(input: &AlephAlphaExceptionInput) -> Option<ErrorClass> {
-    if let Some(class) = text_classification(input) {
-        return Some(class);
-    }
-    status_classification(input)
+    let family = classify(input)?;
+    let context = context(input);
+    Some(build(family, context, input.status_code))
 }
 
 fn context(input: &AlephAlphaExceptionInput) -> ErrorContext {
@@ -41,40 +40,63 @@ fn context(input: &AlephAlphaExceptionInput) -> ErrorContext {
     }
 }
 
-type TextPredicate = fn(&str) -> bool;
-type ErrorClassBuilder = fn(Box<ErrorContext>) -> ErrorClass;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Family {
+    ContextWindowExceeded,
+    BadRequest,
+    // the 401 branch raises without a response kwarg at all, so it keeps the class default
+    Authentication,
+    RateLimit,
+    ServiceUnavailable,
+}
 
-const TEXT_CANDIDATES: [(TextPredicate, ErrorClassBuilder); 2] = [
+type TextPredicate = fn(&str) -> bool;
+
+const TEXT_CANDIDATES: [(TextPredicate, Family); 2] = [
     (
         |error_str| error_str.contains("This is longer than the model's maximum context length"),
-        ErrorClass::ContextWindowExceeded,
+        Family::ContextWindowExceeded,
     ),
     (
         |error_str| error_str.contains("InvalidToken") || error_str.contains("No token provided"),
-        ErrorClass::BadRequest,
+        Family::BadRequest,
     ),
 ];
 
-fn text_classification(input: &AlephAlphaExceptionInput) -> Option<ErrorClass> {
-    let (_, build) = TEXT_CANDIDATES
+// both text branches pass response=getattr(original_exception, "response", None), so both answer input.status_code directly
+fn classify(input: &AlephAlphaExceptionInput) -> Option<Family> {
+    if let Some((_, family)) = TEXT_CANDIDATES
         .into_iter()
-        .find(|(matches, _)| matches(&input.error_str))?;
-    Some(build(Box::new(context(input))))
+        .find(|(matches, _)| matches(&input.error_str))
+    {
+        return Some(family);
+    }
+    match input.status_code? {
+        401 => Some(Family::Authentication),
+        400 => Some(Family::BadRequest),
+        429 => Some(Family::RateLimit),
+        500 => Some(Family::ServiceUnavailable),
+        _ => None,
+    }
 }
 
-fn status_classification(input: &AlephAlphaExceptionInput) -> Option<ErrorClass> {
-    let status = input.status_code?;
-    let ctx = context(input);
-    match status {
-        401 => Some(ErrorClass::Authentication(Box::new(ctx))),
-        400 => Some(ErrorClass::BadRequest(Box::new(ctx))),
-        429 => Some(ErrorClass::RateLimit(Box::new(RateLimitDetails {
-            context: ctx,
+fn build(family: Family, context: ErrorContext, status_code: Option<u16>) -> ErrorClass {
+    match family {
+        Family::ContextWindowExceeded => ErrorClass::ContextWindowExceeded(Box::new(
+            ResponseDetails::with_status(context, status_code),
+        )),
+        Family::BadRequest => {
+            ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(context, status_code)))
+        }
+        Family::Authentication => {
+            ErrorClass::Authentication(Box::new(ResponseDetails::with_status(context, None)))
+        }
+        Family::RateLimit => ErrorClass::RateLimit(Box::new(RateLimitDetails {
+            context,
             category: RateLimitCategory::VendorRateLimit,
             dimension: None,
             headers: BTreeMap::new(),
-        }))),
-        500 => Some(ErrorClass::ServiceUnavailable(Box::new(ctx))),
-        _ => None,
+        })),
+        Family::ServiceUnavailable => ErrorClass::ServiceUnavailable(Box::new(context)),
     }
 }

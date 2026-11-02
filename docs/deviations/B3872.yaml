@@ -1,0 +1,5 @@
+task: B3872
+deviations:
+  - what: The stream opt-in label on litellm_proxy_total_requests_metric is skipped when custom_prometheus_metadata_labels or custom_prometheus_tags already produced the same label, not only when the metric's default labels already have it.
+    why: LiteLLM's get_labels only checks default_labels before appending the stream label, so a caller that also lists "stream" in custom_prometheus_metadata_labels gets it twice and then fails Prometheus's own duplicate-label-name check when the metric is registered; no working setup can rely on the duplicate, so betterlite dedupes against both lists via the same push_if_absent used for every other opt-in label.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L975-L980

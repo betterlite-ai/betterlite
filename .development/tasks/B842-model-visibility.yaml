@@ -80,7 +80,6 @@ scope:
   paths:
     - crates/betterlite-server/src/model_visibility.rs
     - crates/betterlite-server/src/model_visibility/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/src/helpers/server/model_visibility.rs
     - tools/oracle/src/helpers/server/model_visibility/**

@@ -102,7 +102,6 @@ scope:
   paths:
     - crates/betterlite-server/src/member_row_write.rs
     - crates/betterlite-server/src/member_row_write/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/src/helpers/server/member_row_write.rs
     - tools/oracle/src/helpers/server/member_row_write/**
@@ -111,6 +110,7 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/member-row-write/**
     - tools/oracle/fuzz/corpus/helper_case/member-row-write-*
+    - crates/betterlite-server/src/member_row_write/fixtures.rs
     - crates/betterlite-server/src/member_row_write/fixtures/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/member-row-write-*

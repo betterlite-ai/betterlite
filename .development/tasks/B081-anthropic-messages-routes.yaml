@@ -48,7 +48,6 @@ scope:
   - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
   - crates/betterlite-server/src/state/**
-  - crates/betterlite-server/src/lib.rs
   - crates/betterlite-server/Cargo.toml
   - crates/betterlite-config/fuzz/corpus/config_yaml/anthropic-messages-routes-*
   - tools/oracle/cases/api/anthropic-messages-routes/**

@@ -1,5 +1,6 @@
 from typing import Literal, NotRequired, Protocol, TypeAlias, TypedDict, Unpack, cast
 
+import httpx
 import openai
 from litellm.exceptions import APIError as LitellmApiError
 from litellm.litellm_core_utils import exception_mapping_utils as mapping
@@ -11,6 +12,7 @@ class CloudflareInput(TypedDict):
     provider: Literal["cloudflare"]
     model: NotRequired[str | None]
     error_str: str
+    status_code: NotRequired[int | None]
 
 
 class CohereInput(TypedDict):
@@ -50,6 +52,10 @@ class _ProviderCauseError(Exception):
         super().__init__(error_str)
         if status_code is not None:
             self.status_code = status_code
+            self.response = httpx.Response(
+                status_code=status_code,
+                request=httpx.Request(method="POST", url="https://docs.litellm.ai/docs"),
+            )
         if message is not None:
             self.message = message
         self._error_str = error_str
@@ -101,6 +107,8 @@ def _classified(
         return {"family": family, "context": context, "original_status": 408}
     if family == "api":
         return {"family": family, "context": context, "status": status}
+    if family in {"authentication", "context_window_exceeded", "bad_request"}:
+        return {"family": family, **context, "status": status}
     return {"family": family, **context}
 
 
@@ -155,7 +163,8 @@ _AI21_FAMILIES: dict[str, str] = {
 def _run_cloudflare(input_value: CloudflareInput) -> JsonValue:
     model = input_value.get("model")
     error_str = input_value["error_str"]
-    cause = _ProviderCauseError(error_str, message=error_str)
+    status_code = input_value.get("status_code")
+    cause = _ProviderCauseError(error_str, status_code=status_code, message=error_str)
     call = cast(_Mapper, mapping._map_cloudflare_exception)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
     try:
         call(
@@ -169,7 +178,8 @@ def _run_cloudflare(input_value: CloudflareInput) -> JsonValue:
         )
     except openai.APIError as error:
         family = _CLOUDFLARE_FAMILIES[type(error).__name__]
-        return {"result": _classified(family, model, "cloudflare")}
+        status = cast(LitellmApiError, error).status_code
+        return {"result": _classified(family, model, "cloudflare", status)}
     return {"result": None}
 
 
@@ -191,7 +201,9 @@ def _run_cohere(input_value: CohereInput) -> JsonValue:
             extra_information="",
         )
     except openai.APIError as error:
-        return {"result": _classified(_COHERE_FAMILIES[type(error).__name__], model, "cohere")}
+        family = _COHERE_FAMILIES[type(error).__name__]
+        status = cast(LitellmApiError, error).status_code
+        return {"result": _classified(family, model, "cohere", status)}
     except _ProviderCauseError:
         return {"result": _unclassified()}
     return {"result": None}
@@ -215,7 +227,7 @@ def _run_huggingface(input_value: HuggingfaceInput) -> JsonValue:
         )
     except openai.APIError as error:
         family = _HUGGINGFACE_FAMILIES[type(error).__name__]
-        status = cast(LitellmApiError, error).status_code if family == "api" else None
+        status = cast(LitellmApiError, error).status_code
         return {"result": _classified(family, model, "huggingface", status)}
     return {"result": None}
 
@@ -238,7 +250,7 @@ def _run_ai21(input_value: Ai21Input) -> JsonValue:
         )
     except openai.APIError as error:
         family = _AI21_FAMILIES[type(error).__name__]
-        status = cast(LitellmApiError, error).status_code if family == "api" else None
+        status = cast(LitellmApiError, error).status_code
         return {"result": _classified(family, model, "ai21", status)}
     return {"result": None}
 

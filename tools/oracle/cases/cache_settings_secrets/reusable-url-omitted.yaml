@@ -1,0 +1,9 @@
+kind: helper
+name: cache-settings-secrets-reusable-url-omitted
+call:
+  b4306:
+    function: reusable
+    incoming: {}
+    saved: {url: "redis://host"}
+env: {}
+compare: {ignore: []}

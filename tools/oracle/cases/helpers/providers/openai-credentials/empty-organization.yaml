@@ -1,0 +1,5 @@
+kind: helper
+name: empty-organization
+call: {openai_credentials: {empty_organization: {api_key: ' ', organization: '', litellm_api_key: null, litellm_openai_key: null, litellm_organization: global-org, env: {}}}}
+env: {}
+compare: {ignore: []}

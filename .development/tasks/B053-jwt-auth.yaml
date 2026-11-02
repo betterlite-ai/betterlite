@@ -77,7 +77,6 @@ scope:
   paths:
     - crates/betterlite-server/src/jwt_auth.rs
     - crates/betterlite-server/src/jwt_auth/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/src/helpers/server/jwt_auth.rs
     - tools/oracle/src/helpers/server/jwt_auth/**

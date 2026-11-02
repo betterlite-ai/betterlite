@@ -19,6 +19,13 @@ scope:
     - tools/oracle/helpers/b3161/**
     - tools/oracle/src/helpers/server/b3161.rs
     - tools/oracle/src/helpers/server/b3161/**
+    - tools/oracle/cases/roi_connections/connections-test-estimator-409.yaml
+    - tools/oracle/cases/roi_connections/connections-test-github-502.yaml
+    - tools/oracle/cases/roi_connections/connections-test-write-admin-200.yaml
+    - tools/oracle/cases/roi_connections/repositories-non-admin-403.yaml
+    - tools/oracle/cases/roi_connections/repositories-query-parameter-200.yaml
+    - tools/oracle/cases/roi_connections/repositories-read-admin-200.yaml
+    - tools/oracle/cases/roi_connections/repositories-source-error-502.yaml
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L123-L124

@@ -77,7 +77,6 @@ scope:
   paths:
     - crates/betterlite-server/src/bulk_team_removal.rs
     - crates/betterlite-server/src/bulk_team_removal/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/src/helpers/server/bulk_team_removal.rs
     - tools/oracle/src/helpers/server/bulk_team_removal/**

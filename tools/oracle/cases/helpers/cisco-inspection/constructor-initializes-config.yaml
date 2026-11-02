@@ -1,0 +1,16 @@
+kind: helper
+name: constructor-initializes-config
+call:
+  b3762:
+    construct:
+      settings:
+        api_key: test-key
+        api_base: "https://cisco.test"
+        inspection_type: mcp
+        inspect_path: "/custom/inspect"
+        on_flagged_action: monitor
+        fallback_on_error: allow
+        timeout: 7.5
+env: {}
+compare:
+  ignore: []
