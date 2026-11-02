@@ -1,0 +1,10 @@
+kind: helper
+name: provider-defaults-b-qwencloud
+call:
+  provider_defaults_b:
+    provider: qwencloud
+    model: qwencloud-model
+    environment:
+      DASHSCOPE_API_KEY: env-dashscope-fallback
+env: {}
+compare: {ignore: []}

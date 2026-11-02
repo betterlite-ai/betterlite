@@ -1,0 +1,8 @@
+kind: helper
+name: provider-defaults-b-gigachat
+call:
+  provider_defaults_b:
+    provider: gigachat
+    model: gigachat-model
+env: {}
+compare: {ignore: []}

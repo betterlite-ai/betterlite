@@ -1,0 +1,8 @@
+kind: helper
+name: provider-defaults-b-ragflow-invalid-model
+call:
+  provider_defaults_b:
+    provider: ragflow
+    model: bad-model
+env: {}
+compare: {ignore: []}
