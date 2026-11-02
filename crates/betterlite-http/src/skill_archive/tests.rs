@@ -312,8 +312,8 @@ fn skill_archive_rejects_a_local_and_central_header_name_mismatch() {
         start += position + 1;
     }
     assert_eq!(occurrences.len(), 2);
-    let central_directory_offset = occurrences[1];
-    bytes[central_directory_offset..central_directory_offset + marker.len()]
+    let local_header_offset = occurrences[0];
+    bytes[local_header_offset..local_header_offset + marker.len()]
         .copy_from_slice(b"skill/XKILL.md");
     assert!(build_skill_archive(&bytes).is_none());
 }
