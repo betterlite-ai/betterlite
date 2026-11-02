@@ -105,22 +105,15 @@ pub fn function_tool(dialect: CallDialect) -> CodeExecutionTool {
 
 #[must_use]
 pub fn function_tool_choice(dialect: CallDialect) -> CodeExecutionToolChoice {
-    match function_tool(dialect) {
-        CodeExecutionTool::ChatCompletion(tool) => {
-            CodeExecutionToolChoice::ChatCompletion(ChatFunctionToolChoice {
-                kind: tool.kind,
-                function: ChatFunctionToolChoiceFunction {
-                    name: tool.function.name,
-                },
-            })
-        }
-        CodeExecutionTool::Responses(tool) => {
-            CodeExecutionToolChoice::Responses(ResponsesFunctionToolChoice {
-                kind: tool.kind,
-                name: tool.name,
-            })
-        }
+    let name = CODE_EXECUTION_TOOL_NAME.to_owned();
+    let kind = "function".to_owned();
+    if dialect != CallDialect::ChatCompletion {
+        return CodeExecutionToolChoice::Responses(ResponsesFunctionToolChoice { kind, name });
     }
+    CodeExecutionToolChoice::ChatCompletion(ChatFunctionToolChoice {
+        kind,
+        function: ChatFunctionToolChoiceFunction { name },
+    })
 }
 
 pub fn tool_choice_detection(tool_choice: &Value) -> bool {
