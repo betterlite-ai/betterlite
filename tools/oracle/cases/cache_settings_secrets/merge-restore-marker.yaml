@@ -1,0 +1,9 @@
+kind: helper
+name: cache-settings-secrets-merge-restore-marker
+call:
+  b4306:
+    function: merge
+    incoming: {host: "a", password: "***REDACTED***"}
+    saved: {host: "a", password: "secret"}
+env: {}
+compare: {ignore: []}

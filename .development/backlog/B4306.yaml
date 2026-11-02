@@ -1,14 +1,14 @@
 id: B4306
 milestone: M8 platform
 title: Bind saved cache credentials to their connection targets
-status: todo
+status: done
 depends_on: [B244]
 file: tasks/B4306-cache-settings-secrets.yaml
 covers:
   - "litellm/proxy/management_endpoints/cache_settings_endpoints.py"
 parent: B125
 split_from: B125
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 524
