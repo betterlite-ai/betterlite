@@ -48,6 +48,18 @@ fn typesafe_config_resolves_api_base_from_its_own_env_name() {
 }
 
 #[test]
+fn typesafe_config_requires_an_api_key() {
+    let required: bool = TypeSafeDecisionsConfig::API_KEY_REQUIRED;
+    assert!(required);
+}
+
+#[test]
+fn typesafe_config_does_not_support_safety_identifier() {
+    let supports_safety_identifier: bool = TypeSafeDecisionsConfig::SUPPORTS_SAFETY_IDENTIFIER;
+    assert!(!supports_safety_identifier);
+}
+
+#[test]
 fn typesafe_config_resolves_api_key_from_its_own_env_name() {
     let config = TypeSafeDecisionsConfig;
     let get_secret_str = |name: &str| {

@@ -18,6 +18,7 @@ use super::questions::{ir_question, systemone_keys, systemone_question};
 use super::requests::{RequestConversionError, ir_to_systemone_request, systemone_request_to_ir};
 use super::responses::to_ir::{parse_systemone_response, systemone_response_to_ir};
 use super::responses::to_systemone::ir_to_systemone_response;
+use super::wire::RequestWire;
 use crate::openai_base_config::Headers;
 
 struct BareProviderConfig;
@@ -44,7 +45,36 @@ macro_rules! question_fn {
             })
         }
     };
+    ($fn_name:ident, $Variant:ident, $Struct:ident, $name:expr, $instructions:literal, $field:ident, $value:expr) => {
+        fn $fn_name() -> ir::DecisionQuestion {
+            ir::DecisionQuestion::$Variant(ir::$Struct {
+                name: $name,
+                instructions: Some(DecisionsJson::Text($instructions.to_owned())),
+                $field: $value,
+                extra: Extra::default(),
+            })
+        }
+    };
 }
+
+question_fn!(
+    boolean_choice_question,
+    Choice,
+    ChoiceQuestion,
+    Some("b".to_owned()),
+    "pick one",
+    choices,
+    vec![
+        ir::ChoiceOption {
+            value: ChoiceValue::Flag(true),
+            description: None,
+        },
+        ir::ChoiceOption {
+            value: ChoiceValue::Flag(false),
+            description: None,
+        },
+    ]
+);
 
 question_fn!(
     predicate_question,
@@ -94,6 +124,18 @@ fn request_with(questions: Vec<ir::DecisionQuestion>) -> ir::DecisionRequest {
         input: ir::DecisionInput::State(DecisionsJson::Text("state".to_owned())),
         questions,
         safety_identifier: None,
+    }
+}
+
+fn response_with(
+    answers: IndexMap<String, systemone::DecisionAnswer>,
+) -> systemone::DecisionsResponse {
+    systemone::DecisionsResponse {
+        model: Some("systemone-1".to_owned()),
+        answers,
+        usage: None,
+        hidden_params: Extra::default(),
+        extra: Extra::default(),
     }
 }
 
@@ -272,6 +314,54 @@ fn systemone_request_builds_model_state_and_questions() {
         .map(|name| name.as_ref().as_str())
         .collect();
     assert_eq!(names, vec!["a", "b"]);
+}
+
+#[test]
+fn systemone_request_builds_score_criteria_from_level_labels_and_descriptions() {
+    let request = request_with(vec![score_question("c")]);
+    let built = ir_to_systemone_request("systemone-1", &request).unwrap();
+    let (_, question) = built
+        .body
+        .questions
+        .as_ref()
+        .iter()
+        .find(|(name, _)| name.as_ref().as_str() == "c")
+        .unwrap();
+    match question {
+        systemone::DecisionQuestion::Score(score) => {
+            assert_eq!(
+                score.criteria.as_ref(),
+                &vec![
+                    DecisionsJson::Text("low".to_owned()),
+                    DecisionsJson::Text("high: very high indeed".to_owned()),
+                ]
+            );
+        }
+        other @ (systemone::DecisionQuestion::Noul(_) | systemone::DecisionQuestion::Choice(_)) => {
+            panic!("expected a score question, got {other:?}")
+        }
+    }
+}
+
+#[test]
+fn systemone_request_wire_omits_a_question_with_no_criteria() {
+    let request = request_with(vec![predicate_question("a")]);
+    let built = ir_to_systemone_request("systemone-1", &request).unwrap();
+    let payload = serde_json::to_value(RequestWire::from(&built)).unwrap();
+    assert!(payload["questions"]["a"].get("criteria").is_none());
+}
+
+#[test]
+fn systemone_request_wire_omits_a_question_with_no_instructions() {
+    let question = ir::DecisionQuestion::Predicate(ir::PredicateQuestion {
+        name: Some("a".to_owned()),
+        instructions: None,
+        criteria: Some(IndexMap::from([(NoulLabel::True, None)])),
+        extra: Extra::default(),
+    });
+    let built = ir_to_systemone_request("systemone-1", &request_with(vec![question])).unwrap();
+    let payload = serde_json::to_value(RequestWire::from(&built)).unwrap();
+    assert!(payload["questions"]["a"].get("instructions").is_none());
 }
 
 #[test]
@@ -463,6 +553,97 @@ fn systemone_response_reconstructs_score_answers_with_level_labels() {
 }
 
 #[test]
+fn systemone_response_falls_back_to_level_label_and_zero_probability_when_missing() {
+    let request = request_with(vec![score_question("c")]);
+    let mut score_probabilities = IndexMap::new();
+    score_probabilities.insert("1".to_owned(), Number::from_f64(0.9).unwrap());
+    let mut answers = IndexMap::new();
+    answers.insert(
+        "c".to_owned(),
+        systemone::DecisionAnswer::Score {
+            score: Number::from(1_u8),
+            confidence: Number::from_f64(0.9).unwrap(),
+            legend: IndexMap::new(),
+            probabilities: score_probabilities,
+            extra: Extra::default(),
+        },
+    );
+    let response = response_with(answers);
+    let ir = systemone_response_to_ir(&response, &request);
+    match &ir.answers[0] {
+        ir::DecisionAnswer::Score { probabilities, .. } => {
+            assert_eq!(
+                probabilities[0].label,
+                DecisionsJson::Text("low".to_owned())
+            );
+            assert_eq!(probabilities[0].probability, Number::from(0_u8));
+        }
+        other @ (ir::DecisionAnswer::Predicate { .. }
+        | ir::DecisionAnswer::Choice { .. }
+        | ir::DecisionAnswer::Refusal) => {
+            panic!("expected a score answer, got {other:?}")
+        }
+    }
+}
+
+#[rstest]
+#[case::answer_type_does_not_match_the_question(Some(systemone::DecisionAnswer::Choice {
+    choice: "yes".to_owned(),
+    confidence: Number::from_f64(0.5).unwrap(),
+    probabilities: IndexMap::new(),
+    extra: Extra::default(),
+}))]
+#[case::no_answer_is_present(None)]
+fn systemone_response_refuses_a_predicate_question_without_a_matching_noul_answer(
+    #[case] case_answer: Option<systemone::DecisionAnswer>,
+) {
+    let request = request_with(vec![predicate_question("a")]);
+    let mut answers = IndexMap::new();
+    if let Some(answer) = case_answer {
+        answers.insert("a".to_owned(), answer);
+    }
+    let response = response_with(answers);
+    let ir = systemone_response_to_ir(&response, &request);
+    assert!(matches!(ir.answers[0], ir::DecisionAnswer::Refusal));
+}
+
+#[test]
+fn systemone_response_maps_boolean_choice_values_back_to_flags() {
+    let request = request_with(vec![boolean_choice_question()]);
+    let mut choice_probabilities = IndexMap::new();
+    choice_probabilities.insert("true".to_owned(), Number::from_f64(0.7).unwrap());
+    choice_probabilities.insert("false".to_owned(), Number::from_f64(0.3).unwrap());
+    let mut answers = IndexMap::new();
+    answers.insert(
+        "b".to_owned(),
+        systemone::DecisionAnswer::Choice {
+            choice: "true".to_owned(),
+            confidence: Number::from_f64(0.9).unwrap(),
+            probabilities: choice_probabilities,
+            extra: Extra::default(),
+        },
+    );
+    let response = response_with(answers);
+    let ir = systemone_response_to_ir(&response, &request);
+    match &ir.answers[0] {
+        ir::DecisionAnswer::Choice {
+            choice,
+            probabilities,
+            ..
+        } => {
+            assert_eq!(*choice, ChoiceValue::Flag(true));
+            assert_eq!(probabilities[0].value, ChoiceValue::Flag(true));
+            assert_eq!(probabilities[1].value, ChoiceValue::Flag(false));
+        }
+        other @ (ir::DecisionAnswer::Predicate { .. }
+        | ir::DecisionAnswer::Score { .. }
+        | ir::DecisionAnswer::Refusal) => {
+            panic!("expected a choice answer, got {other:?}")
+        }
+    }
+}
+
+#[test]
 fn systemone_response_parse_succeeds_on_well_formed_payload() {
     let request = request_with(vec![predicate_question("a")]);
     let payload = br#"{"model":"systemone-1","answers":{"a":{"type":"noul","noul":0.5}}}"#;
@@ -547,14 +728,26 @@ fn base_config_validate_environment_filters_reserved_headers_case_insensitively(
     headers.insert("X-Custom".to_owned(), "kept".to_owned());
     let api_key = SecretString::from("secret-value");
     let validated = config.validate_environment(&headers, "model", Some(&api_key));
-    assert_eq!(validated.get("X-Custom"), Some(&"kept".to_owned()));
     assert_eq!(
-        validated.get("Authorization"),
-        Some(&"Bearer secret-value".to_owned())
+        validated,
+        Headers::from([
+            ("Authorization".to_owned(), "Bearer secret-value".to_owned()),
+            ("Content-Type".to_owned(), "application/json".to_owned()),
+            ("X-Custom".to_owned(), "kept".to_owned()),
+        ])
     );
-    assert_eq!(
-        validated.get("Content-Type"),
-        Some(&"application/json".to_owned())
+}
+
+#[test]
+fn base_config_validate_environment_drops_a_lowercase_authorization_header_without_an_api_key() {
+    let config = BareProviderConfig;
+    let mut headers: Headers = Headers::new();
+    headers.insert("authorization".to_owned(), "stale".to_owned());
+    let validated = config.validate_environment(&headers, "model", None);
+    assert!(
+        !validated
+            .keys()
+            .any(|name| name.eq_ignore_ascii_case("authorization"))
     );
 }
 
@@ -667,7 +860,7 @@ fn base_config_transform_decisions_request_builds_systemone_request_from_ir() {
 fn base_config_transform_decisions_response_wraps_schema_mismatch_as_invalid() {
     let config = BareProviderConfig;
     let request = request_with(vec![predicate_question("a")]);
-    let error = config
+    let wrapped = config
         .transform_decisions_response(
             "model-1",
             "typesafe",
@@ -675,7 +868,10 @@ fn base_config_transform_decisions_response_wraps_schema_mismatch_as_invalid() {
             &request,
         )
         .unwrap_err();
-    assert!(matches!(error, ParseResponseError::Invalid(_)));
+    let ParseResponseError::Invalid(provider_error) = wrapped else {
+        panic!("expected a ParseResponseError::Invalid, got {wrapped:?}")
+    };
+    assert_eq!(provider_error.status_code, 500);
 }
 
 #[test]
@@ -686,6 +882,18 @@ fn base_config_transform_decisions_response_surfaces_malformed_json_without_wrap
         .transform_decisions_response("model-1", "typesafe", b"not json", &request)
         .unwrap_err();
     assert!(matches!(error, ParseResponseError::Malformed(_)));
+}
+
+#[test]
+fn base_config_requires_an_api_key_by_default() {
+    let required: bool = BareProviderConfig::API_KEY_REQUIRED;
+    assert!(required);
+}
+
+#[test]
+fn base_config_does_not_support_safety_identifier_by_default() {
+    let supports_safety_identifier: bool = BareProviderConfig::SUPPORTS_SAFETY_IDENTIFIER;
+    assert!(!supports_safety_identifier);
 }
 
 #[test]
