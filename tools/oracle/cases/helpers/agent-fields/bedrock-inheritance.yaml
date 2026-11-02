@@ -1,0 +1,6 @@
+kind: helper
+name: bedrock-inheritance
+call:
+  b3191: {function: agent_credential_fields, agent_type: bedrock_agentcore}
+env: {}
+compare: {ignore: []}

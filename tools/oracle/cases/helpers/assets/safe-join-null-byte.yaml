@@ -1,0 +1,10 @@
+kind: helper
+name: safe_join_rejects_a_null_byte_in_any_part
+call:
+  assets:
+    op: safe_join
+    fixture: []
+    parts: ["bad\0name.txt"]
+env: {}
+compare:
+  ignore: []

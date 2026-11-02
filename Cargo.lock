@@ -1352,8 +1352,10 @@ dependencies = [
  "betterlite-config",
  "betterlite-http",
  "betterlite-models",
+ "betterlite-prompts",
  "hex",
  "indexmap 2.14.2",
+ "nix",
  "rand 0.10.3",
  "rstest",
  "rust_decimal",
@@ -1367,6 +1369,7 @@ dependencies = [
  "tracing",
  "unicode-normalization",
  "url",
+ "uuid",
 ]
 
 [[package]]
@@ -1436,6 +1439,8 @@ dependencies = [
  "serde_json",
  "serde_with",
  "sha2 0.11.1",
+ "soft-canonicalize",
+ "tempfile",
  "thiserror",
  "tl",
  "tokio",
@@ -1670,6 +1675,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
+ "soft-canonicalize",
  "strum",
  "subtle",
  "tempfile",

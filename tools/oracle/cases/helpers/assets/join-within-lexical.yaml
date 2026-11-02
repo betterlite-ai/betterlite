@@ -1,0 +1,10 @@
+kind: helper
+name: join_within_joins_nested_components_lexically
+call:
+  assets:
+    op: join_within
+    base_dir: /srv/assets
+    parts: [uploads, report.pdf]
+env: {}
+compare:
+  ignore: []

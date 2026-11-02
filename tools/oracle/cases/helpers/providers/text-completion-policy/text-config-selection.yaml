@@ -1,0 +1,5 @@
+kind: helper
+name: text-config-selection
+call: {text_completion_policy: {text_config_selection: {provider: fireworks_ai}}}
+env: {}
+compare: {ignore: []}

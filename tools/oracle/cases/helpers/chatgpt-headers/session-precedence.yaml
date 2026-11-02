@@ -1,0 +1,19 @@
+kind: helper
+name: chatgpt-headers-session-precedence
+call:
+  chatgpt_headers:
+    environment: {}
+    access_token: "session-precedence-token"
+    account_id: null
+    session_id: null
+    litellm_params:
+      mapping:
+        litellm_session_id: 0
+        session_id: false
+        metadata:
+          session_id: ""
+        litellm_trace_id: "trace-1"
+        litellm_call_id: "call-1"
+env: {}
+compare:
+  ignore: []
