@@ -6,13 +6,16 @@ description: >-
   these models. Add the inherited provider-error construction below core/server and preserve
   the base constructor's lack of side effects.
 
-  Export from betterlite-openai::evals: DataSourceConfigCustom, DataSourceConfigLogs,
+  Export from betterlite-openai::evals::types (crates/betterlite-openai/src/evals/types.rs, tests
+  in evals/types/tests.rs): DataSourceConfigCustom, DataSourceConfigLogs,
   DataSourceConfigStoredCompletions, DataSourceConfig union, LLMAsJudgeGraderConfig,
   GroundTruthGraderConfig, CustomGraderConfig, GraderConfig union, CreateEvalRequest,
   UpdateEvalRequest, ListEvalsParams, Eval, ListEvalsResponse, DeleteEvalResponse,
   CancelEvalResponse, CreateRunRequest, ListRunsParams, ResultCounts, PerTestingCriteriaResult,
   Run, ListRunsResponse, CancelRunResponse, RunDeleteResponse. These classes have no user-defined
-  methods. Also export the base class BaseEvalsAPIConfig with all transformation hooks
+  methods. Export from betterlite-openai::evals::transformation
+  (crates/betterlite-openai/src/evals/transformation.rs, tests in evals/transformation/tests.rs)
+  the base class BaseEvalsAPIConfig with all transformation hooks
   (validate_environment, sign_request, get_complete_url, transform_*_request,
   transform_*_response, get_error_class) and the inherited provider-error construction.
 
@@ -94,10 +97,10 @@ checks:
   commands:
     - id: eval-types-test
       why: eval type definitions do not parse, serialize, or have missing fields
-      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^eval_types::/) | test(/^eval_contracts::/)'
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^evals::types::/)'
     - id: base-config-test
       why: BaseEvalsAPIConfig initialization or error class construction fails
-      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^base_evals_config::/) | test(/^eval_error_class::/)'
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^evals::transformation::/)'
 
 oracle_cases: []
 
@@ -113,6 +116,7 @@ out_of_scope:
   - Provider selection and routing; that is owned by external router tasks.
 
 pitfalls:
+  - "Nextest names a test by its full module path from the crate root. The contracts and their tests live in evals/types.rs and evals/types/tests.rs, so their tests are named evals::types::tests::...; BaseEvalsAPIConfig and its tests live in evals/transformation.rs and evals/transformation/tests.rs (evals::transformation::tests::...). evals.rs belongs to B523 and already declares both modules, so all of this task's code stays under evals/."
   - "RunDeleteResponse.object defaults to Some(\"eval.run.deleted\") when omitted from the wire; RunDeleteResponse.deleted defaults to Some(true) when omitted. Both may be None if explicitly set to null, but the default values match LiteLLM's wire contract."
   - "Eval.object always defaults to \"eval\" (not a union); ListEvalsResponse.object always defaults to \"list\"; Run.object always defaults to \"eval.run\"; DeleteEvalResponse.object always defaults to \"eval.deleted\"; CancelEvalResponse.object always defaults to \"eval\"; CancelRunResponse.object always defaults to \"eval.run\". These constants are part of the wire format contract."
   - "ListEvalsResponse.has_more defaults to false, not None; ListRunsResponse.has_more defaults to false. Omitted has_more is treated as false, not as missing data."
