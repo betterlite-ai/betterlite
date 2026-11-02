@@ -1,0 +1,5 @@
+kind: helper
+name: catalog_override_from_server
+call: {b4682: {operation: override, prefix: srv, tools: [{name: srv-search, description: old}], overrides: {search: safe}}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,5 @@
+kind: helper
+name: catalog_batch_concurrency
+call: {b4682: {operation: batch, expected: {batch_size: 8, order: [one, two, three, four, five, six, seven, eight, nine]}}}
+env: {}
+compare: {ignore: []}

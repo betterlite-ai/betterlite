@@ -1,0 +1,5 @@
+kind: helper
+name: catalog_error_extraction
+call: {b4682: {operation: error, expected: {reason: 'ValueError: blocked'}}}
+env: {}
+compare: {ignore: []}

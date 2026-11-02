@@ -1,0 +1,5 @@
+kind: helper
+name: catalog_pin_restore_description
+call: {b4682: {operation: pin, tools: [{name: tool, description: changed, input_schema: {x: {type: string}}}], pinned: {tool: {description: original, input_schema: {}}}}}
+env: {}
+compare: {ignore: []}

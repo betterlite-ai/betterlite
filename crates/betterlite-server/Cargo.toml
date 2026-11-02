@@ -10,6 +10,7 @@ axum.workspace = true
 betterlite-auth = { path = "../betterlite-auth" }
 betterlite-billing = { path = "../betterlite-billing" }
 betterlite-config = { path = "../betterlite-config" }
+betterlite-db = { path = "../betterlite-db" }
 betterlite-error = { path = "../betterlite-error" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-models = { path = "../betterlite-models" }
@@ -19,7 +20,7 @@ betterlite-redact = { path = "../betterlite-redact" }
 email_address = "0.2.9"
 encoding_rs = "0.8.42"
 form_urlencoded = "1.2.2"
-futures-util = { version = "0.3.34", default-features = false, features = ["async-await"] }
+futures-util = { version = "0.3.34", default-features = false, features = ["alloc", "async-await"] }
 hyper-util = { workspace = true, features = ["server-auto", "tokio", "service"] }
 indexmap = { version = "2.14.2", features = ["serde"] }
 multipart-rs = "0.2.3"
@@ -30,6 +31,7 @@ secrecy.workspace = true
 serde.workspace = true
 serde_json = { version = "1.0.154", features = ["raw_value"] }
 serde_with = { version = "3.24.0", default-features = false, features = ["alloc", "macros"] }
+sha2.workspace = true
 soft-canonicalize = "0.5.6"
 strum = { version = "0.28.0", features = ["derive"] }
 subtle.workspace = true
