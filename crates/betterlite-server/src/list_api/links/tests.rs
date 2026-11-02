@@ -38,7 +38,10 @@ fn links_preserve_ordered_repeated_parameters_and_replace_page() {
         links.next,
         Some("/management/v1/widgets?sort=name&tag=a+b&tag=c&page=3".to_owned())
     );
+}
 
+#[test]
+fn pagination_links_cover_empty_and_page_boundaries() {
     let empty = build_list_links("/management/v1/widgets", &[], 1, 0);
     assert_eq!(empty.first, "/management/v1/widgets?page=1");
     assert_eq!(empty.last, "/management/v1/widgets?page=1");
