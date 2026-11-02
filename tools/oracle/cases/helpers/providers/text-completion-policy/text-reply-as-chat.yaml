@@ -21,6 +21,10 @@ call:
           finish_reason: tool_use
           index: 2
           logprobs: null
+        - text: refused
+          finish_reason: refusal
+          index: 3
+          logprobs: null
         usage:
           prompt_tokens: 5
           completion_tokens: 3
