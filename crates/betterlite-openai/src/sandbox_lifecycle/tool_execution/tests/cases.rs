@@ -1,0 +1,174 @@
+use serde_json::json;
+
+use super::super::{MockConfig, MockRegistry, MockToolRegistry, test_object};
+
+fn provider<'provider>(
+    config: &'provider MockConfig,
+    registry: &'provider MockRegistry,
+    tool_registry: &'provider MockToolRegistry,
+) -> SandboxProvider<'provider, MockConfig, MockRegistry, MockToolRegistry> {
+    SandboxProvider {
+        sandbox_config: Some(config),
+        registry,
+        tool_registry,
+        sandbox_tool_name: None,
+    }
+}
+
+#[tokio::test]
+async fn run_tool_call_executes_code_and_returns_stdout_when_there_is_no_error() {
+    let config = MockConfig::succeeding(test_object([("stdout", json!("hello"))]));
+    let registry = MockRegistry::default();
+    let tool_registry = MockToolRegistry::default();
+    let sandbox = provider(&config, &registry, &tool_registry);
+    let container = test_object([("id", json!("container-1"))]);
+    let output = run_tool_call(&sandbox, None, &container, r#"{"code": "print(1)"}"#)
+        .await
+        .unwrap();
+    assert_eq!(output, "hello");
+}
+
+#[tokio::test]
+async fn run_tool_call_runs_empty_code_when_arguments_is_an_empty_string() {
+    let config = MockConfig::succeeding(test_object([("stdout", json!("ran"))]));
+    let registry = MockRegistry::default();
+    let tool_registry = MockToolRegistry::default();
+    let sandbox = provider(&config, &registry, &tool_registry);
+    let container = test_object([("id", json!("container-1"))]);
+    let output = run_tool_call(&sandbox, None, &container, "").await.unwrap();
+    assert_eq!(output, "ran");
+}
+
+#[tokio::test]
+async fn run_tool_call_returns_the_execution_error_message_when_the_result_has_an_error() {
+    let config = MockConfig::succeeding(test_object([
+        ("stdout", json!("")),
+        ("error", test_object([("value", json!("boom"))])),
+    ]));
+    let registry = MockRegistry::default();
+    let tool_registry = MockToolRegistry::default();
+    let sandbox = provider(&config, &registry, &tool_registry);
+    let container = test_object([("id", json!("container-1"))]);
+    let output = run_tool_call(&sandbox, None, &container, r#"{"code": "1/0"}"#)
+        .await
+        .unwrap();
+    assert_eq!(output, "[execution error] boom");
+}
+
+#[tokio::test]
+async fn run_tool_call_propagates_lifecycle_errors_from_running_the_code() {
+    let config = MockConfig::failing("sandbox unreachable");
+    let registry = MockRegistry::default();
+    let tool_registry = MockToolRegistry::default();
+    let sandbox = provider(&config, &registry, &tool_registry);
+    let container = test_object([("id", json!("container-1"))]);
+    let error = run_tool_call(&sandbox, None, &container, r#"{"code": "1"}"#)
+        .await
+        .unwrap_err();
+    assert!(matches!(error, ToolExecutionError::Lifecycle(_)));
+}
+
+#[tokio::test]
+async fn invalid_arguments_returns_the_friendly_message_when_the_json_does_not_parse() {
+    let config = MockConfig::failing("must not run");
+    let registry = MockRegistry::default();
+    let tool_registry = MockToolRegistry::default();
+    let sandbox = provider(&config, &registry, &tool_registry);
+    let container = test_object([("id", json!("container-1"))]);
+    let output = run_tool_call(&sandbox, None, &container, "not json")
+        .await
+        .unwrap();
+    assert_eq!(output, INVALID_ARGUMENTS_MESSAGE);
+}
+
+#[tokio::test]
+async fn invalid_arguments_rejects_valid_json_that_is_not_an_object() {
+    let config = MockConfig::failing("must not run");
+    let registry = MockRegistry::default();
+    let tool_registry = MockToolRegistry::default();
+    let sandbox = provider(&config, &registry, &tool_registry);
+    let container = test_object([("id", json!("container-1"))]);
+    let error = run_tool_call(&sandbox, None, &container, "5")
+        .await
+        .unwrap_err();
+    assert!(matches!(error, ToolExecutionError::ArgumentsNotAnObject));
+}
+
+#[tokio::test]
+async fn invalid_arguments_treats_a_missing_code_field_as_empty_code() {
+    let config = MockConfig::succeeding(test_object([("stdout", json!("ran"))]));
+    let registry = MockRegistry::default();
+    let tool_registry = MockToolRegistry::default();
+    let sandbox = provider(&config, &registry, &tool_registry);
+    let container = test_object([("id", json!("container-1"))]);
+    let output = run_tool_call(&sandbox, None, &container, "{}")
+        .await
+        .unwrap();
+    assert_eq!(output, "ran");
+}
+
+#[test]
+fn error_message_extracts_the_value_field_when_present() {
+    let result = test_object([(
+        "error",
+        test_object([
+            ("value", json!("division by zero")),
+            ("name", json!("ZeroDivisionError")),
+        ]),
+    )]);
+    assert_eq!(
+        error_message(&result),
+        Some("[execution error] division by zero".to_owned())
+    );
+}
+
+#[test]
+fn error_message_falls_back_to_the_name_field_when_value_is_absent() {
+    let result = test_object([("error", test_object([("name", json!("ZeroDivisionError"))]))]);
+    assert_eq!(
+        error_message(&result),
+        Some("[execution error] ZeroDivisionError".to_owned())
+    );
+}
+
+#[test]
+fn error_message_falls_back_to_the_name_field_when_value_is_null() {
+    let result = test_object([(
+        "error",
+        test_object([("value", json!(null)), ("name", json!("ZeroDivisionError"))]),
+    )]);
+    assert_eq!(
+        error_message(&result),
+        Some("[execution error] ZeroDivisionError".to_owned())
+    );
+}
+
+#[test]
+fn error_message_keeps_an_explicit_empty_string_value_instead_of_falling_back() {
+    let result = test_object([(
+        "error",
+        test_object([("value", json!("")), ("name", json!("ZeroDivisionError"))]),
+    )]);
+    assert_eq!(
+        error_message(&result),
+        Some("[execution error] ".to_owned())
+    );
+}
+
+#[test]
+fn error_message_returns_none_when_there_is_no_error_field() {
+    let result = test_object([("stdout", json!("ok"))]);
+    assert_eq!(error_message(&result), None);
+}
+
+#[test]
+fn error_message_returns_none_when_the_error_field_is_null() {
+    let result = test_object([("error", json!(null)), ("stdout", json!("ok"))]);
+    assert_eq!(error_message(&result), None);
+}
+
+#[test]
+fn error_message_does_not_panic_when_the_error_field_is_not_an_object() {
+    let result = test_object([("error", json!("boom"))]);
+    assert_eq!(error_message(&result), None);
+}
