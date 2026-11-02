@@ -49,6 +49,10 @@ impl PriceLookup for Lookup {
 #[case::empty_after_stripping(" ,, ".to_owned(), None)]
 #[case::too_long("a".repeat(25), None)]
 #[case::exactly_max_length("a".repeat(24), Some("a".repeat(24)))]
+#[case::combining_mark_and_circled_letter(
+    "\u{93f}\u{24b6}720p".to_owned(),
+    Some("720p".to_owned())
+)]
 fn sanitize_video_resolution_keeps_unicode_alphanumerics_within_length(
     #[case] input: String,
     #[case] expected: Option<String>,

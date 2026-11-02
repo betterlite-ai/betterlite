@@ -1,8 +1,24 @@
 use rust_decimal::Decimal;
+use unicode_general_category::{GeneralCategory, get_general_category};
 
 use super::error::DurationCostError;
 use super::numeric::numeric_price;
 use crate::price_lookup::{PriceLookup, PriceRecord};
+
+// Mirrors Python's str.isalnum(): the Lu/Ll/Lt/Lm/Lo letter categories or the Nd/Nl/No number categories, not Unicode's wider Alphabetic/Numeric properties (which also keep combining marks and circled letters).
+fn is_alnum(character: char) -> bool {
+    matches!(
+        get_general_category(character),
+        GeneralCategory::UppercaseLetter
+            | GeneralCategory::LowercaseLetter
+            | GeneralCategory::TitlecaseLetter
+            | GeneralCategory::ModifierLetter
+            | GeneralCategory::OtherLetter
+            | GeneralCategory::DecimalNumber
+            | GeneralCategory::LetterNumber
+            | GeneralCategory::OtherNumber
+    )
+}
 
 // Trims, lowercases and keeps only Unicode alphanumerics and underscores, so "1,080p" selects "1080p"; an empty or over-long result means no resolution-specific field applies.
 #[must_use]
@@ -13,7 +29,7 @@ pub fn sanitize_video_resolution(resolution: &str) -> Option<String> {
     }
     let safe: String = trimmed
         .chars()
-        .filter(|character| character.is_alphanumeric() || *character == '_')
+        .filter(|character| is_alnum(*character) || *character == '_')
         .collect();
     if safe.is_empty() || safe.chars().count() > 24 {
         return None;
