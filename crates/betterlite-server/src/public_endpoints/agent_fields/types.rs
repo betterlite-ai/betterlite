@@ -28,7 +28,7 @@ pub struct AgentCredentialField {
     pub validation_message: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct AgentCreateInfo {
     pub agent_type: String,
     pub agent_type_display_name: String,

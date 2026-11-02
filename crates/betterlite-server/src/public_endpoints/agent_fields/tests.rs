@@ -2,14 +2,17 @@
 
 use std::sync::Arc;
 
-use axum::body::to_bytes;
-use axum::http::StatusCode;
+use axum::Router;
+use axum::body::{Body, to_bytes};
+use axum::http::{Request, StatusCode};
 use axum::response::IntoResponse as _;
+use axum::routing::get;
+use tower::ServiceExt as _;
 
 use super::catalog::{agent_fields, raw_agent_catalog};
 use super::error::AgentFieldsError;
-use super::get_agent_fields;
-use super::types::RawAgentCreateInfo;
+use super::types::{AgentCreateInfo, RawAgentCreateInfo};
+use super::{AGENT_FIELDS_PATH, get_agent_fields};
 
 #[test]
 fn agent_fields_returns_all_eight_agents_in_source_order() {
@@ -119,7 +122,7 @@ fn use_a2a_form_fields_never_appears_on_agent_create_info() {
 }
 
 #[test]
-fn raw_agent_catalog_is_not_cached_across_calls() {
+fn raw_agent_catalog_decodes_all_eight_agents_on_every_call() {
     let first = raw_agent_catalog().expect("catalog decodes");
     let second = raw_agent_catalog().expect("catalog decodes");
     assert_eq!(first, second);
@@ -147,4 +150,15 @@ async fn get_agent_fields_handler_returns_the_full_catalog() {
     let body = String::from_utf8(bytes.to_vec()).unwrap();
     assert!(body.contains(r#""agent_type":"a2a""#));
     assert!(body.contains(r#""agent_type":"watsonx_orchestrate""#));
+}
+
+#[tokio::test]
+async fn agent_fields_path_serves_the_full_catalog_through_a_router() {
+    let router = Router::new().route(AGENT_FIELDS_PATH, get(|| async { get_agent_fields() }));
+    let request = Request::get(AGENT_FIELDS_PATH).body(Body::empty()).unwrap();
+    let response = router.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: Vec<AgentCreateInfo> = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(body, agent_fields().expect("catalog decodes"));
 }
