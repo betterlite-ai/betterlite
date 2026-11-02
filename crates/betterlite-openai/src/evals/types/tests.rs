@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use rstest::rstest;
+use serde_json::Value;
 
 use super::{
     CancelEvalResponse, CancelRunResponse, CancelledStatus, CreateEvalRequest, CreateRunRequest,
@@ -21,6 +22,20 @@ fn data_source_config_custom_requires_item_schema_and_defaults_sample_schema() {
             item_schema: serde_json::from_str(r#"{"role": "string"}"#).unwrap(),
             include_sample_schema: None,
         })
+    );
+    serde_json::from_str::<DataSourceConfig>(r#"{"type": "custom"}"#).unwrap_err();
+}
+
+#[test]
+fn data_source_config_custom_omits_absent_include_sample_schema_on_the_wire() {
+    let config = DataSourceConfig::Custom(DataSourceConfigCustom {
+        item_schema: serde_json::from_str(r#"{"role": "string"}"#).unwrap(),
+        include_sample_schema: None,
+    });
+    assert_eq!(
+        serde_json::to_value(&config).unwrap(),
+        serde_json::from_str::<Value>(r#"{"type": "custom", "item_schema": {"role": "string"}}"#)
+            .unwrap()
     );
 }
 
@@ -62,6 +77,18 @@ fn grader_config_llm_as_judge_holds_optional_model_and_prompt() {
 }
 
 #[test]
+fn grader_config_llm_as_judge_omits_absent_model_and_prompt_on_the_wire() {
+    let grader = GraderConfig::LlmAsJudge(LLMAsJudgeGraderConfig {
+        model: None,
+        prompt: None,
+    });
+    assert_eq!(
+        serde_json::to_value(&grader).unwrap(),
+        serde_json::from_str::<Value>(r#"{"type": "llm_as_judge"}"#).unwrap()
+    );
+}
+
+#[test]
 fn grader_config_ground_truth_holds_optional_metric() {
     let grader: GraderConfig =
         serde_json::from_str(r#"{"type": "ground_truth", "metric": "f1_score"}"#).unwrap();
@@ -75,6 +102,10 @@ fn grader_config_ground_truth_holds_optional_metric() {
     assert_eq!(
         bare,
         GraderConfig::GroundTruth(GroundTruthGraderConfig { metric: None })
+    );
+    assert_eq!(
+        serde_json::to_value(&bare).unwrap(),
+        serde_json::from_str::<Value>(r#"{"type": "ground_truth"}"#).unwrap()
     );
 }
 
@@ -118,6 +149,65 @@ fn create_eval_request_requires_data_source_config_and_testing_criteria() {
     );
     assert_eq!(request.testing_criteria.len(), 1);
     assert_eq!(request.metadata, None);
+    serde_json::from_str::<CreateEvalRequest>(r#"{"data_source_config": {"type": "logs"}}"#)
+        .unwrap_err();
+    serde_json::from_str::<CreateEvalRequest>(
+        r#"{"testing_criteria": [{"type": "custom", "function_id": "fn-1"}]}"#,
+    )
+    .unwrap_err();
+}
+
+#[test]
+fn create_eval_request_omits_absent_name_and_metadata_on_the_wire() {
+    let request = CreateEvalRequest {
+        name: None,
+        data_source_config: DataSourceConfig::Logs(DataSourceConfigLogs { metadata: None }),
+        testing_criteria: vec![GraderConfig::Custom(CustomGraderConfig {
+            function_id: "fn-1".to_owned(),
+        })],
+        metadata: None,
+    };
+    assert_eq!(
+        serde_json::to_value(&request).unwrap(),
+        serde_json::from_str::<Value>(
+            r#"{"data_source_config": {"type": "logs"}, "testing_criteria": [{"type": "custom", "function_id": "fn-1"}]}"#
+        )
+        .unwrap()
+    );
+}
+
+#[test]
+fn create_eval_request_omits_every_absent_nested_optional_on_the_wire() {
+    let request = CreateEvalRequest {
+        name: None,
+        data_source_config: DataSourceConfig::Custom(DataSourceConfigCustom {
+            item_schema: serde_json::from_str(r#"{"role": "string"}"#).unwrap(),
+            include_sample_schema: None,
+        }),
+        testing_criteria: vec![
+            GraderConfig::LlmAsJudge(LLMAsJudgeGraderConfig {
+                model: None,
+                prompt: None,
+            }),
+            GraderConfig::GroundTruth(GroundTruthGraderConfig { metric: None }),
+        ],
+        metadata: None,
+    };
+    let wire = serde_json::to_value(&request).unwrap();
+    assert_eq!(
+        wire,
+        serde_json::from_str::<Value>(
+            r#"{"data_source_config": {"type": "custom", "item_schema": {"role": "string"}}, "testing_criteria": [{"type": "llm_as_judge"}, {"type": "ground_truth"}]}"#
+        )
+        .unwrap()
+    );
+    let wire_text = wire.to_string();
+    assert!(!wire_text.contains("include_sample_schema"));
+    assert!(!wire_text.contains("model"));
+    assert!(!wire_text.contains("prompt"));
+    assert!(!wire_text.contains("metric"));
+    assert!(!wire_text.contains("name"));
+    assert!(!wire_text.contains("metadata"));
 }
 
 #[test]
@@ -125,6 +215,10 @@ fn update_eval_request_fields_are_all_optional() {
     let request: UpdateEvalRequest = serde_json::from_str("{}").unwrap();
     assert_eq!(request.name, None);
     assert_eq!(request.metadata, None);
+    assert_eq!(
+        serde_json::to_value(&request).unwrap(),
+        serde_json::from_str::<Value>("{}").unwrap()
+    );
 }
 
 #[test]
@@ -136,6 +230,11 @@ fn list_evals_params_fields_are_all_optional() {
     assert_eq!(params.before, None);
     assert_eq!(params.order, Some(EvalOrder::Asc));
     assert_eq!(params.order_by, Some(EvalOrderBy::UpdatedAt));
+    let bare: ListEvalsParams = serde_json::from_str("{}").unwrap();
+    assert_eq!(
+        serde_json::to_value(&bare).unwrap(),
+        serde_json::from_str::<Value>("{}").unwrap()
+    );
 }
 
 #[test]
@@ -165,6 +264,7 @@ fn delete_eval_response_requires_deleted_and_defaults_object() {
         serde_json::from_str(r#"{"eval_id": "eval-1", "deleted": true}"#).unwrap();
     assert_eq!(response.object, "eval.deleted");
     assert!(response.deleted);
+    serde_json::from_str::<DeleteEvalResponse>(r#"{"eval_id": "eval-1"}"#).unwrap_err();
 }
 
 #[test]
@@ -181,6 +281,11 @@ fn create_run_request_requires_data_source() {
         serde_json::from_str(r#"{"data_source": {"type": "logs"}}"#).unwrap();
     assert_eq!(request.name, None);
     assert_eq!(request.metadata, None);
+    assert_eq!(
+        serde_json::to_value(&request).unwrap(),
+        serde_json::from_str::<Value>(r#"{"data_source": {"type": "logs"}}"#).unwrap()
+    );
+    serde_json::from_str::<CreateRunRequest>("{}").unwrap_err();
 }
 
 #[test]
@@ -188,6 +293,11 @@ fn list_runs_params_fields_are_all_optional_and_has_no_order_by() {
     let params: ListRunsParams = serde_json::from_str(r#"{"order": "desc"}"#).unwrap();
     assert_eq!(params.limit, None);
     assert_eq!(params.order, Some(EvalOrder::Desc));
+    let bare: ListRunsParams = serde_json::from_str("{}").unwrap();
+    assert_eq!(
+        serde_json::to_value(&bare).unwrap(),
+        serde_json::from_str::<Value>("{}").unwrap()
+    );
 }
 
 #[test]

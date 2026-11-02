@@ -8,16 +8,19 @@ mod tests;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DataSourceConfigCustom {
     pub item_schema: Map<String, Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub include_sample_schema: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DataSourceConfigLogs {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<Map<String, Value>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DataSourceStoredCompletions {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<Map<String, Value>>,
 }
 
@@ -31,7 +34,9 @@ pub enum DataSourceConfig {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LLMAsJudgeGraderConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub prompt: Option<String>,
 }
 
@@ -45,6 +50,7 @@ pub enum GroundTruthMetric {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GroundTruthGraderConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub metric: Option<GroundTruthMetric>,
 }
 
@@ -63,15 +69,19 @@ pub enum GraderConfig {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CreateEvalRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     pub data_source_config: DataSourceConfig,
     pub testing_criteria: Vec<GraderConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<Map<String, Value>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UpdateEvalRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<Map<String, Value>>,
 }
 
@@ -91,10 +101,15 @@ pub enum EvalOrderBy {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ListEvalsParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub after: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub before: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub order: Option<EvalOrder>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub order_by: Option<EvalOrderBy>,
 }
 
@@ -159,15 +174,21 @@ pub struct CancelEvalResponse {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CreateRunRequest {
     pub data_source: Map<String, Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<Map<String, Value>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ListRunsParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub after: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub before: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub order: Option<EvalOrder>,
 }
 
