@@ -27,6 +27,10 @@ scope:
     - tools/oracle/helpers/b4742/**
     - tools/oracle/src/helpers/http/b4742.rs
     - tools/oracle/src/helpers/http/b4742/**
+    - tools/oracle/cases/helpers/mcp-sigv4/canonical-signing-vectors.yaml
+    - tools/oracle/cases/helpers/mcp-sigv4/default-chain-mocked.yaml
+    - tools/oracle/cases/helpers/mcp-sigv4/explicit-credentials.yaml
+    - tools/oracle/cases/helpers/mcp-sigv4/sts-assume-role-with-creds.yaml
   lint_tables: false
 
 references:
