@@ -358,7 +358,7 @@ async fn seed_stopped_at_offset_rows(client: &Client) {
     .await;
     batch_execute(
         client,
-        r#"INSERT INTO "LiteLLM_ShadowEvalJob" (id, api_key_id, router_name, judge_model, shadow_percentage, max_turns, group_id, stopped_at, ends_at) VALUES ('job-stop-equal', 'key-stop', 'router-a', 'judge-a', 10.0, 5, 'job-stop-equal', now(), now() AT TIME ZONE 'utc')"#,
+        r#"INSERT INTO "LiteLLM_ShadowEvalJob" (id, api_key_id, router_name, judge_model, shadow_percentage, max_turns, group_id, stopped_at, ends_at) VALUES ('job-stop-equal', 'key-stop', 'router-a', 'judge-a', 10.0, 5, 'job-stop-equal', now(), date_trunc('milliseconds', now() AT TIME ZONE 'utc'))"#,
     )
     .await;
     exec_params(
