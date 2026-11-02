@@ -1,12 +1,18 @@
+#[cfg(test)]
 use std::time::Instant;
 
+#[cfg(test)]
 use serde_json::json;
 
-use super::super::cache_operations::CacheEntry;
-use super::super::resolution::SandboxToolParams;
-use super::super::{MockConfig, MockRegistry, MockToolRegistry, test_object};
+#[cfg(test)]
+use super::cache_operations::CacheEntry;
+#[cfg(test)]
+use super::resolution::SandboxToolParams;
+#[cfg(test)]
+use super::{MockConfig, MockRegistry, MockToolRegistry, block_on, test_object};
 
-fn provider<'provider>(
+#[cfg(test)]
+const fn provider<'provider>(
     registry: &'provider MockRegistry,
     tool_registry: &'provider MockToolRegistry,
 ) -> SandboxProvider<'provider, MockConfig, MockRegistry, MockToolRegistry> {
@@ -18,6 +24,7 @@ fn provider<'provider>(
     }
 }
 
+#[cfg(test)]
 fn cached(cache: &mut SandboxCache, key: &str) {
     cache.entries.insert(
         key.to_owned(),
@@ -34,8 +41,9 @@ fn cached(cache: &mut SandboxCache, key: &str) {
     );
 }
 
-#[tokio::test]
-async fn cleanup_leaves_session_scoped_containers_in_the_cache() {
+#[cfg(test)]
+#[test]
+fn cleanup_leaves_session_scoped_containers_in_the_cache() {
     let registry = MockRegistry::succeeding(test_object([("id", json!("cache-key"))]));
     let tool_registry = MockToolRegistry::default();
     let sandbox = provider(&registry, &tool_registry);
@@ -46,13 +54,14 @@ async fn cleanup_leaves_session_scoped_containers_in_the_cache() {
         sandbox_key: Some("cache-key".to_owned()),
         code_interpreter_calls: Vec::new(),
     };
-    cleanup_hook(&sandbox, &mut cache, &metadata).await;
+    block_on(sandbox.cleanup_hook(&mut cache, &metadata));
     assert_eq!(cache.entries.len(), 1);
     assert_eq!(registry.delete_calls.lock().unwrap().len(), 0);
 }
 
-#[tokio::test]
-async fn cleanup_deletes_request_scoped_containers() {
+#[cfg(test)]
+#[test]
+fn cleanup_deletes_request_scoped_containers() {
     let registry = MockRegistry::succeeding(test_object([("id", json!("cache-key"))]));
     let tool_registry = MockToolRegistry::default();
     let sandbox = provider(&registry, &tool_registry);
@@ -63,13 +72,14 @@ async fn cleanup_deletes_request_scoped_containers() {
         sandbox_key: Some("cache-key".to_owned()),
         code_interpreter_calls: Vec::new(),
     };
-    cleanup_hook(&sandbox, &mut cache, &metadata).await;
+    block_on(sandbox.cleanup_hook(&mut cache, &metadata));
     assert_eq!(cache.entries.len(), 0);
     assert_eq!(registry.delete_calls.lock().unwrap().len(), 1);
 }
 
-#[tokio::test]
-async fn cleanup_does_nothing_when_the_sandbox_key_is_absent() {
+#[cfg(test)]
+#[test]
+fn cleanup_does_nothing_when_the_sandbox_key_is_absent() {
     let registry = MockRegistry::default();
     let tool_registry = MockToolRegistry::default();
     let sandbox = provider(&registry, &tool_registry);
@@ -79,12 +89,13 @@ async fn cleanup_does_nothing_when_the_sandbox_key_is_absent() {
         sandbox_key: None,
         code_interpreter_calls: Vec::new(),
     };
-    cleanup_hook(&sandbox, &mut cache, &metadata).await;
+    block_on(sandbox.cleanup_hook(&mut cache, &metadata));
     assert_eq!(registry.delete_calls.lock().unwrap().len(), 0);
 }
 
-#[tokio::test]
-async fn post_response_merges_code_interpreter_calls_before_the_first_message_item() {
+#[cfg(test)]
+#[test]
+fn post_response_merges_code_interpreter_calls_before_the_first_message_item() {
     let registry = MockRegistry::default();
     let tool_registry = MockToolRegistry::default();
     let sandbox = provider(&registry, &tool_registry);
@@ -107,15 +118,16 @@ async fn post_response_merges_code_interpreter_calls_before_the_first_message_it
         "output",
         Value::Array(vec![function_call.clone(), message.clone()]),
     )]);
-    let merged = post_response_hook(&sandbox, &mut cache, &metadata, response).await;
+    let merged = block_on(sandbox.post_response_hook(&mut cache, &metadata, response));
     assert_eq!(
         merged,
         test_object([("output", Value::Array(vec![function_call, call, message]))])
     );
 }
 
-#[tokio::test]
-async fn post_response_returns_the_response_unchanged_when_there_are_no_calls() {
+#[cfg(test)]
+#[test]
+fn post_response_returns_the_response_unchanged_when_there_are_no_calls() {
     let registry = MockRegistry::default();
     let tool_registry = MockToolRegistry::default();
     let sandbox = provider(&registry, &tool_registry);
@@ -127,12 +139,13 @@ async fn post_response_returns_the_response_unchanged_when_there_are_no_calls() 
     };
     let message = test_object([("type", json!("message")), ("content", json!("hi"))]);
     let response = test_object([("output", Value::Array(vec![message]))]);
-    let unchanged = post_response_hook(&sandbox, &mut cache, &metadata, response.clone()).await;
+    let unchanged = block_on(sandbox.post_response_hook(&mut cache, &metadata, response.clone()));
     assert_eq!(unchanged, response);
 }
 
-#[tokio::test]
-async fn post_response_leaves_session_scoped_containers_in_the_cache() {
+#[cfg(test)]
+#[test]
+fn post_response_leaves_session_scoped_containers_in_the_cache() {
     let registry = MockRegistry::succeeding(test_object([("id", json!("cache-key"))]));
     let tool_registry = MockToolRegistry::default();
     let sandbox = provider(&registry, &tool_registry);
@@ -144,13 +157,14 @@ async fn post_response_leaves_session_scoped_containers_in_the_cache() {
         code_interpreter_calls: Vec::new(),
     };
     let response = test_object([("output", Value::Array(Vec::new()))]);
-    post_response_hook(&sandbox, &mut cache, &metadata, response).await;
+    block_on(sandbox.post_response_hook(&mut cache, &metadata, response));
     assert_eq!(cache.entries.len(), 1);
     assert_eq!(registry.delete_calls.lock().unwrap().len(), 0);
 }
 
-#[tokio::test]
-async fn post_response_deletes_request_scoped_containers() {
+#[cfg(test)]
+#[test]
+fn post_response_deletes_request_scoped_containers() {
     let registry = MockRegistry::succeeding(test_object([("id", json!("cache-key"))]));
     let tool_registry = MockToolRegistry::default();
     let sandbox = provider(&registry, &tool_registry);
@@ -162,7 +176,7 @@ async fn post_response_deletes_request_scoped_containers() {
         code_interpreter_calls: Vec::new(),
     };
     let response = test_object([("output", Value::Array(Vec::new()))]);
-    post_response_hook(&sandbox, &mut cache, &metadata, response).await;
+    block_on(sandbox.post_response_hook(&mut cache, &metadata, response));
     assert_eq!(cache.entries.len(), 0);
     assert_eq!(registry.delete_calls.lock().unwrap().len(), 1);
 }

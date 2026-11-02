@@ -6,6 +6,9 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 #[cfg(test)]
+use tokio::runtime::Builder;
+
+#[cfg(test)]
 use serde_json::{Map, Value};
 
 #[cfg(test)]
@@ -25,6 +28,17 @@ where
             .into_iter()
             .map(|(key, value)| (key.to_owned(), value)),
     ))
+}
+
+#[cfg(test)]
+fn block_on<F>(future: F) -> F::Output
+where
+    F: Future,
+{
+    Builder::new_current_thread()
+        .build()
+        .unwrap()
+        .block_on(future)
 }
 
 #[cfg(test)]
@@ -83,9 +97,8 @@ impl SandboxConfig for MockConfig {
 #[cfg(test)]
 #[derive(Clone, Default)]
 struct MockRegistry {
-    create_result: Option<Result<Value, MockError>>,
-    run_result: Option<Result<Value, MockError>>,
-    delete_result: Option<Result<(), MockError>>,
+    create: Option<Value>,
+    run: Option<Value>,
     delete_calls: Arc<Mutex<Vec<Value>>>,
 }
 
@@ -93,12 +106,21 @@ struct MockRegistry {
 impl MockRegistry {
     fn succeeding(container: Value) -> Self {
         Self {
-            create_result: Some(Ok(container.clone())),
-            run_result: Some(Ok(container)),
-            delete_result: Some(Ok(())),
+            create: Some(container.clone()),
+            run: Some(container),
             delete_calls: Arc::default(),
         }
     }
+}
+
+#[cfg(test)]
+fn mock_registry_value<V>(value: Option<&V>, operation: &str) -> V
+where
+    V: Clone,
+{
+    value
+        .cloned()
+        .unwrap_or_else(|| panic!("{operation} not configured on MockRegistry"))
 }
 
 #[cfg(test)]
@@ -109,11 +131,7 @@ impl SandboxRegistry for MockRegistry {
         &self,
         _params: &SandboxToolParams,
     ) -> impl Future<Output = Result<Value, MockError>> {
-        ready(
-            self.create_result
-                .clone()
-                .expect("create not configured on MockRegistry"),
-        )
+        ready(Ok(mock_registry_value(self.create.as_ref(), "create")))
     }
 
     fn run(
@@ -122,11 +140,7 @@ impl SandboxRegistry for MockRegistry {
         _container: &Value,
         _code: &str,
     ) -> impl Future<Output = Result<Value, MockError>> {
-        ready(
-            self.run_result
-                .clone()
-                .expect("run not configured on MockRegistry"),
-        )
+        ready(Ok(mock_registry_value(self.run.as_ref(), "run")))
     }
 
     fn delete(
@@ -135,11 +149,7 @@ impl SandboxRegistry for MockRegistry {
         container: &Value,
     ) -> impl Future<Output = Result<(), MockError>> {
         self.delete_calls.lock().unwrap().push(container.clone());
-        ready(
-            self.delete_result
-                .clone()
-                .expect("delete not configured on MockRegistry"),
-        )
+        ready(Ok(()))
     }
 }
 

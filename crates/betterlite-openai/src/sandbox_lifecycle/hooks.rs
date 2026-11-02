@@ -1,3 +1,5 @@
+use std::future::Future;
+
 use serde_json::Value;
 
 use super::cache_operations::SandboxCache;
@@ -25,43 +27,47 @@ fn merge_into_response(mut response: Value, calls: &[Value]) -> Value {
     response
 }
 
-pub async fn cleanup_hook<C, R, T>(
-    provider: &SandboxProvider<'_, C, R, T>,
-    cache: &mut SandboxCache,
-    metadata: &PlanMetadata,
-) where
-    C: SandboxConfig,
-    R: SandboxRegistry<Error = C::Error>,
-    T: SandboxToolRegistry,
-{
-    if metadata.is_session_scoped {
-        return;
-    }
-    provider
-        .delete_container_for_cache_key(cache, metadata.sandbox_key.as_deref())
-        .await;
+pub trait SandboxHooks {
+    fn cleanup_hook(
+        &self,
+        cache: &mut SandboxCache,
+        metadata: &PlanMetadata,
+    ) -> impl Future<Output = ()> + Send;
+
+    fn post_response_hook(
+        &self,
+        cache: &mut SandboxCache,
+        metadata: &PlanMetadata,
+        response: Value,
+    ) -> impl Future<Output = Value> + Send;
 }
 
-pub async fn post_response_hook<C, R, T>(
-    provider: &SandboxProvider<'_, C, R, T>,
-    cache: &mut SandboxCache,
-    metadata: &PlanMetadata,
-    response: Value,
-) -> Value
+impl<C, R, T> SandboxHooks for SandboxProvider<'_, C, R, T>
 where
     C: SandboxConfig,
     R: SandboxRegistry<Error = C::Error>,
     T: SandboxToolRegistry,
 {
-    if !metadata.is_session_scoped {
-        provider
-            .delete_container_for_cache_key(cache, metadata.sandbox_key.as_deref())
+    async fn cleanup_hook(&self, cache: &mut SandboxCache, metadata: &PlanMetadata) {
+        if metadata.is_session_scoped {
+            return;
+        }
+        self.delete_container_for_cache_key(cache, metadata.sandbox_key.as_deref())
             .await;
     }
-    if metadata.code_interpreter_calls.is_empty() {
-        return response;
+
+    async fn post_response_hook(
+        &self,
+        cache: &mut SandboxCache,
+        metadata: &PlanMetadata,
+        response: Value,
+    ) -> Value {
+        self.cleanup_hook(cache, metadata).await;
+        if metadata.code_interpreter_calls.is_empty() {
+            return response;
+        }
+        merge_into_response(response, &metadata.code_interpreter_calls)
     }
-    merge_into_response(response, &metadata.code_interpreter_calls)
 }
 
-mod tests;
+include!("hooks/tests/cases.rs");

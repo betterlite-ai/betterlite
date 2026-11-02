@@ -90,4 +90,4 @@ where
     Ok(error_message(&result).unwrap_or_else(|| stdout(&result)))
 }
 
-mod tests;
+include!("tool_execution/tests/cases.rs");

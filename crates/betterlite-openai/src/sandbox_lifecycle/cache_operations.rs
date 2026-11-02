@@ -148,4 +148,4 @@ pub async fn prune_expired_cache<C, R, T, Clk>(
     }
 }
 
-mod tests;
+include!("cache_operations/tests/cases.rs");

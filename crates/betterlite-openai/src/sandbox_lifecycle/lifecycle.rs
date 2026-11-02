@@ -140,4 +140,4 @@ where
     }
 }
 
-mod tests;
+include!("lifecycle/tests/cases.rs");
