@@ -187,12 +187,15 @@ fn input_error(message: String) -> Box<HelperError> {
 }
 
 fn parse_error(error: &OcrRequestError) -> Box<HelperError> {
+    let status = matches!(error, OcrRequestError::InvalidRequestFormat(_)).then_some(400);
     Box::new(HelperError {
         class: "OcrRequestError".to_owned(),
-        status: None,
+        status,
         error_type: None,
         param: None,
         code: None,
         message: error.to_string(),
     })
 }
+
+mod tests;
