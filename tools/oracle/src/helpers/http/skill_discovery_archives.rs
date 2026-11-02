@@ -25,13 +25,15 @@ impl crate::helpers::Helper for Op {
                 })
             })?;
         let Some(archive) = betterlite_http::skill_archive::build_skill_archive(&content) else {
-            return Ok(serde_json::Value::Null);
+            return Ok(serde_json::json!({ "archive": null }));
         };
         Ok(serde_json::json!({
-            "content": base64::engine::general_purpose::STANDARD.encode(archive.content),
-            "digest": archive.digest,
-            "declared_name": archive.declared_name,
-            "declared_description": archive.declared_description,
+            "archive": {
+                "content": base64::engine::general_purpose::STANDARD.encode(archive.content),
+                "digest": archive.digest,
+                "declared_name": archive.declared_name,
+                "declared_description": archive.declared_description,
+            }
         }))
     }
 }
