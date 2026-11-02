@@ -265,7 +265,7 @@ async fn check_skill_agent_empty_arrays(client: &Client) {
     assert_column(
         client,
         "LiteLLM_ObjectPermissionTable",
-        empty_text_array("skills"),
+        nullable_empty_text_array("skills"),
     )
     .await;
     exec_params(
@@ -277,7 +277,7 @@ async fn check_skill_agent_empty_arrays(client: &Client) {
     assert_column(
         client,
         "LiteLLM_AgentsTable",
-        empty_text_array("access_group_ids"),
+        nullable_empty_text_array("access_group_ids"),
     )
     .await;
 }

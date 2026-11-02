@@ -472,6 +472,10 @@ fn empty_text_array(name: &'static str) -> ColumnSpec {
     (name, "ARRAY", false, Some("'{}'::text[]"), "_text", None)
 }
 
+fn nullable_empty_text_array(name: &'static str) -> ColumnSpec {
+    (name, "ARRAY", true, Some("'{}'::text[]"), "_text", None)
+}
+
 async fn assert_exec_params_err_state(
     client: &Client,
     sql: &str,
