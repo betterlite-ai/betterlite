@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fmt::Display;
 use std::net::TcpListener;
 use std::time::Duration;
 
@@ -20,37 +21,22 @@ use crate::helpers::{HelperError, HelperResult};
 use crate::mock::MockProvider;
 use crate::routing_mock_scripts::MockScript;
 
+mod request;
+use request::{
+    AporiaModerationRequest, AporiaPostCallRequest, GuardrailsAiConstructRequest,
+    GuardrailsAiProcessRequest,
+};
+
 pub(crate) struct Op;
 
 #[derive(serde::Deserialize)]
-#[serde(rename_all = "snake_case", deny_unknown_fields)]
+#[serde(rename_all = "snake_case")]
 pub(crate) enum Input {
-    AporiaModeration {
-        api_key: String,
-        messages: Option<Vec<GuardrailMessage>>,
-        dynamic_params: BTreeMap<String, GuardrailValue>,
-        answer: Option<UpstreamAnswer>,
-    },
-    AporiaPostCall {
-        api_key: String,
-        messages: Vec<GuardrailMessage>,
-        response_string: Option<String>,
-        dynamic_params: BTreeMap<String, GuardrailValue>,
-        answer: Option<UpstreamAnswer>,
-    },
-    GuardrailsAiConstruct {
-        guard_name: Option<String>,
-        api_base: Option<String>,
-        environment: BTreeMap<String, String>,
-    },
+    AporiaModeration(AporiaModerationRequest),
+    AporiaPostCall(AporiaPostCallRequest),
+    GuardrailsAiConstruct(GuardrailsAiConstructRequest),
     #[serde(rename = "guardrails_ai_process_input")]
-    GuardrailsAiProcess {
-        guard_name: String,
-        input_format: InputFormat,
-        last_user_message: Option<String>,
-        dynamic_params: BTreeMap<String, GuardrailValue>,
-        answer: Option<UpstreamAnswer>,
-    },
+    GuardrailsAiProcess(GuardrailsAiProcessRequest),
 }
 
 impl crate::helpers::Helper for Op {
@@ -58,42 +44,29 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::AporiaModeration {
-                api_key,
-                messages,
-                dynamic_params,
-                answer,
-            } => aporia_moderation(api_key, messages.clone(), dynamic_params, answer.as_ref()),
-            Input::AporiaPostCall {
-                api_key,
-                messages,
-                response_string,
-                dynamic_params,
-                answer,
-            } => aporia_post_call(
-                api_key,
-                messages.clone(),
-                response_string.clone(),
-                dynamic_params,
-                answer.as_ref(),
+            Input::AporiaModeration(request) => run_aporia(
+                &request.api_key,
+                &request.dynamic_params,
+                request.answer.as_ref(),
+                AporiaCall::Moderation(request.messages.clone()),
             ),
-            Input::GuardrailsAiConstruct {
-                guard_name,
-                api_base,
-                environment,
-            } => guardrails_ai_construct(guard_name.clone(), api_base.clone(), environment),
-            Input::GuardrailsAiProcess {
-                guard_name,
-                input_format,
-                last_user_message,
-                dynamic_params,
-                answer,
-            } => guardrails_ai_process_input(
-                guard_name,
-                *input_format,
-                last_user_message.clone(),
-                dynamic_params,
-                answer.as_ref(),
+            Input::AporiaPostCall(request) => run_aporia(
+                &request.api_key,
+                &request.dynamic_params,
+                request.answer.as_ref(),
+                AporiaCall::PostCall(request.messages.clone(), request.response_string.clone()),
+            ),
+            Input::GuardrailsAiConstruct(request) => guardrails_ai_construct(
+                request.guard_name.clone(),
+                request.api_base.clone(),
+                &request.environment,
+            ),
+            Input::GuardrailsAiProcess(request) => guardrails_ai_process_input(
+                &request.guard_name,
+                request.input_format,
+                request.last_user_message.clone(),
+                &request.dynamic_params,
+                request.answer.as_ref(),
             ),
         }
     }
@@ -149,38 +122,51 @@ fn aporia_guardrail(api_key: &str, base: &str) -> AporiaGuardrail {
     }
 }
 
-fn aporia_moderation(
+type AporiaPrepared = (
+    AporiaGuardrail,
+    TcpListener,
+    tokio::runtime::Runtime,
+    Option<MockProvider>,
+);
+
+fn prepare_aporia(
     api_key: &str,
-    messages: Option<Vec<GuardrailMessage>>,
-    dynamic_params: &BTreeMap<String, GuardrailValue>,
     answer: Option<&UpstreamAnswer>,
-) -> HelperResult {
+) -> Result<AporiaPrepared, Box<HelperError>> {
     let (mock, silent, base, runtime) = prepare(answer)?;
-    let guardrail = aporia_guardrail(api_key, &base);
-    let gate = ModerationGate {
-        should_run: true,
-        should_proceed: true,
-    };
-    let result = runtime.block_on(guardrail.async_moderation_hook(gate, messages, dynamic_params));
-    drop(silent);
-    finish_aporia(mock, result)
+    Ok((aporia_guardrail(api_key, &base), silent, runtime, mock))
 }
 
-fn aporia_post_call(
+enum AporiaCall {
+    Moderation(Option<Vec<GuardrailMessage>>),
+    PostCall(Vec<GuardrailMessage>, Option<String>),
+}
+
+fn run_aporia(
     api_key: &str,
-    messages: Vec<GuardrailMessage>,
-    response_string: Option<String>,
     dynamic_params: &BTreeMap<String, GuardrailValue>,
     answer: Option<&UpstreamAnswer>,
+    call: AporiaCall,
 ) -> HelperResult {
-    let (mock, silent, base, runtime) = prepare(answer)?;
-    let guardrail = aporia_guardrail(api_key, &base);
-    let result = runtime.block_on(guardrail.async_post_call_success_hook(
-        true,
-        response_string,
-        messages,
-        dynamic_params,
-    ));
+    let (guardrail, silent, runtime, mock) = prepare_aporia(api_key, answer)?;
+    let result = runtime.block_on(async {
+        match call {
+            AporiaCall::Moderation(messages) => {
+                let gate = ModerationGate {
+                    should_run: true,
+                    should_proceed: true,
+                };
+                guardrail
+                    .async_moderation_hook(gate, messages, dynamic_params)
+                    .await
+            }
+            AporiaCall::PostCall(messages, response_string) => {
+                guardrail
+                    .async_post_call_success_hook(true, response_string, messages, dynamic_params)
+                    .await
+            }
+        }
+    });
     drop(silent);
     finish_aporia(mock, result)
 }
@@ -189,6 +175,26 @@ fn finish_aporia(
     mock: Option<MockProvider>,
     result: Result<bool, AporiaGuardrailError>,
 ) -> HelperResult {
+    finish(
+        mock,
+        result,
+        |error| match error {
+            AporiaGuardrailError::Blocked { .. } => "HTTPException",
+            AporiaGuardrailError::MissingEnvironment { .. } => "KeyError",
+            AporiaGuardrailError::Timeout { .. }
+            | AporiaGuardrailError::Request { .. }
+            | AporiaGuardrailError::InvalidHeader { .. }
+            | AporiaGuardrailError::HttpStatus { .. }
+            | AporiaGuardrailError::ResponseTooLarge { .. }
+            | AporiaGuardrailError::ResponseJson { .. } => "AporiaGuardrailAPIError",
+        },
+        |path, request, _ran| json!({ "path": path, "request": request }),
+    )
+}
+
+fn extract_call(
+    mock: Option<MockProvider>,
+) -> Result<(Option<String>, Option<serde_json::Value>), Box<HelperError>> {
     let calls = mock
         .map(MockProvider::finish)
         .transpose()
@@ -196,22 +202,25 @@ fn finish_aporia(
     let recorded = calls.unwrap_or_default().into_iter().next();
     let path = recorded.as_ref().map(|call| call.request.path.clone());
     let request = recorded.map(|call| call.request.body);
-    result.map_err(|error| aporia_failure(&error))?;
-    Ok(json!({ "path": path, "request": request }))
+    Ok((path, request))
 }
 
-fn aporia_failure(error: &AporiaGuardrailError) -> Box<HelperError> {
-    let class = match error {
-        AporiaGuardrailError::Blocked { .. } => "HTTPException",
-        AporiaGuardrailError::MissingEnvironment { .. } => "KeyError",
-        AporiaGuardrailError::Timeout { .. }
-        | AporiaGuardrailError::Request { .. }
-        | AporiaGuardrailError::InvalidHeader { .. }
-        | AporiaGuardrailError::HttpStatus { .. }
-        | AporiaGuardrailError::ResponseTooLarge { .. }
-        | AporiaGuardrailError::ResponseJson { .. } => "AporiaGuardrailAPIError",
-    };
-    fail(class, error.to_string())
+fn finish<T, E, Classify, Build>(
+    mock: Option<MockProvider>,
+    result: Result<T, E>,
+    classify: Classify,
+    build: Build,
+) -> HelperResult
+where
+    E: Display,
+    Classify: FnOnce(&E) -> &'static str,
+    Build: FnOnce(Option<String>, Option<serde_json::Value>, T) -> serde_json::Value,
+{
+    let (path, request) = extract_call(mock)?;
+    match result {
+        Ok(value) => Ok(build(path, request, value)),
+        Err(error) => Err(fail(classify(&error), error.to_string())),
+    }
 }
 
 fn guardrails_ai_construct(
@@ -221,7 +230,7 @@ fn guardrails_ai_construct(
 ) -> HelperResult {
     let settings =
         GuardrailsAiSettings::resolve(guard_name, api_base, InputFormat::LlmOutput, environment)
-            .map_err(|error| guardrails_ai_failure(&error))?;
+            .map_err(|error| fail(classify_guardrails_ai(&error), error.to_string()))?;
     Ok(json!({
         "guard_name": settings.guard_name,
         "api_base": settings.api_base,
@@ -254,19 +263,16 @@ fn finish_guardrails_ai(
     mock: Option<MockProvider>,
     result: Result<Option<String>, GuardrailsAiGuardrailError>,
 ) -> HelperResult {
-    let calls = mock
-        .map(MockProvider::finish)
-        .transpose()
-        .map_err(|error| fail("MockError", error.to_string()))?;
-    let recorded = calls.unwrap_or_default().into_iter().next();
-    let path = recorded.as_ref().map(|call| call.request.path.clone());
-    let request = recorded.map(|call| call.request.body);
-    let updated_text = result.map_err(|error| guardrails_ai_failure(&error))?;
-    Ok(json!({ "path": path, "request": request, "updated_text": updated_text }))
+    finish(
+        mock,
+        result,
+        classify_guardrails_ai,
+        |path, request, updated_text| json!({ "path": path, "request": request, "updated_text": updated_text }),
+    )
 }
 
-fn guardrails_ai_failure(error: &GuardrailsAiGuardrailError) -> Box<HelperError> {
-    let class = match error {
+const fn classify_guardrails_ai(error: &GuardrailsAiGuardrailError) -> &'static str {
+    match error {
         GuardrailsAiGuardrailError::MissingGuardName => "Exception",
         GuardrailsAiGuardrailError::Blocked { .. }
         | GuardrailsAiGuardrailError::PreCallBlocked { .. } => "HTTPException",
@@ -277,6 +283,5 @@ fn guardrails_ai_failure(error: &GuardrailsAiGuardrailError) -> Box<HelperError>
         | GuardrailsAiGuardrailError::ResponseJson { .. }
         | GuardrailsAiGuardrailError::PreCallMissingOutput
         | GuardrailsAiGuardrailError::InvalidUtf8 { .. } => "GuardrailsAIException",
-    };
-    fail(class, error.to_string())
+    }
 }

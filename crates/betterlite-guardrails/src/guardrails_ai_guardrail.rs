@@ -9,6 +9,9 @@ use serde::{Deserialize, Serialize};
 pub mod error;
 use error::GuardrailsAiGuardrailError;
 
+mod http;
+use http::{parse_pre_call_response, read_capped_body, request_error};
+
 const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 const DEFAULT_API_BASE: &str = "http://0.0.0.0:8000";
 
@@ -150,7 +153,7 @@ impl GuardrailsAiGuardrail {
         if !status.is_success() {
             return Err(GuardrailsAiGuardrailError::HttpStatus { status });
         }
-        let bytes = read_capped_body(response).await?;
+        let bytes = read_capped_body(response, MAX_RESPONSE_BYTES).await?;
         let parsed: GuardrailsAiApiResponse = serde_json::from_slice(&bytes)
             .map_err(|source| GuardrailsAiGuardrailError::ResponseJson { source })?;
         if parsed.validation_passed == Some(false) {
@@ -186,7 +189,7 @@ impl GuardrailsAiGuardrail {
             .await
             .map_err(request_error)?;
         let status = response.status();
-        let bytes = read_capped_body(response).await?;
+        let bytes = read_capped_body(response, MAX_RESPONSE_BYTES).await?;
         parse_pre_call_response(status, &bytes)
     }
 
@@ -249,65 +252,6 @@ impl GuardrailConfigModelIdentity for GuardrailsAiConfigModel {
     fn ui_friendly_name() -> &'static str {
         "Guardrails AI"
     }
-}
-
-fn parse_pre_call_response(
-    status: reqwest::StatusCode,
-    bytes: &[u8],
-) -> Result<String, GuardrailsAiGuardrailError> {
-    if status == reqwest::StatusCode::BAD_REQUEST {
-        let body_text = String::from_utf8(bytes.to_vec())
-            .map_err(|source| GuardrailsAiGuardrailError::InvalidUtf8 { source })?;
-        return Err(GuardrailsAiGuardrailError::PreCallBlocked {
-            response: body_text,
-        });
-    }
-    if !status.is_success() {
-        return Err(GuardrailsAiGuardrailError::HttpStatus { status });
-    }
-    let parsed: GuardrailsAiPreCallApiResponse = serde_json::from_slice(bytes)
-        .map_err(|source| GuardrailsAiGuardrailError::ResponseJson { source })?;
-    let first_output = parsed
-        .outputs
-        .first()
-        .ok_or(GuardrailsAiGuardrailError::PreCallMissingOutput)?;
-    first_output
-        .data
-        .first()
-        .cloned()
-        .ok_or(GuardrailsAiGuardrailError::PreCallMissingOutput)
-}
-
-fn request_error(source: reqwest::Error) -> GuardrailsAiGuardrailError {
-    if source.is_timeout() {
-        GuardrailsAiGuardrailError::Timeout { source }
-    } else {
-        GuardrailsAiGuardrailError::Request { source }
-    }
-}
-
-async fn read_capped_body(
-    mut response: reqwest::Response,
-) -> Result<Vec<u8>, GuardrailsAiGuardrailError> {
-    let limit_bytes = u64::try_from(MAX_RESPONSE_BYTES).unwrap_or(u64::MAX);
-    if response
-        .content_length()
-        .is_some_and(|length| length > limit_bytes)
-    {
-        return Err(GuardrailsAiGuardrailError::ResponseTooLarge {
-            limit: MAX_RESPONSE_BYTES,
-        });
-    }
-    let mut body = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(request_error)? {
-        body.extend_from_slice(&chunk);
-        if body.len() > MAX_RESPONSE_BYTES {
-            return Err(GuardrailsAiGuardrailError::ResponseTooLarge {
-                limit: MAX_RESPONSE_BYTES,
-            });
-        }
-    }
-    Ok(body)
 }
 
 #[path = "guardrails_ai_guardrail/tests.rs"]
