@@ -5,21 +5,14 @@ use super::numeric::numeric_price;
 use super::video::{NoPriceLog, VideoCostRequest, resolved_video_cost};
 use crate::price_lookup::{PriceLookup, PriceRecord};
 
-// An absent provider defaults to "openai"; an explicit "" is used as given (docs/compatibility.md).
-const fn effective_provider(custom_llm_provider: Option<&str>) -> &str {
-    match custom_llm_provider {
-        Some(provider) => provider,
-        None => "openai",
-    }
-}
-
 fn model_info(
     model: &str,
     custom_llm_provider: Option<&str>,
     lookup: &dyn PriceLookup,
 ) -> Result<PriceRecord, DurationCostError> {
+    // An absent provider defaults to "openai"; an explicit "" is used as given (docs/compatibility.md).
     lookup
-        .effective_model_info(model, Some(effective_provider(custom_llm_provider)))
+        .effective_model_info(model, Some(custom_llm_provider.unwrap_or("openai")))
         .ok_or_else(|| DurationCostError::UnknownModel {
             model: model.to_owned(),
         })
