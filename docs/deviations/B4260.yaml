@@ -1,0 +1,5 @@
+task: B4260
+deviations:
+  - what: resolve_local_image expands only a bare ~ or a ~/-prefixed path using the single injected home_dir; it does not expand ~username to another system user's home directory.
+    why: LiteLLM's os.path.expanduser falls back to a pwd.getpwnam lookup for ~username, which reads the system user database rather than the filesystem or logging dependencies this task injects. No proxy deployment relies on a logo or favicon path naming another OS user's home directory, so betterlite keeps expansion to the server's own injected home directory.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/static_asset_utils.py#L31

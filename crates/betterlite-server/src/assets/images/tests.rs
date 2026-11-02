@@ -111,6 +111,15 @@ fn resolve_local_image_expands_a_home_relative_candidate() {
     assert_eq!(resolved.media_type, "image/png");
 }
 
+#[test]
+fn resolve_local_image_does_not_expand_another_users_home_directory() {
+    let workspace = TempDir::new().unwrap();
+    fs::write(workspace.path().join("logo.png"), b"\x89PNG\r\n\x1a\n").unwrap();
+    let logger = RecordingLogger::default();
+    let resolved = resolve_local_image("~otheruser/logo.png", Some(workspace.path()), &logger);
+    assert!(resolved.is_none());
+}
+
 #[rstest]
 fn replays_corpus(#[files("fuzz/corpus/local_image_header/*")] path: PathBuf) {
     let bytes = fs::read(path).unwrap();
