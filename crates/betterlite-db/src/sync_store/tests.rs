@@ -1,10 +1,11 @@
 #![cfg(test)]
 
-use super::{FinishClaim, SyncStore};
+use super::{FinishClaim, SyncStore, iso_format};
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use betterlite_roi::records::{
     ROIEstimate, ROIEstimateStatus, ROIPullRecord, ROIReport, ROISyncPhase, ROISyncStatus,
 };
+use chrono::NaiveDate;
 use clap::Parser;
 use deadpool_postgres::{Client, Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
@@ -559,4 +560,22 @@ async fn clear_report_is_noop_when_no_report_exists() {
     drop(client);
     pool.close();
     fixture.close_async().await.unwrap();
+}
+
+#[test]
+fn iso_format_omits_fractional_seconds_when_instant_is_exact() {
+    let instant = NaiveDate::from_ymd_opt(2026, 1, 2)
+        .unwrap()
+        .and_hms_opt(3, 4, 5)
+        .unwrap();
+    assert_eq!(iso_format(instant), "2026-01-02T03:04:05+00:00");
+}
+
+#[test]
+fn iso_format_keeps_microseconds_when_instant_has_a_fractional_part() {
+    let instant = NaiveDate::from_ymd_opt(2026, 1, 2)
+        .unwrap()
+        .and_hms_micro_opt(3, 4, 5, 123_456)
+        .unwrap();
+    assert_eq!(iso_format(instant), "2026-01-02T03:04:05.123456+00:00");
 }
