@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::sections::billing_metrics::Metering;
-use betterlite_http::otlp_client::{OtlpClient, OtlpClientError};
+use betterlite_http::otlp_client::{OtlpClient, OtlpClientError, tls};
 use opentelemetry::KeyValue;
 use opentelemetry_otlp::{
     ExporterBuildError, MetricExporter, WithExportConfig as _, WithHttpConfig as _,
@@ -66,8 +66,11 @@ pub fn build_mtls_meter_provider(
         .filter(|millis| *millis > 0)
         .map(Duration::from_millis)
         .ok_or(ExporterError::Interval { interval_ms })?;
-    let client =
-        OtlpClient::build(metering, policy).map_err(|source| ExporterError::Client { source })?;
+    let tls_config = tls::tls_config(metering)
+        .map_err(|source| OtlpClientError::Tls { source })
+        .map_err(|source| ExporterError::Client { source })?;
+    let client = OtlpClient::with_tls(tls_config, policy)
+        .map_err(|source| ExporterError::Client { source })?;
     let exporter = MetricExporter::builder()
         .with_http()
         .with_endpoint(metering.endpoint.clone())
