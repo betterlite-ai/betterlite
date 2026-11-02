@@ -346,6 +346,23 @@ fn user_budget_email_alias_is_opt_in() {
 }
 
 #[test]
+fn rate_limit_labels_require_the_failed_requests_metric() {
+    let mut settings = PrometheusLabelSettings::with_defaults();
+    settings.emit_rate_limit_labels = true;
+    let labels = get_labels("litellm_proxy_total_requests_metric", &settings).unwrap();
+    assert!(!labels.contains(&"rate_limit_category".to_owned()));
+    assert!(!labels.contains(&"rate_limit_type".to_owned()));
+}
+
+#[test]
+fn input_sequence_length_label_is_restricted_to_its_metrics() {
+    let mut settings = PrometheusLabelSettings::with_defaults();
+    settings.budget_and_length.emit_input_sequence_length = true;
+    let labels = get_labels("litellm_proxy_total_requests_metric", &settings).unwrap();
+    assert!(!labels.contains(&"input_sequence_length".to_owned()));
+}
+
+#[test]
 fn proxy_total_requests_stream_label_is_opt_in() {
     let mut settings = PrometheusLabelSettings::with_defaults();
     let metric = "litellm_proxy_total_requests_metric";
