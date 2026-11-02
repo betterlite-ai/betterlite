@@ -13,7 +13,10 @@ description: >-
   fallback codex_cli_rs/0.0.0 (Unknown 0; unknown) unknown. CHATGPT_DEFAULT_INSTRUCTIONS uses its truthy
   value or the complete pinned default prompt; do not shorten the prompt.
 
-  Resolve environment in betterlite-config/src/providers/chatgpt/headers.rs. Terminal precedence is
+  Resolve environment in betterlite-config/src/providers/chatgpt/headers.rs and expose the result as
+  the chatgpt_headers config section (crates/betterlite-config/src/sections/chatgpt_headers.rs): its
+  Section::convert reads the variables through the EnvironmentLookup it receives and calls the resolver,
+  and betterlite-openai reads config.sections.chatgpt_headers. Terminal precedence is
   TERM_PROGRAM plus TERM_PROGRAM_VERSION, WEZTERM_VERSION, any ITERM_SESSION_ID/ITERM_PROFILE/ITERM_PROFILE_NAME,
   TERM_SESSION_ID, KITTY_WINDOW_ID or kitty in TERM, ALACRITTY_SOCKET or TERM=alacritty, KONSOLE_VERSION,
   GNOME_TERMINAL_SCREEN, VTE_VERSION, WT_SESSION, TERM, then unknown. Presence of empty WezTerm/Konsole/VTE
@@ -26,8 +29,8 @@ description: >-
   Python does. Header construction receives an already normalized typed session context, so no new byte
   decoder is required. Register chatgpt_headers in both B171 dispatchers and add a call.chatgpt_headers
   seed. Compare terminal_priority, empty_terminal_version, ascii_sanitization, session_precedence,
-  model_dump_failure and instruction_override. Config test chatgpt_header_env_loads exercises every
-  environment spelling above via the real loader. Counted source is 220 nonblank/non-comment lines;
+  model_dump_failure and instruction_override. Config test chatgpt_header_env_loads in
+  sections/chatgpt_headers/tests.rs exercises every environment spelling above via the real loader. Counted source is 220 nonblank/non-comment lines;
   estimate 235 implementation/data, 190 tests, 105 adapters and 140 config/wiring lines, capped at 700.
 scope:
   paths:
@@ -42,6 +45,8 @@ scope:
     - crates/betterlite-config/src/providers/chatgpt/**
     - crates/betterlite-config/src/providers/chatgpt/headers.rs
     - crates/betterlite-config/src/providers/chatgpt/headers/**
+    - crates/betterlite-config/src/sections/chatgpt_headers.rs
+    - crates/betterlite-config/src/sections/chatgpt_headers/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/chatgpt_headers*
     - tools/oracle/src/helpers/openai/chatgpt_headers.rs
     - tools/oracle/src/helpers/openai/chatgpt_headers/**
@@ -66,7 +71,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^chatgpt::headers::/)'
     - id: chatgpt-header-config
       why: ambient terminal variables bypass the tested configuration boundary
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(chatgpt_header_env_loads)'
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::chatgpt_headers::tests::chatgpt_header_env_loads/)'
     - id: chatgpt-header-python
       why: the header helper adapter cannot be checked independently
       run: test -f tools/oracle/helpers/chatgpt_headers.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/chatgpt_headers.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
@@ -84,6 +89,7 @@ deviations: []
 out_of_scope:
   - The access token's acquisition and expiration checks are B1508/B1509; these functions only format a supplied credential.
 pitfalls:
+  - "betterlite-config keeps providers private (lib.rs has mod providers;), so other crates never reach providers::chatgpt directly. The resolved environment leaves the crate only through the chatgpt_headers section: replace its stub_section!() with a Raw struct (no YAML keys), a Settings type and a Section impl whose convert calls the resolver. sections.rs already declares and lists the section, and lib.rs, loader.rs and types.rs stay untouched."
   - 'The oracle helper for this task is pre-registered as chatgpt_headers in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/chatgpt_headers.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/chatgpt_headers.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A model_dump exception returns an empty context even when the same object also exposes a working dict method.
   - TERM_PROGRAM outranks every terminal-specific variable, including an explicitly present WEZTERM_VERSION.

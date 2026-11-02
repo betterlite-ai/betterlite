@@ -1,0 +1,16 @@
+kind: helper
+name: resolution-punctuation-unicode-and-length
+call:
+  duration_cost:
+    operation: video
+    calculator: default
+    model: veo-3
+    duration_seconds: "3"
+    custom_llm_provider: null
+    model_info:
+      output_cost_per_second: "0.1"
+      output_cost_per_second_ã1080p: "4"
+    video_resolution: "Ã1,080P"
+    raw_catalog: null
+compare: {ignore: []}
+env: {}
