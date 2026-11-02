@@ -274,3 +274,26 @@ fn prune_expired_cache_keeps_entries_within_the_ttl() {
     assert_eq!(cache.entries.len(), 1);
     assert_eq!(registry.delete_calls.lock().unwrap().len(), 0);
 }
+
+#[cfg(test)]
+#[test]
+fn prune_expired_cache_keeps_an_entry_exactly_at_the_ttl_boundary() {
+    let registry = MockRegistry::default();
+    let tool_registry = MockToolRegistry::default();
+    let sandbox = provider(None::<&MockConfig>, &registry, &tool_registry);
+    let mut cache = SandboxCache::default();
+    let base = Instant::now();
+    cache.entries.insert(
+        "at-boundary".to_owned(),
+        CacheEntry {
+            container: test_object([("id", json!("at-boundary"))]),
+            params: None,
+            last_accessed: base,
+            identity: None,
+        },
+    );
+    let now = base + Duration::from_secs(CACHE_TTL_SECONDS);
+    block_on(prune_expired_cache(&sandbox, &mut cache, &FixedClock(now)));
+    assert_eq!(cache.entries.len(), 1);
+    assert_eq!(registry.delete_calls.lock().unwrap().len(), 0);
+}
