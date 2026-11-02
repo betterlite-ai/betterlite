@@ -151,6 +151,12 @@ fn target_repr_behavior(#[case] value: Value, #[case] expected: &str) {
 #[case::url_omitted_keeps_saved(Map::new(), obj(r#"{"url": "redis://host"}"#), true)]
 #[case::url_redacted_keeps_saved(marker_field("url"), obj(r#"{"url": "redis://host"}"#), true)]
 #[case::missing_incoming_field_breaks_match(Map::new(), obj(r#"{"host": "a"}"#), false)]
+#[case::unsaved_field_does_not_block_reuse(obj(r#"{"port": 6379}"#), Map::new(), true)]
+#[case::different_url_breaks_match(
+    obj(r#"{"url": "other"}"#),
+    obj(r#"{"url": "redis://host"}"#),
+    false
+)]
 fn saved_secret_is_reusable_behavior(
     #[case] incoming: Map<String, Value>,
     #[case] saved: Map<String, Value>,
@@ -188,6 +194,14 @@ fn merge_over_saved_keeps_explicit_new_value() {
 fn merge_over_saved_drops_url_when_switching_to_discrete_target() {
     let incoming = obj(r#"{"host": "a"}"#);
     let saved = obj(r#"{"url": "redis://host"}"#);
+    let merged = merge_over_saved(&incoming, &saved);
+    assert!(!merged.contains_key("url"));
+}
+
+#[test]
+fn merge_over_saved_drops_url_when_sentinel_nodes_signal_discrete_target() {
+    let incoming = obj(r#"{"sentinel_nodes": ["a"]}"#);
+    let saved = obj(r#"{"url": "redis://saved-target"}"#);
     let merged = merge_over_saved(&incoming, &saved);
     assert!(!merged.contains_key("url"));
 }
