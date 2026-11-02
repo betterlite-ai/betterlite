@@ -1,11 +1,13 @@
 use crate::helpers::{HelperError, HelperResult};
+use betterlite_config::loader::ConfigLoader;
+use betterlite_config::types::Config;
 use betterlite_openai::credentials::{
-    CredentialsError, ExplicitCredentials, LiteLlmGlobals, get_openai_credentials,
-    infer_openai_data_residency, is_openai_backed_api_base, resolve_openai_api_base,
+    ExplicitCredentials, LiteLlmGlobals, get_openai_credentials, infer_openai_data_residency,
+    is_openai_backed_api_base, resolve_openai_api_base,
 };
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::json;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -64,7 +66,15 @@ fn invalid_input(message: String) -> Box<HelperError> {
     })
 }
 
-fn credentials(fields: &CredentialFields) -> Value {
+fn load_config(env: &BTreeMap<String, String>) -> Result<Config, Box<HelperError>> {
+    Ok(ConfigLoader {
+        lookup: env.clone(),
+    }
+    .load("")?)
+}
+
+fn credentials(fields: &CredentialFields) -> HelperResult {
+    let config = load_config(&fields.env)?;
     let explicit = ExplicitCredentials {
         api_base: None,
         api_key: fields.api_key.clone().map(SecretString::from),
@@ -76,27 +86,33 @@ fn credentials(fields: &CredentialFields) -> Value {
         openai_key: fields.litellm_openai_key.clone().map(SecretString::from),
         organization: fields.litellm_organization.clone(),
     };
-    let resolved = get_openai_credentials(explicit, globals, &fields.env);
-    json!({
+    let resolved = get_openai_credentials(
+        explicit,
+        globals,
+        &config.sections.openai_credentials,
+        config.sections.resource_sdk_settings.openai_api_key,
+    );
+    Ok(json!({
         "api_base": resolved.api_base,
         "api_key": resolved.api_key.as_ref().map(ExposeSecret::expose_secret),
         "organization": resolved.organization,
-    })
+    }))
 }
 
-fn base_url(fields: &ApiBaseFields) -> Value {
+fn base_url(fields: &ApiBaseFields) -> HelperResult {
+    let config = load_config(&fields.env)?;
     let api_base = resolve_openai_api_base(
         fields.api_base.as_deref(),
         fields.litellm_api_base.as_deref(),
-        &fields.env,
+        &config.sections.openai_credentials,
     );
-    json!({ "api_base": api_base })
+    Ok(json!({ "api_base": api_base }))
 }
 
 fn host_boundary(fields: &HostFields) -> HelperResult {
     is_openai_backed_api_base(&fields.api_base)
         .map(|accepted| json!({ "accepted": accepted }))
-        .map_err(|error: CredentialsError| invalid_input(error.to_string()))
+        .map_err(|error| invalid_input(error.to_string()))
 }
 
 fn residency(fields: &ResidencyFields) -> HelperResult {
@@ -110,8 +126,8 @@ fn residency(fields: &ResidencyFields) -> HelperResult {
 fn invoke(input: &CredentialsCall) -> HelperResult {
     match input {
         CredentialsCall::KeyAndOrganizationPrecedence(fields)
-        | CredentialsCall::EmptyOrganization(fields) => Ok(credentials(fields)),
-        CredentialsCall::BaseUrlBeforeApiBase(fields) => Ok(base_url(fields)),
+        | CredentialsCall::EmptyOrganization(fields) => credentials(fields),
+        CredentialsCall::BaseUrlBeforeApiBase(fields) => base_url(fields),
         CredentialsCall::OpenaiHostBoundary(fields) => host_boundary(fields),
         CredentialsCall::RegionalDataResidency(fields) => residency(fields),
     }

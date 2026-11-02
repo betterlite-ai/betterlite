@@ -1,11 +1,10 @@
-use betterlite_config::loader::EnvironmentLookup;
+use betterlite_config::sections::openai_credentials::Settings as OpenAiCredentialsSettings;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Serialize;
 use thiserror::Error;
 use url::Url;
 
 const OPENAI_API_HOST: &str = "api.openai.com";
-pub const DEFAULT_OPENAI_API_BASE: &str = "https://api.openai.com/v1";
 
 #[derive(Debug, Error)]
 pub enum CredentialsError {
@@ -45,38 +44,32 @@ pub struct OpenAiCredentials {
 pub fn resolve_openai_api_base(
     api_base: Option<&str>,
     litellm_api_base: Option<&str>,
-    lookup: &dyn EnvironmentLookup,
+    settings: &OpenAiCredentialsSettings,
 ) -> String {
-    let base_url = lookup.lookup("OPENAI_BASE_URL");
-    let api_base_env = lookup.lookup("OPENAI_API_BASE");
     present(api_base)
         .or_else(|| present(litellm_api_base))
-        .or_else(|| present(base_url.as_deref()))
-        .or_else(|| present(api_base_env.as_deref()))
-        .unwrap_or(DEFAULT_OPENAI_API_BASE)
-        .to_owned()
+        .map_or_else(|| settings.api_base.clone(), str::to_owned)
 }
 
 pub fn get_openai_credentials(
     explicit: ExplicitCredentials,
     globals: LiteLlmGlobals,
-    lookup: &dyn EnvironmentLookup,
+    settings: &OpenAiCredentialsSettings,
+    env_api_key: Option<SecretString>,
 ) -> OpenAiCredentials {
     let api_base = resolve_openai_api_base(
         explicit.api_base.as_deref(),
         globals.api_base.as_deref(),
-        lookup,
+        settings,
     );
-    let env_organization = lookup.lookup("OPENAI_ORGANIZATION");
     let organization = present(explicit.organization.as_deref())
         .or_else(|| present(globals.organization.as_deref()))
-        .or_else(|| present(env_organization.as_deref()))
+        .or_else(|| present(settings.organization.as_deref()))
         .map(str::to_owned);
-    let env_api_key = lookup.lookup("OPENAI_API_KEY");
     let api_key = present_secret(explicit.api_key)
         .or_else(|| present_secret(globals.api_key))
         .or_else(|| present_secret(globals.openai_key))
-        .or_else(|| present_secret(env_api_key.map(SecretString::from)));
+        .or_else(|| present_secret(env_api_key));
     OpenAiCredentials {
         api_base,
         api_key,
@@ -85,12 +78,36 @@ pub fn get_openai_credentials(
 }
 
 pub fn is_openai_backed_api_base(api_base: &str) -> Result<bool, CredentialsError> {
-    let url = Url::parse(api_base)?;
-    let Some(raw_host) = url.host_str() else {
-        return Ok(false);
-    };
-    let host = raw_host.to_ascii_lowercase();
-    Ok(host == OPENAI_API_HOST || host.ends_with(&format!(".{OPENAI_API_HOST}")))
+    let host = extract_host(api_base)?;
+    Ok(host.is_some_and(|name| {
+        name == OPENAI_API_HOST || name.ends_with(&format!(".{OPENAI_API_HOST}"))
+    }))
+}
+
+fn extract_host(api_base: &str) -> Result<Option<String>, CredentialsError> {
+    match Url::parse(api_base) {
+        Ok(url) => Ok(url.host_str().map(str::to_ascii_lowercase)),
+        Err(url::ParseError::EmptyHost | url::ParseError::RelativeUrlWithoutBase) => Ok(None),
+        Err(url::ParseError::InvalidPort) => Ok(host_ignoring_port(api_base)),
+        Err(error) => Err(CredentialsError::InvalidApiBase(error)),
+    }
+}
+
+// urlsplit().hostname never validates the port, unlike url::Url::parse; strip it and retry.
+fn host_ignoring_port(api_base: &str) -> Option<String> {
+    let (scheme, rest) = api_base.split_once("://")?;
+    let (authority, suffix) = rest
+        .find(['/', '?', '#'])
+        .map_or((rest, ""), |boundary| rest.split_at(boundary));
+    let (host, port) = authority.rsplit_once(':')?;
+    if port.is_empty() || !port.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let stripped = format!("{scheme}://{host}{suffix}");
+    Url::parse(&stripped)
+        .ok()?
+        .host_str()
+        .map(str::to_ascii_lowercase)
 }
 
 #[must_use]
