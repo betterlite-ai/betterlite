@@ -468,6 +468,14 @@ async fn catalog_snapshot(client: &Client) -> Vec<String> {
     )
     .await;
     snapshot.append(&mut indexes);
+    let mut constraints = string_rows(
+        client,
+        "SELECT conname || ':' || pg_get_constraintdef(oid) FROM pg_constraint \
+         WHERE connamespace = 'public'::regnamespace ORDER BY conname",
+        &[],
+    )
+    .await;
+    snapshot.append(&mut constraints);
     snapshot
 }
 
