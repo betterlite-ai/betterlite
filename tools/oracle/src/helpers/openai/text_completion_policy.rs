@@ -93,6 +93,7 @@ fn invoke(input: &TextCompletionCall) -> Result<Value, Box<HelperError>> {
         TextCompletionCall::TextReplyAsChat(value) => to_chat_model_response(
             value.response_object.clone(),
             value.model_response_object.clone(),
+            &uuid::Uuid::new_v4,
         )
         .map(Value::Object)
         .map_err(|error| invalid_input(error.to_string())),

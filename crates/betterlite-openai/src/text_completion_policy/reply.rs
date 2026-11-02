@@ -1,6 +1,7 @@
 use serde::Deserialize;
 use serde_json::{Map, Value};
 use thiserror::Error;
+use uuid::Uuid;
 
 #[derive(Debug, Error)]
 pub enum ReplyError {
@@ -20,8 +21,8 @@ struct TextCompletionChoice {
     logprobs: Option<Value>,
 }
 
-// A present-but-empty finish_reason (0, "", false, []) collapses to "stop" too: TextChoices only keeps it when truthy.
-fn is_blank_finish_reason(value: &Value) -> bool {
+// Python truthiness: 0, "", false, [] and {} are all blank, matching the `if value:` checks in TextChoices and Usage.
+fn is_blank(value: &Value) -> bool {
     match value {
         Value::Null | Value::Bool(false) => true,
         Value::Number(number) => number.as_f64() == Some(0.0_f64),
@@ -63,7 +64,7 @@ fn mapped_finish_reason(raw: &str) -> &'static str {
 
 // Mirrors TextChoices.__init__: a blank or missing raw value stays None rather than falling back to "stop".
 fn embedded_finish_reason(raw: Option<Value>) -> Value {
-    match raw.filter(|value| !is_blank_finish_reason(value)) {
+    match raw.filter(|value| !is_blank(value)) {
         Some(Value::String(text)) => Value::String(mapped_finish_reason(&text).to_owned()),
         Some(_) => Value::String("stop".to_owned()),
         None => Value::Null,
@@ -92,6 +93,68 @@ fn embed_original_choices(response: &mut Value) {
         let raw = fields.remove("finish_reason");
         fields.insert("finish_reason".to_owned(), embedded_finish_reason(raw));
     }
+}
+
+// Usage.__init__: each count defaults to 0 when falsy, each details object stays null unless the raw value is truthy.
+fn resolve_usage(raw: Option<Value>) -> Value {
+    let fields = match raw.filter(|value| !is_blank(value)) {
+        Some(Value::Object(fields)) => fields,
+        _ => Map::new(),
+    };
+    let mut usage = Map::new();
+    for key in ["prompt_tokens", "completion_tokens", "total_tokens"] {
+        let resolved = fields
+            .get(key)
+            .filter(|value| !is_blank(value))
+            .cloned()
+            .unwrap_or(Value::from(0));
+        usage.insert(key.to_owned(), resolved);
+    }
+    for key in ["completion_tokens_details", "prompt_tokens_details"] {
+        let resolved = fields
+            .get(key)
+            .filter(|value| !is_blank(value))
+            .cloned()
+            .unwrap_or(Value::Null);
+        usage.insert(key.to_owned(), resolved);
+    }
+    Value::Object(usage)
+}
+
+// TextCompletionResponse.__init__: a choices value that isn't a list (missing, null, or any other shape) becomes one default choice.
+fn resolve_choices(raw: Option<Value>) -> Value {
+    match raw {
+        Some(Value::Array(choices)) => Value::Array(choices),
+        _ => {
+            let mut choice = Map::new();
+            choice.insert("text".to_owned(), Value::Null);
+            choice.insert("finish_reason".to_owned(), Value::Null);
+            choice.insert("logprobs".to_owned(), Value::Null);
+            choice.insert("index".to_owned(), Value::from(0));
+            Value::Array(vec![Value::Object(choice)])
+        }
+    }
+}
+
+// TextCompletionResponse.__init__: id is only generated when missing or null, unlike usage's truthiness check.
+fn resolve_id(raw: Option<Value>, identifier: &dyn Fn() -> Uuid) -> Value {
+    match raw {
+        Some(Value::Null) | None => Value::String(format!("chatcmpl-{}", identifier())),
+        Some(value) => value,
+    }
+}
+
+// Applies TextCompletionResponse's own defaulting before convert_to_chat_model_response_object ever sees the response.
+fn normalize_response(response: &mut Value, identifier: &dyn Fn() -> Uuid) {
+    let Some(fields) = response.as_object_mut() else {
+        return;
+    };
+    let id = resolve_id(fields.remove("id"), identifier);
+    fields.insert("id".to_owned(), id);
+    let usage = resolve_usage(fields.remove("usage"));
+    fields.insert("usage".to_owned(), usage);
+    let choices = resolve_choices(fields.remove("choices"));
+    fields.insert("choices".to_owned(), choices);
 }
 
 impl TextCompletionChoice {
@@ -124,10 +187,12 @@ impl TextCompletionChoice {
 pub fn to_chat_model_response(
     response_object: Option<Value>,
     model_response_object: Option<Map<String, Value>>,
+    identifier: &dyn Fn() -> Uuid,
 ) -> Result<Map<String, Value>, ReplyError> {
     let (Some(mut response), Some(mut target)) = (response_object, model_response_object) else {
         return Err(ReplyError::MissingResponseFormat);
     };
+    normalize_response(&mut response, identifier);
     let choices_value = response.get("choices").cloned().unwrap_or(Value::Null);
     let choices: Vec<TextCompletionChoice> = serde_json::from_value(choices_value)?;
     let chat_choices = choices

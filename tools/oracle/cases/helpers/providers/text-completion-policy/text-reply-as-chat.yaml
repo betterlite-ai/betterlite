@@ -4,7 +4,6 @@ call:
   text_completion_policy:
     text_reply_as_chat:
       response_object:
-        id: cmpl-fixed
         object: text_completion
         created: 1700000000
         model: gpt-3.5-turbo-instruct
@@ -29,12 +28,6 @@ call:
           finish_reason: function_call
           index: 4
           logprobs: null
-        usage:
-          prompt_tokens: 5
-          completion_tokens: 3
-          total_tokens: 8
-          completion_tokens_details: null
-          prompt_tokens_details: null
       model_response_object:
         id: chatcmpl-fresh
         object: chat.completion
@@ -42,4 +35,9 @@ call:
         model: null
         system_fingerprint: null
 env: {}
-compare: {ignore: []}
+compare:
+  ignore:
+    - pointer: /value/id
+      why: id is omitted from response_object, so both LiteLLM and betterlite generate it from a fresh random source
+    - pointer: /value/_hidden_params/original_response/id
+      why: id is omitted from response_object, so both LiteLLM and betterlite generate it from a fresh random source
