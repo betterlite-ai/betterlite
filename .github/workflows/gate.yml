@@ -215,6 +215,13 @@ jobs:
             tests) selection=(--only tests) ;;
             task) for id in "${lint[@]}" tests mutants coverage; do selection+=(--skip "$id"); done ;;
           esac
+          if [[ $PART == task ]]; then
+            checks=$(cargo gate list "$TASK")
+            if ! awk -v skipped=" ${lint[*]} tests mutants coverage " 'NF && !index(skipped, " "$1" "){remaining=1} END{exit !remaining}' <<<"$checks"; then
+              echo "every task check belongs to another gate part"
+              exit 0
+            fi
+          fi
           cargo gate run "${TASK:-B000}" "${selection[@]}"
 
       - name: Save LiteLLM's helper answers

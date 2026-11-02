@@ -47,6 +47,8 @@ pub(crate) enum GateError {
     NoTaskFile(String),
     #[error("{0} is not an optional check in .development/checks.yaml")]
     UnknownCheck(String),
+    #[error("invalid check selection: {0}")]
+    Selection(String),
     #[error("invalid glob {pattern}: {source}")]
     Glob {
         pattern: String,

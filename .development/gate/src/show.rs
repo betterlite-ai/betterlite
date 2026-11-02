@@ -6,7 +6,7 @@ use std::fs;
 use crate::coverage;
 use crate::development::Development;
 use crate::error::GateError;
-use crate::git::{common_dir, git};
+use crate::git::{coordinator, git};
 use crate::spec::backlog::{BacklogEntry, Resolution, Status};
 use crate::spec::litellm::Litellm;
 use crate::spec::task::ReviewLevel;
@@ -133,7 +133,7 @@ fn history(development: &Development, entry: &BacklogEntry) -> Result<Vec<String
             lines.push(format!("resolved: {date}, {}", size.trim()));
         }
     }
-    let journal = common_dir(root)?.join("betterlite").join(&entry.id);
+    let journal = coordinator(root)?.join("betterlite").join(&entry.id);
     if let Ok(listing) = fs::read_dir(&journal) {
         let attempts = listing
             .filter_map(Result::ok)
