@@ -1,7 +1,7 @@
 id: B732
 milestone: M4 keys, spend and management
 title: Typed authentication principals and role normalization
-status: todo
+status: done
 depends_on: [B003, B171, B720, B856, B2313, B2314]
 file: tasks/B732-auth-identity.yaml
 covers:
@@ -18,7 +18,7 @@ covers:
   - "litellm/proxy/auth/auth_checks.py"
 parent: B052
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 533
