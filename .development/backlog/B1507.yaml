@@ -1,14 +1,14 @@
 id: B1507
 milestone: M3 providers
 title: Construct ChatGPT subscription headers and session identity
-status: todo
+status: done
 depends_on: [B002, B171, B184]
 file: tasks/B1507-chatgpt-headers.yaml
 covers:
   - "litellm/llms/chatgpt/common_utils.py"
 parent: B045
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 531

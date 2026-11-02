@@ -1,0 +1,29 @@
+kind: helper
+name: text-completion-policy-seed-reply-as-chat
+call:
+  text_completion_policy:
+    text_reply_as_chat:
+      response_object:
+        id: cmpl-fixed
+        object: text_completion
+        created: 1700000000
+        model: gpt-3.5-turbo-instruct
+        choices:
+        - text: hello
+          finish_reason: stop
+          index: 0
+          logprobs: null
+        usage:
+          prompt_tokens: 5
+          completion_tokens: 3
+          total_tokens: 8
+          completion_tokens_details: null
+          prompt_tokens_details: null
+      model_response_object:
+        id: chatcmpl-fresh
+        object: chat.completion
+        created: 1700000000
+        model: null
+        system_fingerprint: null
+env: {}
+compare: {ignore: []}

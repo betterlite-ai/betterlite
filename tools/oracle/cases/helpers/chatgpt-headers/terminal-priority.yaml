@@ -1,0 +1,36 @@
+kind: helper
+name: chatgpt-headers-terminal-priority
+call:
+  chatgpt_headers:
+    environment:
+      TERM_PROGRAM: "iTerm.app"
+      TERM_PROGRAM_VERSION: "3.5.0"
+      WEZTERM_VERSION: "20240203"
+      ITERM_SESSION_ID: "w0t0p0"
+      TERM_SESSION_ID: "abc"
+      KITTY_WINDOW_ID: "1"
+      TERM: "alacritty"
+      ALACRITTY_SOCKET: "/tmp/alacritty.sock"
+      KONSOLE_VERSION: "230400"
+      GNOME_TERMINAL_SCREEN: "/org/gnome/Terminal/screen/1"
+      VTE_VERSION: "6800"
+      WT_SESSION: "abc-def"
+    access_token: "terminal-priority-token"
+    account_id: null
+    session_id: null
+    litellm_params: absent
+env:
+  TERM_PROGRAM: "iTerm.app"
+  TERM_PROGRAM_VERSION: "3.5.0"
+  WEZTERM_VERSION: "20240203"
+  ITERM_SESSION_ID: "w0t0p0"
+  TERM_SESSION_ID: "abc"
+  KITTY_WINDOW_ID: "1"
+  TERM: "alacritty"
+  ALACRITTY_SOCKET: "/tmp/alacritty.sock"
+  KONSOLE_VERSION: "230400"
+  GNOME_TERMINAL_SCREEN: "/org/gnome/Terminal/screen/1"
+  VTE_VERSION: "6800"
+  WT_SESSION: "abc-def"
+compare:
+  ignore: []

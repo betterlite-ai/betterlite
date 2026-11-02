@@ -1351,8 +1351,10 @@ dependencies = [
  "betterlite-config",
  "betterlite-http",
  "betterlite-models",
+ "betterlite-prompts",
  "hex",
  "indexmap 2.14.2",
+ "nix",
  "rand 0.10.3",
  "rstest",
  "rust_decimal",
@@ -1366,6 +1368,7 @@ dependencies = [
  "tracing",
  "unicode-normalization",
  "url",
+ "uuid",
 ]
 
 [[package]]
