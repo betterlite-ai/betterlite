@@ -17,38 +17,50 @@ pub(crate) enum VideoCalculator {
 }
 
 #[derive(Deserialize)]
+pub(crate) struct AudioCostPerSecondInput {
+    model: String,
+    custom_llm_provider: Option<String>,
+    duration: Decimal,
+    catalog: Option<PriceRecord>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct WallClockPerSecondInput {
+    model: String,
+    custom_llm_provider: Option<String>,
+    response_time_ms: Option<Decimal>,
+    catalog: Option<PriceRecord>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct VideoInput {
+    calculator: VideoCalculator,
+    model: String,
+    duration_seconds: Decimal,
+    custom_llm_provider: Option<String>,
+    model_info: Option<PriceRecord>,
+    video_resolution: Option<String>,
+    raw_catalog: Option<PriceRecord>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct CharacterMetricInput {
+    key: String,
+    record: PriceRecord,
+    above_128k_tokens: Vec<Decimal>,
+}
+
+#[derive(Deserialize)]
 #[serde(tag = "operation")]
 pub(crate) enum Input {
     #[serde(rename = "audio_cost_per_second")]
-    AudioCostPerSecond {
-        model: String,
-        custom_llm_provider: Option<String>,
-        duration: Decimal,
-        catalog: Option<PriceRecord>,
-    },
+    AudioCostPerSecond(AudioCostPerSecondInput),
     #[serde(rename = "wall_clock_per_second")]
-    WallClockPerSecond {
-        model: String,
-        custom_llm_provider: Option<String>,
-        response_time_ms: Option<Decimal>,
-        catalog: Option<PriceRecord>,
-    },
+    WallClockPerSecond(WallClockPerSecondInput),
     #[serde(rename = "video")]
-    Video {
-        calculator: VideoCalculator,
-        model: String,
-        duration_seconds: Decimal,
-        custom_llm_provider: Option<String>,
-        model_info: Option<PriceRecord>,
-        video_resolution: Option<String>,
-        raw_catalog: Option<PriceRecord>,
-    },
+    Video(VideoInput),
     #[serde(rename = "character_metric")]
-    CharacterMetric {
-        key: String,
-        record: PriceRecord,
-        above_128k_tokens: Vec<Decimal>,
-    },
+    CharacterMetric(CharacterMetricInput),
 }
 
 // Ignores the model and provider the lookup is asked about, same as the other case-driven PriceLookup fixtures in this helper group.
@@ -88,11 +100,11 @@ impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        run_inner(input).map_err(duration_cost_error)
+        run_inner(input).map_err(|error| duration_cost_error(&error))
     }
 }
 
-fn duration_cost_error(error: DurationCostError) -> Box<crate::helpers::HelperError> {
+fn duration_cost_error(error: &DurationCostError) -> Box<crate::helpers::HelperError> {
     let class = match error {
         DurationCostError::UnknownModel { .. } => "UnknownModel",
         DurationCostError::NoCharacterOrTokenPricing { .. } => "NoCharacterOrTokenPricing",
@@ -110,92 +122,79 @@ fn duration_cost_error(error: DurationCostError) -> Box<crate::helpers::HelperEr
     })
 }
 
+fn catalog_lookup(catalog: Option<&PriceRecord>) -> CaseLookup {
+    CaseLookup {
+        effective: catalog.cloned(),
+        raw: None,
+    }
+}
+
+fn cost_pair_json(prompt_cost: Decimal, completion_cost: Decimal) -> serde_json::Value {
+    serde_json::json!({
+        "prompt_cost": prompt_cost.normalize().to_string(),
+        "completion_cost": completion_cost.normalize().to_string(),
+    })
+}
+
 fn run_inner(input: &Input) -> Result<serde_json::Value, DurationCostError> {
     match input {
-        Input::AudioCostPerSecond {
-            model,
-            custom_llm_provider,
-            duration,
-            catalog,
-        } => {
-            let lookup = CaseLookup {
-                effective: catalog.clone(),
-                raw: None,
-            };
-            let (prompt_cost, completion_cost) =
-                cost_per_second(model, custom_llm_provider.as_deref(), *duration, &lookup)?;
-            Ok(serde_json::json!({
-                "prompt_cost": prompt_cost.normalize().to_string(),
-                "completion_cost": completion_cost.normalize().to_string(),
-            }))
+        Input::AudioCostPerSecond(fields) => {
+            let lookup = catalog_lookup(fields.catalog.as_ref());
+            let (prompt_cost, completion_cost) = cost_per_second(
+                &fields.model,
+                fields.custom_llm_provider.as_deref(),
+                fields.duration,
+                &lookup,
+            )?;
+            Ok(cost_pair_json(prompt_cost, completion_cost))
         }
-        Input::WallClockPerSecond {
-            model,
-            custom_llm_provider,
-            response_time_ms,
-            catalog,
-        } => {
-            let lookup = CaseLookup {
-                effective: catalog.clone(),
-                raw: None,
-            };
+        Input::WallClockPerSecond(fields) => {
+            let lookup = catalog_lookup(fields.catalog.as_ref());
             let result = per_second_pricing_cost(
-                model,
-                custom_llm_provider.as_deref(),
-                *response_time_ms,
+                &fields.model,
+                fields.custom_llm_provider.as_deref(),
+                fields.response_time_ms,
                 &lookup,
             )?;
             Ok(
                 result.map_or(serde_json::Value::Null, |(prompt_cost, completion_cost)| {
-                    serde_json::json!({
-                        "prompt_cost": prompt_cost.normalize().to_string(),
-                        "completion_cost": completion_cost.normalize().to_string(),
-                    })
+                    cost_pair_json(prompt_cost, completion_cost)
                 }),
             )
         }
-        Input::Video {
-            calculator,
-            model,
-            duration_seconds,
-            custom_llm_provider,
-            model_info,
-            video_resolution,
-            raw_catalog,
-        } => {
-            let lookup = CaseLookup {
-                effective: model_info.clone(),
-                raw: raw_catalog.clone(),
-            };
-            let request = VideoCostRequest {
-                model,
-                duration_seconds: *duration_seconds,
-                custom_llm_provider: custom_llm_provider.as_deref(),
-                model_info: model_info.as_ref(),
-                video_resolution: video_resolution.as_deref(),
-            };
-            let cost = match calculator {
-                VideoCalculator::Openai => video_generation_cost(&request, &lookup)?,
-                VideoCalculator::Default => default_video_cost_calculator(&request, &lookup)?,
-            };
-            Ok(serde_json::json!({ "cost": cost.normalize().to_string() }))
-        }
-        Input::CharacterMetric {
-            key,
-            record,
-            above_128k_tokens,
-        } => {
-            let metric_name = match select_cost_metric_for_model(key, record)? {
+        Input::Video(fields) => run_video(fields),
+        Input::CharacterMetric(fields) => {
+            let metric_name = match select_cost_metric_for_model(&fields.key, &fields.record)? {
                 CostMetric::Character => "cost_per_character",
                 CostMetric::Token => "cost_per_token",
             };
-            let above_128k: Vec<bool> = above_128k_tokens
+            let above_128k: Vec<bool> = fields
+                .above_128k_tokens
                 .iter()
                 .map(|tokens| *tokens > Decimal::from(128_000_i32))
                 .collect();
             Ok(serde_json::json!({ "metric": metric_name, "above_128k": above_128k }))
         }
     }
+}
+
+fn run_video(fields: &VideoInput) -> Result<serde_json::Value, DurationCostError> {
+    let lookup = CaseLookup {
+        effective: fields.model_info.clone(),
+        raw: fields.raw_catalog.clone(),
+    };
+    let request = VideoCostRequest {
+        model: &fields.model,
+        duration_seconds: fields.duration_seconds,
+        custom_llm_provider: fields.custom_llm_provider.as_deref(),
+        model_info: fields.model_info.as_ref(),
+        video_resolution: fields.video_resolution.as_deref(),
+    };
+    let cost = match fields.calculator {
+        VideoCalculator::Openai => video_generation_cost(&request, &lookup),
+        VideoCalculator::Default => default_video_cost_calculator(&request, &lookup),
+    }?;
+    Ok(serde_json::json!({ "cost": cost.normalize().to_string() }))
 }
 
 mod tests;
