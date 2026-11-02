@@ -39,62 +39,50 @@ fn strip_ie_path(value: Vec<u8>) -> Vec<u8> {
     }
 }
 
-// A ';' only ends a parameter segment when the quotes seen since the previous segment start, minus escaped quotes, are balanced: _parseparam (python-multipart's vendored copy of email.message._parseparam) counts quotes the same way to skip a ';' inside a quoted value such as filename="report;v2.pdf".
-fn quote_parity_is_odd(bytes: &[u8], start: usize, end: usize) -> bool {
-    let window = bytes.get(start..end).unwrap_or(&[]);
-    let quotes = window.iter().fold(0_usize, |count, &byte| {
-        if byte == b'"' {
-            count.saturating_add(1)
-        } else {
-            count
-        }
-    });
-    let escaped_quotes = window.windows(2).fold(0_usize, |count, pair| {
-        if pair == b"\\\"" {
-            count.saturating_add(1)
-        } else {
-            count
-        }
-    });
-    (quotes & 1) != (escaped_quotes & 1)
+// Splits a segment's key and value the way _parseparam does: a lowercased, trimmed key and a trimmed value, or the whole trimmed segment as the key when there is no '='.
+fn parse_param_segment(segment: &[u8]) -> (Vec<u8>, Vec<u8>) {
+    segment.iter().position(|&byte| byte == b'=').map_or_else(
+        || (segment.trim_ascii().to_ascii_lowercase(), Vec::new()),
+        |equals| {
+            let (key, rest) = segment.split_at(equals);
+            let value = rest.get(1..).unwrap_or(&[]);
+            (
+                key.trim_ascii().to_ascii_lowercase(),
+                value.trim_ascii().to_vec(),
+            )
+        },
+    )
 }
 
-fn find_semicolon_from(bytes: &[u8], start: usize) -> Option<usize> {
-    bytes
-        .get(start..)?
-        .iter()
-        .position(|&byte| byte == b';')
-        .map(|offset| offset.saturating_add(start))
-}
-
-// Splits a Content-Disposition value the way _parseparam does: on ';', except inside a quoted segment, with each key lowercased and both the key and value trimmed.
+// Splits a Content-Disposition value the way _parseparam does: on ';', except where the non-escaped quotes seen since the previous segment start are odd (inside a quoted value such as filename="report;v2.pdf"). A single pass over disposition's bytes, driven by the for loop's own index rather than a helper's return value, so no mutation of the quote or escape check can stop the scan from reaching the end.
 fn parse_params(disposition: &[u8]) -> Vec<(Vec<u8>, Vec<u8>)> {
     let mut params = Vec::new();
-    let mut start = 0_usize;
-    while start < disposition.len() {
-        let mut end = find_semicolon_from(disposition, start);
-        while let Some(semicolon) = end {
-            if semicolon <= start || !quote_parity_is_odd(disposition, start, semicolon) {
-                break;
+    let mut segment_start = 0_usize;
+    let mut quote_count = 0_usize;
+    for (index, &byte) in disposition.iter().enumerate() {
+        match byte {
+            b'"' => {
+                let escaped = index
+                    .checked_sub(1)
+                    .and_then(|previous| disposition.get(previous))
+                    == Some(&b'\\');
+                if !escaped {
+                    quote_count = quote_count.saturating_add(1);
+                }
             }
-            end = find_semicolon_from(disposition, semicolon.saturating_add(1));
+            b';' if quote_count & 1 == 0 => {
+                params.push(parse_param_segment(
+                    disposition.get(segment_start..index).unwrap_or(&[]),
+                ));
+                segment_start = index.saturating_add(1);
+                quote_count = 0;
+            }
+            _ => {}
         }
-        let segment_end = end.unwrap_or(disposition.len());
-        let segment = disposition.get(start..segment_end).unwrap_or(&[]);
-        let entry = segment.iter().position(|&byte| byte == b'=').map_or_else(
-            || (segment.trim_ascii().to_ascii_lowercase(), Vec::new()),
-            |equals| {
-                let (key, rest) = segment.split_at(equals);
-                let value = rest.get(1..).unwrap_or(&[]);
-                (
-                    key.trim_ascii().to_ascii_lowercase(),
-                    value.trim_ascii().to_vec(),
-                )
-            },
-        );
-        params.push(entry);
-        start = segment_end.saturating_add(1);
     }
+    params.push(parse_param_segment(
+        disposition.get(segment_start..).unwrap_or(&[]),
+    ));
     params
 }
 

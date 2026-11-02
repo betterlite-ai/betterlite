@@ -402,6 +402,35 @@ fn well_past_the_combined_cap_is_rejected_without_collecting_every_part() {
     parse_body(&body, "multipart/form-data; boundary=B").unwrap_err();
 }
 
+fn mixed_parts_body(boundary: &str, field_count: usize, file_count: usize) -> Vec<u8> {
+    let mut body = Vec::new();
+    for index in 0..field_count {
+        body.extend_from_slice(
+            format!(
+                "--{boundary}\r\nContent-Disposition: form-data; name=\"f{index}\"\r\n\r\nv\r\n"
+            )
+            .as_bytes(),
+        );
+    }
+    for index in 0..file_count {
+        body.extend_from_slice(
+            format!(
+                "--{boundary}\r\nContent-Disposition: form-data; name=\"u{index}\"; filename=\"a{index}.bin\"\r\n\r\nv\r\n"
+            )
+            .as_bytes(),
+        );
+    }
+    body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
+    body
+}
+
+#[test]
+fn exactly_the_combined_cap_is_accepted() {
+    // 1000 fields plus 1000 files hits split_items's own MAX_FIELDS + MAX_FILES cap exactly, so items.len() reaches max_items without ever exceeding it, and both parse_body's own per-kind counters stay at their own caps too. This is what tells split_items's "> max_items" apart from "== max_items" or ">= max_items": either of those would reject this request too.
+    let body = mixed_parts_body("B", 1000, 1000);
+    parse_body(&body, "multipart/form-data; boundary=B").unwrap();
+}
+
 #[test]
 fn one_thousand_files_are_accepted() {
     let body = parts_body("B", 1000, Some("a.bin"));
