@@ -72,8 +72,13 @@ fn credentials_cases(#[case] case: u8) { match case {
     assert!(!is_openai_backed_api_base("https://").expect("missing host, not an error"));
     assert!(!is_openai_backed_api_base("api.openai.com/v1").expect("scheme-less, not an error"));
     assert!(is_openai_backed_api_base("https://api.openai.com:99999/v1").expect("out-of-range port, host still extracted"));
-    assert!(!is_openai_backed_api_base("https://api.openai.com:12xyz/v1").expect("non-digit port, host not extracted"));
-    assert!(matches!(is_openai_backed_api_base("http://[::1"), Err(CredentialsError::InvalidApiBase(_))));
+    assert!(is_openai_backed_api_base("https://api.openai.com:12xyz/v1").expect("non-digit port text is never inspected, host still extracted"));
+    assert!(is_openai_backed_api_base("https://foo bar.api.openai.com/v1").expect("a space in the host is not percent-decoded or rejected"));
+    assert!(is_openai_backed_api_base("https://xn--a.api.openai.com/").expect("a punycode literal is compared as raw text, not IDNA-decoded"));
+    assert!(!is_openai_backed_api_base("https://999.1.1.1/v1").expect("an out-of-range IPv4-looking host outside brackets is never validated"));
+    assert!(!is_openai_backed_api_base("https://api%2Eopenai.com/v1").expect("a percent-encoded dot stays raw text, not percent-decoded"));
+    assert!(!is_openai_backed_api_base("https://api\u{ff0e}openai.com/v1").expect("a full-width dot stays raw text, not IDNA-mapped"));
+    assert!(matches!(is_openai_backed_api_base("http://[::1"), Err(CredentialsError::InvalidApiBase)));
 },
 4 => {
     assert_eq!(infer_openai_data_residency(Some("openai"), Some("https://eu.api.openai.com/v1")), Some(DataResidency::Eu));

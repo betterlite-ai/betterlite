@@ -1,15 +1,15 @@
 use betterlite_config::sections::openai_credentials::Settings as OpenAiCredentialsSettings;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Serialize;
+use std::net::{Ipv4Addr, Ipv6Addr};
 use thiserror::Error;
-use url::Url;
 
 const OPENAI_API_HOST: &str = "api.openai.com";
 
 #[derive(Debug, Error)]
 pub enum CredentialsError {
     #[error("api_base is not a valid URL")]
-    InvalidApiBase(#[from] url::ParseError),
+    InvalidApiBase,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -84,30 +84,106 @@ pub fn is_openai_backed_api_base(api_base: &str) -> Result<bool, CredentialsErro
     }))
 }
 
+// Mirrors urlsplit(api_base).hostname: a textual split, no percent-decoding or IDNA mapping.
 fn extract_host(api_base: &str) -> Result<Option<String>, CredentialsError> {
-    match Url::parse(api_base) {
-        Ok(url) => Ok(url.host_str().map(str::to_ascii_lowercase)),
-        Err(url::ParseError::EmptyHost | url::ParseError::RelativeUrlWithoutBase) => Ok(None),
-        Err(url::ParseError::InvalidPort) => Ok(host_ignoring_port(api_base)),
-        Err(error) => Err(CredentialsError::InvalidApiBase(error)),
+    let Some(netloc) = split_netloc(api_base) else {
+        return Ok(None);
+    };
+    if netloc.is_empty() {
+        return Ok(None);
     }
+    let host = raw_host(netloc)?;
+    if host.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(lowercase_host(host)))
 }
 
-// urlsplit().hostname never validates the port, unlike url::Url::parse; strip it and retry.
-fn host_ignoring_port(api_base: &str) -> Option<String> {
-    let (scheme, rest) = api_base.split_once("://")?;
-    let (authority, suffix) = rest
-        .find(['/', '?', '#'])
-        .map_or((rest, ""), |boundary| rest.split_at(boundary));
-    let (host, port) = authority.rsplit_once(':')?;
-    if port.is_empty() || !port.bytes().all(|byte| byte.is_ascii_digit()) {
+fn split_netloc(api_base: &str) -> Option<&str> {
+    let after_scheme = find_scheme_colon(api_base).map_or(api_base, |colon| {
+        let (_, rest) = api_base.split_at(colon.saturating_add(1));
+        rest
+    });
+    let rest = after_scheme.strip_prefix("//")?;
+    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let (netloc, _) = rest.split_at(end);
+    Some(netloc)
+}
+
+fn find_scheme_colon(api_base: &str) -> Option<usize> {
+    let colon = api_base.find(':')?;
+    if colon == 0 {
         return None;
     }
-    let stripped = format!("{scheme}://{host}{suffix}");
-    Url::parse(&stripped)
-        .ok()?
-        .host_str()
-        .map(str::to_ascii_lowercase)
+    let (prefix, _) = api_base.split_at(colon);
+    let mut chars = prefix.chars();
+    if !chars.next()?.is_ascii_alphabetic() {
+        return None;
+    }
+    let is_scheme = prefix
+        .chars()
+        .all(|letter| letter.is_ascii_alphanumeric() || matches!(letter, '+' | '-' | '.'));
+    is_scheme.then_some(colon)
+}
+
+fn raw_host(netloc: &str) -> Result<&str, CredentialsError> {
+    let has_open = netloc.contains('[');
+    let has_close = netloc.contains(']');
+    if has_open != has_close {
+        return Err(CredentialsError::InvalidApiBase);
+    }
+    let hostinfo = netloc.rsplit_once('@').map_or(netloc, |(_, after)| after);
+    if !has_open {
+        return Ok(hostinfo
+            .split_once(':')
+            .map_or(hostinfo, |(host, _port)| host));
+    }
+    let (before, bracketed) = hostinfo
+        .split_once('[')
+        .ok_or(CredentialsError::InvalidApiBase)?;
+    if !before.is_empty() {
+        return Err(CredentialsError::InvalidApiBase);
+    }
+    let (hostname, after) = bracketed
+        .split_once(']')
+        .ok_or(CredentialsError::InvalidApiBase)?;
+    if !after.is_empty() && !after.starts_with(':') {
+        return Err(CredentialsError::InvalidApiBase);
+    }
+    validate_bracketed_host(hostname)?;
+    Ok(hostname)
+}
+
+// _check_bracketed_host: an IPvFuture (v<hex>.<rest>) or non-IPv4 address; a bracketed IPv4 literal is rejected.
+fn validate_bracketed_host(hostname: &str) -> Result<(), CredentialsError> {
+    if let Some(future) = hostname.strip_prefix('v') {
+        let mut parts = future.splitn(2, '.');
+        let version = parts.next().unwrap_or("");
+        let rest = parts.next();
+        let valid_future = !version.is_empty()
+            && version.bytes().all(|byte| byte.is_ascii_hexdigit())
+            && rest.is_some_and(|text| !text.is_empty());
+        return valid_future
+            .then_some(())
+            .ok_or(CredentialsError::InvalidApiBase);
+    }
+    if hostname.parse::<Ipv4Addr>().is_ok() {
+        return Err(CredentialsError::InvalidApiBase);
+    }
+    hostname
+        .parse::<Ipv6Addr>()
+        .map(|_ignored| ())
+        .map_err(|_ignored| CredentialsError::InvalidApiBase)
+}
+
+// hostname(): lowercase everything before a zone-id separator, keeping the zone id as written.
+fn lowercase_host(host: &str) -> String {
+    let (name, zone) = host.split_once('%').unwrap_or((host, ""));
+    if zone.is_empty() {
+        name.to_ascii_lowercase()
+    } else {
+        format!("{}%{zone}", name.to_ascii_lowercase())
+    }
 }
 
 #[must_use]
@@ -118,9 +194,7 @@ pub fn infer_openai_data_residency(
     if custom_llm_provider != Some("openai") {
         return None;
     }
-    let host = present(api_base)
-        .and_then(|base| Url::parse(base).ok())
-        .and_then(|url| url.host_str().map(str::to_ascii_lowercase))?;
+    let host = extract_host(present(api_base)?).ok().flatten()?;
     match host.as_str() {
         "eu.api.openai.com" => Some(DataResidency::Eu),
         "us.api.openai.com" => Some(DataResidency::Us),
