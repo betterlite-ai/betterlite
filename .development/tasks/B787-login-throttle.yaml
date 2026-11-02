@@ -130,7 +130,6 @@ scope:
   paths:
     - crates/betterlite-server/src/login_throttle.rs
     - crates/betterlite-server/src/login_throttle/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/src/helpers/server/login_throttle.rs
     - tools/oracle/src/helpers/server/login_throttle/**

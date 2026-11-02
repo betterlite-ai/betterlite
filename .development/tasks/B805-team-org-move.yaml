@@ -65,7 +65,6 @@ scope:
   paths:
     - crates/betterlite-server/src/team_org_move.rs
     - crates/betterlite-server/src/team_org_move/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/src/helpers/server/team_org_move.rs
     - tools/oracle/src/helpers/server/team_org_move/**
@@ -74,6 +73,7 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/team-org-move/**
     - tools/oracle/fuzz/corpus/helper_case/team-org-move-*
+    - crates/betterlite-server/src/team_org_move/fixtures.rs
     - crates/betterlite-server/src/team_org_move/fixtures/**
   lint_tables: false
 references:

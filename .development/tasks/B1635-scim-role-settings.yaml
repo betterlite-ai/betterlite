@@ -28,7 +28,6 @@ description: >-
 scope:
   paths:
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/scim_role_settings.rs
     - crates/betterlite-server/src/scim_role_settings/**
     - crates/betterlite-config/src/scim_role_settings.rs

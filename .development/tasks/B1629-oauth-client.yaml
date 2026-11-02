@@ -35,7 +35,6 @@ scope:
     - crates/betterlite-auth/fuzz/Cargo.toml
     - crates/betterlite-auth/fuzz/fuzz_targets/oauth_provider_document.rs
     - crates/betterlite-auth/fuzz/corpus/oauth_provider_document/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/google_sso.rs
     - crates/betterlite-server/src/google_sso/**
     - crates/betterlite-config/src/google_sso.rs

@@ -1,7 +1,7 @@
 id: B3122
 title: Record and retrieve caller-scoped provider cache observations
 description: >-
-  Build strict observation decoding and the native success-event observer in crates/betterlite-server::hooks,
+  Build strict observation decoding in betterlite-anthropic's observation_parsing and the native success-event observer in betterlite-logging's cache_observer,
   reusing the shared callback registry and injected cache/clock handles.
   The observer decodes successful native Anthropic responses to extract exact-before-lookback prefix evidence,
   validates fingerprints and cache token counts, stores observations with request-start expiry windows,
@@ -79,22 +79,22 @@ checks:
   commands:
     - id: cache-observation-tests
       why: CacheObservation, _cache_key, or _read_exact logic fails
-      run: cargo nextest run --locked -p betterlite-server -E 'test(/^hooks::cache_observation::tests::/)' --no-tests=fail
+      run: cargo nextest run --locked -p betterlite-anthropic -p betterlite-logging -E 'test(/^(observation_parsing|cache_observer)::tests::/)' --no-tests=fail
     - id: parse-observed-cache-tests
       why: parse_observed_cache validation or reconstruction logic fails
-      run: cargo nextest run --locked -p betterlite-server -E 'test(/^hooks::cache_observation::tests::.*parse_observed/)' --no-tests=fail
+      run: cargo nextest run --locked -p betterlite-anthropic -p betterlite-logging -E 'test(/^(observation_parsing|cache_observer)::tests::.*parse_observed/)' --no-tests=fail
     - id: observer-init-tests
       why: PromptCacheObserver initialization fails
-      run: cargo nextest run --locked -p betterlite-server -E 'test(/^hooks::cache_observation::tests::.*init/)' --no-tests=fail
+      run: cargo nextest run --locked -p betterlite-anthropic -p betterlite-logging -E 'test(/^(observation_parsing|cache_observer)::tests::.*init/)' --no-tests=fail
     - id: observer-event-tests
       why: async_log_success_event event validation fails
-      run: cargo nextest run --locked -p betterlite-server -E 'test(/^hooks::cache_observation::tests::.*event/)' --no-tests=fail
+      run: cargo nextest run --locked -p betterlite-anthropic -p betterlite-logging -E 'test(/^(observation_parsing|cache_observer)::tests::.*event/)' --no-tests=fail
     - id: observer-read-only-tests
       why: read-only hit (cache_creation_tokens == 0) evidence validation fails
-      run: cargo nextest run --locked -p betterlite-server -E 'test(/^hooks::cache_observation::tests::.*read_only/)' --no-tests=fail
+      run: cargo nextest run --locked -p betterlite-anthropic -p betterlite-logging -E 'test(/^(observation_parsing|cache_observer)::tests::.*read_only/)' --no-tests=fail
     - id: observer-storage-tests
       why: observation storage and TTL logic fails
-      run: cargo nextest run --locked -p betterlite-server -E 'test(/^hooks::cache_observation::tests::.*storage/)' --no-tests=fail
+      run: cargo nextest run --locked -p betterlite-anthropic -p betterlite-logging -E 'test(/^(observation_parsing|cache_observer)::tests::.*storage/)' --no-tests=fail
 oracle_cases: []
 deviations:
   - what: "parse_observed_cache decodes request and response as strict Pydantic models instead of LiteLLM's manual field access."

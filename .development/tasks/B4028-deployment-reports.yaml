@@ -50,10 +50,10 @@ checks:
   commands:
     - id: deployment-metrics-tests
       why: deployment metrics update and top-five selection behavior does not match LiteLLM
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^deployment_metrics::/) or test(/^daily_report_scheduler::/) or test(/^deployment_success_logging::/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^alerting::deployment_reports::deployment_metrics::/) or test(/^alerting::deployment_reports::daily_report_scheduler::/) or test(/^alerting::deployment_reports::deployment_success_logging::/)'
     - id: daily-report-tests
       why: daily report formatting and cache reset behavior does not match LiteLLM
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_report::/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^alerting::deployment_reports::daily_report::/)'
 oracle_cases: []
 deviations:
   - what: Metric timestamps use an injected clock provider instead of litellm.utils.get_utc_datetime.

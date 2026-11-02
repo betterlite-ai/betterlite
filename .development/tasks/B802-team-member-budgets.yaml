@@ -79,7 +79,6 @@ scope:
   paths:
     - crates/betterlite-server/src/team_member_budgets.rs
     - crates/betterlite-server/src/team_member_budgets/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/src/helpers/server/team_member_budgets.rs
     - tools/oracle/src/helpers/server/team_member_budgets/**
@@ -88,6 +87,7 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/team-member-budgets/**
     - tools/oracle/fuzz/corpus/helper_case/team-member-budgets-*
+    - crates/betterlite-server/src/team_member_budgets/fixtures.rs
     - crates/betterlite-server/src/team_member_budgets/fixtures/**
   lint_tables: false
 references:

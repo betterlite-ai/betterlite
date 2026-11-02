@@ -31,7 +31,6 @@ description: >-
   120 helper adapters and 100 fuzz/cases, within 800 changed lines.
 scope:
   paths:
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/release_info.rs
     - crates/betterlite-server/src/release_info/**
     - crates/betterlite-server/fuzz/Cargo.toml

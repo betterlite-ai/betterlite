@@ -36,6 +36,7 @@ pub struct PassthroughLogPayload {
     pub cost_per_request: Option<Decimal>,
 }
 
+pub mod route_registration;
 mod tests;
 
 #[must_use]

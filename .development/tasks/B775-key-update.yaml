@@ -81,7 +81,6 @@ scope:
   paths:
     - crates/betterlite-server/src/key_update.rs
     - crates/betterlite-server/src/key_update/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes.rs
     - crates/betterlite-server/src/routes/**
@@ -90,6 +89,7 @@ scope:
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/key-update/**
+    - crates/betterlite-server/src/key_update/fixtures.rs
     - crates/betterlite-server/src/key_update/fixtures/**
     - tools/oracle/helpers/b775.py
     - tools/oracle/helpers/b775/**

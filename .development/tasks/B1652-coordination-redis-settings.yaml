@@ -33,7 +33,6 @@ description: >-
   180 oracle/fuzz and 90 config-test lines within 775 changed lines.
 scope:
   paths:
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/coordination_redis_settings.rs
     - crates/betterlite-server/src/coordination_redis_settings/**
     - crates/betterlite-server/fuzz/Cargo.toml

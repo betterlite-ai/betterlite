@@ -42,7 +42,6 @@ scope:
   paths:
     - crates/betterlite-server/src/team_model_cleanup.rs
     - crates/betterlite-server/src/team_model_cleanup/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/src/helpers/server/team_model_cleanup.rs
     - tools/oracle/src/helpers/server/team_model_cleanup/**

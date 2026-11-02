@@ -37,7 +37,6 @@ description: >-
   composition budget 230 implementation, 220 tests and 180 HTTP/fuzz material, cap 700.
 scope:
   paths:
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/settings_api.rs
     - crates/betterlite-server/src/settings_api/**
     - crates/betterlite-server/src/callback_metadata_routes.rs

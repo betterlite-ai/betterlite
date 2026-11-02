@@ -27,8 +27,6 @@ description: >-
 
 scope:
   paths:
-    - crates/betterlite-server/src/lib.rs
-    - crates/betterlite-server/src/agent_endpoints/mod.rs
     - crates/betterlite-server/src/agent_endpoints/admin_actions.rs
     - crates/betterlite-server/src/agent_endpoints/admin_actions/**
     - crates/betterlite-server/src/agent_endpoints/admin_actions/tests.rs
@@ -37,7 +35,6 @@ scope:
     - tools/oracle/helpers/b4786/**
     - tools/oracle/src/helpers/server/b4786.rs
     - tools/oracle/src/helpers/server/b4786/**
-    - crates/betterlite-server/src/agent_endpoints/mod/**
     - crates/betterlite-server/src/agent_endpoints/admin_actions/tests/**
   lint_tables: false
 
@@ -135,16 +132,16 @@ checks:
       run: grep -qE '_check_agent_management_permission|check_feature_access_for_user' crates/betterlite-server/src/agent_endpoints/admin_actions.rs
     - id: http-kill-switch-missing-agent
       why: The kill_switch route does not reject missing agents with 404.
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_admin_actions::tests::.*kill.*404/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_endpoints::admin_actions::tests::.*kill.*404/)'
     - id: http-kill-switch-no-config
       why: The kill_switch route does not reject agents without kill_switch config with 400.
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_admin_actions::tests::.*kill.*no.*config/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_endpoints::admin_actions::tests::.*kill.*no.*config/)'
     - id: http-kill-switch-success
       why: The kill_switch route does not fire the kill switch and return 200 on success.
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_admin_actions::tests::.*kill.*success/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_endpoints::admin_actions::tests::.*kill.*success/)'
     - id: http-kill-switch-failure
       why: The kill_switch route does not return 502 on webhook failure.
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_admin_actions::tests::.*kill.*failure.*502/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_endpoints::admin_actions::tests::.*kill.*failure.*502/)'
     - id: http-make-public-single-route
       why: The make_agent_public route is not registered or missing the decorator.
       run: grep -qE '@router.post.*make_public.*{agent_id}|fn make_agent_public' crates/betterlite-server/src/agent_endpoints/admin_actions.rs
@@ -153,16 +150,16 @@ checks:
       run: grep -qE 'PROXY_ADMIN|Only proxy admins can update public model groups' crates/betterlite-server/src/agent_endpoints/admin_actions.rs
     - id: http-make-public-single-missing-agent
       why: The make_agent_public route does not reject missing agents with 404.
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_admin_actions::tests::.*make.*single.*404/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_endpoints::admin_actions::tests::.*make.*single.*404/)'
     - id: http-make-public-single-duplicate
       why: The make_agent_public route does not reject already-public agents with 400.
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_admin_actions::tests::.*make.*single.*duplicate|already/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_endpoints::admin_actions::tests::.*make.*single.*duplicate|already/)'
     - id: http-make-public-single-success
       why: The make_agent_public route does not append and return 200 on success.
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_admin_actions::tests::.*make.*single.*success/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_endpoints::admin_actions::tests::.*make.*single.*success/)'
     - id: http-make-public-single-db-missing
       why: The make_agent_public route does not raise 500 db_not_connected when prisma_client is None.
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_admin_actions::tests::.*make.*single.*(db.*missing|not.*connected)/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_endpoints::admin_actions::tests::.*make.*single.*(db.*missing|not.*connected)/)'
     - id: http-make-public-bulk-route
       why: The make_agents_public route is not registered or missing the decorator.
       run: grep -qE '@router.post.*make_public[^/]*$|fn make_agents_public' crates/betterlite-server/src/agent_endpoints/admin_actions.rs
@@ -171,13 +168,13 @@ checks:
       run: grep -qE 'PROXY_ADMIN|Only proxy admins can update public model groups' crates/betterlite-server/src/agent_endpoints/admin_actions.rs
     - id: http-make-public-bulk-validate-all
       why: The make_agents_public route does not validate all agents before any write.
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_admin_actions::tests::.*make.*bulk.*validate/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_endpoints::admin_actions::tests::.*make.*bulk.*validate/)'
     - id: http-make-public-bulk-success
       why: The make_agents_public route does not replace and return 200 on success.
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_admin_actions::tests::.*make.*bulk.*success/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_endpoints::admin_actions::tests::.*make.*bulk.*success/)'
     - id: http-make-public-bulk-db-missing
       why: The make_agents_public route does not raise 500 db_not_connected when prisma_client is None.
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_admin_actions::tests::.*make.*bulk.*(db.*missing|not.*connected)/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_endpoints::admin_actions::tests::.*make.*bulk.*(db.*missing|not.*connected)/)'
     - id: oracle-management-routes
       why: >-
         Kill-switch triggering, public agent management, error status codes, error shapes or permission

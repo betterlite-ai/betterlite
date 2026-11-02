@@ -67,7 +67,6 @@ scope:
   paths:
     - crates/betterlite-server/src/team_callback_policy.rs
     - crates/betterlite-server/src/team_callback_policy/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/src/helpers/server/team_callback_policy.rs
     - tools/oracle/src/helpers/server/team_callback_policy/**
