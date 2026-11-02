@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::budget::FlattenBudget;
-use super::flatten_and_drop_schema;
+use super::drop_non_python_regex_patterns;
 use crate::arguments::json::{Json, Object};
 
 const COMBINATORS: [&str; 3] = ["allOf", "anyOf", "oneOf"];
@@ -20,7 +20,8 @@ pub fn flatten_top_level(schema: &Object) -> Object {
 
 #[must_use]
 pub fn flatten_and_drop(schema: &Object) -> Object {
-    let filtered = flatten_and_drop_schema(schema);
+    let without_regex = drop_non_python_regex_patterns(schema);
+    let filtered = flatten_top_level(&without_regex);
     flatten_top_level(&filtered)
 }
 
