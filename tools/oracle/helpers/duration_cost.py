@@ -3,6 +3,7 @@ from decimal import Decimal
 from typing import TypeAlias, cast
 from unittest.mock import patch
 
+import litellm
 import litellm.llms.openai.cost_calculation as openai_cost_calculation
 from litellm import cost_calculator
 from litellm.cost_calculator import (
@@ -38,6 +39,22 @@ def _fixture_model_info(catalog: dict[str, Json] | None) -> Callable[..., ModelI
         return cast(ModelInfoBase, catalog)
 
     return lookup
+
+
+# Reports every key present and maps it to the same record, mirroring
+# betterlite's raw_cost_map_entry fixture, which ignores the key it is asked about.
+class _AnyKeyCatalog(dict[str, Json]):
+    def __init__(self, record: dict[str, Json] | None) -> None:
+        super().__init__()
+        self._record = record
+
+    def __contains__(self, key: object) -> bool:
+        return self._record is not None
+
+    def __getitem__(self, key: str) -> Json:
+        if self._record is None:
+            raise KeyError(key)
+        return self._record
 
 
 def _run_audio_cost_per_second(input_value: dict[str, Json]) -> Json:
@@ -86,15 +103,20 @@ def _run_video(input_value: dict[str, Json]) -> Json:
     custom_llm_provider = cast("str | None", input_value.get("custom_llm_provider"))
     model_info = _dict_or_none(input_value.get("model_info"))
     video_resolution = cast("str | None", input_value.get("video_resolution"))
+    raw_catalog = _dict_or_none(input_value.get("raw_catalog"))
 
     calculate = video_generation_cost if calculator == "openai" else default_video_cost_calculator
-    cost = calculate(
-        model=model,
-        duration_seconds=float(duration_seconds),
-        custom_llm_provider=custom_llm_provider,
-        model_info=cast("ModelInfo | None", model_info),
-        video_resolution=video_resolution,
-    )
+    with (
+        patch.object(openai_cost_calculation, "get_model_info", _fixture_model_info(raw_catalog)),
+        patch.object(litellm, "model_cost", _AnyKeyCatalog(raw_catalog)),
+    ):
+        cost = calculate(
+            model=model,
+            duration_seconds=float(duration_seconds),
+            custom_llm_provider=custom_llm_provider,
+            model_info=cast("ModelInfo | None", model_info),
+            video_resolution=video_resolution,
+        )
     return {"cost": _decimal_str(cost)}
 
 

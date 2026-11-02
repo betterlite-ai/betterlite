@@ -1,6 +1,6 @@
 use betterlite_models::duration_cost::character::{CostMetric, select_cost_metric_for_model};
 use betterlite_models::duration_cost::error::DurationCostError;
-use betterlite_models::duration_cost::openai_audio::{cost_per_second, video_generation_cost};
+use betterlite_models::duration_cost::openai_seconds::{cost_per_second, video_generation_cost};
 use betterlite_models::duration_cost::video::{VideoCostRequest, default_video_cost_calculator};
 use betterlite_models::duration_cost::wall_clock::per_second_pricing_cost;
 use betterlite_models::price_lookup::{PriceLookup, PriceRecord, PricedModel};
@@ -186,8 +186,9 @@ fn run_inner(input: &Input) -> Result<serde_json::Value, DurationCostError> {
 }
 
 fn run_video(fields: &VideoInput) -> Result<serde_json::Value, DurationCostError> {
+    // request.model_info, when supplied, bypasses both lookups; raw_catalog alone fixtures the fallback catalog either calculator reads.
     let lookup = CaseLookup {
-        effective: fields.model_info.clone(),
+        effective: fields.raw_catalog.clone(),
         raw: fields.raw_catalog.clone(),
     };
     let request = VideoCostRequest {
