@@ -1,0 +1,19 @@
+kind: helper
+name: system-placement-mid-system-unflagged
+call:
+  system_placement:
+    operation: place_mid_conversation_system
+    supports_mid_conversation_system: false
+    messages:
+      - role: user
+        content: Look up the invoice total.
+      - role: system
+        content: Report amounts in USD.
+      - role: tool
+        tool_call_id: call_1
+        content: "$42.00"
+      - role: user
+        content: Thanks, what about tax?
+env: {}
+compare:
+  ignore: []
