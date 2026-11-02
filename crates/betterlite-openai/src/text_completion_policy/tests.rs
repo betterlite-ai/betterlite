@@ -179,12 +179,9 @@ fn text_completion_policy_cases(#[case] case: u8) {
 
             let target = Map::from_iter([(String::from("object"), json!("text_completion"))]);
             let response = json!({"choices": [], "id": "cmpl-1"});
-            let result = reply::to_chat_model_response(
-                Some(response.clone()),
-                Some(target),
-                &fixed_identifier,
-            )
-            .expect("empty choices accepted");
+            let result =
+                reply::to_chat_model_response(Some(response), Some(target), &fixed_identifier)
+                    .expect("empty choices accepted");
             assert_eq!(result["choices"], json!([]));
             assert_eq!(result["id"], json!("cmpl-1"));
             assert_eq!(result["object"], json!("text_completion"));
@@ -412,7 +409,7 @@ fn text_completion_policy_cases(#[case] case: u8) {
             )]);
             let response_three = json!({"choices": []});
             let result_five = reply::to_chat_model_response(
-                Some(response_three.clone()),
+                Some(response_three),
                 Some(target_with_hidden_params),
                 &fixed_identifier,
             )

@@ -107,7 +107,7 @@ fn resolve_usage(raw: Option<Value>) -> Value {
             .get(key)
             .filter(|value| !is_blank(value))
             .cloned()
-            .unwrap_or(Value::from(0));
+            .unwrap_or_else(|| Value::from(0_i64));
         usage.insert(key.to_owned(), resolved);
     }
     for key in ["completion_tokens_details", "prompt_tokens_details"] {
@@ -123,17 +123,15 @@ fn resolve_usage(raw: Option<Value>) -> Value {
 
 // TextCompletionResponse.__init__: a choices value that isn't a list (missing, null, or any other shape) becomes one default choice.
 fn resolve_choices(raw: Option<Value>) -> Value {
-    match raw {
-        Some(Value::Array(choices)) => Value::Array(choices),
-        _ => {
-            let mut choice = Map::new();
-            choice.insert("text".to_owned(), Value::Null);
-            choice.insert("finish_reason".to_owned(), Value::Null);
-            choice.insert("logprobs".to_owned(), Value::Null);
-            choice.insert("index".to_owned(), Value::from(0));
-            Value::Array(vec![Value::Object(choice)])
-        }
+    if let Some(Value::Array(choices)) = raw {
+        return Value::Array(choices);
     }
+    let mut choice = Map::new();
+    choice.insert("text".to_owned(), Value::Null);
+    choice.insert("finish_reason".to_owned(), Value::Null);
+    choice.insert("logprobs".to_owned(), Value::Null);
+    choice.insert("index".to_owned(), Value::from(0_i64));
+    Value::Array(vec![Value::Object(choice)])
 }
 
 // TextCompletionResponse.__init__: id is only generated when missing or null, unlike usage's truthiness check.
