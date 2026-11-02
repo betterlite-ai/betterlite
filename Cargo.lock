@@ -1006,6 +1006,7 @@ dependencies = [
  "betterlite-rate-limit",
  "betterlite-secrets",
  "dec_from_char",
+ "fancy-regex",
  "indexmap 2.14.2",
  "insta",
  "netrc-rs",

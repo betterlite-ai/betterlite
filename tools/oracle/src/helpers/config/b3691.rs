@@ -1,3 +1,5 @@
+mod tests;
+
 pub(crate) struct Op;
 
 impl crate::helpers::Helper for Op {

@@ -1,0 +1,33 @@
+{
+  "kind": "helper",
+  "name": "category-json-auto-display-name",
+  "call": {
+    "b3691": {
+      "function": "categories",
+      "roots": [
+        [
+          {
+            "filename": "harm_toxic_abuse.json",
+            "content": "{}"
+          },
+          {
+            "filename": "other_test.json",
+            "content": "not parsed"
+          },
+          {
+            "filename": "mixed-UP_42title.json",
+            "content": ""
+          },
+          {
+            "filename": "ignored.txt",
+            "content": ""
+          }
+        ]
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

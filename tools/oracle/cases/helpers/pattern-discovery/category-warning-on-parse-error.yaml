@@ -1,0 +1,25 @@
+{
+  "kind": "helper",
+  "name": "category-warning-on-parse-error",
+  "call": {
+    "b3691": {
+      "function": "categories",
+      "roots": [
+        [
+          {
+            "filename": "broken.yaml",
+            "content": "category_name: [unterminated"
+          },
+          {
+            "filename": "valid.yaml",
+            "content": "category_name: valid\n"
+          }
+        ]
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
