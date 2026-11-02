@@ -49,6 +49,19 @@ scope:
     - tools/oracle/helpers/b4746/**
     - tools/oracle/src/helpers/core_ops/b4746.rs
     - tools/oracle/src/helpers/core_ops/b4746/**
+    - tools/oracle/cases/helpers/mcp-client-resources/get-prompt-error.yaml
+    - tools/oracle/cases/helpers/mcp-client-resources/get-prompt-success.yaml
+    - tools/oracle/cases/helpers/mcp-client-resources/list-prompts-cursor-exhaustion.yaml
+    - tools/oracle/cases/helpers/mcp-client-resources/list-prompts-deadline-expiration.yaml
+    - tools/oracle/cases/helpers/mcp-client-resources/list-prompts-method-not-found.yaml
+    - tools/oracle/cases/helpers/mcp-client-resources/list-prompts-unsupported.yaml
+    - tools/oracle/cases/helpers/mcp-client-resources/list-resources-cursor-exhaustion.yaml
+    - tools/oracle/cases/helpers/mcp-client-resources/list-resources-method-not-found.yaml
+    - tools/oracle/cases/helpers/mcp-client-resources/list-resources-unsupported.yaml
+    - tools/oracle/cases/helpers/mcp-client-resources/list-resource-templates-method-not-found.yaml
+    - tools/oracle/cases/helpers/mcp-client-resources/list-resource-templates-unsupported.yaml
+    - tools/oracle/cases/helpers/mcp-client-resources/read-resource-error.yaml
+    - tools/oracle/cases/helpers/mcp-client-resources/read-resource-success.yaml
   lint_tables: false
 
 references:

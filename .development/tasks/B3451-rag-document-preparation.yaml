@@ -49,6 +49,21 @@ scope:
     - tools/oracle/helpers/b3451/**
     - tools/oracle/src/helpers/core_ops/b3451.rs
     - tools/oracle/src/helpers/core_ops/b3451/**
+    - tools/oracle/cases/ingestion_state/chunk-binary-empty.yaml
+    - tools/oracle/cases/ingestion_state/chunk-config-custom.yaml
+    - tools/oracle/cases/ingestion_state/chunk-config-defaults.yaml
+    - tools/oracle/cases/ingestion_state/chunk-config-invalid.yaml
+    - tools/oracle/cases/ingestion_state/chunk-pdf-fallback.yaml
+    - tools/oracle/cases/ingestion_state/chunk-utf8-text.yaml
+    - tools/oracle/cases/ingestion_state/credential-merge.yaml
+    - tools/oracle/cases/ingestion_state/init-options.yaml
+    - tools/oracle/cases/ingestion_state/ocr-disabled.yaml
+    - tools/oracle/cases/ingestion_state/ocr-image-detection.yaml
+    - tools/oracle/cases/ingestion_state/ocr-mistral-model.yaml
+    - tools/oracle/cases/ingestion_state/upload-filedata.yaml
+    - tools/oracle/cases/ingestion_state/upload-file-id.yaml
+    - tools/oracle/cases/ingestion_state/upload-missing-source.yaml
+    - tools/oracle/cases/ingestion_state/upload-url-fetch.yaml
   lint_tables: false
 
 references:

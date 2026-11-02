@@ -16,6 +16,17 @@ scope:
     - tools/oracle/helpers/b4677/**
     - tools/oracle/src/helpers/server/b4677.rs
     - tools/oracle/src/helpers/server/b4677/**
+    - tools/oracle/cases/mcp/byok-consent/get-basic.yaml
+    - tools/oracle/cases/mcp/byok-consent/get-invalid-redirect-uri.yaml
+    - tools/oracle/cases/mcp/byok-consent/get-invalid-response-type.yaml
+    - tools/oracle/cases/mcp/byok-consent/get-no-code-challenge.yaml
+    - tools/oracle/cases/mcp/byok-consent/get-with-server-id.yaml
+    - tools/oracle/cases/mcp/byok-consent/post-at-capacity.yaml
+    - tools/oracle/cases/mcp/byok-consent/post-auth-code-limit.yaml
+    - tools/oracle/cases/mcp/byok-consent/post-basic.yaml
+    - tools/oracle/cases/mcp/byok-consent/post-byok-token-rejected.yaml
+    - tools/oracle/cases/mcp/byok-consent/post-no-session.yaml
+    - tools/oracle/cases/mcp/byok-consent/post-revoked-session.yaml
   lint_tables: false
 
 references:
