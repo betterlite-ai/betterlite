@@ -197,7 +197,11 @@ fn text_completion_policy_cases(#[case] case: u8) {
                     {"text": "a", "finish_reason": "stop", "index": 9_i32},
                     {"text": "b", "finish_reason": "length"},
                 ],
-                "usage": {"total_tokens": 3_i32},
+                "usage": {
+                    "total_tokens": 3_i32,
+                    "completion_tokens_details": {"reasoning_tokens": 2_i32},
+                    "prompt_tokens_details": {"cached_tokens": 1_i32},
+                },
             });
             let result_two = reply::to_chat_model_response(
                 Some(response_two),
@@ -228,8 +232,8 @@ fn text_completion_policy_cases(#[case] case: u8) {
                     "prompt_tokens": 0_i32,
                     "completion_tokens": 0_i32,
                     "total_tokens": 3_i32,
-                    "completion_tokens_details": null,
-                    "prompt_tokens_details": null,
+                    "completion_tokens_details": {"reasoning_tokens": 2_i32},
+                    "prompt_tokens_details": {"cached_tokens": 1_i32},
                 })
             );
             assert_eq!(result_two["id"], json!(generated_id));
