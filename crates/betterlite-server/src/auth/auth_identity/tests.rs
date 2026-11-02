@@ -5,7 +5,9 @@ use std::sync::atomic::AtomicBool;
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
+use axum::extract::Extension;
 use axum::http::{Request, StatusCode, header};
+use axum::routing::get;
 use secrecy::SecretString;
 use tower::ServiceExt as _;
 
@@ -52,22 +54,34 @@ fn stage_is_registered() {
 }
 
 fn protected_server(master_key: &str) -> Router {
+    protected_server_with_chat(master_key, Router::new())
+}
+
+fn protected_server_with_chat(master_key: &str, chat: Router) -> Router {
     routes::router(
         Some(SecretString::from(master_key.to_owned())),
         Arc::new(AtomicBool::new(false)),
         &[],
-        Router::new(),
+        chat,
         Router::new(),
     )
 }
 
-fn request_with_key(key: Option<&str>) -> Request<Body> {
-    let unauthenticated = Request::builder().uri("/v1/models");
+async fn echo_principal_subject(Extension(context): Extension<AuthContext>) -> String {
+    context.principal.subject
+}
+
+fn request_to(path: &str, key: Option<&str>) -> Request<Body> {
+    let unauthenticated = Request::builder().uri(path);
     let authenticated = match key {
         Some(value) => unauthenticated.header(header::AUTHORIZATION, format!("Bearer {value}")),
         None => unauthenticated,
     };
     authenticated.body(Body::empty()).unwrap()
+}
+
+fn request_with_key(key: Option<&str>) -> Request<Body> {
+    request_to("/v1/models", key)
 }
 
 #[tokio::test]
@@ -109,14 +123,18 @@ async fn failure_stops_downstream() {
 
 #[tokio::test]
 async fn success_forwards_auth_context() {
-    let response = protected_server("secret-master-key")
-        .oneshot(request_with_key(Some("secret-master-key")))
+    let chat = Router::new().route("/v1/chat/completions", get(echo_principal_subject));
+    let response = protected_server_with_chat("secret-master-key", chat)
+        .oneshot(request_to(
+            "/v1/chat/completions",
+            Some("secret-master-key"),
+        ))
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let text = String::from_utf8(body.to_vec()).unwrap();
-    assert!(text.contains("\"object\":\"list\""));
+    assert!(text.contains("master_key"));
 }
 
 #[tokio::test]

@@ -45,15 +45,6 @@ pub enum TeamRole {
     Member,
 }
 
-const EFFECTIVE_USER_ROLE_TABLE: &[(&str, UserRole)] = &[
-    ("proxy_admin", UserRole::ProxyAdmin),
-    ("proxy_admin_viewer", UserRole::ProxyAdminViewer),
-    ("org_admin", UserRole::OrgAdmin),
-    ("internal_user_viewer", UserRole::InternalUserViewer),
-    ("team", UserRole::Team),
-    ("customer", UserRole::Customer),
-];
-
 #[must_use]
 pub fn map_role(role: Option<&str>) -> Option<Role> {
     match role {
@@ -75,12 +66,15 @@ pub fn team_role(role: Option<&str>) -> TeamRole {
 
 #[must_use]
 pub fn effective_user_role(role: Option<&str>) -> UserRole {
-    for (legacy_value, mapped) in EFFECTIVE_USER_ROLE_TABLE {
-        if role == Some(*legacy_value) {
-            return *mapped;
-        }
+    match role {
+        Some("proxy_admin") => UserRole::ProxyAdmin,
+        Some("proxy_admin_viewer") => UserRole::ProxyAdminViewer,
+        Some("org_admin") => UserRole::OrgAdmin,
+        Some("internal_user_viewer") => UserRole::InternalUserViewer,
+        Some("team") => UserRole::Team,
+        Some("customer") => UserRole::Customer,
+        _ => UserRole::InternalUser,
     }
-    UserRole::InternalUser
 }
 
 #[must_use]
