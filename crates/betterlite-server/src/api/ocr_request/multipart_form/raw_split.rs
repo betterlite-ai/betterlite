@@ -23,13 +23,6 @@ const fn header_kind(name: &[u8]) -> HeaderKind {
     }
 }
 
-// Splits off the next CRLF-terminated line, returning the line and what follows its CRLF.
-fn next_line(cursor: &[u8]) -> Option<(&[u8], &[u8])> {
-    let idx = cursor.windows(2).position(|pair| pair == b"\r\n")?;
-    let (line, after_line) = cursor.split_at(idx);
-    Some((line, after_line.get(2..).unwrap_or(&[])))
-}
-
 fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack
         .windows(needle.len())
@@ -50,10 +43,12 @@ fn parse_header_line(line: &[u8]) -> Result<(&[u8], &[u8]), OcrRequestError> {
     Ok((name, value))
 }
 
-// Scans past everything before the first boundary line (the preamble, which MIME allows and ignores), returning what follows its trailing CRLF.
+// Scans past everything before the first boundary line (the preamble, which MIME allows and ignores), returning what follows its trailing CRLF. Each loop below finds only the CRLF's offset, not a slice pair: a caller advancing by that offset plus a literal 2 always shrinks its own cursor, so a mutated offset can at worst spin without allocating, not leak memory on every turn.
 fn skip_preamble<'body>(body: &'body [u8], dash_boundary: &[u8]) -> &'body [u8] {
     let mut remaining = body;
-    while let Some((line, after_crlf)) = next_line(remaining) {
+    while let Some(idx) = remaining.windows(2).position(|pair| pair == b"\r\n") {
+        let line = remaining.get(..idx).unwrap_or(remaining);
+        let after_crlf = remaining.get(idx.saturating_add(2)..).unwrap_or(&[]);
         if line.starts_with(dash_boundary) {
             return after_crlf;
         }
@@ -73,7 +68,9 @@ fn read_headers(remaining: &[u8]) -> Result<PartHeaders<'_>, OcrRequestError> {
     let mut content_disposition = None;
     let mut content_type = None;
     let mut cursor = remaining;
-    while let Some((line, after_crlf)) = next_line(cursor) {
+    while let Some(idx) = cursor.windows(2).position(|pair| pair == b"\r\n") {
+        let line = cursor.get(..idx).unwrap_or(cursor);
+        let after_crlf = cursor.get(idx.saturating_add(2)..).unwrap_or(&[]);
         if line.trim_ascii().is_empty() {
             return Ok(PartHeaders {
                 content_disposition,
@@ -102,11 +99,13 @@ fn read_data<'body>(
     dash_boundary: &[u8],
 ) -> (&'body [u8], &'body [u8], bool) {
     let mut cursor = remaining;
-    while let Some((line, after_crlf)) = next_line(cursor) {
+    while let Some(idx) = cursor.windows(2).position(|pair| pair == b"\r\n") {
+        let line = cursor.get(..idx).unwrap_or(cursor);
+        let after_crlf = cursor.get(idx.saturating_add(2)..).unwrap_or(&[]);
         if line.starts_with(dash_boundary) {
             let consumed = remaining.len().saturating_sub(cursor.len());
             let content_len = consumed.saturating_sub(2);
-            let (content, _) = remaining.split_at(content_len);
+            let content = remaining.get(..content_len).unwrap_or(remaining);
             return (content, after_crlf, is_final_boundary(line, dash_boundary));
         }
         cursor = after_crlf;
