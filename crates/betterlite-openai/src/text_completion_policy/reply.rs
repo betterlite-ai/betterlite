@@ -51,6 +51,7 @@ fn mapped_finish_reason(raw: &str) -> &'static str {
         | "NO_IMAGE"
         | "IMAGE_RECITATION"
         | "IMAGE_OTHER"
+        | "ESCALATION"
         | "sensitive"
         | "guardrail_intervened"
         | "content_filter"
@@ -60,11 +61,36 @@ fn mapped_finish_reason(raw: &str) -> &'static str {
     }
 }
 
-// Only a truthy string gets mapped; any other truthy JSON scalar has no table entry and defaults to "stop".
-fn resolve_finish_reason(raw: Option<Value>) -> Value {
+// Mirrors TextChoices.__init__: a blank or missing raw value stays None rather than falling back to "stop".
+fn embedded_finish_reason(raw: Option<Value>) -> Value {
     match raw.filter(|value| !is_blank_finish_reason(value)) {
         Some(Value::String(text)) => Value::String(mapped_finish_reason(&text).to_owned()),
-        Some(_) | None => Value::String("stop".to_owned()),
+        Some(_) => Value::String("stop".to_owned()),
+        None => Value::Null,
+    }
+}
+
+// Choices.__init__ runs the same mapping but defaults a None finish_reason to "stop" instead of keeping it.
+fn resolve_finish_reason(raw: Option<Value>) -> Value {
+    let mapped = embedded_finish_reason(raw);
+    if mapped.is_null() {
+        Value::String("stop".to_owned())
+    } else {
+        mapped
+    }
+}
+
+// TextChoices maps finish_reason at parse time, so the stored original response carries the mapped value too.
+fn embed_original_choices(response: &mut Value) {
+    let Some(Value::Array(choices)) = response.get_mut("choices") else {
+        return;
+    };
+    for choice in choices {
+        let Value::Object(fields) = choice else {
+            continue;
+        };
+        let raw = fields.remove("finish_reason");
+        fields.insert("finish_reason".to_owned(), embedded_finish_reason(raw));
     }
 }
 
@@ -99,7 +125,7 @@ pub fn to_chat_model_response(
     response_object: Option<Value>,
     model_response_object: Option<Map<String, Value>>,
 ) -> Result<Map<String, Value>, ReplyError> {
-    let (Some(response), Some(mut target)) = (response_object, model_response_object) else {
+    let (Some(mut response), Some(mut target)) = (response_object, model_response_object) else {
         return Err(ReplyError::MissingResponseFormat);
     };
     let choices_value = response.get("choices").cloned().unwrap_or(Value::Null);
@@ -117,6 +143,7 @@ pub fn to_chat_model_response(
             response.get(key).cloned().unwrap_or(Value::Null),
         );
     }
+    embed_original_choices(&mut response);
     let mut hidden_params = match target.remove("_hidden_params") {
         Some(Value::Object(existing)) => existing,
         _ => Map::new(),

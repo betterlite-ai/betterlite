@@ -233,6 +233,10 @@ fn text_completion_policy_cases(#[case] case: u8) {
             assert_eq!(result_falsy["choices"][0]["finish_reason"], json!("stop"));
             assert_eq!(result_falsy["choices"][1]["finish_reason"], json!("stop"));
             assert_eq!(result_falsy["choices"][2]["finish_reason"], json!("stop"));
+            assert_eq!(
+                result_falsy["_hidden_params"]["original_response"]["choices"][0]["finish_reason"],
+                json!(null)
+            );
 
             let mapped_finish_reasons = json!({
                 "choices": [
@@ -250,6 +254,14 @@ fn text_completion_policy_cases(#[case] case: u8) {
             );
             assert_eq!(result_mapped["choices"][1]["finish_reason"], json!("stop"));
             assert_eq!(result_mapped["choices"][2]["finish_reason"], json!("stop"));
+            assert_eq!(
+                result_mapped["_hidden_params"]["original_response"]["choices"][0]["finish_reason"],
+                json!("tool_calls")
+            );
+            assert_eq!(
+                result_mapped["_hidden_params"]["original_response"]["choices"][1]["finish_reason"],
+                json!("stop")
+            );
 
             let explicit_null_logprobs = json!({"choices": [{"text": "d", "logprobs": null}]});
             let result_explicit_null =
