@@ -32,7 +32,7 @@ use std::io;
 use std::path::PathBuf;
 use std::process::{ExitCode, ExitStatus};
 use std::str::Utf8Error;
-use std::sync::mpsc::RecvTimeoutError;
+use std::sync::mpsc::RecvError;
 use std::time::{Duration, SystemTimeError};
 
 use axum::http::status::InvalidStatusCode;
@@ -225,7 +225,7 @@ pub enum OracleError {
     #[error("scenario join has no concurrent step to join")]
     ScenarioJoinMissing,
     #[error("scenario join did not hear back from every concurrent request: {0}")]
-    ScenarioJoinFailed(#[source] RecvTimeoutError),
+    ScenarioJoinFailed(#[source] RecvError),
     #[error(
         "scenario needs at least {requests} upstream answers, one per request, but only {upstream} are scripted"
     )]
