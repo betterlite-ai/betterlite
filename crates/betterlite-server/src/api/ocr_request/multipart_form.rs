@@ -31,8 +31,8 @@ pub(super) fn parse_body(body: &[u8], content_type: &str) -> Result<ParsedForm, 
     let mut form = ParsedForm::new();
     let mut fields = 0_usize;
     let mut files = 0_usize;
-    for item in split_items(body, &boundary, MAX_FIELDS + MAX_FILES)? {
-        let field = read_item(&item, &charset)?;
+    for item in split_items(body, &boundary) {
+        let field = read_item(&item?, &charset)?;
         match &field.value {
             FormValue::File { .. } => files = files.saturating_add(1),
             FormValue::Text(_) => fields = fields.saturating_add(1),

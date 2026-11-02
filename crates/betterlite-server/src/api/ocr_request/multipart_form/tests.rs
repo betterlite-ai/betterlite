@@ -282,6 +282,110 @@ fn tis_620_leaves_0xa0_undefined_unlike_iso_8859_11() {
 }
 
 #[test]
+fn thai_charset_decodes_byte_range_into_the_thai_block() {
+    // 0xA1 falls in iso8859_11's Thai run, decoding to U+0E01 (0x0E00 + (0xA1 - 0xA0)); 0x41 stays plain ASCII.
+    let mut body = Vec::new();
+    body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.pdf\"\r\nContent-Type: application/pdf\r\n\r\ndata\r\n");
+    body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n");
+    body.extend_from_slice(&[0x41, 0xA1]);
+    body.extend_from_slice(b"\r\n--B--\r\n");
+    let form = parse_body(
+        &body,
+        "multipart/form-data; boundary=B; charset=iso-8859-11",
+    )
+    .unwrap();
+    let (_, fields) = build(&form).unwrap();
+    assert_eq!(
+        fields.get("model"),
+        Some(&Json::Text("A\u{e01}".to_owned()))
+    );
+}
+
+#[test]
+fn iso_8859_11_keeps_0xa0_as_non_breaking_space() {
+    // Unlike tis-620, iso8859_11 maps 0xA0 to U+00A0 rather than leaving it undefined.
+    let mut body = Vec::new();
+    body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.pdf\"\r\nContent-Type: application/pdf\r\n\r\ndata\r\n");
+    body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n");
+    body.extend_from_slice(&[0xA0, 0xA1]);
+    body.extend_from_slice(b"\r\n--B--\r\n");
+    let form = parse_body(
+        &body,
+        "multipart/form-data; boundary=B; charset=iso-8859-11",
+    )
+    .unwrap();
+    let (_, fields) = build(&form).unwrap();
+    assert_eq!(
+        fields.get("model"),
+        Some(&Json::Text("\u{a0}\u{e01}".to_owned()))
+    );
+}
+
+#[test]
+fn gb2312_strict_decodes_a_valid_double_byte_pair() {
+    // 0xB0 0xA1 is a lead and trail byte both inside strict GB2312's 94x94 grid, decoding to U+554A (啊).
+    let mut body = Vec::new();
+    body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.pdf\"\r\nContent-Type: application/pdf\r\n\r\ndata\r\n");
+    body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n");
+    body.extend_from_slice(&[0xB0, 0xA1]);
+    body.extend_from_slice(b"\r\n--B--\r\n");
+    let form = parse_body(&body, "multipart/form-data; boundary=B; charset=gb2312").unwrap();
+    let (_, fields) = build(&form).unwrap();
+    assert_eq!(
+        fields.get("model"),
+        Some(&Json::Text("\u{554a}".to_owned()))
+    );
+}
+
+#[test]
+fn gb2312_strict_leaves_ascii_bytes_below_0x80_in_place() {
+    // A byte below 0x80 advances the strict GB2312 scan by one rather than pairing with a trail byte, so 0x7F stays ASCII DEL while the following 0xA1 0xA1 pair still decodes as the GB2312 full-width space U+3000.
+    let mut body = Vec::new();
+    body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.pdf\"\r\nContent-Type: application/pdf\r\n\r\ndata\r\n");
+    body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n");
+    body.extend_from_slice(&[0x7F, 0xA1, 0xA1]);
+    body.extend_from_slice(b"\r\n--B--\r\n");
+    let form = parse_body(&body, "multipart/form-data; boundary=B; charset=gb2312").unwrap();
+    let (_, fields) = build(&form).unwrap();
+    assert_eq!(
+        fields.get("model"),
+        Some(&Json::Text("\u{7f}\u{3000}".to_owned()))
+    );
+}
+
+#[test]
+fn gb2312_rejects_a_lead_byte_at_0x80() {
+    // 0x80 is neither below 0x80 nor inside the strict lead range 0xA1..=0xF7, so the whole value falls back to byte-identical latin-1 instead of pairing 0x80 with a trail byte.
+    let mut body = Vec::new();
+    body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.pdf\"\r\nContent-Type: application/pdf\r\n\r\ndata\r\n");
+    body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n");
+    body.extend_from_slice(&[0x80, 0xB0, 0xA1]);
+    body.extend_from_slice(b"\r\n--B--\r\n");
+    let form = parse_body(&body, "multipart/form-data; boundary=B; charset=gb2312").unwrap();
+    let (_, fields) = build(&form).unwrap();
+    assert_eq!(
+        fields.get("model"),
+        Some(&Json::Text("\u{80}\u{b0}\u{a1}".to_owned()))
+    );
+}
+
+#[test]
+fn gb2312_rejects_a_trail_byte_outside_the_strict_range() {
+    // 0xB0 is a valid lead byte, but 0x40 is outside the strict trail range 0xA1..=0xFE, so the whole value falls back to latin-1 instead of consuming 0xB0 0x40 as a double-byte pair.
+    let mut body = Vec::new();
+    body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.pdf\"\r\nContent-Type: application/pdf\r\n\r\ndata\r\n");
+    body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n");
+    body.extend_from_slice(&[0xB0, 0x40]);
+    body.extend_from_slice(b"\r\n--B--\r\n");
+    let form = parse_body(&body, "multipart/form-data; boundary=B; charset=gb2312").unwrap();
+    let (_, fields) = build(&form).unwrap();
+    assert_eq!(
+        fields.get("model"),
+        Some(&Json::Text("\u{b0}\u{40}".to_owned()))
+    );
+}
+
+#[test]
 fn gb2312_rejects_gbk_only_bytes() {
     // 0x81 0x40 decodes as GBK's "丂" through encoding_rs's gb2312 label, but Python's strict gb2312 codec has no such lead byte and falls back to latin-1.
     let mut body = Vec::new();
@@ -397,7 +501,7 @@ fn one_thousand_and_one_fields_are_rejected() {
 
 #[test]
 fn well_past_the_combined_cap_is_rejected_without_collecting_every_part() {
-    // split_items itself bails once it holds more than MAX_FIELDS + MAX_FILES items, rather than collecting all 2001 parts before parse_body's own counters ever run.
+    // split_items yields one item at a time, so parse_body's own field counter stops the loop as soon as it passes MAX_FIELDS, well before a 2001st part is ever read.
     let body = parts_body("B", 2001, None);
     parse_body(&body, "multipart/form-data; boundary=B").unwrap_err();
 }
@@ -426,7 +530,7 @@ fn mixed_parts_body(boundary: &str, field_count: usize, file_count: usize) -> Ve
 
 #[test]
 fn exactly_the_combined_cap_is_accepted() {
-    // 1000 fields plus 1000 files hits split_items's own MAX_FIELDS + MAX_FILES cap exactly, so items.len() reaches max_items without ever exceeding it, and both parse_body's own per-kind counters stay at their own caps too. This is what tells split_items's "> max_items" apart from "== max_items" or ">= max_items": either of those would reject this request too.
+    // 1000 fields and 1000 files each land exactly on their own cap at once, proving parse_body's field and file counters are independent rather than sharing one combined budget.
     let body = mixed_parts_body("B", 1000, 1000);
     parse_body(&body, "multipart/form-data; boundary=B").unwrap();
 }

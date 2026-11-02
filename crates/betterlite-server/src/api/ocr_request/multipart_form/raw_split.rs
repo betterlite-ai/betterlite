@@ -129,33 +129,47 @@ fn read_data<'body>(
     }
 }
 
-// A byte-level split of the multipart body that never requires a header value to be valid UTF-8, unlike multipart-rs's own streaming reader used in parse_body for the boundary and Content-Type. Bailing once the item count passes max_items keeps a body of many tiny parts from growing the item list well past parse_body's own field/file caps before those caps ever run.
-pub(super) fn split_items<'body>(
-    body: &'body [u8],
-    boundary: &str,
-    max_items: usize,
-) -> Result<Vec<RawItem<'body>>, OcrRequestError> {
-    let dash_boundary = format!("--{boundary}").into_bytes();
-    let mut items = Vec::new();
-    let mut remaining = skip_preamble(body, &dash_boundary);
-    loop {
-        let before = remaining.len();
-        let headers = read_headers(remaining)?;
-        let (data, after_data, is_final) = read_data(headers.after_headers, &dash_boundary);
-        items.push(RawItem {
+pub(super) struct SplitItems<'body> {
+    dash_boundary: Vec<u8>,
+    remaining: &'body [u8],
+    done: bool,
+}
+
+impl<'body> Iterator for SplitItems<'body> {
+    type Item = Result<RawItem<'body>, OcrRequestError>;
+
+    // Reads one item at a time rather than collecting every part into a Vec first, so a caller's own per-item cap (parse_body's field and file counts) runs before the next part is read, the way python-multipart's own streaming reader counts as it reads.
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.done {
+            return None;
+        }
+        let before = self.remaining.len();
+        let headers = match read_headers(self.remaining) {
+            Ok(headers) => headers,
+            Err(error) => {
+                self.done = true;
+                return Some(Err(error));
+            }
+        };
+        let (data, after_data, is_final) = read_data(headers.after_headers, &self.dash_boundary);
+        // Legitimate parsing always shrinks remaining by at least the boundary line it consumed, so this stops iteration on a mutant that fakes is_final instead of trusting it alone.
+        self.done = is_final || after_data.len() >= before;
+        self.remaining = after_data;
+        Some(Ok(RawItem {
             content_disposition: headers.content_disposition,
             content_type: headers.content_type,
             data,
-        });
-        if items.len() > max_items {
-            return Err(OcrRequestError::MultipartParse(
-                MultipartError::InvalidItemHeader,
-            ));
-        }
-        // Legitimate parsing always shrinks remaining by at least the boundary line it consumed, so this stops the loop on a mutant that fakes is_final instead of trusting it alone.
-        if is_final || after_data.len() >= before {
-            return Ok(items);
-        }
-        remaining = after_data;
+        }))
+    }
+}
+
+// A byte-level split of the multipart body that never requires a header value to be valid UTF-8, unlike multipart-rs's own streaming reader used in parse_body for the boundary and Content-Type.
+pub(super) fn split_items<'body>(body: &'body [u8], boundary: &str) -> SplitItems<'body> {
+    let dash_boundary = format!("--{boundary}").into_bytes();
+    let remaining = skip_preamble(body, &dash_boundary);
+    SplitItems {
+        dash_boundary,
+        remaining,
+        done: false,
     }
 }
