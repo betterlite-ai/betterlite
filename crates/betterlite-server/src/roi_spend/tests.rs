@@ -51,6 +51,7 @@ async fn reader_delegates_to_read_spend_and_normalizes_email() {
         )
         .await
         .unwrap();
+    drop(client);
     let reader = PostgresSpendReader {
         store: PostgresStore {
             pool: Some(pool.clone()),
@@ -63,7 +64,6 @@ async fn reader_delegates_to_read_spend_and_normalizes_email() {
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].email, "user.one@example.com");
     assert_eq!(records[0].spend, "1.5".parse::<Decimal>().unwrap());
-    drop(client);
     pool.close();
     fixture.close_async().await.unwrap();
 }
@@ -71,6 +71,7 @@ async fn reader_delegates_to_read_spend_and_normalizes_email() {
 #[tokio::test]
 async fn reader_returns_empty_when_no_rows_match() {
     let (fixture, pool, client) = database().await;
+    drop(client);
     let reader = PostgresSpendReader {
         store: PostgresStore {
             pool: Some(pool.clone()),
@@ -81,7 +82,6 @@ async fn reader_returns_empty_when_no_rows_match() {
         .await
         .unwrap();
     assert!(records.is_empty());
-    drop(client);
     pool.close();
     fixture.close_async().await.unwrap();
 }
