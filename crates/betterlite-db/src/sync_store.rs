@@ -11,7 +11,7 @@ const EXPIRED_MESSAGE: &str =
     "The worker stopped responding. Run analysis again to resume saved estimates.";
 
 const ACQUIRE_SQL: &str = r#"INSERT INTO "LiteLLM_Config" (param_name, param_value, last_run_at)
-    VALUES ($1, $2::jsonb, NOW())
+    VALUES ($1, $2::text::jsonb, NOW())
     ON CONFLICT (param_name) DO UPDATE
     SET param_value = EXCLUDED.param_value, last_run_at = NOW()
     WHERE ("LiteLLM_Config".last_run_at < NOW() - INTERVAL '60 seconds'
@@ -20,7 +20,7 @@ const ACQUIRE_SQL: &str = r#"INSERT INTO "LiteLLM_Config" (param_name, param_val
     RETURNING param_name"#;
 
 const HEARTBEAT_SQL: &str = r#"UPDATE "LiteLLM_Config"
-    SET param_value = jsonb_set(param_value, '{status}', $3::jsonb), last_run_at = NOW()
+    SET param_value = jsonb_set(param_value, '{status}', $3::text::jsonb), last_run_at = NOW()
     WHERE param_name = $1 AND param_value->>'owner' = $2
       AND param_value->>'cancel' = 'false'
       AND param_value->'status'->>'running' = 'true'
@@ -35,21 +35,21 @@ const FINISH_SQL: &str = r#"WITH owned AS (
         FOR UPDATE
     ), report_write AS (
         INSERT INTO "LiteLLM_Config" (param_name, param_value)
-        SELECT $5, $4::jsonb FROM owned WHERE $4::text IS NOT NULL
+        SELECT $5, $4::text::jsonb FROM owned WHERE $4::text IS NOT NULL
         ON CONFLICT (param_name) DO UPDATE SET param_value = EXCLUDED.param_value
     ), cache_cleanup AS (
         DELETE FROM "LiteLLM_Config" cached
         WHERE starts_with(cached.param_name, 'roi_calculator_pull_')
           AND EXISTS (SELECT 1 FROM owned) AND $4::text IS NOT NULL
           AND EXISTS (
-              SELECT 1 FROM jsonb_array_elements($4::jsonb->'pulls') pull
+              SELECT 1 FROM jsonb_array_elements($4::text::jsonb->'pulls') pull
               WHERE pull->>'url' = cached.param_value->>'url'
                 AND pull->'estimate'->>'status' = 'estimated'
                 AND pull->>'cache_key' IS NOT NULL
                 AND cached.param_name <> 'roi_calculator_pull_' || (pull->>'cache_key')
           )
     )
-    UPDATE "LiteLLM_Config" SET param_value = jsonb_set(param_value, '{status}', $3::jsonb),
+    UPDATE "LiteLLM_Config" SET param_value = jsonb_set(param_value, '{status}', $3::text::jsonb),
         last_run_at = NOW()
     WHERE param_name IN (SELECT param_name FROM owned) RETURNING param_name"#;
 

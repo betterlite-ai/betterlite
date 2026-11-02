@@ -125,7 +125,7 @@ async fn insert_sync_state(
     client
         .execute(
             r#"INSERT INTO "LiteLLM_Config" (param_name, param_value, last_run_at)
-               VALUES ('roi_calculator_sync', $1::jsonb, NOW() - ($2::double precision * INTERVAL '1 second'))"#,
+               VALUES ('roi_calculator_sync', $1::text::jsonb, NOW() - ($2::double precision * INTERVAL '1 second'))"#,
             &[&value, &age_seconds],
         )
         .await
