@@ -1,0 +1,5 @@
+kind: helper
+name: text-completion-extraction
+call: {"b3963": {"operation": "content_selection", "kwargs": {"call_type": "text_completion", "messages": [{"role": "user", "content": "Write a poem"}]}, "response": {"family": "text_completion", "text": "completion result"}}}
+env: {}
+compare: {ignore: []}

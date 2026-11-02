@@ -1,0 +1,5 @@
+kind: helper
+name: generic-dict-fallback
+call: {"b3963": {"operation": "content_selection", "kwargs": {"call_type": "something_else", "messages": [{"role": "user", "content": "hi"}]}, "response": {"family": "generic_dict", "value": {"choices": [{"message": {"content": "dict response content", "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "foo", "arguments": "{}"}}]}}]}}}}
+env: {}
+compare: {ignore: []}
