@@ -9,4 +9,3 @@ CREATE TABLE IF NOT EXISTS "LiteLLM_BudgetWindowSpend" (
 
     CONSTRAINT "LiteLLM_BudgetWindowSpend_pkey" PRIMARY KEY ("entity_type","entity_id","window_duration")
 );
-

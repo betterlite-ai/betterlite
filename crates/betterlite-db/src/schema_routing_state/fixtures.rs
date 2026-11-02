@@ -17,7 +17,7 @@ const PINNED_ADD_MEMORY_TABLE: MigrationFile = MigrationFile {
 const PINNED_TEAM_TOTAL_SPEND: MigrationFile = MigrationFile {
     directory: "20260421135425_add_team_membership_total_spend",
     bytes: include_bytes!("fixtures/20260421135425_add_team_membership_total_spend.sql"),
-    sha256: "686be79c5c68c056c7473f27374767ae6c952fe09e95ea7b8dd13047a09fad8b",
+    sha256: "f955bbe1ba1812b4023f0e9bcaacb274006d39782a403e56620051f955b22303",
 };
 
 const PINNED_TOOLS_OBJ_PERM: MigrationFile = MigrationFile {
@@ -29,7 +29,7 @@ const PINNED_TOOLS_OBJ_PERM: MigrationFile = MigrationFile {
 const PINNED_WORKFLOW_RUNS_TABLES: MigrationFile = MigrationFile {
     directory: "20260429161855_workflow_runs_tables",
     bytes: include_bytes!("fixtures/20260429161855_workflow_runs_tables.sql"),
-    sha256: "6293c4f78ea52d9e64503a0b284e9da960dd6351ffe2210b74ec5494607c6f67",
+    sha256: "ef37c5ce9e82708631bf7692b2bed8eb9efec1b63812b80141e69dffbf3958e9",
 };
 
 const PINNED_RESOURCE_OWNER: MigrationFile = MigrationFile {
@@ -73,7 +73,7 @@ const PINNED_OAUTH2_FLOW: MigrationFile = MigrationFile {
 const PINNED_MCP_TIMEOUT: MigrationFile = MigrationFile {
     directory: "20260605182307_add_timeout_to_mcp_server_table",
     bytes: include_bytes!("fixtures/20260605182307_add_timeout_to_mcp_server_table.sql"),
-    sha256: "04ad0398ccf6dc0c03a1f1520f4461b7fe34347654f81d19a2a3bef8e8ef2e89",
+    sha256: "6b8dd9fbce6d69844943ae1ad2735bdcc9b4bca8947a4478446118ed813537fa",
 };
 
 const PINNED_MCP_TOOL_SEARCH: MigrationFile = MigrationFile {
@@ -125,7 +125,7 @@ const PINNED_DAILY_TEAM_PTU: MigrationFile = MigrationFile {
 const PINNED_TOKEN_KEY_TYPE: MigrationFile = MigrationFile {
     directory: "20260713230852_add_key_type_to_litellm_verification_token",
     bytes: include_bytes!("fixtures/20260713230852_add_key_type_to_litellm_verification_token.sql"),
-    sha256: "e8cf45e1f2aab2ddaad1d53cd67f518e08f803b409ccac210a9c3a3e8c6a03f5",
+    sha256: "845c8a7b0a360fa1aad7420c16b853c526e53b77f34da2330088bc326570ef3e",
 };
 
 const PINNED_MCP_ISSUER: MigrationFile = MigrationFile {
@@ -207,7 +207,7 @@ const PINNED_GATEWAY_REQUESTS: MigrationFile = MigrationFile {
 const PINNED_BUDGET_WINDOW: MigrationFile = MigrationFile {
     directory: "20260804162853_add_budget_window_spend_table",
     bytes: include_bytes!("fixtures/20260804162853_add_budget_window_spend_table.sql"),
-    sha256: "ea19ecfef5e181f8b4ac20d9e5baeb241c2d10a793de3c50cfc24b69ca600774",
+    sha256: "13eb8d2505475ee58eb957c054133fdf570f55e3e0eefb5244a5996c6c8347a6",
 };
 
 const PINNED_SESSION_ROLLUP: MigrationFile = MigrationFile {

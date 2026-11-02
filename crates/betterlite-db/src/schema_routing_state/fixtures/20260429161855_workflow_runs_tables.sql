@@ -72,4 +72,3 @@ ALTER TABLE "LiteLLM_WorkflowEvent" ADD CONSTRAINT "LiteLLM_WorkflowEvent_run_id
 
 -- AddForeignKey
 ALTER TABLE "LiteLLM_WorkflowMessage" ADD CONSTRAINT "LiteLLM_WorkflowMessage_run_id_fkey" FOREIGN KEY ("run_id") REFERENCES "LiteLLM_WorkflowRun"("run_id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
