@@ -1,0 +1,5 @@
+task: B1674
+deviations:
+  - what: Image dimensions use checked signed integers and image charges use exact decimals; overflow returns a typed pricing error.
+    why: Extreme dimensions must not wrap or create float infinity while ordinary signed dimensions retain pinned behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2432-L2496

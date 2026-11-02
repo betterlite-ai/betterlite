@@ -1,0 +1,11 @@
+kind: helper
+name: image-cost-default-seed
+call:
+  image_cost:
+    operation: default
+    model: image-cost-default-pixel-model
+    size: "-5x10"
+    model_info:
+      input_cost_per_pixel: 0.00001
+compare: {ignore: []}
+env: {}
