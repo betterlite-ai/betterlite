@@ -1,0 +1,5 @@
+kind: helper
+name: openai-host-boundary
+call: {openai_credentials: {openai_host_boundary: {api_base: 'https://api.openai.com.attacker.example/v1'}}}
+env: {}
+compare: {ignore: []}

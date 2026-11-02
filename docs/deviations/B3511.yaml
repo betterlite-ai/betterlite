@@ -1,0 +1,8 @@
+task: B3511
+deviations:
+  - what: When a SystemOne question has no name or multiple questions share the same name, questions are keyed by numeric string index instead of using the name.
+    why: "LiteLLM falls back to numeric keys when names are absent or duplicated; betterlite preserves this behavior to match provider response mapping."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/decisions/transformation.py#L63-L67
+  - what: OpenAI input with image content parts is rejected with UnsupportedDecisionsRequest reason, and no state text is constructed.
+    why: "SystemOne providers accept text-only input; image rejection is explicit rather than silently dropping images to preserve data loss clarity."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/decisions/transformation.py#L54-L56

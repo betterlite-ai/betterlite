@@ -32,14 +32,7 @@ scope:
     - tools/oracle/helpers/b4803/**
     - tools/oracle/src/helpers/oracle/b4803.rs
     - tools/oracle/src/helpers/oracle/b4803/**
-    - tools/oracle/cases/a2a/artifact-event.yaml
-    - tools/oracle/cases/a2a/message-text-extraction.yaml
-    - tools/oracle/cases/a2a/metadata-forward.yaml
-    - tools/oracle/cases/a2a/openai-to-a2a-response.yaml
-    - tools/oracle/cases/a2a/role-passthrough.yaml
-    - tools/oracle/cases/a2a/status-completed-event.yaml
-    - tools/oracle/cases/a2a/status-working-event.yaml
-    - tools/oracle/cases/a2a/task-event.yaml
+    - tools/oracle/cases/a2a/*
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/litellm_completion_bridge/transformation.py

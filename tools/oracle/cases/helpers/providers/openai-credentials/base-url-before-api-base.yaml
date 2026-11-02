@@ -1,0 +1,5 @@
+kind: helper
+name: base-url-before-api-base
+call: {openai_credentials: {base_url_before_api_base: {api_base: null, litellm_api_base: null, env: {OPENAI_BASE_URL: 'https://base-url.example/v1?foo=bar', OPENAI_API_BASE: 'https://api-base.example/v1/'}}}}
+env: {}
+compare: {ignore: []}
