@@ -141,12 +141,9 @@ fn merge_group(group: &[ChunkResult]) -> (Vec<Output>, bool) {
                 chunk
                     .content
                     .first()
-                    .map_or("", |item| {
-                        item.text
-                            .as_ref()
-                            .and_then(|text| text.text.as_deref())
-                            .unwrap_or("")
-                    })
+                    .and_then(|item| item.text.as_ref())
+                    .and_then(|text| text.text.as_deref())
+                    .unwrap_or("")
                     .to_owned()
             })
         };

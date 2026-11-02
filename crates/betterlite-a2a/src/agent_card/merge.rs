@@ -77,9 +77,9 @@ pub fn merge_agent_card(
 fn filtered_capabilities(value: Option<WireValue<Capabilities>>) -> WireValue<Capabilities> {
     let streaming = match value {
         Some(WireValue::Typed(capabilities)) => {
-            capabilities.streaming.flatten().and_then(|value| {
-                let json = serde_json::to_value(&value).ok()?;
-                is_truthy(&json).then_some(value)
+            capabilities.streaming.flatten().and_then(|streaming| {
+                let json = serde_json::to_value(&streaming).ok()?;
+                is_truthy(&json).then_some(streaming)
             })
         }
         _ => None,
