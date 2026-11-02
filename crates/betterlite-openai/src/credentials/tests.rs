@@ -79,6 +79,8 @@ fn credentials_cases(#[case] case: u8) { match case {
     assert!(!is_openai_backed_api_base("https://api%2Eopenai.com/v1").expect("a percent-encoded dot stays raw text, not percent-decoded"));
     assert!(!is_openai_backed_api_base("https://api\u{ff0e}openai.com/v1").expect("a full-width dot stays raw text, not IDNA-mapped"));
     assert!(matches!(is_openai_backed_api_base("http://[::1"), Err(CredentialsError::InvalidApiBase)));
+    assert!(!is_openai_backed_api_base("http://[::1]/v1").expect("a valid bracketed IPv6 literal is not an error"));
+    assert!(matches!(is_openai_backed_api_base("http://[1.2.3.4]/v1"), Err(CredentialsError::InvalidApiBase)));
 },
 4 => {
     assert_eq!(infer_openai_data_residency(Some("openai"), Some("https://eu.api.openai.com/v1")), Some(DataResidency::Eu));
