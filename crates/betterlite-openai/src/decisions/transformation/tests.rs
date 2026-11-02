@@ -496,6 +496,14 @@ fn base_config_resolve_api_base_prefers_explicit_value_over_env_and_default() {
 }
 
 #[test]
+fn base_config_get_default_api_base_defaults_to_none() {
+    let config = BareProviderConfig;
+    assert_eq!(config.get_default_api_base(), None);
+    let get_secret_str = |_: &str| String::new();
+    assert_eq!(config.resolve_api_base(None, get_secret_str), None);
+}
+
+#[test]
 fn base_config_resolve_api_base_falls_back_to_default_when_env_is_unset() {
     struct WithDefault;
     impl DecisionsProviderConfig for WithDefault {
