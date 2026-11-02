@@ -360,11 +360,13 @@ fn check_generic_dict_tool_call_reordering() {
     assert_eq!(delta_output, "");
 }
 
-// chat_completion_tool_call_from_dict dumps a custom tool call as {id, type: "custom", custom: {name, input}}, never the function shape, and takes the custom branch for a "custom" type even without a sibling "custom" key's presence driving it (type alone is enough).
+// chat_completion_tool_call_from_dict dumps a custom tool call as {id, type: "custom", custom: {name, input}}, never the function shape. is_custom_tool_call_dict takes that branch for a "custom" type alone, and also for a non-null "custom" payload alone even when type says "function": the two conditions are independent, not both required.
 fn check_custom_tool_call_dump() {
     let kwargs = GalileoKwargs::default();
     let value = obj(r#"{"choices": [{"message": {"tool_calls": [
-            {"id": "call_1", "type": "custom", "custom": {"name": "exec", "input": "ls -la"}}
+            {"id": "call_1", "type": "custom", "custom": {"name": "exec", "input": "ls -la"}},
+            {"id": "call_2", "type": "function", "function": {"name": "f", "arguments": "{}"},
+             "custom": {"name": "exec2", "input": "pwd"}}
         ]}}]}"#);
     let (_, output, _) = galileo_input_output_content(
         &kwargs,
@@ -374,26 +376,10 @@ fn check_custom_tool_call_dump() {
     );
     assert_eq!(
         output,
-        r#"{"id":"call_1","type":"custom","custom":{"name":"exec","input":"ls -la"}}"#
-    );
-}
-
-// is_custom_tool_call_dict takes the custom branch for a non-null "custom" payload even when type says "function", since the two conditions are independent, not both required.
-fn check_custom_tool_call_detection_by_payload_alone() {
-    let kwargs = GalileoKwargs::default();
-    let value = obj(r#"{"choices": [{"message": {"tool_calls": [
-            {"id": "call_1", "type": "function", "function": {"name": "f", "arguments": "{}"},
-             "custom": {"name": "exec", "input": "ls -la"}}
-        ]}}]}"#);
-    let (_, output, _) = galileo_input_output_content(
-        &kwargs,
-        Some(&ResponseObj::GenericDict { value }),
-        Level::Default,
-        None,
-    );
-    assert_eq!(
-        output,
-        r#"{"id":"call_1","type":"custom","custom":{"name":"exec","input":"ls -la"}}"#
+        concat!(
+            r#"{"id":"call_1","type":"custom","custom":{"name":"exec","input":"ls -la"}}"#,
+            r#"{"id":"call_2","type":"custom","custom":{"name":"exec2","input":"pwd"}}"#,
+        )
     );
 }
 
@@ -574,7 +560,6 @@ fn galileo_payload_construction() {
     check_error_level_short_circuit();
     check_generic_dict_tool_call_reordering();
     check_custom_tool_call_dump();
-    check_custom_tool_call_detection_by_payload_alone();
     check_function_arguments_normalization();
     check_call_type_mismatch_falls_through();
     check_pass_through_endpoint_content();
