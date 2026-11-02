@@ -1,0 +1,13 @@
+kind: helper
+name: empty-supplied-pricing-skips-public-map
+call:
+  token_cost:
+    operation: generic
+    usage:
+      prompt_tokens: 10
+      completion_tokens: 5
+      total_tokens: 15
+    supplied_model_info: {}
+    moment: "2024-01-01T00:00:00Z"
+compare: {ignore: []}
+env: {}
