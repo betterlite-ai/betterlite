@@ -1,8 +1,11 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
+
 use rstest::rstest;
 
 use super::*;
+use crate::facts::{RequestFacts, ResponseFacts};
 
 fn describe(class: &ErrorClass) -> &'static str {
     match class {
@@ -121,6 +124,23 @@ fn unclassified_carries_the_raw_message_and_no_identity() {
     assert_eq!(context.message, "a completely unrelated failure");
     assert_eq!(context.model, None);
     assert_eq!(context.provider, None);
+}
+
+#[rstest]
+#[case::status_498(498)]
+fn response_branches_answer_the_provider_status(#[case] status: u16) {
+    let mut error = facts(Some(status));
+    error.response = Some(ResponseFacts {
+        status_code: status,
+        headers: BTreeMap::new(),
+        request: Some(RequestFacts {
+            method: "POST".to_owned(),
+            url: "https://api.cohere.ai/v1".to_owned(),
+        }),
+    });
+    let class = map_cohere_exception(&error, "unrecognized failure", "", None)
+        .expect("expected a classification");
+    assert_eq!(class.metadata().status_code, status);
 }
 
 #[test]

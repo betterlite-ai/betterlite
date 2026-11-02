@@ -1,0 +1,8 @@
+kind: helper
+name: bytes-prepended-to-the-zip
+call:
+  skill_discovery_archives:
+    stored_content: IyEvYmluL3NoCmV4aXQgMApQSwMEFAAAAAgAAAAhAEBo+qYKAAAACAAAAA4AAABza2lsbC9TS0lMTC5tZMtNzMtMSy0uAQBQSwECFAMUAAAACAAAACEAQGj6pgoAAAAIAAAADgAAAAAAAAAAAAAApIEAAAAAc2tpbGwvU0tJTEwubWRQSwUGAAAAAAEAAQA8AAAANgAAAAAA
+env: {}
+compare:
+  ignore: []

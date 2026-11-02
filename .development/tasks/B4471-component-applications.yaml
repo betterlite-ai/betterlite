@@ -37,6 +37,18 @@ scope:
     - tools/oracle/helpers/b4471/**
     - tools/oracle/src/helpers/server/b4471.rs
     - tools/oracle/src/helpers/server/b4471/**
+    - tools/oracle/cases/backend/allowed-exact-path.yaml
+    - tools/oracle/cases/backend/allowed-mount-exact.yaml
+    - tools/oracle/cases/backend/allowed-path-prefix.yaml
+    - tools/oracle/cases/backend/blocked-mount-prefix.yaml
+    - tools/oracle/cases/backend/blocked-unknown-path.yaml
+    - tools/oracle/cases/backend/blocked-unrelated-prefix.yaml
+    - tools/oracle/cases/gateway/allowed-exact-path.yaml
+    - tools/oracle/cases/gateway/allowed-mount-exact.yaml
+    - tools/oracle/cases/gateway/allowed-path-prefix.yaml
+    - tools/oracle/cases/gateway/blocked-mount-prefix.yaml
+    - tools/oracle/cases/gateway/blocked-unknown-path.yaml
+    - tools/oracle/cases/gateway/blocked-unrelated-prefix.yaml
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/gateway/main.py#L35-L49

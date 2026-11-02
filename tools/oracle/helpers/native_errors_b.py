@@ -1,5 +1,6 @@
-from typing import Literal, Protocol, TypeAlias, TypedDict, Unpack, cast
+from typing import Literal, NotRequired, Protocol, TypeAlias, TypedDict, Unpack, cast
 
+import httpx
 import openai
 from litellm.litellm_core_utils import exception_mapping_utils as mapping
 
@@ -28,6 +29,10 @@ class _ProviderCauseError(Exception):
         super().__init__(error_str)
         if status_code is not None:
             self.status_code = status_code
+            self.response = httpx.Response(
+                status_code=status_code,
+                request=httpx.Request(method="POST", url="https://docs.litellm.ai/docs"),
+            )
         if message is not None:
             self.message = message
 
@@ -66,7 +71,13 @@ class OllamaTextException(TypedDict):
     text: str
 
 
-OllamaOriginalException = OllamaDictException | OllamaTextException
+class OllamaTextStatusException(TypedDict):
+    kind: Literal["text_status"]
+    text: str
+    status_code: NotRequired[int | None]
+
+
+OllamaOriginalException = OllamaDictException | OllamaTextException | OllamaTextStatusException
 
 
 class OllamaInput(TypedDict):
@@ -129,6 +140,8 @@ def _result_for_family(family: str, model: str, provider: str, status_code: int)
         }
     if family == "api":
         return {"family": family, "context": _context(model, provider), "status": status_code}
+    if family in {"context_window_exceeded", "bad_request", "authentication"}:
+        return {"family": family, **_context(model, provider), "status": status_code}
     return {"family": family, **_context(model, provider)}
 
 
@@ -224,6 +237,12 @@ def _run_ollama(input_value: OllamaInput) -> JsonValue:
     cause: object
     if original_exception["kind"] == "dict":
         cause = {"error": original_exception["error"]}
+    elif original_exception["kind"] == "text_status":
+        cause = _ProviderCauseError(
+            original_exception["text"],
+            status_code=original_exception.get("status_code"),
+            message=None,
+        )
     else:
         cause = original_exception["text"]
     mapper = cast(_Mapper, mapping._map_ollama_exception)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]

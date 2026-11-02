@@ -1,2 +1,13 @@
 task: B3210
-deviations: []
+deviations:
+  - what: >-
+      A member name containing a NUL byte stays rejected, even though LiteLLM truncates the name at
+      its first NUL byte and builds the archive under the truncated name instead.
+    why: Truncating a name on a NUL byte is a path-construction trick, not a behavior worth copying; rejecting the whole upload is the safer, intended answer.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/agent_skills_archive.py#L87-L95"
+  - what: >-
+      A corrupt or truncated DEFLATE member returns None, so the skill is left out of the index and
+      its archive route answers 404, where LiteLLM's own except clause lets the read error escape
+      and the route answers an unhandled 500.
+    why: LiteLLM's try/except around build_skill_archive catches only BadZipFile, OSError and RuntimeError; the matching zlib.error or EOFError reaches _archive_for uncaught, which has no except of its own.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/agent_skills_archive.py#L39-L57"

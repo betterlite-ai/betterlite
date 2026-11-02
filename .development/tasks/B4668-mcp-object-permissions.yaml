@@ -27,6 +27,11 @@ scope:
     - tools/oracle/helpers/b4668/**
     - tools/oracle/src/helpers/mcp/b4668.rs
     - tools/oracle/src/helpers/mcp/b4668/**
+    - tools/oracle/cases/helpers/object-permissions/no-mcp-servers-opt-out.yaml
+    - tools/oracle/cases/helpers/object-permissions/unloadable-entitlement-db-failure.yaml
+    - tools/oracle/cases/helpers/object-permissions/unloadable-entitlement-error.yaml
+    - tools/oracle/cases/helpers/object-permissions/wildcard-tool-unrestricted.yaml
+    - tools/oracle/cases/helpers/object-permissions/wildcard-with-toolset-grants.yaml
   lint_tables: false
 
 references:

@@ -26,6 +26,12 @@ scope:
     - tools/oracle/helpers/b3614/**
     - tools/oracle/src/helpers/server/b3614.rs
     - tools/oracle/src/helpers/server/b3614/**
+    - tools/oracle/cases/passthrough/collision-detect-exact-match.yaml
+    - tools/oracle/cases/passthrough/collision-detect-method-overlap.yaml
+    - tools/oracle/cases/passthrough/collision-reorder-ahead.yaml
+    - tools/oracle/cases/passthrough/registry-remove-exact.yaml
+    - tools/oracle/cases/passthrough/registry-remove-subpath.yaml
+    - tools/oracle/cases/passthrough/registry-remove-openai-routes.yaml
   lint_tables: false
 references:
   - url: >-

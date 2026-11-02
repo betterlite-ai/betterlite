@@ -88,6 +88,17 @@ def _result_for(
     if family == "api":
         mapped = cast(MappedError, error)
         return {"family": family, "context": context, "status": mapped.status_code}
+    if family in {
+        "authentication",
+        "context_window_exceeded",
+        "bad_request",
+        "permission_denied",
+        "not_found",
+        "unprocessable_entity",
+        "content_policy_violation",
+    }:
+        mapped = cast(MappedError, error)
+        return {"family": family, **context, "status": mapped.status_code}
     return {"family": family, **context}
 
 
