@@ -4,7 +4,7 @@ use super::cache::{CacheComponent, CacheMemoryInput, CacheMemorySnapshot, CacheS
 use super::gc_config::gc_thresholds;
 use super::process::{
     MemoryStatus, ProcessMemoryError, health_status, parse_proc_memory, process_memory_snapshot,
-    snapshot_process_memory,
+    read_process_memory,
 };
 use super::router::{RouterMemoryInput, RouterMemorySnapshot};
 use super::unsupported::UnsupportedSnapshot;
@@ -47,7 +47,7 @@ fn process_snapshot_keeps_healthy_status_on_error() {
 #[cfg(target_os = "linux")]
 #[test]
 fn live_process_snapshot_has_real_memory_values() {
-    let snapshot = snapshot_process_memory();
+    let snapshot = process_memory_snapshot(read_process_memory());
     let memory = snapshot.memory.expect("Linux proc memory is available");
     assert!(memory.resident_bytes > 0);
     assert!(memory.virtual_bytes >= memory.resident_bytes);
@@ -95,7 +95,7 @@ fn router_sections_measure_shallow_inputs() {
 
 #[test]
 fn python_runtime_snapshots_are_explicitly_unsupported() {
-    let snapshot = UnsupportedSnapshot::gc_statistics();
+    let snapshot = UnsupportedSnapshot::new("GC statistics");
     assert_eq!(snapshot.error.error_type, "unsupported_runtime");
     assert_eq!(snapshot.error.code, "unsupported_runtime");
 }

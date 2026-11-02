@@ -60,14 +60,7 @@ impl LiteLLMSendMessageResponse {
         if let AgentJson::Object(fields) = &mut payload {
             fields.retain(|_, value| !value.is_null());
         }
-        Self::from_dict(&payload, request_id)
-    }
-
-    pub fn from_dict(
-        response: &AgentJson,
-        request_id: Option<&AgentJson>,
-    ) -> Result<Self, AgentProviderError> {
-        let normalized = normalize_a2a_jsonrpc_response(response, request_id)?;
+        let normalized = normalize_a2a_jsonrpc_response(&payload, request_id)?;
         serde_json::from_value(normalized).map_err(|source| AgentProviderError::Decode { source })
     }
 }
