@@ -1,0 +1,5 @@
+kind: helper
+name: openai-host-boundary-port-non-digit
+call: {openai_credentials: {openai_host_boundary: {api_base: 'https://api.openai.com:12xyz/v1'}}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,5 @@
+kind: helper
+name: key-and-organization-precedence
+call: {openai_credentials: {key_and_organization_precedence: {api_key: null, organization: null, litellm_api_key: null, litellm_openai_key: global-openai-key, litellm_organization: null, env: {OPENAI_API_KEY: env-key, OPENAI_ORGANIZATION: env-org}}}}
+env: {}
+compare: {ignore: []}
