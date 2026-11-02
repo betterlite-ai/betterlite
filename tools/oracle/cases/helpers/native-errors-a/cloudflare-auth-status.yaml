@@ -1,0 +1,13 @@
+kind: helper
+name: native-errors-a-cloudflare-auth-status
+call:
+  native_errors_a:
+    provider: cloudflare
+    model: cf/model-a
+    error_str: "Authentication error: invalid token"
+    status_code: 403
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::error::details::{RateLimitDetails, TimeoutDetails, TimeoutStatus};
+use crate::error::details::{RateLimitDetails, ResponseDetails, TimeoutDetails, TimeoutStatus};
 use crate::error::{ErrorClass, ErrorContext};
 use crate::facts::ProviderErrorFacts;
 use crate::rate_limit::RateLimitCategory;
@@ -98,11 +98,17 @@ fn classify(facts: &ProviderErrorFacts, error_str: &str, exception_type: &str) -
     })
 }
 
-fn build(family: Family, context: ErrorContext) -> ErrorClass {
+fn build(family: Family, context: ErrorContext, status_code: Option<u16>) -> ErrorClass {
     match family {
-        Family::Authentication => ErrorClass::Authentication(Box::new(context)),
-        Family::BadRequest => ErrorClass::BadRequest(Box::new(context)),
-        Family::ContextWindowExceeded => ErrorClass::ContextWindowExceeded(Box::new(context)),
+        Family::Authentication => {
+            ErrorClass::Authentication(Box::new(ResponseDetails::with_status(context, status_code)))
+        }
+        Family::BadRequest => {
+            ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(context, status_code)))
+        }
+        Family::ContextWindowExceeded => ErrorClass::ContextWindowExceeded(Box::new(
+            ResponseDetails::with_status(context, status_code),
+        )),
         Family::InternalServer => ErrorClass::InternalServer(Box::new(context)),
         Family::Timeout => ErrorClass::Timeout(Box::new(TimeoutDetails {
             context,
@@ -137,18 +143,29 @@ pub fn map_cohere_exception(
             body_param: None,
             body_code: None,
         }))),
-        Outcome::Classified(family, reason) => Some(build(
-            family,
-            ErrorContext {
-                message: reason.to_owned(),
-                model,
-                provider: Some("cohere".to_owned()),
-                max_retries: None,
-                num_retries: None,
-                body_type: None,
-                body_param: None,
-                body_code: None,
-            },
-        )),
+        Outcome::Classified(family, reason) => {
+            let response_has_request = facts
+                .response
+                .as_ref()
+                .is_some_and(|response| response.request.is_some());
+            Some(build(
+                family,
+                ErrorContext {
+                    message: reason.to_owned(),
+                    model,
+                    provider: Some("cohere".to_owned()),
+                    max_retries: None,
+                    num_retries: None,
+                    body_type: None,
+                    body_param: None,
+                    body_code: None,
+                },
+                if response_has_request {
+                    facts.status_code
+                } else {
+                    None
+                },
+            ))
+        }
     }
 }

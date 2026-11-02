@@ -6,7 +6,7 @@ call:
     model: claude-3
     custom_llm_provider: bedrock
     error_str: "AccessDeniedException: no permission"
-    status_code: null
+    status_code: 403
 env: {}
 compare:
   ignore:

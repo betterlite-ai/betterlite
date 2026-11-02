@@ -1,5 +1,6 @@
 from typing import Literal, NotRequired, Protocol, TypeAlias, TypedDict, Unpack, cast
 
+import httpx
 import litellm
 import openai
 from litellm.exceptions import AuthenticationError, GuardrailRaisedException
@@ -71,6 +72,10 @@ class _OriginalException:
     ) -> None:
         if status_code is not None:
             self.status_code = status_code
+            self.response = httpx.Response(
+                status_code=status_code,
+                request=httpx.Request(method="POST", url="https://docs.litellm.ai/docs"),
+            )
         self.status_code_is_synthesized = status_code_is_synthesized
         if message is not None:
             self.message = message

@@ -47,6 +47,63 @@ impl fmt::Debug for RateLimitDetails {
     }
 }
 
+// response.status_code when openai.APIStatusError.__init__ gets one; DEFAULT is the mapper's own status otherwise
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub struct ResponseStatus<const DEFAULT: u16>(pub u16);
+
+impl<const DEFAULT: u16> Default for ResponseStatus<DEFAULT> {
+    fn default() -> Self {
+        Self(DEFAULT)
+    }
+}
+
+// flat, not a nested `context: ErrorContext`, so callers outside this crate keep pattern-matching the same field names
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ResponseDetails<const DEFAULT: u16> {
+    pub message: String,
+    pub model: Option<String>,
+    pub provider: Option<String>,
+    #[serde(default)]
+    pub max_retries: Option<u32>,
+    #[serde(default)]
+    pub num_retries: Option<u32>,
+    #[serde(default)]
+    pub body_type: Option<String>,
+    #[serde(default)]
+    pub body_param: Option<String>,
+    #[serde(default)]
+    pub body_code: Option<String>,
+    #[serde(default)]
+    pub status: ResponseStatus<DEFAULT>,
+}
+
+impl<const DEFAULT: u16> From<ErrorContext> for ResponseDetails<DEFAULT> {
+    fn from(context: ErrorContext) -> Self {
+        Self {
+            message: context.message,
+            model: context.model,
+            provider: context.provider,
+            max_retries: context.max_retries,
+            num_retries: context.num_retries,
+            body_type: context.body_type,
+            body_param: context.body_param,
+            body_code: context.body_code,
+            status: ResponseStatus::default(),
+        }
+    }
+}
+
+impl<const DEFAULT: u16> ResponseDetails<DEFAULT> {
+    // the status a mapper carries off the provider's response, falling back to this variant's own class default
+    pub fn with_status(context: ErrorContext, status_code: Option<u16>) -> Self {
+        Self {
+            status: status_code.map(ResponseStatus).unwrap_or_default(),
+            ..Self::from(context)
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ApiDetails {
     pub context: ErrorContext,

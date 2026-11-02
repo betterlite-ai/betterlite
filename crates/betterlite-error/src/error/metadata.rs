@@ -1,10 +1,11 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use super::BodyOverride;
 use super::details::{
-    BudgetExceededDetails, GuardrailDetails, RateLimitDetails, SchemaValidationDetails,
+    BudgetExceededDetails, GuardrailDetails, RateLimitDetails, ResponseDetails,
+    SchemaValidationDetails,
 };
+use super::{BodyOverride, ErrorContext};
 use crate::envelope::{WireField, is_unsafe_header_name};
 use crate::rate_limit::{RateLimitCategory, RateLimitDimension};
 
@@ -51,6 +52,24 @@ impl fmt::Debug for ErrorMetadata {
             .field("openai_code", &self.openai_code)
             .finish()
     }
+}
+
+// status.0 is the carried provider status; DEFAULT is each variant's own class default when none was carried
+pub(super) fn response_metadata<const DEFAULT: u16>(
+    details: &ResponseDetails<DEFAULT>,
+    body: BodyOverride,
+) -> ErrorMetadata {
+    let context = ErrorContext {
+        message: details.message.clone(),
+        model: details.model.clone(),
+        provider: details.provider.clone(),
+        max_retries: details.max_retries,
+        num_retries: details.num_retries,
+        body_type: details.body_type.clone(),
+        body_param: details.body_param.clone(),
+        body_code: details.body_code.clone(),
+    };
+    context.metadata(details.status.0, WireField::Null, WireField::Null, body)
 }
 
 pub(super) fn rate_limit_metadata(details: &RateLimitDetails) -> ErrorMetadata {

@@ -55,6 +55,31 @@ fn error_facts_behavior_tests_behavior(
     assert_eq!(mapped.metadata().status_code, expected_wire_status);
 }
 
+#[rstest]
+#[case::bad_request_409_with_a_response(409)]
+fn response_branches_answer_the_provider_status(#[case] status: u16) {
+    let error = ProviderErrorFacts {
+        status_code: Some(status),
+        response: Some(ResponseFacts {
+            status_code: status,
+            headers: BTreeMap::new(),
+            request: Some(RequestFacts {
+                method: "POST".to_owned(),
+                url: "https://api.provider.example/v1".to_owned(),
+            }),
+        }),
+        body: None,
+        status_code_is_synthesized: false,
+        message: None,
+        headers: None,
+        litellm_response_headers: None,
+        request: None,
+    };
+    let mapped = status_error_class(&error, "failed", "Provider", None, None)
+        .expect("a 4xx status must produce a class");
+    assert_eq!(mapped.metadata().status_code, status);
+}
+
 #[path = "tests/synthesized_status/tests.rs"]
 mod synthesized_status;
 
