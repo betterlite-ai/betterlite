@@ -29,13 +29,13 @@ fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         .position(|window| window == needle)
 }
 
-// A line is a boundary only when dash_boundary is immediately followed by nothing (an ordinary boundary) or by "--" (the closing boundary, which needs no trailing CRLF since it can end the body). Anything else, such as a data line that merely starts with dash_boundary, is not a boundary at all.
+// A line is a boundary only when dash_boundary is immediately followed by nothing (an ordinary boundary) or by "--" (the closing boundary). python-multipart stops at the second hyphen and drops everything else on that line, so a closing boundary followed by trailing spaces or an epilogue (no trailing CRLF needed, since it can end the body) is still the closing boundary. Anything else, such as a data line that merely starts with dash_boundary, is not a boundary at all.
 fn boundary_kind(line: &[u8], dash_boundary: &[u8]) -> Option<bool> {
     let rest = line.strip_prefix(dash_boundary)?;
-    if rest.is_empty() {
-        Some(false)
-    } else if rest == b"--" {
+    if rest.starts_with(b"--") {
         Some(true)
+    } else if rest.is_empty() {
+        Some(false)
     } else {
         None
     }
