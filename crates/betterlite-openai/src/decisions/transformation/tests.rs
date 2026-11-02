@@ -793,7 +793,8 @@ fn base_config_sign_request_returns_headers_unchanged_and_no_signed_body() {
     let config = BareProviderConfig;
     let mut headers: Headers = Headers::new();
     headers.insert("X-Custom".to_owned(), "kept".to_owned());
-    let body = sample_systemone_request();
+    let built = sample_systemone_request();
+    let body = RequestWire::from(&built);
     let litellm_params = Extra::default();
     let context = SigningContext {
         url: "https://api.example.com/v1/systemone",
@@ -856,6 +857,18 @@ fn base_config_transform_decisions_request_builds_systemone_request_from_ir() {
         .transform_decisions_request("model-1", &request, "typesafe")
         .unwrap();
     assert_eq!(built.model, "model-1");
+}
+
+#[test]
+fn base_config_transform_decisions_request_omits_absent_criteria_from_the_wire_body() {
+    let config = BareProviderConfig;
+    let request = request_with(vec![predicate_question("a")]);
+    let built = config
+        .transform_decisions_request("model-1", &request, "typesafe")
+        .unwrap();
+    let payload = serde_json::to_value(&built).unwrap();
+    assert_eq!(payload["questions"]["a"]["type"], "noul");
+    assert!(payload["questions"]["a"].get("criteria").is_none());
 }
 
 #[test]

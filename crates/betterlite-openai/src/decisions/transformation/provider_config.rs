@@ -2,20 +2,21 @@ use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::error::Category;
 
-use betterlite_models::decisions::{DecisionsJson, Extra, ir, systemone};
+use betterlite_models::decisions::{DecisionsJson, Extra, ir};
 
 use crate::error::{ProviderError, ProviderErrorParts};
 use crate::openai_base_config::Headers;
 
 use super::requests::{self, RequestConversionError};
 use super::responses;
+use super::wire;
 
 const RESERVED_HEADERS: [&str; 2] = ["authorization", "content-type"];
 
 pub struct SigningContext<'call> {
     pub url: &'call str,
     pub api_base: &'call str,
-    pub body: &'call systemone::DecisionsRequest,
+    pub body: &'call wire::RequestWire,
     pub api_key: Option<&'call SecretString>,
     pub litellm_params: &'call Extra,
 }
@@ -154,8 +155,9 @@ pub trait DecisionsProviderConfig {
         model: &str,
         request: &ir::DecisionRequest,
         _custom_llm_provider: &str,
-    ) -> Result<systemone::DecisionsRequest, RequestConversionError> {
+    ) -> Result<wire::RequestWire, RequestConversionError> {
         requests::ir_to_systemone_request(&self.request_model(model), request)
+            .map(|built| wire::RequestWire::from(&built))
     }
 
     fn unwrap_response<'call>(&self, payload: &'call [u8]) -> &'call [u8] {
