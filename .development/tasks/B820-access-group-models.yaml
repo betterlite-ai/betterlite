@@ -52,7 +52,6 @@ scope:
   paths:
     - crates/betterlite-server/src/access_group_models.rs
     - crates/betterlite-server/src/access_group_models/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/src/helpers/server/access_group_models.rs
     - tools/oracle/src/helpers/server/access_group_models/**
@@ -61,6 +60,7 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/access-group-models/**
     - tools/oracle/fuzz/corpus/helper_case/access-group-models-*
+    - crates/betterlite-server/src/access_group_models/fixtures.rs
     - crates/betterlite-server/src/access_group_models/fixtures/**
   lint_tables: false
 references:

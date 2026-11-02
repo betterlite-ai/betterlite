@@ -34,7 +34,6 @@ description: >-
 scope:
   paths:
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/cyberark_config_routes.rs
     - crates/betterlite-server/src/cyberark_config_routes/**
     - crates/betterlite-server/fuzz/corpus/config_override/cyberark-routes-*

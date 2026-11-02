@@ -1,0 +1,25 @@
+kind: helper
+name: inspect-chat-sends-enabled-rules-and-integration-config
+call:
+  b3762:
+    inspect_chat:
+      settings:
+        api_key: test-key
+        api_base: "https://cisco.test"
+        inspection_type: chat
+        on_flagged_action: block
+        fallback_on_error: block
+        timeout: 5
+        enabled_rules: ["Prompt Injection"]
+        integration_profile_id: profile-123
+        integration_profile_version: v2
+        integration_tenant_id: tenant-456
+        integration_type: saas
+      request_data:
+        messages:
+          - {role: user, content: "hello there"}
+      direction: input
+      answer: {status: 200, headers: {}, body: {is_safe: true}}
+env: {}
+compare:
+  ignore: []

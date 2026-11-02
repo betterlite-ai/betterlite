@@ -22,7 +22,6 @@ description: >-
   200 behavior tests, 100 parsing/fuzz and 70 route wiring lines, a 725-line budget.
 scope:
   paths:
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/routes.rs
     - crates/betterlite-server/src/routes/**
     - crates/betterlite-server/src/state.rs

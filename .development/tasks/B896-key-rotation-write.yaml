@@ -85,7 +85,6 @@ scope:
   paths:
     - crates/betterlite-server/src/key_rotation_write.rs
     - crates/betterlite-server/src/key_rotation_write/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/src/helpers/server/key_rotation_write.rs
     - tools/oracle/src/helpers/server/key_rotation_write/**
@@ -94,6 +93,7 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/key-rotation-write/**
     - tools/oracle/fuzz/corpus/helper_case/key-rotation-write-*
+    - crates/betterlite-server/src/key_rotation_write/fixtures.rs
     - crates/betterlite-server/src/key_rotation_write/fixtures/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/key-rotation-write-*

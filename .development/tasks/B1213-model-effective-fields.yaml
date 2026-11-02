@@ -72,7 +72,6 @@ scope:
   paths:
     - crates/betterlite-server/src/model_effective_fields.rs
     - crates/betterlite-server/src/model_effective_fields/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/src/helpers/server/model_effective_fields.rs
     - tools/oracle/src/helpers/server/model_effective_fields/**

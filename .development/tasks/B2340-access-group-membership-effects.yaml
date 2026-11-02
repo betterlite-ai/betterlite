@@ -36,7 +36,7 @@ description: >-
   cache_add_null_existing_and_duplicate, cache_remove_nonempty_absent and cache_failure_stops_sequence
   verify exact keys, calls and retained fields.
 
-  Build access_group_membership_effects in betterlite-server, keeping files below 300 lines. These
+  Build access_group_member_effects in betterlite-server, keeping files below 300 lines. These
   routines perform database/cache/global-registry work; use native tests rather than a Python helper
   pretending to be pure. B860 uses POSTGRES_TEST_URL when configured and testcontainers only otherwise;
   connection or startup failure fails the tests. This module reads no environment/config value and
@@ -45,9 +45,8 @@ description: >-
   420 within a 450-line gate.
 scope:
   paths:
-    - crates/betterlite-server/src/access_group_membership_effects.rs
-    - crates/betterlite-server/src/access_group_membership_effects/**
-    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/access_group_member_effects.rs
+    - crates/betterlite-server/src/access_group_member_effects/**
     - crates/betterlite-server/Cargo.toml
   lint_tables: false
 references:
@@ -68,11 +67,11 @@ checks:
     - id: behavior-tests
       why: Assignment, registry or cached-object behavior tests are missing or fail.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E
-        'test(/^access_group_membership_effects::tests::/) - test(/replays_the_/)'
+        'test(/^access_group_member_effects::tests::/) - test(/replays_the_/)'
     - id: postgres-tests
       why: Actual assignment and rollback tests are missing or fail.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E
-        'test(/^access_group_membership_effects::tests::assignment_/)'
+        'test(/^access_group_member_effects::tests::assignment_/)'
 oracle_cases: []
 deviations: []
 out_of_scope:

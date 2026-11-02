@@ -1,6 +1,7 @@
 pub mod agents;
 pub mod anthropic_beta_config;
 pub mod anthropic_beta_filter;
+pub mod anthropic_messages_routes;
 pub mod api_boundaries;
 pub mod assistant_messages;
 pub mod assistant_read_delete;

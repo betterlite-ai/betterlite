@@ -23,7 +23,6 @@ description: >-
   allocate 190 implementation, 160 tests, 90 adapters and 100 config/fuzz lines, budget 600.
 scope:
   paths:
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/sso_return_targets.rs
     - crates/betterlite-server/src/sso_return_targets/**
     - crates/betterlite-server/fuzz/Cargo.toml

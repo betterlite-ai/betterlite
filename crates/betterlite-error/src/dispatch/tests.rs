@@ -4,7 +4,7 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use rstest::rstest;
 
 use super::*;
-use crate::error::details::{ApiDetails, GuardrailDetails};
+use crate::error::details::{ApiDetails, GuardrailDetails, ResponseDetails, ResponseStatus};
 use crate::facts::presence::Field;
 use crate::facts::{ErrorCode, ProviderErrorBody};
 use crate::parse::LitellmExceptionFacts;
@@ -54,7 +54,7 @@ fn family(class: &ErrorClass) -> &'static str {
 
 #[rstest]
 #[case::already_mapped_identity_passes_through(
-    DispatchInput::Mapped(ErrorClass::Authentication(Box::new(ErrorContext {
+    DispatchInput::Mapped(ErrorClass::Authentication(Box::new(ResponseDetails {
         message: "boom".to_owned(),
         model: Some("gpt-4".to_owned()),
         provider: Some("openai".to_owned()),
@@ -63,6 +63,7 @@ fn family(class: &ErrorClass) -> &'static str {
         body_type: None,
         body_param: None,
         body_code: None,
+        status: ResponseStatus::default(),
     }))),
     "authentication"
 )]
@@ -332,7 +333,7 @@ fn classify_facts_maps_every_litellm_proxy_exception_name_to_its_family(
         body: None,
     };
     assert_eq!(
-        family(&litellm_proxy::classify_facts(&facts)),
+        family(&litellm_proxy::classify_facts(&facts, None)),
         expected_family
     );
 }
@@ -351,7 +352,7 @@ fn classify_facts_reads_a_numeric_body_code_as_its_decimal_string() {
             code: Field::Value(ErrorCode::Number(42)),
         }),
     };
-    let ErrorClass::RateLimit(details) = litellm_proxy::classify_facts(&facts) else {
+    let ErrorClass::RateLimit(details) = litellm_proxy::classify_facts(&facts, None) else {
         panic!("expected RateLimit");
     };
     assert_eq!(details.context.body_code.as_deref(), Some("42"));
@@ -371,7 +372,7 @@ fn classify_facts_reads_a_text_body_code_verbatim() {
             code: Field::Value(ErrorCode::Text("rate_limit_exceeded".to_owned())),
         }),
     };
-    let ErrorClass::RateLimit(details) = litellm_proxy::classify_facts(&facts) else {
+    let ErrorClass::RateLimit(details) = litellm_proxy::classify_facts(&facts, None) else {
         panic!("expected RateLimit");
     };
     assert_eq!(
@@ -394,7 +395,7 @@ fn classify_facts_leaves_body_code_absent_when_the_body_carries_no_code() {
             code: Field::Missing,
         }),
     };
-    let ErrorClass::RateLimit(details) = litellm_proxy::classify_facts(&facts) else {
+    let ErrorClass::RateLimit(details) = litellm_proxy::classify_facts(&facts, None) else {
         panic!("expected RateLimit");
     };
     assert_eq!(details.context.body_code, None);
@@ -432,7 +433,7 @@ fn an_unrecognized_facts_name_never_panics_and_classifies_as_unclassified() {
         body: None,
     };
     assert_eq!(
-        family(&litellm_proxy::classify_facts(&facts)),
+        family(&litellm_proxy::classify_facts(&facts, None)),
         "unclassified"
     );
 }
@@ -490,4 +491,39 @@ fn api_details_status_is_forwarded_unchanged_through_mapped_passthrough() {
         panic!("expected Api");
     };
     assert_eq!(details.status, 418);
+}
+
+#[test]
+fn catchall_answers_the_provider_status() {
+    let input = DispatchInput::Raw(raw("triton", "boom", Some(409)));
+    let ErrorClass::BadRequest(details) = dispatch(&input, &redactor()) else {
+        panic!("expected BadRequest");
+    };
+    assert_eq!(details.status.0, 409);
+}
+
+#[test]
+fn litellm_proxy_answers_the_provider_status() {
+    let input = DispatchInput::Raw(raw(
+        "litellm_proxy",
+        "litellm.BadRequestError: bad input",
+        Some(422),
+    ));
+    let ErrorClass::BadRequest(details) = dispatch(&input, &redactor()) else {
+        panic!("expected BadRequest");
+    };
+    assert_eq!(details.status.0, 422);
+}
+
+#[test]
+fn litellm_proxy_invalid_request_keeps_400() {
+    let input = DispatchInput::Raw(raw(
+        "litellm_proxy",
+        "litellm.InvalidRequestError: bad input",
+        Some(422),
+    ));
+    let ErrorClass::BadRequest(details) = dispatch(&input, &redactor()) else {
+        panic!("expected BadRequest");
+    };
+    assert_eq!(details.status.0, 400);
 }

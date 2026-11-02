@@ -62,7 +62,6 @@ scope:
   paths:
     - crates/betterlite-server/src/key_reassignment.rs
     - crates/betterlite-server/src/key_reassignment/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
   lint_tables: false
 references:

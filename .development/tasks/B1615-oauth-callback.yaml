@@ -29,7 +29,6 @@ description: >-
   lines within 750; existing providers and session services are not reimplemented.
 scope:
   paths:
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/oauth_callback.rs
     - crates/betterlite-server/src/oauth_callback/**
     - crates/betterlite-server/fuzz/Cargo.toml

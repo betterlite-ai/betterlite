@@ -1,6 +1,6 @@
-use std::borrow::Cow;
 use std::collections::BTreeSet;
-use std::io::{Cursor, Read as _, Write as _};
+use std::io::{Cursor, Write as _};
+use std::ops::Range;
 use std::str;
 
 use regex::Regex;
@@ -11,10 +11,22 @@ use zip::result::{ZipError, ZipResult};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, DateTime, ZipArchive, ZipWriter};
 
+mod central_directory;
+mod cp437;
+
 const MAX_ARCHIVE_UNPACKED_BYTES: u64 = 50 * 1024 * 1024;
 const MAX_ARCHIVE_ENTRIES: usize = 1_000;
 const SKILL_MANIFEST_FILENAME: &str = "SKILL.md";
 const FRONTMATTER_PATTERN: &str = r"(?s)^---\s*\n(.*?)\n---\s*(?:\n|$)";
+const LOCAL_HEADER_SIGNATURE: [u8; 4] = [0x50, 0x4b, 0x03, 0x04];
+const LOCAL_HEADER_FIXED_LEN: usize = 30;
+const LOCAL_HEADER_FLAGS_RANGE: Range<usize> = 6..8;
+const LOCAL_HEADER_NAME_LEN_RANGE: Range<usize> = 26..28;
+const CENTRAL_HEADER_SIGNATURE: [u8; 4] = [0x50, 0x4b, 0x01, 0x02];
+const CENTRAL_HEADER_FIXED_LEN: usize = 46;
+const CENTRAL_HEADER_FLAGS_RANGE: Range<usize> = 8..10;
+const CENTRAL_HEADER_NAME_LEN_RANGE: Range<usize> = 28..30;
+const LANGUAGE_ENCODING_FLAG: u16 = 0x0800;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SkillArchive {
@@ -26,8 +38,8 @@ pub struct SkillArchive {
 
 #[must_use]
 pub fn build_skill_archive(stored_content: &[u8]) -> Option<SkillArchive> {
-    let mut uploaded = ZipArchive::new(Cursor::new(stored_content)).ok()?;
-    let members = flattened_members(&mut uploaded)?;
+    let uploaded = ZipArchive::new(Cursor::new(stored_content)).ok()?;
+    let members = flattened_members(stored_content, &uploaded)?;
     let manifest = members
         .iter()
         .find_map(|(name, data)| (name == SKILL_MANIFEST_FILENAME).then_some(data.as_slice()))?;
@@ -42,25 +54,28 @@ pub fn build_skill_archive(stored_content: &[u8]) -> Option<SkillArchive> {
     })
 }
 
-fn flattened_members(uploaded: &mut ZipArchive<Cursor<&[u8]>>) -> Option<Vec<(String, Vec<u8>)>> {
+fn flattened_members(
+    stored_content: &[u8],
+    uploaded: &ZipArchive<Cursor<&[u8]>>,
+) -> Option<Vec<(String, Vec<u8>)>> {
+    let starts =
+        central_directory::header_starts(stored_content, uploaded.central_directory_start());
+    let archive_offset = uploaded.offset();
     let mut entries = Vec::new();
     let mut unpacked_bytes = 0_u64;
-    for index in 0..uploaded.len() {
-        let mut info = uploaded.by_index(index).ok()?;
-        if info.is_dir() {
+    for central_header_start in starts {
+        let member = read_validated_member(
+            stored_content,
+            central_header_start,
+            archive_offset,
+            &mut unpacked_bytes,
+        )?;
+        let ArchiveMember::File(path, data) = member else {
             continue;
-        }
+        };
         if entries.len() >= MAX_ARCHIVE_ENTRIES {
             return None;
         }
-        unpacked_bytes = unpacked_bytes.checked_add(info.size())?;
-        if unpacked_bytes > MAX_ARCHIVE_UNPACKED_BYTES {
-            return None;
-        }
-        let raw_name = info.name().ok()?;
-        let path = normalize_path(raw_name.as_ref())?;
-        let mut data = Vec::new();
-        info.read_to_end(&mut data).ok()?;
         entries.push((path, data));
     }
     if entries.is_empty() {
@@ -82,6 +97,80 @@ fn flattened_members(uploaded: &mut ZipArchive<Cursor<&[u8]>>) -> Option<Vec<(St
     }
     flattened.sort_by(|left, right| left.0.cmp(&right.0));
     Some(flattened)
+}
+
+enum ArchiveMember {
+    Directory,
+    File(String, Vec<u8>),
+}
+
+fn read_validated_member(
+    stored_content: &[u8],
+    central_header_start: u64,
+    archive_offset: u64,
+    unpacked_bytes: &mut u64,
+) -> Option<ArchiveMember> {
+    let entry =
+        central_directory::read_entry(stored_content, central_header_start, archive_offset)?;
+    if entry.name.ends_with('/') {
+        return Some(ArchiveMember::Directory);
+    }
+    if !local_header_name_matches(stored_content, entry.local_header_start, &entry.name)? {
+        return None;
+    }
+    let path = normalize_path(&entry.name)?;
+    *unpacked_bytes = unpacked_bytes.checked_add(entry.declared_uncompressed_size)?;
+    if *unpacked_bytes > MAX_ARCHIVE_UNPACKED_BYTES {
+        return None;
+    }
+    let data = central_directory::decompress(stored_content, central_header_start, archive_offset)?;
+    Some(ArchiveMember::File(path, data))
+}
+
+fn header_name_bytes(
+    stored_content: &[u8],
+    header_start: u64,
+    fixed_len: usize,
+    signature: [u8; 4],
+    name_len_range: Range<usize>,
+) -> Option<(&[u8], &[u8])> {
+    let start = usize::try_from(header_start).ok()?;
+    let fixed = stored_content.get(start..start.checked_add(fixed_len)?)?;
+    let actual_signature: [u8; 4] = fixed.get(..4)?.try_into().ok()?;
+    if actual_signature != signature {
+        return None;
+    }
+    let name_length_bytes: [u8; 2] = fixed.get(name_len_range)?.try_into().ok()?;
+    let name_length = usize::from(u16::from_le_bytes(name_length_bytes));
+    let name_start = start.checked_add(fixed_len)?;
+    let name_raw = stored_content.get(name_start..name_start.checked_add(name_length)?)?;
+    Some((fixed, name_raw))
+}
+
+fn decode_header_name(raw: &[u8], is_utf8: bool) -> Option<String> {
+    if is_utf8 {
+        str::from_utf8(raw).ok().map(ToOwned::to_owned)
+    } else {
+        Some(raw.iter().copied().map(cp437::decode).collect())
+    }
+}
+
+fn local_header_name_matches(
+    stored_content: &[u8],
+    header_start: u64,
+    central_name: &str,
+) -> Option<bool> {
+    let (fixed, local_name_raw) = header_name_bytes(
+        stored_content,
+        header_start,
+        LOCAL_HEADER_FIXED_LEN,
+        LOCAL_HEADER_SIGNATURE,
+        LOCAL_HEADER_NAME_LEN_RANGE,
+    )?;
+    let flags_bytes: [u8; 2] = fixed.get(LOCAL_HEADER_FLAGS_RANGE)?.try_into().ok()?;
+    let flags = u16::from_le_bytes(flags_bytes);
+    let local_name = decode_header_name(local_name_raw, flags & LANGUAGE_ENCODING_FLAG != 0)?;
+    Some(local_name == central_name)
 }
 
 fn normalize_path(raw_path: &str) -> Option<String> {
@@ -139,7 +228,8 @@ enum FrontmatterField {
 }
 
 fn manifest_frontmatter(manifest: &[u8]) -> (Option<String>, Option<String>) {
-    let text = decode_utf8_replacing(manifest);
+    #[expect(clippy::disallowed_methods, reason = "LiteLLM uses errors=replace")]
+    let text = String::from_utf8_lossy(manifest).into_owned();
     let Ok(pattern) = Regex::new(FRONTMATTER_PATTERN) else {
         return (None, None);
     };
@@ -149,7 +239,12 @@ fn manifest_frontmatter(manifest: &[u8]) -> (Option<String>, Option<String>) {
     let Some(yaml) = captures.get(1) else {
         return (None, None);
     };
-    let Ok(frontmatter) = serde_saphyr::from_str::<Frontmatter>(yaml.as_str()) else {
+    let options = serde_saphyr::options! {
+        duplicate_keys: serde_saphyr::DuplicateKeyPolicy::LastWins,
+    };
+    let Ok(frontmatter) =
+        serde_saphyr::from_str_with_options::<Frontmatter>(yaml.as_str(), options)
+    else {
         return (None, None);
     };
     (
@@ -163,33 +258,6 @@ fn frontmatter_text(field: Option<FrontmatterField>) -> Option<String> {
         FrontmatterField::Text(text) => clean_frontmatter_text(&text),
         FrontmatterField::Other(_) => None,
     }
-}
-
-fn decode_utf8_replacing(input: &[u8]) -> String {
-    let mut remaining = input;
-    let mut output = String::new();
-    while !remaining.is_empty() {
-        match str::from_utf8(remaining) {
-            Ok(valid) => {
-                output.push_str(valid);
-                break;
-            }
-            Err(error) => {
-                let valid_length = error.valid_up_to();
-                if let Some(valid) = remaining.get(..valid_length) {
-                    output.push_str(str::from_utf8(valid).unwrap_or_default());
-                }
-                output.push('\u{FFFD}');
-                let invalid_length = error
-                    .error_len()
-                    .unwrap_or_else(|| remaining.len().saturating_sub(valid_length));
-                remaining = remaining
-                    .get(valid_length.saturating_add(invalid_length)..)
-                    .unwrap_or_default();
-            }
-        }
-    }
-    output
 }
 
 fn clean_frontmatter_text(text: &str) -> Option<String> {
@@ -206,10 +274,7 @@ fn repack(members: &[(String, Vec<u8>)]) -> ZipResult<Vec<u8>> {
     let mut writer = ZipWriter::new(&mut output);
     let options = SimpleFileOptions::default()
         .compression_method(CompressionMethod::Deflated)
-        .last_modified_time(
-            DateTime::from_date_and_time(1980, 1, 1, 0, 0, 0)
-                .map_err(|error| ZipError::InvalidArchive(Cow::Owned(error.to_string())))?,
-        )
+        .last_modified_time(DateTime::DEFAULT)
         .external_attributes(0o644 << 16);
     for (name, data) in members {
         writer.start_file(name, options)?;

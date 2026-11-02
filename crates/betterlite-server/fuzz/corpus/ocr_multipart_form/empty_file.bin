@@ -1,0 +1,6 @@
+--FUZZ
+Content-Disposition: form-data; name="file"; filename="a.pdf"
+Content-Type: application/pdf
+
+
+--FUZZ--

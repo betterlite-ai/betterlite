@@ -58,7 +58,6 @@ description: >-
 
 scope:
   paths:
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/health_access_and_connections.rs
     - crates/betterlite-server/src/health_access_and_connections/**
     - tools/oracle/Cargo.toml

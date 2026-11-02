@@ -75,7 +75,6 @@ scope:
   paths:
     - crates/betterlite-server/src/organization_members.rs
     - crates/betterlite-server/src/organization_members/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes.rs
     - crates/betterlite-server/src/routes/**
@@ -84,6 +83,7 @@ scope:
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/organization-members/**
+    - crates/betterlite-server/src/organization_members/fixtures.rs
     - crates/betterlite-server/src/organization_members/fixtures/**
     - tools/oracle/helpers/b828.py
     - tools/oracle/helpers/b828/**

@@ -25,13 +25,10 @@ scope:
   paths:
   - crates/betterlite-router/src/model_rate_limits.rs
   - crates/betterlite-router/src/model_rate_limits/**
-  - crates/betterlite-server/src/lib.rs
   - crates/betterlite-server/src/routes.rs
   - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
   - crates/betterlite-server/src/state/**
-  - crates/betterlite-server/src/routing/mod.rs
-  - crates/betterlite-server/src/routing/mod/**
   - crates/betterlite-server/src/routing/model_rate_limits.rs
   - crates/betterlite-server/src/routing/model_rate_limits/**
   - crates/betterlite-router/src/strategy.rs

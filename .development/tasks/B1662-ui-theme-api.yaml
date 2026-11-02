@@ -39,7 +39,6 @@ description: >-
   model/function lines budget 250 routes/files, 80 config, 220 tests and 190 fuzz/HTTP, cap 800.
 scope:
   paths:
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/ui_theme_routes.rs
     - crates/betterlite-server/src/ui_theme_routes/**
     - crates/betterlite-server/fuzz/Cargo.toml
