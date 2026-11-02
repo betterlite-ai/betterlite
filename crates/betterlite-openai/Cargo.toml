@@ -10,7 +10,7 @@ betterlite-config = { path = "../betterlite-config" }
 betterlite-http = { path = "../betterlite-http" }
 hex.workspace = true
 indexmap = { version = "2.14.2", features = ["serde"] }
-nix.workspace = true
+nix = { version = "0.31.3", default-features = false, features = ["feature"] }
 rand = { version = "0.10.3", default-features = false, features = ["std", "std_rng", "sys_rng"] }
 rust_decimal.workspace = true
 secrecy = { workspace = true, features = ["serde"] }

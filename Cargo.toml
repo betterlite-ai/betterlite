@@ -16,7 +16,6 @@ chrono = { version = "0.4.45", default-features = false, features = ["now", "ser
 deadpool-postgres = "0.14.2"
 hex = "0.4.3"
 hyper-util = "0.1.21"
-nix = { version = "0.31.3", default-features = false, features = ["feature"] }
 percent-encoding = "2.3.2"
 phf = { version = "0.13.1", features = ["macros"] }
 quick-xml = "0.41.0"
