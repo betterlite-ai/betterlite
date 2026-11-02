@@ -4,9 +4,9 @@ use std::ops::Range;
 use zip::ZipArchive;
 
 use super::{
-    CENTRAL_HEADER_FIXED_LEN, CENTRAL_HEADER_NAME_LEN_RANGE, CENTRAL_HEADER_SIGNATURE,
-    LOCAL_HEADER_FIXED_LEN, LOCAL_HEADER_NAME_LEN_RANGE, LOCAL_HEADER_SIGNATURE,
-    central_header_name_and_flags, decode_header_name, header_name_bytes,
+    CENTRAL_HEADER_FIXED_LEN, CENTRAL_HEADER_FLAGS_RANGE, CENTRAL_HEADER_NAME_LEN_RANGE,
+    CENTRAL_HEADER_SIGNATURE, LOCAL_HEADER_FIXED_LEN, LOCAL_HEADER_NAME_LEN_RANGE,
+    LOCAL_HEADER_SIGNATURE, decode_header_name, header_name_bytes,
 };
 
 const CENTRAL_COMPRESSED_LEN_RANGE: Range<usize> = 20..24;
@@ -51,15 +51,15 @@ fn next_header_start(stored_content: &[u8], header_start: u64) -> Option<u64> {
 }
 
 pub(super) fn read_entry(stored_content: &[u8], central_header_start: u64) -> Option<CentralEntry> {
-    let (name_raw, flags) = central_header_name_and_flags(stored_content, central_header_start)?;
-    let name = decode_header_name(name_raw, flags & super::LANGUAGE_ENCODING_FLAG != 0)?;
-    let (fixed, _name) = header_name_bytes(
+    let (fixed, name_raw) = header_name_bytes(
         stored_content,
         central_header_start,
         CENTRAL_HEADER_FIXED_LEN,
         CENTRAL_HEADER_SIGNATURE,
         CENTRAL_HEADER_NAME_LEN_RANGE,
     )?;
+    let flags = u16::from_le_bytes(fixed.get(CENTRAL_HEADER_FLAGS_RANGE)?.try_into().ok()?);
+    let name = decode_header_name(name_raw, flags & super::LANGUAGE_ENCODING_FLAG != 0)?;
     let uncompressed_size =
         u32::from_le_bytes(fixed.get(CENTRAL_UNCOMPRESSED_LEN_RANGE)?.try_into().ok()?);
     let local_header_offset =
@@ -75,9 +75,8 @@ pub(super) fn read_entry(stored_content: &[u8], central_header_start: u64) -> Op
 pub(super) fn decompress(stored_content: &[u8], central_header_start: u64) -> Option<Vec<u8>> {
     let synthetic = single_entry_archive(stored_content, central_header_start)?;
     let mut archive = ZipArchive::new(Cursor::new(synthetic.as_slice())).ok()?;
-    let mut entry = archive.by_index(0).ok()?;
     let mut data = Vec::new();
-    entry.read_to_end(&mut data).ok()?;
+    archive.by_index(0).ok()?.read_to_end(&mut data).ok()?;
     Some(data)
 }
 

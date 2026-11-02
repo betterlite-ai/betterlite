@@ -140,21 +140,6 @@ fn header_name_bytes(
     Some((fixed, name_raw))
 }
 
-fn central_header_name_and_flags(
-    stored_content: &[u8],
-    central_header_start: u64,
-) -> Option<(&[u8], u16)> {
-    let (fixed, name_raw) = header_name_bytes(
-        stored_content,
-        central_header_start,
-        CENTRAL_HEADER_FIXED_LEN,
-        CENTRAL_HEADER_SIGNATURE,
-        CENTRAL_HEADER_NAME_LEN_RANGE,
-    )?;
-    let flags_bytes: [u8; 2] = fixed.get(CENTRAL_HEADER_FLAGS_RANGE)?.try_into().ok()?;
-    Some((name_raw, u16::from_le_bytes(flags_bytes)))
-}
-
 fn decode_header_name(raw: &[u8], is_utf8: bool) -> Option<String> {
     if is_utf8 {
         str::from_utf8(raw).ok().map(ToOwned::to_owned)
