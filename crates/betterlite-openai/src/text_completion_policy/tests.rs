@@ -215,6 +215,17 @@ fn text_completion_policy_cases(#[case] case: u8) {
                     .contains_key("logprobs")
             );
 
+            let explicit_null_logprobs = json!({"choices": [{"text": "d", "logprobs": null}]});
+            let result_explicit_null =
+                reply::to_chat_model_response(Some(explicit_null_logprobs), Some(Map::new()))
+                    .expect("explicit null logprobs omits the field");
+            assert!(
+                !result_explicit_null["choices"][0]
+                    .as_object()
+                    .expect("choice object")
+                    .contains_key("logprobs")
+            );
+
             let with_logprobs = json!({
                 "choices": [{"text": "c", "finish_reason": "length", "logprobs": {"tokens": ["c"]}}],
             });

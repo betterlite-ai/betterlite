@@ -39,7 +39,8 @@ impl TextCompletionChoice {
         );
         choice.insert("index".to_owned(), Value::from(index));
         choice.insert("message".to_owned(), Value::Object(message));
-        if let Some(logprobs) = self.logprobs {
+        // A null logprobs resolves to None in LiteLLM's Choices, which deletes the field just like an absent key.
+        if let Some(logprobs) = self.logprobs.filter(|value| !value.is_null()) {
             choice.insert("logprobs".to_owned(), logprobs);
         }
         Value::Object(choice)
