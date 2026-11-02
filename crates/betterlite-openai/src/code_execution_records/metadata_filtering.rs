@@ -6,24 +6,18 @@ use super::{
 };
 
 pub fn strip(kwargs: &mut Map<String, Value>) {
-    let Some(metadata) = kwargs.get("litellm_metadata").and_then(Value::as_object) else {
+    let Some(Value::Object(metadata)) = kwargs.get_mut("litellm_metadata") else {
         return;
     };
-    let filtered: Map<String, Value> = metadata
-        .iter()
-        .filter(|(key, _)| {
-            !INTERCEPTION_INTERNAL_PREFIXES
-                .iter()
-                .any(|prefix| key.starts_with(prefix))
-                && !key.starts_with("_agentic_loop")
-                && key.as_str() != "max_agentic_loops"
-        })
-        .map(|(key, value)| (key.clone(), value.clone()))
-        .collect();
-    if filtered.is_empty() {
+    metadata.retain(|key, _| {
+        !INTERCEPTION_INTERNAL_PREFIXES
+            .iter()
+            .any(|prefix| key.starts_with(prefix))
+            && !key.starts_with("_agentic_loop")
+            && key.as_str() != "max_agentic_loops"
+    });
+    if metadata.is_empty() {
         kwargs.remove("litellm_metadata");
-    } else {
-        kwargs.insert("litellm_metadata".to_owned(), Value::Object(filtered));
     }
 }
 

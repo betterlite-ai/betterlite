@@ -45,13 +45,11 @@ pub fn optional_params(optional_params: &Map<String, Value>) -> Map<String, Valu
     let drop_tool_choice = optional_params
         .get("tool_choice")
         .is_some_and(tool_choice_detection);
-    optional_params
-        .iter()
-        .filter(|(key, _)| {
-            key.as_str() != "tools" && !(key.as_str() == "tool_choice" && drop_tool_choice)
-        })
-        .map(|(key, value)| (key.clone(), value.clone()))
-        .collect()
+    let mut filtered = optional_params.clone();
+    filtered.retain(|key, _| {
+        key.as_str() != "tools" && !(key.as_str() == "tool_choice" && drop_tool_choice)
+    });
+    filtered
 }
 
 include!("followup_filtering/tests/cases.rs");
