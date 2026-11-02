@@ -47,7 +47,6 @@ fn required_then_typed(
     Some(Json::Object(ordered))
 }
 
-// A list-typed field whose own shape invalidates the whole item unless every element parses under `project`, such as ResponseOutputMessage.content or ResponseReasoningItem.summary.
 fn project_part_list<F>(list: &Json, project: F) -> Option<Vec<Json>>
 where
     F: Fn(&IndexMap<String, Json>) -> Option<Json>,
@@ -65,7 +64,6 @@ where
     Some(projected)
 }
 
-// Clones `fields` and overwrites each name in `replace` with the already-projected value; shared by every shape whose own validation rewrites one or more nested fields (a content list, an action, a caller) before required_then_typed checks what else is required.
 fn with_replaced(
     fields: &IndexMap<String, Json>,
     replace: &[(&str, Json)],
