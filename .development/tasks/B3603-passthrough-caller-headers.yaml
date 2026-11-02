@@ -32,7 +32,6 @@ scope:
   paths:
   - crates/betterlite-auth/src/passthrough.rs
   - crates/betterlite-auth/src/passthrough/**
-  - crates/betterlite-server/src/lib.rs
   - crates/betterlite-server/src/passthrough.rs
   - crates/betterlite-server/src/passthrough/**
   - tools/oracle/cases/passthrough/**

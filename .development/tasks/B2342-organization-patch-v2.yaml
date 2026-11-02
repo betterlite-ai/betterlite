@@ -61,7 +61,6 @@ scope:
   paths:
     - crates/betterlite-server/src/organization_patch_v2.rs
     - crates/betterlite-server/src/organization_patch_v2/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/routes.rs
     - crates/betterlite-server/src/routes/**
     - crates/betterlite-server/src/state.rs

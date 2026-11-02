@@ -30,7 +30,6 @@ description: >-
 scope:
   paths:
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/sso.rs
     - crates/betterlite-server/src/sso/**
     - crates/betterlite-config/src/sso.rs

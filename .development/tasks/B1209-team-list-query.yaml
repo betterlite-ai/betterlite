@@ -69,7 +69,6 @@ scope:
   paths:
     - crates/betterlite-server/src/team_list_query.rs
     - crates/betterlite-server/src/team_list_query/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/src/helpers/server/team_list_query.rs
     - tools/oracle/src/helpers/server/team_list_query/**

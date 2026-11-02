@@ -1,5 +1,6 @@
 pub(crate) mod chat;
 pub(crate) mod embeddings;
+pub(crate) mod prompts;
 
 use crate::auth::authenticate;
 use crate::error_body::json_error;

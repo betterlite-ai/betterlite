@@ -69,28 +69,28 @@ checks:
   commands:
     - id: breakdown-aggregation-tests
       why: update_breakdown_metrics does not correctly aggregate records across all dimensions or metadata handling is wrong
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_pages::breakdown/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity::pages::breakdown/)'
     - id: ptu-sentinel-tests
       why: PTU sentinel handling is incorrect (appears in models/model_groups/providers/api_keys api_key_breakdowns, missing from mcp_servers/endpoints, or flat_cost not added to parents)
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_pages::(sentinel|ptu_)/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity::pages::(sentinel|ptu_)/)'
     - id: model-group-tests
       why: model-group fallback does not work correctly; models bucket uses model_group for non-sentinel or model_groups bucket does not use fallback
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_pages::model_group/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity::pages::model_group/)'
     - id: sync-aggregation-tests
       why: sync aggregation does not group by date, returns wrong order, or loses metrics
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_pages::sync_aggregate/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity::pages::sync_aggregate/)'
     - id: async-aggregation-tests
       why: async aggregation does not fetch metadata correctly or does not dispatch to worker thread
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_pages::async_aggregate/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity::pages::async_aggregate/)'
     - id: read-service-tests
       why: read service does not parse dates, resolve scopes, query pages, or return correct paginated response
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_pages::read_service/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity::pages::read_service/)'
     - id: metadata-callback-tests
       why: metadata callback is not invoked correctly or does not override computed totals
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_pages::metadata_callback/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity::pages::metadata_callback/)'
     - id: pagination-tests
       why: pagination metadata (total_pages, has_more) does not use full total_count or is computed from page_size and page number alone
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_pages::pagination/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity::pages::pagination/)'
 oracle_cases: []
 deviations:
   - what: Metadata callback remains a typed injected callback (not resurrecting the unused tag-deduplication helper from LiteLLM).

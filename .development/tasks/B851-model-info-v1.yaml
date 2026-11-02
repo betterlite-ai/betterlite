@@ -81,7 +81,6 @@ scope:
   paths:
     - crates/betterlite-server/src/model_info_v1.rs
     - crates/betterlite-server/src/model_info_v1/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes.rs
     - crates/betterlite-server/src/routes/**

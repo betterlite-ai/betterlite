@@ -1,0 +1,5 @@
+task: B4120
+deviations:
+  - what: _parse_code returns empty string for any JSON parse error, including malformed JSON, missing code field, and non-string code values.
+    why: Display-only parsing trades strictness for resilience so the loop doesn't crash on malformed arguments; the execution path (_run_tool_call) parses again strictly and rejects errors.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L688-L706

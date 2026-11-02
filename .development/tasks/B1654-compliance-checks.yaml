@@ -32,7 +32,6 @@ description: >-
   material within 750 changed lines.
 scope:
   paths:
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/compliance_checks.rs
     - crates/betterlite-server/src/compliance_checks/**
     - crates/betterlite-server/fuzz/Cargo.toml

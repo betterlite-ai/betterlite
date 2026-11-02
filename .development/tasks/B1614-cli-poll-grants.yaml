@@ -22,7 +22,6 @@ description: >-
   records; 240 implementation, 200 tests and 60 integration/corpus lines fit a 575-line cap.
 scope:
   paths:
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/cli_poll_grants.rs
     - crates/betterlite-server/src/cli_poll_grants/**
     - crates/betterlite-server/fuzz/corpus/cli_login_input/team-grants-*

@@ -1,0 +1,14 @@
+kind: helper
+name: empty_body_with_form_fallback
+call:
+  b3300:
+    multipart:
+      file_base64: ZGF0YQ==
+      file_name: a.pdf
+      file_content_type: application/pdf
+      fields:
+        - [model, mistral-ocr]
+    use_cached_form: true
+env: {}
+compare:
+  ignore: []

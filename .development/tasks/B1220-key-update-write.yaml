@@ -75,8 +75,8 @@ scope:
   paths:
     - crates/betterlite-server/src/key_update_write.rs
     - crates/betterlite-server/src/key_update_write/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/key_update_write/fixtures.rs
     - crates/betterlite-server/src/key_update_write/fixtures/**
   lint_tables: false
 references:

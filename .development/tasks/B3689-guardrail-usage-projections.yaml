@@ -142,34 +142,34 @@ checks:
   commands:
     - id: window-validation-works
       why: Date window validation is missing, incorrect or error messages mismatch LiteLLM
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrail_usage_projections::.*window_validation/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::usage_projections::.*window_validation/)'
     - id: window-defaults-work
       why: resolve_usage_window defaults are incorrect or do not round-trip as ISO strings
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrail_usage_projections::.*window_defaults/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::usage_projections::.*window_defaults/)'
     - id: window-format-strict
       why: Date format is not validated strictly (non-ISO round-trip allowed)
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrail_usage_projections::.*format_strict/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::usage_projections::.*format_strict/)'
     - id: thresholds-correct
       why: Status thresholds or trend comparison offsets are incorrect
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrail_usage_projections::.*(status|trend)/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::usage_projections::.*(status|trend)/)'
     - id: metrics-aggregation-works
       why: Daily metrics aggregation is missing, incomplete or produces wrong totals
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrail_usage_projections::.*aggregat(e|ion)/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::usage_projections::.*aggregat(e|ion)/)'
     - id: row-aggregation-works
       why: Row summation or grouping by counter/team/key is missing or incorrect
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrail_usage_projections::.*sum_|.*grouping/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::usage_projections::.*sum_|.*grouping/)'
     - id: guardrail-overview-works
       why: Overview row building is missing, metrics lookup fails or fallback rows are incorrect
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrail_usage_projections::.*overview/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::usage_projections::.*overview/)'
     - id: policy-overview-works
       why: Policy overview rows are missing or policy_id lookup is incorrect
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrail_usage_projections::.*policy/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::usage_projections::.*policy/)'
     - id: field-access-works
       why: Field extraction from mixed db/config guardrail records fails
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrail_usage_projections::.*field/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::usage_projections::.*field/)'
     - id: guardrail-usage-oracle
       why: The typed operation has no seed, the oracle helper fails or behavior tests are missing
-      run: test -f tools/oracle/helpers/b3689.py && test -f tools/oracle/src/helpers/server/b3689.rs && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^guardrail_usage_projections::|replays_the_helper_case_corpus/)' && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/guardrail-usage-projections-*)"
+      run: test -f tools/oracle/helpers/b3689.py && test -f tools/oracle/src/helpers/server/b3689.rs && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^guardrails::usage_projections::|replays_the_helper_case_corpus/)' && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/guardrail-usage-projections-*)"
     - id: guardrail-usage-python
       why: The helper adapter is missing or strict Python checking fails
       run: test -f tools/oracle/helpers/b3689.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json

@@ -33,7 +33,6 @@ scope:
   paths:
     - crates/betterlite-gateway/**
     - crates/betterlite-backend/**
-    - crates/betterlite-server/src/lib.rs
     - tools/oracle/helpers/b4471.py
     - tools/oracle/helpers/b4471/**
     - tools/oracle/src/helpers/server/b4471.rs

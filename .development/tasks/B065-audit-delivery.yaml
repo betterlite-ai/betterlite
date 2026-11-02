@@ -41,7 +41,6 @@ description: >-
 scope:
   paths:
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/audit.rs
     - crates/betterlite-server/src/audit/**
     - crates/betterlite-logging/Cargo.toml
