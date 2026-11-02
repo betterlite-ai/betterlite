@@ -282,22 +282,35 @@ async fn check_raw_value_with_timestamps(client: &Client, check: RawValueCheck<'
     assert_created_updated_timestamps(client, check.table).await;
 }
 
-async fn check_oauth_client_raw_json_and_timestamp_defaults(client: &Client) {
-    check_raw_value_with_timestamps(
-        client,
-        RawValueCheck {
-            insert_sql: r#"INSERT INTO "LiteLLM_MCPServerOAuthClient" (server_id, credentials) VALUES ($1, $2)"#,
-            insert_params: &[
-                &"server-oauth",
-                &serde_json::Value::String("raw-opaque-value".to_owned()),
-            ],
+#[derive(Clone, Copy)]
+enum RawValueCohort {
+    OauthClient,
+    Sso,
+}
+
+fn raw_value_check_for(cohort: RawValueCohort) -> RawValueCheck<'static> {
+    match cohort {
+        RawValueCohort::OauthClient => RawValueCheck {
+            insert_sql: r#"INSERT INTO "LiteLLM_MCPServerOAuthClient" (server_id, credentials) VALUES ($1, $2::jsonb)"#,
+            insert_params: &[&"server-oauth", &r#""raw-opaque-value""#],
             select_sql: r#"SELECT credentials::text FROM "LiteLLM_MCPServerOAuthClient" WHERE server_id = $1"#,
             select_param: "server-oauth",
             expected: r#""raw-opaque-value""#,
             table: "LiteLLM_MCPServerOAuthClient",
         },
-    )
-    .await;
+        RawValueCohort::Sso => RawValueCheck {
+            insert_sql: r#"INSERT INTO "LiteLLM_SSOIdentityAssertion" (user_id, assertion_b64) VALUES ($1, $2)"#,
+            insert_params: &[&"user-sso", &"opaque-assertion-bytes"],
+            select_sql: r#"SELECT assertion_b64 FROM "LiteLLM_SSOIdentityAssertion" WHERE user_id = $1"#,
+            select_param: "user-sso",
+            expected: "opaque-assertion-bytes",
+            table: "LiteLLM_SSOIdentityAssertion",
+        },
+    }
+}
+
+async fn check_oauth_client_or_sso_raw_value(client: &Client, cohort: RawValueCohort) {
+    check_raw_value_with_timestamps(client, raw_value_check_for(cohort)).await;
 }
 
 async fn check_jwt_key_delete_now_cascades_only_its_mappings(client: &Client) {
@@ -355,33 +368,22 @@ async fn run_mcp_key_history_check(client: &Client, cohort: McpKeyHistoryCohort)
             check_nullable_oauth_exchange_issuer_fields(client).await;
         }
         McpKeyHistoryCohort::UnguardedNullableColumnsRepeat42701 => {
-            check_unguarded_nullable_columns_repeat_42701(client).await
+            check_unguarded_nullable_columns_repeat_42701(client).await;
         }
         McpKeyHistoryCohort::KeyTypeNullableBothTables => {
-            check_key_type_nullable_both_tables(client).await
+            check_key_type_nullable_both_tables(client).await;
         }
         McpKeyHistoryCohort::BudgetFallbacksEmptyBothTables => {
-            check_budget_fallbacks_empty_both_tables(client).await
+            check_budget_fallbacks_empty_both_tables(client).await;
         }
         McpKeyHistoryCohort::SettingsUpdatedAtNullableNoBackfill => {
-            check_settings_updated_at_nullable_no_backfill(client).await
+            check_settings_updated_at_nullable_no_backfill(client).await;
         }
         McpKeyHistoryCohort::OauthClientRawJsonAndTimestampDefaults => {
-            check_oauth_client_raw_json_and_timestamp_defaults(client).await
+            check_oauth_client_or_sso_raw_value(client, RawValueCohort::OauthClient).await;
         }
         McpKeyHistoryCohort::SsoAssertionRawTextAndTimestampDefaults => {
-            check_raw_value_with_timestamps(
-                client,
-                RawValueCheck {
-                    insert_sql: r#"INSERT INTO "LiteLLM_SSOIdentityAssertion" (user_id, assertion_b64) VALUES ($1, $2)"#,
-                    insert_params: &[&"user-sso", &"opaque-assertion-bytes"],
-                    select_sql: r#"SELECT assertion_b64 FROM "LiteLLM_SSOIdentityAssertion" WHERE user_id = $1"#,
-                    select_param: "user-sso",
-                    expected: "opaque-assertion-bytes",
-                    table: "LiteLLM_SSOIdentityAssertion",
-                },
-            )
-            .await;
+            check_oauth_client_or_sso_raw_value(client, RawValueCohort::Sso).await;
         }
         McpKeyHistoryCohort::JwtKeyDeleteNowCascadesOnlyItsMappings => {
             check_jwt_key_delete_now_cascades_only_its_mappings(client).await;

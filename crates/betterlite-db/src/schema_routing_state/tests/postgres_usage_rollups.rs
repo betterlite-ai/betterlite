@@ -269,7 +269,15 @@ async fn check_budget_window_key_excludes_start(client: &Client) {
     assert_eq!(sql_state(&conflict), SqlState::UNIQUE_VIOLATION.code());
 }
 
-async fn check_autorouter_integer_counters(client: &Client) {
+const AUTOROUTER_SESSION: &str = "LiteLLM_AutoRouterSession";
+
+async fn check_autorouter_fourteen_integer_counters_tokens_spend_models_tiers(client: &Client) {
+    exec_params(
+        client,
+        r#"INSERT INTO "LiteLLM_AutoRouterSession" (api_key, session_id, router_name, router_type, first_turn_at, last_turn_at, last_model) VALUES ($1, $2, $3, $4, now(), now(), $5)"#,
+        &[&"key-a", &"session-a", &"router-a", &"adaptive", &"model-a"],
+    )
+    .await;
     for name in [
         "turns",
         "unordered_turns",
@@ -286,27 +294,14 @@ async fn check_autorouter_integer_counters(client: &Client) {
         "ttl_5m_turns",
         "ttl_1h_turns",
     ] {
-        assert_column(client, "LiteLLM_AutoRouterSession", int4_zero(name)).await;
+        assert_column(client, AUTOROUTER_SESSION, int4_zero(name)).await;
     }
-    assert_column(
-        client,
-        "LiteLLM_AutoRouterSession",
-        int8_zero("total_tokens"),
-    )
-    .await;
-}
-
-async fn check_autorouter_spend_and_tiers(client: &Client) {
+    assert_column(client, AUTOROUTER_SESSION, int8_zero("total_tokens")).await;
     for name in ["spend", "saved_spend"] {
-        assert_column(
-            client,
-            "LiteLLM_AutoRouterSession",
-            float8_default(name, "0"),
-        )
-        .await;
+        assert_column(client, AUTOROUTER_SESSION, float8_default(name, "0")).await;
     }
     for name in ["models", "tier_turns"] {
-        assert_column(client, "LiteLLM_AutoRouterSession", empty_jsonb(name)).await;
+        assert_column(client, AUTOROUTER_SESSION, empty_jsonb(name)).await;
     }
 }
 
@@ -336,14 +331,7 @@ async fn run_usage_rollups_check(client: &Client, cohort: UsageRollupsCohort) {
             check_budget_window_key_excludes_start(client).await;
         }
         UsageRollupsCohort::AutorouterFourteenIntegerCountersTokensSpendModelsTiers => {
-            exec_params(
-                client,
-                r#"INSERT INTO "LiteLLM_AutoRouterSession" (api_key, session_id, router_name, router_type, first_turn_at, last_turn_at, last_model) VALUES ($1, $2, $3, $4, now(), now(), $5)"#,
-                &[&"key-a", &"session-a", &"router-a", &"adaptive", &"model-a"],
-            )
-            .await;
-            check_autorouter_integer_counters(client).await;
-            check_autorouter_spend_and_tiers(client).await;
+            check_autorouter_fourteen_integer_counters_tokens_spend_models_tiers(client).await;
         }
     }
 }
