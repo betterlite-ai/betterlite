@@ -50,6 +50,14 @@ fn opencode_validation_rejects_agent_managed_keys() {
     r#"{"agent":"nope"}"#,
     "OpenCodeOptions.config['agent'] must be a mapping"
 )]
+#[case::agent_list_repeated_name(
+    r#"{"agent":{"build":["model","model"]}}"#,
+    "OpenCodeOptions.config['agent']['build'] sets ['model'], which LiteLLM manages; use permissions=/disable_tools=/model= instead"
+)]
+#[case::mode_list_two_names(
+    r#"{"mode":{"plan":["tools","model"]}}"#,
+    "OpenCodeOptions.config['mode']['plan'] sets ['model', 'tools'], which LiteLLM manages; use permissions=/disable_tools=/model= instead"
+)]
 fn config_errors_match_litellm(#[case] raw: &str, #[case] expected: &str) {
     let config: JsonObject = serde_json::from_str(raw).unwrap();
     assert_eq!(

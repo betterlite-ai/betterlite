@@ -101,5 +101,6 @@ where
         .map(str::to_owned)
         .collect();
     managed.sort();
+    managed.dedup();
     managed
 }

@@ -1,5 +1,7 @@
 use unicode_general_category::{GeneralCategory, get_general_category};
 
+mod tests;
+
 const NON_PRINTABLE_CATEGORIES: [GeneralCategory; 7] = [
     GeneralCategory::Control,
     GeneralCategory::Format,
