@@ -1336,6 +1336,7 @@ version = "0.1.0"
 dependencies = [
  "betterlite-config",
  "betterlite-http",
+ "betterlite-models",
  "hex",
  "indexmap 2.14.2",
  "rand 0.10.3",
