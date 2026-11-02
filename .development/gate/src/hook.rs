@@ -1,5 +1,6 @@
 mod tests;
 
+use std::env;
 use std::fs;
 use std::io::ErrorKind;
 use std::path::PathBuf;
@@ -104,16 +105,32 @@ pub(crate) fn hook(input: &str) -> Result<Vec<String>, GateError> {
             return block_counted(&development, task_id, &[line]);
         }
     };
+    check_report(&development, task_id, &report)
+}
+
+fn check_report(
+    development: &Development,
+    task_id: &str,
+    report: &Report,
+) -> Result<Vec<String>, GateError> {
     if report.status == ReportStatus::Blocked && !report.blocker.trim().is_empty() {
         return Ok(Vec::new());
     }
     let task = development.task(task_id)?;
-    let verdict = checks::run(&development, &task, &Selection::default())?;
     let added = added_dependencies(&development.root, &resolve_base(&development.root)?)?;
-    let problems = report_problems(&report, &task, &added);
-    if verdict.passed && problems.is_empty() {
+    let problems = report_problems(report, &task, &added);
+    if !problems.is_empty() {
+        return block_counted(development, task_id, &problems);
+    }
+    let selection = if env::var("GATE_DISPATCHED").as_deref() == Ok("1") {
+        checks::selection::preflight(development, &task)?
+    } else {
+        Selection::default()
+    };
+    let verdict = checks::run(development, &task, &selection)?;
+    if verdict.passed {
         return Ok(Vec::new());
     }
     let lines: Vec<String> = verdict.lines.into_iter().chain(problems).collect();
-    block_counted(&development, task_id, &lines)
+    block_counted(development, task_id, &lines)
 }

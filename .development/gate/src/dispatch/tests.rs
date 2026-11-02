@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+mod interrupted;
+
 use std::fs::{self, File};
 use std::ops::ControlFlow;
 use std::path::Path;

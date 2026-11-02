@@ -1,4 +1,7 @@
 mod execute;
+mod history;
+pub(crate) mod selection;
+mod tests;
 
 use std::fs;
 use std::path::Path;
@@ -93,6 +96,7 @@ pub(crate) fn run(
     task: &Task,
     selection: &Selection,
 ) -> Result<Verdict, GateError> {
+    selection::validate(development, task, selection)?;
     let root = &development.root;
     let facts = Facts::collect(root)?;
     let log_dir = journal_dir(root, &task.id)?.join("gate");
@@ -102,38 +106,48 @@ pub(crate) fn run(
     })?;
     // a dispatch reads the holder's process group from it to stop a check run whose worker died
     let _held = gate_lock::hold(&log_dir)?;
-    let mut outcomes = builtin_outcomes(development, task, &facts, selection);
+    let run_dir = history::start(&log_dir)?;
+    run_checks(development, task, selection, &facts, &run_dir)
+}
+
+fn run_checks(
+    development: &Development,
+    task: &Task,
+    selection: &Selection,
+    facts: &Facts,
+    log_dir: &Path,
+) -> Result<Verdict, GateError> {
+    let root = &development.root;
+    let mut outcomes = builtin_outcomes(development, task, facts, selection);
     let environment = [
         ("GATE_TASK", task.id.clone()),
         ("GATE_BASE", facts.base.clone()),
         ("GATE_LOG_DIR", log_dir.display().to_string()),
         ("GATE_ORACLE_CASES", task.oracle_cases.join(" ")),
     ];
-    let (later, first): (Vec<&Command>, Vec<&Command>) = commands(development, task)?
-        .into_iter()
-        .filter(|check| {
-            (selection.only.is_empty() || selection.only.contains(&check.id))
-                && !selection.skip.contains(&check.id)
-        })
-        .partition(|check| check.after_green);
-    for command in first {
-        let started = Instant::now();
-        let outcome = run_command(root, &log_dir, command, &environment)?;
-        outcomes.push((command.id.clone(), started.elapsed().as_secs(), outcome));
+    let scheduled = selection::schedule(development, task, selection)?;
+    let reasons = [
+        None,
+        Some("fix the failed prerequisites before expensive checks"),
+        Some("runs once every other check passes"),
+    ];
+    for (group, reason) in scheduled.into_iter().zip(reasons) {
+        let blocked = reason.filter(|_| {
+            outcomes
+                .iter()
+                .any(|(_, _, outcome)| matches!(outcome, Outcome::Fail { .. }))
+        });
+        for command in group {
+            let started = Instant::now();
+            let outcome = match blocked {
+                Some(message) => Outcome::Skip(message.to_owned()),
+                None => run_command(root, log_dir, command, &environment)?,
+            };
+            outcomes.push((command.id.clone(), started.elapsed().as_secs(), outcome));
+        }
     }
-    let red = outcomes
-        .iter()
-        .any(|(_, _, outcome)| matches!(outcome, Outcome::Fail { .. }));
-    for command in later {
-        let started = Instant::now();
-        let outcome = if red {
-            Outcome::Skip("runs once every other check passes".to_owned())
-        } else {
-            run_command(root, &log_dir, command, &environment)?
-        };
-        outcomes.push((command.id.clone(), started.elapsed().as_secs(), outcome));
-    }
-    Ok(render(task, &facts.base, &log_dir, outcomes))
+    history::save(root, log_dir, &facts.base, selection, &outcomes)?;
+    Ok(render(task, &facts.base, log_dir, outcomes))
 }
 
 fn run_command(
@@ -163,7 +177,10 @@ fn render(
         outcomes.len(),
         log_dir.display()
     )];
-    let mut passed = true;
+    let mut passed = !outcomes.is_empty();
+    if outcomes.is_empty() {
+        lines.push("FAIL selection: no checks selected".to_owned());
+    }
     for (id, seconds, outcome) in outcomes {
         match outcome {
             Outcome::Pass => lines.push(format!("PASS {id} ({seconds}s)")),
