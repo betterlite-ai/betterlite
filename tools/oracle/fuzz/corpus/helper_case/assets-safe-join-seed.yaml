@@ -1,5 +1,12 @@
 kind: helper
 name: assets-safe-join-seed
-call: {assets: {op: safe_join, fixture: [{kind: dir, path: inside}, {kind: file, path: inside/file.txt, content_hex: "6869"}], parts: [inside, file.txt]}}
+call:
+  assets:
+    op: safe_join
+    fixture:
+      - {kind: dir, path: inside}
+      - {kind: file, path: inside/file.txt, content_hex: "6869"}
+    parts: [inside, file.txt]
 env: {}
-compare: {ignore: []}
+compare:
+  ignore: []
