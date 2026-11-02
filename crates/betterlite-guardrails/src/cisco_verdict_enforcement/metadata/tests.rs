@@ -107,6 +107,16 @@ fn stash_verdict_on_request_leaves_non_object_metadata_alone() {
 }
 
 #[test]
+fn stash_verdict_on_request_leaves_an_explicit_null_metadata_alone() {
+    let mut request_data = obj(r#"{"metadata": null}"#);
+    stash_verdict_on_request(&mut request_data, context(), &empty_verdict());
+    assert_eq!(
+        request_data.get("metadata").map(|raw| raw.get()),
+        Some("null")
+    );
+}
+
+#[test]
 fn sanitize_response_for_logging_strips_sensitive_keys_and_tags_surface_and_action() {
     let response = Json::parse(r#"{"is_safe": true, "raw_request": "secret", "_internal": 1}"#);
     let sanitized =

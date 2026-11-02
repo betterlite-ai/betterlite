@@ -9,16 +9,20 @@ use crate::cisco_verdict_enforcement::support::{
     direction_label, insert_serialized, rule_name, surface_label,
 };
 
-// Mirrors LiteLLM's fn _stash_verdict_on_request, except a non-object existing metadata value is left alone instead of overwritten.
+// Mirrors LiteLLM's fn _stash_verdict_on_request: request_data.setdefault("metadata", {}) only creates a fresh object when the key is absent, so an explicit null (or any other non-object value) is left untouched.
 pub fn stash_verdict_on_request(
     request_data: &mut Fields,
     context: ScanContext,
     verdict: &CiscoVerdict,
 ) {
-    let mut metadata = match Json::field(request_data, "metadata") {
-        Json::Object(existing) => existing,
-        Json::Null => Fields::new(),
-        Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => return,
+    let mut metadata = match request_data.get("metadata") {
+        None => Fields::new(),
+        Some(raw) => match Json::parse(raw.get()) {
+            Json::Object(existing) => existing,
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+                return;
+            }
+        },
     };
     let prefix = format!(
         "cisco_ai_defense_{}_{}",
