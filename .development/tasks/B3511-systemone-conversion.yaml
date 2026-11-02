@@ -12,6 +12,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-openai/src/decisions/**
+    - crates/betterlite-openai/src/providers/typesafe/decisions.rs
     - crates/betterlite-openai/src/providers/typesafe/decisions/**
   lint_tables: false
 
