@@ -98,7 +98,6 @@ scope:
   paths:
     - crates/betterlite-server/src/key_persistence.rs
     - crates/betterlite-server/src/key_persistence/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/src/helpers/server/key_persistence.rs
     - tools/oracle/src/helpers/server/key_persistence/**
@@ -107,6 +106,7 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/key-persistence/**
     - tools/oracle/fuzz/corpus/helper_case/key-persistence-*
+    - crates/betterlite-server/src/key_persistence/fixtures.rs
     - crates/betterlite-server/src/key_persistence/fixtures/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/key-persistence-*

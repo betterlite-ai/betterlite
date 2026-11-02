@@ -138,73 +138,73 @@ checks:
   commands:
     - id: frequency-daily-only
       why: MavvrikFocusLogger does not raise ValueError for non-daily frequency values
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_export::frequency_daily_only/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::mavvrik::export::frequency_daily_only/)'
     - id: init-super-call
       why: MavvrikFocusLogger.__init__ does not call super().__init__ with correct provider, format, frequency, prefix
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_export::init_super_call/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::mavvrik::export::init_super_call/)'
     - id: max-rows-parsing
       why: MAVVRIK_FOCUS_MAX_ROWS parsing does not default to 500000 or does not raise error on invalid input
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_export::max_rows_parsing/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::mavvrik::export::max_rows_parsing/)'
     - id: parse-marker-formats
       why: _parse_metrics_marker does not handle Unix timestamps and ISO date formats correctly
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_export::parse_marker_formats/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::mavvrik::export::parse_marker_formats/)'
     - id: parse-marker-none
       why: _parse_metrics_marker does not return None for falsy markers or does not set timestamps to midnight
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_export::parse_marker_none/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::mavvrik::export::parse_marker_none/)'
     - id: parse-marker-warning
       why: _parse_metrics_marker does not log warning for unparseable markers
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_export::parse_marker_warning/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::mavvrik::export::parse_marker_warning/)'
     - id: is-empty-marker-cases
       why: _is_empty_metrics_marker does not distinguish None, 0, empty string from actual dates
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_export::is_empty_marker_cases/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::mavvrik::export::is_empty_marker_cases/)'
     - id: export-window-row-cap
       why: _export_window does not apply effective_limit or does not warn at row cap
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_export_window::row_cap/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::mavvrik::export_window::row_cap/)'
     - id: export-window-empty-delivery
       why: _export_window does not deliver empty payload when data is empty
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_export_window::empty_delivery/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::mavvrik::export_window::empty_delivery/)'
     - id: scheduled-export-register
       why: _run_scheduled_export does not call get_metrics_marker on the Mavvrik destination
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_scheduled_export::register/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::mavvrik::scheduled_export::register/)'
     - id: scheduled-export-today-window
       why: _run_scheduled_export does not compute today window with end_time=now and start_time=yesterday at 00:00
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_scheduled_export::today_window/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::mavvrik::scheduled_export::today_window/)'
     - id: scheduled-export-marker-check
       why: _run_scheduled_export does not check if marker is empty or behind yesterday
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_scheduled_export::marker_check/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::mavvrik::scheduled_export::marker_check/)'
     - id: catchup-start-date
       why: _run_scheduled_export does not compute catch-up start date from max(last_ingested+1, yesterday-6) or does not always run catch-up when marker is empty
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_scheduled_export::catchup_start_date/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::mavvrik::scheduled_export::catchup_start_date/)'
     - id: catchup-behind-warning
       why: _run_scheduled_export does not warn when last_ingested is more than 7 days behind
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_scheduled_export::catchup_behind_warning/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::mavvrik::scheduled_export::catchup_behind_warning/)'
     - id: catchup-loop
       why: _run_scheduled_export does not loop catch-up dates or does not use min(date+1, now) as end_time
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_scheduled_export::catchup_loop/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::mavvrik::scheduled_export::catchup_loop/)'
     - id: scheduled-export-yesterday
       why: _run_scheduled_export does not export yesterday last with end_time=now
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_scheduled_export::yesterday/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::mavvrik::scheduled_export::yesterday/)'
     - id: pod-lock-acquire-mavvrik
       why: initialize_mavvrik_focus_export_job does not acquire pod lock with MAVVRIK_FOCUS_EXPORT_JOB_NAME
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_schedule::pod_lock_acquire/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::mavvrik::schedule::pod_lock_acquire/)'
     - id: pod-lock-acquire-fail-mavvrik
       why: initialize_mavvrik_focus_export_job does not log debug and return early on acquire failure
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_schedule::pod_lock_acquire_fail/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::mavvrik::schedule::pod_lock_acquire_fail/)'
     - id: pod-lock-release-mavvrik
       why: initialize_mavvrik_focus_export_job does not release pod lock with MAVVRIK_FOCUS_EXPORT_JOB_NAME in finally
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_schedule::pod_lock_release/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::mavvrik::schedule::pod_lock_release/)'
     - id: scheduler-exact-type-match-mavvrik
       why: init_mavvrik_focus_background_job does not filter by exact type or includes subclasses
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_schedule::exact_type_match/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::mavvrik::schedule::exact_type_match/)'
     - id: scheduler-lazy-init-mavvrik
       why: init_mavvrik_focus_background_job does not attempt lazy initialization when "mavvrik" is registered
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_schedule::lazy_init/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::mavvrik::schedule::lazy_init/)'
     - id: scheduler-skip-empty-mavvrik
       why: init_mavvrik_focus_background_job does not skip when no logger is found
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_schedule::skip_empty/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::mavvrik::schedule::skip_empty/)'
     - id: scheduler-registration-mavvrik
       why: init_mavvrik_focus_background_job does not register the scheduler job with correct id and trigger
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mavvrik_schedule::registration/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::mavvrik::schedule::registration/)'
 oracle_cases: []
 deviations:
   - what: >-

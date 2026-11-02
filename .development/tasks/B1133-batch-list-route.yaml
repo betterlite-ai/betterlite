@@ -80,7 +80,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-server/Cargo.toml
-  - crates/betterlite-server/src/lib.rs
   - crates/betterlite-server/src/error.rs
   - crates/betterlite-server/src/api/batch_list_route.rs
   - crates/betterlite-server/src/api/batch_list_route/**

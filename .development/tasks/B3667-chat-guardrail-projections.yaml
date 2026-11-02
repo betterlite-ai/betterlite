@@ -138,73 +138,73 @@ checks:
   commands:
     - id: not-run-reason-cases
       why: _not_run_reason filtering tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::(not_run_reason|scoping)/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::extraction::(not_run_reason|scoping)/)'
     - id: tool-name-extraction-cases
       why: extract_request_tool_names tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::extract_tool_names/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::extraction::extract_tool_names/)'
     - id: input-extraction-cases
       why: _extract_inputs tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::(extract_input|message_extraction)/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::extraction::(extract_input|message_extraction)/)'
     - id: input-text-rewrite-cases
       why: _apply_guardrail_responses_to_input_texts tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::apply_input_text/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::extraction::apply_input_text/)'
     - id: input-tool-rewrite-cases
       why: _apply_guardrail_responses_to_input_tool_calls tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::apply_input_tool/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::extraction::apply_input_tool/)'
     - id: narrowed-to-choice-cases
       why: _narrowed_to_choice tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::narrowed_to_choice/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::extraction::narrowed_to_choice/)'
     - id: error-items-cases
       why: build_stream_error_items tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::error_items/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::extraction::error_items/)'
     - id: accumulate-string-cases
       why: _accumulate_string_content_by_choice_index tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::accumulate_string/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::extraction::accumulate_string/)'
     - id: tool-fingerprint-cases
       why: _streamed_tool_call_fingerprints tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::tool_fingerprints/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::extraction::tool_fingerprints/)'
     - id: first-choice-finish-cases
       why: _first_choice_has_finished tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::first_choice_finish/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::extraction::first_choice_finish/)'
     - id: combine-texts-cases
       why: _combine_streaming_texts tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::combine_texts/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::extraction::combine_texts/)'
     - id: has-text-cases
       why: _has_text_content tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::has_text/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::extraction::has_text/)'
     - id: output-extraction-cases
       why: _extract_output_text_images_and_tool_calls tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::extract_output/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::extraction::extract_output/)'
     - id: tool-call-convert-cases
       why: _convert_tool_call_to_dict tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::convert_tool_call/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::extraction::convert_tool_call/)'
     - id: output-text-rewrite-cases
       why: _apply_guardrail_responses_to_output_texts tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::apply_output_text/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::extraction::apply_output_text/)'
     - id: output-tool-rewrite-cases
       why: _apply_guardrail_responses_to_output_tool_calls tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::apply_output_tool/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::extraction::apply_output_tool/)'
     - id: streaming-ended-cases
       why: _check_streaming_has_ended tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::streaming_ended/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::extraction::streaming_ended/)'
     - id: block-sse-cases
       why: build_block_sse_chunks tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::(block_sse|block_chunks)/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::extraction::(block_sse|block_chunks)/)'
     - id: block-usage-cases
       why: block sse chunks usage field tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::block_usage/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::extraction::block_usage/)'
     - id: chat-sse-chunk-cases
       why: _chat_sse_chunk encoding tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::sse_chunk/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::extraction::sse_chunk/)'
     - id: stream-chunk-choices-cases
       why: _stream_chunk_choices filtering tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::stream_choices/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::extraction::stream_choices/)'
     - id: streamed-delta-tool-cases
       why: _streamed_delta_tool_calls tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::delta_tool_calls/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::extraction::delta_tool_calls/)'
     - id: blocked-identity-cases
       why: _blocked_stream_identity tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_extraction::blocked_identity/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::extraction::blocked_identity/)'
 
 oracle_cases: []
 

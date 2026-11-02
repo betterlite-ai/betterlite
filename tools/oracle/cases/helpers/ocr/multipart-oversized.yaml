@@ -1,0 +1,9 @@
+kind: helper
+name: multipart_oversized
+call:
+  b3300:
+    multipart:
+      file_filler_bytes: 52428801
+env: {}
+compare:
+  ignore: []

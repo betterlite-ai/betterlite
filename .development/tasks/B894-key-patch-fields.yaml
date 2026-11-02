@@ -92,7 +92,6 @@ scope:
   paths:
     - crates/betterlite-server/src/key_patch_fields.rs
     - crates/betterlite-server/src/key_patch_fields/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/src/helpers/server/key_patch_fields.rs
     - tools/oracle/src/helpers/server/key_patch_fields/**
@@ -101,6 +100,7 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/key-patch-fields/**
     - tools/oracle/fuzz/corpus/helper_case/key-patch-fields-*
+    - crates/betterlite-server/src/key_patch_fields/fixtures.rs
     - crates/betterlite-server/src/key_patch_fields/fixtures/**
   lint_tables: false
 references:

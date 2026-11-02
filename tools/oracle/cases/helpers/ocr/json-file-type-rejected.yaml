@@ -1,0 +1,11 @@
+kind: helper
+name: json_file_type_rejected
+call:
+  b3300:
+    json_body:
+      model: mistral/mistral-ocr-latest
+      document:
+        type: file
+env: {}
+compare:
+  ignore: []

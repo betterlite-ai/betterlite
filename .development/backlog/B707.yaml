@@ -1,7 +1,7 @@
 id: B707
 milestone: M4 keys, spend and management
 title: Postgres migrations for routing state
-status: todo
+status: done
 depends_on: [B700, B706, B860]
 file: tasks/B707-schema-routing-state.yaml
 covers:
@@ -43,7 +43,7 @@ covers:
   - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260810000000_add_verificationtoken_settings_updated_at/migration.sql"
 parent: B051
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 511

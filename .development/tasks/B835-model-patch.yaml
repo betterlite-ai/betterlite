@@ -110,7 +110,6 @@ scope:
   paths:
     - crates/betterlite-server/src/model_patch.rs
     - crates/betterlite-server/src/model_patch/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes.rs
     - crates/betterlite-server/src/routes/**
@@ -119,6 +118,7 @@ scope:
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/model-patch/**
+    - crates/betterlite-server/src/model_patch/fixtures.rs
     - crates/betterlite-server/src/model_patch/fixtures/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/model-patch-*

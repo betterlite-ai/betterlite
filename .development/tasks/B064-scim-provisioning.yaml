@@ -33,7 +33,6 @@ description: >-
 scope:
   paths:
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/scim.rs
     - crates/betterlite-server/src/scim/**
     - crates/betterlite-server/fuzz/corpus/scim_resource/group-patch-*

@@ -35,7 +35,6 @@ description: >-
   230 tests and 180 adapters/corpus lines, capped at 800.
 scope:
   paths:
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/list_api.rs
     - crates/betterlite-server/src/list_api/**
     - crates/betterlite-server/src/list_api/{plan,problem,links}.rs

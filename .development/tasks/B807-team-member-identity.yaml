@@ -71,7 +71,6 @@ scope:
   paths:
     - crates/betterlite-server/src/team_member_identity.rs
     - crates/betterlite-server/src/team_member_identity/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/src/helpers/server/team_member_identity.rs
     - tools/oracle/src/helpers/server/team_member_identity/**

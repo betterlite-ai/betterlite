@@ -27,7 +27,6 @@ scope:
   paths:
     - crates/betterlite-core/src/api/media_relay_logging.rs
     - crates/betterlite-core/src/api/media_relay_logging/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/media_relay_logging.rs
     - crates/betterlite-server/src/media_relay_logging/**
     - tools/oracle/src/helpers/core_ops/media_relay_logging.rs
