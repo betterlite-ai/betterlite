@@ -53,7 +53,6 @@ fn failures(
     report: &Report,
 ) -> Result<Vec<String>, GateError> {
     let task = worktree.task(task_id)?;
-    let verdict = checks::run(worktree, &task, &Selection::default())?;
     let added = added_dependencies(&worktree.root, &resolve_base(&worktree.root)?)?;
     let mut problems = report_problems(report, &task, &added);
     let log = worktree
@@ -62,7 +61,11 @@ fn failures(
     if log.exists() {
         problems.extend(deviations::file_problems(&log, &worktree.backlog));
     }
-    if verdict.passed && problems.is_empty() {
+    if !problems.is_empty() {
+        return Ok(problems);
+    }
+    let verdict = checks::run(worktree, &task, &Selection::default())?;
+    if verdict.passed {
         return Ok(Vec::new());
     }
     let failing = verdict
@@ -189,12 +192,22 @@ pub(crate) fn attempt_once(
         Run::Limited => {
             return Ok(Turn {
                 step: None,
-                session: None,
+                session: super::checkpoint::session(
+                    &attempt
+                        .places
+                        .journal
+                        .join(format!("attempt-{}-worker.json", attempt.number)),
+                )?,
             });
         }
     };
     Ok(Turn {
         step: Some(Step::Retry(vec![note])),
-        session: None,
+        session: super::checkpoint::session(
+            &attempt
+                .places
+                .journal
+                .join(format!("attempt-{}-worker.json", attempt.number)),
+        )?,
     })
 }

@@ -97,18 +97,24 @@ fn run_on_seat(
     invocation: &Invocation<'_>,
 ) -> Result<Run, GateError> {
     let account = vendor::find_vendor(agents, &runner.vendor)?;
-    let seats = vendor::take_seat(invocation.git_common_dir, agents, account, seat)?;
+    super::maintenance::check(invocation.git_common_dir, "")?;
+    let marker = vendor::marker_time(invocation.git_common_dir, &account.id);
+    let Some(seats) = vendor::take_seat(invocation.git_common_dir, agents, account, seat)? else {
+        return Ok(Run::Limited);
+    };
+    super::maintenance::check(invocation.git_common_dir, "")?;
     let started = Instant::now();
     let reply = runner::run(runner, rung, invocation)?;
-    drop(seats);
     if let Some(text) = reply.answer {
+        vendor::clear_probe(invocation.git_common_dir, &account.id, marker)?;
+        drop(seats);
         return Ok(Run::Answer {
             text,
             session: reply.session,
         });
     }
     let stdout = invocation.output.with_extension("stdout");
-    match vendor::limit_line(account, &[&stdout, invocation.log])? {
+    let outcome = match vendor::limit_line(account, &[&stdout, invocation.log])? {
         Some(line) => {
             vendor::mark(invocation.git_common_dir, &account.id, &line)?;
             Ok(Run::Limited)
@@ -119,5 +125,7 @@ fn run_on_seat(
             Ok(Run::TimedOut)
         }
         None => Ok(Run::Silent),
-    }
+    };
+    drop(seats);
+    outcome
 }
