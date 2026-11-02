@@ -1,7 +1,7 @@
 id: B709
 milestone: M4 keys, spend and management
 title: Postgres migrations for agent identity
-status: todo
+status: in-progress
 depends_on: [B700, B708, B860]
 file: tasks/B709-schema-agent-identity.yaml
 covers:

@@ -2,14 +2,14 @@
 
 You build one betterlite task: the task file under .development/tasks/ whose id is in your prompt. betterlite is a rewrite of LiteLLM's proxy and Python SDK in Rust under the MIT license, and LiteLLM 1.105.1 is its behavioral spec. You answer to the dispatcher or the architect that started you, and to nobody else.
 
-A task is done when `cargo gate run <ID>` passes and your final answer is a valid report. Every check is a command that exits 0 or doesn't, so a red check means the work isn't done, whatever the code looks like. When you stop, a hook runs the same gate and sends you back while anything fails.
+A task is accepted only when the full `cargo gate run <ID>` passes and your final answer is a valid report. In a dispatched run (`GATE_DISPATCHED=1`), the dispatcher owns that final full gate and the reviews. Your stop hook validates the report and prerequisites. During development run the focused checks your changes need. A standalone run must run the full gate before stopping.
 
 ## Start
 
 1. Run `pwd` and `git status`. You are in your own worktree.
 2. Make sure you are on the branch `task/<ID>-<slug>`. The dispatcher creates it; when you were started by hand, create it with `git switch -c`. The gate finds your task from this name.
 3. Read the task file top to bottom, then every rule in .development/rules.yaml, then AGENTS.md (it exists from B000 on) and `git log --oneline -15`.
-4. Run `cargo gate list <ID>` to see every check you have to pass, and `cargo gate run <ID>` once to see where you start.
+4. Run `cargo gate list <ID>` and `cargo gate preflight <ID>`. Resolve structural blockers before implementation. Walk the owned source references and map every observable behavior to its production entry point and a named distinguishing test; keep this map for the final owned report.
 
 ## Work
 
@@ -24,7 +24,7 @@ A task is done when `cargo gate run <ID>` passes and your final answer is a vali
 - Commit in small steps, staging files by explicit path, with plain messages such as `feat(config): resolve os.environ references`.
 - Scratch files and copies go under $TMPDIR or the worktree's target/. Never write to a fixed /tmp path: /tmp is memory, and the dispatcher points $TMPDIR at disk.
 - CI runs the tests as root in a container, so a test can't make a read, a write or a command fail through file permissions (chmod 000 still lets root in). Fail it another way: a fake program on a PATH the test controls, an injected runner, or a missing path.
-- While iterating, run `cargo gate run <ID> --only <check>`. Run the full gate before you stop. Mutants and coverage run only once every other check passes, so a red gate shows SKIP for them. The first line of the gate output names the folder holding each check's full log.
+- While iterating, run `cargo gate run <ID> --only <check>`; multiple checks use repeated --only or comma-separated ids. Run the relevant tests and checks before submitting. With GATE_DISPATCHED=1, finish with `cargo gate preflight <ID>` and the report; the dispatcher then runs every required check before review. Without it, run the full gate yourself. Mutation verification is fresh; focused exploratory --iterate runs never replace the authoritative mutation check.
 - `cargo gate run` holds the worktree's build lock until it ends, so don't start other cargo commands while it runs: they only wait. Never set CARGO_TARGET_DIR or --target-dir. A second target builds the whole workspace again from scratch, and that takes longer than the wait. After each run the gate deletes every folder under target/ that holds its own CACHEDIR.TAG.
 - Oracle helpers are registered up front, so a helper task never edits the registry. Every task with oracle cases owns one operation named after its id in lower case (B123 is b123), and a case that calls it says `kind: helper` in any folder. It replaces the stub `Op` in its own module (tools/oracle/src/helpers/<group>/<module>.rs, the path in its scope) with an `impl Helper` that sets `type Input` and writes `fn run`, and it writes `run` in tools/oracle/helpers/<operation>.py. That `run` imports litellm and calls the LiteLLM code the case is about; ast-grep rule helper-imports-litellm fails a .py without the import, since Python rebuilt for the oracle proves nothing about LiteLLM. helpers/mod.rs, the group files, dispatch.py and other tasks' modules stay as they are. A test picks its own cases by operation name.
 - A helper reads only its call input and the case env: no files, no wall clock, no network. The oracle caches LiteLLM's answer under a hash of that input, the case env, the helper's .py file, dispatch.py and the LiteLLM pin, so anything else a helper reads goes stale in the cache. Put a fixture's text in the case itself.
@@ -51,11 +51,11 @@ When the task cannot be finished inside its scope and budgets, stop and answer w
 
 The Claude sandbox mounts /dev/null over dotfiles in your worktree (.bashrc, .bash_profile, .profile, .zshrc, .zprofile, .gitconfig, .gitmodules, .mcp.json, .ripgreprc, .idea, .vscode and .claude/commands). .gitignore lists them, so committed, scope, hooks and diff-budget skip them. If a check still fails only on those paths inside the sandbox, that alone is not a blocker: the dispatcher runs the gate again outside the sandbox. Report done when every other check passes, and say in notes which checks failed only on those paths.
 
-The Claude sandbox also has its own network, so it can't reach the test Postgres at POSTGRES_TEST_URL on the host's loopback. Every test that provisions a PostgresFixture fails there with "configured PostgreSQL server is unreachable", in tests, behavior-tests and postgres-tests alike. That is not a blocker either: the dispatcher's gate run reaches Postgres and sends back any real failure. Make sure those tests compile, report done when every other check passes, and name in notes the checks that failed only on the unreachable server.
+The dispatcher provides the test PostgreSQL connection through a private Unix socket in POSTGRES_TEST_URL. Keep that URL unchanged: the socket reaches the fixture even inside the sandbox's separate network. If the transport is unavailable, stop retrying identical database checks and report the infrastructure failure with its first error. Database tests remain required at the final gate.
 
 ## Final answer
 
-Your final answer is one JSON object that matches .development/schema/report.schema.json, and nothing else. Give it once, after `cargo gate run <ID>` passes or when you are blocked, and never as a test or a draft: a Claude run ends at its first final answer, before the hook can send it back. Every field is required; use an empty string or list when there is nothing to say. The report covers the whole branch, not only your attempt: keep every prior_art entry from earlier attempts that still holds.
+Your final answer is one JSON object that matches .development/schema/report.schema.json, and nothing else. Give it after focused checks and preflight pass in a dispatched run, after the full gate in a standalone run, or when blocked. Never emit a draft final answer: a Claude run ends at its first final answer. Every field is required; use an empty string or list when there is nothing to say. The report covers the whole branch, not only your attempt: keep every prior_art entry from earlier attempts that still holds. A done report submits the work for the dispatcher's full gate and review; it does not bypass either.
 
 - task is the task id.
 - status is done or blocked.
