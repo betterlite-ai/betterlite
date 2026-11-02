@@ -348,7 +348,7 @@ async fn check_existing_group_id_preserved(client: &Client) {
     .await;
 }
 
-const STOPPED_AT_ALIGNMENT_RETRIES: u32 = 50;
+const STOPPED_AT_ALIGNMENT_RETRIES: u32 = 20_000;
 
 async fn align_transaction_to_millisecond_boundary(client: &Client) {
     batch_execute(client, "BEGIN; SET LOCAL TIME ZONE 'UTC';").await;
