@@ -1,0 +1,1 @@
+{"model":"claude-3-5-sonnet","messages":[{"role":"user","content":"What's the weather in Boston?"},{"role":"assistant","content":"It's sunny in Boston."},{"role":"system","content":"Keep every answer under two sentences."},{"role":"user","content":"And in Seattle?"}]}

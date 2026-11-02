@@ -1,0 +1,15 @@
+kind: helper
+name: empty-video-price-table-returns-zero
+call:
+  duration_cost:
+    operation: video
+    calculator: default
+    model: veo-3
+    duration_seconds: "10"
+    custom_llm_provider: null
+    model_info: {}
+    video_resolution: "1080p"
+    raw_catalog:
+      output_cost_per_second: "9"
+compare: {ignore: []}
+env: {}

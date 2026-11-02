@@ -1,7 +1,7 @@
 id: B706
 milestone: M4 keys, spend and management
 title: Postgres migrations for policy resources
-status: todo
+status: done
 depends_on: [B700, B705, B860]
 file: tasks/B706-schema-policy-resources.yaml
 covers:
@@ -39,7 +39,7 @@ covers:
   - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260415120000_health_check_latest_per_model_index/migration.sql"
 parent: B051
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 495

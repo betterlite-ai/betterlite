@@ -21,7 +21,6 @@ description: >-
 
 scope:
   paths:
-  - crates/betterlite-openai/src/lib.rs
   - crates/betterlite-openai/src/code_execution_records.rs
   - crates/betterlite-openai/src/code_execution_records/**
   - crates/betterlite-openai/fuzz/Cargo.toml

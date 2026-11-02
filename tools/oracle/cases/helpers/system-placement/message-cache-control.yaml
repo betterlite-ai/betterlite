@@ -1,0 +1,14 @@
+kind: helper
+name: system-placement-message-cache-control
+call:
+  system_placement:
+    operation: system_message_as_user
+    message:
+      role: system
+      content: Remember the account id.
+      cache_control:
+        type: ephemeral
+        ttl: 1h
+env: {}
+compare:
+  ignore: []
