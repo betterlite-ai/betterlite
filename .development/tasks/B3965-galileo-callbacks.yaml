@@ -25,20 +25,7 @@ scope:
   - tools/oracle/src/helpers/logging/b3965.rs
   - tools/oracle/src/helpers/logging/b3965/**
   - crates/betterlite-logging/src/galileo/admission/**
-  - tools/oracle/cases/logging/galileo-admission/batch-threshold-triggers-flush.yaml
-  - tools/oracle/cases/logging/galileo-admission/buffer-append.yaml
-  - tools/oracle/cases/logging/galileo-admission/buffer-exceeded-drops-oldest.yaml
-  - tools/oracle/cases/logging/galileo-admission/buffer-exceeded-logs-warning.yaml
-  - tools/oracle/cases/logging/galileo-admission/failure-callback-diagnostic-only.yaml
-  - tools/oracle/cases/logging/galileo-admission/llm-response-record-construction.yaml
-  - tools/oracle/cases/logging/galileo-admission/messages-field-optional.yaml
-  - tools/oracle/cases/logging/galileo-admission/success-callback-configured.yaml
-  - tools/oracle/cases/logging/galileo-admission/success-callback-no-standard-logging-object.yaml
-  - tools/oracle/cases/logging/galileo-admission/success-callback-not-configured.yaml
-  - tools/oracle/cases/logging/galileo-admission/time-fallback-to-datetimes.yaml
-  - tools/oracle/cases/logging/galileo-admission/time-from-standard-logging-object.yaml
-  - tools/oracle/cases/logging/galileo-admission/token-normalization-with-zero-fallback.yaml
-  - tools/oracle/cases/logging/galileo-admission/total-tokens-computed-from-sum.yaml
+  - tools/oracle/cases/logging/galileo-admission/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/galileo.py#L658-L674
