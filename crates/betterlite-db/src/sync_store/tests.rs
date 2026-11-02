@@ -7,7 +7,7 @@ use betterlite_roi::records::{
 };
 use chrono::NaiveDate;
 use clap::Parser;
-use deadpool_postgres::{Client, Manager, Pool};
+use deadpool_postgres::{Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
 
@@ -17,7 +17,7 @@ struct Environment {
     url: Option<String>,
 }
 
-async fn database() -> (PostgresFixture, Pool, Client) {
+async fn database() -> (PostgresFixture, Pool, SyncStore) {
     let url = Environment::parse_from(["sync-store-tests"])
         .url
         .map(SecretString::from);
@@ -27,8 +27,9 @@ async fn database() -> (PostgresFixture, Pool, Client) {
         .unwrap();
     let manager = Manager::new(fixture.options.url.expose_secret().parse().unwrap(), NoTls);
     let pool = Pool::builder(manager).max_size(1).build().unwrap();
-    let client = pool.get().await.unwrap();
+    let client = SyncStore::open(&pool).await.unwrap();
     client
+        .client
         .batch_execute(include_str!("schema.sql"))
         .await
         .unwrap();
@@ -111,7 +112,7 @@ struct StoredSyncState<'state> {
 }
 
 async fn insert_sync_state(
-    client: &Client,
+    client: &SyncStore,
     owner: &str,
     status: &ROISyncStatus,
     cancel: bool,
@@ -123,7 +124,7 @@ async fn insert_sync_state(
         cancel,
     })
     .unwrap();
-    client
+    client.client
         .execute(
             r#"INSERT INTO "LiteLLM_Config" (param_name, param_value, last_run_at)
                VALUES ('roi_calculator_sync', $1::text::jsonb, NOW() - ($2::double precision * INTERVAL '1 second'))"#,
@@ -133,8 +134,9 @@ async fn insert_sync_state(
         .unwrap();
 }
 
-async fn config_param(client: &Client, param_name: &str) -> Option<String> {
+async fn config_param(client: &SyncStore, param_name: &str) -> Option<String> {
     client
+        .client
         .query_opt(
             r#"SELECT param_value::text FROM "LiteLLM_Config" WHERE param_name = $1"#,
             &[&param_name],
@@ -144,8 +146,9 @@ async fn config_param(client: &Client, param_name: &str) -> Option<String> {
         .map(|row| row.get(0))
 }
 
-async fn seed_cached_pulls(client: &Client) {
+async fn seed_cached_pulls(client: &SyncStore) {
     client
+        .client
         .batch_execute(
             r#"
         INSERT INTO "LiteLLM_Config" (param_name, param_value) VALUES
@@ -161,7 +164,8 @@ async fn seed_cached_pulls(client: &Client) {
 #[tokio::test]
 async fn acquire_succeeds_when_no_existing_lease() {
     let (fixture, pool, client) = database().await;
-    let acquired = SyncStore::acquire(&**client, "owner-a", &sample_status(true), 0.0)
+    let acquired = client
+        .acquire("owner-a", &sample_status(true), 0.0)
         .await
         .unwrap();
     assert!(acquired);
@@ -175,7 +179,8 @@ async fn acquire_succeeds_when_no_existing_lease() {
 async fn acquire_fails_when_lease_is_held_and_running() {
     let (fixture, pool, client) = database().await;
     insert_sync_state(&client, "owner-a", &sample_status(true), false, 0.0).await;
-    let acquired = SyncStore::acquire(&**client, "owner-b", &sample_status(true), 0.0)
+    let acquired = client
+        .acquire("owner-b", &sample_status(true), 0.0)
         .await
         .unwrap();
     assert!(!acquired);
@@ -188,7 +193,8 @@ async fn acquire_fails_when_lease_is_held_and_running() {
 async fn acquire_succeeds_when_lease_expired() {
     let (fixture, pool, client) = database().await;
     insert_sync_state(&client, "owner-a", &sample_status(true), false, 120.0).await;
-    let acquired = SyncStore::acquire(&**client, "owner-b", &sample_status(true), 0.0)
+    let acquired = client
+        .acquire("owner-b", &sample_status(true), 0.0)
         .await
         .unwrap();
     assert!(acquired);
@@ -201,7 +207,8 @@ async fn acquire_succeeds_when_lease_expired() {
 async fn acquire_succeeds_when_existing_run_finished() {
     let (fixture, pool, client) = database().await;
     insert_sync_state(&client, "owner-a", &sample_status(false), false, 0.0).await;
-    let acquired = SyncStore::acquire(&**client, "owner-b", &sample_status(true), 0.0)
+    let acquired = client
+        .acquire("owner-b", &sample_status(true), 0.0)
         .await
         .unwrap();
     assert!(acquired);
@@ -214,11 +221,13 @@ async fn acquire_succeeds_when_existing_run_finished() {
 async fn acquire_respects_scheduled_interval_window() {
     let (fixture, pool, client) = database().await;
     insert_sync_state(&client, "owner-a", &sample_status(false), false, 30.0).await;
-    let blocked = SyncStore::acquire(&**client, "owner-b", &sample_status(true), 10.0)
+    let blocked = client
+        .acquire("owner-b", &sample_status(true), 10.0)
         .await
         .unwrap();
     assert!(!blocked);
-    let allowed = SyncStore::acquire(&**client, "owner-b", &sample_status(true), 0.4)
+    let allowed = client
+        .acquire("owner-b", &sample_status(true), 0.4)
         .await
         .unwrap();
     assert!(allowed);
@@ -233,12 +242,10 @@ async fn heartbeat_extends_lease_and_updates_status() {
     insert_sync_state(&client, "owner-a", &sample_status(true), false, 30.0).await;
     let mut status = sample_status(true);
     status.done = 2;
-    let extended = SyncStore::heartbeat(&**client, "owner-a", &status)
-        .await
-        .unwrap();
+    let extended = client.heartbeat("owner-a", &status).await.unwrap();
     assert!(extended);
-    let stored = SyncStore::status(&**client).await.unwrap().unwrap();
-    assert_eq!(stored.done, 2);
+    let stored = client.status().await.unwrap().unwrap();
+    assert_eq!(stored, status);
     drop(client);
     pool.close();
     fixture.close_async().await.unwrap();
@@ -248,7 +255,8 @@ async fn heartbeat_extends_lease_and_updates_status() {
 async fn heartbeat_fails_on_owner_mismatch() {
     let (fixture, pool, client) = database().await;
     insert_sync_state(&client, "owner-a", &sample_status(true), false, 0.0).await;
-    let extended = SyncStore::heartbeat(&**client, "owner-b", &sample_status(true))
+    let extended = client
+        .heartbeat("owner-b", &sample_status(true))
         .await
         .unwrap();
     assert!(!extended);
@@ -261,7 +269,8 @@ async fn heartbeat_fails_on_owner_mismatch() {
 async fn heartbeat_fails_when_cancelled() {
     let (fixture, pool, client) = database().await;
     insert_sync_state(&client, "owner-a", &sample_status(true), true, 0.0).await;
-    let extended = SyncStore::heartbeat(&**client, "owner-a", &sample_status(true))
+    let extended = client
+        .heartbeat("owner-a", &sample_status(true))
         .await
         .unwrap();
     assert!(!extended);
@@ -274,7 +283,8 @@ async fn heartbeat_fails_when_cancelled() {
 async fn heartbeat_fails_when_not_running() {
     let (fixture, pool, client) = database().await;
     insert_sync_state(&client, "owner-a", &sample_status(false), false, 0.0).await;
-    let extended = SyncStore::heartbeat(&**client, "owner-a", &sample_status(true))
+    let extended = client
+        .heartbeat("owner-a", &sample_status(true))
         .await
         .unwrap();
     assert!(!extended);
@@ -287,7 +297,8 @@ async fn heartbeat_fails_when_not_running() {
 async fn heartbeat_fails_when_lease_expired() {
     let (fixture, pool, client) = database().await;
     insert_sync_state(&client, "owner-a", &sample_status(true), false, 120.0).await;
-    let extended = SyncStore::heartbeat(&**client, "owner-a", &sample_status(true))
+    let extended = client
+        .heartbeat("owner-a", &sample_status(true))
         .await
         .unwrap();
     assert!(!extended);
@@ -300,16 +311,14 @@ async fn heartbeat_fails_when_lease_expired() {
 async fn finish_requires_ownership() {
     let (fixture, pool, client) = database().await;
     insert_sync_state(&client, "owner-a", &sample_status(true), false, 0.0).await;
-    let finished = SyncStore::finish(
-        &**client,
-        FinishClaim {
+    let finished = client
+        .finish(FinishClaim {
             owner: "owner-b",
             status: &sample_status(false),
             report: None,
-        },
-    )
-    .await
-    .unwrap();
+        })
+        .await
+        .unwrap();
     assert!(!finished);
     drop(client);
     pool.close();
@@ -320,16 +329,14 @@ async fn finish_requires_ownership() {
 async fn finish_fails_when_lease_expired() {
     let (fixture, pool, client) = database().await;
     insert_sync_state(&client, "owner-a", &sample_status(true), false, 120.0).await;
-    let finished = SyncStore::finish(
-        &**client,
-        FinishClaim {
+    let finished = client
+        .finish(FinishClaim {
             owner: "owner-a",
             status: &sample_status(false),
             report: None,
-        },
-    )
-    .await
-    .unwrap();
+        })
+        .await
+        .unwrap();
     assert!(!finished);
     drop(client);
     pool.close();
@@ -340,16 +347,14 @@ async fn finish_fails_when_lease_expired() {
 async fn finish_skips_cancel_check_when_report_is_null() {
     let (fixture, pool, client) = database().await;
     insert_sync_state(&client, "owner-a", &sample_status(true), true, 0.0).await;
-    let finished = SyncStore::finish(
-        &**client,
-        FinishClaim {
+    let finished = client
+        .finish(FinishClaim {
             owner: "owner-a",
             status: &sample_status(false),
             report: None,
-        },
-    )
-    .await
-    .unwrap();
+        })
+        .await
+        .unwrap();
     assert!(finished);
     drop(client);
     pool.close();
@@ -361,16 +366,14 @@ async fn finish_checks_cancel_when_report_is_present() {
     let (fixture, pool, client) = database().await;
     insert_sync_state(&client, "owner-a", &sample_status(true), true, 0.0).await;
     let report = sample_report(Vec::new());
-    let finished = SyncStore::finish(
-        &**client,
-        FinishClaim {
+    let finished = client
+        .finish(FinishClaim {
             owner: "owner-a",
             status: &sample_status(false),
             report: Some(&report),
-        },
-    )
-    .await
-    .unwrap();
+        })
+        .await
+        .unwrap();
     assert!(!finished);
     drop(client);
     pool.close();
@@ -382,22 +385,20 @@ async fn finish_publishes_report_atomically() {
     let (fixture, pool, client) = database().await;
     insert_sync_state(&client, "owner-a", &sample_status(true), false, 0.0).await;
     let report = sample_report(vec![sample_pull("https://example.com/pr/1", Some("key-1"))]);
-    let finished = SyncStore::finish(
-        &**client,
-        FinishClaim {
+    let finished = client
+        .finish(FinishClaim {
             owner: "owner-a",
             status: &sample_status(false),
             report: Some(&report),
-        },
-    )
-    .await
-    .unwrap();
+        })
+        .await
+        .unwrap();
     assert!(finished);
     let stored = config_param(&client, "roi_calculator_report")
         .await
         .unwrap();
-    assert!(stored.contains("https://example.com/pr/1"));
-    let status = SyncStore::status(&**client).await.unwrap().unwrap();
+    assert_eq!(serde_json::from_str::<ROIReport>(&stored).unwrap(), report);
+    let status = client.status().await.unwrap().unwrap();
     assert!(!status.running);
     drop(client);
     pool.close();
@@ -410,16 +411,14 @@ async fn finish_cleans_up_obsolete_cached_pulls() {
     insert_sync_state(&client, "owner-a", &sample_status(true), false, 0.0).await;
     seed_cached_pulls(&client).await;
     let report = sample_report(vec![sample_pull("https://example.com/pr/1", Some("key-1"))]);
-    let finished = SyncStore::finish(
-        &**client,
-        FinishClaim {
+    let finished = client
+        .finish(FinishClaim {
             owner: "owner-a",
             status: &sample_status(false),
             report: Some(&report),
-        },
-    )
-    .await
-    .unwrap();
+        })
+        .await
+        .unwrap();
     assert!(finished);
     assert!(
         config_param(&client, "roi_calculator_pull_old-key")
@@ -444,7 +443,7 @@ async fn finish_cleans_up_obsolete_cached_pulls() {
 #[tokio::test]
 async fn status_returns_none_when_no_sync_exists() {
     let (fixture, pool, client) = database().await;
-    let status = SyncStore::status(&**client).await.unwrap();
+    let status = client.status().await.unwrap();
     assert!(status.is_none());
     drop(client);
     pool.close();
@@ -455,7 +454,7 @@ async fn status_returns_none_when_no_sync_exists() {
 async fn status_returns_status_unchanged_when_not_expired() {
     let (fixture, pool, client) = database().await;
     insert_sync_state(&client, "owner-a", &sample_status(true), false, 5.0).await;
-    let status = SyncStore::status(&**client).await.unwrap().unwrap();
+    let status = client.status().await.unwrap().unwrap();
     assert!(status.running);
     assert_eq!(status.phase, ROISyncPhase::Spend);
     assert!(status.error.is_none());
@@ -468,7 +467,7 @@ async fn status_returns_status_unchanged_when_not_expired() {
 async fn status_marks_expired_worker_as_error() {
     let (fixture, pool, client) = database().await;
     insert_sync_state(&client, "owner-a", &sample_status(true), false, 120.0).await;
-    let status = SyncStore::status(&**client).await.unwrap().unwrap();
+    let status = client.status().await.unwrap().unwrap();
     assert!(!status.running);
     assert_eq!(status.phase, ROISyncPhase::Error);
     assert_eq!(status.stage, "Sync interrupted");
@@ -491,7 +490,7 @@ async fn status_marks_expired_worker_as_error() {
 async fn status_does_not_rewrite_already_stopped_worker() {
     let (fixture, pool, client) = database().await;
     insert_sync_state(&client, "owner-a", &sample_status(false), false, 120.0).await;
-    let status = SyncStore::status(&**client).await.unwrap().unwrap();
+    let status = client.status().await.unwrap().unwrap();
     assert!(!status.running);
     assert_eq!(status.phase, ROISyncPhase::Spend);
     assert!(status.error.is_none());
@@ -504,7 +503,7 @@ async fn status_does_not_rewrite_already_stopped_worker() {
 async fn cancel_sets_cancel_flag_and_phase_regardless_of_expiry_and_ownership() {
     let (fixture, pool, client) = database().await;
     insert_sync_state(&client, "owner-a", &sample_status(true), false, 120.0).await;
-    SyncStore::cancel(&**client).await.unwrap();
+    client.cancel().await.unwrap();
     let stored = config_param(&client, "roi_calculator_sync").await.unwrap();
     assert!(stored.contains("\"cancel\":true") || stored.contains("\"cancel\": true"));
     assert!(
@@ -519,7 +518,7 @@ async fn cancel_sets_cancel_flag_and_phase_regardless_of_expiry_and_ownership() 
 async fn cancel_is_noop_when_not_running() {
     let (fixture, pool, client) = database().await;
     insert_sync_state(&client, "owner-a", &sample_status(false), false, 0.0).await;
-    SyncStore::cancel(&**client).await.unwrap();
+    client.cancel().await.unwrap();
     let stored = config_param(&client, "roi_calculator_sync").await.unwrap();
     assert!(stored.contains("\"cancel\":false") || stored.contains("\"cancel\": false"));
     drop(client);
@@ -530,14 +529,14 @@ async fn cancel_is_noop_when_not_running() {
 #[tokio::test]
 async fn clear_report_deletes_cached_report() {
     let (fixture, pool, client) = database().await;
-    client
+    client.client
         .execute(
             r#"INSERT INTO "LiteLLM_Config" (param_name, param_value) VALUES ('roi_calculator_report', '{}')"#,
             &[],
         )
         .await
         .unwrap();
-    SyncStore::clear_report(&**client).await.unwrap();
+    client.clear_report().await.unwrap();
     assert!(
         config_param(&client, "roi_calculator_report")
             .await
@@ -551,7 +550,7 @@ async fn clear_report_deletes_cached_report() {
 #[tokio::test]
 async fn clear_report_is_noop_when_no_report_exists() {
     let (fixture, pool, client) = database().await;
-    SyncStore::clear_report(&**client).await.unwrap();
+    client.clear_report().await.unwrap();
     assert!(
         config_param(&client, "roi_calculator_report")
             .await
