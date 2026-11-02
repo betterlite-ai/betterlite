@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
+use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 
@@ -26,6 +27,18 @@ pub enum FilterOp {
     IsNull,
 }
 
+const FILTER_OP_WIRE_NAMES: [(FilterOp, &str); 9] = [
+    (FilterOp::Compare(ComparisonOp::Eq), "eq"),
+    (FilterOp::Compare(ComparisonOp::Gte), "gte"),
+    (FilterOp::Compare(ComparisonOp::Lte), "lte"),
+    (FilterOp::Compare(ComparisonOp::Gt), "gt"),
+    (FilterOp::Compare(ComparisonOp::Lt), "lt"),
+    (FilterOp::Compare(ComparisonOp::Contains), "contains"),
+    (FilterOp::Compare(ComparisonOp::Not), "not"),
+    (FilterOp::In, "in"),
+    (FilterOp::IsNull, "is_null"),
+];
+
 impl FilterOp {
     #[must_use]
     pub const fn as_wire_name(self) -> &'static str {
@@ -44,22 +57,15 @@ impl FilterOp {
 
     #[must_use]
     pub fn from_wire_name(name: &str) -> Option<Self> {
-        match name {
-            "eq" => Some(Self::Compare(ComparisonOp::Eq)),
-            "gte" => Some(Self::Compare(ComparisonOp::Gte)),
-            "lte" => Some(Self::Compare(ComparisonOp::Lte)),
-            "gt" => Some(Self::Compare(ComparisonOp::Gt)),
-            "lt" => Some(Self::Compare(ComparisonOp::Lt)),
-            "contains" => Some(Self::Compare(ComparisonOp::Contains)),
-            "not" => Some(Self::Compare(ComparisonOp::Not)),
-            "in" => Some(Self::In),
-            "is_null" => Some(Self::IsNull),
-            _ => None,
-        }
+        FILTER_OP_WIRE_NAMES
+            .iter()
+            .find(|(_, wire_name)| *wire_name == name)
+            .map(|(operation, _)| *operation)
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum FilterType {
     Text,
     Int,

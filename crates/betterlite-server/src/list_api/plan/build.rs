@@ -12,7 +12,13 @@ fn scope_predicates(scope: &Scope) -> Result<Vec<Predicate>, ProblemDetail> {
     match scope {
         Scope::All => Ok(Vec::new()),
         Scope::Where(predicates) => Ok(predicates.clone()),
-        Scope::Denied(reason) => Err(problem::forbidden(reason.clone())),
+        Scope::Denied(reason) => Err(ProblemDetail {
+            r#type: "urn:litellm:error:forbidden".to_owned(),
+            title: "Forbidden".to_owned(),
+            status: 403,
+            detail: reason.clone(),
+            allowed: None,
+        }),
     }
 }
 

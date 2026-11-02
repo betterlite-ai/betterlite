@@ -43,7 +43,7 @@ pub(crate) struct SpecInput {
 
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct FilterInput {
-    value_type: String,
+    value_type: FilterType,
     ops: BTreeSet<String>,
 }
 
@@ -95,30 +95,17 @@ fn helper_error(message: String) -> Box<crate::helpers::HelperError> {
     })
 }
 
-fn filter_type(name: &str) -> Result<FilterType, Box<crate::helpers::HelperError>> {
-    match name {
-        "text" => Ok(FilterType::Text),
-        "int" => Ok(FilterType::Int),
-        "money" => Ok(FilterType::Money),
-        "timestamp" => Ok(FilterType::Timestamp),
-        other => Err(helper_error(format!("unknown filter type {other}"))),
-    }
-}
-
-fn filter_op(name: &str) -> Option<FilterOp> {
-    FilterOp::from_wire_name(name)
-}
-
 fn make_spec(input: SpecInput) -> Result<ListSpec, Box<crate::helpers::HelperError>> {
-    let filters = input
-        .filters
-        .into_iter()
-        .map(|(field, filter)| {
-            let ops = filter.ops.iter().filter_map(|op| filter_op(op)).collect();
-            filter_type(&filter.value_type)
-                .map(|value_type| (field, FilterSpec { value_type, ops }))
-        })
-        .collect::<Result<BTreeMap<_, _>, _>>()?;
+    let mut filters = BTreeMap::new();
+    for (field, filter) in input.filters {
+        let value_type = filter.value_type;
+        let ops = filter
+            .ops
+            .iter()
+            .filter_map(|op| FilterOp::from_wire_name(op))
+            .collect();
+        filters.insert(field, FilterSpec { value_type, ops });
+    }
     ListSpec {
         resource: input.resource,
         sortable: input.sortable,
@@ -140,53 +127,25 @@ fn make_spec(input: SpecInput) -> Result<ListSpec, Box<crate::helpers::HelperErr
     .map_err(|error| helper_error(error.to_string()))
 }
 
-fn make_scope(input: ScopeInput) -> Result<Scope, Box<crate::helpers::HelperError>> {
-    match input {
-        ScopeInput::All => Ok(Scope::All),
-        ScopeInput::Denied { reason } => Ok(Scope::Denied(reason)),
-        ScopeInput::Where { predicates } => predicates
-            .into_iter()
-            .map(make_predicate)
-            .collect::<Result<Vec<_>, _>>()
-            .map(Scope::Where),
-    }
-}
-
-fn make_predicate(input: PredicateInput) -> Result<Predicate, Box<crate::helpers::HelperError>> {
-    match input {
-        PredicateInput::IsNull { field, negated } => Ok(Predicate::IsNull(
-            betterlite_server::list_api::plan::types::IsNull { field, negated },
-        )),
-        PredicateInput::Compare { field, op, value } => {
-            let comparison = match op.as_str() {
-                "eq" => ComparisonOp::Eq,
-                "contains" => ComparisonOp::Contains,
-                "gte" => ComparisonOp::Gte,
-                other => return Err(helper_error(format!("unknown comparison {other}"))),
-            };
-            Ok(Predicate::Compare(
-                betterlite_server::list_api::plan::types::Compare {
-                    field,
-                    op: comparison,
-                    value: FilterValue::Text(value),
-                },
-            ))
-        }
+fn comparison_from_wire(op: &str) -> Result<ComparisonOp, Box<crate::helpers::HelperError>> {
+    match op {
+        "eq" => Ok(ComparisonOp::Eq),
+        "contains" => Ok(ComparisonOp::Contains),
+        "gte" => Ok(ComparisonOp::Gte),
+        other => Err(helper_error(format!("unknown comparison {other}"))),
     }
 }
 
 fn loc_part(location: Value) -> Result<LocPart, Box<crate::helpers::HelperError>> {
-    match location {
-        Value::String(field) => Ok(LocPart::Field(field)),
-        Value::Number(index) => index
-            .as_u64()
-            .and_then(|number| usize::try_from(number).ok())
-            .map(LocPart::Index)
-            .ok_or_else(|| helper_error("invalid error index".to_owned())),
-        Value::Null | Value::Bool(_) | Value::Array(_) | Value::Object(_) => {
-            Err(helper_error("invalid error location".to_owned()))
-        }
+    if let Some(field) = location.as_str() {
+        return Ok(LocPart::Field(field.to_owned()));
     }
+    let Some(index) = location.as_u64() else {
+        return Err(helper_error("invalid error location".to_owned()));
+    };
+    let index = usize::try_from(index)
+        .map_err(|_overflow| helper_error("invalid error index".to_owned()))?;
+    Ok(LocPart::Index(index))
 }
 
 const fn comparison_name(op: ComparisonOp) -> &'static str {
@@ -223,24 +182,15 @@ fn predicate_json(predicate: Predicate) -> Value {
             json!({"kind":"compare", "field":compare.field, "op":comparison_name(compare.op), "value":value_json(compare.value)})
         }
         Predicate::IsNull(null_predicate) => {
-            json!({"kind":"is_null", "field":null_predicate.field, "negated":null_predicate.negated})
+            json!({"kind":"isnull", "field":null_predicate.field, "negated":null_predicate.negated})
         }
         Predicate::Within(within) => {
             json!({"kind":"within", "field":within.field, "values":within.values.into_iter().map(value_json).collect::<Vec<_>>() })
         }
         Predicate::AnyOf(any) => {
-            json!({"kind":"any_of", "clauses":any.clauses.into_iter().map(|compare| json!({"field":compare.field, "op":comparison_name(compare.op), "value":value_json(compare.value)})).collect::<Vec<_>>()})
+            json!({"kind":"anyof", "clauses":any.clauses.into_iter().map(|compare| json!({"field":compare.field, "op":comparison_name(compare.op), "value":value_json(compare.value)})).collect::<Vec<_>>()})
         }
     }
-}
-
-fn plan_json(plan: betterlite_server::list_api::plan::types::QueryPlan) -> Value {
-    json!({"where": plan.where_.into_iter().map(predicate_json).collect::<Vec<_>>(), "order": plan.order.into_iter().map(|sort| json!({"field":sort.field, "descending":sort.descending})).collect::<Vec<_>>(), "skip": plan.skip, "take": plan.take})
-}
-
-fn decode_json(raw: &str) -> Value {
-    let decoded = decode_list_query(raw.as_bytes());
-    json!({"pairs": decoded.pairs, "last_value": decoded.last_value})
 }
 
 impl crate::helpers::Helper for Op {
@@ -248,19 +198,51 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         match input {
-            Input::Decode { raw } => Ok(decode_json(raw)),
+            Input::Decode { raw } => {
+                let decoded = decode_list_query(raw.as_bytes());
+                Ok(json!({"pairs": decoded.pairs, "last_value": decoded.last_value}))
+            }
             Input::Plan {
                 spec,
                 params,
                 scope,
             } => {
-                let result = build_query_plan(
-                    &make_spec(spec.clone())?,
-                    params,
-                    &make_scope(scope.clone())?,
-                );
+                let scope = match scope.clone() {
+                    ScopeInput::All => Scope::All,
+                    ScopeInput::Denied { reason } => Scope::Denied(reason),
+                    ScopeInput::Where { predicates } => Scope::Where(
+                        predicates
+                            .into_iter()
+                            .map(|predicate| match predicate {
+                                PredicateInput::IsNull { field, negated } => Ok(Predicate::IsNull(
+                                    betterlite_server::list_api::plan::types::IsNull {
+                                        field,
+                                        negated,
+                                    },
+                                )),
+                                PredicateInput::Compare { field, op, value } => {
+                                    comparison_from_wire(&op).map(|op| {
+                                        Predicate::Compare(
+                                            betterlite_server::list_api::plan::types::Compare {
+                                                field,
+                                                op,
+                                                value: FilterValue::Text(value),
+                                            },
+                                        )
+                                    })
+                                }
+                            })
+                            .collect::<Result<Vec<_>, _>>()?,
+                    ),
+                };
+                let result = build_query_plan(&make_spec(spec.clone())?, params, &scope);
                 match result {
-                    Ok(plan) => Ok(plan_json(plan)),
+                    Ok(plan) => Ok(json!({
+                        "where": plan.where_.into_iter().map(predicate_json).collect::<Vec<_>>(),
+                        "order": plan.order.into_iter().map(|sort| json!({"field":sort.field, "descending":sort.descending})).collect::<Vec<_>>(),
+                        "skip": plan.skip,
+                        "take": plan.take
+                    })),
                     Err(problem) => problem_json(&problem),
                 }
             }

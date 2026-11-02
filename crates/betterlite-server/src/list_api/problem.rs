@@ -1,11 +1,8 @@
-use std::collections::BTreeSet;
-use std::error::Error;
-use std::fmt::{self, Display, Formatter};
-
 use axum::Json;
 use axum::http::header::CONTENT_TYPE;
 use axum::http::{HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
+use std::collections::BTreeSet;
 
 use crate::list_api::plan::types::FilterOp;
 use crate::management_envelopes::{ProblemDetail, ProblemDocument};
@@ -14,22 +11,9 @@ mod tests;
 pub const PROBLEM_CONTENT_TYPE: &str = "application/problem+json";
 const PROBLEM_TYPE_BASE: &str = "urn:litellm:error:";
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
+#[error("{}", .0.detail)]
 pub struct ManagementProblem(pub ProblemDetail);
-
-impl Display for ManagementProblem {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0.detail)
-    }
-}
-
-impl Error for ManagementProblem {}
-
-impl From<ProblemDetail> for ManagementProblem {
-    fn from(problem: ProblemDetail) -> Self {
-        Self(problem)
-    }
-}
 
 impl IntoResponse for ManagementProblem {
     fn into_response(self) -> Response {
@@ -77,43 +61,50 @@ pub fn invalid_query_parameter(detail: String) -> ProblemDetail {
     )
 }
 
-#[must_use]
-pub fn forbidden(reason: String) -> ProblemDetail {
-    problem("forbidden", "Forbidden", 403, reason, None)
+pub enum SortProblem<'a> {
+    Invalid {
+        resource: &'a str,
+        fields: &'a BTreeSet<&'a str>,
+        sortable: &'a BTreeSet<String>,
+    },
+    Duplicate {
+        fields: &'a BTreeSet<&'a str>,
+        sortable: &'a BTreeSet<String>,
+    },
 }
 
 #[must_use]
-pub fn invalid_sort_field(
-    resource: &str,
-    rejected: &BTreeSet<&str>,
-    sortable: &BTreeSet<String>,
-) -> ProblemDetail {
-    let quoted: Vec<String> = rejected.iter().map(|field| format!("'{field}'")).collect();
-    problem(
-        "invalid-sort-field",
-        "Invalid sort field",
-        400,
-        format!("Cannot sort {resource} by: {}.", quoted.join(", ")),
-        Some(sortable.iter().cloned().collect()),
-    )
-}
-
-#[must_use]
-pub fn duplicate_sort_field(
-    repeated: &BTreeSet<&str>,
-    sortable: &BTreeSet<String>,
-) -> ProblemDetail {
-    let names: Vec<&str> = repeated.iter().copied().collect();
-    problem(
-        "duplicate-sort-field",
-        "Duplicate sort field",
-        400,
-        format!(
-            "Sort field(s) named more than once: {}. Each may appear once.",
-            names.join(", ")
-        ),
-        Some(sortable.iter().cloned().collect()),
-    )
+pub fn sort_problem(problem_kind: SortProblem<'_>) -> ProblemDetail {
+    match problem_kind {
+        SortProblem::Invalid {
+            resource,
+            fields,
+            sortable,
+        } => {
+            let quoted = fields
+                .iter()
+                .map(|field| format!("'{field}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            problem(
+                "invalid-sort-field",
+                "Invalid sort field",
+                400,
+                format!("Cannot sort {resource} by: {quoted}."),
+                Some(sortable.iter().cloned().collect()),
+            )
+        }
+        SortProblem::Duplicate { fields, sortable } => {
+            let names = fields.iter().copied().collect::<Vec<_>>().join(", ");
+            problem(
+                "duplicate-sort-field",
+                "Duplicate sort field",
+                400,
+                format!("Sort field(s) named more than once: {names}. Each may appear once."),
+                Some(sortable.iter().cloned().collect()),
+            )
+        }
+    }
 }
 
 #[must_use]
@@ -163,7 +154,7 @@ pub fn reject_unknown_query_params(
         return Ok(());
     }
     let allowed: Vec<String> = declared.iter().map(|name| (*name).to_owned()).collect();
-    Err(ManagementProblem::from(unknown_query_parameter(
+    Err(ManagementProblem(unknown_query_parameter(
         &unknown, allowed,
     )))
 }
@@ -196,10 +187,7 @@ fn loc_part_text(part: &LocPart) -> String {
     }
 }
 
-fn is_length_error_of_rejected_items(
-    error: &ValidationErrorDetail,
-    errors: &[ValidationErrorDetail],
-) -> bool {
+fn suppress_parent_length(error: &ValidationErrorDetail, errors: &[ValidationErrorDetail]) -> bool {
     error.error_type == "too_short"
         && errors.iter().any(|other| {
             other.loc.len() > error.loc.len()
@@ -228,7 +216,7 @@ fn is_body_validation_error(errors: &[&ValidationErrorDetail]) -> bool {
 pub fn request_validation_problem(raw_errors: &[ValidationErrorDetail]) -> ProblemDetail {
     let errors: Vec<&ValidationErrorDetail> = raw_errors
         .iter()
-        .filter(|error| !is_length_error_of_rejected_items(error, raw_errors))
+        .filter(|error| !suppress_parent_length(error, raw_errors))
         .collect();
     let joined_detail = joined_error_detail(&errors);
     if is_body_validation_error(&errors) {
