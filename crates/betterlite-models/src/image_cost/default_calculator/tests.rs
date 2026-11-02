@@ -8,6 +8,7 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 use serde_json::Number;
 
+use super::super::error::ImageCostError;
 use super::{DefaultImageCostRequest, default_image_cost_calculator, parse_image_dimensions};
 use crate::price_lookup::{PriceLookup, PriceRecord, PricedModel};
 use crate::tiered_pricing::Scalar;
@@ -289,6 +290,12 @@ fn n_absent_defaults_to_one_image() {
     )
     .expect("n defaults to one");
     assert_eq!(cost, Decimal::new(2, 1));
+}
+
+#[test]
+fn an_oversized_dimension_overflows_instead_of_wrapping() {
+    let result = parse_image_dimensions("99999999999999999999999x1");
+    assert!(matches!(result, Err(ImageCostError::DimensionOverflow)));
 }
 
 #[rstest]
