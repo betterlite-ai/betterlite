@@ -1,5 +1,7 @@
 use chrono::{DateTime, Utc};
 use deadpool_postgres::GenericClient;
+use std::mem;
+use std::sync::PoisonError;
 use tokio_postgres::error::SqlState;
 use tokio_postgres::types::ToSql;
 
@@ -56,15 +58,35 @@ pub struct BudgetCascadeBatch {
 
 impl SpendResetBatch {
     pub async fn commit(&self, unit: SpendResetUnitOfWork) -> Result<(), CommitError> {
-        let entries = unit.keys.queue.take();
-        commit_entries(&self.store, entries).await
+        commit_entries(
+            &self.store,
+            mem::take(
+                &mut *unit
+                    .keys
+                    .queue
+                    .entries
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner),
+            ),
+        )
+        .await
     }
 }
 
 impl BudgetCascadeBatch {
     pub async fn commit(&self, unit: BudgetCascadeUnitOfWork) -> Result<(), CommitError> {
-        let entries = unit.budgets.queue.take();
-        commit_entries(&self.store, entries).await
+        commit_entries(
+            &self.store,
+            mem::take(
+                &mut *unit
+                    .budgets
+                    .queue
+                    .entries
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner),
+            ),
+        )
+        .await
     }
 }
 

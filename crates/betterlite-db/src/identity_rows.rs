@@ -129,8 +129,10 @@ where
     T: Deserialize<'de>,
     D: serde::Deserializer<'de>,
 {
-    let value = Option::<Vec<T>>::deserialize(deserializer)?;
-    Ok(value.unwrap_or_default())
+    match Option::<Vec<T>>::deserialize(deserializer)? {
+        Some(values) => Ok(values),
+        None => Ok(Vec::new()),
+    }
 }
 pub(crate) fn null_decimal<'de, D>(deserializer: D) -> Result<rust_decimal::Decimal, D::Error>
 where

@@ -75,7 +75,9 @@ impl Parser<'_> {
             b'"' => self.parse_string().map(JsonValue::String),
             b'[' => self.parse_array(),
             b'{' => self.parse_object(),
-            b'-' | b'0'..=b'9' => self.parse_number(),
+            b'-' | b'0'..=b'9' => {
+                serde_json::from_slice(self.scan_number()?).map(JsonValue::Number)
+            }
             _ => Err(invalid_json()),
         }
     }
@@ -132,11 +134,6 @@ impl Parser<'_> {
             return Err(invalid_json());
         };
         serde_json::from_slice(text)
-    }
-
-    fn parse_number(&mut self) -> Result<JsonValue, serde_json::Error> {
-        let text = self.scan_number()?;
-        serde_json::from_slice(text).map(JsonValue::Number)
     }
 
     fn scan_number(&mut self) -> Result<&[u8], serde_json::Error> {

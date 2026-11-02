@@ -80,11 +80,6 @@ impl ErrorType {
     }
 }
 
-fn contains_any(message: &str, phrases: &[&str]) -> bool {
-    let lower = message.to_ascii_lowercase();
-    phrases.iter().any(|phrase| lower.contains(phrase))
-}
-
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Lineage {
     ConnectionOnly,
@@ -196,7 +191,10 @@ pub fn is_database_transport_error(error: &DbError) -> bool {
         | ErrorType::MissingRequiredValue
         | ErrorType::RawQuery
         | ErrorType::TableNotFound
-        | ErrorType::RecordNotFound => contains_any(&error.message, &TRANSPORT_WORDS),
+        | ErrorType::RecordNotFound => {
+            let lower = error.message.to_ascii_lowercase();
+            TRANSPORT_WORDS.iter().any(|phrase| lower.contains(phrase))
+        }
     }
 }
 
@@ -205,10 +203,10 @@ fn has_deadlock_marker(error: &DbError) -> bool {
     if error.code.as_deref() == Some("P2034") {
         return true;
     }
-    contains_any(
-        &error.message,
-        &["deadlock detected", "40p01", "write conflict or a deadlock"],
-    )
+    let lower = error.message.to_ascii_lowercase();
+    ["deadlock detected", "40p01", "write conflict or a deadlock"]
+        .iter()
+        .any(|phrase| lower.contains(phrase))
 }
 
 #[must_use]
@@ -239,7 +237,10 @@ pub fn is_read_only_transaction_error(error: &DbError) -> bool {
     if !is_prisma_error(error.error_type) {
         return false;
     }
-    contains_any(&error.message, &["\"25006\"", "read-only transaction"])
+    let lower = error.message.to_ascii_lowercase();
+    ["\"25006\"", "read-only transaction"]
+        .iter()
+        .any(|phrase| lower.contains(phrase))
 }
 
 #[must_use]

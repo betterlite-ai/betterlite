@@ -1,4 +1,3 @@
-use std::mem;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use chrono::{DateTime, Utc};
@@ -8,7 +7,7 @@ use super::SpendResetData;
 
 #[derive(Debug)]
 pub(super) struct Queue<T> {
-    entries: Arc<Mutex<Vec<T>>>,
+    pub(super) entries: Arc<Mutex<Vec<T>>>,
 }
 
 impl<T> Default for Queue<T> {
@@ -24,18 +23,6 @@ impl<T> Clone for Queue<T> {
         Self {
             entries: Arc::clone(&self.entries),
         }
-    }
-}
-
-impl<T> Queue<T> {
-    pub(super) fn push(&self, entry: T) {
-        let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
-        entries.push(entry);
-    }
-
-    pub(super) fn take(&self) -> Vec<T> {
-        let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
-        mem::take(&mut entries)
     }
 }
 
@@ -62,12 +49,16 @@ macro_rules! single_reset_writes {
                 spend_decrement: Decimal,
             ) {
                 let data = super::spend_reset_data(budget_reset_at, spend_decrement);
-                self.queue.push(SpendResetEntry {
-                    table: $table,
-                    column: $column,
-                    identifier: identifier.to_owned(),
-                    data,
-                });
+                self.queue
+                    .entries
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .push(SpendResetEntry {
+                        table: $table,
+                        column: $column,
+                        identifier: identifier.to_owned(),
+                        data,
+                    });
             }
         }
     };
@@ -131,18 +122,26 @@ pub struct LinkedSpendResetWrites {
 impl LinkedSpendResetWrites {
     pub fn queue_spend_zero(&self, filter: LinkedResetFilter) {
         let write = LinkedWrite::Zero(filter);
-        self.queue.push(CascadeEntry::Linked {
-            table: self.table,
-            write,
-        });
+        self.queue
+            .entries
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(CascadeEntry::Linked {
+                table: self.table,
+                write,
+            });
     }
 
     pub fn queue_spend_decrement(&self, filter: LinkedResetFilter, amount: Decimal) {
         let write = LinkedWrite::Decrement(filter, amount);
-        self.queue.push(CascadeEntry::Linked {
-            table: self.table,
-            write,
-        });
+        self.queue
+            .entries
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(CascadeEntry::Linked {
+                table: self.table,
+                write,
+            });
     }
 }
 
@@ -155,18 +154,26 @@ pub struct KeyLinkedSpendResetWrites {
 impl KeyLinkedSpendResetWrites {
     pub fn queue_spend_zero(&self, filter: KeyLinkedResetFilter) {
         let write = LinkedWrite::KeyZero(filter);
-        self.queue.push(CascadeEntry::Linked {
-            table: self.table,
-            write,
-        });
+        self.queue
+            .entries
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(CascadeEntry::Linked {
+                table: self.table,
+                write,
+            });
     }
 
     pub fn queue_spend_decrement(&self, filter: KeyLinkedResetFilter, amount: Decimal) {
         let write = LinkedWrite::KeyDecrement(filter, amount);
-        self.queue.push(CascadeEntry::Linked {
-            table: self.table,
-            write,
-        });
+        self.queue
+            .entries
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(CascadeEntry::Linked {
+                table: self.table,
+                write,
+            });
     }
 }
 
@@ -178,9 +185,13 @@ pub struct BudgetWindowWrites {
 impl BudgetWindowWrites {
     pub fn queue_window_advance(&self, budget_id: &str, budget_reset_at: DateTime<Utc>) {
         let owned_budget_id = budget_id.to_owned();
-        self.queue.push(CascadeEntry::Window {
-            budget_id: owned_budget_id,
-            budget_reset_at,
-        });
+        self.queue
+            .entries
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(CascadeEntry::Window {
+                budget_id: owned_budget_id,
+                budget_reset_at,
+            });
     }
 }
