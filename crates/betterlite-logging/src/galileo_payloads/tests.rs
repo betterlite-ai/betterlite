@@ -606,6 +606,8 @@ fn check_responses_api_web_search_and_custom_tool_projection() {
             {"type": "web_search_call", "id": "ws_2", "status": "completed", "action": {"type": "bogus"}},
             {"type": "web_search_call", "id": "ws_3", "status": "completed", "action": {"type": "find_in_page", "pattern": "cat", "url": "http://example.com"}},
             {"type": "web_search_call", "id": "ws_4", "status": "completed", "action": {"type": "mystery", "pattern": "x", "url": "http://y"}},
+            {"type": "web_search_call", "id": "ws_5", "status": "completed", "action": {"type": "search", "query": "q2", "sources": [{"type": "url", "url": "http://z"}]}},
+            {"type": "web_search_call", "id": "ws_6", "status": "completed", "action": {"type": "search", "query": "q3", "sources": [{"type": "mystery", "url": "http://z"}]}},
             {"type": "custom_tool_call", "call_id": "c1", "input": "x", "name": "t", "caller": {"type": "program", "caller_id": "p1"}},
             {"type": "custom_tool_call", "call_id": "c2", "input": "x", "name": "t", "caller": {"type": "bogus"}}
         ]"#,
@@ -614,6 +616,8 @@ fn check_responses_api_web_search_and_custom_tool_projection() {
             {"type": "web_search_call", "id": "ws_2", "status": "completed", "action": {"type": "bogus"}},
             {"id": "ws_3", "action": {"pattern": "cat", "type": "find_in_page", "url": "http://example.com"}, "status": "completed", "type": "web_search_call"},
             {"type": "web_search_call", "id": "ws_4", "status": "completed", "action": {"type": "mystery", "pattern": "x", "url": "http://y"}},
+            {"id": "ws_5", "action": {"type": "search", "queries": null, "query": "q2", "sources": [{"type": "url", "url": "http://z"}]}, "status": "completed", "type": "web_search_call"},
+            {"type": "web_search_call", "id": "ws_6", "status": "completed", "action": {"type": "search", "query": "q3", "sources": [{"type": "mystery", "url": "http://z"}]}},
             {"call_id": "c1", "input": "x", "name": "t", "type": "custom_tool_call", "id": null, "caller": {"caller_id": "p1", "type": "program"}, "namespace": null},
             {"type": "custom_tool_call", "call_id": "c2", "input": "x", "name": "t", "caller": {"type": "bogus"}}
         ]"#,
