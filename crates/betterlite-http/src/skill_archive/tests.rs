@@ -448,13 +448,12 @@ fn skill_archive_builds_an_archive_with_an_unreadable_directory_entry() {
 }
 
 #[test]
-#[expect(
-    clippy::non_ascii_literal,
-    reason = "the test needs a name that decodes differently as utf8 and cp437"
-)]
 fn skill_archive_rejects_a_local_utf8_name_that_mismatches_the_central_cp437_decode() {
-    let mut bytes = upload(&[("skill/SKILL.md", b"manifest"), ("skill/café.md", b"body")]);
-    let marker = "skill/café.md".as_bytes();
+    let mut bytes = upload(&[
+        ("skill/SKILL.md", b"manifest"),
+        ("skill/x\u{e9}.md", b"body"),
+    ]);
+    let marker = "skill/x\u{e9}.md".as_bytes();
     let offsets = find_all(&bytes, marker);
     assert_eq!(offsets.len(), 2);
     bytes[offsets[1] - 38 + 1] &= !0x08;
@@ -502,15 +501,11 @@ fn raw_central_header(name: &[u8], flags: u16, data: &[u8], local_header_offset:
 }
 
 #[test]
-#[expect(
-    clippy::non_ascii_literal,
-    reason = "the test needs a name that decodes differently as utf8 and cp437"
-)]
 fn skill_archive_accepts_a_local_and_central_name_that_decode_to_the_same_string() {
     let manifest_local = raw_local_header(b"skill/SKILL.md", 0, b"manifest");
     let second_local_offset = u32::try_from(manifest_local.len()).unwrap();
-    let utf8_name = [b"skill/caf".as_slice(), &[0xc3, 0xa9], b".md"].concat();
-    let cp437_name = [b"skill/caf".as_slice(), &[0x82], b".md"].concat();
+    let utf8_name = [b"skill/x".as_slice(), &[0xc3, 0xa9], b".md"].concat();
+    let cp437_name = [b"skill/x".as_slice(), &[0x82], b".md"].concat();
     let second_local = raw_local_header(&utf8_name, 0x0800, b"body");
 
     let mut bytes = Vec::new();
@@ -536,7 +531,7 @@ fn skill_archive_accepts_a_local_and_central_name_that_decode_to_the_same_string
     let mut repacked = ZipArchive::new(Cursor::new(archive.content)).unwrap();
     let mut data = Vec::new();
     repacked
-        .by_name("café.md")
+        .by_name("x\u{e9}.md")
         .unwrap()
         .read_to_end(&mut data)
         .unwrap();
