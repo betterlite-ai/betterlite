@@ -20,6 +20,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "code_execution_arguments"
+path = "fuzz_targets/code_execution_arguments.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "embedding"
 path = "fuzz_targets/embedding.rs"
 test = false
