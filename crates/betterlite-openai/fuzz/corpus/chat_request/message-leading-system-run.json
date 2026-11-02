@@ -1,0 +1,1 @@
+{"model":"claude-3-5-sonnet","messages":[{"role":"system","content":"You are a helpful assistant."},{"role":"system","content":"Keep answers short."},{"role":"user","content":"Hi there."},{"role":"assistant","content":"Hello!"},{"role":"system","content":"Also mention the time zone."},{"role":"user","content":"What time is it?"}]}

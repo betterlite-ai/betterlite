@@ -1,0 +1,17 @@
+kind: helper
+name: session-refresh-not-refresh-shaped
+call:
+  b4653:
+    function: session_refresh
+    signing_key: "session-signing-key-0123456789abcdef"
+    mint:
+      principal:
+        user_id: user-1
+        client_id: client-1
+      kind: session
+      mint_now: 1700000000
+    open_now: 1700000100
+    expected_client_id: client-1
+env: {}
+compare:
+  ignore: []

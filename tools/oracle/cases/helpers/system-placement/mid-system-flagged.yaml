@@ -1,0 +1,18 @@
+kind: helper
+name: system-placement-mid-system-flagged
+call:
+  system_placement:
+    operation: place_mid_conversation_system
+    supports_mid_conversation_system: true
+    messages:
+      - role: user
+        content: What's the weather in Boston?
+      - role: assistant
+        content: It's sunny in Boston.
+      - role: system
+        content: Keep every answer under two sentences.
+      - role: user
+        content: And in Seattle?
+env: {}
+compare:
+  ignore: []

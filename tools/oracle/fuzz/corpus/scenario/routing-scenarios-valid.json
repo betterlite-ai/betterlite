@@ -1,0 +1,1 @@
+{"steps":[{"http":{"request":{"method":"POST","path":"/v1/chat/completions","headers":{},"body":{}}}},{"concurrent":{"requests":[{"request":{"method":"POST","path":"/v1/chat/completions","headers":{},"body":{}}},{"request":{"method":"POST","path":"/v1/chat/completions","headers":{},"body":{}}}]}},{"join":{"deadline_ms":1000}}]}
