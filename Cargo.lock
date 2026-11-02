@@ -1638,6 +1638,7 @@ dependencies = [
  "betterlite-http",
  "betterlite-ocr",
  "betterlite-openai",
+ "betterlite-redact",
  "email_address",
  "encoding_rs",
  "form_urlencoded",
