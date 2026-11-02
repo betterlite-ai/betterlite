@@ -2,8 +2,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::build::build_query_plan;
+use super::build::{build_query_plan, facet_where};
 use super::coerce::{coerce, parse_filters, parse_positive_int, parse_sort};
+use super::params::facet_allowed_params;
 use super::query::decode_list_query;
 use super::types::{
     ComparisonOp, FilterOp, FilterSpec, FilterType, FilterValue, ListSpec, Predicate, Scope,
@@ -93,6 +94,31 @@ fn search_uses_sorted_fields_and_empty_search_adds_no_clause() {
     let empty = BTreeMap::from([(String::from("q"), String::new())]);
     let empty_plan = build_query_plan(&spec(), &empty, &Scope::All).expect("empty search is valid");
     assert!(empty_plan.where_.is_empty());
+}
+
+#[test]
+fn facet_plan_conjoins_scope_filters_search_and_omits_sort_alias() {
+    let params = BTreeMap::from([
+        (String::from("filter[name]"), String::from("Ada")),
+        (String::from("q"), String::from("engineer")),
+    ]);
+    let scope = Scope::Where(vec![Predicate::Compare(super::types::Compare {
+        field: "owner_id".to_owned(),
+        op: ComparisonOp::Eq,
+        value: FilterValue::Text("caller".to_owned()),
+    })]);
+    let predicates = facet_where(&spec(), &params, &scope).expect("facet plan is valid");
+    assert!(
+        matches!(predicates.first(), Some(Predicate::Compare(compare)) if compare.field == "owner_id")
+    );
+    assert!(
+        matches!(predicates.get(1), Some(Predicate::Compare(compare)) if compare.field == "name")
+    );
+    assert!(matches!(predicates.get(2), Some(Predicate::AnyOf(_))));
+
+    let allowed = facet_allowed_params(&spec());
+    assert!(!allowed.iter().any(|name| name == "sort"));
+    assert!(allowed.iter().any(|name| name == "q"));
 }
 
 #[test]
