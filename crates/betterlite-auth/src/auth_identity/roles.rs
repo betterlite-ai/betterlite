@@ -44,14 +44,18 @@ pub enum TeamRole {
     Member,
 }
 
+const ROLE_MAP: &[(&str, Role)] = &[
+    ("proxy_admin", Role::PlatformAdmin),
+    ("proxy_admin_viewer", Role::PlatformViewer),
+    ("org_admin", Role::OrgAdmin),
+];
+
 #[must_use]
 pub fn map_role(role: Option<&str>) -> Option<Role> {
-    match role? {
-        "proxy_admin" => Some(Role::PlatformAdmin),
-        "proxy_admin_viewer" => Some(Role::PlatformViewer),
-        "org_admin" => Some(Role::OrgAdmin),
-        _ => None,
-    }
+    let value = role?;
+    ROLE_MAP
+        .iter()
+        .find_map(|(key, mapped)| (*key == value).then_some(*mapped))
 }
 
 #[must_use]
