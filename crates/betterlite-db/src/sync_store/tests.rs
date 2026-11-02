@@ -1,11 +1,11 @@
 #![cfg(test)]
 
-use super::{FinishClaim, SyncStore, iso_format};
+use super::{FinishClaim, SyncState, SyncStore, iso_format};
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use betterlite_roi::records::{
     ROIEstimate, ROIEstimateStatus, ROIPullRecord, ROIReport, ROISyncPhase, ROISyncStatus,
 };
-use chrono::NaiveDate;
+use chrono::{NaiveDate, NaiveDateTime};
 use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
@@ -146,6 +146,18 @@ async fn config_param(client: &SyncStore, param_name: &str) -> Option<String> {
         .map(|row| row.get(0))
 }
 
+async fn config_run_time(client: &SyncStore) -> NaiveDateTime {
+    client
+        .client
+        .query_one(
+            r#"SELECT last_run_at FROM "LiteLLM_Config" WHERE param_name = 'roi_calculator_sync'"#,
+            &[],
+        )
+        .await
+        .unwrap()
+        .get(0)
+}
+
 async fn seed_cached_pulls(client: &SyncStore) {
     client
         .client
@@ -240,12 +252,14 @@ async fn acquire_respects_scheduled_interval_window() {
 async fn heartbeat_extends_lease_and_updates_status() {
     let (fixture, pool, client) = database().await;
     insert_sync_state(&client, "owner-a", &sample_status(true), false, 30.0).await;
+    let previous_run = config_run_time(&client).await;
     let mut status = sample_status(true);
     status.done = 2;
     let extended = client.heartbeat("owner-a", &status).await.unwrap();
     assert!(extended);
     let stored = client.status().await.unwrap().unwrap();
     assert_eq!(stored, status);
+    assert!(config_run_time(&client).await > previous_run);
     drop(client);
     pool.close();
     fixture.close_async().await.unwrap();
@@ -505,10 +519,13 @@ async fn cancel_sets_cancel_flag_and_phase_regardless_of_expiry_and_ownership() 
     insert_sync_state(&client, "owner-a", &sample_status(true), false, 120.0).await;
     client.cancel().await.unwrap();
     let stored = config_param(&client, "roi_calculator_sync").await.unwrap();
-    assert!(stored.contains("\"cancel\":true") || stored.contains("\"cancel\": true"));
-    assert!(
-        stored.contains("\"phase\":\"cancelled\"") || stored.contains("\"phase\": \"cancelled\"")
-    );
+    let state: SyncState = serde_json::from_str(&stored).unwrap();
+    assert!(state.cancel);
+    assert_eq!(state.owner, "");
+    assert!(!state.status.running);
+    assert_eq!(state.status.phase, ROISyncPhase::Cancelled);
+    assert_eq!(state.status.stage, "Sync cancelled");
+    assert!(state.status.finished_at.is_some());
     drop(client);
     pool.close();
     fixture.close_async().await.unwrap();
