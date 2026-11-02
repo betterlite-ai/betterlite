@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
+use betterlite_billing::billable_category::BillableCategory;
 use tower::ServiceExt as _;
 
 use super::super::BillableRequestMetrics;
@@ -33,7 +34,14 @@ async fn still_classifies_when_only_the_sink_is_configured() {
         .unwrap();
     router.oneshot(request).await.unwrap();
 
-    assert_eq!(sink.calls().len(), 1);
+    assert_eq!(
+        sink.calls(),
+        vec![(
+            BillableCategory::Llm,
+            "/chat/completions".to_owned(),
+            StatusCode::OK
+        )]
+    );
 }
 
 #[tokio::test]
@@ -47,5 +55,13 @@ async fn still_classifies_when_only_the_recorder_is_configured() {
         .unwrap();
     router.oneshot(request).await.unwrap();
 
-    assert_eq!(recorder.calls().len(), 1);
+    assert_eq!(
+        recorder.calls(),
+        vec![(
+            BillableCategory::Llm,
+            "/chat/completions".to_owned(),
+            StatusCode::OK,
+            None
+        )]
+    );
 }
