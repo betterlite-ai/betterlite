@@ -4,10 +4,12 @@ use std::fs::{self, File};
 use std::io::Write as _;
 use std::path::Path;
 use std::process::{Child, Stdio};
+use std::time::Instant;
 
 use serde::Deserialize;
 use serde_json::Value;
 
+use crate::dispatch::checkpoint;
 use crate::error::GateError;
 use crate::process::check_command;
 use crate::spec::agents::{OutputMode, PLACEHOLDERS, Rung, Runner};
@@ -112,12 +114,12 @@ fn reply(mode: OutputMode, output: &Path, stdout: &Path) -> Result<Reply, GateEr
             })?;
             Ok(Reply {
                 answer: Some(answer),
-                session: None,
+                session: checkpoint::session(output)?,
             })
         }
         OutputMode::File => Ok(Reply {
             answer: None,
-            session: None,
+            session: checkpoint::session(output)?,
         }),
         OutputMode::ClaudeJson => {
             let text = fs::read_to_string(stdout).map_err(|source| GateError::Read {
@@ -144,14 +146,19 @@ fn spawn(
         path: invocation.log.to_owned(),
         source,
     })?;
-    check_command("timeout")
+    check_command("setpriv")
         .args([
+            "--pdeathsig",
+            "TERM",
+            "--",
+            "timeout",
             "--kill-after=60",
             &format!("{}m", rung.timeout_minutes),
             &runner.program,
         ])
         .args(arguments)
         .current_dir(invocation.worktree)
+        .env("GATE_DISPATCHED", "1")
         .stdin(Stdio::piped())
         .stdout(stdout)
         .stderr(log)
@@ -167,8 +174,41 @@ pub(crate) fn run(
     rung: &Rung,
     invocation: &Invocation<'_>,
 ) -> Result<Reply, GateError> {
-    let raw_schema = fs::read_to_string(invocation.schema).map_err(|source| GateError::Read {
-        path: invocation.schema.to_owned(),
+    let schema_text = schema_text(invocation.schema)?;
+    let template = match (invocation.session, runner.resume.as_ref()) {
+        (Some(_), Some(resume)) => resume,
+        (None, _) | (Some(_), None) => &runner.args,
+    };
+    let mut arguments = template
+        .iter()
+        .map(|argument| expand(argument, rung, invocation, &schema_text))
+        .collect::<Result<Vec<String>, GateError>>()?;
+    let planned = planned_session(runner, invocation, &mut arguments)?;
+    checkpoint::begin(invocation.output, runner, rung, planned.as_deref())?;
+    let stdout_path = invocation.output.with_extension("stdout");
+    let failed = |source| GateError::Spawn {
+        program: runner.program.clone(),
+        source,
+    };
+    let started = Instant::now();
+    let mut child = spawn(runner, rung, invocation, &arguments, &stdout_path)?;
+    if let Some(mut input) = child.stdin.take() {
+        input
+            .write_all(invocation.prompt.as_bytes())
+            .map_err(failed)?;
+    }
+    let status = child.wait().map_err(failed)?;
+    checkpoint::finish(invocation.output, started.elapsed(), status.code())?;
+    let mut reply = reply(runner.output, invocation.output, &stdout_path)?;
+    if reply.session.is_none() {
+        reply.session = checkpoint::session(invocation.output)?;
+    }
+    Ok(reply)
+}
+
+fn schema_text(path: &Path) -> Result<String, GateError> {
+    let raw_schema = fs::read_to_string(path).map_err(|source| GateError::Read {
+        path: path.to_owned(),
         source,
     })?;
     let mut schema: Value =
@@ -180,29 +220,34 @@ pub(crate) fn run(
     if let Some(object) = schema.as_object_mut() {
         object.remove("$schema");
     }
-    let schema_text = serde_json::to_string(&schema).map_err(|source| GateError::Json {
+    let text = serde_json::to_string(&schema).map_err(|source| GateError::Json {
         what: "the answer schema".to_owned(),
         source,
     })?;
-    let template = match (invocation.session, runner.resume.as_ref()) {
-        (Some(_), Some(resume)) => resume,
-        (None, _) | (Some(_), None) => &runner.args,
+    Ok(text)
+}
+
+fn planned_session(
+    runner: &Runner,
+    invocation: &Invocation<'_>,
+    arguments: &mut Vec<String>,
+) -> Result<Option<String>, GateError> {
+    let planned = if invocation.session.is_none()
+        && runner.resume.is_some()
+        && Path::new(&runner.program)
+            .file_name()
+            .is_some_and(|name| name == "claude")
+    {
+        let path = Path::new("/proc/sys/kernel/random/uuid");
+        let raw = fs::read_to_string(path).map_err(|source| GateError::Read {
+            path: path.to_owned(),
+            source,
+        })?;
+        let id = raw.trim().to_owned();
+        arguments.extend(["--session-id".to_owned(), id.clone()]);
+        Some(id)
+    } else {
+        invocation.session.map(str::to_owned)
     };
-    let arguments = template
-        .iter()
-        .map(|argument| expand(argument, rung, invocation, &schema_text))
-        .collect::<Result<Vec<String>, GateError>>()?;
-    let stdout_path = invocation.output.with_extension("stdout");
-    let failed = |source| GateError::Spawn {
-        program: runner.program.clone(),
-        source,
-    };
-    let mut child = spawn(runner, rung, invocation, &arguments, &stdout_path)?;
-    if let Some(mut input) = child.stdin.take() {
-        input
-            .write_all(invocation.prompt.as_bytes())
-            .map_err(failed)?;
-    }
-    child.wait().map_err(failed)?;
-    reply(runner.output, invocation.output, &stdout_path)
+    Ok(planned)
 }
