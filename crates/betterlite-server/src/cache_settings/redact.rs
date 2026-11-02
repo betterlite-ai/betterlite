@@ -10,13 +10,14 @@ pub fn is_credential_field(key: &str) -> bool {
         || SensitiveDataMasker::default().is_sensitive_key(key, &[])
 }
 
-#[must_use]
-pub fn redact_credentials(settings: &Map<String, Value>) -> Map<String, Value> {
+fn redact_where<F>(settings: &Map<String, Value>, should_redact: F) -> Map<String, Value>
+where
+    F: Fn(&str, &Value) -> bool,
+{
     settings
         .iter()
         .map(|(key, value)| {
-            let redacted = !value.is_null() && is_credential_field(key);
-            let next = if redacted {
+            let next = if should_redact(key, value) {
                 Value::String(REDACTED_VALUE.to_owned())
             } else {
                 value.clone()
@@ -27,12 +28,16 @@ pub fn redact_credentials(settings: &Map<String, Value>) -> Map<String, Value> {
 }
 
 #[must_use]
+pub fn redact_credentials(settings: &Map<String, Value>) -> Map<String, Value> {
+    redact_where(settings, |key, value| {
+        !value.is_null() && is_credential_field(key)
+    })
+}
+
+#[must_use]
 pub fn redact_settings(settings: Option<&Map<String, Value>>) -> Map<String, Value> {
     let Some(present) = settings.filter(|map| !map.is_empty()) else {
         return Map::new();
     };
-    present
-        .keys()
-        .map(|key| (key.clone(), Value::String(REDACTED_VALUE.to_owned())))
-        .collect()
+    redact_where(present, |_, _| true)
 }

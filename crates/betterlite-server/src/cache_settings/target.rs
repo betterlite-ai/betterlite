@@ -9,8 +9,8 @@ use super::REDACTED_VALUE;
 #[must_use]
 pub fn has_connection_target(value: &Value) -> bool {
     match value {
-        Value::String(text) => !text.trim().is_empty() && text != REDACTED_VALUE,
         Value::Null => false,
+        Value::String(text) => !text.trim().is_empty() && text != REDACTED_VALUE,
         Value::Array(items) => !items.is_empty(),
         Value::Object(fields) => !fields.is_empty(),
         Value::Bool(_) | Value::Number(_) => true,
@@ -19,14 +19,19 @@ pub fn has_connection_target(value: &Value) -> bool {
 
 #[must_use]
 pub fn target_repr(value: &Value) -> String {
-    match value {
-        Value::Array(_) | Value::Object(_) => canonical_json(value),
-        Value::Null => "None".to_owned(),
-        Value::Bool(true) => "True".to_owned(),
-        Value::Bool(false) => "False".to_owned(),
-        Value::Number(number) => number.to_string(),
-        Value::String(text) => text.clone(),
+    if matches!(value, Value::Array(_) | Value::Object(_)) {
+        return canonical_json(value);
     }
+    if let Some(text) = value.as_str() {
+        return text.to_owned();
+    }
+    if let Value::Bool(flag) = value {
+        return (if *flag { "True" } else { "False" }).to_owned();
+    }
+    if let Value::Number(number) = value {
+        return number.to_string();
+    }
+    "None".to_owned()
 }
 
 // json.dumps(sort_keys=True) adds ", " and ": " separators that serde_json's compact formatter omits, so only those are overridden here.
@@ -39,27 +44,30 @@ fn canonical_json(value: &Value) -> String {
 
 struct PythonStyleFormatter;
 
+fn comma_before_continuation<W>(writer: &mut W, first: bool) -> io::Result<()>
+where
+    W: ?Sized + io::Write,
+{
+    if first {
+        Ok(())
+    } else {
+        writer.write_all(b", ")
+    }
+}
+
 impl Formatter for PythonStyleFormatter {
     fn begin_array_value<W>(&mut self, writer: &mut W, first: bool) -> io::Result<()>
     where
         W: ?Sized + io::Write,
     {
-        if first {
-            Ok(())
-        } else {
-            writer.write_all(b", ")
-        }
+        comma_before_continuation(writer, first)
     }
 
     fn begin_object_key<W>(&mut self, writer: &mut W, first: bool) -> io::Result<()>
     where
         W: ?Sized + io::Write,
     {
-        if first {
-            Ok(())
-        } else {
-            writer.write_all(b", ")
-        }
+        comma_before_continuation(writer, first)
     }
 
     fn begin_object_value<W>(&mut self, writer: &mut W) -> io::Result<()>
