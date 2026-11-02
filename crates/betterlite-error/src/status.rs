@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
-use crate::error::details::{ApiDetails, RateLimitDetails, TimeoutDetails, TimeoutStatus};
+use crate::error::details::{
+    ApiDetails, RateLimitDetails, ResponseDetails, TimeoutDetails, TimeoutStatus,
+};
 use crate::error::{ErrorClass, ErrorContext};
 use crate::facts::{ProviderErrorFacts, RequestFacts, ResponseFacts};
 use crate::rate_limit::RateLimitCategory;
@@ -84,8 +86,12 @@ pub fn status_error_class(
     provider: Option<String>,
 ) -> Option<ErrorClass> {
     let mapping = map_exception_by_status(error, error_str, exception_provider)?;
+    let response_has_request = error
+        .response
+        .as_ref()
+        .is_some_and(|response| response.request.is_some());
     let context = ErrorContext {
-        message: mapping.message,
+        message: mapping.message.clone(),
         model,
         provider,
         max_retries: None,
@@ -94,28 +100,46 @@ pub fn status_error_class(
         body_param: None,
         body_code: None,
     };
-    let boxed = Box::new(context);
-    Some(match mapping.family {
-        StatusFamily::Authentication => ErrorClass::Authentication(boxed),
-        StatusFamily::PermissionDenied => ErrorClass::PermissionDenied(boxed),
-        StatusFamily::NotFound => ErrorClass::NotFound(boxed),
+    Some(build_error_class(&mapping, context, response_has_request))
+}
+
+// BadRequestError drops a response without _request and falls back to its class default; Authentication, PermissionDenied and NotFound only ever reach this status_code anyway
+fn build_error_class(
+    mapping: &StatusMapping,
+    context: ErrorContext,
+    response_has_request: bool,
+) -> ErrorClass {
+    match mapping.family {
+        StatusFamily::Authentication => ErrorClass::Authentication(Box::new(
+            ResponseDetails::with_status(context, Some(mapping.status_code)),
+        )),
+        StatusFamily::PermissionDenied => ErrorClass::PermissionDenied(Box::new(
+            ResponseDetails::with_status(context, Some(mapping.status_code)),
+        )),
+        StatusFamily::NotFound => ErrorClass::NotFound(Box::new(ResponseDetails::with_status(
+            context,
+            Some(mapping.status_code),
+        ))),
         StatusFamily::Timeout => ErrorClass::Timeout(Box::new(TimeoutDetails {
-            context: *boxed,
+            context,
             original_status: TimeoutStatus(mapping.status_code),
         })),
         StatusFamily::RateLimit => ErrorClass::RateLimit(Box::new(RateLimitDetails {
-            context: *boxed,
+            context,
             category: RateLimitCategory::VendorRateLimit,
             dimension: None,
             headers: BTreeMap::new(),
         })),
-        StatusFamily::InternalServer => ErrorClass::InternalServer(boxed),
-        StatusFamily::BadGateway => ErrorClass::BadGateway(boxed),
-        StatusFamily::ServiceUnavailable => ErrorClass::ServiceUnavailable(boxed),
-        StatusFamily::BadRequest => ErrorClass::BadRequest(boxed),
+        StatusFamily::InternalServer => ErrorClass::InternalServer(Box::new(context)),
+        StatusFamily::BadGateway => ErrorClass::BadGateway(Box::new(context)),
+        StatusFamily::ServiceUnavailable => ErrorClass::ServiceUnavailable(Box::new(context)),
+        StatusFamily::BadRequest => ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(
+            context,
+            response_has_request.then_some(mapping.status_code),
+        ))),
         StatusFamily::Api => ErrorClass::Api(Box::new(ApiDetails {
-            context: *boxed,
+            context,
             status: mapping.status_code,
         })),
-    })
+    }
 }

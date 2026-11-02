@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
+
 use rstest::rstest;
 
 use super::*;
@@ -83,6 +85,41 @@ fn openai_like_errors_behavior_tests_behavior(
             );
         }
     }
+}
+
+fn facts_with_response(status_code: Option<u16>) -> ProviderErrorFacts {
+    use crate::facts::{RequestFacts, ResponseFacts};
+    let mut error = facts(status_code);
+    error.response = status_code.map(|status| ResponseFacts {
+        status_code: status,
+        headers: BTreeMap::new(),
+        request: Some(RequestFacts {
+            method: "POST".to_owned(),
+            url: "https://my-provider.example/v1".to_owned(),
+        }),
+    });
+    error
+}
+
+#[rstest]
+#[case::context_window_on_500("this model's maximum context length is 4096 tokens", 500)]
+fn response_branches_answer_the_provider_status(#[case] error_str: &str, #[case] status: u16) {
+    let error = facts_with_response(Some(status));
+    let class = map_openai_like_exception(&error, error_str, "my_provider", None)
+        .expect("expected a classification");
+    assert_eq!(class.metadata().status_code, status);
+}
+
+#[rstest]
+#[case::authorization_denied_without_a_response("authorization denied for this api key", 401)]
+fn branches_without_a_response_keep_the_class_status(
+    #[case] error_str: &str,
+    #[case] expected_status: u16,
+) {
+    let error = facts(None);
+    let class = map_openai_like_exception(&error, error_str, "my_provider", None)
+        .expect("expected a classification");
+    assert_eq!(class.metadata().status_code, expected_status);
 }
 
 #[path = "tests/precedence/tests.rs"]

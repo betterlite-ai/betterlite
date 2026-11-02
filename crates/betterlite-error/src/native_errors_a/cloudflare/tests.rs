@@ -67,6 +67,18 @@ fn matched_authentication_sets_model_and_provider() {
     assert_eq!(context.provider.as_deref(), Some("cloudflare"));
 }
 
+#[rstest]
+#[case::authentication_on_403("Authentication error: invalid token", 403)]
+fn response_branches_answer_the_provider_status(#[case] error_str: &str, #[case] status: u16) {
+    let class = map_cloudflare_with_status(
+        error_str,
+        Some("cloudflare/model-a".to_owned()),
+        Some(status),
+    )
+    .expect("expected a classification");
+    assert_eq!(class.metadata().status_code, status);
+}
+
 #[test]
 fn matched_bad_request_tolerates_missing_model() {
     let class = map_cloudflare_exception("must have required property 'model'", None)

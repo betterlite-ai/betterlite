@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::error::details::{RateLimitDetails, TimeoutDetails, TimeoutStatus};
+use crate::error::details::{RateLimitDetails, ResponseDetails, TimeoutDetails, TimeoutStatus};
 use crate::error::{ErrorClass, ErrorContext};
 use crate::rate_limit::RateLimitCategory;
 
@@ -17,10 +17,9 @@ pub struct TogetherAiExceptionInput {
 
 #[must_use]
 pub fn map_together_ai_exception(input: &TogetherAiExceptionInput) -> Option<ErrorClass> {
-    if let Some(class) = predicate_classification(input) {
-        return Some(class);
-    }
-    status_classification(input)
+    let family = classify(input)?;
+    let context = context(input);
+    Some(build(family, context, input.status_code))
 }
 
 fn context(input: &TogetherAiExceptionInput) -> ErrorContext {
@@ -64,60 +63,80 @@ fn error_type_is_validation(error_str: &str) -> bool {
     body.error_type.as_deref() == Some("validation")
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Family {
+    ContextWindowExceeded,
+    Authentication,
+    BadRequest,
+    Timeout,
+    RateLimit,
+}
+
 // the error_str predicates LiteLLM checks before ever looking at status_code
-fn predicate_classification(input: &TogetherAiExceptionInput) -> Option<ErrorClass> {
+fn predicate_family(input: &TogetherAiExceptionInput) -> Option<Family> {
     let field = error_field(&input.error_str);
     if field
         .as_deref()
         .is_some_and(|err| err.contains("`inputs` tokens + `max_new_tokens` must be <="))
     {
-        return Some(ErrorClass::ContextWindowExceeded(Box::new(context(input))));
+        return Some(Family::ContextWindowExceeded);
     }
     if field
         .as_deref()
         .is_some_and(|err| err.contains("invalid private key"))
     {
-        return Some(ErrorClass::Authentication(Box::new(context(input))));
+        return Some(Family::Authentication);
     }
     if field
         .as_deref()
         .is_some_and(|err| err.contains("INVALID_ARGUMENT"))
     {
-        return Some(ErrorClass::BadRequest(Box::new(context(input))));
+        return Some(Family::BadRequest);
     }
     if input.error_str.contains("A timeout occurred") {
-        return Some(ErrorClass::Timeout(Box::new(TimeoutDetails {
-            context: context(input),
-            original_status: TimeoutStatus(408),
-        })));
+        return Some(Family::Timeout);
     }
     let is_validation = field
         .as_deref()
         .is_some_and(|err| err.contains("API key doesn't match expected format."))
         || error_type_is_validation(&input.error_str);
-    if is_validation {
-        return Some(ErrorClass::BadRequest(Box::new(context(input))));
-    }
-    None
+    is_validation.then_some(Family::BadRequest)
 }
 
 // a status present but unmatched, and a missing status_code attribute, both crash with AttributeError in LiteLLM (see docs/deviations/B242.yaml); betterlite falls through to None for both
-fn status_classification(input: &TogetherAiExceptionInput) -> Option<ErrorClass> {
-    let status = input.status_code?;
-    let ctx = context(input);
-    match status {
-        // Timeout() never receives exception_status_code in either branch, so both default to 408
-        408 | 524 => Some(ErrorClass::Timeout(Box::new(TimeoutDetails {
-            context: ctx,
+fn classify(input: &TogetherAiExceptionInput) -> Option<Family> {
+    if let Some(family) = predicate_family(input) {
+        return Some(family);
+    }
+    // Timeout() never receives exception_status_code in either branch, so both default to 408
+    match input.status_code? {
+        408 | 524 => Some(Family::Timeout),
+        422 => Some(Family::BadRequest),
+        429 => Some(Family::RateLimit),
+        _ => None,
+    }
+}
+
+fn build(family: Family, context: ErrorContext, status_code: Option<u16>) -> ErrorClass {
+    match family {
+        Family::ContextWindowExceeded => ErrorClass::ContextWindowExceeded(Box::new(
+            ResponseDetails::with_status(context, status_code),
+        )),
+        Family::Authentication => {
+            ErrorClass::Authentication(Box::new(ResponseDetails::with_status(context, status_code)))
+        }
+        Family::BadRequest => {
+            ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(context, status_code)))
+        }
+        Family::Timeout => ErrorClass::Timeout(Box::new(TimeoutDetails {
+            context,
             original_status: TimeoutStatus(408),
-        }))),
-        422 => Some(ErrorClass::BadRequest(Box::new(ctx))),
-        429 => Some(ErrorClass::RateLimit(Box::new(RateLimitDetails {
-            context: ctx,
+        })),
+        Family::RateLimit => ErrorClass::RateLimit(Box::new(RateLimitDetails {
+            context,
             category: RateLimitCategory::VendorRateLimit,
             dimension: None,
             headers: BTreeMap::new(),
-        }))),
-        _ => None,
+        })),
     }
 }

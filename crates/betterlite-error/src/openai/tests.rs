@@ -125,6 +125,33 @@ fn openai_errors_openai_error_tests_behavior(
     );
 }
 
+#[rstest]
+#[case::status_422(input("boom", Some(422)), 422)]
+#[case::context_window_on_server_status(
+    input("This model's maximum context length is 4096 tokens", Some(500)),
+    500
+)]
+#[case::model_not_found_on_status(
+    input("invalid_request_error: model_not_found - no such model", Some(404)),
+    404
+)]
+#[case::content_policy_on_status(
+    input(
+        "invalid_request_error raised: content_policy_violation detected",
+        Some(422)
+    ),
+    422
+)]
+#[case::status_401(input("boom", Some(401)), 401)]
+#[case::status_404(input("boom", Some(404)), 404)]
+fn response_branches_answer_the_provider_status(
+    #[case] input: OpenaiExceptionInput,
+    #[case] expected_status: u16,
+) {
+    let class = map_openai_exception(&input);
+    assert_eq!(class.metadata().status_code, expected_status);
+}
+
 #[test]
 fn rate_limit_text_outranks_context_window_text() {
     let class = map_openai_exception(&input(

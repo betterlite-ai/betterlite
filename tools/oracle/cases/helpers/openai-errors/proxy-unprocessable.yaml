@@ -1,0 +1,11 @@
+kind: helper
+name: openai-errors-proxy-unprocessable
+call:
+  provider_error:
+    kind: raw
+    model: gpt-4
+    custom_llm_provider: litellm_proxy
+    error_str: "litellm.BadRequestError: bad input"
+    status_code: 422
+env: {}
+compare: {ignore: []}

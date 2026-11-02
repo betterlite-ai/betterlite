@@ -1,5 +1,6 @@
 from typing import Literal, NotRequired, Protocol, TypeAlias, TypedDict, Unpack, cast
 
+import httpx
 import openai
 from litellm.litellm_core_utils import exception_mapping_utils as mapping
 
@@ -65,6 +66,10 @@ class _OriginalException:
     ) -> None:
         if status_code is not None:
             self.status_code = status_code
+            self.response = httpx.Response(
+                status_code=status_code,
+                request=httpx.Request(method="POST", url="https://docs.litellm.ai/docs"),
+            )
         if body is not None:
             self.body = body
         if message is not None:

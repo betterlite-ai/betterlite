@@ -1,0 +1,16 @@
+task: B5102
+deviations:
+  - what: >-
+      A mapper with a typed status_code input (openai, replicate, bedrock, sagemaker, azure, openrouter, cloudflare,
+      nlp_cloud, together_ai, aleph_alpha, ollama, the litellm_proxy branch and the catchall) answers that status on a
+      branch that passes a response, though the input carries no response object. LiteLLM answers it only when the
+      exception has a response with a request. Without one, BadRequestError and its subclasses answer 400,
+      AuthenticationError and NotFoundError answer 401 and 404, and PermissionDeniedError and UnprocessableEntityError
+      fail to build. A facts mapper given a response without a request answers the class default, where LiteLLM's
+      AuthenticationError and NotFoundError fail on response.request.
+    why: >-
+      On the real path every original exception carries a response with a request and its own status, since
+      BaseLLMException builds one and openai SDK errors carry theirs. So a status without a response, or a response
+      without a request, never reaches a mapper there, and the status betterlite answers is the one LiteLLM answers on
+      that path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L41-L64
