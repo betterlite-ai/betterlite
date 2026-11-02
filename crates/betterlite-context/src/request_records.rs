@@ -156,7 +156,12 @@ impl RequestRecordProjection {
     fn filter_object(fields: BTreeMap<String, RequestRecord>, depth: i32) -> RequestRecord {
         let filtered = fields
             .into_iter()
-            .filter_map(|(key, value)| Self::filter_item(value, depth).map(|item| (key, item)))
+            .filter_map(|(key, value)| {
+                let filtered = Self::filter_value(value, depth.saturating_sub(1));
+                (!matches!(filtered, RequestRecord::Null))
+                    .then_some(filtered)
+                    .map(|item| (key, item))
+            })
             .collect();
         RequestRecord::Object(filtered)
     }
@@ -164,14 +169,12 @@ impl RequestRecordProjection {
     fn filter_array(values: Vec<RequestRecord>, depth: i32) -> RequestRecord {
         let filtered = values
             .into_iter()
-            .filter_map(|value| Self::filter_item(value, depth))
+            .filter_map(|value| {
+                let filtered = Self::filter_value(value, depth.saturating_sub(1));
+                (!matches!(filtered, RequestRecord::Null)).then_some(filtered)
+            })
             .collect();
         RequestRecord::Array(filtered)
-    }
-
-    fn filter_item(value: RequestRecord, depth: i32) -> Option<RequestRecord> {
-        let filtered = Self::filter_value(value, depth.saturating_sub(1));
-        (!matches!(filtered, RequestRecord::Null)).then_some(filtered)
     }
 
     #[must_use]
