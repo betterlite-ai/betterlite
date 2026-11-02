@@ -1,5 +1,8 @@
 task: B3300
 deviations:
+  - what: betterlite rejects reducto:// file IDs in JSON requests with a 400 error; LiteLLM would accept them and fail when calling the provider.
+    why: A file ID without user scoping is a path to leaking cross-user data through the proxy. Rejecting early prevents confusion when a shared ID shows wrong results.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ocr_endpoints/endpoints.py#L229-245
   - what: betterlite error messages on request parsing failures are betterlite's own instead of LiteLLM's Python exception messages.
     why: Error wording is not part of the wire contract; clients branch on status and code, not message text. Matching LiteLLM's exception type and code is sufficient (rule errors-match-litellm).
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ocr_endpoints/endpoints.py#L200-213
