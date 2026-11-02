@@ -84,6 +84,14 @@ fn credentials_cases(#[case] case: u8) { match case {
     assert!(!is_openai_backed_api_base("http://[v1.2]/v1").expect("a valid IPvFuture literal is not an error"));
     assert!(matches!(is_openai_backed_api_base("http://[v1]/v1"), Err(CredentialsError::InvalidApiBase)));
     assert!(matches!(is_openai_backed_api_base("http://[::1]x/v1"), Err(CredentialsError::InvalidApiBase)));
+    assert!(is_openai_backed_api_base(" https://api.openai.com/v1").expect("a leading space is stripped, not left in the scheme"));
+    assert!(is_openai_backed_api_base("https://api.openai.com\n/v1").expect("an embedded newline is dropped, not left in the host"));
+    assert!(matches!(is_openai_backed_api_base("https://api.openai.com\u{2100}/v1"), Err(CredentialsError::InvalidApiBase)));
+    assert!(!is_openai_backed_api_base("http://[V1.x]/v1").expect("an uppercase V IPvFuture literal is accepted like lowercase"));
+    assert!(matches!(is_openai_backed_api_base("http://[V1]/v1"), Err(CredentialsError::InvalidApiBase)));
+    assert!(!is_openai_backed_api_base("http://[fe80::1%25eth0]/v1").expect("a bracketed IPv6 literal with a zone id is not an error"));
+    assert!(matches!(is_openai_backed_api_base("http://[fe80::1%25eth0%25eth1]/v1"), Err(CredentialsError::InvalidApiBase)));
+    assert!(matches!(is_openai_backed_api_base("http://[fe80::1%]/v1"), Err(CredentialsError::InvalidApiBase)));
 },
 4 => {
     assert_eq!(infer_openai_data_residency(Some("openai"), Some("https://eu.api.openai.com/v1")), Some(DataResidency::Eu));
@@ -92,6 +100,7 @@ fn credentials_cases(#[case] case: u8) { match case {
     assert_eq!(infer_openai_data_residency(Some("openai"), Some("https://api.openai.com/v1")), None);
     assert_eq!(infer_openai_data_residency(Some("openai"), None), None);
     assert_eq!(infer_openai_data_residency(Some("openai"), Some("http://[::1")), None);
+    assert_eq!(infer_openai_data_residency(Some("openai"), Some(" https://eu.api.openai.com/v1")), Some(DataResidency::Eu));
 },
 _ => panic!("unknown case {case}") } }
 #[test]

@@ -3,6 +3,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::Serialize;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use thiserror::Error;
+use unicode_normalization::UnicodeNormalization as _;
 
 const OPENAI_API_HOST: &str = "api.openai.com";
 
@@ -86,17 +87,47 @@ pub fn is_openai_backed_api_base(api_base: &str) -> Result<bool, CredentialsErro
 
 // Mirrors urlsplit(api_base).hostname: a textual split, no percent-decoding or IDNA mapping.
 fn extract_host(api_base: &str) -> Result<Option<String>, CredentialsError> {
-    let Some(netloc) = split_netloc(api_base) else {
+    let sanitized = sanitize_api_base(api_base);
+    let Some(netloc) = split_netloc(&sanitized) else {
         return Ok(None);
     };
     if netloc.is_empty() {
         return Ok(None);
     }
     let host = raw_host(netloc)?;
+    check_netloc_confusables(netloc)?;
     if host.is_empty() {
         return Ok(None);
     }
     Ok(Some(lowercase_host(host)))
+}
+
+// urlsplit() lstrips _WHATWG_C0_CONTROL_OR_SPACE, then drops tab, CR and LF everywhere.
+fn sanitize_api_base(api_base: &str) -> String {
+    api_base
+        .trim_start_matches(|letter: char| letter <= '\u{0020}')
+        .chars()
+        .filter(|letter| !matches!(letter, '\t' | '\r' | '\n'))
+        .collect()
+}
+
+// _checknetloc: a non-ASCII netloc that NFKC-normalizes into '/?#@:' is rejected as confusable.
+fn check_netloc_confusables(netloc: &str) -> Result<(), CredentialsError> {
+    if netloc.is_ascii() {
+        return Ok(());
+    }
+    let filtered: String = netloc
+        .chars()
+        .filter(|letter| !matches!(letter, '@' | ':' | '#' | '?'))
+        .collect();
+    let normalized: String = filtered.nfkc().collect();
+    if normalized == filtered {
+        return Ok(());
+    }
+    if normalized.contains(['/', '?', '#', '@', ':']) {
+        return Err(CredentialsError::InvalidApiBase);
+    }
+    Ok(())
 }
 
 fn split_netloc(api_base: &str) -> Option<&str> {
@@ -156,7 +187,10 @@ fn raw_host(netloc: &str) -> Result<&str, CredentialsError> {
 
 // _check_bracketed_host: an IPvFuture (v<hex>.<rest>) or non-IPv4 address; a bracketed IPv4 literal is rejected.
 fn validate_bracketed_host(hostname: &str) -> Result<(), CredentialsError> {
-    if let Some(future) = hostname.strip_prefix('v') {
+    let ipv_future = hostname
+        .strip_prefix('v')
+        .or_else(|| hostname.strip_prefix('V'));
+    if let Some(future) = ipv_future {
         let mut parts = future.splitn(2, '.');
         let version = parts.next().unwrap_or("");
         let rest = parts.next();
@@ -170,7 +204,13 @@ fn validate_bracketed_host(hostname: &str) -> Result<(), CredentialsError> {
     if hostname.parse::<Ipv4Addr>().is_ok() {
         return Err(CredentialsError::InvalidApiBase);
     }
-    hostname
+    let (address, zone) = hostname
+        .split_once('%')
+        .map_or((hostname, None), |(address, zone)| (address, Some(zone)));
+    if zone.is_some_and(|text| text.is_empty() || text.contains('%')) {
+        return Err(CredentialsError::InvalidApiBase);
+    }
+    address
         .parse::<Ipv6Addr>()
         .map(|_ignored| ())
         .map_err(|_ignored| CredentialsError::InvalidApiBase)
