@@ -1,0 +1,17 @@
+kind: helper
+name: pre-call-hook-records-applied-guardrail-on-missing-mcp-payload
+call:
+  b3762:
+    pre_call_hook:
+      settings:
+        api_key: test-key
+        api_base: "https://cisco.test"
+        inspection_type: mcp
+        on_flagged_action: block
+        fallback_on_error: block
+        timeout: 5
+      call_type: mcp_call
+      request_data: {}
+env: {}
+compare:
+  ignore: []

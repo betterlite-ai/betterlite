@@ -1,0 +1,8 @@
+kind: helper
+name: cache-settings-secrets-redact-classifier-key
+call:
+  b4306:
+    function: redact_credentials
+    settings: {api_key: "k", host: "h"}
+env: {}
+compare: {ignore: []}

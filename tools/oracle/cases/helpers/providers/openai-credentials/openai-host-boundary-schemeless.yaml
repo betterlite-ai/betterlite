@@ -1,0 +1,5 @@
+kind: helper
+name: openai-host-boundary-schemeless
+call: {openai_credentials: {openai_host_boundary: {api_base: 'api.openai.com/v1'}}}
+env: {}
+compare: {ignore: []}

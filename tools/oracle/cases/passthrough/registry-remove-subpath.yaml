@@ -1,0 +1,11 @@
+kind: helper
+name: registry-remove-subpath
+call:
+  b3614:
+    remove:
+      registrations:
+        - {key: 'a:subpath:/custom:GET', endpoint_id: a, route_type: subpath, path: /custom, methods: [GET], auth: null}
+      openai_routes: [/custom, /custom/*, /other]
+      endpoint_id: a
+env: {}
+compare: {ignore: []}

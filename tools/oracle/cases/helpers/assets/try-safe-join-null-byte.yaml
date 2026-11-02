@@ -1,0 +1,10 @@
+kind: helper
+name: try_safe_join_returns_null_instead_of_raising_on_a_null_byte
+call:
+  assets:
+    op: try_safe_join
+    fixture: []
+    parts: ["bad\0name.txt"]
+env: {}
+compare:
+  ignore: []

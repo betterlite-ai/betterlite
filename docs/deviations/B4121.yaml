@@ -1,0 +1,17 @@
+task: B4121
+deviations:
+  - what: Cache TTL is 900 seconds (15 minutes), with a per-identity LRU cap of 10 entries.
+    why: LiteLLM uses these constants; they are not configurable per request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L54-L55
+  - what: Session-scoped containers skip deletion in the cleanup and post-response hooks; request-scoped containers delete on both.
+    why: Session-scoped containers must survive across multiple tool calls in one agentic loop.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L614-L618
+  - what: Error messages concatenate "[execution error] " with error.value or error.name without panicking on missing fields.
+    why: Sandbox results may have different error shapes; graceful extraction preserves user code failure info.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L695-L706
+  - what: Tool-call arguments that parse as valid JSON but are not an object return a typed ArgumentsNotAnObject error instead of panicking.
+    why: Python's _run_tool_call only catches JSONDecodeError and TypeError, so a value like a bare string or number raises an uncaught AttributeError on .get("code") that the caller's exception handler turns into a container deletion. Rust has no such attribute lookup to fail; the closest faithful behavior is a typed error the caller can match on, which the test invalid_arguments_rejects_valid_json_that_is_not_an_object proves.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L694-L698
+  - what: When an error object has neither a usable value nor a usable name, betterlite falls back to the traceback field and then to the fixed text "unknown error", instead of the literal word "None".
+    why: Python's message = error.get("value") or error.get("name") falls through to None when both are missing, and the f-string then renders that as the text "None", which no caller could rely on as a real error message. The test error_message_falls_back_to_the_traceback_field_when_value_and_name_are_null proves the traceback fallback, and error_message_falls_back_to_unknown_error_when_no_field_is_usable proves the fixed text when all three fields are unusable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L701-L703

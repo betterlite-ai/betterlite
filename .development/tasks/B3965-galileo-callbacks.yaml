@@ -25,6 +25,7 @@ scope:
   - tools/oracle/src/helpers/logging/b3965.rs
   - tools/oracle/src/helpers/logging/b3965/**
   - crates/betterlite-logging/src/galileo/admission/**
+  - tools/oracle/cases/logging/galileo-admission/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/galileo.py#L658-L674

@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::error::details::{RateLimitDetails, TimeoutDetails, TimeoutStatus};
+use crate::error::details::{RateLimitDetails, ResponseDetails, TimeoutDetails, TimeoutStatus};
 use crate::error::{ErrorClass, ErrorContext};
 use crate::facts::ExceptionCheckers;
 use crate::rate_limit::RateLimitCategory;
@@ -106,39 +106,64 @@ const fn classify_by_status(status_code: u16) -> Option<(Family, &'static str)> 
     }
 }
 
-#[must_use]
-pub fn map_anthropic_exception(input: &AnthropicExceptionInput) -> Option<ErrorClass> {
-    let (family, reason) = classify_by_predicate(&input.error_str)
-        .or_else(|| classify_by_status(input.status_code?))?;
-    let context = ErrorContext {
+fn anthropic_context(reason: &str, model: Option<String>) -> ErrorContext {
+    ErrorContext {
         message: format!("anthropic: {reason}"),
-        model: Some(input.model.clone()),
+        model,
         provider: Some("anthropic".to_owned()),
         max_retries: None,
         num_retries: None,
         body_type: None,
         body_param: None,
         body_code: None,
-    };
-    Some(match family {
-        Family::ContextWindowExceeded => ErrorClass::ContextWindowExceeded(Box::new(context)),
+    }
+}
+
+fn rate_limit_anthropic_class(context: ErrorContext) -> ErrorClass {
+    ErrorClass::RateLimit(Box::new(RateLimitDetails {
+        context,
+        category: RateLimitCategory::VendorRateLimit,
+        dimension: None,
+        headers: BTreeMap::new(),
+    }))
+}
+
+// anthropic's mapper reads original_exception.response directly only on its 403 branch, where the status is 403 anyway, so every one of these seven families keeps its class default
+fn build_anthropic_class(family: Family, context: ErrorContext) -> ErrorClass {
+    match family {
+        Family::ContextWindowExceeded => {
+            ErrorClass::ContextWindowExceeded(Box::new(ResponseDetails::with_status(context, None)))
+        }
         Family::InternalServer => ErrorClass::InternalServer(Box::new(context)),
-        Family::Authentication => ErrorClass::Authentication(Box::new(context)),
-        Family::ContentPolicyViolation => ErrorClass::ContentPolicyViolation(Box::new(context)),
-        Family::BadRequest => ErrorClass::BadRequest(Box::new(context)),
-        Family::PermissionDenied => ErrorClass::PermissionDenied(Box::new(context)),
-        Family::NotFound => ErrorClass::NotFound(Box::new(context)),
+        Family::Authentication => {
+            ErrorClass::Authentication(Box::new(ResponseDetails::with_status(context, None)))
+        }
+        Family::ContentPolicyViolation => ErrorClass::ContentPolicyViolation(Box::new(
+            ResponseDetails::with_status(context, None),
+        )),
+        Family::BadRequest => {
+            ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(context, None)))
+        }
+        Family::PermissionDenied => {
+            ErrorClass::PermissionDenied(Box::new(ResponseDetails::with_status(context, None)))
+        }
+        Family::NotFound => {
+            ErrorClass::NotFound(Box::new(ResponseDetails::with_status(context, None)))
+        }
         Family::Timeout(original_status) => ErrorClass::Timeout(Box::new(TimeoutDetails {
             context,
             original_status: TimeoutStatus(original_status),
         })),
-        Family::RateLimit => ErrorClass::RateLimit(Box::new(RateLimitDetails {
-            context,
-            category: RateLimitCategory::VendorRateLimit,
-            dimension: None,
-            headers: BTreeMap::new(),
-        })),
+        Family::RateLimit => rate_limit_anthropic_class(context),
         Family::BadGateway => ErrorClass::BadGateway(Box::new(context)),
         Family::ServiceUnavailable => ErrorClass::ServiceUnavailable(Box::new(context)),
-    })
+    }
+}
+
+#[must_use]
+pub fn map_anthropic_exception(input: &AnthropicExceptionInput) -> Option<ErrorClass> {
+    let (family, reason) = classify_by_predicate(&input.error_str)
+        .or_else(|| classify_by_status(input.status_code?))?;
+    let context = anthropic_context(reason, Some(input.model.clone()));
+    Some(build_anthropic_class(family, context))
 }

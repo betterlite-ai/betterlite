@@ -1,0 +1,9 @@
+kind: helper
+name: cache-settings-secrets-reusable-null-incoming-url
+call:
+  b4306:
+    function: reusable
+    incoming: {host: "a", url: null}
+    saved: {host: "a", url: "redis://host"}
+env: {}
+compare: {ignore: []}

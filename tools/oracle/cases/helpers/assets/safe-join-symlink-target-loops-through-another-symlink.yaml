@@ -1,0 +1,12 @@
+kind: helper
+name: safe_join_escapes_when_a_symlink_target_loops_through_another_symlink
+call:
+  assets:
+    op: safe_join
+    fixture:
+      - {kind: symlink, path: "../outside/loop", target: loop}
+      - {kind: symlink, path: b, target: "../outside/loop"}
+    parts: [b]
+env: {}
+compare:
+  ignore: []

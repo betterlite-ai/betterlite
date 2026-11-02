@@ -30,6 +30,18 @@ scope:
     - tools/oracle/helpers/b3943/**
     - tools/oracle/src/helpers/logging/b3943.rs
     - tools/oracle/src/helpers/logging/b3943/**
+    - tools/oracle/cases/logging/newrelic-attribute-truncation.yaml
+    - tools/oracle/cases/logging/newrelic-bucket-aggregation.yaml
+    - tools/oracle/cases/logging/newrelic-bucket-single-record.yaml
+    - tools/oracle/cases/logging/newrelic-budget-gauge-without-budget.yaml
+    - tools/oracle/cases/logging/newrelic-budget-gauge-with-spend.yaml
+    - tools/oracle/cases/logging/newrelic-empty-attributes-omitted.yaml
+    - tools/oracle/cases/logging/newrelic-envelope-interval-minimum.yaml
+    - tools/oracle/cases/logging/newrelic-envelope-stable-bucket-order.yaml
+    - tools/oracle/cases/logging/newrelic-metric-record-extraction.yaml
+    - tools/oracle/cases/logging/newrelic-region-eu-endpoint.yaml
+    - tools/oracle/cases/logging/newrelic-region-unknown-fallback.yaml
+    - tools/oracle/cases/logging/newrelic-region-us-endpoint.yaml
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/newrelic.py#L17-L30

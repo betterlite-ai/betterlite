@@ -1,0 +1,10 @@
+kind: helper
+name: resolve_local_image_returns_null_for_a_missing_file
+call:
+  assets:
+    op: resolve_local_image
+    fixture: []
+    candidate: /definitely-missing-betterlite-asset.png
+env: {}
+compare:
+  ignore: []

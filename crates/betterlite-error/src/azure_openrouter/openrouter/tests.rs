@@ -101,6 +101,13 @@ fn status_classification_renders_the_matching_label(#[case] status: u16, #[case]
     assert_eq!(describe(&class).1, expected);
 }
 
+#[rstest]
+#[case::status_422(422)]
+fn response_branches_answer_the_provider_status(#[case] status: u16) {
+    let class = map_openrouter_exception(&input(Some(status), false));
+    assert_eq!(class.metadata().status_code, status);
+}
+
 #[test]
 fn no_status_code_message_names_the_exception_provider() {
     let class = map_openrouter_exception(&input(None, false));

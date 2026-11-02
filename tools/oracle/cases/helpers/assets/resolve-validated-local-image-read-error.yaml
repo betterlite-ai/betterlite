@@ -1,0 +1,10 @@
+kind: helper
+name: resolve_local_image_logs_debug_when_the_file_cannot_be_read
+call:
+  assets:
+    op: resolve_local_image
+    fixture: []
+    candidate: /proc/self/mem
+env: {}
+compare:
+  ignore: []

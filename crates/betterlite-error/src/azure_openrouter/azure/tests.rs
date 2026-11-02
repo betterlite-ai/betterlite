@@ -266,6 +266,21 @@ fn status_classification_renders_the_matching_label(#[case] status: u16, #[case]
     assert_eq!(describe(&class).1, expected);
 }
 
+#[rstest]
+#[case::context_window_on_server_status(
+    "This model's maximum context length is 4096",
+    Some(500),
+    500
+)]
+fn response_branches_answer_the_provider_status(
+    #[case] error_str: &str,
+    #[case] status_code: Option<u16>,
+    #[case] expected_status: u16,
+) {
+    let class = map_azure_exception(&input(error_str, status_code));
+    assert_eq!(class.metadata().status_code, expected_status);
+}
+
 #[test]
 fn no_status_code_message_names_the_exception_provider() {
     let class = map_azure_exception(&input("boom", None));

@@ -23,6 +23,18 @@ scope:
     - tools/oracle/helpers/b3505/**
     - tools/oracle/src/helpers/core_ops/b3505.rs
     - tools/oracle/src/helpers/core_ops/b3505/**
+    - tools/oracle/cases/agents/item-async-delete-delegates-to-sync.yaml
+    - tools/oracle/cases/agents/item-async-get-delegates-to-sync.yaml
+    - tools/oracle/cases/agents/item-async-list-versions-delegates-to-sync.yaml
+    - tools/oracle/cases/agents/item-delete-basic.yaml
+    - tools/oracle/cases/agents/item-delete-with-name-metadata.yaml
+    - tools/oracle/cases/agents/item-get-basic.yaml
+    - tools/oracle/cases/agents/item-get-with-name-metadata.yaml
+    - tools/oracle/cases/agents/item-http-error-wrapping.yaml
+    - tools/oracle/cases/agents/item-list-versions-basic.yaml
+    - tools/oracle/cases/agents/item-list-versions-with-pagination.yaml
+    - tools/oracle/cases/agents/item-provider-absent-defaults-gemini.yaml
+    - tools/oracle/cases/agents/item-unsupported-provider-error.yaml
   lint_tables: false
 
 references:
