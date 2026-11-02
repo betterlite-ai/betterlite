@@ -103,6 +103,20 @@ async fn check_mcp_user_env_unique_pair_and_indexes(client: &Client) {
     )
     .await;
     assert!(index_exists(client, "LiteLLM_MCPUserEnvVars_user_id_server_id_key").await);
+    assert_index(
+        client,
+        "LiteLLM_MCPUserEnvVars_user_id_idx",
+        &["user_id"],
+        false,
+    )
+    .await;
+    assert_index(
+        client,
+        "LiteLLM_MCPUserEnvVars_server_id_idx",
+        &["server_id"],
+        false,
+    )
+    .await;
 }
 
 async fn check_nullable_oauth_exchange_issuer_fields(client: &Client) {

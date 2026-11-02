@@ -113,11 +113,16 @@ async fn check_six_compression_token_defaults(client: &Client) {
 async fn check_six_three_savings_defaults_preserve_existing_spend(client: &Client) {
     let seeded = seed_spend_tables(client, "savings", 7.5_f64).await;
     batch_execute(client, migration_sql_of(ADD_SAVINGS_SPEND.directory)).await;
+    batch_execute(
+        client,
+        migration_sql_of(ADD_AUTOROUTER_SAVINGS_SPEND.directory),
+    )
+    .await;
     for (table, id) in seeded {
         let row = query_one_row(
             client,
             &format!(
-                r#"SELECT spend, compression_savings_spend, prompt_caching_savings_spend FROM "{table}" WHERE id = $1"#
+                r#"SELECT spend, compression_savings_spend, prompt_caching_savings_spend, autorouter_savings_spend FROM "{table}" WHERE id = $1"#
             ),
             &[&id],
         )
@@ -125,6 +130,7 @@ async fn check_six_three_savings_defaults_preserve_existing_spend(client: &Clien
         let spend: f64 = row.get(0);
         let compression_savings_spend: f64 = row.get(1);
         let prompt_caching_savings_spend: f64 = row.get(2);
+        let autorouter_savings_spend: f64 = row.get(3);
         assert_eq!(
             spend.to_bits(),
             7.5_f64.to_bits(),
@@ -132,6 +138,13 @@ async fn check_six_three_savings_defaults_preserve_existing_spend(client: &Clien
         );
         assert_eq!(compression_savings_spend.to_bits(), 0.0_f64.to_bits());
         assert_eq!(prompt_caching_savings_spend.to_bits(), 0.0_f64.to_bits());
+        assert_eq!(autorouter_savings_spend.to_bits(), 0.0_f64.to_bits());
+        assert_column(
+            client,
+            table,
+            float8_default("autorouter_savings_spend", "0.0"),
+        )
+        .await;
     }
 }
 
