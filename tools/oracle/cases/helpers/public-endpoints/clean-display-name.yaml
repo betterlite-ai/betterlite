@@ -1,0 +1,6 @@
+kind: helper
+name: clean-display-name
+call:
+  b3190: {function: clean_display_name, raw: "A2A (Agent-to-Agent) (`a2a`)"}
+env: {}
+compare: {ignore: []}

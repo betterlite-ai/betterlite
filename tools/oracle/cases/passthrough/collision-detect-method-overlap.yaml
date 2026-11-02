@@ -1,0 +1,11 @@
+kind: helper
+name: collision-detect-method-overlap
+call:
+  b3614:
+    collision:
+      existing_routes:
+        - {path: /foo, methods: [GET, POST], lazy_owned: false}
+      new_path: /foo
+      new_methods: [POST, PUT]
+env: {}
+compare: {ignore: []}

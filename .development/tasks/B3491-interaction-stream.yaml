@@ -32,6 +32,17 @@ scope:
     - tools/oracle/helpers/b3491/**
     - tools/oracle/src/helpers/core_ops/b3491.rs
     - tools/oracle/src/helpers/core_ops/b3491/**
+    - tools/oracle/cases/interactions/stream/async-task-dispatch.yaml
+    - tools/oracle/cases/interactions/stream/blank-lines-ignored.yaml
+    - tools/oracle/cases/interactions/stream/done-marker-exits.yaml
+    - tools/oracle/cases/interactions/stream/event-type-2026-05-20.yaml
+    - tools/oracle/cases/interactions/stream/json-decode-error.yaml
+    - tools/oracle/cases/interactions/stream/last-completion-wins.yaml
+    - tools/oracle/cases/interactions/stream/legacy-status-done.yaml
+    - tools/oracle/cases/interactions/stream/non-dict-event.yaml
+    - tools/oracle/cases/interactions/stream/sse-strip-then-parse.yaml
+    - tools/oracle/cases/interactions/stream/sync-executor-dispatch.yaml
+    - tools/oracle/cases/interactions/stream/valid-event-stream.yaml
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/streaming_iterator.py#L29-L68

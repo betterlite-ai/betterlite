@@ -1,0 +1,5 @@
+kind: helper
+name: openai-host-boundary-space-in-host
+call: {openai_credentials: {openai_host_boundary: {api_base: 'https://foo bar.api.openai.com/v1'}}}
+env: {}
+compare: {ignore: []}

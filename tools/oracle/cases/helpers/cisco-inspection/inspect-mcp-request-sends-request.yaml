@@ -1,0 +1,23 @@
+kind: helper
+name: inspect-mcp-request-sends-request
+call:
+  b3762:
+    inspect_mcp_request:
+      settings:
+        api_key: test-key
+        api_base: "https://cisco.test"
+        inspection_type: mcp
+        on_flagged_action: block
+        fallback_on_error: block
+        timeout: 5
+      request_data:
+        jsonrpc: "2.0"
+        id: 1
+        method: "tools/call"
+        params:
+          name: lookup
+          arguments: {query: weather}
+      answer: {status: 200, headers: {}, body: {is_safe: true}}
+env: {}
+compare:
+  ignore: []

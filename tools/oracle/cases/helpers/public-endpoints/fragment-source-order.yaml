@@ -1,0 +1,6 @@
+kind: helper
+name: fragment-source-order
+call:
+  b3190: {function: provider_catalog_raw}
+env: {}
+compare: {ignore: []}

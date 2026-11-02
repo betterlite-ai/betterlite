@@ -15,6 +15,10 @@ description: >-
   text_tokens,video_tokens default null. Output audio_tokens,reasoning_tokens,text_tokens default
   null. Preserve extra provider fields. Store cost as Decimal, including total_cost extracted
   from a mapping. _hidden_params starts empty and never appears in serialized response JSON.
+  output decodes each item into the OpenAI SDK's ResponseOutputItem union member it validates as,
+  keeps an item that matches none as the dict it was, and serializes each item the way model_dump
+  does, null defaults and extra keys included. Galileo's responses projection (B3963) serializes
+  this list and leaves the item types it does not project to this task.
 
   The optional request declarations retain omission versus explicit null for include,
   instructions,max_output_tokens,metadata,parallel_tool_calls,previous_response_id,reasoning,

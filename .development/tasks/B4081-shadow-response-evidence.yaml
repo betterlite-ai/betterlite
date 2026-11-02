@@ -43,6 +43,18 @@ scope:
     - tools/oracle/helpers/b4081/**
     - tools/oracle/src/helpers/core_ops/b4081.rs
     - tools/oracle/src/helpers/core_ops/b4081/**
+    - tools/oracle/cases/helpers/shadow-evidence/basic-chat-response.yaml
+    - tools/oracle/cases/helpers/shadow-evidence/chat-with-tool-calls.yaml
+    - tools/oracle/cases/helpers/shadow-evidence/cost-from-price-map.yaml
+    - tools/oracle/cases/helpers/shadow-evidence/cost-from-stamped.yaml
+    - tools/oracle/cases/helpers/shadow-evidence/empty-chat-response.yaml
+    - tools/oracle/cases/helpers/shadow-evidence/judge-reply-truncated.yaml
+    - tools/oracle/cases/helpers/shadow-evidence/judge-reply-valid.yaml
+    - tools/oracle/cases/helpers/shadow-evidence/responses-api-output-text.yaml
+    - tools/oracle/cases/helpers/shadow-evidence/responses-api-tool-calls.yaml
+    - tools/oracle/cases/helpers/shadow-evidence/routing-decision-absent.yaml
+    - tools/oracle/cases/helpers/shadow-evidence/routing-decision-with-tier.yaml
+    - tools/oracle/cases/helpers/shadow-evidence/unmapped-model-zero-cost.yaml
   lint_tables: false
 
 references:

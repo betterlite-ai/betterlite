@@ -1,0 +1,6 @@
+kind: helper
+name: endpoints-discovery
+call:
+  b3190: {function: get_supported_endpoints}
+env: {}
+compare: {ignore: []}

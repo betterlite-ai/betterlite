@@ -39,6 +39,12 @@ scope:
     - tools/oracle/src/helpers/logging/b3876/**
     - crates/betterlite-logging/src/prometheus_helpers/bounded_series_tracker/**
     - crates/betterlite-logging/src/prometheus/bounded_series/**
+    - tools/oracle/cases/prometheus/bounded-series-max-cardinality.yaml
+    - tools/oracle/cases/prometheus/bounded-series-no-limits.yaml
+    - tools/oracle/cases/prometheus/bounded-series-ttl-expiry.yaml
+    - tools/oracle/cases/prometheus/counter-emission-no-end-user.yaml
+    - tools/oracle/cases/prometheus/counter-emission-with-tracking.yaml
+    - tools/oracle/cases/prometheus/series-removal-failure.yaml
   lint_tables: false
 
 references:

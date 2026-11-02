@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::error::details::{RateLimitDetails, TimeoutDetails, TimeoutStatus};
+use crate::error::details::{RateLimitDetails, ResponseDetails, TimeoutDetails, TimeoutStatus};
 use crate::error::{ErrorClass, ErrorContext};
 use crate::rate_limit::RateLimitCategory;
 
@@ -181,12 +181,16 @@ pub fn map_bedrock_exception(input: &BedrockExceptionInput) -> Option<ErrorClass
     Some(build(input, family, provider))
 }
 
-fn build(input: &BedrockExceptionInput, family: Family, provider: Provider) -> ErrorClass {
+fn bedrock_context(
+    input: &BedrockExceptionInput,
+    family: Family,
+    provider: Provider,
+) -> ErrorContext {
     let provider_value = match provider {
         Provider::Literal => "bedrock".to_owned(),
         Provider::Custom => input.custom_llm_provider.clone(),
     };
-    let context = ErrorContext {
+    ErrorContext {
         message: format!("{provider_value}: {}", reason(family)),
         model: Some(input.model.clone()),
         provider: Some(provider_value),
@@ -195,12 +199,26 @@ fn build(input: &BedrockExceptionInput, family: Family, provider: Provider) -> E
         body_type: None,
         body_param: None,
         body_code: None,
-    };
+    }
+}
+
+fn build(input: &BedrockExceptionInput, family: Family, provider: Provider) -> ErrorClass {
+    let context = bedrock_context(input, family, provider);
+    // _map_bedrock_exception passes a response on every branch of these five families, AccessDeniedException included
     match family {
-        Family::ContextWindowExceeded => ErrorClass::ContextWindowExceeded(Box::new(context)),
-        Family::BadRequest => ErrorClass::BadRequest(Box::new(context)),
-        Family::Authentication => ErrorClass::Authentication(Box::new(context)),
-        Family::PermissionDenied => ErrorClass::PermissionDenied(Box::new(context)),
+        Family::ContextWindowExceeded => ErrorClass::ContextWindowExceeded(Box::new(
+            ResponseDetails::with_status(context, input.status_code),
+        )),
+        Family::BadRequest => ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(
+            context,
+            input.status_code,
+        ))),
+        Family::Authentication => ErrorClass::Authentication(Box::new(
+            ResponseDetails::with_status(context, input.status_code),
+        )),
+        Family::PermissionDenied => ErrorClass::PermissionDenied(Box::new(
+            ResponseDetails::with_status(context, input.status_code),
+        )),
         Family::RateLimit => ErrorClass::RateLimit(Box::new(RateLimitDetails {
             context,
             category: RateLimitCategory::VendorRateLimit,
@@ -209,7 +227,10 @@ fn build(input: &BedrockExceptionInput, family: Family, provider: Provider) -> E
         })),
         Family::InternalServer => ErrorClass::InternalServer(Box::new(context)),
         Family::ServiceUnavailable => ErrorClass::ServiceUnavailable(Box::new(context)),
-        Family::NotFound => ErrorClass::NotFound(Box::new(context)),
+        Family::NotFound => ErrorClass::NotFound(Box::new(ResponseDetails::with_status(
+            context,
+            input.status_code,
+        ))),
         Family::Timeout(original_status) => ErrorClass::Timeout(Box::new(TimeoutDetails {
             context,
             original_status: TimeoutStatus(original_status),

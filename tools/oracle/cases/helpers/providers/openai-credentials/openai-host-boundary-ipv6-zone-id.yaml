@@ -1,0 +1,5 @@
+kind: helper
+name: openai-host-boundary-ipv6-zone-id
+call: {openai_credentials: {openai_host_boundary: {api_base: 'http://[fe80::1%25eth0]/v1'}}}
+env: {}
+compare: {ignore: []}
