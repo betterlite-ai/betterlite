@@ -60,4 +60,11 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "daily_tags"
+path = "fuzz_targets/daily_tags.rs"
+test = false
+doc = false
+bench = false
+
 [workspace]
