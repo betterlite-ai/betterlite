@@ -2,17 +2,16 @@
 
 use std::sync::Arc;
 
-use axum::Router;
 use axum::body::{Body, to_bytes};
+use axum::extract::State;
 use axum::http::{Request, StatusCode};
 use axum::response::IntoResponse as _;
-use axum::routing::get;
 use tower::ServiceExt as _;
 
 use super::catalog::{agent_fields, raw_agent_catalog};
 use super::error::AgentFieldsError;
 use super::types::{AgentCreateInfo, RawAgentCreateInfo};
-use super::{AGENT_FIELDS_PATH, get_agent_fields};
+use super::{AGENT_FIELDS_PATH, AgentFieldsState, agent_fields_routes, get_agent_fields};
 
 #[test]
 fn agent_fields_returns_all_eight_agents_in_source_order() {
@@ -145,7 +144,10 @@ async fn agent_fields_error_responds_with_litellms_unhandled_exception_body() {
 
 #[tokio::test]
 async fn get_agent_fields_handler_returns_the_full_catalog() {
-    let response = get_agent_fields().expect("catalog decodes");
+    let state: AgentFieldsState = Arc::new(agent_fields());
+    let response = get_agent_fields(State(state))
+        .await
+        .expect("catalog decodes");
     let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let body = String::from_utf8(bytes.to_vec()).unwrap();
     assert!(body.contains(r#""agent_type":"a2a""#));
@@ -154,7 +156,7 @@ async fn get_agent_fields_handler_returns_the_full_catalog() {
 
 #[tokio::test]
 async fn agent_fields_path_serves_the_full_catalog_through_a_router() {
-    let router = Router::new().route(AGENT_FIELDS_PATH, get(|| async { get_agent_fields() }));
+    let router = agent_fields_routes();
     let request = Request::get(AGENT_FIELDS_PATH).body(Body::empty()).unwrap();
     let response = router.oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
