@@ -46,4 +46,11 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "image_dimensions"
+path = "fuzz_targets/image_dimensions.rs"
+test = false
+doc = false
+bench = false
+
 [workspace]
