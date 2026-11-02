@@ -221,3 +221,20 @@ fn error_message_returns_none_when_the_error_object_is_empty() {
     let result = test_object([("error", json!({}))]);
     assert_eq!(error_message(&result), None);
 }
+
+#[cfg(test)]
+#[test]
+fn error_message_falls_back_to_unknown_error_when_no_field_is_usable() {
+    let result = test_object([(
+        "error",
+        test_object([
+            ("name", json!(null)),
+            ("value", json!(null)),
+            ("traceback", json!(null)),
+        ]),
+    )]);
+    assert_eq!(
+        error_message(&result),
+        Some("[execution error] unknown error".to_owned())
+    );
+}
