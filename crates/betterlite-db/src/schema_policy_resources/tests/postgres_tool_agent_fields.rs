@@ -65,20 +65,30 @@ async fn check_rename_input_policy_preserves_value(client: &Client) {
 }
 
 async fn check_output_untrusted_and_policy_indexes(client: &Client) {
-    assert_untrusted_default_text_column(client, "LiteLLM_ToolTable", "output_policy").await;
     assert!(!index_exists(client, "LiteLLM_ToolTable_call_policy_idx").await);
-    assert_index(
+    assert_table_catalog(
         client,
-        "LiteLLM_ToolTable_input_policy_idx",
-        &["input_policy"],
-        false,
-    )
-    .await;
-    assert_index(
-        client,
-        "LiteLLM_ToolTable_output_policy_idx",
-        &["output_policy"],
-        false,
+        "LiteLLM_ToolTable",
+        &[(
+            "output_policy",
+            "text",
+            false,
+            Some("'untrusted'::text"),
+            "text",
+            None,
+        )],
+        &[
+            (
+                "LiteLLM_ToolTable_input_policy_idx",
+                &["input_policy"],
+                false,
+            ),
+            (
+                "LiteLLM_ToolTable_output_policy_idx",
+                &["output_policy"],
+                false,
+            ),
+        ],
     )
     .await;
 }
@@ -101,42 +111,36 @@ async fn check_blocked_tools_and_model_arrays(client: &Client) {
         &[&"permission-a"],
     )
     .await;
-    assert_column(
+    assert_columns(
         client,
         "LiteLLM_ObjectPermissionTable",
-        (
-            "blocked_tools",
-            "ARRAY",
-            true,
-            Some("ARRAY[]::text[]"),
-            "_text",
-            None,
-        ),
+        &[
+            (
+                "blocked_tools",
+                "ARRAY",
+                true,
+                Some("ARRAY[]::text[]"),
+                "_text",
+                None,
+            ),
+            (
+                "models",
+                "ARRAY",
+                true,
+                Some("ARRAY[]::text[]"),
+                "_text",
+                None,
+            ),
+        ],
     )
     .await;
-    assert_column(
+    let both_empty = scalar_bool(
         client,
-        "LiteLLM_ObjectPermissionTable",
-        (
-            "models",
-            "ARRAY",
-            true,
-            Some("ARRAY[]::text[]"),
-            "_text",
-            None,
-        ),
-    )
-    .await;
-    let row = query_one_row(
-        client,
-        r#"SELECT blocked_tools, models FROM "LiteLLM_ObjectPermissionTable" WHERE object_permission_id = $1"#,
+        r#"SELECT blocked_tools = '{}' AND models = '{}' FROM "LiteLLM_ObjectPermissionTable" WHERE object_permission_id = $1"#,
         &[&"permission-a"],
     )
     .await;
-    let blocked_tools: Vec<String> = row.get(0);
-    let models: Vec<String> = row.get(1);
-    assert!(blocked_tools.is_empty());
-    assert!(models.is_empty());
+    assert!(both_empty);
 }
 
 async fn check_spend_tool_composite_key(client: &Client) {
@@ -314,23 +318,18 @@ async fn check_agent_zero_spend_headers_and_four_integer_limits(client: &Client)
         &[&"agent-limits", &"agent-limits-name"],
     )
     .await;
-    assert_column(
-        client,
-        "LiteLLM_AgentsTable",
-        (
-            "spend",
-            "double precision",
-            false,
-            Some("0.0"),
-            "float8",
-            None,
-        ),
-    )
-    .await;
     assert_columns(
         client,
         "LiteLLM_AgentsTable",
         &[
+            (
+                "spend",
+                "double precision",
+                false,
+                Some("0.0"),
+                "float8",
+                None,
+            ),
             ("tpm_limit", "integer", true, None, "int4", None),
             ("rpm_limit", "integer", true, None, "int4", None),
             ("session_tpm_limit", "integer", true, None, "int4", None),
@@ -390,7 +389,7 @@ fn tool_agent_checkpoint_for(cohort: ToolAgentCohort) -> &'static str {
 async fn run_tool_agent_check(client: &Client, cohort: ToolAgentCohort) {
     match cohort {
         ToolAgentCohort::UntrustedPolicyAndZeroCount => {
-            check_untrusted_policy_and_zero_count(client).await
+            check_untrusted_policy_and_zero_count(client).await;
         }
         ToolAgentCohort::RenameInputPolicyPreservesValue => {
             check_rename_input_policy_preserves_value(client).await;
@@ -402,7 +401,7 @@ async fn run_tool_agent_check(client: &Client, cohort: ToolAgentCohort) {
             check_tool_rename_guard_other_schema_failure(client).await;
         }
         ToolAgentCohort::BlockedToolsAndModelArrays => {
-            check_blocked_tools_and_model_arrays(client).await
+            check_blocked_tools_and_model_arrays(client).await;
         }
         ToolAgentCohort::SpendToolCompositeKey => check_spend_tool_composite_key(client).await,
         ToolAgentCohort::AgentPermissionSetNullAndKeyAgentNullable => {
@@ -416,7 +415,7 @@ async fn run_tool_agent_check(client: &Client, cohort: ToolAgentCohort) {
             check_public_internet_default_true_existing_false_unchanged(client).await;
         }
         ToolAgentCohort::GuardrailActiveStatusIndex => {
-            check_guardrail_active_status_index(client).await
+            check_guardrail_active_status_index(client).await;
         }
         ToolAgentCohort::AgentZeroSpendHeadersAndFourIntegerLimits => {
             check_agent_zero_spend_headers_and_four_integer_limits(client).await;

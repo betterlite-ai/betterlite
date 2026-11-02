@@ -35,7 +35,7 @@ fn health_index_checkpoint_for(cohort: HealthIndexCohort) -> &'static str {
 async fn run_health_index_check(client: &Client, cohort: HealthIndexCohort) {
     match cohort {
         HealthIndexCohort::CheckedAtDescendingAndValid => {
-            check_checked_at_descending_and_valid(client).await
+            check_checked_at_descending_and_valid(client).await;
         }
         HealthIndexCohort::ExplicitTransactionError25001 => {
             check_explicit_transaction_error_25001(client).await;

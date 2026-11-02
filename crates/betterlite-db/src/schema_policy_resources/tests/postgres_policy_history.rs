@@ -393,11 +393,11 @@ async fn run_policy_history_check(client: &Client, cohort: PolicyHistoryCohort) 
             check_guardrail_policy_metric_zero_counters_and_nullable_averages(client).await;
         }
         PolicyHistoryCohort::SpendGuardrailIndexPairs => {
-            check_spend_guardrail_index_pairs(client).await
+            check_spend_guardrail_index_pairs(client).await;
         }
         PolicyHistoryCohort::SixEntityDateIndexes => check_six_entity_date_indexes(client).await,
         PolicyHistoryCohort::ProjectColumnOnlyRepair => {
-            check_project_column_only_repair(client).await
+            check_project_column_only_repair(client).await;
         }
         PolicyHistoryCohort::PolicyDefaultProductionVersionOne => {
             check_policy_default_production_version_one(client).await;
@@ -409,10 +409,10 @@ async fn run_policy_history_check(client: &Client, cohort: PolicyHistoryCohort) 
             check_policy_version_duplicate_rejected(client).await;
         }
         PolicyHistoryCohort::ManagedBatchProcessedFalse => {
-            check_managed_batch_processed_false(client).await
+            check_managed_batch_processed_false(client).await;
         }
         PolicyHistoryCohort::NullableRequestDuration => {
-            check_nullable_request_duration(client).await
+            check_nullable_request_duration(client).await;
         }
         PolicyHistoryCohort::SpecPathAddDropReaddLosesOldValues => {
             check_spec_path_add_drop_readd_loses_old_values(client).await;

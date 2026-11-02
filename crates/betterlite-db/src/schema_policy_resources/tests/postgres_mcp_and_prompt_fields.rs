@@ -174,24 +174,26 @@ async fn check_jwt_token_delete_restrict_update_cascade(client: &Client) {
     assert_eq!(cascaded, "token-cascade-renamed");
 }
 
+async fn assert_config_override_insert_not_null_violation(client: &Client, sql: &str, id: &str) {
+    let error = exec_params_err(client, sql, &[&id]).await;
+    assert_eq!(sql_state(&error), SqlState::NOT_NULL_VIOLATION.code());
+}
+
 async fn check_config_override_required_json_and_updated_at(client: &Client) {
-    assert_column(
+    assert_columns(
         client,
         "LiteLLM_ConfigOverrides",
-        ("config_value", "jsonb", false, None, "jsonb", None),
-    )
-    .await;
-    assert_column(
-        client,
-        "LiteLLM_ConfigOverrides",
-        (
-            "updated_at",
-            "timestamp without time zone",
-            false,
-            None,
-            "timestamp",
-            Some(3_i32),
-        ),
+        &[
+            ("config_value", "jsonb", false, None, "jsonb", None),
+            (
+                "updated_at",
+                "timestamp without time zone",
+                false,
+                None,
+                "timestamp",
+                Some(3_i32),
+            ),
+        ],
     )
     .await;
     exec_params(
@@ -200,26 +202,18 @@ async fn check_config_override_required_json_and_updated_at(client: &Client) {
         &[&"router-config"],
     )
     .await;
-    let missing_value = exec_params_err(
+    assert_config_override_insert_not_null_violation(
         client,
         r#"INSERT INTO "LiteLLM_ConfigOverrides" (config_type, updated_at) VALUES ($1, now())"#,
-        &[&"missing-value"],
+        "missing-value",
     )
     .await;
-    assert_eq!(
-        sql_state(&missing_value),
-        SqlState::NOT_NULL_VIOLATION.code()
-    );
-    let missing_updated_at = exec_params_err(
+    assert_config_override_insert_not_null_violation(
         client,
         r#"INSERT INTO "LiteLLM_ConfigOverrides" (config_type, config_value) VALUES ($1, '{}')"#,
-        &[&"missing-updated-at"],
+        "missing-updated-at",
     )
     .await;
-    assert_eq!(
-        sql_state(&missing_updated_at),
-        SqlState::NOT_NULL_VIOLATION.code()
-    );
 }
 
 async fn check_approval_fields_restore_preserves_values(client: &Client) {
