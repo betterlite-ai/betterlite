@@ -327,7 +327,26 @@ async fn check_prompt_development_backfill(client: &Client) {
     assert_eq!(environment, "development");
 }
 
+async fn assert_prompt_environment_indexes(client: &Client) {
+    assert_index(
+        client,
+        "LiteLLM_PromptTable_prompt_id_version_environment_key",
+        &["prompt_id", "version", "environment"],
+        true,
+    )
+    .await;
+    assert_index(
+        client,
+        "LiteLLM_PromptTable_prompt_id_environment_idx",
+        &["prompt_id", "environment"],
+        false,
+    )
+    .await;
+}
+
 async fn check_prompt_environment_distinct_versions(client: &Client) {
+    assert_prompt_environment_indexes(client).await;
+
     exec_params(
         client,
         r#"INSERT INTO "LiteLLM_PromptTable" (id, prompt_id, litellm_params, updated_at, environment)
@@ -347,6 +366,15 @@ async fn check_prompt_environment_distinct_versions(client: &Client) {
         environments,
         vec!["development".to_owned(), "production".to_owned()]
     );
+
+    let conflict = exec_params_err(
+        client,
+        r#"INSERT INTO "LiteLLM_PromptTable" (id, prompt_id, litellm_params, updated_at, environment)
+           VALUES ($1, $2, '{}', now(), 'development')"#,
+        &[&"prompt-dev-again", &"prompt-shared"],
+    )
+    .await;
+    assert_eq!(sql_state(&conflict), SqlState::UNIQUE_VIOLATION.code());
 }
 
 async fn check_prompt_environment_repeat_42701(client: &Client) {

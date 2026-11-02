@@ -197,6 +197,14 @@ async fn check_agent_permission_set_null_on_delete(client: &Client) {
 async fn check_agent_permission_set_null_and_key_agent_nullable(client: &Client) {
     check_agent_permission_set_null_on_delete(client).await;
 
+    assert_rule(
+        client,
+        "LiteLLM_AgentsTable_object_permission_id_fkey",
+        'c',
+        'n',
+    )
+    .await;
+
     assert_column(
         client,
         "LiteLLM_VerificationToken",
@@ -311,14 +319,7 @@ async fn check_guardrail_active_status_index(client: &Client) {
     assert_eq!(status, "active");
 }
 
-async fn check_agent_zero_spend_headers_and_four_integer_limits(client: &Client) {
-    exec_params(
-        client,
-        r#"INSERT INTO "LiteLLM_AgentsTable" (agent_id, agent_name, agent_card_params, created_by, updated_by)
-           VALUES ($1, $2, '{}', 'tester', 'tester')"#,
-        &[&"agent-limits", &"agent-limits-name"],
-    )
-    .await;
+async fn assert_agent_spend_and_limit_columns(client: &Client) {
     assert_columns(
         client,
         "LiteLLM_AgentsTable",
@@ -335,19 +336,40 @@ async fn check_agent_zero_spend_headers_and_four_integer_limits(client: &Client)
             ("rpm_limit", "integer", true, None, "int4", None),
             ("session_tpm_limit", "integer", true, None, "int4", None),
             ("session_rpm_limit", "integer", true, None, "int4", None),
+            (
+                "static_headers",
+                "jsonb",
+                true,
+                Some("'{}'::jsonb"),
+                "jsonb",
+                None,
+            ),
         ],
     )
     .await;
+}
+
+async fn check_agent_zero_spend_headers_and_four_integer_limits(client: &Client) {
+    exec_params(
+        client,
+        r#"INSERT INTO "LiteLLM_AgentsTable" (agent_id, agent_name, agent_card_params, created_by, updated_by)
+           VALUES ($1, $2, '{}', 'tester', 'tester')"#,
+        &[&"agent-limits", &"agent-limits-name"],
+    )
+    .await;
+    assert_agent_spend_and_limit_columns(client).await;
     let row = query_one_row(
         client,
-        r#"SELECT spend::text, static_headers, extra_headers, tpm_limit FROM "LiteLLM_AgentsTable" WHERE agent_id = $1"#,
+        r#"SELECT spend::text, static_headers::text, extra_headers, tpm_limit FROM "LiteLLM_AgentsTable" WHERE agent_id = $1"#,
         &[&"agent-limits"],
     )
     .await;
     let spend: String = row.get(0);
+    let static_headers: String = row.get(1);
     let extra_headers: Vec<String> = row.get(2);
     let tpm_limit: Option<i32> = row.get(3);
     assert_eq!(spend, "0");
+    assert_eq!(static_headers, "{}");
     assert!(extra_headers.is_empty());
     assert_eq!(tpm_limit, None);
 }

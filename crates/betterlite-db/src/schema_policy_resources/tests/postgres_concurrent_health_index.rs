@@ -55,7 +55,25 @@ async fn postgres_concurrent_health_index(#[case] cohort: HealthIndexCohort) {
     .await;
 }
 
-async fn check_checked_at_descending_and_valid(client: &Client) {
+fn non_comment_statement_count(sql: &str) -> usize {
+    let without_comments: String = sql
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("--"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    without_comments
+        .split(';')
+        .filter(|statement| !statement.trim().is_empty())
+        .count()
+}
+
+async fn assert_health_index_shape_and_sort_direction(client: &Client) {
+    assert_eq!(
+        non_comment_statement_count(migration_sql_of(HEALTH_CHECK_LATEST_PER_MODEL_INDEX)),
+        1,
+        "the concurrent index migration must stay a single statement"
+    );
+
     let facts = index_facts(client, HEALTH_INDEX_NAME).await;
     assert_eq!(
         facts.columns,
@@ -66,6 +84,17 @@ async fn check_checked_at_descending_and_valid(client: &Client) {
         ]
     );
     assert!(!facts.unique);
+
+    let index_def = scalar_text(
+        client,
+        "SELECT pg_get_indexdef(ic.oid) FROM pg_class ic WHERE ic.relname = $1",
+        &[&HEALTH_INDEX_NAME],
+    )
+    .await;
+    assert!(
+        index_def.ends_with("checked_at DESC)"),
+        "expected checked_at to sort descending, got {index_def}"
+    );
 
     let valid = scalar_bool(
         client,
@@ -78,6 +107,10 @@ async fn check_checked_at_descending_and_valid(client: &Client) {
         valid,
         "a CONCURRENTLY build that completes leaves the index valid"
     );
+}
+
+async fn check_checked_at_descending_and_valid(client: &Client) {
+    assert_health_index_shape_and_sort_direction(client).await;
 
     insert_health_check_row(client, "health-older", "model-latest", -10).await;
     insert_health_check_row(client, "health-newer", "model-latest", 0).await;

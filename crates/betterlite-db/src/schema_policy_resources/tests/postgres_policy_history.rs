@@ -64,8 +64,9 @@ async fn assert_counter_default(client: &Client, table: &str, column_name: &str)
         "{table}.{column_name} must stay required"
     );
     assert_eq!(info.data_type, "bigint");
-    assert!(
-        info.default.unwrap().contains('0'),
+    assert_eq!(
+        info.default.as_deref(),
+        Some("0"),
         "{table}.{column_name} default"
     );
 }
@@ -117,6 +118,28 @@ async fn assert_metric_table_zero_counters_and_nullable_averages(client: &Client
     .await;
 }
 
+async fn assert_metric_table_pk_and_lookup_indexes(
+    client: &Client,
+    table: &str,
+    entity_column: &str,
+) {
+    assert_index(
+        client,
+        &format!("{table}_pkey"),
+        &[entity_column, "date"],
+        true,
+    )
+    .await;
+    assert_index(client, &format!("{table}_date_idx"), &["date"], false).await;
+    assert_index(
+        client,
+        &format!("{table}_{entity_column}_idx"),
+        &[entity_column],
+        false,
+    )
+    .await;
+}
+
 async fn check_guardrail_policy_metric_zero_counters_and_nullable_averages(client: &Client) {
     exec_params(
         client,
@@ -136,6 +159,14 @@ async fn check_guardrail_policy_metric_zero_counters_and_nullable_averages(clien
     )
     .await;
     assert_metric_table_zero_counters_and_nullable_averages(client, "LiteLLM_DailyPolicyMetrics")
+        .await;
+    assert_metric_table_pk_and_lookup_indexes(
+        client,
+        "LiteLLM_DailyGuardrailMetrics",
+        "guardrail_id",
+    )
+    .await;
+    assert_metric_table_pk_and_lookup_indexes(client, "LiteLLM_DailyPolicyMetrics", "policy_id")
         .await;
 }
 
@@ -231,6 +262,40 @@ async fn check_project_column_only_repair(client: &Client) {
     assert_eq!(foreign_keys, "0", "no foreign key should be invented");
 }
 
+async fn assert_policy_versioning_index_and_nullable_columns(client: &Client) {
+    assert_index(
+        client,
+        "LiteLLM_PolicyTable_policy_name_version_status_idx",
+        &["policy_name", "version_status"],
+        false,
+    )
+    .await;
+    assert_columns(
+        client,
+        "LiteLLM_PolicyTable",
+        &[
+            ("parent_version_id", "text", true, None, "text", None),
+            (
+                "production_at",
+                "timestamp without time zone",
+                true,
+                None,
+                "timestamp",
+                Some(3_i32),
+            ),
+            (
+                "published_at",
+                "timestamp without time zone",
+                true,
+                None,
+                "timestamp",
+                Some(3_i32),
+            ),
+        ],
+    )
+    .await;
+}
+
 async fn check_policy_default_production_version_one(client: &Client) {
     exec_params(
         client,
@@ -251,6 +316,7 @@ async fn check_policy_default_production_version_one(client: &Client) {
     assert!(is_latest);
     assert_eq!(version_number, 1_i32);
     assert_eq!(version_status, "production");
+    assert_policy_versioning_index_and_nullable_columns(client).await;
 }
 
 async fn check_multiple_versions_same_latest_allowed(client: &Client) {
