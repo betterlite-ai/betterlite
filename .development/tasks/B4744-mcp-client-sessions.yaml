@@ -77,6 +77,22 @@ scope:
     - tools/oracle/src/helpers/mcp/b4744.rs
     - tools/oracle/src/helpers/mcp/b4744/**
     - crates/betterlite-mcp/src/client/sessions/tests/**
+    - tools/oracle/cases/helpers/mcp-sessions/execute-cleanup-bounds.yaml
+    - tools/oracle/cases/helpers/mcp-sessions/execute-error-precedence.yaml
+    - tools/oracle/cases/helpers/mcp-sessions/factory-auth-precedence.yaml
+    - tools/oracle/cases/helpers/mcp-sessions/factory-tls.yaml
+    - tools/oracle/cases/helpers/mcp-sessions/http-transport.yaml
+    - tools/oracle/cases/helpers/mcp-sessions/init-auto-legacy.yaml
+    - tools/oracle/cases/helpers/mcp-sessions/init-auto-reject.yaml
+    - tools/oracle/cases/helpers/mcp-sessions/init-capabilities.yaml
+    - tools/oracle/cases/helpers/mcp-sessions/init-explicit-version.yaml
+    - tools/oracle/cases/helpers/mcp-sessions/init-version-mismatch.yaml
+    - tools/oracle/cases/helpers/mcp-sessions/run-with-session.yaml
+    - tools/oracle/cases/helpers/mcp-sessions/sse-transport.yaml
+    - tools/oracle/cases/helpers/mcp-sessions/stdio-env-allowlist.yaml
+    - tools/oracle/cases/helpers/mcp-sessions/stdio-env-provided.yaml
+    - tools/oracle/cases/helpers/mcp-sessions/stdio-npm-cache.yaml
+    - tools/oracle/cases/helpers/mcp-sessions/stdio-transport.yaml
   lint_tables: false
 
 references:

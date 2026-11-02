@@ -1,0 +1,15 @@
+kind: helper
+name: native-errors-b-ollama-text-status
+call:
+  native_errors_b:
+    provider: ollama
+    model: ollama/llama2
+    original_exception:
+      kind: text_status
+      text: "no such file or directory"
+      status_code: 500
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

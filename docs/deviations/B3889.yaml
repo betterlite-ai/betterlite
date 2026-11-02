@@ -1,0 +1,11 @@
+task: B3889
+deviations:
+  - what: Betterlite uses a Sync trait bound for factories instead of Python's callable. Both defer initialization to the first request.
+    why: Rust requires explicit thread-safety bounds; a factory function that returns an optional sink/recorder preserves the lazy-resolution pattern with explicit types.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/billable_request_metrics_middleware.py#L201-L222
+  - what: Betterlite logs sink and recorder failures with structured JSON tracing, not Python's verbose_proxy_logger.
+    why: All betterlite errors use the tracing crate for consistent JSON output to stderr.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/billable_request_metrics_middleware.py#L277-L285
+  - what: Enterprise billing recorder is not built; only the open-source gateway request sink is wired.
+    why: Betterlite has no paid tier and does not include LiteLLM's enterprise package.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/billable_request_metrics_middleware.py#L281-L285

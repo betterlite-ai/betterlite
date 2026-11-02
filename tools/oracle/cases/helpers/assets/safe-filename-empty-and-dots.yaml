@@ -1,0 +1,9 @@
+kind: helper
+name: safe_filename_rejects_a_bare_parent_directory_reference
+call:
+  assets:
+    op: safe_filename
+    filename: ".."
+env: {}
+compare:
+  ignore: []

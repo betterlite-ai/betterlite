@@ -1,0 +1,12 @@
+kind: helper
+name: registry-remove-openai-routes
+call:
+  b3614:
+    remove:
+      registrations:
+        - {key: 'a:exact:/foo:GET', endpoint_id: a, route_type: exact, path: /foo, methods: [GET], auth: null}
+        - {key: 'b:exact:/foo:GET', endpoint_id: b, route_type: exact, path: /foo, methods: [GET], auth: null}
+      openai_routes: [/foo, /foo]
+      endpoint_id: a
+env: {}
+compare: {ignore: []}

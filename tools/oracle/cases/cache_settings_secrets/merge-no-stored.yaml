@@ -1,0 +1,9 @@
+kind: helper
+name: cache-settings-secrets-merge-no-stored
+call:
+  b4306:
+    function: merge
+    incoming: {password: "***REDACTED***"}
+    saved: {}
+env: {}
+compare: {ignore: []}

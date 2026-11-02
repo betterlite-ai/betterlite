@@ -25,6 +25,12 @@ scope:
     - tools/oracle/src/helpers/core_ops/b3365.rs
     - tools/oracle/src/helpers/core_ops/b3365/**
     - crates/betterlite-core/src/api/container_resource_http/tests/**
+    - tools/oracle/cases/containers/retrieve-and-delete-http/delete-provider-error.yaml
+    - tools/oracle/cases/containers/retrieve-and-delete-http/delete-successful.yaml
+    - tools/oracle/cases/containers/retrieve-and-delete-http/delete-transport-error.yaml
+    - tools/oracle/cases/containers/retrieve-and-delete-http/retrieve-provider-error.yaml
+    - tools/oracle/cases/containers/retrieve-and-delete-http/retrieve-successful.yaml
+    - tools/oracle/cases/containers/retrieve-and-delete-http/retrieve-transport-error.yaml
   lint_tables: false
 
 references:

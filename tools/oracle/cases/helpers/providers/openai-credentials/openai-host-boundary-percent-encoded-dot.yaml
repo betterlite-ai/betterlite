@@ -1,0 +1,5 @@
+kind: helper
+name: openai-host-boundary-percent-encoded-dot
+call: {openai_credentials: {openai_host_boundary: {api_base: 'https://api%2Eopenai.com/v1'}}}
+env: {}
+compare: {ignore: []}

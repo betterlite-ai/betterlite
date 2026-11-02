@@ -1,0 +1,9 @@
+kind: helper
+name: cache-settings-secrets-reusable-missing-stored-field
+call:
+  b4306:
+    function: reusable
+    incoming: {}
+    saved: {host: "a"}
+env: {}
+compare: {ignore: []}

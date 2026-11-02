@@ -1,0 +1,9 @@
+kind: helper
+name: cache-settings-secrets-merge-drop-url
+call:
+  b4306:
+    function: merge
+    incoming: {host: "a"}
+    saved: {url: "redis://host"}
+env: {}
+compare: {ignore: []}
