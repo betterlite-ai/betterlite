@@ -554,15 +554,18 @@ fn check_message_model_dump_extended_fields() {
     assert_eq!(messages_for_span, Json::List(Vec::new()));
 }
 
-// litellm.types.llms.openai.ResponsesAPIResponse.output parses a "message" item into ResponseOutputMessage and a "function_call" item into ResponseFunctionToolCall before _serialize_galileo_output dumps them, filling every declared optional field with null; an item whose type isn't recognized stays an unmodified dict.
+// litellm.types.llms.openai.ResponsesAPIResponse.output parses a "message" item into ResponseOutputMessage (content parts being output_text or refusal), a "function_call" item into ResponseFunctionToolCall and a "reasoning" item into ResponseReasoningItem before _serialize_galileo_output dumps them, filling every declared optional field with null; an item whose type isn't recognized, or doesn't validate against its recognized type, stays an unmodified dict.
 fn check_responses_api_output_projection() {
     let kwargs = GalileoKwargs::default();
     let output = val(r#"[
             {"type": "message", "id": "msg_1", "role": "assistant", "status": "completed",
              "content": [{"type": "output_text", "text": "hi", "annotations": []}]},
+            {"type": "message", "id": "msg_2", "role": "assistant", "status": "completed",
+             "content": [{"type": "refusal", "refusal": "no"}]},
             {"type": "function_call", "call_id": "call_1", "name": "f", "arguments": "{}"},
             {"type": "something_unknown", "foo": "bar"},
-            {"type": "reasoning", "call_id": "call_2", "name": "g", "arguments": "{}"}
+            {"type": "reasoning", "call_id": "call_2", "name": "g", "arguments": "{}"},
+            {"type": "reasoning", "id": "rs_1", "summary": []}
         ]"#);
     let (_, response_output, _) = galileo_input_output_content(
         &kwargs,
@@ -575,10 +578,15 @@ fn check_responses_api_output_projection() {
             {"id": "msg_1",
              "content": [{"annotations": [], "text": "hi", "type": "output_text", "logprobs": null}],
              "role": "assistant", "status": "completed", "type": "message", "phase": null},
+            {"id": "msg_2",
+             "content": [{"refusal": "no", "type": "refusal"}],
+             "role": "assistant", "status": "completed", "type": "message", "phase": null},
             {"arguments": "{}", "call_id": "call_1", "name": "f", "type": "function_call",
              "id": null, "caller": null, "namespace": null, "status": null},
             {"type": "something_unknown", "foo": "bar"},
-            {"type": "reasoning", "call_id": "call_2", "name": "g", "arguments": "{}"}
+            {"type": "reasoning", "call_id": "call_2", "name": "g", "arguments": "{}"},
+            {"id": "rs_1", "summary": [], "type": "reasoning",
+             "content": null, "encrypted_content": null, "status": null}
         ]"#);
     assert_eq!(parsed, expected);
 }
