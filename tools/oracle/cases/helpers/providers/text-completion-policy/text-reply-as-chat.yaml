@@ -1,0 +1,54 @@
+kind: helper
+name: text-reply-as-chat
+call:
+  text_completion_policy:
+    text_reply_as_chat:
+      response_object:
+        object: something-else
+        model: gpt-3.5-turbo-instruct
+        usage:
+          prompt_tokens: 10
+          completion_tokens: 5
+          total_tokens: 15
+          prompt_cache_hit_tokens: 2
+          cache_read_input_tokens: 3
+          custom_provider_field: kept
+          completion_tokens_details:
+            reasoning_tokens: 4
+        choices:
+        - text: hello
+          finish_reason: stop
+          index: 0
+          logprobs: null
+        - text: world
+          finish_reason: stop_sequence
+          index: 1
+          logprobs: null
+        - text: again
+          finish_reason: tool_use
+          index: 2
+          logprobs: null
+        - text: refused
+          finish_reason: refusal
+          index: 3
+          logprobs: null
+        - text: calling
+          finish_reason: function_call
+          index: 4
+          logprobs: null
+      model_response_object:
+        id: chatcmpl-fresh
+        object: chat.completion
+        created: 1700000000
+        model: null
+        system_fingerprint: null
+      clock: 1700000000
+env: {}
+compare:
+  ignore:
+    - pointer: /value/id
+      why: id is omitted from response_object, so both LiteLLM and betterlite generate it from a fresh random source
+    - pointer: /value/_hidden_params/original_response/id
+      why: id is omitted from response_object, so both LiteLLM and betterlite generate it from a fresh random source
+    - pointer: /value/_hidden_params/original_response/created
+      why: created is omitted from response_object, so LiteLLM fills it from the real wall clock while betterlite uses the injected clock value

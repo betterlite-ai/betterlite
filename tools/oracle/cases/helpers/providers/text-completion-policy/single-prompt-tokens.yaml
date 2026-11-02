@@ -1,0 +1,5 @@
+kind: helper
+name: single-prompt-tokens
+call: {text_completion_policy: {single_prompt_tokens: {model: text-davinci-003, messages: [{role: user, content: [1, 2, 3]}], optional_params: {}}}}
+env: {}
+compare: {ignore: []}
