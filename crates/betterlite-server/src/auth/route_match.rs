@@ -4,7 +4,7 @@ use axum::http::StatusCode;
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use betterlite_auth::route_match::classifier;
-use betterlite_auth::route_match::templates::RouteValue;
+use betterlite_auth::route_match::templates::{RouteValue, route_matches_pattern};
 use serde::Serialize;
 
 mod tests;
@@ -36,7 +36,10 @@ pub fn admit(route: &str, method: &str) -> Result<(), RouteMatchError> {
     let recognized = classifier::is_llm_api_route(&RouteValue::Text(route))
         || classifier::is_management_route(route)
         || classifier::is_info_route(route)
-        || classifier::is_mcp_discovery_route(route, Some(method));
+        || classifier::is_mcp_discovery_route(route, Some(method))
+        || ["/models/{model_id}", "/v1/models/{model_id}"]
+            .iter()
+            .any(|pattern| route_matches_pattern(&RouteValue::Text(route), pattern));
     if recognized {
         Ok(())
     } else {
