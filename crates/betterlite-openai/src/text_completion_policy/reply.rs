@@ -3,6 +3,9 @@ use serde_json::{Map, Value};
 use thiserror::Error;
 use uuid::Uuid;
 
+mod usage;
+use usage::{original_usage_shape, resolve_usage};
+
 #[derive(Debug, Error)]
 pub enum ReplyError {
     #[error("Error in response object format")]
@@ -81,6 +84,17 @@ fn resolve_finish_reason(raw: Option<Value>) -> Value {
     }
 }
 
+// The copy already on target.usage stays trimmed; only the stored original response gets the full wrapper shape.
+fn expand_original_usage(response: &mut Value) {
+    let Some(fields) = response.as_object_mut() else {
+        return;
+    };
+    let Some(usage) = fields.get("usage").cloned() else {
+        return;
+    };
+    fields.insert("usage".to_owned(), original_usage_shape(&usage));
+}
+
 // TextChoices maps finish_reason at parse time, so the stored original response carries the mapped value too.
 fn embed_original_choices(response: &mut Value) {
     let Some(Value::Array(choices)) = response.get_mut("choices") else {
@@ -93,32 +107,6 @@ fn embed_original_choices(response: &mut Value) {
         let raw = fields.remove("finish_reason");
         fields.insert("finish_reason".to_owned(), embedded_finish_reason(raw));
     }
-}
-
-// Usage.__init__: each count defaults to 0 when falsy, each details object stays null unless the raw value is truthy.
-fn resolve_usage(raw: Option<Value>) -> Value {
-    let fields = match raw.filter(|value| !is_blank(value)) {
-        Some(Value::Object(fields)) => fields,
-        _ => Map::new(),
-    };
-    let mut usage = Map::new();
-    for key in ["prompt_tokens", "completion_tokens", "total_tokens"] {
-        let resolved = fields
-            .get(key)
-            .filter(|value| !is_blank(value))
-            .cloned()
-            .unwrap_or_else(|| Value::from(0_i64));
-        usage.insert(key.to_owned(), resolved);
-    }
-    for key in ["completion_tokens_details", "prompt_tokens_details"] {
-        let resolved = fields
-            .get(key)
-            .filter(|value| !is_blank(value))
-            .cloned()
-            .unwrap_or(Value::Null);
-        usage.insert(key.to_owned(), resolved);
-    }
-    Value::Object(usage)
 }
 
 // TextCompletionResponse.__init__: a choices value that isn't a list (missing, null, or any other shape) becomes one default choice.
@@ -142,8 +130,20 @@ fn resolve_id(raw: Option<Value>, identifier: &dyn Fn() -> Uuid) -> Value {
     }
 }
 
+// TextCompletionResponse.__init__: created is only generated when missing or null, matching resolve_id's strictness.
+fn resolve_created(raw: Option<Value>, clock: &dyn Fn() -> i64) -> Value {
+    match raw {
+        Some(Value::Null) | None => Value::from(clock()),
+        Some(value) => value,
+    }
+}
+
 // Applies TextCompletionResponse's own defaulting before convert_to_chat_model_response_object ever sees the response.
-fn normalize_response(response: &mut Value, identifier: &dyn Fn() -> Uuid) {
+fn normalize_response(
+    response: &mut Value,
+    identifier: &dyn Fn() -> Uuid,
+    clock: &dyn Fn() -> i64,
+) {
     let Some(fields) = response.as_object_mut() else {
         return;
     };
@@ -153,6 +153,13 @@ fn normalize_response(response: &mut Value, identifier: &dyn Fn() -> Uuid) {
     fields.insert("usage".to_owned(), usage);
     let choices = resolve_choices(fields.remove("choices"));
     fields.insert("choices".to_owned(), choices);
+    // TextCompletionResponse.__init__ always sets object to "text_completion", overwriting whatever the provider sent.
+    fields.insert(
+        "object".to_owned(),
+        Value::String("text_completion".to_owned()),
+    );
+    let created = resolve_created(fields.remove("created"), clock);
+    fields.insert("created".to_owned(), created);
 }
 
 impl TextCompletionChoice {
@@ -186,11 +193,12 @@ pub fn to_chat_model_response(
     response_object: Option<Value>,
     model_response_object: Option<Map<String, Value>>,
     identifier: &dyn Fn() -> Uuid,
+    clock: &dyn Fn() -> i64,
 ) -> Result<Map<String, Value>, ReplyError> {
     let (Some(mut response), Some(mut target)) = (response_object, model_response_object) else {
         return Err(ReplyError::MissingResponseFormat);
     };
-    normalize_response(&mut response, identifier);
+    normalize_response(&mut response, identifier, clock);
     let choices_value = response.get("choices").cloned().unwrap_or(Value::Null);
     let choices: Vec<TextCompletionChoice> = serde_json::from_value(choices_value)?;
     let chat_choices = choices
@@ -206,6 +214,7 @@ pub fn to_chat_model_response(
             response.get(key).cloned().unwrap_or(Value::Null),
         );
     }
+    expand_original_usage(&mut response);
     embed_original_choices(&mut response);
     let mut hidden_params = match target.remove("_hidden_params") {
         Some(Value::Object(existing)) => existing,

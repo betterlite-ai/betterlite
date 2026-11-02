@@ -15,6 +15,10 @@ fn fixed_identifier() -> Uuid {
     Uuid::from_u128(0x0123_4567_89ab_4def_8123_4567_89ab_cdef)
 }
 
+fn fixed_clock() -> i64 {
+    1_700_000_000_i64
+}
+
 #[rstest]
 #[case::text_config_values(0)]
 #[case::text_parameter_allowlist(1)]
@@ -169,19 +173,33 @@ fn text_completion_policy_cases(#[case] case: u8) {
             let generated_id = format!("chatcmpl-{}", fixed_identifier());
 
             assert!(matches!(
-                reply::to_chat_model_response(None, Some(Map::new()), &fixed_identifier),
+                reply::to_chat_model_response(
+                    None,
+                    Some(Map::new()),
+                    &fixed_identifier,
+                    &fixed_clock
+                ),
                 Err(reply::ReplyError::MissingResponseFormat)
             ));
             assert!(matches!(
-                reply::to_chat_model_response(Some(json!({})), None, &fixed_identifier),
+                reply::to_chat_model_response(
+                    Some(json!({})),
+                    None,
+                    &fixed_identifier,
+                    &fixed_clock
+                ),
                 Err(reply::ReplyError::MissingResponseFormat)
             ));
 
             let target = Map::from_iter([(String::from("object"), json!("text_completion"))]);
             let response = json!({"choices": [], "id": "cmpl-1"});
-            let result =
-                reply::to_chat_model_response(Some(response), Some(target), &fixed_identifier)
-                    .expect("empty choices accepted");
+            let result = reply::to_chat_model_response(
+                Some(response),
+                Some(target),
+                &fixed_identifier,
+                &fixed_clock,
+            )
+            .expect("empty choices accepted");
             assert_eq!(result["choices"], json!([]));
             assert_eq!(result["id"], json!("cmpl-1"));
             assert_eq!(result["object"], json!("text_completion"));
@@ -189,7 +207,13 @@ fn text_completion_policy_cases(#[case] case: u8) {
             assert_eq!(result["model"], json!(null));
             assert_eq!(
                 result["_hidden_params"]["original_response"],
-                json!({"choices": [], "id": "cmpl-1", "usage": zero_usage})
+                json!({
+                    "choices": [],
+                    "id": "cmpl-1",
+                    "usage": zero_usage,
+                    "object": "text_completion",
+                    "created": 1_700_000_000_i64,
+                })
             );
 
             let response_two = json!({
@@ -207,6 +231,7 @@ fn text_completion_policy_cases(#[case] case: u8) {
                 Some(response_two),
                 Some(Map::new()),
                 &fixed_identifier,
+                &fixed_clock,
             )
             .expect("sequential index");
             assert_eq!(result_two["choices"][0]["index"], json!(0_i32));
@@ -232,8 +257,36 @@ fn text_completion_policy_cases(#[case] case: u8) {
                     "prompt_tokens": 0_i32,
                     "completion_tokens": 0_i32,
                     "total_tokens": 3_i32,
-                    "completion_tokens_details": {"reasoning_tokens": 2_i32},
-                    "prompt_tokens_details": {"cached_tokens": 1_i32},
+                    "completion_tokens_details": {
+                        "reasoning_tokens": 2_i32,
+                    },
+                    "prompt_tokens_details": {
+                        "cached_tokens": 1_i32,
+                    },
+                })
+            );
+            assert_eq!(
+                result_two["_hidden_params"]["original_response"]["usage"],
+                json!({
+                    "prompt_tokens": 0_i32,
+                    "completion_tokens": 0_i32,
+                    "total_tokens": 3_i32,
+                    "completion_tokens_details": {
+                        "accepted_prediction_tokens": null,
+                        "audio_tokens": null,
+                        "reasoning_tokens": 2_i32,
+                        "rejected_prediction_tokens": null,
+                        "text_tokens": null,
+                        "image_tokens": null,
+                        "video_tokens": null,
+                    },
+                    "prompt_tokens_details": {
+                        "audio_tokens": null,
+                        "cached_tokens": 1_i32,
+                        "text_tokens": null,
+                        "image_tokens": null,
+                        "video_tokens": null,
+                    },
                 })
             );
             assert_eq!(result_two["id"], json!(generated_id));
@@ -244,6 +297,7 @@ fn text_completion_policy_cases(#[case] case: u8) {
                 Some(usage_missing),
                 Some(Map::new()),
                 &fixed_identifier,
+                &fixed_clock,
             )
             .expect("missing usage defaults to zero");
             assert_eq!(result_usage_missing["usage"], zero_usage);
@@ -253,6 +307,7 @@ fn text_completion_policy_cases(#[case] case: u8) {
                 Some(choices_missing),
                 Some(Map::new()),
                 &fixed_identifier,
+                &fixed_clock,
             )
             .expect("missing choices default to one empty choice");
             assert_eq!(
@@ -278,6 +333,7 @@ fn text_completion_policy_cases(#[case] case: u8) {
                 Some(choices_null),
                 Some(Map::new()),
                 &fixed_identifier,
+                &fixed_clock,
             )
             .expect("null choices default to one empty choice");
             assert_eq!(
@@ -290,6 +346,7 @@ fn text_completion_policy_cases(#[case] case: u8) {
                 Some(missing_fields),
                 Some(Map::new()),
                 &fixed_identifier,
+                &fixed_clock,
             )
             .expect("missing choice fields default");
             assert_eq!(result_three["choices"][0]["finish_reason"], json!("stop"));
@@ -315,6 +372,7 @@ fn text_completion_policy_cases(#[case] case: u8) {
                 Some(falsy_finish_reasons),
                 Some(Map::new()),
                 &fixed_identifier,
+                &fixed_clock,
             )
             .expect("falsy finish_reason collapses to stop");
             assert_eq!(result_falsy["choices"][0]["finish_reason"], json!("stop"));
@@ -338,6 +396,7 @@ fn text_completion_policy_cases(#[case] case: u8) {
                 Some(mapped_finish_reasons),
                 Some(Map::new()),
                 &fixed_identifier,
+                &fixed_clock,
             )
             .expect("raw provider reasons map through the table");
             assert_eq!(
@@ -368,6 +427,7 @@ fn text_completion_policy_cases(#[case] case: u8) {
                 Some(explicit_null_logprobs),
                 Some(Map::new()),
                 &fixed_identifier,
+                &fixed_clock,
             )
             .expect("explicit null logprobs omits the field");
             assert!(
@@ -384,6 +444,7 @@ fn text_completion_policy_cases(#[case] case: u8) {
                 Some(with_logprobs),
                 Some(Map::new()),
                 &fixed_identifier,
+                &fixed_clock,
             )
             .expect("explicit logprobs pass through");
             assert_eq!(
@@ -394,7 +455,12 @@ fn text_completion_policy_cases(#[case] case: u8) {
 
             let malformed = json!({"choices": [{"text": 5_i32, "finish_reason": "stop"}]});
             assert!(matches!(
-                reply::to_chat_model_response(Some(malformed), Some(Map::new()), &fixed_identifier),
+                reply::to_chat_model_response(
+                    Some(malformed),
+                    Some(Map::new()),
+                    &fixed_identifier,
+                    &fixed_clock
+                ),
                 Err(reply::ReplyError::MalformedChoices(_))
             ));
             let malformed_shape = json!({"choices": ["not-an-object"]});
@@ -402,7 +468,8 @@ fn text_completion_policy_cases(#[case] case: u8) {
                 reply::to_chat_model_response(
                     Some(malformed_shape),
                     Some(Map::new()),
-                    &fixed_identifier
+                    &fixed_identifier,
+                    &fixed_clock
                 ),
                 Err(reply::ReplyError::MalformedChoices(_))
             ));
@@ -416,6 +483,7 @@ fn text_completion_policy_cases(#[case] case: u8) {
                 Some(response_three),
                 Some(target_with_hidden_params),
                 &fixed_identifier,
+                &fixed_clock,
             )
             .expect("preserves other hidden params");
             assert_eq!(
@@ -424,7 +492,119 @@ fn text_completion_policy_cases(#[case] case: u8) {
             );
             assert_eq!(
                 result_five["_hidden_params"]["original_response"],
-                json!({"choices": [], "id": generated_id, "usage": zero_usage})
+                json!({
+                    "choices": [],
+                    "id": generated_id,
+                    "usage": zero_usage,
+                    "object": "text_completion",
+                    "created": 1_700_000_000_i64,
+                })
+            );
+
+            let response_unknown_usage = json!({
+                "choices": [],
+                "usage": {"total_tokens": 1_i32, "custom_provider_field": "kept"},
+            });
+            let result_unknown_usage = reply::to_chat_model_response(
+                Some(response_unknown_usage),
+                Some(Map::new()),
+                &fixed_identifier,
+                &fixed_clock,
+            )
+            .expect("unknown usage key survives");
+            assert_eq!(
+                result_unknown_usage["usage"]["custom_provider_field"],
+                json!("kept")
+            );
+
+            let response_cache_mappings = json!({
+                "choices": [],
+                "usage": {
+                    "prompt_cache_hit_tokens": 2_i32,
+                    "cache_read_input_tokens": 3_i32,
+                    "cache_creation_input_tokens": 4_i32,
+                },
+            });
+            let result_cache_mappings = reply::to_chat_model_response(
+                Some(response_cache_mappings),
+                Some(Map::new()),
+                &fixed_identifier,
+                &fixed_clock,
+            )
+            .expect("cache token keys map onto prompt_tokens_details");
+            assert_eq!(
+                result_cache_mappings["usage"]["prompt_tokens_details"]["cached_tokens"],
+                json!(3_i32)
+            );
+            assert_eq!(
+                result_cache_mappings["usage"]["prompt_tokens_details"]["cache_write_tokens"],
+                json!(4_i32)
+            );
+            assert_eq!(
+                result_cache_mappings["_hidden_params"]["original_response"]["usage"]["prompt_tokens_details"],
+                json!({
+                    "audio_tokens": null,
+                    "cached_tokens": 3_i32,
+                    "cache_write_tokens": 4_i32,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null,
+                })
+            );
+
+            let response_non_integer_cache = json!({
+                "choices": [],
+                "usage": {"prompt_cache_hit_tokens": "not-a-number"},
+            });
+            let result_non_integer_cache = reply::to_chat_model_response(
+                Some(response_non_integer_cache),
+                Some(Map::new()),
+                &fixed_identifier,
+                &fixed_clock,
+            )
+            .expect("non-integer cache value is ignored");
+            assert_eq!(
+                result_non_integer_cache["usage"]["prompt_tokens_details"],
+                json!(null)
+            );
+
+            let response_object_override = json!({"choices": [], "object": "something-else"});
+            let result_object_override = reply::to_chat_model_response(
+                Some(response_object_override),
+                Some(Map::new()),
+                &fixed_identifier,
+                &fixed_clock,
+            )
+            .expect("object is always forced to text_completion");
+            assert_eq!(
+                result_object_override["_hidden_params"]["original_response"]["object"],
+                json!("text_completion")
+            );
+
+            let response_created_given = json!({"choices": [], "created": 42_i64});
+            let result_created_given = reply::to_chat_model_response(
+                Some(response_created_given),
+                Some(Map::new()),
+                &fixed_identifier,
+                &fixed_clock,
+            )
+            .expect("an explicit created value is kept");
+            assert_eq!(
+                result_created_given["_hidden_params"]["original_response"]["created"],
+                json!(42_i64)
+            );
+
+            let response_created_null = json!({"choices": [], "created": null});
+            let result_created_null = reply::to_chat_model_response(
+                Some(response_created_null),
+                Some(Map::new()),
+                &fixed_identifier,
+                &fixed_clock,
+            )
+            .expect("a null created value falls back to the clock");
+            assert_eq!(
+                result_created_null["_hidden_params"]["original_response"]["created"],
+                json!(1_700_000_000_i64)
             );
         }
         5 => {

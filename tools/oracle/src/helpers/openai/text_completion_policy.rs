@@ -39,6 +39,8 @@ pub(crate) struct RequestInput {
 pub(crate) struct ReplyInput {
     response_object: Option<Value>,
     model_response_object: Option<Object>,
+    #[serde(default)]
+    clock: Option<i64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -90,13 +92,17 @@ fn invoke(input: &TextCompletionCall) -> Result<Value, Box<HelperError>> {
         TextCompletionCall::TextParameterAllowlist(_) => Ok(json!(SUPPORTED_PARAMS)),
         TextCompletionCall::SinglePromptTokens(value)
         | TextCompletionCall::MultiplePromptStrings(value) => request(value),
-        TextCompletionCall::TextReplyAsChat(value) => to_chat_model_response(
-            value.response_object.clone(),
-            value.model_response_object.clone(),
-            &uuid::Uuid::new_v4,
-        )
-        .map(Value::Object)
-        .map_err(|error| invalid_input(error.to_string())),
+        TextCompletionCall::TextReplyAsChat(value) => {
+            let clock = value.clock.unwrap_or(0_i64);
+            to_chat_model_response(
+                value.response_object.clone(),
+                value.model_response_object.clone(),
+                &uuid::Uuid::new_v4,
+                &|| clock,
+            )
+            .map(Value::Object)
+            .map_err(|error| invalid_input(error.to_string()))
+        }
         TextCompletionCall::TextConfigSelection(value) => {
             Ok(json!(select_completion_provider(value.provider)))
         }
