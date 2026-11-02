@@ -2,16 +2,29 @@
 
 use std::sync::Arc;
 
+use axum::body::{Body, to_bytes};
+use axum::extract::State;
+use axum::http::{Request, StatusCode};
+use axum::response::{IntoResponse as _, Response};
 use indexmap::IndexMap;
 use rstest::rstest;
+use tower::ServiceExt as _;
 
 use super::catalog::provider_catalog;
 use super::endpoints::{
     BACKUP_ASSET, build_endpoints, build_endpoints_from_json, clean_display_name,
-    supported_endpoints,
 };
-use super::types::{ProviderSupportEntry, ProvidersFile};
-use super::{get_provider_fields, get_supported_endpoints, get_supported_providers};
+use super::types::{ProviderSupportEntry, ProvidersFile, SupportedEndpointsResponse};
+use super::{
+    get_provider_fields, get_supported_endpoints, get_supported_providers, providers_routes,
+};
+
+async fn response_body(response: Response) -> String {
+    let status = response.status();
+    assert_eq!(status, StatusCode::OK);
+    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    String::from_utf8(bytes.to_vec()).unwrap()
+}
 
 #[tokio::test]
 async fn providers_list_is_sorted_and_includes_known_llm_providers() {
@@ -37,7 +50,9 @@ async fn providers_list_excludes_json_registry_only_slugs(#[case] excluded: &str
 
 #[tokio::test]
 async fn provider_fields_end_with_the_final_four_in_source_order() {
-    let fields = get_provider_fields().await.0;
+    let response = get_provider_fields().await.expect("catalog decodes");
+    let body = response_body(response).await;
+    let fields: Vec<super::types::ProviderCreateInfo> = serde_json::from_str(&body).unwrap();
     let tail: Vec<&str> = fields
         .iter()
         .rev()
@@ -46,6 +61,18 @@ async fn provider_fields_end_with_the_final_four_in_source_order() {
         .map(|entry| entry.provider.as_str())
         .collect();
     assert_eq!(tail, ["WATSONX_TEXT", "xAI", "XINFERENCE", "CURSOR"]);
+}
+
+#[tokio::test]
+async fn providers_error_responds_with_litellms_unhandled_exception_body() {
+    let bad_json = build_endpoints_from_json(b"not json").expect_err("not valid JSON");
+    let response = bad_json.into_response();
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    assert_eq!(
+        bytes.as_ref(),
+        br#"{"error":{"message":"Internal server error","type":"internal_server_error"}}"#
+    );
 }
 
 #[test]
@@ -175,13 +202,33 @@ fn load_endpoints_reads_the_bundled_backup_file() {
 
 #[tokio::test]
 async fn supported_endpoints_handler_matches_the_bundled_file() {
-    let response = get_supported_endpoints().await.0;
-    assert_eq!(response.endpoints[0].key, "chat_completions");
+    let endpoints = build_endpoints_from_json(BACKUP_ASSET).expect("bundled file decodes");
+    let state = Arc::new(Ok(SupportedEndpointsResponse { endpoints }));
+    let response = get_supported_endpoints(State(state))
+        .await
+        .expect("endpoints load");
+    let body = response_body(response).await;
+    assert!(body.contains(r#""key":"chat_completions""#));
 }
 
-#[test]
-fn supported_endpoints_is_cached_for_the_process_lifetime() {
-    let first = supported_endpoints().expect("endpoints load");
-    let second = supported_endpoints().expect("endpoints load");
-    assert!(Arc::ptr_eq(&first, &second));
+#[tokio::test]
+async fn supported_endpoints_handler_returns_a_500_for_a_cached_decode_failure() {
+    let error = build_endpoints_from_json(b"not json").expect_err("not valid JSON");
+    let state = Arc::new(Err(error));
+    let response = get_supported_endpoints(State(state)).await.unwrap_err();
+    assert_eq!(
+        response.into_response().status(),
+        StatusCode::INTERNAL_SERVER_ERROR
+    );
+}
+
+#[tokio::test]
+async fn providers_routes_serves_endpoints_through_injected_router_state() {
+    let request = Request::get("/public/endpoints")
+        .body(Body::empty())
+        .unwrap();
+    let response = providers_routes().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_body(response).await;
+    assert!(body.contains(r#""key":"chat_completions""#));
 }

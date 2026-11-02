@@ -2,7 +2,7 @@ mod tests;
 
 use betterlite_server::public_endpoints::providers::catalog::provider_catalog;
 use betterlite_server::public_endpoints::providers::endpoints::{
-    build_endpoints_from_json, clean_display_name, supported_endpoints,
+    build_endpoints_from_json, clean_display_name, load_bundled_endpoints,
 };
 use betterlite_server::public_endpoints::providers::error::ProvidersError;
 use betterlite_server::public_endpoints::providers::get_supported_providers;
@@ -43,17 +43,17 @@ impl Helper for Op {
                 serde_json::to_value(catalog).map_err(json_error)?
             }
             Input::GetSupportedEndpoints => {
-                let cached = supported_endpoints().map_err(provider_error)?;
-                serde_json::to_value(&*cached).map_err(json_error)?
+                let response = load_bundled_endpoints().map_err(provider_error)?;
+                serde_json::to_value(&response).map_err(json_error)?
             }
             Input::GetSupportedEndpointsTwice => {
-                let first = supported_endpoints().map_err(provider_error)?;
-                let second = supported_endpoints().map_err(provider_error)?;
-                json!([first.as_ref(), second.as_ref()])
+                let first = load_bundled_endpoints().map_err(provider_error)?;
+                let second = load_bundled_endpoints().map_err(provider_error)?;
+                json!([first, second])
             }
             Input::GetEndpointKeysInOrder => {
-                let cached = supported_endpoints().map_err(provider_error)?;
-                let keys: Vec<String> = cached
+                let response = load_bundled_endpoints().map_err(provider_error)?;
+                let keys: Vec<String> = response
                     .endpoints
                     .iter()
                     .map(|entry| entry.key.clone())

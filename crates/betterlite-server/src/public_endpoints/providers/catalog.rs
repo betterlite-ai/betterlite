@@ -26,7 +26,7 @@ fn decode_fragment(bytes: &[u8]) -> Result<Vec<ProviderCreateInfo>, ProvidersErr
             limit: MAX_FRAGMENT_BYTES,
         });
     }
-    serde_json::from_slice(bytes).map_err(ProvidersError::FragmentJson)
+    serde_json::from_slice(bytes).map_err(|error| ProvidersError::FragmentJson(error.to_string()))
 }
 
 pub fn provider_catalog() -> Result<Vec<ProviderCreateInfo>, ProvidersError> {

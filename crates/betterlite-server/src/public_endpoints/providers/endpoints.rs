@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::sync::{Arc, Mutex, PoisonError};
 
 use regex::Regex;
 
@@ -60,24 +59,12 @@ pub fn build_endpoints_from_json(bytes: &[u8]) -> Result<Vec<SupportedEndpoint>,
             limit: MAX_ENDPOINTS_BYTES,
         });
     }
-    let raw: ProvidersFile =
-        serde_json::from_slice(bytes).map_err(ProvidersError::EndpointsJson)?;
+    let raw: ProvidersFile = serde_json::from_slice(bytes)
+        .map_err(|error| ProvidersError::EndpointsJson(error.to_string()))?;
     Ok(build_endpoints(&raw))
 }
 
-static CACHED_ENDPOINTS: Mutex<Option<Arc<SupportedEndpointsResponse>>> = Mutex::new(None);
-
-pub fn supported_endpoints() -> Result<Arc<SupportedEndpointsResponse>, ProvidersError> {
-    let mut cached = CACHED_ENDPOINTS
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
-    if let Some(endpoints) = cached.as_ref() {
-        return Ok(Arc::clone(endpoints));
-    }
-    let endpoints = Arc::new(SupportedEndpointsResponse {
-        endpoints: build_endpoints_from_json(BACKUP_ASSET)?,
-    });
-    *cached = Some(Arc::clone(&endpoints));
-    drop(cached);
-    Ok(endpoints)
+pub fn load_bundled_endpoints() -> Result<SupportedEndpointsResponse, ProvidersError> {
+    build_endpoints_from_json(BACKUP_ASSET)
+        .map(|endpoints| SupportedEndpointsResponse { endpoints })
 }
