@@ -7,10 +7,24 @@ use std::path::Path;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use rstest::rstest;
-use zip::write::SimpleFileOptions;
+use zip::write::{FullFileOptions, SimpleFileOptions};
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
 use super::build_skill_archive;
+
+fn find_all(bytes: &[u8], marker: &[u8]) -> Vec<usize> {
+    let mut offsets = Vec::new();
+    let mut start = 0_usize;
+    while let Some(position) = bytes[start..]
+        .windows(marker.len())
+        .position(|window| window == marker)
+    {
+        let offset = start.checked_add(position).unwrap();
+        offsets.push(offset);
+        start = offset.checked_add(1).unwrap();
+    }
+    offsets
+}
 
 fn upload(members: &[(&str, &[u8])]) -> Vec<u8> {
     let mut output = Cursor::new(Vec::new());
@@ -330,6 +344,81 @@ fn skill_archive_returns_none_for_a_corrupted_deflate_member() {
     let mut corrupted = bytes;
     corrupted[data_start..data_start + 4].copy_from_slice(&[0xFF; 4]);
     assert!(build_skill_archive(&corrupted).is_none());
+}
+
+#[test]
+fn skill_archive_compares_the_central_directory_raw_name_not_the_extra_field() {
+    let mut output = Cursor::new(Vec::new());
+    let mut writer = ZipWriter::new(&mut output);
+    let mut options = FullFileOptions::default().compression_method(CompressionMethod::Stored);
+    let final_name_raw = b"skill/zzq\x82.md";
+    let mut unicode_path_field = vec![1_u8];
+    unicode_path_field.extend_from_slice(&crc32fast::hash(final_name_raw).to_le_bytes());
+    unicode_path_field.extend_from_slice("skill/zzq\u{e9}.md".as_bytes());
+    options
+        .add_extra_field(0x7075, unicode_path_field, true)
+        .unwrap();
+    writer.start_file("skill/zzqX.md", options).unwrap();
+    writer.write_all(b"body").unwrap();
+    writer
+        .start_file(
+            "skill/SKILL.md",
+            SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
+        )
+        .unwrap();
+    writer.write_all(b"manifest").unwrap();
+    writer.finish().unwrap();
+    let mut bytes = output.into_inner();
+    let marker = b"skill/zzqX.md";
+    let offsets = find_all(&bytes, marker);
+    assert_eq!(offsets.len(), 2);
+    bytes[offsets[0] + 9] = 0x82;
+    bytes[offsets[1] + 9] = 0x82;
+    let archive = build_skill_archive(&bytes).unwrap();
+    let mut repacked = ZipArchive::new(Cursor::new(archive.content)).unwrap();
+    let mut data = Vec::new();
+    repacked
+        .by_name("zzq\u{e9}.md")
+        .unwrap()
+        .read_to_end(&mut data)
+        .unwrap();
+    assert_eq!(data, b"body");
+}
+
+#[test]
+fn skill_archive_decodes_a_central_name_as_cp437_when_bit_11_is_clear() {
+    let mut bytes = upload(&[("skill/SKILL.md", b"manifest"), ("skill/zzqXY.md", b"body")]);
+    let marker = b"skill/zzqXY.md";
+    let offsets = find_all(&bytes, marker);
+    assert_eq!(offsets.len(), 2);
+    bytes[offsets[0] + 9] = 0xc3;
+    bytes[offsets[0] + 10] = 0xa9;
+    bytes[offsets[1] + 9] = 0xc3;
+    bytes[offsets[1] + 10] = 0xa9;
+    let archive = build_skill_archive(&bytes).unwrap();
+    let mut repacked = ZipArchive::new(Cursor::new(archive.content)).unwrap();
+    let mut data = Vec::new();
+    repacked
+        .by_name("zzq\u{251c}\u{2310}.md")
+        .unwrap()
+        .read_to_end(&mut data)
+        .unwrap();
+    assert_eq!(data, b"body");
+}
+
+#[test]
+fn skill_archive_rejects_duplicate_central_directory_names() {
+    let mut bytes = upload(&[
+        ("skill/SKILL.md", b"manifest"),
+        ("skill/a1.txt", b"first"),
+        ("skill/a2.txt", b"second"),
+    ]);
+    let marker = b"skill/a2.txt";
+    let offsets = find_all(&bytes, marker);
+    assert_eq!(offsets.len(), 2);
+    bytes[offsets[0]..offsets[0] + marker.len()].copy_from_slice(b"skill/a1.txt");
+    bytes[offsets[1]..offsets[1] + marker.len()].copy_from_slice(b"skill/a1.txt");
+    assert!(build_skill_archive(&bytes).is_none());
 }
 
 #[test]

@@ -1199,6 +1199,7 @@ dependencies = [
  "base64 0.23.1",
  "betterlite-config",
  "bytes",
+ "crc32fast",
  "futures-util",
  "hex",
  "opentelemetry-http",

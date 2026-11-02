@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 use std::io::{Cursor, Read as _, Write as _};
 use std::ops::Range;
+use std::str;
 
 use regex::Regex;
 use serde::Deserialize;
@@ -17,6 +18,29 @@ const FRONTMATTER_PATTERN: &str = r"(?s)^---\s*\n(.*?)\n---\s*(?:\n|$)";
 const LOCAL_HEADER_SIGNATURE: [u8; 4] = [0x50, 0x4b, 0x03, 0x04];
 const LOCAL_HEADER_FIXED_LEN: usize = 30;
 const LOCAL_HEADER_NAME_LEN_RANGE: Range<usize> = 26..28;
+const CENTRAL_HEADER_SIGNATURE: [u8; 4] = [0x50, 0x4b, 0x01, 0x02];
+const CENTRAL_HEADER_FIXED_LEN: usize = 46;
+const CENTRAL_HEADER_FLAGS_RANGE: Range<usize> = 8..10;
+const CENTRAL_HEADER_NAME_LEN_RANGE: Range<usize> = 28..30;
+const LANGUAGE_ENCODING_FLAG: u16 = 0x0800;
+const CP437_HIGH_BYTES: [char; 128] = [
+    '\u{00c7}', '\u{00fc}', '\u{00e9}', '\u{00e2}', '\u{00e4}', '\u{00e0}', '\u{00e5}', '\u{00e7}',
+    '\u{00ea}', '\u{00eb}', '\u{00e8}', '\u{00ef}', '\u{00ee}', '\u{00ec}', '\u{00c4}', '\u{00c5}',
+    '\u{00c9}', '\u{00e6}', '\u{00c6}', '\u{00f4}', '\u{00f6}', '\u{00f2}', '\u{00fb}', '\u{00f9}',
+    '\u{00ff}', '\u{00d6}', '\u{00dc}', '\u{00a2}', '\u{00a3}', '\u{00a5}', '\u{20a7}', '\u{0192}',
+    '\u{00e1}', '\u{00ed}', '\u{00f3}', '\u{00fa}', '\u{00f1}', '\u{00d1}', '\u{00aa}', '\u{00ba}',
+    '\u{00bf}', '\u{2310}', '\u{00ac}', '\u{00bd}', '\u{00bc}', '\u{00a1}', '\u{00ab}', '\u{00bb}',
+    '\u{2591}', '\u{2592}', '\u{2593}', '\u{2502}', '\u{2524}', '\u{2561}', '\u{2562}', '\u{2556}',
+    '\u{2555}', '\u{2563}', '\u{2551}', '\u{2557}', '\u{255d}', '\u{255c}', '\u{255b}', '\u{2510}',
+    '\u{2514}', '\u{2534}', '\u{252c}', '\u{251c}', '\u{2500}', '\u{253c}', '\u{255e}', '\u{255f}',
+    '\u{255a}', '\u{2554}', '\u{2569}', '\u{2566}', '\u{2560}', '\u{2550}', '\u{256c}', '\u{2567}',
+    '\u{2568}', '\u{2564}', '\u{2565}', '\u{2559}', '\u{2558}', '\u{2552}', '\u{2553}', '\u{256b}',
+    '\u{256a}', '\u{2518}', '\u{250c}', '\u{2588}', '\u{2584}', '\u{258c}', '\u{2590}', '\u{2580}',
+    '\u{03b1}', '\u{00df}', '\u{0393}', '\u{03c0}', '\u{03a3}', '\u{03c3}', '\u{00b5}', '\u{03c4}',
+    '\u{03a6}', '\u{0398}', '\u{03a9}', '\u{03b4}', '\u{221e}', '\u{03c6}', '\u{03b5}', '\u{2229}',
+    '\u{2261}', '\u{00b1}', '\u{2265}', '\u{2264}', '\u{2320}', '\u{2321}', '\u{00f7}', '\u{2248}',
+    '\u{00b0}', '\u{2219}', '\u{00b7}', '\u{221a}', '\u{207f}', '\u{00b2}', '\u{25a0}', '\u{00a0}',
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SkillArchive {
@@ -48,18 +72,19 @@ fn flattened_members(
     stored_content: &[u8],
     uploaded: &mut ZipArchive<Cursor<&[u8]>>,
 ) -> Option<Vec<(String, Vec<u8>)>> {
+    if uploaded.has_duplicate_names() {
+        return None;
+    }
     let mut entries = Vec::new();
     let mut unpacked_bytes = 0_u64;
     for index in 0..uploaded.len() {
-        let raw_name = uploaded.name_for_index(index)?.ok()?.into_owned();
-        if raw_name.ends_with('/') {
+        let member = read_validated_member(stored_content, uploaded, index, &mut unpacked_bytes)?;
+        let ArchiveMember::File(path, data) = member else {
             continue;
-        }
+        };
         if entries.len() >= MAX_ARCHIVE_ENTRIES {
             return None;
         }
-        let path = normalize_path(&raw_name)?;
-        let data = read_validated_entry(stored_content, uploaded, index, &mut unpacked_bytes)?;
         entries.push((path, data));
     }
     if entries.is_empty() {
@@ -83,23 +108,75 @@ fn flattened_members(
     Some(flattened)
 }
 
-fn read_validated_entry(
+enum ArchiveMember {
+    Directory,
+    File(String, Vec<u8>),
+}
+
+fn read_validated_member(
     stored_content: &[u8],
     uploaded: &mut ZipArchive<Cursor<&[u8]>>,
     index: usize,
     unpacked_bytes: &mut u64,
-) -> Option<Vec<u8>> {
+) -> Option<ArchiveMember> {
     let mut info = uploaded.by_index(index).ok()?;
-    if !local_header_name_matches(stored_content, info.header_start(), info.name_raw())? {
+    let (central_name_raw, flags) =
+        central_header_name_and_flags(stored_content, info.central_header_start())?;
+    let name = decode_central_name(central_name_raw, flags & LANGUAGE_ENCODING_FLAG != 0)?;
+    if name.ends_with('/') {
+        return Some(ArchiveMember::Directory);
+    }
+    if !local_header_name_matches(stored_content, info.header_start(), central_name_raw)? {
         return None;
     }
+    let path = normalize_path(&name)?;
     *unpacked_bytes = unpacked_bytes.checked_add(info.size())?;
     if *unpacked_bytes > MAX_ARCHIVE_UNPACKED_BYTES {
         return None;
     }
     let mut data = Vec::new();
     info.read_to_end(&mut data).ok()?;
-    Some(data)
+    Some(ArchiveMember::File(path, data))
+}
+
+fn central_header_name_and_flags(
+    stored_content: &[u8],
+    central_header_start: u64,
+) -> Option<(&[u8], u16)> {
+    let start = usize::try_from(central_header_start).ok()?;
+    let fixed = stored_content.get(start..start.checked_add(CENTRAL_HEADER_FIXED_LEN)?)?;
+    let signature: [u8; 4] = fixed.get(..4)?.try_into().ok()?;
+    if signature != CENTRAL_HEADER_SIGNATURE {
+        return None;
+    }
+    let flags_bytes: [u8; 2] = fixed.get(CENTRAL_HEADER_FLAGS_RANGE)?.try_into().ok()?;
+    let name_length_bytes: [u8; 2] = fixed.get(CENTRAL_HEADER_NAME_LEN_RANGE)?.try_into().ok()?;
+    let name_length = usize::from(u16::from_le_bytes(name_length_bytes));
+    let name_start = start.checked_add(CENTRAL_HEADER_FIXED_LEN)?;
+    let name_raw = stored_content.get(name_start..name_start.checked_add(name_length)?)?;
+    Some((name_raw, u16::from_le_bytes(flags_bytes)))
+}
+
+fn decode_central_name(raw: &[u8], is_utf8: bool) -> Option<String> {
+    if is_utf8 {
+        str::from_utf8(raw).ok().map(ToOwned::to_owned)
+    } else {
+        Some(
+            raw.iter()
+                .map(|&byte| {
+                    usize::from(byte).checked_sub(0x80).map_or_else(
+                        || char::from(byte),
+                        |index| {
+                            CP437_HIGH_BYTES
+                                .get(index)
+                                .copied()
+                                .unwrap_or(char::REPLACEMENT_CHARACTER)
+                        },
+                    )
+                })
+                .collect(),
+        )
+    }
 }
 
 fn local_header_name_matches(
