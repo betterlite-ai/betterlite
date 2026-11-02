@@ -49,7 +49,6 @@ scope:
     - crates/betterlite-provider/src/dispatch/**
     - crates/betterlite-server/src/media_providers.rs
     - crates/betterlite-server/src/media_providers/**
-    - crates/betterlite-server/src/lib.rs
     - tools/oracle/cases/providers/media/**
     - tools/oracle/fixtures/media/**
     - tools/oracle/helpers/b046.py

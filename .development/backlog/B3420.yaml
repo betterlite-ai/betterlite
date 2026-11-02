@@ -1,7 +1,7 @@
 id: B3420
 milestone: M5 api families
 title: Eval wire contracts and inherited provider errors
-status: todo
+status: done
 depends_on: [B2202]
 file: tasks/B3420-eval-contracts.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/base_llm/evals/**"
 parent: B096
 split_from: B096
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 506

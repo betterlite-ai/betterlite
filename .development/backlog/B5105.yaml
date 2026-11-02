@@ -1,0 +1,13 @@
+id: B5105
+milestone: M2 routing
+title: A concurrent scenario step times out on the request, not the channel
+status: done
+depends_on: [B300]
+file: tasks/B5105-join-timeout-on-request.yaml
+covers: []
+parent: null
+split_from: null
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 513

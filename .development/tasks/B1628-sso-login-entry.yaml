@@ -30,7 +30,6 @@ description: >-
   config/parser/route lines within 800; no enterprise package code is ported.
 scope:
   paths:
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/sso_login_entry.rs
     - crates/betterlite-server/src/sso_login_entry/**
     - crates/betterlite-server/fuzz/Cargo.toml

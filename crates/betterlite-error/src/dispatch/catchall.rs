@@ -1,7 +1,8 @@
 use crate::dispatch::{RawException, exception_provider_label};
+use crate::error::details::ResponseDetails;
 use crate::error::{ErrorClass, ErrorContext};
 use crate::facts::ProviderErrorFacts;
-use crate::status::status_error_class;
+use crate::status::{response_or_stub, status_error_class};
 
 // the openai-python SDK bug exception_type() checks against str(original_exception), ahead of every status-based fallback
 const BAD_REQUEST_SDK_BUG: &str =
@@ -34,13 +35,15 @@ fn bad_request_sdk_bug(raw: &RawException) -> Option<ErrorClass> {
         body_param: None,
         body_code: None,
     };
-    Some(ErrorClass::BadRequest(Box::new(context)))
+    Some(ErrorClass::BadRequest(Box::new(
+        ResponseDetails::with_status(context, None),
+    )))
 }
 
 // _map_exception_by_status runs first; a synthetic status never outranks this, since it bails out early
 fn status_or_api_connection(raw: &RawException, error_str: &str) -> ErrorClass {
     let exception_provider = exception_provider_label(&raw.custom_llm_provider);
-    let facts = ProviderErrorFacts {
+    let mut facts = ProviderErrorFacts {
         status_code: raw.status_code,
         status_code_is_synthesized: raw.status_code_is_synthesized,
         message: None,
@@ -50,6 +53,10 @@ fn status_or_api_connection(raw: &RawException, error_str: &str) -> ErrorClass {
         litellm_response_headers: None,
         request: None,
     };
+    // _map_exception_by_status runs on the original exception, which always carries a response on the real path
+    if let Some(status_code) = raw.status_code {
+        facts.response = Some(response_or_stub(&facts, status_code));
+    }
     if let Some(class) = status_error_class(
         &facts,
         error_str,

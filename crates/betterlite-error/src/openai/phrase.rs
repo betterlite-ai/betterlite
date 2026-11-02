@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
 
 use super::{OpenaiExceptionInput, flat_body, openai_context};
-use crate::error::details::{ApiDetails, RateLimitDetails, TimeoutDetails, TimeoutStatus};
+use crate::error::details::{
+    ApiDetails, RateLimitDetails, ResponseDetails, TimeoutDetails, TimeoutStatus,
+};
 use crate::error::{ErrorClass, ErrorContext};
 use crate::facts::ExceptionCheckers;
 use crate::rate_limit::RateLimitCategory;
@@ -104,29 +106,39 @@ const fn phrase_shape(family: PhraseFamily) -> (&'static str, &'static str, bool
     }
 }
 
-// the ErrorClass variant each family raises, over the one context every family builds the same way
-fn phrase_variant(family: PhraseFamily, context: ErrorContext) -> ErrorClass {
+fn rate_limit_class(context: ErrorContext) -> ErrorClass {
+    ErrorClass::RateLimit(Box::new(RateLimitDetails {
+        context,
+        category: RateLimitCategory::VendorRateLimit,
+        dimension: None,
+        headers: BTreeMap::new(),
+    }))
+}
+
+// status is the provider's status on the branches _map_openai_exception passes its response to
+fn phrase_variant(family: PhraseFamily, context: ErrorContext, status: Option<u16>) -> ErrorClass {
     match family {
-        PhraseFamily::RateLimit | PhraseFamily::RequestTooLarge => {
-            ErrorClass::RateLimit(Box::new(RateLimitDetails {
-                context,
-                category: RateLimitCategory::VendorRateLimit,
-                dimension: None,
-                headers: BTreeMap::new(),
-            }))
+        PhraseFamily::RateLimit | PhraseFamily::RequestTooLarge => rate_limit_class(context),
+        PhraseFamily::ContextWindow => ErrorClass::ContextWindowExceeded(Box::new(
+            ResponseDetails::with_status(context, status),
+        )),
+        PhraseFamily::ModelNotFound => {
+            ErrorClass::NotFound(Box::new(ResponseDetails::with_status(context, status)))
         }
-        PhraseFamily::ContextWindow => ErrorClass::ContextWindowExceeded(Box::new(context)),
-        PhraseFamily::ModelNotFound => ErrorClass::NotFound(Box::new(context)),
         PhraseFamily::TimeoutString => ErrorClass::Timeout(Box::new(TimeoutDetails {
             context,
             original_status: TimeoutStatus(408),
         })),
-        PhraseFamily::ContentPolicy => ErrorClass::ContentPolicyViolation(Box::new(context)),
+        PhraseFamily::ContentPolicy => ErrorClass::ContentPolicyViolation(Box::new(
+            ResponseDetails::with_status(context, status),
+        )),
         PhraseFamily::EncryptedContent | PhraseFamily::InvalidRequest => {
-            ErrorClass::BadRequest(Box::new(context))
+            ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(context, status)))
         }
         PhraseFamily::InternalServerText => ErrorClass::InternalServer(Box::new(context)),
-        PhraseFamily::MissingCredential => ErrorClass::Authentication(Box::new(context)),
+        PhraseFamily::MissingCredential => {
+            ErrorClass::Authentication(Box::new(ResponseDetails::with_status(context, status)))
+        }
         PhraseFamily::MistralStreaming => ErrorClass::Api(Box::new(ApiDetails {
             context,
             status: 500,
@@ -149,5 +161,8 @@ pub(super) fn phrase_error_class(
         super::NO_BODY
     };
     let context = openai_context(input, text, body);
-    phrase_variant(family, context)
+    let status = (!input.status_code_is_synthesized)
+        .then_some(input.status_code)
+        .flatten();
+    phrase_variant(family, context, status)
 }

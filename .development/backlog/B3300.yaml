@@ -1,7 +1,7 @@
 id: B3300
 milestone: M5 api families
 title: OCR response contracts and proxy request decoding
-status: todo
+status: done
 depends_on: []
 file: tasks/B3300-ocr-contracts-and-decoding.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/ocr_endpoints/endpoints.py"
 parent: B092
 split_from: B092
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 507

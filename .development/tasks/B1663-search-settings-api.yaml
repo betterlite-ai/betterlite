@@ -37,7 +37,6 @@ description: >-
   additions within 775 changed lines.
 scope:
   paths:
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/search_settings_routes.rs
     - crates/betterlite-server/src/search_settings_routes/**
     - crates/betterlite-server/fuzz/Cargo.toml

@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::error::details::{RateLimitDetails, TimeoutDetails, TimeoutStatus};
+use crate::error::details::{RateLimitDetails, ResponseDetails, TimeoutDetails, TimeoutStatus};
 use crate::error::{ErrorClass, ErrorContext};
 use crate::facts::{ExceptionCheckers, ProviderErrorFacts};
 use crate::parse::get_body_error_code;
@@ -23,7 +23,8 @@ enum Family {
     ServiceUnavailable,
 }
 
-type PhraseRule = (&'static [&'static str], Family, &'static str);
+// the fourth field overrides the response status this rule's httpx.Response hardcodes; None means the class default applies, since every other rule's hardcoded status already equals its class default
+type PhraseRule = (&'static [&'static str], Family, &'static str, Option<u16>);
 
 // branch-1153 and branch-1167, tried before the shared context-window checker
 const EARLY_PHRASE_RULES: &[PhraseRule] = &[
@@ -34,11 +35,13 @@ const EARLY_PHRASE_RULES: &[PhraseRule] = &[
         ],
         Family::BadRequest,
         "the Vertex AI project could not be resolved",
+        None,
     ),
     (
         &["400 Request payload size exceeds"],
         Family::ContextWindowExceeded,
         "the request payload exceeds Vertex AI's size limit",
+        None,
     ),
 ];
 
@@ -48,16 +51,20 @@ const MID_PHRASE_RULES: &[PhraseRule] = &[
         &["None Unknown Error.", "Content has no parts."],
         Family::InternalServer,
         "Vertex AI returned an empty or unparsable response",
+        None,
     ),
     (
         &["API key not valid."],
         Family::Authentication,
         "the Vertex AI API key is not valid",
+        None,
     ),
     (
         &["403"],
         Family::BadRequest,
         "Vertex AI rejected the request",
+        // this branch raises BadRequestError but hardcodes response=httpx.Response(status_code=403, ...), overriding BadRequest's own 400 default regardless of the original exception's status_code
+        Some(403),
     ),
 ];
 
@@ -70,6 +77,7 @@ const LATE_PHRASE_RULES: &[PhraseRule] = &[
         ],
         Family::ContentPolicyViolation,
         "Vertex AI blocked the response",
+        None,
     ),
     (
         &[
@@ -81,35 +89,42 @@ const LATE_PHRASE_RULES: &[PhraseRule] = &[
         ],
         Family::RateLimit,
         "Vertex AI's quota for this request was exceeded",
+        None,
     ),
 ];
 
-// branch-1272, tried last, after the status-dependent envelope check in classify_envelope
+// branch-1272, tried last, after the status-dependent envelope check below
 const FINAL_PHRASE_RULES: &[PhraseRule] = &[(
     &["500 Internal Server Error", "The model is overloaded."],
     Family::InternalServer,
     "Vertex AI reported an internal server error",
+    None,
 )];
 
 // the first rule in the slice whose phrases match wins, mirroring an elif chain over literal substrings
-fn phrase_family(error_str: &str, rules: &[PhraseRule]) -> Option<(Family, &'static str)> {
-    for (phrases, family, reason) in rules {
+fn phrase_family(
+    error_str: &str,
+    rules: &[PhraseRule],
+) -> Option<(Family, &'static str, Option<u16>)> {
+    for (phrases, family, reason, status_override) in rules {
         if phrases.iter().any(|phrase| error_str.contains(phrase)) {
-            return Some((*family, reason));
+            return Some((*family, reason, *status_override));
         }
     }
     None
 }
 
 // branch-1250: a 429 wrapped inside a 5xx envelope, LiteLLM's only predicate that also reads status_code
-fn classify_envelope(error_str: &str, status_code: Option<u16>) -> Option<(Family, &'static str)> {
-    let is_5xx_wrapped_429 = status_code.is_some_and(|status| (500..600).contains(&status))
-        && get_body_error_code(error_str) == Some(429);
-    is_5xx_wrapped_429.then_some((
-        Family::RateLimit,
-        "the gateway wrapped a 429 inside a 5xx envelope",
-    ))
+fn is_5xx_wrapped_429(error_str: &str, status_code: Option<u16>) -> bool {
+    status_code.is_some_and(|status| (500..600).contains(&status))
+        && get_body_error_code(error_str) == Some(429)
 }
+
+const ENVELOPE_RATE_LIMIT: (Family, &str, Option<u16>) = (
+    Family::RateLimit,
+    "the gateway wrapped a 429 inside a 5xx envelope",
+    None,
+);
 
 // the status_code fallback LiteLLM only reaches once every error_str predicate above has missed
 const fn classify_by_status(status_code: u16) -> Option<(Family, &'static str)> {
@@ -150,19 +165,22 @@ pub fn map_vertex_exception(
     model: Option<String>,
 ) -> Option<ErrorClass> {
     // mirrors _map_vertex_exception's elif chain: the error_str predicates run first and win over status_code
-    let (family, reason) = phrase_family(error_str, EARLY_PHRASE_RULES)
+    let (family, reason, status_override) = phrase_family(error_str, EARLY_PHRASE_RULES)
         .or_else(|| {
             // branch-1173: the shared context-window checker other tasks' predicates already implement and reuse
             ExceptionCheckers::context_window(error_str).then_some((
                 Family::ContextWindowExceeded,
                 "the request exceeded the model's context window",
+                None,
             ))
         })
         .or_else(|| phrase_family(error_str, MID_PHRASE_RULES))
         .or_else(|| phrase_family(error_str, LATE_PHRASE_RULES))
-        .or_else(|| classify_envelope(error_str, error.status_code))
+        .or_else(|| is_5xx_wrapped_429(error_str, error.status_code).then_some(ENVELOPE_RATE_LIMIT))
         .or_else(|| phrase_family(error_str, FINAL_PHRASE_RULES))
-        .or_else(|| classify_by_status(error.status_code?))?;
+        .or_else(|| {
+            classify_by_status(error.status_code?).map(|(family, reason)| (family, reason, None))
+        })?;
     let context = ErrorContext {
         message: format!("{custom_llm_provider}: {reason}"),
         model,
@@ -173,28 +191,54 @@ pub fn map_vertex_exception(
         body_param: None,
         body_code: None,
     };
-    Some(build_error_class(family, context))
+    Some(build_error_class(family, context, status_override))
 }
 
-fn build_error_class(family: Family, context: ErrorContext) -> ErrorClass {
+fn rate_limit_vertex_class(context: ErrorContext) -> ErrorClass {
+    ErrorClass::RateLimit(Box::new(RateLimitDetails {
+        context,
+        category: RateLimitCategory::VendorRateLimit,
+        dimension: None,
+        headers: BTreeMap::new(),
+    }))
+}
+
+fn timeout_vertex_class(context: ErrorContext) -> ErrorClass {
+    ErrorClass::Timeout(Box::new(TimeoutDetails {
+        context,
+        original_status: TimeoutStatus::default(),
+    }))
+}
+
+fn build_error_class(
+    family: Family,
+    context: ErrorContext,
+    status_override: Option<u16>,
+) -> ErrorClass {
     match family {
-        Family::BadRequest => ErrorClass::BadRequest(Box::new(context)),
-        Family::ContextWindowExceeded => ErrorClass::ContextWindowExceeded(Box::new(context)),
+        Family::BadRequest => ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(
+            context,
+            status_override,
+        ))),
+        Family::ContextWindowExceeded => ErrorClass::ContextWindowExceeded(Box::new(
+            ResponseDetails::with_status(context, status_override),
+        )),
         Family::InternalServer => ErrorClass::InternalServer(Box::new(context)),
-        Family::Authentication => ErrorClass::Authentication(Box::new(context)),
-        Family::ContentPolicyViolation => ErrorClass::ContentPolicyViolation(Box::new(context)),
-        Family::RateLimit => ErrorClass::RateLimit(Box::new(RateLimitDetails {
+        Family::Authentication => ErrorClass::Authentication(Box::new(
+            ResponseDetails::with_status(context, status_override),
+        )),
+        Family::ContentPolicyViolation => ErrorClass::ContentPolicyViolation(Box::new(
+            ResponseDetails::with_status(context, status_override),
+        )),
+        Family::RateLimit => rate_limit_vertex_class(context),
+        Family::PermissionDenied => ErrorClass::PermissionDenied(Box::new(
+            ResponseDetails::with_status(context, status_override),
+        )),
+        Family::NotFound => ErrorClass::NotFound(Box::new(ResponseDetails::with_status(
             context,
-            category: RateLimitCategory::VendorRateLimit,
-            dimension: None,
-            headers: BTreeMap::new(),
-        })),
-        Family::PermissionDenied => ErrorClass::PermissionDenied(Box::new(context)),
-        Family::NotFound => ErrorClass::NotFound(Box::new(context)),
-        Family::Timeout => ErrorClass::Timeout(Box::new(TimeoutDetails {
-            context,
-            original_status: TimeoutStatus::default(),
-        })),
+            status_override,
+        ))),
+        Family::Timeout => timeout_vertex_class(context),
         Family::ApiConnection => ErrorClass::ApiConnection(Box::new(context)),
         Family::ServiceUnavailable => ErrorClass::ServiceUnavailable(Box::new(context)),
     }

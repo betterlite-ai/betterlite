@@ -57,7 +57,6 @@ scope:
     - crates/betterlite-models/src/savings_pricing.rs
     - crates/betterlite-models/src/savings_pricing/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/savings.rs
     - crates/betterlite-server/src/savings/**
     - crates/betterlite-server/src/state.rs

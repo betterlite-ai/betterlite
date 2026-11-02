@@ -28,13 +28,10 @@ scope:
   paths:
   - crates/betterlite-router/src/llm_classifier.rs
   - crates/betterlite-router/src/llm_classifier/**
-  - crates/betterlite-server/src/lib.rs
   - crates/betterlite-server/src/routes.rs
   - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
   - crates/betterlite-server/src/state/**
-  - crates/betterlite-server/src/routing/mod.rs
-  - crates/betterlite-server/src/routing/mod/**
   - crates/betterlite-server/src/routing/llm_classifier.rs
   - crates/betterlite-server/src/routing/llm_classifier/**
   - crates/betterlite-router/src/strategy.rs

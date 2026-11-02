@@ -82,7 +82,6 @@ scope:
   paths:
     - crates/betterlite-server/src/user_delete.rs
     - crates/betterlite-server/src/user_delete/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes.rs
     - crates/betterlite-server/src/routes/**

@@ -227,6 +227,19 @@ fn aws_errors_behavior_tests_behavior(
     }
 }
 
+#[rstest]
+#[case::access_denied_400("AccessDeniedException: no permission", Some(400), 400)]
+#[case::access_denied_422("AccessDeniedException: no permission", Some(422), 422)]
+fn response_branches_answer_the_provider_status(
+    #[case] error_str: &str,
+    #[case] status_code: Option<u16>,
+    #[case] expected_status: u16,
+) {
+    let class = map_bedrock_exception(&input("bedrock", error_str, status_code))
+        .expect("the AccessDeniedException predicate must match");
+    assert_eq!(class.metadata().status_code, expected_status);
+}
+
 #[test]
 fn message_carries_the_family_specific_reason() {
     let mapped = map_bedrock_exception(&input(

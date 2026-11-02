@@ -124,6 +124,15 @@ fn missing_message_falls_back_to_error_str_instead_of_panicking() {
     assert_eq!(details.message, "nlp_cloud: boom");
 }
 
+#[rstest]
+#[case::status_406(406)]
+#[case::status_403(403)]
+fn response_branches_answer_the_provider_status(#[case] status: u16) {
+    let class =
+        map_nlp_cloud_exception(&input("boom", Some(status))).expect("expected a classification");
+    assert_eq!(class.metadata().status_code, status);
+}
+
 #[test]
 fn timeout_default_ignores_the_original_522_and_524_status() {
     // Timeout() never receives exception_status_code here, so it defaults to 408 regardless of the HTTP status

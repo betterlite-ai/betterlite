@@ -49,7 +49,6 @@ scope:
   paths:
     - crates/betterlite-server/src/model_ptu_pricing.rs
     - crates/betterlite-server/src/model_ptu_pricing/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/src/helpers/server/model_ptu_pricing.rs
     - tools/oracle/src/helpers/server/model_ptu_pricing/**
