@@ -95,29 +95,12 @@ async fn update_lease<C>(
 where
     C: GenericClient + Sync,
 {
-    let encoded = encode(status)?;
+    let encoded =
+        serde_json::to_string(status).map_err(|source| DbError::InvalidRecord { source })?;
     let mut params: Vec<&(dyn ToSql + Sync)> = vec![&SYNC_KEY, &owner, &encoded];
     params.extend_from_slice(extra);
     let rows = client.query(sql, &params).await.map_err(backend)?;
     Ok(!rows.is_empty())
-}
-
-async fn discard<C>(client: &C, sql: &str, key: &str) -> Result<(), DbError<serde_json::Error>>
-where
-    C: GenericClient + Sync,
-{
-    client.execute(sql, &[&key]).await.map_err(backend)?;
-    Ok(())
-}
-
-fn encode<T>(value: &T) -> Result<String, DbError<serde_json::Error>>
-where
-    T: Serialize,
-{
-    match serde_json::to_string(value) {
-        Ok(encoded) => Ok(encoded),
-        Err(source) => Err(DbError::InvalidRecord { source }),
-    }
 }
 
 pub struct FinishClaim<'claim> {
@@ -143,7 +126,8 @@ impl SyncStore {
             status: status.clone(),
             cancel: false,
         };
-        let encoded = encode(&state)?;
+        let encoded =
+            serde_json::to_string(&state).map_err(|source| DbError::InvalidRecord { source })?;
         let interval = scheduled_interval.to_string();
         let rows = client
             .query(ACQUIRE_SQL, &[&SYNC_KEY, &encoded, &interval])
@@ -160,8 +144,10 @@ impl SyncStore {
     where
         C: GenericClient + Sync,
     {
+        let encoded =
+            serde_json::to_string(status).map_err(|source| DbError::InvalidRecord { source })?;
         let affected = client
-            .execute(HEARTBEAT_SQL, &[&SYNC_KEY, &owner, &encode(status)?])
+            .execute(HEARTBEAT_SQL, &[&SYNC_KEY, &owner, &encoded])
             .await
             .map_err(backend)?;
         Ok(affected > 0)
@@ -179,7 +165,11 @@ impl SyncStore {
             status,
             report,
         } = claim;
-        let encoded_report = report.map(encode).transpose()?;
+        let encoded_report = report
+            .map(|value| {
+                serde_json::to_string(value).map_err(|source| DbError::InvalidRecord { source })
+            })
+            .transpose()?;
         update_lease(
             client,
             FINISH_SQL,
@@ -223,7 +213,10 @@ impl SyncStore {
     where
         C: GenericClient + Sync,
     {
-        discard(client, CANCEL_SQL, SYNC_KEY).await?;
+        client
+            .execute(CANCEL_SQL, &[&SYNC_KEY])
+            .await
+            .map_err(backend)?;
         Ok(())
     }
 
@@ -231,7 +224,10 @@ impl SyncStore {
     where
         C: GenericClient + Sync,
     {
-        discard(client, CLEAR_REPORT_SQL, REPORT_KEY).await?;
+        client
+            .execute(CLEAR_REPORT_SQL, &[&REPORT_KEY])
+            .await
+            .map_err(backend)?;
         Ok(())
     }
 }
