@@ -52,6 +52,15 @@ fn record_call<T>(calls: &Arc<Mutex<Vec<T>>>, call: T) {
 }
 
 #[cfg(test)]
+fn record_and_succeed<T>(calls: &Arc<Mutex<Vec<T>>>, call: T) -> Result<(), MockError> {
+    calls
+        .lock()
+        .map_err(|_poison| MockError("mock calls mutex was poisoned".to_owned()))?
+        .push(call);
+    Ok(())
+}
+
+#[cfg(test)]
 #[derive(Clone, Default)]
 struct MockConfigCalls {
     run: Arc<Mutex<Vec<(Value, String)>>>,
@@ -171,8 +180,7 @@ impl SandboxRegistry for MockRegistry {
         _params: &SandboxToolParams,
         container: &Value,
     ) -> impl Future<Output = Result<(), MockError>> {
-        record_call(&self.calls.delete, container.clone());
-        ready(Ok(()))
+        ready(record_and_succeed(&self.calls.delete, container.clone()))
     }
 }
 
