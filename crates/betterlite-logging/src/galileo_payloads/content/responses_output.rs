@@ -167,10 +167,8 @@ fn web_search_action_search_dump(fields: &IndexMap<String, Json>) -> Option<Json
             }
         })?),
     };
-    let mut with_sources = fields.clone();
-    with_sources.insert("sources".to_owned(), sources);
     required_then_typed(
-        &with_sources,
+        &with_replaced(fields, &[("sources", sources)]),
         &[],
         "search",
         &["queries", "query", "sources"],
