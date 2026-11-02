@@ -32,6 +32,42 @@ fn is_blank_finish_reason(value: &Value) -> bool {
     }
 }
 
+// Ported from _FINISH_REASON_MAP in litellm/litellm_core_utils/core_helpers.py, defaulting to "stop" when the raw value has no entry.
+fn mapped_finish_reason(raw: &str) -> &'static str {
+    match raw {
+        "max_tokens" | "MAX_TOKENS" | "compaction" | "length" => "length",
+        "tool_use" | "tool_calls" => "tool_calls",
+        "refusal"
+        | "ERROR_TOXIC"
+        | "SAFETY"
+        | "RECITATION"
+        | "LANGUAGE"
+        | "OTHER"
+        | "BLOCKLIST"
+        | "PROHIBITED_CONTENT"
+        | "SPII"
+        | "IMAGE_SAFETY"
+        | "IMAGE_PROHIBITED_CONTENT"
+        | "NO_IMAGE"
+        | "IMAGE_RECITATION"
+        | "IMAGE_OTHER"
+        | "sensitive"
+        | "guardrail_intervened"
+        | "content_filter"
+        | "content_filtered" => "content_filter",
+        "function_call" => "function_call",
+        _ => "stop",
+    }
+}
+
+// Only a truthy string gets mapped; any other truthy JSON scalar has no table entry and defaults to "stop".
+fn resolve_finish_reason(raw: Option<Value>) -> Value {
+    match raw.filter(|value| !is_blank_finish_reason(value)) {
+        Some(Value::String(text)) => Value::String(mapped_finish_reason(&text).to_owned()),
+        Some(_) | None => Value::String("stop".to_owned()),
+    }
+}
+
 impl TextCompletionChoice {
     // Message/Choices always carry tool_calls/function_call/finish_reason (default "stop"), but logprobs only when given.
     fn into_chat_choice(self, index: usize) -> Value {
@@ -46,9 +82,7 @@ impl TextCompletionChoice {
         let mut choice = Map::new();
         choice.insert(
             "finish_reason".to_owned(),
-            self.finish_reason
-                .filter(|value| !is_blank_finish_reason(value))
-                .unwrap_or_else(|| Value::String("stop".to_owned())),
+            resolve_finish_reason(self.finish_reason),
         );
         choice.insert("index".to_owned(), Value::from(index));
         choice.insert("message".to_owned(), Value::Object(message));

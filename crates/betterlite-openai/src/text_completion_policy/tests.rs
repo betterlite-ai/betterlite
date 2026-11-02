@@ -234,6 +234,23 @@ fn text_completion_policy_cases(#[case] case: u8) {
             assert_eq!(result_falsy["choices"][1]["finish_reason"], json!("stop"));
             assert_eq!(result_falsy["choices"][2]["finish_reason"], json!("stop"));
 
+            let mapped_finish_reasons = json!({
+                "choices": [
+                    {"text": "a", "finish_reason": "tool_use"},
+                    {"text": "b", "finish_reason": "stop_sequence"},
+                    {"text": "c", "finish_reason": "my_custom_reason"},
+                ],
+            });
+            let result_mapped =
+                reply::to_chat_model_response(Some(mapped_finish_reasons), Some(Map::new()))
+                    .expect("raw provider reasons map through the table");
+            assert_eq!(
+                result_mapped["choices"][0]["finish_reason"],
+                json!("tool_calls")
+            );
+            assert_eq!(result_mapped["choices"][1]["finish_reason"], json!("stop"));
+            assert_eq!(result_mapped["choices"][2]["finish_reason"], json!("stop"));
+
             let explicit_null_logprobs = json!({"choices": [{"text": "d", "logprobs": null}]});
             let result_explicit_null =
                 reply::to_chat_model_response(Some(explicit_null_logprobs), Some(Map::new()))

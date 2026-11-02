@@ -13,6 +13,14 @@ call:
           finish_reason: stop
           index: 0
           logprobs: null
+        - text: world
+          finish_reason: stop_sequence
+          index: 1
+          logprobs: null
+        - text: again
+          finish_reason: tool_use
+          index: 2
+          logprobs: null
         usage:
           prompt_tokens: 5
           completion_tokens: 3
