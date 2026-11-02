@@ -1633,6 +1633,7 @@ name = "betterlite-server"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "betterlite-billing",
  "betterlite-config",
  "betterlite-error",
  "betterlite-http",
@@ -1654,10 +1655,12 @@ dependencies = [
  "serde_json",
  "serde_with",
  "subtle",
+ "tempfile",
  "thiserror",
  "tokio",
  "tower",
  "tracing",
+ "tracing-subscriber",
  "url",
  "uuid",
 ]
