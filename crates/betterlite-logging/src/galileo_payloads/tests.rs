@@ -569,6 +569,8 @@ fn check_responses_api_output_projection() {
             {"type": "reasoning", "id": "rs_3", "summary": [{"text": "s"}]},
             {"type": "web_search_call", "id": "ws_1", "status": "completed", "action": {"type": "search", "query": "q"}},
             {"type": "web_search_call", "id": "ws_2", "status": "completed", "action": {"type": "bogus"}},
+            {"type": "web_search_call", "id": "ws_3", "status": "completed", "action": {"type": "find_in_page", "pattern": "cat", "url": "http://example.com"}},
+            {"type": "web_search_call", "id": "ws_4", "status": "completed", "action": {"type": "mystery", "pattern": "x", "url": "http://y"}},
             {"type": "custom_tool_call", "call_id": "c1", "input": "x", "name": "t", "caller": {"type": "program", "caller_id": "p1"}},
             {"type": "custom_tool_call", "call_id": "c2", "input": "x", "name": "t", "caller": {"type": "bogus"}}
         ]"#);
@@ -591,10 +593,16 @@ fn check_responses_api_output_projection() {
             {"type": "reasoning", "id": "rs_3", "summary": [{"text": "s"}]},
             {"id": "ws_1", "action": {"type": "search", "queries": null, "query": "q", "sources": null}, "status": "completed", "type": "web_search_call"},
             {"type": "web_search_call", "id": "ws_2", "status": "completed", "action": {"type": "bogus"}},
+            {"id": "ws_3", "action": {"pattern": "cat", "type": "find_in_page", "url": "http://example.com"}, "status": "completed", "type": "web_search_call"},
+            {"type": "web_search_call", "id": "ws_4", "status": "completed", "action": {"type": "mystery", "pattern": "x", "url": "http://y"}},
             {"call_id": "c1", "input": "x", "name": "t", "type": "custom_tool_call", "id": null, "caller": {"caller_id": "p1", "type": "program"}, "namespace": null},
             {"type": "custom_tool_call", "call_id": "c2", "input": "x", "name": "t", "caller": {"type": "bogus"}}
         ]"#);
     assert_eq!(parsed, expected);
+    // A valid find_in_page action's projected and raw field sets are equal as parsed JSON; only the text shows typed_sequence's declared order.
+    assert!(response_output.contains(
+        r#""action": {"pattern": "cat", "type": "find_in_page", "url": "http://example.com"}"#
+    ));
 }
 
 // Rerank uses its own langfuse-style prompt (just the messages, no functions/tools) rather than the shared build_prompt, and that prompt is echoed as the span's messages_for_span.
