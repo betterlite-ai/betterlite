@@ -41,14 +41,18 @@ impl LlmResponse {
     #[must_use]
     pub fn to_record(&self, extra_messages: Option<Json>) -> IndexMap<String, Json> {
         let mut record = IndexMap::new();
-        record.insert(
-            "latency_ms".to_owned(),
-            Json::Number(serde_json::Number::from(self.latency_ms)),
-        );
-        record.insert(
-            "status_code".to_owned(),
-            Json::Number(serde_json::Number::from(self.status_code)),
-        );
+        for (key, value) in [
+            ("latency_ms", self.latency_ms),
+            ("status_code", self.status_code),
+            ("num_input_tokens", self.num_input_tokens),
+            ("num_output_tokens", self.num_output_tokens),
+            ("num_total_tokens", self.num_total_tokens),
+        ] {
+            record.insert(
+                key.to_owned(),
+                Json::Number(serde_json::Number::from(value)),
+            );
+        }
         record.insert("input_text".to_owned(), Json::Text(self.input_text.clone()));
         record.insert(
             "output_text".to_owned(),
@@ -56,18 +60,6 @@ impl LlmResponse {
         );
         record.insert("node_type".to_owned(), Json::Text(self.node_type.clone()));
         record.insert("model".to_owned(), Json::Text(self.model.clone()));
-        record.insert(
-            "num_input_tokens".to_owned(),
-            Json::Number(serde_json::Number::from(self.num_input_tokens)),
-        );
-        record.insert(
-            "num_output_tokens".to_owned(),
-            Json::Number(serde_json::Number::from(self.num_output_tokens)),
-        );
-        record.insert(
-            "num_total_tokens".to_owned(),
-            Json::Number(serde_json::Number::from(self.num_total_tokens)),
-        );
         self.insert_optional_fields(&mut record);
         if let Some(messages) = extra_messages {
             record.insert("messages".to_owned(), messages);

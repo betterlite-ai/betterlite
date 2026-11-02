@@ -87,14 +87,6 @@ fn block_text_or_default(block: &Json) -> String {
     }
 }
 
-fn push_block_text(text: &mut String, block: &Json) {
-    if let Json::Object(block_fields) = block
-        && let Some(Json::Text(block_text)) = block_fields.get("text")
-    {
-        text.push_str(block_text);
-    }
-}
-
 fn push_search_result_text(text: &mut String, fields: &IndexMap<String, Json>) {
     for key in ["source", "title"] {
         if let Some(Json::Text(value)) = fields.get(key) {
@@ -103,7 +95,7 @@ fn push_search_result_text(text: &mut String, fields: &IndexMap<String, Json>) {
     }
     if let Some(Json::List(blocks)) = fields.get("content") {
         for block in blocks {
-            push_block_text(text, block);
+            text.push_str(&block_text_or_default(block));
         }
     }
     if let Some(citations) = fields
