@@ -119,10 +119,12 @@ def _run_default(input_value: dict[str, Json]) -> Json:
 def _run_openai(input_value: dict[str, Json]) -> Json:
     image_count = cast(int, input_value.get("image_count", 1))
     usage_value = cast("dict[str, Json] | None", input_value.get("usage"))
-    image_response = ImageResponse.model_construct(
-        created=0,
-        data=_image_objects(image_count),
-        usage=None if usage_value is None else _usage_view(usage_value),
+    image_response = ImageResponse.model_construct(created=0, data=_image_objects(image_count))
+    # A plain attribute set, not model_construct(usage=...): a chat Usage assigned here
+    # matches how litellm's own handlers attach usage, and skips openai._models.construct's
+    # union-type cache, which cannot weak-reference a `X | None` annotation on this Python build.
+    image_response.usage = (
+        None if usage_value is None else cast(ImageUsage, _usage_view(usage_value))
     )
     cost = openai_cost_calculator(
         model=cast(str, input_value["model"]),
@@ -140,8 +142,10 @@ def _run_azure(input_value: dict[str, Json]) -> Json:
     image_response = ImageResponse.model_construct(
         created=0,
         data=_image_objects(image_count),
-        usage=None if usage_value is None else _usage_view(usage_value),
         size=cast("str | None", billing.get("size")),
+    )
+    image_response.usage = (
+        None if usage_value is None else cast(ImageUsage, _usage_view(usage_value))
     )
     cost = azure_cost_calculator(
         model=cast(str, input_value["model"]),

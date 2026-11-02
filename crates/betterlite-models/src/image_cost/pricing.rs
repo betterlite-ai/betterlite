@@ -73,15 +73,18 @@ pub fn input_cost_per_pixel(
 
 // A declared `float | None` field read without any string tolerance: any other JSON shape names the field as a type mismatch instead of being coerced.
 pub fn raw_price(record: &PriceRecord, key: &str) -> Result<Option<Decimal>, ImageCostError> {
-    match record.get(key) {
-        None | Some(Scalar::Null) => Ok(None),
-        Some(Scalar::Number(number)) => Ok(Some(parse_decimal_lexeme(&number.to_string())?)),
-        Some(Scalar::Bool(_) | Scalar::Text(_) | Scalar::Array(_) | Scalar::Object(_)) => {
-            Err(ImageCostError::WrongFieldType {
-                field: key.to_owned(),
-            })
-        }
+    let Some(scalar) = record.get(key) else {
+        return Ok(None);
+    };
+    if matches!(scalar, Scalar::Null) {
+        return Ok(None);
     }
+    let Scalar::Number(number) = scalar else {
+        return Err(ImageCostError::WrongFieldType {
+            field: key.to_owned(),
+        });
+    };
+    Ok(Some(parse_decimal_lexeme(&number.to_string())?))
 }
 
 // Mirrors _get_cost_per_unit's default_value=None path: a malformed string, an array or an object is absent, letting the caller's own fallback apply instead of becoming a hard zero.
@@ -129,8 +132,8 @@ fn is_decimal_mantissa(text: &str) -> bool {
         && (frac_part.is_empty() || is_underscored_digits(frac_part))
 }
 
-// PEP 515: a digit run may carry single underscores between two digits, never leading, trailing or doubled.
-fn is_underscored_digits(text: &str) -> bool {
+// PEP 515: a digit run may carry single underscores between two digits, never leading, trailing or doubled. Shared with default_calculator's int-literal grammar, which has the same rule.
+pub(super) fn is_underscored_digits(text: &str) -> bool {
     let bytes = text.as_bytes();
     let (Some(&first), Some(&last)) = (bytes.first(), bytes.last()) else {
         return false;

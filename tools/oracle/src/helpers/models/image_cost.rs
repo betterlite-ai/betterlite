@@ -66,8 +66,19 @@ fn image_cost_error(error: &ImageCostError) -> Box<HelperError> {
     })
 }
 
-fn run_default(fields: &input::DefaultInput) -> crate::helpers::HelperResult {
-    let cost = default_image_cost_calculator(
+// A macro_rules body is an opaque token tree, not a parsed fn, so the shared skeleton lives here once.
+macro_rules! run_op {
+    ($name:ident, $input:ty, |$fields:ident| $calculator:expr, |$value:ident| $format:expr) => {
+        fn $name($fields: &$input) -> crate::helpers::HelperResult {
+            let $value = $calculator.map_err(|error| image_cost_error(&error))?;
+            Ok(json!({ "cost": $format }))
+        }
+    };
+}
+run_op!(
+    run_default,
+    input::DefaultInput,
+    |fields| default_image_cost_calculator(
         &DefaultImageCostRequest {
             model: &fields.model,
             custom_llm_provider: fields.custom_llm_provider.as_deref(),
@@ -77,75 +88,73 @@ fn run_default(fields: &input::DefaultInput) -> crate::helpers::HelperResult {
             model_info: fields.model_info.as_ref(),
         },
         &NullLookup,
-    )
-    .map_err(|error| image_cost_error(&error))?;
-    Ok(json!({ "cost": cost.normalize().to_string() }))
-}
-
-fn run_openai(fields: &input::OpenaiInput) -> crate::helpers::HelperResult {
-    let view = fields
-        .usage
-        .clone()
-        .map(input::UsageViewInput::into_view)
-        .transpose()?;
-    let database = TimeZoneDatabase::from_env();
-    let cost = openai::cost_calculator(
-        &OpenAiImageCostRequest {
-            model: &fields.model,
-            custom_llm_provider: fields.custom_llm_provider.as_deref(),
-            model_info: fields.model_info.as_ref(),
-            image_count: fields.image_count,
-            usage: view.as_ref(),
-            moment: fields.moment,
-        },
-        &NullLookup,
-        &database,
-    )
-    .map_err(|error| image_cost_error(&error))?;
-    Ok(json!({ "cost": cost.normalize().to_string() }))
-}
-
-fn run_azure(fields: &input::AzureInput) -> crate::helpers::HelperResult {
-    let width = input::raw_value(fields.width.as_ref())?;
-    let height = input::raw_value(fields.height.as_ref())?;
-    let billing = fields.billing.clone().into_billing()?;
-    let database = TimeZoneDatabase::from_env();
-    let cost = azure::cost_calculator(
-        &AzureImageCostRequest {
-            model: &fields.model,
-            model_info: fields.model_info.as_ref(),
-            size: fields.size.as_deref(),
-            n_images: fields.n_images,
-            width: width.as_deref(),
-            height: height.as_deref(),
-            response: AzureImageResponse::Image(&billing),
-            moment: fields.moment,
-        },
-        &NullLookup,
-        &database,
-    )
-    .map_err(|error| image_cost_error(&error))?;
-    Ok(json!({ "cost": cost.normalize().to_string() }))
-}
-
-fn run_usage(fields: &input::UsageOpInput) -> crate::helpers::HelperResult {
-    let details = fields.usage.to_details()?;
-    let database = TimeZoneDatabase::from_env();
-    let cost = image_usage_cost(
-        &ImageUsageCostRequest {
-            model: &fields.model,
-            custom_llm_provider: fields.custom_llm_provider.as_deref(),
-            usage: &details,
-            model_info: fields.model_info.as_ref(),
-            moment: fields.moment,
-        },
-        &NullLookup,
-        &database,
-    )
-    .map_err(|error| image_cost_error(&error))?;
-    Ok(json!({ "cost": cost.map(|value| value.normalize().to_string()) }))
-}
-
+    ),
+    |value| value.normalize().to_string()
+);
+run_op!(
+    run_openai,
+    input::OpenaiInput,
+    |fields| {
+        let view = match &fields.usage {
+            Some(usage) => Some(usage.clone().into_view()?),
+            None => None,
+        };
+        openai::cost_calculator(
+            &OpenAiImageCostRequest {
+                model: &fields.model,
+                custom_llm_provider: fields.custom_llm_provider.as_deref(),
+                model_info: fields.model_info.as_ref(),
+                image_count: fields.image_count,
+                usage: view.as_ref(),
+                moment: fields.moment,
+            },
+            &NullLookup,
+            &TimeZoneDatabase::from_env(),
+        )
+    },
+    |value| value.normalize().to_string()
+);
+run_op!(
+    run_azure,
+    input::AzureInput,
+    |fields| {
+        let billing = fields.billing.clone().into_billing()?;
+        azure::cost_calculator(
+            &AzureImageCostRequest {
+                model: &fields.model,
+                model_info: fields.model_info.as_ref(),
+                size: fields.size.as_deref(),
+                n_images: fields.n_images,
+                width: input::raw_value(fields.width.as_ref())?.as_deref(),
+                height: input::raw_value(fields.height.as_ref())?.as_deref(),
+                response: AzureImageResponse::Image(&billing),
+                moment: fields.moment,
+            },
+            &NullLookup,
+            &TimeZoneDatabase::from_env(),
+        )
+    },
+    |value| value.normalize().to_string()
+);
+run_op!(
+    run_usage,
+    input::UsageOpInput,
+    |fields| {
+        let details = fields.usage.to_details()?;
+        image_usage_cost(
+            &ImageUsageCostRequest {
+                model: &fields.model,
+                custom_llm_provider: fields.custom_llm_provider.as_deref(),
+                usage: &details,
+                model_info: fields.model_info.as_ref(),
+                moment: fields.moment,
+            },
+            &NullLookup,
+            &TimeZoneDatabase::from_env(),
+        )
+    },
+    |value| value.map(|amount| amount.normalize().to_string())
+);
 impl crate::helpers::Helper for Op {
     type Input = Input;
 

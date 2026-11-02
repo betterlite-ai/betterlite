@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use rust_decimal::Decimal;
 
 use super::error::ImageCostError;
-use super::pricing::raw_price;
+use super::pricing::{is_underscored_digits, raw_price};
 use crate::price_lookup::{PriceLookup, PriceRecord};
 
 const DEFAULT_SIZE: &str = "1024-x-1024";
@@ -121,7 +121,7 @@ fn parse_signed_int_literal(text: &str) -> Result<i64, ImageCostError> {
         || (false, trimmed.strip_prefix('+').unwrap_or(trimmed)),
         |rest| (true, rest),
     );
-    if !is_digit_run(digits) {
+    if !is_underscored_digits(digits) {
         return Err(ImageCostError::MalformedSize {
             size: text.to_owned(),
         });
@@ -140,27 +140,6 @@ fn parse_signed_int_literal(text: &str) -> Result<i64, ImageCostError> {
     } else {
         Ok(magnitude)
     }
-}
-
-// PEP 515: a digit run may carry single underscores between two digits, never leading, trailing or doubled.
-fn is_digit_run(text: &str) -> bool {
-    let bytes = text.as_bytes();
-    let (Some(&first), Some(&last)) = (bytes.first(), bytes.last()) else {
-        return false;
-    };
-    if first == b'_' || last == b'_' {
-        return false;
-    }
-    let mut previous_was_underscore = false;
-    for &current in bytes {
-        match current {
-            b'_' if previous_was_underscore => return false,
-            b'_' => previous_was_underscore = true,
-            digit if digit.is_ascii_digit() => previous_was_underscore = false,
-            _ => return false,
-        }
-    }
-    true
 }
 
 // The eight pinned candidates, in search order: quality/base, provider-first-quality, base, high/base, quality/last-segment, last-segment, model, stripped-provider model. All occurrences of provider/ are stripped only once the model starts with it.

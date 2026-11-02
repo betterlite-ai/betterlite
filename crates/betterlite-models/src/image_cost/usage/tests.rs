@@ -25,15 +25,12 @@ fn detail_map(entries: &[(&str, &str)]) -> DetailMap {
 }
 
 fn model(entries: &[(&str, &str)]) -> PriceRecord {
-    entries
-        .iter()
-        .map(|(key, value)| {
-            (
-                (*key).to_owned(),
-                serde_json::from_str::<Scalar>(value).expect("a fixture scalar parses"),
-            )
-        })
-        .collect()
+    let mut record = PriceRecord::new();
+    for (key, value) in entries {
+        let scalar = serde_json::from_str::<Scalar>(value).expect("a fixture scalar parses");
+        record.insert((*key).to_owned(), scalar);
+    }
+    record
 }
 
 fn moment() -> DateTime<Utc> {

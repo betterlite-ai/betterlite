@@ -6,8 +6,7 @@ use super::ImageUsageView;
 use super::error::ImageCostError;
 use super::pricing::{flat_image_cost, resolve_image_model_info};
 use super::usage::{
-    ChatUsageCostRequest, ImageUsageCostRequest, ImageUsageDetails, chat_usage_cost,
-    image_usage_cost,
+    ChatUsageCostRequest, ImageUsageCostRequest, chat_usage_cost, image_usage_cost,
 };
 use crate::cost_usage::CostUsage;
 use crate::price_lookup::{PriceLookup, PriceRecord};
@@ -69,62 +68,44 @@ fn priced_usage(
     lookup: &dyn PriceLookup,
     database: &TimeZoneDatabase,
 ) -> Result<Decimal, ImageCostError> {
+    let request = context.request;
+    let chat_cost = |chat_usage: &CostUsage| {
+        chat_usage_cost(
+            &ChatUsageCostRequest {
+                model: request.model,
+                custom_llm_provider: context.provider,
+                usage: chat_usage,
+                model_info: context.price_table,
+                moment: request.moment,
+            },
+            lookup,
+            database,
+        )
+    };
     match usage {
         ImageUsageView::Chat(chat_usage) if chat_usage.completion_details.is_some() => {
-            priced_chat(context, chat_usage, lookup, database)
+            chat_cost(chat_usage)
         }
         ImageUsageView::Image(details) if details.input_tokens.is_some() => {
-            priced_image(context, details, lookup, database)
+            let token_based = image_usage_cost(
+                &ImageUsageCostRequest {
+                    model: request.model,
+                    custom_llm_provider: context.provider,
+                    usage: details,
+                    model_info: context.price_table,
+                    moment: request.moment,
+                },
+                lookup,
+                database,
+            )?;
+            token_based.map_or_else(
+                || flat_image_cost(context.price_table, request.image_count),
+                Ok,
+            )
         }
-        ImageUsageView::Chat(chat_usage) => priced_chat(context, chat_usage, lookup, database),
-        ImageUsageView::Image(_) => {
-            flat_image_cost(context.price_table, context.request.image_count)
-        }
+        ImageUsageView::Chat(chat_usage) => chat_cost(chat_usage),
+        ImageUsageView::Image(_) => flat_image_cost(context.price_table, request.image_count),
     }
-}
-
-fn priced_chat(
-    context: &PricingContext<'_>,
-    chat_usage: &CostUsage,
-    lookup: &dyn PriceLookup,
-    database: &TimeZoneDatabase,
-) -> Result<Decimal, ImageCostError> {
-    let request = context.request;
-    chat_usage_cost(
-        &ChatUsageCostRequest {
-            model: request.model,
-            custom_llm_provider: context.provider,
-            usage: chat_usage,
-            model_info: context.price_table,
-            moment: request.moment,
-        },
-        lookup,
-        database,
-    )
-}
-
-fn priced_image(
-    context: &PricingContext<'_>,
-    details: &ImageUsageDetails,
-    lookup: &dyn PriceLookup,
-    database: &TimeZoneDatabase,
-) -> Result<Decimal, ImageCostError> {
-    let request = context.request;
-    let token_based = image_usage_cost(
-        &ImageUsageCostRequest {
-            model: request.model,
-            custom_llm_provider: context.provider,
-            usage: details,
-            model_info: context.price_table,
-            moment: request.moment,
-        },
-        lookup,
-        database,
-    )?;
-    token_based.map_or_else(
-        || flat_image_cost(context.price_table, request.image_count),
-        Ok,
-    )
 }
 
 mod tests;
