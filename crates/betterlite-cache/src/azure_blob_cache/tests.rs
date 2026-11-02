@@ -237,7 +237,7 @@ async fn async_set_cache_overwrites_existing_blob() {
     transport.seed("key", BlobState::Body(b"{\"old\":true}".to_vec()));
     let cache = cache_with(Arc::clone(&transport), Duration::from_secs(5)).await;
     let value = decode_body(br#"{"new":true}"#).unwrap();
-    cache.async_set_cache("key", &value).await;
+    cache.put("key", &value, true).await;
     let stored = cache.async_get_cache("key").await.unwrap();
     assert_eq!(stored, value);
 }
@@ -268,7 +268,7 @@ async fn async_get_cache_returns_value_on_hit() {
     let transport = FakeTransport::new(ContainerOutcome::Created);
     let cache = cache_with(Arc::clone(&transport), Duration::from_secs(5)).await;
     let value = decode_body(br#"{"ok":true}"#).unwrap();
-    cache.async_set_cache("key", &value).await;
+    cache.put("key", &value, true).await;
     let stored = cache.async_get_cache("key").await.unwrap();
     assert_eq!(stored, value);
 }
