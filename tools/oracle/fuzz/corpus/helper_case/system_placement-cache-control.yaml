@@ -1,0 +1,5 @@
+kind: helper
+name: system-placement-cache-control-seed
+call: {system_placement: {operation: anthropic_system_messages, message: {role: system, content: [{type: text, text: Remember the account id., cache_control: {type: ephemeral, ttl: 1h}}, {type: text, text: Prefer metric units., cache_control: {type: ephemeral}}, {type: text, text: No cache needed for this one.}]}}}
+env: {}
+compare: {ignore: []}
