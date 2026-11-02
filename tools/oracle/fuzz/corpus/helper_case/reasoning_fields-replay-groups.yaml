@@ -1,0 +1,21 @@
+kind: helper
+name: reasoning-fields-replay-groups
+call:
+  reasoning_fields:
+    operation: responses_reasoning_items_from_thinking_blocks
+    thinking_blocks:
+      - type: thinking
+        thinking: first part of the thought
+        signature: anthropic-signature-one
+      - type: thinking
+        thinking: second part of the thought
+        signature: anthropic-signature-two
+      - type: thinking
+        thinking: encrypted thought
+        signature: "litellm_encrypted_reasoning:opaque-payload"
+      - type: thinking
+        thinking: a later thought
+        signature: anthropic-signature-three
+env: {}
+compare:
+  ignore: []

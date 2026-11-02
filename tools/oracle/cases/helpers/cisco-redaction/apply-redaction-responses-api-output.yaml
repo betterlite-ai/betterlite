@@ -1,0 +1,16 @@
+kind: helper
+name: apply-redaction-responses-api-output
+call:
+  b3757:
+    function: apply_redaction_responses_api_output
+    response:
+      output:
+        - type: message
+          content:
+            - {type: output_text, text: secret data here}
+          arguments: '{"q": "secret"}'
+    sanitized_text: "[REDACTED]"
+    sanitized_messages: null
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,11 @@
+kind: helper
+name: extract-masked-entity-count-rules
+call:
+  b3757:
+    function: extract_masked_entity_count_rules
+    rules:
+      - entity_types: [EMAIL, EMAIL, PHONE_NUMBER]
+      - entity_types: [EMAIL]
+env: {}
+compare:
+  ignore: []

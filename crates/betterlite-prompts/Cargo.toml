@@ -11,11 +11,12 @@ betterlite-models = { path = "../betterlite-models" }
 chrono.workspace = true
 fancy-regex = "0.19.2"
 indexmap = { version = "2.14.2", features = ["serde"] }
-minijinja = { version = "3.0.4", features = ["builtins", "fuel", "serde"] }
+minijinja = { version = "3.0.4", features = ["builtins", "fuel", "preserve_order", "serde"] }
 minijinja-contrib = { version = "3.0.4", default-features = false, features = ["pycompat"] }
 serde.workspace = true
 serde-saphyr.workspace = true
 serde_json = { version = "1.0.145", features = ["arbitrary_precision"] }
+serde_with = { version = "3.24.0", default-features = false, features = ["macros"] }
 thiserror.workspace = true
 tracing.workspace = true
 

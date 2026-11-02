@@ -222,6 +222,31 @@ fn answer_cache_key_follows_the_helper_module_the_pin_and_the_env() {
 }
 
 #[test]
+fn python_failures_carry_the_exception_status() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    crate::process::sync_litellm(&root).unwrap();
+    let case_env = BTreeMap::new();
+    let role_call: super::HelperCall = serde_saphyr::from_str(
+        "builtin_prompts: {family: ollama, messages: [{role: other, content: x}], model: injected-model}",
+    )
+    .unwrap();
+    let role_error = super::python::run_python(&root, &role_call, &case_env)
+        .unwrap()
+        .error
+        .unwrap();
+    assert_eq!(role_error.status, Some(400));
+
+    let path_call: super::HelperCall =
+        serde_saphyr::from_str("url_path: {function: segment, value: '..', field_name: file_id}")
+            .unwrap();
+    let path_error = super::python::run_python(&root, &path_call, &case_env)
+        .unwrap()
+        .error
+        .unwrap();
+    assert_eq!(path_error.status, None);
+}
+
+#[test]
 fn answer_cache_stores_a_miss_in_the_write_layer_only() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let scratch = answer_scratch("miss");

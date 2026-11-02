@@ -1,0 +1,16 @@
+kind: helper
+name: fireworks-explicit-free-cache-and-off-peak-default
+call:
+  token_cost:
+    operation: fireworks_cache_default
+    model_info:
+      input_cost_per_token: 0.1
+      cache_read_input_token_cost: 0
+    custom_llm_provider: fireworks_ai
+    off_peak_pricing:
+      hours_utc: "10:00-11:00"
+      input_cost_per_token: 0.05
+      cache_read_input_token_cost: 0.025
+    off_peak_cache_read_present: true
+compare: {ignore: []}
+env: {}
