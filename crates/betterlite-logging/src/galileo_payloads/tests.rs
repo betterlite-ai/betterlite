@@ -554,8 +554,8 @@ fn check_message_model_dump_extended_fields() {
     assert_eq!(messages_for_span, Json::List(Vec::new()));
 }
 
-// Shared by both check_responses_api_*_projection tests: runs a raw Responses-API output list through galileo_input_output_content and hands back the parsed JSON (for assert_eq!) and the raw serialized text (for the odd case that needs to see declared field order).
-fn responses_api_output_for(output: &str) -> (Json, String) {
+// Shared by both check_responses_api_*_projection tests: runs a raw Responses-API output list through galileo_input_output_content, asserts it parses to `expected`, and hands back the raw serialized text for the odd case that needs to see declared field order.
+fn assert_responses_api_output(output: &str, expected: &str) -> String {
     let kwargs = GalileoKwargs::default();
     let (_, response_output, _) = galileo_input_output_content(
         &kwargs,
@@ -565,13 +565,14 @@ fn responses_api_output_for(output: &str) -> (Json, String) {
         Level::Default,
         None,
     );
-    let parsed = serde_json::from_str(&response_output).expect("valid JSON output");
-    (parsed, response_output)
+    let parsed: Json = serde_json::from_str(&response_output).expect("valid JSON output");
+    assert_eq!(parsed, val(expected));
+    response_output
 }
 
 // litellm.types.llms.openai.ResponsesAPIResponse.output parses each raw item into its matching openai.types.responses.ResponseOutputItem member (message, function_call or reasoning) before _serialize_galileo_output dumps them, filling every declared optional field with null and keeping any extra key the item or part carried; an item whose type isn't recognized or doesn't validate against its recognized type (including a reasoning summary part without a "summary_text" type) stays an unmodified dict.
 fn check_responses_api_output_projection() {
-    let (parsed, _) = responses_api_output_for(
+    assert_responses_api_output(
         r#"[
             {"type": "message", "id": "msg_1", "role": "assistant", "status": "completed", "content": [{"type": "output_text", "text": "hi", "annotations": []}]},
             {"type": "message", "id": "msg_2", "role": "assistant", "status": "completed", "content": [{"type": "refusal", "refusal": "no", "foo": 1}]},
@@ -583,8 +584,7 @@ fn check_responses_api_output_projection() {
             {"type": "something_else", "id": "rs_2", "summary": []},
             {"type": "reasoning", "id": "rs_3", "summary": [{"text": "s"}]}
         ]"#,
-    );
-    let expected = val(r#"[
+        r#"[
             {"id": "msg_1", "content": [{"annotations": [], "text": "hi", "type": "output_text", "logprobs": null}], "role": "assistant", "status": "completed", "type": "message", "phase": null},
             {"id": "msg_2", "content": [{"refusal": "no", "type": "refusal", "foo": 1}], "role": "assistant", "status": "completed", "type": "message", "phase": null},
             {"type": "message", "id": "msg_3", "role": "assistant", "status": "completed", "content": [{"type": "something_else", "refusal": "no"}]},
@@ -594,13 +594,13 @@ fn check_responses_api_output_projection() {
             {"id": "rs_1", "summary": [], "type": "reasoning", "content": null, "encrypted_content": null, "status": null, "foo": "bar"},
             {"type": "something_else", "id": "rs_2", "summary": []},
             {"type": "reasoning", "id": "rs_3", "summary": [{"text": "s"}]}
-        ]"#);
-    assert_eq!(parsed, expected);
+        ]"#,
+    );
 }
 
 // openai.types.responses.response_function_web_search.Action and ResponseCustomToolCall.Caller: an unrecognized or invalid action/caller invalidates the whole web_search_call or custom_tool_call item, which stays an unmodified dict.
 fn check_responses_api_web_search_and_custom_tool_projection() {
-    let (parsed, response_output) = responses_api_output_for(
+    let response_output = assert_responses_api_output(
         r#"[
             {"type": "web_search_call", "id": "ws_1", "status": "completed", "action": {"type": "search", "query": "q"}},
             {"type": "web_search_call", "id": "ws_2", "status": "completed", "action": {"type": "bogus"}},
@@ -609,16 +609,15 @@ fn check_responses_api_web_search_and_custom_tool_projection() {
             {"type": "custom_tool_call", "call_id": "c1", "input": "x", "name": "t", "caller": {"type": "program", "caller_id": "p1"}},
             {"type": "custom_tool_call", "call_id": "c2", "input": "x", "name": "t", "caller": {"type": "bogus"}}
         ]"#,
-    );
-    let expected = val(r#"[
+        r#"[
             {"id": "ws_1", "action": {"type": "search", "queries": null, "query": "q", "sources": null}, "status": "completed", "type": "web_search_call"},
             {"type": "web_search_call", "id": "ws_2", "status": "completed", "action": {"type": "bogus"}},
             {"id": "ws_3", "action": {"pattern": "cat", "type": "find_in_page", "url": "http://example.com"}, "status": "completed", "type": "web_search_call"},
             {"type": "web_search_call", "id": "ws_4", "status": "completed", "action": {"type": "mystery", "pattern": "x", "url": "http://y"}},
             {"call_id": "c1", "input": "x", "name": "t", "type": "custom_tool_call", "id": null, "caller": {"caller_id": "p1", "type": "program"}, "namespace": null},
             {"type": "custom_tool_call", "call_id": "c2", "input": "x", "name": "t", "caller": {"type": "bogus"}}
-        ]"#);
-    assert_eq!(parsed, expected);
+        ]"#,
+    );
     // A valid find_in_page action's projected and raw field sets are equal as parsed JSON; only the text shows typed_sequence's declared order.
     assert!(response_output.contains(
         r#""action": {"pattern": "cat", "type": "find_in_page", "url": "http://example.com"}"#
