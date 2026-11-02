@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use std::future::IntoFuture as _;
 use std::io::Result as IoResult;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use axum::Router;
 use axum::body::Bytes;
@@ -33,6 +34,7 @@ fn guardrail(api_base: &str, input_format: InputFormat) -> GuardrailsAiGuardrail
     GuardrailsAiGuardrail {
         settings: settings(api_base, input_format),
         client: reqwest::Client::default(),
+        timeout: Duration::from_secs(30),
     }
 }
 

@@ -253,6 +253,7 @@ fn guardrails_ai_process_input(
             input_format,
         },
         client: reqwest::Client::new(),
+        timeout: Duration::from_secs(30),
     };
     let result = runtime.block_on(guardrail.process_input(last_user_message, dynamic_params));
     drop(silent);

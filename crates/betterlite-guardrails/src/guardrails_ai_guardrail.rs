@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::guardrail_identity::config_models::GuardrailConfigModelIdentity;
@@ -124,6 +125,7 @@ struct PreCallRequest {
 pub struct GuardrailsAiGuardrail {
     pub settings: Settings,
     pub client: reqwest::Client,
+    pub timeout: Duration,
 }
 
 impl GuardrailsAiGuardrail {
@@ -146,6 +148,7 @@ impl GuardrailsAiGuardrail {
             .post(url)
             .header(CONTENT_TYPE, "application/json")
             .json(&body)
+            .timeout(self.timeout)
             .send()
             .await
             .map_err(request_error)?;
@@ -185,6 +188,7 @@ impl GuardrailsAiGuardrail {
             .post(url)
             .header(CONTENT_TYPE, "application/json")
             .json(&body)
+            .timeout(self.timeout)
             .send()
             .await
             .map_err(request_error)?;
