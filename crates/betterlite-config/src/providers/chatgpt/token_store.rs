@@ -35,8 +35,8 @@ pub(crate) fn resolve(lookup: &dyn EnvironmentLookup) -> TokenStorePaths {
 
 // a HOME the caller did not provide leaves this literal ~ path, matching os.path.expanduser's untouched fallback
 fn expand_default_token_dir(lookup: &dyn EnvironmentLookup) -> String {
-    let Some(home) = lookup.lookup("HOME").filter(|value| !value.is_empty()) else {
+    let Some(home) = lookup.lookup("HOME") else {
         return DEFAULT_TOKEN_DIR.to_owned();
     };
-    format!("{home}/.config/litellm/chatgpt")
+    format!("{}/.config/litellm/chatgpt", home.trim_end_matches('/'))
 }

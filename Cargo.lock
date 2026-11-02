@@ -1348,6 +1348,7 @@ dependencies = [
 name = "betterlite-openai"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
  "betterlite-config",
  "betterlite-http",
  "betterlite-models",
@@ -1363,6 +1364,7 @@ dependencies = [
  "serde_json",
  "serde_with",
  "sha2 0.11.1",
+ "tempfile",
  "thiserror",
  "tokio",
  "tracing",

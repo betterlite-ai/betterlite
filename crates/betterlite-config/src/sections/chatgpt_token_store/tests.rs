@@ -26,6 +26,11 @@ fn lookup(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
     "auth.json",
     "https://chatgpt.com/backend-api/codex"
 )]
+#[case::empty_home(&[("HOME", "")], "/.config/litellm/chatgpt", "auth.json", "https://chatgpt.com/backend-api/codex")]
+#[case::trailing_home(&[("HOME", "/home/alice/")], "/home/alice/.config/litellm/chatgpt", "auth.json", "https://chatgpt.com/backend-api/codex")]
+#[case::literal_override(&[("CHATGPT_TOKEN_DIR", "~/literal")], "~/literal", "auth.json", "https://chatgpt.com/backend-api/codex")]
+#[case::primary_wins(&[("CHATGPT_API_BASE", "primary"), ("OPENAI_CHATGPT_API_BASE", "secondary")], "~/.config/litellm/chatgpt", "auth.json", "primary")]
+#[case::empty_bases(&[("CHATGPT_API_BASE", ""), ("OPENAI_CHATGPT_API_BASE", "")], "~/.config/litellm/chatgpt", "auth.json", "https://chatgpt.com/backend-api/codex")]
 #[case::explicit_dir(
     &[("CHATGPT_TOKEN_DIR", "/custom")],
     "/custom",
@@ -36,6 +41,12 @@ fn lookup(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
     &[("CHATGPT_TOKEN_DIR", "")],
     "",
     "auth.json",
+    "https://chatgpt.com/backend-api/codex"
+)]
+#[case::absolute_file(
+    &[("CHATGPT_AUTH_FILE", "/absolute/auth.json")],
+    "~/.config/litellm/chatgpt",
+    "/absolute/auth.json",
     "https://chatgpt.com/backend-api/codex"
 )]
 #[case::explicit_file(
