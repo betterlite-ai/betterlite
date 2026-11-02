@@ -16,9 +16,8 @@ use betterlite_models::decisions::{DecisionsJson, Extra, Json, TokenCount, ir};
 use super::provider_config::{DecisionsProviderConfig, ParseResponseError};
 use super::questions::{ir_question, systemone_keys, systemone_question};
 use super::requests::{RequestConversionError, ir_to_systemone_request, systemone_request_to_ir};
-use super::responses::{
-    ir_to_systemone_response, parse_systemone_response, systemone_response_to_ir,
-};
+use super::responses::to_ir::{parse_systemone_response, systemone_response_to_ir};
+use super::responses::to_systemone::ir_to_systemone_response;
 use crate::openai_base_config::Headers;
 
 struct BareProviderConfig;

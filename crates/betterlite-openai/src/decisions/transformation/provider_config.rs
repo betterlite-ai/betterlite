@@ -167,7 +167,7 @@ pub trait DecisionsProviderConfig {
         payload: &[u8],
         request: &ir::DecisionRequest,
     ) -> Result<ir::DecisionResponse, serde_json::Error> {
-        responses::parse_systemone_response(self.unwrap_response(payload), request)
+        responses::to_ir::parse_systemone_response(self.unwrap_response(payload), request)
     }
 
     fn transform_decisions_response(
