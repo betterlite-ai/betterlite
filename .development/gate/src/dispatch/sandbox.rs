@@ -1,5 +1,6 @@
 mod tests;
 
+use std::env;
 use std::fs;
 use std::path::Path;
 
@@ -31,6 +32,8 @@ struct Filesystem<'dirs> {
 #[serde(rename_all = "camelCase")]
 struct Network {
     allowed_domains: [&'static str; 1],
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    allow_unix_sockets: Vec<String>,
 }
 
 pub(crate) fn write_settings(
@@ -47,6 +50,7 @@ pub(crate) fn write_settings(
             filesystem: Filesystem { allow_write },
             network: Network {
                 allowed_domains: ["*"],
+                allow_unix_sockets: env::var("GATE_POSTGRES_SOCKET").ok().into_iter().collect(),
             },
         },
     };
