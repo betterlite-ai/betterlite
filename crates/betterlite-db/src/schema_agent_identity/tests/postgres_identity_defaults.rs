@@ -144,7 +144,7 @@ async fn check_retired_timestamp_no_agent_fk(client: &Client) {
     assert_column(
         client,
         "LiteLLM_RetiredAgent",
-        timestamp3_now_default("retired_at"),
+        timestamp3("retired_at", Some("CURRENT_TIMESTAMP")),
     )
     .await;
 }
@@ -168,7 +168,7 @@ async fn check_verified_human_interactive_defaults_and_unique_subject(client: &C
         &[
             text_default("kind", "'human'::text"),
             text_default("verified_via", "'sso_interactive'::text"),
-            timestamp3_now_default("verified_at"),
+            timestamp3("verified_at", Some("CURRENT_TIMESTAMP")),
         ],
     )
     .await;
@@ -331,38 +331,39 @@ fn identity_defaults_checkpoint(cohort: IdentityDefaultsCohort) -> &'static str 
     }
 }
 
-async fn dispatch_identity_defaults_check(client: &Client, cohort: IdentityDefaultsCohort) {
-    use IdentityDefaultsCohort::*;
-    match cohort {
-        AgentEnabledAutonomousUnmanaged => check_agent_enabled_autonomous_unmanaged(client).await,
-        BillingAgentAndKillSwitchNullable => {
-            check_billing_agent_and_kill_switch_nullable(client).await;
-        }
-        IdentityActiveAndNullableRoleScopeDefaults => {
-            check_identity_active_and_nullable_role_scope_defaults(client).await;
-        }
-        IdentityProviderTupleUnique => check_identity_provider_tuple_unique(client).await,
-        IssuerPrincipalUniqueWithNulls => check_issuer_principal_unique_with_nulls(client).await,
-        LiveAndRetiredTupleUniquenessSeparate => {
-            check_live_and_retired_tuple_uniqueness_separate(client).await;
-        }
-        RetiredTimestampNoAgentFk => check_retired_timestamp_no_agent_fk(client).await,
-        VerifiedHumanInteractiveDefaultsAndUniqueSubject => {
-            check_verified_human_interactive_defaults_and_unique_subject(client).await;
-        }
-        TextDefaultsNotEnumChecks => check_text_defaults_not_enum_checks(client).await,
-        AgentDeleteLiveCascadeRetiredSetNull => {
-            check_agent_delete_live_cascade_retired_set_null(client).await;
-        }
-        UserDeleteSubjectCascade => check_user_delete_subject_cascade(client).await,
-        IdentityParentUpdatesCascade => check_identity_parent_updates_cascade(client).await,
-        NoAutomaticRetiredRecord => check_no_automatic_retired_record(client).await,
-    }
-}
-
 async fn run_identity_defaults_check(client: &Client, cohort: IdentityDefaultsCohort) {
+    use IdentityDefaultsCohort::*;
     apply_migrations_through(client, identity_defaults_checkpoint(cohort)).await;
-    dispatch_identity_defaults_check(client, cohort).await;
+    let check: Pin<Box<dyn Future<Output = ()> + Send + '_>> = match cohort {
+        AgentEnabledAutonomousUnmanaged => {
+            Box::pin(check_agent_enabled_autonomous_unmanaged(client))
+        }
+        BillingAgentAndKillSwitchNullable => {
+            Box::pin(check_billing_agent_and_kill_switch_nullable(client))
+        }
+        IdentityActiveAndNullableRoleScopeDefaults => Box::pin(
+            check_identity_active_and_nullable_role_scope_defaults(client),
+        ),
+        IdentityProviderTupleUnique => Box::pin(check_identity_provider_tuple_unique(client)),
+        IssuerPrincipalUniqueWithNulls => {
+            Box::pin(check_issuer_principal_unique_with_nulls(client))
+        }
+        LiveAndRetiredTupleUniquenessSeparate => {
+            Box::pin(check_live_and_retired_tuple_uniqueness_separate(client))
+        }
+        RetiredTimestampNoAgentFk => Box::pin(check_retired_timestamp_no_agent_fk(client)),
+        VerifiedHumanInteractiveDefaultsAndUniqueSubject => {
+            Box::pin(check_verified_human_interactive_defaults_and_unique_subject(client))
+        }
+        TextDefaultsNotEnumChecks => Box::pin(check_text_defaults_not_enum_checks(client)),
+        AgentDeleteLiveCascadeRetiredSetNull => {
+            Box::pin(check_agent_delete_live_cascade_retired_set_null(client))
+        }
+        UserDeleteSubjectCascade => Box::pin(check_user_delete_subject_cascade(client)),
+        IdentityParentUpdatesCascade => Box::pin(check_identity_parent_updates_cascade(client)),
+        NoAutomaticRetiredRecord => Box::pin(check_no_automatic_retired_record(client)),
+    };
+    check.await;
 }
 
 #[rstest]

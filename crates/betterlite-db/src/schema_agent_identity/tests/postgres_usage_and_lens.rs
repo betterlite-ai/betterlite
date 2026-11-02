@@ -67,8 +67,8 @@ async fn check_daily_model_five_counters_zero_required_dimensions_and_updated_at
             int8_zero("request_count"),
             int8_zero("successful_requests"),
             int8_zero("failed_requests"),
-            timestamp3_now_default("created_at"),
-            timestamp3_required("updated_at"),
+            timestamp3("created_at", Some("CURRENT_TIMESTAMP")),
+            timestamp3("updated_at", None),
         ],
     )
     .await;
@@ -122,12 +122,7 @@ async fn check_engine_run_required_created_at_without_fk(client: &Client) {
         &[&"run-a", &"engine-never-existed"],
     )
     .await;
-    assert_column(
-        client,
-        "LiteLLM_EngineRun",
-        timestamp3_required("created_at"),
-    )
-    .await;
+    assert_column(client, "LiteLLM_EngineRun", timestamp3("created_at", None)).await;
 }
 
 async fn insert_rename_fixture_rows(client: &Client) {
@@ -252,24 +247,27 @@ fn usage_and_lens_checkpoint(cohort: UsageAndLensCohort) -> &'static str {
 async fn run_usage_and_lens_check(client: &Client, cohort: UsageAndLensCohort) {
     use UsageAndLensCohort::*;
     apply_migrations_through(client, usage_and_lens_checkpoint(cohort)).await;
-    match cohort {
-        PinnedToolsNullableEmptyObject => check_pinned_tools_nullable_empty_object(client).await,
-        DailyModelFiveCountersZeroRequiredDimensionsAndUpdatedAt => {
-            check_daily_model_five_counters_zero_required_dimensions_and_updated_at(client).await;
+    let check: Pin<Box<dyn Future<Output = ()> + Send + '_>> = match cohort {
+        PinnedToolsNullableEmptyObject => {
+            Box::pin(check_pinned_tools_nullable_empty_object(client))
         }
-        EngineZeroVersionRequiredJson => check_engine_zero_version_required_json(client).await,
-        WorkerUniqueHashUnchanged => check_worker_unique_hash_unchanged(client).await,
+        DailyModelFiveCountersZeroRequiredDimensionsAndUpdatedAt => Box::pin(
+            check_daily_model_five_counters_zero_required_dimensions_and_updated_at(client),
+        ),
+        EngineZeroVersionRequiredJson => Box::pin(check_engine_zero_version_required_json(client)),
+        WorkerUniqueHashUnchanged => Box::pin(check_worker_unique_hash_unchanged(client)),
         EngineRunRequiredCreatedAtWithoutFk => {
-            check_engine_run_required_created_at_without_fk(client).await;
+            Box::pin(check_engine_run_required_created_at_without_fk(client))
         }
-        LensNamesAndFiveIndexRenames => assert_lens_renamed(client).await,
+        LensNamesAndFiveIndexRenames => Box::pin(assert_lens_renamed(client)),
         RenamePreservesOidsRowsAndHashBytes => {
-            check_rename_preserves_oids_rows_and_hash_bytes(client).await;
+            Box::pin(check_rename_preserves_oids_rows_and_hash_bytes(client))
         }
-        RenameAlreadyFinalNoop => check_rename_already_final_noop(client).await,
-        RenameExistingDestinationError => check_rename_existing_destination_error(client).await,
-        LateIndexCollisionRollsBackDo => check_late_index_collision_rolls_back_do(client).await,
-    }
+        RenameAlreadyFinalNoop => Box::pin(check_rename_already_final_noop(client)),
+        RenameExistingDestinationError => Box::pin(check_rename_existing_destination_error(client)),
+        LateIndexCollisionRollsBackDo => Box::pin(check_late_index_collision_rolls_back_do(client)),
+    };
+    check.await;
 }
 
 #[rstest]

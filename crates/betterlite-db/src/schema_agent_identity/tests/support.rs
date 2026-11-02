@@ -1,3 +1,5 @@
+use std::pin::Pin;
+
 use crate::schema_agent_identity::fixtures::PINNED_MIGRATION_CATALOG;
 use crate::schema_agent_identity::migrations::*;
 use crate::schema_agent_identity::*;
@@ -252,10 +254,6 @@ async fn scalar_text(client: &Client, sql: &str, params: &[&(dyn ToSql + Sync)])
     client.query_one(sql, params).await.unwrap().get(0)
 }
 
-async fn scalar_bool(client: &Client, sql: &str, params: &[&(dyn ToSql + Sync)]) -> bool {
-    client.query_one(sql, params).await.unwrap().get(0)
-}
-
 async fn scalar_opt_text(
     client: &Client,
     sql: &str,
@@ -274,12 +272,13 @@ async fn relation_oid(client: &Client, name: &str) -> String {
 }
 
 async fn relation_exists(client: &Client, name: &str) -> bool {
-    scalar_bool(
+    query_opt_row(
         client,
-        "SELECT EXISTS (SELECT 1 FROM pg_class WHERE relname = $1)",
+        "SELECT 1 FROM pg_class WHERE relname = $1",
         &[&name],
     )
     .await
+    .is_some()
 }
 
 struct ColumnInfo {
@@ -403,23 +402,12 @@ fn float8_zero(name: &'static str) -> ColumnSpec {
     (name, "double precision", false, Some("0.0"), "float8", None)
 }
 
-fn timestamp3_now_default(name: &'static str) -> ColumnSpec {
+fn timestamp3(name: &'static str, default: Option<&'static str>) -> ColumnSpec {
     (
         name,
         "timestamp without time zone",
         false,
-        Some("CURRENT_TIMESTAMP"),
-        "timestamp",
-        Some(3_i32),
-    )
-}
-
-fn timestamp3_required(name: &'static str) -> ColumnSpec {
-    (
-        name,
-        "timestamp without time zone",
-        false,
-        None,
+        default,
         "timestamp",
         Some(3_i32),
     )
