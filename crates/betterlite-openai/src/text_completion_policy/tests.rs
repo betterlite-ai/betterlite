@@ -552,6 +552,41 @@ fn text_completion_policy_cases(#[case] case: u8) {
                 })
             );
 
+            let response_cache_mapping_merges_existing = json!({
+                "choices": [],
+                "usage": {
+                    "prompt_tokens_details": {"text_tokens": 7_i32},
+                    "cache_creation_input_tokens": 4_i32,
+                },
+            });
+            let result_cache_merge = reply::to_chat_model_response(
+                Some(response_cache_mapping_merges_existing),
+                Some(Map::new()),
+                &fixed_identifier,
+                &fixed_clock,
+            )
+            .expect("cache mapping merges into the existing details object");
+            assert_eq!(
+                result_cache_merge["usage"]["prompt_tokens_details"],
+                json!({"text_tokens": 7_i32, "cache_write_tokens": 4_i32})
+            );
+
+            let response_u64_cache_token = json!({
+                "choices": [],
+                "usage": {"cache_creation_input_tokens": u64::MAX},
+            });
+            let result_u64_cache_token = reply::to_chat_model_response(
+                Some(response_u64_cache_token),
+                Some(Map::new()),
+                &fixed_identifier,
+                &fixed_clock,
+            )
+            .expect("a u64-only cache value still maps");
+            assert_eq!(
+                result_u64_cache_token["usage"]["prompt_tokens_details"]["cache_write_tokens"],
+                json!(u64::MAX)
+            );
+
             let response_non_integer_cache = json!({
                 "choices": [],
                 "usage": {"prompt_cache_hit_tokens": "not-a-number"},
