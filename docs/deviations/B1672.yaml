@@ -1,0 +1,5 @@
+task: B1672
+deviations:
+  - what: Generic billing reports exact Decimal totals and a typed failure for nonfinite rates or arithmetic overflow.
+    why: Float approximation cannot be the stored source of spend, while ordinary malformed uplift values still warn and use one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L1480-L1492

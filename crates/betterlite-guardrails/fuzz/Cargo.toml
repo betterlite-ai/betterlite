@@ -27,6 +27,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "javelin_wire"
+path = "fuzz_targets/javelin_wire.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "lakera_wire"
 path = "fuzz_targets/lakera_wire.rs"
 test = false

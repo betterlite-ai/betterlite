@@ -1,0 +1,11 @@
+kind: helper
+name: native-error-raw-bedrock
+call:
+  native_error:
+    kind: raw
+    model: claude-3
+    custom_llm_provider: bedrock
+    error_str: "Too many requests, please wait before trying again."
+    status_code: 429
+env: {}
+compare: {ignore: []}
