@@ -2,63 +2,40 @@ use super::*;
 
 #[test]
 fn system_placement_behavior_tests_behavior() {
-    assert_encrypted_thinking_blocks_the_anchor();
-    assert_signed_thinking_is_the_anchor();
-}
-
-// An unsignable (encrypted) thinking part never renders, so the assistant turn carrying only one is skipped when looking for the next rendering turn, and the run cannot anchor.
-fn assert_encrypted_thinking_blocks_the_anchor() {
-    let encrypted_only = vec![
-        text_message("user", "hi"),
-        text_message("system", "note"),
+    assert_anchor_depends_on_whether_thinking_renders(
+        Some("litellm_encrypted_reasoning:xyz"),
         parts_message(
-            "assistant",
-            vec![thinking_part(
-                "secret",
-                Some("litellm_encrypted_reasoning:xyz"),
-            )],
+            "user",
+            vec![
+                text_part(text_parts::CONVERTED_SYSTEM_NOTE),
+                text_part("note"),
+            ],
         ),
-        text_message("user", "bye"),
-    ];
-    let placed = place_mid_conversation_system(&encrypted_only, true);
-    assert_eq!(
-        placed,
-        vec![
-            text_message("user", "hi"),
-            parts_message(
-                "user",
-                vec![
-                    text_part(text_parts::CONVERTED_SYSTEM_NOTE),
-                    text_part("note")
-                ]
-            ),
-            parts_message(
-                "assistant",
-                vec![thinking_part(
-                    "secret",
-                    Some("litellm_encrypted_reasoning:xyz")
-                )],
-            ),
-            text_message("user", "bye"),
-        ]
+    );
+    assert_anchor_depends_on_whether_thinking_renders(
+        Some("sig123"),
+        parts_message("system", vec![text_part("note")]),
     );
 }
 
-// A signed thinking part renders, so the assistant turn carrying it is the first later turn that renders, and the run anchors to the user turn in front of it.
-fn assert_signed_thinking_is_the_anchor() {
-    let signed = vec![
+// An unsignable (encrypted) thinking part never renders, so the assistant turn carrying only one is skipped when looking for the next rendering turn and the run converts in place instead of anchoring; a signed one renders, so the run anchors to the user turn in front of the assistant turn that carries it.
+fn assert_anchor_depends_on_whether_thinking_renders(
+    signature: Option<&str>,
+    system_turn: Message,
+) {
+    let messages = vec![
         text_message("user", "hi"),
         text_message("system", "note"),
-        parts_message("assistant", vec![thinking_part("plan", Some("sig123"))]),
+        parts_message("assistant", vec![thinking_part("thought", signature)]),
         text_message("user", "bye"),
     ];
-    let placed = place_mid_conversation_system(&signed, true);
+    let placed = place_mid_conversation_system(&messages, true);
     assert_eq!(
         placed,
         vec![
             text_message("user", "hi"),
-            parts_message("system", vec![text_part("note")]),
-            parts_message("assistant", vec![thinking_part("plan", Some("sig123"))]),
+            system_turn,
+            parts_message("assistant", vec![thinking_part("thought", signature)]),
             text_message("user", "bye"),
         ]
     );
