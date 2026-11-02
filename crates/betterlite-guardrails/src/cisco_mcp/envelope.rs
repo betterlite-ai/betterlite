@@ -60,7 +60,8 @@ pub enum ArgumentsValue {
 #[must_use]
 pub fn build_request_payload(data: &Fields) -> Option<RequestPayload> {
     if matches!(Json::field(data, "jsonrpc"), Json::Text(version) if version == "2.0") {
-        let id = default_id(data, &["id", "litellm_call_id"]);
+        let id = first_nonfalsy_raw(data, &["id", "litellm_call_id"])
+            .map_or(IdValue::Default("litellm-mcp"), IdValue::Given);
         let method = first_nonfalsy_raw(data, &["method"])
             .map_or(MethodValue::Default("tools/call"), MethodValue::Given);
         let params = first_nonfalsy_raw(data, &["params"])
@@ -73,8 +74,14 @@ pub fn build_request_payload(data: &Fields) -> Option<RequestPayload> {
         });
     }
     let name = first_nonfalsy_raw(data, &["mcp_tool_name", "tool_name", "name"])?;
-    let given_arguments =
-        present_raw(data, "mcp_arguments").or_else(|| present_raw(data, "arguments"));
+    let given_arguments = data
+        .get("mcp_arguments")
+        .and_then(|raw| (!matches!(Json::parse(raw.get()), Json::Null)).then(|| raw.clone()))
+        .or_else(|| {
+            data.get("arguments").and_then(|raw| {
+                (!matches!(Json::parse(raw.get()), Json::Null)).then(|| raw.clone())
+            })
+        });
     let arguments = match given_arguments {
         Some(raw) if matches!(Json::parse(raw.get()), Json::Object(_)) => {
             ArgumentsValue::Given(raw)
@@ -83,15 +90,11 @@ pub fn build_request_payload(data: &Fields) -> Option<RequestPayload> {
     };
     Some(RequestPayload {
         jsonrpc: "2.0",
-        id: default_id(data, &["litellm_call_id"]),
+        id: first_nonfalsy_raw(data, &["litellm_call_id"])
+            .map_or(IdValue::Default("litellm-mcp"), IdValue::Given),
         method: MethodValue::Default("tools/call"),
         params: ParamsValue::Built { name, arguments },
     })
-}
-
-fn default_id(data: &Fields, keys: &[&str]) -> IdValue {
-    let raw = first_nonfalsy_raw(data, keys);
-    raw.map_or(IdValue::Default("litellm-mcp"), IdValue::Given)
 }
 
 #[must_use]
@@ -138,11 +141,6 @@ fn first_nonfalsy_raw(fields: &Fields, keys: &[&str]) -> Option<Box<RawValue>> {
         }
     }
     None
-}
-
-fn present_raw(fields: &Fields, key: &str) -> Option<Box<RawValue>> {
-    let raw = fields.get(key)?;
-    (!matches!(Json::parse(raw.get()), Json::Null)).then(|| raw.clone())
 }
 
 mod tests;

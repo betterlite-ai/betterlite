@@ -98,8 +98,12 @@ pub fn build_result(content: &[Box<RawValue>], source: Option<&Fields>) -> McpRe
         .iter()
         .map(|item| serialize_content_item(item))
         .collect();
-    let structured_content = source
-        .and_then(|fields| source_field_raw(fields, "structuredContent", "structured_content"));
+    let structured_content = source.and_then(|fields| {
+        let raw = fields
+            .get("structuredContent")
+            .or_else(|| fields.get("structured_content"))?;
+        (!matches!(Json::parse(raw.get()), Json::Null)).then(|| raw.clone())
+    });
     let is_error = source.and_then(|fields| source_field_bool(fields, "isError", "is_error"));
     McpResult {
         content: items,
@@ -119,11 +123,6 @@ pub fn serialize_content_item(item: &RawValue) -> ContentItem {
             }
         }
     }
-}
-
-fn source_field_raw(fields: &Fields, camel: &str, snake: &str) -> Option<Box<RawValue>> {
-    let raw = fields.get(camel).or_else(|| fields.get(snake))?;
-    (!matches!(Json::parse(raw.get()), Json::Null)).then(|| raw.clone())
 }
 
 fn source_field_bool(fields: &Fields, camel: &str, snake: &str) -> Option<bool> {

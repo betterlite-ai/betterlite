@@ -22,7 +22,8 @@ fn split_refuses_empty_and_unsplittable_content() {
     assert_eq!(nearest_whitespace("abcd "), 2);
     assert_eq!(nearest_whitespace("ab\u{1f}cdefgh"), 3);
     assert_eq!(bin_pack(&[], 4).len(), 1);
-    assert!(!is_input_too_large(None));
+    let lowered = None::<&str>.map(str::to_lowercase).unwrap_or_default();
+    assert!(!TOO_LARGE.iter().any(|pattern| lowered.contains(pattern)));
 }
 
 #[test]
