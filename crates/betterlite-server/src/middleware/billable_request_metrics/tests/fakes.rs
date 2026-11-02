@@ -9,12 +9,11 @@ use axum::middleware;
 use axum::response::Response;
 use betterlite_billing::billable_category::BillableCategory;
 use tempfile::NamedTempFile;
-use tower::BoxError;
 use tracing::Level;
 use tracing::subscriber::with_default;
 
-use super::super::recorder::BillingRecorder;
-use super::super::sink::GatewayRequestSink;
+use super::super::recorder::{BillingRecorder, BillingRecorderError};
+use super::super::sink::{GatewayRequestSink, GatewayRequestSinkError};
 use super::super::{BillableRequestMetrics, RecorderFactory, SinkFactory, record_billable_request};
 
 type SinkCall = (BillableCategory, String, StatusCode);
@@ -25,13 +24,13 @@ fn record_or_fail<T>(
     call: T,
     fails: bool,
     failure: &'static str,
-) -> Result<(), BoxError> {
+) -> Result<(), io::Error> {
     calls
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .push(call);
     if fails {
-        return Err(Box::new(io::Error::other(failure)));
+        return Err(io::Error::other(failure));
     }
     Ok(())
 }
@@ -51,7 +50,7 @@ where
 }
 
 macro_rules! define_mock {
-    ($name:ident, $trait:ident, $call:ty, $failure:literal, ($($arg:ident: $ty:ty),+), $tuple:expr) => {
+    ($name:ident, $trait:ident, $call:ty, $error:ty, $ctor:expr, $failure:literal, ($($arg:ident: $ty:ty),+), $tuple:expr) => {
         pub(crate) struct $name {
             calls: Mutex<Vec<$call>>,
             fails: bool,
@@ -74,8 +73,8 @@ macro_rules! define_mock {
         }
 
         impl $trait for $name {
-            fn record(&self, $($arg: $ty),+) -> Result<(), BoxError> {
-                record_or_fail(&self.calls, $tuple, self.fails, $failure)
+            fn record(&self, $($arg: $ty),+) -> Result<(), $error> {
+                record_or_fail(&self.calls, $tuple, self.fails, $failure).map_err($ctor)
             }
         }
     };
@@ -85,6 +84,8 @@ define_mock!(
     MockSink,
     GatewayRequestSink,
     SinkCall,
+    GatewayRequestSinkError,
+    GatewayRequestSinkError::Failed,
     "mock sink failure",
     (category: BillableCategory, route: &str, status_code: StatusCode),
     (category, route.to_owned(), status_code)
@@ -94,6 +95,8 @@ define_mock!(
     MockRecorder,
     BillingRecorder,
     RecorderCall,
+    BillingRecorderError,
+    BillingRecorderError::Failed,
     "mock recorder failure",
     (
         category: BillableCategory,
