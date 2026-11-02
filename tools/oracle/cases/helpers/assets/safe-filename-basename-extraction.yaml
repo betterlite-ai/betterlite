@@ -1,0 +1,9 @@
+kind: helper
+name: safe_filename_extracts_the_basename_from_a_unix_path
+call:
+  assets:
+    op: safe_filename
+    filename: uploads/2024/report.pdf
+env: {}
+compare:
+  ignore: []

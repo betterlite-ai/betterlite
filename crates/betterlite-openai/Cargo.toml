@@ -9,8 +9,10 @@ publish.workspace = true
 betterlite-config = { path = "../betterlite-config" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-models = { path = "../betterlite-models" }
+betterlite-prompts = { path = "../betterlite-prompts" }
 hex.workspace = true
 indexmap = { version = "2.14.2", features = ["serde"] }
+nix = { version = "0.31.3", default-features = false, features = ["feature"] }
 rand = { version = "0.10.3", default-features = false, features = ["std", "std_rng", "sys_rng"] }
 rust_decimal.workspace = true
 secrecy = { workspace = true, features = ["serde"] }
@@ -22,6 +24,7 @@ thiserror.workspace = true
 tracing.workspace = true
 unicode-normalization = "0.1.26"
 url = "2.5.8"
+uuid.workspace = true
 
 [dev-dependencies]
 rstest = "=0.27.0"

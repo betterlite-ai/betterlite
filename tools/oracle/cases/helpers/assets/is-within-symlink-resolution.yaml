@@ -1,0 +1,12 @@
+kind: helper
+name: is_within_resolves_a_symlink_that_points_outside_base_dir
+call:
+  assets:
+    op: is_within
+    fixture:
+      - {kind: dir, path: "../outside"}
+      - {kind: symlink, path: escape, target: "../outside"}
+    path: escape
+env: {}
+compare:
+  ignore: []

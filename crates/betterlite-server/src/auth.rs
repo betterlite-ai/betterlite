@@ -49,18 +49,18 @@ pub mod team_budget_admission;
 pub mod trusted_network;
 pub mod virtual_key_routes;
 
-use crate::error_body::{AuthenticationFailure, authentication_error};
+use crate::auth::auth_identity::{INSTALLED_STAGES, StageInput, dispatch};
+use crate::error_body::authentication_error;
 use axum::body::Body;
 use axum::extract::State;
 use axum::http::{HeaderMap, Request, header};
 use axum::middleware::Next;
 use axum::response::Response;
 use regex::Regex;
-use secrecy::{ExposeSecret as _, SecretString};
-use subtle::ConstantTimeEq as _;
+use secrecy::SecretString;
 pub(crate) async fn authenticate(
     State(master_key_state): State<Option<SecretString>>,
-    request: Request<Body>,
+    mut request: Request<Body>,
     next: Next,
 ) -> Response {
     if matches!(
@@ -73,22 +73,16 @@ pub(crate) async fn authenticate(
         return next.run(request).await;
     };
     let presented_key = extract_key(request.headers());
-    if presented_key.as_ref().is_some_and(|presented| {
-        bool::from(
-            presented
-                .expose_secret()
-                .as_bytes()
-                .ct_eq(master_key.expose_secret().as_bytes()),
-        )
-    }) {
-        return next.run(request).await;
+    for backend in INSTALLED_STAGES {
+        let input = StageInput::MasterKey(presented_key.clone());
+        match dispatch(*backend, &input, master_key) {
+            Ok(context) => {
+                request.extensions_mut().insert(context);
+            }
+            Err(failure) => return authentication_error(&failure),
+        }
     }
-    let failure = match presented_key.as_ref() {
-        None => AuthenticationFailure::Missing,
-        Some(key) if key.expose_secret().is_empty() => AuthenticationFailure::Missing,
-        Some(_) => AuthenticationFailure::Invalid,
-    };
-    authentication_error(&failure)
+    next.run(request).await
 }
 fn extract_key(headers: &HeaderMap) -> Option<SecretString> {
     for name in [

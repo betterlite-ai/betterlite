@@ -1,0 +1,10 @@
+kind: helper
+name: auth-identity-role-user-row
+call:
+  auth_identity:
+    aspect: role
+    user_role: proxy_admin
+    user_present: true
+env: {}
+compare:
+  ignore: []

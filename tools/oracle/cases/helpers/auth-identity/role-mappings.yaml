@@ -1,0 +1,10 @@
+kind: helper
+name: auth-identity-role-mappings
+call:
+  auth_identity:
+    aspect: role
+    user_role: org_admin
+    user_present: false
+env: {}
+compare:
+  ignore: []
