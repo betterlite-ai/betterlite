@@ -40,18 +40,14 @@ pub(super) fn as_optional_text(
     })
 }
 
-pub(super) fn as_decimal(value: Option<&SpendColumnValue>) -> Decimal {
-    match value {
-        Some(SpendColumnValue::Bool(flag)) => Decimal::from(u8::from(*flag)),
-        Some(SpendColumnValue::Int(whole)) => Decimal::from(*whole),
-        Some(SpendColumnValue::Decimal(amount)) => *amount,
-        None
-        | Some(
-            SpendColumnValue::Null
-            | SpendColumnValue::Text(_)
-            | SpendColumnValue::Array(_)
-            | SpendColumnValue::Object(_),
-        ) => Decimal::ZERO,
+impl SpendColumnValue {
+    pub(super) fn number(&self) -> Decimal {
+        match self {
+            Self::Bool(flag) => Decimal::from(u8::from(*flag)),
+            Self::Int(whole) => Decimal::from(*whole),
+            Self::Decimal(amount) => *amount,
+            Self::Null | Self::Text(_) | Self::Array(_) | Self::Object(_) => Decimal::ZERO,
+        }
     }
 }
 
@@ -59,7 +55,8 @@ pub(super) fn as_counter(
     value: Option<&SpendColumnValue>,
     field: &str,
 ) -> Result<i64, DailySpendValueError> {
-    as_decimal(value)
+    value
+        .map_or(Decimal::ZERO, SpendColumnValue::number)
         .trunc()
         .to_i64()
         .ok_or_else(|| DailySpendValueError::Overflow {

@@ -1,7 +1,8 @@
 use super::bind::SqlBind;
 use super::columns::{COUNTER_COLUMNS, KEY_COLUMNS, SPEND_COLUMNS, sql_cast};
 use super::entities::{DailySpendTable, SpendRow};
-use super::values::{DailySpendValueError, as_counter, as_decimal, as_optional_text};
+use super::values::{DailySpendValueError, SpendColumnValue, as_counter, as_optional_text};
+use rust_decimal::Decimal;
 use uuid::Uuid;
 
 pub fn build_bulk_upsert(
@@ -74,7 +75,9 @@ fn row_params(
         )?)));
     }
     for column in SPEND_COLUMNS {
-        let decimal = as_decimal(transaction.get(column));
+        let decimal = transaction
+            .get(column)
+            .map_or(Decimal::ZERO, SpendColumnValue::number);
         params.push(SqlBind::Money(decimal));
     }
     if table.carries_request_id {

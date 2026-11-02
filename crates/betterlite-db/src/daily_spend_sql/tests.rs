@@ -95,7 +95,7 @@ async fn postgres_daily_collisions_and_tag_request_retention() {
     let (fixture, pool) = database().await;
     let first = pool.get().await.unwrap();
     let second = pool.get().await.unwrap();
-    daily_schema(&first).await;
+    first.batch_execute(DAILY_SCHEMA).await.unwrap();
     let mut initial = row("tag", Null, 2);
     initial.insert("model_group".to_owned(), Text("first".to_owned()));
     initial.insert("request_id".to_owned(), Text("request".to_owned()));
@@ -132,42 +132,22 @@ async fn postgres_daily_collisions_and_tag_request_retention() {
     fixture.close_async().await.unwrap();
 }
 
-async fn daily_schema(client: &deadpool_postgres::Client) {
-    let mut fields = vec![
-        "id text PRIMARY KEY",
-        "tag text",
-        "date text",
-        "api_key text",
-        "model text",
-        "custom_llm_provider text",
-        "mcp_namespaced_tool_name text",
-        "endpoint text",
-        "model_group text",
-        "request_id text",
-        "updated_at timestamp",
-    ]
-    .into_iter()
-    .map(str::to_owned)
-    .collect::<Vec<_>>();
-    fields.extend(
-        super::columns::COUNTER_COLUMNS
-            .iter()
-            .map(|column| format!("{column} bigint NOT NULL")),
-    );
-    fields.extend(
-        super::columns::SPEND_COLUMNS
-            .iter()
-            .map(|column| format!("{column} double precision NOT NULL")),
-    );
-    fields.push("UNIQUE(tag, date, api_key, model, custom_llm_provider, mcp_namespaced_tool_name, endpoint)".to_owned());
-    client
-        .batch_execute(&format!(
-            "CREATE TABLE \"LiteLLM_DailyTagSpend\" ({})",
-            fields.join(", ")
-        ))
-        .await
-        .unwrap();
-}
+const DAILY_SCHEMA: &str = r#"CREATE TABLE "LiteLLM_DailyTagSpend" (
+    id text PRIMARY KEY, tag text, date text NOT NULL, api_key text NOT NULL,
+    model text, model_group text, custom_llm_provider text, mcp_namespaced_tool_name text,
+    endpoint text, request_id text, updated_at timestamp(3) NOT NULL,
+    created_at timestamp(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    prompt_tokens bigint NOT NULL DEFAULT 0, completion_tokens bigint NOT NULL DEFAULT 0,
+    api_requests bigint NOT NULL DEFAULT 0, successful_requests bigint NOT NULL DEFAULT 0,
+    failed_requests bigint NOT NULL DEFAULT 0, cache_read_input_tokens bigint NOT NULL DEFAULT 0,
+    cache_creation_input_tokens bigint NOT NULL DEFAULT 0, compression_saved_tokens bigint NOT NULL DEFAULT 0,
+    total_response_time_ms bigint NOT NULL DEFAULT 0, timed_requests bigint NOT NULL DEFAULT 0,
+    spend double precision NOT NULL DEFAULT 0, compression_savings_spend double precision NOT NULL DEFAULT 0,
+    prompt_caching_savings_spend double precision NOT NULL DEFAULT 0,
+    gateway_injected_caching_savings_spend double precision NOT NULL DEFAULT 0,
+    autorouter_savings_spend double precision NOT NULL DEFAULT 0,
+    UNIQUE(tag, date, api_key, model, custom_llm_provider, mcp_namespaced_tool_name, endpoint)
+)"#;
 
 #[test]
 fn rejects_overflow_and_nonfinite_money() {
@@ -198,7 +178,7 @@ fn rolling_upgrade_daily_record_defaults() {
 }
 
 async fn check_daily(first: &deadpool_postgres::Client) {
-    let result = first.query_one("SELECT prompt_tokens, spend::numeric, model_group, request_id, model, count(*) OVER () FROM \"LiteLLM_DailyTagSpend\"", &[]).await.unwrap();
+    let result = first.query_one("SELECT prompt_tokens, spend::numeric, model_group, request_id, model, count(*) OVER (), id FROM \"LiteLLM_DailyTagSpend\"", &[]).await.unwrap();
     assert_eq!(
         (
             result.get::<_, i64>(0),
@@ -215,4 +195,13 @@ async fn check_daily(first: &deadpool_postgres::Client) {
         ),
         ("first".to_owned(), "request".to_owned(), String::new(), 1)
     );
+    let identifier = uuid::Uuid::parse_str(&result.get::<_, String>(6)).unwrap();
+    assert_eq!(identifier.get_version(), Some(uuid::Version::Random));
+}
+
+#[rstest]
+#[case::oversized(vec![b' '; 0x0010_0001])]
+#[case::invalid_utf8(vec![0xff])]
+fn rejects_invalid_tag_bytes(#[case] bytes: Vec<u8>) {
+    decode_daily_tags(&bytes).unwrap_err();
 }

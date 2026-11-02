@@ -1,8 +1,7 @@
 use super::columns::{COUNTER_COLUMNS, KEY_COLUMNS, SPEND_COLUMNS};
 use super::entities::{DailySpendTable, SpendRow};
-use super::values::{
-    DailySpendValueError, SpendColumnValue, as_counter, as_decimal, as_optional_text,
-};
+use super::values::{DailySpendValueError, SpendColumnValue, as_counter, as_optional_text};
+use rust_decimal::Decimal;
 
 pub fn conflict_key(
     table: &DailySpendTable,
@@ -49,8 +48,12 @@ fn merge_into(merged: &mut SpendRow, next: &SpendRow) -> Result<(), DailySpendVa
         merged.insert(column.to_owned(), SpendColumnValue::Int(summed));
     }
     for column in SPEND_COLUMNS {
-        let total = as_decimal(merged.get(column));
-        let addition = as_decimal(next.get(column));
+        let total = merged
+            .get(column)
+            .map_or(Decimal::ZERO, SpendColumnValue::number);
+        let addition = next
+            .get(column)
+            .map_or(Decimal::ZERO, SpendColumnValue::number);
         let summed = total
             .checked_add(addition)
             .ok_or_else(|| DailySpendValueError::Overflow {
