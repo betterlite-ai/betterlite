@@ -125,6 +125,119 @@ fn output_reasoning_item_dump(fields: &IndexMap<String, Json>) -> Option<Json> {
     )
 }
 
+// openai.types.responses.response_function_web_search.ActionSearchSource.model_dump() field order (type, url); both have no default, so a source missing either isn't a valid ActionSearchSource.
+fn web_search_action_source_dump(fields: &IndexMap<String, Json>) -> Option<Json> {
+    match fields.get("type") {
+        Some(Json::Text(kind)) if kind == "url" => {
+            let mut ordered = IndexMap::new();
+            ordered.insert("type".to_owned(), Json::Text("url".to_owned()));
+            ordered.insert("url".to_owned(), fields.get("url")?.clone());
+            append_extra_fields(&mut ordered, fields);
+            Some(Json::Object(ordered))
+        }
+        _ => None,
+    }
+}
+
+// openai.types.responses.response_function_web_search.ActionSearch.model_dump() field order (type, queries, query, sources); sources, when present, must each validate as ActionSearchSource.
+fn web_search_action_search_dump(fields: &IndexMap<String, Json>) -> Option<Json> {
+    match fields.get("type") {
+        Some(Json::Text(kind)) if kind == "search" => {
+            let sources = match fields.get("sources") {
+                None | Some(Json::Null) => Json::Null,
+                Some(list) => Json::List(project_part_list(list, web_search_action_source_dump)?),
+            };
+            let mut with_sources = fields.clone();
+            with_sources.insert("sources".to_owned(), sources);
+            required_then_typed(
+                &with_sources,
+                &[],
+                "search",
+                &["queries", "query", "sources"],
+            )
+        }
+        _ => None,
+    }
+}
+
+// openai.types.responses.response_function_web_search.ActionFind.model_dump() field order (pattern, type, url); pattern and url have no default, so a find action missing either isn't valid.
+fn web_search_action_find_dump(fields: &IndexMap<String, Json>) -> Option<Json> {
+    match fields.get("type") {
+        Some(Json::Text(kind)) if kind == "find_in_page" => {
+            let mut ordered = IndexMap::new();
+            ordered.insert("pattern".to_owned(), fields.get("pattern")?.clone());
+            ordered.insert("type".to_owned(), Json::Text("find_in_page".to_owned()));
+            ordered.insert("url".to_owned(), fields.get("url")?.clone());
+            append_extra_fields(&mut ordered, fields);
+            Some(Json::Object(ordered))
+        }
+        _ => None,
+    }
+}
+
+// openai.types.responses.response_function_web_search.Action's three variants, discriminated by "type": ActionSearch, ActionOpenPage, ActionFind; no member falls back to a plain dict, so an unrecognized or invalid action invalidates the whole web_search_call item.
+fn web_search_action_dump(fields: &IndexMap<String, Json>) -> Option<Json> {
+    web_search_action_search_dump(fields)
+        .or_else(|| output_typed_part(fields, "open_page", &[], &["url"]))
+        .or_else(|| web_search_action_find_dump(fields))
+}
+
+// openai.types.responses.ResponseFunctionWebSearch.model_dump() field order (id, action, status, type); id, action and status have no default. status is a Literal["in_progress", "searching", "completed", "failed"], so any other status value invalidates the item too.
+fn web_search_call_dump(fields: &IndexMap<String, Json>) -> Option<Json> {
+    match fields.get("status") {
+        Some(Json::Text(status))
+            if matches!(
+                status.as_str(),
+                "in_progress" | "searching" | "completed" | "failed"
+            ) => {}
+        _ => return None,
+    }
+    let Json::Object(action_fields) = fields.get("action")? else {
+        return None;
+    };
+    let action = web_search_action_dump(action_fields)?;
+    let mut with_action = fields.clone();
+    with_action.insert("action".to_owned(), action);
+    required_then_typed(
+        &with_action,
+        &["id", "action", "status"],
+        "web_search_call",
+        &[],
+    )
+}
+
+// openai.types.responses.ResponseCustomToolCall.Caller's two variants, discriminated by "type": CallerDirect ({"type": "direct"}) and CallerProgram (caller_id, type); neither falls back to a plain dict, so an unrecognized or invalid caller invalidates the whole custom_tool_call item.
+fn custom_tool_caller_dump(fields: &IndexMap<String, Json>) -> Option<Json> {
+    match fields.get("type") {
+        Some(Json::Text(kind)) if kind == "direct" => output_typed_part(fields, "direct", &[], &[]),
+        Some(Json::Text(kind)) if kind == "program" => {
+            let mut ordered = IndexMap::new();
+            ordered.insert("caller_id".to_owned(), fields.get("caller_id")?.clone());
+            ordered.insert("type".to_owned(), Json::Text("program".to_owned()));
+            append_extra_fields(&mut ordered, fields);
+            Some(Json::Object(ordered))
+        }
+        _ => None,
+    }
+}
+
+// openai.types.responses.ResponseCustomToolCall.model_dump() field order (call_id, input, name, type, id, caller, namespace); call_id, input and name have no default, so an item missing any of them isn't a valid ResponseCustomToolCall.
+fn custom_tool_call_dump(fields: &IndexMap<String, Json>) -> Option<Json> {
+    let caller = match fields.get("caller") {
+        None | Some(Json::Null) => Json::Null,
+        Some(Json::Object(caller_fields)) => custom_tool_caller_dump(caller_fields)?,
+        Some(_) => return None,
+    };
+    let mut with_caller = fields.clone();
+    with_caller.insert("caller".to_owned(), caller);
+    required_then_typed(
+        &with_caller,
+        &["call_id", "input", "name"],
+        "custom_tool_call",
+        &["id", "caller", "namespace"],
+    )
+}
+
 // litellm.types.llms.openai.ResponsesAPIResponse.output parses each raw item into its matching typed class when it validates; an item with an unrecognized or invalid shape stays an unmodified dict, so _serialize_galileo_output's json.dumps writes it back verbatim.
 pub(super) fn output_item_dump(item: &Json) -> Json {
     let Json::Object(fields) = item else {
@@ -140,6 +253,8 @@ pub(super) fn output_item_dump(item: &Json) -> Json {
             &["id", "caller", "namespace", "status"],
         ),
         Some(Json::Text(kind)) if kind == "reasoning" => output_reasoning_item_dump(fields),
+        Some(Json::Text(kind)) if kind == "web_search_call" => web_search_call_dump(fields),
+        Some(Json::Text(kind)) if kind == "custom_tool_call" => custom_tool_call_dump(fields),
         _ => None,
     };
     projected.unwrap_or_else(|| item.clone())

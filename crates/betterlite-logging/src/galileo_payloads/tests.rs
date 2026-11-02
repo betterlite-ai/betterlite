@@ -554,53 +554,23 @@ fn check_message_model_dump_extended_fields() {
     assert_eq!(messages_for_span, Json::List(Vec::new()));
 }
 
-// litellm.types.llms.openai.ResponsesAPIResponse.output parses a "message" item into ResponseOutputMessage (content parts being output_text or refusal) and a "function_call" item into ResponseFunctionToolCall before _serialize_galileo_output dumps them, filling every declared optional field with null and keeping any extra key the item or part carried; an item whose type isn't recognized or doesn't validate against its recognized type stays an unmodified dict.
+// litellm.types.llms.openai.ResponsesAPIResponse.output parses each raw item into its matching openai.types.responses.ResponseOutputItem member (message, function_call, reasoning, web_search_call or custom_tool_call) before _serialize_galileo_output dumps them, filling every declared optional field with null and keeping any extra key the item or part carried; an item whose type isn't recognized or doesn't validate against its recognized type (including a reasoning summary part without a "summary_text" type) stays an unmodified dict.
 fn check_responses_api_output_projection() {
     let kwargs = GalileoKwargs::default();
     let output = val(r#"[
-            {"type": "message", "id": "msg_1", "role": "assistant", "status": "completed",
-             "content": [{"type": "output_text", "text": "hi", "annotations": []}]},
-            {"type": "message", "id": "msg_2", "role": "assistant", "status": "completed",
-             "content": [{"type": "refusal", "refusal": "no", "foo": 1}]},
-            {"type": "message", "id": "msg_3", "role": "assistant", "status": "completed",
-             "content": [{"type": "something_else", "refusal": "no"}]},
+            {"type": "message", "id": "msg_1", "role": "assistant", "status": "completed", "content": [{"type": "output_text", "text": "hi", "annotations": []}]},
+            {"type": "message", "id": "msg_2", "role": "assistant", "status": "completed", "content": [{"type": "refusal", "refusal": "no", "foo": 1}]},
+            {"type": "message", "id": "msg_3", "role": "assistant", "status": "completed", "content": [{"type": "something_else", "refusal": "no"}]},
             {"type": "function_call", "call_id": "call_1", "name": "f", "arguments": "{}"},
-            {"type": "something_unknown", "foo": "bar"}
-        ]"#);
-    let (_, response_output, _) = galileo_input_output_content(
-        &kwargs,
-        Some(&ResponseObj::ResponsesApi { output }),
-        Level::Default,
-        None,
-    );
-    let parsed: Json = serde_json::from_str(&response_output).expect("valid JSON output");
-    let expected = val(r#"[
-            {"id": "msg_1",
-             "content": [{"annotations": [], "text": "hi", "type": "output_text", "logprobs": null}],
-             "role": "assistant", "status": "completed", "type": "message", "phase": null},
-            {"id": "msg_2",
-             "content": [{"refusal": "no", "type": "refusal", "foo": 1}],
-             "role": "assistant", "status": "completed", "type": "message", "phase": null},
-            {"type": "message", "id": "msg_3", "role": "assistant", "status": "completed",
-             "content": [{"type": "something_else", "refusal": "no"}]},
-            {"arguments": "{}", "call_id": "call_1", "name": "f", "type": "function_call",
-             "id": null, "caller": null, "namespace": null, "status": null},
-            {"type": "something_unknown", "foo": "bar"}
-        ]"#);
-    assert_eq!(parsed, expected);
-}
-
-// litellm.types.llms.openai.ResponsesAPIResponse.output parses a "reasoning" item into ResponseReasoningItem, keeping any extra key the item carried and requiring every summary part to have type "summary_text"; a reasoning item whose type doesn't match the union or whose summary carries an untyped part stays an unmodified dict, the same as web_search_call and custom_tool_call items, since decoding the rest of the ResponseOutputItem union belongs to B1138.
-fn check_responses_api_output_projection_reasoning_and_out_of_scope() {
-    let kwargs = GalileoKwargs::default();
-    let output = val(r#"[
+            {"type": "something_unknown", "foo": "bar"},
             {"type": "reasoning", "call_id": "call_2", "name": "g", "arguments": "{}"},
             {"type": "reasoning", "id": "rs_1", "summary": [], "foo": "bar"},
             {"type": "something_else", "id": "rs_2", "summary": []},
             {"type": "reasoning", "id": "rs_3", "summary": [{"text": "s"}]},
-            {"type": "web_search_call", "id": "ws_1", "status": "completed",
-             "action": {"type": "search", "query": "q"}},
-            {"type": "custom_tool_call", "call_id": "c1", "input": "x", "name": "t"}
+            {"type": "web_search_call", "id": "ws_1", "status": "completed", "action": {"type": "search", "query": "q"}},
+            {"type": "web_search_call", "id": "ws_2", "status": "completed", "action": {"type": "bogus"}},
+            {"type": "custom_tool_call", "call_id": "c1", "input": "x", "name": "t", "caller": {"type": "program", "caller_id": "p1"}},
+            {"type": "custom_tool_call", "call_id": "c2", "input": "x", "name": "t", "caller": {"type": "bogus"}}
         ]"#);
     let (_, response_output, _) = galileo_input_output_content(
         &kwargs,
@@ -610,14 +580,19 @@ fn check_responses_api_output_projection_reasoning_and_out_of_scope() {
     );
     let parsed: Json = serde_json::from_str(&response_output).expect("valid JSON output");
     let expected = val(r#"[
+            {"id": "msg_1", "content": [{"annotations": [], "text": "hi", "type": "output_text", "logprobs": null}], "role": "assistant", "status": "completed", "type": "message", "phase": null},
+            {"id": "msg_2", "content": [{"refusal": "no", "type": "refusal", "foo": 1}], "role": "assistant", "status": "completed", "type": "message", "phase": null},
+            {"type": "message", "id": "msg_3", "role": "assistant", "status": "completed", "content": [{"type": "something_else", "refusal": "no"}]},
+            {"arguments": "{}", "call_id": "call_1", "name": "f", "type": "function_call", "id": null, "caller": null, "namespace": null, "status": null},
+            {"type": "something_unknown", "foo": "bar"},
             {"type": "reasoning", "call_id": "call_2", "name": "g", "arguments": "{}"},
-            {"id": "rs_1", "summary": [], "type": "reasoning",
-             "content": null, "encrypted_content": null, "status": null, "foo": "bar"},
+            {"id": "rs_1", "summary": [], "type": "reasoning", "content": null, "encrypted_content": null, "status": null, "foo": "bar"},
             {"type": "something_else", "id": "rs_2", "summary": []},
             {"type": "reasoning", "id": "rs_3", "summary": [{"text": "s"}]},
-            {"type": "web_search_call", "id": "ws_1", "status": "completed",
-             "action": {"type": "search", "query": "q"}},
-            {"type": "custom_tool_call", "call_id": "c1", "input": "x", "name": "t"}
+            {"id": "ws_1", "action": {"type": "search", "queries": null, "query": "q", "sources": null}, "status": "completed", "type": "web_search_call"},
+            {"type": "web_search_call", "id": "ws_2", "status": "completed", "action": {"type": "bogus"}},
+            {"call_id": "c1", "input": "x", "name": "t", "type": "custom_tool_call", "id": null, "caller": {"caller_id": "p1", "type": "program"}, "namespace": null},
+            {"type": "custom_tool_call", "call_id": "c2", "input": "x", "name": "t", "caller": {"type": "bogus"}}
         ]"#);
     assert_eq!(parsed, expected);
 }
@@ -700,7 +675,6 @@ fn galileo_payload_construction() {
     check_message_model_dump_falsy_fields();
     check_message_model_dump_extended_fields();
     check_responses_api_output_projection();
-    check_responses_api_output_projection_reasoning_and_out_of_scope();
     check_rerank_content();
     check_messages_or_empty_guard();
 }
