@@ -124,3 +124,22 @@ fn a_worker_also_needs_a_writer_seat_and_a_reviewer_does_not() {
     drop((first, second));
     assert!(seat_free(git.path(), &agents, &claude, Seat::Worker).unwrap());
 }
+
+#[test]
+fn an_expired_limit_allows_one_probe_instead_of_a_stampede() {
+    let agents = agents();
+    let git = tempfile::tempdir().unwrap();
+    mark(git.path(), "openai", "You've hit your usage limit").unwrap();
+    let path = git.path().join("betterlite/limits/openai");
+    File::options()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_modified(SystemTime::now() - Duration::from_hours(1))
+        .unwrap();
+    let probe = take_seat(git.path(), &agents, &codex(), Seat::Worker).unwrap();
+    assert!(probe.is_some());
+    assert!(!seat_free(git.path(), &agents, &codex(), Seat::Worker).unwrap());
+    drop(probe);
+    assert!(seat_free(git.path(), &agents, &codex(), Seat::Worker).unwrap());
+}
