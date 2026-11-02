@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use super::error::ProvidersError;
 use super::types::ProviderCreateInfo;
 
@@ -26,7 +28,7 @@ fn decode_fragment(bytes: &[u8]) -> Result<Vec<ProviderCreateInfo>, ProvidersErr
             limit: MAX_FRAGMENT_BYTES,
         });
     }
-    serde_json::from_slice(bytes).map_err(|error| ProvidersError::FragmentJson(error.to_string()))
+    serde_json::from_slice(bytes).map_err(|error| ProvidersError::FragmentJson(Arc::new(error)))
 }
 
 pub fn provider_catalog() -> Result<Vec<ProviderCreateInfo>, ProvidersError> {

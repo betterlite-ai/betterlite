@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use regex::Regex;
 
@@ -60,7 +61,7 @@ pub fn build_endpoints_from_json(bytes: &[u8]) -> Result<Vec<SupportedEndpoint>,
         });
     }
     let raw: ProvidersFile = serde_json::from_slice(bytes)
-        .map_err(|error| ProvidersError::EndpointsJson(error.to_string()))?;
+        .map_err(|error| ProvidersError::EndpointsJson(Arc::new(error)))?;
     Ok(build_endpoints(&raw))
 }
 
