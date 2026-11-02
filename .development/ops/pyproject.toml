@@ -1,0 +1,18 @@
+[project]
+name = "betterlite-dispatch-ops"
+version = "0.1.0"
+requires-python = ">=3.13,<3.14"
+dependencies = []
+
+[dependency-groups]
+dev = ["basedpyright==1.40.2", "ruff==0.17.1"]
+
+[tool.uv]
+default-groups = []
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "ANN", "PLW"]

@@ -62,12 +62,26 @@ enum Command {
     Validate,
     #[command(about = "Print the checks a task runs")]
     List { task: String },
+    #[command(
+        about = "Check task prerequisites without running builds, tests, coverage or mutants"
+    )]
+    Preflight { task: String },
+    #[command(about = "Check account backoff before preparing a checkout; starts no agents")]
+    Availability,
     #[command(about = "Run every check of a task; exit 1 when any check fails")]
     Run {
         task: String,
-        #[arg(long, help = "Run only this check id (repeatable)")]
+        #[arg(
+            long,
+            value_delimiter = ',',
+            help = "Run only these check ids (repeatable or comma-separated)"
+        )]
         only: Vec<String>,
-        #[arg(long, help = "Leave this check id out (repeatable)")]
+        #[arg(
+            long,
+            value_delimiter = ',',
+            help = "Leave these check ids out (repeatable or comma-separated)"
+        )]
         skip: Vec<String>,
     },
     #[command(
@@ -190,19 +204,18 @@ fn run_command(
 ) -> Result<(Vec<String>, bool), GateError> {
     match command {
         Command::Affected => Ok((affected::affected(&development.root)?, true)),
-        Command::Validate => {
-            let problems = validate::validate(&development.root)?;
-            let passed = problems.is_empty();
-            Ok((
-                if passed {
-                    vec!["valid".to_owned()]
-                } else {
-                    problems
-                },
-                passed,
-            ))
+        Command::Availability => {
+            dispatch::availability(development)?;
+            Ok((vec!["a worker vendor is available".to_owned()], true))
         }
+        Command::Validate => validate_command(development),
         Command::List { task } => Ok((listing(development, &task)?, true)),
+        Command::Preflight { task: id } => {
+            let task = development.task(&id)?;
+            let selection = checks::selection::preflight(development, &task)?;
+            let verdict = checks::run(development, &task, &selection)?;
+            Ok((verdict.lines, verdict.passed))
+        }
         Command::Run { task, only, skip } => {
             let verdict = checks::run(
                 development,
@@ -245,4 +258,15 @@ fn main() -> ExitCode {
             }
         }
     }
+}
+
+fn validate_command(development: &Development) -> Result<(Vec<String>, bool), GateError> {
+    let problems = validate::validate(&development.root)?;
+    let passed = problems.is_empty();
+    let lines = if passed {
+        vec!["valid".to_owned()]
+    } else {
+        problems
+    };
+    Ok((lines, passed))
 }

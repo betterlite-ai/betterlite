@@ -1,12 +1,14 @@
+mod slots;
 mod tests;
 
+use std::env;
 use std::fs::{self, File};
 use std::path::Path;
 use std::process::ExitStatus;
 
 use crate::checks::Outcome;
 use crate::error::GateError;
-use crate::git::common_dir;
+use crate::git::coordinator;
 use crate::process::check_command;
 use crate::spec::command::Command;
 
@@ -54,6 +56,7 @@ fn run_logged(
         .arg(&command.run)
         .current_dir(root)
         .envs(environment.iter().map(|(key, value)| (*key, value)))
+        .env("GATE_BUILD_HELD", "1")
         .stdout(log)
         .stderr(errors)
         .status()
@@ -71,7 +74,7 @@ pub(crate) fn execute(
 ) -> Result<Outcome, GateError> {
     let log_path = log_dir.join(format!("{}.log", command.id));
     let turn = if command.one_at_a_time {
-        let path = common_dir(root)?
+        let path = coordinator(root)?
             .join("betterlite")
             .join(format!("{}.lock", command.id));
         let file = File::create(&path).map_err(|source| GateError::Write {
@@ -84,7 +87,9 @@ pub(crate) fn execute(
     } else {
         None
     };
+    let build = build_slot(root, command)?;
     let status = run_logged(root, &log_path, command, environment)?;
+    drop(build);
     drop(turn);
     if status.success() {
         return Ok(Outcome::Pass);
@@ -106,4 +111,33 @@ pub(crate) fn execute(
         why: command.why.clone(),
         hints: found,
     })
+}
+
+fn build_slot(root: &Path, command: &Command) -> Result<Option<File>, GateError> {
+    let configured = env::var("GATE_BUILD_SLOTS")
+        .ok()
+        .map(|value| value.parse::<u32>())
+        .transpose()
+        .map_err(|error| {
+            GateError::Selection(format!(
+                "GATE_BUILD_SLOTS must be a positive integer: {error}"
+            ))
+        })?;
+    if configured == Some(0) {
+        return Err(GateError::Selection(
+            "GATE_BUILD_SLOTS must be positive".to_owned(),
+        ));
+    }
+    let build = if let Some(count) = configured
+        && command.run.contains("cargo ")
+        && env::var("GATE_BUILD_HELD").as_deref() != Ok("1")
+    {
+        Some(slots::acquire(
+            &coordinator(root)?.join("betterlite/builds"),
+            count,
+        )?)
+    } else {
+        None
+    };
+    Ok(build)
 }
