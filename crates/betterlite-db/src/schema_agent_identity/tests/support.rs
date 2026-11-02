@@ -272,10 +272,11 @@ async fn relation_oid(client: &Client, name: &str) -> String {
 }
 
 async fn relation_exists(client: &Client, name: &str) -> bool {
-    query_opt_row(
+    let quoted_identifier = format!("\"{name}\"");
+    scalar_opt_text(
         client,
-        "SELECT 1 FROM pg_class WHERE relname = $1",
-        &[&name],
+        "SELECT to_regclass($1)::text",
+        &[&quoted_identifier],
     )
     .await
     .is_some()
