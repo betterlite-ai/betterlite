@@ -39,7 +39,10 @@ fn function_tool_builds_the_responses_shape() {
         test_object([
             ("type", json!("function")),
             ("name", json!(CODE_EXECUTION_TOOL_NAME)),
-            ("description", json!(FUNCTION_DESCRIPTION)),
+            (
+                "description",
+                json!("Execute python code in a sandbox and return stdout."),
+            ),
             ("parameters", expected_parameters()),
         ])
     );
@@ -58,7 +61,10 @@ fn function_tool_builds_the_chat_completion_shape_nested_under_function() {
                 "function",
                 test_object([
                     ("name", json!(CODE_EXECUTION_TOOL_NAME)),
-                    ("description", json!(FUNCTION_DESCRIPTION)),
+                    (
+                        "description",
+                        json!("Execute python code in a sandbox and return stdout."),
+                    ),
                     ("parameters", expected_parameters()),
                 ]),
             ),
