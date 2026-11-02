@@ -1,6 +1,10 @@
 mod tests;
 
-use betterlite_auth::{agent_policy, budget_snapshots};
+use betterlite_auth::agent_policy::{
+    AgentIdentityBinding, AgentKillSwitchAuth, AgentKillSwitchConfig, AgentResponse,
+    ManagedAgentContext,
+};
+use betterlite_auth::budget_snapshots;
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -42,11 +46,29 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         match input.function {
-            Function::KillAuth => model::<agent_policy::AgentKillSwitchAuth>(&input.value),
-            Function::KillConfig => model::<agent_policy::AgentKillSwitchConfig>(&input.value),
-            Function::AgentResponse => model::<agent_policy::AgentResponse>(&input.value),
-            Function::IdentityBinding => model::<agent_policy::AgentIdentityBinding>(&input.value),
-            Function::ManagedContext => model::<agent_policy::ManagedAgentContext>(&input.value),
+            Function::KillAuth => {
+                serde_json::from_value::<AgentKillSwitchAuth>(input.value.clone())
+                    .and_then(serde_json::to_value)
+                    .map_err(CarriedPolicyRecordsError::from)
+            }
+            Function::KillConfig => {
+                serde_json::from_value::<AgentKillSwitchConfig>(input.value.clone())
+                    .and_then(serde_json::to_value)
+                    .map_err(CarriedPolicyRecordsError::from)
+            }
+            Function::AgentResponse => serde_json::from_value::<AgentResponse>(input.value.clone())
+                .and_then(serde_json::to_value)
+                .map_err(CarriedPolicyRecordsError::from),
+            Function::IdentityBinding => {
+                serde_json::from_value::<AgentIdentityBinding>(input.value.clone())
+                    .and_then(serde_json::to_value)
+                    .map_err(CarriedPolicyRecordsError::from)
+            }
+            Function::ManagedContext => {
+                serde_json::from_value::<ManagedAgentContext>(input.value.clone())
+                    .and_then(serde_json::to_value)
+                    .map_err(CarriedPolicyRecordsError::from)
+            }
             Function::KeySnapshot => snapshot::<budget_snapshots::KeyBudgetSnapshot>(&input.value),
             Function::TeamSnapshot => {
                 snapshot::<budget_snapshots::TeamBudgetSnapshot>(&input.value)
@@ -56,25 +78,19 @@ impl crate::helpers::Helper for Op {
             }
             Function::OrgSnapshot => snapshot::<budget_snapshots::OrgBudgetSnapshot>(&input.value),
         }
-        .map_err(|error| {
-            Box::new(crate::helpers::HelperError {
-                class: "ValidationError".to_owned(),
-                status: None,
-                error_type: None,
-                param: None,
-                code: None,
-                message: error.to_string(),
-            })
-        })
+        .map_err(|error| to_helper_error(&error))
     }
 }
 
-fn model<T>(value: &Value) -> Result<Value, CarriedPolicyRecordsError>
-where
-    T: serde::de::DeserializeOwned + serde::Serialize,
-{
-    let model: T = serde_json::from_value(value.clone())?;
-    Ok(serde_json::to_value(model)?)
+fn to_helper_error(error: &CarriedPolicyRecordsError) -> Box<crate::helpers::HelperError> {
+    Box::new(crate::helpers::HelperError {
+        class: "ValidationError".to_owned(),
+        status: None,
+        error_type: None,
+        param: None,
+        code: None,
+        message: error.to_string(),
+    })
 }
 
 fn snapshot<T>(value: &Value) -> Result<Value, CarriedPolicyRecordsError>

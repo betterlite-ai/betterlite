@@ -10,7 +10,6 @@ use serde::{Deserialize, Serialize};
 use crate::agent_policy::caller::AgentCaller;
 use crate::agent_policy::{AgentResponse, ManagedAgentContext};
 use crate::budget_snapshots::{OrgBudgetSnapshot, TeamBudgetSnapshot, UserBudgetSnapshot};
-use crate::resolved_key::materialize;
 use crate::resolved_key::view::{VerificationTokenView, ViewError};
 use crate::user_roles::UserRole;
 
@@ -185,7 +184,9 @@ impl UserAPIKeyAuth {
         strip_server_only_fields(&mut fields);
         hash_api_key_and_token(&mut fields)?;
         let view = VerificationTokenView::construct(fields.clone())?;
-        let extra = materialize(fields).map_err(AuthError::Json)?;
+        let extra = serde_json::to_string(&JsonData::Object(fields))
+            .and_then(|text| serde_json::from_str(&text))
+            .map_err(AuthError::Json)?;
         Ok(Self {
             view,
             extra,
