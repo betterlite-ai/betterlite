@@ -135,14 +135,6 @@ pub fn layered_ocr_pricing(sources: &[Option<&PriceRecord>]) -> Result<OcrPricin
     })
 }
 
-pub fn first_price(
-    source: Option<&PriceRecord>,
-    keys: &[&str],
-) -> Result<Option<Decimal>, OcrCostError> {
-    let pairs: Vec<(Option<&PriceRecord>, &str)> = keys.iter().map(|key| (source, *key)).collect();
-    first_numeric(&pairs)
-}
-
 // An absent provider is spelled "None" to match Python's str(None) in the same log line.
 #[must_use]
 pub fn single_log_line(value: Option<&str>) -> String {
@@ -252,8 +244,18 @@ pub fn ocr_batch_cost(
     let pages_processed = usage.pages_processed;
     let annotation_pages = usage.pages_processed_annotation;
 
-    let deployment_page_rate = first_price(deployment_info, &BATCH_PAGE_RATE_KEYS)?;
-    let deployment_annotation_rate = first_price(deployment_info, &BATCH_ANNOTATION_RATE_KEYS)?;
+    let deployment_page_rate = first_numeric(
+        &BATCH_PAGE_RATE_KEYS
+            .iter()
+            .map(|key| (deployment_info, *key))
+            .collect::<Vec<(Option<&PriceRecord>, &str)>>(),
+    )?;
+    let deployment_annotation_rate = first_numeric(
+        &BATCH_ANNOTATION_RATE_KEYS
+            .iter()
+            .map(|key| (deployment_info, *key))
+            .collect::<Vec<(Option<&PriceRecord>, &str)>>(),
+    )?;
     let needs_published_pricing = (pages_processed > 0 && deployment_page_rate.is_none())
         || (annotation_pages > 0 && deployment_annotation_rate.is_none());
 
@@ -272,11 +274,21 @@ pub fn ocr_batch_cost(
 
     let page_rate = match deployment_page_rate {
         Some(rate) => Some(rate),
-        None => first_price(published.as_ref(), &BATCH_PAGE_RATE_KEYS)?,
+        None => first_numeric(
+            &BATCH_PAGE_RATE_KEYS
+                .iter()
+                .map(|key| (published.as_ref(), *key))
+                .collect::<Vec<(Option<&PriceRecord>, &str)>>(),
+        )?,
     };
     let annotation_rate = match deployment_annotation_rate {
         Some(rate) => Some(rate),
-        None => first_price(published.as_ref(), &BATCH_ANNOTATION_RATE_KEYS)?,
+        None => first_numeric(
+            &BATCH_ANNOTATION_RATE_KEYS
+                .iter()
+                .map(|key| (published.as_ref(), *key))
+                .collect::<Vec<(Option<&PriceRecord>, &str)>>(),
+        )?,
     };
     if page_rate.is_none() && pages_processed > 0 {
         tracing::warn!(

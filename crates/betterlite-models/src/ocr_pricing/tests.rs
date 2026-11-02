@@ -2,7 +2,7 @@
 
 use super::{
     OcrBatchUsage, OcrBilling, OcrCostError, OcrPricingField, OcrResponseKind, OcrUsage,
-    first_ocr_price, first_price, layered_ocr_pricing, ocr_batch_cost, ocr_cost, single_log_line,
+    first_numeric, first_ocr_price, layered_ocr_pricing, ocr_batch_cost, ocr_cost, single_log_line,
 };
 use crate::price_lookup::{PriceLookup, PriceRecord, PricedModel};
 use crate::tiered_pricing::Scalar;
@@ -198,10 +198,13 @@ fn first_price_checks_each_key_in_order(
     #[case] expected: Option<Decimal>,
 ) {
     let source = record(pairs);
+    let keys = ["ocr_cost_per_page_batches", "ocr_cost_per_page"];
     assert_eq!(
-        first_price(
-            Some(&source),
-            &["ocr_cost_per_page_batches", "ocr_cost_per_page"]
+        first_numeric(
+            &keys
+                .iter()
+                .map(|key| (Some(&source), *key))
+                .collect::<Vec<(Option<&PriceRecord>, &str)>>()
         )
         .unwrap(),
         expected
