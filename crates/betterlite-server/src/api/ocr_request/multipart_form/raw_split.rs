@@ -29,9 +29,16 @@ fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         .position(|window| window == needle)
 }
 
-fn is_final_boundary(line: &[u8], dash_boundary: &[u8]) -> bool {
-    line.strip_prefix(dash_boundary)
-        .is_some_and(|rest| rest.starts_with(b"--"))
+// A line is a boundary only when dash_boundary is immediately followed by nothing (an ordinary boundary) or by "--" (the closing boundary, which needs no trailing CRLF since it can end the body). Anything else, such as a data line that merely starts with dash_boundary, is not a boundary at all.
+fn boundary_kind(line: &[u8], dash_boundary: &[u8]) -> Option<bool> {
+    let rest = line.strip_prefix(dash_boundary)?;
+    if rest.is_empty() {
+        Some(false)
+    } else if rest == b"--" {
+        Some(true)
+    } else {
+        None
+    }
 }
 
 fn parse_header_line(line: &[u8]) -> Result<(&[u8], &[u8]), OcrRequestError> {
@@ -49,7 +56,7 @@ fn skip_preamble<'body>(body: &'body [u8], dash_boundary: &[u8]) -> &'body [u8] 
     while let Some(idx) = remaining.windows(2).position(|pair| pair == b"\r\n") {
         let line = remaining.get(..idx).unwrap_or(remaining);
         let after_crlf = remaining.get(idx.saturating_add(2)..).unwrap_or(&[]);
-        if line.starts_with(dash_boundary) {
+        if boundary_kind(line, dash_boundary).is_some() {
             return after_crlf;
         }
         remaining = after_crlf;
@@ -99,24 +106,34 @@ fn read_data<'body>(
     dash_boundary: &[u8],
 ) -> (&'body [u8], &'body [u8], bool) {
     let mut cursor = remaining;
-    while let Some(idx) = cursor.windows(2).position(|pair| pair == b"\r\n") {
-        let line = cursor.get(..idx).unwrap_or(cursor);
-        let after_crlf = cursor.get(idx.saturating_add(2)..).unwrap_or(&[]);
-        if line.starts_with(dash_boundary) {
+    loop {
+        if let Some(idx) = cursor.windows(2).position(|pair| pair == b"\r\n") {
+            let line = cursor.get(..idx).unwrap_or(cursor);
+            let after_crlf = cursor.get(idx.saturating_add(2)..).unwrap_or(&[]);
+            if let Some(is_final) = boundary_kind(line, dash_boundary) {
+                let consumed = remaining.len().saturating_sub(cursor.len());
+                let content_len = consumed.saturating_sub(2);
+                let content = remaining.get(..content_len).unwrap_or(remaining);
+                return (content, after_crlf, is_final);
+            }
+            cursor = after_crlf;
+        } else if let Some(is_final) = boundary_kind(cursor, dash_boundary) {
+            // The body can end right after the closing boundary's second hyphen, with no trailing CRLF, so a final unterminated line still needs checking before falling back to treating the rest as content.
             let consumed = remaining.len().saturating_sub(cursor.len());
             let content_len = consumed.saturating_sub(2);
             let content = remaining.get(..content_len).unwrap_or(remaining);
-            return (content, after_crlf, is_final_boundary(line, dash_boundary));
+            return (content, &[], is_final);
+        } else {
+            return (remaining, &[], true);
         }
-        cursor = after_crlf;
     }
-    (remaining, &[], true)
 }
 
-// A byte-level split of the multipart body that never requires a header value to be valid UTF-8, unlike multipart-rs's own streaming reader used in parse_body for the boundary and Content-Type.
+// A byte-level split of the multipart body that never requires a header value to be valid UTF-8, unlike multipart-rs's own streaming reader used in parse_body for the boundary and Content-Type. Bailing once the item count passes max_items keeps a body of many tiny parts from growing the item list well past parse_body's own field/file caps before those caps ever run.
 pub(super) fn split_items<'body>(
     body: &'body [u8],
     boundary: &str,
+    max_items: usize,
 ) -> Result<Vec<RawItem<'body>>, OcrRequestError> {
     let dash_boundary = format!("--{boundary}").into_bytes();
     let mut items = Vec::new();
@@ -130,6 +147,11 @@ pub(super) fn split_items<'body>(
             content_type: headers.content_type,
             data,
         });
+        if items.len() > max_items {
+            return Err(OcrRequestError::MultipartParse(
+                MultipartError::InvalidItemHeader,
+            ));
+        }
         // Legitimate parsing always shrinks remaining by at least the boundary line it consumed, so this stops the loop on a mutant that fakes is_final instead of trusting it alone.
         if is_final || after_data.len() >= before {
             return Ok(items);
