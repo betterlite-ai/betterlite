@@ -641,6 +641,10 @@ fn drops_the_fixture_databases_after_a_late_step_failure() {
         &mut generator,
     )
     .expect_err("a missing capture at the second step fails the whole run");
+    assert_eq!(
+        generator.counter, 2,
+        "the run should have named both fixture databases through this run's own generator"
+    );
     let remaining = all_database_names(secret.expose_secret())
         .into_iter()
         .filter(|name| name.starts_with(&prefix))
