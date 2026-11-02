@@ -1,18 +1,10 @@
 use serde::Deserialize;
-use serde::de::{DeserializeOwned, Deserializer, Error as _};
+use serde::de::{Deserializer, Error as _};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 #[error("the storage response is not a valid row list")]
 pub struct RowsError(#[source] pub serde_json::Error);
-
-pub fn decode_rows<T>(bytes: &[u8]) -> Result<Vec<T>, RowsError>
-where
-    T: DeserializeOwned,
-{
-    let decoded = serde_json::from_slice(bytes);
-    decoded.map_err(RowsError)
-}
 
 // ClickHouse reports a flag as the native type, as a 0/1 int, or as a quoted digit string.
 #[derive(Deserialize)]
@@ -52,16 +44,23 @@ pub fn bool_from_bool_or_zero_one<'de, D>(deserializer: D) -> Result<bool, D::Er
 where
     D: Deserializer<'de>,
 {
-    let value = Lax::deserialize(deserializer)?;
-    bool::from_lax(value).ok_or_else(|| D::Error::custom("expected a boolean or 0/1"))
+    match Lax::deserialize(deserializer) {
+        Ok(value) => {
+            bool::from_lax(value).ok_or_else(|| D::Error::custom("expected a boolean or 0/1"))
+        }
+        Err(error) => Err(error),
+    }
 }
 
 pub fn i64_from_int_or_numeric_string<'de, D>(deserializer: D) -> Result<i64, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let value = Lax::deserialize(deserializer)?;
-    i64::from_lax(value).ok_or_else(|| D::Error::custom("expected an integer or a numeric string"))
+    match Lax::deserialize(deserializer) {
+        Ok(value) => i64::from_lax(value)
+            .ok_or_else(|| D::Error::custom("expected an integer or a numeric string")),
+        Err(error) => Err(error),
+    }
 }
 
 mod tests;

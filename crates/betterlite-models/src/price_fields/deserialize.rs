@@ -28,6 +28,8 @@ pub(crate) fn optional_price<'de, Input>(
 where
     Input: Deserializer<'de>,
 {
-    let value = ExactDecimal::deserialize(deserializer)?;
-    Ok(Some(Decimal::from(value)))
+    match ExactDecimal::deserialize(deserializer) {
+        Ok(value) => Ok(Some(Decimal::from(value))),
+        Err(error) => Err(error),
+    }
 }
