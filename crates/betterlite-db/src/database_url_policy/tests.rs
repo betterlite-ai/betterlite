@@ -52,7 +52,7 @@ fn idle_none_zero_negative() {
     assert_eq!(
         vec![(
             "max_idle_connection_lifetime".to_owned(),
-            None.unwrap_or(QueryValue::Integer(IDLE_LIFETIME_DEFAULT))
+            QueryValue::Integer(IDLE_LIFETIME_DEFAULT)
         )],
         vec![(
             "max_idle_connection_lifetime".to_owned(),
@@ -62,7 +62,7 @@ fn idle_none_zero_negative() {
     assert_eq!(
         vec![(
             "max_idle_connection_lifetime".to_owned(),
-            Some(QueryValue::Integer(0)).unwrap_or(QueryValue::Integer(IDLE_LIFETIME_DEFAULT))
+            QueryValue::Integer(0)
         )],
         vec![(
             "max_idle_connection_lifetime".to_owned(),
@@ -72,7 +72,7 @@ fn idle_none_zero_negative() {
     assert_eq!(
         vec![(
             "max_idle_connection_lifetime".to_owned(),
-            Some(QueryValue::Integer(-5)).unwrap_or(QueryValue::Integer(IDLE_LIFETIME_DEFAULT))
+            QueryValue::Integer(-5)
         )],
         vec![(
             "max_idle_connection_lifetime".to_owned(),
@@ -87,7 +87,7 @@ fn idle_integer_configured_passes_through() {
     assert_eq!(
         vec![(
             "max_idle_connection_lifetime".to_owned(),
-            Some(QueryValue::Integer(300)).unwrap_or(QueryValue::Integer(IDLE_LIFETIME_DEFAULT))
+            QueryValue::Integer(300)
         )],
         vec![(
             "max_idle_connection_lifetime".to_owned(),

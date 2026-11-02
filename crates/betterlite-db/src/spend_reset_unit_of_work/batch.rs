@@ -58,8 +58,7 @@ pub struct BudgetCascadeBatch {
 
 impl SpendResetBatch {
     pub async fn commit(&self, unit: SpendResetUnitOfWork) -> Result<(), CommitError> {
-        commit_entries(
-            &self.store,
+        commit_entries(&self.store, {
             mem::take(
                 &mut *unit
                     .keys
@@ -67,16 +66,15 @@ impl SpendResetBatch {
                     .entries
                     .lock()
                     .unwrap_or_else(PoisonError::into_inner),
-            ),
-        )
+            )
+        })
         .await
     }
 }
 
 impl BudgetCascadeBatch {
     pub async fn commit(&self, unit: BudgetCascadeUnitOfWork) -> Result<(), CommitError> {
-        commit_entries(
-            &self.store,
+        commit_entries(&self.store, {
             mem::take(
                 &mut *unit
                     .budgets
@@ -84,8 +82,8 @@ impl BudgetCascadeBatch {
                     .entries
                     .lock()
                     .unwrap_or_else(PoisonError::into_inner),
-            ),
-        )
+            )
+        })
         .await
     }
 }
