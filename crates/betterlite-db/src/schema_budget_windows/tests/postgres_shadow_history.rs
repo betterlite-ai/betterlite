@@ -348,8 +348,32 @@ async fn check_existing_group_id_preserved(client: &Client) {
     .await;
 }
 
-async fn seed_stopped_at_offset_rows(client: &Client) {
+const STOPPED_AT_ALIGNMENT_RETRIES: u32 = 50;
+
+async fn align_transaction_to_millisecond_boundary(client: &Client) {
     batch_execute(client, "BEGIN; SET LOCAL TIME ZONE 'UTC';").await;
+    for attempts_remaining in (1..=STOPPED_AT_ALIGNMENT_RETRIES).rev() {
+        let sub_millisecond_remainder: i64 = client
+            .query_one(
+                "SELECT extract(microseconds from now())::bigint % 1000",
+                &[],
+            )
+            .await
+            .unwrap()
+            .get(0);
+        if sub_millisecond_remainder == 0 {
+            return;
+        }
+        assert!(
+            attempts_remaining > 1,
+            "transaction now() never landed on a millisecond boundary after {STOPPED_AT_ALIGNMENT_RETRIES} tries"
+        );
+        batch_execute(client, "ROLLBACK; BEGIN; SET LOCAL TIME ZONE 'UTC';").await;
+    }
+}
+
+async fn seed_stopped_at_offset_rows(client: &Client) {
+    align_transaction_to_millisecond_boundary(client).await;
     exec_params(
         client,
         r#"INSERT INTO "LiteLLM_ShadowEvalJob" (id, api_key_id, router_name, judge_model, shadow_percentage, max_turns, group_id, stopped_at, ends_at) VALUES ($1, $2, $3, $4, $5, $6, $1, now(), now() + interval '1 hour')"#,
@@ -358,7 +382,13 @@ async fn seed_stopped_at_offset_rows(client: &Client) {
     .await;
     batch_execute(
         client,
-        r#"INSERT INTO "LiteLLM_ShadowEvalJob" (id, api_key_id, router_name, judge_model, shadow_percentage, max_turns, group_id, stopped_at, ends_at) VALUES ('job-stop-equal', 'key-stop', 'router-a', 'judge-a', 10.0, 5, 'job-stop-equal', now(), date_trunc('milliseconds', now() AT TIME ZONE 'utc'))"#,
+        r#"INSERT INTO "LiteLLM_ShadowEvalJob" (id, api_key_id, router_name, judge_model, shadow_percentage, max_turns, group_id, stopped_at, ends_at) VALUES ('job-stop-equal', 'key-stop', 'router-a', 'judge-a', 10.0, 5, 'job-stop-equal', now(), now() AT TIME ZONE 'utc')"#,
+    )
+    .await;
+    exec_params(
+        client,
+        r#"INSERT INTO "LiteLLM_ShadowEvalJob" (id, api_key_id, router_name, judge_model, shadow_percentage, max_turns, group_id, stopped_at, ends_at) VALUES ($1, $2, $3, $4, $5, $6, $1, now(), now() - interval '1 hour')"#,
+        &[&"job-stop-expired", &"key-stop", &"router-a", &"judge-a", &10.0_f64, &5_i32],
     )
     .await;
     exec_params(
@@ -395,6 +425,12 @@ async fn check_stopped_at_offset_backfill(client: &Client) {
         &[&"job-stop-equal"],
     )
     .await;
+    let expired = scalar_opt_text(
+        client,
+        r#"SELECT stopped_by FROM "LiteLLM_ShadowEvalJob" WHERE id = $1"#,
+        &[&"job-stop-expired"],
+    )
+    .await;
     let unstopped_future = scalar_opt_text(
         client,
         r#"SELECT stopped_by FROM "LiteLLM_ShadowEvalJob" WHERE id = $1"#,
@@ -404,6 +440,7 @@ async fn check_stopped_at_offset_backfill(client: &Client) {
     batch_execute(client, "COMMIT;").await;
     assert_eq!(future.as_deref(), Some("unknown"));
     assert_eq!(equal, None);
+    assert_eq!(expired, None);
     assert_eq!(unstopped_future, None);
 }
 
