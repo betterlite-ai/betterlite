@@ -525,15 +525,25 @@ fn check_message_model_dump_falsy_fields() {
     }
 }
 
-// litellm.types.utils.Message.__init__ keeps annotations even when empty (an is-not-None check, not truthiness), keeps a present reasoning_content, carries a tool call's own extra "index" key ahead of function/id/type (ChatCompletionMessageToolCall.__init__ passes **params to super().__init__() before assigning self.function/id/type), and folds any key that isn't a declared Message field into the pydantic extra tail (here, a null "refusal").
+// litellm.types.utils.Message.__init__ keeps annotations even when empty (an is-not-None check, not truthiness), keeps a present reasoning_content, carries a tool call's own extra "index" key ahead of function/id/type (ChatCompletionMessageToolCall.__init__ passes **params to super().__init__() before assigning self.function/id/type), and folds any key that isn't a declared Message field into the pydantic extra tail (here, a null "refusal"). A Chat response's messages_for_span still falls back to the (here absent) request messages, independent of what the response message carries.
 fn check_message_model_dump_extended_fields() {
-    assert_chat_message_output(
-        val(
-            r#"{"role": "assistant", "content": "Hi", "refusal": null, "annotations": [],
-            "reasoning_content": "thinking...",
-            "tool_calls": [{"index": 0, "id": "call_1", "type": "function",
-                "function": {"name": "f", "arguments": "{}"}}]}"#,
-        ),
+    let kwargs = GalileoKwargs::default();
+    let message = val(
+        r#"{"role": "assistant", "content": "Hi", "refusal": null, "annotations": [],
+        "reasoning_content": "thinking...",
+        "tool_calls": [{"index": 0, "id": "call_1", "type": "function",
+            "function": {"name": "f", "arguments": "{}"}}]}"#,
+    );
+    let (_, output, messages_for_span) = galileo_input_output_content(
+        &kwargs,
+        Some(&ResponseObj::Chat {
+            message: Some(message),
+        }),
+        Level::Default,
+        None,
+    );
+    assert_eq!(
+        output,
         concat!(
             r#"{"content": "Hi", "role": "assistant", "#,
             r#""tool_calls": [{"index": 0, "function": {"arguments": "{}", "name": "f"}, "id": "call_1", "type": "function"}], "#,
@@ -541,6 +551,7 @@ fn check_message_model_dump_extended_fields() {
             r#""provider_specific_fields": null, "annotations": [], "refusal": null}"#,
         ),
     );
+    assert_eq!(messages_for_span, Json::List(Vec::new()));
 }
 
 // litellm.types.llms.openai.ResponsesAPIResponse.output parses a "message" item into ResponseOutputMessage and a "function_call" item into ResponseFunctionToolCall before _serialize_galileo_output dumps them, filling every declared optional field with null; an item whose type isn't recognized stays an unmodified dict.
