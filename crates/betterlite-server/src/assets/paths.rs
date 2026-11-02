@@ -51,10 +51,11 @@ pub fn safe_join(base_dir: &Path, parts: &[&str]) -> Result<PathBuf, PathError> 
 
 #[must_use]
 pub fn try_safe_join(base_dir: &Path, parts: &[&str]) -> Option<PathBuf> {
-    match safe_join(base_dir, parts) {
-        Ok(path) => Some(path),
-        Err(_) => None,
+    let result = safe_join(base_dir, parts);
+    if result.is_err() {
+        return None;
     }
+    result.ok()
 }
 
 #[must_use]
