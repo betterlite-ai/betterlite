@@ -21,6 +21,7 @@ struct TextCompletionChoice {
 }
 
 impl TextCompletionChoice {
+    // Message/Choices always carry tool_calls/function_call/finish_reason (default "stop"), but logprobs only when given.
     fn into_chat_choice(self, index: usize) -> Value {
         let mut message = Map::new();
         message.insert("role".to_owned(), Value::String("assistant".to_owned()));
@@ -28,14 +29,19 @@ impl TextCompletionChoice {
             "content".to_owned(),
             self.text.map_or(Value::Null, Value::String),
         );
+        message.insert("tool_calls".to_owned(), Value::Null);
+        message.insert("function_call".to_owned(), Value::Null);
         let mut choice = Map::new();
         choice.insert(
             "finish_reason".to_owned(),
-            self.finish_reason.unwrap_or(Value::Null),
+            self.finish_reason
+                .unwrap_or_else(|| Value::String("stop".to_owned())),
         );
         choice.insert("index".to_owned(), Value::from(index));
         choice.insert("message".to_owned(), Value::Object(message));
-        choice.insert("logprobs".to_owned(), self.logprobs.unwrap_or(Value::Null));
+        if let Some(logprobs) = self.logprobs {
+            choice.insert("logprobs".to_owned(), logprobs);
+        }
         Value::Object(choice)
     }
 }

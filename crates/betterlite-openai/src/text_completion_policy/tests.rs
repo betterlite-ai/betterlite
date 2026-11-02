@@ -181,9 +181,19 @@ fn text_completion_policy_cases(#[case] case: u8) {
             assert_eq!(result_two["choices"][1]["index"], json!(1_i32));
             assert_eq!(
                 result_two["choices"][0]["message"],
-                json!({"role": "assistant", "content": "a"})
+                json!({
+                    "role": "assistant",
+                    "content": "a",
+                    "tool_calls": null,
+                    "function_call": null,
+                })
             );
-            assert_eq!(result_two["choices"][1]["logprobs"], json!(null));
+            assert!(
+                !result_two["choices"][1]
+                    .as_object()
+                    .expect("choice object")
+                    .contains_key("logprobs")
+            );
             assert_eq!(result_two["usage"], json!({"total_tokens": 3_i32}));
             assert!(!result_two.contains_key("id"));
             assert!(!result_two.contains_key("model"));
@@ -191,11 +201,27 @@ fn text_completion_policy_cases(#[case] case: u8) {
             let missing_fields = json!({"choices": [{}]});
             let result_three =
                 reply::to_chat_model_response(Some(missing_fields), Some(Map::new()))
-                    .expect("missing choice fields default to null");
-            assert_eq!(result_three["choices"][0]["finish_reason"], json!(null));
+                    .expect("missing choice fields default");
+            assert_eq!(result_three["choices"][0]["finish_reason"], json!("stop"));
             assert_eq!(
                 result_three["choices"][0]["message"]["content"],
                 json!(null)
+            );
+            assert!(
+                !result_three["choices"][0]
+                    .as_object()
+                    .expect("choice object")
+                    .contains_key("logprobs")
+            );
+
+            let with_logprobs = json!({
+                "choices": [{"text": "c", "finish_reason": "length", "logprobs": {"tokens": ["c"]}}],
+            });
+            let result_four = reply::to_chat_model_response(Some(with_logprobs), Some(Map::new()))
+                .expect("explicit logprobs pass through");
+            assert_eq!(
+                result_four["choices"][0]["logprobs"],
+                json!({"tokens": ["c"]})
             );
 
             let malformed = json!({"choices": [{"text": 5_i32, "finish_reason": "stop"}]});
