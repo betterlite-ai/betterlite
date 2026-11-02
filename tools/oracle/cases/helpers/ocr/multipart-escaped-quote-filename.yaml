@@ -1,0 +1,12 @@
+kind: helper
+name: multipart_escaped_quote_filename
+call:
+  b3300:
+    multipart:
+      file_base64: SGVsbG8sIFdvcmxkIQ==
+      file_name: 'a\"b.pdf'
+      file_content_type: "application/pdf"
+      fields: []
+env: {}
+compare:
+  ignore: []
