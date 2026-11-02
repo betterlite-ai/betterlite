@@ -469,11 +469,11 @@ fn empty_jsonb(name: &'static str) -> ColumnSpec {
 }
 
 fn empty_text_array(name: &'static str) -> ColumnSpec {
-    (name, "ARRAY", false, Some("'{}'::text[]"), "_text", None)
+    (name, "ARRAY", false, Some("ARRAY[]::text[]"), "_text", None)
 }
 
 fn nullable_empty_text_array(name: &'static str) -> ColumnSpec {
-    (name, "ARRAY", true, Some("'{}'::text[]"), "_text", None)
+    (name, "ARRAY", true, Some("ARRAY[]::text[]"), "_text", None)
 }
 
 async fn assert_exec_params_err_state(
