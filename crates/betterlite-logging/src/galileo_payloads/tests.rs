@@ -562,10 +562,13 @@ fn check_responses_api_output_projection() {
              "content": [{"type": "output_text", "text": "hi", "annotations": []}]},
             {"type": "message", "id": "msg_2", "role": "assistant", "status": "completed",
              "content": [{"type": "refusal", "refusal": "no"}]},
+            {"type": "message", "id": "msg_3", "role": "assistant", "status": "completed",
+             "content": [{"type": "something_else", "refusal": "no"}]},
             {"type": "function_call", "call_id": "call_1", "name": "f", "arguments": "{}"},
             {"type": "something_unknown", "foo": "bar"},
             {"type": "reasoning", "call_id": "call_2", "name": "g", "arguments": "{}"},
-            {"type": "reasoning", "id": "rs_1", "summary": []}
+            {"type": "reasoning", "id": "rs_1", "summary": []},
+            {"type": "something_else", "id": "rs_2", "summary": []}
         ]"#);
     let (_, response_output, _) = galileo_input_output_content(
         &kwargs,
@@ -581,12 +584,15 @@ fn check_responses_api_output_projection() {
             {"id": "msg_2",
              "content": [{"refusal": "no", "type": "refusal"}],
              "role": "assistant", "status": "completed", "type": "message", "phase": null},
+            {"type": "message", "id": "msg_3", "role": "assistant", "status": "completed",
+             "content": [{"type": "something_else", "refusal": "no"}]},
             {"arguments": "{}", "call_id": "call_1", "name": "f", "type": "function_call",
              "id": null, "caller": null, "namespace": null, "status": null},
             {"type": "something_unknown", "foo": "bar"},
             {"type": "reasoning", "call_id": "call_2", "name": "g", "arguments": "{}"},
             {"id": "rs_1", "summary": [], "type": "reasoning",
-             "content": null, "encrypted_content": null, "status": null}
+             "content": null, "encrypted_content": null, "status": null},
+            {"type": "something_else", "id": "rs_2", "summary": []}
         ]"#);
     assert_eq!(parsed, expected);
 }
