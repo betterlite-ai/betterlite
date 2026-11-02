@@ -1,5 +1,5 @@
 kind: helper
-name: guardrails-ai-blocked
+name: blocked
 call:
   b3753:
     guardrails_ai_process_input:

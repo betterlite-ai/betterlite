@@ -1,5 +1,5 @@
 kind: helper
-name: guardrails-ai-init
+name: init
 call:
   b3753:
     guardrails_ai_construct:

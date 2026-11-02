@@ -1,5 +1,5 @@
 kind: helper
-name: aporia-moderation-blocked
+name: moderation-blocked
 call:
   b3753:
     aporia_moderation:
