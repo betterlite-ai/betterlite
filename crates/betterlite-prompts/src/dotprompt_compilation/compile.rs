@@ -56,8 +56,13 @@ pub(super) fn compile_inner(
         });
     };
 
+    let empty_variables = Object::new();
     let rendered_content = manager.with_prompt_manager(|prompt_manager| {
-        prompt_manager.render(prompt_id, prompt_variables, version)
+        prompt_manager.render(
+            prompt_id,
+            prompt_variables.unwrap_or(&empty_variables),
+            version,
+        )
     })??;
 
     let messages = messages::convert_to_messages(&rendered_content);

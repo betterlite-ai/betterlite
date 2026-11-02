@@ -1,0 +1,5 @@
+kind: helper
+name: system-placement-system-after-user-seed
+call: {system_placement: {operation: place_mid_conversation_system, supports_mid_conversation_system: true, messages: [{role: user, content: Summarize the attached report.}, {role: system, content: Limit the summary to three bullet points.}, {role: assistant, content: Here is the summary.}]}}
+env: {}
+compare: {ignore: []}

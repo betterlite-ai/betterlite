@@ -1,0 +1,11 @@
+kind: helper
+name: provider-defaults-b-dashscope
+call:
+  provider_defaults_b:
+    provider: dashscope
+    model: dashscope-model
+    environment:
+      DASHSCOPE_API_BASE: https://env.dashscope.example/v1
+      DASHSCOPE_API_KEY: env-dashscope-key
+env: {}
+compare: {ignore: []}

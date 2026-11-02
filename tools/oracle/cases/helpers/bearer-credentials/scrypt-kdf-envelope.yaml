@@ -1,0 +1,10 @@
+kind: helper
+name: scrypt-kdf-envelope
+call:
+  b4653:
+    function: scrypt
+    master_key: "sk-test-master-key-0123456789abcdef"
+    domains: [envelope_signing, envelope_encryption]
+env: {}
+compare:
+  ignore: []

@@ -13,10 +13,13 @@ use axum::body::Bytes;
 use axum::routing::post;
 use betterlite_config::sections::grayswan::{Configured, OnFlaggedAction, ReasoningMode};
 use reqwest::StatusCode;
-use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
+use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderValue};
+use rstest::rstest;
 use secrecy::SecretString;
 use serde::Deserialize;
+use std::net::TcpListener as StdTcpListener;
 use tokio::net::TcpListener;
+use tokio::runtime::Builder as RuntimeBuilder;
 use tokio::task::JoinSet;
 use tracing::subscriber::with_default;
 
@@ -274,6 +277,72 @@ fn grayswan_block_error_status_code_is_bad_request() {
         .process_response(&response(0.9), GuardrailInputType::Request, vec![], vec![])
         .expect_err("blocked");
     assert_eq!(error.status_code(), StatusCode::BAD_REQUEST);
+}
+fn connection_refused() -> reqwest::Error {
+    let listener = StdTcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let addr = listener.local_addr().unwrap();
+    drop(listener);
+    let runtime = RuntimeBuilder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime
+        .block_on(
+            reqwest::Client::default()
+                .get(format!("http://{addr}"))
+                .send(),
+        )
+        .unwrap_err()
+}
+#[rstest]
+#[case::timeout(
+    GraySwanGuardrailAPIError::Timeout { source: connection_refused() },
+    StatusCode::REQUEST_TIMEOUT
+)]
+#[case::http_status_in_range(
+    GraySwanGuardrailAPIError::HttpStatus { status: StatusCode::NOT_FOUND },
+    StatusCode::NOT_FOUND
+)]
+#[case::http_status_out_of_range(
+    GraySwanGuardrailAPIError::HttpStatus { status: StatusCode::MOVED_PERMANENTLY },
+    StatusCode::INTERNAL_SERVER_ERROR
+)]
+#[case::blocked(
+    GraySwanGuardrailAPIError::Blocked {
+        reason: String::new(),
+        violation_location: "input",
+        violation: 0.9_f64,
+        violated_rules: Vec::new(),
+        mutation: None,
+        ipi: None,
+    },
+    StatusCode::BAD_REQUEST
+)]
+#[case::request(
+    GraySwanGuardrailAPIError::Request { source: connection_refused() },
+    StatusCode::INTERNAL_SERVER_ERROR
+)]
+#[case::invalid_header(
+    GraySwanGuardrailAPIError::InvalidHeader {
+        source: HeaderValue::from_str("\u{0}").unwrap_err(),
+    },
+    StatusCode::INTERNAL_SERVER_ERROR
+)]
+#[case::response_too_large(
+    GraySwanGuardrailAPIError::ResponseTooLarge { limit: 10 },
+    StatusCode::INTERNAL_SERVER_ERROR
+)]
+#[case::response_json(
+    GraySwanGuardrailAPIError::ResponseJson {
+        source: serde_json::from_str::<()>("not json").unwrap_err(),
+    },
+    StatusCode::INTERNAL_SERVER_ERROR
+)]
+fn grayswan_error_status_follows_litellm(
+    #[case] error: GraySwanGuardrailAPIError,
+    #[case] status: StatusCode,
+) {
+    assert_eq!(error.status_code(), status);
 }
 #[test]
 fn grayswan_passthrough_replaces_post_call_messages() {

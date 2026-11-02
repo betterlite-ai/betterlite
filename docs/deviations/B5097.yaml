@@ -1,0 +1,8 @@
+task: B5097
+deviations:
+  - what: >-
+      Rendering now rejects a template or a rendered output past a fixed byte limit, matching the cap
+      crates/betterlite-prompts/src/jinja/bounds.rs already applies to the chat-template renderer (65536
+      bytes in, 1048576 bytes out).
+    why: LiteLLM's render() has no limit on template length or output size; fuel only counts instructions, so a short template can still build an unbounded output.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/dotprompt/prompt_manager.py#L200-L241

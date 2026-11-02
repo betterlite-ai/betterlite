@@ -1,9 +1,14 @@
 use crate::events::RunResult;
-use crate::payloads::PayloadError;
+use crate::payloads::{DEFAULT_MAX_RECURSE_DEPTH, PayloadError};
 use crate::state::Incompatibility;
 use crate::types::{Capability, Harness, Usage};
 use std::io;
 use thiserror::Error;
+
+mod python_repr;
+
+use python_repr::str_repr;
+
 #[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
 pub enum CappedOperation {
     #[error("read")]
@@ -24,19 +29,41 @@ pub enum HarnessError {
         harness: Harness,
         expected: &'static str,
     },
-    #[error("CodexOptions.config key {key:?} must be a non-empty key without '='")]
+    #[error("Invalid CodexOptions.config key: {}", str_repr(key))]
     InvalidConfigKey { key: String },
-    #[error("CodexOptions.config key {key:?} is managed by Harness.{}; use the matching agent() argument instead", .harness.name())]
-    ManagedConfigKey { key: String, harness: Harness },
     #[error(
-        "OpenCodeOptions.config[{section}{agent}] contains managed keys: {keys:?}",
-        agent = .agent.as_ref().map_or_else(String::new, |name| format!(".{name}"))
+        "CodexOptions.config[{}] is managed by LiteLLM; use the matching agent() argument instead",
+        str_repr(key)
     )]
-    OpenCodeManagedKeys {
+    ManagedConfigKey { key: String },
+    #[error("CodexOptions.config value of type NoneType cannot be passed to codex")]
+    CodexNullValue,
+    #[error("CodexOptions.config is nested deeper than {DEFAULT_MAX_RECURSE_DEPTH} levels")]
+    CodexNestedTooDeep,
+    #[error(
+        "OpenCodeOptions.config[{}] is managed by LiteLLM; use the matching agent() argument (model=, permissions=, disable_tools=) instead",
+        str_repr(key)
+    )]
+    OpenCodeManagedTopLevelKey { key: String },
+    #[error(
+        "OpenCodeOptions.config[{}][{}] sets [{}], which LiteLLM manages; use permissions=/disable_tools=/model= instead",
+        str_repr(section),
+        str_repr(agent),
+        keys.iter().map(|key| str_repr(key)).collect::<Vec<_>>().join(", ")
+    )]
+    OpenCodeAgentManagedKeys {
         section: String,
-        agent: Option<String>,
+        agent: String,
         keys: Vec<String>,
     },
+    #[error("OpenCodeOptions.config[{}] must be a mapping", str_repr(section))]
+    OpenCodeSectionNotMapping { section: String },
+    #[error(
+        "OpenCodeOptions.config[{}][{}] must be a mapping",
+        str_repr(section),
+        str_repr(agent)
+    )]
+    OpenCodeAgentShapeInvalid { section: String, agent: String },
     #[error("the runtime is missing from the sandbox or failed to start: {0}")]
     InstallFailed(#[source] io::Error),
     #[error("the sandbox failed: {source}")]

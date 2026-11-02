@@ -1,0 +1,76 @@
+name: routing-scenario-concurrent-requests
+config: |
+  model_list:
+    - model_name: scenario-model
+      litellm_params:
+        model: openai/gpt-scenario-upstream
+        api_base: "{{upstream}}"
+        api_key: oracle-key
+env: {}
+upstream:
+  - status: 200
+    headers: {content-type: application/json, x-request-id: upstream-request-1}
+    body:
+      id: chatcmpl-oracle-concurrent
+      object: chat.completion
+      created: 1700000000
+      model: gpt-scenario-upstream-2024
+      choices:
+        - index: 0
+          message: {role: assistant, content: Hello!, refusal: null, annotations: []}
+          logprobs: null
+          finish_reason: stop
+      usage: {prompt_tokens: 5, completion_tokens: 2, total_tokens: 7}
+  - status: 200
+    headers: {content-type: application/json, x-request-id: upstream-request-1}
+    body:
+      id: chatcmpl-oracle-concurrent
+      object: chat.completion
+      created: 1700000000
+      model: gpt-scenario-upstream-2024
+      choices:
+        - index: 0
+          message: {role: assistant, content: Hello!, refusal: null, annotations: []}
+          logprobs: null
+          finish_reason: stop
+      usage: {prompt_tokens: 5, completion_tokens: 2, total_tokens: 7}
+scenario:
+  steps:
+    - concurrent:
+        requests:
+          - request:
+              method: POST
+              path: /v1/chat/completions
+              headers:
+                content-type: application/json
+                authorization: Bearer oracle-master
+                x-litellm-call-id: oracle-call-scenario-concurrent
+              body:
+                model: scenario-model
+                messages:
+                  - {role: user, content: Say hello.}
+                stream: false
+            compare:
+              headers: [content-type, x-litellm-model-group, x-litellm-model-id]
+              headers_present: [x-litellm-response-duration-ms]
+              upstream_headers: [authorization, content-type]
+              ignore: []
+          - request:
+              method: POST
+              path: /v1/chat/completions
+              headers:
+                content-type: application/json
+                authorization: Bearer oracle-master
+                x-litellm-call-id: oracle-call-scenario-concurrent
+              body:
+                model: scenario-model
+                messages:
+                  - {role: user, content: Say hello.}
+                stream: false
+            compare:
+              headers: [content-type, x-litellm-model-group, x-litellm-model-id]
+              headers_present: [x-litellm-response-duration-ms]
+              upstream_headers: [authorization, content-type]
+              ignore: []
+    - join:
+        deadline_ms: 10000

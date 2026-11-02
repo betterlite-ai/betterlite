@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use super::{PriceLookup, PriceRecord};
+use super::{PriceLookup, PriceRecord, PricedModel};
 use crate::tiered_pricing::Scalar;
 use std::collections::BTreeMap;
 
@@ -21,6 +21,22 @@ impl PriceLookup for Fixture {
 
     fn raw_cost_map_entry(&self, key: &str) -> Option<PriceRecord> {
         self.raw.get(key).cloned()
+    }
+
+    fn effective_priced_model(
+        &self,
+        model: &str,
+        _custom_llm_provider: Option<&str>,
+    ) -> Option<PricedModel> {
+        self.effective
+            .get(model)
+            .cloned()
+            .map(|record| PricedModel {
+                record,
+                tiered_pricing: Vec::new(),
+                off_peak_pricing: None,
+                off_peak_cache_read_present: false,
+            })
     }
 }
 
