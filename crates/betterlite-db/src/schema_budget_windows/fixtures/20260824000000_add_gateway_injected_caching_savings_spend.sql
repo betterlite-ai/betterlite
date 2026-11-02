@@ -15,4 +15,3 @@ ALTER TABLE "LiteLLM_DailyTeamSpend" ADD COLUMN IF NOT EXISTS "gateway_injected_
 
 -- AlterTable
 ALTER TABLE "LiteLLM_DailyTagSpend" ADD COLUMN IF NOT EXISTS "gateway_injected_caching_savings_spend" DOUBLE PRECISION NOT NULL DEFAULT 0.0;
-

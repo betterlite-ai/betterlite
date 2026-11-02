@@ -152,110 +152,21 @@ async fn check_direction_forward_allows_other_direction(client: &Client) {
     assert_eq!(sql_state(&conflict), SqlState::UNIQUE_VIOLATION.code());
 }
 
-async fn check_group_id_null_fill_before_not_null(client: &Client) {
-    insert_shadow_job(client, "job-g1", "key-g1", "+ interval '1 hour'").await;
-    batch_execute(client, migration_sql_of(SHADOW_EVAL_MULTI_KEY.directory)).await;
-    let group_id = scalar_text(
-        client,
-        r#"SELECT group_id FROM "LiteLLM_ShadowEvalJob" WHERE id = $1"#,
-        &[&"job-g1"],
-    )
-    .await;
-    assert_eq!(group_id, "job-g1");
-    assert_column(
-        client,
-        "LiteLLM_ShadowEvalJob",
-        ("group_id", "text", false, None, "text", None),
-    )
-    .await;
-}
-
-async fn check_existing_group_id_preserved(client: &Client) {
-    exec_params(
-        client,
-        r#"INSERT INTO "LiteLLM_ShadowEvalJob" (id, api_key_id, router_name, judge_model, shadow_percentage, max_turns, group_id, ends_at) VALUES ($1, $2, $3, $4, $5, $6, $7, now() + interval '1 hour')"#,
-        &[
-            &"job-g2",
-            &"key-g2",
-            &"router-a",
-            &"judge-a",
-            &10.0_f64,
-            &5_i32,
-            &"custom-group",
-        ],
-    )
-    .await;
-    batch_execute(client, migration_sql_of(SHADOW_EVAL_MULTI_KEY.directory)).await;
-    let group_id = scalar_text(
-        client,
-        r#"SELECT group_id FROM "LiteLLM_ShadowEvalJob" WHERE id = $1"#,
-        &[&"job-g2"],
-    )
-    .await;
-    assert_eq!(group_id, "custom-group");
-}
-
-async fn insert_shadow_job_with_group_id(
+async fn check_shadow_eval_scalar_backfill(
     client: &Client,
     id: &str,
-    api_key_id: &str,
-    stopped_offset: &str,
-    ends_offset: &str,
+    migration_directory: &str,
+    select_column: &str,
+    expected: Option<&str>,
 ) {
-    exec_params(
+    batch_execute(client, migration_sql_of(migration_directory)).await;
+    let actual = scalar_opt_text(
         client,
-        &format!(
-            r#"INSERT INTO "LiteLLM_ShadowEvalJob" (id, api_key_id, router_name, judge_model, shadow_percentage, max_turns, group_id, stopped_at, ends_at) VALUES ($1, $2, $3, $4, $5, $6, $1, now() {stopped_offset}, now() {ends_offset})"#
-        ),
-        &[&id, &api_key_id, &"router-a", &"judge-a", &10.0_f64, &5_i32],
+        &format!(r#"SELECT {select_column} FROM "LiteLLM_ShadowEvalJob" WHERE id = $1"#),
+        &[&id],
     )
     .await;
-}
-
-async fn check_stopped_future_only_unknown_backfill(client: &Client) {
-    insert_shadow_job_with_group_id(
-        client,
-        "job-stop-future",
-        "key-stop-future",
-        "",
-        "+ interval '1 hour'",
-    )
-    .await;
-    batch_execute(
-        client,
-        migration_sql_of(ADD_SHADOW_EVAL_STOPPED_BY.directory),
-    )
-    .await;
-    let stopped_by = scalar_text(
-        client,
-        r#"SELECT stopped_by FROM "LiteLLM_ShadowEvalJob" WHERE id = $1"#,
-        &[&"job-stop-future"],
-    )
-    .await;
-    assert_eq!(stopped_by, "unknown");
-}
-
-async fn check_stopped_equal_now_or_expired_unchanged(client: &Client) {
-    insert_shadow_job_with_group_id(
-        client,
-        "job-stop-expired",
-        "key-stop-expired",
-        "",
-        "- interval '1 hour'",
-    )
-    .await;
-    batch_execute(
-        client,
-        migration_sql_of(ADD_SHADOW_EVAL_STOPPED_BY.directory),
-    )
-    .await;
-    let stopped_by = scalar_opt_text(
-        client,
-        r#"SELECT stopped_by FROM "LiteLLM_ShadowEvalJob" WHERE id = $1"#,
-        &[&"job-stop-expired"],
-    )
-    .await;
-    assert_eq!(stopped_by, None);
+    assert_eq!(actual.as_deref(), expected);
 }
 
 async fn check_budget_and_comparison_cost_defaults(client: &Client) {
@@ -394,74 +305,133 @@ async fn check_router_names_models_empty_attempt_router_null(client: &Client) {
     assert_eq!(router_name, None);
 }
 
-async fn run_shadow_history_check_early(client: &Client, cohort: ShadowHistoryCohort) -> bool {
-    match cohort {
-        ShadowHistoryCohort::RequiredJobInputsNoRangeChecks => {
-            check_required_job_inputs_no_range_checks(client).await;
-        }
-        ShadowHistoryCohort::AttemptJudgeCostZeroAndNullableDetails => {
-            check_attempt_judge_cost_zero_and_nullable_details(client).await;
-        }
-        ShadowHistoryCohort::OneUnstoppedJobIncludingExpired => {
-            check_one_unstopped_job_including_expired(client).await;
-        }
-        ShadowHistoryCohort::DirectionForwardAllowsOtherDirection => {
-            check_direction_forward_allows_other_direction(client).await;
-        }
-        ShadowHistoryCohort::GroupIdNullFillBeforeNotNull => {
-            check_group_id_null_fill_before_not_null(client).await;
-        }
-        ShadowHistoryCohort::ExistingGroupIdPreserved => {
-            check_existing_group_id_preserved(client).await;
-        }
-        ShadowHistoryCohort::StoppedFutureOnlyUnknownBackfill
-        | ShadowHistoryCohort::StoppedEqualNowOrExpiredUnchanged
-        | ShadowHistoryCohort::BudgetAndComparisonCostDefaults
-        | ShadowHistoryCohort::FunnelFourZeroCounters
-        | ShadowHistoryCohort::TargetTypeKeyAndRenamedId
-        | ShadowHistoryCohort::PartialUniquenessPerTargetTypeAndDirection
-        | ShadowHistoryCohort::RouterNamesModelsEmptyAttemptRouterNull => return false,
-    }
-    true
+async fn check_group_id_null_fill_before_not_null(client: &Client) {
+    insert_shadow_job(client, "job-g1", "key-g1", "+ interval '1 hour'").await;
+    check_shadow_eval_scalar_backfill(
+        client,
+        "job-g1",
+        SHADOW_EVAL_MULTI_KEY.directory,
+        "group_id",
+        Some("job-g1"),
+    )
+    .await;
+    assert_column(
+        client,
+        "LiteLLM_ShadowEvalJob",
+        ("group_id", "text", false, None, "text", None),
+    )
+    .await;
 }
 
-async fn run_shadow_history_check_late(client: &Client, cohort: ShadowHistoryCohort) {
-    match cohort {
-        ShadowHistoryCohort::StoppedFutureOnlyUnknownBackfill => {
-            check_stopped_future_only_unknown_backfill(client).await;
-        }
-        ShadowHistoryCohort::StoppedEqualNowOrExpiredUnchanged => {
-            check_stopped_equal_now_or_expired_unchanged(client).await;
-        }
-        ShadowHistoryCohort::BudgetAndComparisonCostDefaults => {
-            check_budget_and_comparison_cost_defaults(client).await;
-        }
-        ShadowHistoryCohort::FunnelFourZeroCounters => {
-            check_funnel_four_zero_counters(client).await;
-        }
-        ShadowHistoryCohort::TargetTypeKeyAndRenamedId => {
-            check_target_type_key_and_renamed_id(client).await;
-        }
-        ShadowHistoryCohort::PartialUniquenessPerTargetTypeAndDirection => {
-            check_partial_uniqueness_per_target_type_and_direction(client).await;
-        }
-        ShadowHistoryCohort::RouterNamesModelsEmptyAttemptRouterNull => {
-            check_router_names_models_empty_attempt_router_null(client).await;
-        }
-        ShadowHistoryCohort::RequiredJobInputsNoRangeChecks
-        | ShadowHistoryCohort::AttemptJudgeCostZeroAndNullableDetails
-        | ShadowHistoryCohort::OneUnstoppedJobIncludingExpired
-        | ShadowHistoryCohort::DirectionForwardAllowsOtherDirection
-        | ShadowHistoryCohort::GroupIdNullFillBeforeNotNull
-        | ShadowHistoryCohort::ExistingGroupIdPreserved => {}
-    }
+async fn check_existing_group_id_preserved(client: &Client) {
+    exec_params(
+        client,
+        r#"INSERT INTO "LiteLLM_ShadowEvalJob" (id, api_key_id, router_name, judge_model, shadow_percentage, max_turns, group_id, ends_at) VALUES ($1, $2, $3, $4, $5, $6, $7, now() + interval '1 hour')"#,
+        &[
+            &"job-g2",
+            &"key-g2",
+            &"router-a",
+            &"judge-a",
+            &10.0_f64,
+            &5_i32,
+            &"custom-group",
+        ],
+    )
+    .await;
+    check_shadow_eval_scalar_backfill(
+        client,
+        "job-g2",
+        SHADOW_EVAL_MULTI_KEY.directory,
+        "group_id",
+        Some("custom-group"),
+    )
+    .await;
+}
+
+async fn check_stopped_future_only_unknown_backfill(client: &Client) {
+    exec_params(
+        client,
+        r#"INSERT INTO "LiteLLM_ShadowEvalJob" (id, api_key_id, router_name, judge_model, shadow_percentage, max_turns, group_id, stopped_at, ends_at) VALUES ($1, $2, $3, $4, $5, $6, $1, now(), now() + interval '1 hour')"#,
+        &[
+            &"job-stop-future",
+            &"key-stop-future",
+            &"router-a",
+            &"judge-a",
+            &10.0_f64,
+            &5_i32,
+        ],
+    )
+    .await;
+    check_shadow_eval_scalar_backfill(
+        client,
+        "job-stop-future",
+        ADD_SHADOW_EVAL_STOPPED_BY.directory,
+        "stopped_by",
+        Some("unknown"),
+    )
+    .await;
+}
+
+async fn check_stopped_equal_now_or_expired_unchanged(client: &Client) {
+    exec_params(
+        client,
+        r#"INSERT INTO "LiteLLM_ShadowEvalJob" (id, api_key_id, router_name, judge_model, shadow_percentage, max_turns, group_id, stopped_at, ends_at) VALUES ($1, $2, $3, $4, $5, $6, $1, now(), now() - interval '1 hour')"#,
+        &[
+            &"job-stop-expired",
+            &"key-stop-expired",
+            &"router-a",
+            &"judge-a",
+            &10.0_f64,
+            &5_i32,
+        ],
+    )
+    .await;
+    check_shadow_eval_scalar_backfill(
+        client,
+        "job-stop-expired",
+        ADD_SHADOW_EVAL_STOPPED_BY.directory,
+        "stopped_by",
+        None,
+    )
+    .await;
 }
 
 async fn run_shadow_history_check(client: &Client, cohort: ShadowHistoryCohort) {
-    if run_shadow_history_check_early(client, cohort).await {
-        return;
-    }
-    run_shadow_history_check_late(client, cohort).await;
+    use ShadowHistoryCohort::*;
+    let check: Pin<Box<dyn Future<Output = ()> + Send + '_>> = match cohort {
+        RequiredJobInputsNoRangeChecks => {
+            Box::pin(check_required_job_inputs_no_range_checks(client))
+        }
+        AttemptJudgeCostZeroAndNullableDetails => {
+            Box::pin(check_attempt_judge_cost_zero_and_nullable_details(client))
+        }
+        OneUnstoppedJobIncludingExpired => {
+            Box::pin(check_one_unstopped_job_including_expired(client))
+        }
+        DirectionForwardAllowsOtherDirection => {
+            Box::pin(check_direction_forward_allows_other_direction(client))
+        }
+        GroupIdNullFillBeforeNotNull => Box::pin(check_group_id_null_fill_before_not_null(client)),
+        ExistingGroupIdPreserved => Box::pin(check_existing_group_id_preserved(client)),
+        StoppedFutureOnlyUnknownBackfill => {
+            Box::pin(check_stopped_future_only_unknown_backfill(client))
+        }
+        StoppedEqualNowOrExpiredUnchanged => {
+            Box::pin(check_stopped_equal_now_or_expired_unchanged(client))
+        }
+        BudgetAndComparisonCostDefaults => {
+            Box::pin(check_budget_and_comparison_cost_defaults(client))
+        }
+        FunnelFourZeroCounters => Box::pin(check_funnel_four_zero_counters(client)),
+        TargetTypeKeyAndRenamedId => Box::pin(check_target_type_key_and_renamed_id(client)),
+        PartialUniquenessPerTargetTypeAndDirection => Box::pin(
+            check_partial_uniqueness_per_target_type_and_direction(client),
+        ),
+        RouterNamesModelsEmptyAttemptRouterNull => {
+            Box::pin(check_router_names_models_empty_attempt_router_null(client))
+        }
+    };
+    check.await;
 }
 
 #[rstest]

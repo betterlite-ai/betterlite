@@ -59,7 +59,7 @@ const PINNED_SPEND_LOG_KEY_START_IDX: MigrationFile = MigrationFile {
 const PINNED_CACHE_SAVINGS_SPEND: MigrationFile = MigrationFile {
     directory: "20260824000000_add_gateway_injected_caching_savings_spend",
     bytes: include_bytes!("fixtures/20260824000000_add_gateway_injected_caching_savings_spend.sql"),
-    sha256: "8657e0cd99f8ff8e69dba50decc602c0d11e98076f6a32a3cb5563c6ce114da7",
+    sha256: "9ae4b5a13c7e655716429ce5e54e48e4526ba0da3eac15b2638922636ea43604",
 };
 
 const PINNED_SHADOW_COST_COMPARISON: MigrationFile = MigrationFile {

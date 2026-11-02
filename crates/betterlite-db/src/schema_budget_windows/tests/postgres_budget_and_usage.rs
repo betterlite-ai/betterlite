@@ -1,3 +1,5 @@
+use std::pin::Pin;
+
 #[derive(Clone, Copy)]
 enum BudgetAndUsageCohort {
     HeartbeatTimestampDefaults,
@@ -15,42 +17,6 @@ enum BudgetAndUsageCohort {
     PolicyPriorityNullDefaultFlagFalse,
     PasswordResetAndBreachTimeNull,
     ManagedContentRequiredBytea,
-}
-
-fn budget_and_usage_checkpoint_for(cohort: BudgetAndUsageCohort) -> &'static str {
-    match cohort {
-        BudgetAndUsageCohort::HeartbeatTimestampDefaults => ADD_PROXY_WORKER_HEARTBEAT.directory,
-        BudgetAndUsageCohort::GuardrailUnitsZeroCostNullUntrackedZero => {
-            ADD_GUARDRAIL_USAGE_UNITS_COST.directory
-        }
-        BudgetAndUsageCohort::SpendLogTimestampBackfill => {
-            ADD_DAILY_GUARDRAIL_USAGE_UNITS.directory
-        }
-        BudgetAndUsageCohort::RequestIndexMigrationsAreNoops => SHADOW_EVAL_MAX_BUDGET.directory,
-        BudgetAndUsageCohort::SixGatewaySavingsAndTimingDefaults => {
-            ADD_DAILY_RESPONSE_TIME.directory
-        }
-        BudgetAndUsageCohort::AccessGroupBudgetSetNull => {
-            ADD_MODEL_ACCESS_GROUP_BUDGET_TABLE.directory
-        }
-        BudgetAndUsageCohort::ManagedOrgNoBackfill => ADD_GUARDRAIL_USAGE_UNITS_COST.directory,
-        BudgetAndUsageCohort::McpDiscoveryFalse => {
-            ADD_PER_SERVER_OAUTH_DISCOVERY_TO_MCP_SERVERS.directory
-        }
-        BudgetAndUsageCohort::SkillAgentEmptyArrays => ADD_AGENT_ACCESS_GROUP_IDS.directory,
-        BudgetAndUsageCohort::FiveNullableTpdLimits => ADD_TPD_LIMIT.directory,
-        BudgetAndUsageCohort::TemporaryBudgetFieldsNull => ADD_BUDGET_TEMP_INCREASE.directory,
-        BudgetAndUsageCohort::KeyTotalSpendZeroNotCurrentSpend => ADD_KEY_TOTAL_SPEND.directory,
-        BudgetAndUsageCohort::PolicyPriorityNullDefaultFlagFalse => {
-            ADD_POLICY_ATTACHMENT_IS_DEFAULT.directory
-        }
-        BudgetAndUsageCohort::PasswordResetAndBreachTimeNull => {
-            ADD_PASSWORD_RESET_COLUMNS.directory
-        }
-        BudgetAndUsageCohort::ManagedContentRequiredBytea => {
-            ADD_MANAGED_FILE_CONTENT_TABLE.directory
-        }
-    }
 }
 
 fn timestamp3_now_default(name: &'static str) -> ColumnSpec {
@@ -80,6 +46,40 @@ async fn check_heartbeat_timestamp_defaults(client: &Client) {
         ],
     )
     .await;
+}
+
+async fn check_mcp_discovery_false(client: &Client) {
+    exec_params(
+        client,
+        r#"INSERT INTO "LiteLLM_MCPServerTable" (server_id, url) VALUES ($1, $2)"#,
+        &[&"server-a", &"https://example.test/mcp"],
+    )
+    .await;
+    assert_column(
+        client,
+        "LiteLLM_MCPServerTable",
+        bool_false("per_server_oauth_discovery"),
+    )
+    .await;
+}
+
+async fn check_temporary_budget_fields_null(client: &Client) {
+    exec_params(
+        client,
+        r#"INSERT INTO "LiteLLM_BudgetTable" (budget_id, created_by, updated_by) VALUES ($1, $2, $2)"#,
+        &[&"budget-temp", &"operator"],
+    )
+    .await;
+    let row = query_one_row(
+        client,
+        r#"SELECT temp_budget_increase, temp_budget_expiry FROM "LiteLLM_BudgetTable" WHERE budget_id = $1"#,
+        &[&"budget-temp"],
+    )
+    .await;
+    let temp_budget_increase: Option<f64> = row.get(0);
+    let temp_budget_expiry: Option<SystemTime> = row.get(1);
+    assert_eq!(temp_budget_increase, None);
+    assert_eq!(temp_budget_expiry, None);
 }
 
 async fn check_guardrail_units_zero_cost_null_untracked_zero(client: &Client) {
@@ -125,25 +125,21 @@ async fn check_request_index_migrations_are_noops(client: &Client) {
     let before_first = catalog_snapshot(client).await;
     batch_execute(
         client,
-        migration_sql_of(ADD_SPEND_LOGS_API_KEY_STARTTIME_INDEX.directory),
+        migration_sql_of(ADD_SPEND_LOG_KEY_START_IDX.directory),
     )
     .await;
     assert_eq!(before_first, catalog_snapshot(client).await);
     for directory in [
-        ADD_GATEWAY_INJECTED_CACHING_SAVINGS_SPEND.directory,
+        ADD_CACHE_SAVINGS_SPEND.directory,
         SHADOW_EVAL_COST_COMPARISON.directory,
-        ADD_MODEL_ACCESS_GROUP_BUDGET_TABLE.directory,
+        ADD_ACCESS_GROUP_BUDGET.directory,
         SHADOW_EVAL_TYPED_TARGETS.directory,
         ADD_LITELLM_CALL_ID_SPEND_LOGS.directory,
     ] {
         batch_execute(client, migration_sql_of(directory)).await;
     }
     let before_second = catalog_snapshot(client).await;
-    batch_execute(
-        client,
-        migration_sql_of(SPEND_LOGS_LITELLM_CALL_ID_INDEX.directory),
-    )
-    .await;
+    batch_execute(client, migration_sql_of(SPEND_LOG_CALL_ID_INDEX.directory)).await;
     assert_eq!(before_second, catalog_snapshot(client).await);
 }
 
@@ -247,7 +243,7 @@ async fn check_managed_org_no_backfill(client: &Client) {
     .await;
     batch_execute(
         client,
-        migration_sql_of(ADD_ORG_ID_TO_MANAGED_OBJECT_TABLE.directory),
+        migration_sql_of(ADD_ORG_ID_MANAGED_OBJECT.directory),
     )
     .await;
     let org_id = scalar_opt_text(
@@ -257,21 +253,6 @@ async fn check_managed_org_no_backfill(client: &Client) {
     )
     .await;
     assert_eq!(org_id, None);
-}
-
-async fn check_mcp_discovery_false(client: &Client) {
-    exec_params(
-        client,
-        r#"INSERT INTO "LiteLLM_MCPServerTable" (server_id, url) VALUES ($1, $2)"#,
-        &[&"server-a", &"https://example.test/mcp"],
-    )
-    .await;
-    assert_column(
-        client,
-        "LiteLLM_MCPServerTable",
-        bool_false("per_server_oauth_discovery"),
-    )
-    .await;
 }
 
 async fn check_skill_agent_empty_arrays(client: &Client) {
@@ -337,38 +318,6 @@ async fn check_five_nullable_tpd_limits(client: &Client) {
             "LiteLLM_DeletedVerificationToken",
         ],
         ("tpd_limit", "bigint", true, None, "int8", None),
-    )
-    .await;
-}
-
-async fn check_temporary_budget_fields_null(client: &Client) {
-    exec_params(
-        client,
-        r#"INSERT INTO "LiteLLM_BudgetTable" (budget_id, created_by, updated_by) VALUES ($1, $2, $2)"#,
-        &[&"budget-temp", &"operator"],
-    )
-    .await;
-    assert_columns(
-        client,
-        "LiteLLM_BudgetTable",
-        &[
-            (
-                "temp_budget_increase",
-                "double precision",
-                true,
-                None,
-                "float8",
-                None,
-            ),
-            (
-                "temp_budget_expiry",
-                "timestamp without time zone",
-                true,
-                None,
-                "timestamp",
-                Some(3_i32),
-            ),
-        ],
     )
     .await;
 }
@@ -476,82 +425,69 @@ async fn check_managed_content_required_bytea(client: &Client) {
     .await;
 }
 
-async fn run_budget_and_usage_check_early(client: &Client, cohort: BudgetAndUsageCohort) -> bool {
+fn budget_and_usage_checkpoint_for(cohort: BudgetAndUsageCohort) -> &'static str {
     match cohort {
-        BudgetAndUsageCohort::HeartbeatTimestampDefaults => {
-            check_heartbeat_timestamp_defaults(client).await;
-        }
+        BudgetAndUsageCohort::HeartbeatTimestampDefaults => ADD_PROXY_WORKER_HEARTBEAT.directory,
         BudgetAndUsageCohort::GuardrailUnitsZeroCostNullUntrackedZero => {
-            check_guardrail_units_zero_cost_null_untracked_zero(client).await;
+            ADD_GUARDRAIL_USAGE_UNITS_COST.directory
         }
-        BudgetAndUsageCohort::SpendLogTimestampBackfill => {
-            check_spend_log_timestamp_backfill(client).await;
-        }
-        BudgetAndUsageCohort::RequestIndexMigrationsAreNoops => {
-            check_request_index_migrations_are_noops(client).await;
-        }
+        BudgetAndUsageCohort::SpendLogTimestampBackfill => ADD_DAILY_GUARDRAIL_UNITS.directory,
+        BudgetAndUsageCohort::RequestIndexMigrationsAreNoops => SHADOW_EVAL_MAX_BUDGET.directory,
         BudgetAndUsageCohort::SixGatewaySavingsAndTimingDefaults => {
-            check_six_gateway_savings_and_timing_defaults(client).await;
+            ADD_DAILY_RESPONSE_TIME.directory
         }
-        BudgetAndUsageCohort::AccessGroupBudgetSetNull => {
-            check_access_group_budget_set_null(client).await;
-        }
-        BudgetAndUsageCohort::ManagedOrgNoBackfill => {
-            check_managed_org_no_backfill(client).await;
-        }
-        BudgetAndUsageCohort::McpDiscoveryFalse => {
-            check_mcp_discovery_false(client).await;
-        }
-        BudgetAndUsageCohort::SkillAgentEmptyArrays
-        | BudgetAndUsageCohort::FiveNullableTpdLimits
-        | BudgetAndUsageCohort::TemporaryBudgetFieldsNull
-        | BudgetAndUsageCohort::KeyTotalSpendZeroNotCurrentSpend
-        | BudgetAndUsageCohort::PolicyPriorityNullDefaultFlagFalse
-        | BudgetAndUsageCohort::PasswordResetAndBreachTimeNull
-        | BudgetAndUsageCohort::ManagedContentRequiredBytea => return false,
-    }
-    true
-}
-
-async fn run_budget_and_usage_check_late(client: &Client, cohort: BudgetAndUsageCohort) {
-    match cohort {
-        BudgetAndUsageCohort::SkillAgentEmptyArrays => {
-            check_skill_agent_empty_arrays(client).await;
-        }
-        BudgetAndUsageCohort::FiveNullableTpdLimits => {
-            check_five_nullable_tpd_limits(client).await;
-        }
-        BudgetAndUsageCohort::TemporaryBudgetFieldsNull => {
-            check_temporary_budget_fields_null(client).await;
-        }
-        BudgetAndUsageCohort::KeyTotalSpendZeroNotCurrentSpend => {
-            check_key_total_spend_zero_not_current_spend(client).await;
-        }
+        BudgetAndUsageCohort::AccessGroupBudgetSetNull => ADD_ACCESS_GROUP_BUDGET.directory,
+        BudgetAndUsageCohort::ManagedOrgNoBackfill => ADD_GUARDRAIL_USAGE_UNITS_COST.directory,
+        BudgetAndUsageCohort::McpDiscoveryFalse => ADD_MCP_OAUTH_DISCOVERY.directory,
+        BudgetAndUsageCohort::SkillAgentEmptyArrays => ADD_AGENT_ACCESS_GROUP_IDS.directory,
+        BudgetAndUsageCohort::FiveNullableTpdLimits => ADD_TPD_LIMIT.directory,
+        BudgetAndUsageCohort::TemporaryBudgetFieldsNull => ADD_BUDGET_TEMP_INCREASE.directory,
+        BudgetAndUsageCohort::KeyTotalSpendZeroNotCurrentSpend => ADD_KEY_TOTAL_SPEND.directory,
         BudgetAndUsageCohort::PolicyPriorityNullDefaultFlagFalse => {
-            check_policy_priority_null_default_flag_false(client).await;
+            ADD_POLICY_ATTACHMENT_DEFAULT.directory
         }
         BudgetAndUsageCohort::PasswordResetAndBreachTimeNull => {
-            check_password_reset_and_breach_time_null(client).await;
+            ADD_PASSWORD_RESET_COLUMNS.directory
         }
         BudgetAndUsageCohort::ManagedContentRequiredBytea => {
-            check_managed_content_required_bytea(client).await;
+            ADD_MANAGED_FILE_CONTENT_TABLE.directory
         }
-        BudgetAndUsageCohort::HeartbeatTimestampDefaults
-        | BudgetAndUsageCohort::GuardrailUnitsZeroCostNullUntrackedZero
-        | BudgetAndUsageCohort::SpendLogTimestampBackfill
-        | BudgetAndUsageCohort::RequestIndexMigrationsAreNoops
-        | BudgetAndUsageCohort::SixGatewaySavingsAndTimingDefaults
-        | BudgetAndUsageCohort::AccessGroupBudgetSetNull
-        | BudgetAndUsageCohort::ManagedOrgNoBackfill
-        | BudgetAndUsageCohort::McpDiscoveryFalse => {}
     }
 }
 
 async fn run_budget_and_usage_check(client: &Client, cohort: BudgetAndUsageCohort) {
-    if run_budget_and_usage_check_early(client, cohort).await {
-        return;
-    }
-    run_budget_and_usage_check_late(client, cohort).await;
+    use BudgetAndUsageCohort::*;
+    apply_migrations_through(client, budget_and_usage_checkpoint_for(cohort)).await;
+    let check: Pin<Box<dyn Future<Output = ()> + Send + '_>> = match cohort {
+        HeartbeatTimestampDefaults => Box::pin(check_heartbeat_timestamp_defaults(client)),
+        GuardrailUnitsZeroCostNullUntrackedZero => {
+            Box::pin(check_guardrail_units_zero_cost_null_untracked_zero(client))
+        }
+        SpendLogTimestampBackfill => Box::pin(check_spend_log_timestamp_backfill(client)),
+        RequestIndexMigrationsAreNoops => {
+            Box::pin(check_request_index_migrations_are_noops(client))
+        }
+        SixGatewaySavingsAndTimingDefaults => {
+            Box::pin(check_six_gateway_savings_and_timing_defaults(client))
+        }
+        AccessGroupBudgetSetNull => Box::pin(check_access_group_budget_set_null(client)),
+        ManagedOrgNoBackfill => Box::pin(check_managed_org_no_backfill(client)),
+        McpDiscoveryFalse => Box::pin(check_mcp_discovery_false(client)),
+        TemporaryBudgetFieldsNull => Box::pin(check_temporary_budget_fields_null(client)),
+        SkillAgentEmptyArrays => Box::pin(check_skill_agent_empty_arrays(client)),
+        FiveNullableTpdLimits => Box::pin(check_five_nullable_tpd_limits(client)),
+        KeyTotalSpendZeroNotCurrentSpend => {
+            Box::pin(check_key_total_spend_zero_not_current_spend(client))
+        }
+        PolicyPriorityNullDefaultFlagFalse => {
+            Box::pin(check_policy_priority_null_default_flag_false(client))
+        }
+        PasswordResetAndBreachTimeNull => {
+            Box::pin(check_password_reset_and_breach_time_null(client))
+        }
+        ManagedContentRequiredBytea => Box::pin(check_managed_content_required_bytea(client)),
+    };
+    check.await;
 }
 
 #[rstest]
@@ -581,7 +517,6 @@ async fn run_budget_and_usage_check(client: &Client, cohort: BudgetAndUsageCohor
 #[tokio::test]
 async fn postgres_budget_and_usage(#[case] cohort: BudgetAndUsageCohort) {
     Box::pin(harness(move |[client]| async move {
-        apply_migrations_through(&client, budget_and_usage_checkpoint_for(cohort)).await;
         run_budget_and_usage_check(&client, cohort).await;
     }))
     .await;

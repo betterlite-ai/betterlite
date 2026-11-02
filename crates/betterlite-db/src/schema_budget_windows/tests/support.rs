@@ -275,6 +275,18 @@ async fn scalar_opt_text(
     client.query_one(sql, params).await.unwrap().get(0)
 }
 
+async fn scalar_opt_bool(
+    client: &Client,
+    sql: &str,
+    params: &[&(dyn ToSql + Sync)],
+) -> Option<bool> {
+    client
+        .query_opt(sql, params)
+        .await
+        .unwrap()
+        .map(|row| row.get(0))
+}
+
 struct ColumnInfo {
     data_type: String,
     is_nullable: bool,
@@ -330,23 +342,26 @@ struct IndexFacts {
     unique: bool,
 }
 
-async fn index_row(client: &Client, index: &str) -> Option<Row> {
-    client
-        .query_opt(
-            "SELECT indisunique FROM pg_index idx \
-             JOIN pg_class ic ON ic.oid = idx.indexrelid WHERE ic.relname = $1",
-            &[&index],
-        )
-        .await
-        .unwrap()
-}
-
 async fn index_exists(client: &Client, index: &str) -> bool {
-    index_row(client, index).await.is_some()
+    scalar_opt_bool(
+        client,
+        "SELECT indisunique FROM pg_index idx \
+         JOIN pg_class ic ON ic.oid = idx.indexrelid WHERE ic.relname = $1",
+        &[&index],
+    )
+    .await
+    .is_some()
 }
 
 async fn index_facts(client: &Client, index: &str) -> IndexFacts {
-    let unique = index_row(client, index).await.unwrap().get(0);
+    let unique = scalar_opt_bool(
+        client,
+        "SELECT indisunique FROM pg_index idx \
+         JOIN pg_class ic ON ic.oid = idx.indexrelid WHERE ic.relname = $1",
+        &[&index],
+    )
+    .await
+    .unwrap();
     let columns = string_rows(
         client,
         "SELECT a.attname FROM pg_index idx \
@@ -396,6 +411,17 @@ async fn assert_columns(client: &Client, table: &str, specs: &[ColumnSpec]) {
     for spec in specs {
         assert_column(client, table, *spec).await;
     }
+}
+
+async fn insert_then_assert_columns(
+    client: &Client,
+    insert_sql: &str,
+    insert_params: &[&(dyn ToSql + Sync)],
+    table: &str,
+    specs: &[ColumnSpec],
+) {
+    exec_params(client, insert_sql, insert_params).await;
+    assert_columns(client, table, specs).await;
 }
 
 async fn assert_index(client: &Client, name: &str, columns: &[&str], unique: bool) {

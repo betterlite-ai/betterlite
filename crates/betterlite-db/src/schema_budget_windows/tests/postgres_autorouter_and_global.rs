@@ -17,14 +17,14 @@ enum AutorouterAndGlobalCohort {
 fn autorouter_and_global_checkpoint_for(cohort: AutorouterAndGlobalCohort) -> &'static str {
     match cohort {
         AutorouterAndGlobalCohort::SessionClassifierAndBaselineDefaults => {
-            ADD_AUTOROUTER_SESSION_BASELINE_MODELS.directory
+            ADD_AUTOROUTER_BASE_MODELS.directory
         }
         AutorouterAndGlobalCohort::SavingsEstimateCoverageDefaults => {
-            ADD_AUTOROUTER_SAVINGS_ESTIMATE_COVERAGE.directory
+            ADD_AUTOROUTER_COVERAGE.directory
         }
         AutorouterAndGlobalCohort::UserSessionAllCounterJsonAndSpendDefaults
         | AutorouterAndGlobalCohort::UserSessionKeyAndTwoIndexes => {
-            ADD_AUTOROUTER_USER_SESSION_ROLLUP.directory
+            ADD_AUTOROUTER_USER_ROLLUP.directory
         }
         AutorouterAndGlobalCohort::GlobalTenBigintFiveSpendDefaults
         | AutorouterAndGlobalCohort::GlobalUniqueTupleNullSemantics => {
@@ -34,7 +34,7 @@ fn autorouter_and_global_checkpoint_for(cohort: AutorouterAndGlobalCohort) -> &'
             ADD_DAILY_RESPONSE_TIME.directory
         }
         AutorouterAndGlobalCohort::IssuerDistinctClaimPairsInactiveStillUnique => {
-            SCOPE_JWT_KEY_MAPPING_BY_ISSUER.directory
+            SCOPE_JWT_KEY_BY_ISSUER.directory
         }
         AutorouterAndGlobalCohort::BaselineRequiredInitialEquivalence
         | AutorouterAndGlobalCohort::BaselineZeroRevisionsFalseRetired
@@ -45,88 +45,14 @@ fn autorouter_and_global_checkpoint_for(cohort: AutorouterAndGlobalCohort) -> &'
     }
 }
 
-async fn insert_autorouter_session(client: &Client, key: &str) {
+async fn check_autorouter_session_defaults(client: &Client, specs: &[ColumnSpec]) {
     exec_params(
         client,
         r#"INSERT INTO "LiteLLM_AutoRouterSession" (api_key, session_id, router_name, router_type, first_turn_at, last_turn_at, last_model) VALUES ($1, 'session-a', 'router-a', 'classifier', now(), now(), 'model-a')"#,
-        &[&key],
+        &[&"key-a"],
     )
     .await;
-}
-
-async fn check_session_classifier_and_baseline_defaults(client: &Client) {
-    insert_autorouter_session(client, "key-a").await;
-    assert_columns(
-        client,
-        "LiteLLM_AutoRouterSession",
-        &[
-            float8_default("classifier_cost", "0"),
-            int4_zero("classifier_cost_recorded_turns"),
-            empty_jsonb("baseline_models"),
-        ],
-    )
-    .await;
-}
-
-async fn check_savings_estimate_coverage_defaults(client: &Client) {
-    insert_autorouter_session(client, "key-a").await;
-    assert_columns(
-        client,
-        "LiteLLM_AutoRouterSession",
-        &[
-            int4_zero("savings_estimated_turns"),
-            float8_default("savings_estimated_actual_spend", "0"),
-            float8_default("savings_estimated_saved_spend", "0"),
-            empty_jsonb("savings_estimated_baseline_models"),
-        ],
-    )
-    .await;
-}
-
-async fn insert_autorouter_user_session(client: &Client, user_id: &str, api_key: &str) {
-    exec_params(
-        client,
-        r#"INSERT INTO "LiteLLM_AutoRouterUserSession" (user_id, api_key, session_id, router_name, router_type, first_turn_at, last_turn_at, last_model) VALUES ($1, $2, 'session-a', 'router-a', 'classifier', now(), now(), 'model-a')"#,
-        &[&user_id, &api_key],
-    )
-    .await;
-}
-
-async fn check_user_session_all_counter_json_and_spend_defaults(client: &Client) {
-    insert_autorouter_user_session(client, "user-a", "key-a").await;
-    assert_columns(
-        client,
-        "LiteLLM_AutoRouterUserSession",
-        &[
-            empty_jsonb("models"),
-            int4_zero("turns"),
-            int4_zero("unordered_turns"),
-            int4_zero("covered_turns"),
-            int4_zero("cache_hits"),
-            int4_zero("same_model_turns"),
-            int4_zero("same_model_hits"),
-            int4_zero("first_visit_turns"),
-            int4_zero("first_visit_hits"),
-            int4_zero("return_turns"),
-            int4_zero("return_hits"),
-            int4_zero("return_expired_misses"),
-            int4_zero("return_within_ttl_misses"),
-            int4_zero("ttl_5m_turns"),
-            int4_zero("ttl_1h_turns"),
-            int8_zero("total_tokens"),
-            float8_default("spend", "0"),
-            float8_default("saved_spend", "0"),
-            int4_zero("savings_estimated_turns"),
-            float8_default("savings_estimated_actual_spend", "0"),
-            float8_default("savings_estimated_saved_spend", "0"),
-            empty_jsonb("savings_estimated_baseline_models"),
-            float8_default("classifier_cost", "0"),
-            int4_zero("classifier_cost_recorded_turns"),
-            empty_jsonb("tier_turns"),
-            empty_jsonb("baseline_models"),
-        ],
-    )
-    .await;
+    assert_columns(client, "LiteLLM_AutoRouterSession", specs).await;
 }
 
 async fn check_user_session_key_and_two_indexes(client: &Client) {
@@ -180,32 +106,6 @@ async fn insert_daily_global_spend(client: &Client, id: &str, scope: GlobalSpend
     .await;
 }
 
-async fn check_global_ten_bigint_five_spend_defaults(client: &Client) {
-    insert_daily_global_spend(client, "global-a", EMPTY_GLOBAL_SPEND_SCOPE).await;
-    assert_columns(
-        client,
-        "LiteLLM_DailyGlobalSpend",
-        &[
-            int8_zero("prompt_tokens"),
-            int8_zero("completion_tokens"),
-            int8_zero("cache_read_input_tokens"),
-            int8_zero("cache_creation_input_tokens"),
-            int8_zero("compression_saved_tokens"),
-            int8_zero("api_requests"),
-            int8_zero("successful_requests"),
-            int8_zero("failed_requests"),
-            int8_zero("total_response_time_ms"),
-            int8_zero("timed_requests"),
-            float8_default("compression_savings_spend", "0.0"),
-            float8_default("prompt_caching_savings_spend", "0.0"),
-            float8_default("gateway_injected_caching_savings_spend", "0.0"),
-            float8_default("autorouter_savings_spend", "0.0"),
-            float8_default("spend", "0.0"),
-        ],
-    )
-    .await;
-}
-
 async fn check_global_unique_tuple_null_semantics(client: &Client) {
     insert_daily_global_spend(client, "global-null-1", EMPTY_GLOBAL_SPEND_SCOPE).await;
     insert_daily_global_spend(client, "global-null-2", EMPTY_GLOBAL_SPEND_SCOPE).await;
@@ -250,11 +150,7 @@ async fn check_issuer_empty_backfill_and_null_rejection(client: &Client) {
         &[&"mapping-issuer", &"claim-a", &"value-a", &"token-issuer"],
     )
     .await;
-    batch_execute(
-        client,
-        migration_sql_of(SCOPE_JWT_KEY_MAPPING_BY_ISSUER.directory),
-    )
-    .await;
+    batch_execute(client, migration_sql_of(SCOPE_JWT_KEY_BY_ISSUER.directory)).await;
     let jwt_issuer = scalar_text(
         client,
         r#"SELECT jwt_issuer FROM "LiteLLM_JWTKeyMapping" WHERE id = $1"#,
@@ -409,45 +305,135 @@ async fn check_observation_text_data_false_conflict_and_order_indexes(client: &C
     .await;
 }
 
+async fn check_user_session_all_counter_json_and_spend_defaults(client: &Client) {
+    insert_then_assert_columns(
+        client,
+        r#"INSERT INTO "LiteLLM_AutoRouterUserSession" (user_id, api_key, session_id, router_name, router_type, first_turn_at, last_turn_at, last_model) VALUES ($1, $2, 'session-a', 'router-a', 'classifier', now(), now(), 'model-a')"#,
+        &[&"user-a", &"key-a"],
+        "LiteLLM_AutoRouterUserSession",
+        &[
+            empty_jsonb("models"),
+            int4_zero("turns"),
+            int4_zero("unordered_turns"),
+            int4_zero("covered_turns"),
+            int4_zero("cache_hits"),
+            int4_zero("same_model_turns"),
+            int4_zero("same_model_hits"),
+            int4_zero("first_visit_turns"),
+            int4_zero("first_visit_hits"),
+            int4_zero("return_turns"),
+            int4_zero("return_hits"),
+            int4_zero("return_expired_misses"),
+            int4_zero("return_within_ttl_misses"),
+            int4_zero("ttl_5m_turns"),
+            int4_zero("ttl_1h_turns"),
+            int8_zero("total_tokens"),
+            float8_default("spend", "0"),
+            float8_default("saved_spend", "0"),
+            int4_zero("savings_estimated_turns"),
+            float8_default("savings_estimated_actual_spend", "0"),
+            float8_default("savings_estimated_saved_spend", "0"),
+            empty_jsonb("savings_estimated_baseline_models"),
+            float8_default("classifier_cost", "0"),
+            int4_zero("classifier_cost_recorded_turns"),
+            empty_jsonb("tier_turns"),
+            empty_jsonb("baseline_models"),
+        ],
+    )
+    .await;
+}
+
+async fn check_global_ten_bigint_five_spend_defaults(client: &Client) {
+    insert_then_assert_columns(
+        client,
+        r#"INSERT INTO "LiteLLM_DailyGlobalSpend" (id, date, updated_at) VALUES ($1, 'date-a', now())"#,
+        &[&"global-a"],
+        "LiteLLM_DailyGlobalSpend",
+        &[
+            int8_zero("prompt_tokens"),
+            int8_zero("completion_tokens"),
+            int8_zero("cache_read_input_tokens"),
+            int8_zero("cache_creation_input_tokens"),
+            int8_zero("compression_saved_tokens"),
+            int8_zero("api_requests"),
+            int8_zero("successful_requests"),
+            int8_zero("failed_requests"),
+            int8_zero("total_response_time_ms"),
+            int8_zero("timed_requests"),
+            float8_default("compression_savings_spend", "0.0"),
+            float8_default("prompt_caching_savings_spend", "0.0"),
+            float8_default("gateway_injected_caching_savings_spend", "0.0"),
+            float8_default("autorouter_savings_spend", "0.0"),
+            float8_default("spend", "0.0"),
+        ],
+    )
+    .await;
+}
+
+async fn check_session_classifier_and_baseline_defaults(client: &Client) {
+    check_autorouter_session_defaults(
+        client,
+        &[
+            float8_default("classifier_cost", "0"),
+            int4_zero("classifier_cost_recorded_turns"),
+            empty_jsonb("baseline_models"),
+        ],
+    )
+    .await;
+}
+
+async fn check_savings_estimate_coverage_defaults(client: &Client) {
+    check_autorouter_session_defaults(
+        client,
+        &[
+            int4_zero("savings_estimated_turns"),
+            float8_default("savings_estimated_actual_spend", "0"),
+            float8_default("savings_estimated_saved_spend", "0"),
+            empty_jsonb("savings_estimated_baseline_models"),
+        ],
+    )
+    .await;
+}
+
 async fn run_autorouter_and_global_check(client: &Client, cohort: AutorouterAndGlobalCohort) {
-    match cohort {
-        AutorouterAndGlobalCohort::SessionClassifierAndBaselineDefaults => {
-            check_session_classifier_and_baseline_defaults(client).await;
+    use AutorouterAndGlobalCohort::*;
+    let check: Pin<Box<dyn Future<Output = ()> + Send + '_>> = match cohort {
+        SessionClassifierAndBaselineDefaults => {
+            Box::pin(check_session_classifier_and_baseline_defaults(client))
         }
-        AutorouterAndGlobalCohort::SavingsEstimateCoverageDefaults => {
-            check_savings_estimate_coverage_defaults(client).await;
+        SavingsEstimateCoverageDefaults => {
+            Box::pin(check_savings_estimate_coverage_defaults(client))
         }
-        AutorouterAndGlobalCohort::UserSessionAllCounterJsonAndSpendDefaults => {
-            check_user_session_all_counter_json_and_spend_defaults(client).await;
+        UserSessionAllCounterJsonAndSpendDefaults => Box::pin(
+            check_user_session_all_counter_json_and_spend_defaults(client),
+        ),
+        UserSessionKeyAndTwoIndexes => Box::pin(check_user_session_key_and_two_indexes(client)),
+        GlobalTenBigintFiveSpendDefaults => {
+            Box::pin(check_global_ten_bigint_five_spend_defaults(client))
         }
-        AutorouterAndGlobalCohort::UserSessionKeyAndTwoIndexes => {
-            check_user_session_key_and_two_indexes(client).await;
+        GlobalUniqueTupleNullSemantics => {
+            Box::pin(check_global_unique_tuple_null_semantics(client))
         }
-        AutorouterAndGlobalCohort::GlobalTenBigintFiveSpendDefaults => {
-            check_global_ten_bigint_five_spend_defaults(client).await;
+        IssuerEmptyBackfillAndNullRejection => {
+            Box::pin(check_issuer_empty_backfill_and_null_rejection(client))
         }
-        AutorouterAndGlobalCohort::GlobalUniqueTupleNullSemantics => {
-            check_global_unique_tuple_null_semantics(client).await;
+        IssuerDistinctClaimPairsInactiveStillUnique => Box::pin(
+            check_issuer_distinct_claim_pairs_inactive_still_unique(client),
+        ),
+        BaselineRequiredInitialEquivalence => {
+            Box::pin(check_baseline_required_initial_equivalence(client))
         }
-        AutorouterAndGlobalCohort::IssuerEmptyBackfillAndNullRejection => {
-            check_issuer_empty_backfill_and_null_rejection(client).await;
+        BaselineZeroRevisionsFalseRetired => {
+            Box::pin(check_baseline_zero_revisions_false_retired(client))
         }
-        AutorouterAndGlobalCohort::IssuerDistinctClaimPairsInactiveStillUnique => {
-            check_issuer_distinct_claim_pairs_inactive_still_unique(client).await;
+        DirtyIndexExcludesRetiredAndPublished => {
+            Box::pin(check_dirty_index_excludes_retired_and_published(client))
         }
-        AutorouterAndGlobalCohort::BaselineRequiredInitialEquivalence => {
-            check_baseline_required_initial_equivalence(client).await;
+        ObservationTextDataFalseConflictAndOrderIndexes => {
+            Box::pin(check_observation_text_data_false_conflict_and_order_indexes(client))
         }
-        AutorouterAndGlobalCohort::BaselineZeroRevisionsFalseRetired => {
-            check_baseline_zero_revisions_false_retired(client).await;
-        }
-        AutorouterAndGlobalCohort::DirtyIndexExcludesRetiredAndPublished => {
-            check_dirty_index_excludes_retired_and_published(client).await;
-        }
-        AutorouterAndGlobalCohort::ObservationTextDataFalseConflictAndOrderIndexes => {
-            check_observation_text_data_false_conflict_and_order_indexes(client).await;
-        }
-    }
+    };
+    check.await;
 }
 
 #[rstest]
