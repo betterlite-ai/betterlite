@@ -791,6 +791,46 @@ fn text_completion_policy_cases(#[case] case: u8) {
                 json!(8_i32)
             );
 
+            let response_cache_write_tokens_given = json!({
+                "choices": [],
+                "usage": {
+                    "prompt_tokens_details": {"cache_write_tokens": 9_i32},
+                },
+            });
+            let result_cache_write_tokens_given = reply::to_chat_model_response(
+                Some(response_cache_write_tokens_given),
+                Some(Map::new()),
+                &fixed_identifier,
+                &fixed_clock,
+            )
+            .expect("cache_write_tokens mirrors onto cache_creation_tokens");
+            assert_eq!(
+                result_cache_write_tokens_given["usage"]["prompt_tokens_details"]["cache_creation_tokens"],
+                json!(9_i32)
+            );
+
+            let response_nested_cache_creation_u64 = json!({
+                "choices": [],
+                "usage": {
+                    "prompt_tokens_details": {"cache_creation_input_tokens": u64::MAX},
+                },
+            });
+            let result_nested_cache_creation_u64 = reply::to_chat_model_response(
+                Some(response_nested_cache_creation_u64),
+                Some(Map::new()),
+                &fixed_identifier,
+                &fixed_clock,
+            )
+            .expect("a u64-only nested cache_creation_input_tokens still backfills");
+            assert_eq!(
+                result_nested_cache_creation_u64["usage"]["prompt_tokens_details"]["cache_write_tokens"],
+                json!(u64::MAX)
+            );
+            assert_eq!(
+                result_nested_cache_creation_u64["usage"]["prompt_tokens_details"]["cache_creation_tokens"],
+                json!(u64::MAX)
+            );
+
             let response_object_override = json!({"choices": [], "object": "something-else"});
             let result_object_override = reply::to_chat_model_response(
                 Some(response_object_override),
