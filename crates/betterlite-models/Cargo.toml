@@ -21,6 +21,7 @@ speedate = "0.18.0"
 strum = { version = "0.28.0", features = ["derive"] }
 thiserror.workspace = true
 tracing.workspace = true
+unicode-general-category = "1.1.0"
 url = "2.5.8"
 
 [dev-dependencies]

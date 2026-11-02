@@ -1,0 +1,19 @@
+kind: helper
+name: openai-chat-usage-precedes-image-fields
+call:
+  image_cost:
+    operation: openai
+    model: image-cost-chat-usage-model
+    model_info:
+      input_cost_per_token: 0.00001
+      output_cost_per_token: 0.00002
+      output_cost_per_image_token: 0.00006
+    usage:
+      kind: chat
+      prompt_tokens: 20
+      completion_tokens: 30
+      total_tokens: 50
+      completion_details:
+        image_tokens: 12
+compare: {ignore: []}
+env: {}

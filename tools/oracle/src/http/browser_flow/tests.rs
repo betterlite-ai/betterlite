@@ -13,6 +13,9 @@ use axum::Router;
 use axum::body::Body;
 use axum::extract::{Request as AxumRequest, State};
 use axum::http::{Response as AxumResponse, StatusCode};
+use betterlite_postgres_fixture::connection::{
+    DatabaseNameGenerator, PostgresFixture, RandomDatabaseName,
+};
 use betterlite_postgres_fixture::seed::DatabaseFixture;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::sync::oneshot;
@@ -545,7 +548,7 @@ fn stops_and_cleans_up_the_gateway_after_a_late_step_failure() {
     let _removed = fs::remove_file(&log_path);
 }
 
-fn fixture_database_names(url: &str) -> Vec<String> {
+fn all_database_names(url: &str) -> Vec<String> {
     let runtime = runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -557,10 +560,7 @@ fn fixture_database_names(url: &str) -> Vec<String> {
         let mut driver = JoinSet::new();
         driver.spawn(connection);
         admin
-            .query(
-                "select datname from pg_database where datname like 'betterlite_fixture_%'",
-                &[],
-            )
+            .query("select datname from pg_database", &[])
             .await
             .expect("pg_database query succeeds")
             .into_iter()
@@ -575,15 +575,29 @@ fn fresh_oracle_root() -> PathBuf {
         .join(unique_id().expect("unique id generates"))
 }
 
-#[test]
-fn drops_the_fixture_databases_after_a_late_step_failure() {
-    let environment =
-        <DatabaseEnvironment as clap::Parser>::try_parse_from([env!("CARGO_PKG_NAME")])
-            .expect("database environment parses");
-    let secret = environment
-        .postgres_test_url
-        .expect("POSTGRES_TEST_URL is set for this test");
-    let mut before = fixture_database_names(secret.expose_secret());
+// Names fixtures with this run's own prefix so the cleanup assertion below cannot pass by accident.
+struct PrefixedDatabaseName {
+    prefix: String,
+    counter: u32,
+}
+
+impl PrefixedDatabaseName {
+    fn new(unique: &str) -> Self {
+        Self {
+            prefix: format!("betterlite_fixture_{}", unique.replace('-', "_")),
+            counter: 0,
+        }
+    }
+}
+
+impl DatabaseNameGenerator for PrefixedDatabaseName {
+    fn next_name(&mut self) -> String {
+        self.counter = self.counter.saturating_add(1);
+        format!("{}_{}", self.prefix, self.counter)
+    }
+}
+
+fn late_failure_case() -> Case {
     let missing = capture(
         "missing",
         CaptureSource::Header {
@@ -596,17 +610,49 @@ fn drops_the_fixture_databases_after_a_late_step_failure() {
     ];
     let mut case = steps_case(steps);
     case.database = Some(DatabaseFixture::default());
+    case
+}
+
+#[test]
+fn drops_the_fixture_databases_after_a_late_step_failure() {
+    let environment =
+        <DatabaseEnvironment as clap::Parser>::try_parse_from([env!("CARGO_PKG_NAME")])
+            .expect("database environment parses");
+    let secret = environment
+        .postgres_test_url
+        .expect("POSTGRES_TEST_URL is set for this test");
+    let foreign = PostgresFixture::provision_with_generator_sync(
+        Some(&secret),
+        &DatabaseFixture::default(),
+        &mut RandomDatabaseName,
+    )
+    .expect("a foreign fixture database provisions");
+    let mut generator = PrefixedDatabaseName::new(&unique_id().expect("unique id generates"));
+    let prefix = generator.prefix.clone();
     let options = Options {
         self_check: true,
         paths: Vec::new(),
     };
-    let _error = run_group_with_url(&options, &fresh_oracle_root(), &[case], Some(&secret))
-        .expect_err("a missing capture at the second step fails the whole run");
-    let mut after = fixture_database_names(secret.expose_secret());
-    before.sort();
-    after.sort();
+    let _error = run_group_with_url(
+        &options,
+        &fresh_oracle_root(),
+        &[late_failure_case()],
+        Some(&secret),
+        &mut generator,
+    )
+    .expect_err("a missing capture at the second step fails the whole run");
     assert_eq!(
-        before, after,
-        "no betterlite_fixture_ database should remain after cleanup"
+        generator.counter, 2,
+        "the run should have named both fixture databases through this run's own generator"
     );
+    let remaining = all_database_names(secret.expose_secret())
+        .into_iter()
+        .filter(|name| name.starts_with(&prefix))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        remaining,
+        Vec::<String>::new(),
+        "no database named with this run's prefix should remain after cleanup"
+    );
+    foreign.close().expect("the foreign fixture closes");
 }

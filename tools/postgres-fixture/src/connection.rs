@@ -117,19 +117,22 @@ impl fmt::Debug for PostgresFixture {
 }
 
 impl PostgresFixture {
-    pub fn provision_from_url(
+    pub fn provision_with_generator_sync<G>(
         configured_url: Option<&SecretString>,
         fixture: &DatabaseFixture,
-    ) -> Result<Self, FixtureError> {
+        generator: &mut G,
+    ) -> Result<Self, FixtureError>
+    where
+        G: DatabaseNameGenerator,
+    {
         fixture.seed.validate()?;
         let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(FixtureError::Runtime)?;
-        let mut generator = RandomDatabaseName;
         let _runtime_guard = runtime.enter();
         let mut task =
-            Self::provision_with_name_generator(configured_url, &fixture.seed, &mut generator);
+            Self::provision_with_name_generator(configured_url, &fixture.seed, generator);
         runtime.block_on(task.resolve())
     }
 

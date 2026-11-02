@@ -1330,6 +1330,7 @@ dependencies = [
  "strum",
  "thiserror",
  "tracing",
+ "unicode-general-category",
  "url",
 ]
 
