@@ -9,6 +9,7 @@ use serde::Deserialize;
 use super::competitor_intent_base::{BaseCompetitorIntentChecker, CompetitorIntentError, Meaning};
 
 pub mod settings;
+mod tests;
 use settings::AirlineSettings;
 
 pub const AIRLINE_OTHER_MEANING_SIGNALS: &[&str] = &[
