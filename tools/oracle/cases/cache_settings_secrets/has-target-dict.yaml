@@ -1,0 +1,8 @@
+kind: helper
+name: cache-settings-secrets-has-target-dict
+call:
+  b4306:
+    function: has_target
+    value: {a: 1}
+env: {}
+compare: {ignore: []}

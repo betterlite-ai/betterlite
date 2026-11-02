@@ -1,0 +1,9 @@
+kind: helper
+name: cache-settings-secrets-merge-explicit-new
+call:
+  b4306:
+    function: merge
+    incoming: {host: "a", password: "new-secret"}
+    saved: {host: "a", password: "old-secret"}
+env: {}
+compare: {ignore: []}

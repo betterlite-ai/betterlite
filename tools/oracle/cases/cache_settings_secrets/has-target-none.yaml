@@ -1,0 +1,8 @@
+kind: helper
+name: cache-settings-secrets-has-target-none
+call:
+  b4306:
+    function: has_target
+    value: null
+env: {}
+compare: {ignore: []}
