@@ -84,22 +84,18 @@ fn request(input: &RequestInput) -> Result<Value, Box<HelperError>> {
         .map_err(|error| invalid_input(error.to_string()))
 }
 
-fn reply(input: &ReplyInput) -> Result<Value, Box<HelperError>> {
-    to_chat_model_response(
-        input.response_object.clone(),
-        input.model_response_object.clone(),
-    )
-    .map(Value::Object)
-    .map_err(|error| invalid_input(error.to_string()))
-}
-
 fn invoke(input: &TextCompletionCall) -> Result<Value, Box<HelperError>> {
     match input {
         TextCompletionCall::TextConfigValues(value) => config_values(value),
         TextCompletionCall::TextParameterAllowlist(_) => Ok(json!(SUPPORTED_PARAMS)),
         TextCompletionCall::SinglePromptTokens(value)
         | TextCompletionCall::MultiplePromptStrings(value) => request(value),
-        TextCompletionCall::TextReplyAsChat(value) => reply(value),
+        TextCompletionCall::TextReplyAsChat(value) => to_chat_model_response(
+            value.response_object.clone(),
+            value.model_response_object.clone(),
+        )
+        .map(Value::Object)
+        .map_err(|error| invalid_input(error.to_string())),
         TextCompletionCall::TextConfigSelection(value) => {
             Ok(json!(select_completion_provider(value.provider)))
         }

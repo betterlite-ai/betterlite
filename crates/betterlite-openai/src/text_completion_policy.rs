@@ -5,10 +5,6 @@
         reason = "serde_json test fixtures are concise and type-directed"
     )
 )]
-#![expect(
-    clippy::wildcard_enum_match_arm,
-    reason = "every provider outside the three text-completion families uses the OpenAI config"
-)]
 
 pub mod prompt;
 pub mod reply;
@@ -69,12 +65,15 @@ pub enum TextCompletionProviderTag {
 }
 
 #[must_use]
-pub const fn select_completion_provider(provider: ProviderId) -> TextCompletionProviderTag {
-    match provider {
-        ProviderId::FireworksAi => TextCompletionProviderTag::FireworksAi,
-        ProviderId::TogetherAi => TextCompletionProviderTag::TogetherAi,
-        ProviderId::TextCompletionInception => TextCompletionProviderTag::TextCompletionInception,
-        _ => TextCompletionProviderTag::OpenAi,
+pub fn select_completion_provider(provider: ProviderId) -> TextCompletionProviderTag {
+    if provider == ProviderId::FireworksAi {
+        TextCompletionProviderTag::FireworksAi
+    } else if provider == ProviderId::TogetherAi {
+        TextCompletionProviderTag::TogetherAi
+    } else if provider == ProviderId::TextCompletionInception {
+        TextCompletionProviderTag::TextCompletionInception
+    } else {
+        TextCompletionProviderTag::OpenAi
     }
 }
 
