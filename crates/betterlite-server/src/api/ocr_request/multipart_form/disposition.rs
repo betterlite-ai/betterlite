@@ -39,22 +39,77 @@ fn strip_ie_path(value: Vec<u8>) -> Vec<u8> {
     }
 }
 
-pub(super) fn disposition_param_bytes(disposition: &[u8], key: &str) -> Option<Vec<u8>> {
-    disposition
-        .split(|&byte| byte == b';')
-        .map(<[u8]>::trim_ascii)
-        .find_map(|segment| {
-            let equals = segment.iter().position(|&byte| byte == b'=')?;
-            let (segment_key, rest) = segment.split_at(equals);
-            let segment_value = rest.get(1..).unwrap_or(&[]);
-            if segment_key != key.as_bytes() {
-                return None;
+// A ';' only ends a parameter segment when the quotes seen since the previous segment start, minus escaped quotes, are balanced: _parseparam (python-multipart's vendored copy of email.message._parseparam) counts quotes the same way to skip a ';' inside a quoted value such as filename="report;v2.pdf".
+fn quote_parity_is_odd(bytes: &[u8], start: usize, end: usize) -> bool {
+    let window = bytes.get(start..end).unwrap_or(&[]);
+    let quotes = window.iter().fold(0_usize, |count, &byte| {
+        if byte == b'"' {
+            count.saturating_add(1)
+        } else {
+            count
+        }
+    });
+    let escaped_quotes = window.windows(2).fold(0_usize, |count, pair| {
+        if pair == b"\\\"" {
+            count.saturating_add(1)
+        } else {
+            count
+        }
+    });
+    (quotes & 1) != (escaped_quotes & 1)
+}
+
+fn find_semicolon_from(bytes: &[u8], start: usize) -> Option<usize> {
+    bytes
+        .get(start..)?
+        .iter()
+        .position(|&byte| byte == b';')
+        .map(|offset| offset.saturating_add(start))
+}
+
+// Splits a Content-Disposition value the way _parseparam does: on ';', except inside a quoted segment, with each key lowercased and both the key and value trimmed.
+fn parse_params(disposition: &[u8]) -> Vec<(Vec<u8>, Vec<u8>)> {
+    let mut params = Vec::new();
+    let mut start = 0_usize;
+    while start < disposition.len() {
+        let mut end = find_semicolon_from(disposition, start);
+        while let Some(semicolon) = end {
+            if semicolon <= start || !quote_parity_is_odd(disposition, start, semicolon) {
+                break;
             }
-            let value = dequote(segment_value);
-            Some(if key == "filename" {
+            end = find_semicolon_from(disposition, semicolon.saturating_add(1));
+        }
+        let segment_end = end.unwrap_or(disposition.len());
+        let segment = disposition.get(start..segment_end).unwrap_or(&[]);
+        let entry = segment.iter().position(|&byte| byte == b'=').map_or_else(
+            || (segment.trim_ascii().to_ascii_lowercase(), Vec::new()),
+            |equals| {
+                let (key, rest) = segment.split_at(equals);
+                let value = rest.get(1..).unwrap_or(&[]);
+                (
+                    key.trim_ascii().to_ascii_lowercase(),
+                    value.trim_ascii().to_vec(),
+                )
+            },
+        );
+        params.push(entry);
+        start = segment_end.saturating_add(1);
+    }
+    params
+}
+
+pub(super) fn disposition_param_bytes(disposition: &[u8], key: &str) -> Option<Vec<u8>> {
+    let key_bytes = key.as_bytes();
+    let mut result = None;
+    for (segment_key, segment_value) in parse_params(disposition) {
+        if segment_key == key_bytes {
+            let value = dequote(&segment_value);
+            result = Some(if key == "filename" {
                 strip_ie_path(value)
             } else {
                 value
-            })
-        })
+            });
+        }
+    }
+    result
 }
