@@ -7,11 +7,12 @@ description: >-
 
   The BaseDecisionsConfig class provides inherited provider behavior: credential resolution through environment names or defaults, header validation with reserved-header filtering, cost tracking, AWS signing detection, URL normalization, error translation and response parsing. Concrete providers (TypeSafe, Strands, OpenAI) override specific methods. TypeSafe uses TYPESAFE_API_KEY and TYPESAFE_API_BASE with default https://api.typesafe.ai.
 
-  Copy the conversion functions and BaseDecisionsConfig from litellm/llms/base_llm/decisions/transformation.py into a new module in crates/betterlite-openai/src/decisions/, and add TypeSafeDecisionsConfig to a new decisions module in crates/betterlite-openai/src/providers/typesafe/. Validate round-trip conversions (SystemOne to IR to SystemOne, OpenAI to IR to SystemOne) in tests; B3514 will consume the transport interface.
+  Copy the conversion functions and BaseDecisionsConfig from litellm/llms/base_llm/decisions/transformation.py into crates/betterlite-openai/src/decisions/transformation.rs with its tests in decisions/transformation/tests.rs, and add TypeSafeDecisionsConfig to crates/betterlite-openai/src/providers/typesafe/decisions.rs with its tests in providers/typesafe/decisions/tests.rs. Validate round-trip conversions (SystemOne to IR to SystemOne, OpenAI to IR to SystemOne) in tests; B3514 will consume the transport interface.
 
 scope:
   paths:
     - crates/betterlite-openai/src/decisions/**
+    - crates/betterlite-openai/src/providers/typesafe/decisions.rs
     - crates/betterlite-openai/src/providers/typesafe/decisions/**
   lint_tables: false
 
@@ -81,31 +82,31 @@ checks:
     - id: systemone-conversion-keys
       why: >-
         systemone_keys does not exist, does not return tuple with named keys when all unique, or does not fall back to numeric string indices
-      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions_systemone_keys::/)'
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions::transformation::tests::systemone_keys/)'
     - id: decisions-ir-question
       why: >-
         _ir_question does not exist, does not construct correct IR question types (predicate/choice/score), or does not map criteria/levels correctly
-      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions_ir_question::/)'
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions::transformation::tests::ir_question/)'
     - id: decisions-systemone-request
       why: >-
         systemone_request_to_ir or ir_to_systemone_request does not exist, does not convert correctly, or does not detect and reject images with UnsupportedDecisionsRequest
-      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions_systemone_request::/)'
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions::transformation::tests::systemone_request/)'
     - id: decisions-systemone-response
       why: >-
         systemone_response_to_ir, ir_to_systemone_response, parse_systemone_response or _systemone_answer does not exist, does not match answers through keys, does not reconstruct types correctly, or does not drop refusals
-      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions_systemone_response::/)'
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions::transformation::tests::systemone_response/)'
     - id: decisions-base-config
       why: >-
         BaseDecisionsConfig does not exist, resolve_api_base/resolve_api_key do not follow env-then-default pattern, validate_environment does not filter reserved headers or add Content-Type, get_complete_url does not normalize slashes, transform_decisions_request/transform_decisions_response do not handle model/response correctly, or signs_with_aws/sign_request/provider_reported_cost/missing_api_base_message do not exist or have wrong defaults
-      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions_base_config::/)'
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions::transformation::tests::base_config/)'
     - id: typesafe-config
       why: >-
         TypeSafeDecisionsConfig does not exist, does not set api_key_env/api_base_env to the correct environment names, or does not return the correct default api_base
-      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^typesafe_config::/)'
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^providers::typesafe::decisions::tests::/)'
     - id: decisions-roundtrip
       why: >-
         Round-trip conversions (SystemOne to IR to SystemOne, OpenAI to IR to SystemOne) do not preserve question names, answer values, confidences, probabilities or extra fields
-      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions_roundtrip::/)'
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions::transformation::tests::roundtrip/)'
 
 oracle_cases: []
 
@@ -128,6 +129,7 @@ out_of_scope:
     B3510 owns record types, validators and the decisions_text helper function.
 
 pitfalls:
+  - "Each check picks its tests by name prefix inside decisions::transformation::tests: start every test name with systemone_keys, ir_question, systemone_request, systemone_response, base_config or roundtrip, matching the proof it backs. The TypeSafe tests go in providers::typesafe::decisions::tests."
   - "systemone_keys returns a tuple of strings, all unique. If a question has no name (None), it must fall back to numeric string indices: questions at indices 0, 1, 2 become ('0', '1', '2'). Mixed named/unnamed questions use names where present and numeric strings where absent."
   - "ImageContent and TextContent are union types within OpenAI message content. A message.content can be str or list[ImageContent | TextContent]; check isinstance before accessing .text or .url."
   - "_has_image returns True only if the message content is a list and contains at least one image part. A string content is never an image."

@@ -1,0 +1,9 @@
+kind: helper
+name: opencode-managed-mode-list
+call:
+  b5081:
+    harness: opencode
+    config: { mode: { plan: [model] } }
+env: {}
+compare:
+  ignore: []
