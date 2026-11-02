@@ -1,14 +1,14 @@
 id: B3614
 milestone: M5 api families
 title: Pass-through route registry and collision lookup
-status: todo
+status: done
 depends_on: [B2302, B866]
 file: tasks/B3614-passthrough-route-registry.yaml
 covers:
   - "litellm/proxy/pass_through_endpoints/pass_through_endpoints.py"
 parent: B102
 split_from: B102
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 525
