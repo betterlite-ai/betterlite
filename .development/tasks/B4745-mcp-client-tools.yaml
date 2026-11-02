@@ -47,17 +47,7 @@ scope:
     - tools/oracle/src/helpers/mcp/b4745.rs
     - tools/oracle/src/helpers/mcp/b4745/**
     - crates/betterlite-mcp/src/client/tools/tests/**
-    - tools/oracle/cases/helpers/mcp-client-tools/call-tool-cancellation.yaml
-    - tools/oracle/cases/helpers/mcp-client-tools/call-tool-error-result.yaml
-    - tools/oracle/cases/helpers/mcp-client-tools/call-tool-input-required-accepted.yaml
-    - tools/oracle/cases/helpers/mcp-client-tools/call-tool-input-required-rejected.yaml
-    - tools/oracle/cases/helpers/mcp-client-tools/call-tool-progress-callback-failure.yaml
-    - tools/oracle/cases/helpers/mcp-client-tools/call-tool-progress-forwarding.yaml
-    - tools/oracle/cases/helpers/mcp-client-tools/call-tool-success.yaml
-    - tools/oracle/cases/helpers/mcp-client-tools/list-tools-broken-connection-detection.yaml
-    - tools/oracle/cases/helpers/mcp-client-tools/list-tools-empty-catalog.yaml
-    - tools/oracle/cases/helpers/mcp-client-tools/list-tools-partial-on-deadline.yaml
-    - tools/oracle/cases/helpers/mcp-client-tools/list-tools-raise-on-error.yaml
+    - tools/oracle/cases/helpers/mcp-client-tools/**
   lint_tables: false
 
 references:

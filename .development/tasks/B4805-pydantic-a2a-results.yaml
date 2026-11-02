@@ -32,13 +32,7 @@ scope:
     - tools/oracle/helpers/b4805/**
     - tools/oracle/src/helpers/a2a/b4805.rs
     - tools/oracle/src/helpers/a2a/b4805/**
-    - tools/oracle/cases/a2a/pydantic-artifact-extraction.yaml
-    - tools/oracle/cases/a2a/pydantic-empty-text.yaml
-    - tools/oracle/cases/a2a/pydantic-fake-streaming.yaml
-    - tools/oracle/cases/a2a/pydantic-history-fallback.yaml
-    - tools/oracle/cases/a2a/pydantic-message-fallback.yaml
-    - tools/oracle/cases/a2a/pydantic-multipart-join.yaml
-    - tools/oracle/cases/a2a/pydantic-transform-response.yaml
+    - tools/oracle/cases/a2a/pydantic*
   lint_tables: false
 
 references:
