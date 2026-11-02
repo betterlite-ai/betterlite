@@ -26,7 +26,6 @@ pub struct TokenForwardingRequest<'request> {
     pub moment: DateTime<Utc>,
 }
 
-// The openai and azure wrappers both forward straight into generic_cost_per_token, differing only in the provider string and in which of their own extra parameters is actually used.
 pub fn cost_per_token(
     request: &TokenForwardingRequest<'_>,
     provider: Provider<'_>,
