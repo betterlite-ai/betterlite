@@ -1,0 +1,9 @@
+kind: helper
+name: numeric-booleans-and-string-counters
+call:
+  spend_upsert:
+    steps:
+      numbers: {"kind":"daily","entity":"team","rows":[{"team_id":"a","prompt_tokens":true,"completion_tokens":-2.9,"api_requests":"7","spend":true,"date":42},{"team_id":"a","prompt_tokens":4.8,"completion_tokens":false,"spend":0.25,"date":"42"}]}
+env: {}
+compare:
+  ignore: [{"pointer":"/value/numbers/params/0","why":"Each daily row receives a newly generated UUID."}]

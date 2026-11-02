@@ -1,0 +1,13 @@
+kind: helper
+name: tags-json-deduplication-and-invalid-member
+call:
+  spend_upsert:
+    steps:
+      json: {"kind":"extract","entity":"tag","payload":{"request_tags":"[\"b\",\"a\",\"b\",\"\"]"}}
+      array: {"kind":"extract","entity":"tag","payload":{"request_tags":["b","a","b",""]}}
+      invalid: {"kind":"extract","entity":"tag","payload":{"request_tags":"[\"a\",3]"}}
+      invalid_json: {"kind":"extract","entity":"tag","payload":{"request_tags":"["}}
+      null_tags: {"kind":"extract","entity":"tag","payload":{"request_tags":null}}
+env: {}
+compare:
+  ignore: []

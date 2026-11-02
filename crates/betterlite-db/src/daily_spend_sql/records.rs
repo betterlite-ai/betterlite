@@ -16,12 +16,17 @@ pub struct BaseDailySpendTransaction {
     pub cache_read_input_tokens: i64,
     pub cache_creation_input_tokens: i64,
     pub compression_saved_tokens: i64,
+    #[serde(with = "rust_decimal::serde::arbitrary_precision")]
     pub compression_savings_spend: Decimal,
+    #[serde(with = "rust_decimal::serde::arbitrary_precision")]
     pub prompt_caching_savings_spend: Decimal,
     #[serde(rename = "gateway_injected_caching_savings_spend")]
+    #[serde(with = "rust_decimal::serde::arbitrary_precision")]
     pub gateway_cache_savings_spend: Decimal,
     #[serde(default)]
+    #[serde(with = "rust_decimal::serde::arbitrary_precision")]
     pub autorouter_savings_spend: Decimal,
+    #[serde(with = "rust_decimal::serde::arbitrary_precision")]
     pub spend: Decimal,
     pub api_requests: i64,
     pub successful_requests: i64,

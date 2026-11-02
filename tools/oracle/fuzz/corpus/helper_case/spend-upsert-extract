@@ -1,0 +1,8 @@
+kind: helper
+name: spend-upsert-seed
+call:
+  spend_upsert:
+    steps:
+      null_user: {kind: extract, entity: user, payload: {user: null}}
+env: {}
+compare: {ignore: []}

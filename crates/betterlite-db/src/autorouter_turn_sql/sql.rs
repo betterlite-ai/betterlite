@@ -1,23 +1,23 @@
-const API_KEY: &str = "$1";
-const SESSION_ID: &str = "$2";
-const ROUTER_NAME: &str = "$3";
-const ROUTER_TYPE: &str = "$4";
-const MODEL: &str = "$5";
-const TURN_AT: &str = "$6";
-const TOTAL_TOKENS: &str = "$7";
-const SPEND: &str = "$8";
-const SAVED_SPEND: &str = "$9";
-const CLASSIFIER_COST: &str = "$10";
-const COVERED: &str = "$11";
-const CACHE_HIT: &str = "$12";
-const CACHE_TTL: &str = "$13";
-const CACHE_TOUCHED: &str = "$14";
-const TIER: &str = "$15";
-const BASELINE: &str = "$16";
-const SAVINGS_TURNS: &str = "$17";
-const SAVINGS_ACTUAL: &str = "$18";
-const SAVINGS_SAVED: &str = "$19";
-const USER_ID: &str = "$20";
+const API_KEY: &str = "$api_key";
+const SESSION_ID: &str = "$session_id";
+const ROUTER_NAME: &str = "$router_name";
+const ROUTER_TYPE: &str = "$router_type";
+const MODEL: &str = "$model";
+const TURN_AT: &str = "$turn_at";
+const TOTAL_TOKENS: &str = "$total_tokens";
+const SPEND: &str = "$spend";
+const SAVED_SPEND: &str = "$saved_spend";
+const CLASSIFIER_COST: &str = "$classifier_cost";
+const COVERED: &str = "$covered";
+const CACHE_HIT: &str = "$cache_hit";
+const CACHE_TTL: &str = "$cache_ttl_seconds";
+const CACHE_TOUCHED: &str = "$cache_touched";
+const TIER: &str = "$tier";
+const BASELINE: &str = "$baseline_model";
+const SAVINGS_TURNS: &str = "$savings_estimated_turns";
+const SAVINGS_ACTUAL: &str = "$savings_estimated_actual_spend";
+const SAVINGS_SAVED: &str = "$savings_estimated_saved_spend";
+const USER_ID: &str = "$user_id";
 
 const CACHE_TTL_5M_SECONDS: i64 = 300;
 const CACHE_TTL_1H_SECONDS: i64 = 3600;
@@ -30,13 +30,15 @@ const SESSION_COLUMNS: &str = "api_key, session_id, router_name, router_type, fi
     baseline_models, savings_estimated_turns, savings_estimated_actual_spend, savings_estimated_saved_spend, \
     savings_estimated_baseline_models";
 
-const IN_ORDER: &str = "$6::timestamp >= t.last_turn_at";
-const SAME: &str = "$6::timestamp >= t.last_turn_at AND t.last_model = $5";
-const FIRST: &str = "$6::timestamp >= t.last_turn_at AND NOT t.models ? $5";
-const RETURN: &str = "$6::timestamp >= t.last_turn_at AND t.models ? $5 AND t.last_model <> $5";
-const RETURN_MISS: &str = "$6::timestamp >= t.last_turn_at AND t.models ? $5 AND t.last_model <> $5 \
-    AND $11::int = 1 AND $12::int = 0 AND (t.models -> $5 ->> 'ttl') IS NOT NULL";
-const IDLE_SECONDS: &str = "EXTRACT(EPOCH FROM $6::timestamp) - (t.models -> $5 ->> 'at')::float8";
+const IN_ORDER: &str = "$turn_at::timestamp >= t.last_turn_at";
+const SAME: &str = "$turn_at::timestamp >= t.last_turn_at AND t.last_model = $model";
+const FIRST: &str = "$turn_at::timestamp >= t.last_turn_at AND NOT t.models ? $model";
+const RETURN: &str =
+    "$turn_at::timestamp >= t.last_turn_at AND t.models ? $model AND t.last_model <> $model";
+const RETURN_MISS: &str = "$turn_at::timestamp >= t.last_turn_at AND t.models ? $model AND t.last_model <> $model \
+    AND $covered::int = 1 AND $cache_hit::int = 0 AND (t.models -> $model ->> 'ttl') IS NOT NULL";
+const IDLE_SECONDS: &str =
+    "EXTRACT(EPOCH FROM $turn_at::timestamp) - (t.models -> $model ->> 'at')::float8";
 fn select_values(user_scoped: bool) -> String {
     let user_value = if user_scoped {
         format!("{USER_ID}::text, ")
@@ -50,7 +52,7 @@ fn select_values(user_scoped: bool) -> String {
         "(CASE WHEN {BASELINE}::text IS NULL THEN '{{}}'::jsonb ELSE jsonb_build_object({BASELINE}::text, 1) END)"
     );
     let estimated_baseline_delta = format!(
-        "(CASE WHEN ({SAVINGS_TURNS}::int = 1 AND {BASELINE}::text IS NOT NULL) THEN jsonb_build_object({BASELINE}::text, 1) ELSE '{{}}'::jsonb END)"
+        "(CASE WHEN {SAVINGS_TURNS}::int = 1 AND {BASELINE}::text IS NOT NULL THEN jsonb_build_object({BASELINE}::text, 1) ELSE '{{}}'::jsonb END)"
     );
     format!(
         "{user_value}{API_KEY}, {SESSION_ID}, {ROUTER_NAME}, {ROUTER_TYPE}, {TURN_AT}::timestamp, {TURN_AT}::timestamp,\n    \
@@ -132,12 +134,13 @@ pub fn session_upsert_sql(user_scoped: bool) -> String {
     };
     let user_column = if user_scoped { "user_id, " } else { "" };
     let required_identity = if user_scoped { USER_ID } else { API_KEY };
-    format!(
+    let template = format!(
         "INSERT INTO \"{table_name}\" AS t (\n    {user_column}{SESSION_COLUMNS}\n)\nSELECT\n    {}\nWHERE {required_identity}::text <> ''\nON CONFLICT ({user_column}api_key, session_id, router_name) DO UPDATE SET\n    {},\n    {}",
         select_values(user_scoped),
         conflict_counters(),
         conflict_models_and_tiers(ROUTER_TYPE),
-    )
+    );
+    bind_placeholders(template)
 }
 
 #[must_use]
@@ -147,4 +150,14 @@ pub fn upsert_autorouter_session_sql() -> String {
         session_upsert_sql(false),
         session_upsert_sql(true),
     )
+}
+
+fn bind_placeholders(mut template: String) -> String {
+    for (index, field) in super::transaction::FIELD_ORDER.iter().enumerate().rev() {
+        template = template.replace(
+            &format!("${field}"),
+            &format!("${}", index.saturating_add(1)),
+        );
+    }
+    template
 }

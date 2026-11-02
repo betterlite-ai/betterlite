@@ -1,18 +1,17 @@
 use super::columns::{COUNTER_COLUMNS, KEY_COLUMNS, SPEND_COLUMNS};
 use super::entities::{DailySpendTable, SpendRow};
-use super::values::{DailySpendValueError, SpendColumnValue, as_counter, as_decimal, as_text};
+use super::values::{
+    DailySpendValueError, SpendColumnValue, as_counter, as_decimal, as_optional_text,
+};
 
 pub fn conflict_key(
     table: &DailySpendTable,
     transaction: &SpendRow,
 ) -> Result<Vec<String>, DailySpendValueError> {
     let mut key = Vec::with_capacity(KEY_COLUMNS.len());
-    key.push(as_text(
-        transaction.get(table.entity_id_column),
-        table.entity_id_column,
-    )?);
+    key.push(as_optional_text(transaction.get(table.entity_id_column))?.unwrap_or_default());
     for column in KEY_COLUMNS {
-        key.push(as_text(transaction.get(column), column)?);
+        key.push(as_optional_text(transaction.get(column))?.unwrap_or_default());
     }
     Ok(key)
 }
@@ -44,16 +43,20 @@ fn merge_into(merged: &mut SpendRow, next: &SpendRow) -> Result<(), DailySpendVa
         let addition = as_counter(next.get(column), column)?;
         let summed = total
             .checked_add(addition)
-            .ok_or(DailySpendValueError::Overflow { field: column })?;
-        merged.insert(column, SpendColumnValue::Int(summed));
+            .ok_or_else(|| DailySpendValueError::Overflow {
+                field: column.to_owned(),
+            })?;
+        merged.insert(column.to_owned(), SpendColumnValue::Int(summed));
     }
     for column in SPEND_COLUMNS {
-        let total = as_decimal(merged.get(column), column)?;
-        let addition = as_decimal(next.get(column), column)?;
+        let total = as_decimal(merged.get(column));
+        let addition = as_decimal(next.get(column));
         let summed = total
             .checked_add(addition)
-            .ok_or(DailySpendValueError::Overflow { field: column })?;
-        merged.insert(column, SpendColumnValue::Decimal(summed));
+            .ok_or_else(|| DailySpendValueError::Overflow {
+                field: column.to_owned(),
+            })?;
+        merged.insert(column.to_owned(), SpendColumnValue::Decimal(summed));
     }
     Ok(())
 }

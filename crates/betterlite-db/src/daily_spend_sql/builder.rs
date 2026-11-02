@@ -1,16 +1,16 @@
+use super::bind::SqlBind;
 use super::columns::{COUNTER_COLUMNS, KEY_COLUMNS, SPEND_COLUMNS, sql_cast};
 use super::entities::{DailySpendTable, SpendRow};
 use super::values::{DailySpendValueError, as_counter, as_decimal, as_optional_text};
-use tokio_postgres::types::ToSql;
 use uuid::Uuid;
 
 pub fn build_bulk_upsert(
     table: &DailySpendTable,
     batch: &[(Vec<String>, SpendRow)],
-) -> Result<(String, Vec<Box<dyn ToSql + Sync + Send>>), DailySpendValueError> {
+) -> Result<(String, Vec<SqlBind>), DailySpendValueError> {
     let columns = insert_columns(table);
     let quoted_table = format!("\"{}\"", table.name);
-    let mut params: Vec<Box<dyn ToSql + Sync + Send>> = Vec::new();
+    let mut params: Vec<SqlBind> = Vec::new();
     let mut rows = Vec::with_capacity(batch.len());
     for (key, transaction) in batch {
         let mut placeholders = Vec::with_capacity(columns.len());
@@ -58,27 +58,28 @@ fn row_params(
     table: &DailySpendTable,
     key: &[String],
     transaction: &SpendRow,
-) -> Result<Vec<Box<dyn ToSql + Sync + Send>>, DailySpendValueError> {
-    let mut params: Vec<Box<dyn ToSql + Sync + Send>> = Vec::new();
-    params.push(Box::new(Uuid::new_v4().to_string()));
+) -> Result<Vec<SqlBind>, DailySpendValueError> {
+    let mut params: Vec<SqlBind> = Vec::new();
+    params.push(SqlBind::Text(Some(Uuid::new_v4().to_string())));
     for value in key {
-        params.push(Box::new(value.clone()));
+        params.push(SqlBind::Text(Some(value.clone())));
     }
-    params.push(Box::new(as_optional_text(
+    params.push(SqlBind::Text(as_optional_text(
         transaction.get("model_group"),
-        "model_group",
     )?));
     for column in COUNTER_COLUMNS {
-        params.push(Box::new(as_counter(transaction.get(column), column)?));
+        params.push(SqlBind::Integer(Some(as_counter(
+            transaction.get(column),
+            column,
+        )?)));
     }
     for column in SPEND_COLUMNS {
-        let decimal = as_decimal(transaction.get(column), column)?;
-        params.push(Box::new(decimal));
+        let decimal = as_decimal(transaction.get(column));
+        params.push(SqlBind::Money(decimal));
     }
     if table.carries_request_id {
-        params.push(Box::new(as_optional_text(
+        params.push(SqlBind::Text(as_optional_text(
             transaction.get("request_id"),
-            "request_id",
         )?));
     }
     Ok(params)

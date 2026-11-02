@@ -1,87 +1,60 @@
-use chrono::{DateTime, Utc};
+use crate::daily_spend_sql::bind::SqlBind;
+use chrono::{DateTime, FixedOffset};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use tokio_postgres::types::ToSql;
 
-pub const FIELD_ORDER: [&str; 20] = [
-    "api_key",
-    "session_id",
-    "router_name",
-    "router_type",
-    "model",
-    "turn_at",
-    "total_tokens",
-    "spend",
-    "saved_spend",
-    "classifier_cost",
-    "covered",
-    "cache_hit",
-    "cache_ttl_seconds",
-    "cache_touched",
-    "tier",
-    "baseline_model",
-    "savings_estimated_turns",
-    "savings_estimated_actual_spend",
-    "savings_estimated_saved_spend",
-    "user_id",
-];
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct AutoRouterTurnTransaction {
-    pub api_key: String,
-    pub session_id: String,
-    pub router_name: String,
-    pub router_type: String,
-    pub model: String,
-    pub turn_at: DateTime<Utc>,
-    pub total_tokens: i64,
-    pub spend: Decimal,
-    pub saved_spend: Decimal,
-    pub classifier_cost: Decimal,
-    pub covered: TurnFlag,
-    pub cache_hit: TurnFlag,
-    pub cache_ttl_seconds: Option<i64>,
-    pub cache_touched: TurnFlag,
+macro_rules! turn_record {
+    ($($(#[$meta:meta])* $field:ident: $kind:ty => $bind:ident),+ $(,)?) => {
+        #[derive(Clone, Serialize, Deserialize)]
+        pub struct AutoRouterTurnTransaction { $($(#[$meta])* pub $field: $kind,)+ }
+        pub const FIELD_ORDER: &[&str] = &[$(stringify!($field),)+];
+        #[must_use]
+        pub fn upsert_params(transaction: &AutoRouterTurnTransaction) -> Vec<SqlBind> {
+            vec![$(turn_record!(@bind $bind, transaction.$field)),+]
+        }
+    };
+    (@bind text, $value:expr) => { SqlBind::Text(Some($value.clone())) };
+    (@bind optional, $value:expr) => { SqlBind::Text($value.clone()) };
+    (@bind money, $value:expr) => { SqlBind::Money($value) };
+    (@bind integer, $value:expr) => { SqlBind::Integer(Some($value)) };
+    (@bind nullable, $value:expr) => { SqlBind::Integer($value) };
+    (@bind flag, $value:expr) => { SqlBind::Integer(Some(i64::from($value.0))) };
+    (@bind timestamp, $value:expr) => { SqlBind::Text(Some($value.to_rfc3339())) };
+}
+turn_record! {
+    api_key: String => text,
+    session_id: String => text,
+    router_name: String => text,
+    router_type: String => text,
+    model: String => text,
+    turn_at: DateTime<FixedOffset> => timestamp,
+    total_tokens: i64 => integer,
+    #[serde(with = "rust_decimal::serde::arbitrary_precision")]
+    spend: Decimal => money,
+    #[serde(with = "rust_decimal::serde::arbitrary_precision")]
+    saved_spend: Decimal => money,
+    #[serde(with = "rust_decimal::serde::arbitrary_precision")]
+    classifier_cost: Decimal => money,
+    covered: TurnFlag => flag,
+    cache_hit: TurnFlag => flag,
+    cache_ttl_seconds: Option<i64> => nullable,
+    cache_touched: TurnFlag => flag,
     #[serde(default)]
-    pub tier: Option<String>,
+    tier: Option<String> => optional,
     #[serde(default)]
-    pub baseline_model: Option<String>,
+    baseline_model: Option<String> => optional,
     #[serde(default)]
-    pub savings_estimated_turns: i64,
+    savings_estimated_turns: i64 => integer,
     #[serde(default)]
-    pub savings_estimated_actual_spend: Decimal,
+    #[serde(with = "rust_decimal::serde::arbitrary_precision")]
+    savings_estimated_actual_spend: Decimal => money,
     #[serde(default)]
-    pub savings_estimated_saved_spend: Decimal,
+    #[serde(with = "rust_decimal::serde::arbitrary_precision")]
+    savings_estimated_saved_spend: Decimal => money,
     #[serde(default)]
-    pub user_id: String,
+    user_id: String => text,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct TurnFlag(pub bool);
-
-#[must_use]
-pub fn upsert_params(transaction: &AutoRouterTurnTransaction) -> Vec<Box<dyn ToSql + Sync + Send>> {
-    vec![
-        Box::new(transaction.api_key.clone()),
-        Box::new(transaction.session_id.clone()),
-        Box::new(transaction.router_name.clone()),
-        Box::new(transaction.router_type.clone()),
-        Box::new(transaction.model.clone()),
-        Box::new(transaction.turn_at.to_rfc3339()),
-        Box::new(transaction.total_tokens),
-        Box::new(transaction.spend),
-        Box::new(transaction.saved_spend),
-        Box::new(transaction.classifier_cost),
-        Box::new(i64::from(transaction.covered.0)),
-        Box::new(i64::from(transaction.cache_hit.0)),
-        Box::new(transaction.cache_ttl_seconds),
-        Box::new(i64::from(transaction.cache_touched.0)),
-        Box::new(transaction.tier.clone()),
-        Box::new(transaction.baseline_model.clone()),
-        Box::new(transaction.savings_estimated_turns),
-        Box::new(transaction.savings_estimated_actual_spend),
-        Box::new(transaction.savings_estimated_saved_spend),
-        Box::new(transaction.user_id.clone()),
-    ]
-}

@@ -1,5 +1,5 @@
+use crate::daily_spend_sql::bind::execute;
 use deadpool_postgres::GenericClient;
-use tokio_postgres::types::ToSql;
 
 use super::sql::upsert_autorouter_session_sql;
 use super::transaction::{AutoRouterTurnTransaction, upsert_params};
@@ -20,12 +20,7 @@ where
 {
     let sql = upsert_autorouter_session_sql();
     let params = upsert_params(transaction);
-    let refs: Vec<&(dyn ToSql + Sync)> = params
-        .iter()
-        .map(|value| -> &(dyn ToSql + Sync) { value.as_ref() })
-        .collect();
-    client
-        .execute(sql.as_str(), &refs)
+    execute(client, &sql, &params)
         .await
         .map_err(|source| TurnWriteError::Statement(backend(source)))?;
     Ok(())

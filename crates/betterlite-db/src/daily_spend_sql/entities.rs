@@ -1,10 +1,12 @@
 use super::tags::{DailyTagsError, TagsPayload, tags_from_payload};
 use super::values::SpendColumnValue;
-use std::collections::HashMap;
+use serde::Deserialize;
+use std::collections::BTreeMap;
 
-pub type SpendRow = HashMap<&'static str, SpendColumnValue>;
+pub type SpendRow = BTreeMap<String, SpendColumnValue>;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum DailySpendEntity {
     User,
     Team,
@@ -16,9 +18,9 @@ pub enum DailySpendEntity {
 
 #[derive(Debug, Clone, Copy)]
 pub struct DailySpendTable {
-    pub name: &'static str,
-    pub entity_id_column: &'static str,
-    pub carries_request_id: bool,
+    pub(super) name: &'static str,
+    pub(super) entity_id_column: &'static str,
+    pub(super) carries_request_id: bool,
 }
 
 impl DailySpendEntity {
@@ -60,8 +62,9 @@ impl DailySpendEntity {
 }
 
 // The handful of fields daily_spend_entity_ids reads out of the much larger request/log payload; callers project their own payload type into this one.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 pub struct DailySpendEntityPayload {
+    #[serde(default, with = "serde_with::rust::double_option")]
     pub user: Option<Option<String>>,
     pub team_id: Option<String>,
     pub organization_id: Option<String>,
