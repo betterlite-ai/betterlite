@@ -1,0 +1,10 @@
+kind: helper
+name: auth-identity-resolver-errors
+call:
+  auth_identity:
+    aspect: error
+    variant: key_not_found
+    hashed_token: "deadbeef"
+env: {}
+compare:
+  ignore: []

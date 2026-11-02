@@ -1,0 +1,9 @@
+kind: helper
+name: auth-identity-identity-records
+call:
+  auth_identity:
+    aspect: records
+    id: user-42
+env: {}
+compare:
+  ignore: []

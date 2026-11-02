@@ -1,0 +1,9 @@
+kind: helper
+name: auth-identity-principal-defaults-and-exclusions
+call:
+  auth_identity:
+    aspect: principal
+    subject: user-123
+env: {}
+compare:
+  ignore: []
