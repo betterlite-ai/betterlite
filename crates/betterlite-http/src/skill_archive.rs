@@ -60,11 +60,16 @@ fn flattened_members(
 ) -> Option<Vec<(String, Vec<u8>)>> {
     let starts =
         central_directory::header_starts(stored_content, uploaded.central_directory_start());
+    let archive_offset = uploaded.offset();
     let mut entries = Vec::new();
     let mut unpacked_bytes = 0_u64;
     for central_header_start in starts {
-        let member =
-            read_validated_member(stored_content, central_header_start, &mut unpacked_bytes)?;
+        let member = read_validated_member(
+            stored_content,
+            central_header_start,
+            archive_offset,
+            &mut unpacked_bytes,
+        )?;
         let ArchiveMember::File(path, data) = member else {
             continue;
         };
@@ -102,9 +107,11 @@ enum ArchiveMember {
 fn read_validated_member(
     stored_content: &[u8],
     central_header_start: u64,
+    archive_offset: u64,
     unpacked_bytes: &mut u64,
 ) -> Option<ArchiveMember> {
-    let entry = central_directory::read_entry(stored_content, central_header_start)?;
+    let entry =
+        central_directory::read_entry(stored_content, central_header_start, archive_offset)?;
     if entry.name.ends_with('/') {
         return Some(ArchiveMember::Directory);
     }
@@ -116,7 +123,7 @@ fn read_validated_member(
     if *unpacked_bytes > MAX_ARCHIVE_UNPACKED_BYTES {
         return None;
     }
-    let data = central_directory::decompress(stored_content, central_header_start)?;
+    let data = central_directory::decompress(stored_content, central_header_start, archive_offset)?;
     Some(ArchiveMember::File(path, data))
 }
 

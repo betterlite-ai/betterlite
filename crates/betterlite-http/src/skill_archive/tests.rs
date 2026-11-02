@@ -588,6 +588,44 @@ fn skill_archive_keeps_distinct_members_that_share_a_unicode_path_extra_field() 
 }
 
 #[test]
+fn skill_archive_reads_a_member_with_zip64_central_sizes() {
+    let mut output = Cursor::new(Vec::new());
+    let mut writer = ZipWriter::new(&mut output);
+    let options = SimpleFileOptions::default()
+        .compression_method(CompressionMethod::Stored)
+        .large_file(true);
+    writer.start_file("skill/SKILL.md", options).unwrap();
+    writer.write_all(b"manifest").unwrap();
+    writer.finish().unwrap();
+    let bytes = output.into_inner();
+    let archive = build_skill_archive(&bytes).unwrap();
+    let mut repacked = ZipArchive::new(Cursor::new(archive.content)).unwrap();
+    let mut data = Vec::new();
+    repacked
+        .by_name("SKILL.md")
+        .unwrap()
+        .read_to_end(&mut data)
+        .unwrap();
+    assert_eq!(data, b"manifest");
+}
+
+#[test]
+fn skill_archive_reads_an_upload_with_bytes_prepended_to_the_zip() {
+    let zip_bytes = upload(&[("skill/SKILL.md", b"manifest")]);
+    let mut bytes = b"#!/bin/sh\nexit 0\n".to_vec();
+    bytes.extend_from_slice(&zip_bytes);
+    let archive = build_skill_archive(&bytes).unwrap();
+    let mut repacked = ZipArchive::new(Cursor::new(archive.content)).unwrap();
+    let mut data = Vec::new();
+    repacked
+        .by_name("SKILL.md")
+        .unwrap()
+        .read_to_end(&mut data)
+        .unwrap();
+    assert_eq!(data, b"manifest");
+}
+
+#[test]
 fn skill_archive_replays_the_skill_archive_zip_corpus() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/skill_archive_zip");
     fs::read_dir(path)
