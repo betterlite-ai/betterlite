@@ -9,7 +9,6 @@ use std::time::Duration;
 use axum::Router;
 use axum::body::Bytes;
 use axum::http::Uri;
-use axum::routing::post;
 use betterlite_config::sections::guardrail_identity::config_models::GuardrailConfigModelIdentity as _;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use reqwest::StatusCode;
@@ -114,90 +113,84 @@ struct CapturedDynamicParams {
     project_id: Option<String>,
 }
 
-async fn mock_validate_server(
-    status: StatusCode,
-    response_body: String,
-) -> (String, Arc<Mutex<Vec<u8>>>, JoinSet<IoResult<()>>) {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let base = format!("http://{}", listener.local_addr().unwrap());
-    let body = Arc::new(Mutex::new(Vec::new()));
-    let body_for_handler = Arc::clone(&body);
-    let answer = move |bytes: Bytes| {
-        let body_for_body = Arc::clone(&body_for_handler);
-        async move {
-            *body_for_body.lock().unwrap() = bytes.to_vec();
-            (status, response_body)
-        }
-    };
-    let router = Router::new().route("/guards/my-guard/validate", post(answer));
-    let mut server = JoinSet::new();
-    server.spawn(axum::serve(listener, router).into_future());
-    (base, body, server)
+#[derive(Default)]
+struct CapturedRequest {
+    path: String,
+    body: Vec<u8>,
 }
 
-async fn mock_path_server(
+async fn mock_server(
     status: StatusCode,
     response_body: String,
-) -> (String, Arc<Mutex<String>>, JoinSet<IoResult<()>>) {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let base = format!("http://{}", listener.local_addr().unwrap());
-    let path = Arc::new(Mutex::new(String::new()));
-    let path_for_handler = Arc::clone(&path);
-    let answer = move |uri: Uri| {
-        let path_for_body = Arc::clone(&path_for_handler);
+) -> (String, Arc<Mutex<CapturedRequest>>, JoinSet<IoResult<()>>) {
+    let captured = Arc::new(Mutex::new(CapturedRequest::default()));
+    let captured_for_handler = Arc::clone(&captured);
+    let answer = move |uri: Uri, bytes: Bytes| {
+        let captured_for_request = Arc::clone(&captured_for_handler);
         async move {
-            *path_for_body.lock().unwrap() = uri.path().to_owned();
+            *captured_for_request.lock().unwrap() = CapturedRequest {
+                path: uri.path().to_owned(),
+                body: bytes.to_vec(),
+            };
             (status, response_body)
         }
     };
     let router = Router::new().fallback(answer);
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
     let mut server = JoinSet::new();
     server.spawn(axum::serve(listener, router).into_future());
-    (base, path, server)
+    (base, captured, server)
 }
 
 #[tokio::test]
 async fn guardrails_ai_make_api_request_joins_a_path_base_without_a_trailing_slash_rfc3986_style() {
     let (base, path, _server) =
-        mock_path_server(StatusCode::OK, r#"{"validationPassed": true}"#.to_owned()).await;
+        mock_server(StatusCode::OK, r#"{"validationPassed": true}"#.to_owned()).await;
     let instance = guardrail(&format!("{base}/v1"), InputFormat::LlmOutput);
     instance
         .make_guardrails_ai_api_request("hello", &BTreeMap::new())
         .await
         .expect("validation passes");
-    assert_eq!(path.lock().unwrap().clone(), "/guards/my-guard/validate");
+    assert_eq!(
+        path.lock().unwrap().path.clone(),
+        "/guards/my-guard/validate"
+    );
 }
 
 #[tokio::test]
 async fn guardrails_ai_make_api_request_joins_a_path_base_with_a_trailing_slash() {
     let (base, path, _server) =
-        mock_path_server(StatusCode::OK, r#"{"validationPassed": true}"#.to_owned()).await;
+        mock_server(StatusCode::OK, r#"{"validationPassed": true}"#.to_owned()).await;
     let instance = guardrail(&format!("{base}/v1/"), InputFormat::LlmOutput);
     instance
         .make_guardrails_ai_api_request("hello", &BTreeMap::new())
         .await
         .expect("validation passes");
-    assert_eq!(path.lock().unwrap().clone(), "/v1/guards/my-guard/validate");
+    assert_eq!(
+        path.lock().unwrap().path.clone(),
+        "/v1/guards/my-guard/validate"
+    );
 }
 
 #[tokio::test]
 async fn guardrails_ai_make_api_request_posts_the_llm_output_field() {
     let (base, body, _server) =
-        mock_validate_server(StatusCode::OK, r#"{"validationPassed": true}"#.to_owned()).await;
+        mock_server(StatusCode::OK, r#"{"validationPassed": true}"#.to_owned()).await;
     let instance = guardrail(&base, InputFormat::LlmOutput);
     instance
         .make_guardrails_ai_api_request("hello world", &BTreeMap::new())
         .await
         .expect("validation passes");
     let captured: CapturedLlmOutputRequest =
-        serde_json::from_slice(&body.lock().unwrap().clone()).unwrap();
+        serde_json::from_slice(&body.lock().unwrap().body.clone()).unwrap();
     assert_eq!(captured.llm_output, "hello world");
 }
 
 #[tokio::test]
 async fn guardrails_ai_make_api_request_merges_dynamic_params_into_the_json_body() {
     let (base, body, _server) =
-        mock_validate_server(StatusCode::OK, r#"{"validationPassed": true}"#.to_owned()).await;
+        mock_server(StatusCode::OK, r#"{"validationPassed": true}"#.to_owned()).await;
     let instance = guardrail(&base, InputFormat::LlmOutput);
     let dynamic_params = BTreeMap::from([(
         "project_id".to_owned(),
@@ -208,14 +201,14 @@ async fn guardrails_ai_make_api_request_merges_dynamic_params_into_the_json_body
         .await
         .expect("validation passes");
     let captured: CapturedDynamicParams =
-        serde_json::from_slice(&body.lock().unwrap().clone()).unwrap();
+        serde_json::from_slice(&body.lock().unwrap().body.clone()).unwrap();
     assert_eq!(captured.project_id, Some("p-1".to_owned()));
 }
 
 #[tokio::test]
 async fn guardrails_ai_make_api_request_raises_when_validation_passed_is_false() {
     let (base, _body, _server) =
-        mock_validate_server(StatusCode::OK, r#"{"validationPassed": false}"#.to_owned()).await;
+        mock_server(StatusCode::OK, r#"{"validationPassed": false}"#.to_owned()).await;
     let instance = guardrail(&base, InputFormat::LlmOutput);
     let error = instance
         .make_guardrails_ai_api_request("hello", &BTreeMap::new())
@@ -227,7 +220,7 @@ async fn guardrails_ai_make_api_request_raises_when_validation_passed_is_false()
 #[tokio::test]
 async fn guardrails_ai_blocked_error_status_code_is_bad_request() {
     let (base, _body, _server) =
-        mock_validate_server(StatusCode::OK, r#"{"validationPassed": false}"#.to_owned()).await;
+        mock_server(StatusCode::OK, r#"{"validationPassed": false}"#.to_owned()).await;
     let instance = guardrail(&base, InputFormat::LlmOutput);
     let error = instance
         .make_guardrails_ai_api_request("hello", &BTreeMap::new())
@@ -238,7 +231,7 @@ async fn guardrails_ai_blocked_error_status_code_is_bad_request() {
 
 #[tokio::test]
 async fn guardrails_ai_make_api_request_does_not_raise_when_validation_passed_is_absent() {
-    let (base, _body, _server) = mock_validate_server(StatusCode::OK, "{}".to_owned()).await;
+    let (base, _body, _server) = mock_server(StatusCode::OK, "{}".to_owned()).await;
     let instance = guardrail(&base, InputFormat::LlmOutput);
     instance
         .make_guardrails_ai_api_request("hello", &BTreeMap::new())
@@ -249,7 +242,7 @@ async fn guardrails_ai_make_api_request_does_not_raise_when_validation_passed_is
 #[tokio::test]
 async fn guardrails_ai_make_api_request_rejects_a_non_success_status() {
     let (base, _body, _server) =
-        mock_validate_server(StatusCode::INTERNAL_SERVER_ERROR, "oops".to_owned()).await;
+        mock_server(StatusCode::INTERNAL_SERVER_ERROR, "oops".to_owned()).await;
     let instance = guardrail(&base, InputFormat::LlmOutput);
     let result = instance
         .make_guardrails_ai_api_request("hello", &BTreeMap::new())
@@ -264,7 +257,7 @@ async fn guardrails_ai_make_api_request_rejects_a_non_success_status() {
 #[tokio::test]
 async fn guardrails_ai_http_status_error_status_code_is_the_upstream_status() {
     let (base, _body, _server) =
-        mock_validate_server(StatusCode::SERVICE_UNAVAILABLE, "oops".to_owned()).await;
+        mock_server(StatusCode::SERVICE_UNAVAILABLE, "oops".to_owned()).await;
     let instance = guardrail(&base, InputFormat::LlmOutput);
     let result = instance
         .make_guardrails_ai_api_request("hello", &BTreeMap::new())
@@ -288,7 +281,7 @@ struct CapturedInputsRequest {
 
 #[tokio::test]
 async fn guardrails_ai_pre_call_request_sends_an_inputs_list_with_one_bytes_element() {
-    let (base, body, _server) = mock_validate_server(
+    let (base, body, _server) = mock_server(
         StatusCode::OK,
         r#"{"modelname": "m", "modelversion": "1", "outputs": [{"name": "text", "shape": [1], "data": ["validated"], "datatype": "BYTES"}]}"#
             .to_owned(),
@@ -301,7 +294,7 @@ async fn guardrails_ai_pre_call_request_sends_an_inputs_list_with_one_bytes_elem
         .expect("a successful pre-call response returns the first output");
     assert_eq!(result, "validated");
     let captured: CapturedInputsRequest =
-        serde_json::from_slice(&body.lock().unwrap().clone()).unwrap();
+        serde_json::from_slice(&body.lock().unwrap().body.clone()).unwrap();
     assert_eq!(captured.inputs.len(), 1);
     assert_eq!(captured.inputs[0].name, "text");
     assert_eq!(captured.inputs[0].shape, vec![1]);
@@ -311,7 +304,7 @@ async fn guardrails_ai_pre_call_request_sends_an_inputs_list_with_one_bytes_elem
 
 #[tokio::test]
 async fn guardrails_ai_pre_call_request_treats_status_400_as_a_blocked_violation() {
-    let (base, _body, _server) = mock_validate_server(
+    let (base, _body, _server) = mock_server(
         StatusCode::BAD_REQUEST,
         r#"{"error": "blocked"}"#.to_owned(),
     )
@@ -329,7 +322,7 @@ async fn guardrails_ai_pre_call_request_treats_status_400_as_a_blocked_violation
 
 #[tokio::test]
 async fn guardrails_ai_pre_call_blocked_error_status_code_is_bad_request() {
-    let (base, _body, _server) = mock_validate_server(
+    let (base, _body, _server) = mock_server(
         StatusCode::BAD_REQUEST,
         r#"{"error": "blocked"}"#.to_owned(),
     )
@@ -345,7 +338,7 @@ async fn guardrails_ai_pre_call_blocked_error_status_code_is_bad_request() {
 #[tokio::test]
 async fn guardrails_ai_pre_call_request_rejects_other_non_success_statuses() {
     let (base, _body, _server) =
-        mock_validate_server(StatusCode::INTERNAL_SERVER_ERROR, "oops".to_owned()).await;
+        mock_server(StatusCode::INTERNAL_SERVER_ERROR, "oops".to_owned()).await;
     let instance = guardrail(&base, InputFormat::Inputs);
     let result = instance.make_pre_call_request("text").await;
     assert!(matches!(
@@ -405,7 +398,7 @@ async fn guardrails_ai_logging_hook_skips_the_api_call_for_text_completion() {
 
 #[tokio::test]
 async fn guardrails_ai_logging_hook_calls_process_input_for_completion() {
-    let (base, _body, _server) = mock_validate_server(
+    let (base, _body, _server) = mock_server(
         StatusCode::OK,
         r#"{"validationPassed": true, "validatedOutput": "fixed"}"#.to_owned(),
     )
@@ -420,7 +413,7 @@ async fn guardrails_ai_logging_hook_calls_process_input_for_completion() {
 
 #[tokio::test]
 async fn guardrails_ai_process_input_uses_validated_output_when_present() {
-    let (base, _body, _server) = mock_validate_server(
+    let (base, _body, _server) = mock_server(
         StatusCode::OK,
         r#"{"validationPassed": true, "validatedOutput": "fixed"}"#.to_owned(),
     )
@@ -436,7 +429,7 @@ async fn guardrails_ai_process_input_uses_validated_output_when_present() {
 #[tokio::test]
 async fn guardrails_ai_process_input_falls_back_to_raw_llm_output_when_validated_output_is_absent()
 {
-    let (base, _body, _server) = mock_validate_server(
+    let (base, _body, _server) = mock_server(
         StatusCode::OK,
         r#"{"validationPassed": true, "rawLlmOutput": "raw"}"#.to_owned(),
     )
@@ -453,7 +446,7 @@ async fn guardrails_ai_process_input_falls_back_to_raw_llm_output_when_validated
 async fn guardrails_ai_process_input_falls_back_to_the_original_text_when_both_outputs_are_absent()
 {
     let (base, _body, _server) =
-        mock_validate_server(StatusCode::OK, r#"{"validationPassed": true}"#.to_owned()).await;
+        mock_server(StatusCode::OK, r#"{"validationPassed": true}"#.to_owned()).await;
     let instance = guardrail(&base, InputFormat::LlmOutput);
     let result = instance
         .process_input(Some("original".to_owned()), &BTreeMap::new(), "completion")
@@ -465,7 +458,7 @@ async fn guardrails_ai_process_input_falls_back_to_the_original_text_when_both_o
 #[tokio::test]
 async fn guardrails_ai_process_input_falls_back_to_the_original_text_when_validated_output_is_empty()
  {
-    let (base, _body, _server) = mock_validate_server(
+    let (base, _body, _server) = mock_server(
         StatusCode::OK,
         r#"{"validationPassed": true, "validatedOutput": "", "rawLlmOutput": ""}"#.to_owned(),
     )
@@ -480,7 +473,7 @@ async fn guardrails_ai_process_input_falls_back_to_the_original_text_when_valida
 
 #[tokio::test]
 async fn guardrails_ai_process_input_uses_the_inputs_format_when_configured() {
-    let (base, _body, _server) = mock_validate_server(
+    let (base, _body, _server) = mock_server(
         StatusCode::OK,
         r#"{"modelname": "m", "modelversion": "1", "outputs": [{"name": "text", "shape": [1], "data": ["validated"], "datatype": "BYTES"}]}"#
             .to_owned(),
@@ -527,7 +520,7 @@ async fn guardrails_ai_post_call_hook_skips_without_calling_the_api_when_content
 #[tokio::test]
 async fn guardrails_ai_post_call_hook_calls_the_api_with_the_response_content() {
     let (base, body, _server) =
-        mock_validate_server(StatusCode::OK, r#"{"validationPassed": true}"#.to_owned()).await;
+        mock_server(StatusCode::OK, r#"{"validationPassed": true}"#.to_owned()).await;
     let instance = guardrail(&base, InputFormat::LlmOutput);
     let ran = instance
         .async_post_call_success_hook(true, Some("final reply".to_owned()), &BTreeMap::new())
@@ -535,7 +528,7 @@ async fn guardrails_ai_post_call_hook_calls_the_api_with_the_response_content() 
         .expect("the api call succeeds");
     assert!(ran);
     let captured: CapturedLlmOutputRequest =
-        serde_json::from_slice(&body.lock().unwrap().clone()).unwrap();
+        serde_json::from_slice(&body.lock().unwrap().body.clone()).unwrap();
     assert_eq!(captured.llm_output, "final reply");
 }
 

@@ -267,11 +267,8 @@ pub struct GuardrailsAiConfigModel {
     pub guardrails_ai_api_input_format: Option<InputFormat>,
 }
 
-#[expect(
-    clippy::unnecessary_wraps,
-    reason = "the field is Option<InputFormat> so an explicit null deserializes to None; this default must match"
-)]
-const fn default_input_format() -> Option<InputFormat> {
+#[must_use]
+pub const fn default_input_format() -> Option<InputFormat> {
     Some(InputFormat::LlmOutput)
 }
 
