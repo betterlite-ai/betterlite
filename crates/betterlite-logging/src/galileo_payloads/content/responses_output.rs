@@ -14,13 +14,19 @@ fn insert_defaulted(
     }
 }
 
-// openai.types.responses.ResponseOutputText.model_dump() field order (annotations, text, type, logprobs); annotations and text have no default, so a part missing either isn't a valid ResponseOutputText.
-fn output_text_content_part(part: &IndexMap<String, Json>) -> Option<Json> {
+// Shared by any Responses-API shape whose own model_dump is just a run of required fields (no default, so a missing one invalidates the shape), the type tag, then a run of fields defaulted to null.
+fn required_then_typed(
+    fields: &IndexMap<String, Json>,
+    required: &[&str],
+    type_tag: &str,
+    defaulted: &[&str],
+) -> Option<Json> {
     let mut ordered = IndexMap::new();
-    ordered.insert("annotations".to_owned(), part.get("annotations")?.clone());
-    ordered.insert("text".to_owned(), part.get("text")?.clone());
-    ordered.insert("type".to_owned(), Json::Text("output_text".to_owned()));
-    insert_defaulted(&mut ordered, part, &["logprobs"]);
+    for key in required {
+        ordered.insert((*key).to_owned(), fields.get(*key)?.clone());
+    }
+    ordered.insert("type".to_owned(), Json::Text(type_tag.to_owned()));
+    insert_defaulted(&mut ordered, fields, defaulted);
     Some(Json::Object(ordered))
 }
 
@@ -40,7 +46,13 @@ fn output_message_item_dump(fields: &IndexMap<String, Json>) -> Option<Json> {
         if !matches!(part_fields.get("type"), Some(Json::Text(kind)) if kind == "output_text") {
             return None;
         }
-        projected_parts.push(output_text_content_part(part_fields)?);
+        // openai.types.responses.ResponseOutputText.model_dump() field order (annotations, text, type, logprobs); annotations and text have no default, so a part missing either isn't a valid ResponseOutputText.
+        projected_parts.push(required_then_typed(
+            part_fields,
+            &["annotations", "text"],
+            "output_text",
+            &["logprobs"],
+        )?);
     }
     let mut ordered = IndexMap::new();
     ordered.insert("id".to_owned(), id);
@@ -54,17 +66,12 @@ fn output_message_item_dump(fields: &IndexMap<String, Json>) -> Option<Json> {
 
 // openai.types.responses.ResponseFunctionToolCall.model_dump() field order (arguments, call_id, name, type, id, caller, namespace, status); arguments, call_id and name have no default, so an item missing any of them isn't a valid ResponseFunctionToolCall.
 fn output_function_call_dump(fields: &IndexMap<String, Json>) -> Option<Json> {
-    let mut ordered = IndexMap::new();
-    ordered.insert("arguments".to_owned(), fields.get("arguments")?.clone());
-    ordered.insert("call_id".to_owned(), fields.get("call_id")?.clone());
-    ordered.insert("name".to_owned(), fields.get("name")?.clone());
-    ordered.insert("type".to_owned(), Json::Text("function_call".to_owned()));
-    insert_defaulted(
-        &mut ordered,
+    required_then_typed(
         fields,
+        &["arguments", "call_id", "name"],
+        "function_call",
         &["id", "caller", "namespace", "status"],
-    );
-    Some(Json::Object(ordered))
+    )
 }
 
 // litellm.types.llms.openai.ResponsesAPIResponse.output parses each raw item into its matching typed class when it validates; an item with an unrecognized or invalid shape stays an unmodified dict, so _serialize_galileo_output's json.dumps writes it back verbatim.

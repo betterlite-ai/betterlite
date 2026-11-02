@@ -504,22 +504,25 @@ fn assert_chat_message_output(message: Json, expected: &str) {
 
 // An empty tool_calls list or a falsy function_call dict is present but folds back to null, same as an absent key; a truthy function_call takes its ordered dump instead.
 fn check_message_model_dump_falsy_fields() {
-    assert_chat_message_output(
-        val(r#"{"role": "assistant", "content": null, "tool_calls": [], "function_call": {}}"#),
-        concat!(
-            r#"{"content": null, "role": "assistant", "tool_calls": null, "#,
-            r#""function_call": null, "provider_specific_fields": null}"#,
+    let cases = [
+        (
+            r#"{"role": "assistant", "content": null, "tool_calls": [], "function_call": {}}"#,
+            concat!(
+                r#"{"content": null, "role": "assistant", "tool_calls": null, "#,
+                r#""function_call": null, "provider_specific_fields": null}"#,
+            ),
         ),
-    );
-    assert_chat_message_output(
-        val(
+        (
             r#"{"role": "assistant", "content": null, "function_call": {"name": "f", "arguments": "{}"}}"#,
+            concat!(
+                r#"{"content": null, "role": "assistant", "tool_calls": null, "#,
+                r#""function_call": {"arguments": "{}", "name": "f"}, "provider_specific_fields": null}"#,
+            ),
         ),
-        concat!(
-            r#"{"content": null, "role": "assistant", "tool_calls": null, "#,
-            r#""function_call": {"arguments": "{}", "name": "f"}, "provider_specific_fields": null}"#,
-        ),
-    );
+    ];
+    for (input, expected) in cases {
+        assert_chat_message_output(val(input), expected);
+    }
 }
 
 // litellm.types.utils.Message.__init__ keeps annotations even when empty (an is-not-None check, not truthiness), keeps a present reasoning_content, carries a tool call's own extra "index" key ahead of function/id/type (ChatCompletionMessageToolCall.__init__ passes **params to super().__init__() before assigning self.function/id/type), and folds any key that isn't a declared Message field into the pydantic extra tail (here, a null "refusal").
