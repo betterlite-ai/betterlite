@@ -49,6 +49,10 @@ fn marker_field(key: &str) -> Map<String, Value> {
     obj(r#"{"url": "  ", "host": "h"}"#),
     parse(r#"{"url": "  ", "host": "h"}"#)
 )]
+#[case::numeric_cluster_nodes_counts_as_cluster_mode(
+    obj(r#"{"url": "redis://host:6379", "redis_startup_nodes": 0, "host": "ignored"}"#),
+    parse(r#"{"url": "redis://host:6379", "redis_startup_nodes": 0, "host": "ignored"}"#)
+)]
 fn resolve_cache_url_precedence_behavior(
     #[case] input: Map<String, Value>,
     #[case] expected: Value,
