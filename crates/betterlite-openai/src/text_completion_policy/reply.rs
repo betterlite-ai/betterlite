@@ -62,10 +62,12 @@ pub fn to_chat_model_response(
         .map(|(index, choice)| choice.into_chat_choice(index))
         .collect();
     target.insert("choices".to_owned(), Value::Array(chat_choices));
+    // A real TextCompletionResponse always carries id/model/usage (auto-generated id, nullable model, zero-valued usage), so these always replace the fresh target's own values.
     for key in ["usage", "id", "model"] {
-        if let Some(value) = response.get(key) {
-            target.insert(key.to_owned(), value.clone());
-        }
+        target.insert(
+            key.to_owned(),
+            response.get(key).cloned().unwrap_or(Value::Null),
+        );
     }
     let mut hidden_params = match target.remove("_hidden_params") {
         Some(Value::Object(existing)) => existing,

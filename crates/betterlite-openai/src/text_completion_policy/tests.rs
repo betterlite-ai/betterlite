@@ -165,7 +165,8 @@ fn text_completion_policy_cases(#[case] case: u8) {
             assert_eq!(result["choices"], json!([]));
             assert_eq!(result["id"], json!("cmpl-1"));
             assert_eq!(result["object"], json!("text_completion"));
-            assert!(!result.contains_key("usage"));
+            assert_eq!(result["usage"], json!(null));
+            assert_eq!(result["model"], json!(null));
             assert_eq!(result["_hidden_params"]["original_response"], response);
 
             let response_two = json!({
@@ -195,8 +196,8 @@ fn text_completion_policy_cases(#[case] case: u8) {
                     .contains_key("logprobs")
             );
             assert_eq!(result_two["usage"], json!({"total_tokens": 3_i32}));
-            assert!(!result_two.contains_key("id"));
-            assert!(!result_two.contains_key("model"));
+            assert_eq!(result_two["id"], json!(null));
+            assert_eq!(result_two["model"], json!(null));
 
             let missing_fields = json!({"choices": [{}]});
             let result_three =
