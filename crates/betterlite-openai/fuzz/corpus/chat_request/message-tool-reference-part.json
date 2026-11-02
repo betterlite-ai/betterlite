@@ -1,0 +1,1 @@
+{"model":"claude-3-5-sonnet","messages":[{"role":"tool","tool_call_id":"call_1","content":[{"type":"tool_reference","tool_use_id":"call_1"},{"type":"text","text":"Additional context from the tool."}]}]}

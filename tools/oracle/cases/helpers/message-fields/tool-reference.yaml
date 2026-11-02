@@ -1,0 +1,21 @@
+kind: helper
+name: message-fields-tool-reference
+call:
+  message_fields:
+    operation: drop_tool_reference_parts_from_tool_messages
+    messages:
+      - role: tool
+        tool_call_id: call_1
+        content:
+          - type: tool_reference
+            tool_use_id: call_1
+          - type: text
+            text: Additional context from the tool.
+      - role: tool
+        tool_call_id: call_2
+        content:
+          - type: tool_reference
+            tool_use_id: call_2
+env: {}
+compare:
+  ignore: []

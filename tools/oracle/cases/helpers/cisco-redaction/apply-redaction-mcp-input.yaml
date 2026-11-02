@@ -1,0 +1,14 @@
+kind: helper
+name: apply-redaction-mcp-input
+call:
+  b3757:
+    function: apply_redaction_mcp_input
+    request_data:
+      mcp_arguments: {query: sensitive data}
+      arguments: {query: sensitive data}
+      params: {name: search, arguments: {query: sensitive data}}
+    sanitized_text: null
+    sanitized_mcp_arguments: {query: "[REDACTED]"}
+env: {}
+compare:
+  ignore: []

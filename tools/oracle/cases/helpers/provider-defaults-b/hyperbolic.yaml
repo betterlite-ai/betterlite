@@ -1,0 +1,8 @@
+kind: helper
+name: provider-defaults-b-hyperbolic
+call:
+  provider_defaults_b:
+    provider: hyperbolic
+    model: hyperbolic-model
+env: {}
+compare: {ignore: []}

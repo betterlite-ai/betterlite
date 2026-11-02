@@ -18,8 +18,16 @@ const FIXTURE_DIRECTORY: &str = concat!(
     "/fixtures/native-feature-oracle"
 );
 
-pub(super) fn child_environment(case: &Case, litellm_child: bool) -> BTreeMap<String, String> {
-    let mut environment = case.env.clone();
+pub(super) fn child_environment(
+    case: &Case,
+    litellm_child: bool,
+    upstream: &str,
+) -> BTreeMap<String, String> {
+    let mut environment = case
+        .env
+        .iter()
+        .map(|(name, value)| (name.clone(), value.replace("{{upstream}}", upstream)))
+        .collect::<BTreeMap<_, _>>();
     if case.native_feature_eligibility && litellm_child {
         environment.insert(
             "LITELLM_WORKER_STARTUP_HOOKS".to_owned(),
@@ -30,7 +38,7 @@ pub(super) fn child_environment(case: &Case, litellm_child: bool) -> BTreeMap<St
     environment
 }
 
-pub(super) fn write_marker(directory: &Path, eligible: bool) -> Result<(), OracleError> {
+pub(crate) fn write_marker(directory: &Path, eligible: bool) -> Result<(), OracleError> {
     let marker = ArtifactMarker {
         native_feature_eligibility: eligible,
     };

@@ -3,7 +3,6 @@ use serde_json::Value;
 
 use super::{MergeError, is_empty_value, text_block};
 
-// Assistant content: a string, a list of content blocks kept as-is, or any other JSON value LiteLLM stores unexamined.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Content {
@@ -21,7 +20,6 @@ impl Content {
         }
     }
 
-    // A string becomes one text block; a list is kept as-is, item shape unchecked, matching list[object].
     pub(super) fn into_blocks(self) -> Result<Vec<Value>, MergeError> {
         match self {
             Self::Text(text) => Ok(vec![text_block(&text)]),
@@ -41,7 +39,6 @@ impl From<Content> for Value {
     }
 }
 
-// thinking_blocks: a non-empty list joins reasoning accumulation; any other JSON shape (a dict, a string, an empty list) is kept as-is but never merged.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ThinkingBlocks {
@@ -58,7 +55,6 @@ impl ThinkingBlocks {
     }
 }
 
-// reasoning_content: any JSON is accepted, but only a non-empty string counts as reasoning text.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ReasoningText {

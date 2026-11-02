@@ -1,26 +1,28 @@
 use reqwest::blocking::Client;
 use secrecy::SecretString;
 use std::collections::BTreeMap;
-use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+pub(crate) use self::compare_cases::compare_group;
 use super::gateway::{GatewayInput, start as start_gateway};
 use crate::OracleError;
-use crate::artifacts;
 use crate::case::{Case, LoadedCase};
 use crate::cli::Options;
-use crate::compare;
 use crate::helpers;
+use crate::http::browser_flow;
 use crate::http::{self, Response};
 use crate::mock::{MockProvider, ProviderRequest};
 use crate::paths::artifact_root;
 use crate::process::Gateway;
 use crate::routing_mock_scripts::MockScript;
 
+pub(crate) mod browser_flow_group;
+pub(crate) mod compare_cases;
 mod config;
 mod fixtures;
-mod native_feature_eligibility;
+pub(crate) mod native_feature_eligibility;
+mod scenario;
 
 #[derive(Debug, clap::Parser)]
 pub(crate) struct DatabaseEnvironment {
@@ -36,6 +38,7 @@ pub(crate) fn run_cases(
         return Err(OracleError::MissingCapture(0));
     }
     let mut groups = BTreeMap::<String, Vec<Case>>::new();
+    let mut scenarios = Vec::new();
     let mut helper_outcome = helpers::HelperRun::Match;
     for loaded_case in cases {
         match loaded_case {
@@ -46,6 +49,7 @@ pub(crate) fn run_cases(
                 );
                 groups.entry(group_key).or_default().push(http_case);
             }
+            LoadedCase::Scenario(scenario_case) => scenarios.push(scenario_case),
             LoadedCase::Helper(helper_case) => {
                 let result = helpers::run_case(&helper_case, options.self_check)?;
                 if matches!(result, helpers::HelperRun::Difference) {
@@ -58,6 +62,10 @@ pub(crate) fn run_cases(
     let mut outcomes = Vec::new();
     for (_, group) in groups {
         outcomes.extend(run_group(options, &root, &group)?);
+    }
+    // Each scenario is its own gateway pair, never batched with other scenarios or Http cases.
+    for scenario_case in &scenarios {
+        outcomes.push(scenario::run_scenario_case(options, &root, scenario_case)?);
     }
     if matches!(helper_outcome, helpers::HelperRun::Difference) {
         return Ok(exit_status(true));
@@ -108,9 +116,17 @@ pub(crate) fn run_group_with_url(
         fixtures: &fixtures,
         mock,
     });
+    with_fixture_cleanup(fixtures, operation_result)
+}
+
+// Shared by both pipelines: provision a fixture, run once, then close it regardless of the outcome.
+fn with_fixture_cleanup<T>(
+    fixtures: fixtures::FixtureGuard,
+    operation_result: Result<T, OracleError>,
+) -> Result<T, OracleError> {
     let cleanup_result = fixtures.close();
     match (operation_result, cleanup_result) {
-        (Ok(outcomes), Ok(())) => Ok(outcomes),
+        (Ok(value), Ok(())) => Ok(value),
         (Err(error), Ok(())) => Err(error),
         (Ok(_), Err(cleanup_error)) => Err(OracleError::DatabaseCleanup(cleanup_error)),
         (Err(error), Err(cleanup_error)) => Err(OracleError::OperationCleanup {
@@ -140,9 +156,13 @@ fn run_group_capture(input: GroupCaptureInput<'_>) -> Result<Vec<bool>, OracleEr
     } = input;
     let (group_dir, first_config, second_config) =
         config::prepare_gateway_configs(root, first_case, fixtures, &mock.base_url)?;
-    let first_case_env = native_feature_eligibility::child_environment(first_case, true);
-    let second_case_env =
-        native_feature_eligibility::child_environment(first_case, options.self_check);
+    let first_case_env =
+        native_feature_eligibility::child_environment(first_case, true, &mock.base_url);
+    let second_case_env = native_feature_eligibility::child_environment(
+        first_case,
+        options.self_check,
+        &mock.base_url,
+    );
     let first_input = GatewayInput {
         options,
         group_dir: &group_dir,
@@ -156,24 +176,34 @@ fn run_group_capture(input: GroupCaptureInput<'_>) -> Result<Vec<bool>, OracleEr
         case_env: &second_case_env,
     };
     let client = http::client()?;
-    let captures = capture_gateways(&first_input, &second_input, cases, &client, mock)?;
+    let captures = capture_gateways(
+        &first_input,
+        &second_input,
+        &client,
+        mock,
+        |http_client, gateway| capture_gateway(http_client, gateway, cases),
+    )?;
     compare_group(root, cases, &captures)
 }
 
-fn capture_gateways(
+// Shared by the Http and Scenario pipelines: start a gateway, capture against it, then the next.
+fn capture_gateways<F>(
     first_input: &GatewayInput<'_>,
     second_input: &GatewayInput<'_>,
-    cases: &[Case],
     client: &Client,
     mock: MockProvider,
-) -> Result<GroupCapture, OracleError> {
+    mut capture: F,
+) -> Result<GroupCapture, OracleError>
+where
+    F: FnMut(&Client, Gateway) -> Result<Vec<Response>, OracleError>,
+{
     let first = start_gateway(first_input, true)?;
     let first_log = first.log_path.clone();
-    let first_results = capture_gateway(client, first, cases)?;
+    let first_results = capture(client, first)?;
     let first_trace = mock.finish_run()?;
     let second = start_gateway(second_input, false)?;
     let second_log = second.log_path.clone();
-    let second_results = capture_gateway(client, second, cases)?;
+    let second_results = capture(client, second)?;
     let second_requests = mock
         .finish()?
         .into_iter()
@@ -198,69 +228,25 @@ pub(crate) struct GroupCapture {
     pub(crate) second_requests: Vec<ProviderRequest>,
 }
 
-pub(crate) fn compare_group(
-    root: &Path,
+pub(crate) fn capture_gateway(
+    client: &Client,
+    mut gateway: Gateway,
     cases: &[Case],
-    captures: &GroupCapture,
-) -> Result<Vec<bool>, OracleError> {
-    let mut outcomes = Vec::with_capacity(cases.len());
-    let mut first_offset = 0;
-    for (index, case) in cases.iter().enumerate() {
-        let request_count = case.upstream.len();
-        let first_capture = captures
-            .first
-            .get(index)
-            .ok_or(OracleError::MissingCapture(index))?;
-        let second_capture = captures
-            .second
-            .get(index)
-            .ok_or(OracleError::MissingCapture(index))?;
-        let first_slice = request_slice(&captures.first_requests, first_offset, request_count);
-        let second_slice = request_slice(&captures.second_requests, first_offset, request_count);
-        first_offset = first_offset.saturating_add(request_count);
-        outcomes.push(compare_case(artifacts::ArtifactInput {
-            root,
-            case,
-            first: first_capture,
-            second: second_capture,
-            first_requests: first_slice,
-            second_requests: second_slice,
-            first_log: &captures.first_log,
-            second_log: &captures.second_log,
-            result: None,
-        })?);
-    }
-    Ok(outcomes)
-}
-
-fn compare_case(input: artifacts::ArtifactInput<'_>) -> Result<bool, OracleError> {
-    let result = compare::compare(
-        input.first,
-        input.second,
-        input.first_requests,
-        input.second_requests,
-        &input.case.compare,
-    );
-    let artifact_directory = artifacts::write(artifacts::ArtifactInput {
-        result: result.as_ref().err(),
-        ..input
-    })?;
-    native_feature_eligibility::write_marker(
-        &artifact_directory,
-        input.case.native_feature_eligibility,
-    )?;
-    let name = &input.case.name;
-    match result {
-        Ok(()) => {
-            writeln!(io::stdout().lock(), "PASS {name}").map_err(OracleError::Output)?;
-            Ok(false)
-        }
-        Err(error) => {
-            writeln!(io::stdout().lock(), "FAIL {name}: {}", error.pointer)
-                .map_err(OracleError::Output)?;
-            Ok(true)
+) -> Result<Vec<Response>, OracleError> {
+    let mut captures = Vec::new();
+    for case in cases {
+        if let Some(steps) = &case.steps {
+            captures.extend(browser_flow::run_case_steps(
+                client,
+                &gateway.base_url,
+                steps,
+            )?);
+        } else {
+            captures.push(http::send(client, &gateway.base_url, &case.request)?);
         }
     }
+    gateway.stop()?;
+    Ok(captures)
 }
 
 pub(crate) fn request_slice(
@@ -270,18 +256,4 @@ pub(crate) fn request_slice(
 ) -> &[ProviderRequest] {
     let end = offset.saturating_add(count);
     requests.get(offset..end).unwrap_or_default()
-}
-
-pub(crate) fn capture_gateway(
-    client: &Client,
-    mut gateway: Gateway,
-    cases: &[Case],
-) -> Result<Vec<Response>, OracleError> {
-    let mut captures = Vec::with_capacity(cases.len());
-    for case in cases {
-        let response = http::send(client, &gateway.base_url, &case.request)?;
-        captures.push(response);
-    }
-    gateway.stop()?;
-    Ok(captures)
 }

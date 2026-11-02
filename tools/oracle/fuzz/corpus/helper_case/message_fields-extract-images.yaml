@@ -1,0 +1,16 @@
+kind: helper
+name: message-fields-extract-images
+call:
+  message_fields:
+    operation: extract_images_from_message
+    message:
+      role: user
+      content:
+        - type: text
+          text: What is in this image?
+        - type: image_url
+          image_url:
+            url: data:image/png;base64,iVBORw0KGgo=
+env: {}
+compare:
+  ignore: []

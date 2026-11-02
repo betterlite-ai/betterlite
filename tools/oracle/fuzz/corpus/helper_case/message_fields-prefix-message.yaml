@@ -1,0 +1,17 @@
+kind: helper
+name: message-fields-prefix-message
+call:
+  message_fields:
+    operation: convert_prefix_message_to_non_prefix_messages
+    messages:
+      - role: user
+        content: Continue this story.
+      - role: assistant
+        content: Once upon a time
+        prefix: true
+      - role: user
+        content: No prefix flag here.
+        prefix: false
+env: {}
+compare:
+  ignore: []

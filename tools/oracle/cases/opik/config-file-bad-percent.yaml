@@ -1,0 +1,12 @@
+kind: helper
+name: opik-config-file-bad-percent
+call:
+  b3973:
+    function: config
+    environment: {}
+    config_file: "[other]\nbroken = 50%\n\n[opik]\nurl_override = file\n"
+    lookups:
+      - key: url_override
+env: {}
+compare:
+  ignore: []

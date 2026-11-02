@@ -1,0 +1,16 @@
+kind: helper
+name: apply-redaction-chat-input
+call:
+  b3757:
+    function: apply_redaction_chat_input
+    request_data:
+      messages:
+        - {role: system, content: be helpful}
+        - {role: user, content: hello there}
+    sanitized_text: null
+    sanitized_messages:
+      - {role: system, content: be helpful}
+      - {role: user, content: "[REDACTED]"}
+env: {}
+compare:
+  ignore: []

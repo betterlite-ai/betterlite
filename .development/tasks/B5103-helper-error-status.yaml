@@ -71,6 +71,14 @@ description: >-
   writes Some(status) from the variant, and other failures keep None.
 
 
+  Message fields, in tools/oracle/src/helpers/prompts/message_fields.rs. migration_error maps
+  FileMigrationError::MissingFile to BadRequestError. migrate_file_to_image_url raises litellm.BadRequestError when a
+  type=file part has no file field (common_utils.py L1749-L1753), so MissingFile gets 400. MissingFileReference mirrors
+  the ValueError raised when file_id and file_data are both missing and keeps None. The first B5103 run found this
+  helper: dispatch.py's change made helpers/message-fields/migrate-file-missing-file.yaml fail at /error/status, and
+  it was the only helper case that did.
+
+
   Gray Swan, in B3771's tools/oracle/src/helpers/guardrails/b3771/grayswan.rs. Its failure maps a block to
   HTTPException and every other error to GraySwanGuardrailAPIError. A block raises HTTPException(status_code=400)
   (grayswan.py L420-L436 and L538-L552) and gets 400. A failed monitor call raises GraySwanGuardrailAPIError with the
@@ -97,7 +105,8 @@ description: >-
 
 
   Cases. With the status filled, these cases compare it: lasso/block-action-raises-400.yaml,
-  deepkeep/blocked-action.yaml, helpers/providers/bedrock-other-image-models/image-provider-error.yaml, and B3771's
+  deepkeep/blocked-action.yaml, helpers/providers/bedrock-other-image-models/image-provider-error.yaml,
+  helpers/message-fields/migrate-file-missing-file.yaml, and B3771's
   grayswan/violation-block-action.yaml, grayswan/error-timeout.yaml, grayswan/error-fail-open-false.yaml (500) and
   generic_guardrail_api/blocked-verdict.yaml. lasso/api-429-rate-limit.yaml, deepkeep/unreachable-fail-closed.yaml,
   grayswan/error-connection-failure.yaml and generic_guardrail_api/error-5xx-fail-closed.yaml stay None on both
@@ -125,7 +134,9 @@ description: >-
   tools/oracle/src/helpers/guardrails/b3778/tests.rs, deepkeep_failures_carry_the_python_status in a new b3767/tests.rs,
   grayswan_failures_carry_the_python_status and generic_block_carries_status_400 in a new b3771/tests.rs,
   role_error_carries_status_400 in builtin_prompts/tests.rs, factory_role_error_carries_status_400 in
-  prompt_factory/tests.rs and provider_error_carries_its_status in other_image_models/tests.rs. role_error_carries_status_400
+  prompt_factory/tests.rs, provider_error_carries_its_status in other_image_models/tests.rs and
+  missing_file_field_carries_status_400 in message_fields/tests.rs. missing_file_field_carries_status_400 replaces
+  missing_file_field_keeps_the_bad_request_class and keeps its class assert. role_error_carries_status_400
   replaces errors_keep_the_python_class and keeps its class and message asserts. b3778.rs, b3767.rs and b3771.rs each
   gain a mod tests; line at the end, the way builtin_prompts.rs has one.
 
@@ -153,6 +164,8 @@ scope:
   - tools/oracle/src/helpers/prompts/prompt_factory/tests.rs
   - tools/oracle/src/helpers/bedrock/other_image_models.rs
   - tools/oracle/src/helpers/bedrock/other_image_models/tests.rs
+  - tools/oracle/src/helpers/prompts/message_fields.rs
+  - tools/oracle/src/helpers/prompts/message_fields/tests.rs
   - tools/oracle/cases/helpers/builtin-prompts/claude21-empty.yaml
   - tools/oracle/cases/helpers/builtin-prompts/claude-empty.yaml
   - tools/oracle/cases/helpers/builtin-prompts/default-parts.yaml
@@ -205,6 +218,8 @@ references:
   why: prompt_factory sends an ollama model to ollama_pt.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/amazon_stability3_transformation.py#L95-L98
   why: A failed Stability 3 finish reason raises BedrockError(status_code=400).
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L1749-L1758
+  why: migrate_file_to_image_url raises litellm.BadRequestError for a type=file part with no file field, and ValueError when file_id and file_data are both missing.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L86-L93
   why: GraySwanGuardrailAPIError keeps the status_code it is given, None by default.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/grayswan.py#L470-L487
@@ -235,7 +250,8 @@ dod:
     Each native helper named in the description writes the status of the exception it mirrors and None where that
     exception has none. lasso_failures_carry_the_python_status, deepkeep_failures_carry_the_python_status,
     role_error_carries_status_400, factory_role_error_carries_status_400, provider_error_carries_its_status,
-    grayswan_failures_carry_the_python_status and generic_block_carries_status_400 prove it.
+    missing_file_field_carries_status_400, grayswan_failures_carry_the_python_status and generic_block_carries_status_400
+    prove it.
   proof:
   - native-status
 - text: >-
@@ -246,9 +262,9 @@ dod:
   - grayswan-status
 - text: >-
     The status cases match LiteLLM: lasso/block-action-raises-400, deepkeep/blocked-action,
-    bedrock-other-image-models/image-provider-error, builtin-prompts/ollama-role, prompt-template/factory-ollama-role,
-    grayswan/violation-block-action, grayswan/error-timeout, grayswan/error-fail-open-false and
-    generic_guardrail_api/blocked-verdict. So do the None cases lasso/api-429-rate-limit,
+    bedrock-other-image-models/image-provider-error, message-fields/migrate-file-missing-file, builtin-prompts/ollama-role,
+    prompt-template/factory-ollama-role, grayswan/violation-block-action, grayswan/error-timeout,
+    grayswan/error-fail-open-false and generic_guardrail_api/blocked-verdict. So do the None cases lasso/api-429-rate-limit,
     deepkeep/unreachable-fail-closed, grayswan/error-connection-failure and generic_guardrail_api/error-5xx-fail-closed.
   proof:
   - oracle
@@ -278,7 +294,7 @@ checks:
   - id: native-status
     why: a native helper still writes None where the Python exception carries a status
     run: |-
-      list=$(cargo nextest list --locked -p betterlite-oracle -E 'test(/^helpers::(guardrails|prompts|bedrock)::/)' --message-format oneline) && for name in guardrails::b3778::tests::lasso_failures_carry_the_python_status guardrails::b3767::tests::deepkeep_failures_carry_the_python_status guardrails::b3771::tests::grayswan_failures_carry_the_python_status guardrails::b3771::tests::generic_block_carries_status_400 prompts::builtin_prompts::tests::role_error_carries_status_400 prompts::prompt_factory::tests::factory_role_error_carries_status_400 bedrock::other_image_models::tests::provider_error_carries_its_status; do grep -q "helpers::$name$" <<< "$list" || { echo "missing test $name"; exit 1; }; done && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::(guardrails::(b3778|b3767|b3771)|prompts::(builtin_prompts|prompt_factory)|bedrock::other_image_models)::tests::/)'
+      list=$(cargo nextest list --locked -p betterlite-oracle -E 'test(/^helpers::(guardrails|prompts|bedrock)::/)' --message-format oneline) && for name in guardrails::b3778::tests::lasso_failures_carry_the_python_status guardrails::b3767::tests::deepkeep_failures_carry_the_python_status guardrails::b3771::tests::grayswan_failures_carry_the_python_status guardrails::b3771::tests::generic_block_carries_status_400 prompts::builtin_prompts::tests::role_error_carries_status_400 prompts::prompt_factory::tests::factory_role_error_carries_status_400 bedrock::other_image_models::tests::provider_error_carries_its_status prompts::message_fields::tests::missing_file_field_carries_status_400; do grep -q "helpers::$name$" <<< "$list" || { echo "missing test $name"; exit 1; }; done && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::(guardrails::(b3778|b3767|b3771)|prompts::(builtin_prompts|prompt_factory|message_fields)|bedrock::other_image_models)::tests::/)'
   - id: grayswan-status
     why: a Gray Swan error still answers 400 where LiteLLM's proxy answers 408, the upstream status or 500
     run: |-
@@ -303,6 +319,7 @@ oracle_cases:
 - tools/oracle/cases/guardrails/generic_guardrail_api/blocked-verdict.yaml
 - tools/oracle/cases/guardrails/generic_guardrail_api/error-5xx-fail-closed.yaml
 - tools/oracle/cases/helpers/providers/bedrock-other-image-models/image-provider-error.yaml
+- tools/oracle/cases/helpers/message-fields/migrate-file-missing-file.yaml
 - tools/oracle/cases/helpers/prompt-template/factory-ollama-role.yaml
 - tools/oracle/cases/helpers/builtin-prompts/claude21-empty.yaml
 - tools/oracle/cases/helpers/builtin-prompts/claude-empty.yaml

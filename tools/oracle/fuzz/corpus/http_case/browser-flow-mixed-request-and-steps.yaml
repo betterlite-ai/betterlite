@@ -1,0 +1,29 @@
+name: browser-flow-mixed-request-and-steps
+config: |
+  general_settings:
+    master_key: oracle-master
+env: {}
+upstream: []
+request:
+  method: GET
+  path: "/legacy"
+  headers: {}
+  body: null
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []
+steps:
+  - request:
+      method: GET
+      path: "/start"
+      headers: {}
+      body: null
+    compare:
+      headers: []
+      headers_present: []
+      upstream_headers: []
+      ignore: []
+    captures: []
+    form: false

@@ -41,10 +41,12 @@ betterlite-streaming = { path = "../../crates/betterlite-streaming" }
 betterlite-websearch = { path = "../../crates/betterlite-websearch" }
 chrono.workspace = true
 clap = { version = "4.6.7", features = ["derive", "env"] }
+cookie_store = "0.22.0"
 futures-util = { version = "0.3.34", default-features = false }
 hex = "0.4.3"
 indexmap = { version = "2.14.2", features = ["serde"] }
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
+percent-encoding.workspace = true
 quick-xml.workspace = true
 reqwest = { version = "0.13.5", default-features = false, features = ["blocking"] }
 rust_decimal.workspace = true
@@ -55,6 +57,7 @@ serde_json = { version = "1.0.145", features = ["arbitrary_precision", "raw_valu
 serde_with = { version = "3.24.0", default-features = false, features = ["alloc"] }
 sha2.workspace = true
 thiserror = "2.0.17"
+tl = "0.7.8"
 tokio = { version = "=1.53.3", features = ["rt", "net", "sync", "test-util", "time", "io-util", "macros", "process", "fs"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["registry"] }
@@ -64,6 +67,7 @@ uuid = { version = "1.28.0", default-features = false }
 
 [dev-dependencies]
 rstest = "=0.27.0"
+tokio-postgres.workspace = true
 
 [[test]]
 name = "otlp_normalization"

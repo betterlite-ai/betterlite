@@ -256,12 +256,15 @@ fn deepkeep_failure(error: &DeepKeepError) -> Box<HelperError> {
         | DeepKeepError::InvalidHeader { .. }
         | DeepKeepError::InvalidHeaderName { .. } => "DeepKeepGuardrailAPIError",
     };
+    let status = matches!(error, DeepKeepError::Blocked { .. }).then_some(400);
     Box::new(HelperError {
         class: class.to_owned(),
-        status: None,
+        status,
         error_type: None,
         param: None,
         code: None,
         message: error.to_string(),
     })
 }
+
+mod tests;

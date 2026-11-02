@@ -1,0 +1,5 @@
+task: B4653
+deviations:
+  - what: Betterlite resolves os.environ/ secret references directly, without LiteLLM's secret manager abstraction.
+    why: The betterlite config layer reads secrets from the environment directly; the extra indirection adds no value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/session_credentials.py#L106-L112
