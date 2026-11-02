@@ -40,5 +40,11 @@ pub(crate) struct GuardrailsAiProcessRequest {
     pub(crate) input_format: InputFormat,
     pub(crate) last_user_message: Option<String>,
     pub(crate) dynamic_params: BTreeMap<String, GuardrailValue>,
+    #[serde(default = "default_call_type")]
+    pub(crate) call_type: String,
     pub(crate) answer: Option<UpstreamAnswer>,
+}
+
+fn default_call_type() -> String {
+    "completion".to_owned()
 }

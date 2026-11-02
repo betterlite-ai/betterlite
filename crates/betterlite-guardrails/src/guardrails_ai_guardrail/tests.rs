@@ -1,6 +1,5 @@
 #![cfg(test)]
 
-use std::any::TypeId;
 use std::collections::BTreeMap;
 use std::future::IntoFuture as _;
 use std::io::Result as IoResult;
@@ -9,6 +8,7 @@ use std::time::Duration;
 
 use axum::Router;
 use axum::body::Bytes;
+use axum::http::Uri;
 use axum::routing::post;
 use betterlite_config::sections::guardrail_identity::config_models::GuardrailConfigModelIdentity as _;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -135,6 +135,51 @@ async fn mock_validate_server(
     (base, body, server)
 }
 
+async fn mock_path_server(
+    status: StatusCode,
+    response_body: String,
+) -> (String, Arc<Mutex<String>>, JoinSet<IoResult<()>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let path = Arc::new(Mutex::new(String::new()));
+    let path_for_handler = Arc::clone(&path);
+    let answer = move |uri: Uri| {
+        let path_for_body = Arc::clone(&path_for_handler);
+        async move {
+            *path_for_body.lock().unwrap() = uri.path().to_owned();
+            (status, response_body)
+        }
+    };
+    let router = Router::new().fallback(answer);
+    let mut server = JoinSet::new();
+    server.spawn(axum::serve(listener, router).into_future());
+    (base, path, server)
+}
+
+#[tokio::test]
+async fn guardrails_ai_make_api_request_joins_a_path_base_without_a_trailing_slash_rfc3986_style() {
+    let (base, path, _server) =
+        mock_path_server(StatusCode::OK, r#"{"validationPassed": true}"#.to_owned()).await;
+    let instance = guardrail(&format!("{base}/v1"), InputFormat::LlmOutput);
+    instance
+        .make_guardrails_ai_api_request("hello", &BTreeMap::new())
+        .await
+        .expect("validation passes");
+    assert_eq!(path.lock().unwrap().clone(), "/guards/my-guard/validate");
+}
+
+#[tokio::test]
+async fn guardrails_ai_make_api_request_joins_a_path_base_with_a_trailing_slash() {
+    let (base, path, _server) =
+        mock_path_server(StatusCode::OK, r#"{"validationPassed": true}"#.to_owned()).await;
+    let instance = guardrail(&format!("{base}/v1/"), InputFormat::LlmOutput);
+    instance
+        .make_guardrails_ai_api_request("hello", &BTreeMap::new())
+        .await
+        .expect("validation passes");
+    assert_eq!(path.lock().unwrap().clone(), "/v1/guards/my-guard/validate");
+}
+
 #[tokio::test]
 async fn guardrails_ai_make_api_request_posts_the_llm_output_field() {
     let (base, body, _server) =
@@ -180,6 +225,18 @@ async fn guardrails_ai_make_api_request_raises_when_validation_passed_is_false()
 }
 
 #[tokio::test]
+async fn guardrails_ai_blocked_error_status_code_is_bad_request() {
+    let (base, _body, _server) =
+        mock_validate_server(StatusCode::OK, r#"{"validationPassed": false}"#.to_owned()).await;
+    let instance = guardrail(&base, InputFormat::LlmOutput);
+    let error = instance
+        .make_guardrails_ai_api_request("hello", &BTreeMap::new())
+        .await
+        .expect_err("a failed validation raises");
+    assert_eq!(error.status_code(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn guardrails_ai_make_api_request_does_not_raise_when_validation_passed_is_absent() {
     let (base, _body, _server) = mock_validate_server(StatusCode::OK, "{}".to_owned()).await;
     let instance = guardrail(&base, InputFormat::LlmOutput);
@@ -202,6 +259,18 @@ async fn guardrails_ai_make_api_request_rejects_a_non_success_status() {
         Err(GuardrailsAiGuardrailError::HttpStatus { status })
             if status == StatusCode::INTERNAL_SERVER_ERROR
     ));
+}
+
+#[tokio::test]
+async fn guardrails_ai_http_status_error_status_code_is_the_upstream_status() {
+    let (base, _body, _server) =
+        mock_validate_server(StatusCode::SERVICE_UNAVAILABLE, "oops".to_owned()).await;
+    let instance = guardrail(&base, InputFormat::LlmOutput);
+    let result = instance
+        .make_guardrails_ai_api_request("hello", &BTreeMap::new())
+        .await;
+    let error = result.expect_err("a non-success status raises");
+    assert_eq!(error.status_code(), StatusCode::SERVICE_UNAVAILABLE);
 }
 
 #[derive(Deserialize)]
@@ -259,6 +328,21 @@ async fn guardrails_ai_pre_call_request_treats_status_400_as_a_blocked_violation
 }
 
 #[tokio::test]
+async fn guardrails_ai_pre_call_blocked_error_status_code_is_bad_request() {
+    let (base, _body, _server) = mock_validate_server(
+        StatusCode::BAD_REQUEST,
+        r#"{"error": "blocked"}"#.to_owned(),
+    )
+    .await;
+    let instance = guardrail(&base, InputFormat::Inputs);
+    let error = instance
+        .make_pre_call_request("text")
+        .await
+        .expect_err("status 400 is a blocked violation");
+    assert_eq!(error.status_code(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn guardrails_ai_pre_call_request_rejects_other_non_success_statuses() {
     let (base, _body, _server) =
         mock_validate_server(StatusCode::INTERNAL_SERVER_ERROR, "oops".to_owned()).await;
@@ -275,10 +359,63 @@ async fn guardrails_ai_pre_call_request_rejects_other_non_success_statuses() {
 async fn guardrails_ai_process_input_returns_none_when_last_user_message_is_none() {
     let instance = guardrail("http://127.0.0.1:1", InputFormat::LlmOutput);
     let result = instance
-        .process_input(None, &BTreeMap::new())
+        .process_input(None, &BTreeMap::new(), "completion")
         .await
         .expect("a missing message does not error");
     assert_eq!(result, None);
+}
+
+#[tokio::test]
+async fn guardrails_ai_process_input_skips_the_api_call_for_text_completion() {
+    let instance = guardrail("http://127.0.0.1:1", InputFormat::LlmOutput);
+    let result = instance
+        .process_input(
+            Some("original".to_owned()),
+            &BTreeMap::new(),
+            "text_completion",
+        )
+        .await
+        .expect("a non-completion call type is never sent to the API");
+    assert_eq!(result, Some("original".to_owned()));
+}
+
+#[tokio::test]
+async fn guardrails_ai_process_input_skips_the_api_call_for_embeddings() {
+    let instance = guardrail("http://127.0.0.1:1", InputFormat::LlmOutput);
+    let result = instance
+        .process_input(Some("original".to_owned()), &BTreeMap::new(), "embeddings")
+        .await
+        .expect("a non-completion call type is never sent to the API");
+    assert_eq!(result, Some("original".to_owned()));
+}
+
+#[tokio::test]
+async fn guardrails_ai_logging_hook_skips_the_api_call_for_text_completion() {
+    let instance = guardrail("http://127.0.0.1:1", InputFormat::LlmOutput);
+    let result = instance
+        .async_logging_hook(
+            Some("original".to_owned()),
+            &BTreeMap::new(),
+            "text_completion",
+        )
+        .await
+        .expect("a non-completion call type is never sent to the API");
+    assert_eq!(result, Some("original".to_owned()));
+}
+
+#[tokio::test]
+async fn guardrails_ai_logging_hook_calls_process_input_for_completion() {
+    let (base, _body, _server) = mock_validate_server(
+        StatusCode::OK,
+        r#"{"validationPassed": true, "validatedOutput": "fixed"}"#.to_owned(),
+    )
+    .await;
+    let instance = guardrail(&base, InputFormat::LlmOutput);
+    let result = instance
+        .async_logging_hook(Some("original".to_owned()), &BTreeMap::new(), "completion")
+        .await
+        .expect("validation succeeds");
+    assert_eq!(result, Some("fixed".to_owned()));
 }
 
 #[tokio::test]
@@ -290,7 +427,7 @@ async fn guardrails_ai_process_input_uses_validated_output_when_present() {
     .await;
     let instance = guardrail(&base, InputFormat::LlmOutput);
     let result = instance
-        .process_input(Some("original".to_owned()), &BTreeMap::new())
+        .process_input(Some("original".to_owned()), &BTreeMap::new(), "completion")
         .await
         .expect("validation succeeds");
     assert_eq!(result, Some("fixed".to_owned()));
@@ -306,7 +443,7 @@ async fn guardrails_ai_process_input_falls_back_to_raw_llm_output_when_validated
     .await;
     let instance = guardrail(&base, InputFormat::LlmOutput);
     let result = instance
-        .process_input(Some("original".to_owned()), &BTreeMap::new())
+        .process_input(Some("original".to_owned()), &BTreeMap::new(), "completion")
         .await
         .expect("validation succeeds");
     assert_eq!(result, Some("raw".to_owned()));
@@ -319,7 +456,7 @@ async fn guardrails_ai_process_input_falls_back_to_the_original_text_when_both_o
         mock_validate_server(StatusCode::OK, r#"{"validationPassed": true}"#.to_owned()).await;
     let instance = guardrail(&base, InputFormat::LlmOutput);
     let result = instance
-        .process_input(Some("original".to_owned()), &BTreeMap::new())
+        .process_input(Some("original".to_owned()), &BTreeMap::new(), "completion")
         .await
         .expect("validation succeeds");
     assert_eq!(result, Some("original".to_owned()));
@@ -335,7 +472,7 @@ async fn guardrails_ai_process_input_falls_back_to_the_original_text_when_valida
     .await;
     let instance = guardrail(&base, InputFormat::LlmOutput);
     let result = instance
-        .process_input(Some("original".to_owned()), &BTreeMap::new())
+        .process_input(Some("original".to_owned()), &BTreeMap::new(), "completion")
         .await
         .expect("validation succeeds");
     assert_eq!(result, Some("original".to_owned()));
@@ -351,7 +488,7 @@ async fn guardrails_ai_process_input_uses_the_inputs_format_when_configured() {
     .await;
     let instance = guardrail(&base, InputFormat::Inputs);
     let result = instance
-        .process_input(Some("original".to_owned()), &BTreeMap::new())
+        .process_input(Some("original".to_owned()), &BTreeMap::new(), "completion")
         .await
         .expect("validation succeeds");
     assert_eq!(result, Some("validated".to_owned()));
@@ -403,8 +540,20 @@ async fn guardrails_ai_post_call_hook_calls_the_api_with_the_response_content() 
 }
 
 #[test]
-fn guardrails_ai_get_config_model_returns_a_type_distinct_from_other_config_models() {
-    assert_ne!(TypeId::of::<GuardrailsAiConfigModel>(), TypeId::of::<u8>());
+fn guardrails_ai_config_model_deserializes_guard_name_api_base_and_input_format() {
+    let model: GuardrailsAiConfigModel = serde_json::from_str(
+        r#"{"guard_name": "my-guard", "api_base": "https://guardrails.example", "guardrails_ai_api_input_format": "inputs"}"#,
+    )
+    .unwrap();
+    assert_eq!(model.guard_name, Some("my-guard".to_owned()));
+    assert_eq!(
+        model.api_base,
+        Some("https://guardrails.example".to_owned())
+    );
+    assert_eq!(
+        model.guardrails_ai_api_input_format,
+        Some(InputFormat::Inputs)
+    );
 }
 
 #[test]
@@ -417,5 +566,15 @@ fn guardrails_ai_config_model_defaults_guard_name_and_api_base_to_none_and_forma
     let model: GuardrailsAiConfigModel = serde_json::from_str("{}").unwrap();
     assert_eq!(model.guard_name, None);
     assert_eq!(model.api_base, None);
-    assert_eq!(model.guardrails_ai_api_input_format, InputFormat::LlmOutput);
+    assert_eq!(
+        model.guardrails_ai_api_input_format,
+        Some(InputFormat::LlmOutput)
+    );
+}
+
+#[test]
+fn guardrails_ai_config_model_accepts_an_explicit_null_input_format() {
+    let model: GuardrailsAiConfigModel =
+        serde_json::from_str(r#"{"guardrails_ai_api_input_format": null}"#).unwrap();
+    assert_eq!(model.guardrails_ai_api_input_format, None);
 }

@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import httpx
 import litellm
+from fastapi import HTTPException
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.guardrails.guardrail_hooks.aporia_ai.aporia_ai import (  # pyright: ignore[reportMissingTypeStubs]
     AporiaGuardrail,
@@ -38,14 +39,24 @@ def aporia_moderation(fields: dict[str, Json]) -> Json:
     data: dict[str, Json] = {}
     if fields.get("messages") is not None:
         data["messages"] = fields["messages"]
-    with patch.object(aporia, "should_run_guardrail", return_value=True):
-        asyncio.run(
-            aporia.async_moderation_hook(  # pyright: ignore[reportUnknownMemberType]
-                data=cast("dict[str, object]", data),
-                user_api_key_dict=UserAPIKeyAuth(),
-                call_type="completion",
+    try:
+        with patch.object(aporia, "should_run_guardrail", return_value=True):
+            asyncio.run(
+                aporia.async_moderation_hook(  # pyright: ignore[reportUnknownMemberType]
+                    data=cast("dict[str, object]", data),
+                    user_api_key_dict=UserAPIKeyAuth(),
+                    call_type="completion",
+                )
             )
-        )
+    except HTTPException as exc:
+        detail = cast(dict[str, Json], exc.detail)
+        return {
+            "path": captured.get("path"),
+            "request": captured.get("request"),
+            "blocked": True,
+            "status": exc.status_code,
+            "response": detail["aporia_ai_response"],
+        }
     return {"path": captured.get("path"), "request": captured.get("request")}
 
 
@@ -103,11 +114,21 @@ def guardrails_ai_process_input(fields: dict[str, Json]) -> Json:
     last_user_message = cast("str | None", fields.get("last_user_message"))
     if last_user_message is not None:
         data["messages"] = [{"role": "user", "content": last_user_message}]
-    result = asyncio.run(  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
-        guardrails_ai.process_input(  # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType]
-            data=cast("dict[str, object]", data), call_type="completion"
+    try:
+        result = asyncio.run(  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
+            guardrails_ai.process_input(  # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType]
+                data=cast("dict[str, object]", data), call_type="completion"
+            )
         )
-    )
+    except HTTPException as exc:
+        detail = cast(dict[str, Json], exc.detail)
+        return {
+            "path": captured.get("path"),
+            "request": captured.get("request"),
+            "blocked": True,
+            "status": exc.status_code,
+            "response": detail["guardrails_ai_response"],
+        }
     updated_messages = cast(
         "list[dict[str, Json]] | None",
         result.get("messages"),  # pyright: ignore[reportUnknownMemberType]

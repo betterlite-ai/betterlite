@@ -1164,6 +1164,7 @@ dependencies = [
  "tracing-subscriber",
  "ulid",
  "unicode-normalization",
+ "url",
 ]
 
 [[package]]

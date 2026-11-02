@@ -150,10 +150,7 @@ impl AporiaGuardrail {
         headers.insert(HeaderName::from_static("x-aporia-api-key"), api_key);
         let response = self
             .client
-            .post(format!(
-                "{}/validate",
-                self.settings.api_base.trim_end_matches('/')
-            ))
+            .post(format!("{}/validate", self.settings.api_base))
             .headers(headers)
             .json(&prepared)
             .timeout(self.timeout)

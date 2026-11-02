@@ -23,3 +23,20 @@ pub enum AporiaGuardrailError {
     #[error("Violated guardrail policy")]
     Blocked { response: AporiaApiResponse },
 }
+
+impl AporiaGuardrailError {
+    // LiteLLM raises HTTPException(400, ...) on a block and the upstream status on a non-2xx reply.
+    #[must_use]
+    pub const fn status_code(&self) -> StatusCode {
+        match self {
+            Self::HttpStatus { status } => *status,
+            Self::Blocked { .. } => StatusCode::BAD_REQUEST,
+            Self::MissingEnvironment { .. }
+            | Self::Timeout { .. }
+            | Self::Request { .. }
+            | Self::InvalidHeader { .. }
+            | Self::ResponseTooLarge { .. }
+            | Self::ResponseJson { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}

@@ -6,6 +6,7 @@ use betterlite_config::sections::guardrail_identity::config_models::GuardrailCon
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use reqwest::header::CONTENT_TYPE;
 use serde::{Deserialize, Serialize};
+use url::Url;
 
 pub mod error;
 use error::GuardrailsAiGuardrailError;
@@ -15,6 +16,7 @@ use http::{parse_pre_call_response, read_capped_body, request_error};
 
 const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 const DEFAULT_API_BASE: &str = "http://0.0.0.0:8000";
+const COMPLETION_CALL_TYPES: [&str; 2] = ["completion", "acompletion"];
 
 pub const SUPPORTED_EVENT_HOOKS: [EventHook; 3] = [
     EventHook::PostCall,
@@ -69,7 +71,7 @@ impl Settings {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GuardrailsAiApiResponse {
     #[serde(default)]
@@ -129,6 +131,14 @@ pub struct GuardrailsAiGuardrail {
 }
 
 impl GuardrailsAiGuardrail {
+    // httpx's URL.join follows RFC 3986 merge: no trailing slash drops the base's last segment.
+    fn validate_url(&self) -> Result<Url, GuardrailsAiGuardrailError> {
+        let base = Url::parse(&self.settings.api_base)
+            .map_err(|source| GuardrailsAiGuardrailError::InvalidApiBase { source })?;
+        base.join(&format!("guards/{}/validate", self.settings.guard_name))
+            .map_err(|source| GuardrailsAiGuardrailError::InvalidApiBase { source })
+    }
+
     pub async fn make_guardrails_ai_api_request(
         &self,
         llm_output: &str,
@@ -138,11 +148,7 @@ impl GuardrailsAiGuardrail {
             llm_output: llm_output.to_owned(),
             dynamic_params: dynamic_params.clone(),
         };
-        let url = format!(
-            "{}/guards/{}/validate",
-            self.settings.api_base.trim_end_matches('/'),
-            self.settings.guard_name
-        );
+        let url = self.validate_url()?;
         let response = self
             .client
             .post(url)
@@ -178,11 +184,7 @@ impl GuardrailsAiGuardrail {
                 datatype: "BYTES".to_owned(),
             }],
         };
-        let url = format!(
-            "{}/guards/{}/validate",
-            self.settings.api_base.trim_end_matches('/'),
-            self.settings.guard_name
-        );
+        let url = self.validate_url()?;
         let response = self
             .client
             .post(url)
@@ -201,7 +203,11 @@ impl GuardrailsAiGuardrail {
         &self,
         last_user_message: Option<String>,
         dynamic_params: &BTreeMap<String, GuardrailValue>,
+        call_type: &str,
     ) -> Result<Option<String>, GuardrailsAiGuardrailError> {
+        if !COMPLETION_CALL_TYPES.contains(&call_type) {
+            return Ok(last_user_message);
+        }
         let Some(text) = last_user_message else {
             return Ok(None);
         };
@@ -219,6 +225,19 @@ impl GuardrailsAiGuardrail {
             }
         };
         Ok(Some(updated_text))
+    }
+
+    pub async fn async_logging_hook(
+        &self,
+        last_user_message: Option<String>,
+        dynamic_params: &BTreeMap<String, GuardrailValue>,
+        call_type: &str,
+    ) -> Result<Option<String>, GuardrailsAiGuardrailError> {
+        if !COMPLETION_CALL_TYPES.contains(&call_type) {
+            return Ok(last_user_message);
+        }
+        self.process_input(last_user_message, dynamic_params, call_type)
+            .await
     }
 
     // Returns whether the guardrail ran, for the (out-of-scope) applied-guardrails header.
@@ -245,11 +264,15 @@ pub struct GuardrailsAiConfigModel {
     pub api_base: Option<String>,
     pub guard_name: Option<String>,
     #[serde(default = "default_input_format")]
-    pub guardrails_ai_api_input_format: InputFormat,
+    pub guardrails_ai_api_input_format: Option<InputFormat>,
 }
 
-const fn default_input_format() -> InputFormat {
-    InputFormat::LlmOutput
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "the field is Option<InputFormat> so an explicit null deserializes to None; this default must match"
+)]
+const fn default_input_format() -> Option<InputFormat> {
+    Some(InputFormat::LlmOutput)
 }
 
 impl GuardrailConfigModelIdentity for GuardrailsAiConfigModel {

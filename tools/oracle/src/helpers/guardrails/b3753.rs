@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::fmt::Display;
 use std::net::TcpListener;
 use std::time::Duration;
 
@@ -61,13 +60,7 @@ impl crate::helpers::Helper for Op {
                 request.api_base.clone(),
                 &request.environment,
             ),
-            Input::GuardrailsAiProcess(request) => guardrails_ai_process_input(
-                &request.guard_name,
-                request.input_format,
-                request.last_user_message.clone(),
-                &request.dynamic_params,
-                request.answer.as_ref(),
-            ),
+            Input::GuardrailsAiProcess(request) => guardrails_ai_process_input(request),
         }
     }
 }
@@ -175,21 +168,41 @@ fn finish_aporia(
     mock: Option<MockProvider>,
     result: Result<bool, AporiaGuardrailError>,
 ) -> HelperResult {
-    finish(
-        mock,
-        result,
-        |error| match error {
-            AporiaGuardrailError::Blocked { .. } => "HTTPException",
-            AporiaGuardrailError::MissingEnvironment { .. } => "KeyError",
-            AporiaGuardrailError::Timeout { .. }
+    let (path, request) = extract_call(mock)?;
+    match result {
+        Ok(_ran) => Ok(json!({ "path": path, "request": request })),
+        Err(error) => match &error {
+            AporiaGuardrailError::Blocked { response } => Ok(json!({
+                "path": path,
+                "request": request,
+                "blocked": true,
+                "status": error.status_code().as_u16(),
+                "response": response,
+            })),
+            AporiaGuardrailError::MissingEnvironment { .. }
+            | AporiaGuardrailError::Timeout { .. }
             | AporiaGuardrailError::Request { .. }
             | AporiaGuardrailError::InvalidHeader { .. }
             | AporiaGuardrailError::HttpStatus { .. }
             | AporiaGuardrailError::ResponseTooLarge { .. }
-            | AporiaGuardrailError::ResponseJson { .. } => "AporiaGuardrailAPIError",
+            | AporiaGuardrailError::ResponseJson { .. } => {
+                Err(fail(classify_aporia(&error), error.to_string()))
+            }
         },
-        |path, request, _ran| json!({ "path": path, "request": request }),
-    )
+    }
+}
+
+const fn classify_aporia(error: &AporiaGuardrailError) -> &'static str {
+    match error {
+        AporiaGuardrailError::Blocked { .. } => "HTTPException",
+        AporiaGuardrailError::MissingEnvironment { .. } => "KeyError",
+        AporiaGuardrailError::Timeout { .. }
+        | AporiaGuardrailError::Request { .. }
+        | AporiaGuardrailError::InvalidHeader { .. }
+        | AporiaGuardrailError::HttpStatus { .. }
+        | AporiaGuardrailError::ResponseTooLarge { .. }
+        | AporiaGuardrailError::ResponseJson { .. } => "AporiaGuardrailAPIError",
+    }
 }
 
 fn extract_call(
@@ -203,24 +216,6 @@ fn extract_call(
     let path = recorded.as_ref().map(|call| call.request.path.clone());
     let request = recorded.map(|call| call.request.body);
     Ok((path, request))
-}
-
-fn finish<T, E, Classify, Build>(
-    mock: Option<MockProvider>,
-    result: Result<T, E>,
-    classify: Classify,
-    build: Build,
-) -> HelperResult
-where
-    E: Display,
-    Classify: FnOnce(&E) -> &'static str,
-    Build: FnOnce(Option<String>, Option<serde_json::Value>, T) -> serde_json::Value,
-{
-    let (path, request) = extract_call(mock)?;
-    match result {
-        Ok(value) => Ok(build(path, request, value)),
-        Err(error) => Err(fail(classify(&error), error.to_string())),
-    }
 }
 
 fn guardrails_ai_construct(
@@ -238,24 +233,22 @@ fn guardrails_ai_construct(
     }))
 }
 
-fn guardrails_ai_process_input(
-    guard_name: &str,
-    input_format: InputFormat,
-    last_user_message: Option<String>,
-    dynamic_params: &BTreeMap<String, GuardrailValue>,
-    answer: Option<&UpstreamAnswer>,
-) -> HelperResult {
-    let (mock, silent, base, runtime) = prepare(answer)?;
+fn guardrails_ai_process_input(request: &GuardrailsAiProcessRequest) -> HelperResult {
+    let (mock, silent, base, runtime) = prepare(request.answer.as_ref())?;
     let guardrail = GuardrailsAiGuardrail {
         settings: GuardrailsAiSettings {
-            guard_name: guard_name.to_owned(),
+            guard_name: request.guard_name.clone(),
             api_base: base,
-            input_format,
+            input_format: request.input_format,
         },
         client: reqwest::Client::new(),
         timeout: Duration::from_secs(30),
     };
-    let result = runtime.block_on(guardrail.process_input(last_user_message, dynamic_params));
+    let result = runtime.block_on(guardrail.process_input(
+        request.last_user_message.clone(),
+        &request.dynamic_params,
+        &request.call_type,
+    ));
     drop(silent);
     finish_guardrails_ai(mock, result)
 }
@@ -264,12 +257,33 @@ fn finish_guardrails_ai(
     mock: Option<MockProvider>,
     result: Result<Option<String>, GuardrailsAiGuardrailError>,
 ) -> HelperResult {
-    finish(
-        mock,
-        result,
-        classify_guardrails_ai,
-        |path, request, updated_text| json!({ "path": path, "request": request, "updated_text": updated_text }),
-    )
+    let (path, request) = extract_call(mock)?;
+    match result {
+        Ok(updated_text) => {
+            Ok(json!({ "path": path, "request": request, "updated_text": updated_text }))
+        }
+        Err(error) => match &error {
+            GuardrailsAiGuardrailError::Blocked { response } => Ok(json!({
+                "path": path,
+                "request": request,
+                "blocked": true,
+                "status": error.status_code().as_u16(),
+                "response": response,
+            })),
+            GuardrailsAiGuardrailError::MissingGuardName
+            | GuardrailsAiGuardrailError::InvalidApiBase { .. }
+            | GuardrailsAiGuardrailError::Timeout { .. }
+            | GuardrailsAiGuardrailError::Request { .. }
+            | GuardrailsAiGuardrailError::HttpStatus { .. }
+            | GuardrailsAiGuardrailError::ResponseTooLarge { .. }
+            | GuardrailsAiGuardrailError::ResponseJson { .. }
+            | GuardrailsAiGuardrailError::PreCallBlocked { .. }
+            | GuardrailsAiGuardrailError::PreCallMissingOutput
+            | GuardrailsAiGuardrailError::InvalidUtf8 { .. } => {
+                Err(fail(classify_guardrails_ai(&error), error.to_string()))
+            }
+        },
+    }
 }
 
 const fn classify_guardrails_ai(error: &GuardrailsAiGuardrailError) -> &'static str {
@@ -277,7 +291,8 @@ const fn classify_guardrails_ai(error: &GuardrailsAiGuardrailError) -> &'static 
         GuardrailsAiGuardrailError::MissingGuardName => "Exception",
         GuardrailsAiGuardrailError::Blocked { .. }
         | GuardrailsAiGuardrailError::PreCallBlocked { .. } => "HTTPException",
-        GuardrailsAiGuardrailError::Timeout { .. }
+        GuardrailsAiGuardrailError::InvalidApiBase { .. }
+        | GuardrailsAiGuardrailError::Timeout { .. }
         | GuardrailsAiGuardrailError::Request { .. }
         | GuardrailsAiGuardrailError::HttpStatus { .. }
         | GuardrailsAiGuardrailError::ResponseTooLarge { .. }

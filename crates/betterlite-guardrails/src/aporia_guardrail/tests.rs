@@ -1,6 +1,5 @@
 #![cfg(test)]
 
-use std::any::TypeId;
 use std::collections::BTreeMap;
 use std::future::IntoFuture as _;
 use std::io::{self, Write};
@@ -10,6 +9,7 @@ use std::time::Duration;
 use axum::Router;
 use axum::body::Bytes;
 use axum::http::HeaderMap as AxumHeaderMap;
+use axum::http::Uri;
 use axum::routing::post;
 use betterlite_config::sections::guardrail_identity::config_models::GuardrailConfigModelIdentity as _;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -223,6 +223,30 @@ async fn aporia_make_api_request_sends_the_x_aporia_api_key_header_and_json_cont
 }
 
 #[tokio::test]
+async fn aporia_make_api_request_does_not_trim_a_trailing_slash_from_the_api_base() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}/", listener.local_addr().unwrap());
+    let path = Arc::new(Mutex::new(String::new()));
+    let path_for_handler = Arc::clone(&path);
+    let answer = move |uri: Uri| {
+        let path_for_body = Arc::clone(&path_for_handler);
+        async move {
+            *path_for_body.lock().unwrap() = uri.path().to_owned();
+            (StatusCode::OK, r#"{"action": "pass"}"#.to_owned())
+        }
+    };
+    let router = Router::new().fallback(answer);
+    let mut server = JoinSet::new();
+    server.spawn(axum::serve(listener, router).into_future());
+    let instance = guardrail(&base);
+    instance
+        .make_aporia_api_request(vec![message("user", "hi")], None, &BTreeMap::new())
+        .await
+        .expect("a pass action does not error");
+    assert_eq!(path.lock().unwrap().clone(), "//validate");
+}
+
+#[tokio::test]
 async fn aporia_make_api_request_merges_dynamic_params_into_the_json_body() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
@@ -267,6 +291,17 @@ async fn aporia_make_api_request_blocks_when_action_is_block() {
 }
 
 #[tokio::test]
+async fn aporia_block_error_status_code_is_bad_request() {
+    let (result, _headers, _captured) = call_with_mock_server(
+        StatusCode::OK,
+        r#"{"action": "block", "validation": "unsafe"}"#.to_owned(),
+    )
+    .await;
+    let error = result.expect_err("a block action raises");
+    assert_eq!(error.status_code(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn aporia_make_api_request_rejects_a_non_success_status() {
     let (result, _headers, _captured) =
         call_with_mock_server(StatusCode::INTERNAL_SERVER_ERROR, "oops".to_owned()).await;
@@ -275,6 +310,14 @@ async fn aporia_make_api_request_rejects_a_non_success_status() {
         Err(AporiaGuardrailError::HttpStatus { status })
             if status == StatusCode::INTERNAL_SERVER_ERROR
     ));
+}
+
+#[tokio::test]
+async fn aporia_http_status_error_status_code_is_the_upstream_status() {
+    let (result, _headers, _captured) =
+        call_with_mock_server(StatusCode::SERVICE_UNAVAILABLE, "oops".to_owned()).await;
+    let error = result.expect_err("a non-success status raises");
+    assert_eq!(error.status_code(), StatusCode::SERVICE_UNAVAILABLE);
 }
 
 #[tokio::test]
@@ -448,11 +491,12 @@ async fn aporia_moderation_hook_transforms_roles_before_sending() {
 }
 
 #[test]
-fn aporia_get_config_model_returns_a_type_distinct_from_other_config_models() {
-    assert_ne!(
-        TypeId::of::<AporiaGuardrailConfigModel>(),
-        TypeId::of::<u8>()
-    );
+fn aporia_config_model_deserializes_api_key_and_api_base() {
+    let model: AporiaGuardrailConfigModel =
+        serde_json::from_str(r#"{"api_key": "secret", "api_base": "https://aporia.example"}"#)
+            .unwrap();
+    assert_eq!(model.api_key, Some("secret".to_owned()));
+    assert_eq!(model.api_base, Some("https://aporia.example".to_owned()));
 }
 
 #[test]
