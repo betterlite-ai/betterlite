@@ -1,4 +1,5 @@
 const ADD_SPEND_LOG_TOOL_INDEX: &str = "20260226120000_add_spend_log_tool_index";
+const ADD_AGENT_ID_TO_DELETE_KEYS: &str = "20260226202727_add_agent_id_to_delete_keys";
 const ADD_CLAUDE_CODE_PLUGIN_TABLE: &str = "20260228000000_add_claude_code_plugin_table";
 const ADD_SPEND_LOGS_COMPOSITE_INDEX: &str = "20260228100000_add_spend_logs_composite_index";
 const MCP_DEFAULT_PUBLIC_INTERNET_TRUE: &str = "20260228110000_mcp_default_public_internet_true";
@@ -372,10 +373,10 @@ fn tool_agent_checkpoint_for(cohort: ToolAgentCohort) -> &'static str {
         ToolAgentCohort::UntrustedPolicyAndZeroCount
         | ToolAgentCohort::RenameInputPolicyPreservesValue
         | ToolAgentCohort::ToolRenameGuardOtherSchemaFailure
-        | ToolAgentCohort::AgentPermissionSetNullAndKeyAgentNullable
         | ToolAgentCohort::PublicInternetDefaultTrueExistingFalseUnchanged => {
             ADD_AGENT_OBJECT_PERMISSIONS_TABLE
         }
+        ToolAgentCohort::AgentPermissionSetNullAndKeyAgentNullable => ADD_AGENT_ID_TO_DELETE_KEYS,
         ToolAgentCohort::OutputUntrustedAndPolicyIndexes => UPDATE_TOOL_TABLE_POLICIES,
         ToolAgentCohort::BlockedToolsAndModelArrays => SCHEMA_SYNC_20260312,
         ToolAgentCohort::SpendToolCompositeKey => ADD_SPEND_LOG_TOOL_INDEX,
