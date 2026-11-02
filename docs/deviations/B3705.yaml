@@ -1,0 +1,5 @@
+task: B3705
+deviations:
+  - what: "LiteLLM catches all exceptions and logs at exception level; betterlite catches HTTPException separately to re-raise it, and catches other exceptions to log at debug level and return gracefully."
+    why: "Separating exception types allows 403 errors to reach the caller while non-permission errors warn and permit the request to proceed, matching the warn-and-skip pattern in the source."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/cache_control_check.py#L53-L59"
