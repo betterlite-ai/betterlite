@@ -6,12 +6,12 @@ use crate::sections::Section;
 
 pub const DEFAULT_API_BASE: &str = "https://api.openai.com/v1";
 
-#[expect(
-    clippy::empty_structs_with_brackets,
-    reason = "a map-shaped Raw, not a unit struct, so serde still accepts (and ignores) the document's keys"
-)]
+// a map-shaped Raw, not a unit struct, so serde still accepts (and ignores) the document's keys
 #[derive(Debug, Default, serde::Deserialize)]
-pub struct Raw {}
+pub struct Raw {
+    #[serde(skip)]
+    _unused: (),
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
