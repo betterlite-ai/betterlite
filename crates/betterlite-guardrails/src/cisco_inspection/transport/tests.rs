@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::error::Error as _;
 use std::future::IntoFuture as _;
 use std::io;
 
@@ -128,6 +129,7 @@ async fn post_inspection_wraps_a_connection_failure() {
         .await
         .expect_err("connection refused");
     assert!(error.to_string().contains("request failed"));
+    assert!(error.source().is_some());
 }
 
 #[tokio::test]
@@ -139,6 +141,7 @@ async fn post_inspection_wraps_a_timeout() {
         .await
         .expect_err("timeout");
     assert!(error.to_string().contains("timed out after 0.2s"));
+    assert!(error.source().is_some());
     drop(listener);
 }
 
@@ -150,6 +153,18 @@ async fn post_inspection_does_not_follow_redirects() {
         .await
         .expect_err("redirect surfaced as non-success");
     assert!(error.to_string().contains("HTTP 302"));
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn post_inspection_wraps_a_response_over_the_byte_limit() {
+    let oversized = vec![b'a'; (1024 * 1024) + 1];
+    let (base, mut server) = serve(StatusCode::OK, oversized).await;
+    let guardrail = guardrail(10.0, plain_client());
+    let error = post_inspection(&guardrail, &format!("{base}/inspect"), &(), "chat")
+        .await
+        .expect_err("oversized response");
+    assert!(error.to_string().contains("exceeds 1048576 bytes"));
     server.shutdown().await;
 }
 

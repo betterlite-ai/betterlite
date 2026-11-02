@@ -1,4 +1,5 @@
 use std::ops::Sub as _;
+use std::str;
 use std::time::Duration;
 
 use reqwest::header::{ACCEPT, CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue, USER_AGENT};
@@ -13,18 +14,19 @@ use crate::cisco_inspection::error::ApiError;
 const CISCO_API_KEY_HEADER: &str = "x-cisco-ai-defense-api-key";
 const LITELLM_VERSION: &str = "1.105.1";
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
+const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 
 // Mirrors LiteLLM's fn _build_headers.
 pub fn build_headers(guardrail: &CiscoInspectionGuardrail) -> Result<HeaderMap, ApiError> {
     let mut headers = HeaderMap::new();
     let mut api_key = HeaderValue::from_str(guardrail.settings.api_key.expose_secret())
-        .map_err(|error| ApiError(error.to_string()))?;
+        .map_err(|source| ApiError::InvalidApiKeyHeader { source })?;
     api_key.set_sensitive(true);
     headers.insert(HeaderName::from_static(CISCO_API_KEY_HEADER), api_key);
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
     headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
     let user_agent = HeaderValue::from_str(&format!("litellm/{LITELLM_VERSION}"))
-        .map_err(|error| ApiError(error.to_string()))?;
+        .map_err(|source| ApiError::InvalidUserAgentHeader { source })?;
     headers.insert(USER_AGENT, user_agent);
     Ok(headers)
 }
@@ -50,42 +52,72 @@ where
         .timeout(timeout)
         .send()
         .await
-        .map_err(|error| send_error(&error, surface, guardrail.settings.timeout))?;
+        .map_err(|error| send_error(error, surface, guardrail.settings.timeout))?;
     let status = response.status();
-    let body = response
-        .text()
-        .await
-        .map_err(|error| send_error(&error, surface, guardrail.settings.timeout))?;
+    let body = match read_body(response, surface, guardrail.settings.timeout).await {
+        // Keep the HTTP status authoritative when an error body exceeds the limit.
+        Err(ApiError::ResponseTooLarge { .. }) if !status.is_success() => Vec::new(),
+        result => result?,
+    };
     if !status.is_success() {
-        let snippet: String = body.chars().take(500).collect();
-        return Err(ApiError(format!(
-            "Cisco AI Defense {surface} API returned HTTP {}: {snippet}",
-            status.as_u16()
-        )));
+        let text = str::from_utf8(&body).map_err(|source| ApiError::HttpStatusEncoding {
+            surface: surface.to_owned(),
+            status: status.as_u16(),
+            source,
+        })?;
+        let snippet: String = text.chars().take(500).collect();
+        return Err(ApiError::HttpStatus {
+            surface: surface.to_owned(),
+            status: status.as_u16(),
+            snippet,
+        });
     }
     parse_body(&body, surface)
 }
 
-fn parse_body(body: &str, surface: &str) -> Result<Json, ApiError> {
-    serde_json::from_str::<Box<RawValue>>(body)
+async fn read_body(
+    mut response: reqwest::Response,
+    surface: &str,
+    timeout: f64,
+) -> Result<Vec<u8>, ApiError> {
+    let mut body = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|error| send_error(error, surface, timeout))?
+    {
+        if body.len().saturating_add(chunk.len()) > MAX_RESPONSE_BYTES {
+            return Err(ApiError::ResponseTooLarge {
+                surface: surface.to_owned(),
+                limit: MAX_RESPONSE_BYTES,
+            });
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
+}
+
+fn parse_body(body: &[u8], surface: &str) -> Result<Json, ApiError> {
+    serde_json::from_slice::<Box<RawValue>>(body)
         .map(|raw| Json::parse(raw.get()))
-        .map_err(|_error| {
-            ApiError(format!(
-                "Cisco AI Defense {surface} API returned a non-JSON response"
-            ))
+        .map_err(|source| ApiError::ResponseJson {
+            surface: surface.to_owned(),
+            source,
         })
 }
 
-fn send_error(error: &reqwest::Error, surface: &str, timeout: f64) -> ApiError {
-    if error.is_timeout() {
-        ApiError(format!(
-            "Cisco AI Defense {surface} API call timed out after {}s",
-            render_timeout_seconds(timeout)
-        ))
+fn send_error(source: reqwest::Error, surface: &str, timeout: f64) -> ApiError {
+    if source.is_timeout() {
+        ApiError::Timeout {
+            surface: surface.to_owned(),
+            timeout: render_timeout_seconds(timeout),
+            source,
+        }
     } else {
-        ApiError(format!(
-            "Cisco AI Defense {surface} API request failed: {error}"
-        ))
+        ApiError::Request {
+            surface: surface.to_owned(),
+            source,
+        }
     }
 }
 

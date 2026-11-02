@@ -46,7 +46,7 @@ pub(super) fn construct(settings: &Value) -> HelperResult {
 pub(super) fn headers(settings: &Value) -> HelperResult {
     let guardrail = guardrail(settings)?;
     let map = build_headers(&guardrail)
-        .map_err(|error| fail("CiscoAIDefenseGuardrailAPIError", error.0))?;
+        .map_err(|error| fail("CiscoAIDefenseGuardrailAPIError", error.to_string()))?;
     let mut rendered = std::collections::BTreeMap::new();
     for (name, value) in &map {
         let text = value
@@ -195,7 +195,7 @@ pub(super) fn post_inspection_op(args: &PostInspectionInput) -> HelperResult {
     let (path, body) = recorded_call(mock)?;
     let value = result
         .map(|json| json_to_value(&json))
-        .map_err(|error| fail("CiscoAIDefenseGuardrailAPIError", error.0))?;
+        .map_err(|error| fail("CiscoAIDefenseGuardrailAPIError", error.to_string()))?;
     Ok(json!({
         "path": path,
         "request": body,
