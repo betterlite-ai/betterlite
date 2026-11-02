@@ -1,6 +1,5 @@
 use super::templates::{
-    RouteValue, check_route_access, is_wildcard_pattern, route_matches_pattern,
-    route_matches_wildcard_pattern,
+    RouteValue, check_route_access, route_matches_pattern, route_matches_wildcard_pattern,
 };
 use crate::{auxiliary_routes, inference_routes, management_routes};
 use regex::Regex;
@@ -27,7 +26,7 @@ fn matches_exact_tables(route: &str) -> bool {
 
 fn matches_template_tables(route: &str) -> bool {
     let templated = |pattern: &&str| pattern.contains('{');
-    let wildcarded = |pattern: &&str| is_wildcard_pattern(pattern);
+    let wildcarded = |pattern: &&str| matches!(pattern.chars().last(), Some('*'));
     let hits_pattern = |pattern: &&str| route_matches_pattern(&RouteValue::Text(route), pattern);
     let hits_wildcard = |pattern: &&str| route_matches_wildcard_pattern(route, pattern);
 

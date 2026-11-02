@@ -6,8 +6,8 @@ use betterlite_auth::route_match::classifier::{
 use betterlite_auth::route_match::groups::get_actual_routes;
 use betterlite_auth::route_match::method::{MethodAccess, get_request_method};
 use betterlite_auth::route_match::templates::{
-    RouteValue, check_route_access, is_wildcard_pattern, route_matches_allowed_route,
-    route_matches_pattern, route_matches_wildcard_pattern,
+    RouteValue, check_route_access, route_matches_allowed_route, route_matches_pattern,
+    route_matches_wildcard_pattern,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -68,7 +68,10 @@ fn predicate(input: &Input) -> crate::helpers::HelperResult {
                 .as_deref()
                 .is_some_and(|pattern| route_matches_pattern(&RouteValue::Text(path), pattern))
         }),
-        "is_wildcard_pattern" => input.pattern.as_deref().is_some_and(is_wildcard_pattern),
+        "is_wildcard_pattern" => input
+            .pattern
+            .as_deref()
+            .is_some_and(|pattern| matches!(pattern.chars().last(), Some('*'))),
         "route_matches_wildcard_pattern" => route.is_some_and(|path| {
             input
                 .pattern

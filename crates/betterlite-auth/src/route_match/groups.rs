@@ -13,9 +13,10 @@ pub fn get_actual_routes(allowed_routes: &[&str]) -> Vec<String> {
 }
 
 fn expand_group(name: &str) -> Option<Vec<String>> {
-    static_group(name)
-        .map(|slice| slice.iter().map(|route| (*route).to_owned()).collect())
-        .or_else(|| dynamic_group(name))
+    let routes = static_group(name)
+        .map(<[_]>::to_vec)
+        .or_else(|| dynamic_group(name))?;
+    Some(routes.iter().map(|route| (*route).to_owned()).collect())
 }
 
 fn static_group(name: &str) -> Option<&'static [&'static str]> {
@@ -50,7 +51,7 @@ fn static_group(name: &str) -> Option<&'static [&'static str]> {
     })
 }
 
-fn dynamic_group(name: &str) -> Option<Vec<String>> {
+fn dynamic_group(name: &str) -> Option<Vec<&str>> {
     let routes: Vec<&str> = match name {
         "llm_api_routes" => inference_routes::llm_api_routes(),
         "management_routes" => management_routes::management_routes(),
@@ -60,5 +61,5 @@ fn dynamic_group(name: &str) -> Option<Vec<String>> {
         "public_routes" => auxiliary_routes::public_routes().into_iter().collect(),
         _ => return None,
     };
-    Some(routes.into_iter().map(ToOwned::to_owned).collect())
+    Some(routes)
 }

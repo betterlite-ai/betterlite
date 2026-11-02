@@ -64,14 +64,6 @@ fn placeholder_fragment(placeholder: &str, after: &str) -> &'static str {
 }
 
 #[must_use]
-pub fn is_wildcard_pattern(pattern: &str) -> bool {
-    match pattern.chars().last() {
-        Some('*') => true,
-        _ => false,
-    }
-}
-
-#[must_use]
 pub fn route_matches_wildcard_pattern(route: &str, pattern: &str) -> bool {
     pattern
         .strip_suffix('*')
@@ -92,7 +84,8 @@ pub fn check_route_access(route: &str, allowed_routes: &[&str]) -> bool {
         return true;
     }
     let wildcard_hit = allowed_routes.iter().any(|pattern| {
-        is_wildcard_pattern(pattern) && route_matches_wildcard_pattern(route, pattern)
+        matches!(pattern.chars().last(), Some('*'))
+            && route_matches_wildcard_pattern(route, pattern)
     });
     if wildcard_hit {
         return true;

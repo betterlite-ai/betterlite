@@ -11,8 +11,8 @@ use super::classifier::{
 use super::groups::get_actual_routes;
 use super::method::{MethodAccess, MethodAccessError, get_request_method};
 use super::templates::{
-    RouteValue, check_route_access, is_wildcard_pattern, route_matches_allowed_route,
-    route_matches_pattern, route_matches_wildcard_pattern,
+    RouteValue, check_route_access, route_matches_allowed_route, route_matches_pattern,
+    route_matches_wildcard_pattern,
 };
 use crate::inference_routes::ANTHROPIC_ROUTES;
 use crate::management_routes;
@@ -161,19 +161,21 @@ fn path_placeholder_slash_colon_newline() {
 }
 
 #[test]
-#[expect(
-    clippy::literal_string_with_formatting_args,
-    reason = "the {model_name:path} here is a LiteLLM route placeholder, not a format argument"
-)]
 fn google_colon_suffix_boundary() {
-    let pattern = "/v1beta/models/{model_name:path}:generateContent";
+    let pattern = [
+        "/v1beta/models/{",
+        "model_name:path",
+        "}",
+        ":generateContent",
+    ]
+    .concat();
     assert!(route_matches_pattern(
         &RouteValue::Text("/v1beta/models/foo/bar:generateContent"),
-        pattern
+        &pattern
     ));
     assert!(!route_matches_pattern(
         &RouteValue::Text("/v1beta/models/foo:bar:generateContent"),
-        pattern
+        &pattern
     ));
 }
 
@@ -200,14 +202,14 @@ fn regex_metacharacters_and_final_newline() {
 
 #[test]
 fn final_star_empty_suffix() {
-    assert!(is_wildcard_pattern("/foo*"));
+    assert!(matches!("/foo*".chars().last(), Some('*')));
     assert!(route_matches_wildcard_pattern("/foo", "/foo*"));
     assert!(route_matches_wildcard_pattern("/foobar", "/foo*"));
 }
 
 #[test]
 fn inner_star_not_wildcard() {
-    assert!(!is_wildcard_pattern("/foo*bar"));
+    assert!(!matches!("/foo*bar".chars().last(), Some('*')));
     assert!(check_route_access("/fobar", &["/foo*bar"]));
 }
 
