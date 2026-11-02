@@ -1,32 +1,38 @@
 use std::io::Error as IoError;
+use std::str;
 
 use betterlite_ocr::json::{Json, Object};
-use encoding_rs::Encoding;
-use futures_util::StreamExt as _;
-use multipart_rs::{MultipartError, MultipartItem, MultipartReader};
+use multipart_rs::{MultipartError, MultipartReader};
 
 use super::error::OcrRequestError;
 use super::upload::read_upload;
 use super::{FormField, FormValue, OcrDocument, ParsedForm};
+use charset::decode_part;
+use disposition::disposition_param_bytes;
+use raw_split::{RawItem, split_items};
+
+mod charset;
+mod disposition;
+mod raw_split;
+mod tests;
 
 const MAX_FILE_BYTES: usize = 50 * 1024 * 1024;
 const MAX_FIELDS: usize = 1000;
 const MAX_FILES: usize = 1000;
 const MAX_PART_BYTES: usize = 1024 * 1024;
 
-pub(super) async fn parse_body(
-    body: &[u8],
-    content_type: &str,
-) -> Result<ParsedForm, OcrRequestError> {
+// multipart-rs's own reader rejects a header line that is not valid UTF-8 before it ever builds an item, so it is reused only to read the boundary and validate the Content-Type header; the body is then split by hand in raw_split, keeping headers as bytes until decode_part runs.
+pub(super) fn parse_body(body: &[u8], content_type: &str) -> Result<ParsedForm, OcrRequestError> {
     let headers = [("content-type".to_owned(), content_type.to_owned())];
-    let mut reader = MultipartReader::<IoError>::from_data_with_headers(body, &headers)
-        .map_err(OcrRequestError::MultipartParse)?;
+    let boundary = MultipartReader::<IoError>::from_data_with_headers(body, &headers)
+        .map_err(OcrRequestError::MultipartParse)?
+        .boundary;
     let charset = charset_param(content_type);
     let mut form = ParsedForm::new();
     let mut fields = 0_usize;
     let mut files = 0_usize;
-    while let Some(item) = reader.next().await {
-        let field = read_item(&item.map_err(OcrRequestError::MultipartParse)?, &charset)?;
+    for item in split_items(body, &boundary)? {
+        let field = read_item(&item, &charset)?;
         match &field.value {
             FormValue::File { .. } => files = files.saturating_add(1),
             FormValue::Text(_) => fields = fields.saturating_add(1),
@@ -56,41 +62,18 @@ fn charset_param(content_type: &str) -> String {
         .unwrap_or_else(|| "utf-8".to_owned())
 }
 
-// _user_safe_decode: decode with the charset, falling back to latin-1 (which never fails) on an unrecognized charset or a decode error.
-fn decode_part(bytes: &[u8], charset: &str) -> String {
-    Encoding::for_label(charset.as_bytes()).map_or_else(
-        || bytes.iter().copied().map(char::from).collect(),
-        |encoding| {
-            let (decoded, had_errors) = encoding.decode_without_bom_handling(bytes);
-            if had_errors {
-                bytes.iter().copied().map(char::from).collect()
-            } else {
-                decoded.into_owned()
-            }
-        },
-    )
-}
-
-fn disposition_param(disposition: &str, key: &str) -> Option<String> {
-    disposition.split(';').map(str::trim).find_map(|part| {
-        let (part_key, part_value) = part.split_once('=')?;
-        (part_key == key).then(|| part_value.trim_matches('"').to_owned())
-    })
-}
-
-fn read_item(item: &MultipartItem, charset: &str) -> Result<FormField, OcrRequestError> {
-    let header = |key: &str| {
-        item.headers
-            .iter()
-            .find(|(name, _)| name.eq_ignore_ascii_case(key))
-            .map(|(_, value)| value.as_str())
-    };
-    let disposition = header("content-disposition").unwrap_or_default();
-    let name = disposition_param(disposition, "name").ok_or(OcrRequestError::MultipartParse(
-        MultipartError::InvalidItemHeader,
-    ))?;
-    let filename = disposition_param(disposition, "filename");
-    let content_type = header("content-type").map(ToOwned::to_owned);
+fn read_item(item: &RawItem<'_>, charset: &str) -> Result<FormField, OcrRequestError> {
+    let disposition = item.content_disposition.unwrap_or_default();
+    let name_bytes = disposition_param_bytes(disposition, "name").ok_or(
+        OcrRequestError::MultipartParse(MultipartError::InvalidItemHeader),
+    )?;
+    let name = decode_part(&name_bytes, charset);
+    let filename =
+        disposition_param_bytes(disposition, "filename").map(|bytes| decode_part(&bytes, charset));
+    let content_type = item
+        .content_type
+        .and_then(|bytes| str::from_utf8(bytes).ok())
+        .map(ToOwned::to_owned);
     if filename.is_some() {
         return Ok(FormField {
             name,
@@ -108,7 +91,7 @@ fn read_item(item: &MultipartItem, charset: &str) -> Result<FormField, OcrReques
     }
     Ok(FormField {
         name,
-        value: FormValue::Text(decode_part(&item.data, charset)),
+        value: FormValue::Text(decode_part(item.data, charset)),
     })
 }
 
@@ -154,5 +137,3 @@ fn supplied_mime_type(content_type: Option<&str>) -> Option<String> {
     }
     Some(base.to_owned())
 }
-
-mod tests;

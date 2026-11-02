@@ -27,12 +27,10 @@ fn multipart_body(boundary: &str, file_bytes: &[u8], extra_field: Option<(&str, 
     body
 }
 
-#[tokio::test]
-async fn parses_a_file_field_into_an_upload_document() {
+#[test]
+fn parses_a_file_field_into_an_upload_document() {
     let body = multipart_body("X-BOUNDARY", b"%PDF-1.4", Some(("model", "mistral-ocr")));
-    let form = parse_body(&body, "multipart/form-data; boundary=X-BOUNDARY")
-        .await
-        .unwrap();
+    let form = parse_body(&body, "multipart/form-data; boundary=X-BOUNDARY").unwrap();
     let (document, fields) = build(&form).unwrap();
     let Some(OcrDocument::Upload {
         bytes,
@@ -51,15 +49,13 @@ async fn parses_a_file_field_into_an_upload_document() {
     );
 }
 
-#[tokio::test]
-async fn strips_mime_type_parameters() {
+#[test]
+fn strips_mime_type_parameters() {
     let mut body = Vec::new();
     body.extend_from_slice(
         b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.txt\"\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nhello\r\n--B--\r\n",
     );
-    let form = parse_body(&body, "multipart/form-data; boundary=B")
-        .await
-        .unwrap();
+    let form = parse_body(&body, "multipart/form-data; boundary=B").unwrap();
     let (document, _) = build(&form).unwrap();
     let Some(OcrDocument::Upload { mime_type, .. }) = document else {
         panic!("expected an upload document");
@@ -67,12 +63,10 @@ async fn strips_mime_type_parameters() {
     assert_eq!(mime_type, Some("text/plain".to_owned()));
 }
 
-#[tokio::test]
-async fn octet_stream_mime_type_is_dropped() {
+#[test]
+fn octet_stream_mime_type_is_dropped() {
     let body = multipart_body("B", b"data", None);
-    let form = parse_body(&body, "multipart/form-data; boundary=B")
-        .await
-        .unwrap();
+    let form = parse_body(&body, "multipart/form-data; boundary=B").unwrap();
     let mut form_with_octet_stream = form;
     if let Some(FormField {
         value: FormValue::File { content_type, .. },
@@ -88,8 +82,8 @@ async fn octet_stream_mime_type_is_dropped() {
     assert_eq!(mime_type, None);
 }
 
-#[tokio::test]
-async fn missing_file_field_is_rejected() {
+#[test]
+fn missing_file_field_is_rejected() {
     let form = vec![FormField {
         name: "model".to_owned(),
         value: FormValue::Text("mistral-ocr".to_owned()),
@@ -97,17 +91,15 @@ async fn missing_file_field_is_rejected() {
     build(&form).unwrap_err();
 }
 
-#[tokio::test]
-async fn empty_file_is_rejected() {
+#[test]
+fn empty_file_is_rejected() {
     let body = multipart_body("B", b"", None);
-    let form = parse_body(&body, "multipart/form-data; boundary=B")
-        .await
-        .unwrap();
+    let form = parse_body(&body, "multipart/form-data; boundary=B").unwrap();
     build(&form).unwrap_err();
 }
 
-#[tokio::test]
-async fn oversized_file_is_rejected() {
+#[test]
+fn oversized_file_is_rejected() {
     let oversized = vec![0_u8; 50 * 1024 * 1024 + 1];
     let form = vec![FormField {
         name: "file".to_owned(),
@@ -120,8 +112,8 @@ async fn oversized_file_is_rejected() {
     build(&form).unwrap_err();
 }
 
-#[tokio::test]
-async fn file_well_under_the_cap_is_accepted() {
+#[test]
+fn file_well_under_the_cap_is_accepted() {
     let bytes = vec![0_u8; 2_000_000];
     let form = vec![FormField {
         name: "file".to_owned(),
@@ -134,15 +126,13 @@ async fn file_well_under_the_cap_is_accepted() {
     build(&form).unwrap();
 }
 
-#[tokio::test]
-async fn file_field_without_a_content_type_header_is_still_a_file() {
+#[test]
+fn file_field_without_a_content_type_header_is_still_a_file() {
     let mut body = Vec::new();
     body.extend_from_slice(
         b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.bin\"\r\n\r\ndata\r\n--B--\r\n",
     );
-    let form = parse_body(&body, "multipart/form-data; boundary=B")
-        .await
-        .unwrap();
+    let form = parse_body(&body, "multipart/form-data; boundary=B").unwrap();
     let Some(FormField {
         value: FormValue::File { content_type, .. },
         ..
@@ -153,8 +143,8 @@ async fn file_field_without_a_content_type_header_is_still_a_file() {
     assert_eq!(*content_type, None);
 }
 
-#[tokio::test]
-async fn field_without_a_filename_but_with_a_content_type_is_kept_as_text() {
+#[test]
+fn field_without_a_filename_but_with_a_content_type_is_kept_as_text() {
     let mut body = Vec::new();
     body.extend_from_slice(
         b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.pdf\"\r\nContent-Type: application/pdf\r\n\r\ndata\r\n",
@@ -162,9 +152,7 @@ async fn field_without_a_filename_but_with_a_content_type_is_kept_as_text() {
     body.extend_from_slice(
         b"--B\r\nContent-Disposition: form-data; name=\"thumbnail\"\r\nContent-Type: image/png\r\n\r\ninline\r\n--B--\r\n",
     );
-    let form = parse_body(&body, "multipart/form-data; boundary=B")
-        .await
-        .unwrap();
+    let form = parse_body(&body, "multipart/form-data; boundary=B").unwrap();
     let (_, fields) = build(&form).unwrap();
     assert_eq!(
         fields.get("thumbnail"),
@@ -172,26 +160,22 @@ async fn field_without_a_filename_but_with_a_content_type_is_kept_as_text() {
     );
 }
 
-#[tokio::test]
-async fn document_form_field_is_ignored() {
+#[test]
+fn document_form_field_is_ignored() {
     let mut body = Vec::new();
     body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.pdf\"\r\nContent-Type: application/pdf\r\n\r\ndata\r\n");
     body.extend_from_slice(
         b"--B\r\nContent-Disposition: form-data; name=\"document\"\r\n\r\nignored\r\n--B--\r\n",
     );
-    let form = parse_body(&body, "multipart/form-data; boundary=B")
-        .await
-        .unwrap();
+    let form = parse_body(&body, "multipart/form-data; boundary=B").unwrap();
     let (_, fields) = build(&form).unwrap();
     assert!(!fields.contains_key("document"));
 }
 
-#[tokio::test]
-async fn non_json_field_is_kept_as_text() {
+#[test]
+fn non_json_field_is_kept_as_text() {
     let body = multipart_body("B", b"data", Some(("model", "mistral-ocr")));
-    let form = parse_body(&body, "multipart/form-data; boundary=B")
-        .await
-        .unwrap();
+    let form = parse_body(&body, "multipart/form-data; boundary=B").unwrap();
     let (_, fields) = build(&form).unwrap();
     assert_eq!(
         fields.get("model"),
@@ -199,16 +183,14 @@ async fn non_json_field_is_kept_as_text() {
     );
 }
 
-#[tokio::test]
-async fn non_utf8_text_field_falls_back_to_latin1() {
+#[test]
+fn non_utf8_text_field_falls_back_to_latin1() {
     let mut body = Vec::new();
     body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.pdf\"\r\nContent-Type: application/pdf\r\n\r\ndata\r\n");
     body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n");
     body.extend_from_slice(&[0xFF, 0xFE]);
     body.extend_from_slice(b"\r\n--B--\r\n");
-    let form = parse_body(&body, "multipart/form-data; boundary=B")
-        .await
-        .unwrap();
+    let form = parse_body(&body, "multipart/form-data; boundary=B").unwrap();
     let (_, fields) = build(&form).unwrap();
     assert_eq!(
         fields.get("model"),
@@ -216,30 +198,40 @@ async fn non_utf8_text_field_falls_back_to_latin1() {
     );
 }
 
-#[tokio::test]
-async fn charset_param_picks_the_decoding() {
+#[test]
+fn charset_param_picks_the_decoding() {
+    // 0x80 is invalid UTF-8 either way, but encoding_rs's windows-1252 alias for "iso-8859-1" decodes it as U+20AC rather than true latin-1's U+0080.
     let mut body = Vec::new();
     body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.pdf\"\r\nContent-Type: application/pdf\r\n\r\ndata\r\n");
     body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n");
-    body.extend_from_slice(&[0xE9]);
+    body.extend_from_slice(&[0x80]);
     body.extend_from_slice(b"\r\n--B--\r\n");
-    let form = parse_body(&body, "multipart/form-data; boundary=B; charset=iso-8859-1")
-        .await
-        .unwrap();
+    let form = parse_body(&body, "multipart/form-data; boundary=B; charset=iso-8859-1").unwrap();
     let (_, fields) = build(&form).unwrap();
-    assert_eq!(fields.get("model"), Some(&Json::Text("\u{e9}".to_owned())));
+    assert_eq!(fields.get("model"), Some(&Json::Text("\u{80}".to_owned())));
 }
 
-#[tokio::test]
-async fn charset_defaults_to_utf8_when_absent() {
+#[test]
+fn us_ascii_charset_decodes_as_byte_identity() {
+    // codecs.lookup("us-ascii") resolves to "ascii", so a byte above 0x7f falls back to latin-1's byte-identity decoding, not windows-1252's substitution.
+    let mut body = Vec::new();
+    body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.pdf\"\r\nContent-Type: application/pdf\r\n\r\ndata\r\n");
+    body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n");
+    body.extend_from_slice(&[0x80]);
+    body.extend_from_slice(b"\r\n--B--\r\n");
+    let form = parse_body(&body, "multipart/form-data; boundary=B; charset=us-ascii").unwrap();
+    let (_, fields) = build(&form).unwrap();
+    assert_eq!(fields.get("model"), Some(&Json::Text("\u{80}".to_owned())));
+}
+
+#[test]
+fn charset_defaults_to_utf8_when_absent() {
     let mut body = Vec::new();
     body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.pdf\"\r\nContent-Type: application/pdf\r\n\r\ndata\r\n");
     body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n");
     body.extend_from_slice("\u{e9}\u{e8}".as_bytes());
     body.extend_from_slice(b"\r\n--B--\r\n");
-    let form = parse_body(&body, "multipart/form-data; boundary=B")
-        .await
-        .unwrap();
+    let form = parse_body(&body, "multipart/form-data; boundary=B").unwrap();
     let (_, fields) = build(&form).unwrap();
     assert_eq!(
         fields.get("model"),
@@ -247,48 +239,46 @@ async fn charset_defaults_to_utf8_when_absent() {
     );
 }
 
-#[tokio::test]
-async fn explicit_charset_decodes_a_multi_byte_sequence() {
+#[test]
+fn explicit_charset_decodes_a_multi_byte_sequence() {
+    // The charset also decodes the field name, so a plain ASCII name does not survive utf-16le; read the field directly instead of going through build()'s name lookup.
     let mut body = Vec::new();
-    body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.pdf\"\r\nContent-Type: application/pdf\r\n\r\ndata\r\n");
     body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n");
     body.extend_from_slice(&[0x41, 0x00]);
     body.extend_from_slice(b"\r\n--B--\r\n");
-    let form = parse_body(&body, "multipart/form-data; boundary=B; charset=utf-16le")
-        .await
-        .unwrap();
-    let (_, fields) = build(&form).unwrap();
-    assert_eq!(fields.get("model"), Some(&Json::Text("A".to_owned())));
+    let form = parse_body(&body, "multipart/form-data; boundary=B; charset=utf-16le").unwrap();
+    let Some(FormField {
+        value: FormValue::Text(text),
+        ..
+    }) = form.first()
+    else {
+        panic!("expected a text field");
+    };
+    assert_eq!(text, "A");
 }
 
-#[tokio::test]
-async fn a_part_without_a_name_is_rejected() {
+#[test]
+fn a_part_without_a_name_is_rejected() {
     let body = b"--B\r\nContent-Disposition: form-data\r\n\r\nvalue\r\n--B--\r\n".to_vec();
-    parse_body(&body, "multipart/form-data; boundary=B")
-        .await
-        .unwrap_err();
+    parse_body(&body, "multipart/form-data; boundary=B").unwrap_err();
 }
 
-#[tokio::test]
-async fn a_text_part_over_one_mebibyte_is_rejected() {
+#[test]
+fn a_text_part_over_one_mebibyte_is_rejected() {
     let mut body = Vec::new();
     body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n");
     body.extend_from_slice(&vec![b'a'; 1024 * 1024 + 1]);
     body.extend_from_slice(b"\r\n--B--\r\n");
-    parse_body(&body, "multipart/form-data; boundary=B")
-        .await
-        .unwrap_err();
+    parse_body(&body, "multipart/form-data; boundary=B").unwrap_err();
 }
 
-#[tokio::test]
-async fn a_text_part_at_one_mebibyte_is_accepted() {
+#[test]
+fn a_text_part_at_one_mebibyte_is_accepted() {
     let mut body = Vec::new();
     body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n");
     body.extend_from_slice(&vec![b'a'; 1024 * 1024]);
     body.extend_from_slice(b"\r\n--B--\r\n");
-    parse_body(&body, "multipart/form-data; boundary=B")
-        .await
-        .unwrap();
+    parse_body(&body, "multipart/form-data; boundary=B").unwrap();
 }
 
 fn parts_body(boundary: &str, count: usize, filename: Option<&str>) -> Vec<u8> {
@@ -307,46 +297,36 @@ fn parts_body(boundary: &str, count: usize, filename: Option<&str>) -> Vec<u8> {
     body
 }
 
-#[tokio::test]
-async fn one_thousand_fields_are_accepted() {
+#[test]
+fn one_thousand_fields_are_accepted() {
     let body = parts_body("B", 1000, None);
-    parse_body(&body, "multipart/form-data; boundary=B")
-        .await
-        .unwrap();
+    parse_body(&body, "multipart/form-data; boundary=B").unwrap();
 }
 
-#[tokio::test]
-async fn one_thousand_and_one_fields_are_rejected() {
+#[test]
+fn one_thousand_and_one_fields_are_rejected() {
     let body = parts_body("B", 1001, None);
-    parse_body(&body, "multipart/form-data; boundary=B")
-        .await
-        .unwrap_err();
+    parse_body(&body, "multipart/form-data; boundary=B").unwrap_err();
 }
 
-#[tokio::test]
-async fn one_thousand_files_are_accepted() {
+#[test]
+fn one_thousand_files_are_accepted() {
     let body = parts_body("B", 1000, Some("a.bin"));
-    parse_body(&body, "multipart/form-data; boundary=B")
-        .await
-        .unwrap();
+    parse_body(&body, "multipart/form-data; boundary=B").unwrap();
 }
 
-#[tokio::test]
-async fn one_thousand_and_one_files_are_rejected() {
+#[test]
+fn one_thousand_and_one_files_are_rejected() {
     let body = parts_body("B", 1001, Some("a.bin"));
-    parse_body(&body, "multipart/form-data; boundary=B")
-        .await
-        .unwrap_err();
+    parse_body(&body, "multipart/form-data; boundary=B").unwrap_err();
 }
 
-#[tokio::test]
-async fn the_last_field_named_file_wins() {
+#[test]
+fn the_last_field_named_file_wins() {
     let mut body = Vec::new();
     body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"first.pdf\"\r\n\r\nfirst\r\n");
     body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"second.pdf\"\r\n\r\nsecond\r\n--B--\r\n");
-    let form = parse_body(&body, "multipart/form-data; boundary=B")
-        .await
-        .unwrap();
+    let form = parse_body(&body, "multipart/form-data; boundary=B").unwrap();
     let (document, _) = build(&form).unwrap();
     let Some(OcrDocument::Upload { bytes, .. }) = document else {
         panic!("expected an upload document");
@@ -354,16 +334,14 @@ async fn the_last_field_named_file_wins() {
     assert_eq!(bytes, b"second");
 }
 
-#[tokio::test]
-async fn a_text_part_followed_by_an_upload_part_both_named_file_uses_the_upload() {
+#[test]
+fn a_text_part_followed_by_an_upload_part_both_named_file_uses_the_upload() {
     let mut body = Vec::new();
     body.extend_from_slice(
         b"--B\r\nContent-Disposition: form-data; name=\"file\"\r\n\r\nnot a file\r\n",
     );
     body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.pdf\"\r\n\r\ndata\r\n--B--\r\n");
-    let form = parse_body(&body, "multipart/form-data; boundary=B")
-        .await
-        .unwrap();
+    let form = parse_body(&body, "multipart/form-data; boundary=B").unwrap();
     let (document, _) = build(&form).unwrap();
     let Some(OcrDocument::Upload { bytes, .. }) = document else {
         panic!("expected an upload document");
@@ -371,12 +349,10 @@ async fn a_text_part_followed_by_an_upload_part_both_named_file_uses_the_upload(
     assert_eq!(bytes, b"data");
 }
 
-#[tokio::test]
-async fn json_field_is_decoded() {
+#[test]
+fn json_field_is_decoded() {
     let body = multipart_body("B", b"data", Some(("pages", "[0,1,2]")));
-    let form = parse_body(&body, "multipart/form-data; boundary=B")
-        .await
-        .unwrap();
+    let form = parse_body(&body, "multipart/form-data; boundary=B").unwrap();
     let (_, fields) = build(&form).unwrap();
     assert_eq!(
         fields.get("pages"),
@@ -386,4 +362,53 @@ async fn json_field_is_decoded() {
             Json::Number(serde_json::Number::from(2_i64)),
         ]))
     );
+}
+
+#[test]
+fn non_utf8_filename_falls_back_to_latin1() {
+    // multipart-rs's own reader would reject this whole request as non-UTF-8; Starlette decodes a filename with the same charset-then-latin-1-fallback logic it uses for part bodies.
+    let mut body = Vec::new();
+    body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"");
+    body.extend_from_slice(&[0xE9]);
+    body.extend_from_slice(b".pdf\"\r\n\r\ndata\r\n--B--\r\n");
+    let form = parse_body(&body, "multipart/form-data; boundary=B").unwrap();
+    let (document, _) = build(&form).unwrap();
+    let Some(OcrDocument::Upload { filename, .. }) = document else {
+        panic!("expected an upload document");
+    };
+    assert_eq!(filename, Some("\u{e9}.pdf".to_owned()));
+}
+
+#[test]
+fn non_utf8_field_name_falls_back_to_latin1() {
+    let mut body = Vec::new();
+    body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.pdf\"\r\nContent-Type: application/pdf\r\n\r\ndata\r\n");
+    body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"");
+    body.extend_from_slice(&[0xE9]);
+    body.extend_from_slice(b"\"\r\n\r\nvalue\r\n--B--\r\n");
+    let form = parse_body(&body, "multipart/form-data; boundary=B").unwrap();
+    let (_, fields) = build(&form).unwrap();
+    assert_eq!(fields.get("\u{e9}"), Some(&Json::Text("value".to_owned())));
+}
+
+#[test]
+fn windows_path_filename_keeps_only_the_last_segment() {
+    let body = b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"C:\\Users\\a\\scan.pdf\"\r\n\r\ndata\r\n--B--\r\n".to_vec();
+    let form = parse_body(&body, "multipart/form-data; boundary=B").unwrap();
+    let (document, _) = build(&form).unwrap();
+    let Some(OcrDocument::Upload { filename, .. }) = document else {
+        panic!("expected an upload document");
+    };
+    assert_eq!(filename, Some("scan.pdf".to_owned()));
+}
+
+#[test]
+fn escaped_quote_in_filename_is_unescaped() {
+    let body = b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a\\\"b.pdf\"\r\n\r\ndata\r\n--B--\r\n".to_vec();
+    let form = parse_body(&body, "multipart/form-data; boundary=B").unwrap();
+    let (document, _) = build(&form).unwrap();
+    let Some(OcrDocument::Upload { filename, .. }) = document else {
+        panic!("expected an upload document");
+    };
+    assert_eq!(filename, Some("a\"b.pdf".to_owned()));
 }
