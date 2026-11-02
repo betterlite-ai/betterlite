@@ -1,15 +1,19 @@
 use std::collections::BTreeMap;
 
-use crate::error::details::{ApiDetails, RateLimitDetails, TimeoutDetails, TimeoutStatus};
+use crate::error::details::{
+    ApiDetails, RateLimitDetails, ResponseDetails, TimeoutDetails, TimeoutStatus,
+};
 use crate::error::{ErrorClass, ErrorContext};
-use crate::facts::{ExceptionCheckers, ProviderErrorFacts, bounded_text};
+use crate::facts::{ProviderErrorFacts, bounded_text};
 use crate::parse::get_error_message;
 use crate::rate_limit::RateLimitCategory;
 
 pub mod body;
 mod tests;
 
-use body::{AzureErrorBody, azure_error_code, content_policy_fields, typed_body};
+use body::{
+    AzureErrorBody, azure_error_code, content_policy_context, is_content_policy, typed_body,
+};
 
 // mirrors the _map_azure_exception kwargs read by its branch predicates and raised exceptions
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -75,55 +79,63 @@ fn azure_context(
     }
 }
 
-type ErrorClassBuilder = fn(Box<ErrorContext>) -> ErrorClass;
 type TextPredicate = fn(&str) -> bool;
 
-// predicate to test error_str against, the label to show in the rendered message, and the variant it maps to
-const TEXT_CANDIDATES: [(TextPredicate, &str, ErrorClassBuilder); 3] = [
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TextFamily {
+    InternalServer,
+    ContextWindowExceeded,
+    NotFound,
+}
+
+// predicate to test error_str against, the label to show in the rendered message, and the family it maps to
+const TEXT_CANDIDATES: [(TextPredicate, &str, TextFamily); 3] = [
     (
         |error_str| error_str.contains("Internal server error"),
         "Internal server error",
-        ErrorClass::InternalServer,
+        TextFamily::InternalServer,
     ),
     (
         |error_str| error_str.contains("This model's maximum context length is"),
         "ContextWindowExceededError",
-        ErrorClass::ContextWindowExceeded,
+        TextFamily::ContextWindowExceeded,
     ),
     (
         |error_str| error_str.contains("DeploymentNotFound"),
         "NotFoundError",
-        ErrorClass::NotFound,
+        TextFamily::NotFound,
     ),
 ];
 
+// _map_azure_exception passes a response on both the context-window and DeploymentNotFound branches
 fn text_classification(input: &AzureExceptionInput, message: &str) -> Option<ErrorClass> {
     let found = TEXT_CANDIDATES
         .into_iter()
         .find(|(matches, ..)| matches(&input.error_str));
-    found.map(|(_, label, build)| {
+    found.map(|(_, label, family)| {
         let text = format!("AzureException {label} - {message}");
         let context = azure_context(input, "azure", text, NO_BODY);
-        build(Box::new(context))
+        match family {
+            TextFamily::InternalServer => ErrorClass::InternalServer(Box::new(context)),
+            TextFamily::ContextWindowExceeded => ErrorClass::ContextWindowExceeded(Box::new(
+                ResponseDetails::with_status(context, input.status_code),
+            )),
+            TextFamily::NotFound => ErrorClass::NotFound(Box::new(ResponseDetails::with_status(
+                context,
+                input.status_code,
+            ))),
+        }
     })
 }
 
 fn content_policy_classification(input: &AzureExceptionInput, message: &str) -> Option<ErrorClass> {
-    let matched = azure_error_code(input.body.as_ref()).as_deref()
-        == Some("content_policy_violation")
-        || ExceptionCheckers::azure_policy(&input.error_str);
-    if !matched {
+    if !is_content_policy(input) {
         return None;
     }
-    let (error_type, error_code) = content_policy_fields(input.body.as_ref());
-    let text = format!("litellm.BadRequestError: litellm.ContentPolicyViolationError: {message}");
-    let body = (
-        Some(error_type.unwrap_or_else(|| "invalid_request_error".to_owned())),
-        None,
-        Some(error_code.unwrap_or_else(|| "content_policy_violation".to_owned())),
-    );
-    let context = azure_context(input, "azure", text, body);
-    Some(ErrorClass::ContentPolicyViolation(Box::new(context)))
+    let context = content_policy_context(input, message);
+    Some(ErrorClass::ContentPolicyViolation(Box::new(
+        ResponseDetails::with_status(context, input.status_code),
+    )))
 }
 
 fn encrypted_or_invalid_request(input: &AzureExceptionInput, message: &str) -> Option<ErrorClass> {
@@ -139,17 +151,23 @@ fn encrypted_or_invalid_request(input: &AzureExceptionInput, message: &str) -> O
         let text = format!(
             "AzureException - {message}\n\nEncrypted content affinity is required across deployments."
         );
-        return Some(ErrorClass::BadRequest(Box::new(azure_context(
-            input, "azure", text, body,
-        ))));
+        return Some(ErrorClass::BadRequest(Box::new(
+            ResponseDetails::with_status(
+                azure_context(input, "azure", text, body),
+                input.status_code,
+            ),
+        )));
     }
     let is_invalid_request = input.error_str.contains("invalid_request_error")
         && matches!(input.status_code, None | Some(400));
     if is_invalid_request {
         let text = format!("AzureException BadRequestError - {message}");
-        return Some(ErrorClass::BadRequest(Box::new(azure_context(
-            input, "azure", text, body,
-        ))));
+        return Some(ErrorClass::BadRequest(Box::new(
+            ResponseDetails::with_status(
+                azure_context(input, "azure", text, body),
+                input.status_code,
+            ),
+        )));
     }
     None
 }
@@ -165,7 +183,9 @@ fn credential_or_connection(input: &AzureExceptionInput, message: &str) -> Optio
             input.exception_provider
         );
         let context = azure_context(input, &provider, text, NO_BODY);
-        return Some(ErrorClass::Authentication(Box::new(context)));
+        return Some(ErrorClass::Authentication(Box::new(
+            ResponseDetails::with_status(context, input.status_code),
+        )));
     }
     if input.error_str.contains("Connection error") {
         let text = format!(
@@ -178,47 +198,46 @@ fn credential_or_connection(input: &AzureExceptionInput, message: &str) -> Optio
     None
 }
 
+const STATUS_LABELS: &[(u16, &str)] = &[
+    (401, "AuthenticationError"),
+    (404, "NotFoundError"),
+    (408, "Timeout"),
+    (422, "BadRequestError"),
+    (429, "RateLimitError"),
+    (502, "BadGatewayError"),
+    (503, "ServiceUnavailableError"),
+    (504, "Timeout"),
+];
+
 fn status_text(
     input: &AzureExceptionInput,
     status: Option<u16>,
     message: &str,
 ) -> (String, BodyFields) {
-    match status {
-        None => (
-            format!(
-                "{} APIConnectionError - {message}",
-                input.exception_provider
-            ),
-            (None, None, None),
-        ),
-        Some(400) => {
-            let fields = input.body.as_ref();
-            (
-                format!("AzureException - {message}"),
-                (
-                    fields.and_then(|body| body.kind.clone()),
-                    fields.and_then(|body| body.param.clone()),
-                    fields.and_then(|body| body.code.clone()),
-                ),
-            )
-        }
-        Some(other) => {
-            let label = match other {
-                401 => "AuthenticationError",
-                404 => "NotFoundError",
-                408 | 504 => "Timeout",
-                422 => "BadRequestError",
-                429 => "RateLimitError",
-                502 => "BadGatewayError",
-                503 => "ServiceUnavailableError",
-                _ => "APIError",
-            };
-            (
-                format!("AzureException {label} - {message}"),
-                (None, None, None),
-            )
-        }
+    let Some(code) = status else {
+        let text = format!(
+            "{} APIConnectionError - {message}",
+            input.exception_provider
+        );
+        return (text, (None, None, None));
+    };
+    if code == 400 {
+        let fields = input.body.as_ref();
+        let body = (
+            fields.and_then(|body| body.kind.clone()),
+            fields.and_then(|body| body.param.clone()),
+            fields.and_then(|body| body.code.clone()),
+        );
+        return (format!("AzureException - {message}"), body);
     }
+    let label = STATUS_LABELS
+        .iter()
+        .find(|(known, _)| *known == code)
+        .map_or("APIError", |(_, label)| *label);
+    (
+        format!("AzureException {label} - {message}"),
+        (None, None, None),
+    )
 }
 
 fn status_classification(input: &AzureExceptionInput, message: &str) -> ErrorClass {
@@ -227,9 +246,15 @@ fn status_classification(input: &AzureExceptionInput, message: &str) -> ErrorCla
     let context = azure_context(input, "azure", text, body);
     match status {
         None => ErrorClass::ApiConnection(Box::new(context)),
-        Some(400 | 422) => ErrorClass::BadRequest(Box::new(context)),
-        Some(401) => ErrorClass::Authentication(Box::new(context)),
-        Some(404) => ErrorClass::NotFound(Box::new(context)),
+        Some(code @ (400 | 422)) => {
+            ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(context, Some(code))))
+        }
+        Some(code @ 401) => {
+            ErrorClass::Authentication(Box::new(ResponseDetails::with_status(context, Some(code))))
+        }
+        Some(code @ 404) => {
+            ErrorClass::NotFound(Box::new(ResponseDetails::with_status(context, Some(code))))
+        }
         Some(408) => ErrorClass::Timeout(Box::new(TimeoutDetails {
             context,
             original_status: TimeoutStatus(408),

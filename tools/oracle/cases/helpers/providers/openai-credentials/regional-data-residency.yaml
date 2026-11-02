@@ -1,0 +1,5 @@
+kind: helper
+name: regional-data-residency
+call: {openai_credentials: {regional_data_residency: {custom_llm_provider: openai, api_base: 'https://EU.API.OPENAI.COM:8443/v1'}}}
+env: {}
+compare: {ignore: []}

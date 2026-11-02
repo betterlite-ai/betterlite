@@ -12,10 +12,12 @@ def run(input_value: dict[str, Json]) -> Json:
     stored_content = base64.b64decode(input_value["stored_content"])
     archive = build_skill_archive(stored_content)
     if archive is None:
-        return None
+        return {"archive": None}
     return {
-        "content": base64.b64encode(archive.content).decode("ascii"),
-        "digest": archive.digest,
-        "declared_name": archive.declared_name,
-        "declared_description": archive.declared_description,
+        "archive": {
+            "content": base64.b64encode(archive.content).decode("ascii"),
+            "digest": archive.digest,
+            "declared_name": archive.declared_name,
+            "declared_description": archive.declared_description,
+        }
     }

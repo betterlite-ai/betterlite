@@ -1,0 +1,23 @@
+kind: helper
+name: inspect-mcp-response-sends-request
+call:
+  b3762:
+    inspect_mcp_response:
+      settings:
+        api_key: test-key
+        api_base: "https://cisco.test"
+        inspection_type: mcp
+        on_flagged_action: block
+        fallback_on_error: block
+        timeout: 5
+      request_data: {}
+      response:
+        jsonrpc: "2.0"
+        id: 1
+        result:
+          content:
+            - {type: text, text: "42 degrees"}
+      answer: {status: 200, headers: {}, body: {is_safe: true}}
+env: {}
+compare:
+  ignore: []

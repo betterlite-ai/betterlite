@@ -1,0 +1,9 @@
+kind: helper
+name: cache-settings-secrets-reusable-null-saved-field
+call:
+  b4306:
+    function: reusable
+    incoming: {host: "a", port: 6379, password: "***REDACTED***"}
+    saved: {host: "a", port: null, password: "s"}
+env: {}
+compare: {ignore: []}

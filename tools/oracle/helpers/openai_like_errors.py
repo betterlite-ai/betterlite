@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 from typing import Protocol, TypeAlias, TypedDict, Unpack, cast
 
+import httpx
 import openai
 from litellm.litellm_core_utils import exception_mapping_utils as mapping
 
@@ -51,6 +52,32 @@ def _context(model: str | None, provider: str) -> dict[str, JsonValue]:
     }
 
 
+def _result_for_family(
+    family: str, context: dict[str, JsonValue], error: openai.APIError
+) -> JsonValue:
+    if family == "rate_limit":
+        return {
+            "family": family,
+            "context": context,
+            "category": "vendor_rate_limit",
+            "dimension": None,
+            "headers": {},
+        }
+    if family == "timeout":
+        mapped = cast(MappedError, error)
+        return {"family": family, "context": context, "original_status": mapped.status_code}
+    if family in {
+        "authentication",
+        "context_window_exceeded",
+        "bad_request",
+        "permission_denied",
+        "not_found",
+    }:
+        mapped = cast(MappedError, error)
+        return {"family": family, **context, "status": mapped.status_code}
+    return {"family": family, **context}
+
+
 def run(argument: JsonValue) -> JsonValue:
     if not isinstance(argument, dict):
         raise ValueError("openai-like errors input must be an object")
@@ -68,6 +95,11 @@ def run(argument: JsonValue) -> JsonValue:
         raise ValueError("status_code must be an integer or null")
 
     cause = SimpleNamespace(status_code=status_code, message=error_str)
+    if status_code is not None:
+        cause.response = httpx.Response(
+            status_code=status_code,
+            request=httpx.Request(method="POST", url="https://docs.litellm.ai/docs"),
+        )
     call = cast(Mapper, mapping._map_openai_like_exception)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
     try:
         call(
@@ -81,20 +113,6 @@ def run(argument: JsonValue) -> JsonValue:
         )
     except openai.APIError as error:
         family = _FAMILIES[type(error).__name__]
-        context = _context(model, provider)
-        result: JsonValue
-        if family == "rate_limit":
-            result = {
-                "family": family,
-                "context": context,
-                "category": "vendor_rate_limit",
-                "dimension": None,
-                "headers": {},
-            }
-        elif family == "timeout":
-            mapped = cast(MappedError, error)
-            result = {"family": family, "context": context, "original_status": mapped.status_code}
-        else:
-            result = {"family": family, **context}
+        result = _result_for_family(family, _context(model, provider), error)
         return {"result": result}
     return {"result": None}

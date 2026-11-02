@@ -1,0 +1,9 @@
+kind: helper
+name: cache-settings-secrets-reusable-url-redacted
+call:
+  b4306:
+    function: reusable
+    incoming: {url: "***REDACTED***"}
+    saved: {url: "redis://host"}
+env: {}
+compare: {ignore: []}
