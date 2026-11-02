@@ -152,8 +152,10 @@ pub(super) fn matches_float_literal_grammar(text: &str) -> bool {
         None => (body, None),
     };
     is_decimal_mantissa(mantissa)
-        && exponent.is_none_or(|text| {
-            let digits = text.strip_prefix(['+', '-']).unwrap_or(text);
+        && exponent.is_none_or(|exponent_text| {
+            let digits = exponent_text
+                .strip_prefix(['+', '-'])
+                .unwrap_or(exponent_text);
             is_underscored_digits(digits)
         })
 }

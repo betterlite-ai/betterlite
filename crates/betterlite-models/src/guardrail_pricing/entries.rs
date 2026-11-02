@@ -120,7 +120,7 @@ fn billable_entry_cost(entry: &GuardrailCostEntry) -> Decimal {
 fn validated_entry_cost(raw: &GuardrailInformationEntry) -> Result<Decimal, GuardrailPricingError> {
     let parsed = parse_validated_field(raw, "guardrail cost", parse_scalar_cost_field)?;
     let entry = parsed.map(|(cost, in_spend)| GuardrailCostEntry { cost, in_spend });
-    Ok(entry.map_or(Decimal::ZERO, |parsed| billable_entry_cost(&parsed)))
+    Ok(entry.map_or(Decimal::ZERO, |cost_entry| billable_entry_cost(&cost_entry)))
 }
 
 pub fn guardrail_information_cost(
