@@ -80,16 +80,6 @@ fn output_message_item_dump(fields: &IndexMap<String, Json>) -> Option<Json> {
     Some(Json::Object(ordered))
 }
 
-// openai.types.responses.ResponseFunctionToolCall.model_dump() field order (arguments, call_id, name, type, id, caller, namespace, status); arguments, call_id and name have no default, so an item missing any of them isn't a valid ResponseFunctionToolCall.
-fn output_function_call_dump(fields: &IndexMap<String, Json>) -> Option<Json> {
-    required_then_typed(
-        fields,
-        &["arguments", "call_id", "name"],
-        "function_call",
-        &["id", "caller", "namespace", "status"],
-    )
-}
-
 // openai.types.responses.ResponseReasoningItem.model_dump() field order (id, summary, type, content, encrypted_content, status); id and summary have no default, so an item missing either isn't a valid ResponseReasoningItem. Each summary entry is a Summary (text, type), with text required.
 fn output_reasoning_item_dump(fields: &IndexMap<String, Json>) -> Option<Json> {
     let id = fields.get("id")?.clone();
@@ -115,7 +105,13 @@ pub(super) fn output_item_dump(item: &Json) -> Json {
     };
     let projected = match fields.get("type") {
         Some(Json::Text(kind)) if kind == "message" => output_message_item_dump(fields),
-        Some(Json::Text(kind)) if kind == "function_call" => output_function_call_dump(fields),
+        // openai.types.responses.ResponseFunctionToolCall.model_dump() field order (arguments, call_id, name, type, id, caller, namespace, status); arguments, call_id and name have no default, so an item missing any of them isn't a valid ResponseFunctionToolCall.
+        Some(Json::Text(kind)) if kind == "function_call" => required_then_typed(
+            fields,
+            &["arguments", "call_id", "name"],
+            "function_call",
+            &["id", "caller", "namespace", "status"],
+        ),
         Some(Json::Text(kind)) if kind == "reasoning" => output_reasoning_item_dump(fields),
         _ => None,
     };
