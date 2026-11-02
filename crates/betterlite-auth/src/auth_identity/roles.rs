@@ -45,36 +45,22 @@ pub enum TeamRole {
     Member,
 }
 
-const LEGACY_USER_ROLES: [(&str, UserRole); 6] = [
-    ("proxy_admin", UserRole::ProxyAdmin),
-    ("proxy_admin_viewer", UserRole::ProxyAdminViewer),
-    ("org_admin", UserRole::OrgAdmin),
-    ("internal_user_viewer", UserRole::InternalUserViewer),
-    ("team", UserRole::Team),
-    ("customer", UserRole::Customer),
-];
-
 #[must_use]
 pub fn effective_user_role(role: Option<&str>) -> UserRole {
-    for (value, user_role) in LEGACY_USER_ROLES {
-        if role == Some(value) {
-            return user_role;
-        }
-    }
-    UserRole::InternalUser
+    role.and_then(|value| value.parse().ok())
+        .unwrap_or(UserRole::InternalUser)
 }
 
 #[must_use]
 pub fn map_role(role: Option<&str>) -> Option<Role> {
-    let user_role = effective_user_role(role);
-    if user_role == UserRole::ProxyAdmin {
-        Some(Role::PlatformAdmin)
-    } else if user_role == UserRole::ProxyAdminViewer {
-        Some(Role::PlatformViewer)
-    } else if user_role == UserRole::OrgAdmin {
-        Some(Role::OrgAdmin)
-    } else {
-        None
+    match effective_user_role(role) {
+        UserRole::ProxyAdmin => Some(Role::PlatformAdmin),
+        UserRole::ProxyAdminViewer => Some(Role::PlatformViewer),
+        UserRole::OrgAdmin => Some(Role::OrgAdmin),
+        UserRole::InternalUser
+        | UserRole::InternalUserViewer
+        | UserRole::Team
+        | UserRole::Customer => None,
     }
 }
 
