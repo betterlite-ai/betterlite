@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use serde::de::DeserializeOwned;
+
 use crate::error::{ProviderError, ProviderErrorParts};
 use crate::evals::transformation::{BaseEvalsAPIConfig, EvalsHttpResponse, EvalsRequestContext};
 use crate::evals::types::{
@@ -8,6 +10,48 @@ use crate::evals::types::{
     Run, RunDeleteResponse, RunStatus, UpdateEvalRequest,
 };
 use crate::openai_base_config::{Headers, Object};
+
+macro_rules! object_echo_request {
+    ($($name:ident($($arg:ident: $ty:ty),*);)+) => {
+        $(
+            fn $name(
+                &self,
+                $($arg: $ty,)*
+                _context: &EvalsRequestContext<'_>,
+            ) -> Result<(String, Object), Self::Error> {
+                Ok(echo_object())
+            }
+        )+
+    };
+}
+
+macro_rules! headers_echo_request {
+    ($($name:ident($($arg:ident: $ty:ty),*);)+) => {
+        $(
+            fn $name(
+                &self,
+                $($arg: $ty,)*
+                context: &EvalsRequestContext<'_>,
+            ) -> Result<(String, Headers), Self::Error> {
+                Ok(echo_headers(context))
+            }
+        )+
+    };
+}
+
+macro_rules! headers_object_echo_request {
+    ($($name:ident($($arg:ident: $ty:ty),*);)+) => {
+        $(
+            fn $name(
+                &self,
+                $($arg: $ty,)*
+                context: &EvalsRequestContext<'_>,
+            ) -> Result<(String, Headers, Object), Self::Error> {
+                Ok(echo_headers_and_object(context))
+            }
+        )+
+    };
+}
 
 struct NoOpEvalsConfig;
 
@@ -43,171 +87,138 @@ impl BaseEvalsAPIConfig for NoOpEvalsConfig {
         &self,
         raw_response: &EvalsHttpResponse<'_>,
     ) -> Result<Eval, Self::Error> {
-        serde_json::from_str(raw_response.text).map_err(|source| parse_error(&source))
+        parse_response(raw_response)
     }
 
-    fn transform_list_evals_request(
-        &self,
-        _list_params: &ListEvalsParams,
-        _context: &EvalsRequestContext<'_>,
-    ) -> Result<(String, Object), Self::Error> {
-        Ok((String::new(), Object::new()))
+    object_echo_request! {
+        transform_list_evals_request(_list_params: &ListEvalsParams);
     }
 
     fn transform_list_evals_response(
         &self,
         raw_response: &EvalsHttpResponse<'_>,
     ) -> Result<ListEvalsResponse, Self::Error> {
-        serde_json::from_str(raw_response.text).map_err(|source| parse_error(&source))
+        parse_response(raw_response)
     }
 
-    fn transform_get_eval_request(
-        &self,
-        _eval_id: &str,
-        _api_base: &str,
-        context: &EvalsRequestContext<'_>,
-    ) -> Result<(String, Headers), Self::Error> {
-        Ok((String::new(), context.headers.clone()))
+    headers_echo_request! {
+        transform_get_eval_request(_eval_id: &str, _api_base: &str);
     }
 
     fn transform_get_eval_response(
         &self,
         raw_response: &EvalsHttpResponse<'_>,
     ) -> Result<Eval, Self::Error> {
-        serde_json::from_str(raw_response.text).map_err(|source| parse_error(&source))
+        parse_response(raw_response)
     }
 
-    fn transform_update_eval_request(
-        &self,
-        _eval_id: &str,
-        _update_request: &UpdateEvalRequest,
-        _api_base: &str,
-        context: &EvalsRequestContext<'_>,
-    ) -> Result<(String, Headers, Object), Self::Error> {
-        Ok((String::new(), context.headers.clone(), Object::new()))
+    headers_object_echo_request! {
+        transform_update_eval_request(_eval_id: &str, _update_request: &UpdateEvalRequest, _api_base: &str);
     }
 
     fn transform_update_eval_response(
         &self,
         raw_response: &EvalsHttpResponse<'_>,
     ) -> Result<Eval, Self::Error> {
-        serde_json::from_str(raw_response.text).map_err(|source| parse_error(&source))
+        parse_response(raw_response)
     }
 
-    fn transform_delete_eval_request(
-        &self,
-        _eval_id: &str,
-        _api_base: &str,
-        context: &EvalsRequestContext<'_>,
-    ) -> Result<(String, Headers), Self::Error> {
-        Ok((String::new(), context.headers.clone()))
+    headers_echo_request! {
+        transform_delete_eval_request(_eval_id: &str, _api_base: &str);
     }
 
     fn transform_delete_eval_response(
         &self,
         raw_response: &EvalsHttpResponse<'_>,
     ) -> Result<DeleteEvalResponse, Self::Error> {
-        serde_json::from_str(raw_response.text).map_err(|source| parse_error(&source))
+        parse_response(raw_response)
     }
 
-    fn transform_cancel_eval_request(
-        &self,
-        _eval_id: &str,
-        _api_base: &str,
-        context: &EvalsRequestContext<'_>,
-    ) -> Result<(String, Headers, Object), Self::Error> {
-        Ok((String::new(), context.headers.clone(), Object::new()))
+    headers_object_echo_request! {
+        transform_cancel_eval_request(_eval_id: &str, _api_base: &str);
     }
 
     fn transform_cancel_eval_response(
         &self,
         raw_response: &EvalsHttpResponse<'_>,
     ) -> Result<CancelEvalResponse, Self::Error> {
-        serde_json::from_str(raw_response.text).map_err(|source| parse_error(&source))
+        parse_response(raw_response)
     }
 
-    fn transform_create_run_request(
-        &self,
-        _eval_id: &str,
-        _create_request: &CreateRunRequest,
-        _context: &EvalsRequestContext<'_>,
-    ) -> Result<(String, Object), Self::Error> {
-        Ok((String::new(), Object::new()))
+    object_echo_request! {
+        transform_create_run_request(_eval_id: &str, _create_request: &CreateRunRequest);
     }
 
     fn transform_create_run_response(
         &self,
         raw_response: &EvalsHttpResponse<'_>,
     ) -> Result<Run, Self::Error> {
-        serde_json::from_str(raw_response.text).map_err(|source| parse_error(&source))
+        parse_response(raw_response)
     }
 
-    fn transform_list_runs_request(
-        &self,
-        _eval_id: &str,
-        _list_params: &ListRunsParams,
-        _context: &EvalsRequestContext<'_>,
-    ) -> Result<(String, Object), Self::Error> {
-        Ok((String::new(), Object::new()))
+    object_echo_request! {
+        transform_list_runs_request(_eval_id: &str, _list_params: &ListRunsParams);
     }
 
     fn transform_list_runs_response(
         &self,
         raw_response: &EvalsHttpResponse<'_>,
     ) -> Result<ListRunsResponse, Self::Error> {
-        serde_json::from_str(raw_response.text).map_err(|source| parse_error(&source))
+        parse_response(raw_response)
     }
 
-    fn transform_get_run_request(
-        &self,
-        _eval_id: &str,
-        _run_id: &str,
-        _api_base: &str,
-        context: &EvalsRequestContext<'_>,
-    ) -> Result<(String, Headers), Self::Error> {
-        Ok((String::new(), context.headers.clone()))
+    headers_echo_request! {
+        transform_get_run_request(_eval_id: &str, _run_id: &str, _api_base: &str);
     }
 
     fn transform_get_run_response(
         &self,
         raw_response: &EvalsHttpResponse<'_>,
     ) -> Result<Run, Self::Error> {
-        serde_json::from_str(raw_response.text).map_err(|source| parse_error(&source))
+        parse_response(raw_response)
     }
 
-    fn transform_cancel_run_request(
-        &self,
-        _eval_id: &str,
-        _run_id: &str,
-        _api_base: &str,
-        context: &EvalsRequestContext<'_>,
-    ) -> Result<(String, Headers, Object), Self::Error> {
-        Ok((String::new(), context.headers.clone(), Object::new()))
+    headers_object_echo_request! {
+        transform_cancel_run_request(_eval_id: &str, _run_id: &str, _api_base: &str);
     }
 
     fn transform_cancel_run_response(
         &self,
         raw_response: &EvalsHttpResponse<'_>,
     ) -> Result<CancelRunResponse, Self::Error> {
-        serde_json::from_str(raw_response.text).map_err(|source| parse_error(&source))
+        parse_response(raw_response)
     }
 
-    fn transform_delete_run_request(
-        &self,
-        _eval_id: &str,
-        _run_id: &str,
-        _api_base: &str,
-        context: &EvalsRequestContext<'_>,
-    ) -> Result<(String, Headers, Object), Self::Error> {
-        Ok((String::new(), context.headers.clone(), Object::new()))
+    headers_object_echo_request! {
+        transform_delete_run_request(_eval_id: &str, _run_id: &str, _api_base: &str);
     }
 
     fn transform_delete_run_response(
         &self,
         raw_response: &EvalsHttpResponse<'_>,
     ) -> Result<RunDeleteResponse, Self::Error> {
-        serde_json::from_str(raw_response.text).map_err(|source| parse_error(&source))
+        parse_response(raw_response)
     }
+}
+
+fn echo_object() -> (String, Object) {
+    (String::new(), Object::new())
+}
+
+fn echo_headers(context: &EvalsRequestContext<'_>) -> (String, Headers) {
+    (String::new(), context.headers.clone())
+}
+
+fn echo_headers_and_object(context: &EvalsRequestContext<'_>) -> (String, Headers, Object) {
+    (String::new(), context.headers.clone(), Object::new())
+}
+
+fn parse_response<T, E>(raw_response: &EvalsHttpResponse<'_>) -> Result<T, E>
+where
+    T: DeserializeOwned,
+    E: From<ProviderError>,
+{
+    serde_json::from_str(raw_response.text).map_err(|source| E::from(parse_error(&source)))
 }
 
 fn parse_error(source: &serde_json::Error) -> ProviderError {
