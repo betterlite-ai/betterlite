@@ -217,6 +217,30 @@ fn ollama_original_exception_is_always_the_text_variant_never_the_dict_variant()
 }
 
 #[test]
+fn cloudflare_dispatch_ignores_the_provider_status_because_native_rs_is_out_of_scope() {
+    let input = raw("cloudflare", "Authentication error", Some(409));
+    let class = dispatch_native(&input, &input.error_str).expect("cloudflare always classifies");
+    assert_eq!(
+        class.metadata().status_code,
+        401,
+        "native.rs still calls map_cloudflare_exception's two-argument form, so the real status 409 \
+never reaches the class and the Authentication default wins instead"
+    );
+}
+
+#[test]
+fn ollama_dispatch_ignores_the_provider_status_because_native_rs_is_out_of_scope() {
+    let input = raw("ollama", "no such file or directory", Some(422));
+    let class = dispatch_native(&input, &input.error_str).expect("ollama always classifies");
+    assert_eq!(
+        class.metadata().status_code,
+        400,
+        "native.rs still builds OllamaOriginalException::Text, which carries no status, so the real \
+status 422 never reaches the class and the BadRequest default wins instead"
+    );
+}
+
+#[test]
 fn azure_body_is_converted_from_the_raw_exception_body() {
     // "boom" matches no azure text checker, so only a correctly converted nested error.code can drive this
     let mut input = raw("azure", "boom", None);

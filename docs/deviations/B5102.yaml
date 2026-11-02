@@ -30,4 +30,4 @@ deviations:
       crate building and lets the new tests and oracle cases exercise the real mapper logic, but it leaves the
       production gap open until native.rs is back in scope, which B5095's planned move onto dispatch.rs will need
       to close for both providers.
-    link: ""
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1366-L1387
