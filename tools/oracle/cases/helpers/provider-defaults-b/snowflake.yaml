@@ -1,0 +1,10 @@
+kind: helper
+name: provider-defaults-b-snowflake
+call:
+  provider_defaults_b:
+    provider: snowflake
+    model: snowflake-model
+    environment:
+      SNOWFLAKE_JWT: env-snowflake-jwt
+env: {}
+compare: {ignore: []}

@@ -21,7 +21,8 @@ pub(crate) mod browser_flow_group;
 pub(crate) mod compare_cases;
 mod config;
 mod fixtures;
-mod native_feature_eligibility;
+pub(crate) mod native_feature_eligibility;
+mod scenario;
 
 #[derive(Debug, clap::Parser)]
 pub(crate) struct DatabaseEnvironment {
@@ -37,6 +38,7 @@ pub(crate) fn run_cases(
         return Err(OracleError::MissingCapture(0));
     }
     let mut groups = BTreeMap::<String, Vec<Case>>::new();
+    let mut scenarios = Vec::new();
     let mut helper_outcome = helpers::HelperRun::Match;
     for loaded_case in cases {
         match loaded_case {
@@ -47,6 +49,7 @@ pub(crate) fn run_cases(
                 );
                 groups.entry(group_key).or_default().push(http_case);
             }
+            LoadedCase::Scenario(scenario_case) => scenarios.push(scenario_case),
             LoadedCase::Helper(helper_case) => {
                 let result = helpers::run_case(&helper_case, options.self_check)?;
                 if matches!(result, helpers::HelperRun::Difference) {
@@ -59,6 +62,10 @@ pub(crate) fn run_cases(
     let mut outcomes = Vec::new();
     for (_, group) in groups {
         outcomes.extend(run_group(options, &root, &group)?);
+    }
+    // Each scenario is its own gateway pair, never batched with other scenarios or Http cases.
+    for scenario_case in &scenarios {
+        outcomes.push(scenario::run_scenario_case(options, &root, scenario_case)?);
     }
     if matches!(helper_outcome, helpers::HelperRun::Difference) {
         return Ok(exit_status(true));
@@ -109,9 +116,17 @@ pub(crate) fn run_group_with_url(
         fixtures: &fixtures,
         mock,
     });
+    with_fixture_cleanup(fixtures, operation_result)
+}
+
+// Shared by both pipelines: provision a fixture, run once, then close it regardless of the outcome.
+fn with_fixture_cleanup<T>(
+    fixtures: fixtures::FixtureGuard,
+    operation_result: Result<T, OracleError>,
+) -> Result<T, OracleError> {
     let cleanup_result = fixtures.close();
     match (operation_result, cleanup_result) {
-        (Ok(outcomes), Ok(())) => Ok(outcomes),
+        (Ok(value), Ok(())) => Ok(value),
         (Err(error), Ok(())) => Err(error),
         (Ok(_), Err(cleanup_error)) => Err(OracleError::DatabaseCleanup(cleanup_error)),
         (Err(error), Err(cleanup_error)) => Err(OracleError::OperationCleanup {
@@ -161,24 +176,34 @@ fn run_group_capture(input: GroupCaptureInput<'_>) -> Result<Vec<bool>, OracleEr
         case_env: &second_case_env,
     };
     let client = http::client()?;
-    let captures = capture_gateways(&first_input, &second_input, cases, &client, mock)?;
+    let captures = capture_gateways(
+        &first_input,
+        &second_input,
+        &client,
+        mock,
+        |http_client, gateway| capture_gateway(http_client, gateway, cases),
+    )?;
     compare_group(root, cases, &captures)
 }
 
-fn capture_gateways(
+// Shared by the Http and Scenario pipelines: start a gateway, capture against it, then the next.
+fn capture_gateways<F>(
     first_input: &GatewayInput<'_>,
     second_input: &GatewayInput<'_>,
-    cases: &[Case],
     client: &Client,
     mock: MockProvider,
-) -> Result<GroupCapture, OracleError> {
+    mut capture: F,
+) -> Result<GroupCapture, OracleError>
+where
+    F: FnMut(&Client, Gateway) -> Result<Vec<Response>, OracleError>,
+{
     let first = start_gateway(first_input, true)?;
     let first_log = first.log_path.clone();
-    let first_results = capture_gateway(client, first, cases)?;
+    let first_results = capture(client, first)?;
     let first_trace = mock.finish_run()?;
     let second = start_gateway(second_input, false)?;
     let second_log = second.log_path.clone();
-    let second_results = capture_gateway(client, second, cases)?;
+    let second_results = capture(client, second)?;
     let second_requests = mock
         .finish()?
         .into_iter()

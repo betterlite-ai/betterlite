@@ -1,7 +1,7 @@
 id: B1672
 milestone: M4 keys, spend and management
 title: Calculate generic token totals with cache overlap and regional uplifts
-status: todo
+status: done
 depends_on: [B171, B204, B1668, B1670, B1671, B1678]
 file: tasks/B1672-generic-token-cost.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/fireworks_ai/cache_pricing.py"
 parent: B068
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 482

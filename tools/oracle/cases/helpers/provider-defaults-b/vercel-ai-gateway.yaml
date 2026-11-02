@@ -1,0 +1,10 @@
+kind: helper
+name: provider-defaults-b-vercel-ai-gateway
+call:
+  provider_defaults_b:
+    provider: vercel_ai_gateway
+    model: vercel-model
+    environment:
+      VERCEL_OIDC_TOKEN: env-oidc-token
+env: {}
+compare: {ignore: []}

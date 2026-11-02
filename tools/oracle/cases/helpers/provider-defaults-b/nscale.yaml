@@ -1,0 +1,8 @@
+kind: helper
+name: provider-defaults-b-nscale
+call:
+  provider_defaults_b:
+    provider: nscale
+    model: nscale-model
+env: {}
+compare: {ignore: []}

@@ -9,12 +9,15 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::multipart_oracle::error::MultipartError;
-use crate::multipart_oracle::request::{answer_body, request_body};
+use crate::multipart_oracle::request::request_body;
+use serde::de::IgnoredAny;
 
 pub mod browser_flow;
 mod config_inspection;
+mod group;
 mod helper;
 
+pub(crate) use group::{LoadedCase, ScenarioCase};
 pub(crate) use helper::HelperCase;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -39,15 +42,23 @@ pub struct Case {
 
 pub type HttpCase = Case;
 
-#[derive(Debug, Clone)]
-pub(crate) enum LoadedCase {
-    Http(Case),
-    Helper(HelperCase),
+impl Case {
+    fn common(&self) -> group::CommonFields<'_> {
+        group::CommonFields {
+            name: &self.name,
+            config: &self.config,
+            env: &self.env,
+            native_feature_eligibility: self.native_feature_eligibility,
+            database: self.database.as_ref(),
+            upstream: &self.upstream,
+        }
+    }
 }
 
 #[derive(Deserialize)]
 struct CaseKind {
     kind: Option<helper::HelperKind>,
+    scenario: Option<IgnoredAny>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
@@ -141,6 +152,11 @@ pub(crate) fn parse_case(path: &Path, text: &str) -> Result<LoadedCase, OracleEr
         helper::validate_helper(path, &case)?;
         return Ok(LoadedCase::Helper(case));
     }
+    if probe.scenario.is_some() {
+        let case: ScenarioCase = serde_saphyr::from_str(text).map_err(parse_error)?;
+        group::validate_scenario_case(path, &case)?;
+        return Ok(LoadedCase::Scenario(case));
+    }
     let case = decode_case(path, text.as_bytes())?;
     Ok(LoadedCase::Http(case))
 }
@@ -203,43 +219,8 @@ fn collect_yaml(path: &Path, files: &mut Vec<PathBuf>) -> Result<(), OracleError
 }
 
 pub(crate) fn validate(path: &Path, case: &Case) -> Result<(), OracleError> {
-    let invalid = |message: &str| OracleError::CaseInvalid {
-        path: path.to_owned(),
-        message: message.to_owned(),
-    };
-    if case.name.is_empty() || case.config.is_empty() {
-        return Err(invalid("name and config cannot be empty"));
-    }
-    validate_request_or_steps(path, case)?;
-    if case.env.contains_key("LITELLM_LICENSE") {
-        return Err(invalid("env cannot set LITELLM_LICENSE"));
-    }
-    if case.env.contains_key("LITELLM_WORKER_STARTUP_HOOKS") {
-        return Err(invalid("env cannot set LITELLM_WORKER_STARTUP_HOOKS"));
-    }
-    if case.native_feature_eligibility && case.env.contains_key("PYTHONPATH") {
-        return Err(invalid("env cannot set PYTHONPATH on an eligible case"));
-    }
-    if config_inspection::requests_license(path, &case.config)? {
-        return Err(invalid(
-            "config cannot set general_settings.litellm_license or environment_variables.LITELLM_LICENSE",
-        ));
-    }
-    if let Some(database) = &case.database {
-        database
-            .seed
-            .validate()
-            .map_err(|source| OracleError::HttpCaseFixture { source })?;
-    }
-    for answer in &case.upstream {
-        if answer.body.is_some() == answer.events.is_some() {
-            return Err(invalid(
-                "each upstream answer must contain exactly one of body or events",
-            ));
-        }
-        answer_body(answer).map_err(OracleError::Multipart)?;
-    }
-    Ok(())
+    group::validate_common(path, &case.common())?;
+    validate_request_or_steps(path, case)
 }
 
 // Serde defaults the unused side of request/compare or steps, so emptiness stands in for absence.
@@ -248,8 +229,10 @@ fn validate_request_or_steps(path: &Path, case: &Case) -> Result<(), OracleError
         path: path.to_owned(),
         message: message.to_owned(),
     };
+    let plain_request_unset =
+        *case.request == Request::default() && *case.compare == Compare::default();
     if let Some(steps) = &case.steps {
-        if *case.request != Request::default() || *case.compare != Compare::default() {
+        if !plain_request_unset {
             return Err(invalid("a case cannot set both request/compare and steps"));
         }
         return browser_flow::validate_steps(path, steps);

@@ -1,0 +1,8 @@
+kind: helper
+name: provider-defaults-b-v0
+call:
+  provider_defaults_b:
+    provider: v0
+    model: v0-model
+env: {}
+compare: {ignore: []}

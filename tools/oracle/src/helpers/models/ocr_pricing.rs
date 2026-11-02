@@ -2,7 +2,7 @@ use betterlite_models::ocr_pricing::{
     OcrBatchUsage, OcrBilling, OcrCostError, OcrResponseKind, OcrUsage, layered_ocr_pricing,
     ocr_batch_cost, ocr_cost,
 };
-use betterlite_models::price_lookup::{PriceLookup, PriceRecord};
+use betterlite_models::price_lookup::{PriceLookup, PriceRecord, PricedModel};
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
@@ -89,6 +89,20 @@ impl PriceLookup for CaseLookup {
 
     fn raw_cost_map_entry(&self, _key: &str) -> Option<PriceRecord> {
         None
+    }
+
+    // OCR billing never reads tiers or off-peak tables, so the catalog fixture carries none.
+    fn effective_priced_model(
+        &self,
+        _model: &str,
+        _custom_llm_provider: Option<&str>,
+    ) -> Option<PricedModel> {
+        self.catalog.as_ref().map(|catalog| PricedModel {
+            record: catalog.entry.clone(),
+            tiered_pricing: Vec::new(),
+            off_peak_pricing: None,
+            off_peak_cache_read_present: false,
+        })
     }
 }
 

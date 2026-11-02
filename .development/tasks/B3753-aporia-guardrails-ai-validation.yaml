@@ -42,6 +42,8 @@ scope:
     - tools/oracle/helpers/b3753/**
     - tools/oracle/src/helpers/guardrails/b3753.rs
     - tools/oracle/src/helpers/guardrails/b3753/**
+    - tools/oracle/cases/guardrails/aporia_ai/**
+    - tools/oracle/cases/guardrails/guardrails_ai/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/aporia_ai/aporia_ai.py#L39-L46
@@ -157,7 +159,7 @@ dod:
       {api_base}/validate with X-APORIA-API-KEY header, checks response.status_code == 200,
       parses response.json(), raises HTTPException 400 with error and aporia_ai_response
       if action is "block".
-    proof: [aporia-guardrails-tests, aporia-oracle]
+    proof: [aporia-guardrails-tests, oracle]
   - text: >-
       AporiaGuardrail.async_post_call_success_hook checks should_run_guardrail
       with post_call event type, returns if false, calls convert_litellm_response_object_to_str,
@@ -190,7 +192,7 @@ dod:
       merges result with get_guardrail_dynamic_request_body_params, POSTs JSON to
       {api_base}/guards/{guard_name}/validate, parses GuardrailsAIResponse, raises
       HTTPException 400 with error and guardrails_ai_response if validationPassed is False.
-    proof: [guardrails-ai-tests, guardrails-ai-oracle]
+    proof: [guardrails-ai-tests, oracle]
   - text: >-
       GuardrailsAI.make_guardrails_ai_api_request_pre_call_request builds inputs
       list with text as BYTES, POSTs to {api_base}/guards/{guard_name}/validate,
@@ -234,23 +236,17 @@ checks:
     - id: aporia-guardrails-tests
       why: Aporia guardrail tests fail or do not exist
       run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^aporia_guardrail::/)'
-    - id: aporia-oracle
-      why: Aporia cases do not match LiteLLM on client response or provider requests
-      run: cargo run --locked --quiet -p betterlite-oracle -- tools/oracle/cases/guardrails/
     - id: guardrails-ai-tests
       why: Guardrails AI tests fail or do not exist
       run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrails_ai_guardrail::/)'
-    - id: guardrails-ai-oracle
-      why: Guardrails AI cases do not match LiteLLM on client response or provider requests
-      run: cargo run --locked --quiet -p betterlite-oracle -- tools/oracle/cases/guardrails/
 oracle_cases:
-  - tools/oracle/cases/guardrails/aporia-moderation-request.yaml
-  - tools/oracle/cases/guardrails/aporia-moderation-blocked.yaml
-  - tools/oracle/cases/guardrails/aporia-post-call.yaml
-  - tools/oracle/cases/guardrails/guardrails-ai-init.yaml
-  - tools/oracle/cases/guardrails/guardrails-ai-llmoutput.yaml
-  - tools/oracle/cases/guardrails/guardrails-ai-inputs.yaml
-  - tools/oracle/cases/guardrails/guardrails-ai-blocked.yaml
+  - tools/oracle/cases/guardrails/aporia_ai/moderation-request.yaml
+  - tools/oracle/cases/guardrails/aporia_ai/moderation-blocked.yaml
+  - tools/oracle/cases/guardrails/aporia_ai/post-call.yaml
+  - tools/oracle/cases/guardrails/guardrails_ai/init.yaml
+  - tools/oracle/cases/guardrails/guardrails_ai/llmoutput.yaml
+  - tools/oracle/cases/guardrails/guardrails_ai/inputs.yaml
+  - tools/oracle/cases/guardrails/guardrails_ai/blocked.yaml
 deviations:
   - what: >-
       When APORIO_API_KEY or APORIO_API_BASE is missing from environment and not
@@ -307,6 +303,10 @@ out_of_scope:
       Request/response routing and framework dispatch; those come from the guardrail
       lifecycle in B104.
 pitfalls:
+  - >-
+      The cases live in tools/oracle/cases/guardrails/aporia_ai/ and guardrails_ai/, one folder per
+      guardrail like lasso/ and deepkeep/. A branch that added them flat under guardrails/ moves them
+      with git mv and keeps their content.
   - >-
       Only Aporia's async_moderation_hook (during_call) transforms roles via
       transform_messages; async_post_call_success_hook (post_call) passes the raw,
