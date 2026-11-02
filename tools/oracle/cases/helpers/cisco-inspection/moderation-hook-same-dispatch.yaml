@@ -1,0 +1,19 @@
+kind: helper
+name: moderation-hook-same-dispatch
+call:
+  b3762:
+    moderation_hook:
+      settings:
+        api_key: test-key
+        api_base: "https://cisco.test"
+        inspection_type: chat
+        on_flagged_action: block
+        fallback_on_error: block
+        timeout: 5
+      request_data:
+        messages:
+          - {role: user, content: "hello there"}
+      answer: {status: 200, headers: {}, body: {is_safe: true}}
+env: {}
+compare:
+  ignore: []

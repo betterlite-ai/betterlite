@@ -93,6 +93,22 @@ fn missing_message_falls_back_to_error_str_instead_of_panicking() {
     assert_eq!(details.message, "aleph_alpha: boom");
 }
 
+#[rstest]
+#[case::context_window_on_500("This is longer than the model's maximum context length", 500)]
+#[case::bad_request_status_400("boom", 400)]
+fn response_branches_answer_the_provider_status(#[case] error_str: &str, #[case] status: u16) {
+    let class = map_aleph_alpha_exception(&input(error_str, Some(status)))
+        .expect("expected a classification");
+    assert_eq!(class.metadata().status_code, status);
+}
+
+#[test]
+fn status_401_keeps_the_class_default() {
+    let class =
+        map_aleph_alpha_exception(&input("boom", Some(401))).expect("expected a classification");
+    assert_eq!(class.metadata().status_code, 401);
+}
+
 #[test]
 fn unmatched_status_and_missing_status_never_panic() {
     // LiteLLM re-raises the original provider exception unmodified in both cases; betterlite has no typed class to hand back either, so both defer to the caller's generic classifier

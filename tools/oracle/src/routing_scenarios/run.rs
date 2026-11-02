@@ -66,20 +66,17 @@ fn run_concurrent(
             });
         }
         drop(sender);
-        collect(&receiver, requests.len(), deadline)
+        collect(&receiver, requests.len())
     })
 }
 
 fn collect(
     receiver: &mpsc::Receiver<ConcurrentResult>,
     count: usize,
-    deadline: Duration,
 ) -> Result<Vec<Response>, OracleError> {
     let mut collected: Vec<Option<Response>> = repeat_n(None, count).collect();
     for _received in 0..count {
-        let (index, result) = receiver
-            .recv_timeout(deadline)
-            .map_err(OracleError::ScenarioJoinFailed)?;
+        let (index, result) = receiver.recv().map_err(OracleError::ScenarioJoinFailed)?;
         let slot = collected
             .get_mut(index)
             .ok_or(OracleError::MissingCapture(index))?;

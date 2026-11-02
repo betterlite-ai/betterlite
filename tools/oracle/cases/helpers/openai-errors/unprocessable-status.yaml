@@ -1,0 +1,11 @@
+kind: helper
+name: openai-errors-unprocessable-status
+call:
+  provider_error:
+    kind: raw
+    model: gpt-4
+    custom_llm_provider: openai
+    error_str: "an unmatched failure"
+    status_code: 422
+env: {}
+compare: {ignore: []}

@@ -60,15 +60,13 @@ def _run(
     error_str: str,
     status_code: int | None,
 ) -> JsonValue:
-    cause = SimpleNamespace(
-        message=error_str,
-        response=httpx.Response(
-            status_code=status_code or 500,
-            request=httpx.Request(method="GET", url="https://example.com"),
-        ),
-    )
+    cause = SimpleNamespace(message=error_str)
     if status_code is not None:
         cause.status_code = status_code
+        cause.response = httpx.Response(
+            status_code=status_code,
+            request=httpx.Request(method="POST", url="https://docs.litellm.ai/docs"),
+        )
     try:
         mapper(
             model=model,
@@ -95,6 +93,15 @@ def _run(
         elif family == "timeout":
             mapped = cast(MappedError, error)
             result = {"family": family, "context": context, "original_status": mapped.status_code}
+        elif family in {
+            "authentication",
+            "context_window_exceeded",
+            "bad_request",
+            "permission_denied",
+            "not_found",
+        }:
+            mapped = cast(MappedError, error)
+            result = {"family": family, **context, "status": mapped.status_code}
         else:
             result = {"family": family, **context}
         return {"result": result}

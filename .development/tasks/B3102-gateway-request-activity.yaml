@@ -49,6 +49,11 @@ scope:
     - tools/oracle/src/helpers/db/b3102.rs
     - tools/oracle/src/helpers/db/b3102/**
     - crates/betterlite-db/src/gateway_requests/**
+    - tools/oracle/cases/gateway_activity/admin-default-range.yaml
+    - tools/oracle/cases/gateway_activity/admin-view-only.yaml
+    - tools/oracle/cases/gateway_activity/custom-date-range.yaml
+    - tools/oracle/cases/gateway_activity/missing-database.yaml
+    - tools/oracle/cases/gateway_activity/non-admin-denied.yaml
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/gateway_requests.py#L1-L52

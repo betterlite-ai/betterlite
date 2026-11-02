@@ -27,6 +27,19 @@ scope:
     - tools/oracle/helpers/b3725/**
     - tools/oracle/src/helpers/guardrails/b3725.rs
     - tools/oracle/src/helpers/guardrails/b3725/**
+    - tools/oracle/cases/guardrails/bedrock-checks/content-filter-threshold-match.yaml
+    - tools/oracle/cases/guardrails/bedrock-checks/http-exception-on-violations.yaml
+    - tools/oracle/cases/guardrails/bedrock-checks/input-messages-retagged-user.yaml
+    - tools/oracle/cases/guardrails/bedrock-checks/malformed-json-500-error.yaml
+    - tools/oracle/cases/guardrails/bedrock-checks/messages-split-after-ten-blocks.yaml
+    - tools/oracle/cases/guardrails/bedrock-checks/modify-response-on-violations.yaml
+    - tools/oracle/cases/guardrails/bedrock-checks/non-200-error-response.yaml
+    - tools/oracle/cases/guardrails/bedrock-checks/no-violations-empty-response.yaml
+    - tools/oracle/cases/guardrails/bedrock-checks/output-response-assistant.yaml
+    - tools/oracle/cases/guardrails/bedrock-checks/pii-offset-stripped-from-logging.yaml
+    - tools/oracle/cases/guardrails/bedrock-checks/pii-truncated-is-violation.yaml
+    - tools/oracle/cases/guardrails/bedrock-checks/prompt-attack-threshold-match.yaml
+    - tools/oracle/cases/guardrails/bedrock-checks/threshold-none-detect-only.yaml
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1820-L1836
