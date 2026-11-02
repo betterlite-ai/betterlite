@@ -254,6 +254,7 @@ fn text_completion_policy_cases(#[case] case: u8) {
                 result_four["choices"][0]["logprobs"],
                 json!({"tokens": ["c"]})
             );
+            assert_eq!(result_four["choices"][0]["finish_reason"], json!("length"));
 
             let malformed = json!({"choices": [{"text": 5_i32, "finish_reason": "stop"}]});
             assert!(matches!(
