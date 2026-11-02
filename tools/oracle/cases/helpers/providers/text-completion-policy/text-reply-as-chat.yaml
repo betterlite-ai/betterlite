@@ -25,6 +25,10 @@ call:
           finish_reason: refusal
           index: 3
           logprobs: null
+        - text: calling
+          finish_reason: function_call
+          index: 4
+          logprobs: null
         usage:
           prompt_tokens: 5
           completion_tokens: 3

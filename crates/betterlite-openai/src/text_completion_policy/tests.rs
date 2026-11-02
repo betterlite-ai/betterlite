@@ -244,6 +244,7 @@ fn text_completion_policy_cases(#[case] case: u8) {
                     {"text": "b", "finish_reason": "stop_sequence"},
                     {"text": "c", "finish_reason": "my_custom_reason"},
                     {"text": "d", "finish_reason": "refusal"},
+                    {"text": "e", "finish_reason": "function_call"},
                 ],
             });
             let result_mapped =
@@ -258,6 +259,10 @@ fn text_completion_policy_cases(#[case] case: u8) {
             assert_eq!(
                 result_mapped["choices"][3]["finish_reason"],
                 json!("content_filter")
+            );
+            assert_eq!(
+                result_mapped["choices"][4]["finish_reason"],
+                json!("function_call")
             );
             assert_eq!(
                 result_mapped["_hidden_params"]["original_response"]["choices"][0]["finish_reason"],
