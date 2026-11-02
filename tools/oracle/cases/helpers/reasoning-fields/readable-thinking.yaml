@@ -1,0 +1,17 @@
+kind: helper
+name: reasoning-fields-readable-thinking
+call:
+  reasoning_fields:
+    operation: reasoning_content_from_thinking_blocks
+    thinking_blocks:
+      - type: thinking
+        thinking: The user wants the capital of France.
+        signature: anthropic-signature-one
+      - type: redacted_thinking
+        data: opaque-redacted-payload
+      - type: thinking
+        thinking: Paris is the capital.
+        signature: anthropic-signature-two
+env: {}
+compare:
+  ignore: []

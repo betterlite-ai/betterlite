@@ -1,0 +1,11 @@
+kind: helper
+name: provider-defaults-b-xai
+call:
+  provider_defaults_b:
+    provider: xai
+    model: xai-model
+    xai_key: global-xai-key
+    environment:
+      XAI_API_KEY: env-xai-key
+env: {}
+compare: {ignore: []}

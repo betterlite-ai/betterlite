@@ -1,0 +1,25 @@
+kind: helper
+name: bearer-prefix-strip
+call:
+  b4653:
+    function: bearer_prefix_strip
+    checks:
+      - family: bridge
+        candidate: "llm_env_abc123"
+      - family: bridge
+        candidate: "llm_refresh_abc123"
+      - family: bridge
+        candidate: "llm_session_abc123"
+      - family: bridge
+        candidate: "some-upstream-oauth-token"
+      - family: session
+        candidate: "llm_session_abc123"
+      - family: session
+        candidate: "llm_srefresh_abc123"
+      - family: session
+        candidate: "llm_env_abc123"
+      - family: session
+        candidate: "some-upstream-oauth-token"
+env: {}
+compare:
+  ignore: []
