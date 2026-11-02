@@ -55,7 +55,6 @@ scope:
   paths:
     - crates/betterlite-server/src/management_rbac.rs
     - crates/betterlite-server/src/management_rbac/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/src/helpers/server/management_rbac.rs
     - tools/oracle/src/helpers/server/management_rbac/**

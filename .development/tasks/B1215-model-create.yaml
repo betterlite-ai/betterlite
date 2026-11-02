@@ -77,7 +77,6 @@ scope:
   paths:
     - crates/betterlite-server/src/model_create.rs
     - crates/betterlite-server/src/model_create/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes.rs
     - crates/betterlite-server/src/routes/**
@@ -86,6 +85,7 @@ scope:
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/model-create/**
+    - crates/betterlite-server/src/model_create/fixtures.rs
     - crates/betterlite-server/src/model_create/fixtures/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/model-create-*

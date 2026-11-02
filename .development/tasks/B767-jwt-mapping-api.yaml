@@ -118,7 +118,6 @@ scope:
   paths:
     - crates/betterlite-server/src/jwt_mapping_api.rs
     - crates/betterlite-server/src/jwt_mapping_api/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes.rs
     - crates/betterlite-server/src/routes/**
@@ -127,6 +126,7 @@ scope:
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/jwt-mapping-api/**
+    - crates/betterlite-server/src/jwt_mapping_api/fixtures.rs
     - crates/betterlite-server/src/jwt_mapping_api/fixtures/**
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/jwt_mapping_api.rs

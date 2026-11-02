@@ -21,7 +21,6 @@ description: >-
   B171's helper-case corpus, not a second HTML-input parser.
 scope:
   paths:
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/cli_login_pages.rs
     - crates/betterlite-server/src/cli_login_pages/**
     - tools/oracle/Cargo.toml

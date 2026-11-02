@@ -35,7 +35,6 @@ description: >-
   with a 650-line limit.
 scope:
   paths:
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/settings_services.rs
     - crates/betterlite-server/src/settings_services/**
     - tools/oracle/src/helpers/server/settings_schema.rs

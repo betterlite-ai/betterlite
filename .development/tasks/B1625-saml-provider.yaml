@@ -43,7 +43,6 @@ scope:
     - crates/betterlite-auth/fuzz/fuzz_targets/saml_metadata.rs
     - crates/betterlite-auth/fuzz/corpus/saml_metadata/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/saml_entrypoints.rs
     - crates/betterlite-server/src/saml_entrypoints/**
     - crates/betterlite-config/src/saml_provider.rs

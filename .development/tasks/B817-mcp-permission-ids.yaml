@@ -70,7 +70,6 @@ scope:
   paths:
     - crates/betterlite-server/src/mcp_permission_ids.rs
     - crates/betterlite-server/src/mcp_permission_ids/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/src/helpers/server/mcp_permission_ids.rs
     - tools/oracle/src/helpers/server/mcp_permission_ids/**

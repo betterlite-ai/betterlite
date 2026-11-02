@@ -27,7 +27,6 @@ description: >-
 scope:
   paths:
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/scim_projections.rs
     - crates/betterlite-server/src/scim_projections/**
     - tools/oracle/Cargo.toml

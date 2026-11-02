@@ -27,7 +27,6 @@ description: >-
   lines budget 350 implementation, 210 tests, 90 adapters and 100 config/wiring, cap 800.
 scope:
   paths:
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/sso_user_sync.rs
     - crates/betterlite-server/src/sso_user_sync/**
     - crates/betterlite-config/src/sso_user_sync.rs

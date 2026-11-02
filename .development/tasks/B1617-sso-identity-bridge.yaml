@@ -25,7 +25,6 @@ description: >-
 scope:
   paths:
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/sso_identity_bridge.rs
     - crates/betterlite-server/src/sso_identity_bridge/**
     - crates/betterlite-config/src/sso_identity_bridge.rs

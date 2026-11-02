@@ -22,7 +22,6 @@ description: >-
   100 decoder/fuzz and 50 composition lines, within 650 changed lines.
 scope:
   paths:
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/routes.rs
     - crates/betterlite-server/src/routes/**
     - crates/betterlite-server/src/tag_reads.rs

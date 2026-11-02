@@ -24,7 +24,6 @@ description: >-
   lines; budget 260 handlers, 220 tests, 100 parser/fuzz and 70 composition, within 675 lines.
 scope:
   paths:
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/routes.rs
     - crates/betterlite-server/src/routes/**
     - crates/betterlite-server/src/state.rs

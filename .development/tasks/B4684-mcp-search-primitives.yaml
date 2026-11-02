@@ -14,7 +14,7 @@ description: >-
 scope:
   paths:
     - Cargo.toml
-    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/mcp.rs
     - crates/betterlite-server/src/mcp/**
     - tools/oracle/src/helpers/server/mcp_search_primitives.rs
     - tools/oracle/src/helpers/server/mcp_search_primitives/**

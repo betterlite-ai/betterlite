@@ -97,7 +97,6 @@ scope:
   paths:
     - crates/betterlite-server/src/key_patch_policy.rs
     - crates/betterlite-server/src/key_patch_policy/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/src/helpers/server/key_patch_policy.rs
     - tools/oracle/src/helpers/server/key_patch_policy/**
