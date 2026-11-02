@@ -582,7 +582,9 @@ fn check_responses_api_output_projection() {
             {"type": "reasoning", "call_id": "call_2", "name": "g", "arguments": "{}"},
             {"type": "reasoning", "id": "rs_1", "summary": [], "foo": "bar"},
             {"type": "something_else", "id": "rs_2", "summary": []},
-            {"type": "reasoning", "id": "rs_3", "summary": [{"text": "s"}]}
+            {"type": "reasoning", "id": "rs_3", "summary": [{"text": "s"}]},
+            {"type": "reasoning", "id": "rs_4", "summary": [], "status": "completed"},
+            {"type": "reasoning", "id": "rs_5", "summary": [], "status": "bogus"}
         ]"#,
         r#"[
             {"id": "msg_1", "content": [{"annotations": [], "text": "hi", "type": "output_text", "logprobs": null}], "role": "assistant", "status": "completed", "type": "message", "phase": null},
@@ -593,7 +595,9 @@ fn check_responses_api_output_projection() {
             {"type": "reasoning", "call_id": "call_2", "name": "g", "arguments": "{}"},
             {"id": "rs_1", "summary": [], "type": "reasoning", "content": null, "encrypted_content": null, "status": null, "foo": "bar"},
             {"type": "something_else", "id": "rs_2", "summary": []},
-            {"type": "reasoning", "id": "rs_3", "summary": [{"text": "s"}]}
+            {"type": "reasoning", "id": "rs_3", "summary": [{"text": "s"}]},
+            {"id": "rs_4", "summary": [], "type": "reasoning", "content": null, "encrypted_content": null, "status": "completed"},
+            {"type": "reasoning", "id": "rs_5", "summary": [], "status": "bogus"}
         ]"#,
     );
 }
