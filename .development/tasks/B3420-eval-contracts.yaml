@@ -19,7 +19,6 @@ description: >-
 scope:
   paths:
     - crates/betterlite-openai/src/evals/**
-    - crates/betterlite-openai/src/lib.rs
     - crates/betterlite-openai/tests/fixtures/evals/**
     - crates/betterlite-openai/Cargo.toml
   lint_tables: false
