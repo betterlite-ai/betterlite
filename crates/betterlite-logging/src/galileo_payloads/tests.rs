@@ -554,10 +554,25 @@ fn check_message_model_dump_extended_fields() {
     assert_eq!(messages_for_span, Json::List(Vec::new()));
 }
 
+// Shared by both check_responses_api_*_projection tests: runs a raw Responses-API output list through galileo_input_output_content and hands back the parsed JSON (for assert_eq!) and the raw serialized text (for the odd case that needs to see declared field order).
+fn responses_api_output_for(output: &str) -> (Json, String) {
+    let kwargs = GalileoKwargs::default();
+    let (_, response_output, _) = galileo_input_output_content(
+        &kwargs,
+        Some(&ResponseObj::ResponsesApi {
+            output: val(output),
+        }),
+        Level::Default,
+        None,
+    );
+    let parsed = serde_json::from_str(&response_output).expect("valid JSON output");
+    (parsed, response_output)
+}
+
 // litellm.types.llms.openai.ResponsesAPIResponse.output parses each raw item into its matching openai.types.responses.ResponseOutputItem member (message, function_call or reasoning) before _serialize_galileo_output dumps them, filling every declared optional field with null and keeping any extra key the item or part carried; an item whose type isn't recognized or doesn't validate against its recognized type (including a reasoning summary part without a "summary_text" type) stays an unmodified dict.
 fn check_responses_api_output_projection() {
-    let kwargs = GalileoKwargs::default();
-    let output = val(r#"[
+    let (parsed, _) = responses_api_output_for(
+        r#"[
             {"type": "message", "id": "msg_1", "role": "assistant", "status": "completed", "content": [{"type": "output_text", "text": "hi", "annotations": []}]},
             {"type": "message", "id": "msg_2", "role": "assistant", "status": "completed", "content": [{"type": "refusal", "refusal": "no", "foo": 1}]},
             {"type": "message", "id": "msg_3", "role": "assistant", "status": "completed", "content": [{"type": "something_else", "refusal": "no"}]},
@@ -567,14 +582,8 @@ fn check_responses_api_output_projection() {
             {"type": "reasoning", "id": "rs_1", "summary": [], "foo": "bar"},
             {"type": "something_else", "id": "rs_2", "summary": []},
             {"type": "reasoning", "id": "rs_3", "summary": [{"text": "s"}]}
-        ]"#);
-    let (_, response_output, _) = galileo_input_output_content(
-        &kwargs,
-        Some(&ResponseObj::ResponsesApi { output }),
-        Level::Default,
-        None,
+        ]"#,
     );
-    let parsed: Json = serde_json::from_str(&response_output).expect("valid JSON output");
     let expected = val(r#"[
             {"id": "msg_1", "content": [{"annotations": [], "text": "hi", "type": "output_text", "logprobs": null}], "role": "assistant", "status": "completed", "type": "message", "phase": null},
             {"id": "msg_2", "content": [{"refusal": "no", "type": "refusal", "foo": 1}], "role": "assistant", "status": "completed", "type": "message", "phase": null},
@@ -591,22 +600,16 @@ fn check_responses_api_output_projection() {
 
 // openai.types.responses.response_function_web_search.Action and ResponseCustomToolCall.Caller: an unrecognized or invalid action/caller invalidates the whole web_search_call or custom_tool_call item, which stays an unmodified dict.
 fn check_responses_api_web_search_and_custom_tool_projection() {
-    let kwargs = GalileoKwargs::default();
-    let output = val(r#"[
+    let (parsed, response_output) = responses_api_output_for(
+        r#"[
             {"type": "web_search_call", "id": "ws_1", "status": "completed", "action": {"type": "search", "query": "q"}},
             {"type": "web_search_call", "id": "ws_2", "status": "completed", "action": {"type": "bogus"}},
             {"type": "web_search_call", "id": "ws_3", "status": "completed", "action": {"type": "find_in_page", "pattern": "cat", "url": "http://example.com"}},
             {"type": "web_search_call", "id": "ws_4", "status": "completed", "action": {"type": "mystery", "pattern": "x", "url": "http://y"}},
             {"type": "custom_tool_call", "call_id": "c1", "input": "x", "name": "t", "caller": {"type": "program", "caller_id": "p1"}},
             {"type": "custom_tool_call", "call_id": "c2", "input": "x", "name": "t", "caller": {"type": "bogus"}}
-        ]"#);
-    let (_, response_output, _) = galileo_input_output_content(
-        &kwargs,
-        Some(&ResponseObj::ResponsesApi { output }),
-        Level::Default,
-        None,
+        ]"#,
     );
-    let parsed: Json = serde_json::from_str(&response_output).expect("valid JSON output");
     let expected = val(r#"[
             {"id": "ws_1", "action": {"type": "search", "queries": null, "query": "q", "sources": null}, "status": "completed", "type": "web_search_call"},
             {"type": "web_search_call", "id": "ws_2", "status": "completed", "action": {"type": "bogus"}},
