@@ -260,7 +260,7 @@ async fn assert_dirty_index_shape(client: &Client) {
         .unwrap();
     assert_eq!(
         predicate,
-        "(NOT retired) AND (revision <> published_revision)"
+        "((NOT retired) AND (revision <> published_revision))"
     );
     assert_index(
         client,
