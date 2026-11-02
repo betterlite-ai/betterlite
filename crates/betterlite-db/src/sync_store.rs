@@ -165,11 +165,12 @@ impl SyncStore {
             status,
             report,
         } = claim;
-        let encoded_report = report
-            .map(|value| {
-                serde_json::to_string(value).map_err(|source| DbError::InvalidRecord { source })
-            })
-            .transpose()?;
+        let encoded_report = match report {
+            Some(value) => Some(
+                serde_json::to_string(value).map_err(|source| DbError::InvalidRecord { source })?,
+            ),
+            None => None,
+        };
         update_lease(
             client,
             FINISH_SQL,
