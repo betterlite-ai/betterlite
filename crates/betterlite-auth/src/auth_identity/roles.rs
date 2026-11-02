@@ -1,3 +1,4 @@
+use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use serde::{Deserialize, Serialize};
 
 use crate::user_roles::UserRole;
@@ -44,18 +45,14 @@ pub enum TeamRole {
     Member,
 }
 
-const ROLE_MAP: &[(&str, Role)] = &[
-    ("proxy_admin", Role::PlatformAdmin),
-    ("proxy_admin_viewer", Role::PlatformViewer),
-    ("org_admin", Role::OrgAdmin),
-];
-
 #[must_use]
 pub fn map_role(role: Option<&str>) -> Option<Role> {
-    let value = role?;
-    ROLE_MAP
-        .iter()
-        .find_map(|(key, mapped)| (*key == value).then_some(*mapped))
+    match role? {
+        "proxy_admin" => Some(Role::PlatformAdmin),
+        "proxy_admin_viewer" => Some(Role::PlatformViewer),
+        "org_admin" => Some(Role::OrgAdmin),
+        _ => None,
+    }
 }
 
 #[must_use]
@@ -69,15 +66,33 @@ pub fn team_role(role: Option<&str>) -> TeamRole {
 
 #[must_use]
 pub fn effective_user_role(role: Option<&str>) -> UserRole {
-    match role {
-        Some("proxy_admin") => UserRole::ProxyAdmin,
-        Some("proxy_admin_viewer") => UserRole::ProxyAdminViewer,
-        Some("org_admin") => UserRole::OrgAdmin,
-        Some("internal_user_viewer") => UserRole::InternalUserViewer,
-        Some("team") => UserRole::Team,
-        Some("customer") => UserRole::Customer,
-        Some(_) | None => UserRole::InternalUser,
+    let Some(value) = role else {
+        return UserRole::InternalUser;
+    };
+    match value {
+        "proxy_admin" => UserRole::ProxyAdmin,
+        "proxy_admin_viewer" => UserRole::ProxyAdminViewer,
+        "org_admin" => UserRole::OrgAdmin,
+        "internal_user_viewer" => UserRole::InternalUserViewer,
+        "team" => UserRole::Team,
+        "customer" => UserRole::Customer,
+        _ => UserRole::InternalUser,
     }
+}
+
+#[must_use]
+pub fn get_user_role(user: Option<&LiteLLMUserTable>) -> Option<UserRole> {
+    let row = user?;
+    let role = effective_user_role(row.user_role.as_deref());
+    Some(role)
+}
+
+#[must_use]
+pub fn is_user_proxy_admin(user: Option<&LiteLLMUserTable>) -> bool {
+    let Some(row) = user else {
+        return false;
+    };
+    row.user_role.as_deref() == Some("proxy_admin")
 }
 
 mod tests;

@@ -6,9 +6,14 @@ use super::{
     CredentialRef, EndUserIdentity, NetworkContext, OrganizationIdentity, Principal,
     ProjectIdentity, TeamIdentity, UserIdentity,
 };
-use crate::auth_identity::roles::{AuthMethod, PrincipalType, Role, TeamRole};
+use crate::auth_identity::roles::{Role, TeamRole};
 use crate::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_db::budget_permission_rows::JsonData;
+
+fn fresh_principal() -> Principal {
+    serde_json::from_str(r#"{"principal_type":"human","subject":"sub","auth_method":"api_key"}"#)
+        .unwrap()
+}
 
 #[test]
 fn identity_required_ids() {
@@ -87,7 +92,7 @@ fn principal_three_required_fields() {
 
 #[test]
 fn principal_nullable_identity_defaults() {
-    let principal = Principal::new(PrincipalType::Human, "sub".to_owned(), AuthMethod::ApiKey);
+    let principal = fresh_principal();
     assert_eq!(principal.issuer, None);
     assert_eq!(principal.user, None);
     assert_eq!(principal.organization, None);
@@ -97,7 +102,7 @@ fn principal_nullable_identity_defaults() {
 
 #[test]
 fn principal_fresh_empty_sequences() {
-    let principal = Principal::new(PrincipalType::Human, "sub".to_owned(), AuthMethod::ApiKey);
+    let principal = fresh_principal();
     assert!(principal.audience.is_empty());
     assert!(principal.teams.is_empty());
     assert!(principal.roles.is_empty());
@@ -106,14 +111,14 @@ fn principal_fresh_empty_sequences() {
 
 #[test]
 fn principal_fresh_credential_and_network() {
-    let principal = Principal::new(PrincipalType::Human, "sub".to_owned(), AuthMethod::ApiKey);
+    let principal = fresh_principal();
     assert_eq!(principal.credential_ref, CredentialRef::default());
     assert_eq!(principal.network, NetworkContext::default());
 }
 
 #[test]
 fn principal_sequence_order_and_duplicates() {
-    let mut principal = Principal::new(PrincipalType::Human, "sub".to_owned(), AuthMethod::ApiKey);
+    let mut principal = fresh_principal();
     principal.roles = vec![Role::OrgAdmin, Role::OrgAdmin, Role::TeamMember];
     assert_eq!(
         principal.roles,
@@ -123,8 +128,8 @@ fn principal_sequence_order_and_duplicates() {
 
 #[test]
 fn principal_top_level_freeze_is_shallow() {
-    let mut first = Principal::new(PrincipalType::Human, "sub".to_owned(), AuthMethod::ApiKey);
-    let second = Principal::new(PrincipalType::Human, "sub".to_owned(), AuthMethod::ApiKey);
+    let mut first = fresh_principal();
+    let second = fresh_principal();
     first.roles.push(Role::OrgAdmin);
     first.network.client_ip = Some("10.0.0.1".to_owned());
     assert!(second.roles.is_empty());
@@ -133,7 +138,7 @@ fn principal_top_level_freeze_is_shallow() {
 
 #[test]
 fn source_key_excluded_from_json_and_repr() {
-    let mut principal = Principal::new(PrincipalType::Human, "sub".to_owned(), AuthMethod::ApiKey);
+    let mut principal = fresh_principal();
     let fields = BTreeMap::from([(
         "api_key".to_owned(),
         JsonData::String("sk-secret-value".to_owned()),

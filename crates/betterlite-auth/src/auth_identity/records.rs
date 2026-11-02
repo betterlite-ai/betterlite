@@ -104,27 +104,4 @@ pub struct Principal {
     pub source_key: SourceKey,
 }
 
-impl Principal {
-    #[must_use]
-    pub fn new(principal_type: PrincipalType, subject: String, auth_method: AuthMethod) -> Self {
-        Self {
-            principal_type,
-            subject,
-            issuer: None,
-            audience: Vec::new(),
-            user: None,
-            organization: None,
-            teams: Vec::new(),
-            project: None,
-            end_user: None,
-            roles: Vec::new(),
-            scopes: Vec::new(),
-            auth_method,
-            credential_ref: CredentialRef::default(),
-            network: NetworkContext::default(),
-            source_key: SourceKey::default(),
-        }
-    }
-}
-
 mod tests;

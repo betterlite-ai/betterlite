@@ -3,8 +3,19 @@
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use rstest::rstest;
 
-use super::{AuthMethod, PrincipalType, Role, TeamRole, effective_user_role, map_role, team_role};
+use super::{
+    AuthMethod, PrincipalType, Role, TeamRole, effective_user_role, get_user_role,
+    is_user_proxy_admin, map_role, team_role,
+};
 use crate::user_roles::UserRole;
+
+fn user_with_role(role: Option<&str>) -> LiteLLMUserTable {
+    let text = role.map_or_else(
+        || r#"{"user_id":"u1"}"#.to_owned(),
+        |value| format!(r#"{{"user_id":"u1","user_role":"{value}"}}"#),
+    );
+    serde_json::from_str(&text).unwrap()
+}
 
 #[rstest]
 #[case::api_key(AuthMethod::ApiKey, "api_key")]
@@ -104,26 +115,33 @@ fn effective_role_invalid_is_internal(#[case] value: Option<&str>) {
 
 #[test]
 fn absent_user_role_is_none() {
-    let user: Option<&LiteLLMUserTable> = None;
-    assert_eq!(
-        user.map(|record| effective_user_role(record.user_role.as_deref())),
-        None
-    );
+    let absent: Option<&LiteLLMUserTable> = None;
+    assert_eq!(get_user_role(absent), None);
+}
+
+#[rstest]
+#[case::proxy_admin(Some("proxy_admin"), Some(UserRole::ProxyAdmin))]
+#[case::org_admin(Some("org_admin"), Some(UserRole::OrgAdmin))]
+#[case::unknown(Some("not_a_role"), Some(UserRole::InternalUser))]
+fn present_user_role_applies_fallback(
+    #[case] role: Option<&str>,
+    #[case] expected: Option<UserRole>,
+) {
+    let user = user_with_role(role);
+    assert_eq!(get_user_role(Some(&user)), expected);
 }
 
 #[rstest]
 #[case::proxy_admin(Some("proxy_admin"), true)]
 #[case::wrong_case(Some("Proxy_Admin"), false)]
-#[case::absent_role(None, false)]
+#[case::other_role(Some("org_admin"), false)]
 fn proxy_admin_requires_exact_present_role(#[case] role: Option<&str>, #[case] expected: bool) {
-    let text = role.map_or_else(
-        || r#"{"user_id":"u1"}"#.to_owned(),
-        |value| format!(r#"{{"user_id":"u1","user_role":"{value}"}}"#),
-    );
-    let user: LiteLLMUserTable = serde_json::from_str(&text).unwrap();
-    let is_admin =
-        Some(&user).is_some_and(|record| record.user_role.as_deref() == Some("proxy_admin"));
-    assert_eq!(is_admin, expected);
+    let user = user_with_role(role);
+    assert_eq!(is_user_proxy_admin(Some(&user)), expected);
+}
+
+#[test]
+fn absent_user_is_never_proxy_admin() {
     let absent: Option<&LiteLLMUserTable> = None;
-    assert!(absent.is_none_or(|record| record.user_role.as_deref() != Some("proxy_admin")));
+    assert!(!is_user_proxy_admin(absent));
 }
