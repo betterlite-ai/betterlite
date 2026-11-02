@@ -176,30 +176,6 @@ const MESSAGE_DECLARED_FIELDS: [&str; 11] = [
     "annotations",
 ];
 
-fn message_tool_calls_field(fields: &IndexMap<String, Json>) -> Json {
-    match fields.get("tool_calls") {
-        Some(Json::List(items)) if !items.is_empty() => {
-            Json::List(items.iter().map(ordered_tool_call_fields).collect())
-        }
-        _ => Json::Null,
-    }
-}
-
-fn message_function_call_field(fields: &IndexMap<String, Json>) -> Json {
-    match fields.get("function_call") {
-        Some(value) if super::super::support::has_value(value) => ordered_function_fields(value),
-        _ => Json::Null,
-    }
-}
-
-fn message_role_field(fields: &IndexMap<String, Json>) -> Json {
-    fields
-        .get("role")
-        .filter(|value| super::super::support::has_value(value))
-        .cloned()
-        .unwrap_or_else(|| Json::Text("assistant".to_owned()))
-}
-
 // Everything model_dump places after function_call: audio/images/reasoning_content/thinking_blocks/reasoning_items when not null, provider_specific_fields (litellm.types.utils.add_provider_specific_fields keeps its None default unless the caller's dict is non-empty), annotations when not null, then the caller's own extra keys in their own order.
 fn append_message_tail_fields(
     ordered: &mut IndexMap<String, Json>,
@@ -243,11 +219,31 @@ pub(super) fn message_model_dump(message: &Json) -> Json {
         "content".to_owned(),
         fields.get("content").cloned().unwrap_or(Json::Null),
     );
-    ordered.insert("role".to_owned(), message_role_field(fields));
-    ordered.insert("tool_calls".to_owned(), message_tool_calls_field(fields));
+    ordered.insert(
+        "role".to_owned(),
+        fields
+            .get("role")
+            .filter(|value| super::super::support::has_value(value))
+            .cloned()
+            .unwrap_or_else(|| Json::Text("assistant".to_owned())),
+    );
+    ordered.insert(
+        "tool_calls".to_owned(),
+        match fields.get("tool_calls") {
+            Some(Json::List(items)) if !items.is_empty() => {
+                Json::List(items.iter().map(ordered_tool_call_fields).collect())
+            }
+            _ => Json::Null,
+        },
+    );
     ordered.insert(
         "function_call".to_owned(),
-        message_function_call_field(fields),
+        match fields.get("function_call") {
+            Some(value) if super::super::support::has_value(value) => {
+                ordered_function_fields(value)
+            }
+            _ => Json::Null,
+        },
     );
     append_message_tail_fields(&mut ordered, fields);
     Json::Object(ordered)
