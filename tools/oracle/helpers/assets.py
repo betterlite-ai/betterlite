@@ -92,12 +92,14 @@ def run(input_value: Input) -> Json:
     if input_value["op"] == "is_within":
         return _run_is_within(input_value.get("fixture", []), input_value["path"])
     if input_value["op"] == "join_within":
-        return path_utils.join_within(input_value["base_dir"], *input_value["parts"])
+        joined = path_utils.join_within(input_value["base_dir"], *input_value["parts"])
+        return {"joined": joined}
     if input_value["op"] == "safe_filename":
         return path_utils.safe_filename(input_value["filename"])
     if input_value["op"] == "detect_local_image_media_type":
         header = bytes.fromhex(input_value["header_hex"])
-        return static_asset_utils.detect_local_image_media_type(header)
+        media_type = static_asset_utils.detect_local_image_media_type(header)
+        return {"media_type": media_type}
     return _run_resolve_local_image(input_value.get("fixture", []), input_value["candidate"])
 
 
@@ -128,16 +130,19 @@ def _run_safe_join(entries: list[Entry], parts: list[str], *, strict: bool) -> J
         base.mkdir(parents=True, exist_ok=True)
         _materialize(base, entries)
         canonical_base = base.resolve()
+        if strict and any("\x00" in part for part in parts):
+            raise ValueError("Path contains null byte")
         if strict:
-            resolved = path_utils.safe_join(str(base), *parts)
+            try:
+                resolved = path_utils.safe_join(str(base), *parts)
+            except ValueError:
+                return {"relative_path": None, "outside_root": True}
         else:
             resolved = path_utils.try_safe_join(str(base), *parts)
             if resolved is None:
-                return None
+                return {"relative_path": None, "outside_root": True}
         relative = _relative_to(canonical_base, Path(resolved))
-        if relative is None:
-            raise ValueError("resolved path left the fixture root")
-        return relative
+        return {"relative_path": relative, "outside_root": False}
 
 
 def _run_is_within(entries: list[Entry], path: str) -> Json:

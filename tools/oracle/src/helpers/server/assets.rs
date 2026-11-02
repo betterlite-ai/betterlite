@@ -82,43 +82,50 @@ fn run_safe_join(
     let (_root, base) = prepare_base(entries)?;
     let canonical_base = soft_canonicalize(&base)?;
     let parts_ref: Vec<&str> = parts.iter().map(String::as_str).collect();
-    let resolved = if strict {
-        paths::safe_join(&base, &parts_ref)?
-    } else {
-        match paths::try_safe_join(&base, &parts_ref)? {
-            Some(path) => path,
-            None => return Ok(serde_json::Value::Null),
+    let outcome = if strict {
+        match paths::safe_join(&base, &parts_ref) {
+            Ok(path) => Some(path),
+            Err(PathError::Escaped { .. }) => None,
+            Err(PathError::NullByte) => {
+                return Err(Box::<crate::helpers::HelperError>::from(Invalid(
+                    "Path contains null byte".to_owned(),
+                )));
+            }
         }
+    } else {
+        paths::try_safe_join(&base, &parts_ref)
     };
-    let relative = fixture::relative_to(&canonical_base, &resolved)
-        .ok_or_else(|| Invalid("resolved path left the fixture root".to_owned()))?;
-    Ok(serde_json::Value::String(relative))
+    let Some(resolved) = outcome else {
+        return Ok(serde_json::json!({ "relative_path": null, "outside_root": true }));
+    };
+    let relative = fixture::relative_to(&canonical_base, &resolved);
+    Ok(serde_json::json!({ "relative_path": relative, "outside_root": false }))
 }
 
 fn run_is_within(entries: &[Entry], path: &str) -> crate::helpers::HelperResult {
     let (_root, base) = prepare_base(entries)?;
     let joined = base.join(path);
-    let within = paths::is_within(&joined, &base)?;
+    let within = paths::is_within(&joined, &base);
     Ok(serde_json::Value::Bool(within))
 }
 
 fn run_join_within(base_dir: &str, parts: &[String]) -> crate::helpers::HelperResult {
     let parts_ref: Vec<&str> = parts.iter().map(String::as_str).collect();
-    let Some(joined) = paths::join_within(Path::new(base_dir), &parts_ref) else {
-        return Ok(serde_json::Value::Null);
+    let joined = match paths::join_within(Path::new(base_dir), &parts_ref) {
+        Some(path) => Some(
+            path.to_str()
+                .ok_or_else(|| Invalid("joined path is not valid UTF-8".to_owned()))?
+                .to_owned(),
+        ),
+        None => None,
     };
-    let text = joined
-        .to_str()
-        .ok_or_else(|| Invalid("joined path is not valid UTF-8".to_owned()))?;
-    Ok(serde_json::Value::String(text.to_owned()))
+    Ok(serde_json::json!({ "joined": joined }))
 }
 
 fn run_detect(header_hex: &str) -> crate::helpers::HelperResult {
     let bytes = hex::decode(header_hex).map_err(|error| Invalid(error.to_string()))?;
-    let Some(media_type) = images::detect_local_image_media_type(&bytes) else {
-        return Ok(serde_json::Value::Null);
-    };
-    Ok(serde_json::Value::String(media_type.to_owned()))
+    let media_type = images::detect_local_image_media_type(&bytes);
+    Ok(serde_json::json!({ "media_type": media_type }))
 }
 
 fn run_resolve(entries: &[Entry], candidate: &str) -> crate::helpers::HelperResult {
@@ -186,19 +193,10 @@ impl From<Invalid> for Box<crate::helpers::HelperError> {
     }
 }
 
-impl From<PathError> for Box<crate::helpers::HelperError> {
-    fn from(error: PathError) -> Self {
-        match error {
-            PathError::Io(source) => Self::from(source),
-            PathError::NullByte | PathError::Escaped { .. } => {
-                Self::from(Invalid(error.to_string()))
-            }
-        }
-    }
-}
-
 impl From<FilenameError> for Box<crate::helpers::HelperError> {
     fn from(error: FilenameError) -> Self {
         Self::from(Invalid(error.to_string()))
     }
 }
+
+mod tests;

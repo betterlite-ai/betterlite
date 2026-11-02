@@ -1,4 +1,3 @@
-use std::io;
 use std::path::{Component, Path, PathBuf, absolute};
 
 use soft_canonicalize::soft_canonicalize;
@@ -9,8 +8,6 @@ pub enum PathError {
     NullByte,
     #[error("Path {resolved:?} escapes base directory {base:?}")]
     Escaped { resolved: PathBuf, base: PathBuf },
-    #[error("could not resolve path")]
-    Io(#[source] io::Error),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -42,9 +39,9 @@ pub fn safe_join(base_dir: &Path, parts: &[&str]) -> Result<PathBuf, PathError> 
     if has_null_byte(parts) {
         return Err(PathError::NullByte);
     }
-    let base = soft_canonicalize(base_dir).map_err(PathError::Io)?;
+    let base = realpath_non_strict(base_dir);
     let joined = push_parts(&base, parts);
-    let resolved = soft_canonicalize(&joined).map_err(PathError::Io)?;
+    let resolved = realpath_non_strict(&joined);
     if resolved.starts_with(&base) {
         Ok(resolved)
     } else {
@@ -52,18 +49,45 @@ pub fn safe_join(base_dir: &Path, parts: &[&str]) -> Result<PathBuf, PathError> 
     }
 }
 
-pub fn try_safe_join(base_dir: &Path, parts: &[&str]) -> Result<Option<PathBuf>, io::Error> {
+#[must_use]
+pub fn try_safe_join(base_dir: &Path, parts: &[&str]) -> Option<PathBuf> {
     match safe_join(base_dir, parts) {
-        Ok(path) => Ok(Some(path)),
-        Err(PathError::NullByte | PathError::Escaped { .. }) => Ok(None),
-        Err(PathError::Io(source)) => Err(source),
+        Ok(path) => Some(path),
+        Err(_) => None,
     }
 }
 
-pub fn is_within(path: &Path, base_dir: &Path) -> Result<bool, io::Error> {
-    let base = soft_canonicalize(base_dir)?;
-    let resolved = soft_canonicalize(path)?;
-    Ok(resolved.starts_with(&base))
+#[must_use]
+pub fn is_within(path: &Path, base_dir: &Path) -> bool {
+    let base = realpath_non_strict(base_dir);
+    let resolved = realpath_non_strict(path);
+    resolved.starts_with(&base)
+}
+
+// Mirrors `os.path.realpath(path, strict=False)`: a loop or permission error keeps its unresolved remainder instead of raising.
+fn realpath_non_strict(path: &Path) -> PathBuf {
+    let Ok(absolute_path) = absolute(path) else {
+        return path.to_path_buf();
+    };
+    if let Ok(resolved) = soft_canonicalize(&absolute_path) {
+        return resolved;
+    }
+    let mut resolved_prefix = PathBuf::new();
+    let mut literal_suffix = PathBuf::new();
+    let mut probe = PathBuf::new();
+    let mut fell_back = false;
+    for component in absolute_path.components() {
+        probe.push(component);
+        if fell_back {
+            literal_suffix.push(component);
+        } else if let Ok(canonical) = soft_canonicalize(&probe) {
+            resolved_prefix = canonical;
+        } else {
+            fell_back = true;
+            literal_suffix.push(component);
+        }
+    }
+    resolved_prefix.join(literal_suffix)
 }
 
 #[must_use]

@@ -2,9 +2,11 @@
 
 use std::cell::Cell;
 use std::fs;
+use std::os::unix::fs::symlink;
 use std::path::PathBuf;
 
 use rstest::rstest;
+use soft_canonicalize::soft_canonicalize;
 use tempfile::TempDir;
 
 use super::{AssetLogger, detect_local_image_media_type, resolve_local_image};
@@ -66,6 +68,20 @@ fn resolve_local_image_returns_the_media_type_for_a_supported_file() {
     assert_eq!(resolved.media_type, "image/png");
     assert!(resolved.path.is_file());
     assert!(logger.levels().is_empty());
+}
+
+#[test]
+fn resolve_local_image_returns_the_realpath_resolved_symlink_target() {
+    let workspace = TempDir::new().unwrap();
+    let real = workspace.path().join("real");
+    fs::create_dir_all(&real).unwrap();
+    let target = real.join("image.png");
+    fs::write(&target, b"\x89PNG\r\n\x1a\n").unwrap();
+    let candidate = workspace.path().join("logo.png");
+    symlink(&target, &candidate).unwrap();
+    let logger = RecordingLogger::default();
+    let resolved = resolve_local_image(candidate.to_str().unwrap(), None, &logger).unwrap();
+    assert_eq!(resolved.path, soft_canonicalize(&target).unwrap());
 }
 
 #[test]

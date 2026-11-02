@@ -72,16 +72,29 @@ fn try_safe_join_swaps_the_value_error_for_an_option(
     #[case] expect_some: bool,
 ) {
     let (_workspace, base) = workspace();
-    assert_eq!(try_safe_join(&base, parts).unwrap().is_some(), expect_some);
+    assert_eq!(try_safe_join(&base, parts).is_some(), expect_some);
 }
 
 #[test]
 fn is_within_follows_symlinks_on_both_sides() {
     let (_workspace, base) = workspace();
-    assert!(is_within(&base.join("inside"), &base).unwrap());
-    assert!(is_within(&base.join("loop"), &base).unwrap());
-    assert!(is_within(&base, &base).unwrap());
-    assert!(!is_within(&base.join("escape"), &base).unwrap());
+    assert!(is_within(&base.join("inside"), &base));
+    assert!(is_within(&base.join("loop"), &base));
+    assert!(is_within(&base, &base));
+    assert!(!is_within(&base.join("escape"), &base));
+}
+
+#[test]
+fn safe_join_keeps_the_unresolved_remainder_for_a_symlink_loop() {
+    let workspace = TempDir::new().unwrap();
+    let base = workspace.path().join("base");
+    fs::create_dir_all(&base).unwrap();
+    symlink("loop", base.join("loop")).unwrap();
+    let resolved = safe_join(&base, &["loop"]).unwrap();
+    let canonical_base = soft_canonicalize(&base).unwrap();
+    assert_eq!(resolved, canonical_base.join("loop"));
+    assert!(is_within(&base.join("loop"), &base));
+    assert!(try_safe_join(&base, &["loop"]).is_some());
 }
 
 #[rstest]
