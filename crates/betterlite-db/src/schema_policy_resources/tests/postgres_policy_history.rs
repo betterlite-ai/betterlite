@@ -262,35 +262,24 @@ async fn check_project_column_only_repair(client: &Client) {
     assert_eq!(foreign_keys, "0", "no foreign key should be invented");
 }
 
-async fn assert_policy_versioning_index_and_nullable_columns(client: &Client) {
-    assert_index(
-        client,
-        "LiteLLM_PolicyTable_policy_name_version_status_idx",
-        &["policy_name", "version_status"],
-        false,
-    )
-    .await;
+async fn assert_policy_versioning_nullable_columns(client: &Client) {
+    let timestamp_column = |name| {
+        (
+            name,
+            "timestamp without time zone",
+            true,
+            None,
+            "timestamp",
+            Some(3_i32),
+        )
+    };
     assert_columns(
         client,
         "LiteLLM_PolicyTable",
         &[
             ("parent_version_id", "text", true, None, "text", None),
-            (
-                "production_at",
-                "timestamp without time zone",
-                true,
-                None,
-                "timestamp",
-                Some(3_i32),
-            ),
-            (
-                "published_at",
-                "timestamp without time zone",
-                true,
-                None,
-                "timestamp",
-                Some(3_i32),
-            ),
+            timestamp_column("production_at"),
+            timestamp_column("published_at"),
         ],
     )
     .await;
@@ -316,7 +305,14 @@ async fn check_policy_default_production_version_one(client: &Client) {
     assert!(is_latest);
     assert_eq!(version_number, 1_i32);
     assert_eq!(version_status, "production");
-    assert_policy_versioning_index_and_nullable_columns(client).await;
+    assert_index(
+        client,
+        "LiteLLM_PolicyTable_policy_name_version_status_idx",
+        &["policy_name", "version_status"],
+        false,
+    )
+    .await;
+    assert_policy_versioning_nullable_columns(client).await;
 }
 
 async fn check_multiple_versions_same_latest_allowed(client: &Client) {
