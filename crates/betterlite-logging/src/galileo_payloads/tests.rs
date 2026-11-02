@@ -561,7 +561,8 @@ fn check_responses_api_output_projection() {
             {"type": "message", "id": "msg_1", "role": "assistant", "status": "completed",
              "content": [{"type": "output_text", "text": "hi", "annotations": []}]},
             {"type": "function_call", "call_id": "call_1", "name": "f", "arguments": "{}"},
-            {"type": "something_unknown", "foo": "bar"}
+            {"type": "something_unknown", "foo": "bar"},
+            {"type": "reasoning", "call_id": "call_2", "name": "g", "arguments": "{}"}
         ]"#);
     let (_, response_output, _) = galileo_input_output_content(
         &kwargs,
@@ -576,7 +577,8 @@ fn check_responses_api_output_projection() {
              "role": "assistant", "status": "completed", "type": "message", "phase": null},
             {"arguments": "{}", "call_id": "call_1", "name": "f", "type": "function_call",
              "id": null, "caller": null, "namespace": null, "status": null},
-            {"type": "something_unknown", "foo": "bar"}
+            {"type": "something_unknown", "foo": "bar"},
+            {"type": "reasoning", "call_id": "call_2", "name": "g", "arguments": "{}"}
         ]"#);
     assert_eq!(parsed, expected);
 }
