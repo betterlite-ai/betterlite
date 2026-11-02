@@ -384,5 +384,5 @@ pitfalls:
 - A missing status takes ResponseStatus's Default; no call site writes a literal 400 or 401 as a fallback.
 review_level: standard
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2100
   max_new_expects: 0
