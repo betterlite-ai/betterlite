@@ -1,0 +1,9 @@
+kind: helper
+name: codex-null-value
+call:
+  b5081:
+    harness: codex
+    config: { clean: null }
+env: {}
+compare:
+  ignore: []

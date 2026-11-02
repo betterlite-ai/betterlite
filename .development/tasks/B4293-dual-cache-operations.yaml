@@ -26,7 +26,6 @@ scope:
   paths:
     - crates/betterlite-cache/src/dual_cache.rs
     - crates/betterlite-cache/src/dual_cache/**
-    - crates/betterlite-cache/src/lib.rs
     - tools/oracle/cases/dual_cache/**
     - tools/oracle/helpers/b4293.py
     - tools/oracle/helpers/b4293/**
