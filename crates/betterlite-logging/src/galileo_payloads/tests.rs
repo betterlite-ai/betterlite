@@ -489,45 +489,82 @@ fn check_chat_message_projection() {
     );
 }
 
-// An empty tool_calls list or a falsy function_call dict is present but folds back to null, same as an absent key; a truthy function_call takes its ordered dump instead.
-fn check_message_model_dump_falsy_fields() {
+fn assert_chat_message_output(message: Json, expected: &str) {
     let kwargs = GalileoKwargs::default();
-    let empty_message =
-        val(r#"{"role": "assistant", "content": null, "tool_calls": [], "function_call": {}}"#);
-    let (_, empty_output, _) = galileo_input_output_content(
+    let (_, output, _) = galileo_input_output_content(
         &kwargs,
         Some(&ResponseObj::Chat {
-            message: Some(empty_message),
+            message: Some(message),
         }),
         Level::Default,
         None,
     );
-    assert_eq!(
-        empty_output,
+    assert_eq!(output, expected);
+}
+
+// An empty tool_calls list or a falsy function_call dict is present but folds back to null, same as an absent key; a truthy function_call takes its ordered dump instead.
+fn check_message_model_dump_falsy_fields() {
+    assert_chat_message_output(
+        val(r#"{"role": "assistant", "content": null, "tool_calls": [], "function_call": {}}"#),
         concat!(
             r#"{"content": null, "role": "assistant", "tool_calls": null, "#,
             r#""function_call": null, "provider_specific_fields": null}"#,
-        )
+        ),
     );
-
-    let function_call_message = val(
-        r#"{"role": "assistant", "content": null, "function_call": {"name": "f", "arguments": "{}"}}"#,
-    );
-    let (_, function_call_output, _) = galileo_input_output_content(
-        &kwargs,
-        Some(&ResponseObj::Chat {
-            message: Some(function_call_message),
-        }),
-        Level::Default,
-        None,
-    );
-    assert_eq!(
-        function_call_output,
+    assert_chat_message_output(
+        val(
+            r#"{"role": "assistant", "content": null, "function_call": {"name": "f", "arguments": "{}"}}"#,
+        ),
         concat!(
             r#"{"content": null, "role": "assistant", "tool_calls": null, "#,
             r#""function_call": {"arguments": "{}", "name": "f"}, "provider_specific_fields": null}"#,
-        )
+        ),
     );
+}
+
+// litellm.types.utils.Message.__init__ keeps annotations even when empty (an is-not-None check, not truthiness), keeps a present reasoning_content, carries a tool call's own extra "index" key ahead of function/id/type (ChatCompletionMessageToolCall.__init__ passes **params to super().__init__() before assigning self.function/id/type), and folds any key that isn't a declared Message field into the pydantic extra tail (here, a null "refusal").
+fn check_message_model_dump_extended_fields() {
+    assert_chat_message_output(
+        val(
+            r#"{"role": "assistant", "content": "Hi", "refusal": null, "annotations": [],
+            "reasoning_content": "thinking...",
+            "tool_calls": [{"index": 0, "id": "call_1", "type": "function",
+                "function": {"name": "f", "arguments": "{}"}}]}"#,
+        ),
+        concat!(
+            r#"{"content": "Hi", "role": "assistant", "#,
+            r#""tool_calls": [{"index": 0, "function": {"arguments": "{}", "name": "f"}, "id": "call_1", "type": "function"}], "#,
+            r#""function_call": null, "reasoning_content": "thinking...", "#,
+            r#""provider_specific_fields": null, "annotations": [], "refusal": null}"#,
+        ),
+    );
+}
+
+// litellm.types.llms.openai.ResponsesAPIResponse.output parses a "message" item into ResponseOutputMessage and a "function_call" item into ResponseFunctionToolCall before _serialize_galileo_output dumps them, filling every declared optional field with null; an item whose type isn't recognized stays an unmodified dict.
+fn check_responses_api_output_projection() {
+    let kwargs = GalileoKwargs::default();
+    let output = val(r#"[
+            {"type": "message", "id": "msg_1", "role": "assistant", "status": "completed",
+             "content": [{"type": "output_text", "text": "hi", "annotations": []}]},
+            {"type": "function_call", "call_id": "call_1", "name": "f", "arguments": "{}"},
+            {"type": "something_unknown", "foo": "bar"}
+        ]"#);
+    let (_, response_output, _) = galileo_input_output_content(
+        &kwargs,
+        Some(&ResponseObj::ResponsesApi { output }),
+        Level::Default,
+        None,
+    );
+    let parsed: Json = serde_json::from_str(&response_output).expect("valid JSON output");
+    let expected = val(r#"[
+            {"id": "msg_1",
+             "content": [{"annotations": [], "text": "hi", "type": "output_text", "logprobs": null}],
+             "role": "assistant", "status": "completed", "type": "message", "phase": null},
+            {"arguments": "{}", "call_id": "call_1", "name": "f", "type": "function_call",
+             "id": null, "caller": null, "namespace": null, "status": null},
+            {"type": "something_unknown", "foo": "bar"}
+        ]"#);
+    assert_eq!(parsed, expected);
 }
 
 // Rerank uses its own langfuse-style prompt (just the messages, no functions/tools) rather than the shared build_prompt, and that prompt is echoed as the span's messages_for_span.
@@ -606,6 +643,8 @@ fn galileo_payload_construction() {
     check_pass_through_endpoint_content();
     check_chat_message_projection();
     check_message_model_dump_falsy_fields();
+    check_message_model_dump_extended_fields();
+    check_responses_api_output_projection();
     check_rerank_content();
     check_messages_or_empty_guard();
 }

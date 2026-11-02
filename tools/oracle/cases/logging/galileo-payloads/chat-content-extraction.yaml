@@ -1,5 +1,5 @@
 kind: helper
 name: chat-content-extraction
-call: {"b3963": {"operation": "content_selection", "kwargs": {"call_type": "completion", "messages": [{"role": "user", "content": "Hello"}]}, "response": {"family": "chat", "message": {"role": "assistant", "content": "Hi there"}}}}
+call: {"b3963": {"operation": "content_selection", "kwargs": {"call_type": "completion", "messages": [{"role": "user", "content": "Hello"}]}, "response": {"family": "chat", "message": {"role": "assistant", "content": "Hi", "refusal": null, "annotations": [], "reasoning_content": "thinking...", "tool_calls": [{"index": 0, "id": "call_1", "type": "function", "function": {"name": "f", "arguments": "{}"}}]}}}}
 env: {}
 compare: {ignore: []}

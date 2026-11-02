@@ -8,6 +8,21 @@ use crate::python_json;
 
 mod families;
 mod model_response;
+mod responses_output;
+
+// Shared by the chat image-list and the Responses-API output-list projections: a List runs each item through `project`, anything else passes through unmodified.
+fn project_list_or_passthrough<F>(value: &Json, project: F) -> Json
+where
+    F: Fn(&Json) -> Json,
+{
+    match value {
+        Json::List(items) => Json::List(items.iter().map(project).collect()),
+        other
+        @ (Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
+            other.clone()
+        }
+    }
+}
 
 // Mirrors the level string _get_galileo_input_output_content receives from the callback dispatch.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]

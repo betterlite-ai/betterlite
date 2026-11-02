@@ -2,8 +2,9 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
 use super::model_response::{
-    content_from_dict_response, image_response_data_model_dump, message_model_dump,
+    content_from_dict_response, image_object_model_dump, message_model_dump,
 };
+use super::responses_output::output_item_dump;
 use super::{GalileoKwargs, ResponseObj, langfuse_style_rerank_prompt, serialize_galileo_output};
 use crate::python_json;
 
@@ -51,9 +52,10 @@ fn marker_family_content(
     let output_text = match family {
         MarkerFamily::Embedding => "embedding-output".to_owned(),
         MarkerFamily::Speech => "speech-output".to_owned(),
-        MarkerFamily::Image(data) => {
-            serialize_galileo_output(data.map(image_response_data_model_dump).as_ref())
-        }
+        MarkerFamily::Image(data) => serialize_galileo_output(
+            data.map(|value| super::project_list_or_passthrough(value, image_object_model_dump))
+                .as_ref(),
+        ),
         MarkerFamily::Transcription(text) => {
             serialize_galileo_output(text.cloned().map(Json::Text).as_ref())
         }
@@ -118,9 +120,11 @@ pub(super) fn response_content(
             super::messages_or_empty(kwargs),
         ),
         ResponseObj::Rerank { results } => rerank_content(kwargs, results),
-        // The Responses API echoes its own output back, gated by has_value like Python's `if response is not None`.
+        // The Responses API echoes its own output back, gated by has_value like Python's `if response is not None`; each item goes through its parsed pydantic shape first, the way ResponsesAPIResponse.output already parsed it.
         ResponseObj::ResponsesApi { output } => {
-            let present_output = super::super::support::has_value(output).then_some(output);
+            let projected_output = super::project_list_or_passthrough(output, output_item_dump);
+            let present_output =
+                super::super::support::has_value(&projected_output).then_some(&projected_output);
             standard_content(
                 prompt,
                 serialize_galileo_output(present_output),

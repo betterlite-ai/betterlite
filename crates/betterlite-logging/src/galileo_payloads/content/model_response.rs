@@ -75,7 +75,7 @@ fn custom_name_input_fields(custom_value: Option<&Json>) -> Json {
     }
 }
 
-// litellm.types.utils.chat_completion_tool_call_from_dict dispatches between the custom-shaped dump (ChatCompletionMessageCustomToolCall's declared field order: id, type, custom with name and input) and the function-shaped dump (ChatCompletionMessageToolCall.__init__'s attribute-assignment order: function, then id, then type).
+// litellm.types.utils.chat_completion_tool_call_from_dict dispatches between the custom-shaped dump (ChatCompletionMessageCustomToolCall's declared field order: id, type, custom with name and input) and the function-shaped dump. ChatCompletionMessageToolCall.__init__ passes **params (the caller's extra keys, like "index") to super().__init__() before assigning self.function/id/type, so on a model with no declared fields those extras land in __pydantic_extra__ ahead of function, id and type.
 fn ordered_tool_call_fields(tool_call: &Json) -> Json {
     let Json::Object(fields) = tool_call else {
         return tool_call.clone();
@@ -91,6 +91,11 @@ fn ordered_tool_call_fields(tool_call: &Json) -> Json {
             custom_name_input_fields(fields.get("custom")),
         );
         return Json::Object(ordered);
+    }
+    for (key, value) in fields {
+        if key != "function" && key != "id" && key != "type" {
+            ordered.insert(key.clone(), value.clone());
+        }
     }
     let function = fields
         .get("function")
@@ -147,7 +152,86 @@ pub(super) fn content_from_dict_response(value: &IndexMap<String, Json>) -> Stri
     content
 }
 
-// litellm.types.utils.Message.model_dump()/.json(): content, role, tool_calls, function_call and provider_specific_fields are always explicitly set, so exclude_unset keeps them (nulls included) in this declared order.
+// The Message fields litellm deletes from the model (so they're absent from model_dump) whenever the caller's own argument was None, kept otherwise even if falsy (an empty list stays); provider_specific_fields and annotations are handled on their own right after.
+const MESSAGE_KEPT_WHEN_NOT_NULL: [&str; 5] = [
+    "audio",
+    "images",
+    "reasoning_content",
+    "thinking_blocks",
+    "reasoning_items",
+];
+
+// Every Message field litellm's __init__ reads by name; any other key the caller passed goes to **params, which SafeAttributeModel stores as pydantic extra fields appended after every declared field, in the caller's own order.
+const MESSAGE_DECLARED_FIELDS: [&str; 11] = [
+    "content",
+    "role",
+    "tool_calls",
+    "function_call",
+    "audio",
+    "images",
+    "reasoning_content",
+    "thinking_blocks",
+    "reasoning_items",
+    "provider_specific_fields",
+    "annotations",
+];
+
+fn message_tool_calls_field(fields: &IndexMap<String, Json>) -> Json {
+    match fields.get("tool_calls") {
+        Some(Json::List(items)) if !items.is_empty() => {
+            Json::List(items.iter().map(ordered_tool_call_fields).collect())
+        }
+        _ => Json::Null,
+    }
+}
+
+fn message_function_call_field(fields: &IndexMap<String, Json>) -> Json {
+    match fields.get("function_call") {
+        Some(value) if super::super::support::has_value(value) => ordered_function_fields(value),
+        _ => Json::Null,
+    }
+}
+
+fn message_role_field(fields: &IndexMap<String, Json>) -> Json {
+    fields
+        .get("role")
+        .filter(|value| super::super::support::has_value(value))
+        .cloned()
+        .unwrap_or_else(|| Json::Text("assistant".to_owned()))
+}
+
+// Everything model_dump places after function_call: audio/images/reasoning_content/thinking_blocks/reasoning_items when not null, provider_specific_fields (litellm.types.utils.add_provider_specific_fields keeps its None default unless the caller's dict is non-empty), annotations when not null, then the caller's own extra keys in their own order.
+fn append_message_tail_fields(
+    ordered: &mut IndexMap<String, Json>,
+    fields: &IndexMap<String, Json>,
+) {
+    for key in MESSAGE_KEPT_WHEN_NOT_NULL {
+        if let Some(value) = fields.get(key).filter(|value| !matches!(value, Json::Null)) {
+            ordered.insert(key.to_owned(), value.clone());
+        }
+    }
+    ordered.insert(
+        "provider_specific_fields".to_owned(),
+        fields
+            .get("provider_specific_fields")
+            .filter(|value| super::super::support::has_value(value))
+            .cloned()
+            .unwrap_or(Json::Null),
+    );
+    if let Some(annotations) = fields
+        .get("annotations")
+        .filter(|value| !matches!(value, Json::Null))
+    {
+        ordered.insert("annotations".to_owned(), annotations.clone());
+    }
+    for (key, value) in fields {
+        if !MESSAGE_DECLARED_FIELDS.contains(&key.as_str()) {
+            ordered.insert(key.clone(), value.clone());
+        }
+    }
+}
+
+// litellm.types.utils.Message.__init__ (types/utils.py:1399-1497): content, role, tool_calls and function_call are always explicitly set (nulls included).
 pub(super) fn message_model_dump(message: &Json) -> Json {
     let empty = IndexMap::new();
     let fields = match message {
@@ -159,38 +243,18 @@ pub(super) fn message_model_dump(message: &Json) -> Json {
         "content".to_owned(),
         fields.get("content").cloned().unwrap_or(Json::Null),
     );
+    ordered.insert("role".to_owned(), message_role_field(fields));
+    ordered.insert("tool_calls".to_owned(), message_tool_calls_field(fields));
     ordered.insert(
-        "role".to_owned(),
-        fields
-            .get("role")
-            .filter(|value| super::super::support::has_value(value))
-            .cloned()
-            .unwrap_or_else(|| Json::Text("assistant".to_owned())),
+        "function_call".to_owned(),
+        message_function_call_field(fields),
     );
-    let tool_calls = match fields.get("tool_calls") {
-        Some(Json::List(items)) if !items.is_empty() => {
-            Json::List(items.iter().map(ordered_tool_call_fields).collect())
-        }
-        _ => Json::Null,
-    };
-    ordered.insert("tool_calls".to_owned(), tool_calls);
-    let function_call = match fields.get("function_call") {
-        Some(value) if super::super::support::has_value(value) => ordered_function_fields(value),
-        _ => Json::Null,
-    };
-    ordered.insert("function_call".to_owned(), function_call);
-    ordered.insert(
-        "provider_specific_fields".to_owned(),
-        fields
-            .get("provider_specific_fields")
-            .cloned()
-            .unwrap_or(Json::Null),
-    );
+    append_message_tail_fields(&mut ordered, fields);
     Json::Object(ordered)
 }
 
 // litellm.types.utils.ImageObject.json() calls model_dump() directly (not the exclude_unset default), so its fields are always present, nulls included, in the order ImageObject's base class (openai.types.image.Image) declares b64_json and revised_prompt before url, then ImageObject itself adds provider_specific_fields.
-fn image_object_model_dump(image: &Json) -> Json {
+pub(super) fn image_object_model_dump(image: &Json) -> Json {
     let empty = IndexMap::new();
     let fields = match image {
         Json::Object(fields) => fields,
@@ -209,15 +273,4 @@ fn image_object_model_dump(image: &Json) -> Json {
         );
     }
     Json::Object(ordered)
-}
-
-// litellm.integrations.galileo.GalileoObserve's ImageResponse branch reads "data": a list of ImageObject, each serialized through this same dump.
-pub(super) fn image_response_data_model_dump(data: &Json) -> Json {
-    match data {
-        Json::List(items) => Json::List(items.iter().map(image_object_model_dump).collect()),
-        other
-        @ (Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
-            other.clone()
-        }
-    }
 }
