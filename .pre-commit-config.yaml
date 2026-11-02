@@ -26,7 +26,7 @@ repos:
           awk 'FNR==1{j=0} !j&&NF{sub(/^[ \t]+/,""); if(/^\/[\/*]/||(/^#/&&!/^#[![]/)){print FILENAME": file starts with a comment";e=1} j=1} END{exit e}'
         language: system
         types: [text]
-        exclude: (^|/)Cargo\.lock$|\.md$|^LICENSE$
+        exclude: (^|/)Cargo\.lock$|\.md$|^LICENSE$|^crates/betterlite-config/assets/content_filter/
       # parallel tasks add dependencies to the same manifests; in name order they rarely touch the same gap
       - id: sorted-dependencies
         name: dependency tables in name order
@@ -57,7 +57,7 @@ repos:
         entry: typos
         language: system
         types: [text]
-        exclude: ^\.development/
+        exclude: ^\.development/|^crates/betterlite-config/assets/content_filter/
       - id: fmt
         name: cargo fmt
         entry: cargo fmt --
