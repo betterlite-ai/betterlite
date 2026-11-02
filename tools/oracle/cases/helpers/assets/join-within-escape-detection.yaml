@@ -1,0 +1,10 @@
+kind: helper
+name: join_within_rejects_a_parent_directory_component
+call:
+  assets:
+    op: join_within
+    base_dir: /srv/assets
+    parts: ["..", "secret.txt"]
+env: {}
+compare:
+  ignore: []

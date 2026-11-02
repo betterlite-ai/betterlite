@@ -1,0 +1,12 @@
+kind: helper
+name: safe_join_rejects_a_symlink_that_escapes_base_dir
+call:
+  assets:
+    op: safe_join
+    fixture:
+      - {kind: dir, path: "../outside"}
+      - {kind: symlink, path: escape, target: "../outside"}
+    parts: [escape, secret.txt]
+env: {}
+compare:
+  ignore: []

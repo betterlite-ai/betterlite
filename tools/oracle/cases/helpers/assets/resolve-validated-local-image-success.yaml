@@ -1,0 +1,11 @@
+kind: helper
+name: resolve_local_image_returns_the_media_type_for_a_supported_file
+call:
+  assets:
+    op: resolve_local_image
+    fixture:
+      - {kind: file, path: image.png, content_hex: "89504e470d0a1a0a"}
+    candidate: "<root>/image.png"
+env: {}
+compare:
+  ignore: []

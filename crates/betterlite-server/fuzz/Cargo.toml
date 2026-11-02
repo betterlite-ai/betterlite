@@ -17,6 +17,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "local_image_header"
+path = "fuzz_targets/local_image_header.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "ocr_json_body"
 path = "fuzz_targets/ocr_json_body.rs"
 test = false
