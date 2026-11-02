@@ -67,7 +67,6 @@ scope:
   paths:
     - crates/betterlite-server/src/management_payload.rs
     - crates/betterlite-server/src/management_payload/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/src/helpers/server/management_payload.rs
     - tools/oracle/src/helpers/server/management_payload/**

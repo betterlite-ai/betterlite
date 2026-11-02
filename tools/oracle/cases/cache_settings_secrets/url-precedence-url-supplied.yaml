@@ -1,0 +1,8 @@
+kind: helper
+name: cache-settings-secrets-url-precedence-url-supplied
+call:
+  b4306:
+    function: url_precedence
+    settings: {url: "redis://host:6379", host: "ignored", port: 1, db: 0, password: "p", username: "u"}
+env: {}
+compare: {ignore: []}

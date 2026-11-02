@@ -21,6 +21,24 @@ scope:
     - tools/oracle/helpers/b3790/**
     - tools/oracle/src/helpers/guardrails/b3790.rs
     - tools/oracle/src/helpers/guardrails/b3790/**
+    - tools/oracle/cases/guardrails/pillar/bool-default-fallback.yaml
+    - tools/oracle/cases/guardrails/pillar/bool-env-fallback.yaml
+    - tools/oracle/cases/guardrails/pillar/bool-explicit-precedence.yaml
+    - tools/oracle/cases/guardrails/pillar/encode-json-basic.yaml
+    - tools/oracle/cases/guardrails/pillar/encode-json-unicode.yaml
+    - tools/oracle/cases/guardrails/pillar/error-allow-fallback.yaml
+    - tools/oracle/cases/guardrails/pillar/error-block-fallback.yaml
+    - tools/oracle/cases/guardrails/pillar/headers-no-context.yaml
+    - tools/oracle/cases/guardrails/pillar/headers-with-context.yaml
+    - tools/oracle/cases/guardrails/pillar/model-provider-extraction.yaml
+    - tools/oracle/cases/guardrails/pillar/model-provider-fallback.yaml
+    - tools/oracle/cases/guardrails/pillar/payload-basic.yaml
+    - tools/oracle/cases/guardrails/pillar/payload-with-session.yaml
+    - tools/oracle/cases/guardrails/pillar/response-flagged-block.yaml
+    - tools/oracle/cases/guardrails/pillar/response-flagged-monitor.yaml
+    - tools/oracle/cases/guardrails/pillar/response-headers-truncated.yaml
+    - tools/oracle/cases/guardrails/pillar/truncate-evidence-dict-text.yaml
+    - tools/oracle/cases/guardrails/pillar/truncate-evidence-list-oversized.yaml
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/pillar/pillar.py#L75-L168

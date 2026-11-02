@@ -1,8 +1,11 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
+
 use rstest::rstest;
 
 use super::*;
+use crate::facts::{RequestFacts, ResponseFacts};
 
 fn describe(class: &ErrorClass) -> &'static str {
     match class {
@@ -102,6 +105,22 @@ fn api_fallback_carries_the_original_status() {
         panic!("expected Api, got {class:?}");
     };
     assert_eq!(details.status, 500);
+}
+
+#[rstest]
+#[case::status_422(422)]
+fn response_branches_answer_the_provider_status(#[case] status: u16) {
+    let mut error = facts(None, Some(status));
+    error.response = Some(ResponseFacts {
+        status_code: status,
+        headers: BTreeMap::new(),
+        request: Some(RequestFacts {
+            method: "POST".to_owned(),
+            url: "https://api.ai21.com/v1".to_owned(),
+        }),
+    });
+    let class = map_ai21_exception(&error, None).expect("expected a classification");
+    assert_eq!(class.metadata().status_code, status);
 }
 
 #[test]

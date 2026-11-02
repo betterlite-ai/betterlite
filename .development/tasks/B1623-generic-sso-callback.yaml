@@ -28,7 +28,6 @@ description: >-
   70 adapter and 70 config/wiring lines within 650.
 scope:
   paths:
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/generic_sso_callback.rs
     - crates/betterlite-server/src/generic_sso_callback/**
     - crates/betterlite-config/src/generic_sso_callback.rs

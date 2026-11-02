@@ -40,7 +40,6 @@ description: >-
   270 state/config, 230 tests and 230 helper/fuzz/schema material within 800 changed lines.
 scope:
   paths:
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/ui_settings_state.rs
     - crates/betterlite-server/src/ui_settings_state/**
     - crates/betterlite-server/fuzz/Cargo.toml

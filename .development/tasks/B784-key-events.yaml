@@ -95,7 +95,6 @@ scope:
   paths:
     - crates/betterlite-server/src/key_events.rs
     - crates/betterlite-server/src/key_events/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/src/helpers/server/key_events.rs
     - tools/oracle/src/helpers/server/key_events/**

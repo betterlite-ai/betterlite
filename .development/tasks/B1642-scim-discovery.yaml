@@ -27,7 +27,6 @@ description: >-
   with additional URI path examples in the HTTP case decoder corpus rather than a new parser.
 scope:
   paths:
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/scim_discovery.rs
     - crates/betterlite-server/src/scim_discovery/**
     - tools/oracle/cases/management/scim-discovery/**

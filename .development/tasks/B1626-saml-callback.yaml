@@ -35,7 +35,6 @@ scope:
     - crates/betterlite-auth/fuzz/Cargo.toml
     - crates/betterlite-auth/fuzz/fuzz_targets/saml_assertion_input.rs
     - crates/betterlite-auth/fuzz/corpus/saml_assertion_input/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/saml_callback.rs
     - crates/betterlite-server/src/saml_callback/**
     - crates/betterlite-config/src/saml_assertion.rs

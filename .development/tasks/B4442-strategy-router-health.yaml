@@ -32,14 +32,11 @@ scope:
   paths:
   - crates/betterlite-server/src/health/router.rs
   - crates/betterlite-server/src/health/router/**
-  - crates/betterlite-server/src/lib.rs
   - crates/betterlite-server/src/error.rs
   - crates/betterlite-server/src/routes.rs
   - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
   - crates/betterlite-server/src/state/**
-  - crates/betterlite-server/src/health/mod.rs
-  - crates/betterlite-server/src/health/mod/**
   - tools/oracle/cases/routing/router-health/**
   - tools/oracle/src/router_probes/strategy_router_health.rs
   - tools/oracle/src/router_probes/strategy_router_health/**

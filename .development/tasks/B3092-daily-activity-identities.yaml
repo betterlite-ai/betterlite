@@ -70,28 +70,28 @@ checks:
   commands:
     - id: spend-window-cases
       why: spend_logs_window computation is missing, wrong or does not handle empty dates
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_recovery::spend_window/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity::recovery::spend_window/)'
     - id: date-parse-cases
       why: _parse_spend_date parsing is missing, does not handle invalid dates, or logs unexpectedly
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_recovery::parse_spend_date/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity::recovery::parse_spend_date/)'
     - id: owner-merge-cases
       why: _metadata_with_recovered_owner merging is missing or does not preserve existing metadata
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_recovery::metadata_merge/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity::recovery::metadata_merge/)'
     - id: recovery-order-cases
       why: recovery sequence does not call all five functions in order or replaces existing resolved keys
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_recovery::recover_key_metadata/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity::recovery::recover_key_metadata/)'
     - id: recovery-error-cases
       why: recovery functions do not handle database errors gracefully or return partial results on failure
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_recovery::(empty_recovery|recovery_error)/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity::recovery::(empty_recovery|recovery_error)/)'
     - id: window-boundary-cases
       why: window boundaries are wrong, all-None dates do not skip recovery, or window is passed incorrectly
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_recovery::window_/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity::recovery::window_/)'
     - id: daily-spend-owner-cases
       why: recover_key_owner_from_daily_spend does not infer user_id correctly or fills team_id incorrectly
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_recovery::spend_owner/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity::recovery::spend_owner/)'
     - id: user-details-cases
       why: attach_user_details does not fetch user_email or team_id, or applies team_id to non-CLI keys
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_recovery::user_details/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity::recovery::user_details/)'
 oracle_cases: []
 deviations:
   - what: Recovery functions accept an empty or all-None spend_logs_window parameter and skip the spend-log query when None, returning empty metadata without querying.

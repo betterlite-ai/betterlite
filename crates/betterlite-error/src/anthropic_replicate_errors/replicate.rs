@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
-use crate::error::details::{ApiDetails, RateLimitDetails, TimeoutDetails, TimeoutStatus};
+use crate::error::details::{
+    ApiDetails, RateLimitDetails, ResponseDetails, TimeoutDetails, TimeoutStatus,
+};
 use crate::error::{ErrorClass, ErrorContext};
 use crate::rate_limit::RateLimitCategory;
 
@@ -74,34 +76,44 @@ const fn classify_by_status(status_code: u16) -> Option<(Family, &'static str)> 
     }
 }
 
-#[must_use]
-pub fn map_replicate_exception(input: &ReplicateExceptionInput) -> ErrorClass {
-    let matched = classify_by_predicate(&input.error_str, &input.exception_type)
-        .or_else(|| input.status_code.and_then(classify_by_status));
-    let reason = matched.map_or("the provider returned an unmapped error", |(_, reason)| {
-        reason
-    });
-    let context = ErrorContext {
+fn replicate_context(reason: &str, model: Option<String>) -> ErrorContext {
+    ErrorContext {
         message: format!("replicate: {reason}"),
-        model: Some(input.model.clone()),
+        model,
         provider: Some("replicate".to_owned()),
         max_retries: None,
         num_retries: None,
         body_type: None,
         body_param: None,
         body_code: None,
-    };
-    match matched.map(|(family, _)| family) {
-        Some(Family::Authentication) => ErrorClass::Authentication(Box::new(context)),
-        Some(Family::ContextWindowExceeded) => ErrorClass::ContextWindowExceeded(Box::new(context)),
-        Some(Family::BadRequest) => ErrorClass::BadRequest(Box::new(context)),
+    }
+}
+
+// _map_replicate_exception passes a response on every branch of these four families
+fn build_replicate_class(
+    family: Option<Family>,
+    context: ErrorContext,
+    status_code: Option<u16>,
+) -> ErrorClass {
+    match family {
+        Some(Family::Authentication) => {
+            ErrorClass::Authentication(Box::new(ResponseDetails::with_status(context, status_code)))
+        }
+        Some(Family::ContextWindowExceeded) => ErrorClass::ContextWindowExceeded(Box::new(
+            ResponseDetails::with_status(context, status_code),
+        )),
+        Some(Family::BadRequest) => {
+            ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(context, status_code)))
+        }
         Some(Family::RateLimit) => ErrorClass::RateLimit(Box::new(RateLimitDetails {
             context,
             category: RateLimitCategory::VendorRateLimit,
             dimension: None,
             headers: BTreeMap::new(),
         })),
-        Some(Family::UnprocessableEntity) => ErrorClass::UnprocessableEntity(Box::new(context)),
+        Some(Family::UnprocessableEntity) => ErrorClass::UnprocessableEntity(Box::new(
+            ResponseDetails::with_status(context, status_code),
+        )),
         Some(Family::Timeout(original_status)) => ErrorClass::Timeout(Box::new(TimeoutDetails {
             context,
             original_status: TimeoutStatus(original_status),
@@ -112,4 +124,19 @@ pub fn map_replicate_exception(input: &ReplicateExceptionInput) -> ErrorClass {
             status: 500,
         })),
     }
+}
+
+#[must_use]
+pub fn map_replicate_exception(input: &ReplicateExceptionInput) -> ErrorClass {
+    let matched = classify_by_predicate(&input.error_str, &input.exception_type)
+        .or_else(|| input.status_code.and_then(classify_by_status));
+    let reason = matched.map_or("the provider returned an unmapped error", |(_, reason)| {
+        reason
+    });
+    let context = replicate_context(reason, Some(input.model.clone()));
+    build_replicate_class(
+        matched.map(|(family, _)| family),
+        context,
+        input.status_code,
+    )
 }

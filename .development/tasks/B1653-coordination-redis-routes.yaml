@@ -32,7 +32,6 @@ description: >-
   100 corpus lines, capped at 775.
 scope:
   paths:
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/coordination_redis_routes.rs
     - crates/betterlite-server/src/coordination_redis_routes/**
     - tools/oracle/Cargo.toml

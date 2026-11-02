@@ -122,7 +122,6 @@ scope:
   paths:
     - crates/betterlite-server/src/user_fields.rs
     - crates/betterlite-server/src/user_fields/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes.rs
     - crates/betterlite-server/src/routes/**

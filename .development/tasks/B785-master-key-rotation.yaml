@@ -89,7 +89,6 @@ scope:
   paths:
     - crates/betterlite-server/src/master_key_rotation.rs
     - crates/betterlite-server/src/master_key_rotation/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes.rs
     - crates/betterlite-server/src/routes/**
@@ -98,6 +97,7 @@ scope:
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/master-key-rotation/**
+    - crates/betterlite-server/src/master_key_rotation/fixtures.rs
     - crates/betterlite-server/src/master_key_rotation/fixtures/**
     - tools/oracle/helpers/b785.py
     - tools/oracle/helpers/b785/**

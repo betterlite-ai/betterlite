@@ -66,6 +66,14 @@ scope:
     - tools/oracle/helpers/b3994/**
     - tools/oracle/src/helpers/logging/b3994.rs
     - tools/oracle/src/helpers/logging/b3994/**
+    - tools/oracle/cases/helpers/s3-log-batches-s3-batch/adaptive-throttle-sampling.yaml
+    - tools/oracle/cases/helpers/s3-log-batches-s3-batch/batch-file-disabled-on-cold-storage.yaml
+    - tools/oracle/cases/helpers/s3-log-batches-s3-batch/batch-file-grouping.yaml
+    - tools/oracle/cases/helpers/s3-log-batches-s3-batch/concurrency-bounded-by-limit.yaml
+    - tools/oracle/cases/helpers/s3-log-batches-s3-batch/fresh-work-ordered.yaml
+    - tools/oracle/cases/helpers/s3-log-batches-s3-batch/overflow-trims-oldest.yaml
+    - tools/oracle/cases/helpers/s3-log-batches-s3-batch/partial-success-drops-stale.yaml
+    - tools/oracle/cases/helpers/s3-log-batches-s3-batch/requeued-preserved-on-total-failure.yaml
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L104-L105

@@ -79,7 +79,6 @@ scope:
   paths:
     - crates/betterlite-server/src/model_info_search.rs
     - crates/betterlite-server/src/model_info_search/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/model_info_datetime.rs

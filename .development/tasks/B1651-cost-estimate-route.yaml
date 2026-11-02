@@ -34,7 +34,6 @@ description: >-
 scope:
   paths:
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/cost_estimate_route.rs
     - crates/betterlite-server/src/cost_estimate_route/**
     - crates/betterlite-server/fuzz/Cargo.toml

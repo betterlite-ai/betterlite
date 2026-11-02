@@ -43,7 +43,6 @@ scope:
     - crates/betterlite-provider/src/dispatch/**
     - crates/betterlite-server/src/subscription_dispatch.rs
     - crates/betterlite-server/src/subscription_dispatch/**
-    - crates/betterlite-server/src/lib.rs
     - tools/oracle/cases/providers/subscriptions/**
     - tools/oracle/fixtures/subscriptions/**
     - tools/oracle/helpers/b045.py

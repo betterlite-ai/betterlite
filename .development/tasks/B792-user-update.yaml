@@ -143,7 +143,6 @@ scope:
   paths:
     - crates/betterlite-server/src/user_update.rs
     - crates/betterlite-server/src/user_update/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes.rs
     - crates/betterlite-server/src/routes/**
@@ -152,6 +151,7 @@ scope:
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/user-update/**
+    - crates/betterlite-server/src/user_update/fixtures.rs
     - crates/betterlite-server/src/user_update/fixtures/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/user-update-*

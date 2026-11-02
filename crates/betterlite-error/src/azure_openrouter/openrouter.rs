@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
-use crate::error::details::{ApiDetails, RateLimitDetails, TimeoutDetails, TimeoutStatus};
+use crate::error::details::{
+    ApiDetails, RateLimitDetails, ResponseDetails, TimeoutDetails, TimeoutStatus,
+};
 use crate::error::{ErrorClass, ErrorContext};
 use crate::rate_limit::RateLimitCategory;
 
@@ -41,23 +43,27 @@ pub fn map_openrouter_exception(input: &OpenrouterExceptionInput) -> ErrorClass 
     }
 }
 
+const STATUS_LABELS: &[(u16, &str)] = &[
+    (400, ""),
+    (401, "AuthenticationError: "),
+    (404, "NotFoundError: "),
+    (408, "Timeout Error: "),
+    (422, "BadRequestError: "),
+    (429, "RateLimitError: "),
+    (503, "ServiceUnavailableError: "),
+    (504, "Timeout Error: "),
+];
+
 fn status_message(input: &OpenrouterExceptionInput, status: u16) -> String {
-    let provider = &input.exception_provider;
-    let text = &input.error_str;
-    match status {
-        400 => format!("{provider} - {text}"),
-        401 => format!("AuthenticationError: {provider} - {text}"),
-        404 => format!("NotFoundError: {provider} - {text}"),
-        408 | 504 => format!("Timeout Error: {provider} - {text}"),
-        422 => format!("BadRequestError: {provider} - {text}"),
-        429 => format!("RateLimitError: {provider} - {text}"),
-        503 => format!("ServiceUnavailableError: {provider} - {text}"),
-        _ => format!("APIError: {provider} - {text}"),
-    }
+    let label = STATUS_LABELS
+        .iter()
+        .find(|(code, _)| *code == status)
+        .map_or("APIError: ", |(_, label)| *label);
+    format!("{label}{} - {}", input.exception_provider, input.error_str)
 }
 
-fn status_classification(input: &OpenrouterExceptionInput, status: u16) -> ErrorClass {
-    let context = ErrorContext {
+fn status_context(input: &OpenrouterExceptionInput, status: u16) -> ErrorContext {
+    ErrorContext {
         message: status_message(input, status),
         model: Some(input.model.clone()),
         provider: Some(input.custom_llm_provider.clone()),
@@ -66,11 +72,24 @@ fn status_classification(input: &OpenrouterExceptionInput, status: u16) -> Error
         body_type: None,
         body_param: None,
         body_code: None,
-    };
+    }
+}
+
+fn status_classification(input: &OpenrouterExceptionInput, status: u16) -> ErrorClass {
+    let context = status_context(input, status);
     match status {
-        400 | 422 => ErrorClass::BadRequest(Box::new(context)),
-        401 => ErrorClass::Authentication(Box::new(context)),
-        404 => ErrorClass::NotFound(Box::new(context)),
+        400 | 422 => ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(
+            context,
+            Some(status),
+        ))),
+        401 => ErrorClass::Authentication(Box::new(ResponseDetails::with_status(
+            context,
+            Some(status),
+        ))),
+        404 => ErrorClass::NotFound(Box::new(ResponseDetails::with_status(
+            context,
+            Some(status),
+        ))),
         408 => ErrorClass::Timeout(Box::new(TimeoutDetails {
             context,
             original_status: TimeoutStatus(408),
