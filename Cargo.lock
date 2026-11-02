@@ -1080,6 +1080,7 @@ name = "betterlite-db"
 version = "0.1.0"
 dependencies = [
  "betterlite-postgres-fixture",
+ "betterlite-roi",
  "betterlite-secrets",
  "chrono",
  "clap",
@@ -1634,10 +1635,16 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "betterlite-config",
+ "betterlite-db",
  "betterlite-error",
  "betterlite-http",
  "betterlite-ocr",
  "betterlite-openai",
+ "betterlite-postgres-fixture",
+ "betterlite-roi",
+ "chrono",
+ "clap",
+ "deadpool-postgres",
  "email_address",
  "encoding_rs",
  "form_urlencoded",
@@ -1656,6 +1663,7 @@ dependencies = [
  "subtle",
  "thiserror",
  "tokio",
+ "tokio-postgres",
  "tower",
  "tracing",
  "url",
