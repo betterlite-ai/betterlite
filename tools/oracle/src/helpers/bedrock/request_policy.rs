@@ -54,26 +54,28 @@ pub(crate) enum IteratorCall {
     Async,
 }
 
+fn failure(class: &str, status: Option<u16>, message: String) -> Box<crate::helpers::HelperError> {
+    Box::new(crate::helpers::HelperError {
+        class: class.to_owned(),
+        status,
+        error_type: None,
+        param: None,
+        code: None,
+        message,
+    })
+}
+
 pub(crate) fn invoke(
     input: &BedrockRequestPolicyInput,
 ) -> Result<Value, Box<crate::helpers::HelperError>> {
-    let policy = BedrockRequestPolicy::from_fields(&input.fields);
-    let failure = |class: &str, status: Option<u16>, message: String| {
-        Box::new(crate::helpers::HelperError {
-            class: class.to_owned(),
-            status,
-            error_type: None,
-            param: None,
-            code: None,
-            message,
-        })
-    };
-    let bedrock_failure =
-        |error: BedrockError| failure("BedrockError", Some(error.status_code()), error.to_string());
-    let value_failure = |error: serde_json::Error| failure("ValueError", None, error.to_string());
+    let policy = (!input.fields.is_empty()).then_some(BedrockRequestPolicy {
+        fields: input.fields.iter().cloned().collect(),
+    });
     let projected = match &input.step {
         PolicyStep::Resolve { litellm_params, caller } => {
-            resolve(policy.as_ref(), litellm_params, caller).map_err(bedrock_failure)?
+            resolve(policy.as_ref(), litellm_params, caller).map_err(|error| {
+                failure("BedrockError", Some(error.status_code()), error.to_string())
+            })?
         }
         PolicyStep::Validate { metadata } => metadata
             .iter()
@@ -83,15 +85,19 @@ pub(crate) fn invoke(
             })
             .collect(),
         PolicyStep::Merge { headers, guardrail, litellm_params } => {
-            merge(headers, guardrail, policy.as_ref(), litellm_params).map_err(bedrock_failure)?
+            merge(headers, guardrail, policy.as_ref(), litellm_params).map_err(|error| {
+                failure("BedrockError", Some(error.status_code()), error.to_string())
+            })?
         }
         PolicyStep::Aliases { non_default, optional } => {
             let mut params = entries(optional);
             map_auth_aliases(&entries(non_default), &mut params);
-            pairs_json(&params).map_err(value_failure)?
+            pairs_json(&params)
+                .map_err(|error| failure("ValueError", None, error.to_string()))?
         }
         PolicyStep::MergeParams { deployment, request } => {
-            pairs_json(&merge_aws_request_params(&entries(deployment), &entries(request))).map_err(value_failure)?
+            pairs_json(&merge_aws_request_params(&entries(deployment), &entries(request)))
+                .map_err(|error| failure("ValueError", None, error.to_string()))?
         }
         PolicyStep::Iterate { response, calls } => iterate(response, calls),
     };

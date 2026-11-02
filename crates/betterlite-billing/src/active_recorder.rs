@@ -6,7 +6,7 @@ mod tests;
 
 #[derive(Debug, Default)]
 pub struct ActiveRecorderRegistry {
-    recorder: Mutex<Option<BillingMetricsRecorder>>,
+    pub(crate) recorder: Mutex<Option<BillingMetricsRecorder>>,
 }
 
 impl ActiveRecorderRegistry {
@@ -17,11 +17,5 @@ impl ActiveRecorderRegistry {
                 "Billing metrics: a new recorder replaced the active one, which will not be flushed at shutdown"
             );
         }
-    }
-
-    #[must_use]
-    pub fn pop(&self) -> Option<BillingMetricsRecorder> {
-        let mut active = self.recorder.lock().unwrap_or_else(PoisonError::into_inner);
-        active.take()
     }
 }

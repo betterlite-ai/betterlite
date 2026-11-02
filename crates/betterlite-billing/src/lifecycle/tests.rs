@@ -4,8 +4,8 @@ use std::fs;
 use std::io::{Read as _, Write as _};
 use std::net::TcpListener;
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver};
+use std::sync::{Arc, PoisonError};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
@@ -177,7 +177,15 @@ fn an_unlicensed_deployment_gets_no_recorder() {
             },
         )
     });
-    assert!(recorder.is_none() && registry.pop().is_none());
+    assert!(
+        recorder.is_none()
+            && registry
+                .recorder
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .take()
+                .is_none()
+    );
     let disabled =
         "DEBUG betterlite_billing::lifecycle: Billing metrics disabled: deployment is not licensed";
     assert!(output.contains(disabled), "{output}");
@@ -200,7 +208,15 @@ fn missing_configuration_disables_metering() {
             },
         )
     });
-    assert!(recorder.is_none() && registry.pop().is_none());
+    assert!(
+        recorder.is_none()
+            && registry
+                .recorder
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .take()
+                .is_none()
+    );
     assert!(
         output.contains("(LITELLM_BILLING_METRICS_ENDPOINT, "),
         "{output}"
@@ -225,7 +241,15 @@ fn an_exporter_failure_disables_metering() {
             },
         )
     });
-    assert!(recorder.is_none() && registry.pop().is_none());
+    assert!(
+        recorder.is_none()
+            && registry
+                .recorder
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .take()
+                .is_none()
+    );
     let disabled = "WARN betterlite_billing::lifecycle: Billing metrics disabled: failed to initialize exporter: interval value 0 is invalid";
     assert!(output.contains(disabled), "{output}");
 }
@@ -291,5 +315,12 @@ fn a_failed_final_flush_is_logged() {
         output.contains("WARN") && output.contains("final flush failed"),
         "{output}"
     );
-    assert!(registry.pop().is_none());
+    assert!(
+        registry
+            .recorder
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
+            .is_none()
+    );
 }
