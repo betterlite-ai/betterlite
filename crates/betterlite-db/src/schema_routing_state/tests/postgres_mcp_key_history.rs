@@ -291,7 +291,7 @@ enum RawValueCohort {
 fn raw_value_check_for(cohort: RawValueCohort) -> RawValueCheck<'static> {
     match cohort {
         RawValueCohort::OauthClient => RawValueCheck {
-            insert_sql: r#"INSERT INTO "LiteLLM_MCPServerOAuthClient" (server_id, credentials) VALUES ($1, $2::jsonb)"#,
+            insert_sql: r#"INSERT INTO "LiteLLM_MCPServerOAuthClient" (server_id, credentials) VALUES ($1, $2::text::jsonb)"#,
             insert_params: &[&"server-oauth", &r#""raw-opaque-value""#],
             select_sql: r#"SELECT credentials::text FROM "LiteLLM_MCPServerOAuthClient" WHERE server_id = $1"#,
             select_param: "server-oauth",
