@@ -378,6 +378,25 @@ fn check_custom_tool_call_dump() {
     );
 }
 
+// is_custom_tool_call_dict takes the custom branch for a non-null "custom" payload even when type says "function", since the two conditions are independent, not both required.
+fn check_custom_tool_call_detection_by_payload_alone() {
+    let kwargs = GalileoKwargs::default();
+    let value = obj(r#"{"choices": [{"message": {"tool_calls": [
+            {"id": "call_1", "type": "function", "function": {"name": "f", "arguments": "{}"},
+             "custom": {"name": "exec", "input": "ls -la"}}
+        ]}}]}"#);
+    let (_, output, _) = galileo_input_output_content(
+        &kwargs,
+        Some(&ResponseObj::GenericDict { value }),
+        Level::Default,
+        None,
+    );
+    assert_eq!(
+        output,
+        r#"{"id":"call_1","type":"custom","custom":{"name":"exec","input":"ls -la"}}"#
+    );
+}
+
 // Function.__init__ turns a dict `arguments` into its JSON text and reads a missing or explicitly null `arguments` as "", never as a nested object or a literal null.
 fn check_function_arguments_normalization() {
     let kwargs = GalileoKwargs::default();
@@ -555,6 +574,7 @@ fn galileo_payload_construction() {
     check_error_level_short_circuit();
     check_generic_dict_tool_call_reordering();
     check_custom_tool_call_dump();
+    check_custom_tool_call_detection_by_payload_alone();
     check_function_arguments_normalization();
     check_call_type_mismatch_falls_through();
     check_pass_through_endpoint_content();
