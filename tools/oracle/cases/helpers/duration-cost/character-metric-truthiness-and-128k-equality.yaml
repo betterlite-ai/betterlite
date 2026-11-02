@@ -1,0 +1,12 @@
+kind: helper
+name: character-metric-truthiness-and-128k-equality
+call:
+  duration_cost:
+    operation: character_metric
+    key: fixture-model
+    record:
+      input_cost_per_character: "0.002"
+      input_cost_per_token: "0.01"
+    above_128k_tokens: ["128000", "128000.0001", "127999.9999"]
+compare: {ignore: []}
+env: {}

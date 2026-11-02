@@ -8,6 +8,7 @@ use crate::http::Response;
 use crate::paths::unique_id;
 use crate::runner::DatabaseEnvironment;
 use crate::runner::run_group_with_url;
+use betterlite_postgres_fixture::connection::RandomDatabaseName;
 use betterlite_postgres_fixture::error::FixtureError;
 use secrecy::ExposeSecret as _;
 use std::collections::BTreeMap;
@@ -21,7 +22,8 @@ fn legacy_case_without_database() {
         paths: Vec::new(),
     };
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/oracle");
-    let result = run_group_with_url(&options, &root, &[case], None).unwrap();
+    let result =
+        run_group_with_url(&options, &root, &[case], None, &mut RandomDatabaseName).unwrap();
     assert_eq!(result, [false]);
 }
 
@@ -40,7 +42,8 @@ fn public_route_without_key() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/oracle")
         .join(unique_id().unwrap());
-    let result = run_group_with_url(&options, &root, &[case], None).unwrap();
+    let result =
+        run_group_with_url(&options, &root, &[case], None, &mut RandomDatabaseName).unwrap();
     assert_eq!(result, [false]);
     let captures = fs::read_dir(root.join("public"))
         .unwrap()
