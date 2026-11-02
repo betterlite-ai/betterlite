@@ -92,30 +92,27 @@ fn clean_headers(
     context: &HeaderSanitizeContext<'_>,
 ) -> BTreeMap<String, String> {
     let custom_key_lower = context.custom_key_header_name.map(str::to_lowercase);
-    raw_headers
-        .iter()
-        .filter(|(name, _)| {
-            let lower = name.to_lowercase();
-            !SPECIAL_HEADER_NAMES.contains(&lower.as_str())
-                && custom_key_lower.as_deref() != Some(lower.as_str())
-        })
-        .map(|(name, value)| (name.to_lowercase(), value.clone()))
-        .collect()
+    let mut cleaned = BTreeMap::new();
+    for (name, value) in raw_headers {
+        let lower = name.to_lowercase();
+        if SPECIAL_HEADER_NAMES.contains(&lower.as_str())
+            || custom_key_lower.as_deref() == Some(lower.as_str())
+        {
+            continue;
+        }
+        cleaned.insert(lower, value.clone());
+    }
+    cleaned
 }
 
 fn redact_credential_headers(headers: BTreeMap<String, String>) -> BTreeMap<String, String> {
-    headers
-        .into_iter()
-        .map(|(name, value)| {
-            let masked = CREDENTIAL_HEADER_NAMES.contains(&name.to_lowercase().as_str());
-            (
-                name,
-                if masked {
-                    REDACTED_VALUE.to_owned()
-                } else {
-                    value
-                },
-            )
-        })
-        .collect()
+    let mut redacted = BTreeMap::new();
+    for (name, value) in headers {
+        if CREDENTIAL_HEADER_NAMES.contains(&name.to_lowercase().as_str()) {
+            redacted.insert(name, REDACTED_VALUE.to_owned());
+        } else {
+            redacted.insert(name, value);
+        }
+    }
+    redacted
 }

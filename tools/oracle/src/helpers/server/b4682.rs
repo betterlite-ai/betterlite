@@ -107,18 +107,18 @@ fn pin(input: &Value) -> crate::helpers::HelperResult {
         .get("pinned")
         .and_then(Value::as_object)
         .ok_or_else(|| error("pinned is required"))?;
-    let mut upstream = std::collections::BTreeMap::new();
+    let mut upstream_names = std::collections::BTreeSet::new();
     for tool in tools {
         let name = tool
             .get("name")
             .and_then(Value::as_str)
             .ok_or_else(|| error("tool name is required"))?;
-        upstream.insert(name, tool);
+        upstream_names.insert(name);
     }
     let result = pin_entries(tools, pinned)?;
     let removed: Vec<String> = pinned
         .keys()
-        .filter(|name| !upstream.contains_key(name.as_str()))
+        .filter(|name| !upstream_names.contains(name.as_str()))
         .cloned()
         .collect();
     Ok(
@@ -179,20 +179,18 @@ fn override_description(input: &Value) -> crate::helpers::HelperResult {
         .and_then(Value::as_object)
         .ok_or_else(|| error("overrides are required"))?;
     let prefix = input.get("prefix").and_then(Value::as_str).unwrap_or("");
-    let served = tools
-        .iter()
-        .map(|tool| {
-            let mut output = tool.clone();
-            if let Some(name) = tool.get("name").and_then(Value::as_str) {
-                let bare = name.strip_prefix(&format!("{prefix}-")).unwrap_or(name);
-                if let Some(description) = overrides.get(bare)
-                    && let Some(object) = output.as_object_mut()
-                {
-                    object.insert("description".to_owned(), description.clone());
-                }
+    let mut served = Vec::with_capacity(tools.len());
+    for tool in tools {
+        let mut output = tool.clone();
+        if let Some(name) = tool.get("name").and_then(Value::as_str) {
+            let bare = name.strip_prefix(&format!("{prefix}-")).unwrap_or(name);
+            if let Some(description) = overrides.get(bare)
+                && let Some(object) = output.as_object_mut()
+            {
+                object.insert("description".to_owned(), description.clone());
             }
-            output
-        })
-        .collect::<Vec<_>>();
+        }
+        served.push(output);
+    }
     Ok(Value::Array(served))
 }

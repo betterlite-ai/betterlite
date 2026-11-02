@@ -3,10 +3,12 @@
 use std::collections::BTreeMap;
 
 use super::description_overrides::apply_description_overrides;
+use super::guard::GuardrailFailure;
+use super::headers::{HeaderSanitizeContext, logging_safe_mcp_headers};
 use super::pin::pin_tool_catalog;
 use super::prefix::{PrefixPolicy, strip_known_server_prefix};
 use super::types::{MCPServer, MCPTool};
-use super::{CatalogAlert, PinnedCatalogDrift};
+use super::{CatalogAlert, PinnedCatalogDrift, block_reason, masked_tool};
 use betterlite_db::mcp_stored_contracts::{JsonValue, PinnedMCPTool};
 
 fn tool(name: &str, description: Option<&str>) -> MCPTool {
@@ -129,4 +131,68 @@ fn json_value_can_represent_schema() {
         JsonValue::String(String::from("object")),
     )]));
     assert!(matches!(value, JsonValue::Object(_)));
+}
+
+#[test]
+fn scannable_text_skips_empty_tool() {
+    let empty = tool("empty", Some(""));
+    assert!(!super::has_scannable_text(&empty));
+    assert!(super::has_scannable_text(&tool("described", Some("text"))));
+}
+
+#[test]
+fn mask_applies_guarded_description_and_schema() {
+    let original = tool("search", Some("old"));
+    let schema = BTreeMap::from([("type".to_owned(), JsonValue::String("object".to_owned()))]);
+    let guarded = BTreeMap::from([
+        (
+            "mcp_tool_description".to_owned(),
+            JsonValue::String("safe".to_owned()),
+        ),
+        (
+            "mcp_input_schema".to_owned(),
+            JsonValue::Object(schema.clone()),
+        ),
+    ]);
+    let masked = masked_tool(&original, &guarded);
+    assert_eq!(masked.description.as_deref(), Some("safe"));
+    assert_eq!(masked.input_schema, schema);
+    assert_eq!(masked_tool(&original, &BTreeMap::new()), original);
+}
+
+#[test]
+fn block_reason_extracts_detail_then_falls_back() {
+    let detail = GuardrailFailure {
+        exception_type: "GuardError".to_owned(),
+        exception_message: "ignored".to_owned(),
+        detail_error: Some("blocked".to_owned()),
+    };
+    assert_eq!(block_reason(&detail), "blocked");
+    let fallback = GuardrailFailure {
+        exception_type: "GuardError".to_owned(),
+        exception_message: String::new(),
+        detail_error: None,
+    };
+    assert_eq!(block_reason(&fallback), "GuardError");
+}
+
+#[test]
+fn header_sanitize_drops_proxy_credentials_and_host() {
+    let raw = BTreeMap::from([
+        ("Host".to_owned(), "deployment.internal".to_owned()),
+        ("Authorization".to_owned(), "proxy-key".to_owned()),
+        ("X-Api-Key".to_owned(), "upstream-key".to_owned()),
+        ("X-Trace".to_owned(), "visible".to_owned()),
+    ]);
+    let context = HeaderSanitizeContext {
+        extra_headers: &["X-Api-Key".to_owned()],
+        identity_header_names: &[],
+        custom_key_header_name: Some("X-Deployment-Key"),
+        client_side_auth_header_name: "Authorization",
+    };
+    let safe = logging_safe_mcp_headers(&raw, &context);
+    assert_eq!(
+        safe,
+        BTreeMap::from([("x-trace".to_owned(), "visible".to_owned())])
+    );
 }
