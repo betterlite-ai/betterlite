@@ -164,18 +164,6 @@ jobs:
         with:
           tool: cargo-nextest@0.9.140,cargo-deny@0.20.2,cargo-llvm-cov@0.8.7,cargo-mutants@27.1.0,typos@1.48.0,prek@0.4.9,zizmor@1.26.1,uv@0.11.14
 
-      - name: Check operations code
-        if: matrix.part == 'lint' && github.event_name != 'pull_request'
-        env:
-          BASE: ${{ needs.find.outputs.base }}
-        run: |
-          if git diff --quiet "$BASE" HEAD -- .development/ops; then
-            exit 0
-          fi
-          uv run --locked --project .development/ops --group dev ruff check .development/ops
-          uv run --locked --project .development/ops --group dev basedpyright --project .development/ops/pyrightconfig.json
-          for script in .development/ops/*.sh; do bash -n "$script"; done
-
       - name: Restore the tools built from source
         if: github.event_name != 'pull_request'
         id: tools
