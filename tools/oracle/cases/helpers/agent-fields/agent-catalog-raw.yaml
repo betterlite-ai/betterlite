@@ -1,0 +1,6 @@
+kind: helper
+name: agent-catalog-raw
+call:
+  b3191: {function: agent_catalog_raw}
+env: {}
+compare: {ignore: []}
