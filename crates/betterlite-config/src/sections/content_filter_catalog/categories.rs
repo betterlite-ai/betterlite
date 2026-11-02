@@ -4,7 +4,7 @@ use std::path::{self, Component, Path, PathBuf};
 
 use crate::sections::content_filter_records::ContentFilterAction;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct CategoryCatalogEntry {
     pub name: String,
     pub display_name: String,
@@ -128,18 +128,25 @@ fn json_category_entry(stem: &str) -> CategoryCatalogEntry {
 }
 
 fn title_case(value: &str) -> String {
-    value
-        .split('_')
-        .map(|word| {
-            let mut chars = word.chars();
-            chars.next().map_or_else(String::new, |first| {
-                let mut titled: String = first.to_uppercase().collect();
-                titled.push_str(&chars.as_str().to_lowercase());
-                titled
-            })
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
+    let mut titled = String::with_capacity(value.len());
+    let mut capitalize = true;
+    for character in value.chars() {
+        if character == '_' {
+            titled.push(' ');
+            capitalize = true;
+        } else if character.is_alphanumeric() {
+            if capitalize && character.is_alphabetic() {
+                titled.extend(character.to_uppercase());
+                capitalize = false;
+            } else {
+                titled.extend(character.to_lowercase());
+            }
+        } else {
+            titled.push(character);
+            capitalize = true;
+        }
+    }
+    titled
 }
 
 // Mirrors the lexical half of betterlite_server::assets::paths::join_within, without symlink resolution.

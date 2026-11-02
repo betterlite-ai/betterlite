@@ -7,7 +7,7 @@ use serde::Deserialize;
 
 use crate::sections::content_filter_catalog::roots::DATA_DIR;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct PatternMetadata {
     pub name: String,
     pub display_name: String,
@@ -15,9 +15,11 @@ pub struct PatternMetadata {
     pub description: String,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, serde::Serialize)]
 pub struct PatternExtraConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub keyword_pattern: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub allow_word_numbers: Option<bool>,
 }
 
@@ -49,6 +51,17 @@ struct PatternEntry {
     _action: Option<String>,
     #[serde(flatten)]
     extra: PatternExtraConfig,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct PatternCatalog {
+    pub names: Vec<String>,
+    pub metadata: Vec<PatternMetadata>,
+    pub patterns: BTreeMap<String, String>,
+    pub categories: BTreeMap<String, Vec<String>>,
+    pub display_names: BTreeMap<String, String>,
+    pub descriptions: BTreeMap<String, String>,
+    pub extra_config: BTreeMap<String, PatternExtraConfig>,
 }
 
 fn load_patterns() -> Result<Vec<PatternEntry>, PatternCatalogError> {
@@ -102,6 +115,43 @@ pub fn get_pattern_metadata() -> Result<Vec<PatternMetadata>, PatternCatalogErro
             description: entry.description,
         })
         .collect())
+}
+
+pub fn get_pattern_catalog() -> Result<PatternCatalog, PatternCatalogError> {
+    let entries = load_patterns()?;
+    let mut names = Vec::with_capacity(entries.len());
+    let mut metadata = Vec::with_capacity(entries.len());
+    let mut patterns = BTreeMap::new();
+    let mut categories: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut display_names = BTreeMap::new();
+    let mut descriptions = BTreeMap::new();
+    let mut extra_config = BTreeMap::new();
+    for entry in entries {
+        names.push(entry.name.clone());
+        metadata.push(PatternMetadata {
+            name: entry.name.clone(),
+            display_name: entry.display_name.clone(),
+            category: entry.category.clone(),
+            description: entry.description.clone(),
+        });
+        patterns.insert(entry.name.clone(), entry.pattern);
+        categories
+            .entry(entry.category)
+            .or_default()
+            .push(entry.name.clone());
+        display_names.insert(entry.name.clone(), entry.display_name);
+        descriptions.insert(entry.name.clone(), entry.description);
+        extra_config.insert(entry.name, entry.extra);
+    }
+    Ok(PatternCatalog {
+        names,
+        metadata,
+        patterns,
+        categories,
+        display_names,
+        descriptions,
+        extra_config,
+    })
 }
 
 pub fn pattern_categories() -> Result<BTreeMap<String, Vec<String>>, PatternCatalogError> {
