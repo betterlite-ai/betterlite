@@ -1,0 +1,9 @@
+kind: helper
+name: codex-valid-config
+call:
+  b5081:
+    harness: codex
+    config: { clean: true }
+env: {}
+compare:
+  ignore: []

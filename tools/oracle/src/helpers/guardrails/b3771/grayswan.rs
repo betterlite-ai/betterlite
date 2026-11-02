@@ -10,6 +10,7 @@ use betterlite_guardrails::grayswan::error::GraySwanGuardrailAPIError;
 use betterlite_guardrails::grayswan::wire::{
     GraySwanDynamicParams, GraySwanInput, GraySwanResponse, GraySwanVerdict,
 };
+use reqwest::StatusCode;
 use secrecy::SecretString;
 use serde_json::json;
 
@@ -117,7 +118,7 @@ fn parse_request(request: &serde_json::Value) -> Result<Request, Box<crate::help
     let settings = parse_settings(&settings_source, OnFlaggedAction::Monitor)?;
     let dynamic = request.get("dynamic").cloned().unwrap_or_else(|| json!({}));
     let dynamic_params: GraySwanDynamicParams = serde_json::from_value(dynamic)
-        .map_err(|error| failure_with_class("GuardrailError", error.to_string()))?;
+        .map_err(|error| failure_with_class("GuardrailError", None, error.to_string()))?;
     let messages = parse_messages(request)?;
     let tools = parse_json_field(request, "tools")?.unwrap_or_default();
     let (input_type, fail) = request_flags(request);
@@ -154,7 +155,7 @@ fn parse_messages(
         .get("messages")
         .map_or_else(fallback_message, |value| {
             serde_json::from_value(value.clone())
-                .map_err(|error| failure_with_class("GuardrailError", error.to_string()))
+                .map_err(|error| failure_with_class("GuardrailError", None, error.to_string()))
         })
 }
 fn request_flags(request: &serde_json::Value) -> (GuardrailInputType, String) {
@@ -192,7 +193,7 @@ fn run_payload(parsed: Request) -> crate::helpers::HelperResult {
     };
     let payload = guardrail.prepare_payload(&prepared, parsed.messages, parsed.tools);
     serde_json::to_value(payload)
-        .map_err(|error| failure_with_class("GuardrailError", error.to_string()))
+        .map_err(|error| failure_with_class("GuardrailError", None, error.to_string()))
 }
 pub(super) fn call(input: &serde_json::Value) -> crate::helpers::HelperResult {
     let found = input.get("grayswan_call").cloned();
@@ -202,11 +203,11 @@ pub(super) fn call(input: &serde_json::Value) -> crate::helpers::HelperResult {
 fn run_call(call: Request) -> crate::helpers::HelperResult {
     let script = match &call.answer {
         Some(reply) => MockScript::try_from(std::slice::from_ref(reply))
-            .map_err(|error| failure_with_class("GuardrailError", error.to_string()))?,
+            .map_err(|error| failure_with_class("GuardrailError", None, error.to_string()))?,
         None => disconnection_script(&call.fail),
     };
     let mock = MockProvider::start(script)
-        .map_err(|error| failure_with_class("GuardrailError", error.to_string()))?;
+        .map_err(|error| failure_with_class("GuardrailError", None, error.to_string()))?;
     let mut settings = call.settings;
     settings.api_base.clone_from(&mock.base_url);
     settings.guardrail_timeout = Duration::from_millis(200);
@@ -225,11 +226,11 @@ fn run_call(call: Request) -> crate::helpers::HelperResult {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-        .map_err(|error| failure_with_class("GuardrailError", error.to_string()))?;
+        .map_err(|error| failure_with_class("GuardrailError", None, error.to_string()))?;
     let result = runtime.block_on(guardrail.apply_guardrail(prepared, call.input_type));
     let calls = mock
         .finish()
-        .map_err(|error| failure_with_class("GuardrailError", error.to_string()))?;
+        .map_err(|error| failure_with_class("GuardrailError", None, error.to_string()))?;
     let payload = calls
         .into_iter()
         .next()
@@ -238,12 +239,22 @@ fn run_call(call: Request) -> crate::helpers::HelperResult {
         .map(|_outcome| payload.unwrap_or(serde_json::Value::Null))
         .map_err(|error| failure(&error))
 }
-fn failure(error: &GraySwanGuardrailAPIError) -> Box<crate::helpers::HelperError> {
+pub(super) fn failure(error: &GraySwanGuardrailAPIError) -> Box<crate::helpers::HelperError> {
     let is_blocked = matches!(error, GraySwanGuardrailAPIError::Blocked { .. });
+    let status = match error {
+        GraySwanGuardrailAPIError::Blocked { .. } => Some(400_u16),
+        GraySwanGuardrailAPIError::Timeout { .. } => Some(StatusCode::REQUEST_TIMEOUT.as_u16()),
+        GraySwanGuardrailAPIError::HttpStatus { status } => Some(status.as_u16()),
+        GraySwanGuardrailAPIError::Request { .. }
+        | GraySwanGuardrailAPIError::InvalidHeader { .. }
+        | GraySwanGuardrailAPIError::ResponseTooLarge { .. }
+        | GraySwanGuardrailAPIError::ResponseJson { .. } => None,
+    };
     error_failure(
         is_blocked,
         "HTTPException",
         "GraySwanGuardrailAPIError",
+        status,
         error.to_string(),
     )
 }

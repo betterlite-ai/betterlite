@@ -1,0 +1,8 @@
+kind: helper
+name: provider-defaults-b-wandb
+call:
+  provider_defaults_b:
+    provider: wandb
+    model: wandb-model
+env: {}
+compare: {ignore: []}

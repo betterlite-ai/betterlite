@@ -1,0 +1,10 @@
+kind: helper
+name: provider-defaults-b-qwen-ai-platform
+call:
+  provider_defaults_b:
+    provider: qwen_ai_platform
+    model: qwen-ai-model
+    environment:
+      QWEN_AI_PLATFORM_API_KEY: env-qwen-key
+env: {}
+compare: {ignore: []}

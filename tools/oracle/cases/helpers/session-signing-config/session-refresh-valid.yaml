@@ -1,0 +1,19 @@
+kind: helper
+name: session-refresh-valid
+call:
+  b4653:
+    function: session_refresh
+    signing_key: "session-signing-key-0123456789abcdef"
+    mint:
+      principal:
+        user_id: user-1
+        client_id: client-1
+      kind: session_refresh
+      mint_now: 1700000000
+    open_now: 1700000100
+    expected_client_id: client-1
+env: {}
+compare:
+  ignore:
+    - pointer: /value/jti
+      why: jti is minted from fresh randomness independently on each side, so the two languages never derive the same value for the same case.

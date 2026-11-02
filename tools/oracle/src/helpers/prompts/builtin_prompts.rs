@@ -82,9 +82,10 @@ fn failure(error: &PromptError) -> Box<HelperError> {
             "SerializationError"
         }
     };
+    let status = matches!(error, PromptError::Role { .. }).then_some(400);
     Box::new(HelperError {
         class: class.to_owned(),
-        status: None,
+        status,
         error_type: None,
         param: None,
         code: None,
