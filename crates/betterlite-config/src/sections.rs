@@ -99,6 +99,7 @@ pub mod catalog_updates;
 pub mod cato_lifecycle;
 pub mod cato_projections;
 pub mod central_auth_checks;
+pub mod chatgpt_headers;
 pub mod cisco_verdict_contracts;
 pub mod classifier_context;
 pub mod classifier_message_text;
@@ -445,6 +446,7 @@ sections! {
     bedrock_web_identity, billing_metrics, budget_admission_handoff, budget_primitives,
     budget_reset, budget_windows, cache_cost_routing, capability_classifier,
     capability_forecast, catalog_updates, cato_lifecycle, cato_projections, central_auth_checks,
+    chatgpt_headers,
     cisco_verdict_contracts, classifier_context, classifier_message_text, claude_gateway_oauth,
     claude_gateway_policy, claude_platform_inputs, claude_skill_write, clickhouse_spend_logging,
     cloud_storage, complexity_adaptive_placement, complexity_config, complexity_placement,
