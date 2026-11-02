@@ -205,6 +205,12 @@ async fn check_six_entity_date_indexes(client: &Client) {
 }
 
 async fn check_project_column_only_repair(client: &Client) {
+    batch_execute(
+        client,
+        r#"ALTER TABLE "LiteLLM_VerificationToken" DROP COLUMN IF EXISTS "project_id";"#,
+    )
+    .await;
+    batch_execute(client, migration_sql_of(ENSURE_PROJECT_ID)).await;
     assert_column(
         client,
         "LiteLLM_VerificationToken",
@@ -378,8 +384,8 @@ fn policy_history_checkpoint_for(cohort: PolicyHistoryCohort) -> &'static str {
         | PolicyHistoryCohort::SpendGuardrailIndexPairs => BASELINE_DIFF,
         PolicyHistoryCohort::SixEntityDateIndexes
         | PolicyHistoryCohort::SpecPathAddDropReaddLosesOldValues => SPEC_PATH_ADDED,
-        PolicyHistoryCohort::ProjectColumnOnlyRepair
-        | PolicyHistoryCohort::PolicyDefaultProductionVersionOne => ENSURE_PROJECT_ID,
+        PolicyHistoryCohort::ProjectColumnOnlyRepair => COMPOSITE_INDEX_AGGREGATE_TABLES,
+        PolicyHistoryCohort::PolicyDefaultProductionVersionOne => ENSURE_PROJECT_ID,
         PolicyHistoryCohort::MultipleVersionsSameLatestAllowed
         | PolicyHistoryCohort::PolicyVersionDuplicateRejected => ADD_POLICY_VERSIONING,
         PolicyHistoryCohort::ManagedBatchProcessedFalse => ADD_BATCH_PROCESSED,
