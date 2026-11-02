@@ -2,7 +2,7 @@ helper_group! {
     "anthropic_history" => anthropic_history, "anthropic_invokes" => anthropic_invokes,
     "anthropic_prompt" => anthropic_prompt, "anthropic_results" => anthropic_results,
     "anthropic_user_blocks" => anthropic_user_blocks, "b4056" => b4056, "b4123" => b4123,
-    "b4124" => b4124, "b4125" => b4125, "b4126" => b4126, "b4383" => b4383,
+    "b4124" => b4124, "b4125" => b4125, "b4126" => b4126, "b4383" => b4383, "b5083" => b5083,
     "bedrock_content" => bedrock_content, "bedrock_images" => bedrock_images,
     "bedrock_processor" => bedrock_processor, "bedrock_prompt" => bedrock_prompt,
     "bedrock_tool_results" => bedrock_tool_results, "bedrock_tools" => bedrock_tools,
