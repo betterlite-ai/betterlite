@@ -1,0 +1,5 @@
+task: B4306
+deviations:
+  - what: resolve_cache_url_precedence treats the cluster-mode marker (redis_startup_nodes) as present using the same non-empty/non-null/non-marker check as has_connection_target, instead of LiteLLM's raw Python truthiness on that field. A value such as 0 or false counts as cluster mode in betterlite but not in LiteLLM.
+    why: docs/compatibility.md and the no-python-habits lint forbid porting Python truthiness as a standalone pattern; the repo's established typed predicate (has_connection_target) is the precise equivalent for this untyped field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cache_settings_endpoints.py#L86-L100

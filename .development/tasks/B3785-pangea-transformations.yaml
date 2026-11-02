@@ -33,6 +33,15 @@ scope:
     - tools/oracle/src/helpers/guardrails/b3785.rs
     - tools/oracle/src/helpers/guardrails/b3785/**
     - crates/betterlite-guardrails/src/pangea/tests/**
+    - tools/oracle/cases/guardrails/pangea-backend-timeout.yaml
+    - tools/oracle/cases/guardrails/pangea-request-blocked.yaml
+    - tools/oracle/cases/guardrails/pangea-request-input-allowed.yaml
+    - tools/oracle/cases/guardrails/pangea-request-input-transformed.yaml
+    - tools/oracle/cases/guardrails/pangea-response-blocked.yaml
+    - tools/oracle/cases/guardrails/pangea-response-output-allowed.yaml
+    - tools/oracle/cases/guardrails/pangea-response-output-transformed.yaml
+    - tools/oracle/cases/guardrails/pangea-text-completion-input-allowed.yaml
+    - tools/oracle/cases/guardrails/pangea-text-completion-input-transformed.yaml
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/pangea/pangea.py#L38-L48

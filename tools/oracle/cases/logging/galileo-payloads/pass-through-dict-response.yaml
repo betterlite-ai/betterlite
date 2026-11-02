@@ -1,0 +1,5 @@
+kind: helper
+name: pass-through-dict-response
+call: {"b3963": {"operation": "content_selection", "kwargs": {"call_type": "pass_through_endpoint"}, "response": {"family": "pass_through_dict", "value": {"response": {"text": "passthrough output"}}}}}
+env: {}
+compare: {ignore: []}

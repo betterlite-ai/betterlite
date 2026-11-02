@@ -1,0 +1,7 @@
+# chatgpt_headers has no YAML keys: every setting comes from the environment
+model_list:
+  - model_name: codex
+    litellm_params:
+      model: chatgpt/gpt-5-codex
+chatgpt_headers:
+  originator: ignored

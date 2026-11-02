@@ -1,0 +1,5 @@
+kind: helper
+name: realtime-list-response
+call: {"b3963": {"operation": "content_selection", "kwargs": {"call_type": "_arealtime", "input": {"type": "session.update"}}, "response": {"family": "realtime_list", "items": [{"type": "transcript", "text": "hello"}]}}}
+env: {}
+compare: {ignore: []}

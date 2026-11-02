@@ -1,0 +1,12 @@
+kind: helper
+name: safe_join_still_escapes_through_a_symlink_loop_via_parent_traversal
+call:
+  assets:
+    op: safe_join
+    fixture:
+      - {kind: symlink, path: loop, target: loop}
+      - {kind: file, path: "../secret.txt", content_hex: "736563726574"}
+    parts: [loop, "..", "..", secret.txt]
+env: {}
+compare:
+  ignore: []

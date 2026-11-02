@@ -1,0 +1,6 @@
+kind: helper
+name: agent-fields-list
+call:
+  b3191: {function: get_agent_fields}
+env: {}
+compare: {ignore: []}

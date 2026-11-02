@@ -19,6 +19,27 @@ scope:
     - tools/oracle/helpers/b3859/**
     - tools/oracle/src/helpers/logging/b3859.rs
     - tools/oracle/src/helpers/logging/b3859/**
+    - tools/oracle/cases/helpers/legacy_lifecycle/dynamic-config-override.yaml
+    - tools/oracle/cases/helpers/legacy_lifecycle/dynamic-headers-tracer-selection.yaml
+    - tools/oracle/cases/helpers/legacy_lifecycle/emit-guardrail-spans-from-request-data.yaml
+    - tools/oracle/cases/helpers/legacy_lifecycle/failure-closes-proxy-span.yaml
+    - tools/oracle/cases/helpers/legacy_lifecycle/failure-dedup-streaming.yaml
+    - tools/oracle/cases/helpers/legacy_lifecycle/failure-with-parent-span.yaml
+    - tools/oracle/cases/helpers/legacy_lifecycle/failure-with-primary-span.yaml
+    - tools/oracle/cases/helpers/legacy_lifecycle/guardrail-attributes-guardrail-response.yaml
+    - tools/oracle/cases/helpers/legacy_lifecycle/guardrail-attributes-masked-entity-count.yaml
+    - tools/oracle/cases/helpers/legacy_lifecycle/guardrail-dedup-per-entry.yaml
+    - tools/oracle/cases/helpers/legacy_lifecycle/guardrail-span-creation.yaml
+    - tools/oracle/cases/helpers/legacy_lifecycle/guardrail-start-end-times.yaml
+    - tools/oracle/cases/helpers/legacy_lifecycle/guardrail-team-attributes.yaml
+    - tools/oracle/cases/helpers/legacy_lifecycle/langfuse-env-var-headers.yaml
+    - tools/oracle/cases/helpers/legacy_lifecycle/raw-request-span-generation-name.yaml
+    - tools/oracle/cases/helpers/legacy_lifecycle/raw-request-span-skipped-in-semconv.yaml
+    - tools/oracle/cases/helpers/legacy_lifecycle/success-closes-proxy-span.yaml
+    - tools/oracle/cases/helpers/legacy_lifecycle/success-dedup-streaming.yaml
+    - tools/oracle/cases/helpers/legacy_lifecycle/success-with-parent-span.yaml
+    - tools/oracle/cases/helpers/legacy_lifecycle/success-with-primary-span.yaml
+    - tools/oracle/cases/helpers/legacy_lifecycle/team-attributes-on-proxy-span.yaml
   lint_tables: false
 
 references:

@@ -1,0 +1,9 @@
+kind: helper
+name: safe_filename_normalizes_backslash_separators
+call:
+  assets:
+    op: safe_filename
+    filename: 'uploads\2024\report.pdf'
+env: {}
+compare:
+  ignore: []

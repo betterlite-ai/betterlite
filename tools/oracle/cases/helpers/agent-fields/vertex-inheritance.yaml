@@ -1,0 +1,6 @@
+kind: helper
+name: vertex-inheritance
+call:
+  b3191: {function: agent_credential_fields, agent_type: vertex_agent_engine}
+env: {}
+compare: {ignore: []}

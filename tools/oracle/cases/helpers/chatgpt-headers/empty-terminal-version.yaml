@@ -1,0 +1,14 @@
+kind: helper
+name: chatgpt-headers-empty-terminal-version
+call:
+  chatgpt_headers:
+    environment:
+      WEZTERM_VERSION: ""
+    access_token: "empty-terminal-version-token"
+    account_id: null
+    session_id: null
+    litellm_params: absent
+env:
+  WEZTERM_VERSION: ""
+compare:
+  ignore: []

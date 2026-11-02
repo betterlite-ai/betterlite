@@ -1,0 +1,20 @@
+task: B3614
+deviations:
+  - what: >-
+      SafeRouteAdder.add_api_route_if_not_exists does not block addition when a collision
+      exists only with lazy-owned routes; the route is always added when no non-lazy-owned
+      route exists, and is also reordered ahead of the first colliding lazy-owned route.
+    why: >-
+      LiteLLM distinguishes lazy-owned (placeholder) routes from app-registered routes so
+      configuration pass-through endpoints can take priority over features not yet loaded.
+      A route added at a path where lazy features have registered placeholders is moved
+      ahead of those placeholders, giving it the precedence the configuration intended.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L2884-L2950
+  - what: >-
+      remove_endpoint_routes mutates the shared LiteLLMRoutes.openai_routes list, which auth
+      and configuration reads directly.
+    why: >-
+      Registration and removal must keep the registry and the exposed configuration in sync
+      so auth sees the same routes the config API returns.
+    link: ""

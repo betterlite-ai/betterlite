@@ -66,6 +66,7 @@ scope:
   paths:
     - crates/betterlite-auth/src/auth_identity.rs
     - crates/betterlite-auth/src/auth_identity/**
+    - crates/betterlite-auth/src/user_roles.rs
     - crates/betterlite-auth/Cargo.toml
     - Cargo.toml
     - crates/betterlite-server/src/auth.rs

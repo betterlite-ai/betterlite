@@ -1,0 +1,8 @@
+kind: helper
+name: cache-settings-secrets-target-repr-dict-sorted
+call:
+  b4306:
+    function: target_repr
+    value: {port: 6379, host: "a"}
+env: {}
+compare: {ignore: []}

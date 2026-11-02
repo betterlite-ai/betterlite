@@ -1,0 +1,9 @@
+kind: helper
+name: detect_local_image_media_type_recognizes_a_webp_signature
+call:
+  assets:
+    op: detect_local_image_media_type
+    header_hex: "52494646000000005745425056503820"
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,5 @@
+kind: helper
+name: error-level-status
+call: {"b3963": {"operation": "content_selection", "kwargs": {"call_type": "completion", "messages": [{"role": "user", "content": "test input"}]}, "level": "error", "status_message": "simulated provider error"}}
+env: {}
+compare: {ignore: []}

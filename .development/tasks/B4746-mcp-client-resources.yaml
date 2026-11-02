@@ -49,6 +49,7 @@ scope:
     - tools/oracle/helpers/b4746/**
     - tools/oracle/src/helpers/core_ops/b4746.rs
     - tools/oracle/src/helpers/core_ops/b4746/**
+    - tools/oracle/cases/helpers/mcp-client-resources/**
   lint_tables: false
 
 references:

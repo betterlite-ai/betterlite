@@ -1,0 +1,16 @@
+kind: helper
+name: chatgpt-headers-ascii-sanitization
+call:
+  chatgpt_headers:
+    environment:
+      CHATGPT_ORIGINATOR: "café\tCLI"
+      TERM: "tërm"
+    access_token: "ascii-sanitization-token"
+    account_id: null
+    session_id: null
+    litellm_params: absent
+env:
+  CHATGPT_ORIGINATOR: "café\tCLI"
+  TERM: "tërm"
+compare:
+  ignore: []

@@ -1,0 +1,13 @@
+kind: helper
+name: collision-reorder-ahead
+call:
+  b3614:
+    collision:
+      existing_routes:
+        - {path: /x, methods: [GET], lazy_owned: false}
+        - {path: /foo, methods: [GET], lazy_owned: true}
+        - {path: /z, methods: [GET], lazy_owned: false}
+      new_path: /foo
+      new_methods: [GET]
+env: {}
+compare: {ignore: []}

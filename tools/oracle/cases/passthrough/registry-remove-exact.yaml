@@ -1,0 +1,11 @@
+kind: helper
+name: registry-remove-exact
+call:
+  b3614:
+    remove:
+      registrations:
+        - {key: 'a:exact:/custom:GET', endpoint_id: a, route_type: exact, path: /custom, methods: [GET], auth: null}
+      openai_routes: [/custom, /other]
+      endpoint_id: a
+env: {}
+compare: {ignore: []}

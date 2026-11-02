@@ -1,0 +1,5 @@
+kind: helper
+name: multiple-prompt-strings
+call: {text_completion_policy: {multiple_prompt_strings: {model: text-davinci-003, messages: [{role: user, content: first}, {role: user, content: second}], optional_params: {}}}}
+env: {}
+compare: {ignore: []}

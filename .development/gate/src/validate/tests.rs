@@ -1,14 +1,16 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::ids::{check_id_problem, task_id_problem};
 use crate::spec::agents::Agents;
+use crate::spec::backlog::{Backlog, BacklogEntry};
 use crate::spec::catalog::Catalog;
 use crate::spec::task::Task;
 use crate::validate::agents::runner_problems;
 use crate::validate::command_args::argument_problems;
-use crate::validate::needs::needed_paths;
+use crate::validate::needs::{self, needed_paths};
 use crate::validate::task::{banned_tooling, scope_root_problems};
 use crate::validate::validate;
 use crate::yaml::read_yaml;
@@ -173,6 +175,47 @@ fn needed_paths_come_from_oracle_cases_and_test_flags() {
         "tools/oracle/cases/passthrough/endpoint-type-vertex.yaml".to_owned(),
         false
     )));
+    let errors: Task =
+        read_yaml(&root.join(".development/tasks/B5102-error-response-status.yaml")).unwrap();
+    assert!(
+        needed_paths(&errors)
+            .contains(&("tools/oracle/cases/helpers/openai-errors".to_owned(), true))
+    );
+}
+
+#[test]
+fn only_an_open_dependency_covers_a_missing_case() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let catalog: Catalog = read_yaml(&root.join(".development/checks.yaml")).unwrap();
+    let mut tasks = BTreeMap::new();
+    for (id, path, cases) in [
+        ("B998", "tools/oracle/cases/probe/**", "[]"),
+        (
+            "B999",
+            "crates/probe/**",
+            "[tools/oracle/cases/probe/missing.yaml]",
+        ),
+    ] {
+        let text = format!(
+            "{{id: {id}, title: Probe, description: Probe., scope: {{paths: [{path}], lint_tables: false}}, references: [], dod: [{{text: Done., proof: [scope]}}], checks: {{optional: [], commands: []}}, oracle_cases: {cases}, deviations: [], out_of_scope: [], pitfalls: [], review_level: standard, budget: {{max_changed_lines: 100, max_new_expects: 0}}}}"
+        );
+        tasks.insert(
+            id.to_owned(),
+            serde_saphyr::from_str::<Task>(&text).unwrap(),
+        );
+    }
+    for (status, found) in [("done", 1), ("todo", 0)] {
+        let mut entries = Vec::new();
+        for (id, entry_status, depends_on) in [("B998", status, "[]"), ("B999", "todo", "[B998]")] {
+            let text = format!(
+                "{{id: {id}, milestone: M0, title: Probe, status: {entry_status}, depends_on: {depends_on}, file: null, covers: [], parent: null, split_from: null, resolution: null, superseded_by: null, blocked_reason: null, pr: null}}"
+            );
+            entries.push(serde_saphyr::from_str::<BacklogEntry>(&text).unwrap());
+        }
+        let backlog = Backlog { tasks: entries };
+        let problems = needs::problems(&root, &catalog, &backlog, &tasks).unwrap();
+        assert_eq!(problems.len(), found, "{status}: {problems:?}");
+    }
 }
 
 #[test]
