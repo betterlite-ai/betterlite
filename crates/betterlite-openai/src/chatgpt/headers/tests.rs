@@ -217,6 +217,8 @@ fn metadata_session_id(value: &str) -> Value {
 #[case(mapping(&[("litellm_session_id", json!("")), ("session_id", json!("b"))]), "b")]
 #[case(mapping(&[("litellm_session_id", json!(42_i64))]), "42")]
 #[case(mapping(&[("litellm_session_id", json!(true))]), "True")]
+#[case(mapping(&[("litellm_session_id", json!(["a", "b"]))]), "['a', 'b']")]
+#[case(mapping(&[("litellm_session_id", json!({"x": "y"}))]), "{'x': 'y'}")]
 fn session_id_precedence_and_stringification(#[case] params: ParamsRecord, #[case] expected: &str) {
     let input = LitellmParamsInput::Mapping(params);
     assert_eq!(get_chatgpt_session_id(&input), Some(expected.to_owned()));
