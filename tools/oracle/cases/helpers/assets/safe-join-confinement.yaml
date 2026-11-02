@@ -1,0 +1,12 @@
+kind: helper
+name: safe_join_confines_a_plain_descendant_to_base_dir
+call:
+  assets:
+    op: safe_join
+    fixture:
+      - {kind: dir, path: inside}
+      - {kind: file, path: inside/file.txt, content_hex: "6869"}
+    parts: [inside, file.txt]
+env: {}
+compare:
+  ignore: []

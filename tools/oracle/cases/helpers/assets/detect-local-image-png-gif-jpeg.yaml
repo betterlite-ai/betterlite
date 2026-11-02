@@ -1,0 +1,9 @@
+kind: helper
+name: detect_local_image_media_type_recognizes_a_png_signature
+call:
+  assets:
+    op: detect_local_image_media_type
+    header_hex: "89504e470d0a1a0a"
+env: {}
+compare:
+  ignore: []

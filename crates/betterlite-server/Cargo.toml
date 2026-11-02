@@ -30,6 +30,7 @@ secrecy.workspace = true
 serde.workspace = true
 serde_json = { version = "1.0.154", features = ["raw_value"] }
 serde_with = { version = "3.24.0", default-features = false, features = ["alloc", "macros"] }
+soft-canonicalize = "0.5.6"
 strum = { version = "0.28.0", features = ["derive"] }
 subtle.workspace = true
 thiserror.workspace = true

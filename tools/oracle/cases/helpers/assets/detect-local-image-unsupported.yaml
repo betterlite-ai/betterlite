@@ -1,0 +1,9 @@
+kind: helper
+name: detect_local_image_media_type_returns_null_for_an_unrecognized_header
+call:
+  assets:
+    op: detect_local_image_media_type
+    header_hex: "6e6f7420616e20696d61676520617420616c6c"
+env: {}
+compare:
+  ignore: []
