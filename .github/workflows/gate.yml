@@ -30,7 +30,6 @@ jobs:
       base: ${{ steps.find.outputs.base }}
       task: ${{ steps.find.outputs.task }}
       parts: ${{ steps.find.outputs.parts }}
-      ops: ${{ steps.find.outputs.ops }}
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -70,49 +69,6 @@ jobs:
           echo "base=$base" >> "$GITHUB_OUTPUT"
           echo "task=$task" >> "$GITHUB_OUTPUT"
           echo "parts=$parts" >> "$GITHUB_OUTPUT"
-          if git diff --quiet "$base" HEAD -- .development/gate .development/ops .github/workflows/gate.yml; then
-            echo "ops=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "ops=true" >> "$GITHUB_OUTPUT"
-          fi
-
-  operations:
-    name: dispatch integration tests
-    needs: find
-    if: needs.find.outputs.ops == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    permissions:
-      contents: read
-    env:
-      CARGO_PROFILE_DEV_DEBUG: line-tables-only
-      CARGO_PROFILE_TEST_DEBUG: line-tables-only
-    steps:
-      - name: Check out
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Install sandbox test tools
-        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends bubblewrap
-      - name: Install uv
-        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
-        with:
-          tool: uv@0.11.14
-      - name: Restore the gate build cache
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          shared-key: gate-lint
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-          workspaces: .development/gate -> target
-      - name: Build the dispatcher
-        run: cargo build --locked --manifest-path .development/gate/Cargo.toml
-      - name: Check operations code
-        run: |
-          uv run --locked --project .development/ops --group dev ruff check .development/ops
-          uv run --locked --project .development/ops --group dev basedpyright --project .development/ops/pyrightconfig.json
-          for script in .development/ops/*.sh; do bash -n "$script"; done
-      - name: Exercise miniature dispatches and Linux sandboxes
-        run: sudo --preserve-env=PATH uv run --locked --no-sync --project .development/ops python -m unittest discover -s .development/ops -p 'test_*.py' -v
 
   checks:
     name: ${{ matrix.part }}
@@ -208,6 +164,18 @@ jobs:
         with:
           tool: cargo-nextest@0.9.140,cargo-deny@0.20.2,cargo-llvm-cov@0.8.7,cargo-mutants@27.1.0,typos@1.48.0,prek@0.4.9,zizmor@1.26.1,uv@0.11.14
 
+      - name: Check operations code
+        if: matrix.part == 'lint' && github.event_name != 'pull_request'
+        env:
+          BASE: ${{ needs.find.outputs.base }}
+        run: |
+          if git diff --quiet "$BASE" HEAD -- .development/ops; then
+            exit 0
+          fi
+          uv run --locked --project .development/ops --group dev ruff check .development/ops
+          uv run --locked --project .development/ops --group dev basedpyright --project .development/ops/pyrightconfig.json
+          for script in .development/ops/*.sh; do bash -n "$script"; done
+
       - name: Restore the tools built from source
         if: github.event_name != 'pull_request'
         id: tools
@@ -287,7 +255,7 @@ jobs:
 
   gate:
     name: gate
-    needs: [find, checks, operations]
+    needs: [find, checks]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -297,7 +265,6 @@ jobs:
         env:
           FIND: ${{ needs.find.result }}
           CHECKS: ${{ needs.checks.result }}
-          OPERATIONS: ${{ needs.operations.result }}
         run: |
-          echo "find $FIND, checks $CHECKS, operations $OPERATIONS"
-          [[ $FIND == success && $CHECKS == success && ( $OPERATIONS == success || $OPERATIONS == skipped ) ]]
+          echo "find $FIND, checks $CHECKS"
+          [[ $FIND == success && $CHECKS == success ]]

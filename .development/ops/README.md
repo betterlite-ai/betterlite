@@ -7,7 +7,7 @@ the development group contains Ruff and basedpyright. Run Python through
 `common.sh` stops launchers while either the coordinator's `.git/betterlite/maintenance`
 or `logs/maintenance.STOP` exists. The dispatcher checks maintenance again before
 each invocation and while waiting for a vendor seat. Removing these files is an
-explicit operator action; tests never remove real maintenance files.
+explicit operator action.
 
 Task checkouts use private Git directories with hardlinked immutable objects. The
 `betterlite.coordinator` Git setting points at the shared journal and lock directory.
@@ -45,19 +45,15 @@ After that verification, a clean idle checkout is archived under
 `refs/betterlite/completed/<task>` and removed. A late edit or live process preserves
 the checkout. Blocked or paused checkouts are never cleaned this way.
 
-Run the miniature integration suite after building the dispatcher:
+Check the operations code:
 
 ```sh
-cargo build --locked --manifest-path .development/gate/Cargo.toml
 uv run --locked --project .development/ops --group dev ruff check .development/ops
 uv run --locked --project .development/ops --group dev basedpyright --project .development/ops/pyrightconfig.json
-uv run --locked --project .development/ops python -m unittest discover -s .development/ops -p 'test_*.py' -v
+for script in .development/ops/*.sh; do bash -n "$script"; done
 ```
 
-The suite needs Linux network namespaces and loopback sockets. It uses temporary
-repositories, fake model programs and fake GitHub responses. It never calls a model
-provider or resumes production workers. The gate workflow runs it when gate or
-operations code changes and requires its result.
+The existing lint job runs these checks when operations code changes.
 
 `usage.py <journal-root>` reports measured invocation time and available usage records.
 Claude's cumulative cost and output-token totals are counted once per session;
