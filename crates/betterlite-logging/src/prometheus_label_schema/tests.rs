@@ -422,14 +422,20 @@ fn input_sequence_length_label_is_restricted_to_its_metrics() {
 
 #[test]
 fn proxy_total_requests_stream_label_is_opt_in() {
-    let mut settings = PrometheusLabelSettings::with_defaults();
     let metric = "litellm_proxy_total_requests_metric";
-    let without = get_labels(metric, &settings).unwrap();
-    assert!(!without.contains(&"stream".to_owned()));
+    let mut settings = PrometheusLabelSettings::with_defaults();
+    let mut without = super::default_labels(metric).unwrap();
+    without.extend(["org_id".to_owned(), "org_alias".to_owned()]);
+    assert_eq!(get_labels(metric, &settings).unwrap(), without);
 
     settings.emit_stream_label = true;
-    let with = get_labels(metric, &settings).unwrap();
-    assert!(with.contains(&"stream".to_owned()));
+    let mut with = super::default_labels(metric).unwrap();
+    with.extend([
+        "stream".to_owned(),
+        "org_id".to_owned(),
+        "org_alias".to_owned(),
+    ]);
+    assert_eq!(get_labels(metric, &settings).unwrap(), with);
 }
 
 #[test]
