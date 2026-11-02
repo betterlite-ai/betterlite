@@ -622,6 +622,31 @@ fn base_config_missing_api_base_message_names_the_provider() {
 }
 
 #[test]
+fn base_config_canonical_model_returns_the_model_unchanged() {
+    let config = BareProviderConfig;
+    assert_eq!(config.canonical_model("systemone-1"), "systemone-1");
+}
+
+#[test]
+fn base_config_health_check_questions_returns_the_reachable_predicate() {
+    let config = BareProviderConfig;
+    let questions = config.health_check_questions();
+    assert_eq!(questions.len(), 1);
+    match &questions[0] {
+        ir::DecisionQuestion::Predicate(predicate) => {
+            assert_eq!(predicate.name, Some("reachable".to_owned()));
+            assert_eq!(
+                predicate.instructions,
+                Some(DecisionsJson::Text("Is the service reachable?".to_owned()))
+            );
+        }
+        other @ (ir::DecisionQuestion::Choice(_) | ir::DecisionQuestion::Score(_)) => {
+            panic!("expected a predicate question, got {other:?}")
+        }
+    }
+}
+
+#[test]
 fn base_config_transform_decisions_request_builds_systemone_request_from_ir() {
     let config = BareProviderConfig;
     let request = request_with(vec![predicate_question("a")]);
