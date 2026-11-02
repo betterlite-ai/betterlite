@@ -1,0 +1,5 @@
+kind: helper
+name: system-placement-leading-system-seed
+call: {system_placement: {operation: split_leading_system_run, messages: [{role: system, content: You are a helpful assistant.}, {role: system, content: Keep answers short.}, {role: user, content: Hi there.}, {role: assistant, content: Hello!}]}}
+env: {}
+compare: {ignore: []}
