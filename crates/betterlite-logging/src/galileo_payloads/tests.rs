@@ -584,7 +584,9 @@ fn check_responses_api_output_projection() {
             {"type": "something_else", "id": "rs_2", "summary": []},
             {"type": "reasoning", "id": "rs_3", "summary": [{"text": "s"}]},
             {"type": "reasoning", "id": "rs_4", "summary": [], "status": "completed"},
-            {"type": "reasoning", "id": "rs_5", "summary": [], "status": "bogus"}
+            {"type": "reasoning", "id": "rs_5", "summary": [], "status": "bogus"},
+            {"type": "reasoning", "id": "rs_6", "summary": [{"type": "summary_text", "text": "s2", "foo": "extra1"}], "content": [{"type": "reasoning_text", "text": "t2", "bar": "extra2"}]},
+            {"type": "reasoning", "id": "rs_7", "summary": [], "content": [{"text": "u"}]}
         ]"#,
         r#"[
             {"id": "msg_1", "content": [{"annotations": [], "text": "hi", "type": "output_text", "logprobs": null}], "role": "assistant", "status": "completed", "type": "message", "phase": null},
@@ -597,7 +599,9 @@ fn check_responses_api_output_projection() {
             {"type": "something_else", "id": "rs_2", "summary": []},
             {"type": "reasoning", "id": "rs_3", "summary": [{"text": "s"}]},
             {"id": "rs_4", "summary": [], "type": "reasoning", "content": null, "encrypted_content": null, "status": "completed"},
-            {"type": "reasoning", "id": "rs_5", "summary": [], "status": "bogus"}
+            {"type": "reasoning", "id": "rs_5", "summary": [], "status": "bogus"},
+            {"id": "rs_6", "summary": [{"text": "s2", "type": "summary_text", "foo": "extra1"}], "type": "reasoning", "content": [{"text": "t2", "type": "reasoning_text", "bar": "extra2"}], "encrypted_content": null, "status": null},
+            {"type": "reasoning", "id": "rs_7", "summary": [], "content": [{"text": "u"}]}
         ]"#,
     );
 }
