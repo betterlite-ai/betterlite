@@ -1,0 +1,9 @@
+kind: helper
+name: opencode-section-not-mapping
+call:
+  b5081:
+    harness: opencode
+    config: { mode: nope }
+env: {}
+compare:
+  ignore: []

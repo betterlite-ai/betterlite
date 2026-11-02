@@ -23,6 +23,7 @@ mod paths;
 pub mod process;
 pub mod routing_mock_scripts;
 pub mod routing_probe_ipc;
+pub mod routing_scenarios;
 pub mod runner;
 
 mod tests;
@@ -31,6 +32,7 @@ use std::io;
 use std::path::PathBuf;
 use std::process::{ExitCode, ExitStatus};
 use std::str::Utf8Error;
+use std::sync::mpsc::RecvTimeoutError;
 use std::time::{Duration, SystemTimeError};
 
 use axum::http::status::InvalidStatusCode;
@@ -214,6 +216,20 @@ pub enum OracleError {
     DatabaseUrlConflict,
     #[error("gateway config already sets general_settings.disable_prisma_schema_update")]
     DisableSchemaUpdateConflict,
+    #[error("scenario is {bytes} bytes, past the 16 MiB limit")]
+    ScenarioTooLarge { bytes: usize },
+    #[error("cannot parse scenario: {0}")]
+    ScenarioParse(#[source] serde_json::Error),
+    #[error("invalid scenario: {message}")]
+    ScenarioInvalid { message: String },
+    #[error("scenario join has no concurrent step to join")]
+    ScenarioJoinMissing,
+    #[error("scenario join did not hear back from every concurrent request: {0}")]
+    ScenarioJoinFailed(#[source] RecvTimeoutError),
+    #[error(
+        "scenario needs at least {requests} upstream answers, one per request, but only {upstream} are scripted"
+    )]
+    ScenarioUpstreamShort { requests: usize, upstream: usize },
 }
 
 pub fn run() -> Result<ExitCode, OracleError> {

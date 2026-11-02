@@ -13,13 +13,14 @@ where
         return Ok(None);
     };
     let parsed = serde_json::from_value(value)
-        .map_err(|error| failure_with_class("GuardrailError", error.to_string()))?;
+        .map_err(|error| failure_with_class("GuardrailError", None, error.to_string()))?;
     Ok(Some(parsed))
 }
 pub(super) fn error_failure(
     is_blocked: bool,
     blocked_class: &str,
     other_class: &str,
+    status: Option<u16>,
     message: String,
 ) -> Box<crate::helpers::HelperError> {
     let class = if is_blocked {
@@ -27,16 +28,17 @@ pub(super) fn error_failure(
     } else {
         other_class
     };
-    failure_with_class(class, message)
+    failure_with_class(class, status, message)
 }
 pub(super) fn failure_with_class(
     class_name: &str,
+    status: Option<u16>,
     message: String,
 ) -> Box<crate::helpers::HelperError> {
     let class = class_name.to_owned();
     Box::new(crate::helpers::HelperError {
         class,
-        status: None,
+        status,
         error_type: None,
         param: None,
         code: None,

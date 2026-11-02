@@ -38,7 +38,7 @@ pub(super) fn child_environment(
     environment
 }
 
-pub(super) fn write_marker(directory: &Path, eligible: bool) -> Result<(), OracleError> {
+pub(crate) fn write_marker(directory: &Path, eligible: bool) -> Result<(), OracleError> {
     let marker = ArtifactMarker {
         native_feature_eligibility: eligible,
     };

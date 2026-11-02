@@ -32,13 +32,19 @@ impl GraySwanGuardrailAPIError {
     #[must_use]
     pub const fn status_code(&self) -> StatusCode {
         match self {
-            Self::Timeout { .. }
-            | Self::Request { .. }
-            | Self::HttpStatus { .. }
+            Self::Timeout { .. } => StatusCode::REQUEST_TIMEOUT,
+            Self::HttpStatus { status } => {
+                if status.as_u16() >= 400 && status.as_u16() <= 599 {
+                    *status
+                } else {
+                    StatusCode::INTERNAL_SERVER_ERROR
+                }
+            }
+            Self::Blocked { .. } => StatusCode::BAD_REQUEST,
+            Self::Request { .. }
             | Self::InvalidHeader { .. }
             | Self::ResponseTooLarge { .. }
-            | Self::ResponseJson { .. }
-            | Self::Blocked { .. } => StatusCode::BAD_REQUEST,
+            | Self::ResponseJson { .. } => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }

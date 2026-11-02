@@ -1,0 +1,8 @@
+task: B3760
+deviations:
+  - what: Missing action (null in response) allows the request; unknown action strings normalize to block.
+    why: LiteLLM permits null action, treating it as allow; any unrecognized action is treated as block, not as a distinct unknown category.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L1250-L1273
+  - what: API errors (timeout, connection failure, non-200 status) fall back to configured fallback_mode (block or monitor), not based on HTTP status code.
+    why: LiteLLM applies the same fallback_mode to all classes of API error; status code alone does not determine the action.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L1763-L1812

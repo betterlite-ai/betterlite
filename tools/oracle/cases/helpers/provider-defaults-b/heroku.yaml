@@ -1,0 +1,13 @@
+kind: helper
+name: provider-defaults-b-heroku
+call:
+  provider_defaults_b:
+    provider: heroku
+    model: heroku-model
+    api_base: https://explicit.heroku.example/v1
+    api_key: explicit-heroku-key
+    environment:
+      HEROKU_API_BASE: https://env.heroku.example/v1
+      HEROKU_API_KEY: env-heroku-key
+env: {}
+compare: {ignore: []}

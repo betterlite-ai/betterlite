@@ -19,7 +19,7 @@ description: >-
   Tests. providers::codex::transformation::tests::config_errors_match_litellm is an rstest over the invalid, empty, managed, managed-dotted, quote-holding, null-value and too-deep cases, and asserts the full to_string() of each error. providers::opencode::transformation::tests::config_errors_match_litellm does the same for the top-level, agent, mode and not-a-mapping texts, and providers::opencode::transformation::tests::section_shapes_follow_litellm covers the null section and the null, false, 0, "", list and string agent entries. Update the existing tests that match on the old variant fields.
 
 
-  Oracle. The skeleton gives this task the helper operation b5081. It takes `{harness: codex|opencode, config: <object>}`. The Python side calls config_overrides (Codex) or validate_user_config (OpenCode) from the pinned modules and returns `{valid: true}`; the Rust side calls validate_environment on a session whose options carry that config, and maps these HarnessError variants to the class OptionsMismatch. Write the cases listed under oracle_cases.
+  Oracle. The helper cases run through oracle operation b5081, registered with a stub in the harness helper group; replace the stub in tools/oracle/src/helpers/harness/b5081.rs and write tools/oracle/helpers/b5081.py. It takes `{harness: codex|opencode, config: <object>}`. The Python side calls config_overrides (Codex) or validate_user_config (OpenCode) from the pinned modules and returns `{valid: true}`; the Rust side calls validate_environment on a session whose options carry that config, and maps these HarnessError variants to the class OptionsMismatch. Write the cases listed under oracle_cases.
 scope:
   paths:
     - crates/betterlite-harness/src/errors.rs
@@ -29,6 +29,10 @@ scope:
     - crates/betterlite-harness/src/providers/opencode/validation.rs
     - crates/betterlite-harness/src/providers/opencode/transformation/**
     - tools/oracle/cases/helpers/harness-managed-keys/**
+    - tools/oracle/helpers/b5081.py
+    - tools/oracle/helpers/b5081/**
+    - tools/oracle/src/helpers/harness/b5081.rs
+    - tools/oracle/src/helpers/harness/b5081/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codex/harness/transformation.py#L150-L166
