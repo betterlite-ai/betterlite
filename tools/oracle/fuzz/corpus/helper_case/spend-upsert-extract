@@ -4,5 +4,7 @@ call:
   spend_upsert:
     steps:
       null_user: {kind: extract, entity: user, payload: {user: null}}
+      daily: {kind: daily, entity: tag, rows: [{tag: seed, prompt_tokens: true, spend: 0.25}]}
+      turn: {kind: turn, transaction: {api_key: key, session_id: session, router_name: router, router_type: cost, model: model, turn_at: "2026-01-01T00:00:00.001", total_tokens: 3, spend: 0.25, saved_spend: 0, classifier_cost: 0, covered: true, cache_hit: false, cache_ttl_seconds: null, cache_touched: false}}
 env: {}
 compare: {ignore: []}

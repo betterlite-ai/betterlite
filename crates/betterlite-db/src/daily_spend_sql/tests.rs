@@ -205,3 +205,22 @@ async fn check_daily(first: &deadpool_postgres::Client) {
 fn rejects_invalid_tag_bytes(#[case] bytes: Vec<u8>) {
     decode_daily_tags(&bytes).unwrap_err();
 }
+
+#[test]
+fn sums_money_without_binary_roundoff() {
+    let mut first = row("tag", Null, 0);
+    first.insert(
+        "spend".to_owned(),
+        Decimal(rust_decimal::Decimal::new(1, 1)),
+    );
+    let mut second = row("tag", Null, 0);
+    second.insert(
+        "spend".to_owned(),
+        Decimal(rust_decimal::Decimal::new(2, 1)),
+    );
+    let groups = merge_by_conflict_key(&DailySpendEntity::Tag.table(), &[first, second]).unwrap();
+    assert_eq!(
+        groups[0].1.get("spend"),
+        Some(&Decimal(rust_decimal::Decimal::new(3, 1)))
+    );
+}

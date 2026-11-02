@@ -1,7 +1,9 @@
 #![cfg(test)]
 
 use super::sql::{session_upsert_sql, upsert_autorouter_session_sql};
-use super::transaction::{AutoRouterTurnTransaction, FIELD_ORDER, TurnFlag, upsert_params};
+use super::transaction::{
+    AutoRouterTurnTransaction, FIELD_ORDER, TurnFlag, TurnTime, upsert_params,
+};
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use chrono::{DateTime, FixedOffset, TimeZone as _, Utc};
 use deadpool_postgres::{Client, Pool};
@@ -14,10 +16,11 @@ fn turn() -> AutoRouterTurnTransaction {
         router_name: "router".to_owned(),
         router_type: "simple-shuffle".to_owned(),
         model: "model".to_owned(),
-        turn_at: Utc
-            .with_ymd_and_hms(2026, 1, 1, 0, 0, 0)
-            .unwrap()
-            .fixed_offset(),
+        turn_at: TurnTime::Aware(
+            Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0)
+                .unwrap()
+                .fixed_offset(),
+        ),
         total_tokens: 9,
         spend: Decimal::new(5, 1),
         saved_spend: Decimal::new(1, 1),
@@ -91,24 +94,29 @@ pub(crate) async fn database() -> (PostgresFixture, Pool) {
     (fixture, pool)
 }
 
+#[rstest::rstest]
+#[case::offset("2026-01-01T02:00:00.001+02:00")]
+#[case::naive("2026-01-01T02:00:00.001")]
 #[tokio::test]
-async fn postgres_initial_turn_updates_both_scopes() {
+async fn postgres_initial_turn_updates_both_scopes(#[case] at: &str) {
     let (fixture, pool) = database().await;
     let mut client = pool.get().await.unwrap();
     let transaction = client.transaction().await.unwrap();
     let mut input = turn();
+    input.turn_at = serde_json::from_str(&format!("\"{at}\"")).unwrap();
     input.user_id = "user".to_owned();
     input.cache_hit = TurnFlag(true);
     super::write::write_autorouter_turn(&transaction, &input)
         .await
         .unwrap();
     transaction.commit().await.unwrap();
-    let result = client.query_one("SELECT turns, first_visit_turns, same_model_turns, spend::numeric, first_visit_hits FROM \"LiteLLM_AutoRouterUserSession\"", &[]).await.unwrap();
+    let result = client.query_one("SELECT turns, first_visit_turns, same_model_turns, spend::numeric, first_visit_hits, first_turn_at::text FROM \"LiteLLM_AutoRouterUserSession\"", &[]).await.unwrap();
     assert_eq!(result.get::<_, i32>(0), 1_i32);
     assert_eq!(result.get::<_, i32>(1), 1_i32);
     assert_eq!(result.get::<_, i32>(2), 0_i32);
     assert_eq!(result.get::<_, Decimal>(3), input.spend);
     assert_eq!(result.get::<_, i32>(4), 1_i32);
+    assert_eq!(result.get::<_, String>(5), "2026-01-01 02:00:00.001");
     drop(client);
     pool.close();
     fixture.close_async().await.unwrap();
@@ -124,9 +132,12 @@ async fn postgres_order_ties_cache_ttl_and_tier_counters() {
     input.tier = Some("low".to_owned());
     input.baseline_model = Some("base".to_owned());
     input.savings_estimated_turns = 1;
-    let start = input.turn_at;
-    write_ordered_trace(&client, &mut input).await;
-    input.turn_at = start - chrono::Duration::seconds(1);
+    let TurnTime::Aware(start) = input.turn_at else {
+        panic!("test fixture must have a timezone")
+    };
+    write_ordered_trace(&client, &mut input, start).await;
+    let oldest = start - chrono::Duration::seconds(1);
+    input.turn_at = TurnTime::Aware(oldest);
     input.model = "b".to_owned();
     input.cache_ttl_seconds = Some(3600);
     input.router_type = "different".to_owned();
@@ -135,7 +146,7 @@ async fn postgres_order_ties_cache_ttl_and_tier_counters() {
     super::write::write_autorouter_turn(&client, &input)
         .await
         .unwrap();
-    check_rollup(&client, start, input.turn_at).await;
+    check_rollup(&client, start, oldest).await;
     drop(client);
     pool.close();
     fixture.close_async().await.unwrap();
@@ -256,8 +267,11 @@ async fn assert_atomic_failure(first: &Client, input: &AutoRouterTurnTransaction
     assert_eq!(remaining.get::<_, i32>(0), 2_i32);
 }
 
-async fn write_ordered_trace(client: &Client, input: &mut AutoRouterTurnTransaction) {
-    let start = input.turn_at;
+async fn write_ordered_trace(
+    client: &Client,
+    input: &mut AutoRouterTurnTransaction,
+    start: DateTime<FixedOffset>,
+) {
     for (offset, model, touched, hit) in [
         (0, "a", true, false),
         (10, "b", true, false),
@@ -266,9 +280,11 @@ async fn write_ordered_trace(client: &Client, input: &mut AutoRouterTurnTransact
         (301, "a", false, false),
         (301, "a", true, true),
     ] {
-        input.turn_at = start
-            .checked_add_signed(chrono::Duration::seconds(offset))
-            .unwrap();
+        input.turn_at = TurnTime::Aware(
+            start
+                .checked_add_signed(chrono::Duration::seconds(offset))
+                .unwrap(),
+        );
         input.model = model.to_owned();
         input.cache_touched = TurnFlag(touched);
         input.cache_hit = TurnFlag(hit);
