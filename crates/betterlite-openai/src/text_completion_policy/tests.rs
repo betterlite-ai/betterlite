@@ -831,6 +831,63 @@ fn text_completion_policy_cases(#[case] case: u8) {
                 json!(u64::MAX)
             );
 
+            let response_cache_no_amount_resolves = json!({
+                "choices": [],
+                "usage": {
+                    "prompt_tokens_details": {
+                        "cached_tokens": 1_i32,
+                        "cache_write_tokens": null,
+                        "cache_creation_tokens": null,
+                    },
+                },
+            });
+            let result_cache_no_amount_resolves = reply::to_chat_model_response(
+                Some(response_cache_no_amount_resolves),
+                Some(Map::new()),
+                &fixed_identifier,
+                &fixed_clock,
+            )
+            .expect("no resolvable cache amount leaves cache_write_tokens and cache_creation_tokens unset");
+            let prompt_tokens_details_no_amount =
+                result_cache_no_amount_resolves["usage"]["prompt_tokens_details"]
+                    .as_object()
+                    .expect("prompt_tokens_details object");
+            assert!(!prompt_tokens_details_no_amount.contains_key("cache_write_tokens"));
+            assert!(!prompt_tokens_details_no_amount.contains_key("cache_creation_tokens"));
+            assert_eq!(
+                prompt_tokens_details_no_amount["cached_tokens"],
+                json!(1_i32)
+            );
+
+            let response_server_tool_use_extra_key = json!({
+                "choices": [],
+                "usage": {
+                    "server_tool_use": {
+                        "web_search_requests": 1_i32,
+                        "web_fetch_requests": 2_i32,
+                    },
+                },
+            });
+            let result_server_tool_use_extra_key = reply::to_chat_model_response(
+                Some(response_server_tool_use_extra_key),
+                Some(Map::new()),
+                &fixed_identifier,
+                &fixed_clock,
+            )
+            .expect("an undeclared server_tool_use key is dropped");
+            assert_eq!(
+                result_server_tool_use_extra_key["usage"]["server_tool_use"],
+                json!({"web_search_requests": 1_i32})
+            );
+            assert_eq!(
+                result_server_tool_use_extra_key["_hidden_params"]["original_response"]["usage"]["server_tool_use"],
+                json!({
+                    "web_search_requests": 1_i32,
+                    "tool_search_requests": null,
+                    "browser_open_requests": null,
+                })
+            );
+
             let response_object_override = json!({"choices": [], "object": "something-else"});
             let result_object_override = reply::to_chat_model_response(
                 Some(response_object_override),

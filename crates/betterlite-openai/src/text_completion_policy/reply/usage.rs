@@ -34,7 +34,12 @@ pub(super) fn resolve_usage(raw: Option<Value>) -> Value {
         mirror_cache_write_tokens(details);
     }
     apply_cache_mappings(&mut usage, &fields);
-    // cost and server_tool_use are deleted (left unset) rather than defaulted when the caller omits them.
+    apply_cost_and_server_tool_use(&mut usage, &fields);
+    Value::Object(usage)
+}
+
+// cost and server_tool_use are deleted (left unset) rather than defaulted when the caller omits them.
+fn apply_cost_and_server_tool_use(usage: &mut Map<String, Value>, fields: &Map<String, Value>) {
     if let Some(cost) = fields.get("cost").filter(|value| !value.is_null()).cloned() {
         usage.insert("cost".to_owned(), cost);
     }
@@ -43,9 +48,25 @@ pub(super) fn resolve_usage(raw: Option<Value>) -> Value {
         .filter(|value| !value.is_null())
         .cloned()
     {
-        usage.insert("server_tool_use".to_owned(), server_tool_use);
+        usage.insert(
+            "server_tool_use".to_owned(),
+            filter_server_tool_use(server_tool_use),
+        );
     }
-    Value::Object(usage)
+}
+
+// ServerToolUse(**server_tool_use) is a plain BaseModel with extra='ignore', so a key outside its 3 declared fields is dropped.
+fn filter_server_tool_use(server_tool_use: Value) -> Value {
+    let Value::Object(fields) = server_tool_use else {
+        return server_tool_use;
+    };
+    let mut kept = Map::new();
+    for key in SERVER_TOOL_USE_KEYS {
+        if let Some(value) = fields.get(key) {
+            kept.insert(key.to_owned(), value.clone());
+        }
+    }
+    Value::Object(kept)
 }
 
 // Usage.__init__ folds a truthy reasoning_tokens parameter into completion_tokens_details instead of storing it directly.
@@ -118,6 +139,8 @@ fn mirror_cache_write_tokens(details: &mut Map<String, Value>) {
         .filter(|value| value.is_i64() || value.is_u64())
         .cloned();
     let Some(amount) = from_self.or(from_creation).or(from_nested) else {
+        details.remove("cache_write_tokens");
+        details.remove("cache_creation_tokens");
         return;
     };
     details.insert("cache_write_tokens".to_owned(), amount.clone());
