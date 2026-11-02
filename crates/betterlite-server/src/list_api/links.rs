@@ -20,16 +20,8 @@ pub fn build_page_links(
 ) -> PageLinks {
     let previous_page = page.saturating_sub(1);
     let next_page = page.saturating_add(1);
-    let prev = if page > 1 {
-        Some(page_url(path, pairs, previous_page))
-    } else {
-        None
-    };
-    let next = if has_more {
-        Some(page_url(path, pairs, next_page))
-    } else {
-        None
-    };
+    let prev = (page > 1).then(|| page_url(path, pairs, previous_page));
+    let next = has_more.then(|| page_url(path, pairs, next_page));
     PageLinks {
         self_link: page_url(path, pairs, page),
         prev,
@@ -47,16 +39,8 @@ pub fn build_list_links(
     let last = total_pages.max(1);
     let first_link = page_url(path, pairs, 1);
     let last_link = page_url(path, pairs, last);
-    let prev = if page > 1 {
-        Some(page_url(path, pairs, page.saturating_sub(1)))
-    } else {
-        None
-    };
-    let next = if page < last {
-        Some(page_url(path, pairs, page.saturating_add(1)))
-    } else {
-        None
-    };
+    let prev = (page > 1).then(|| page_url(path, pairs, page.saturating_sub(1)));
+    let next = (page < last).then(|| page_url(path, pairs, page.saturating_add(1)));
     ListLinks {
         self_link: page_url(path, pairs, page),
         first: first_link,

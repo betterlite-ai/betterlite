@@ -61,20 +61,21 @@ pub fn invalid_query_parameter(detail: String) -> ProblemDetail {
     )
 }
 
-pub enum SortProblem<'a> {
+#[derive(Clone, Copy)]
+pub enum SortProblem<'borrow> {
     Invalid {
-        resource: &'a str,
-        fields: &'a BTreeSet<&'a str>,
-        sortable: &'a BTreeSet<String>,
+        resource: &'borrow str,
+        fields: &'borrow BTreeSet<&'borrow str>,
+        sortable: &'borrow BTreeSet<String>,
     },
     Duplicate {
-        fields: &'a BTreeSet<&'a str>,
-        sortable: &'a BTreeSet<String>,
+        fields: &'borrow BTreeSet<&'borrow str>,
+        sortable: &'borrow BTreeSet<String>,
     },
 }
 
 #[must_use]
-pub fn sort_problem(problem_kind: SortProblem<'_>) -> ProblemDetail {
+pub fn sort_problem(problem_kind: &SortProblem<'_>) -> ProblemDetail {
     match problem_kind {
         SortProblem::Invalid {
             resource,

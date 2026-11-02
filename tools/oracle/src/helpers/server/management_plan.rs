@@ -136,14 +136,14 @@ fn comparison_from_wire(op: &str) -> Result<ComparisonOp, Box<crate::helpers::He
     }
 }
 
-fn loc_part(location: Value) -> Result<LocPart, Box<crate::helpers::HelperError>> {
+fn loc_part(location: &Value) -> Result<LocPart, Box<crate::helpers::HelperError>> {
     if let Some(field) = location.as_str() {
         return Ok(LocPart::Field(field.to_owned()));
     }
-    let Some(index) = location.as_u64() else {
+    let Some(raw_index) = location.as_u64() else {
         return Err(helper_error("invalid error location".to_owned()));
     };
-    let index = usize::try_from(index)
+    let index = usize::try_from(raw_index)
         .map_err(|_overflow| helper_error("invalid error index".to_owned()))?;
     Ok(LocPart::Index(index))
 }
@@ -206,66 +206,68 @@ impl crate::helpers::Helper for Op {
                 spec,
                 params,
                 scope,
-            } => {
-                let scope = match scope.clone() {
-                    ScopeInput::All => Scope::All,
-                    ScopeInput::Denied { reason } => Scope::Denied(reason),
-                    ScopeInput::Where { predicates } => Scope::Where(
-                        predicates
-                            .into_iter()
-                            .map(|predicate| match predicate {
-                                PredicateInput::IsNull { field, negated } => Ok(Predicate::IsNull(
-                                    betterlite_server::list_api::plan::types::IsNull {
-                                        field,
-                                        negated,
-                                    },
-                                )),
-                                PredicateInput::Compare { field, op, value } => {
-                                    comparison_from_wire(&op).map(|op| {
-                                        Predicate::Compare(
-                                            betterlite_server::list_api::plan::types::Compare {
-                                                field,
-                                                op,
-                                                value: FilterValue::Text(value),
-                                            },
-                                        )
-                                    })
-                                }
-                            })
-                            .collect::<Result<Vec<_>, _>>()?,
-                    ),
-                };
-                let result = build_query_plan(&make_spec(spec.clone())?, params, &scope);
-                match result {
-                    Ok(plan) => Ok(json!({
-                        "where": plan.where_.into_iter().map(predicate_json).collect::<Vec<_>>(),
-                        "order": plan.order.into_iter().map(|sort| json!({"field":sort.field, "descending":sort.descending})).collect::<Vec<_>>(),
-                        "skip": plan.skip,
-                        "take": plan.take
-                    })),
-                    Err(problem) => problem_json(&problem),
-                }
-            }
-            Input::Problem { errors: raw_errors } => {
-                let errors = raw_errors
-                    .iter()
-                    .map(|error| {
-                        let loc = error
-                            .loc
-                            .iter()
-                            .cloned()
-                            .map(loc_part)
-                            .collect::<Result<Vec<_>, _>>()?;
-                        Ok(ValidationErrorDetail {
-                            error_type: error.error_type.clone(),
-                            loc,
-                            msg: error.msg.clone(),
-                        })
-                    })
-                    .collect::<Result<Vec<_>, Box<crate::helpers::HelperError>>>()?;
-                let problem = request_validation_problem(&errors);
-                problem_json(&problem)
-            }
+            } => plan_result(spec, params, scope),
+            Input::Problem { errors } => validation_result(errors),
         }
     }
+}
+
+fn plan_result(
+    spec: &SpecInput,
+    params: &BTreeMap<String, String>,
+    caller_scope: &ScopeInput,
+) -> crate::helpers::HelperResult {
+    let scope = match caller_scope.clone() {
+        ScopeInput::All => Scope::All,
+        ScopeInput::Denied { reason } => Scope::Denied(reason),
+        ScopeInput::Where { predicates } => Scope::Where(
+            predicates
+                .into_iter()
+                .map(|predicate| match predicate {
+                    PredicateInput::IsNull { field, negated } => Ok(Predicate::IsNull(
+                        betterlite_server::list_api::plan::types::IsNull { field, negated },
+                    )),
+                    PredicateInput::Compare { field, op, value } => {
+                        comparison_from_wire(&op).map(|comparison| {
+                            Predicate::Compare(betterlite_server::list_api::plan::types::Compare {
+                                field,
+                                op: comparison,
+                                value: FilterValue::Text(value),
+                            })
+                        })
+                    }
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
+    };
+    let planned = build_query_plan(&make_spec(spec.clone())?, params, &scope);
+    match planned {
+        Ok(query_plan) => Ok(json!({
+            "where": query_plan.where_.into_iter().map(predicate_json).collect::<Vec<_>>(),
+            "order": query_plan.order.into_iter().map(|sort| json!({"field":sort.field, "descending":sort.descending})).collect::<Vec<_>>(),
+            "skip": query_plan.skip,
+            "take": query_plan.take
+        })),
+        Err(problem) => problem_json(&problem),
+    }
+}
+
+fn validation_result(raw_errors: &[ErrorInput]) -> crate::helpers::HelperResult {
+    let validated_errors = raw_errors
+        .iter()
+        .map(|error| {
+            let loc = error
+                .loc
+                .iter()
+                .map(loc_part)
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(ValidationErrorDetail {
+                error_type: error.error_type.clone(),
+                loc,
+                msg: error.msg.clone(),
+            })
+        })
+        .collect::<Result<Vec<_>, Box<crate::helpers::HelperError>>>()?;
+    let problem = request_validation_problem(&validated_errors);
+    problem_json(&problem)
 }

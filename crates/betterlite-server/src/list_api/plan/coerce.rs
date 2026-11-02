@@ -5,9 +5,7 @@ use chrono::{DateTime, TimeZone as _, Utc};
 use rust_decimal::Decimal;
 use speedate::{Date, DateTime as SpeedateDateTime};
 
-pub use crate::list_api::plan::params::{
-    allowed_params, facet_allowed_params, is_known_param, parse_filter_key,
-};
+use crate::list_api::plan::params::parse_filter_key;
 use crate::list_api::plan::types::{
     AnyOf, Compare, ComparisonOp, FilterOp, FilterSpec, FilterType, FilterValue, IsNull, ListSpec,
     PAGE_PARAM, PAGE_SIZE_PARAM, Predicate, SEARCH_PARAM, SORT_PARAM, SortKey, Within,
@@ -98,7 +96,7 @@ pub fn parse_sort(
         .filter(|field| !spec.sortable.contains(*field))
         .collect();
     if !rejected.is_empty() {
-        return Err(problem::sort_problem(problem::SortProblem::Invalid {
+        return Err(problem::sort_problem(&problem::SortProblem::Invalid {
             resource: &spec.resource,
             fields: &rejected,
             sortable: &spec.sortable,
@@ -111,7 +109,7 @@ pub fn parse_sort(
         .copied()
         .collect();
     if !repeated.is_empty() {
-        return Err(problem::sort_problem(problem::SortProblem::Duplicate {
+        return Err(problem::sort_problem(&problem::SortProblem::Duplicate {
             fields: &repeated,
             sortable: &spec.sortable,
         }));
@@ -170,6 +168,21 @@ const fn target_name(target: FilterType) -> &'static str {
     }
 }
 
+fn parse_within_filter(
+    field: &str,
+    raw: &str,
+    value_type: FilterType,
+) -> Result<Predicate, ProblemDetail> {
+    let mut values = Vec::new();
+    for item in raw.split(',') {
+        values.push(coerce(field, FilterOp::In, item.trim(), value_type)?);
+    }
+    Ok(Predicate::Within(Within {
+        field: field.to_owned(),
+        values,
+    }))
+}
+
 fn parse_filter(
     field: &str,
     op: FilterOp,
@@ -184,29 +197,6 @@ fn parse_filter(
         ));
     }
     match op {
-        FilterOp::IsNull => match raw.to_lowercase().as_str() {
-            "true" => Ok(Predicate::IsNull(IsNull {
-                field: field.to_owned(),
-                negated: false,
-            })),
-            "false" => Ok(Predicate::IsNull(IsNull {
-                field: field.to_owned(),
-                negated: true,
-            })),
-            _ => Err(problem::invalid_query_parameter(format!(
-                "'filter[{field}][is_null]' must be 'true' or 'false'."
-            ))),
-        },
-        FilterOp::In => {
-            let values = raw
-                .split(',')
-                .map(|item| coerce(field, FilterOp::In, item.trim(), filter_spec.value_type))
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(Predicate::Within(Within {
-                field: field.to_owned(),
-                values,
-            }))
-        }
         FilterOp::Compare(comparison) => {
             coerce(field, op, raw, filter_spec.value_type).map(|value| {
                 Predicate::Compare(Compare {
@@ -216,6 +206,21 @@ fn parse_filter(
                 })
             })
         }
+        FilterOp::In => parse_within_filter(field, raw, filter_spec.value_type),
+        FilterOp::IsNull => raw
+            .to_lowercase()
+            .parse::<bool>()
+            .map(|is_null| {
+                Predicate::IsNull(IsNull {
+                    field: field.to_owned(),
+                    negated: !is_null,
+                })
+            })
+            .map_err(|_invalid_bool| {
+                problem::invalid_query_parameter(format!(
+                    "'filter[{field}][is_null]' must be 'true' or 'false'."
+                ))
+            }),
     }
 }
 

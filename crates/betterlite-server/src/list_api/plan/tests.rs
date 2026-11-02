@@ -85,14 +85,14 @@ fn offset_overflow_returns_invalid_query_problem() {
 #[test]
 fn search_uses_sorted_fields_and_empty_search_adds_no_clause() {
     let params = BTreeMap::from([(String::from("q"), String::from("Ada"))]);
-    let plan = build_query_plan(&spec(), &params, &Scope::All).expect("search is declared");
+    let search_plan = build_query_plan(&spec(), &params, &Scope::All).expect("search is declared");
     assert!(
-        matches!(plan.where_.first(), Some(Predicate::AnyOf(any)) if any.clauses.iter().map(|clause| clause.field.as_str()).collect::<Vec<_>>() == ["description", "name"])
+        matches!(search_plan.where_.first(), Some(Predicate::AnyOf(any)) if any.clauses.iter().map(|clause| clause.field.as_str()).collect::<Vec<_>>() == ["description", "name"])
     );
 
     let empty = BTreeMap::from([(String::from("q"), String::new())]);
-    let plan = build_query_plan(&spec(), &empty, &Scope::All).expect("empty search is valid");
-    assert!(plan.where_.is_empty());
+    let empty_plan = build_query_plan(&spec(), &empty, &Scope::All).expect("empty search is valid");
+    assert!(empty_plan.where_.is_empty());
 }
 
 #[test]
@@ -120,11 +120,11 @@ fn monetary_filters_use_decimal_and_reject_nonfinite_values() {
 fn list_spec_rejects_invalid_default_and_tiebreaker() {
     let mut invalid_default = spec();
     invalid_default.default_page_size = 0;
-    assert!(invalid_default.validate().is_err());
+    let _invalid_default = invalid_default.validate().unwrap_err();
 
     let mut empty_tiebreaker = spec();
     empty_tiebreaker.tiebreaker.clear();
-    assert!(empty_tiebreaker.validate().is_err());
+    let _empty_tiebreaker = empty_tiebreaker.validate().unwrap_err();
 
     let mut undeclared_default_sort = spec();
     undeclared_default_sort
@@ -133,13 +133,13 @@ fn list_spec_rejects_invalid_default_and_tiebreaker() {
             field: "missing".to_owned(),
             descending: false,
         });
-    assert!(undeclared_default_sort.validate().is_err());
+    let _undeclared_default_sort = undeclared_default_sort.validate().unwrap_err();
 
     let mut nontext_contains = spec();
     if let Some(name_filter) = nontext_contains.filters.get_mut("name") {
         name_filter.value_type = FilterType::Money;
     }
-    assert!(nontext_contains.validate().is_err());
+    let _nontext_contains = nontext_contains.validate().unwrap_err();
 }
 
 #[test]
@@ -148,8 +148,8 @@ fn positive_page_values_accept_python_sign_and_underscores() {
         parse_positive_int("page", " +1_0 ").expect("valid integer"),
         10
     );
-    assert!(parse_positive_int("page", "1__0").is_err());
-    assert!(parse_positive_int("page", "0").is_err());
+    let _bad_separator = parse_positive_int("page", "1__0").unwrap_err();
+    let _zero = parse_positive_int("page", "0").unwrap_err();
 }
 
 #[test]
