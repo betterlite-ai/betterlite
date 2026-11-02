@@ -116,9 +116,12 @@ ir_to_systemone_answer!(
 );
 
 fn systemone_answer(answer: &ir::DecisionAnswer) -> Option<systemone::DecisionAnswer> {
-    systemone_predicate_answer(answer)
-        .or_else(|| systemone_choice_answer(answer))
-        .or_else(|| systemone_score_answer(answer))
+    match answer {
+        ir::DecisionAnswer::Predicate { .. } => systemone_predicate_answer(answer),
+        ir::DecisionAnswer::Choice { .. } => systemone_choice_answer(answer),
+        ir::DecisionAnswer::Score { .. } => systemone_score_answer(answer),
+        ir::DecisionAnswer::Refusal => None,
+    }
 }
 
 super::decision_response_conversion!(
