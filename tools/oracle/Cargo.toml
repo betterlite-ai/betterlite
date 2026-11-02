@@ -26,6 +26,7 @@ betterlite-lens = { path = "../../crates/betterlite-lens" }
 betterlite-logging = { path = "../../crates/betterlite-logging" }
 betterlite-mcp = { path = "../../crates/betterlite-mcp" }
 betterlite-models = { path = "../../crates/betterlite-models" }
+betterlite-ocr = { path = "../../crates/betterlite-ocr" }
 betterlite-openai = { path = "../../crates/betterlite-openai" }
 betterlite-openapi = { path = "../../crates/betterlite-openapi" }
 betterlite-paths = { path = "../../crates/betterlite-paths" }
