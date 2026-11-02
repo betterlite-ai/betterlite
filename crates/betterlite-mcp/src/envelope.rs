@@ -2,11 +2,12 @@ mod crypto;
 pub mod models;
 mod tests;
 
-use betterlite_secrets::secret_codec::NonceSource;
+use base64::{Engine as _, engine::general_purpose::URL_SAFE};
+use betterlite_secrets::secret_codec::{NonceSource, sealing};
 use chrono::{DateTime, TimeDelta, Utc};
 use secrecy::{ExposeSecret as _, SecretString};
 
-use self::crypto::{decrypt_text, encode_jwt, encrypt_grant, open_claims};
+use self::crypto::{decrypt_text, encode_jwt, open_claims};
 use self::models::{MintPayload as _, MintValidation, WireGrant, WireRefresh};
 
 pub type EnvelopeIdentity = models::EnvelopeIdentity;
@@ -201,12 +202,13 @@ where
     N: NonceSource,
 {
     let expires_at = expiry(request.now, request.lifetime)?;
-    let grant = encrypt_grant(
-        request.plaintext,
+    let sealed = sealing::seal_legacy(
+        &SecretString::from(request.plaintext),
         &request.keys.encryption_key,
         request.nonces,
     )
     .map_err(|source| EnvelopeMintError::Seal { source })?;
+    let grant = URL_SAFE.encode(sealed);
     let claims = models::Claims {
         iss: ENVELOPE_ISSUER.to_owned(),
         iat: request.now.timestamp(),

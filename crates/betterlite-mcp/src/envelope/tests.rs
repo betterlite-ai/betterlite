@@ -1,7 +1,8 @@
 #![cfg(test)]
 
+use base64::{Engine as _, engine::general_purpose::URL_SAFE};
 use betterlite_secrets::error::SecretError;
-use betterlite_secrets::secret_codec::{NonceSource, OsNonces};
+use betterlite_secrets::secret_codec::{NonceSource, OsNonces, sealing};
 use chrono::{DateTime, Utc};
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -245,8 +246,14 @@ fn mint_rejects_grant_validation_and_limits() {
 
 fn signed_candidate(kind: EnvelopeKind, plaintext: &str, prefix: &str) -> String {
     let signing_keys = keys();
-    let grant =
-        crypto::encrypt_grant(plaintext, &signing_keys.encryption_key, &FixedNonce).expect("seal");
+    let grant = URL_SAFE.encode(
+        sealing::seal_legacy(
+            &SecretString::from(plaintext),
+            &signing_keys.encryption_key,
+            &FixedNonce,
+        )
+        .expect("seal"),
+    );
     let claims = Claims {
         iss: super::ENVELOPE_ISSUER.to_owned(),
         iat: now().timestamp(),
@@ -293,8 +300,14 @@ fn open_rejects_a_decrypted_grant_that_breaks_model_constraints() {
     let current = now();
     let signing_keys = keys();
     let plaintext = r#"{"access_token":"","token_type":"Bearer","expires_in":0}"#;
-    let grant =
-        crypto::encrypt_grant(plaintext, &signing_keys.encryption_key, &FixedNonce).expect("seal");
+    let grant = URL_SAFE.encode(
+        sealing::seal_legacy(
+            &SecretString::from(plaintext),
+            &signing_keys.encryption_key,
+            &FixedNonce,
+        )
+        .expect("seal"),
+    );
     let claims = Claims {
         iss: super::ENVELOPE_ISSUER.to_owned(),
         iat: current.timestamp(),
@@ -534,12 +547,14 @@ fn opening_rejects_weak_keys(#[case] signing_key: &str) {
         server_id: String::from("server"),
         subject_type: SubjectType::KeyHash,
         subject: String::from("hash"),
-        grant: crypto::encrypt_grant(
-            r#"{"access_token":"a","token_type":"Bearer"}"#,
-            &encryption,
-            &FixedNonce,
-        )
-        .unwrap(),
+        grant: URL_SAFE.encode(
+            sealing::seal_legacy(
+                &SecretString::from(r#"{"access_token":"a","token_type":"Bearer"}"#),
+                &encryption,
+                &FixedNonce,
+            )
+            .unwrap(),
+        ),
     };
     let compact = crypto::encode_jwt(&claims, &signing).unwrap();
     let candidate = format!("{ENVELOPE_PREFIX}{compact}");
