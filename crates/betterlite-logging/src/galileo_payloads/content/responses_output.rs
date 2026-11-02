@@ -167,16 +167,22 @@ fn web_search_action_search_dump(fields: &IndexMap<String, Json>) -> Option<Json
     )
 }
 
-// openai.types.responses.response_function_web_search.Action's three variants, discriminated by "type": ActionSearch, ActionOpenPage (type, url) and ActionFind (pattern, type, url; pattern and url have no default); no member falls back to a plain dict, so an unrecognized or invalid action invalidates the whole web_search_call item.
+// openai.types.responses.response_function_web_search.ActionFind.model_dump() field order (pattern, type, url); pattern and url have no default, so a find action missing either isn't valid.
+fn web_search_action_find_dump(fields: &IndexMap<String, Json>) -> Option<Json> {
+    let Some(Json::Text(kind)) = fields.get("type") else {
+        return None;
+    };
+    if kind != "find_in_page" {
+        return None;
+    }
+    typed_sequence(fields, "find_in_page", &["pattern", "type", "url"])
+}
+
+// openai.types.responses.response_function_web_search.Action's three variants, discriminated by "type": ActionSearch, ActionOpenPage (type, url) and ActionFind; no member falls back to a plain dict, so an unrecognized or invalid action invalidates the whole web_search_call item.
 fn web_search_action_dump(fields: &IndexMap<String, Json>) -> Option<Json> {
     web_search_action_search_dump(fields)
         .or_else(|| output_typed_part(fields, "open_page", &[], &["url"]))
-        .or_else(|| match fields.get("type") {
-            Some(Json::Text(kind)) if kind == "find_in_page" => {
-                typed_sequence(fields, "find_in_page", &["pattern", "type", "url"])
-            }
-            _ => None,
-        })
+        .or_else(|| web_search_action_find_dump(fields))
 }
 
 // Projects ResponseFunctionWebSearch.action through web_search_action_dump and validates .status against its Literal["in_progress", "searching", "completed", "failed"]; None once either doesn't hold.
