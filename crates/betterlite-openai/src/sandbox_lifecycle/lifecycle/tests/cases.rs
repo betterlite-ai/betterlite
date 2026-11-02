@@ -73,7 +73,7 @@ fn create_container_falls_back_to_registry_with_resolved_params() {
     let (container, used_params) = block_on(provider.create_container()).unwrap();
     assert_eq!(container, test_object([("id", json!("container-2"))]));
     assert_resolved_e2b_params(&used_params.unwrap());
-    let create_calls = registry.create_calls.lock().unwrap();
+    let create_calls = registry.calls.create.lock().unwrap();
     assert_eq!(create_calls.len(), 1);
     assert_resolved_e2b_params(&create_calls[0]);
 }
@@ -109,7 +109,7 @@ fn run_code_calls_sandbox_config_when_present() {
     let container = test_object([("id", json!("container-1"))]);
     let result = block_on(provider.run_code(None, &container, "print(1)")).unwrap();
     assert_eq!(result, test_object([("stdout", json!("hi"))]));
-    let run_calls = config.run_calls.lock().unwrap();
+    let run_calls = config.calls.run.lock().unwrap();
     assert_eq!(run_calls.as_slice(), [(container, "print(1)".to_owned())]);
 }
 
@@ -128,7 +128,7 @@ fn run_code_falls_back_to_registry_with_params() {
     let container = test_object([("id", json!("container-2"))]);
     let result = block_on(provider.run_code(Some(&params()), &container, "print(1)")).unwrap();
     assert_eq!(result, test_object([("stdout", json!("hi"))]));
-    let run_calls = registry.run_calls.lock().unwrap();
+    let run_calls = registry.calls.run.lock().unwrap();
     assert_eq!(run_calls.len(), 1);
     assert_eq!(run_calls[0].0.sandbox_provider, params().sandbox_provider);
     assert_eq!(run_calls[0].1, container);
@@ -166,7 +166,7 @@ fn delete_container_calls_sandbox_config_and_swallows_errors() {
     };
     let container = test_object([("id", json!("container-1"))]);
     block_on(provider.delete_container(None, &container));
-    assert_eq!(config.delete_calls.lock().unwrap().as_slice(), [container]);
+    assert_eq!(config.calls.delete.lock().unwrap().as_slice(), [container]);
 }
 
 #[cfg(test)]
@@ -183,7 +183,7 @@ fn delete_container_calls_sandbox_config_when_it_succeeds() {
     };
     let container = test_object([("id", json!("container-1"))]);
     block_on(provider.delete_container(None, &container));
-    assert_eq!(config.delete_calls.lock().unwrap().as_slice(), [container]);
+    assert_eq!(config.calls.delete.lock().unwrap().as_slice(), [container]);
 }
 
 #[cfg(test)]
@@ -200,7 +200,7 @@ fn delete_container_falls_back_to_registry_when_config_is_none() {
         };
     let container = test_object([("id", json!("container-2"))]);
     block_on(provider.delete_container(Some(&params()), &container));
-    assert_eq!(registry.delete_calls.lock().unwrap().len(), 1);
+    assert_eq!(registry.calls.delete.lock().unwrap().len(), 1);
 }
 
 #[cfg(test)]
@@ -217,7 +217,7 @@ fn delete_container_does_nothing_when_config_and_params_are_both_missing() {
         };
     let container = test_object([("id", json!("container-1"))]);
     block_on(provider.delete_container(None, &container));
-    assert_eq!(registry.delete_calls.lock().unwrap().len(), 0);
+    assert_eq!(registry.calls.delete.lock().unwrap().len(), 0);
 }
 
 #[cfg(test)]
@@ -244,7 +244,7 @@ fn delete_by_key_removes_the_entry_and_deletes_its_container() {
     );
     block_on(provider.delete_container_for_cache_key(&mut cache, Some("cache-key")));
     assert_eq!(cache.entries.len(), 0);
-    assert_eq!(registry.delete_calls.lock().unwrap().len(), 1);
+    assert_eq!(registry.calls.delete.lock().unwrap().len(), 1);
 }
 
 #[cfg(test)]
@@ -261,7 +261,7 @@ fn delete_by_key_does_nothing_when_cache_key_is_none() {
         };
     let mut cache = SandboxCache::default();
     block_on(provider.delete_container_for_cache_key(&mut cache, None));
-    assert_eq!(registry.delete_calls.lock().unwrap().len(), 0);
+    assert_eq!(registry.calls.delete.lock().unwrap().len(), 0);
 }
 
 #[cfg(test)]
@@ -278,5 +278,5 @@ fn delete_by_key_does_nothing_when_the_cache_key_is_not_cached() {
         };
     let mut cache = SandboxCache::default();
     block_on(provider.delete_container_for_cache_key(&mut cache, Some("missing-key")));
-    assert_eq!(registry.delete_calls.lock().unwrap().len(), 0);
+    assert_eq!(registry.calls.delete.lock().unwrap().len(), 0);
 }

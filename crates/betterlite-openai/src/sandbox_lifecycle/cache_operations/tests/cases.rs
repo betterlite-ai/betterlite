@@ -146,7 +146,7 @@ fn create_new_container_evicts_the_lru_session_entry_when_the_identity_is_at_the
     assert!(!cache.entries.contains_key("key-0"));
     assert!(cache.entries.contains_key("key-new"));
     assert_eq!(
-        registry.delete_calls.lock().unwrap().as_slice(),
+        registry.calls.delete.lock().unwrap().as_slice(),
         [test_object([("id", json!("key-0"))])]
     );
 }
@@ -252,7 +252,7 @@ fn evict_lru_session_removes_the_least_recently_accessed_entry_at_the_cap() {
     assert!(!cache.entries.contains_key("key-0"));
     assert!(cache.entries.contains_key("key-9"));
     assert_eq!(
-        registry.delete_calls.lock().unwrap().as_slice(),
+        registry.calls.delete.lock().unwrap().as_slice(),
         [test_object([("id", json!("key-0"))])]
     );
 }
@@ -275,7 +275,7 @@ fn evict_lru_session_ignores_entries_with_a_different_identity() {
         &sandbox, &mut cache, "user-1",
     ));
     assert_eq!(cache.entries.len(), SESSION_SCOPED_IDENTITY_CAP);
-    assert_eq!(registry.delete_calls.lock().unwrap().len(), 0);
+    assert_eq!(registry.calls.delete.lock().unwrap().len(), 0);
 }
 
 #[cfg(test)]
@@ -302,7 +302,7 @@ fn prune_expired_cache_removes_entries_older_than_the_ttl_and_deletes_them() {
     let now = base + Duration::from_secs(CACHE_TTL_SECONDS + 1);
     block_on(prune_expired_cache(&sandbox, &mut cache, &FixedClock(now)));
     assert_eq!(cache.entries.len(), 0);
-    assert_eq!(registry.delete_calls.lock().unwrap().len(), 1);
+    assert_eq!(registry.calls.delete.lock().unwrap().len(), 1);
 }
 
 #[cfg(test)]
@@ -325,7 +325,7 @@ fn prune_expired_cache_keeps_entries_within_the_ttl() {
     let now = base + Duration::from_secs(CACHE_TTL_SECONDS - 1);
     block_on(prune_expired_cache(&sandbox, &mut cache, &FixedClock(now)));
     assert_eq!(cache.entries.len(), 1);
-    assert_eq!(registry.delete_calls.lock().unwrap().len(), 0);
+    assert_eq!(registry.calls.delete.lock().unwrap().len(), 0);
 }
 
 #[cfg(test)]
@@ -348,5 +348,5 @@ fn prune_expired_cache_keeps_an_entry_exactly_at_the_ttl_boundary() {
     let now = base + Duration::from_secs(CACHE_TTL_SECONDS);
     block_on(prune_expired_cache(&sandbox, &mut cache, &FixedClock(now)));
     assert_eq!(cache.entries.len(), 1);
-    assert_eq!(registry.delete_calls.lock().unwrap().len(), 0);
+    assert_eq!(registry.calls.delete.lock().unwrap().len(), 0);
 }

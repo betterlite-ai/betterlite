@@ -34,7 +34,7 @@ fn run_tool_call_executes_code_and_returns_stdout_when_there_is_no_error() {
     ))
     .unwrap();
     assert_eq!(output, "hello");
-    let run_calls = config.run_calls.lock().unwrap();
+    let run_calls = config.calls.run.lock().unwrap();
     assert_eq!(run_calls.as_slice(), [(container, "print(1)".to_owned())]);
 }
 

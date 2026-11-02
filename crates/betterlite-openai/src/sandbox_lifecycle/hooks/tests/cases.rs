@@ -56,7 +56,7 @@ fn cleanup_leaves_session_scoped_containers_in_the_cache() {
     };
     block_on(sandbox.cleanup_hook(&mut cache, &metadata));
     assert_eq!(cache.entries.len(), 1);
-    assert_eq!(registry.delete_calls.lock().unwrap().len(), 0);
+    assert_eq!(registry.calls.delete.lock().unwrap().len(), 0);
 }
 
 #[cfg(test)]
@@ -74,7 +74,7 @@ fn cleanup_deletes_request_scoped_containers() {
     };
     block_on(sandbox.cleanup_hook(&mut cache, &metadata));
     assert_eq!(cache.entries.len(), 0);
-    assert_eq!(registry.delete_calls.lock().unwrap().len(), 1);
+    assert_eq!(registry.calls.delete.lock().unwrap().len(), 1);
 }
 
 #[cfg(test)]
@@ -90,7 +90,7 @@ fn cleanup_does_nothing_when_the_sandbox_key_is_absent() {
         code_interpreter_calls: Vec::new(),
     };
     block_on(sandbox.cleanup_hook(&mut cache, &metadata));
-    assert_eq!(registry.delete_calls.lock().unwrap().len(), 0);
+    assert_eq!(registry.calls.delete.lock().unwrap().len(), 0);
 }
 
 #[cfg(test)]
@@ -159,7 +159,7 @@ fn post_response_leaves_session_scoped_containers_in_the_cache() {
     let response = test_object([("output", Value::Array(Vec::new()))]);
     block_on(sandbox.post_response_hook(&mut cache, &metadata, response));
     assert_eq!(cache.entries.len(), 1);
-    assert_eq!(registry.delete_calls.lock().unwrap().len(), 0);
+    assert_eq!(registry.calls.delete.lock().unwrap().len(), 0);
 }
 
 #[cfg(test)]
@@ -178,5 +178,5 @@ fn post_response_deletes_request_scoped_containers() {
     let response = test_object([("output", Value::Array(Vec::new()))]);
     block_on(sandbox.post_response_hook(&mut cache, &metadata, response));
     assert_eq!(cache.entries.len(), 0);
-    assert_eq!(registry.delete_calls.lock().unwrap().len(), 1);
+    assert_eq!(registry.calls.delete.lock().unwrap().len(), 1);
 }
