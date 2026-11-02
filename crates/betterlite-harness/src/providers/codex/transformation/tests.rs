@@ -395,12 +395,8 @@ fn deeply_nested_config() -> String {
 #[case::too_deep(&deeply_nested_config(), "CodexOptions.config is nested deeper than 100 levels")]
 fn config_errors_match_litellm(#[case] raw: &str, #[case] expected: &str) {
     let config: JsonObject = serde_json::from_str(raw).unwrap();
-    assert_eq!(
-        super::config::config_overrides(&config)
-            .unwrap_err()
-            .to_string(),
-        expected
-    );
+    let error = super::config::config_overrides(&config).unwrap_err();
+    assert_eq!(error.to_string(), expected);
 }
 
 #[test]
