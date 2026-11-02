@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use super::SyncStore;
+use super::{FinishClaim, SyncStore};
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use betterlite_roi::records::{
     ROIEstimate, ROIEstimateStatus, ROIPullRecord, ROIReport, ROISyncPhase, ROISyncStatus,
@@ -141,6 +141,20 @@ async fn config_param(client: &Client, param_name: &str) -> Option<String> {
         .await
         .unwrap()
         .map(|row| row.get(0))
+}
+
+async fn seed_cached_pulls(client: &Client) {
+    client
+        .batch_execute(
+            r#"
+        INSERT INTO "LiteLLM_Config" (param_name, param_value) VALUES
+            ('roi_calculator_pull_old-key', '{"url":"https://example.com/pr/1"}'),
+            ('roi_calculator_pull_key-1', '{"url":"https://example.com/pr/1"}'),
+            ('roi_calculator_pull_unrelated', '{"url":"https://example.com/pr/2"}');
+    "#,
+        )
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -285,9 +299,16 @@ async fn heartbeat_fails_when_lease_expired() {
 async fn finish_requires_ownership() {
     let (fixture, pool, client) = database().await;
     insert_sync_state(&client, "owner-a", &sample_status(true), false, 0.0).await;
-    let finished = SyncStore::finish(&**client, "owner-b", &sample_status(false), None)
-        .await
-        .unwrap();
+    let finished = SyncStore::finish(
+        &**client,
+        FinishClaim {
+            owner: "owner-b",
+            status: &sample_status(false),
+            report: None,
+        },
+    )
+    .await
+    .unwrap();
     assert!(!finished);
     drop(client);
     pool.close();
@@ -298,9 +319,16 @@ async fn finish_requires_ownership() {
 async fn finish_fails_when_lease_expired() {
     let (fixture, pool, client) = database().await;
     insert_sync_state(&client, "owner-a", &sample_status(true), false, 120.0).await;
-    let finished = SyncStore::finish(&**client, "owner-a", &sample_status(false), None)
-        .await
-        .unwrap();
+    let finished = SyncStore::finish(
+        &**client,
+        FinishClaim {
+            owner: "owner-a",
+            status: &sample_status(false),
+            report: None,
+        },
+    )
+    .await
+    .unwrap();
     assert!(!finished);
     drop(client);
     pool.close();
@@ -311,9 +339,16 @@ async fn finish_fails_when_lease_expired() {
 async fn finish_skips_cancel_check_when_report_is_null() {
     let (fixture, pool, client) = database().await;
     insert_sync_state(&client, "owner-a", &sample_status(true), true, 0.0).await;
-    let finished = SyncStore::finish(&**client, "owner-a", &sample_status(false), None)
-        .await
-        .unwrap();
+    let finished = SyncStore::finish(
+        &**client,
+        FinishClaim {
+            owner: "owner-a",
+            status: &sample_status(false),
+            report: None,
+        },
+    )
+    .await
+    .unwrap();
     assert!(finished);
     drop(client);
     pool.close();
@@ -325,9 +360,16 @@ async fn finish_checks_cancel_when_report_is_present() {
     let (fixture, pool, client) = database().await;
     insert_sync_state(&client, "owner-a", &sample_status(true), true, 0.0).await;
     let report = sample_report(Vec::new());
-    let finished = SyncStore::finish(&**client, "owner-a", &sample_status(false), Some(&report))
-        .await
-        .unwrap();
+    let finished = SyncStore::finish(
+        &**client,
+        FinishClaim {
+            owner: "owner-a",
+            status: &sample_status(false),
+            report: Some(&report),
+        },
+    )
+    .await
+    .unwrap();
     assert!(!finished);
     drop(client);
     pool.close();
@@ -339,9 +381,16 @@ async fn finish_publishes_report_atomically() {
     let (fixture, pool, client) = database().await;
     insert_sync_state(&client, "owner-a", &sample_status(true), false, 0.0).await;
     let report = sample_report(vec![sample_pull("https://example.com/pr/1", Some("key-1"))]);
-    let finished = SyncStore::finish(&**client, "owner-a", &sample_status(false), Some(&report))
-        .await
-        .unwrap();
+    let finished = SyncStore::finish(
+        &**client,
+        FinishClaim {
+            owner: "owner-a",
+            status: &sample_status(false),
+            report: Some(&report),
+        },
+    )
+    .await
+    .unwrap();
     assert!(finished);
     let stored = config_param(&client, "roi_calculator_report")
         .await
@@ -358,21 +407,18 @@ async fn finish_publishes_report_atomically() {
 async fn finish_cleans_up_obsolete_cached_pulls() {
     let (fixture, pool, client) = database().await;
     insert_sync_state(&client, "owner-a", &sample_status(true), false, 0.0).await;
-    client
-        .batch_execute(
-            r#"
-        INSERT INTO "LiteLLM_Config" (param_name, param_value) VALUES
-            ('roi_calculator_pull_old-key', '{"url":"https://example.com/pr/1"}'),
-            ('roi_calculator_pull_key-1', '{"url":"https://example.com/pr/1"}'),
-            ('roi_calculator_pull_unrelated', '{"url":"https://example.com/pr/2"}');
-    "#,
-        )
-        .await
-        .unwrap();
+    seed_cached_pulls(&client).await;
     let report = sample_report(vec![sample_pull("https://example.com/pr/1", Some("key-1"))]);
-    let finished = SyncStore::finish(&**client, "owner-a", &sample_status(false), Some(&report))
-        .await
-        .unwrap();
+    let finished = SyncStore::finish(
+        &**client,
+        FinishClaim {
+            owner: "owner-a",
+            status: &sample_status(false),
+            report: Some(&report),
+        },
+    )
+    .await
+    .unwrap();
     assert!(finished);
     assert!(
         config_param(&client, "roi_calculator_pull_old-key")

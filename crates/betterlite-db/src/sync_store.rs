@@ -3,6 +3,7 @@ use betterlite_roi::records::{ROIReport, ROISyncPhase, ROISyncStatus};
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use tokio_postgres::GenericClient;
+use tokio_postgres::types::ToSql;
 
 const SYNC_KEY: &str = "roi_calculator_sync";
 const REPORT_KEY: &str = "roi_calculator_report";
@@ -84,6 +85,47 @@ fn iso_format(instant: NaiveDateTime) -> String {
     }
 }
 
+async fn update_lease<C>(
+    client: &C,
+    sql: &str,
+    owner: &str,
+    status: &ROISyncStatus,
+    extra: &[&(dyn ToSql + Sync)],
+) -> Result<bool, DbError<serde_json::Error>>
+where
+    C: GenericClient + Sync,
+{
+    let encoded = encode(status)?;
+    let mut params: Vec<&(dyn ToSql + Sync)> = vec![&SYNC_KEY, &owner, &encoded];
+    params.extend_from_slice(extra);
+    let rows = client.query(sql, &params).await.map_err(backend)?;
+    Ok(!rows.is_empty())
+}
+
+async fn discard<C>(client: &C, sql: &str, key: &str) -> Result<(), DbError<serde_json::Error>>
+where
+    C: GenericClient + Sync,
+{
+    client.execute(sql, &[&key]).await.map_err(backend)?;
+    Ok(())
+}
+
+fn encode<T>(value: &T) -> Result<String, DbError<serde_json::Error>>
+where
+    T: Serialize,
+{
+    match serde_json::to_string(value) {
+        Ok(encoded) => Ok(encoded),
+        Err(source) => Err(DbError::InvalidRecord { source }),
+    }
+}
+
+pub struct FinishClaim<'claim> {
+    pub owner: &'claim str,
+    pub status: &'claim ROISyncStatus,
+    pub report: Option<&'claim ROIReport>,
+}
+
 pub struct SyncStore;
 
 impl SyncStore {
@@ -101,13 +143,10 @@ impl SyncStore {
             status: status.clone(),
             cancel: false,
         };
-        let encoded =
-            serde_json::to_string(&state).map_err(|source| DbError::InvalidRecord { source })?;
+        let encoded = encode(&state)?;
+        let interval = scheduled_interval.to_string();
         let rows = client
-            .query(
-                ACQUIRE_SQL,
-                &[&SYNC_KEY, &encoded, &scheduled_interval.to_string()],
-            )
+            .query(ACQUIRE_SQL, &[&SYNC_KEY, &encoded, &interval])
             .await
             .map_err(backend)?;
         Ok(!rows.is_empty())
@@ -121,44 +160,34 @@ impl SyncStore {
     where
         C: GenericClient + Sync,
     {
-        let encoded =
-            serde_json::to_string(status).map_err(|source| DbError::InvalidRecord { source })?;
-        let rows = client
-            .query(HEARTBEAT_SQL, &[&SYNC_KEY, &owner, &encoded])
+        let affected = client
+            .execute(HEARTBEAT_SQL, &[&SYNC_KEY, &owner, &encode(status)?])
             .await
             .map_err(backend)?;
-        Ok(!rows.is_empty())
+        Ok(affected > 0)
     }
 
     pub async fn finish<C>(
         client: &C,
-        owner: &str,
-        status: &ROISyncStatus,
-        report: Option<&ROIReport>,
+        claim: FinishClaim<'_>,
     ) -> Result<bool, DbError<serde_json::Error>>
     where
         C: GenericClient + Sync,
     {
-        let encoded_status =
-            serde_json::to_string(status).map_err(|source| DbError::InvalidRecord { source })?;
-        let encoded_report = report
-            .map(serde_json::to_string)
-            .transpose()
-            .map_err(|source| DbError::InvalidRecord { source })?;
-        let rows = client
-            .query(
-                FINISH_SQL,
-                &[
-                    &SYNC_KEY,
-                    &owner,
-                    &encoded_status,
-                    &encoded_report,
-                    &REPORT_KEY,
-                ],
-            )
-            .await
-            .map_err(backend)?;
-        Ok(!rows.is_empty())
+        let FinishClaim {
+            owner,
+            status,
+            report,
+        } = claim;
+        let encoded_report = report.map(encode).transpose()?;
+        update_lease(
+            client,
+            FINISH_SQL,
+            owner,
+            status,
+            &[&encoded_report, &REPORT_KEY],
+        )
+        .await
     }
 
     pub async fn status<C>(client: &C) -> Result<Option<ROISyncStatus>, DbError<serde_json::Error>>
@@ -194,10 +223,7 @@ impl SyncStore {
     where
         C: GenericClient + Sync,
     {
-        client
-            .execute(CANCEL_SQL, &[&SYNC_KEY])
-            .await
-            .map_err(backend)?;
+        discard(client, CANCEL_SQL, SYNC_KEY).await?;
         Ok(())
     }
 
@@ -205,10 +231,7 @@ impl SyncStore {
     where
         C: GenericClient + Sync,
     {
-        client
-            .execute(CLEAR_REPORT_SQL, &[&REPORT_KEY])
-            .await
-            .map_err(backend)?;
+        discard(client, CLEAR_REPORT_SQL, REPORT_KEY).await?;
         Ok(())
     }
 }
