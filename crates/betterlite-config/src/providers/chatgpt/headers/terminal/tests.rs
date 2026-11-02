@@ -18,6 +18,7 @@ fn lookup(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
 #[case(&[("WEZTERM_VERSION", "")], "WezTerm")]
 #[case(&[("WEZTERM_VERSION", "20240203")], "WezTerm/20240203")]
 #[case(&[("ITERM_SESSION_ID", "w0t0p0")], "iTerm.app")]
+#[case(&[("ITERM_PROFILE", "Default")], "iTerm.app")]
 #[case(&[("TERM_SESSION_ID", "abc")], "Apple_Terminal")]
 #[case(&[("KITTY_WINDOW_ID", "1")], "kitty")]
 #[case(&[("TERM", "xterm-kitty")], "kitty")]
