@@ -1,0 +1,8 @@
+kind: helper
+name: duplicate-frontmatter-key
+call:
+  skill_discovery_archives:
+    stored_content: UEsDBAoAAAAAAAAAIQBERRXENwAAADcAAAAOAAAAc2tpbGwvU0tJTEwubWQtLS0KbmFtZTogRmlyc3QKbmFtZTogU2Vjb25kCmRlc2NyaXB0aW9uOiBkZW1vCi0tLQpib2R5UEsBAgoDCgAAAAAAAAAhAERFFcQ3AAAANwAAAA4AAAAAAAAAAAAAAKSBAAAAAHNraWxsL1NLSUxMLm1kUEsFBgAAAAABAAEAPAAAAGMAAAAAAA==
+env: {}
+compare:
+  ignore: []

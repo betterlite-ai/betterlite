@@ -20,6 +20,9 @@ scope:
     - tools/oracle/helpers/b4300/**
     - tools/oracle/src/helpers/cache/b4300.rs
     - tools/oracle/src/helpers/cache/b4300/**
+    - tools/oracle/cases/caching/call-type-eligibility.yaml
+    - tools/oracle/cases/caching/embedding-format-validation.yaml
+    - tools/oracle/cases/caching/preset-cache-key.yaml
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L71-L81

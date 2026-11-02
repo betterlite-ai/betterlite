@@ -1,7 +1,7 @@
 id: B3511
 milestone: M5 api families
 title: SystemOne conversion and decision provider contract
-status: todo
+status: done
 depends_on: [B3510, B002, B2202]
 file: tasks/B3511-systemone-conversion.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/typesafe/**"
 parent: B099
 split_from: B099
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 523

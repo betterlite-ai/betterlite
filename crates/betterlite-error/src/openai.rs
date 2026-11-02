@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
-use crate::error::details::{ApiDetails, RateLimitDetails, TimeoutDetails, TimeoutStatus};
+use crate::error::details::{
+    ApiDetails, RateLimitDetails, ResponseDetails, TimeoutDetails, TimeoutStatus,
+};
 use crate::error::{ErrorClass, ErrorContext};
 use crate::facts::{ProviderErrorFacts, bounded_text};
 use crate::parse::get_error_message;
@@ -99,19 +101,28 @@ fn openai_context(input: &OpenaiExceptionInput, message: String, body: BodyField
     }
 }
 
+const STATUS_LABELS: &[(u16, &str)] = &[
+    (400, ""),
+    (401, "AuthenticationError: "),
+    (404, "NotFoundError: "),
+    (408, "Timeout Error: "),
+    (422, ""),
+    (429, "RateLimitError: "),
+    (500, "InternalServerError: "),
+    (502, "BadGatewayError: "),
+    (503, "ServiceUnavailableError: "),
+    (504, "Timeout Error: "),
+];
+
 fn status_text(provider: &str, status: Option<u16>, message: &str) -> String {
-    match status {
-        None => format!("APIConnectionError: {provider} - {message}"),
-        Some(400 | 422) => format!("{provider} - {message}"),
-        Some(401) => format!("AuthenticationError: {provider} - {message}"),
-        Some(404) => format!("NotFoundError: {provider} - {message}"),
-        Some(408 | 504) => format!("Timeout Error: {provider} - {message}"),
-        Some(429) => format!("RateLimitError: {provider} - {message}"),
-        Some(500) => format!("InternalServerError: {provider} - {message}"),
-        Some(502) => format!("BadGatewayError: {provider} - {message}"),
-        Some(503) => format!("ServiceUnavailableError: {provider} - {message}"),
-        Some(_) => format!("APIError: {provider} - {message}"),
-    }
+    let Some(code) = status else {
+        return format!("APIConnectionError: {provider} - {message}");
+    };
+    let label = STATUS_LABELS
+        .iter()
+        .find(|(known, _)| *known == code)
+        .map_or("APIError: ", |(_, label)| *label);
+    format!("{label}{provider} - {message}")
 }
 
 // the status-code fallback _map_openai_exception reaches once every error-string predicate above misses
@@ -129,11 +140,21 @@ fn status_branch(input: &OpenaiExceptionInput, provider: &str, message: &str) ->
         NO_BODY
     };
     let context = openai_context(input, text, body);
+    status_class(status, context)
+}
+
+fn status_class(status: Option<u16>, context: ErrorContext) -> ErrorClass {
     match status {
         None => ErrorClass::ApiConnection(Box::new(context)),
-        Some(400 | 422) => ErrorClass::BadRequest(Box::new(context)),
-        Some(401) => ErrorClass::Authentication(Box::new(context)),
-        Some(404) => ErrorClass::NotFound(Box::new(context)),
+        Some(code @ (400 | 422)) => {
+            ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(context, Some(code))))
+        }
+        Some(code @ 401) => {
+            ErrorClass::Authentication(Box::new(ResponseDetails::with_status(context, Some(code))))
+        }
+        Some(code @ 404) => {
+            ErrorClass::NotFound(Box::new(ResponseDetails::with_status(context, Some(code))))
+        }
         Some(408) => ErrorClass::Timeout(Box::new(TimeoutDetails {
             context,
             original_status: TimeoutStatus(408),

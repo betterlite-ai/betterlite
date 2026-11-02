@@ -9,6 +9,15 @@ scope:
   - tools/oracle/helpers/b3004/**
   - tools/oracle/src/helpers/auth/b3004.rs
   - tools/oracle/src/helpers/auth/b3004/**
+  - tools/oracle/cases/admission/counter-initialization-success.yaml
+  - tools/oracle/cases/admission/counter-initialization-unavailable-fail-closed.yaml
+  - tools/oracle/cases/admission/counter-initialization-unavailable-fail-open.yaml
+  - tools/oracle/cases/admission/grouped-reservation-all-fit.yaml
+  - tools/oracle/cases/admission/grouped-reservation-one-by-one.yaml
+  - tools/oracle/cases/admission/over-budget-block-fail-closed.yaml
+  - tools/oracle/cases/admission/over-budget-entity-block.yaml
+  - tools/oracle/cases/admission/over-budget-entity-resize.yaml
+  - tools/oracle/cases/admission/over-budget-key-throttle-release.yaml
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L73-L97

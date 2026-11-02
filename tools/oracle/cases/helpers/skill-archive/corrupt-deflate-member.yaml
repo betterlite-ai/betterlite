@@ -1,0 +1,10 @@
+kind: helper
+name: corrupt-deflate-member
+call:
+  skill_discovery_archives:
+    stored_content: UEsDBBQAAAAIAAAAIQCbLI38IwAAACEAAAAIAAAAU0tJTEwubWT/////VUhJTctJLEnVTc7PLShKLS5OTVFIyk+pVChJrSgBAFBLAQIUAxQAAAAIAAAAIQCbLI38IwAAACEAAAAIAAAAAAAAAAAAAACkgQAAAABTS0lMTC5tZFBLBQYAAAAAAQABADYAAABJAAAAAAA=
+env: {}
+compare:
+  ignore:
+    - pointer: ""
+      why: betterlite returns None for a corrupted DEFLATE member while LiteLLM's uncaught zlib.error escapes build_skill_archive, a recorded deviation (docs/deviations/B3210.yaml)

@@ -1,0 +1,25 @@
+kind: helper
+name: pre-call-hook-api-error-block-skips-applied-guardrail
+call:
+  b3762:
+    pre_call_hook:
+      settings:
+        api_key: test-key
+        api_base: "https://cisco.test"
+        inspection_type: chat
+        on_flagged_action: block
+        fallback_on_error: block
+        timeout: 5
+      request_data:
+        messages:
+          - {role: user, content: "hello there"}
+      answer: {status: 500, headers: {}, body: {error: upstream failure}}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/outcome
+      why: >-
+        The Python oracle wrapper tags every caught HTTPException as
+        api_error_blocked using the dynamic exception class name, which
+        betterlite's handle_api_error cannot reproduce since it passes a
+        fixed error_type literal.

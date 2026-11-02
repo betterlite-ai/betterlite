@@ -96,6 +96,16 @@ def run(argument: JsonValue) -> JsonValue:
         elif family == "timeout":
             mapped = cast(MappedError, error)
             result = {"family": family, "context": context, "original_status": mapped.status_code}
+        elif family in {
+            "authentication",
+            "context_window_exceeded",
+            "bad_request",
+            "permission_denied",
+            "not_found",
+            "content_policy_violation",
+        }:
+            mapped = cast(MappedError, error)
+            result = {"family": family, **context, "status": mapped.status_code}
         else:
             result = {"family": family, **context}
         return {"result": result}

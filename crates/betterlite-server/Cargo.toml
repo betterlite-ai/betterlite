@@ -7,12 +7,15 @@ publish.workspace = true
 
 [dependencies]
 axum.workspace = true
+betterlite-auth = { path = "../betterlite-auth" }
+betterlite-billing = { path = "../betterlite-billing" }
 betterlite-config = { path = "../betterlite-config" }
 betterlite-error = { path = "../betterlite-error" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-ocr = { path = "../betterlite-ocr" }
 betterlite-openai = { path = "../betterlite-openai" }
+betterlite-redact = { path = "../betterlite-redact" }
 email_address = "0.2.9"
 encoding_rs = "0.8.42"
 form_urlencoded = "1.2.2"
@@ -39,7 +42,9 @@ uuid.workspace = true
 [dev-dependencies]
 rquickjs = "0.14.0"
 rstest = "=0.27.0"
+tempfile = "3.27.0"
 tower = { workspace = true, features = ["util"] }
+tracing-subscriber.workspace = true
 
 [lints]
 workspace = true

@@ -83,6 +83,23 @@ fn anthropic_replicate_errors_behavior_tests_behavior(
     }
 }
 
+#[rstest]
+#[case::context_window_text_on_a_server_status(
+    "prompt is too long: too many tokens",
+    Some(500),
+    400
+)]
+#[case::status_code_elif_413_stays_400("generic failure", Some(413), 400)]
+fn branches_without_a_response_keep_the_class_status(
+    #[case] error_str: &str,
+    #[case] status_code: Option<u16>,
+    #[case] expected_status: u16,
+) {
+    let class = map_anthropic_exception(&input(error_str, status_code))
+        .expect("a matching predicate or status must produce a class");
+    assert_eq!(class.metadata().status_code, expected_status);
+}
+
 #[test]
 fn text_predicate_wins_over_a_competing_status_code() {
     let mapped =

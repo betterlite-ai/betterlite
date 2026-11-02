@@ -1,13 +1,13 @@
 id: B5096
 milestone: M4 keys, spend and management
 title: Close the B3210 skill archive audit gaps
-status: todo
+status: done
 depends_on: [B3210]
 file: tasks/B5096-skill-archive-gaps.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 515

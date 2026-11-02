@@ -1,6 +1,7 @@
 use indexmap::IndexMap;
 use serde::Deserialize;
 
+use betterlite_error::error::details::ResponseDetails;
 use betterlite_error::error::{ErrorClass, ErrorContext};
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, Default)]
@@ -153,7 +154,7 @@ fn classification(
         body_param: None,
         body_code: code.as_str().map(str::to_owned),
     };
-    ErrorClass::ContentPolicyViolation(Box::new(context))
+    ErrorClass::ContentPolicyViolation(Box::new(ResponseDetails::with_status(context, None)))
 }
 
 #[must_use]

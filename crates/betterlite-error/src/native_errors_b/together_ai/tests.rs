@@ -131,6 +131,14 @@ fn missing_status_code_never_panics_and_falls_through() {
     assert!(class.is_none());
 }
 
+#[rstest]
+#[case::status_422("boom", 422)]
+fn response_branches_answer_the_provider_status(#[case] error_str: &str, #[case] status: u16) {
+    let class = map_together_ai_exception(&input(error_str, Some(status)))
+        .expect("expected a classification");
+    assert_eq!(class.metadata().status_code, status);
+}
+
 #[test]
 fn error_response_without_an_error_key_still_classifies_status_422() {
     // line 1778 subscripts error_response['error'] unconditionally and would KeyError in LiteLLM without it; betterlite never needs the key to classify the status
