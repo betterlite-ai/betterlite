@@ -489,6 +489,47 @@ fn check_chat_message_projection() {
     );
 }
 
+// An empty tool_calls list or a falsy function_call dict is present but folds back to null, same as an absent key; a truthy function_call takes its ordered dump instead.
+fn check_message_model_dump_falsy_fields() {
+    let kwargs = GalileoKwargs::default();
+    let empty_message =
+        val(r#"{"role": "assistant", "content": null, "tool_calls": [], "function_call": {}}"#);
+    let (_, empty_output, _) = galileo_input_output_content(
+        &kwargs,
+        Some(&ResponseObj::Chat {
+            message: Some(empty_message),
+        }),
+        Level::Default,
+        None,
+    );
+    assert_eq!(
+        empty_output,
+        concat!(
+            r#"{"content": null, "role": "assistant", "tool_calls": null, "#,
+            r#""function_call": null, "provider_specific_fields": null}"#,
+        )
+    );
+
+    let function_call_message = val(
+        r#"{"role": "assistant", "content": null, "function_call": {"name": "f", "arguments": "{}"}}"#,
+    );
+    let (_, function_call_output, _) = galileo_input_output_content(
+        &kwargs,
+        Some(&ResponseObj::Chat {
+            message: Some(function_call_message),
+        }),
+        Level::Default,
+        None,
+    );
+    assert_eq!(
+        function_call_output,
+        concat!(
+            r#"{"content": null, "role": "assistant", "tool_calls": null, "#,
+            r#""function_call": {"arguments": "{}", "name": "f"}, "provider_specific_fields": null}"#,
+        )
+    );
+}
+
 // Rerank uses its own langfuse-style prompt (just the messages, no functions/tools) rather than the shared build_prompt, and that prompt is echoed as the span's messages_for_span.
 fn check_rerank_content() {
     let kwargs = GalileoKwargs {
@@ -564,6 +605,7 @@ fn galileo_payload_construction() {
     check_call_type_mismatch_falls_through();
     check_pass_through_endpoint_content();
     check_chat_message_projection();
+    check_message_model_dump_falsy_fields();
     check_rerank_content();
     check_messages_or_empty_guard();
 }
