@@ -1,0 +1,8 @@
+task: B3155
+deviations:
+  - what: Spend queries use a native Rust query builder instead of Prisma's Python query helpers.
+    why: betterlite is Rust and builds all SQL from typed operations.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L115-L159
+  - what: The sync store uses raw SQL UPDATE statements with lease logic instead of Python context managers.
+    why: Distributed leases need atomic compare-and-swap semantics; Python's sync model is single-process.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync_store.py#L33-L143
