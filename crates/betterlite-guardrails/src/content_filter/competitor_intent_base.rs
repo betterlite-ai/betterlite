@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 mod classification;
 pub mod configuration;
 mod matching;
+pub mod run;
 use regex::Regex;
 use unicode_normalization::UnicodeNormalization as _;
 

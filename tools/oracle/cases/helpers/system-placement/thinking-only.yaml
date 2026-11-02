@@ -1,0 +1,21 @@
+kind: helper
+name: system-placement-thinking-only
+call:
+  system_placement:
+    operation: place_mid_conversation_system
+    supports_mid_conversation_system: true
+    messages:
+      - role: user
+        content: Plan a trip to Kyoto.
+      - role: system
+        content: Prefer budget options.
+      - role: assistant
+        content:
+          - type: thinking
+            thinking: weighing flights against trains
+            signature: litellm_encrypted_reasoning:abc123
+      - role: user
+        content: Great, go on.
+env: {}
+compare:
+  ignore: []

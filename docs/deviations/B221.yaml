@@ -1,0 +1,5 @@
+task: B221
+deviations:
+  - what: place_mid_conversation_system drops a leading system run instead of indexing with it.
+    why: "_anchor_block documents that a run never starts at 0 because the caller already split the leading run off first; a caller that skips that step hands Python's previous = run[0] - 1 a -1, which indexes messages[-1] and anchors the run on the wrong block. No caller can rely on that wraparound, so betterlite treats a run still at index 0 as not anchorable and drops it rather than reproducing the wrap."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/mid_conversation_system.py#L354-L365

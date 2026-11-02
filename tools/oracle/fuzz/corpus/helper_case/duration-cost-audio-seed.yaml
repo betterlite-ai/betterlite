@@ -1,0 +1,13 @@
+kind: helper
+name: duration-cost-audio-seed
+call:
+  duration_cost:
+    operation: audio_cost_per_second
+    model: fixture-speech
+    custom_llm_provider: null
+    duration: "4"
+    catalog:
+      output_cost_per_second: "0.5"
+      input_cost_per_second: "0.1"
+compare: {ignore: []}
+env: {}

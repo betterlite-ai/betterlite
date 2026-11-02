@@ -6,6 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process;
 
+use betterlite_postgres_fixture::connection::RandomDatabaseName;
 use serde_json::Value;
 
 use crate::OracleError;
@@ -268,7 +269,7 @@ fn the_real_runner_resolves_the_fixture_and_the_mit_handler_answers() {
     let root = root()
         .join("target/oracle")
         .join(unique_id().expect("a unique run suffix is available"));
-    let outcomes = run_group_with_url(&options, &root, &[scim_case], None)
+    let outcomes = run_group_with_url(&options, &root, &[scim_case], None, &mut RandomDatabaseName)
         .expect("the real runner resolves the fixture under the repository root");
     assert_eq!(outcomes, [false]);
     let mut runs = fs::read_dir(root.join("scim-service-provider-config"))

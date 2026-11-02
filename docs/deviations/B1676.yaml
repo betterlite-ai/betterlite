@@ -1,0 +1,5 @@
+task: B1676
+deviations:
+  - what: Duration and character charges are computed as exact decimals; nonfinite values or overflow cannot become a successful monetary result.
+    why: The pinned signed and missing-value rules remain, but spend values must fit the shared finite money representation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/cost_calculation.py#L50-L90
