@@ -101,6 +101,11 @@ fn text_completion_policy_cases(#[case] case: u8) {
             assert!(prompt::is_tokens_or_list_of_tokens(&json!([])));
             assert!(prompt::is_tokens_or_list_of_tokens(&json!([[]])));
             assert_eq!(
+                prompt::transform_prompt(&[json!({"role": "user", "content": [-1_i32, -2_i32]})])
+                    .expect("negative ints count as int-like"),
+                json!([-1_i32, -2_i32])
+            );
+            assert_eq!(
                 prompt::transform_prompt(&[json!({"role": "user", "content": []})])
                     .expect("empty content falls through"),
                 json!("")
@@ -246,6 +251,25 @@ fn text_completion_policy_cases(#[case] case: u8) {
                 reply::to_chat_model_response(Some(malformed_shape), Some(Map::new())),
                 Err(reply::ReplyError::MalformedChoices(_))
             ));
+
+            let target_with_hidden_params = Map::from_iter([(
+                String::from("_hidden_params"),
+                json!({"model_id": "existing-id"}),
+            )]);
+            let response_three = json!({"choices": []});
+            let result_five = reply::to_chat_model_response(
+                Some(response_three.clone()),
+                Some(target_with_hidden_params),
+            )
+            .expect("preserves other hidden params");
+            assert_eq!(
+                result_five["_hidden_params"]["model_id"],
+                json!("existing-id")
+            );
+            assert_eq!(
+                result_five["_hidden_params"]["original_response"],
+                response_three
+            );
         }
         5 => {
             assert_eq!(
