@@ -1,10 +1,12 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::loader::ConfigLoader;
+use betterlite_openai::chatgpt::headers::session::{
+    LitellmParamsInput, ModelDumpOutcome, get_chatgpt_session_id,
+};
 use betterlite_openai::chatgpt::headers::{
-    LitellmParamsInput, ModelDumpOutcome, SystemPlatformEnvironment, get_chatgpt_default_headers,
-    get_chatgpt_instructions, get_chatgpt_originator, get_chatgpt_session_id,
-    get_chatgpt_user_agent,
+    SystemPlatformEnvironment, get_chatgpt_default_headers, get_chatgpt_instructions,
+    get_chatgpt_originator, get_chatgpt_user_agent,
 };
 use secrecy::SecretString;
 use serde::Deserialize;

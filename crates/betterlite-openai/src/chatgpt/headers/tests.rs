@@ -5,11 +5,13 @@ use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Map, Value, json};
 
+use super::session::{
+    LitellmParamsInput, ModelDumpOutcome, ParamsRecord, SessionIdentity, ensure_chatgpt_session_id,
+    get_chatgpt_session_id,
+};
 use super::{
-    DEFAULT_ORIGINATOR, DEFAULT_USER_AGENT, LitellmParamsInput, ModelDumpOutcome, ParamsRecord,
-    PlatformEnvironment, SessionIdentity, ensure_chatgpt_session_id, get_chatgpt_default_headers,
-    get_chatgpt_instructions, get_chatgpt_originator, get_chatgpt_session_id,
-    get_chatgpt_user_agent,
+    DEFAULT_ORIGINATOR, DEFAULT_USER_AGENT, PlatformEnvironment, get_chatgpt_default_headers,
+    get_chatgpt_instructions, get_chatgpt_originator, get_chatgpt_user_agent,
 };
 
 struct FakePlatform;
