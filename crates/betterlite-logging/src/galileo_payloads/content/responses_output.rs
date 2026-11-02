@@ -236,45 +236,33 @@ fn custom_tool_call_project(fields: &IndexMap<String, Json>) -> Option<IndexMap<
 fn projected_item_dump(kind: &str, fields: &IndexMap<String, Json>) -> Option<Json> {
     match kind {
         // openai.types.responses.ResponseOutputMessage.model_dump() field order (id, content, role, status, type, phase); id, content, role and status have no default.
-        "message" => {
-            let projected = message_item_project(fields)?;
-            required_then_typed(
-                &projected,
-                &["id", "content", "role", "status"],
-                "message",
-                &["phase"],
-            )
-        }
+        "message" => required_then_typed(
+            &message_item_project(fields)?,
+            &["id", "content", "role", "status"],
+            "message",
+            &["phase"],
+        ),
         // openai.types.responses.ResponseReasoningItem.model_dump() field order (id, summary, type, content, encrypted_content, status); id and summary have no default.
-        "reasoning" => {
-            let projected = reasoning_item_project(fields)?;
-            required_then_typed(
-                &projected,
-                &["id", "summary"],
-                "reasoning",
-                &["content", "encrypted_content", "status"],
-            )
-        }
+        "reasoning" => required_then_typed(
+            &reasoning_item_project(fields)?,
+            &["id", "summary"],
+            "reasoning",
+            &["content", "encrypted_content", "status"],
+        ),
         // openai.types.responses.ResponseFunctionWebSearch.model_dump() field order (id, action, status, type); id, action and status have no default.
-        "web_search_call" => {
-            let projected = web_search_call_project(fields)?;
-            required_then_typed(
-                &projected,
-                &["id", "action", "status"],
-                "web_search_call",
-                &[],
-            )
-        }
+        "web_search_call" => required_then_typed(
+            &web_search_call_project(fields)?,
+            &["id", "action", "status"],
+            "web_search_call",
+            &[],
+        ),
         // openai.types.responses.ResponseCustomToolCall.model_dump() field order (call_id, input, name, type, id, caller, namespace); call_id, input and name have no default.
-        "custom_tool_call" => {
-            let projected = custom_tool_call_project(fields)?;
-            required_then_typed(
-                &projected,
-                &["call_id", "input", "name"],
-                "custom_tool_call",
-                &["id", "caller", "namespace"],
-            )
-        }
+        "custom_tool_call" => required_then_typed(
+            &custom_tool_call_project(fields)?,
+            &["call_id", "input", "name"],
+            "custom_tool_call",
+            &["id", "caller", "namespace"],
+        ),
         _ => None,
     }
 }
