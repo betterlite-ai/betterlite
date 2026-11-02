@@ -1,0 +1,12 @@
+kind: helper
+name: reasoning-fields-extract-reasoning-content-key-precedence
+call:
+  reasoning_fields:
+    operation: extract_reasoning_content
+    message:
+      role: assistant
+      reasoning_content: "because"
+      reasoning: "why"
+env: {}
+compare:
+  ignore: []

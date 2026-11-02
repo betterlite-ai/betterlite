@@ -1,0 +1,11 @@
+kind: helper
+name: reasoning-fields-unsignable-missing-signature
+call:
+  reasoning_fields:
+    operation: is_unsignable_thinking_block
+    block:
+      type: thinking
+      thinking: "valid reasoning text"
+env: {}
+compare:
+  ignore: []

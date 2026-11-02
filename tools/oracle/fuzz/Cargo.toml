@@ -71,4 +71,11 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "scenario"
+path = "fuzz_targets/scenario.rs"
+test = false
+doc = false
+bench = false
+
 [workspace]

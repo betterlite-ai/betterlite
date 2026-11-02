@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "factory-ollama-role", "call": {"prompt_factory": {"mode": "factory", "model": "llama3", "custom_llm_provider": "ollama", "messages": [{"role": "other", "content": "x"}]}}, "env": {}, "compare": {"ignore": []}}

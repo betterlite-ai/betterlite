@@ -1,0 +1,8 @@
+kind: helper
+name: provider-defaults-b-jina-ai
+call:
+  provider_defaults_b:
+    provider: jina_ai
+    model: jina-model
+env: {}
+compare: {ignore: []}

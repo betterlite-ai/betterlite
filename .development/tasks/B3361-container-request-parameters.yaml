@@ -37,8 +37,8 @@ description: >-
   LlmProviders.AZURE or LlmProviders.AZURE_TEXT, or None for other providers.
 scope:
   paths:
+    - crates/betterlite-core/src/containers.rs
     - crates/betterlite-core/src/containers/**
-    - crates/betterlite-core/src/lib.rs
     - tools/oracle/cases/containers/request-parameters/**
     - tools/oracle/helpers/b3361.py
     - tools/oracle/helpers/b3361/**

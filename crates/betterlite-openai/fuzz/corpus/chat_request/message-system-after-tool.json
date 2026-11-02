@@ -1,0 +1,1 @@
+{"model":"claude-3-5-sonnet","messages":[{"role":"user","content":"Look up the invoice total."},{"role":"system","content":"Report amounts in USD."},{"role":"tool","tool_call_id":"call_1","content":"$42.00"},{"role":"user","content":"Thanks, what about tax?"}]}

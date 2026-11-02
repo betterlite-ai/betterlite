@@ -1,0 +1,13 @@
+kind: helper
+name: bridge-refresh-invalid-shape
+call:
+  b4653:
+    function: bridge_refresh
+    signing_key: "0123456789abcdef0123456789abcdef"
+    encryption_key: "fedcba9876543210fedcba9876543210"
+    candidate: "llm_env_not_actually_a_refresh_envelope"
+    open_now: 1700000100
+    expected_server_id: server-1
+env: {}
+compare:
+  ignore: []

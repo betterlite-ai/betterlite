@@ -1,0 +1,13 @@
+kind: helper
+name: provider-defaults-b-explicit-overrides
+call:
+  provider_defaults_b:
+    provider: together_ai
+    model: together-model
+    api_base: https://explicit.example.com/v1
+    api_key: explicit-key
+    environment:
+      TOGETHER_AI_API_BASE: https://env.example.com/v1
+      TOGETHER_API_KEY: env-key
+env: {}
+compare: {ignore: []}

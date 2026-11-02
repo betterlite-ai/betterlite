@@ -1,0 +1,9 @@
+kind: helper
+name: reasoning-fields-encrypted-content-from-signature
+call:
+  reasoning_fields:
+    operation: encrypted_content_from_signature
+    signature: "litellm_encrypted_reasoning:opaque-payload"
+env: {}
+compare:
+  ignore: []

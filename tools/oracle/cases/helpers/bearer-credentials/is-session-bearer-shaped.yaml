@@ -1,0 +1,17 @@
+kind: helper
+name: is-session-bearer-shaped
+call:
+  b4653:
+    function: bearer_prefix_strip
+    checks:
+      - family: session
+        candidate: "llm_session_xyz"
+      - family: session
+        candidate: "llm_srefresh_xyz"
+      - family: session
+        candidate: ""
+      - family: session
+        candidate: "llm_sess_not_a_real_prefix"
+env: {}
+compare:
+  ignore: []

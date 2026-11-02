@@ -51,6 +51,16 @@ fn bedrock_missing_local_template_raises_an_exception() {
 }
 
 #[test]
+fn factory_role_error_carries_status_400() {
+    let input: Input = serde_json::from_str(
+        r#"{"mode":"factory","model":"llama3","custom_llm_provider":"ollama","messages":[{"role":"other","content":"x"}]}"#,
+    )
+    .unwrap();
+    let error = Op::run(&input).unwrap_err();
+    assert_eq!(error.status, Some(400));
+}
+
+#[test]
 fn generic_missing_local_template_falls_back_to_default_pt() {
     let input: Input = serde_json::from_str(
         r#"{"mode":"factory","model":"meta-llama/llama-3-8b-instruct","messages":[{"role":"system","content":"s"},{"role":"user","content":"u"}]}"#,
