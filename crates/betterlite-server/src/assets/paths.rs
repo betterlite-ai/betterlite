@@ -65,7 +65,7 @@ pub fn is_within(path: &Path, base_dir: &Path) -> bool {
     resolved.starts_with(&base)
 }
 
-// Mirrors `os.path.realpath(path, strict=False)`: a loop or permission error keeps its unresolved remainder instead of raising.
+// Mirrors `os.path.realpath(path, strict=False)`: a failed component stays literal, but a later `..` still pops it and a later component still tries to resolve, as in CPython's `_joinrealpath`.
 fn realpath_non_strict(path: &Path) -> PathBuf {
     let Ok(absolute_path) = absolute(path) else {
         return path.to_path_buf();
@@ -73,22 +73,26 @@ fn realpath_non_strict(path: &Path) -> PathBuf {
     if let Ok(resolved) = soft_canonicalize(&absolute_path) {
         return resolved;
     }
-    let mut resolved_prefix = PathBuf::new();
-    let mut literal_suffix = PathBuf::new();
-    let mut probe = PathBuf::new();
-    let mut fell_back = false;
+    let mut resolved = PathBuf::new();
     for component in absolute_path.components() {
-        probe.push(component);
-        if fell_back {
-            literal_suffix.push(component);
-        } else if let Ok(canonical) = soft_canonicalize(&probe) {
-            resolved_prefix = canonical;
-        } else {
-            fell_back = true;
-            literal_suffix.push(component);
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if matches!(
+                    resolved.components().next_back(),
+                    Some(Component::Normal(_))
+                ) {
+                    resolved.pop();
+                }
+            }
+            Component::Prefix(_) | Component::RootDir => resolved.push(component),
+            Component::Normal(name) => {
+                let candidate = resolved.join(name);
+                resolved = soft_canonicalize(&candidate).unwrap_or(candidate);
+            }
         }
     }
-    resolved_prefix.join(literal_suffix)
+    resolved
 }
 
 #[must_use]

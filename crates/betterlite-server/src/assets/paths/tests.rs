@@ -97,6 +97,20 @@ fn safe_join_keeps_the_unresolved_remainder_for_a_symlink_loop() {
     assert!(try_safe_join(&base, &["loop"]).is_some());
 }
 
+#[test]
+fn safe_join_still_escapes_through_a_symlink_loop_via_parent_traversal() {
+    let workspace = TempDir::new().unwrap();
+    let base = workspace.path().join("base");
+    fs::create_dir_all(&base).unwrap();
+    symlink("loop", base.join("loop")).unwrap();
+    fs::write(workspace.path().join("secret.txt"), b"shh").unwrap();
+    let parts: &[&str] = &["loop", "..", "..", "secret.txt"];
+    let error = safe_join(&base, parts).unwrap_err();
+    assert!(matches!(error, PathError::Escaped { .. }));
+    assert!(try_safe_join(&base, parts).is_none());
+    assert!(!is_within(&base.join("loop/../../secret.txt"), &base));
+}
+
 #[rstest]
 #[case::nested(&["sub", "file.txt"], true)]
 #[case::parent_traversal_escapes(&["..", "secret.txt"], false)]
