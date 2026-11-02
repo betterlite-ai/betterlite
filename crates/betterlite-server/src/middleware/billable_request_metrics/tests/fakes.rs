@@ -20,6 +20,22 @@ use super::super::{BillableRequestMetrics, RecorderFactory, SinkFactory, record_
 type SinkCall = (BillableCategory, String, StatusCode);
 type RecorderCall = (BillableCategory, String, StatusCode, Option<String>);
 
+fn record_or_fail<T>(
+    calls: &Mutex<Vec<T>>,
+    call: T,
+    fails: bool,
+    failure: &'static str,
+) -> Result<(), BoxError> {
+    calls
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .push(call);
+    if fails {
+        return Err(Box::new(io::Error::other(failure)));
+    }
+    Ok(())
+}
+
 pub(crate) fn logged<T, F>(action: F) -> (T, String)
 where
     F: FnOnce() -> T,
@@ -62,14 +78,12 @@ impl GatewayRequestSink for MockSink {
         route: &str,
         status_code: StatusCode,
     ) -> Result<(), BoxError> {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push((category, route.to_owned(), status_code));
-        if self.fails {
-            return Err(Box::new(io::Error::other("mock sink failure")));
-        }
-        Ok(())
+        record_or_fail(
+            &self.calls,
+            (category, route.to_owned(), status_code),
+            self.fails,
+            "mock sink failure",
+        )
     }
 }
 
@@ -102,19 +116,17 @@ impl BillingRecorder for MockRecorder {
         status_code: StatusCode,
         model_id: Option<&str>,
     ) -> Result<(), BoxError> {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push((
+        record_or_fail(
+            &self.calls,
+            (
                 category,
                 route.to_owned(),
                 status_code,
                 model_id.map(str::to_owned),
-            ));
-        if self.fails {
-            return Err(Box::new(io::Error::other("mock recorder failure")));
-        }
-        Ok(())
+            ),
+            self.fails,
+            "mock recorder failure",
+        )
     }
 }
 
