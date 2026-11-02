@@ -4,7 +4,7 @@ from typing import Literal, TypeAlias, cast
 
 import httpx
 from fastapi import HTTPException
-from litellm import DualCache
+from litellm import DualCache, ModelResponse
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.guardrails.guardrail_hooks.cisco_ai_defense.cisco_ai_defense import (
     CiscoAIDefenseGuardrail,
@@ -104,7 +104,7 @@ async def pre_call_hook(fields: dict[str, Json], is_moderation: bool) -> Json:  
     paths, bodies = install_mock(cisco, fields.get("answer"))
     should_run = cast(bool, fields.get("should_run", True))
     cisco.should_run_guardrail = (  # pyright: ignore[reportAttributeAccessIssue]
-        lambda _data, _event_type: should_run  # pyright: ignore[reportUnknownLambdaType]
+        lambda data, event_type: should_run  # noqa: ARG005  # pyright: ignore[reportUnknownLambdaType]
     )
     data = cast(dict[str, Json], fields["request_data"])
     call_type = call_type_of(fields)
@@ -141,7 +141,7 @@ async def post_call_hook(fields: dict[str, Json]) -> Json:
     paths, bodies = install_mock(cisco, fields.get("answer"))
     should_run = cast(bool, fields.get("should_run", True))
     cisco.should_run_guardrail = (  # pyright: ignore[reportAttributeAccessIssue]
-        lambda _data, _event_type: should_run  # pyright: ignore[reportUnknownLambdaType]
+        lambda data, event_type: should_run  # noqa: ARG005  # pyright: ignore[reportUnknownLambdaType]
     )
     data = cast(dict[str, Json], fields["request_data"])
     response = cast(dict[str, Json], fields["response"])
@@ -150,7 +150,7 @@ async def post_call_hook(fields: dict[str, Json]) -> Json:
         await cisco.async_post_call_success_hook(  # pyright: ignore[reportUnknownMemberType]
             data=cast("dict[str, object]", data),
             user_api_key_dict=key_dict,
-            response=cast("object", response),  # pyright: ignore[reportArgumentType]
+            response=ModelResponse(**cast("dict[str, object]", response)),
         )
     except HTTPException as error:
         outcome: Json = api_error_tag(error)
