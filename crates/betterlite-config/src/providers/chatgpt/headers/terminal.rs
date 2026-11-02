@@ -3,7 +3,7 @@ use crate::loader::EnvironmentLookup;
 // LiteLLM checks TERM_PROGRAM before every terminal-specific variable, WezTerm included
 pub(crate) fn resolve(lookup: &dyn EnvironmentLookup) -> String {
     term_program(lookup)
-        .or_else(|| wezterm(lookup))
+        .or_else(|| versioned_terminal(lookup, "WEZTERM_VERSION", "WezTerm"))
         .or_else(|| iterm_present(lookup).then_some("iTerm.app".to_owned()))
         .or_else(|| env_present(lookup, "TERM_SESSION_ID").then_some("Apple_Terminal".to_owned()))
         .or_else(|| kitty_present(lookup).then_some("kitty".to_owned()))
@@ -12,11 +12,11 @@ pub(crate) fn resolve(lookup: &dyn EnvironmentLookup) -> String {
             (env_present(lookup, "ALACRITTY_SOCKET") || term_is_alacritty)
                 .then_some("Alacritty".to_owned())
         })
-        .or_else(|| konsole(lookup))
+        .or_else(|| versioned_terminal(lookup, "KONSOLE_VERSION", "Konsole"))
         .or_else(|| {
             env_present(lookup, "GNOME_TERMINAL_SCREEN").then_some("gnome-terminal".to_owned())
         })
-        .or_else(|| vte(lookup))
+        .or_else(|| versioned_terminal(lookup, "VTE_VERSION", "VTE"))
         .or_else(|| env_present(lookup, "WT_SESSION").then_some("WindowsTerminal".to_owned()))
         .or_else(|| {
             let term = lookup.lookup("TERM").filter(|value| !value.is_empty())?;
@@ -85,30 +85,17 @@ fn term_program(lookup: &dyn EnvironmentLookup) -> Option<String> {
     Some(sanitized_or(&token, "unknown"))
 }
 
-fn wezterm(lookup: &dyn EnvironmentLookup) -> Option<String> {
-    let version = lookup.lookup("WEZTERM_VERSION")?;
+// WezTerm, Konsole and VTE each select on their own version variable, keeping the bare name when it's present but empty
+fn versioned_terminal(
+    lookup: &dyn EnvironmentLookup,
+    version_var: &str,
+    name: &str,
+) -> Option<String> {
+    let version = lookup.lookup(version_var)?;
     if version.is_empty() {
-        Some(sanitized_or("WezTerm", "WezTerm"))
+        Some(sanitized_or(name, name))
     } else {
-        Some(sanitized_or(&format!("WezTerm/{version}"), "WezTerm"))
-    }
-}
-
-fn konsole(lookup: &dyn EnvironmentLookup) -> Option<String> {
-    let version = lookup.lookup("KONSOLE_VERSION")?;
-    if version.is_empty() {
-        Some(sanitized_or("Konsole", "Konsole"))
-    } else {
-        Some(sanitized_or(&format!("Konsole/{version}"), "Konsole"))
-    }
-}
-
-fn vte(lookup: &dyn EnvironmentLookup) -> Option<String> {
-    let version = lookup.lookup("VTE_VERSION")?;
-    if version.is_empty() {
-        Some(sanitized_or("VTE", "VTE"))
-    } else {
-        Some(sanitized_or(&format!("VTE/{version}"), "VTE"))
+        Some(sanitized_or(&format!("{name}/{version}"), name))
     }
 }
 
