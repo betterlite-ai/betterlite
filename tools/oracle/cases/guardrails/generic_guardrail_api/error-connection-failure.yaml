@@ -1,0 +1,9 @@
+kind: helper
+name: error-connection-failure
+call:
+  b3771:
+    generic_call:
+      unreachable_fallback: fail_open
+      fail_on_error: true
+env: {}
+compare: {ignore: []}

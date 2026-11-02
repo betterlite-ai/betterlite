@@ -1,0 +1,8 @@
+task: B4052
+deviations:
+  - what: Eligibility errors during should_run_prompt_management swallow exceptions and return false instead of propagating them.
+    why: LiteLLM behavior at the pinned commit; a missing prompt that causes a lookup error is treated as ineligible for compilation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/dotprompt/dotprompt_manager.py#L99-L103
+  - what: Model stripping removes the "dotprompt/" prefix when template.model is None, leaving only the base model name.
+    why: LiteLLM behavior at the pinned commit; the model projection uses integration_name to strip the prefix.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prompt_management_base.py#L135-L139

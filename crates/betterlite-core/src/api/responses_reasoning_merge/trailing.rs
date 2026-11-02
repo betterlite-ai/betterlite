@@ -3,7 +3,7 @@ use serde_json::{Map, Value};
 use serde_with::rust::double_option;
 
 use super::content::Content;
-use super::{MergeError, Role, is_empty_value};
+use super::{MergeError, Role};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TrailingRecord {
@@ -20,7 +20,7 @@ pub struct TrailingRecord {
         skip_serializing_if = "Option::is_none",
         with = "double_option"
     )]
-    pub tool_calls: Option<Option<Value>>,
+    pub tool_calls: Option<Option<Vec<Value>>>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -48,7 +48,7 @@ impl TrailingInput {
 #[derive(Clone, Copy)]
 enum ToolCalls<'value> {
     Absent,
-    Present(&'value Value),
+    Present(&'value Vec<Value>),
 }
 
 const fn tool_calls(record: &TrailingRecord) -> ToolCalls<'_> {
@@ -58,14 +58,18 @@ const fn tool_calls(record: &TrailingRecord) -> ToolCalls<'_> {
     }
 }
 
-fn has_nonempty_tool_calls(calls: ToolCalls<'_>) -> bool {
+const fn has_nonempty_tool_calls(calls: ToolCalls<'_>) -> bool {
     match calls {
-        ToolCalls::Present(value) => !is_empty_value(value),
+        ToolCalls::Present(value) => !value.is_empty(),
         ToolCalls::Absent => false,
     }
 }
 
-fn is_mergeable_pair(last: &TrailingRecord, new: &TrailingRecord, hosted_search: bool) -> bool {
+const fn is_mergeable_pair(
+    last: &TrailingRecord,
+    new: &TrailingRecord,
+    hosted_search: bool,
+) -> bool {
     let last_is_assistant = matches!(last.role, Role::Known(super::KnownRole::Assistant));
     let new_is_assistant = matches!(new.role, Role::Known(super::KnownRole::Assistant));
     last_is_assistant
@@ -97,16 +101,7 @@ pub fn merge_trailing(
         return Ok(None);
     };
     let Some(TrailingInput::Record(new)) = new_messages.first() else {
-        let value = new_messages
-            .first()
-            .map_or(Value::Null, |input| match input {
-                TrailingInput::Other(other) => other.clone(),
-                TrailingInput::Record(_) => Value::Null,
-            });
-        return match serde_json::from_value::<Map<String, Value>>(value) {
-            Ok(_) => Ok(None),
-            Err(source) => Err(MergeError::InvalidRecord { source }),
-        };
+        return Err(MergeError::InvalidNewMessage);
     };
     if !is_mergeable_pair(last, new, hosted_search) {
         return Ok(None);
@@ -117,26 +112,4 @@ pub fn merge_trailing(
     let mut merged = last.clone();
     merged.content = Some(Some(merged_content(last, new_content)?));
     Ok(Some(merged))
-}
-
-pub fn merge_trailing_values(
-    messages: &[Value],
-    new_messages: &[Value],
-    hosted_search: bool,
-) -> Result<Option<Value>, MergeError> {
-    let typed_messages = messages
-        .iter()
-        .cloned()
-        .map(TrailingInput::from_value)
-        .collect::<Result<Vec<_>, _>>()?;
-    let typed_new_messages = new_messages
-        .iter()
-        .cloned()
-        .map(TrailingInput::from_value)
-        .collect::<Result<Vec<_>, _>>()?;
-    let record = merge_trailing(&typed_messages, &typed_new_messages, hosted_search)?;
-    record
-        .map(serde_json::to_value)
-        .transpose()
-        .map_err(|source| MergeError::InvalidRecord { source })
 }

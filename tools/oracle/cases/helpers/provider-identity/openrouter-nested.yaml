@@ -1,0 +1,9 @@
+kind: helper
+name: provider-identity-openrouter-nested
+call:
+  provider_identity:
+    check: openrouter
+    model: openrouter/anthropic/claude-3.5-sonnet
+    custom_llm_provider: openrouter
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,19 @@
+kind: helper
+name: reasoning-fields-strip-encrypted
+call:
+  reasoning_fields:
+    operation: strip_encrypted_reasoning_from_messages
+    messages:
+      - role: assistant
+        content:
+          - type: thinking
+            thinking: visible reasoning
+            signature: anthropic-signature
+          - type: thinking
+            thinking: encrypted reasoning
+            signature: "litellm_encrypted_reasoning:opaque-payload"
+          - type: text
+            text: the final answer
+env: {}
+compare:
+  ignore: []

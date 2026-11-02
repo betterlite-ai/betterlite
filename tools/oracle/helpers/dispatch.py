@@ -1692,11 +1692,13 @@ def main() -> int:
         value = adapter.run(input_value)
         output: dict[str, Json] = {"ok": True, "value": value}
     except Exception as error:  # noqa: BLE001 - the wire contract names every helper exception
+        carried: object = getattr(error, "status_code", None)
+        status = carried if isinstance(carried, int) and not isinstance(carried, bool) else None
         output = {
             "ok": False,
             "error": {
                 "class": type(error).__name__,
-                "status": None,
+                "status": status,
                 "type": None,
                 "param": None,
                 "code": None,

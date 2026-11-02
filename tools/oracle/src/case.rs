@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 use std::str;
 
 use crate::OracleError;
-use crate::helpers::HelperCall;
 use betterlite_postgres_fixture::seed::DatabaseFixture;
 use serde::Deserialize;
 use serde_json::Value;
@@ -12,7 +11,11 @@ use serde_json::Value;
 use crate::multipart_oracle::error::MultipartError;
 use crate::multipart_oracle::request::{answer_body, request_body};
 
+pub mod browser_flow;
 mod config_inspection;
+mod helper;
+
+pub(crate) use helper::HelperCase;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -22,9 +25,13 @@ pub struct Case {
     pub(crate) env: BTreeMap<String, String>,
     #[serde(default)]
     pub(crate) native_feature_eligibility: bool,
+    #[serde(default)]
     pub(crate) request: Box<Request>,
     pub(crate) upstream: Vec<UpstreamAnswer>,
+    #[serde(default)]
     pub(crate) compare: Box<Compare>,
+    #[serde(default)]
+    pub(crate) steps: Option<Vec<browser_flow::Step>>,
     #[serde(default)]
     #[serde(alias = "database_fixture")]
     pub(crate) database: Option<DatabaseFixture>,
@@ -38,34 +45,12 @@ pub(crate) enum LoadedCase {
     Helper(HelperCase),
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct HelperCase {
-    pub(crate) kind: HelperKind,
-    pub(crate) name: String,
-    pub(crate) call: HelperCall,
-    pub(crate) env: BTreeMap<String, String>,
-    pub(crate) compare: HelperCompare,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum HelperKind {
-    Helper,
-}
-
 #[derive(Deserialize)]
 struct CaseKind {
-    kind: Option<HelperKind>,
+    kind: Option<helper::HelperKind>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct HelperCompare {
-    pub(crate) ignore: Vec<Ignore>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct Request {
     pub(crate) method: String,
@@ -105,7 +90,7 @@ pub(crate) struct UpstreamAnswer {
     pub(crate) events: Option<Vec<String>>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Compare {
     pub(crate) headers: Vec<String>,
@@ -114,7 +99,7 @@ pub(crate) struct Compare {
     pub(crate) ignore: Vec<Ignore>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Ignore {
     pub(crate) pointer: String,
@@ -153,11 +138,16 @@ pub(crate) fn parse_case(path: &Path, text: &str) -> Result<LoadedCase, OracleEr
     let probe: CaseKind = serde_saphyr::from_str(text).map_err(parse_error)?;
     if probe.kind.is_some() {
         let case: HelperCase = serde_saphyr::from_str(text).map_err(parse_error)?;
-        validate_helper(path, &case)?;
+        helper::validate_helper(path, &case)?;
         return Ok(LoadedCase::Helper(case));
     }
     let case = decode_case(path, text.as_bytes())?;
     Ok(LoadedCase::Http(case))
+}
+
+pub fn parse_helper_case(source: &str) -> Result<(), String> {
+    let case: HelperCase = serde_saphyr::from_str(source).map_err(|error| error.to_string())?;
+    helper::validate_helper(Path::new("<helper>"), &case).map_err(|error| error.to_string())
 }
 
 pub fn decode_http_case(bytes: &[u8]) -> Result<HttpCase, OracleError> {
@@ -172,6 +162,13 @@ pub fn decode_http_body(bytes: &[u8]) -> Result<RequestBody, MultipartError> {
     request_body(&request.body, request.body_kind)
 }
 
+pub fn decode_html_form_capture(
+    bytes: &[u8],
+) -> Result<browser_flow::form::FormProjection, browser_flow::form::FormCaptureError> {
+    let text = str::from_utf8(bytes).map_err(browser_flow::form::FormCaptureError::Utf8)?;
+    browser_flow::form::parse_form_projection(text)
+}
+
 fn decode_case(path: &Path, bytes: &[u8]) -> Result<HttpCase, OracleError> {
     let text = str::from_utf8(bytes).map_err(|source| OracleError::CaseUtf8 { source })?;
     let case: Case = serde_saphyr::from_str(text).map_err(|source| OracleError::CaseParse {
@@ -180,11 +177,6 @@ fn decode_case(path: &Path, bytes: &[u8]) -> Result<HttpCase, OracleError> {
     })?;
     validate(path, &case)?;
     Ok(case)
-}
-
-pub fn parse_helper_case(source: &str) -> Result<(), String> {
-    let case: HelperCase = serde_saphyr::from_str(source).map_err(|error| error.to_string())?;
-    validate_helper(Path::new("<helper>"), &case).map_err(|error| error.to_string())
 }
 
 fn collect_yaml(path: &Path, files: &mut Vec<PathBuf>) -> Result<(), OracleError> {
@@ -210,28 +202,15 @@ fn collect_yaml(path: &Path, files: &mut Vec<PathBuf>) -> Result<(), OracleError
     Ok(())
 }
 
-fn validate_helper(path: &Path, case: &HelperCase) -> Result<(), OracleError> {
-    let invalid = |message: &str| OracleError::CaseInvalid {
-        path: path.to_owned(),
-        message: message.to_owned(),
-    };
-    if !matches!(&case.kind, HelperKind::Helper) {
-        return Err(invalid("helper cases must have kind: helper"));
-    }
-    if case.name.is_empty() {
-        return Err(invalid("name cannot be empty"));
-    }
-    validate_ignores(path, &case.compare.ignore)
-}
-
 pub(crate) fn validate(path: &Path, case: &Case) -> Result<(), OracleError> {
     let invalid = |message: &str| OracleError::CaseInvalid {
         path: path.to_owned(),
         message: message.to_owned(),
     };
-    if case.name.is_empty() || case.config.is_empty() || case.request.path.is_empty() {
-        return Err(invalid("name, config, and request.path cannot be empty"));
+    if case.name.is_empty() || case.config.is_empty() {
+        return Err(invalid("name and config cannot be empty"));
     }
+    validate_request_or_steps(path, case)?;
     if case.env.contains_key("LITELLM_LICENSE") {
         return Err(invalid("env cannot set LITELLM_LICENSE"));
     }
@@ -260,12 +239,29 @@ pub(crate) fn validate(path: &Path, case: &Case) -> Result<(), OracleError> {
         }
         answer_body(answer).map_err(OracleError::Multipart)?;
     }
-    // the request body decodes here once so a bad specification stops the run before any gateway starts
+    Ok(())
+}
+
+// Serde defaults the unused side of request/compare or steps, so emptiness stands in for absence.
+fn validate_request_or_steps(path: &Path, case: &Case) -> Result<(), OracleError> {
+    let invalid = |message: &str| OracleError::CaseInvalid {
+        path: path.to_owned(),
+        message: message.to_owned(),
+    };
+    if let Some(steps) = &case.steps {
+        if *case.request != Request::default() || *case.compare != Compare::default() {
+            return Err(invalid("a case cannot set both request/compare and steps"));
+        }
+        return browser_flow::validate_steps(path, steps);
+    }
+    if case.request.path.is_empty() {
+        return Err(invalid("request.path cannot be empty"));
+    }
     request_body(&case.request.body, case.request.body_kind).map_err(OracleError::Multipart)?;
     validate_ignores(path, &case.compare.ignore)
 }
 
-fn validate_ignores(path: &Path, ignores: &[Ignore]) -> Result<(), OracleError> {
+pub(crate) fn validate_ignores(path: &Path, ignores: &[Ignore]) -> Result<(), OracleError> {
     let invalid = |message: &str| OracleError::CaseInvalid {
         path: path.to_owned(),
         message: message.to_owned(),

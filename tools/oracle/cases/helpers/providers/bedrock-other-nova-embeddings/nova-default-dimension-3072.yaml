@@ -1,0 +1,13 @@
+kind: helper
+name: nova-default-dimension-3072
+call:
+  bedrock_other_nova_embeddings:
+    nova_default_purpose_dimensions:
+      non_default: {}
+      optional_params: {}
+      input: hello
+      inference_params: {}
+      async_invoke_route: false
+env: {}
+compare:
+  ignore: []

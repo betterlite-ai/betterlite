@@ -1,0 +1,9 @@
+kind: helper
+name: crlf-in-description-normalizes
+call:
+  blog_feed:
+    function: parse_rss_to_posts
+    xml: "<rss><channel><item><title>T</title><link>https://x</link><description>a\r\nb\rc&#13;d</description></item><item><title>T2</title><link>https://y</link><description><![CDATA[a\r\nb\rc]]></description></item></channel></rss>"
+    max_posts: 2
+env: {}
+compare: {ignore: []}

@@ -43,8 +43,14 @@ description: >-
   load_prompts_from_directory borrow prompt_data and prompt_directory instead of cloning them; and
   insert_prompt_record reads its record through a typed shape instead of matching Json variants by hand,
   which is also where the null fix above lands.
+
+
+  B4052 merged after this task was planned, and its compile.rs (crates/betterlite-prompts/src/dotprompt_compilation/compile.rs:60)
+  calls render() with its own Option prompt_variables. compile_inner keeps that Option parameter and passes the
+  empty default to render() at that one call; nothing else in compile.rs changes.
 scope:
   paths:
+    - crates/betterlite-prompts/src/dotprompt_compilation/compile.rs
     - crates/betterlite-prompts/src/dotprompt_templates.rs
     - crates/betterlite-prompts/src/dotprompt_templates/tests.rs
     - crates/betterlite-prompts/src/dotprompt_templates/sandbox.rs

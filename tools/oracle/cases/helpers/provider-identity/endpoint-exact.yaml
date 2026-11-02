@@ -1,0 +1,9 @@
+kind: helper
+name: provider-identity-endpoint-exact
+call:
+  provider_identity:
+    check: endpoint
+    endpoint: api.groq.com/openai/v1
+    api_base: https://api.groq.com/openai/v1
+env: {}
+compare: {ignore: []}

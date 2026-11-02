@@ -1,0 +1,14 @@
+kind: helper
+name: opik-config-missing-file
+call:
+  b3973:
+    function: config
+    environment: {}
+    config_file: null
+    lookups:
+      - key: url_override
+        default: fallback
+      - key: api_key
+env: {}
+compare:
+  ignore: []

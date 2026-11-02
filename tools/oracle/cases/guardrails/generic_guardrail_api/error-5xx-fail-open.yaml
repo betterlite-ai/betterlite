@@ -1,0 +1,10 @@
+kind: helper
+name: error-5xx-fail-open
+call:
+  b3771:
+    generic_call:
+      unreachable_fallback: fail_open
+      fail_on_error: true
+      answer: {status: 502, headers: {}, body: {}}
+env: {}
+compare: {ignore: []}

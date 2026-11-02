@@ -1,0 +1,12 @@
+kind: helper
+name: provider-identity-cohere
+call:
+  provider_identity:
+    check: cohere
+    model: cohere/command-a-03-2025
+    custom_llm_provider: null
+    catalog:
+      command-a-03-2025:
+        litellm_provider: cohere_chat
+env: {}
+compare: {ignore: []}

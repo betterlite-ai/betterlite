@@ -230,15 +230,15 @@ impl From<Failure> for Box<HelperError> {
             Failure::ImageModels(ImageModelsError::Header(_)) => "UnicodeEncodeError",
             Failure::Json(_) => "KeyError",
         };
-        let message =
-            if let Failure::ImageModels(ImageModelsError::Provider { error, .. }) = &failure {
-                error.error.message.clone()
+        let (message, status) =
+            if let Failure::ImageModels(ImageModelsError::Provider { error, status }) = &failure {
+                (error.error.message.clone(), Some(*status))
             } else {
-                failure.to_string()
+                (failure.to_string(), None)
             };
         Self::new(HelperError {
             class: class.to_owned(),
-            status: None,
+            status,
             error_type: None,
             param: None,
             code: None,

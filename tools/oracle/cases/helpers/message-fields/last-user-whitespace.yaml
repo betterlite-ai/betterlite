@@ -1,0 +1,13 @@
+kind: helper
+name: message-fields-last-user-whitespace
+call:
+  message_fields:
+    operation: get_last_user_message
+    messages:
+      - role: assistant
+        content: hello
+      - role: user
+        content: "   "
+env: {}
+compare:
+  ignore: []

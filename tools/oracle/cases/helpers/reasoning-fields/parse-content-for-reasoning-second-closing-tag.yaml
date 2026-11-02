@@ -1,0 +1,9 @@
+kind: helper
+name: reasoning-fields-parse-content-for-reasoning-second-closing-tag
+call:
+  reasoning_fields:
+    operation: parse_content_for_reasoning
+    message_text: "<think>a</think>b</think>c"
+env: {}
+compare:
+  ignore: []

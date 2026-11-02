@@ -1,0 +1,9 @@
+kind: helper
+name: provider-identity-anthropic-text
+call:
+  provider_identity:
+    check: anthropic_text
+    model: anthropic/claude-2
+    custom_llm_provider: null
+env: {}
+compare: {ignore: []}

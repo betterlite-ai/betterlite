@@ -1,0 +1,10 @@
+kind: helper
+name: provider-geo-errors-versus-uplift-warning
+call:
+  token_cost:
+    operation: provider_geo
+    provider_specific_entry:
+      us: null
+    inference_geo: "us"
+compare: {ignore: []}
+env: {}

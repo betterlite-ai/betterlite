@@ -1,0 +1,12 @@
+kind: helper
+name: opik-config-file-duplicate-key
+call:
+  b3973:
+    function: config
+    environment: {}
+    config_file: "[opik]\nurl_override = a\nURL_OVERRIDE = b\n"
+    lookups:
+      - key: url_override
+env: {}
+compare:
+  ignore: []

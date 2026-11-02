@@ -1,0 +1,13 @@
+kind: helper
+name: opik-metadata-missing-sections
+call:
+  b3973:
+    function: metadata
+    litellm_metadata: {}
+    standard_logging_metadata:
+      user_api_key_auth_metadata: null
+      requester_metadata:
+        opik: null
+env: {}
+compare:
+  ignore: []

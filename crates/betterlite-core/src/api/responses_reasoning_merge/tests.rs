@@ -2,10 +2,29 @@
 
 use super::content::{Content, ReasoningText, ThinkingBlocks};
 use super::record::{ChatRecord, Record};
-use super::trailing::merge_trailing_values as merge_trailing;
+use super::trailing::{TrailingInput, TrailingRecord, merge_trailing as merge_trailing_records};
 use super::{MergeError, Reasoning as _, Role, merge_reasoning};
 use rstest::rstest;
 use serde_json::{Map, Value};
+
+fn merge_trailing(
+    messages: &[Value],
+    new_messages: &[Value],
+    hosted_search: bool,
+) -> Result<Option<Value>, MergeError> {
+    let typed_messages: Vec<TrailingInput> = messages
+        .iter()
+        .cloned()
+        .map(TrailingInput::from_value)
+        .collect::<Result<_, _>>()?;
+    let typed_new_messages: Vec<TrailingInput> = new_messages
+        .iter()
+        .cloned()
+        .map(TrailingInput::from_value)
+        .collect::<Result<_, _>>()?;
+    let merged = merge_trailing_records(&typed_messages, &typed_new_messages, hosted_search)?;
+    Ok(merged.map(|record| serde_json::to_value(record).expect("trailing record serializes")))
+}
 
 fn obj(pairs: Vec<(&str, Value)>) -> Value {
     let mut fields = Map::new();
@@ -211,7 +230,7 @@ fn reasoning_mixed_dict_and_attribute_records() {
         content: Some(Some(Content::Text("answer".to_owned()))),
         reasoning_content: None,
         thinking_blocks: None,
-        tool_calls: Some(Some(arr(vec![str_val("call-1")]))),
+        tool_calls: Some(Some(vec![str_val("call-1")])),
         extra: Map::new(),
     });
     let mut records = vec![pending, target];
@@ -517,13 +536,15 @@ enum Expectation {
     Merged(Option<Value>),
     InvalidRecord,
     InvalidContent,
+    InvalidNewMessage,
 }
 
 fn assert_merge(result: Result<Option<Value>, MergeError>, expected: Expectation) {
     match (result, expected) {
         (Ok(value), Expectation::Merged(wanted)) => assert_eq!(value, wanted),
         (Err(MergeError::InvalidRecord { .. }), Expectation::InvalidRecord)
-        | (Err(MergeError::InvalidContent), Expectation::InvalidContent) => {}
+        | (Err(MergeError::InvalidContent), Expectation::InvalidContent)
+        | (Err(MergeError::InvalidNewMessage), Expectation::InvalidNewMessage) => {}
         (other, other_expected) => panic!("unexpected {other:?} for {other_expected:?}"),
     }
 }
@@ -546,6 +567,16 @@ fn assert_merge(result: Result<Option<Value>, MergeError>, expected: Expectation
 #[case::new_message_not_dict_raises(
     vec![assistant_with_tool_calls()],
     vec![arr(vec![str_val("not"), str_val("a"), str_val("dict")])],
+    false,
+    Expectation::InvalidNewMessage
+)]
+#[case::last_message_malformed_tool_calls_raises(
+    vec![obj(vec![
+        ("role", str_val("assistant")),
+        ("content", str_val("a")),
+        ("tool_calls", Value::Bool(true)),
+    ])],
+    vec![assistant_answer("b")],
     false,
     Expectation::InvalidRecord
 )]
@@ -704,4 +735,15 @@ fn non_list_thinking_blocks_is_not_pending_on_attribute_record() {
     // content=null but a non-list thinking_blocks and no reasoning text leave nothing to accumulate.
     assert!(!record.is_pending());
     assert_eq!(record.blocks(), None);
+}
+
+#[test]
+fn tool_calls_wrong_type_is_rejected() {
+    let value = obj(vec![
+        ("role", str_val("assistant")),
+        ("content", str_val("a")),
+        ("tool_calls", Value::Bool(true)),
+    ]);
+    serde_json::from_value::<ChatRecord>(value.clone()).unwrap_err();
+    serde_json::from_value::<TrailingRecord>(value).unwrap_err();
 }

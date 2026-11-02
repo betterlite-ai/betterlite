@@ -1,0 +1,5 @@
+kind: helper
+name: metadata-extraction-metadata
+call: {b3771: {metadata: {user_api_key_alias: alias}}}
+env: {}
+compare: {ignore: []}
