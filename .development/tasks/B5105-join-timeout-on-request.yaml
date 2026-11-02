@@ -1,0 +1,69 @@
+id: B5105
+title: A concurrent scenario step times out on the request, not the channel
+description: >-
+  B300's a_concurrent_step_with_a_reply_still_pending_times_out_at_the_join_deadline failed main's gate on 64d01ebd
+  (run 41429572811) with "expected a timed-out HTTP request, got Err(ScenarioJoinFailed(Timeout))". The change in that
+  push touched no oracle code. run_concurrent in tools/oracle/src/routing_scenarios/run.rs bounds the step twice with
+  the same deadline: deadline_client gives every request a reqwest timeout of deadline_ms, and collect waits on the
+  channel with recv_timeout(deadline) for each result. recv_timeout starts a fresh clock per message, so the wait for
+  the slow reply starts once the fast reply is in. The slow request's own clock starts when its thread sends. On a
+  loaded runner that thread can start later than the fast reply lands, and then the channel timeout fires first and
+  the scenario fails with ScenarioJoinFailed instead of the request's timeout.
+
+
+  The channel timeout bounds nothing on its own: thread::scope joins every request thread before run_concurrent
+  returns, so the step already takes as long as its slowest request, and the reqwest timeout is what caps that (the
+  comment above deadline_client says so). collect waits with recv() instead, and a request still pending at the
+  deadline always surfaces as its own HttpRequest timeout. ScenarioJoinFailed then wraps std::sync::mpsc::RecvError,
+  the case where every sender dropped before all results came in (a request thread panicked), and its message says
+  that. The existing test stays as it is and is the regression guard.
+scope:
+  paths:
+    - tools/oracle/src/routing_scenarios/run.rs
+    - tools/oracle/src/lib.rs
+  lint_tables: false
+references:
+  - url: https://github.com/betterlite-ai/betterlite/actions/runs/41429572811
+    why: Main's gate on 64d01ebd failed only this test; the log artifact gate-logs-tests holds the panic.
+  - url: https://github.com/betterlite-ai/betterlite/blob/64d01ebd/tools/oracle/src/routing_scenarios/run.rs#L37-L91
+    why: deadline_client sets the request timeout and collect waits on the channel with the same deadline per message.
+  - url: https://github.com/betterlite-ai/betterlite/blob/64d01ebd/tools/oracle/src/routing_scenarios/tests/routing_scenarios_behaviors.rs#L134-L165
+    why: The test expects the slow request's HttpRequest timeout and a step that ends in under a second.
+  - url: https://github.com/betterlite-ai/betterlite/blob/64d01ebd/tools/oracle/src/lib.rs#L227-L228
+    why: ScenarioJoinFailed wraps RecvTimeoutError today.
+dod:
+  - text: collect waits for each concurrent result without its own timeout, so a request pending at the join deadline always fails the scenario with that request's HttpRequest timeout.
+    proof: [no-channel-timeout, join-deadline-stress]
+  - text: ScenarioJoinFailed wraps RecvError and every routing scenario test still passes.
+    proof: [join-error-type, routing-scenario-tests]
+checks:
+  optional: []
+  commands:
+    - id: no-channel-timeout
+      why: collect still races its own channel timeout against the request timeout.
+      run: |-
+        ! grep -n -E 'recv_timeout|RecvTimeoutError' tools/oracle/src/routing_scenarios/run.rs tools/oracle/src/lib.rs
+    - id: join-error-type
+      why: ScenarioJoinFailed does not wrap RecvError.
+      run: |-
+        grep -q -E 'ScenarioJoinFailed\(#\[source\] (std::sync::mpsc::)?RecvError\)' tools/oracle/src/lib.rs
+    - id: join-deadline-stress
+      why: The join deadline test fails on some of 30 runs.
+      run: |-
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail --stress-count 30 -E 'test(=routing_scenarios::tests::routing_scenarios_behaviors::a_concurrent_step_with_a_reply_still_pending_times_out_at_the_join_deadline)'
+    - id: routing-scenario-tests
+      why: A routing scenario test fails.
+      run: |-
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^routing_scenarios::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - The timeout of a concurrent request stays deadline_ms; no grace period on either side.
+  - Other oracle timing flakes in the autopilot log (helper output limit, fixture cleanup) belong to their own tasks.
+pitfalls:
+  - A longer recv_timeout as a backstop would still be a second clock; the scope join waits for every thread anyway, so it adds nothing.
+  - The test file is not in scope. If the test needs a change to pass, the fix is wrong.
+budget:
+  max_changed_lines: 60
+  max_new_expects: 0
+review_level: standard
