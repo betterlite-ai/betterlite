@@ -10,6 +10,8 @@ use super::test_object;
 #[rstest]
 #[case::interception_marker(test_object([("_code_interpreter_interception_active", json!(true)), ("other", json!("kept"))]))]
 #[case::websearch_marker(test_object([("_websearch_interception_active", json!(true)), ("other", json!("kept"))]))]
+#[case::compression_marker(test_object([("_compression_interception_active", json!(true)), ("other", json!("kept"))]))]
+#[case::headroom_marker(test_object([("_headroom_interception_converted_stream", json!(true)), ("other", json!("kept"))]))]
 #[case::agentic_loop_marker(test_object([("_agentic_loop_depth", json!(2_i64)), ("other", json!("kept"))]))]
 #[case::max_agentic_loops(test_object([("max_agentic_loops", json!(4_i64)), ("other", json!("kept"))]))]
 fn strip_removes_interception_markers_and_keeps_other_keys(#[case] metadata: Value) {
@@ -57,6 +59,20 @@ fn write_adds_every_present_marker_and_keeps_existing_metadata() {
     assert_eq!(metadata.get(INTERCEPTION_ACTIVE_KEY), Some(&json!(true)));
     assert_eq!(metadata.get(SANDBOX_KEY), Some(&json!("sandbox-1")));
     assert_eq!(metadata.get(SESSION_SCOPED_KEY), None);
+}
+
+#[cfg(test)]
+#[rstest]
+#[case::interception_active(INTERCEPTION_ACTIVE_KEY)]
+#[case::sandbox_key(SANDBOX_KEY)]
+#[case::session_scoped(SESSION_SCOPED_KEY)]
+#[case::converted_stream(CONVERTED_STREAM_KEY)]
+fn write_copies_every_marker_key_into_litellm_metadata(#[case] marker_key: &str) {
+    let mut kwargs = Map::new();
+    kwargs.insert(marker_key.to_owned(), json!(true));
+    write(&mut kwargs);
+    let metadata = kwargs.get("litellm_metadata").unwrap().as_object().unwrap();
+    assert_eq!(metadata.get(marker_key), Some(&json!(true)));
 }
 
 #[cfg(test)]

@@ -5,23 +5,30 @@ use serde_json::json;
 use super::test_object;
 
 #[cfg(test)]
+fn sample_choice(index: i64, tool_calls: Value, finish_reason: &str) -> Value {
+    test_object([
+        ("index", json!(index)),
+        (
+            "message",
+            test_object([("role", json!("assistant")), ("tool_calls", tool_calls)]),
+        ),
+        ("finish_reason", json!(finish_reason)),
+    ])
+}
+
+#[cfg(test)]
 fn sample_response(tool_calls: Value) -> Value {
+    multi_choice_response(vec![sample_choice(0, tool_calls, "tool_calls")])
+}
+
+#[cfg(test)]
+fn multi_choice_response(choices: Vec<Value>) -> Value {
     test_object([
         ("id", json!("chatcmpl-1")),
         ("object", json!("chat.completion")),
         ("created", json!(1_i64)),
         ("model", json!("gpt-5")),
-        (
-            "choices",
-            Value::Array(vec![test_object([
-                ("index", json!(0_i64)),
-                (
-                    "message",
-                    test_object([("role", json!("assistant")), ("tool_calls", tool_calls)]),
-                ),
-                ("finish_reason", json!("tool_calls")),
-            ])]),
-        ),
+        ("choices", Value::Array(choices)),
     ])
 }
 
@@ -80,6 +87,14 @@ fn normalize_tool_call_returns_none_for_a_different_function_name() {
 
 #[cfg(test)]
 #[test]
+fn normalize_tool_call_returns_none_for_a_non_function_type() {
+    let mut tool_call = code_execution_tool_call("call_1", "{}");
+    tool_call.kind = "custom".to_owned();
+    assert_eq!(normalize_tool_call(&tool_call), None);
+}
+
+#[cfg(test)]
+#[test]
 fn extract_tool_calls_normalizes_the_first_choices_matching_calls() {
     let tool_calls = Value::Array(vec![
         test_object([
@@ -112,6 +127,27 @@ fn extract_tool_calls_normalizes_the_first_choices_matching_calls() {
 #[test]
 fn extract_tool_calls_returns_empty_when_the_response_cannot_be_parsed() {
     assert_eq!(extract_tool_calls(&json!("not a response")), Vec::new());
+}
+
+#[cfg(test)]
+#[test]
+fn extract_tool_calls_only_reads_the_first_choice() {
+    let second_choice_calls = Value::Array(vec![test_object([
+        ("id", json!("call_1")),
+        ("type", json!("function")),
+        (
+            "function",
+            test_object([
+                ("name", json!(CODE_EXECUTION_TOOL_NAME)),
+                ("arguments", json!("{}")),
+            ]),
+        ),
+    ])]);
+    let response = multi_choice_response(vec![
+        sample_choice(0, json!(null), "stop"),
+        sample_choice(1, second_choice_calls, "tool_calls"),
+    ]);
+    assert_eq!(extract_tool_calls(&response), Vec::new());
 }
 
 #[cfg(test)]

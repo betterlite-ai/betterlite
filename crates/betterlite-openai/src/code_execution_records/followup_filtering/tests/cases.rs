@@ -13,6 +13,7 @@ use super::test_object;
 #[case::litellm_logging_obj("litellm_logging_obj")]
 #[case::acompletion("acompletion")]
 #[case::websearch_marker("_websearch_interception_active")]
+#[case::compression_marker("_compression_interception_active")]
 #[case::headroom_marker("_headroom_interception_converted_stream")]
 fn agentic_loop_kwargs_removes_logging_globals_and_other_interceptors_markers(
     #[case] dropped_key: &str,
@@ -49,6 +50,18 @@ fn tools_replaces_code_interpreter_entries_and_keeps_the_rest() {
     let replaced = tools(&requested, CallDialect::Responses).unwrap();
     assert_eq!(replaced[0]["name"], json!(CODE_EXECUTION_TOOL_NAME));
     assert_eq!(replaced[1], test_object([("type", json!("web_search"))]));
+}
+
+#[cfg(test)]
+#[test]
+fn tools_replaces_code_interpreter_entries_with_the_chat_completion_shape() {
+    let requested = Value::Array(vec![test_object([("type", json!("code_interpreter"))])]);
+    let replaced = tools(&requested, CallDialect::ChatCompletion).unwrap();
+    assert_eq!(
+        replaced[0]["function"]["name"],
+        json!(CODE_EXECUTION_TOOL_NAME)
+    );
+    assert_eq!(replaced[0].get("name"), None);
 }
 
 #[cfg(test)]

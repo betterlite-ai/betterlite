@@ -19,12 +19,29 @@ fn function_parameters_declares_the_code_property_as_required() {
 }
 
 #[cfg(test)]
+fn expected_parameters() -> Value {
+    test_object([
+        ("type", json!("object")),
+        (
+            "properties",
+            test_object([("code", test_object([("type", json!("string"))]))]),
+        ),
+        ("required", Value::Array(vec![json!("code")])),
+    ])
+}
+
+#[cfg(test)]
 #[test]
 fn function_tool_builds_the_responses_shape() {
     let tool = function_tool(CallDialect::Responses);
     assert_eq!(
-        serde_json::to_value(&tool).unwrap()["name"],
-        json!(CODE_EXECUTION_TOOL_NAME)
+        serde_json::to_value(&tool).unwrap(),
+        test_object([
+            ("type", json!("function")),
+            ("name", json!(CODE_EXECUTION_TOOL_NAME)),
+            ("description", json!(FUNCTION_DESCRIPTION)),
+            ("parameters", expected_parameters()),
+        ])
     );
     assert!(matches!(tool, CodeExecutionTool::Responses(_)));
 }
@@ -33,8 +50,20 @@ fn function_tool_builds_the_responses_shape() {
 #[test]
 fn function_tool_builds_the_chat_completion_shape_nested_under_function() {
     let tool = function_tool(CallDialect::ChatCompletion);
-    let value = serde_json::to_value(&tool).unwrap();
-    assert_eq!(value["function"]["name"], json!(CODE_EXECUTION_TOOL_NAME));
+    assert_eq!(
+        serde_json::to_value(&tool).unwrap(),
+        test_object([
+            ("type", json!("function")),
+            (
+                "function",
+                test_object([
+                    ("name", json!(CODE_EXECUTION_TOOL_NAME)),
+                    ("description", json!(FUNCTION_DESCRIPTION)),
+                    ("parameters", expected_parameters()),
+                ]),
+            ),
+        ])
+    );
     assert!(matches!(tool, CodeExecutionTool::ChatCompletion(_)));
 }
 
@@ -42,6 +71,13 @@ fn function_tool_builds_the_chat_completion_shape_nested_under_function() {
 #[test]
 fn function_tool_choice_builds_the_responses_shape() {
     let choice = function_tool_choice(CallDialect::Responses);
+    assert_eq!(
+        serde_json::to_value(&choice).unwrap(),
+        test_object([
+            ("type", json!("function")),
+            ("name", json!(CODE_EXECUTION_TOOL_NAME)),
+        ])
+    );
     assert!(matches!(choice, CodeExecutionToolChoice::Responses(_)));
 }
 
@@ -49,8 +85,16 @@ fn function_tool_choice_builds_the_responses_shape() {
 #[test]
 fn function_tool_choice_builds_the_chat_completion_shape_nested_under_function() {
     let choice = function_tool_choice(CallDialect::ChatCompletion);
-    let value = serde_json::to_value(&choice).unwrap();
-    assert_eq!(value["function"]["name"], json!(CODE_EXECUTION_TOOL_NAME));
+    assert_eq!(
+        serde_json::to_value(&choice).unwrap(),
+        test_object([
+            ("type", json!("function")),
+            (
+                "function",
+                test_object([("name", json!(CODE_EXECUTION_TOOL_NAME))]),
+            ),
+        ])
+    );
 }
 
 #[cfg(test)]
