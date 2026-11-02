@@ -1,5 +1,5 @@
 kind: helper
 name: catalog_batch_concurrency
-call: {b4682: {operation: batch, expected: {batch_size: 8, order: [one, two, three, four, five, six, seven, eight, nine]}}}
+call: {b4682: {operation: batch, batch_report: true, tools: [{name: one, description: d, input_schema: {}}, {name: two, description: d, input_schema: {}}, {name: three, description: d, input_schema: {}}, {name: four, description: d, input_schema: {}}, {name: five, description: d, input_schema: {}}, {name: six, description: d, input_schema: {}}, {name: seven, description: d, input_schema: {}}, {name: eight, description: d, input_schema: {}}, {name: nine, description: d, input_schema: {}}], outcomes: {}}}
 env: {}
 compare: {ignore: []}

@@ -1,12 +1,30 @@
 use std::collections::BTreeMap;
 
 use betterlite_db::mcp_stored_contracts::JsonValue;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct MCPTool {
     pub name: String,
+    #[serde(default)]
     pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default)]
+    #[serde(alias = "input_schema")]
     pub input_schema: BTreeMap<String, JsonValue>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "output_schema")]
+    pub output_schema: Option<BTreeMap<String, JsonValue>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution: Option<BTreeMap<String, JsonValue>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<BTreeMap<String, JsonValue>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icons: Option<Vec<JsonValue>>,
+    #[serde(default, rename = "_meta", skip_serializing_if = "Option::is_none")]
+    pub meta: Option<BTreeMap<String, JsonValue>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

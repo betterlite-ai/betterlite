@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::future::Future;
 
 use betterlite_db::mcp_stored_contracts::JsonValue;
+use serde::Deserialize;
 
 use super::types::MCPServer;
 
@@ -13,7 +14,7 @@ pub struct CallerContext {
     pub api_key_hash: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct GuardrailFailure {
     pub exception_type: String,
     pub exception_message: String,
@@ -27,10 +28,25 @@ pub struct ScanContext<'context> {
     pub identity_header_names: &'context [String],
     pub custom_key_header_name: Option<&'context str>,
     pub client_side_auth_header_name: &'context str,
+    pub upstream_credential_names: &'context [String],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GuardrailCallType {
+    ListMcpTools,
+}
+
+impl GuardrailCallType {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::ListMcpTools => "list_mcp_tools",
+        }
+    }
 }
 
 pub struct GuardrailCallContext<'context> {
-    pub call_type: &'context str,
+    pub call_type: GuardrailCallType,
     pub guardrails_only: bool,
     pub tool_name: &'context str,
     pub server_name: &'context str,

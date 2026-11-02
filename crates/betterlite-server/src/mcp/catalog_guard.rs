@@ -10,26 +10,27 @@ use std::collections::BTreeMap;
 
 use betterlite_db::mcp_stored_contracts::JsonValue;
 use futures_util::future::join_all;
+use serde::Serialize;
 
-use self::guard::{GuardrailCallContext, GuardrailFailure, ScanContext};
+use self::guard::{GuardrailCallContext, GuardrailCallType, GuardrailFailure, ScanContext};
 use self::headers::{HeaderSanitizeContext, logging_safe_mcp_headers};
 use self::types::{MCPServer, MCPTool};
 
 const CATALOG_SCAN_BATCH_SIZE: usize = 8;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct CatalogAlert {
     pub signature: String,
     pub message: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct BlockedTool {
     pub name: String,
     pub reason: String,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct ToolDescriptionScan {
     pub served: Vec<MCPTool>,
     pub blocked: Vec<BlockedTool>,
@@ -145,7 +146,13 @@ where
         return ScanOutcome::Served(tool.clone());
     }
     match guarded_catalog_entry(tool, context, hook).await {
-        Ok(Some(guarded)) => ScanOutcome::Served(masked_tool(tool, &guarded)),
+        Ok(Some(guarded)) => match masked_tool(tool, &guarded) {
+            Ok(masked) => ScanOutcome::Served(masked),
+            Err(failure) => ScanOutcome::Blocked(BlockedTool {
+                name: tool.name.clone(),
+                reason: block_reason(&failure),
+            }),
+        },
         Ok(None) => ScanOutcome::Served(tool.clone()),
         Err(failure) => ScanOutcome::Blocked(BlockedTool {
             name: tool.name.clone(),
@@ -163,7 +170,7 @@ where
     H: guard::GuardrailHook + Sync,
 {
     let header_context = HeaderSanitizeContext {
-        extra_headers: &context.server.extra_headers,
+        upstream_credential_names: context.upstream_credential_names,
         identity_header_names: context.identity_header_names,
         custom_key_header_name: context.custom_key_header_name,
         client_side_auth_header_name: context.client_side_auth_header_name,
@@ -172,7 +179,7 @@ where
     let rate_limit_server_name = context.server.rate_limit_name().to_owned();
     let description = tool.description.clone().unwrap_or_default();
     let call_context = GuardrailCallContext {
-        call_type: "list_mcp_tools",
+        call_type: GuardrailCallType::ListMcpTools,
         guardrails_only: true,
         tool_name: &tool.name,
         server_name: &context.server.name,
@@ -185,7 +192,8 @@ where
     hook.pre_call_hook(call_context).await
 }
 
-fn block_reason(failure: &GuardrailFailure) -> String {
+#[must_use]
+pub fn block_reason(failure: &GuardrailFailure) -> String {
     match failure
         .detail_error
         .as_deref()
@@ -199,23 +207,36 @@ fn block_reason(failure: &GuardrailFailure) -> String {
     }
 }
 
-fn masked_tool(tool: &MCPTool, guarded: &BTreeMap<String, JsonValue>) -> MCPTool {
+fn masked_tool(
+    tool: &MCPTool,
+    guarded: &BTreeMap<String, JsonValue>,
+) -> Result<MCPTool, GuardrailFailure> {
     let description = match guarded.get("mcp_tool_description") {
         Some(JsonValue::String(value)) => Some(value.clone()),
         Some(JsonValue::Null) => None,
-        Some(_) | None => tool.description.clone(),
+        Some(value) => return Err(invalid_guarded_value("mcp_tool_description", value)),
+        None => tool.description.clone(),
     };
     let input_schema = match guarded.get("mcp_input_schema") {
         Some(JsonValue::Object(value)) => value.clone(),
-        Some(_) | None => tool.input_schema.clone(),
+        Some(value) => return Err(invalid_guarded_value("mcp_input_schema", value)),
+        None => tool.input_schema.clone(),
     };
     if description == tool.description && input_schema == tool.input_schema {
-        tool.clone()
+        Ok(tool.clone())
     } else {
-        MCPTool {
-            name: tool.name.clone(),
+        Ok(MCPTool {
             description,
             input_schema,
-        }
+            ..tool.clone()
+        })
+    }
+}
+
+fn invalid_guarded_value(field: &str, value: &JsonValue) -> GuardrailFailure {
+    GuardrailFailure {
+        exception_type: "ValidationError".to_owned(),
+        exception_message: format!("{field} must have a valid MCP value, got {value:?}"),
+        detail_error: None,
     }
 }

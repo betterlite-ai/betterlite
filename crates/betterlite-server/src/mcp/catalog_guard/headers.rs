@@ -28,7 +28,7 @@ const DISABLE_REDACTION_HEADER: &str = "litellm-disable-message-redaction";
 const REDACTED_VALUE: &str = "***REDACTED***";
 
 pub struct HeaderSanitizeContext<'context> {
-    pub extra_headers: &'context [String],
+    pub upstream_credential_names: &'context [String],
     pub identity_header_names: &'context [String],
     pub custom_key_header_name: Option<&'context str>,
     pub client_side_auth_header_name: &'context str,
@@ -60,7 +60,7 @@ fn forwarded_headers(context: &HeaderSanitizeContext<'_>) -> BTreeSet<String> {
         .collect();
     exempt.insert("authorization".to_owned());
     context
-        .extra_headers
+        .upstream_credential_names
         .iter()
         .map(|name| name.to_lowercase())
         .filter(|name| !exempt.contains(name))
@@ -95,7 +95,7 @@ fn clean_headers(
     let mut cleaned = BTreeMap::new();
     for (name, value) in raw_headers {
         let lower = name.to_lowercase();
-        if SPECIAL_HEADER_NAMES.contains(&lower.as_str())
+        if (SPECIAL_HEADER_NAMES.contains(&lower.as_str()) && !is_anthropic_oauth(value))
             || custom_key_lower.as_deref() == Some(lower.as_str())
         {
             continue;
@@ -103,6 +103,13 @@ fn clean_headers(
         cleaned.insert(lower, value.clone());
     }
     cleaned
+}
+
+fn is_anthropic_oauth(value: &str) -> bool {
+    value
+        .strip_prefix("Bearer ")
+        .unwrap_or(value)
+        .starts_with("sk-ant-oat")
 }
 
 fn redact_credential_headers(headers: BTreeMap<String, String>) -> BTreeMap<String, String> {

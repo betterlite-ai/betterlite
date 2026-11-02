@@ -1,5 +1,5 @@
 kind: helper
 name: catalog-guard-seed
-call: {b4682: {operation: scan, expected: {served: [], blocked: []}}}
+call: {b4682: {operation: scan, tools: [], outcomes: {}}}
 env: {}
 compare: {ignore: []}

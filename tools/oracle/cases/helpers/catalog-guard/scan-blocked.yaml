@@ -1,5 +1,5 @@
 kind: helper
 name: catalog_scan_blocked
-call: {b4682: {operation: scan, expected: {served: [], blocked: [{name: search, reason: blocked}]}}}
+call: {b4682: {operation: scan, tools: [{name: search, description: query, input_schema: {}}], outcomes: {search: {failure: {exception_type: ValueError, exception_message: blocked}}}}}
 env: {}
 compare: {ignore: []}

@@ -79,9 +79,9 @@ fn drifted(tool: &MCPTool, pinned: &PinnedMCPTool) -> bool {
 fn pinned_tool(tool: &MCPTool, pinned: &PinnedMCPTool) -> MCPTool {
     let description = pinned.as_ref().description.clone();
     MCPTool {
-        name: tool.name.clone(),
         description: (!description.is_empty()).then_some(description),
         input_schema: pinned.as_ref().input_schema.clone(),
+        ..tool.clone()
     }
 }
 

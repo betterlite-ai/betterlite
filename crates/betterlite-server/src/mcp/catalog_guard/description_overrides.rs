@@ -23,9 +23,8 @@ pub fn apply_description_overrides(
 fn described_tool(tool: &MCPTool, override_description: Option<&String>) -> MCPTool {
     match override_description {
         Some(description) if Some(description) != tool.description.as_ref() => MCPTool {
-            name: tool.name.clone(),
             description: Some(description.clone()),
-            input_schema: tool.input_schema.clone(),
+            ..tool.clone()
         },
         _ => tool.clone(),
     }
