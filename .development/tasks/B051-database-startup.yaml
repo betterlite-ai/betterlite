@@ -89,7 +89,6 @@ scope:
   paths:
     - crates/betterlite-server/src/database_startup.rs
     - crates/betterlite-server/src/database_startup/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - Cargo.toml
     - tools/betterlite-db-admin/Cargo.toml
@@ -97,6 +96,7 @@ scope:
     - tools/betterlite-db-admin/src/commands.rs
     - tools/betterlite-db-admin/src/database_startup.rs
     - tools/betterlite-db-admin/src/database_startup/**
+    - crates/betterlite-server/src/database_startup/fixtures.rs
     - crates/betterlite-server/src/database_startup/fixtures/**
     - tools/oracle/src/helpers/server/database_startup.rs
     - tools/oracle/src/helpers/server/database_startup/**

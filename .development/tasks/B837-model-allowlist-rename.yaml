@@ -63,7 +63,6 @@ scope:
   paths:
     - crates/betterlite-server/src/model_allowlist_rename.rs
     - crates/betterlite-server/src/model_allowlist_rename/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/src/helpers/server/model_allowlist_rename.rs
     - tools/oracle/src/helpers/server/model_allowlist_rename/**
@@ -72,6 +71,7 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/model-allowlist-rename/**
     - tools/oracle/fuzz/corpus/helper_case/model-allowlist-rename-*
+    - crates/betterlite-server/src/model_allowlist_rename/fixtures.rs
     - crates/betterlite-server/src/model_allowlist_rename/fixtures/**
   lint_tables: false
 references:

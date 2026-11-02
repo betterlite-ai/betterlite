@@ -28,7 +28,6 @@ scope:
   paths:
     - crates/betterlite-server/src/team_merge_patch.rs
     - crates/betterlite-server/src/team_merge_patch/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/routes.rs
     - crates/betterlite-server/src/routes/**
     - crates/betterlite-server/src/state.rs

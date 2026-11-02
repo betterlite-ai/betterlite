@@ -142,7 +142,6 @@ scope:
   paths:
     - crates/betterlite-server/src/user_bulk_create.rs
     - crates/betterlite-server/src/user_bulk_create/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/src/helpers/server/user_bulk_create.rs
     - tools/oracle/src/helpers/server/user_bulk_create/**
@@ -151,6 +150,7 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/user-bulk-create/**
     - tools/oracle/fuzz/corpus/helper_case/user-bulk-create-*
+    - crates/betterlite-server/src/user_bulk_create/fixtures.rs
     - crates/betterlite-server/src/user_bulk_create/fixtures/**
   lint_tables: false
 references:

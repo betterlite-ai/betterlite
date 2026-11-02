@@ -85,7 +85,6 @@ scope:
   paths:
     - crates/betterlite-server/src/key_event_sinks.rs
     - crates/betterlite-server/src/key_event_sinks/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/src/helpers/server/key_event_sinks.rs
     - tools/oracle/src/helpers/server/key_event_sinks/**

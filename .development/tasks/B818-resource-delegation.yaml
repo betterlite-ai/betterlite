@@ -79,7 +79,6 @@ scope:
   paths:
     - crates/betterlite-server/src/resource_delegation.rs
     - crates/betterlite-server/src/resource_delegation/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/src/helpers/server/resource_delegation.rs
     - tools/oracle/src/helpers/server/resource_delegation/**

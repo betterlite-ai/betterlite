@@ -30,7 +30,6 @@ description: >-
 scope:
   paths:
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/scim_user_lifecycle.rs
     - crates/betterlite-server/src/scim_user_lifecycle/**
     - crates/betterlite-server/fuzz/corpus/scim_resource/user-lifecycle-*
