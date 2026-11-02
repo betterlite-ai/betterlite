@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
+use std::sync::LazyLock;
 
 use fancy_regex::Regex;
 use serde::Deserialize;
@@ -53,7 +54,7 @@ struct PatternEntry {
     extra: PatternExtraConfig,
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct PatternCatalog {
     pub names: Vec<String>,
     pub metadata: Vec<PatternMetadata>,
@@ -63,6 +64,9 @@ pub struct PatternCatalog {
     pub descriptions: BTreeMap<String, String>,
     pub extra_config: BTreeMap<String, PatternExtraConfig>,
 }
+
+static PATTERN_CATALOG: LazyLock<Result<PatternCatalog, PatternCatalogError>> =
+    LazyLock::new(build_pattern_catalog);
 
 fn load_patterns() -> Result<Vec<PatternEntry>, PatternCatalogError> {
     let path = Path::new(DATA_DIR).join("patterns.json");
@@ -77,47 +81,48 @@ fn load_patterns() -> Result<Vec<PatternEntry>, PatternCatalogError> {
 }
 
 pub fn get_compiled_pattern(pattern_name: &str) -> Result<Regex, PatternCatalogError> {
-    let patterns = load_patterns()?;
-    let Some(entry) = patterns.iter().find(|entry| entry.name == pattern_name) else {
-        let available = patterns
-            .iter()
-            .map(|entry| entry.name.as_str())
-            .collect::<Vec<_>>()
-            .join(", ");
+    let catalog = pattern_catalog()?;
+    let Some(pattern) = catalog.patterns.get(pattern_name) else {
         return Err(PatternCatalogError::UnknownPattern {
             name: pattern_name.to_owned(),
-            available,
+            available: catalog.names.join(", "),
         });
     };
-    Regex::new(&format!("(?i){}", entry.pattern)).map_err(|source| PatternCatalogError::Compile {
+    Regex::new(&format!("(?i){pattern}")).map_err(|source| PatternCatalogError::Compile {
         name: pattern_name.to_owned(),
         message: source.to_string(),
     })
 }
 
 pub fn get_all_pattern_names() -> Result<Vec<String>, PatternCatalogError> {
-    let patterns = load_patterns()?;
-    let mut names = Vec::with_capacity(patterns.len());
-    for entry in patterns {
-        names.push(entry.name);
+    match pattern_catalog() {
+        Ok(catalog) => Ok(catalog.names.clone()),
+        Err(error) => Err(error),
     }
-    Ok(names)
 }
 
 pub fn get_pattern_metadata() -> Result<Vec<PatternMetadata>, PatternCatalogError> {
-    let patterns = load_patterns()?;
-    Ok(patterns
-        .into_iter()
-        .map(|entry| PatternMetadata {
-            name: entry.name,
-            display_name: entry.display_name,
-            category: entry.category,
-            description: entry.description,
-        })
-        .collect())
+    match pattern_catalog() {
+        Ok(catalog) => Ok(catalog.metadata.clone()),
+        Err(error) => Err(error),
+    }
 }
 
 pub fn get_pattern_catalog() -> Result<PatternCatalog, PatternCatalogError> {
+    match pattern_catalog() {
+        Ok(catalog) => Ok(catalog.clone()),
+        Err(error) => Err(error),
+    }
+}
+
+fn pattern_catalog() -> Result<&'static PatternCatalog, PatternCatalogError> {
+    match PATTERN_CATALOG.as_ref() {
+        Ok(catalog) => Ok(catalog),
+        Err(error) => Err(error.clone()),
+    }
+}
+
+fn build_pattern_catalog() -> Result<PatternCatalog, PatternCatalogError> {
     let entries = load_patterns()?;
     let mut names = Vec::with_capacity(entries.len());
     let mut metadata = Vec::with_capacity(entries.len());
@@ -155,22 +160,17 @@ pub fn get_pattern_catalog() -> Result<PatternCatalog, PatternCatalogError> {
 }
 
 pub fn pattern_categories() -> Result<BTreeMap<String, Vec<String>>, PatternCatalogError> {
-    let patterns = load_patterns()?;
-    let mut categories: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for entry in patterns {
-        categories
-            .entry(entry.category)
-            .or_default()
-            .push(entry.name);
+    match pattern_catalog() {
+        Ok(catalog) => Ok(catalog.categories.clone()),
+        Err(error) => Err(error),
     }
-    Ok(categories)
 }
 
 pub fn pattern_extra_config() -> Result<BTreeMap<String, PatternExtraConfig>, PatternCatalogError> {
-    Ok(load_patterns()?
-        .into_iter()
-        .map(|entry| (entry.name, entry.extra))
-        .collect())
+    match pattern_catalog() {
+        Ok(catalog) => Ok(catalog.extra_config.clone()),
+        Err(error) => Err(error),
+    }
 }
 
 mod tests;
