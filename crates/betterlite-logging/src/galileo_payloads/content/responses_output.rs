@@ -30,38 +30,49 @@ fn required_then_typed(
     Some(Json::Object(ordered))
 }
 
+// A list-typed field whose own shape invalidates the whole item unless every element parses under `project`, such as ResponseOutputMessage.content or ResponseReasoningItem.summary.
+fn project_part_list<F>(list: &Json, project: F) -> Option<Vec<Json>>
+where
+    F: Fn(&IndexMap<String, Json>) -> Option<Json>,
+{
+    let Json::List(parts) = list else {
+        return None;
+    };
+    let mut projected = Vec::with_capacity(parts.len());
+    for part in parts {
+        let Json::Object(part_fields) = part else {
+            return None;
+        };
+        projected.push(project(part_fields)?);
+    }
+    Some(projected)
+}
+
+// openai.types.responses.ResponseOutputText.model_dump() field order (annotations, text, type, logprobs) or openai.types.responses.ResponseOutputRefusal.model_dump() field order (refusal, type), picked by the part's own type tag; a part whose type is neither isn't a valid Content union member.
+fn output_content_part_dump(part_fields: &IndexMap<String, Json>) -> Option<Json> {
+    match part_fields.get("type") {
+        Some(Json::Text(kind)) if kind == "output_text" => required_then_typed(
+            part_fields,
+            &["annotations", "text"],
+            "output_text",
+            &["logprobs"],
+        ),
+        Some(Json::Text(kind)) if kind == "refusal" => {
+            required_then_typed(part_fields, &["refusal"], "refusal", &[])
+        }
+        _ => None,
+    }
+}
+
 // openai.types.responses.ResponseOutputMessage.model_dump() field order (id, content, role, status, type, phase); id, content, role and status have no default, so an item missing any of them, or whose content holds anything but output_text or refusal parts, isn't a valid ResponseOutputMessage.
 fn output_message_item_dump(fields: &IndexMap<String, Json>) -> Option<Json> {
     let id = fields.get("id")?.clone();
     let role = fields.get("role")?.clone();
     let status = fields.get("status")?.clone();
-    let Some(Json::List(parts)) = fields.get("content") else {
-        return None;
-    };
-    let mut projected_parts = Vec::with_capacity(parts.len());
-    for part in parts {
-        let Json::Object(part_fields) = part else {
-            return None;
-        };
-        let projected_part = match part_fields.get("type") {
-            // openai.types.responses.ResponseOutputText.model_dump() field order (annotations, text, type, logprobs); annotations and text have no default, so a part missing either isn't a valid ResponseOutputText.
-            Some(Json::Text(kind)) if kind == "output_text" => required_then_typed(
-                part_fields,
-                &["annotations", "text"],
-                "output_text",
-                &["logprobs"],
-            )?,
-            // openai.types.responses.ResponseOutputRefusal.model_dump() field order (refusal, type); refusal has no default, so a part missing it isn't a valid ResponseOutputRefusal.
-            Some(Json::Text(kind)) if kind == "refusal" => {
-                required_then_typed(part_fields, &["refusal"], "refusal", &[])?
-            }
-            _ => return None,
-        };
-        projected_parts.push(projected_part);
-    }
+    let content = project_part_list(fields.get("content")?, output_content_part_dump)?;
     let mut ordered = IndexMap::new();
     ordered.insert("id".to_owned(), id);
-    ordered.insert("content".to_owned(), Json::List(projected_parts));
+    ordered.insert("content".to_owned(), Json::List(content));
     ordered.insert("role".to_owned(), role);
     ordered.insert("status".to_owned(), status);
     ordered.insert("type".to_owned(), Json::Text("message".to_owned()));
@@ -82,21 +93,9 @@ fn output_function_call_dump(fields: &IndexMap<String, Json>) -> Option<Json> {
 // openai.types.responses.ResponseReasoningItem.model_dump() field order (id, summary, type, content, encrypted_content, status); id and summary have no default, so an item missing either isn't a valid ResponseReasoningItem. Each summary entry is a Summary (text, type), with text required.
 fn output_reasoning_item_dump(fields: &IndexMap<String, Json>) -> Option<Json> {
     let id = fields.get("id")?.clone();
-    let Some(Json::List(summary_items)) = fields.get("summary") else {
-        return None;
-    };
-    let mut summary = Vec::with_capacity(summary_items.len());
-    for summary_item in summary_items {
-        let Json::Object(summary_fields) = summary_item else {
-            return None;
-        };
-        summary.push(required_then_typed(
-            summary_fields,
-            &["text"],
-            "summary_text",
-            &[],
-        )?);
-    }
+    let summary = project_part_list(fields.get("summary")?, |summary_fields| {
+        required_then_typed(summary_fields, &["text"], "summary_text", &[])
+    })?;
     let mut ordered = IndexMap::new();
     ordered.insert("id".to_owned(), id);
     ordered.insert("summary".to_owned(), Json::List(summary));
