@@ -11,7 +11,7 @@ use tower::ServiceExt as _;
 use super::catalog::{agent_fields, raw_agent_catalog};
 use super::error::AgentFieldsError;
 use super::types::{AgentCreateInfo, RawAgentCreateInfo};
-use super::{AGENT_FIELDS_PATH, AgentFieldsState, agent_fields_routes, get_agent_fields};
+use super::{AgentFieldsState, agent_fields_routes, get_agent_fields};
 
 #[test]
 fn agent_fields_returns_all_eight_agents_in_source_order() {
@@ -157,7 +157,9 @@ async fn get_agent_fields_handler_returns_the_full_catalog() {
 #[tokio::test]
 async fn agent_fields_path_serves_the_full_catalog_through_a_router() {
     let router = agent_fields_routes();
-    let request = Request::get(AGENT_FIELDS_PATH).body(Body::empty()).unwrap();
+    let request = Request::get("/public/agents/fields")
+        .body(Body::empty())
+        .unwrap();
     let response = router.oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
