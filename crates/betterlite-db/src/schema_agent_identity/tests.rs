@@ -1,5 +1,4 @@
 #![cfg(test)]
-
 include!("tests/support.rs");
 include!("tests/pinned_sql_checksums.rs");
 include!("tests/postgres_catalog.rs");

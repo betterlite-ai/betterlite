@@ -14,25 +14,12 @@ enum IdentityDefaultsCohort {
     IdentityParentUpdatesCascade,
     NoAutomaticRetiredRecord,
 }
-
 async fn insert_agent(client: &Client, id: &str) {
-    exec_params(
-        client,
-        r#"INSERT INTO "LiteLLM_AgentsTable" (agent_id, agent_name, agent_card_params, created_by, updated_by) VALUES ($1, $1, '{}', $2, $2)"#,
-        &[&id, &"operator"],
-    )
-    .await;
+    exec_params(client, r#"INSERT INTO "LiteLLM_AgentsTable" (agent_id, agent_name, agent_card_params, created_by, updated_by) VALUES ($1, $1, '{}', $2, $2)"#, &[&id, &"operator"]).await;
 }
-
 async fn insert_identity(client: &Client, agent_id: &str, provider: &str, tuple: &str) {
-    exec_params(
-        client,
-        r#"INSERT INTO "LiteLLM_AgentIdentity" (agent_id, provider, issuer, tenant_id, client_id, revision) VALUES ($1, $2, $3, $3, $3, 'rev-1')"#,
-        &[&agent_id, &provider, &tuple],
-    )
-    .await;
+    exec_params(client, r#"INSERT INTO "LiteLLM_AgentIdentity" (agent_id, provider, issuer, tenant_id, client_id, revision) VALUES ($1, $2, $3, $3, $3, 'rev-1')"#, &[&agent_id, &provider, &tuple]).await;
 }
-
 async fn check_agent_enabled_autonomous_unmanaged(client: &Client) {
     insert_agent(client, "agent-a").await;
     assert_columns(
@@ -46,7 +33,6 @@ async fn check_agent_enabled_autonomous_unmanaged(client: &Client) {
     )
     .await;
 }
-
 async fn check_billing_agent_and_kill_switch_nullable(client: &Client) {
     insert_agent(client, "agent-b").await;
     assert_column(client, "LiteLLM_AgentsTable", nullable_jsonb("kill_switch")).await;
@@ -62,7 +48,6 @@ async fn check_billing_agent_and_kill_switch_nullable(client: &Client) {
     )
     .await;
 }
-
 async fn check_identity_active_and_nullable_role_scope_defaults(client: &Client) {
     insert_agent(client, "agent-c").await;
     insert_identity(client, "agent-c", "azure-ad", "tuple-c").await;
@@ -72,12 +57,11 @@ async fn check_identity_active_and_nullable_role_scope_defaults(client: &Client)
         &[
             bool_true("active"),
             nullable_text_array("required_roles", "ARRAY[]::text[]"),
-            nullable_text_array("required_scopes", "ARRAY['user_impersonation']::text[]"),
+            nullable_text_array("required_scopes", "ARRAY['user_impersonation'::text]"),
         ],
     )
     .await;
 }
-
 async fn check_identity_provider_tuple_unique(client: &Client) {
     insert_agent(client, "agent-d1").await;
     insert_agent(client, "agent-d2").await;
@@ -90,7 +74,6 @@ async fn check_identity_provider_tuple_unique(client: &Client) {
     )
     .await;
 }
-
 async fn check_issuer_principal_unique_with_nulls(client: &Client) {
     for suffix in ["e1", "e2", "e3", "e4"] {
         insert_agent(client, &format!("agent-{suffix}")).await;
@@ -115,7 +98,6 @@ async fn check_issuer_principal_unique_with_nulls(client: &Client) {
     )
     .await;
 }
-
 async fn check_live_and_retired_tuple_uniqueness_separate(client: &Client) {
     insert_agent(client, "agent-f").await;
     insert_identity(client, "agent-f", "github", "tuple-f").await;
@@ -133,7 +115,6 @@ async fn check_live_and_retired_tuple_uniqueness_separate(client: &Client) {
     .await;
     assert_eq!(provider, "github");
 }
-
 async fn check_retired_timestamp_no_agent_fk(client: &Client) {
     exec_params(
         client,
@@ -148,7 +129,6 @@ async fn check_retired_timestamp_no_agent_fk(client: &Client) {
     )
     .await;
 }
-
 async fn check_verified_human_interactive_defaults_and_unique_subject(client: &Client) {
     exec_params(
         client,
@@ -180,7 +160,6 @@ async fn check_verified_human_interactive_defaults_and_unique_subject(client: &C
     )
     .await;
 }
-
 async fn check_text_defaults_not_enum_checks(client: &Client) {
     exec_params(
         client,
@@ -209,7 +188,6 @@ async fn check_text_defaults_not_enum_checks(client: &Client) {
     .await;
     assert_eq!(kind, "anything-goes");
 }
-
 async fn check_agent_delete_live_cascade_retired_set_null(client: &Client) {
     insert_agent(client, "agent-i").await;
     insert_identity(client, "agent-i", "slack", "tuple-i").await;
@@ -240,7 +218,6 @@ async fn check_agent_delete_live_cascade_retired_set_null(client: &Client) {
     .await;
     assert_eq!(retired_agent_id, None);
 }
-
 async fn check_user_delete_subject_cascade(client: &Client) {
     exec_params(
         client,
@@ -268,7 +245,6 @@ async fn check_user_delete_subject_cascade(client: &Client) {
     .await;
     assert!(subject.is_none());
 }
-
 async fn check_identity_parent_updates_cascade(client: &Client) {
     assert_rule(client, "LiteLLM_AgentIdentity_agent_id_fkey", 'c', 'c').await;
     assert_rule(
@@ -302,7 +278,6 @@ async fn check_identity_parent_updates_cascade(client: &Client) {
     .await;
     assert_eq!(renamed, "agent-k-renamed");
 }
-
 async fn check_no_automatic_retired_record(client: &Client) {
     insert_agent(client, "agent-l").await;
     exec_params(
@@ -319,7 +294,6 @@ async fn check_no_automatic_retired_record(client: &Client) {
     .await;
     assert!(retired.is_none());
 }
-
 fn identity_defaults_checkpoint(cohort: IdentityDefaultsCohort) -> &'static str {
     if matches!(
         cohort,
@@ -330,7 +304,6 @@ fn identity_defaults_checkpoint(cohort: IdentityDefaultsCohort) -> &'static str 
         AGENT_IDENTITY.directory
     }
 }
-
 async fn run_identity_defaults_check(client: &Client, cohort: IdentityDefaultsCohort) {
     use IdentityDefaultsCohort::*;
     apply_migrations_through(client, identity_defaults_checkpoint(cohort)).await;
@@ -365,7 +338,6 @@ async fn run_identity_defaults_check(client: &Client, cohort: IdentityDefaultsCo
     };
     check.await;
 }
-
 #[rstest]
 #[case::agent_enabled_autonomous_unmanaged(IdentityDefaultsCohort::AgentEnabledAutonomousUnmanaged)]
 #[case::billing_agent_and_kill_switch_nullable(

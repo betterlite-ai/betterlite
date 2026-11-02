@@ -11,7 +11,6 @@ enum UsageAndLensCohort {
     RenameExistingDestinationError,
     LateIndexCollisionRollsBackDo,
 }
-
 async fn assert_lens_renamed(client: &Client) {
     for name in ["LiteLLM_Lens", "LiteLLM_LensRun", "LiteLLM_LensWorker"] {
         assert!(relation_exists(client, name).await, "{name} missing");
@@ -32,9 +31,8 @@ async fn assert_lens_renamed(client: &Client) {
     ] {
         assert!(relation_exists(client, name).await, "{name} missing");
     }
-    assert_column(client, "LiteLLM_LensRun", nullable_text("lens_id")).await;
+    assert_column(client, "LiteLLM_LensRun", required_text("lens_id")).await;
 }
-
 async fn check_pinned_tools_nullable_empty_object(client: &Client) {
     exec_params(
         client,
@@ -49,7 +47,6 @@ async fn check_pinned_tools_nullable_empty_object(client: &Client) {
     )
     .await;
 }
-
 async fn check_daily_model_five_counters_zero_required_dimensions_and_updated_at(client: &Client) {
     exec_params(
         client,
@@ -73,7 +70,6 @@ async fn check_daily_model_five_counters_zero_required_dimensions_and_updated_at
     )
     .await;
 }
-
 async fn check_engine_zero_version_required_json(client: &Client) {
     exec_params(
         client,
@@ -91,7 +87,6 @@ async fn check_engine_zero_version_required_json(client: &Client) {
     )
     .await;
 }
-
 async fn check_worker_unique_hash_unchanged(client: &Client) {
     exec_params(
         client,
@@ -114,7 +109,6 @@ async fn check_worker_unique_hash_unchanged(client: &Client) {
     .await;
     assert_eq!(token_hash, "hash-a");
 }
-
 async fn check_engine_run_required_created_at_without_fk(client: &Client) {
     exec_params(
         client,
@@ -124,7 +118,6 @@ async fn check_engine_run_required_created_at_without_fk(client: &Client) {
     .await;
     assert_column(client, "LiteLLM_EngineRun", timestamp3("created_at", None)).await;
 }
-
 async fn insert_rename_fixture_rows(client: &Client) {
     exec_params(
         client,
@@ -145,7 +138,6 @@ async fn insert_rename_fixture_rows(client: &Client) {
     )
     .await;
 }
-
 async fn capture_pre_rename_oids(client: &Client) -> (String, String, String, String) {
     (
         relation_oid(client, "LiteLLM_Engine").await,
@@ -154,7 +146,6 @@ async fn capture_pre_rename_oids(client: &Client) -> (String, String, String, St
         relation_oid(client, "LiteLLM_EngineWorker_token_hash_key").await,
     )
 }
-
 async fn assert_rename_preserved_oids(client: &Client, before: (String, String, String, String)) {
     assert_eq!(before.0, relation_oid(client, "LiteLLM_Lens").await);
     assert_eq!(before.1, relation_oid(client, "LiteLLM_LensRun").await);
@@ -164,7 +155,6 @@ async fn assert_rename_preserved_oids(client: &Client, before: (String, String, 
         relation_oid(client, "LiteLLM_LensWorker_token_hash_key").await
     );
 }
-
 async fn assert_rename_preserved_rows(client: &Client) {
     let version: i32 = query_one_row(
         client,
@@ -192,7 +182,6 @@ async fn assert_rename_preserved_rows(client: &Client) {
     .await;
     assert_eq!(token_hash, "hash-b");
 }
-
 async fn check_rename_preserves_oids_rows_and_hash_bytes(client: &Client) {
     insert_rename_fixture_rows(client).await;
     let before = capture_pre_rename_oids(client).await;
@@ -200,21 +189,18 @@ async fn check_rename_preserves_oids_rows_and_hash_bytes(client: &Client) {
     assert_rename_preserved_oids(client, before).await;
     assert_rename_preserved_rows(client).await;
 }
-
 async fn check_rename_already_final_noop(client: &Client) {
     batch_execute(client, migration_sql_of(RENAME_LENS.directory)).await;
     let before = catalog_snapshot(client).await;
     batch_execute(client, migration_sql_of(RENAME_LENS.directory)).await;
     assert_eq!(before, catalog_snapshot(client).await);
 }
-
 async fn check_rename_existing_destination_error(client: &Client) {
     batch_execute(client, r#"CREATE TABLE "LiteLLM_Lens" (id INT);"#).await;
     batch_execute_err(client, migration_sql_of(RENAME_LENS.directory)).await;
     assert!(relation_exists(client, "LiteLLM_Engine").await);
     assert!(!relation_exists(client, "LiteLLM_LensRun").await);
 }
-
 async fn check_late_index_collision_rolls_back_do(client: &Client) {
     batch_execute(
         client,
@@ -228,7 +214,6 @@ async fn check_late_index_collision_rolls_back_do(client: &Client) {
     assert!(relation_exists(client, "LiteLLM_EngineWorker").await);
     assert!(!relation_exists(client, "LiteLLM_Lens").await);
 }
-
 fn usage_and_lens_checkpoint(cohort: UsageAndLensCohort) -> &'static str {
     use UsageAndLensCohort::*;
     match cohort {
@@ -243,7 +228,6 @@ fn usage_and_lens_checkpoint(cohort: UsageAndLensCohort) -> &'static str {
         | LateIndexCollisionRollsBackDo => LENS_RUN_HISTORY.directory,
     }
 }
-
 async fn run_usage_and_lens_check(client: &Client, cohort: UsageAndLensCohort) {
     use UsageAndLensCohort::*;
     apply_migrations_through(client, usage_and_lens_checkpoint(cohort)).await;
@@ -269,7 +253,6 @@ async fn run_usage_and_lens_check(client: &Client, cohort: UsageAndLensCohort) {
     };
     check.await;
 }
-
 #[rstest]
 #[case::pinned_tools_nullable_empty_object(UsageAndLensCohort::PinnedToolsNullableEmptyObject)]
 #[case::daily_model_five_counters_zero_required_dimensions_and_updated_at(

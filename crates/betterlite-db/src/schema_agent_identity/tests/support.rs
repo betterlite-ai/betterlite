@@ -1,5 +1,3 @@
-use std::pin::Pin;
-
 use crate::schema_agent_identity::fixtures::PINNED_MIGRATION_CATALOG;
 use crate::schema_agent_identity::migrations::*;
 use crate::schema_agent_identity::*;
@@ -18,6 +16,7 @@ use futures_util::future::join_all;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use std::future::Future;
+use std::pin::Pin;
 use std::str;
 use std::time::Duration;
 use tokio::task::{JoinError, JoinSet};
@@ -26,26 +25,21 @@ use tokio::time::timeout;
 use tokio_postgres::error::SqlState;
 use tokio_postgres::types::ToSql;
 use tokio_postgres::{CancelToken, Client, Row};
-
 #[derive(Parser)]
 struct Environment {
     #[arg(long, env = "POSTGRES_TEST_URL")]
     url: Option<String>,
 }
-
 fn postgres_test_url() -> Option<SecretString> {
     Environment::parse_from(["schema-agent-identity"])
         .url
         .map(SecretString::from)
 }
-
 type ConnectionTasks = JoinSet<Result<(), tokio_postgres::Error>>;
-
 const RESET_PUBLIC_SCHEMA_SQL: &str = "DROP SCHEMA public CASCADE; CREATE SCHEMA public;";
 const SETUP_TIMEOUT: Duration = Duration::from_secs(30);
 const BODY_TIMEOUT: Duration = Duration::from_secs(30);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
-
 #[derive(Debug, thiserror::Error)]
 enum HarnessError {
     #[error("fixture operation timed out: {0}")]
@@ -57,7 +51,6 @@ enum HarnessError {
     #[error("test body failed: {0}")]
     Body(#[from] JoinError),
 }
-
 async fn provision() -> Result<PostgresFixture, HarnessError> {
     let url = postgres_test_url();
     let mut generator = RandomDatabaseName;
@@ -75,7 +68,6 @@ async fn provision() -> Result<PostgresFixture, HarnessError> {
     }
     result
 }
-
 async fn provision_all<const N: usize>() -> [PostgresFixture; N] {
     let mut fixtures = Vec::with_capacity(N);
     for _ in 0..N {
@@ -89,7 +81,6 @@ async fn provision_all<const N: usize>() -> [PostgresFixture; N] {
     }
     fixtures.try_into().unwrap()
 }
-
 async fn initialize_schema(
     fixture: &PostgresFixture,
     sql: &str,
@@ -118,7 +109,6 @@ async fn initialize_schema(
         }
     }
 }
-
 async fn initialize_all(
     fixtures: &[PostgresFixture],
     connections: &mut Vec<ConnectionTasks>,
@@ -132,7 +122,6 @@ async fn initialize_all(
     }
     Ok(clients)
 }
-
 async fn cancel_queries(tokens: &[CancelToken]) -> Result<(), HarnessError> {
     let results = join_all(
         tokens
@@ -145,7 +134,6 @@ async fn cancel_queries(tokens: &[CancelToken]) -> Result<(), HarnessError> {
     }
     Ok(())
 }
-
 async fn drain_connection(mut tasks: ConnectionTasks) -> Result<(), HarnessError> {
     let result = timeout(SHUTDOWN_TIMEOUT, async {
         while let Some(outcome) = tasks.join_next().await {
@@ -157,7 +145,6 @@ async fn drain_connection(mut tasks: ConnectionTasks) -> Result<(), HarnessError
     timeout(SHUTDOWN_TIMEOUT, tasks.shutdown()).await?;
     result?
 }
-
 async fn close_fixtures(fixtures: Vec<PostgresFixture>) {
     let outcomes = join_all(
         fixtures
@@ -169,7 +156,6 @@ async fn close_fixtures(fixtures: Vec<PostgresFixture>) {
         outcome.unwrap().unwrap();
     }
 }
-
 async fn run_body<Fut>(body: Fut, duration: Duration) -> Result<(), HarnessError>
 where
     Fut: Future<Output = ()> + Send + 'static,
@@ -180,7 +166,6 @@ where
     timeout(SHUTDOWN_TIMEOUT, bodies.shutdown()).await?;
     result?.unwrap().map_err(HarnessError::Body)
 }
-
 async fn harness_on<const N: usize, F, Fut>(
     fixtures: [PostgresFixture; N],
     body: F,
@@ -218,7 +203,6 @@ where
     }
     outcome
 }
-
 async fn harness<const N: usize, F, Fut>(body: F)
 where
     F: FnOnce([Client; N]) -> Fut + Send + 'static,
@@ -229,19 +213,15 @@ where
         .await
         .unwrap();
 }
-
 async fn batch_execute(client: &Client, sql: &str) {
     client.batch_execute(sql).await.unwrap();
 }
-
 async fn batch_execute_err(client: &Client, sql: &str) -> tokio_postgres::Error {
     client.batch_execute(sql).await.unwrap_err()
 }
-
 async fn exec_params(client: &Client, sql: &str, params: &[&(dyn ToSql + Sync)]) {
     client.execute(sql, params).await.unwrap();
 }
-
 async fn exec_params_err(
     client: &Client,
     sql: &str,
@@ -249,11 +229,9 @@ async fn exec_params_err(
 ) -> tokio_postgres::Error {
     client.execute(sql, params).await.unwrap_err()
 }
-
 async fn scalar_text(client: &Client, sql: &str, params: &[&(dyn ToSql + Sync)]) -> String {
     client.query_one(sql, params).await.unwrap().get(0)
 }
-
 async fn scalar_opt_text(
     client: &Client,
     sql: &str,
@@ -261,7 +239,6 @@ async fn scalar_opt_text(
 ) -> Option<String> {
     client.query_one(sql, params).await.unwrap().get(0)
 }
-
 async fn relation_oid(client: &Client, name: &str) -> String {
     scalar_text(
         client,
@@ -270,15 +247,13 @@ async fn relation_oid(client: &Client, name: &str) -> String {
     )
     .await
 }
-
 async fn relation_exists(client: &Client, name: &str) -> bool {
-    let rows = client
+    !client
         .query("SELECT 1 FROM pg_class WHERE relname = $1", &[&name])
         .await
-        .unwrap();
-    !rows.is_empty()
+        .unwrap()
+        .is_empty()
 }
-
 struct ColumnInfo {
     data_type: String,
     is_nullable: bool,
@@ -286,7 +261,6 @@ struct ColumnInfo {
     udt_name: String,
     datetime_precision: Option<i32>,
 }
-
 async fn column(client: &Client, table: &str, name: &str) -> ColumnInfo {
     let rows = columns_in(client, table).await;
     let row = rows
@@ -301,7 +275,6 @@ async fn column(client: &Client, table: &str, name: &str) -> ColumnInfo {
         datetime_precision: row.get(6),
     }
 }
-
 async fn columns_in(client: &Client, table: &str) -> Vec<Row> {
     client
         .query(
@@ -314,15 +287,12 @@ async fn columns_in(client: &Client, table: &str) -> Vec<Row> {
         .await
         .unwrap()
 }
-
 async fn query_one_row(client: &Client, sql: &str, params: &[&(dyn ToSql + Sync)]) -> Row {
     client.query_one(sql, params).await.unwrap()
 }
-
 async fn query_opt_row(client: &Client, sql: &str, params: &[&(dyn ToSql + Sync)]) -> Option<Row> {
     client.query_opt(sql, params).await.unwrap()
 }
-
 async fn string_rows(client: &Client, sql: &str, params: &[&(dyn ToSql + Sync)]) -> Vec<String> {
     let rows = client.query(sql, params).await.unwrap();
     let mut values = Vec::with_capacity(rows.len());
@@ -331,7 +301,6 @@ async fn string_rows(client: &Client, sql: &str, params: &[&(dyn ToSql + Sync)])
     }
     values
 }
-
 type ColumnSpec = (
     &'static str,
     &'static str,
@@ -341,6 +310,20 @@ type ColumnSpec = (
     Option<i32>,
 );
 
+macro_rules! fixed_column_spec {
+    ($name:ident, $data_type:literal, $nullable:expr, $default:expr, $udt_name:literal) => {
+        fn $name(name: &'static str) -> ColumnSpec {
+            (name, $data_type, $nullable, $default, $udt_name, None)
+        }
+    };
+}
+macro_rules! default_column_spec {
+    ($name:ident, $data_type:literal, $nullable:expr, $udt_name:literal) => {
+        fn $name(name: &'static str, default: &'static str) -> ColumnSpec {
+            (name, $data_type, $nullable, Some(default), $udt_name, None)
+        }
+    };
+}
 async fn assert_column(client: &Client, table: &str, spec: ColumnSpec) {
     let (name, data_type, nullable, default, udt_name, datetime_precision) = spec;
     let info = column(client, table, name).await;
@@ -353,53 +336,34 @@ async fn assert_column(client: &Client, table: &str, spec: ColumnSpec) {
         "{table}.{name} datetime_precision"
     );
 }
-
 async fn assert_columns(client: &Client, table: &str, specs: &[ColumnSpec]) {
     for spec in specs {
         assert_column(client, table, *spec).await;
     }
 }
-
-fn bool_true(name: &'static str) -> ColumnSpec {
-    (name, "boolean", false, Some("true"), "bool", None)
-}
-
-fn bool_false(name: &'static str) -> ColumnSpec {
-    (name, "boolean", false, Some("false"), "bool", None)
-}
-
-fn text_default(name: &'static str, default: &'static str) -> ColumnSpec {
-    (name, "text", false, Some(default), "text", None)
-}
-
-fn nullable_text(name: &'static str) -> ColumnSpec {
-    (name, "text", true, None, "text", None)
-}
-
-fn nullable_text_array(name: &'static str, default: &'static str) -> ColumnSpec {
-    (name, "ARRAY", true, Some(default), "_text", None)
-}
-
-fn nullable_jsonb(name: &'static str) -> ColumnSpec {
-    (name, "jsonb", true, None, "jsonb", None)
-}
-
-fn nullable_empty_jsonb(name: &'static str) -> ColumnSpec {
-    (name, "jsonb", true, Some("'{}'::jsonb"), "jsonb", None)
-}
-
-fn int4_zero(name: &'static str) -> ColumnSpec {
-    (name, "integer", false, Some("0"), "int4", None)
-}
-
-fn int8_zero(name: &'static str) -> ColumnSpec {
-    (name, "bigint", false, Some("0"), "int8", None)
-}
-
-fn float8_zero(name: &'static str) -> ColumnSpec {
-    (name, "double precision", false, Some("0.0"), "float8", None)
-}
-
+fixed_column_spec!(bool_true, "boolean", false, Some("true"), "bool");
+fixed_column_spec!(bool_false, "boolean", false, Some("false"), "bool");
+fixed_column_spec!(nullable_text, "text", true, None, "text");
+fixed_column_spec!(required_text, "text", false, None, "text");
+fixed_column_spec!(nullable_jsonb, "jsonb", true, None, "jsonb");
+fixed_column_spec!(
+    nullable_empty_jsonb,
+    "jsonb",
+    true,
+    Some("'{}'::jsonb"),
+    "jsonb"
+);
+fixed_column_spec!(int4_zero, "integer", false, Some("0"), "int4");
+fixed_column_spec!(int8_zero, "bigint", false, Some("0"), "int8");
+fixed_column_spec!(
+    float8_zero,
+    "double precision",
+    false,
+    Some("0.0"),
+    "float8"
+);
+default_column_spec!(text_default, "text", false, "text");
+default_column_spec!(nullable_text_array, "ARRAY", true, "_text");
 fn timestamp3(name: &'static str, default: Option<&'static str>) -> ColumnSpec {
     (
         name,
@@ -410,17 +374,17 @@ fn timestamp3(name: &'static str, default: Option<&'static str>) -> ColumnSpec {
         Some(3_i32),
     )
 }
-
 async fn assert_exec_params_err_state(
     client: &Client,
     sql: &str,
     params: &[&(dyn ToSql + Sync)],
     code: SqlState,
 ) {
-    let result = exec_params_err(client, sql, params).await;
-    assert_eq!(sql_state(&result), code.code());
+    assert_eq!(
+        sql_state(&exec_params_err(client, sql, params).await),
+        code.code()
+    );
 }
-
 async fn catalog_snapshot(client: &Client) -> Vec<String> {
     let mut snapshot = string_rows(
         client,
@@ -450,7 +414,6 @@ async fn catalog_snapshot(client: &Client) -> Vec<String> {
     snapshot.append(&mut constraints);
     snapshot
 }
-
 async fn assert_rule(client: &Client, conname: &str, update_rule: char, delete_rule: char) {
     let row = query_one_row(
         client,
@@ -463,11 +426,9 @@ async fn assert_rule(client: &Client, conname: &str, update_rule: char, delete_r
     assert_eq!(char::from(u8::try_from(update).unwrap()), update_rule);
     assert_eq!(char::from(u8::try_from(delete).unwrap()), delete_rule);
 }
-
 fn sql_state(error: &tokio_postgres::Error) -> &str {
     error.code().map_or("", SqlState::code)
 }
-
 async fn apply_baseline(client: &Client) {
     batch_execute(client, str::from_utf8(BASELINE_MIGRATION.bytes).unwrap()).await;
     for catalog in [
@@ -483,7 +444,6 @@ async fn apply_baseline(client: &Client) {
         }
     }
 }
-
 async fn apply_migrations_through(client: &Client, directory: &str) {
     apply_baseline(client).await;
     for file in MIGRATION_CATALOG.files {
@@ -494,19 +454,16 @@ async fn apply_migrations_through(client: &Client, directory: &str) {
     }
     panic!("no migration named {directory} in MIGRATION_CATALOG");
 }
-
 async fn apply_migrations_all(client: &Client) {
     let last = MIGRATION_CATALOG.files.last().unwrap();
     apply_migrations_through(client, last.directory).await;
 }
-
 async fn apply_pinned_migrations_all(client: &Client) {
     apply_baseline(client).await;
     for file in PINNED_MIGRATION_CATALOG.files {
         batch_execute(client, str::from_utf8(file.bytes).unwrap()).await;
     }
 }
-
 fn migration_sql_of(directory: &str) -> &'static str {
     let file = MIGRATION_CATALOG
         .files
