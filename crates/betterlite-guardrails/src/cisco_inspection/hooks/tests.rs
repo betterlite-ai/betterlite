@@ -45,10 +45,7 @@ fn guardrail(inspection_type: InspectionType, api_base: String) -> CiscoInspecti
         integration_tenant_id: None,
         integration_type: None,
     };
-    CiscoInspectionGuardrail {
-        settings,
-        client: reqwest::Client::default(),
-    }
+    CiscoInspectionGuardrail::new(settings).expect("default TLS backend builds a client")
 }
 
 async fn serve(status: StatusCode, body: Vec<u8>) -> (String, JoinSet<io::Result<()>>) {
@@ -173,7 +170,11 @@ async fn async_post_call_success_hook_ignores_a_non_chat_inspection_type() {
 
 #[tokio::test]
 async fn async_post_call_success_hook_dispatches_the_output_direction() {
-    let (base, mut server) = serve(StatusCode::OK, br#"{"is_safe":true}"#.to_vec()).await;
+    let (base, mut server) = serve(
+        StatusCode::OK,
+        br#"{"action":"sanitize","sanitized_text":"[REDACTED]"}"#.to_vec(),
+    )
+    .await;
     let guardrail = guardrail(InspectionType::Chat, base);
     let mut request_data = obj(r#"{"messages":[{"role":"user","content":"hi"}]}"#);
     let mut response = obj(r#"{"choices":[{"message":{"content":"there"}}]}"#);
@@ -184,8 +185,24 @@ async fn async_post_call_success_hook_dispatches_the_output_direction() {
 
     let outcome =
         async_post_call_success_hook(&guardrail, &mut request_data, &mut response, args).await;
-    assert!(matches!(outcome, Some(FinalizeOutcome::Allow)));
+    assert!(matches!(outcome, Some(FinalizeOutcome::Redacted(_))));
     assert_eq!(applied_guardrails(&request_data), vec!["cisco-ai-defense"]);
+    let choice = &Json::field(&response, "choices").objects()[0];
+    let message = match Json::field(choice, "message") {
+        Json::Object(fields) => fields,
+        other @ (Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+            panic!("expected message to be an object, got {other:?}")
+        }
+    };
+    assert!(matches!(
+        Json::field(&message, "content"),
+        Json::Text(content) if content == "[REDACTED]"
+    ));
+    let request_message = &Json::field(&request_data, "messages").objects()[0];
+    assert!(matches!(
+        Json::field(request_message, "content"),
+        Json::Text(content) if content == "hi"
+    ));
     server.shutdown().await;
 }
 

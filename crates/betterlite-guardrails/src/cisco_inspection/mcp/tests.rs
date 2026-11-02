@@ -42,10 +42,7 @@ fn guardrail(api_base: String) -> CiscoInspectionGuardrail {
         integration_tenant_id: None,
         integration_type: None,
     };
-    CiscoInspectionGuardrail {
-        settings,
-        client: reqwest::Client::default(),
-    }
+    CiscoInspectionGuardrail::new(settings).expect("default TLS backend builds a client")
 }
 
 async fn serve(status: StatusCode, body: Vec<u8>) -> (String, JoinSet<io::Result<()>>) {

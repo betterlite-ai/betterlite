@@ -25,18 +25,11 @@ fn configured() -> Configured {
     }
 }
 
-fn plain_client() -> reqwest::Client {
-    reqwest::Client::default()
-}
-
 #[test]
 fn new_wraps_settings_and_client_without_change() {
     let settings = configured();
-    let client = plain_client();
-    let guardrail = CiscoInspectionGuardrail {
-        settings: settings.clone(),
-        client,
-    };
+    let guardrail = CiscoInspectionGuardrail::new(settings.clone())
+        .expect("default TLS backend builds a client");
 
     assert_eq!(guardrail.settings.guardrail_name, settings.guardrail_name);
     assert_eq!(guardrail.settings.api_base, settings.api_base);

@@ -9,6 +9,7 @@ use crate::cisco_conversation::{Fields, InspectMessage};
 use crate::cisco_inspection::chat::{ChatInspectionArgs, inspect_chat};
 use crate::cisco_inspection::construct::CiscoInspectionGuardrail;
 use crate::cisco_inspection::mcp::inspect_mcp_request;
+use crate::cisco_verdict_enforcement::api_error::ApiErrorOutcome;
 use crate::cisco_verdict_enforcement::finalize::{FinalizeOutcome, ResponseSurface};
 use crate::cisco_verdict_enforcement::support::insert_serialized;
 
@@ -69,7 +70,10 @@ async fn dispatch_pre_call(
     log_empty_messages: bool,
 ) -> Option<FinalizeOutcome> {
     let outcome = if is_mcp_call_type(call_type) {
-        inspect_mcp_request(guardrail, request_data).await?
+        // LiteLLM's _inspect_mcp_request returns {} instead of raising when the MCP payload can't be built, so this still records the guardrail as applied.
+        inspect_mcp_request(guardrail, request_data)
+            .await
+            .unwrap_or(FinalizeOutcome::Allow)
     } else {
         let messages = request_messages(request_data);
         if messages.is_empty() {
@@ -87,7 +91,9 @@ async fn dispatch_pre_call(
         };
         inspect_chat(guardrail, args, request_data, ResponseSurface::None).await
     };
-    record_applied_guardrail(request_data, &guardrail.settings.guardrail_name);
+    if !skips_applied_guardrail(&outcome) {
+        record_applied_guardrail(request_data, &guardrail.settings.guardrail_name);
+    }
     Some(outcome)
 }
 
@@ -124,8 +130,18 @@ pub async fn async_post_call_success_hook(
         ResponseSurface::ChatResponse(response),
     )
     .await;
-    record_applied_guardrail(request_data, &guardrail.settings.guardrail_name);
+    if !skips_applied_guardrail(&outcome) {
+        record_applied_guardrail(request_data, &guardrail.settings.guardrail_name);
+    }
     Some(outcome)
+}
+
+// LiteLLM raises before add_guardrail_to_applied_guardrails_header runs for a block or a blocking API error, so neither records the guardrail name.
+const fn skips_applied_guardrail(outcome: &FinalizeOutcome) -> bool {
+    matches!(
+        outcome,
+        FinalizeOutcome::Blocked(_) | FinalizeOutcome::ApiError(ApiErrorOutcome::Blocked(_))
+    )
 }
 
 // Mirrors LiteLLM's fn _extract_response_messages.

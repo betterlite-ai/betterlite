@@ -10,7 +10,6 @@ use axum::routing::post;
 use betterlite_config::sections::cisco_verdict_contracts::{
     Configured, FallbackAction, FlaggedAction, InspectionType,
 };
-use reqwest::redirect::Policy;
 use secrecy::SecretString;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
@@ -36,22 +35,8 @@ fn configured(timeout: f64) -> Configured {
     }
 }
 
-fn plain_client() -> reqwest::Client {
-    reqwest::Client::default()
-}
-
-fn client_without_redirects() -> reqwest::Client {
-    reqwest::ClientBuilder::new()
-        .redirect(Policy::none())
-        .build()
-        .expect("client")
-}
-
-fn guardrail(timeout: f64, client: reqwest::Client) -> CiscoInspectionGuardrail {
-    CiscoInspectionGuardrail {
-        settings: configured(timeout),
-        client,
-    }
+fn guardrail(timeout: f64) -> CiscoInspectionGuardrail {
+    CiscoInspectionGuardrail::new(configured(timeout)).expect("default TLS backend builds a client")
 }
 
 async fn serve(status: StatusCode, body: Vec<u8>) -> (String, JoinSet<io::Result<()>>) {
@@ -71,7 +56,7 @@ async fn serve(status: StatusCode, body: Vec<u8>) -> (String, JoinSet<io::Result
 
 #[test]
 fn build_headers_sets_the_cisco_api_key_header() {
-    let guardrail = guardrail(10.0, plain_client());
+    let guardrail = guardrail(10.0);
     let headers = build_headers(&guardrail).expect("headers");
     assert_eq!(
         headers.get("x-cisco-ai-defense-api-key").expect("key"),
@@ -91,7 +76,7 @@ fn build_headers_sets_the_cisco_api_key_header() {
 #[tokio::test]
 async fn post_inspection_parses_a_successful_json_response() {
     let (base, mut server) = serve(StatusCode::OK, br#"{"is_safe":true}"#.to_vec()).await;
-    let guardrail = guardrail(10.0, plain_client());
+    let guardrail = guardrail(10.0);
     let result = post_inspection(&guardrail, &format!("{base}/inspect"), &(), "chat").await;
     result.expect("successful response");
     server.shutdown().await;
@@ -100,7 +85,7 @@ async fn post_inspection_parses_a_successful_json_response() {
 #[tokio::test]
 async fn post_inspection_wraps_a_non_success_status() {
     let (base, mut server) = serve(StatusCode::BAD_REQUEST, b"bad input".to_vec()).await;
-    let guardrail = guardrail(10.0, plain_client());
+    let guardrail = guardrail(10.0);
     let error = post_inspection(&guardrail, &format!("{base}/inspect"), &(), "chat")
         .await
         .expect_err("non-success status");
@@ -111,7 +96,7 @@ async fn post_inspection_wraps_a_non_success_status() {
 #[tokio::test]
 async fn post_inspection_wraps_a_non_json_body() {
     let (base, mut server) = serve(StatusCode::OK, b"not json".to_vec()).await;
-    let guardrail = guardrail(10.0, plain_client());
+    let guardrail = guardrail(10.0);
     let error = post_inspection(&guardrail, &format!("{base}/inspect"), &(), "chat")
         .await
         .expect_err("non-JSON body");
@@ -124,7 +109,7 @@ async fn post_inspection_wraps_a_connection_failure() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let base = format!("http://{}/inspect", listener.local_addr().expect("addr"));
     drop(listener);
-    let guardrail = guardrail(10.0, plain_client());
+    let guardrail = guardrail(10.0);
     let error = post_inspection(&guardrail, &base, &(), "chat")
         .await
         .expect_err("connection refused");
@@ -136,7 +121,7 @@ async fn post_inspection_wraps_a_connection_failure() {
 async fn post_inspection_wraps_a_timeout() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let base = format!("http://{}/inspect", listener.local_addr().expect("addr"));
-    let guardrail = guardrail(0.2, plain_client());
+    let guardrail = guardrail(0.2);
     let error = post_inspection(&guardrail, &base, &(), "chat")
         .await
         .expect_err("timeout");
@@ -148,7 +133,7 @@ async fn post_inspection_wraps_a_timeout() {
 #[tokio::test]
 async fn post_inspection_does_not_follow_redirects() {
     let (base, mut server) = serve(StatusCode::FOUND, Vec::new()).await;
-    let guardrail = guardrail(10.0, client_without_redirects());
+    let guardrail = guardrail(10.0);
     let error = post_inspection(&guardrail, &format!("{base}/inspect"), &(), "chat")
         .await
         .expect_err("redirect surfaced as non-success");
@@ -160,7 +145,7 @@ async fn post_inspection_does_not_follow_redirects() {
 async fn post_inspection_wraps_a_response_over_the_byte_limit() {
     let oversized = vec![b'a'; (1024 * 1024) + 1];
     let (base, mut server) = serve(StatusCode::OK, oversized).await;
-    let guardrail = guardrail(10.0, plain_client());
+    let guardrail = guardrail(10.0);
     let error = post_inspection(&guardrail, &format!("{base}/inspect"), &(), "chat")
         .await
         .expect_err("oversized response");
@@ -172,7 +157,7 @@ async fn post_inspection_wraps_a_response_over_the_byte_limit() {
 async fn post_inspection_renders_a_whole_number_timeout_with_a_trailing_zero() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let base = format!("http://{}/inspect", listener.local_addr().expect("addr"));
-    let guardrail = guardrail(1.0, plain_client());
+    let guardrail = guardrail(1.0);
     let error = post_inspection(&guardrail, &base, &(), "chat")
         .await
         .expect_err("timeout");

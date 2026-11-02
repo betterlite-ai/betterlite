@@ -16,7 +16,12 @@ call:
       response:
         choices:
           - message: {role: assistant, content: "hi back"}
-      answer: {status: 200, headers: {}, body: {is_safe: true}}
+      answer: {status: 200, headers: {}, body: {action: sanitize, sanitized_text: "[REDACTED]"}}
 env: {}
 compare:
-  ignore: []
+  ignore:
+    - pointer: /value/outcome
+      why: >-
+        The Python oracle wrapper only ever reports allow or
+        api_error_blocked for this hook, so it can't distinguish a redact
+        from an allow the way betterlite's outcome_tag does.

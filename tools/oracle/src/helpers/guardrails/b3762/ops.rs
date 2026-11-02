@@ -3,6 +3,7 @@ use betterlite_guardrails::cisco_conversation::Fields;
 use betterlite_guardrails::cisco_conversation::json::Json;
 use betterlite_guardrails::cisco_conversation::request::request_messages;
 use betterlite_guardrails::cisco_inspection::chat::{ChatInspectionArgs, inspect_chat};
+use betterlite_guardrails::cisco_inspection::construct::CiscoInspectionGuardrail;
 use betterlite_guardrails::cisco_inspection::hooks::{
     HookArgs, PostCallArgs, async_moderation_hook, async_post_call_success_hook,
     async_pre_call_hook,
@@ -22,7 +23,7 @@ use super::{
 use crate::helpers::HelperResult;
 
 pub(super) fn construct(settings: &Value) -> HelperResult {
-    let configured = configure(settings)?;
+    let configured = configure(settings, None)?;
     Ok(json!({
         "guardrail_name": configured.guardrail_name,
         "api_base": configured.api_base,
@@ -44,7 +45,7 @@ pub(super) fn construct(settings: &Value) -> HelperResult {
 }
 
 pub(super) fn headers(settings: &Value) -> HelperResult {
-    let guardrail = guardrail(settings)?;
+    let guardrail = guardrail(settings, None)?;
     let map = build_headers(&guardrail)
         .map_err(|error| fail("CiscoAIDefenseGuardrailAPIError", error.to_string()))?;
     let mut rendered = std::collections::BTreeMap::new();
@@ -59,8 +60,7 @@ pub(super) fn headers(settings: &Value) -> HelperResult {
 
 pub(super) fn pre_call_hook(args: &PreCallInput, is_moderation: bool) -> HelperResult {
     let (mock, silent, base, runtime) = prepare(args.answer.as_ref())?;
-    let mut guardrail = guardrail(&args.settings)?;
-    guardrail.settings.api_base = base;
+    let guardrail = guardrail(&args.settings, Some(&base))?;
     let mut data: Fields = serde_json::from_value(args.request_data.clone()).unwrap_or_default();
     let hook_args = HookArgs {
         call_type: args.call_type.as_deref(),
@@ -84,8 +84,7 @@ pub(super) fn pre_call_hook(args: &PreCallInput, is_moderation: bool) -> HelperR
 
 pub(super) fn post_call_hook(args: &PostCallInput) -> HelperResult {
     let (mock, silent, base, runtime) = prepare(args.answer.as_ref())?;
-    let mut guardrail = guardrail(&args.settings)?;
-    guardrail.settings.api_base = base;
+    let guardrail = guardrail(&args.settings, Some(&base))?;
     let mut data: Fields = serde_json::from_value(args.request_data.clone()).unwrap_or_default();
     let mut response: Fields = serde_json::from_value(args.response.clone()).unwrap_or_default();
     let hook_args = PostCallArgs {
@@ -112,8 +111,7 @@ pub(super) fn post_call_hook(args: &PostCallInput) -> HelperResult {
 
 pub(super) fn chat(args: &ChatInput) -> HelperResult {
     let (mock, silent, base, runtime) = prepare(args.answer.as_ref())?;
-    let mut guardrail = guardrail(&args.settings)?;
-    guardrail.settings.api_base = base;
+    let guardrail = guardrail(&args.settings, Some(&base))?;
     let mut data: Fields = serde_json::from_value(args.request_data.clone()).unwrap_or_default();
     let messages = request_messages(&data);
     let direction = match args.direction.as_deref() {
@@ -145,8 +143,7 @@ macro_rules! mcp_op {
     ($fn_name:ident, $input_ty:ty, $run:expr) => {
         pub(super) fn $fn_name(args: &$input_ty) -> HelperResult {
             let (mock, silent, base, runtime) = prepare(args.answer.as_ref())?;
-            let mut guardrail = guardrail(&args.settings)?;
-            guardrail.settings.api_base = base;
+            let guardrail = guardrail(&args.settings, Some(&base))?;
             let mut data: Fields =
                 serde_json::from_value(args.request_data.clone()).unwrap_or_default();
             let outcome = $run(&runtime, &guardrail, &mut data, args);
@@ -179,12 +176,10 @@ mcp_op!(
 
 pub(super) fn post_inspection_op(args: &PostInspectionInput) -> HelperResult {
     let (mock, silent, base, runtime) = prepare(args.answer.as_ref())?;
-    let mut guardrail = guardrail(&args.settings)?;
-    guardrail.settings.api_base = base;
-    let url = format!(
-        "{}{}",
-        guardrail.settings.api_base, guardrail.settings.inspect_path
-    );
+    let configured = configure(&args.settings, Some(&base))?;
+    let url = format!("{base}{}", configured.inspect_path);
+    let guardrail = CiscoInspectionGuardrail::new(configured)
+        .map_err(|error| fail("OSError", error.to_string()))?;
     let result = runtime.block_on(post_inspection(
         &guardrail,
         &url,

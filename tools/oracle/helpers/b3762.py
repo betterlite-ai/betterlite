@@ -1,4 +1,5 @@
 import asyncio
+import copy
 from collections.abc import Mapping
 from typing import Literal, TypeAlias, cast
 
@@ -59,6 +60,25 @@ def install_mock(cisco: CiscoAIDefenseGuardrail, answer: Json) -> tuple[list[str
 
     cisco.async_handler.client = httpx.AsyncClient(transport=httpx.MockTransport(handle))
     return paths, bodies
+
+
+def response_with_redacted_content(original: dict[str, Json], response_obj: ModelResponse) -> Json:
+    # async_post_call_success_hook mutates response_obj's Message.content in place; the
+    # dict handed to ModelResponse(**response) never sees that mutation, so the caller
+    # has to read the redacted text back off response_obj itself.
+    mutated = copy.deepcopy(original)
+    choices = mutated.get("choices")
+    if not isinstance(choices, list):
+        return cast(Json, mutated)
+    for index, choice in enumerate(choices):
+        if not isinstance(choice, dict) or index >= len(response_obj.choices):
+            continue
+        message = choice.get("message")
+        if not isinstance(message, dict):
+            continue
+        mutated_message = getattr(response_obj.choices[index], "message", None)
+        message["content"] = getattr(mutated_message, "content", message.get("content"))
+    return cast(Json, mutated)
 
 
 def applied_guardrails_list(data: dict[str, Json]) -> list[str]:
@@ -145,12 +165,13 @@ async def post_call_hook(fields: dict[str, Json]) -> Json:
     )
     data = cast(dict[str, Json], fields["request_data"])
     response = cast(dict[str, Json], fields["response"])
+    response_obj = ModelResponse(**cast("dict[str, object]", response))
     key_dict = user_api_key(cast("str | None", fields.get("key_user_id")))
     try:
         await cisco.async_post_call_success_hook(  # pyright: ignore[reportUnknownMemberType]
             data=cast("dict[str, object]", data),
             user_api_key_dict=key_dict,
-            response=ModelResponse(**cast("dict[str, object]", response)),
+            response=response_obj,
         )
     except HTTPException as error:
         outcome: Json = api_error_tag(error)
@@ -162,7 +183,7 @@ async def post_call_hook(fields: dict[str, Json]) -> Json:
         "request": bodies[0] if bodies else None,
         "outcome": outcome,
         "applied_guardrails": cast(Json, applied_guardrails_list(data)),
-        "response": cast(Json, response),
+        "response": response_with_redacted_content(response, response_obj),
     }
 
 

@@ -9,9 +9,10 @@ use axum::body::Bytes;
 use axum::http::StatusCode;
 use axum::routing::post;
 use betterlite_config::sections::cisco_verdict_contracts::{
-    Configured, FallbackAction, FlaggedAction, InspectionType,
+    Configured, FallbackAction, FlaggedAction, InspectionType, Rule,
 };
 use secrecy::SecretString;
+use serde_json::value::RawValue;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 
@@ -30,12 +31,8 @@ fn obj(json: &str) -> Fields {
     fields
 }
 
-fn plain_client() -> reqwest::Client {
-    reqwest::Client::default()
-}
-
-fn guardrail(api_base: String, client: reqwest::Client) -> CiscoInspectionGuardrail {
-    let settings = Configured {
+fn configured(api_base: String) -> Configured {
+    Configured {
         guardrail_name: "cisco-ai-defense".to_owned(),
         api_key: SecretString::from("key".to_owned()),
         api_base,
@@ -49,8 +46,24 @@ fn guardrail(api_base: String, client: reqwest::Client) -> CiscoInspectionGuardr
         integration_profile_version: None,
         integration_tenant_id: None,
         integration_type: None,
-    };
-    CiscoInspectionGuardrail { settings, client }
+    }
+}
+
+fn guardrail(api_base: String) -> CiscoInspectionGuardrail {
+    CiscoInspectionGuardrail::new(configured(api_base))
+        .expect("default TLS backend builds a client")
+}
+
+fn guardrail_with_config(api_base: String) -> CiscoInspectionGuardrail {
+    let mut settings = configured(api_base);
+    settings.enabled_rules = vec![Rule {
+        rule_name: "Prompt Injection".to_owned(),
+        entity_types: Vec::new(),
+        rule_id: None,
+        classification: None,
+    }];
+    settings.integration_profile_id = Some("profile-123".to_owned());
+    CiscoInspectionGuardrail::new(settings).expect("default TLS backend builds a client")
 }
 
 fn args(key_user_id: Option<&str>) -> ChatInspectionArgs<'_> {
@@ -112,12 +125,19 @@ typed_field!(
     "an object",
     (Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
 );
+typed_field!(
+    list_field,
+    List,
+    Vec<Box<RawValue>>,
+    "a list",
+    (Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_))
+);
 
 #[tokio::test]
 async fn inspect_chat_sends_the_assembled_payload_and_allows() {
     let (base, captured, mut server) =
         serve_capturing(StatusCode::OK, br#"{"is_safe":true}"#.to_vec()).await;
-    let guardrail = guardrail(base, plain_client());
+    let guardrail = guardrail(base);
     let mut request_data =
         obj(r#"{"user":"alice","litellm_call_id":"call-1","metadata":{"src_app":"gateway"}}"#);
 
@@ -143,10 +163,42 @@ async fn inspect_chat_sends_the_assembled_payload_and_allows() {
 }
 
 #[tokio::test]
+async fn inspect_chat_sends_the_enabled_rules_and_integration_config() {
+    let (base, captured, mut server) =
+        serve_capturing(StatusCode::OK, br#"{"is_safe":true}"#.to_vec()).await;
+    let guardrail = guardrail_with_config(base);
+    let mut request_data = obj("{}");
+
+    inspect_chat(
+        &guardrail,
+        args(None),
+        &mut request_data,
+        ResponseSurface::None,
+    )
+    .await;
+
+    let body = captured
+        .lock()
+        .expect("lock")
+        .clone()
+        .expect("captured body");
+    let config = object_field(&obj(&body), "config");
+    let rules = list_field(&config, "enabled_rules");
+    assert_eq!(rules.len(), 1);
+    let rule = Json::parse(rules[0].get());
+    let Json::Object(rule_fields) = rule else {
+        panic!("expected a rule object");
+    };
+    assert_eq!(text_field(&rule_fields, "rule_name"), "Prompt Injection");
+    assert_eq!(text_field(&config, "integration_profile_id"), "profile-123");
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn inspect_chat_falls_back_to_the_key_user_id_when_no_request_user_is_set() {
     let (base, captured, mut server) =
         serve_capturing(StatusCode::OK, br#"{"is_safe":true}"#.to_vec()).await;
-    let guardrail = guardrail(base, plain_client());
+    let guardrail = guardrail(base);
     let mut request_data = obj("{}");
 
     inspect_chat(
@@ -172,7 +224,7 @@ async fn inspect_chat_wraps_a_transport_failure_into_a_blocked_api_error() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let base = format!("http://{}", listener.local_addr().expect("addr"));
     drop(listener);
-    let guardrail = guardrail(base, plain_client());
+    let guardrail = guardrail(base);
     let mut request_data = obj("{}");
 
     let outcome = inspect_chat(

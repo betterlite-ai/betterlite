@@ -44,10 +44,16 @@ pub(super) fn json_to_value(value: &Json) -> Value {
     }
 }
 
-pub(super) fn configure(settings: &Value) -> Result<Configured, Box<HelperError>> {
+pub(super) fn configure(
+    settings: &Value,
+    api_base: Option<&str>,
+) -> Result<Configured, Box<HelperError>> {
     let mut parameters = settings.clone();
     if let Value::Object(map) = &mut parameters {
         map.insert("guardrail".to_owned(), json!("cisco_ai_defense"));
+        if let Some(base) = api_base {
+            map.insert("api_base".to_owned(), json!(base));
+        }
     }
     let entry = json!({"guardrail_name": "cisco-ai-defense", "litellm_params": parameters});
     let loaded = ConfigLoader {
@@ -80,16 +86,12 @@ pub(super) fn configure(settings: &Value) -> Result<Configured, Box<HelperError>
     Err(fail(class, message))
 }
 
-pub(super) fn guardrail(settings: &Value) -> Result<CiscoInspectionGuardrail, Box<HelperError>> {
-    let configured = configure(settings)?;
-    let client = reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|error| fail("OSError", error.to_string()))?;
-    Ok(CiscoInspectionGuardrail {
-        settings: configured,
-        client,
-    })
+pub(super) fn guardrail(
+    settings: &Value,
+    api_base: Option<&str>,
+) -> Result<CiscoInspectionGuardrail, Box<HelperError>> {
+    CiscoInspectionGuardrail::new(configure(settings, api_base)?)
+        .map_err(|error| fail("OSError", error.to_string()))
 }
 
 pub(super) type Prepared = (
