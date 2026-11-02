@@ -1,5 +1,5 @@
 use crate::helpers::{Helper, HelperError, HelperResult};
-use betterlite_prompts::builtin::{Field, Message};
+use betterlite_prompts::builtin::{Field, Message, PromptError};
 use betterlite_prompts::error::FactoryError;
 use betterlite_prompts::factory::custom::{
     CustomPromptTemplate, custom_prompt, default_response_schema_prompt, function_call_prompt,
@@ -94,9 +94,10 @@ fn failure(error: &FactoryError) -> Box<HelperError> {
         FactoryError::Append { .. } => "AttributeError",
         FactoryError::Unsupported { .. } => "NotBuilt",
     };
+    let status = matches!(error, FactoryError::Prompt(PromptError::Role { .. })).then_some(400);
     Box::new(HelperError {
         class: class.to_owned(),
-        status: None,
+        status,
         error_type: None,
         param: None,
         code: None,

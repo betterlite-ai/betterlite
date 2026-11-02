@@ -22,13 +22,13 @@ fn builtin_prompts_behavior_tests_behavior(#[case] wire: &str, #[case] expected:
 }
 
 #[test]
-fn errors_keep_the_python_class() {
+fn role_error_carries_status_400() {
     let input: Input = serde_json::from_str(
         r#"{"family":"ollama","messages":[{"role":"other","content":"x"}],"model":"chosen"}"#,
     )
     .unwrap();
     let error = Op::run(&input).unwrap_err();
     assert_eq!(error.class, "BadRequestError");
-    assert_eq!(error.status, None);
+    assert_eq!(error.status, Some(400));
     assert!(error.message.contains("chosen"));
 }

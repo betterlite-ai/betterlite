@@ -8,6 +8,7 @@ mod logic;
 mod parser;
 
 use logic::{Cache, fetch_rss_feed, get_blog_posts, local_posts, validate_blog_posts};
+use parser::BlogPost;
 
 pub(crate) struct Op;
 
@@ -84,26 +85,6 @@ struct GetRequest<'request> {
     response: &'request MockResponse,
 }
 
-#[derive(Debug, Clone, Deserialize, serde::Serialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct BlogPost {
-    title: String,
-    description: String,
-    date: String,
-    url: String,
-}
-
-impl From<parser::BlogPost> for BlogPost {
-    fn from(post: parser::BlogPost) -> Self {
-        Self {
-            title: post.title,
-            description: post.description,
-            date: post.date,
-            url: post.url,
-        }
-    }
-}
-
 const BLOG_POSTS_TTL_SECONDS: f64 = 3_600.0;
 
 #[derive(Debug, Error)]
@@ -130,6 +111,7 @@ const fn parse_failure_class(error: &parser::ParseFailure) -> &'static str {
     match error {
         parser::ParseFailure::MissingChannel => "ValueError",
         parser::ParseFailure::Xml(_)
+        | parser::ParseFailure::Decode(_)
         | parser::ParseFailure::Escape(_)
         | parser::ParseFailure::UnclosedElement
         | parser::ParseFailure::OutsideRoot => "ParseError",
@@ -147,8 +129,15 @@ impl Helper for Op {
                 url,
                 timeout,
                 response,
-            } => json!(fetch_rss_feed(url, *timeout, response)?),
-            Input::ParseRssToPosts { xml, max_posts } => run_parse(xml, *max_posts)?,
+            } => {
+                let (request, fetched) = fetch_rss_feed(url, *timeout, response);
+                let text = fetched?;
+                json!({ "text": text, "request": request })
+            }
+            Input::ParseRssToPosts { xml, max_posts } => {
+                let posts = parser::parse_rss_to_posts(xml, *max_posts).map_err(Failure::from)?;
+                serde_json::to_value(posts).map_err(|error| serialization_error(&error))?
+            }
             Input::ValidateBlogPosts { posts } => run_validate(posts),
             Input::GetBlogPosts {
                 url,
@@ -171,15 +160,6 @@ impl Helper for Op {
     }
 }
 
-fn run_parse(xml: &str, max_posts: usize) -> Result<Value, Box<HelperError>> {
-    let posts: Vec<BlogPost> = parser::parse_rss_to_posts(xml, max_posts)
-        .map_err(Failure::from)?
-        .into_iter()
-        .map(BlogPost::from)
-        .collect();
-    serde_json::to_value(posts).map_err(|error| serialization_error(&error))
-}
-
 fn run_validate(posts: &Value) -> Value {
     let (valid, warnings) = validate_blog_posts(posts);
     json!({ "valid": valid, "warnings": warnings })
@@ -190,7 +170,7 @@ fn run_get(request: &GetRequest<'_>) -> Result<Value, Box<HelperError>> {
         posts: request.cached_posts.cloned(),
         last_fetch_time: request.last_fetch_time,
     };
-    let (posts, warnings) = get_blog_posts(
+    let (posts, warnings, _fetch_request) = get_blog_posts(
         &mut cache,
         request.url,
         request.now,
@@ -211,19 +191,16 @@ fn run_sequence(calls: &[GetBlogPostsCall]) -> Value {
     let mut fetch_count = 0_u64;
     let mut requests = Vec::new();
     for call in calls {
-        let cache_hit = !call.local_only
-            && cache.posts.is_some()
-            && call.now < cache.last_fetch_time.mul_add(1.0, BLOG_POSTS_TTL_SECONDS);
-        let (posts, warnings) = get_blog_posts(
+        let (posts, warnings, fetch_request) = get_blog_posts(
             &mut cache,
             &call.url,
             call.now,
             call.local_only,
             &call.response,
         );
-        if !cache_hit && !call.local_only {
+        if let Some(request) = fetch_request {
             fetch_count = fetch_count.saturating_add(1);
-            requests.push(json!({ "url": call.url.clone(), "timeout": default_timeout() }));
+            requests.push(json!({ "url": request.url, "timeout": request.timeout }));
         }
         results.push(json!({ "posts": posts, "warnings": warnings }));
         snapshots.push(json!({

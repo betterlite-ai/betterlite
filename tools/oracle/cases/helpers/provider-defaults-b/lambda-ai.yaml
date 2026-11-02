@@ -1,0 +1,8 @@
+kind: helper
+name: provider-defaults-b-lambda-ai
+call:
+  provider_defaults_b:
+    provider: lambda_ai
+    model: lambda-model
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,17 @@
+kind: helper
+name: is-bridge-envelope-shaped
+call:
+  b4653:
+    function: bearer_prefix_strip
+    checks:
+      - family: bridge
+        candidate: "llm_env_xyz"
+      - family: bridge
+        candidate: "llm_refresh_xyz"
+      - family: bridge
+        candidate: ""
+      - family: bridge
+        candidate: "llm_envelope_not_a_real_prefix"
+env: {}
+compare:
+  ignore: []

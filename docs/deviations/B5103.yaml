@@ -1,0 +1,5 @@
+task: B5103
+deviations:
+  - what: GraySwanGuardrailAPIError::status_code() answers REQUEST_TIMEOUT for Timeout, the upstream status for HttpStatus (INTERNAL_SERVER_ERROR outside 400-599), BAD_REQUEST for Blocked, and INTERNAL_SERVER_ERROR for Request, InvalidHeader, ResponseTooLarge and ResponseJson, instead of BAD_REQUEST for every variant.
+    why: The proxy answers the client with the exception's own status_code when it is an int from 400 to 599, and 500 otherwise. A working Gray Swan guardrail setup relies on a timeout answering 408 and an upstream error answering its own status, not 400, so no setup could have relied on the old answer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3700-L3772

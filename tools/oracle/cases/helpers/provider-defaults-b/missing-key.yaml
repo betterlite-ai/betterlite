@@ -1,0 +1,8 @@
+kind: helper
+name: provider-defaults-b-missing-key
+call:
+  provider_defaults_b:
+    provider: heroku
+    model: heroku-model
+env: {}
+compare: {ignore: []}

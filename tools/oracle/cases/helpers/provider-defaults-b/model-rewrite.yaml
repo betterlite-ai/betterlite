@@ -1,0 +1,10 @@
+kind: helper
+name: provider-defaults-b-model-rewrite
+call:
+  provider_defaults_b:
+    provider: ragflow
+    model: chat/abc123/mymodel
+    api_base: https://explicit.example.com
+    api_key: explicit-key
+env: {}
+compare: {ignore: []}

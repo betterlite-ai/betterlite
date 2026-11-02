@@ -1,0 +1,11 @@
+kind: helper
+name: session-bearer-not-shaped
+call:
+  b4653:
+    function: session_bearer
+    signing_key: "session-signing-key-0123456789abcdef"
+    candidate: "plain-oauth-access-token"
+    open_now: 1700000100
+env: {}
+compare:
+  ignore: []

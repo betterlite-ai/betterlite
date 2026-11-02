@@ -1,0 +1,9 @@
+kind: helper
+name: provider-defaults-b-mistral
+call:
+  provider_defaults_b:
+    provider: mistral
+    model: mistral-model
+    api_base: https://custom.mistral.example
+env: {}
+compare: {ignore: []}

@@ -1,11 +1,10 @@
 use std::collections::BTreeMap;
 
-use super::RawException;
+use super::{RawException, RawExceptionBody};
 use crate::error::details::RateLimitDetails;
 use crate::error::{ErrorClass, ErrorContext};
 use crate::facts::presence::Field;
 use crate::facts::{ErrorCode, ProviderErrorBody};
-use crate::openai::body::OpenaiErrorBody;
 use crate::parse::{self, LitellmExceptionFacts};
 use crate::rate_limit::RateLimitCategory;
 
@@ -15,7 +14,7 @@ pub(super) enum LitellmProxyOutcome {
     Unconstructible,
 }
 
-fn proxy_body(body: Option<&OpenaiErrorBody>) -> Option<ProviderErrorBody> {
+fn proxy_body(body: Option<&RawExceptionBody>) -> Option<ProviderErrorBody> {
     let fields = body?;
     Some(ProviderErrorBody {
         message: fields.message.clone().map_or(Field::Missing, Field::Value),
