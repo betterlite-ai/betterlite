@@ -5,11 +5,11 @@ use crate::providers::chatgpt::headers as environment;
 use crate::sections::Section;
 
 #[derive(Debug, Default, Deserialize)]
-#[expect(
-    clippy::empty_structs_with_brackets,
-    reason = "a map-shaped Raw ignores every unrelated top-level key, unlike a unit struct"
-)]
-pub struct Raw {}
+pub struct Raw {
+    // A skipped marker keeps this environment-only section a YAML mapping.
+    #[serde(skip)]
+    _environment: (),
+}
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Settings {
