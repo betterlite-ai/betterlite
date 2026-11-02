@@ -1,0 +1,8 @@
+kind: helper
+name: cache-settings-secrets-url-precedence-cluster-mode
+call:
+  b4306:
+    function: url_precedence
+    settings: {url: "redis://host:6379", redis_startup_nodes: [{host: "a", port: 1}]}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,6 @@
+kind: helper
+name: providers-list
+call:
+  b3190: {function: get_supported_providers}
+env: {}
+compare: {ignore: []}

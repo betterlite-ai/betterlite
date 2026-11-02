@@ -1,0 +1,20 @@
+kind: helper
+name: inspect-chat-handles-api-error
+call:
+  b3762:
+    inspect_chat:
+      settings:
+        api_key: test-key
+        api_base: "https://cisco.test"
+        inspection_type: chat
+        on_flagged_action: block
+        fallback_on_error: allow
+        timeout: 5
+      request_data:
+        messages:
+          - {role: user, content: "hello there"}
+      direction: input
+      answer: {status: 500, headers: {}, body: {error: "boom"}}
+env: {}
+compare:
+  ignore: []

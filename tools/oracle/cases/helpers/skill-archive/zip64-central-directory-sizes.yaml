@@ -1,0 +1,8 @@
+kind: helper
+name: zip64-central-directory-sizes
+call:
+  skill_discovery_archives:
+    stored_content: UEsDBC0AAAAAAAAAIQBAaPqm//////////8OABQAc2tpbGwvU0tJTEwubWQBABAACAAAAAAAAAAIAAAAAAAAAG1hbmlmZXN0UEsBAi0DLQAAAAAAAAAhAEBo+qb//////////w4AFAAAAAAAAAAAAKSBAAAAAHNraWxsL1NLSUxMLm1kAQAQAAgAAAAAAAAACAAAAAAAAABQSwUGAAAAAAEAAQBQAAAASAAAAAAA
+env: {}
+compare:
+  ignore: []

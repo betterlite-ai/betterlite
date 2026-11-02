@@ -9,9 +9,11 @@ mod tests;
 
 use details::{
     ApiDetails, BudgetExceededDetails, GuardrailDetails, MidStreamFallbackDetails,
-    RateLimitDetails, SchemaValidationDetails, TimeoutDetails, TimeoutStatus,
+    RateLimitDetails, ResponseDetails, SchemaValidationDetails, TimeoutDetails, TimeoutStatus,
 };
-use metadata::{ErrorMetadata, Family, RetryMetadata, family_metadata, rate_limit_metadata};
+use metadata::{
+    ErrorMetadata, Family, RetryMetadata, family_metadata, rate_limit_metadata, response_metadata,
+};
 
 // the fields every openai.*Error-derived LiteLLM exception carries: a message, model/provider identity, retry counters
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -91,16 +93,16 @@ impl ErrorContext {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "family", rename_all = "snake_case")]
 pub enum ErrorClass {
-    Authentication(Box<ErrorContext>),
-    NotFound(Box<ErrorContext>),
-    PermissionDenied(Box<ErrorContext>),
-    BadRequest(Box<ErrorContext>),
-    UnprocessableEntity(Box<ErrorContext>),
+    Authentication(Box<ResponseDetails<401>>),
+    NotFound(Box<ResponseDetails<404>>),
+    PermissionDenied(Box<ResponseDetails<403>>),
+    BadRequest(Box<ResponseDetails<400>>),
+    UnprocessableEntity(Box<ResponseDetails<422>>),
     Timeout(Box<TimeoutDetails>),
     RateLimit(Box<RateLimitDetails>),
     BudgetExceeded(Box<BudgetExceededDetails>),
-    ContextWindowExceeded(Box<ErrorContext>),
-    ContentPolicyViolation(Box<ErrorContext>),
+    ContextWindowExceeded(Box<ResponseDetails<400>>),
+    ContentPolicyViolation(Box<ResponseDetails<400>>),
     ServiceUnavailable(Box<ErrorContext>),
     BadGateway(Box<ErrorContext>),
     InternalServer(Box<ErrorContext>),
@@ -123,14 +125,14 @@ impl ErrorClass {
         use WireField::Null;
         const MISSING: WireField = WireField::MISSING;
         match self {
-            Self::Authentication(ctx) => ctx.metadata(401, Null, Null, Absent),
-            Self::NotFound(ctx) => ctx.metadata(404, Null, Null, Absent),
-            Self::PermissionDenied(ctx) => ctx.metadata(403, Null, Null, Absent),
-            Self::BadRequest(ctx) | Self::ContentPolicyViolation(ctx) => {
-                ctx.metadata(400, Null, Null, Full)
+            Self::Authentication(details) => response_metadata(details, Absent),
+            Self::NotFound(details) => response_metadata(details, Absent),
+            Self::PermissionDenied(details) => response_metadata(details, Absent),
+            Self::BadRequest(details) | Self::ContentPolicyViolation(details) => {
+                response_metadata(details, Full)
             }
-            Self::ContextWindowExceeded(ctx) => ctx.metadata(400, Null, Null, Absent),
-            Self::UnprocessableEntity(ctx) => ctx.metadata(422, Null, Null, Absent),
+            Self::ContextWindowExceeded(details) => response_metadata(details, Absent),
+            Self::UnprocessableEntity(details) => response_metadata(details, Absent),
             Self::ServiceUnavailable(ctx) => ctx.metadata(503, Null, Null, Absent),
             Self::BadGateway(ctx) => ctx.metadata(502, Null, Null, Absent),
             Self::InternalServer(ctx) => {

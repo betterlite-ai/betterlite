@@ -1,0 +1,15 @@
+kind: helper
+name: build-headers-api-key
+call:
+  b3762:
+    build_headers:
+      settings:
+        api_key: test-key
+        api_base: "https://cisco.test"
+        inspection_type: chat
+        on_flagged_action: block
+        fallback_on_error: block
+        timeout: 5
+env: {}
+compare:
+  ignore: []

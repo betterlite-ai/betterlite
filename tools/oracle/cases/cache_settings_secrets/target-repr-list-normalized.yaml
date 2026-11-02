@@ -1,0 +1,8 @@
+kind: helper
+name: cache-settings-secrets-target-repr-list-normalized
+call:
+  b4306:
+    function: target_repr
+    value: [{port: 1}, {port: 2}]
+env: {}
+compare: {ignore: []}
