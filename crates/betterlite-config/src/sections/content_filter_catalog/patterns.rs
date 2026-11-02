@@ -1,12 +1,7 @@
 use std::collections::BTreeMap;
-use std::fs;
-use std::path::Path;
-use std::sync::LazyLock;
 
 use fancy_regex::Regex;
 use serde::Deserialize;
-
-use crate::sections::content_filter_catalog::roots::DATA_DIR;
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct PatternMetadata {
@@ -26,8 +21,6 @@ pub struct PatternExtraConfig {
 
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum PatternCatalogError {
-    #[error("failed to read patterns.json: {message}")]
-    Read { message: String },
     #[error("failed to parse patterns.json: {message}")]
     Parse { message: String },
     #[error("failed to compile pattern '{name}': {message}")]
@@ -65,23 +58,18 @@ pub struct PatternCatalog {
     pub extra_config: BTreeMap<String, PatternExtraConfig>,
 }
 
-static PATTERN_CATALOG: LazyLock<Result<PatternCatalog, PatternCatalogError>> =
-    LazyLock::new(build_pattern_catalog);
+const PATTERNS_JSON: &str = include_str!("../../../assets/content_filter/patterns.json");
 
 fn load_patterns() -> Result<Vec<PatternEntry>, PatternCatalogError> {
-    let path = Path::new(DATA_DIR).join("patterns.json");
-    let content = fs::read_to_string(&path).map_err(|source| PatternCatalogError::Read {
-        message: source.to_string(),
-    })?;
     let parsed: PatternsFile =
-        serde_json::from_str(&content).map_err(|source| PatternCatalogError::Parse {
+        serde_json::from_str(PATTERNS_JSON).map_err(|source| PatternCatalogError::Parse {
             message: source.to_string(),
         })?;
     Ok(parsed.patterns)
 }
 
 pub fn get_compiled_pattern(pattern_name: &str) -> Result<Regex, PatternCatalogError> {
-    let catalog = pattern_catalog()?;
+    let catalog = get_pattern_catalog()?;
     let Some(pattern) = catalog.patterns.get(pattern_name) else {
         return Err(PatternCatalogError::UnknownPattern {
             name: pattern_name.to_owned(),
@@ -95,35 +83,27 @@ pub fn get_compiled_pattern(pattern_name: &str) -> Result<Regex, PatternCatalogE
 }
 
 pub fn get_all_pattern_names() -> Result<Vec<String>, PatternCatalogError> {
-    match pattern_catalog() {
-        Ok(catalog) => Ok(catalog.names.clone()),
+    match get_pattern_catalog() {
+        Ok(catalog) => Ok(catalog.names),
         Err(error) => Err(error),
     }
 }
 
 pub fn get_pattern_metadata() -> Result<Vec<PatternMetadata>, PatternCatalogError> {
-    match pattern_catalog() {
-        Ok(catalog) => Ok(catalog.metadata.clone()),
+    match get_pattern_catalog() {
+        Ok(catalog) => Ok(catalog.metadata),
         Err(error) => Err(error),
     }
 }
 
 pub fn get_pattern_catalog() -> Result<PatternCatalog, PatternCatalogError> {
-    match pattern_catalog() {
-        Ok(catalog) => Ok(catalog.clone()),
+    match load_patterns() {
+        Ok(entries) => Ok(build_pattern_catalog(entries)),
         Err(error) => Err(error),
     }
 }
 
-fn pattern_catalog() -> Result<&'static PatternCatalog, PatternCatalogError> {
-    match PATTERN_CATALOG.as_ref() {
-        Ok(catalog) => Ok(catalog),
-        Err(error) => Err(error.clone()),
-    }
-}
-
-fn build_pattern_catalog() -> Result<PatternCatalog, PatternCatalogError> {
-    let entries = load_patterns()?;
+fn build_pattern_catalog(entries: Vec<PatternEntry>) -> PatternCatalog {
     let mut names = Vec::with_capacity(entries.len());
     let mut metadata = Vec::with_capacity(entries.len());
     let mut patterns = BTreeMap::new();
@@ -148,7 +128,7 @@ fn build_pattern_catalog() -> Result<PatternCatalog, PatternCatalogError> {
         descriptions.insert(entry.name.clone(), entry.description);
         extra_config.insert(entry.name, entry.extra);
     }
-    Ok(PatternCatalog {
+    PatternCatalog {
         names,
         metadata,
         patterns,
@@ -156,19 +136,19 @@ fn build_pattern_catalog() -> Result<PatternCatalog, PatternCatalogError> {
         display_names,
         descriptions,
         extra_config,
-    })
+    }
 }
 
 pub fn pattern_categories() -> Result<BTreeMap<String, Vec<String>>, PatternCatalogError> {
-    match pattern_catalog() {
-        Ok(catalog) => Ok(catalog.categories.clone()),
+    match get_pattern_catalog() {
+        Ok(catalog) => Ok(catalog.categories),
         Err(error) => Err(error),
     }
 }
 
 pub fn pattern_extra_config() -> Result<BTreeMap<String, PatternExtraConfig>, PatternCatalogError> {
-    match pattern_catalog() {
-        Ok(catalog) => Ok(catalog.extra_config.clone()),
+    match get_pattern_catalog() {
+        Ok(catalog) => Ok(catalog.extra_config),
         Err(error) => Err(error),
     }
 }

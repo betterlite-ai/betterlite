@@ -41,7 +41,7 @@ impl Helper for Op {
 }
 
 fn catalog() -> HelperResult {
-    let catalog = get_pattern_catalog().map_err(pattern_error)?;
+    let catalog = get_pattern_catalog().map_err(|error| pattern_error(&error))?;
     serde_json::to_value(catalog).map_err(|error| {
         Box::new(HelperError {
             class: "SerializationError".to_owned(),
@@ -55,7 +55,7 @@ fn catalog() -> HelperResult {
 }
 
 fn compile(name: &str, texts: &[String]) -> HelperResult {
-    let regex = get_compiled_pattern(name).map_err(pattern_error)?;
+    let regex = get_compiled_pattern(name).map_err(|error| pattern_error(&error))?;
     let mut matches = Vec::with_capacity(texts.len());
     for text in texts {
         matches.push(regex.is_match(text).map_err(|error| {
@@ -73,6 +73,23 @@ fn compile(name: &str, texts: &[String]) -> HelperResult {
 }
 
 fn categories(roots: &[Vec<CategoryFile>]) -> HelperResult {
+    let (temporary_roots, warning_names) = write_category_roots(roots)?;
+    let root_paths: Vec<PathBuf> = temporary_roots
+        .iter()
+        .map(|root| root.path().to_path_buf())
+        .collect();
+    let root_refs: Vec<&Path> = root_paths.iter().map(PathBuf::as_path).collect();
+    let entries = available_content_categories(&root_refs);
+    let categories: Vec<Value> = entries
+        .iter()
+        .filter_map(|entry| serde_json::to_value(entry).ok())
+        .collect();
+    Ok(json!({"categories": categories, "warnings": warning_names}))
+}
+
+fn write_category_roots(
+    roots: &[Vec<CategoryFile>],
+) -> Result<(Vec<TempDir>, Vec<String>), Box<HelperError>> {
     let mut temporary_roots = Vec::with_capacity(roots.len());
     let mut warning_names = Vec::new();
     for files in roots {
@@ -94,32 +111,24 @@ fn categories(roots: &[Vec<CategoryFile>]) -> HelperResult {
             }
             fs::write(categories_dir.join(&file.filename), &file.content)
                 .map_err(|error| helper_error("IOError", error.to_string()))?;
-            if file.filename.ends_with(".yaml") || file.filename.ends_with(".yml") {
-                if serde_saphyr::from_str::<Value>(&file.content).is_err() {
-                    warning_names.push(file.filename.clone());
-                }
+            let is_yaml = Path::new(&file.filename)
+                .extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| matches!(extension, "yaml" | "yml"));
+            if is_yaml && serde_saphyr::from_str::<Value>(&file.content).is_err() {
+                warning_names.push(file.filename.clone());
             }
         }
         temporary_roots.push(temporary);
     }
-    let root_paths: Vec<PathBuf> = temporary_roots
-        .iter()
-        .map(|root| root.path().to_path_buf())
-        .collect();
-    let root_refs: Vec<&Path> = root_paths.iter().map(PathBuf::as_path).collect();
-    let entries = available_content_categories(&root_refs);
-    let categories: Vec<Value> = entries
-        .iter()
-        .filter_map(|entry| serde_json::to_value(entry).ok())
-        .collect();
-    Ok(json!({"categories": categories, "warnings": warning_names}))
+    Ok((temporary_roots, warning_names))
 }
 
-fn pattern_error(error: PatternCatalogError) -> Box<HelperError> {
-    let class = match &error {
+fn pattern_error(error: &PatternCatalogError) -> Box<HelperError> {
+    let class = match error {
         PatternCatalogError::UnknownPattern { .. } => "ValueError",
         PatternCatalogError::Compile { .. } => "RegexError",
-        PatternCatalogError::Read { .. } | PatternCatalogError::Parse { .. } => "PatternError",
+        PatternCatalogError::Parse { .. } => "PatternError",
     };
     helper_error(class, error.to_string())
 }
