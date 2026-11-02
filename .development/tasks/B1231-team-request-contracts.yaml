@@ -123,7 +123,6 @@ scope:
   paths:
     - crates/betterlite-server/src/team_request_contracts.rs
     - crates/betterlite-server/src/team_request_contracts/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/src/helpers/server/team_request_contracts.rs
     - tools/oracle/src/helpers/server/team_request_contracts/**

@@ -25,7 +25,6 @@ description: >-
   Authenticate with B003's user_api_key_auth; do not bypass it.
 scope:
   paths:
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/workflow_runs.rs
     - crates/betterlite-server/src/workflow_runs/**
     - tools/oracle/cases/management/workflows/**

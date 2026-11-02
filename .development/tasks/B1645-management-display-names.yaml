@@ -25,7 +25,6 @@ description: >-
 scope:
   paths:
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/management_display_names.rs
     - crates/betterlite-server/src/management_display_names/**
   lint_tables: false

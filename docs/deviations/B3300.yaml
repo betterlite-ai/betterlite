@@ -1,0 +1,11 @@
+task: B3300
+deviations:
+  - what: betterlite rejects reducto:// file IDs in JSON requests with a 400 error; LiteLLM would accept them and fail when calling the provider.
+    why: A file ID without user scoping is a path to leaking cross-user data through the proxy. Rejecting early prevents confusion when a shared ID shows wrong results.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ocr_endpoints/endpoints.py#L229-245
+  - what: betterlite error messages on request parsing failures are betterlite's own instead of LiteLLM's Python exception messages.
+    why: Error wording is not part of the wire contract; clients branch on status and code, not message text. Matching LiteLLM's exception type and code is sufficient (rule errors-match-litellm).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ocr_endpoints/endpoints.py#L200-213
+  - what: Multipart text fields sent with a charset other than UTF-8 decode with encoding_rs's decoder for that label (the WHATWG Encoding Standard), except labels Python reads as ascii, latin-1 or iso8859-9, which decode byte for byte as Python does. An unknown label or bytes the decoder rejects fall back to latin-1. LiteLLM decodes through Starlette with Python's codecs, so a label only one side knows, or a byte outside Python's strict CJK tables (gbk 0x80, euc-kr 0x81 0x41, shift_jis 0x87 0x40, the unassigned gb2312 cell 0xAA 0xA1), gives different text.
+    why: The difference comes from CPython's codec tables, not from LiteLLM, and only shows for a form field sent in a CJK or WHATWG-only charset with bytes outside the strict tables. Matching it would mean porting Python's alias table and its strict CJK tables for input no OCR client sends.
+    link: https://github.com/encode/starlette/blob/1.9.0/starlette/formparsers.py#L49-L53

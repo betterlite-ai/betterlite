@@ -67,7 +67,6 @@ scope:
   paths:
     - crates/betterlite-server/src/model_team_scope.rs
     - crates/betterlite-server/src/model_team_scope/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/src/helpers/server/model_team_scope.rs
     - tools/oracle/src/helpers/server/model_team_scope/**

@@ -30,13 +30,10 @@ scope:
   paths:
   - crates/betterlite-router/src/cooldown_state.rs
   - crates/betterlite-router/src/cooldown_state/**
-  - crates/betterlite-server/src/lib.rs
   - crates/betterlite-server/src/routes.rs
   - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
   - crates/betterlite-server/src/state/**
-  - crates/betterlite-server/src/routing/mod.rs
-  - crates/betterlite-server/src/routing/mod/**
   - crates/betterlite-server/src/routing/cooldown_state.rs
   - crates/betterlite-server/src/routing/cooldown_state/**
   - crates/betterlite-router/src/strategy.rs

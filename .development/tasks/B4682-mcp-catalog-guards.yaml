@@ -56,7 +56,6 @@ description: >-
 
 scope:
   paths:
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/mcp/catalog_guard.rs
     - crates/betterlite-server/src/mcp/catalog_guard/**
     - crates/betterlite-server/src/mcp/catalog_guard/tests.rs

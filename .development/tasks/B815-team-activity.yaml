@@ -72,7 +72,6 @@ scope:
   paths:
     - crates/betterlite-server/src/team_activity.rs
     - crates/betterlite-server/src/team_activity/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes.rs
     - crates/betterlite-server/src/routes/**

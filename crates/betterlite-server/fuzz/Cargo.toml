@@ -16,6 +16,20 @@ doc = false
 bench = false
 
 [[bin]]
+name = "ocr_json_body"
+path = "fuzz_targets/ocr_json_body.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ocr_multipart_form"
+path = "fuzz_targets/ocr_multipart_form.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "scim_resource"
 path = "fuzz_targets/scim_resource.rs"
 test = false

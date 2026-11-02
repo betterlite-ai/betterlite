@@ -87,7 +87,6 @@ scope:
   paths:
     - crates/betterlite-server/src/key_list.rs
     - crates/betterlite-server/src/key_list/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes.rs
     - crates/betterlite-server/src/routes/**

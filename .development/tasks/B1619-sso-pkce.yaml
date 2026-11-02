@@ -24,7 +24,6 @@ description: >-
   231 source lines; allow 250 product, 170 tests, 80 adapters and 80 config/wiring, cap 650.
 scope:
   paths:
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/sso_pkce.rs
     - crates/betterlite-server/src/sso_pkce/**
     - crates/betterlite-config/src/sso_pkce.rs

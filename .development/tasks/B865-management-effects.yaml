@@ -70,8 +70,8 @@ scope:
   paths:
     - crates/betterlite-server/src/management_effects.rs
     - crates/betterlite-server/src/management_effects/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/management_effects/fixtures.rs
     - crates/betterlite-server/src/management_effects/fixtures/**
   lint_tables: false
 references:

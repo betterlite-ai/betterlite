@@ -74,7 +74,6 @@ scope:
   paths:
     - crates/betterlite-server/src/audit_events.rs
     - crates/betterlite-server/src/audit_events/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/audit_record.rs

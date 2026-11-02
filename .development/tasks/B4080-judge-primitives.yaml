@@ -107,7 +107,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^provider_qualified::/)'
     - id: judge-target-tests
       why: judge_target and JudgeTarget tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^judge_target::/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^judge_targets::/)'
     - id: verdict-parse-fuzz
       why: verdict parser fuzz corpus is missing or does not replay
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-models/fuzz/corpus/judge_verdict_parser)" && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(replays_the_judge_verdict_parser_corpus)'

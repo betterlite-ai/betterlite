@@ -252,91 +252,91 @@ checks:
       why: failed_tracking_alert logic or caching fails
       run: >-
         cargo nextest run --locked -p betterlite-server --no-tests=fail
-        -E 'test(/^budget_alerts::failed_tracking($|::)/)'
+        -E 'test(/^alerting::budget_alerts::failed_tracking($|::)/)'
 
     - id: budget-alert-entry-tests
       why: budget_alerts entry point guard logic fails
       run: >-
         cargo nextest run --locked -p betterlite-server --no-tests=fail
-        -E 'test(/^budget_alerts::entry($|::)/)'
+        -E 'test(/^alerting::budget_alerts::entry($|::)/)'
 
     - id: soft-budget-threshold-tests
       why: Soft budget threshold detection or message generation fails
       run: >-
         cargo nextest run --locked -p betterlite-server --no-tests=fail
-        -E 'test(/^budget_alerts::soft_budget($|::)/)'
+        -E 'test(/^alerting::budget_alerts::soft_budget($|::)/)'
 
     - id: max-budget-threshold-tests
       why: Max budget crossed detection fails
       run: >-
         cargo nextest run --locked -p betterlite-server --no-tests=fail
-        -E 'test(/^budget_alerts::max_budget($|::)/)'
+        -E 'test(/^alerting::budget_alerts::max_budget($|::)/)'
 
     - id: threshold-5pct-tests
       why: 5% threshold detection or message fails
       run: >-
         cargo nextest run --locked -p betterlite-server --no-tests=fail
-        -E 'test(/^budget_alerts::threshold_5pct($|::)/)'
+        -E 'test(/^alerting::budget_alerts::threshold_5pct($|::)/)'
 
     - id: threshold-15pct-tests
       why: 15% threshold detection or message fails
       run: >-
         cargo nextest run --locked -p betterlite-server --no-tests=fail
-        -E 'test(/^budget_alerts::threshold_15pct($|::)/)'
+        -E 'test(/^alerting::budget_alerts::threshold_15pct($|::)/)'
 
     - id: cache-key-tests
       why: Cache key generation or lookup fails
       run: >-
         cargo nextest run --locked -p betterlite-server --no-tests=fail
-        -E 'test(/^budget_alerts::cache_key($|::)/)'
+        -E 'test(/^alerting::budget_alerts::cache_key($|::)/)'
 
     - id: cache-ttl-tests
       why: Cache TTL or alert suppression fails
       run: >-
         cargo nextest run --locked -p betterlite-server --no-tests=fail
-        -E 'test(/^budget_alerts::cache_ttl($|::)/)'
+        -E 'test(/^alerting::budget_alerts::cache_ttl($|::)/)'
 
     - id: webhook-event-tests
       why: WebhookEvent construction or field mapping fails
       run: >-
         cargo nextest run --locked -p betterlite-server --no-tests=fail
-        -E 'test(/^budget_alerts::webhook_event($|::)/)'
+        -E 'test(/^alerting::budget_alerts::webhook_event($|::)/)'
 
     - id: budget-alert-send-tests
       why: send_alert call or message formatting fails
       run: >-
         cargo nextest run --locked -p betterlite-server --no-tests=fail
-        -E 'test(/^budget_alerts::send($|::)/)'
+        -E 'test(/^alerting::budget_alerts::send($|::)/)'
 
     - id: threshold-logic-tests
       why: _get_event_and_event_message logic or message composition fails
       run: >-
         cargo nextest run --locked -p betterlite-server --no-tests=fail
-        -E 'test(/^budget_alerts::threshold_logic($|::)/)'
+        -E 'test(/^alerting::budget_alerts::threshold_logic($|::)/)'
 
     - id: percent-calc-tests
       why: _get_percent_of_max_budget_left calculation fails
       run: >-
         cargo nextest run --locked -p betterlite-server --no-tests=fail
-        -E 'test(/^budget_alerts::percent_calc($|::)/)'
+        -E 'test(/^alerting::budget_alerts::percent_calc($|::)/)'
 
     - id: user-info-str-tests
       why: _get_user_info_str formatting or field conversion fails
       run: >-
         cargo nextest run --locked -p betterlite-server --no-tests=fail
-        -E 'test(/^budget_alerts::user_info_str($|::)/)'
+        -E 'test(/^alerting::budget_alerts::user_info_str($|::)/)'
 
     - id: customer-spend-tests
       why: customer_spend_alert guards or send_webhook_alert dispatch fails
       run: >-
         cargo nextest run --locked -p betterlite-server --no-tests=fail
-        -E 'test(/^budget_alerts::customer_spend($|::)/)'
+        -E 'test(/^alerting::budget_alerts::customer_spend($|::)/)'
 
     - id: team-member-message-tests
       why: TEAM_MEMBER event_group message override fails
       run: >-
         cargo nextest run --locked -p betterlite-server --no-tests=fail
-        -E 'test(/^budget_alerts::team_member_message($|::)/)'
+        -E 'test(/^alerting::budget_alerts::team_member_message($|::)/)'
 
 oracle_cases: []
 deviations:

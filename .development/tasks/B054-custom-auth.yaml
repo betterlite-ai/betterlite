@@ -47,7 +47,6 @@ scope:
   paths:
     - crates/betterlite-server/src/custom_auth.rs
     - crates/betterlite-server/src/custom_auth/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/auth.rs
     - crates/betterlite-server/src/auth/**

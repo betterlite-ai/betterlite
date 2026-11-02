@@ -1,0 +1,17 @@
+kind: helper
+name: inspect-mcp-response-skips-on-missing-payload
+call:
+  b3762:
+    inspect_mcp_response:
+      settings:
+        api_key: test-key
+        api_base: "https://cisco.test"
+        inspection_type: mcp
+        on_flagged_action: block
+        fallback_on_error: block
+        timeout: 5
+      request_data: {}
+      response: {}
+env: {}
+compare:
+  ignore: []

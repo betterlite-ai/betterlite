@@ -111,46 +111,46 @@ checks:
   commands:
     - id: constructor-env-defaults
       why: VantageLogger does not read environment variables or apply defaults for credentials and frequency
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^vantage_export::constructor_env/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::vantage::export::constructor_env/)'
     - id: constructor-credentials
       why: VANTAGE_API_KEY and VANTAGE_INTEGRATION_TOKEN are not conditionally added to destination_config
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^vantage_export::constructor_credentials/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::vantage::export::constructor_credentials/)'
     - id: constructor-base-url-default
       why: VANTAGE_BASE_URL does not default to https://api.vantage.sh
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^vantage_export::constructor_base_url/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::vantage::export::constructor_base_url/)'
     - id: constructor-frequency-default
       why: VANTAGE_EXPORT_FREQUENCY does not default to "hourly" or is not normalized to lowercase
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^vantage_export::constructor_frequency/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::vantage::export::constructor_frequency/)'
     - id: constructor-interval-parsing
       why: VANTAGE_EXPORT_INTERVAL_SECONDS invalid values do not warn and fallback to None
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^vantage_export::constructor_interval/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::vantage::export::constructor_interval/)'
     - id: constructor-parent-call
       why: VantageLogger does not call parent.__init__ with correct provider, format, and prefix
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^vantage_export::constructor_parent/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::vantage::export::constructor_parent/)'
     - id: constructor-debug-log
       why: VantageLogger does not log initialization debug message with masked token
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^vantage_export::constructor_debug/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::vantage::export::constructor_debug/)'
     - id: pod-lock-key
       why: initialize_focus_export_job does not use VANTAGE_USAGE_DATA_JOB_NAME as the lock key
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^vantage_export_schedule::pod_lock_key/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::vantage::export_schedule::pod_lock_key/)'
     - id: pod-lock-acquire-fail
       why: initialize_focus_export_job does not log debug and return early when acquire_lock fails
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^vantage_export_schedule::pod_lock_fail/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::vantage::export_schedule::pod_lock_fail/)'
     - id: pod-lock-release
       why: initialize_focus_export_job does not release the lock in a finally block or does not release with the correct VANTAGE_USAGE_DATA_JOB_NAME key
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^vantage_export_schedule::pod_lock_release/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::vantage::export_schedule::pod_lock_release/)'
     - id: pod-lock-unavailable
       why: initialize_focus_export_job does not run the export immediately when pod_lock_manager is unavailable
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^vantage_export_schedule::pod_lock_unavailable/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::vantage::export_schedule::pod_lock_unavailable/)'
     - id: scheduler-type-match
       why: init_vantage_background_job does not retrieve VantageLogger instances using the correct type
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^vantage_export_schedule::scheduler_type/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::vantage::export_schedule::scheduler_type/)'
     - id: scheduler-skip-empty
       why: init_vantage_background_job does not skip when no VantageLogger is registered
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^vantage_export_schedule::scheduler_skip/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::vantage::export_schedule::scheduler_skip/)'
     - id: scheduler-registration
       why: init_vantage_background_job does not register the VantageLogger with the scheduler
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^vantage_export_schedule::scheduler_register/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::vantage::export_schedule::scheduler_register/)'
 
 oracle_cases: []
 

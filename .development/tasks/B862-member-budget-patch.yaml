@@ -104,7 +104,6 @@ scope:
   paths:
     - crates/betterlite-server/src/member_budget_patch.rs
     - crates/betterlite-server/src/member_budget_patch/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/src/helpers/server/member_budget_patch.rs
     - tools/oracle/src/helpers/server/member_budget_patch/**
@@ -113,6 +112,7 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/member-budget-patch/**
     - tools/oracle/fuzz/corpus/helper_case/member-budget-patch-*
+    - crates/betterlite-server/src/member_budget_patch/fixtures.rs
     - crates/betterlite-server/src/member_budget_patch/fixtures/**
   lint_tables: false
 references:

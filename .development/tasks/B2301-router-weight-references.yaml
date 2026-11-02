@@ -44,7 +44,6 @@ scope:
   paths:
     - crates/betterlite-server/src/router_weight_references.rs
     - crates/betterlite-server/src/router_weight_references/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/src/helpers/server/router_weight_references.rs
     - tools/oracle/src/helpers/server/router_weight_references/**

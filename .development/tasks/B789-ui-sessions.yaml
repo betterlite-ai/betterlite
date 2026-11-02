@@ -77,7 +77,6 @@ scope:
   paths:
     - crates/betterlite-server/src/ui_sessions.rs
     - crates/betterlite-server/src/ui_sessions/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/routes.rs
     - crates/betterlite-server/src/routes/**
     - crates/betterlite-server/src/state.rs

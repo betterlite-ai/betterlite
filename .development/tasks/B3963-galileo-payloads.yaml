@@ -112,6 +112,12 @@ out_of_scope:
 - Callback record admission control and buffering (B3965).
 - Timer installation and flush scheduling.
 - Providers other than those listed above.
+- >-
+  Decoding ResponsesAPIResponse.output into the OpenAI SDK's ResponseOutputItem union belongs to
+  B1138, which owns ResponsesAPIResponse; Galileo only serializes the list it gets. Until B1138
+  lands, output items other than message, function_call and reasoning (web_search_call,
+  file_search_call, custom_tool_call, computer_call, code_interpreter_call, image_generation_call,
+  local_shell_call and the mcp items) serialize exactly as received.
 pitfalls:
 - >-
   Naive datetimes without tzinfo are assumed to be in local time, not UTC. Convert to local tzinfo

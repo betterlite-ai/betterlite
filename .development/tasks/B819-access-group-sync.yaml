@@ -70,8 +70,8 @@ scope:
   paths:
     - crates/betterlite-server/src/access_group_sync.rs
     - crates/betterlite-server/src/access_group_sync/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/access_group_sync/fixtures.rs
     - crates/betterlite-server/src/access_group_sync/fixtures/**
   lint_tables: false
 references:

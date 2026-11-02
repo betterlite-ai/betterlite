@@ -57,7 +57,6 @@ scope:
   paths:
     - crates/betterlite-server/src/user_contracts.rs
     - crates/betterlite-server/src/user_contracts/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/user_contracts.rs

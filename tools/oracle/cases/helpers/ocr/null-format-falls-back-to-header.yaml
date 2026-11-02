@@ -1,0 +1,11 @@
+kind: helper
+name: null_format_falls_back_to_header
+call:
+  b3300:
+    json_body:
+      model: mistral/mistral-ocr-latest
+      req_format: null
+    header_req_format: native
+env: {}
+compare:
+  ignore: []
