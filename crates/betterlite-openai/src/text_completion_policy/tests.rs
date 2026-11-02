@@ -220,6 +220,20 @@ fn text_completion_policy_cases(#[case] case: u8) {
                     .contains_key("logprobs")
             );
 
+            let falsy_finish_reasons = json!({
+                "choices": [
+                    {"text": "a", "finish_reason": ""},
+                    {"text": "b", "finish_reason": 0_i32},
+                    {"text": "c", "finish_reason": false},
+                ],
+            });
+            let result_falsy =
+                reply::to_chat_model_response(Some(falsy_finish_reasons), Some(Map::new()))
+                    .expect("falsy finish_reason collapses to stop");
+            assert_eq!(result_falsy["choices"][0]["finish_reason"], json!("stop"));
+            assert_eq!(result_falsy["choices"][1]["finish_reason"], json!("stop"));
+            assert_eq!(result_falsy["choices"][2]["finish_reason"], json!("stop"));
+
             let explicit_null_logprobs = json!({"choices": [{"text": "d", "logprobs": null}]});
             let result_explicit_null =
                 reply::to_chat_model_response(Some(explicit_null_logprobs), Some(Map::new()))
