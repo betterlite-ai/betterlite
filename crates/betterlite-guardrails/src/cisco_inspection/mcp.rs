@@ -16,31 +16,63 @@ use crate::cisco_verdict_enforcement::handle_api_error;
 
 const PROVIDER_NAME: &str = "cisco_ai_defense";
 
+struct InspectDispatch<'ctx> {
+    guardrail: &'ctx CiscoInspectionGuardrail,
+    scan: ScanContext,
+    request_data: &'ctx mut Fields,
+    response: ResponseSurface<'ctx>,
+    skip_message: &'static str,
+}
+
+impl<'ctx> InspectDispatch<'ctx> {
+    const fn for_request(
+        guardrail: &'ctx CiscoInspectionGuardrail,
+        request_data: &'ctx mut Fields,
+    ) -> Self {
+        let scan = ScanContext {
+            surface: InspectionType::Mcp,
+            direction: Direction::Input,
+        };
+        let skip_message =
+            "Cisco AI Defense guardrail: could not build MCP request payload, skipping";
+        Self {
+            guardrail,
+            scan,
+            request_data,
+            response: ResponseSurface::None,
+            skip_message,
+        }
+    }
+
+    const fn for_response(
+        guardrail: &'ctx CiscoInspectionGuardrail,
+        request_data: &'ctx mut Fields,
+        response: &'ctx Json,
+    ) -> Self {
+        Self {
+            guardrail,
+            scan: ScanContext {
+                surface: InspectionType::Mcp,
+                direction: Direction::Output,
+            },
+            request_data,
+            response: ResponseSurface::McpResponse(response),
+            skip_message: "Cisco AI Defense guardrail: could not build MCP response payload, skipping",
+        }
+    }
+}
+
 // Mirrors LiteLLM's fn _inspect_mcp_request.
 pub async fn inspect_mcp_request(
     guardrail: &CiscoInspectionGuardrail,
     request_data: &mut Fields,
 ) -> Option<FinalizeOutcome> {
-    let Some(payload) = build_request_payload(request_data) else {
-        tracing::debug!(
-            "Cisco AI Defense guardrail: could not build MCP request payload, skipping"
-        );
-        return None;
-    };
-    let scan = ScanContext {
-        surface: InspectionType::Mcp,
-        direction: Direction::Input,
-    };
-    Some(
-        dispatch(
-            guardrail,
-            scan,
-            &payload,
-            request_data,
-            ResponseSurface::None,
-        )
-        .await,
+    let payload = build_request_payload(request_data);
+    dispatch_if_built(
+        InspectDispatch::for_request(guardrail, request_data),
+        payload,
     )
+    .await
 }
 
 // Mirrors LiteLLM's fn _inspect_mcp_response: same None-signals-skip contract as the request side.
@@ -49,23 +81,29 @@ pub async fn inspect_mcp_response(
     request_data: &mut Fields,
     response: &Json,
 ) -> Option<FinalizeOutcome> {
-    let Some(payload) = build_response_payload(request_data, response) else {
-        tracing::debug!(
-            "Cisco AI Defense guardrail: could not build MCP response payload, skipping"
-        );
+    let payload = build_response_payload(request_data, response);
+    let call = InspectDispatch::for_response(guardrail, request_data, response);
+    dispatch_if_built(call, payload).await
+}
+
+async fn dispatch_if_built<Payload>(
+    call: InspectDispatch<'_>,
+    payload: Option<Payload>,
+) -> Option<FinalizeOutcome>
+where
+    Payload: serde::Serialize + Sync,
+{
+    let Some(built) = payload else {
+        tracing::debug!("{}", call.skip_message);
         return None;
-    };
-    let scan = ScanContext {
-        surface: InspectionType::Mcp,
-        direction: Direction::Output,
     };
     Some(
         dispatch(
-            guardrail,
-            scan,
-            &payload,
-            request_data,
-            ResponseSurface::McpResponse(response),
+            call.guardrail,
+            call.scan,
+            &built,
+            call.request_data,
+            call.response,
         )
         .await,
     )

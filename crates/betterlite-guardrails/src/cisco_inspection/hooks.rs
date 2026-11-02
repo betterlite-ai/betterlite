@@ -18,61 +18,74 @@ pub struct HookArgs<'args> {
     pub key_user_id: Option<&'args str>,
 }
 
-// Mirrors LiteLLM's fn async_pre_call_hook.
-pub async fn async_pre_call_hook(
-    guardrail: &CiscoInspectionGuardrail,
-    request_data: &mut Fields,
-    args: HookArgs<'_>,
-) -> Option<FinalizeOutcome> {
-    let is_mcp = is_mcp_call_type(args.call_type);
-    if !surface_matches(guardrail.settings.inspection_type, is_mcp) || !args.should_run {
-        return None;
-    }
-    let outcome = if is_mcp {
-        inspect_mcp_request(guardrail, request_data).await?
-    } else {
-        let messages = request_messages(request_data);
-        if messages.is_empty() {
-            return None;
+// Only the mismatch/empty-messages logging differs between the two hooks, so one template covers both.
+macro_rules! pre_call_gated_hook {
+    ($name:ident, log_mismatch: $log_mismatch:literal, log_empty_messages: $log_empty_messages:literal) => {
+        pub async fn $name(
+            guardrail: &CiscoInspectionGuardrail,
+            request_data: &mut Fields,
+            args: HookArgs<'_>,
+        ) -> Option<FinalizeOutcome> {
+            if !surface_matches(
+                guardrail.settings.inspection_type,
+                is_mcp_call_type(args.call_type),
+            ) {
+                if $log_mismatch {
+                    tracing::debug!(
+                        call_type = args.call_type.unwrap_or_default(),
+                        inspection_type = ?guardrail.settings.inspection_type,
+                        "Cisco AI Defense guardrail: call_type does not match configured inspection_type, skipping"
+                    );
+                }
+                return None;
+            }
+            if !args.should_run {
+                return None;
+            }
+            dispatch_pre_call(
+                guardrail,
+                request_data,
+                args.call_type,
+                args.key_user_id,
+                $log_empty_messages,
+            )
+            .await
         }
-        chat_outcome(
-            guardrail,
-            request_data,
-            messages,
-            Direction::Input,
-            args.key_user_id,
-        )
-        .await
     };
-    record_applied_guardrail(request_data, &guardrail.settings.guardrail_name);
-    Some(outcome)
 }
 
+// Mirrors LiteLLM's fn async_pre_call_hook.
+pre_call_gated_hook!(async_pre_call_hook, log_mismatch: true, log_empty_messages: true);
+
 // Mirrors LiteLLM's fn async_moderation_hook, triggered for the during_call event.
-pub async fn async_moderation_hook(
+pre_call_gated_hook!(async_moderation_hook, log_mismatch: false, log_empty_messages: false);
+
+// Shared by both hooks; log_empty_messages tells them apart.
+async fn dispatch_pre_call(
     guardrail: &CiscoInspectionGuardrail,
     request_data: &mut Fields,
-    args: HookArgs<'_>,
+    call_type: Option<&str>,
+    key_user_id: Option<&str>,
+    log_empty_messages: bool,
 ) -> Option<FinalizeOutcome> {
-    let is_mcp = is_mcp_call_type(args.call_type);
-    if !surface_matches(guardrail.settings.inspection_type, is_mcp) || !args.should_run {
-        return None;
-    }
-    let outcome = if is_mcp {
+    let outcome = if is_mcp_call_type(call_type) {
         inspect_mcp_request(guardrail, request_data).await?
     } else {
         let messages = request_messages(request_data);
         if messages.is_empty() {
+            if log_empty_messages {
+                tracing::debug!(
+                    "Cisco AI Defense guardrail: no scannable messages in pre-call request, skipping"
+                );
+            }
             return None;
         }
-        chat_outcome(
-            guardrail,
-            request_data,
+        let args = ChatInspectionArgs {
             messages,
-            Direction::Input,
-            args.key_user_id,
-        )
-        .await
+            direction: Direction::Input,
+            key_user_id,
+        };
+        inspect_chat(guardrail, args, request_data, ResponseSurface::None).await
     };
     record_applied_guardrail(request_data, &guardrail.settings.guardrail_name);
     Some(outcome)
@@ -99,52 +112,20 @@ pub async fn async_post_call_success_hook(
     }
     let mut messages = request_messages(request_data);
     messages.extend(response_messages);
-    let outcome = chat_outcome_on_response(
-        guardrail,
-        request_data,
-        response,
+    let chat_args = ChatInspectionArgs {
         messages,
-        args.key_user_id,
+        direction: Direction::Output,
+        key_user_id: args.key_user_id,
+    };
+    let outcome = inspect_chat(
+        guardrail,
+        chat_args,
+        request_data,
+        ResponseSurface::ChatResponse(response),
     )
     .await;
     record_applied_guardrail(request_data, &guardrail.settings.guardrail_name);
     Some(outcome)
-}
-
-async fn chat_outcome(
-    guardrail: &CiscoInspectionGuardrail,
-    request_data: &mut Fields,
-    messages: Vec<InspectMessage>,
-    direction: Direction,
-    key_user_id: Option<&str>,
-) -> FinalizeOutcome {
-    let args = ChatInspectionArgs {
-        messages,
-        direction,
-        key_user_id,
-    };
-    inspect_chat(guardrail, args, request_data, ResponseSurface::None).await
-}
-
-async fn chat_outcome_on_response(
-    guardrail: &CiscoInspectionGuardrail,
-    request_data: &mut Fields,
-    response: &mut Fields,
-    messages: Vec<InspectMessage>,
-    key_user_id: Option<&str>,
-) -> FinalizeOutcome {
-    let args = ChatInspectionArgs {
-        messages,
-        direction: Direction::Output,
-        key_user_id,
-    };
-    inspect_chat(
-        guardrail,
-        args,
-        request_data,
-        ResponseSurface::ChatResponse(response),
-    )
-    .await
 }
 
 // Mirrors LiteLLM's fn _extract_response_messages.

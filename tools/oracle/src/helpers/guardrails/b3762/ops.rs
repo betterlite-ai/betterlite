@@ -140,36 +140,42 @@ pub(super) fn chat(args: &ChatInput) -> HelperResult {
     }))
 }
 
-pub(super) fn mcp_request(args: &McpRequestInput) -> HelperResult {
-    let (mock, silent, base, runtime) = prepare(args.answer.as_ref())?;
-    let mut guardrail = guardrail(&args.settings)?;
-    guardrail.settings.api_base = base;
-    let mut data: Fields = serde_json::from_value(args.request_data.clone()).unwrap_or_default();
-    let outcome = runtime.block_on(inspect_mcp_request(&guardrail, &mut data));
-    drop(silent);
-    let (path, body) = recorded_call(mock)?;
-    Ok(json!({
-        "path": path,
-        "request": body,
-        "outcome": outcome.as_ref().map(outcome_tag),
-    }))
+// mcp_request and mcp_response share this setup, differing only in which inspect fn they drive.
+macro_rules! mcp_op {
+    ($fn_name:ident, $input_ty:ty, $run:expr) => {
+        pub(super) fn $fn_name(args: &$input_ty) -> HelperResult {
+            let (mock, silent, base, runtime) = prepare(args.answer.as_ref())?;
+            let mut guardrail = guardrail(&args.settings)?;
+            guardrail.settings.api_base = base;
+            let mut data: Fields =
+                serde_json::from_value(args.request_data.clone()).unwrap_or_default();
+            let outcome = $run(&runtime, &guardrail, &mut data, args);
+            drop(silent);
+            let (path, body) = recorded_call(mock)?;
+            Ok(json!({
+                "path": path,
+                "request": body,
+                "outcome": outcome.as_ref().map(outcome_tag),
+            }))
+        }
+    };
 }
 
-pub(super) fn mcp_response(args: &McpResponseInput) -> HelperResult {
-    let (mock, silent, base, runtime) = prepare(args.answer.as_ref())?;
-    let mut guardrail = guardrail(&args.settings)?;
-    guardrail.settings.api_base = base;
-    let mut data: Fields = serde_json::from_value(args.request_data.clone()).unwrap_or_default();
-    let response_json = Json::parse(&args.response.to_string());
-    let outcome = runtime.block_on(inspect_mcp_response(&guardrail, &mut data, &response_json));
-    drop(silent);
-    let (path, body) = recorded_call(mock)?;
-    Ok(json!({
-        "path": path,
-        "request": body,
-        "outcome": outcome.as_ref().map(outcome_tag),
-    }))
-}
+mcp_op!(
+    mcp_request,
+    McpRequestInput,
+    |runtime: &tokio::runtime::Runtime, guardrail, data, _args| {
+        runtime.block_on(inspect_mcp_request(guardrail, data))
+    }
+);
+mcp_op!(
+    mcp_response,
+    McpResponseInput,
+    |runtime: &tokio::runtime::Runtime, guardrail, data, args: &McpResponseInput| {
+        let response_json = Json::parse(&args.response.to_string());
+        runtime.block_on(inspect_mcp_response(guardrail, data, &response_json))
+    }
+);
 
 pub(super) fn post_inspection_op(args: &PostInspectionInput) -> HelperResult {
     let (mock, silent, base, runtime) = prepare(args.answer.as_ref())?;

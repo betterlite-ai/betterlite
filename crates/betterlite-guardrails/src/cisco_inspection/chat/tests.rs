@@ -86,24 +86,32 @@ async fn serve_capturing(
     (base, captured, server)
 }
 
-fn text_field(fields: &Fields, key: &str) -> String {
-    match Json::field(fields, key) {
-        Json::Text(value) => value,
-        other
-        @ (Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            panic!("expected {key} to be a string, got {other:?}")
+// text_field and object_field each pull one Json variant out of a Fields map or panic.
+macro_rules! typed_field {
+    ($name:ident, $variant:ident, $ty:ty, $noun:literal, $other:pat) => {
+        fn $name(fields: &Fields, key: &str) -> $ty {
+            match Json::field(fields, key) {
+                Json::$variant(value) => value,
+                other @ $other => panic!("expected {key} to be {}, got {other:?}", $noun),
+            }
         }
-    }
+    };
 }
 
-fn object_field(fields: &Fields, key: &str) -> Fields {
-    match Json::field(fields, key) {
-        Json::Object(value) => value,
-        other @ (Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            panic!("expected {key} to be an object, got {other:?}")
-        }
-    }
-}
+typed_field!(
+    text_field,
+    Text,
+    String,
+    "a string",
+    (Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
+);
+typed_field!(
+    object_field,
+    Object,
+    Fields,
+    "an object",
+    (Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
+);
 
 #[tokio::test]
 async fn inspect_chat_sends_the_assembled_payload_and_allows() {
