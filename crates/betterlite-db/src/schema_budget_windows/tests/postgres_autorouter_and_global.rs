@@ -167,52 +167,11 @@ async fn check_issuer_empty_backfill_and_null_rejection(client: &Client) {
     .await;
 }
 
-async fn check_issuer_empty_scope_inactive_still_unique(client: &Client) {
-    exec_params(
-        client,
-        r#"INSERT INTO "LiteLLM_JWTKeyMapping" (id, jwt_claim_name, jwt_claim_value, token, is_active) VALUES ($1, $2, $3, $4, true)"#,
-        &[&"mapping-active", &"claim-a", &"value-a", &"token-distinct"],
-    )
-    .await;
-    assert_exec_params_err_state(
-        client,
-        r#"INSERT INTO "LiteLLM_JWTKeyMapping" (id, jwt_claim_name, jwt_claim_value, token, is_active) VALUES ($1, $2, $3, $4, false)"#,
-        &[&"mapping-inactive", &"claim-a", &"value-a", &"token-distinct"],
-        SqlState::UNIQUE_VIOLATION,
-    )
-    .await;
+async fn insert_jwt_mapping_distinct_claim_value(client: &Client) {
     exec_params(
         client,
         r#"INSERT INTO "LiteLLM_JWTKeyMapping" (id, jwt_claim_name, jwt_claim_value, token) VALUES ($1, $2, $3, $4)"#,
-        &[&"mapping-distinct-value", &"claim-a", &"value-b", &"token-distinct"],
-    )
-    .await;
-}
-
-async fn check_issuer_scoped_pair_still_unique(client: &Client) {
-    exec_params(
-        client,
-        r#"INSERT INTO "LiteLLM_JWTKeyMapping" (id, jwt_claim_name, jwt_claim_value, token, jwt_issuer) VALUES ($1, $2, $3, $4, $5)"#,
-        &[
-            &"mapping-issuer-x",
-            &"claim-a",
-            &"value-a",
-            &"token-distinct",
-            &"issuer-x",
-        ],
-    )
-    .await;
-    assert_exec_params_err_state(
-        client,
-        r#"INSERT INTO "LiteLLM_JWTKeyMapping" (id, jwt_claim_name, jwt_claim_value, token, jwt_issuer) VALUES ($1, $2, $3, $4, $5)"#,
-        &[
-            &"mapping-issuer-x-dup",
-            &"claim-a",
-            &"value-a",
-            &"token-distinct",
-            &"issuer-x",
-        ],
-        SqlState::UNIQUE_VIOLATION,
+        &[&"map-dv", &"claim-a", &"value-b", &"tok-d"],
     )
     .await;
 }
@@ -221,11 +180,38 @@ async fn check_issuer_distinct_claim_pairs_inactive_still_unique(client: &Client
     exec_params(
         client,
         r#"INSERT INTO "LiteLLM_VerificationToken" (token) VALUES ($1)"#,
-        &[&"token-distinct"],
+        &[&"tok-d"],
     )
     .await;
-    check_issuer_empty_scope_inactive_still_unique(client).await;
-    check_issuer_scoped_pair_still_unique(client).await;
+    let active_sql = r#"INSERT INTO "LiteLLM_JWTKeyMapping" (id, jwt_claim_name, jwt_claim_value, token, is_active) VALUES ($1, $2, $3, $4, $5)"#;
+    exec_params(
+        client,
+        active_sql,
+        &[&"map-a", &"claim-a", &"value-a", &"tok-d", &true],
+    )
+    .await;
+    assert_exec_params_err_state(
+        client,
+        active_sql,
+        &[&"map-i", &"claim-a", &"value-a", &"tok-d", &false],
+        SqlState::UNIQUE_VIOLATION,
+    )
+    .await;
+    insert_jwt_mapping_distinct_claim_value(client).await;
+    let issuer_sql = r#"INSERT INTO "LiteLLM_JWTKeyMapping" (id, jwt_claim_name, jwt_claim_value, token, jwt_issuer) VALUES ($1, $2, $3, $4, $5)"#;
+    exec_params(
+        client,
+        issuer_sql,
+        &[&"map-ix", &"claim-a", &"value-a", &"tok-d", &"issuer-x"],
+    )
+    .await;
+    assert_exec_params_err_state(
+        client,
+        issuer_sql,
+        &[&"map-ix-dup", &"claim-a", &"value-a", &"tok-d", &"issuer-x"],
+        SqlState::UNIQUE_VIOLATION,
+    )
+    .await;
 }
 
 async fn insert_autorouter_baseline(client: &Client, scope: &str) {
