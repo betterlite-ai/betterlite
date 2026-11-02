@@ -9,7 +9,7 @@ use crate::cli::Options;
 use crate::gateway::GatewayInput;
 use crate::http;
 use crate::mock::MockProvider;
-use crate::routing_mock_scripts::{MockScript, Outcome, ScriptSpec, ScriptedReply};
+use crate::routing_mock_scripts::{MockScript, ScriptSpec};
 use crate::routing_scenarios;
 
 // A scenario is always its own gateway pair, so there is no group key or multi-case bookkeeping.
@@ -20,14 +20,7 @@ pub(super) fn run_scenario_case(
 ) -> Result<bool, OracleError> {
     let environment =
         <super::DatabaseEnvironment as clap::Parser>::try_parse_from([env!("CARGO_PKG_NAME")])?;
-    let replies = routing_scenarios::upstream_waits(&case.name, &case.scenario)
-        .into_iter()
-        .zip(case.upstream.iter().cloned())
-        .map(|(wait, answer)| ScriptedReply {
-            wait,
-            then: Outcome::Answer(answer),
-        })
-        .collect();
+    let replies = routing_scenarios::scripted_replies(&case.name, &case.scenario, &case.upstream)?;
     let mock = MockProvider::start(MockScript::try_from(ScriptSpec {
         deadline_ms: routing_scenarios::MAX_DEADLINE_MS,
         replies,

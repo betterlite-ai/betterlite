@@ -226,6 +226,10 @@ pub enum OracleError {
     ScenarioJoinMissing,
     #[error("scenario join did not hear back from every concurrent request: {0}")]
     ScenarioJoinFailed(#[source] RecvTimeoutError),
+    #[error(
+        "scenario needs at least {requests} upstream answers, one per request, but only {upstream} are scripted"
+    )]
+    ScenarioUpstreamShort { requests: usize, upstream: usize },
 }
 
 pub fn run() -> Result<ExitCode, OracleError> {

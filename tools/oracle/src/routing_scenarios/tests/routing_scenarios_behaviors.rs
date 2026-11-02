@@ -4,8 +4,9 @@ use rstest::rstest;
 
 use super::super::compare::{compare_responses, compare_transcript};
 use super::super::run::run_scenario;
-use super::super::{ConcurrentStep, HttpStep, JoinPoint, Scenario, ScenarioStep};
+use super::super::{ConcurrentStep, HttpStep, JoinPoint, Scenario, ScenarioStep, scripted_replies};
 use super::{answer, provider_request, request, response};
+use crate::OracleError;
 use crate::case::Compare;
 use crate::http;
 use crate::mock::MockProvider;
@@ -133,14 +134,14 @@ fn compare_transcript_detects_an_altered_provider_trace(
 #[test]
 fn a_concurrent_step_with_a_reply_still_pending_times_out_at_the_join_deadline() {
     let mock = provider(
-        1000,
+        5000,
         vec![
             ScriptedReply {
                 wait: Wait::None,
                 then: Outcome::Answer(answer(200, "fast")),
             },
             ScriptedReply {
-                wait: Wait::Delay { millis: 500 },
+                wait: Wait::Delay { millis: 3000 },
                 then: Outcome::Answer(answer(200, "slow")),
             },
         ],
@@ -156,6 +157,46 @@ fn a_concurrent_step_with_a_reply_still_pending_times_out_at_the_join_deadline()
     let client = http::client().unwrap();
     let elapsed = Instant::now();
     let result = run_scenario(&client, &mock.base_url, &scenario);
-    result.unwrap_err();
-    assert!(elapsed.elapsed() < Duration::from_secs(2));
+    let Err(OracleError::HttpRequest(failure)) = result else {
+        panic!("expected a timed-out HTTP request, got {result:?}")
+    };
+    assert!(failure.is_timeout());
+    assert!(elapsed.elapsed() < Duration::from_secs(1));
+}
+
+#[test]
+fn scripted_replies_keeps_every_upstream_answer_for_a_retry() {
+    let scenario = Scenario {
+        steps: vec![ScenarioStep::Http(http_step("/a"))],
+    };
+    let upstream = vec![answer(429, "first"), answer(200, "second")];
+    let replies = scripted_replies("retry", &scenario, &upstream).unwrap();
+    let statuses = replies
+        .iter()
+        .map(|reply| match &reply.then {
+            Outcome::Answer(answer) => answer.status,
+            Outcome::Close => 0,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(statuses, [429, 200]);
+    assert!(replies.iter().all(|reply| reply.wait == Wait::None));
+}
+
+#[test]
+fn scripted_replies_rejects_fewer_upstream_answers_than_requests() {
+    let scenario = Scenario {
+        steps: vec![
+            ScenarioStep::Http(http_step("/a")),
+            ScenarioStep::Http(http_step("/b")),
+        ],
+    };
+    let upstream = vec![answer(200, "only")];
+    let error = scripted_replies("short", &scenario, &upstream).unwrap_err();
+    assert!(matches!(
+        error,
+        OracleError::ScenarioUpstreamShort {
+            requests: 2,
+            upstream: 1
+        }
+    ));
 }

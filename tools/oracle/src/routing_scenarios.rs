@@ -1,12 +1,13 @@
+use std::iter::repeat;
 use std::path::Path;
 
 use serde::Deserialize;
 
 use crate::OracleError;
-use crate::case::{Compare, Ignore, Request};
+use crate::case::{Compare, Ignore, Request, UpstreamAnswer};
 use crate::http;
 use crate::multipart_oracle::request::request_body;
-use crate::routing_mock_scripts::Wait;
+use crate::routing_mock_scripts::{Outcome, ScriptedReply, Wait};
 
 pub(crate) mod compare;
 pub(crate) mod run;
@@ -95,6 +96,30 @@ pub(crate) fn upstream_waits(case_name: &str, scenario: &Scenario) -> Vec<Wait> 
             ScenarioStep::Join(_) => Vec::new(),
         })
         .collect()
+}
+
+// Provider calls past the client-visible request count (a retry) get no wait of their own.
+pub(crate) fn scripted_replies(
+    case_name: &str,
+    scenario: &Scenario,
+    upstream: &[UpstreamAnswer],
+) -> Result<Vec<ScriptedReply>, OracleError> {
+    let waits = upstream_waits(case_name, scenario);
+    if upstream.len() < waits.len() {
+        return Err(OracleError::ScenarioUpstreamShort {
+            requests: waits.len(),
+            upstream: upstream.len(),
+        });
+    }
+    Ok(waits
+        .into_iter()
+        .chain(repeat(Wait::None))
+        .zip(upstream.iter().cloned())
+        .map(|(wait, answer)| ScriptedReply {
+            wait,
+            then: Outcome::Answer(answer),
+        })
+        .collect())
 }
 
 fn validate(scenario: &Scenario) -> Result<(), String> {
