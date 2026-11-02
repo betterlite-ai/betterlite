@@ -1340,6 +1340,7 @@ dependencies = [
  "betterlite-http",
  "hex",
  "indexmap 2.14.2",
+ "nix",
  "rand 0.10.3",
  "rstest",
  "rust_decimal",
@@ -1351,6 +1352,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "url",
+ "uuid",
 ]
 
 [[package]]
