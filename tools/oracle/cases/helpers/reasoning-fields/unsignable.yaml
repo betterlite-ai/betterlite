@@ -1,0 +1,12 @@
+kind: helper
+name: reasoning-fields-unsignable
+call:
+  reasoning_fields:
+    operation: is_unsignable_thinking_block
+    block:
+      type: thinking
+      thinking: "   "
+      signature: "anthropic-signed"
+env: {}
+compare:
+  ignore: []

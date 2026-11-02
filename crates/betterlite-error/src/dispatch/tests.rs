@@ -22,6 +22,7 @@ fn raw(provider: &str, error_str: &str, status_code: Option<u16>) -> Box<RawExce
         status_code_is_synthesized: false,
         message: None,
         body: None,
+        exception_type: String::new(),
     })
 }
 
@@ -106,6 +107,45 @@ fn openai_errors_openai_error_tests_behavior(
     assert_eq!(family(&class), expected_family, "produced {class:?}");
 }
 
+#[rstest]
+#[case::bad_request_sdk_bug_outranks_the_status_table(
+    DispatchInput::Raw(raw(
+        "some-unknown-provider",
+        "BadRequestError.__init__() missing 1 required positional argument: 'param'",
+        Some(429),
+    )),
+    "bad_request"
+)]
+#[case::bedrock_text_predicate_outranks_the_generic_status_catchall(
+    DispatchInput::Raw(raw("bedrock", "AccessDeniedException", Some(429))),
+    "permission_denied"
+)]
+fn native_errors_native_error_tests_behavior(
+    #[case] input: DispatchInput,
+    #[case] expected_family: &str,
+) {
+    let class = dispatch(&input, &redactor());
+    assert_eq!(family(&class), expected_family, "produced {class:?}");
+}
+
+#[test]
+fn openai_family_body_fields_survive_the_raw_exception_to_openai_body_conversion() {
+    let mut input = raw("groq", "boom", Some(400));
+    input.body = Some(RawExceptionBody {
+        kind: Some("invalid_request_error".to_owned()),
+        param: Some("messages".to_owned()),
+        code: Some("missing_field".to_owned()),
+        message: None,
+        error: None,
+    });
+    let ErrorClass::BadRequest(context) = dispatch(&DispatchInput::Raw(input), &redactor()) else {
+        panic!("expected BadRequest");
+    };
+    assert_eq!(context.body_type.as_deref(), Some("invalid_request_error"));
+    assert_eq!(context.body_param.as_deref(), Some("messages"));
+    assert_eq!(context.body_code.as_deref(), Some("missing_field"));
+}
+
 #[test]
 fn litellm_proxy_unconstructible_name_short_circuits_to_the_empty_identity_fallback() {
     let input = DispatchInput::Raw(raw(
@@ -152,6 +192,7 @@ fn a_model_alone_without_a_provider_still_reaches_the_timeout_preamble() {
         status_code_is_synthesized: false,
         message: None,
         body: None,
+        exception_type: String::new(),
     }));
     let ErrorClass::Timeout(_) = dispatch(&input, &redactor()) else {
         panic!("expected Timeout: `if model or custom_llm_provider:` only needs one side set");
@@ -168,6 +209,7 @@ fn an_empty_model_and_provider_skip_the_timeout_preamble_and_reach_the_catchall(
         status_code_is_synthesized: false,
         message: None,
         body: None,
+        exception_type: String::new(),
     }));
     let class = dispatch(&input, &redactor());
     assert_eq!(
@@ -184,7 +226,7 @@ fn malformed_litellm_proxy_body_falls_through_instead_of_panicking() {
         "litellm.ContextWindowExceededError: too many tokens",
         None,
     );
-    request.body = Some(OpenaiErrorBody {
+    request.body = Some(RawExceptionBody {
         kind: None,
         param: None,
         code: Some("not actually json {{{".to_owned()),
@@ -198,7 +240,7 @@ fn malformed_litellm_proxy_body_falls_through_instead_of_panicking() {
 #[test]
 fn a_secret_looking_body_message_is_redacted_before_it_reaches_the_client() {
     let mut request = raw("openai", "boom", Some(401));
-    request.body = Some(OpenaiErrorBody {
+    request.body = Some(RawExceptionBody {
         kind: None,
         param: None,
         code: None,
@@ -365,7 +407,7 @@ fn the_litellm_proxy_branch_forwards_the_raw_bodys_code_into_the_raised_exceptio
         "litellm.BadRequestError: invalid request",
         None,
     );
-    request.body = Some(OpenaiErrorBody {
+    request.body = Some(RawExceptionBody {
         kind: None,
         param: None,
         code: Some("content_filter".to_owned()),

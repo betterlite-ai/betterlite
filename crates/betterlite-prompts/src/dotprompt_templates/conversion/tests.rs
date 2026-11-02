@@ -51,14 +51,10 @@ fn a_missing_file_surfaces_the_read_error_with_its_cause() {
 fn get_all_prompts_as_json_maps_every_stored_prompt() {
     let mut manager = PromptManager::new(None, None, None, None).unwrap();
     manager
-        .add_prompt(
-            "greeting",
-            "hi".to_owned(),
-            Some(object(r#"{"model": "gpt-4"}"#)),
-        )
+        .add_prompt("greeting", "hi".to_owned(), object(r#"{"model": "gpt-4"}"#))
         .unwrap();
     manager
-        .add_prompt("farewell", "bye".to_owned(), None)
+        .add_prompt("farewell", "bye".to_owned(), Object::new())
         .unwrap();
 
     let result = manager.get_all_prompts_as_json();
