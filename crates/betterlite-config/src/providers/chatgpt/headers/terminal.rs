@@ -41,22 +41,18 @@ pub(crate) fn resolve(lookup: &dyn EnvironmentLookup) -> String {
 }
 
 fn iterm_present(lookup: &dyn EnvironmentLookup) -> bool {
-    for name in ["ITERM_SESSION_ID", "ITERM_PROFILE", "ITERM_PROFILE_NAME"] {
-        if lookup.lookup(name).is_some_and(|value| !value.is_empty()) {
-            return true;
-        }
-    }
-    false
+    ["ITERM_SESSION_ID", "ITERM_PROFILE", "ITERM_PROFILE_NAME"]
+        .into_iter()
+        .any(|name| lookup.lookup(name).is_some_and(|value| !value.is_empty()))
 }
 
 fn kitty_present(lookup: &dyn EnvironmentLookup) -> bool {
-    let window_id_present = lookup
+    lookup
         .lookup("KITTY_WINDOW_ID")
-        .is_some_and(|value| !value.is_empty());
-    let term_names_kitty = lookup
-        .lookup("TERM")
-        .is_some_and(|term| term.contains("kitty"));
-    window_id_present || term_names_kitty
+        .is_some_and(|value| !value.is_empty())
+        || lookup
+            .lookup("TERM")
+            .is_some_and(|term| term.contains("kitty"))
 }
 
 fn sanitize_token(value: &str) -> String {
