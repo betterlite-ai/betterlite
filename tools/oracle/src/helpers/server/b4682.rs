@@ -2,6 +2,12 @@ use serde_json::{Map, Value, json};
 
 pub(crate) struct Op;
 
+struct PinResult {
+    served: Vec<Value>,
+    added: Vec<String>,
+    changed: Vec<String>,
+}
+
 impl crate::helpers::Helper for Op {
     type Input = Value;
 
@@ -43,8 +49,8 @@ fn strip_prefix(input: &Value) -> crate::helpers::HelperResult {
         .get("separator")
         .and_then(Value::as_str)
         .unwrap_or("-");
-    let server = input.get("server");
-    let Some(server) = server else {
+    let server_value = input.get("server");
+    let Some(server) = server_value else {
         return Ok(Value::String(
             name.split_once(separator)
                 .map_or_else(|| name.to_owned(), |(_, rest)| rest.to_owned()),
@@ -101,9 +107,6 @@ fn pin(input: &Value) -> crate::helpers::HelperResult {
         .get("pinned")
         .and_then(Value::as_object)
         .ok_or_else(|| error("pinned is required"))?;
-    let mut served = Vec::new();
-    let mut added = Vec::new();
-    let mut changed = Vec::new();
     let mut upstream = std::collections::BTreeMap::new();
     for tool in tools {
         let name = tool
@@ -111,11 +114,35 @@ fn pin(input: &Value) -> crate::helpers::HelperResult {
             .and_then(Value::as_str)
             .ok_or_else(|| error("tool name is required"))?;
         upstream.insert(name, tool);
+    }
+    let result = pin_entries(tools, pinned)?;
+    let removed: Vec<String> = pinned
+        .keys()
+        .filter(|name| !upstream.contains_key(name.as_str()))
+        .cloned()
+        .collect();
+    Ok(
+        json!({"served": result.served, "added": result.added, "removed": removed, "changed": result.changed}),
+    )
+}
+
+fn pin_entries(
+    tools: &[Value],
+    pinned: &Map<String, Value>,
+) -> Result<PinResult, Box<crate::helpers::HelperError>> {
+    let mut served = Vec::new();
+    let mut added = Vec::new();
+    let mut changed = Vec::new();
+    for tool in tools {
+        let name = tool
+            .get("name")
+            .and_then(Value::as_str)
+            .ok_or_else(|| error("tool name is required"))?;
         if let Some(pin) = pinned.get(name) {
             if tool.get("description") != pin.get("description")
                 || tool.get("input_schema") != pin.get("input_schema")
             {
-                changed.push(name);
+                changed.push(name.to_owned());
             }
             let mut restored = tool.clone();
             if let Some(object) = restored.as_object_mut() {
@@ -132,15 +159,14 @@ fn pin(input: &Value) -> crate::helpers::HelperResult {
             }
             served.push(restored);
         } else {
-            added.push(name);
+            added.push(name.to_owned());
         }
     }
-    let removed: Vec<&str> = pinned
-        .keys()
-        .filter(|name| !upstream.contains_key(name.as_str()))
-        .map(String::as_str)
-        .collect();
-    Ok(json!({"served": served, "added": added, "removed": removed, "changed": changed}))
+    Ok(PinResult {
+        served,
+        added,
+        changed,
+    })
 }
 
 fn override_description(input: &Value) -> crate::helpers::HelperResult {
@@ -159,10 +185,10 @@ fn override_description(input: &Value) -> crate::helpers::HelperResult {
             let mut output = tool.clone();
             if let Some(name) = tool.get("name").and_then(Value::as_str) {
                 let bare = name.strip_prefix(&format!("{prefix}-")).unwrap_or(name);
-                if let Some(description) = overrides.get(bare) {
-                    if let Some(object) = output.as_object_mut() {
-                        object.insert("description".to_owned(), description.clone());
-                    }
+                if let Some(description) = overrides.get(bare)
+                    && let Some(object) = output.as_object_mut()
+                {
+                    object.insert("description".to_owned(), description.clone());
                 }
             }
             output
