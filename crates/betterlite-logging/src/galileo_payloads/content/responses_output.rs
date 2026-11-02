@@ -150,30 +150,31 @@ fn reasoning_item_project(fields: &IndexMap<String, Json>) -> Option<IndexMap<St
 
 // openai.types.responses.response_function_web_search.ActionSearch.model_dump() field order (type, queries, query, sources); sources, when present, must each validate as openai.types.responses.response_function_web_search.ActionSearchSource (type, url, both required).
 fn web_search_action_search_dump(fields: &IndexMap<String, Json>) -> Option<Json> {
-    match fields.get("type") {
-        Some(Json::Text(kind)) if kind == "search" => {
-            let sources = match fields.get("sources") {
-                None | Some(Json::Null) => Json::Null,
-                Some(list) => Json::List(project_part_list(list, |source| {
-                    match source.get("type") {
-                        Some(Json::Text(source_kind)) if source_kind == "url" => {
-                            typed_sequence(source, "url", &["type", "url"])
-                        }
-                        _ => None,
-                    }
-                })?),
-            };
-            let mut with_sources = fields.clone();
-            with_sources.insert("sources".to_owned(), sources);
-            required_then_typed(
-                &with_sources,
-                &[],
-                "search",
-                &["queries", "query", "sources"],
-            )
-        }
-        _ => None,
+    let Some(Json::Text(kind)) = fields.get("type") else {
+        return None;
+    };
+    if kind != "search" {
+        return None;
     }
+    let sources = match fields.get("sources") {
+        None | Some(Json::Null) => Json::Null,
+        Some(list) => Json::List(project_part_list(list, |source| {
+            match source.get("type") {
+                Some(Json::Text(source_kind)) if source_kind == "url" => {
+                    typed_sequence(source, "url", &["type", "url"])
+                }
+                _ => None,
+            }
+        })?),
+    };
+    let mut with_sources = fields.clone();
+    with_sources.insert("sources".to_owned(), sources);
+    required_then_typed(
+        &with_sources,
+        &[],
+        "search",
+        &["queries", "query", "sources"],
+    )
 }
 
 // openai.types.responses.response_function_web_search.ActionFind.model_dump() field order (pattern, type, url); pattern and url have no default, so a find action missing either isn't valid.
@@ -226,7 +227,9 @@ fn custom_tool_call_project(fields: &IndexMap<String, Json>) -> Option<IndexMap<
         Some(Json::Object(caller_fields)) => custom_tool_caller_dump(caller_fields)?,
         Some(_) => return None,
     };
-    Some(with_replaced(fields, &[("caller", caller)]))
+    let mut projected = fields.clone();
+    projected.insert("caller".to_owned(), caller);
+    Some(projected)
 }
 
 // Dispatches a Responses output item that needs its own nested fields validated and projected before required_then_typed can check the rest, by its "type" tag; kinds without a nested shape to project (function_call) stay in output_item_dump, and an unrecognized kind invalidates the item.
