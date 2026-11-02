@@ -1,4 +1,5 @@
 pub mod count;
+pub mod engine;
 pub mod error;
 pub mod image;
 pub mod limits;

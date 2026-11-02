@@ -34,6 +34,7 @@ pub mod gitlab_prompt_compiler;
 pub mod gitlab_templates;
 pub mod jinja;
 pub mod media;
+pub mod media_fetch;
 pub mod media_metadata;
 pub mod message_content;
 pub mod message_fields;
