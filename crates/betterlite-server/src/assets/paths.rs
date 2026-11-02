@@ -1,4 +1,6 @@
-use std::path::{Component, Path, PathBuf, absolute};
+use std::collections::HashMap;
+use std::fs;
+use std::path::{Component, Components, Path, PathBuf, absolute};
 
 use soft_canonicalize::soft_canonicalize;
 
@@ -65,7 +67,7 @@ pub fn is_within(path: &Path, base_dir: &Path) -> bool {
     resolved.starts_with(&base)
 }
 
-// Mirrors `os.path.realpath(path, strict=False)`: a failed component stays literal, but a later `..` still pops it and a later component still tries to resolve, as in CPython's `_joinrealpath`.
+// Mirrors CPython's realpath(strict=False) (posixpath._joinrealpath): a failed or looping component stays literal, and a later component, `..` included, still resolves through it.
 fn realpath_non_strict(path: &Path) -> PathBuf {
     let Ok(absolute_path) = absolute(path) else {
         return path.to_path_buf();
@@ -73,25 +75,63 @@ fn realpath_non_strict(path: &Path) -> PathBuf {
     if let Ok(resolved) = soft_canonicalize(&absolute_path) {
         return resolved;
     }
-    let mut resolved = PathBuf::new();
-    for component in absolute_path.components() {
+    resolve_realpath_components(
+        PathBuf::new(),
+        absolute_path.components(),
+        &mut HashMap::new(),
+    )
+}
+
+fn resolve_realpath_components(
+    mut path: PathBuf,
+    components: Components<'_>,
+    seen: &mut HashMap<PathBuf, Option<PathBuf>>,
+) -> PathBuf {
+    for component in components {
         match component {
             Component::CurDir => {}
             Component::ParentDir => {
-                if matches!(
-                    resolved.components().next_back(),
-                    Some(Component::Normal(_))
-                ) {
-                    resolved.pop();
+                if matches!(path.components().next_back(), Some(Component::Normal(_))) {
+                    path.pop();
                 }
             }
-            Component::Prefix(_) | Component::RootDir => resolved.push(component),
+            Component::Prefix(_) | Component::RootDir => path.push(component),
             Component::Normal(name) => {
-                let candidate = resolved.join(name);
-                resolved = soft_canonicalize(&candidate).unwrap_or(candidate);
+                let candidate = path.join(name);
+                path = resolve_symlink_component(candidate, &path, seen);
             }
         }
     }
+    path
+}
+
+fn resolve_symlink_component(
+    candidate: PathBuf,
+    parent: &Path,
+    seen: &mut HashMap<PathBuf, Option<PathBuf>>,
+) -> PathBuf {
+    let Ok(metadata) = fs::symlink_metadata(&candidate) else {
+        return candidate;
+    };
+    if !metadata.file_type().is_symlink() {
+        return candidate;
+    }
+    match seen.get(&candidate) {
+        Some(Some(resolved)) => return resolved.clone(),
+        Some(None) => return candidate,
+        None => {}
+    }
+    seen.insert(candidate.clone(), None);
+    let Ok(target) = fs::read_link(&candidate) else {
+        return candidate;
+    };
+    let start = if target.is_absolute() {
+        PathBuf::new()
+    } else {
+        parent.to_path_buf()
+    };
+    let resolved = resolve_realpath_components(start, target.components(), seen);
+    seen.insert(candidate, Some(resolved.clone()));
     resolved
 }
 
