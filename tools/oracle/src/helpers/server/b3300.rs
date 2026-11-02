@@ -46,12 +46,7 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         let raw = build_raw_request(input)?;
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .map_err(|error| input_error(error.to_string()))?;
-        let parsed = runtime
-            .block_on(parse_ocr_request(&raw))
-            .map_err(|error| parse_error(&error))?;
+        let parsed = parse_ocr_request(&raw).map_err(|error| parse_error(&error))?;
         Ok(normalize(parsed))
     }
 }

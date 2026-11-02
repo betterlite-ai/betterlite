@@ -52,8 +52,8 @@ pub struct ParsedOcrRequest {
     pub req_format: Option<RequestFormat>,
 }
 
-pub async fn parse_ocr_request(raw: &RawOcrRequest) -> Result<ParsedOcrRequest, OcrRequestError> {
-    let (document, parsed_fields) = parse_ocr_request_body(raw).await?;
+pub fn parse_ocr_request(raw: &RawOcrRequest) -> Result<ParsedOcrRequest, OcrRequestError> {
+    let (document, parsed_fields) = parse_ocr_request_body(raw)?;
     let (fields, req_format) = format::resolve(parsed_fields, raw.header_req_format.as_deref())?;
     Ok(ParsedOcrRequest {
         document,
@@ -62,7 +62,7 @@ pub async fn parse_ocr_request(raw: &RawOcrRequest) -> Result<ParsedOcrRequest, 
     })
 }
 
-async fn parse_ocr_request_body(
+fn parse_ocr_request_body(
     raw: &RawOcrRequest,
 ) -> Result<(Option<OcrDocument>, Object), OcrRequestError> {
     let is_multipart = raw.content_type.as_deref().is_some_and(|content_type| {
@@ -72,7 +72,7 @@ async fn parse_ocr_request_body(
     });
     if is_multipart {
         let content_type = raw.content_type.as_deref().unwrap_or_default();
-        let form = multipart_form::parse_body(&raw.body, content_type).await?;
+        let form = multipart_form::parse_body(&raw.body, content_type)?;
         return multipart_form::build(&form);
     }
     if raw.body.is_empty() {
