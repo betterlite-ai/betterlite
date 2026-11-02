@@ -13,7 +13,7 @@ async fn insert_health_check_row(
         client,
         r#"INSERT INTO "LiteLLM_HealthCheckTable"
                (health_check_id, model_name, model_id, status, checked_at, updated_at)
-           VALUES ($1, $2, $3, 'healthy', now() + ($4 * interval '1 minute'), now())"#,
+           VALUES ($1, $2, $3, 'healthy', now() + ($4::bigint * interval '1 minute'), now())"#,
         &[&id, &"gpt-health", &model_id, &checked_at_offset_minutes],
     )
     .await;
