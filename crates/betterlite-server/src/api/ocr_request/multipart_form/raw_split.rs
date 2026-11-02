@@ -122,6 +122,7 @@ pub(super) fn split_items<'body>(
     let mut items = Vec::new();
     let mut remaining = skip_preamble(body, &dash_boundary);
     loop {
+        let before = remaining.len();
         let headers = read_headers(remaining)?;
         let (data, after_data, is_final) = read_data(headers.after_headers, &dash_boundary);
         items.push(RawItem {
@@ -129,7 +130,8 @@ pub(super) fn split_items<'body>(
             content_type: headers.content_type,
             data,
         });
-        if is_final {
+        // Legitimate parsing always shrinks remaining by at least the boundary line it consumed, so this stops the loop on a mutant that fakes is_final instead of trusting it alone.
+        if is_final || after_data.len() >= before {
             return Ok(items);
         }
         remaining = after_data;
