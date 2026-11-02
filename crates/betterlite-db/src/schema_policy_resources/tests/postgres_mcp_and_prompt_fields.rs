@@ -512,8 +512,7 @@ fn boxed_nullable_mcp_instructions(client: &Client) -> BoxedCheck<'_> {
 #[tokio::test]
 async fn postgres_mcp_and_prompt_fields(#[case] checkpoint: &'static str, #[case] check: CheckFn) {
     harness(move |[client]| async move {
-        let sql = migration_sql_through(checkpoint);
-        batch_execute(&client, &sql).await;
+        apply_migrations_through(&client, checkpoint).await;
         check(&client).await;
     })
     .await;

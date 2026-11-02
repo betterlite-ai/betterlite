@@ -445,8 +445,7 @@ async fn run_tool_agent_check(client: &Client, cohort: ToolAgentCohort) {
 #[tokio::test]
 async fn postgres_tool_agent_fields(#[case] cohort: ToolAgentCohort) {
     harness(move |[client]| async move {
-        let sql = migration_sql_through(tool_agent_checkpoint_for(cohort));
-        batch_execute(&client, &sql).await;
+        apply_migrations_through(&client, tool_agent_checkpoint_for(cohort)).await;
         run_tool_agent_check(&client, cohort).await;
     })
     .await;

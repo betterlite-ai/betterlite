@@ -442,8 +442,7 @@ async fn run_policy_history_check(client: &Client, cohort: PolicyHistoryCohort) 
 #[tokio::test]
 async fn postgres_policy_history(#[case] cohort: PolicyHistoryCohort) {
     harness(move |[client]| async move {
-        let sql = migration_sql_through(policy_history_checkpoint_for(cohort));
-        batch_execute(&client, &sql).await;
+        apply_migrations_through(&client, policy_history_checkpoint_for(cohort)).await;
         run_policy_history_check(&client, cohort).await;
     })
     .await;

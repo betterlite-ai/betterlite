@@ -462,42 +462,40 @@ fn sql_state(error: &tokio_postgres::Error) -> &str {
     error.code().map_or("", SqlState::code)
 }
 
-fn baseline_prefix_sql() -> String {
-    let mut sql = str::from_utf8(BASELINE_MIGRATION.bytes).unwrap().to_owned();
+async fn apply_baseline(client: &Client) {
+    batch_execute(client, str::from_utf8(BASELINE_MIGRATION.bytes).unwrap()).await;
     for file in DAILY_USAGE_CATALOG.files {
-        sql.push_str(str::from_utf8(file.bytes).unwrap());
+        batch_execute(client, str::from_utf8(file.bytes).unwrap()).await;
     }
     for file in MANAGED_RESOURCES_CATALOG.files {
-        sql.push_str(str::from_utf8(file.bytes).unwrap());
+        batch_execute(client, str::from_utf8(file.bytes).unwrap()).await;
     }
     for file in IDENTITY_HISTORY_CATALOG.files {
-        sql.push_str(str::from_utf8(file.bytes).unwrap());
+        batch_execute(client, str::from_utf8(file.bytes).unwrap()).await;
     }
-    sql
 }
 
-fn migration_sql_through(directory: &str) -> String {
-    let mut sql = baseline_prefix_sql();
+async fn apply_migrations_through(client: &Client, directory: &str) {
+    apply_baseline(client).await;
     for file in MIGRATION_CATALOG.files {
-        sql.push_str(str::from_utf8(file.bytes).unwrap());
+        batch_execute(client, str::from_utf8(file.bytes).unwrap()).await;
         if file.directory == directory {
-            return sql;
+            return;
         }
     }
     panic!("no migration named {directory} in MIGRATION_CATALOG");
 }
 
-fn migration_sql_all() -> String {
+async fn apply_migrations_all(client: &Client) {
     let last = MIGRATION_CATALOG.files.last().unwrap();
-    migration_sql_through(last.directory)
+    apply_migrations_through(client, last.directory).await;
 }
 
-fn pinned_migration_sql_all() -> String {
-    let mut sql = baseline_prefix_sql();
+async fn apply_pinned_migrations_all(client: &Client) {
+    apply_baseline(client).await;
     for file in PINNED_MIGRATION_CATALOG.files {
-        sql.push_str(str::from_utf8(file.bytes).unwrap());
+        batch_execute(client, str::from_utf8(file.bytes).unwrap()).await;
     }
-    sql
 }
 
 fn migration_sql_of(directory: &str) -> &'static str {

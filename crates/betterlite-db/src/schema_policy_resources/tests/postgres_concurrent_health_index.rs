@@ -49,8 +49,7 @@ async fn run_health_index_check(client: &Client, cohort: HealthIndexCohort) {
 #[tokio::test]
 async fn postgres_concurrent_health_index(#[case] cohort: HealthIndexCohort) {
     harness(move |[client]| async move {
-        let sql = migration_sql_through(health_index_checkpoint_for(cohort));
-        batch_execute(&client, &sql).await;
+        apply_migrations_through(&client, health_index_checkpoint_for(cohort)).await;
         run_health_index_check(&client, cohort).await;
     })
     .await;
