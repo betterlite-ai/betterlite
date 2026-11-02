@@ -1,0 +1,17 @@
+kind: helper
+name: chatgpt-headers-model-dump-failure
+call:
+  chatgpt_headers:
+    environment: {}
+    access_token: "model-dump-failure-token"
+    account_id: null
+    session_id: null
+    litellm_params:
+      model_snapshot:
+        model_dump: failed
+        dict:
+          succeeded:
+            litellm_session_id: "from-dict"
+env: {}
+compare:
+  ignore: []

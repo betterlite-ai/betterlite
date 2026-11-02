@@ -1,0 +1,14 @@
+kind: helper
+name: chatgpt-headers-instruction-override
+call:
+  chatgpt_headers:
+    environment:
+      CHATGPT_DEFAULT_INSTRUCTIONS: "Stay focused on the oracle fixture and answer in one line."
+    access_token: "instruction-override-token"
+    account_id: null
+    session_id: null
+    litellm_params: absent
+env:
+  CHATGPT_DEFAULT_INSTRUCTIONS: "Stay focused on the oracle fixture and answer in one line."
+compare:
+  ignore: []
