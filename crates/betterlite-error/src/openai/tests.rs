@@ -144,6 +144,19 @@ fn openai_errors_openai_error_tests_behavior(
 )]
 #[case::status_401(input("boom", Some(401)), 401)]
 #[case::status_404(input("boom", Some(404)), 404)]
+#[case::invalid_request_error_on_status(input("invalid_request_error: bad field", Some(409)), 409)]
+#[case::invalid_encrypted_content_on_status(
+    input("invalid_encrypted_content supplied", Some(422)),
+    422
+)]
+#[case::missing_credential_on_status(
+    input(
+        "The api_key client option must be set either by passing api_key to the client or by \
+setting the OPENAI_API_KEY environment variable",
+        Some(403)
+    ),
+    403
+)]
 fn response_branches_answer_the_provider_status(
     #[case] input: OpenaiExceptionInput,
     #[case] expected_status: u16,

@@ -133,11 +133,11 @@ fn phrase_variant(family: PhraseFamily, context: ErrorContext, status: Option<u1
             ResponseDetails::with_status(context, status),
         )),
         PhraseFamily::EncryptedContent | PhraseFamily::InvalidRequest => {
-            ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(context, None)))
+            ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(context, status)))
         }
         PhraseFamily::InternalServerText => ErrorClass::InternalServer(Box::new(context)),
         PhraseFamily::MissingCredential => {
-            ErrorClass::Authentication(Box::new(ResponseDetails::with_status(context, None)))
+            ErrorClass::Authentication(Box::new(ResponseDetails::with_status(context, status)))
         }
         PhraseFamily::MistralStreaming => ErrorClass::Api(Box::new(ApiDetails {
             context,

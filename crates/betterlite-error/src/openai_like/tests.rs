@@ -111,12 +111,18 @@ fn response_branches_answer_the_provider_status(#[case] error_str: &str, #[case]
 }
 
 #[rstest]
-#[case::authorization_denied_without_a_response("authorization denied for this api key", 401)]
+#[case::authorization_denied_without_a_response("authorization denied for this api key", None, 401)]
+#[case::status_unprocessable("failed", Some(422), 400)]
+#[case::status_failed_dependency("failed", Some(424), 400)]
+#[case::status_bad_request("failed", Some(400), 400)]
+#[case::status_authentication("failed", Some(401), 401)]
+#[case::status_not_found("failed", Some(404), 404)]
 fn branches_without_a_response_keep_the_class_status(
     #[case] error_str: &str,
+    #[case] status_code: Option<u16>,
     #[case] expected_status: u16,
 ) {
-    let error = facts(None);
+    let error = facts_with_response(status_code);
     let class = map_openai_like_exception(&error, error_str, "my_provider", None)
         .expect("expected a classification");
     assert_eq!(class.metadata().status_code, expected_status);
