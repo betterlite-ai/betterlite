@@ -81,6 +81,8 @@ fn credentials_cases(#[case] case: u8) { match case {
     assert!(matches!(is_openai_backed_api_base("http://[::1"), Err(CredentialsError::InvalidApiBase)));
     assert!(!is_openai_backed_api_base("http://[::1]/v1").expect("a valid bracketed IPv6 literal is not an error"));
     assert!(matches!(is_openai_backed_api_base("http://[1.2.3.4]/v1"), Err(CredentialsError::InvalidApiBase)));
+    assert!(!is_openai_backed_api_base("http://[v1.2]/v1").expect("a valid IPvFuture literal is not an error"));
+    assert!(matches!(is_openai_backed_api_base("http://[v1]/v1"), Err(CredentialsError::InvalidApiBase)));
 },
 4 => {
     assert_eq!(infer_openai_data_residency(Some("openai"), Some("https://eu.api.openai.com/v1")), Some(DataResidency::Eu));
