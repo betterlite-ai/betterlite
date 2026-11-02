@@ -142,12 +142,12 @@ fn tag_info(
     tag: &quick_xml::events::BytesStart<'_>,
 ) -> Result<(TagKind, bool), ParseFailure> {
     for attribute in tag.attributes() {
-        attribute.map_err(|error| ParseFailure::Xml(error.into()))?;
+        attribute.map_err(|error| ParseFailure::Xml(quick_xml::Error::from(error)))?;
     }
     let inherited = collector.default_namespace.last().copied().unwrap_or(false);
     let declaration = tag
         .try_get_attribute(b"xmlns")
-        .map_err(|error| ParseFailure::Xml(error.into()))?;
+        .map_err(|error| ParseFailure::Xml(quick_xml::Error::from(error)))?;
     let default_namespace = declaration
         .as_ref()
         .map_or(inherited, |attribute| !attribute.value.is_empty());

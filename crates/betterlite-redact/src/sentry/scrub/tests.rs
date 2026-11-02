@@ -30,10 +30,10 @@ fn nested_object(depth: usize, leaf: EventValue) -> EventValue {
     current
 }
 
-fn innermost_by<'value>(
-    value: &'value EventValue,
-    step: impl Fn(&'value EventValue) -> Option<&'value EventValue>,
-) -> &'value EventValue {
+fn innermost_by<'value, Step>(value: &'value EventValue, step: Step) -> &'value EventValue
+where
+    Step: Fn(&'value EventValue) -> Option<&'value EventValue>,
+{
     let mut current = value;
     while let Some(next) = step(current) {
         current = next;

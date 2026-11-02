@@ -120,9 +120,12 @@ pub(super) struct SecretPatterns {
 }
 
 // Builds one anchored regex per (name, branch subset), joined and compiled as `^(?:...)` to re-run at a credential's start, letting the named branches compete for that same start.
-fn anchored_regexes<'branch>(
-    selections: impl IntoIterator<Item = (&'static str, Vec<&'branch str>)>,
-) -> Result<Vec<(&'static str, Regex)>, RedactionError> {
+fn anchored_regexes<'branch, Selections>(
+    selections: Selections,
+) -> Result<Vec<(&'static str, Regex)>, RedactionError>
+where
+    Selections: IntoIterator<Item = (&'static str, Vec<&'branch str>)>,
+{
     let mut patterns = Vec::new();
     for (name, selected) in selections {
         let joined = selected.join("|");

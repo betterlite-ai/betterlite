@@ -43,13 +43,15 @@ fn tool_call_metadata(data: &Fields) -> Option<Fields> {
     None
 }
 
-fn set_if(
+fn set_if<Keep>(
     data: &mut Fields,
     metadata: &Fields,
     source_key: &str,
     targets: &[&str],
-    keep: impl Fn(&Json) -> bool,
-) {
+    keep: Keep,
+) where
+    Keep: Fn(&Json) -> bool,
+{
     let Some(raw) = metadata.get(source_key) else {
         return;
     };
