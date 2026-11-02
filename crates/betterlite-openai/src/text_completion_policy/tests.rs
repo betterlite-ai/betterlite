@@ -188,9 +188,24 @@ fn text_completion_policy_cases(#[case] case: u8) {
             assert!(!result_two.contains_key("id"));
             assert!(!result_two.contains_key("model"));
 
-            let malformed = json!({"choices": [{"finish_reason": "stop"}]});
+            let missing_fields = json!({"choices": [{}]});
+            let result_three =
+                reply::to_chat_model_response(Some(missing_fields), Some(Map::new()))
+                    .expect("missing choice fields default to null");
+            assert_eq!(result_three["choices"][0]["finish_reason"], json!(null));
+            assert_eq!(
+                result_three["choices"][0]["message"]["content"],
+                json!(null)
+            );
+
+            let malformed = json!({"choices": [{"text": 5_i32, "finish_reason": "stop"}]});
             assert!(matches!(
                 reply::to_chat_model_response(Some(malformed), Some(Map::new())),
+                Err(reply::ReplyError::MalformedChoices(_))
+            ));
+            let malformed_shape = json!({"choices": ["not-an-object"]});
+            assert!(matches!(
+                reply::to_chat_model_response(Some(malformed_shape), Some(Map::new())),
                 Err(reply::ReplyError::MalformedChoices(_))
             ));
         }

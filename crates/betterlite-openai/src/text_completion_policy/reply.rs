@@ -12,8 +12,10 @@ pub enum ReplyError {
 
 #[derive(Debug, Clone, Deserialize)]
 struct TextCompletionChoice {
-    text: String,
-    finish_reason: Value,
+    #[serde(default)]
+    text: Option<String>,
+    #[serde(default)]
+    finish_reason: Option<Value>,
     #[serde(default)]
     logprobs: Option<Value>,
 }
@@ -22,9 +24,15 @@ impl TextCompletionChoice {
     fn into_chat_choice(self, index: usize) -> Value {
         let mut message = Map::new();
         message.insert("role".to_owned(), Value::String("assistant".to_owned()));
-        message.insert("content".to_owned(), Value::String(self.text));
+        message.insert(
+            "content".to_owned(),
+            self.text.map_or(Value::Null, Value::String),
+        );
         let mut choice = Map::new();
-        choice.insert("finish_reason".to_owned(), self.finish_reason);
+        choice.insert(
+            "finish_reason".to_owned(),
+            self.finish_reason.unwrap_or(Value::Null),
+        );
         choice.insert("index".to_owned(), Value::from(index));
         choice.insert("message".to_owned(), Value::Object(message));
         choice.insert("logprobs".to_owned(), self.logprobs.unwrap_or(Value::Null));
