@@ -1,10 +1,11 @@
-use axum::Router;
+use axum::Json;
 use axum::extract::Request;
 use axum::http::StatusCode;
-use axum::middleware::{self, Next};
+use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use betterlite_auth::route_match::classifier;
 use betterlite_auth::route_match::templates::RouteValue;
+use serde::Serialize;
 
 mod tests;
 
@@ -16,8 +17,19 @@ pub enum RouteMatchError {
 
 impl IntoResponse for RouteMatchError {
     fn into_response(self) -> Response {
-        (StatusCode::NOT_FOUND, self.to_string()).into_response()
+        (
+            StatusCode::NOT_FOUND,
+            Json(NotFoundBody {
+                detail: "Not Found",
+            }),
+        )
+            .into_response()
     }
+}
+
+#[derive(Serialize)]
+struct NotFoundBody {
+    detail: &'static str,
 }
 
 pub fn admit(route: &str, method: &str) -> Result<(), RouteMatchError> {
@@ -34,6 +46,12 @@ pub fn admit(route: &str, method: &str) -> Result<(), RouteMatchError> {
 
 pub(crate) async fn stage(request: Request, next: Next) -> Response {
     let route = request.uri().path().to_owned();
+    if matches!(
+        route.as_str(),
+        "/health/liveliness" | "/health/liveness" | "/health/readiness"
+    ) {
+        return next.run(request).await;
+    }
     let method = request.method().as_str().to_owned();
     match admit(&route, &method) {
         Ok(()) => next.run(request).await,

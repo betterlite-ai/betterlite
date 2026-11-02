@@ -7,11 +7,13 @@ request:
   method: POST
   path: /v1/batches/example/cancel
   headers:
-    Authorization: Bearer oracle-master
+    Authorization: Bearer rejected-master
   body: null
 upstream: []
 compare:
   headers: []
   headers_present: []
   upstream_headers: []
-  ignore: []
+  ignore:
+    - pointer: /error/message
+      why: betterlite and LiteLLM use different no database authentication messages

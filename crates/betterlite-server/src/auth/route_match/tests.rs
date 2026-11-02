@@ -3,6 +3,7 @@
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
+use axum::middleware;
 use axum::routing::get;
 use tower::ServiceExt as _;
 
@@ -15,7 +16,7 @@ async fn chat_marker() -> &'static str {
 fn guarded_chat() -> Router {
     Router::new()
         .route("/v1/chat/completions", get(chat_marker))
-        .layer(axum::middleware::from_fn(stage))
+        .layer(middleware::from_fn(stage))
 }
 
 fn request_to(path: &str) -> Request<Body> {
