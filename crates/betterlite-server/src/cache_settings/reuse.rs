@@ -4,7 +4,7 @@ use subtle::ConstantTimeEq as _;
 use super::target::target_repr;
 use super::{CONNECTION_TARGET_FIELDS, REDACTED_VALUE};
 
-// `url` can itself carry a credential (CACHE_SENSITIVE_FIELDS), so it alone is compared in constant time.
+// `url` can itself carry a credential (CACHE_SENSITIVE_FIELDS), so every target field is compared in constant time.
 #[must_use]
 pub fn saved_secret_is_reusable(incoming: &Map<String, Value>, saved: &Map<String, Value>) -> bool {
     for field in CONNECTION_TARGET_FIELDS {
@@ -18,11 +18,7 @@ pub fn saved_secret_is_reusable(incoming: &Map<String, Value>, saved: &Map<Strin
         }
         let incoming_repr = target_repr(incoming_value.unwrap_or(&Value::Null));
         let saved_repr = target_repr(saved_value.unwrap_or(&Value::Null));
-        let targets_match = if field == "url" {
-            bool::from(incoming_repr.as_bytes().ct_eq(saved_repr.as_bytes()))
-        } else {
-            incoming_repr == saved_repr
-        };
+        let targets_match = bool::from(incoming_repr.as_bytes().ct_eq(saved_repr.as_bytes()));
         if !targets_match {
             return false;
         }
