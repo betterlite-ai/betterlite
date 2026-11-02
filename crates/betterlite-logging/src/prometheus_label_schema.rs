@@ -86,67 +86,136 @@ const MCP: &str =
 const DEPLOYMENT_TOTAL: &str = "model_group requested_model litellm_model_name model_id api_base api_provider hashed_api_key api_key_alias team team_alias client_ip user_agent";
 const DEPLOYMENT_FAILURE: &str = "model_group requested_model litellm_model_name model_id api_base api_provider exception_status exception_class hashed_api_key api_key_alias team team_alias client_ip user_agent";
 
-// PrometheusMetricLabels budget-metric assignments, LiteLLM lines 701-780
-fn budget_label_set(metric: &str) -> Option<&'static str> {
-    Some(match metric {
-        "litellm_remaining_team_budget_metric"
-        | "litellm_team_max_budget_metric"
-        | "litellm_team_budget_remaining_hours_metric"
-        | "litellm_team_members_metric" => TEAM_BUDGET,
-        "litellm_remaining_org_budget_metric"
-        | "litellm_org_max_budget_metric"
-        | "litellm_org_budget_remaining_hours_metric" => ORG_BUDGET,
-        "litellm_remaining_api_key_budget_metric"
-        | "litellm_api_key_max_budget_metric"
-        | "litellm_api_key_budget_remaining_hours_metric" => API_KEY_BUDGET,
-        "litellm_remaining_user_budget_metric"
-        | "litellm_user_max_budget_metric"
-        | "litellm_user_budget_remaining_hours_metric" => USER_BUDGET,
-        "litellm_remaining_customer_budget_metric"
-        | "litellm_customer_max_budget_metric"
-        | "litellm_customer_budget_remaining_hours_metric" => CUSTOMER_BUDGET,
-        _ => return None,
-    })
-}
+// PrometheusMetricLabels assignments, LiteLLM lines 701-955; B3871 covers the rest
+const STATIC_LABEL_GROUPS: &[(&[&str], &str)] = &[
+    (
+        &[
+            "litellm_remaining_team_budget_metric",
+            "litellm_team_max_budget_metric",
+            "litellm_team_budget_remaining_hours_metric",
+            "litellm_team_members_metric",
+        ],
+        TEAM_BUDGET,
+    ),
+    (
+        &[
+            "litellm_remaining_org_budget_metric",
+            "litellm_org_max_budget_metric",
+            "litellm_org_budget_remaining_hours_metric",
+        ],
+        ORG_BUDGET,
+    ),
+    (
+        &[
+            "litellm_remaining_api_key_budget_metric",
+            "litellm_api_key_max_budget_metric",
+            "litellm_api_key_budget_remaining_hours_metric",
+        ],
+        API_KEY_BUDGET,
+    ),
+    (
+        &[
+            "litellm_remaining_user_budget_metric",
+            "litellm_user_max_budget_metric",
+            "litellm_user_budget_remaining_hours_metric",
+        ],
+        USER_BUDGET,
+    ),
+    (
+        &[
+            "litellm_remaining_customer_budget_metric",
+            "litellm_customer_max_budget_metric",
+            "litellm_customer_budget_remaining_hours_metric",
+        ],
+        CUSTOMER_BUDGET,
+    ),
+    (
+        &[
+            "litellm_remaining_api_key_requests_for_model",
+            "litellm_remaining_api_key_tokens_for_model",
+        ],
+        LIMIT_FOR_MODEL,
+    ),
+    (&["litellm_callback_logging_failures_metric"], CALLBACK),
+    (
+        &[
+            "litellm_api_key_rate_limit_allowed_metric",
+            "litellm_api_key_rate_limit_used_metric",
+        ],
+        API_KEY_RATE_LIMIT,
+    ),
+    (
+        &[
+            "litellm_team_rate_limit_allowed_metric",
+            "litellm_team_rate_limit_used_metric",
+        ],
+        TEAM_RATE_LIMIT,
+    ),
+    (&["litellm_llm_api_failed_requests_metric"], LLM_API_FAILED),
+    (
+        &[
+            "litellm_pod_lock_manager_size",
+            "litellm_in_memory_daily_spend_update_queue_size",
+            "litellm_redis_daily_spend_update_queue_size",
+            "litellm_in_memory_spend_update_queue_size",
+            "litellm_redis_spend_update_queue_size",
+            "litellm_managed_file_size_bytes",
+            "litellm_managed_file_deleted_total",
+            "litellm_check_batch_cost_jobs_polled",
+            "litellm_check_batch_cost_errors_total",
+            "litellm_check_batch_cost_last_run_timestamp",
+        ],
+        EMPTY,
+    ),
+    (
+        &[
+            "litellm_cache_hits_metric",
+            "litellm_cache_misses_metric",
+            "litellm_cached_tokens_metric",
+            "litellm_provider_cache_read_input_tokens_metric",
+            "litellm_provider_cache_creation_input_tokens_metric",
+        ],
+        CACHE,
+    ),
+    (
+        &[
+            "litellm_managed_batch_created_total",
+            "litellm_managed_file_created_total",
+        ],
+        BATCH_USER,
+    ),
+    (
+        &[
+            "litellm_managed_batch_duration_seconds",
+            "litellm_check_batch_cost_jobs_processed_total",
+        ],
+        BATCH_DURATION,
+    ),
+    (
+        &[
+            "litellm_mcp_tool_calls_total",
+            "litellm_mcp_tool_call_spend_metric",
+        ],
+        MCP,
+    ),
+    (
+        &[
+            "litellm_deployment_total_requests",
+            "litellm_deployment_success_responses",
+        ],
+        DEPLOYMENT_TOTAL,
+    ),
+    (
+        &["litellm_deployment_failure_responses"],
+        DEPLOYMENT_FAILURE,
+    ),
+];
 
-// rate-limit/cache/batch/mcp/deployment assignments, LiteLLM lines 781-955; B3871 covers the rest
-fn other_label_set(metric: &str) -> Option<&'static str> {
-    Some(match metric {
-        "litellm_remaining_api_key_requests_for_model"
-        | "litellm_remaining_api_key_tokens_for_model" => LIMIT_FOR_MODEL,
-        "litellm_callback_logging_failures_metric" => CALLBACK,
-        "litellm_api_key_rate_limit_allowed_metric" | "litellm_api_key_rate_limit_used_metric" => {
-            API_KEY_RATE_LIMIT
-        }
-        "litellm_team_rate_limit_allowed_metric" | "litellm_team_rate_limit_used_metric" => {
-            TEAM_RATE_LIMIT
-        }
-        "litellm_llm_api_failed_requests_metric" => LLM_API_FAILED,
-        "litellm_pod_lock_manager_size"
-        | "litellm_in_memory_daily_spend_update_queue_size"
-        | "litellm_redis_daily_spend_update_queue_size"
-        | "litellm_in_memory_spend_update_queue_size"
-        | "litellm_redis_spend_update_queue_size"
-        | "litellm_managed_file_size_bytes"
-        | "litellm_managed_file_deleted_total"
-        | "litellm_check_batch_cost_jobs_polled"
-        | "litellm_check_batch_cost_errors_total"
-        | "litellm_check_batch_cost_last_run_timestamp" => EMPTY,
-        "litellm_cache_hits_metric"
-        | "litellm_cache_misses_metric"
-        | "litellm_cached_tokens_metric"
-        | "litellm_provider_cache_read_input_tokens_metric"
-        | "litellm_provider_cache_creation_input_tokens_metric" => CACHE,
-        "litellm_managed_batch_created_total" | "litellm_managed_file_created_total" => BATCH_USER,
-        "litellm_managed_batch_duration_seconds"
-        | "litellm_check_batch_cost_jobs_processed_total" => BATCH_DURATION,
-        "litellm_mcp_tool_calls_total" | "litellm_mcp_tool_call_spend_metric" => MCP,
-        "litellm_deployment_total_requests" | "litellm_deployment_success_responses" => {
-            DEPLOYMENT_TOTAL
-        }
-        "litellm_deployment_failure_responses" => DEPLOYMENT_FAILURE,
-        _ => return None,
-    })
+fn static_label_set(metric: &str) -> Option<&'static str> {
+    STATIC_LABEL_GROUPS
+        .iter()
+        .find(|(metrics, _)| metrics.contains(&metric))
+        .map(|(_, labels)| *labels)
 }
 
 fn is_org_label_metric(metric: &str) -> bool {
@@ -183,8 +252,7 @@ fn default_labels(metric: &str) -> Option<Vec<String>> {
     if let Some(labels) = request_label_catalog::labels_for_metric(metric) {
         return Some(labels.iter().map(|label| (*label).to_owned()).collect());
     }
-    let labels = budget_label_set(metric).or_else(|| other_label_set(metric))?;
-    Some(label_set(labels))
+    Some(label_set(static_label_set(metric)?))
 }
 
 fn push_if_absent(resolved: &[String], custom_labels: &mut Vec<String>, label: &str) {

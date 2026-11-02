@@ -110,39 +110,18 @@ fn buffer_and_queue_metrics_carry_no_labels(#[case] metric: &str) {
 }
 
 #[rstest]
-#[case::hits("litellm_cache_hits_metric")]
-#[case::misses("litellm_cache_misses_metric")]
-#[case::cached_tokens("litellm_cached_tokens_metric")]
-#[case::provider_read("litellm_provider_cache_read_input_tokens_metric")]
-#[case::provider_creation("litellm_provider_cache_creation_input_tokens_metric")]
-fn cache_metrics_share_the_nine_label_schema(#[case] metric: &str) {
+#[case::cache_hits("litellm_cache_hits_metric", &["model", "hashed_api_key", "api_key_alias", "team", "team_alias", "end_user", "user", "model_id", "api_provider"])]
+#[case::cache_misses("litellm_cache_misses_metric", &["model", "hashed_api_key", "api_key_alias", "team", "team_alias", "end_user", "user", "model_id", "api_provider"])]
+#[case::cached_tokens("litellm_cached_tokens_metric", &["model", "hashed_api_key", "api_key_alias", "team", "team_alias", "end_user", "user", "model_id", "api_provider"])]
+#[case::provider_read("litellm_provider_cache_read_input_tokens_metric", &["model", "hashed_api_key", "api_key_alias", "team", "team_alias", "end_user", "user", "model_id", "api_provider"])]
+#[case::provider_creation("litellm_provider_cache_creation_input_tokens_metric", &["model", "hashed_api_key", "api_key_alias", "team", "team_alias", "end_user", "user", "model_id", "api_provider"])]
+#[case::batch_created("litellm_managed_batch_created_total", &["model", "api_provider", "user", "user_email", "api_key_alias"])]
+#[case::file_created("litellm_managed_file_created_total", &["model", "api_provider", "user", "user_email", "api_key_alias"])]
+fn cache_and_batch_user_metrics_share_their_label_schema(
+    #[case] metric: &str,
+    #[case] expected: &[&str],
+) {
     let settings = PrometheusLabelSettings::with_defaults();
-    let expected: &[&str] = &[
-        "model",
-        "hashed_api_key",
-        "api_key_alias",
-        "team",
-        "team_alias",
-        "end_user",
-        "user",
-        "model_id",
-        "api_provider",
-    ];
-    assert_eq!(get_labels(metric, &settings).unwrap(), expected);
-}
-
-#[rstest]
-#[case::batch_created("litellm_managed_batch_created_total")]
-#[case::file_created("litellm_managed_file_created_total")]
-fn batch_user_metrics_share_the_five_label_schema(#[case] metric: &str) {
-    let settings = PrometheusLabelSettings::with_defaults();
-    let expected: &[&str] = &[
-        "model",
-        "api_provider",
-        "user",
-        "user_email",
-        "api_key_alias",
-    ];
     assert_eq!(get_labels(metric, &settings).unwrap(), expected);
 }
 
