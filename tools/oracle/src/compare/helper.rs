@@ -46,8 +46,10 @@ fn parse_secret<'de, D>(decoder: D) -> Result<Option<SecretString>, D::Error>
 where
     D: WireDecoder<'de>,
 {
-    let value = Option::<String>::deserialize(decoder)?;
-    Ok(value.map(SecretString::from))
+    match Option::<String>::deserialize(decoder) {
+        Ok(value) => Ok(value.map(SecretString::from)),
+        Err(error) => Err(error),
+    }
 }
 
 impl ManagementEffectFields {

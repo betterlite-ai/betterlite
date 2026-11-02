@@ -230,7 +230,11 @@ fn python_failures_carry_the_exception_status() {
         "builtin_prompts: {family: ollama, messages: [{role: other, content: x}], model: injected-model}",
     )
     .unwrap();
-    let role_error = super::python::run_python(&root, &role_call, &case_env)
+    let role_error = super::python::python_stdout(&root, &role_call, &case_env)
+        .and_then(|stdout_output| {
+            serde_json::from_slice::<super::HelperOutput>(&stdout_output)
+                .map_err(OracleError::HelperJson)
+        })
         .unwrap()
         .error
         .unwrap();
@@ -239,7 +243,11 @@ fn python_failures_carry_the_exception_status() {
     let path_call: super::HelperCall =
         serde_saphyr::from_str("url_path: {function: segment, value: '..', field_name: file_id}")
             .unwrap();
-    let path_error = super::python::run_python(&root, &path_call, &case_env)
+    let path_error = super::python::python_stdout(&root, &path_call, &case_env)
+        .and_then(|stdout_output| {
+            serde_json::from_slice::<super::HelperOutput>(&stdout_output)
+                .map_err(OracleError::HelperJson)
+        })
         .unwrap()
         .error
         .unwrap();

@@ -4,7 +4,7 @@ use betterlite_db::mcp_stored_contracts::{
     JsonValue, MCPAuthType, MCPCredentials, MCPTokenEndpointAuthMethod, MCPTransport, decode,
     pinned,
 };
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub(crate) struct Op;
@@ -40,11 +40,11 @@ impl crate::helpers::Helper for Op {
             .iter()
             .map(|(name, call)| {
                 let result = match call {
-                    Call::CredentialContract(value) => validate::<MCPCredentials>(value),
-                    Call::Transport(value) => validate::<MCPTransport>(value),
-                    Call::Auth(value) => validate::<MCPAuthType>(value),
+                    Call::CredentialContract(value) => roundtrip::<MCPCredentials>(value),
+                    Call::Transport(value) => roundtrip::<MCPTransport>(value),
+                    Call::Auth(value) => roundtrip::<MCPAuthType>(value),
                     Call::TokenEndpointMethod(value) => {
-                        validate::<MCPTokenEndpointAuthMethod>(value)
+                        roundtrip::<MCPTokenEndpointAuthMethod>(value)
                     }
                     Call::PinnedToolContract(value) => parse_tools(value),
                     Call::ProtocolMetadata(value) => parse_metadata(value),
@@ -75,11 +75,13 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn validate<Record>(value: &Value) -> Result<Value, &'static str>
+fn roundtrip<T>(value: &Value) -> Result<Value, &'static str>
 where
-    Record: DeserializeOwned + Serialize,
+    T: for<'de> Deserialize<'de> + Serialize,
 {
-    let record: Record = serde_json::from_value(value.clone()).map_err(|_| "ValidationError")?;
+    let Ok(record) = serde_json::from_value::<T>(value.clone()) else {
+        return Err("ValidationError");
+    };
     serde_json::to_value(record).map_err(|_| "SerializationError")
 }
 
