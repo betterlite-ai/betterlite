@@ -4,23 +4,23 @@ use std::ptr;
 
 use rstest::rstest;
 
-use super::labels_for_metric;
+use super::{METRIC_LABELS, labels_for_metric};
 
 #[test]
 fn covers_exactly_thirty_four_request_and_deployment_metrics() {
-    let covered = [
+    let expected_names = [
         "litellm_llm_api_latency_metric",
         "litellm_llm_api_time_to_first_token_metric",
         "litellm_request_total_latency_metric",
         "litellm_request_queue_time_seconds",
+        "litellm_deployment_latency_per_output_token",
+        "litellm_overhead_latency_metric",
+        "litellm_overhead_with_guardrails_latency_metric",
         "litellm_guardrail_latency_seconds",
         "litellm_guardrail_errors_total",
         "litellm_guardrail_requests_total",
         "litellm_proxy_total_requests_metric",
         "litellm_proxy_failed_requests_metric",
-        "litellm_deployment_latency_per_output_token",
-        "litellm_overhead_latency_metric",
-        "litellm_overhead_with_guardrails_latency_metric",
         "litellm_remaining_requests_metric",
         "litellm_remaining_tokens_metric",
         "litellm_requests_metric",
@@ -28,11 +28,11 @@ fn covers_exactly_thirty_four_request_and_deployment_metrics() {
         "litellm_zero_cost_requests_total",
         "litellm_spend_capture_rate",
         "litellm_input_tokens_metric",
-        "litellm_total_tokens_metric",
-        "litellm_output_tokens_metric",
         "litellm_input_cached_tokens_metric",
         "litellm_input_cache_creation_tokens_metric",
         "litellm_input_audio_tokens_metric",
+        "litellm_total_tokens_metric",
+        "litellm_output_tokens_metric",
         "litellm_output_reasoning_tokens_metric",
         "litellm_output_audio_tokens_metric",
         "litellm_video_duration_seconds_metric",
@@ -44,7 +44,9 @@ fn covers_exactly_thirty_four_request_and_deployment_metrics() {
         "litellm_deployment_successful_fallbacks",
         "litellm_deployment_failed_fallbacks",
     ];
-    assert_eq!(covered.len(), 34);
+    let actual_names: Vec<&str> = METRIC_LABELS.iter().map(|(name, _)| *name).collect();
+    assert_eq!(actual_names, expected_names);
+    assert_eq!(METRIC_LABELS.len(), 34);
 }
 
 #[rstest]
