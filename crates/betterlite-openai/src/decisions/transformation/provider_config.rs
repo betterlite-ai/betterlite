@@ -50,6 +50,18 @@ fn first_secret(names: &[&str], get_secret_str: fn(&str) -> String) -> Option<St
         .find(|value| !value.is_empty())
 }
 
+fn resolve_credential(
+    explicit: Option<&str>,
+    env_names: &[&str],
+    get_secret_str: fn(&str) -> String,
+    default: Option<String>,
+) -> Option<String> {
+    explicit
+        .map(str::to_owned)
+        .or_else(|| first_secret(env_names, get_secret_str))
+        .or(default)
+}
+
 pub trait DecisionsProviderConfig {
     const PATH: &'static str = "/v1/systemone";
     const API_KEY_ENV: &'static [&'static str] = &[];
@@ -74,10 +86,12 @@ pub trait DecisionsProviderConfig {
         api_base: Option<&str>,
         get_secret_str: fn(&str) -> String,
     ) -> Option<String> {
-        api_base
-            .map(str::to_owned)
-            .or_else(|| first_secret(Self::API_BASE_ENV, get_secret_str))
-            .or_else(|| self.get_default_api_base())
+        resolve_credential(
+            api_base,
+            Self::API_BASE_ENV,
+            get_secret_str,
+            self.get_default_api_base(),
+        )
     }
 
     fn resolve_api_key(
@@ -85,9 +99,7 @@ pub trait DecisionsProviderConfig {
         api_key: Option<&str>,
         get_secret_str: fn(&str) -> String,
     ) -> Option<String> {
-        api_key
-            .map(str::to_owned)
-            .or_else(|| first_secret(Self::API_KEY_ENV, get_secret_str))
+        resolve_credential(api_key, Self::API_KEY_ENV, get_secret_str, None)
     }
 
     fn canonical_model(&self, model: &str) -> String {

@@ -1,10 +1,12 @@
 use std::collections::HashSet;
 
+use indexmap::IndexMap;
+
 use betterlite_models::decisions::openai::ChoiceValue;
 use betterlite_models::decisions::systemone;
 use betterlite_models::decisions::text::{TextError, decisions_text};
-use betterlite_models::decisions::validators::{Checked, Unchecked, ValidationError};
-use betterlite_models::decisions::{DecisionsJson, ir};
+use betterlite_models::decisions::validators::{Bounded, Unchecked, ValidationError};
+use betterlite_models::decisions::{DecisionsJson, Extra, ir};
 
 #[derive(Debug, thiserror::Error)]
 pub enum SystemOneQuestionError {
@@ -35,55 +37,91 @@ pub fn systemone_keys(questions: &[ir::DecisionQuestion]) -> Vec<String> {
     }
 }
 
-fn ir_predicate_question(name: String, noul: &systemone::NoulQuestion) -> ir::DecisionQuestion {
-    ir::DecisionQuestion::Predicate(ir::PredicateQuestion {
-        name: Some(name),
-        instructions: noul.instructions.clone(),
-        criteria: noul.criteria.clone(),
-        extra: noul.extra.clone(),
-    })
+fn choice_options(
+    criteria: &Bounded<IndexMap<String, Option<DecisionsJson>>, 1, 255>,
+) -> Vec<ir::ChoiceOption> {
+    criteria
+        .as_ref()
+        .iter()
+        .map(|(key, description)| ir::ChoiceOption {
+            value: ChoiceValue::Text(key.clone()),
+            description: description.clone(),
+        })
+        .collect()
 }
 
-fn ir_choice_question(name: String, choice: &systemone::ChoiceQuestion) -> ir::DecisionQuestion {
-    ir::DecisionQuestion::Choice(ir::ChoiceQuestion {
-        name: Some(name),
-        instructions: choice.instructions.clone(),
-        choices: choice
-            .criteria
-            .as_ref()
-            .iter()
-            .map(|(key, description)| ir::ChoiceOption {
-                value: ChoiceValue::Text(key.clone()),
-                description: description.clone(),
-            })
-            .collect(),
-        extra: choice.extra.clone(),
-    })
+fn score_levels(criteria: &Bounded<Vec<DecisionsJson>, 1, 10>) -> Vec<ir::ScoreLevel> {
+    criteria
+        .as_ref()
+        .iter()
+        .map(|criterion| ir::ScoreLevel {
+            label: criterion.clone(),
+            description: None,
+        })
+        .collect()
 }
 
-fn ir_score_question(name: String, score: &systemone::ScoreQuestion) -> ir::DecisionQuestion {
-    ir::DecisionQuestion::Score(ir::ScoreQuestion {
-        name: Some(name),
-        instructions: score.instructions.clone(),
-        levels: score
-            .criteria
-            .as_ref()
-            .iter()
-            .map(|criterion| ir::ScoreLevel {
-                label: criterion.clone(),
-                description: None,
+macro_rules! ir_variant_fn {
+    ($fn_name:ident, $Variant:ident, $Struct:ident, $field:ident, $ValueType:ty) => {
+        const fn $fn_name(
+            name: String,
+            instructions: Option<DecisionsJson>,
+            value: $ValueType,
+            extra: Extra,
+        ) -> ir::DecisionQuestion {
+            ir::DecisionQuestion::$Variant(ir::$Struct {
+                name: Some(name),
+                instructions,
+                $field: value,
+                extra,
             })
-            .collect(),
-        extra: score.extra.clone(),
-    })
+        }
+    };
 }
+
+ir_variant_fn!(
+    predicate_from_systemone,
+    Predicate,
+    PredicateQuestion,
+    criteria,
+    Option<systemone::NoulCriteria>
+);
+ir_variant_fn!(
+    choice_from_systemone,
+    Choice,
+    ChoiceQuestion,
+    choices,
+    Vec<ir::ChoiceOption>
+);
+ir_variant_fn!(
+    score_from_systemone,
+    Score,
+    ScoreQuestion,
+    levels,
+    Vec<ir::ScoreLevel>
+);
 
 #[must_use]
 pub fn ir_question(name: String, question: &systemone::DecisionQuestion) -> ir::DecisionQuestion {
     match question {
-        systemone::DecisionQuestion::Noul(checked) => ir_predicate_question(name, checked.as_ref()),
-        systemone::DecisionQuestion::Choice(choice) => ir_choice_question(name, choice),
-        systemone::DecisionQuestion::Score(score) => ir_score_question(name, score),
+        systemone::DecisionQuestion::Noul(checked) => predicate_from_systemone(
+            name,
+            checked.as_ref().instructions.clone(),
+            checked.as_ref().criteria.clone(),
+            checked.as_ref().extra.clone(),
+        ),
+        systemone::DecisionQuestion::Choice(choice) => choice_from_systemone(
+            name,
+            choice.instructions.clone(),
+            choice_options(&choice.criteria),
+            choice.extra.clone(),
+        ),
+        systemone::DecisionQuestion::Score(score) => score_from_systemone(
+            name,
+            score.instructions.clone(),
+            score_levels(&score.criteria),
+            score.extra.clone(),
+        ),
     }
 }
 
@@ -97,22 +135,8 @@ fn level_criterion(level: &ir::ScoreLevel) -> Result<DecisionsJson, TextError> {
     }
 }
 
-fn systemone_predicate_question(
-    predicate: &ir::PredicateQuestion,
-) -> Result<systemone::DecisionQuestion, SystemOneQuestionError> {
-    let noul = systemone::NoulQuestion {
-        instructions: predicate.instructions.clone(),
-        criteria: predicate.criteria.clone(),
-        extra: predicate.extra.clone(),
-    };
-    let checked: Checked<systemone::NoulQuestion> = Unchecked(noul).try_into()?;
-    Ok(systemone::DecisionQuestion::Noul(checked))
-}
-
-fn systemone_choice_question(
-    choice: &ir::ChoiceQuestion,
-) -> Result<systemone::DecisionQuestion, SystemOneQuestionError> {
-    let criteria = choice
+fn choice_criteria_entries(choice: &ir::ChoiceQuestion) -> IndexMap<String, Option<DecisionsJson>> {
+    choice
         .choices
         .iter()
         .map(|option| {
@@ -121,41 +145,81 @@ fn systemone_choice_question(
                 option.description.clone(),
             )
         })
-        .collect();
-    let bounded = Unchecked(criteria).try_into()?;
-    Ok(systemone::DecisionQuestion::Choice(
-        systemone::ChoiceQuestion {
-            instructions: choice.instructions.clone(),
-            criteria: bounded,
-            extra: choice.extra.clone(),
-        },
+        .collect()
+}
+
+macro_rules! systemone_struct_fn {
+    ($fn_name:ident, $Struct:ident, $CriteriaType:ty) => {
+        const fn $fn_name(
+            instructions: Option<DecisionsJson>,
+            criteria: $CriteriaType,
+            extra: Extra,
+        ) -> systemone::$Struct {
+            systemone::$Struct {
+                instructions,
+                criteria,
+                extra,
+            }
+        }
+    };
+}
+
+systemone_struct_fn!(
+    build_noul_question,
+    NoulQuestion,
+    Option<systemone::NoulCriteria>
+);
+systemone_struct_fn!(
+    build_choice_question,
+    ChoiceQuestion,
+    Bounded<IndexMap<String, Option<DecisionsJson>>, 1, 255>
+);
+systemone_struct_fn!(
+    build_score_question,
+    ScoreQuestion,
+    Bounded<Vec<DecisionsJson>, 1, 10>
+);
+
+fn predicate_to_systemone(
+    predicate: &ir::PredicateQuestion,
+) -> Result<systemone::DecisionQuestion, SystemOneQuestionError> {
+    let built = build_noul_question(
+        predicate.instructions.clone(),
+        predicate.criteria.clone(),
+        predicate.extra.clone(),
+    );
+    Ok(systemone::DecisionQuestion::Noul(
+        Unchecked(built).try_into()?,
     ))
 }
 
-fn systemone_score_question(
+fn choice_to_systemone(
+    choice: &ir::ChoiceQuestion,
+) -> Result<systemone::DecisionQuestion, SystemOneQuestionError> {
+    let criteria = Unchecked(choice_criteria_entries(choice)).try_into()?;
+    let built = build_choice_question(choice.instructions.clone(), criteria, choice.extra.clone());
+    Ok(systemone::DecisionQuestion::Choice(built))
+}
+
+fn score_to_systemone(
     score: &ir::ScoreQuestion,
 ) -> Result<systemone::DecisionQuestion, SystemOneQuestionError> {
-    let criteria = score
+    let entries: Vec<DecisionsJson> = score
         .levels
         .iter()
         .map(level_criterion)
-        .collect::<Result<Vec<_>, _>>()?;
-    let bounded = Unchecked(criteria).try_into()?;
-    Ok(systemone::DecisionQuestion::Score(
-        systemone::ScoreQuestion {
-            instructions: score.instructions.clone(),
-            criteria: bounded,
-            extra: score.extra.clone(),
-        },
-    ))
+        .collect::<Result<_, _>>()?;
+    let criteria = Unchecked(entries).try_into()?;
+    let built = build_score_question(score.instructions.clone(), criteria, score.extra.clone());
+    Ok(systemone::DecisionQuestion::Score(built))
 }
 
 pub fn systemone_question(
     question: &ir::DecisionQuestion,
 ) -> Result<systemone::DecisionQuestion, SystemOneQuestionError> {
     match question {
-        ir::DecisionQuestion::Predicate(predicate) => systemone_predicate_question(predicate),
-        ir::DecisionQuestion::Choice(choice) => systemone_choice_question(choice),
-        ir::DecisionQuestion::Score(score) => systemone_score_question(score),
+        ir::DecisionQuestion::Predicate(predicate) => predicate_to_systemone(predicate),
+        ir::DecisionQuestion::Choice(choice) => choice_to_systemone(choice),
+        ir::DecisionQuestion::Score(score) => score_to_systemone(score),
     }
 }

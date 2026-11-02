@@ -25,15 +25,6 @@ struct BareProviderConfig;
 
 impl DecisionsProviderConfig for BareProviderConfig {}
 
-fn predicate_question(name: &str) -> ir::DecisionQuestion {
-    ir::DecisionQuestion::Predicate(ir::PredicateQuestion {
-        name: Some(name.to_owned()),
-        instructions: Some(DecisionsJson::Text("is it true?".to_owned())),
-        criteria: None,
-        extra: Extra::default(),
-    })
-}
-
 fn unnamed_predicate_question() -> ir::DecisionQuestion {
     ir::DecisionQuestion::Predicate(ir::PredicateQuestion {
         name: None,
@@ -43,41 +34,61 @@ fn unnamed_predicate_question() -> ir::DecisionQuestion {
     })
 }
 
-fn choice_question(name: &str) -> ir::DecisionQuestion {
-    ir::DecisionQuestion::Choice(ir::ChoiceQuestion {
-        name: Some(name.to_owned()),
-        instructions: Some(DecisionsJson::Text("pick one".to_owned())),
-        choices: vec![
-            ir::ChoiceOption {
-                value: ChoiceValue::Text("yes".to_owned()),
-                description: Some(DecisionsJson::Text("affirmative".to_owned())),
-            },
-            ir::ChoiceOption {
-                value: ChoiceValue::Text("no".to_owned()),
-                description: Some(DecisionsJson::Text("negative".to_owned())),
-            },
-        ],
-        extra: Extra::default(),
-    })
+macro_rules! question_fn {
+    ($fn_name:ident, $Variant:ident, $Struct:ident, $instructions:literal, $field:ident, $value:expr) => {
+        fn $fn_name(name: &str) -> ir::DecisionQuestion {
+            ir::DecisionQuestion::$Variant(ir::$Struct {
+                name: Some(name.to_owned()),
+                instructions: Some(DecisionsJson::Text($instructions.to_owned())),
+                $field: $value,
+                extra: Extra::default(),
+            })
+        }
+    };
 }
 
-fn score_question(name: &str) -> ir::DecisionQuestion {
-    ir::DecisionQuestion::Score(ir::ScoreQuestion {
-        name: Some(name.to_owned()),
-        instructions: Some(DecisionsJson::Text("rate it".to_owned())),
-        levels: vec![
-            ir::ScoreLevel {
-                label: DecisionsJson::Text("low".to_owned()),
-                description: None,
-            },
-            ir::ScoreLevel {
-                label: DecisionsJson::Text("high".to_owned()),
-                description: Some("very high indeed".to_owned()),
-            },
-        ],
-        extra: Extra::default(),
-    })
-}
+question_fn!(
+    predicate_question,
+    Predicate,
+    PredicateQuestion,
+    "is it true?",
+    criteria,
+    None
+);
+question_fn!(
+    choice_question,
+    Choice,
+    ChoiceQuestion,
+    "pick one",
+    choices,
+    vec![
+        ir::ChoiceOption {
+            value: ChoiceValue::Text("yes".to_owned()),
+            description: Some(DecisionsJson::Text("affirmative".to_owned())),
+        },
+        ir::ChoiceOption {
+            value: ChoiceValue::Text("no".to_owned()),
+            description: Some(DecisionsJson::Text("negative".to_owned())),
+        },
+    ]
+);
+question_fn!(
+    score_question,
+    Score,
+    ScoreQuestion,
+    "rate it",
+    levels,
+    vec![
+        ir::ScoreLevel {
+            label: DecisionsJson::Text("low".to_owned()),
+            description: None,
+        },
+        ir::ScoreLevel {
+            label: DecisionsJson::Text("high".to_owned()),
+            description: Some("very high indeed".to_owned()),
+        },
+    ]
+);
 
 fn request_with(questions: Vec<ir::DecisionQuestion>) -> ir::DecisionRequest {
     ir::DecisionRequest {
