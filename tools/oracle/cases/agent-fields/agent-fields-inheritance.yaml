@@ -1,0 +1,6 @@
+kind: helper
+name: agent-fields-inheritance
+call:
+  b3191: {function: get_agent_field, agent_type: bedrock_agentcore}
+env: {}
+compare: {ignore: []}
