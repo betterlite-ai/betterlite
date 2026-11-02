@@ -1,0 +1,8 @@
+task: B3762
+deviations:
+  - what: Cisco error messages use betterlite's own wording in failure scenarios, not LiteLLM's exact text.
+    why: Status/timeout/non-JSON failures are all wrapped into one CiscoAIDefenseGuardrailAPIError-classed error on both sides; the oracle does not compare message text (see B3767's identical precedent).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L802-L849
+  - what: betterlite's reqwest client disables redirects globally at construction instead of per-request.
+    why: reqwest has no equivalent of httpx's per-call client.send(request, follow_redirects=False) override; a client built once with redirect::Policy::none() produces the same observable behavior for every inspection request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L820-L825

@@ -30,7 +30,6 @@ description: >-
   cases within 550 changed lines.
 scope:
   paths:
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/allowed_ip_routes.rs
     - crates/betterlite-server/src/allowed_ip_routes/**
     - crates/betterlite-server/fuzz/Cargo.toml

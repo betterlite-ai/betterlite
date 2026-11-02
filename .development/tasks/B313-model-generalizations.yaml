@@ -17,13 +17,10 @@ description: >-
   boundary.
 scope:
   paths:
-  - crates/betterlite-server/src/lib.rs
   - crates/betterlite-server/src/routes.rs
   - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
   - crates/betterlite-server/src/state/**
-  - crates/betterlite-server/src/routing/mod.rs
-  - crates/betterlite-server/src/routing/mod/**
   - crates/betterlite-server/src/routing/model_generalizations.rs
   - crates/betterlite-server/src/routing/model_generalizations/**
   - crates/betterlite-router/src/strategy.rs

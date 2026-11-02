@@ -53,7 +53,6 @@ scope:
   paths:
     - crates/betterlite-server/src/model_capability_slot.rs
     - crates/betterlite-server/src/model_capability_slot/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/src/helpers/server/model_capability_slot.rs
     - tools/oracle/src/helpers/server/model_capability_slot/**
@@ -62,6 +61,7 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/model-capability-slot/**
     - tools/oracle/fuzz/corpus/helper_case/model-capability-slot-*
+    - crates/betterlite-server/src/model_capability_slot/fixtures.rs
     - crates/betterlite-server/src/model_capability_slot/fixtures/**
   lint_tables: false
 references:

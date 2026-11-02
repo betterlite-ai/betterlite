@@ -1,0 +1,11 @@
+kind: helper
+name: format_header_precedence
+call:
+  b3300:
+    json_body:
+      model: mistral/mistral-ocr-latest
+      req_format: litellm
+    header_req_format: native
+env: {}
+compare:
+  ignore: []

@@ -25,7 +25,6 @@ scope:
   paths:
     - crates/betterlite-server/src/endpoints/passthrough_config_reads.rs
     - crates/betterlite-server/src/endpoints/passthrough_config_reads/**
-    - crates/betterlite-server/src/lib.rs
     - tools/oracle/cases/passthrough_config/**
     - tools/oracle/helpers/b3617.py
     - tools/oracle/helpers/b3617/**

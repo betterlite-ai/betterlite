@@ -56,7 +56,6 @@ scope:
   paths:
     - crates/betterlite-server/src/ui_session_cleanup.rs
     - crates/betterlite-server/src/ui_session_cleanup/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/ui-session-cleanup-*

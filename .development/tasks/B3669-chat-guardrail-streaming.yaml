@@ -41,8 +41,8 @@ scope:
   paths:
     - crates/betterlite-server/src/guardrails/chat_guardrail_translation/streaming.rs
     - crates/betterlite-server/src/guardrails/chat_guardrail_translation/streaming/**
-    - crates/betterlite-server/src/guardrails/responses_guardrail_translation/tool_merge.rs
-    - crates/betterlite-server/src/guardrails/responses_guardrail_translation/tool_merge/**
+    - crates/betterlite-server/src/guardrails/responses_translation/tool_merge.rs
+    - crates/betterlite-server/src/guardrails/responses_translation/tool_merge/**
     - crates/betterlite-server/src/guardrails/anthropic_sse.rs
     - crates/betterlite-server/src/guardrails/anthropic_sse/**
   lint_tables: false
@@ -139,28 +139,28 @@ checks:
   commands:
     - id: streaming-dispatch-cases
       why: process_output_streaming_response dispatch logic tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_streaming::(process_output_streaming|dispatch)/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::streaming::(process_output_streaming|dispatch)/)'
     - id: block-only-cases
       why: _process_streaming_block_only block-only path tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_streaming::block_only/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::streaming::block_only/)'
     - id: transform-cases
       why: _process_streaming_transform incremental path tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_streaming::streaming_transform/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::streaming::streaming_transform/)'
     - id: scan-key-cases
       why: get_streaming_scan_key tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_streaming::streaming_scan_key/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::streaming::streaming_scan_key/)'
     - id: tool-validation-cases
       why: tool validation and merging tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^responses_guardrail_tool_merge::(as_tool|validation)/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::responses_translation::tool_merge::(as_tool|validation)/)'
     - id: indexed-key-cases
       why: indexed key and duplicate name handling tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^responses_guardrail_tool_merge::(indexed_key|duplicate)/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::responses_translation::tool_merge::(indexed_key|duplicate)/)'
     - id: merge-tools-cases
       why: merge_guardrailed_tools tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^responses_guardrail_tool_merge::merge_tools/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::responses_translation::tool_merge::merge_tools/)'
     - id: rebuild-namespace-cases
       why: namespace member rebuilding tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^responses_guardrail_tool_merge::rebuild_namespace/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::responses_translation::tool_merge::rebuild_namespace/)'
     - id: anthropic-detect-cases
       why: is_anthropic_sse_stream type detection tests are missing or fail
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::anthropic_sse::is_anthropic_sse_stream/)'

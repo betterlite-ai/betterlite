@@ -30,7 +30,6 @@ description: >-
   handlers/validation, 200 tests and 200 HTTP/fuzz fixtures within 675 changed lines.
 scope:
   paths:
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/signup_defaults_routes.rs
     - crates/betterlite-server/src/signup_defaults_routes/**
     - crates/betterlite-server/fuzz/Cargo.toml

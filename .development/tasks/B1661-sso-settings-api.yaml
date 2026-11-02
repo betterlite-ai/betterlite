@@ -37,7 +37,6 @@ description: >-
   with a 750-line ceiling.
 scope:
   paths:
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/sso_settings_routes.rs
     - crates/betterlite-server/src/sso_settings_routes/**
     - crates/betterlite-server/fuzz/Cargo.toml

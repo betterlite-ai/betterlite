@@ -113,7 +113,6 @@ scope:
   paths:
     - crates/betterlite-server/src/user_bulk_delete.rs
     - crates/betterlite-server/src/user_bulk_delete/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/src/helpers/server/user_bulk_delete.rs
     - tools/oracle/src/helpers/server/user_bulk_delete/**
@@ -122,6 +121,7 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/user-bulk-delete/**
     - tools/oracle/fuzz/corpus/helper_case/user-bulk-delete-*
+    - crates/betterlite-server/src/user_bulk_delete/fixtures.rs
     - crates/betterlite-server/src/user_bulk_delete/fixtures/**
   lint_tables: false
 references:

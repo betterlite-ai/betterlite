@@ -1,0 +1,14 @@
+kind: helper
+name: multipart_file_upload
+call:
+  b3300:
+    multipart:
+      file_base64: SGVsbG8sIFdvcmxkIQ==
+      file_name: sample.pdf
+      file_content_type: "application/pdf; charset=binary"
+      fields:
+        - [model, mistral-ocr-latest]
+        - [pages, "[0,1]"]
+env: {}
+compare:
+  ignore: []

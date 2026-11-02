@@ -28,7 +28,6 @@ description: >-
   all input bytes; this task adds only configuration replay seeds.
 scope:
   paths:
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/sso_status_debug.rs
     - crates/betterlite-server/src/sso_status_debug/**
     - crates/betterlite-config/src/sso_status_debug.rs

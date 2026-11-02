@@ -129,7 +129,6 @@ scope:
   paths:
     - crates/betterlite-server/src/key_create.rs
     - crates/betterlite-server/src/key_create/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/src/helpers/server/key_create.rs
     - tools/oracle/src/helpers/server/key_create/**
@@ -138,6 +137,7 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/key-create/**
     - tools/oracle/fuzz/corpus/helper_case/key-create-*
+    - crates/betterlite-server/src/key_create/fixtures.rs
     - crates/betterlite-server/src/key_create/fixtures/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/key-create-*

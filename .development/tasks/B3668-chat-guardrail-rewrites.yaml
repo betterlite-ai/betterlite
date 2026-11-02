@@ -106,43 +106,43 @@ checks:
   commands:
     - id: input-process-cases
       why: process_input_messages tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_rewrites::(process_input|input_messages)/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::rewrites::(process_input|input_messages)/)'
     - id: input-text-rewrite-cases
       why: _apply_guardrail_responses_to_input_texts tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_rewrites::apply_input_text/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::rewrites::apply_input_text/)'
     - id: input-tool-rewrite-cases
       why: _apply_guardrail_responses_to_input_tool_calls tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_rewrites::apply_input_tool/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::rewrites::apply_input_tool/)'
     - id: output-process-cases
       why: process_output_response tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_rewrites::(process_output|output_response)/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::rewrites::(process_output|output_response)/)'
     - id: output-text-rewrite-cases
       why: _apply_guardrail_responses_to_output_texts tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_rewrites::apply_output_text/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::rewrites::apply_output_text/)'
     - id: output-tool-rewrite-cases
       why: _apply_guardrail_responses_to_output_tool_calls tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_rewrites::apply_output_tool/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::rewrites::apply_output_tool/)'
     - id: ended-stream-gather-cases
       why: _process_ended_stream gathering and choice detection tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_rewrites::ended_stream_gather/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::rewrites::ended_stream_gather/)'
     - id: ended-stream-rebuild-cases
       why: _rebuild_ended_stream_per_choice reconstruction tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_rewrites::rebuild_ended_stream/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::rewrites::rebuild_ended_stream/)'
     - id: string-choice-cases
       why: _string_choice_contents accumulation tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_rewrites::string_choice_contents/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::rewrites::string_choice_contents/)'
     - id: text-rewrite-stream-cases
       why: _write_ended_stream_text_rewrites stream building tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_rewrites::write_text_rewrites/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::rewrites::write_text_rewrites/)'
     - id: tool-shapes-cases
       why: _function_tool_call_shapes detection tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_rewrites::tool_call_shapes/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::rewrites::tool_call_shapes/)'
     - id: tool-fragments-cases
       why: _function_tool_call_fragments undeliverability detection tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_rewrites::tool_call_fragments/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::rewrites::tool_call_fragments/)'
     - id: tool-rewrite-stream-cases
       why: _write_ended_stream_tool_call_rewrites stream emission tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^chat_guardrail_rewrites::write_tool_rewrites/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::rewrites::write_tool_rewrites/)'
 
 oracle_cases: []
 

@@ -106,7 +106,6 @@ scope:
   paths:
     - crates/betterlite-server/src/key_access.rs
     - crates/betterlite-server/src/key_access/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/src/helpers/server/key_access.rs
     - tools/oracle/src/helpers/server/key_access/**

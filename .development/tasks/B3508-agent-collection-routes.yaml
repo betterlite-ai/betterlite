@@ -76,10 +76,10 @@ checks:
   commands:
   - id: behavior-tests
     why: proxy admin detection, query merge or guard behavior tests are absent, incomplete or fail
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_collection_routes(::|$)/) - test(/replays_the_.*_corpus/)'
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::agents::collection_routes(::|$)/) - test(/replays_the_.*_corpus/)'
   - id: security-tests
     why: 401 enforcement or credential validation tests are absent or fail
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_collection_routes::.*security(::|$)/)'
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::agents::collection_routes::.*security(::|$)/)'
   - id: oracle-routes
     why: POST/GET /v1beta/agents routes fail oracle comparison or are absent
     run: cargo run --locked --quiet -p betterlite-oracle -- tools/oracle/cases/agents/collection-routes

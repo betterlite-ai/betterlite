@@ -51,7 +51,6 @@ scope:
   paths:
     - crates/betterlite-server/src/login_return.rs
     - crates/betterlite-server/src/login_return/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/login_return.rs
