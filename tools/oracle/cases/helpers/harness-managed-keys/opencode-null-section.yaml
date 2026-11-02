@@ -1,0 +1,9 @@
+kind: helper
+name: opencode-null-section
+call:
+  b5081:
+    harness: opencode
+    config: { agent: null }
+env: {}
+compare:
+  ignore: []
