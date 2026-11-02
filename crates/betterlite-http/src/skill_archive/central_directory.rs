@@ -24,9 +24,18 @@ pub(super) struct CentralEntry {
 
 // Walks the central directory by byte offset, bypassing the zip crate's name-keyed index so a 0x7075 collision can't hide a member.
 pub(super) fn header_starts(stored_content: &[u8], dir_start: u64) -> Vec<u64> {
+    // uploaded.len() is itself keyed by decoded name, so it would undercount the same collision; bound by byte length instead.
+    let max_entries = stored_content
+        .len()
+        .checked_div(CENTRAL_HEADER_FIXED_LEN)
+        .and_then(|count| count.checked_add(1))
+        .unwrap_or(stored_content.len());
     let mut starts = Vec::new();
     let mut offset = dir_start;
-    while let Some(next) = next_header_start(stored_content, offset) {
+    for _ in 0..max_entries {
+        let Some(next) = next_header_start(stored_content, offset) else {
+            break;
+        };
         starts.push(offset);
         offset = next;
     }
