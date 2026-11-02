@@ -1,6 +1,8 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::fs;
+use std::path::Path;
 
 use rstest::rstest;
 use rust_decimal::Decimal;
@@ -287,4 +289,15 @@ fn n_absent_defaults_to_one_image() {
     )
     .expect("n defaults to one");
     assert_eq!(cost, Decimal::new(2, 1));
+}
+
+#[rstest]
+fn replays_the_image_dimensions_corpus() {
+    let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/image_dimensions");
+    for entry in fs::read_dir(directory).expect("the image_dimensions corpus directory exists") {
+        let path = entry.expect("a corpus entry is readable").path();
+        if let Ok(text) = fs::read_to_string(path) {
+            let _parsed = parse_image_dimensions(&text);
+        }
+    }
 }
