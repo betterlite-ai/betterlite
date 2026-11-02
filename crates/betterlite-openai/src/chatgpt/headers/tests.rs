@@ -1,7 +1,5 @@
 #![cfg(test)]
 
-use std::env::consts::ARCH;
-
 use betterlite_config::sections::chatgpt_headers::Settings as HeaderSettings;
 use nix::sys::utsname::uname;
 use rstest::rstest;
@@ -126,17 +124,21 @@ fn default_user_agent_matches_the_pinned_fallback() {
 }
 
 #[test]
-fn system_platform_environment_reads_the_real_os_release_and_arch() {
+fn system_platform_environment_reads_the_real_uname_fields() {
     let platform = SystemPlatformEnvironment;
-    assert_eq!(platform.os_type(), "Linux");
-    assert_eq!(platform.arch(), ARCH);
-    let uname_release = uname()
-        .expect("uname succeeds on this platform")
-        .release()
-        .to_str()
-        .expect("release is valid UTF-8")
-        .to_owned();
-    assert_eq!(platform.os_release(), uname_release);
+    let info = uname().expect("uname succeeds on this platform");
+    assert_eq!(
+        platform.os_type(),
+        info.sysname().to_str().expect("sysname is valid UTF-8")
+    );
+    assert_eq!(
+        platform.os_release(),
+        info.release().to_str().expect("release is valid UTF-8")
+    );
+    assert_eq!(
+        platform.arch(),
+        info.machine().to_str().expect("machine is valid UTF-8")
+    );
 }
 
 #[test]

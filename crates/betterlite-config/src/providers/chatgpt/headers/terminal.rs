@@ -5,19 +5,34 @@ pub(crate) fn resolve(lookup: &dyn EnvironmentLookup) -> String {
     term_program(lookup)
         .or_else(|| versioned_terminal(lookup, "WEZTERM_VERSION", "WezTerm"))
         .or_else(|| iterm_present(lookup).then_some("iTerm.app".to_owned()))
-        .or_else(|| env_present(lookup, "TERM_SESSION_ID").then_some("Apple_Terminal".to_owned()))
+        .or_else(|| {
+            lookup
+                .lookup("TERM_SESSION_ID")
+                .is_some_and(|value| !value.is_empty())
+                .then_some("Apple_Terminal".to_owned())
+        })
         .or_else(|| kitty_present(lookup).then_some("kitty".to_owned()))
         .or_else(|| {
+            let socket_present = lookup
+                .lookup("ALACRITTY_SOCKET")
+                .is_some_and(|value| !value.is_empty());
             let term_is_alacritty = lookup.lookup("TERM").as_deref() == Some("alacritty");
-            (env_present(lookup, "ALACRITTY_SOCKET") || term_is_alacritty)
-                .then_some("Alacritty".to_owned())
+            (socket_present || term_is_alacritty).then_some("Alacritty".to_owned())
         })
         .or_else(|| versioned_terminal(lookup, "KONSOLE_VERSION", "Konsole"))
         .or_else(|| {
-            env_present(lookup, "GNOME_TERMINAL_SCREEN").then_some("gnome-terminal".to_owned())
+            lookup
+                .lookup("GNOME_TERMINAL_SCREEN")
+                .is_some_and(|value| !value.is_empty())
+                .then_some("gnome-terminal".to_owned())
         })
         .or_else(|| versioned_terminal(lookup, "VTE_VERSION", "VTE"))
-        .or_else(|| env_present(lookup, "WT_SESSION").then_some("WindowsTerminal".to_owned()))
+        .or_else(|| {
+            lookup
+                .lookup("WT_SESSION")
+                .is_some_and(|value| !value.is_empty())
+                .then_some("WindowsTerminal".to_owned())
+        })
         .or_else(|| {
             let term = lookup.lookup("TERM").filter(|value| !value.is_empty())?;
             Some(sanitized_or(&term, "unknown"))
@@ -26,23 +41,22 @@ pub(crate) fn resolve(lookup: &dyn EnvironmentLookup) -> String {
 }
 
 fn iterm_present(lookup: &dyn EnvironmentLookup) -> bool {
-    env_present(lookup, "ITERM_SESSION_ID")
-        || env_present(lookup, "ITERM_PROFILE")
-        || env_present(lookup, "ITERM_PROFILE_NAME")
+    for name in ["ITERM_SESSION_ID", "ITERM_PROFILE", "ITERM_PROFILE_NAME"] {
+        if lookup.lookup(name).is_some_and(|value| !value.is_empty()) {
+            return true;
+        }
+    }
+    false
 }
 
 fn kitty_present(lookup: &dyn EnvironmentLookup) -> bool {
+    let window_id_present = lookup
+        .lookup("KITTY_WINDOW_ID")
+        .is_some_and(|value| !value.is_empty());
     let term_names_kitty = lookup
         .lookup("TERM")
         .is_some_and(|term| term.contains("kitty"));
-    env_present(lookup, "KITTY_WINDOW_ID") || term_names_kitty
-}
-
-fn env_present(lookup: &dyn EnvironmentLookup, name: &str) -> bool {
-    let Some(value) = lookup.lookup(name) else {
-        return false;
-    };
-    !value.is_empty()
+    window_id_present || term_names_kitty
 }
 
 fn sanitize_token(value: &str) -> String {

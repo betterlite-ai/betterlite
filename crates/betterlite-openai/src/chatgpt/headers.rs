@@ -1,7 +1,7 @@
-use std::env::consts::{ARCH, OS};
+use std::ffi::OsStr;
 
 use betterlite_config::sections::chatgpt_headers::Settings as HeaderSettings;
-use nix::sys::utsname::uname;
+use nix::sys::utsname::{UtsName, uname};
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::openai_base_config::Headers;
@@ -24,33 +24,36 @@ pub trait PlatformEnvironment: Send + Sync {
 pub struct SystemPlatformEnvironment;
 
 impl PlatformEnvironment for SystemPlatformEnvironment {
+    // mirrors Python's platform.system(), which reads the same uname(2) sysname field
     fn os_type(&self) -> String {
-        match OS {
-            "macos" => "Darwin",
-            "linux" => "Linux",
-            "windows" => "Windows",
-            other => other,
-        }
-        .to_owned()
+        uname_field(UtsName::sysname, "Unknown")
     }
 
     // mirrors Python's platform.release(), which reads the same uname(2) release field
     fn os_release(&self) -> String {
-        let Ok(info) = uname() else {
-            return "0".to_owned();
-        };
-        let Some(release) = info.release().to_str() else {
-            return "0".to_owned();
-        };
-        if release.is_empty() {
-            "0".to_owned()
-        } else {
-            release.to_owned()
-        }
+        uname_field(UtsName::release, "0")
     }
 
+    // mirrors Python's platform.machine(), which reads the same uname(2) machine field
     fn arch(&self) -> String {
-        ARCH.to_owned()
+        uname_field(UtsName::machine, "unknown")
+    }
+}
+
+fn uname_field<S>(selector: S, fallback: &str) -> String
+where
+    S: Fn(&UtsName) -> &OsStr,
+{
+    let Ok(info) = uname() else {
+        return fallback.to_owned();
+    };
+    let Some(value) = selector(&info).to_str() else {
+        return fallback.to_owned();
+    };
+    if value.is_empty() {
+        fallback.to_owned()
+    } else {
+        value.to_owned()
     }
 }
 

@@ -55,17 +55,28 @@ fn normalize_litellm_params(input: &LitellmParamsInput) -> ParamsRecord {
 pub fn get_chatgpt_session_id(litellm_params: &LitellmParamsInput) -> Option<String> {
     let params = normalize_litellm_params(litellm_params);
     for key in ["litellm_session_id", "session_id"] {
-        if let Some(value) = params.get(key).and_then(present_session_text) {
+        if let Some(value) = params
+            .get(key)
+            .filter(|value| has_session_value(value))
+            .map(stringify_value)
+        {
             return Some(value);
         }
     }
     if let Some(Value::Object(metadata)) = params.get("metadata")
-        && let Some(value) = metadata.get("session_id").and_then(present_session_text)
+        && let Some(value) = metadata
+            .get("session_id")
+            .filter(|value| has_session_value(value))
+            .map(stringify_value)
     {
         return Some(value);
     }
     for key in ["litellm_trace_id", "litellm_call_id"] {
-        if let Some(value) = params.get(key).and_then(present_session_text) {
+        if let Some(value) = params
+            .get(key)
+            .filter(|value| has_session_value(value))
+            .map(stringify_value)
+        {
             return Some(value);
         }
     }
@@ -81,20 +92,6 @@ pub fn ensure_chatgpt_session_id(
         return identity.generate();
     };
     session_id
-}
-
-fn present_session_text(value: &Value) -> Option<String> {
-    if !has_session_value(value) {
-        return None;
-    }
-    Some(match value {
-        Value::String(text) => text.clone(),
-        other @ (Value::Null
-        | Value::Bool(_)
-        | Value::Number(_)
-        | Value::Array(_)
-        | Value::Object(_)) => stringify_value(other),
-    })
 }
 
 fn has_session_value(value: &Value) -> bool {

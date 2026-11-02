@@ -27,14 +27,7 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let resolved = environment::resolve(lookup);
-        Ok(Settings {
-            originator_override: resolved.originator_override,
-            user_agent_override: resolved.user_agent_override,
-            user_agent_suffix: resolved.user_agent_suffix,
-            default_instructions_override: resolved.default_instructions_override,
-            terminal: resolved.terminal,
-        })
+        Ok(environment::resolve(lookup))
     }
 }
 
