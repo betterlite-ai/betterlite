@@ -91,16 +91,64 @@ fn create_new_container_creates_and_caches_when_the_cache_key_is_unseen() {
     let tool_registry = MockToolRegistry::default();
     let sandbox = provider(Some(&config), &registry, &tool_registry);
     let mut cache = SandboxCache::default();
+    let now = Instant::now();
     let (container, _params) = block_on(get_or_create_container(
         &sandbox,
         &mut cache,
         Some("cache-key"),
         Some("user-1"),
-        &FixedClock(Instant::now()),
+        &FixedClock(now),
     ))
     .unwrap();
     assert_eq!(container, test_object([("id", json!("fresh"))]));
     assert_eq!(cache.entries.len(), 1);
+    let entry = &cache.entries["cache-key"];
+    assert_eq!(entry.identity, Some("user-1".to_owned()));
+    assert_eq!(entry.last_accessed, now);
+}
+
+#[cfg(test)]
+#[test]
+fn create_new_container_evicts_the_lru_session_entry_when_the_identity_is_at_the_cap() {
+    let registry = MockRegistry::succeeding(test_object([("id", json!("fresh"))]));
+    let tool_registry = MockToolRegistry {
+        resolved: Some(
+            test_object([("sandbox_provider", json!("e2b"))])
+                .as_object()
+                .unwrap()
+                .clone(),
+        ),
+    };
+    let sandbox: SandboxProvider<'_, MockConfig, MockRegistry, MockToolRegistry> =
+        SandboxProvider {
+            sandbox_config: None,
+            registry: &registry,
+            tool_registry: &tool_registry,
+            sandbox_tool_name: Some("my-tool"),
+        };
+    let mut cache = SandboxCache::default();
+    insert_session_entries(
+        &mut cache,
+        "key",
+        "user-1",
+        Instant::now(),
+        SESSION_SCOPED_IDENTITY_CAP,
+    );
+    block_on(get_or_create_container(
+        &sandbox,
+        &mut cache,
+        Some("key-new"),
+        Some("user-1"),
+        &FixedClock(Instant::now() + Duration::from_secs(1000)),
+    ))
+    .unwrap();
+    assert_eq!(cache.entries.len(), SESSION_SCOPED_IDENTITY_CAP);
+    assert!(!cache.entries.contains_key("key-0"));
+    assert!(cache.entries.contains_key("key-new"));
+    assert_eq!(
+        registry.delete_calls.lock().unwrap().as_slice(),
+        [test_object([("id", json!("key-0"))])]
+    );
 }
 
 #[cfg(test)]
@@ -186,7 +234,7 @@ fn evict_lru_session_keeps_entries_below_the_cap() {
 #[cfg(test)]
 #[test]
 fn evict_lru_session_removes_the_least_recently_accessed_entry_at_the_cap() {
-    let registry = MockRegistry::succeeding(test_object([("id", json!("key-0"))]));
+    let registry = MockRegistry::default();
     let tool_registry = MockToolRegistry::default();
     let sandbox = provider(None::<&MockConfig>, &registry, &tool_registry);
     let mut cache = SandboxCache::default();
@@ -201,7 +249,12 @@ fn evict_lru_session_removes_the_least_recently_accessed_entry_at_the_cap() {
         &sandbox, &mut cache, "user-1",
     ));
     assert_eq!(cache.entries.len(), SESSION_SCOPED_IDENTITY_CAP - 1);
-    assert_eq!(registry.delete_calls.lock().unwrap().len(), 1);
+    assert!(!cache.entries.contains_key("key-0"));
+    assert!(cache.entries.contains_key("key-9"));
+    assert_eq!(
+        registry.delete_calls.lock().unwrap().as_slice(),
+        [test_object([("id", json!("key-0"))])]
+    );
 }
 
 #[cfg(test)]

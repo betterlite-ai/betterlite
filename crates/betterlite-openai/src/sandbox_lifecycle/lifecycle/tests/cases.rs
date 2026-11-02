@@ -2,6 +2,8 @@
 use std::time::Instant;
 
 #[cfg(test)]
+use secrecy::ExposeSecret as _;
+#[cfg(test)]
 use serde_json::json;
 
 #[cfg(test)]
@@ -36,15 +38,29 @@ fn create_container_calls_sandbox_config_when_present() {
 }
 
 #[cfg(test)]
+fn assert_resolved_e2b_params(params: &SandboxToolParams) {
+    assert_eq!(params.sandbox_provider, "e2b");
+    assert_eq!(
+        params.api_key.as_ref().unwrap().expose_secret(),
+        "secret-value"
+    );
+    assert_eq!(params.api_base.as_deref(), Some("https://sandbox.example"));
+}
+
+#[cfg(test)]
 #[test]
 fn create_container_falls_back_to_registry_with_resolved_params() {
     let registry = MockRegistry::succeeding(test_object([("id", json!("container-2"))]));
     let tool_registry = MockToolRegistry {
         resolved: Some(
-            test_object([("sandbox_provider", json!("e2b"))])
-                .as_object()
-                .unwrap()
-                .clone(),
+            test_object([
+                ("sandbox_provider", json!("e2b")),
+                ("api_key", json!("secret-value")),
+                ("api_base", json!("https://sandbox.example")),
+            ])
+            .as_object()
+            .unwrap()
+            .clone(),
         ),
     };
     let provider: SandboxProvider<'_, MockConfig, MockRegistry, MockToolRegistry> =
@@ -56,10 +72,10 @@ fn create_container_falls_back_to_registry_with_resolved_params() {
         };
     let (container, used_params) = block_on(provider.create_container()).unwrap();
     assert_eq!(container, test_object([("id", json!("container-2"))]));
-    let resolved_params = used_params.unwrap();
-    assert_eq!(resolved_params.sandbox_provider, params().sandbox_provider);
-    assert!(resolved_params.api_key.is_none());
-    assert_eq!(resolved_params.api_base, params().api_base);
+    assert_resolved_e2b_params(&used_params.unwrap());
+    let create_calls = registry.create_calls.lock().unwrap();
+    assert_eq!(create_calls.len(), 1);
+    assert_resolved_e2b_params(&create_calls[0]);
 }
 
 #[cfg(test)]
@@ -93,6 +109,8 @@ fn run_code_calls_sandbox_config_when_present() {
     let container = test_object([("id", json!("container-1"))]);
     let result = block_on(provider.run_code(None, &container, "print(1)")).unwrap();
     assert_eq!(result, test_object([("stdout", json!("hi"))]));
+    let run_calls = config.run_calls.lock().unwrap();
+    assert_eq!(run_calls.as_slice(), [(container, "print(1)".to_owned())]);
 }
 
 #[cfg(test)]
@@ -110,6 +128,11 @@ fn run_code_falls_back_to_registry_with_params() {
     let container = test_object([("id", json!("container-2"))]);
     let result = block_on(provider.run_code(Some(&params()), &container, "print(1)")).unwrap();
     assert_eq!(result, test_object([("stdout", json!("hi"))]));
+    let run_calls = registry.run_calls.lock().unwrap();
+    assert_eq!(run_calls.len(), 1);
+    assert_eq!(run_calls[0].0.sandbox_provider, params().sandbox_provider);
+    assert_eq!(run_calls[0].1, container);
+    assert_eq!(run_calls[0].2, "print(1)");
 }
 
 #[cfg(test)]
@@ -143,6 +166,24 @@ fn delete_container_calls_sandbox_config_and_swallows_errors() {
     };
     let container = test_object([("id", json!("container-1"))]);
     block_on(provider.delete_container(None, &container));
+    assert_eq!(config.delete_calls.lock().unwrap().as_slice(), [container]);
+}
+
+#[cfg(test)]
+#[test]
+fn delete_container_calls_sandbox_config_when_it_succeeds() {
+    let config = MockConfig::succeeding(test_object([("id", json!("container-1"))]));
+    let registry = MockRegistry::default();
+    let tool_registry = MockToolRegistry::default();
+    let provider = SandboxProvider {
+        sandbox_config: Some(&config),
+        registry: &registry,
+        tool_registry: &tool_registry,
+        sandbox_tool_name: None,
+    };
+    let container = test_object([("id", json!("container-1"))]);
+    block_on(provider.delete_container(None, &container));
+    assert_eq!(config.delete_calls.lock().unwrap().as_slice(), [container]);
 }
 
 #[cfg(test)]

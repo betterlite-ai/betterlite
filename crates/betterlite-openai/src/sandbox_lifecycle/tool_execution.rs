@@ -8,6 +8,7 @@ use super::resolution::{SandboxToolParams, SandboxToolRegistry};
 
 pub const INVALID_ARGUMENTS_MESSAGE: &str = "[invalid tool arguments: could not parse code]";
 const EXECUTION_ERROR_PREFIX: &str = "[execution error] ";
+const UNKNOWN_EXECUTION_ERROR_TEXT: &str = "unknown error";
 
 #[derive(Debug, Error)]
 pub enum ToolExecutionError<E>
@@ -51,13 +52,17 @@ fn render_error_text(value: &Value) -> String {
 #[must_use]
 pub fn error_message(result: &Value) -> Option<String> {
     let error = result.as_object()?.get("error")?.as_object()?;
+    if error.is_empty() {
+        return None;
+    }
     let value = error.get("value").filter(|entry| !entry.is_null());
-    let fallback = error.get("name").filter(|entry| !entry.is_null());
-    let message = value.or(fallback)?;
-    Some(format!(
-        "{EXECUTION_ERROR_PREFIX}{}",
-        render_error_text(message)
-    ))
+    let name = error.get("name").filter(|entry| !entry.is_null());
+    let traceback = error.get("traceback").filter(|entry| !entry.is_null());
+    let text = value.or(name).or(traceback).map_or_else(
+        || UNKNOWN_EXECUTION_ERROR_TEXT.to_owned(),
+        render_error_text,
+    );
+    Some(format!("{EXECUTION_ERROR_PREFIX}{text}"))
 }
 
 #[must_use]

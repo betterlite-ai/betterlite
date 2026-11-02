@@ -34,6 +34,8 @@ fn run_tool_call_executes_code_and_returns_stdout_when_there_is_no_error() {
     ))
     .unwrap();
     assert_eq!(output, "hello");
+    let run_calls = config.run_calls.lock().unwrap();
+    assert_eq!(run_calls.as_slice(), [(container, "print(1)".to_owned())]);
 }
 
 #[cfg(test)]
@@ -193,5 +195,29 @@ fn error_message_returns_none_when_the_error_field_is_null() {
 #[test]
 fn error_message_does_not_panic_when_the_error_field_is_not_an_object() {
     let result = test_object([("error", json!("boom"))]);
+    assert_eq!(error_message(&result), None);
+}
+
+#[cfg(test)]
+#[test]
+fn error_message_falls_back_to_the_traceback_field_when_value_and_name_are_null() {
+    let result = test_object([(
+        "error",
+        test_object([
+            ("name", json!(null)),
+            ("value", json!(null)),
+            ("traceback", json!("Traceback (most recent call last): ...")),
+        ]),
+    )]);
+    assert_eq!(
+        error_message(&result),
+        Some("[execution error] Traceback (most recent call last): ...".to_owned())
+    );
+}
+
+#[cfg(test)]
+#[test]
+fn error_message_returns_none_when_the_error_object_is_empty() {
+    let result = test_object([("error", json!({}))]);
     assert_eq!(error_message(&result), None);
 }

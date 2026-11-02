@@ -52,6 +52,8 @@ struct MockConfig {
     create: Result<Value, MockError>,
     run: Result<Value, MockError>,
     delete: Result<(), MockError>,
+    run_calls: Arc<Mutex<Vec<(Value, String)>>>,
+    delete_calls: Arc<Mutex<Vec<Value>>>,
 }
 
 #[cfg(test)]
@@ -61,6 +63,8 @@ impl MockConfig {
             create: Ok(container.clone()),
             run: Ok(container),
             delete: Ok(()),
+            run_calls: Arc::default(),
+            delete_calls: Arc::default(),
         }
     }
 
@@ -69,6 +73,8 @@ impl MockConfig {
             create: Err(MockError(message.to_owned())),
             run: Err(MockError(message.to_owned())),
             delete: Err(MockError(message.to_owned())),
+            run_calls: Arc::default(),
+            delete_calls: Arc::default(),
         }
     }
 }
@@ -81,15 +87,16 @@ impl SandboxConfig for MockConfig {
         ready(self.create.clone())
     }
 
-    fn run(
-        &self,
-        _container: &Value,
-        _code: &str,
-    ) -> impl Future<Output = Result<Value, MockError>> {
+    fn run(&self, container: &Value, code: &str) -> impl Future<Output = Result<Value, MockError>> {
+        self.run_calls
+            .lock()
+            .unwrap()
+            .push((container.clone(), code.to_owned()));
         ready(self.run.clone())
     }
 
-    fn delete(&self, _container: &Value) -> impl Future<Output = Result<(), MockError>> {
+    fn delete(&self, container: &Value) -> impl Future<Output = Result<(), MockError>> {
+        self.delete_calls.lock().unwrap().push(container.clone());
         ready(self.delete.clone())
     }
 }
@@ -99,6 +106,8 @@ impl SandboxConfig for MockConfig {
 struct MockRegistry {
     create: Option<Value>,
     run: Option<Value>,
+    create_calls: Arc<Mutex<Vec<SandboxToolParams>>>,
+    run_calls: Arc<Mutex<Vec<(SandboxToolParams, Value, String)>>>,
     delete_calls: Arc<Mutex<Vec<Value>>>,
 }
 
@@ -108,6 +117,8 @@ impl MockRegistry {
         Self {
             create: Some(container.clone()),
             run: Some(container),
+            create_calls: Arc::default(),
+            run_calls: Arc::default(),
             delete_calls: Arc::default(),
         }
     }
@@ -127,19 +138,21 @@ where
 impl SandboxRegistry for MockRegistry {
     type Error = MockError;
 
-    fn create(
-        &self,
-        _params: &SandboxToolParams,
-    ) -> impl Future<Output = Result<Value, MockError>> {
+    fn create(&self, params: &SandboxToolParams) -> impl Future<Output = Result<Value, MockError>> {
+        self.create_calls.lock().unwrap().push(params.clone());
         ready(Ok(mock_registry_value(self.create.as_ref(), "create")))
     }
 
     fn run(
         &self,
-        _params: &SandboxToolParams,
-        _container: &Value,
-        _code: &str,
+        params: &SandboxToolParams,
+        container: &Value,
+        code: &str,
     ) -> impl Future<Output = Result<Value, MockError>> {
+        self.run_calls
+            .lock()
+            .unwrap()
+            .push((params.clone(), container.clone(), code.to_owned()));
         ready(Ok(mock_registry_value(self.run.as_ref(), "run")))
     }
 
