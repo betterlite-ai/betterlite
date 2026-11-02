@@ -1,0 +1,18 @@
+kind: helper
+name: management-plan-sort-duplicates-and-tiebreaker
+call:
+  management_plan:
+    function: plan
+    spec:
+      resource: widgets
+      sortable: [name, created_at]
+      searchable: [name]
+      filters: {}
+      default_sort: []
+      default_page_size: 25
+      max_page_size: 100
+      tiebreaker: created_at
+    params: {sort: "-name,created_at"}
+    scope: {kind: all}
+env: {}
+compare: {ignore: []}
