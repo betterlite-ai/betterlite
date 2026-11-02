@@ -76,18 +76,24 @@ fn categories(roots: &[Vec<CategoryFile>]) -> HelperResult {
     let mut temporary_roots = Vec::with_capacity(roots.len());
     let mut warning_names = Vec::new();
     for files in roots {
-        let temporary = TempDir::new().map_err(io_error)?;
+        let temporary =
+            TempDir::new().map_err(|error| helper_error("IOError", error.to_string()))?;
         let categories_dir = temporary.path().join("categories");
-        fs::create_dir_all(&categories_dir).map_err(io_error)?;
+        fs::create_dir_all(&categories_dir)
+            .map_err(|error| helper_error("IOError", error.to_string()))?;
         for file in files {
             if Path::new(&file.filename)
                 .file_name()
                 .and_then(|name| name.to_str())
                 != Some(file.filename.as_str())
             {
-                return Err(value_error("fixture filename must be a basename"));
+                return Err(helper_error(
+                    "ValueError",
+                    "fixture filename must be a basename".to_owned(),
+                ));
             }
-            fs::write(categories_dir.join(&file.filename), &file.content).map_err(io_error)?;
+            fs::write(categories_dir.join(&file.filename), &file.content)
+                .map_err(|error| helper_error("IOError", error.to_string()))?;
             if file.filename.ends_with(".yaml") || file.filename.ends_with(".yml") {
                 if serde_saphyr::from_str::<Value>(&file.content).is_err() {
                     warning_names.push(file.filename.clone());
@@ -110,40 +116,22 @@ fn categories(roots: &[Vec<CategoryFile>]) -> HelperResult {
 }
 
 fn pattern_error(error: PatternCatalogError) -> Box<HelperError> {
-    let class = match error {
+    let class = match &error {
         PatternCatalogError::UnknownPattern { .. } => "ValueError",
         PatternCatalogError::Compile { .. } => "RegexError",
         PatternCatalogError::Read { .. } | PatternCatalogError::Parse { .. } => "PatternError",
     };
+    helper_error(class, error.to_string())
+}
+
+fn helper_error(class: &str, message: String) -> Box<HelperError> {
     Box::new(HelperError {
         class: class.to_owned(),
         status: None,
         error_type: None,
         param: None,
         code: None,
-        message: error.to_string(),
-    })
-}
-
-fn io_error(error: std::io::Error) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: "IOError".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: error.to_string(),
-    })
-}
-
-fn value_error(message: &str) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: "ValueError".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: message.to_owned(),
+        message,
     })
 }
 
