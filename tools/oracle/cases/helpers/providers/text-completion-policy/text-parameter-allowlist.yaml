@@ -1,0 +1,5 @@
+kind: helper
+name: text-parameter-allowlist
+call: {text_completion_policy: {text_parameter_allowlist: {model: gpt-3.5-turbo-instruct}}}
+env: {}
+compare: {ignore: []}
