@@ -156,8 +156,8 @@ pub trait DecisionsProviderConfig {
         request: &ir::DecisionRequest,
         _custom_llm_provider: &str,
     ) -> Result<wire::RequestWire, RequestConversionError> {
-        requests::ir_to_systemone_request(&self.request_model(model), request)
-            .map(|built| wire::RequestWire::from(&built))
+        let built = requests::ir_to_systemone_request(&self.request_model(model), request)?;
+        Ok(wire::RequestWire::from(&built))
     }
 
     fn unwrap_response<'call>(&self, payload: &'call [u8]) -> &'call [u8] {
