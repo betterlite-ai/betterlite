@@ -12,6 +12,27 @@ fn resolve_verdict_defaults_to_allow_when_action_is_missing() {
 }
 
 #[test]
+fn resolve_verdict_allows_when_action_is_null() {
+    let response = Json::parse(r#"{"action": null}"#);
+    let verdict = resolve_verdict(&response);
+    assert_eq!(verdict.action, Some(Action::Allow));
+}
+
+#[test]
+fn resolve_verdict_allows_when_action_is_an_empty_string() {
+    let response = Json::parse(r#"{"action": ""}"#);
+    let verdict = resolve_verdict(&response);
+    assert_eq!(verdict.action, Some(Action::Allow));
+}
+
+#[test]
+fn resolve_verdict_allows_when_action_is_a_blank_string() {
+    let response = Json::parse(r#"{"action": "   "}"#);
+    let verdict = resolve_verdict(&response);
+    assert_eq!(verdict.action, Some(Action::Allow));
+}
+
+#[test]
 fn resolve_verdict_normalizes_an_unrecognized_action_string_to_block() {
     let response = Json::parse(r#"{"action": "quarantine"}"#);
     let verdict = resolve_verdict(&response);

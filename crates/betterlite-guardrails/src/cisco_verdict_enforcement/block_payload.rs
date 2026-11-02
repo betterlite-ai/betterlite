@@ -20,6 +20,11 @@ pub struct BlockPayload {
     pub event_id: Option<String>,
 }
 
+impl BlockPayload {
+    // The HTTP status _finalize_inspection raises this detail with: HTTPException(status_code=400, detail=...).
+    pub const STATUS_CODE: u16 = 400;
+}
+
 // The HTTP-exception-like shape _http_exception_to_error_obj normalizes.
 pub struct GuardrailException {
     pub status_code: u16,

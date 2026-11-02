@@ -11,7 +11,7 @@ use crate::cisco_configuration::records::{CiscoVerdict, Direction, ScanContext};
 use crate::cisco_conversation::Fields;
 use crate::cisco_conversation::json::Json;
 use crate::cisco_verdict::Action;
-use crate::cisco_verdict_enforcement::api_error::ApiErrorOutcome;
+use crate::cisco_verdict_enforcement::api_error::{ApiErrorDetail, ApiErrorOutcome};
 use crate::cisco_verdict_enforcement::block_payload::GuardrailException;
 use crate::cisco_verdict_enforcement::finalize::ResponseSurface;
 use crate::cisco_verdict_enforcement::{
@@ -77,6 +77,11 @@ fn build_block_payload_carries_the_verdict_audit_fields() {
     verdict.classifications = vec!["PII".to_owned()];
     verdict.severity = Some("high".to_owned());
     verdict.event_id = Some("evt-1".to_owned());
+    verdict.rules = vec![
+        obj(r#"{"rule_name": "pii"}"#),
+        obj(r#"{"classification": "X"}"#),
+    ];
+    verdict.explanation = Some("why".to_owned());
     let payload = build_block_payload(context(), &verdict, "cisco", "cisco-ai-defense");
     assert_eq!(payload.action, "block");
     assert_eq!(payload.surface, "chat");
@@ -86,6 +91,10 @@ fn build_block_payload_carries_the_verdict_audit_fields() {
     assert_eq!(payload.classifications, vec!["PII".to_owned()]);
     assert_eq!(payload.severity, Some("high".to_owned()));
     assert_eq!(payload.event_id, Some("evt-1".to_owned()));
+    assert_eq!(payload.rules, vec![Some("pii".to_owned()), None]);
+    assert_eq!(payload.explanation, Some("why".to_owned()));
+    assert_eq!(payload.error, "Blocked by Cisco AI Defense Guardrail");
+    assert_eq!(payload.message, "Blocked by Cisco AI Defense Guardrail");
 }
 
 #[rstest]
@@ -154,6 +163,35 @@ fn log_decision_logs_at_info_for_an_allowed_verdict() {
     assert!(written.contains("CISCO_AI_DEFENSE_DECISION"));
     assert!(written.contains("\"action\":\"allow\""));
     assert!(written.contains("\"duration_ms\":12.3"));
+    assert!(written.contains("INFO"));
+    assert!(!written.contains("WARN"));
+}
+
+#[test]
+fn log_decision_includes_request_context_keys_and_skips_blank_ones() {
+    let log_path = env::temp_dir().join(format!(
+        "betterlite-cisco-decision-context-{}",
+        process::id()
+    ));
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .with_writer(Arc::new(fs::File::create(&log_path).expect("log file")))
+        .finish();
+    let guard = set_default(subscriber);
+    let request_data = obj(r#"{"model": "gpt", "litellm_call_id": "c1", "mcp_tool_name": ""}"#);
+    log_decision(
+        context(),
+        &empty_verdict(),
+        1.0,
+        "cisco-ai-defense",
+        &request_data,
+    );
+    drop(guard);
+    let written = fs::read_to_string(&log_path).expect("log contents");
+    fs::remove_file(&log_path).expect("remove log");
+    assert!(written.contains("\"model\":\"gpt\""));
+    assert!(written.contains("\"call_id\":\"c1\""));
+    assert!(!written.contains("mcp_tool"));
 }
 
 #[test]
@@ -204,4 +242,5 @@ fn handle_api_error_blocks_when_fallback_is_block() {
         panic!("expected Blocked");
     };
     assert_eq!(detail.error_type, "timeout");
+    assert_eq!(ApiErrorDetail::STATUS_CODE, 503);
 }

@@ -9,6 +9,7 @@ use crate::cisco_conversation::Fields;
 use crate::cisco_conversation::json::Json;
 use crate::cisco_verdict::Action;
 use crate::cisco_verdict_enforcement::api_error::ApiErrorOutcome;
+use crate::cisco_verdict_enforcement::block_payload::BlockPayload;
 use crate::cisco_verdict_enforcement::finalize::{
     FinalizeContext, FinalizeOutcome, ResponseSurface, apply_redaction_input,
     apply_redaction_output, finalize_inspection,
@@ -92,6 +93,48 @@ fn finalize_inspection_blocks_on_block_action_with_block_policy() {
     };
     assert_eq!(payload.action, "block");
     assert_eq!(payload.severity, Some("high".to_owned()));
+    assert_eq!(BlockPayload::STATUS_CODE, 400);
+}
+
+#[test]
+fn finalize_inspection_stashes_the_verdict_on_request_metadata() {
+    let inspect_response =
+        Json::parse(r#"{"action": "block", "severity": "high", "event_id": "evt-1"}"#);
+    let mut request_data = obj("{}");
+    let finalize = finalize_context(
+        InspectionType::Chat,
+        Direction::Input,
+        FlaggedAction::Monitor,
+        FallbackAction::Block,
+    );
+    let outcome = finalize_inspection(
+        &inspect_response,
+        &mut request_data,
+        ResponseSurface::None,
+        &finalize,
+    );
+    assert!(matches!(outcome, FinalizeOutcome::Monitored));
+    let Json::Object(metadata) = Json::field(&request_data, "metadata") else {
+        panic!("metadata missing");
+    };
+    assert_eq!(
+        metadata
+            .get("cisco_ai_defense_chat_input_action")
+            .map(|raw| raw.get()),
+        Some("\"block\"")
+    );
+    assert_eq!(
+        metadata
+            .get("cisco_ai_defense_chat_input_severity")
+            .map(|raw| raw.get()),
+        Some("\"high\"")
+    );
+    assert_eq!(
+        metadata
+            .get("cisco_ai_defense_chat_input_event_id")
+            .map(|raw| raw.get()),
+        Some("\"evt-1\"")
+    );
 }
 
 #[test]
@@ -174,6 +217,7 @@ fn finalize_inspection_handles_a_jsonrpc_error_envelope_as_an_api_error() {
     let FinalizeOutcome::ApiError(ApiErrorOutcome::Unscanned) = outcome else {
         panic!("expected an unscanned API error outcome");
     };
+    assert!(!request_data.contains_key("metadata"));
 }
 
 #[test]
