@@ -256,8 +256,8 @@ fn a_limited_rung_lends_its_try_to_a_later_rung_and_keeps_its_attempts() {
     let ladder = &agents.roles.worker.ladder;
     let own = pick_rung(&agents, &places, 0, &ladder[0]).unwrap().unwrap();
     assert_eq!(
-        (own.rung.model.as_str(), own.counted),
-        ("gpt-reserve", true)
+        (own.runner.id.as_str(), own.rung.model.as_str(), own.counted),
+        (ladder[0].runner.as_str(), ladder[0].model.as_str(), true)
     );
     mark(
         folder.path(),
