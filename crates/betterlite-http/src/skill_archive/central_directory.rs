@@ -188,21 +188,13 @@ pub(super) fn decompress(
     central_header_start: u64,
     archive_offset: u64,
 ) -> Option<Vec<u8>> {
-    let synthetic = single_entry_archive(stored_content, central_header_start, archive_offset)?;
+    let central_record = central_record_bytes(stored_content, central_header_start)?;
+    let local_record = local_record_bytes(stored_content, central_record, archive_offset)?;
+    let synthetic = assemble_synthetic_archive(local_record, central_record)?;
     let mut archive = ZipArchive::new(Cursor::new(synthetic.as_slice())).ok()?;
     let mut data = Vec::new();
     archive.by_index(0).ok()?.read_to_end(&mut data).ok()?;
     Some(data)
-}
-
-fn single_entry_archive(
-    stored_content: &[u8],
-    central_header_start: u64,
-    archive_offset: u64,
-) -> Option<Vec<u8>> {
-    let central_record = central_record_bytes(stored_content, central_header_start)?;
-    let local_record = local_record_bytes(stored_content, central_record, archive_offset)?;
-    assemble_synthetic_archive(local_record, central_record)
 }
 
 fn central_record_bytes(stored_content: &[u8], central_header_start: u64) -> Option<&[u8]> {
