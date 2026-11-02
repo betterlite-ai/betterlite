@@ -1,7 +1,11 @@
 mod attempt;
+mod checkpoint;
+mod maintenance;
 mod overlap;
+mod preparation;
 mod progress;
 mod prompt;
+mod readiness;
 mod review;
 mod runner;
 mod sandbox;
@@ -17,8 +21,7 @@ use std::path::{Path, PathBuf};
 use crate::development::Development;
 use crate::error::GateError;
 use crate::facts::resolve_base;
-use crate::git::common_dir;
-use crate::journal::journal_dir;
+use crate::git::coordinator;
 use crate::spec::agents::{Agents, Role, Rung, Runner};
 use crate::spec::backlog::Status;
 use crate::spec::review::ReviewVerdict;
@@ -81,24 +84,11 @@ pub(crate) fn find_runner<'agents>(
     })
 }
 
-fn writable_dirs(
-    agents: &Agents,
-    git_common_dir: &Path,
-    home: &Path,
-) -> Result<Vec<String>, GateError> {
-    let (Some(git), Some(home_text)) = (git_common_dir.to_str(), home.to_str()) else {
-        return Err(GateError::NotUnicode("the .git folder or HOME"));
-    };
-    Ok(agents
-        .policy
-        .writable
-        .iter()
-        .map(|entry| {
-            entry
-                .replace("{git_common_dir}", git)
-                .replace("{home}", home_text)
-        })
-        .collect())
+pub(crate) fn availability(development: &Development) -> Result<(), GateError> {
+    let git = coordinator(&development.root)?;
+    maintenance::check(&git, "")?;
+    let agents: Agents = read_yaml(&development.root.join(".development/agents.yaml"))?;
+    vendor::available(&git, &agents, "")
 }
 
 pub(crate) const fn reviewer_role(agents: &Agents, level: ReviewLevel, panel: Panel) -> &Role {
@@ -337,6 +327,8 @@ fn run_once(
     pick: &Pick<'_>,
     progress: &mut Progress,
 ) -> Result<Option<Step>, GateError> {
+    maintenance::check(places.git_common_dir, &brief.task.id)?;
+    let interrupted = checkpoint::restore(places.journal, progress, pick.runner, pick.rung)?;
     // saved after the increment, so a killed dispatch never writes over this run's journal files
     progress.number = progress.number.saturating_add(1);
     progress.save(places.journal)?;
@@ -345,7 +337,8 @@ fn run_once(
         .session
         .as_ref()
         .filter(|session| {
-            fix && pick.runner.resume.is_some()
+            (fix || interrupted)
+                && pick.runner.resume.is_some()
                 && session.runner == pick.runner.id
                 && session.model == pick.rung.model
         })
@@ -361,7 +354,7 @@ fn run_once(
     };
     let turn = attempt::attempt_once(&current, pick.runner, pick.rung, &progress.feedback)?;
     // a run stopped by a usage limit keeps the session of the run before it
-    if turn.step.is_some() {
+    if turn.session.is_some() || turn.step.is_some() {
         progress.session = turn.session.map(|id| WorkerSession {
             runner: pick.runner.id.clone(),
             model: pick.rung.model.clone(),
@@ -405,8 +398,10 @@ fn climb_rung<'agents>(
             }
             progress.used = progress.used.saturating_add(1);
         }
+        let interrupted = matches!(step, Step::Retry(_)) && progress.session.is_some();
         let flow = apply_step(agents, brief, places, progress, step)?;
         progress.feedback.extend(removed);
+        checkpoint::save_turn(places.journal, progress, interrupted)?;
         if let ControlFlow::Break(lines) = flow {
             return Ok(lines);
         }
@@ -455,43 +450,39 @@ pub(crate) fn dispatch(
     notes: Vec<String>,
     grant: u32,
 ) -> Result<Vec<String>, GateError> {
+    maintenance::check(&coordinator(&development.root)?, task_id)?;
     let agents: Agents = read_yaml(&development.root.join(".development/agents.yaml"))?;
+    vendor::available(&coordinator(&development.root)?, &agents, task_id)?;
     let file = ready_file(development, task_id)?;
     let task: Task = development.task(task_id)?;
-    let clashes = overlap::overlaps(development, &task)?;
-    if !clashes.is_empty() {
-        return Err(GateError::Dispatch {
-            task: task_id.to_owned(),
-            reason: format!(
-                "its scope overlaps work in progress: {}",
-                clashes.join("; ")
-            ),
-        });
-    }
+    let preparation::State {
+        journal,
+        mut progress,
+        lease: _lease,
+    } = preparation::state(development, &agents, &task, notes, grant)?;
     let (worktree, branch) = worktree::ensure(&development.root, &agents.worktrees, &task)?;
     let base = resolve_base(&worktree)?;
-    let journal = journal_dir(&development.root, task_id)?;
     let brief = Brief {
         task: &task,
         file,
         branch: &branch,
         base: &base,
     };
-    let git_common_dir = common_dir(&development.root)?;
+    let git_common_dir = coordinator(&development.root)?;
     let home = env::var_os("HOME")
         .map(PathBuf::from)
         .ok_or_else(|| GateError::Dispatch {
             task: task_id.to_owned(),
             reason: "HOME is not set, so the worker's cache folders are unknown".to_owned(),
         })?;
+    let writable = preparation::writable(&agents, &worktree, &git_common_dir, &home)?;
     let places = Places {
         worktree: &worktree,
         journal: &journal,
         git_common_dir: &git_common_dir,
         home: &home,
-        writable: &writable_dirs(&agents, &git_common_dir, &home)?,
+        writable: &writable,
     };
-    let mut progress = Progress::load(&journal, notes)?;
     let outcome = run_ladder(&agents, &brief, &places, &mut progress, grant);
     progress.save(&journal).and(outcome)
 }

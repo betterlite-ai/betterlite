@@ -3,7 +3,7 @@ mod tests;
 use crate::builtins::globs::glob_set;
 use crate::development::Development;
 use crate::error::GateError;
-use crate::git::{common_dir, git};
+use crate::git::{coordinator, git};
 use crate::spec::backlog::Status;
 use crate::spec::task::Task;
 
@@ -12,7 +12,7 @@ pub(crate) fn overlaps(development: &Development, task: &Task) -> Result<Vec<Str
     let tracked = git(&development.root, &["ls-files"])?;
     let own = glob_set(&task.scope.paths)?;
     let own_probes = probes(&task.scope.paths);
-    let journals = common_dir(&development.root)?.join("betterlite");
+    let journals = coordinator(&development.root)?.join("betterlite");
     let mut clashes = Vec::new();
     for entry in &development.backlog.tasks {
         // a journal on this machine means a dispatch ran here and its branch is not merged yet
