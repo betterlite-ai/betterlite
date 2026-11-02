@@ -1,19 +1,6 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
-fn insert_defaulted(
-    ordered: &mut IndexMap<String, Json>,
-    fields: &IndexMap<String, Json>,
-    keys: &[&str],
-) {
-    for key in keys {
-        ordered.insert(
-            (*key).to_owned(),
-            fields.get(*key).cloned().unwrap_or(Json::Null),
-        );
-    }
-}
-
 // openai's BaseModel allows extra fields (extra="allow"), so model_dump() writes back any key the type doesn't declare, after the declared ones, in the order the input carried them.
 fn append_extra_fields(ordered: &mut IndexMap<String, Json>, fields: &IndexMap<String, Json>) {
     for (key, value) in fields {
@@ -50,7 +37,12 @@ fn required_then_typed(
         ordered.insert((*key).to_owned(), fields.get(*key)?.clone());
     }
     ordered.insert("type".to_owned(), Json::Text(type_tag.to_owned()));
-    insert_defaulted(&mut ordered, fields, defaulted);
+    for key in defaulted {
+        ordered.insert(
+            (*key).to_owned(),
+            fields.get(*key).cloned().unwrap_or(Json::Null),
+        );
+    }
     append_extra_fields(&mut ordered, fields);
     Some(Json::Object(ordered))
 }
