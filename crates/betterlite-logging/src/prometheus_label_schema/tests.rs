@@ -23,11 +23,20 @@ fn config_defaults_match_litellm() {
 #[rstest]
 #[case::team("litellm_remaining_team_budget_metric", &["team", "team_alias"])]
 #[case::team_max("litellm_team_max_budget_metric", &["team", "team_alias"])]
+#[case::team_remaining_hours("litellm_team_budget_remaining_hours_metric", &["team", "team_alias"])]
 #[case::team_members("litellm_team_members_metric", &["team", "team_alias"])]
 #[case::org("litellm_remaining_org_budget_metric", &["org_id", "org_alias"])]
+#[case::org_max("litellm_org_max_budget_metric", &["org_id", "org_alias"])]
+#[case::org_remaining_hours("litellm_org_budget_remaining_hours_metric", &["org_id", "org_alias"])]
 #[case::api_key("litellm_remaining_api_key_budget_metric", &["hashed_api_key", "api_key_alias"])]
+#[case::api_key_max("litellm_api_key_max_budget_metric", &["hashed_api_key", "api_key_alias"])]
+#[case::api_key_remaining_hours("litellm_api_key_budget_remaining_hours_metric", &["hashed_api_key", "api_key_alias"])]
 #[case::user("litellm_remaining_user_budget_metric", &["user"])]
+#[case::user_max("litellm_user_max_budget_metric", &["user"])]
+#[case::user_remaining_hours("litellm_user_budget_remaining_hours_metric", &["user"])]
 #[case::customer("litellm_remaining_customer_budget_metric", &["end_user"])]
+#[case::customer_max("litellm_customer_max_budget_metric", &["end_user"])]
+#[case::customer_remaining_hours("litellm_customer_budget_remaining_hours_metric", &["end_user"])]
 fn budget_metrics_carry_their_schema(#[case] metric: &str, #[case] expected: &[&str]) {
     let settings = PrometheusLabelSettings::with_defaults();
     assert_eq!(get_labels(metric, &settings).unwrap(), expected);
@@ -84,12 +93,22 @@ fn rate_limit_metrics_carry_only_rate_limit_type_by_default(
 }
 
 #[test]
-fn proxy_failed_requests_adds_rate_limit_category_when_toggled_on() {
+fn proxy_failed_requests_adds_rate_limit_category_and_org_labels_in_order() {
+    let metric = "litellm_proxy_failed_requests_metric";
     let mut settings = PrometheusLabelSettings::with_defaults();
     settings.emit_rate_limit_labels = true;
-    let labels = get_labels("litellm_proxy_failed_requests_metric", &settings).unwrap();
-    assert!(labels.contains(&"rate_limit_category".to_owned()));
-    assert!(labels.contains(&"rate_limit_type".to_owned()));
+    let mut expected = super::default_labels(metric).unwrap();
+    expected.extend(
+        [
+            "rate_limit_category",
+            "rate_limit_type",
+            "org_id",
+            "org_alias",
+        ]
+        .into_iter()
+        .map(str::to_owned),
+    );
+    assert_eq!(get_labels(metric, &settings).unwrap(), expected);
 }
 
 #[rstest]
@@ -312,37 +331,76 @@ fn push_if_absent_skips_a_label_already_in_resolved_defaults() {
     assert_eq!(custom_labels, ["new_label"]);
 }
 
-#[test]
-fn org_label_is_injected_for_latency_metrics() {
+#[rstest]
+#[case::llm_api_latency("litellm_llm_api_latency_metric")]
+#[case::time_to_first_token("litellm_llm_api_time_to_first_token_metric")]
+#[case::request_total_latency("litellm_request_total_latency_metric")]
+#[case::request_queue_time("litellm_request_queue_time_seconds")]
+#[case::proxy_total_requests("litellm_proxy_total_requests_metric")]
+#[case::proxy_failed_requests("litellm_proxy_failed_requests_metric")]
+#[case::deployment_latency_per_output_token("litellm_deployment_latency_per_output_token")]
+#[case::requests("litellm_requests_metric")]
+#[case::spend("litellm_spend_metric")]
+#[case::input_tokens("litellm_input_tokens_metric")]
+#[case::total_tokens("litellm_total_tokens_metric")]
+#[case::output_tokens("litellm_output_tokens_metric")]
+#[case::video_duration("litellm_video_duration_seconds_metric")]
+#[case::images_generated("litellm_images_generated_metric")]
+fn org_label_is_injected_for_every_org_label_metric(#[case] metric: &str) {
     let settings = PrometheusLabelSettings::with_defaults();
-    let labels = get_labels("litellm_llm_api_latency_metric", &settings).unwrap();
-    assert!(labels.contains(&"org_id".to_owned()));
-    assert!(labels.contains(&"org_alias".to_owned()));
+    let mut expected = super::default_labels(metric).unwrap();
+    expected.extend(["org_id".to_owned(), "org_alias".to_owned()]);
+    assert_eq!(get_labels(metric, &settings).unwrap(), expected);
 }
 
-#[test]
-fn input_sequence_length_label_is_opt_in() {
+#[rstest]
+#[case::llm_api_latency("litellm_llm_api_latency_metric")]
+#[case::time_to_first_token("litellm_llm_api_time_to_first_token_metric")]
+#[case::request_total_latency("litellm_request_total_latency_metric")]
+fn input_sequence_length_label_is_opt_in_for_every_member_metric(#[case] metric: &str) {
     let mut settings = PrometheusLabelSettings::with_defaults();
-    let metric = "litellm_llm_api_latency_metric";
-    let without = get_labels(metric, &settings).unwrap();
-    assert!(!without.contains(&"input_sequence_length".to_owned()));
+    let mut without = super::default_labels(metric).unwrap();
+    without.extend(["org_id".to_owned(), "org_alias".to_owned()]);
+    assert_eq!(get_labels(metric, &settings).unwrap(), without);
 
     settings.budget_and_length.emit_input_sequence_length = true;
-    let with = get_labels(metric, &settings).unwrap();
-    assert!(with.contains(&"input_sequence_length".to_owned()));
+    let mut with_input_sequence = without;
+    with_input_sequence.push("input_sequence_length".to_owned());
+    assert_eq!(get_labels(metric, &settings).unwrap(), with_input_sequence);
+}
+
+#[rstest]
+#[case::remaining("litellm_remaining_user_budget_metric")]
+#[case::max("litellm_user_max_budget_metric")]
+#[case::remaining_hours("litellm_user_budget_remaining_hours_metric")]
+fn user_budget_email_alias_is_opt_in_for_every_member_metric(#[case] metric: &str) {
+    let mut settings = PrometheusLabelSettings::with_defaults();
+    assert_eq!(get_labels(metric, &settings).unwrap(), ["user"]);
+
+    settings.budget_and_length.include_email_alias = true;
+    assert_eq!(
+        get_labels(metric, &settings).unwrap(),
+        ["user", "user_email", "user_alias"]
+    );
 }
 
 #[test]
-fn user_budget_email_alias_is_opt_in() {
+fn metadata_tags_org_and_input_sequence_length_labels_are_appended_in_order() {
+    let metric = "litellm_llm_api_latency_metric";
     let mut settings = PrometheusLabelSettings::with_defaults();
-    let metric = "litellm_user_max_budget_metric";
-    let without = get_labels(metric, &settings).unwrap();
-    assert!(!without.contains(&"user_email".to_owned()));
+    settings.custom_metadata_labels = vec!["Request-ID".to_owned()];
+    settings.custom_tags = vec!["beta".to_owned()];
+    settings.budget_and_length.emit_input_sequence_length = true;
 
-    settings.budget_and_length.include_email_alias = true;
-    let with = get_labels(metric, &settings).unwrap();
-    assert!(with.contains(&"user_email".to_owned()));
-    assert!(with.contains(&"user_alias".to_owned()));
+    let mut expected = super::default_labels(metric).unwrap();
+    expected.extend([
+        sanitize_label_name("Request-ID"),
+        sanitize_label_name("tag_beta"),
+        "org_id".to_owned(),
+        "org_alias".to_owned(),
+        "input_sequence_length".to_owned(),
+    ]);
+    assert_eq!(get_labels(metric, &settings).unwrap(), expected);
 }
 
 #[test]
