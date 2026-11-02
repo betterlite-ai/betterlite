@@ -86,9 +86,7 @@ fn a_concurrent_step_dispatches_every_request_before_its_barrier_can_release() {
             ScenarioStep::Concurrent(ConcurrentStep {
                 requests: vec![http_step("/a"), http_step("/b")],
             }),
-            ScenarioStep::Join(JoinPoint {
-                deadline_ms: Some(1000),
-            }),
+            ScenarioStep::Join(JoinPoint { deadline_ms: 1000 }),
         ],
     };
     let client = http::client().unwrap();
@@ -152,9 +150,7 @@ fn a_concurrent_step_with_a_reply_still_pending_times_out_at_the_join_deadline()
             ScenarioStep::Concurrent(ConcurrentStep {
                 requests: vec![http_step("/a"), http_step("/b")],
             }),
-            ScenarioStep::Join(JoinPoint {
-                deadline_ms: Some(100),
-            }),
+            ScenarioStep::Join(JoinPoint { deadline_ms: 100 }),
         ],
     };
     let client = http::client().unwrap();

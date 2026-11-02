@@ -45,11 +45,23 @@ pub(crate) struct ConcurrentStep {
     pub(crate) requests: Vec<HttpStep>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct JoinPoint {
-    #[serde(default)]
-    pub(crate) deadline_ms: Option<u64>,
+    #[serde(default = "default_deadline_ms")]
+    pub(crate) deadline_ms: u64,
+}
+
+impl Default for JoinPoint {
+    fn default() -> Self {
+        Self {
+            deadline_ms: default_deadline_ms(),
+        }
+    }
+}
+
+const fn default_deadline_ms() -> u64 {
+    MAX_DEADLINE_MS
 }
 
 pub fn parse_scenario(bytes: &[u8]) -> Result<Scenario, OracleError> {
@@ -142,13 +154,13 @@ fn validate_concurrent_step(step: &ConcurrentStep) -> Result<(), String> {
 }
 
 fn validate_join_point(join: &JoinPoint) -> Result<(), String> {
-    match join.deadline_ms {
-        None => Ok(()),
-        Some(millis) if (1..=MAX_DEADLINE_MS).contains(&millis) => Ok(()),
-        Some(millis) => Err(format!(
-            "join.deadline_ms {millis} is outside 1 to {MAX_DEADLINE_MS}"
-        )),
+    if (1..=MAX_DEADLINE_MS).contains(&join.deadline_ms) {
+        return Ok(());
     }
+    Err(format!(
+        "join.deadline_ms {} is outside 1 to {MAX_DEADLINE_MS}",
+        join.deadline_ms
+    ))
 }
 
 fn ignores_are_valid(ignores: &[Ignore]) -> Result<(), String> {
