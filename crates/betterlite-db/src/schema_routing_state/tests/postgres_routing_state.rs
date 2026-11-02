@@ -33,19 +33,6 @@ fn routing_state_checkpoint_for(cohort: RoutingStateCohort) -> &'static str {
     }
 }
 
-async fn check_adaptive_required_alpha_beta(client: &Client) {
-    let missing_alpha_beta = exec_params_err(
-        client,
-        r#"INSERT INTO "LiteLLM_AdaptiveRouterState" (router_name, request_type, model_name) VALUES ($1, $2, $3)"#,
-        &[&"router-a", &"chat", &"model-a"],
-    )
-    .await;
-    assert_eq!(
-        sql_state(&missing_alpha_beta),
-        SqlState::NOT_NULL_VIOLATION.code()
-    );
-}
-
 async fn check_adaptive_seven_zero_counters(client: &Client) {
     exec_params(
         client,
@@ -53,55 +40,17 @@ async fn check_adaptive_seven_zero_counters(client: &Client) {
         &[&"session-a", &"router-a", &"model-a", &"normal"],
     )
     .await;
-    assert_columns(
-        client,
-        "LiteLLM_AdaptiveRouterSession",
-        &[
-            (
-                "misalignment_count",
-                "integer",
-                false,
-                Some("0"),
-                "int4",
-                None,
-            ),
-            (
-                "stagnation_count",
-                "integer",
-                false,
-                Some("0"),
-                "int4",
-                None,
-            ),
-            (
-                "disengagement_count",
-                "integer",
-                false,
-                Some("0"),
-                "int4",
-                None,
-            ),
-            (
-                "satisfaction_count",
-                "integer",
-                false,
-                Some("0"),
-                "int4",
-                None,
-            ),
-            ("failure_count", "integer", false, Some("0"), "int4", None),
-            ("loop_count", "integer", false, Some("0"), "int4", None),
-            (
-                "exhaustion_count",
-                "integer",
-                false,
-                Some("0"),
-                "int4",
-                None,
-            ),
-        ],
-    )
-    .await;
+    for name in [
+        "misalignment_count",
+        "stagnation_count",
+        "disengagement_count",
+        "satisfaction_count",
+        "failure_count",
+        "loop_count",
+        "exhaustion_count",
+    ] {
+        assert_column(client, "LiteLLM_AdaptiveRouterSession", int4_zero(name)).await;
+    }
 }
 
 async fn check_adaptive_negative_last_turn_false_credit_and_json_defaults(client: &Client) {
@@ -125,15 +74,6 @@ async fn check_adaptive_negative_last_turn_false_credit_and_json_defaults(client
     assert!(!clean_credit_awarded);
     assert_eq!(tool_call_history, "[]");
     assert_eq!(pending_tool_calls, "{}");
-}
-
-async fn check_adaptive_repeat_42p07(client: &Client) {
-    let repeat = batch_execute_err(
-        client,
-        migration_sql_of(ADD_ADAPTIVE_ROUTER_TABLES.directory),
-    )
-    .await;
-    assert_eq!(sql_state(&repeat), SqlState::DUPLICATE_TABLE.code());
 }
 
 async fn check_memory_globally_unique_key_and_nullable_owners(client: &Client) {
@@ -161,28 +101,6 @@ async fn check_memory_globally_unique_key_and_nullable_owners(client: &Client) {
     assert_eq!(sql_state(&conflict), SqlState::UNIQUE_VIOLATION.code());
 }
 
-async fn check_member_total_spend_zero(client: &Client) {
-    exec_params(
-        client,
-        r#"INSERT INTO "LiteLLM_TeamMembership" (user_id, team_id) VALUES ($1, $2)"#,
-        &[&"user-a", &"team-a"],
-    )
-    .await;
-    assert_column(
-        client,
-        "LiteLLM_TeamMembership",
-        (
-            "total_spend",
-            "double precision",
-            false,
-            Some("0.0"),
-            "float8",
-            None,
-        ),
-    )
-    .await;
-}
-
 async fn check_workflow_pending_and_required_updated_at(client: &Client) {
     exec_params(
         client,
@@ -207,16 +125,6 @@ async fn check_workflow_pending_and_required_updated_at(client: &Client) {
         sql_state(&missing_updated_at),
         SqlState::NOT_NULL_VIOLATION.code()
     );
-}
-
-async fn check_workflow_session_uniqueness(client: &Client) {
-    assert_repeat_insert_unique_violation(
-        client,
-        r#"INSERT INTO "LiteLLM_WorkflowRun" (run_id, session_id, workflow_type, updated_at) VALUES ($1, $2, $3, now())"#,
-        &[&"run-first", &"session-shared", &"type-a"],
-        &[&"run-second", &"session-shared", &"type-a"],
-    )
-    .await;
 }
 
 async fn insert_workflow_run(client: &Client, run_id: &str, session_id: &str, workflow_type: &str) {
@@ -331,12 +239,7 @@ async fn check_proxy_model_false_blocked(client: &Client) {
         &[&"model-a", &"gpt", &"operator"],
     )
     .await;
-    assert_column(
-        client,
-        "LiteLLM_ProxyModelTable",
-        ("blocked", "boolean", false, Some("false"), "bool", None),
-    )
-    .await;
+    assert_column(client, "LiteLLM_ProxyModelTable", bool_false("blocked")).await;
     let blocked = scalar_bool(
         client,
         r#"SELECT blocked FROM "LiteLLM_ProxyModelTable" WHERE model_id = $1"#,
@@ -344,6 +247,48 @@ async fn check_proxy_model_false_blocked(client: &Client) {
     )
     .await;
     assert!(!blocked);
+}
+
+async fn check_adaptive_required_alpha_beta(client: &Client) {
+    assert_exec_params_err_state(
+        client,
+        r#"INSERT INTO "LiteLLM_AdaptiveRouterState" (router_name, request_type, model_name) VALUES ($1, $2, $3)"#,
+        &[&"router-a", &"chat", &"model-a"],
+        SqlState::NOT_NULL_VIOLATION,
+    )
+    .await;
+}
+
+async fn check_workflow_session_uniqueness(client: &Client) {
+    assert_repeat_insert_unique_violation(
+        client,
+        r#"INSERT INTO "LiteLLM_WorkflowRun" (run_id, session_id, workflow_type, updated_at) VALUES ($1, $2, $3, now())"#,
+        &[&"run-first", &"session-shared", &"type-a"],
+        &[&"run-second", &"session-shared", &"type-a"],
+    )
+    .await;
+}
+
+async fn check_member_total_spend_zero(client: &Client) {
+    exec_params(
+        client,
+        r#"INSERT INTO "LiteLLM_TeamMembership" (user_id, team_id) VALUES ($1, $2)"#,
+        &[&"user-a", &"team-a"],
+    )
+    .await;
+    assert_column(
+        client,
+        "LiteLLM_TeamMembership",
+        (
+            "total_spend",
+            "double precision",
+            false,
+            Some("0.0"),
+            "float8",
+            None,
+        ),
+    )
+    .await;
 }
 
 async fn run_routing_state_check(client: &Client, cohort: RoutingStateCohort) {
@@ -357,11 +302,16 @@ async fn run_routing_state_check(client: &Client, cohort: RoutingStateCohort) {
         RoutingStateCohort::AdaptiveNegativeLastTurnFalseCreditAndJsonDefaults => {
             check_adaptive_negative_last_turn_false_credit_and_json_defaults(client).await;
         }
-        RoutingStateCohort::AdaptiveRepeat42p07 => check_adaptive_repeat_42p07(client).await,
+        RoutingStateCohort::AdaptiveRepeat42p07 => {
+            let sql = migration_sql_of(ADD_ADAPTIVE_ROUTER_TABLES.directory);
+            assert_batch_execute_err_state(client, sql, SqlState::DUPLICATE_TABLE).await;
+        }
         RoutingStateCohort::MemoryGloballyUniqueKeyAndNullableOwners => {
             check_memory_globally_unique_key_and_nullable_owners(client).await;
         }
-        RoutingStateCohort::MemberTotalSpendZero => check_member_total_spend_zero(client).await,
+        RoutingStateCohort::MemberTotalSpendZero => {
+            check_member_total_spend_zero(client).await;
+        }
         RoutingStateCohort::WorkflowPendingAndRequiredUpdatedAt => {
             check_workflow_pending_and_required_updated_at(client).await;
         }

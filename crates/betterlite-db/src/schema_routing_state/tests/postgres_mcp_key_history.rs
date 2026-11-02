@@ -52,22 +52,8 @@ async fn check_delegation_and_oauth_false(client: &Client) {
         client,
         "LiteLLM_MCPServerTable",
         &[
-            (
-                "delegate_auth_to_upstream",
-                "boolean",
-                false,
-                Some("false"),
-                "bool",
-                None,
-            ),
-            (
-                "oauth_passthrough",
-                "boolean",
-                false,
-                Some("false"),
-                "bool",
-                None,
-            ),
+            bool_false("delegate_auth_to_upstream"),
+            bool_false("oauth_passthrough"),
         ],
     )
     .await;
@@ -124,34 +110,52 @@ async fn check_nullable_oauth_exchange_issuer_fields(client: &Client) {
         client,
         "LiteLLM_MCPServerTable",
         &[
-            ("dcr_bridge", "boolean", true, None, "bool", None),
-            ("token_exchange_endpoint", "text", true, None, "text", None),
-            ("audience", "text", true, None, "text", None),
-            ("subject_token_type", "text", true, None, "text", None),
-            ("token_exchange_profile", "text", true, None, "text", None),
-            ("issuer", "text", true, None, "text", None),
+            nullable_bool("dcr_bridge"),
+            nullable_text("token_exchange_endpoint"),
+            nullable_text("audience"),
+            nullable_text("subject_token_type"),
+            nullable_text("token_exchange_profile"),
+            nullable_text("issuer"),
         ],
     )
     .await;
 }
 
 async fn check_unguarded_nullable_columns_repeat_42701(client: &Client) {
-    let repeat =
-        batch_execute_err(client, migration_sql_of(ADD_MCP_SERVER_TIMEOUT.directory)).await;
-    assert_eq!(sql_state(&repeat), SqlState::DUPLICATE_COLUMN.code());
+    assert_batch_execute_err_state(
+        client,
+        migration_sql_of(ADD_MCP_SERVER_TIMEOUT.directory),
+        SqlState::DUPLICATE_COLUMN,
+    )
+    .await;
 }
 
-async fn check_key_type_nullable_both_tables(client: &Client) {
+async fn insert_verification_token_pair(
+    client: &Client,
+    token: &str,
+    deleted_id: &str,
+    deleted_token: &str,
+) {
     exec_params(
         client,
         r#"INSERT INTO "LiteLLM_VerificationToken" (token) VALUES ($1)"#,
-        &[&"token-key-type"],
+        &[&token],
     )
     .await;
     exec_params(
         client,
         r#"INSERT INTO "LiteLLM_DeletedVerificationToken" (id, token) VALUES ($1, $2)"#,
-        &[&"deleted-key-type", &"token-key-type-deleted"],
+        &[&deleted_id, &deleted_token],
+    )
+    .await;
+}
+
+async fn check_key_type_nullable_both_tables(client: &Client) {
+    insert_verification_token_pair(
+        client,
+        "token-key-type",
+        "deleted-key-type",
+        "token-key-type-deleted",
     )
     .await;
     assert_single_column(
@@ -166,19 +170,11 @@ async fn check_key_type_nullable_both_tables(client: &Client) {
 }
 
 async fn check_budget_fallbacks_empty_both_tables(client: &Client) {
-    exec_params(
+    insert_verification_token_pair(
         client,
-        r#"INSERT INTO "LiteLLM_VerificationToken" (token) VALUES ($1)"#,
-        &[&"token-budget-fallbacks"],
-    )
-    .await;
-    exec_params(
-        client,
-        r#"INSERT INTO "LiteLLM_DeletedVerificationToken" (id, token) VALUES ($1, $2)"#,
-        &[
-            &"deleted-budget-fallbacks",
-            &"token-budget-fallbacks-deleted",
-        ],
+        "token-budget-fallbacks",
+        "deleted-budget-fallbacks",
+        "token-budget-fallbacks-deleted",
     )
     .await;
     assert_single_column(
@@ -207,19 +203,11 @@ async fn check_budget_fallbacks_empty_both_tables(client: &Client) {
 }
 
 async fn check_settings_updated_at_nullable_no_backfill(client: &Client) {
-    exec_params(
+    insert_verification_token_pair(
         client,
-        r#"INSERT INTO "LiteLLM_VerificationToken" (token) VALUES ($1)"#,
-        &[&"token-settings-updated-at"],
-    )
-    .await;
-    exec_params(
-        client,
-        r#"INSERT INTO "LiteLLM_DeletedVerificationToken" (id, token) VALUES ($1, $2)"#,
-        &[
-            &"deleted-settings-updated-at",
-            &"token-settings-updated-at-deleted",
-        ],
+        "token-settings-updated-at",
+        "deleted-settings-updated-at",
+        "token-settings-updated-at-deleted",
     )
     .await;
     batch_execute(
@@ -278,41 +266,38 @@ async fn assert_created_updated_timestamps(client: &Client, table: &str) {
     .await;
 }
 
-async fn check_oauth_client_raw_json_and_timestamp_defaults(client: &Client) {
-    exec_params(
-        client,
-        r#"INSERT INTO "LiteLLM_MCPServerOAuthClient" (server_id, credentials) VALUES ($1, $2)"#,
-        &[
-            &"server-oauth",
-            &serde_json::Value::String("raw-opaque-value".to_owned()),
-        ],
-    )
-    .await;
-    let stored = scalar_text(
-        client,
-        r#"SELECT credentials::text FROM "LiteLLM_MCPServerOAuthClient" WHERE server_id = $1"#,
-        &[&"server-oauth"],
-    )
-    .await;
-    assert_eq!(stored, r#""raw-opaque-value""#);
-    assert_created_updated_timestamps(client, "LiteLLM_MCPServerOAuthClient").await;
+struct RawValueCheck<'check> {
+    insert_sql: &'check str,
+    insert_params: &'check [&'check (dyn ToSql + Sync)],
+    select_sql: &'check str,
+    select_param: &'check str,
+    expected: &'check str,
+    table: &'check str,
 }
 
-async fn check_sso_assertion_raw_text_and_timestamp_defaults(client: &Client) {
-    exec_params(
+async fn check_raw_value_with_timestamps(client: &Client, check: RawValueCheck<'_>) {
+    exec_params(client, check.insert_sql, check.insert_params).await;
+    let stored = scalar_text(client, check.select_sql, &[&check.select_param]).await;
+    assert_eq!(stored, check.expected);
+    assert_created_updated_timestamps(client, check.table).await;
+}
+
+async fn check_oauth_client_raw_json_and_timestamp_defaults(client: &Client) {
+    check_raw_value_with_timestamps(
         client,
-        r#"INSERT INTO "LiteLLM_SSOIdentityAssertion" (user_id, assertion_b64) VALUES ($1, $2)"#,
-        &[&"user-sso", &"opaque-assertion-bytes"],
+        RawValueCheck {
+            insert_sql: r#"INSERT INTO "LiteLLM_MCPServerOAuthClient" (server_id, credentials) VALUES ($1, $2)"#,
+            insert_params: &[
+                &"server-oauth",
+                &serde_json::Value::String("raw-opaque-value".to_owned()),
+            ],
+            select_sql: r#"SELECT credentials::text FROM "LiteLLM_MCPServerOAuthClient" WHERE server_id = $1"#,
+            select_param: "server-oauth",
+            expected: r#""raw-opaque-value""#,
+            table: "LiteLLM_MCPServerOAuthClient",
+        },
     )
     .await;
-    let stored = scalar_text(
-        client,
-        r#"SELECT assertion_b64 FROM "LiteLLM_SSOIdentityAssertion" WHERE user_id = $1"#,
-        &[&"user-sso"],
-    )
-    .await;
-    assert_eq!(stored, "opaque-assertion-bytes");
-    assert_created_updated_timestamps(client, "LiteLLM_SSOIdentityAssertion").await;
 }
 
 async fn check_jwt_key_delete_now_cascades_only_its_mappings(client: &Client) {
@@ -370,22 +355,33 @@ async fn run_mcp_key_history_check(client: &Client, cohort: McpKeyHistoryCohort)
             check_nullable_oauth_exchange_issuer_fields(client).await;
         }
         McpKeyHistoryCohort::UnguardedNullableColumnsRepeat42701 => {
-            check_unguarded_nullable_columns_repeat_42701(client).await;
+            check_unguarded_nullable_columns_repeat_42701(client).await
         }
         McpKeyHistoryCohort::KeyTypeNullableBothTables => {
-            check_key_type_nullable_both_tables(client).await;
+            check_key_type_nullable_both_tables(client).await
         }
         McpKeyHistoryCohort::BudgetFallbacksEmptyBothTables => {
-            check_budget_fallbacks_empty_both_tables(client).await;
+            check_budget_fallbacks_empty_both_tables(client).await
         }
         McpKeyHistoryCohort::SettingsUpdatedAtNullableNoBackfill => {
-            check_settings_updated_at_nullable_no_backfill(client).await;
+            check_settings_updated_at_nullable_no_backfill(client).await
         }
         McpKeyHistoryCohort::OauthClientRawJsonAndTimestampDefaults => {
-            check_oauth_client_raw_json_and_timestamp_defaults(client).await;
+            check_oauth_client_raw_json_and_timestamp_defaults(client).await
         }
         McpKeyHistoryCohort::SsoAssertionRawTextAndTimestampDefaults => {
-            check_sso_assertion_raw_text_and_timestamp_defaults(client).await;
+            check_raw_value_with_timestamps(
+                client,
+                RawValueCheck {
+                    insert_sql: r#"INSERT INTO "LiteLLM_SSOIdentityAssertion" (user_id, assertion_b64) VALUES ($1, $2)"#,
+                    insert_params: &[&"user-sso", &"opaque-assertion-bytes"],
+                    select_sql: r#"SELECT assertion_b64 FROM "LiteLLM_SSOIdentityAssertion" WHERE user_id = $1"#,
+                    select_param: "user-sso",
+                    expected: "opaque-assertion-bytes",
+                    table: "LiteLLM_SSOIdentityAssertion",
+                },
+            )
+            .await;
         }
         McpKeyHistoryCohort::JwtKeyDeleteNowCascadesOnlyItsMappings => {
             check_jwt_key_delete_now_cascades_only_its_mappings(client).await;

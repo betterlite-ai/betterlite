@@ -82,23 +82,23 @@ async fn check_team_ptu_zero(client: &Client) {
     .await;
 }
 
-async fn check_six_compression_token_defaults(client: &Client) {
+async fn seed_spend_tables(
+    client: &Client,
+    suffix: &str,
+    spend: f64,
+) -> Vec<(&'static str, String)> {
+    let mut seeded = Vec::new();
     for (table, owner_column) in SPEND_TABLES {
-        let id = format!("{table}-compression");
-        insert_minimal_spend_row(client, table, owner_column, &id, 1.0).await;
-        assert_column(
-            client,
-            table,
-            (
-                "compression_saved_tokens",
-                "bigint",
-                false,
-                Some("0"),
-                "int8",
-                None,
-            ),
-        )
-        .await;
+        let id = format!("{table}-{suffix}");
+        insert_minimal_spend_row(client, table, owner_column, &id, spend).await;
+        seeded.push((table, id));
+    }
+    seeded
+}
+
+async fn check_six_compression_token_defaults(client: &Client) {
+    for (table, id) in seed_spend_tables(client, "compression", 1.0).await {
+        assert_column(client, table, int8_zero("compression_saved_tokens")).await;
         let value: i64 = query_one_row(
             client,
             &format!(r#"SELECT compression_saved_tokens FROM "{table}" WHERE id = $1"#),
@@ -111,13 +111,9 @@ async fn check_six_compression_token_defaults(client: &Client) {
 }
 
 async fn check_six_three_savings_defaults_preserve_existing_spend(client: &Client) {
-    for (table, owner_column) in SPEND_TABLES {
-        let id = format!("{table}-savings");
-        insert_minimal_spend_row(client, table, owner_column, &id, 7.5_f64).await;
-    }
+    let seeded = seed_spend_tables(client, "savings", 7.5_f64).await;
     batch_execute(client, migration_sql_of(ADD_SAVINGS_SPEND.directory)).await;
-    for (table, _) in SPEND_TABLES {
-        let id = format!("{table}-savings");
+    for (table, id) in seeded {
         let row = query_one_row(
             client,
             &format!(
@@ -159,10 +155,7 @@ async fn check_daily_tool_zero_counters_and_composite_key(client: &Client) {
     assert_columns(
         client,
         "LiteLLM_DailyToolSpend",
-        &[
-            ("total_tokens", "bigint", false, Some("0"), "int8", None),
-            ("request_count", "bigint", false, Some("0"), "int8", None),
-        ],
+        &[int8_zero("total_tokens"), int8_zero("request_count")],
     )
     .await;
     let conflict = exec_params_err(
@@ -246,15 +239,8 @@ async fn check_gateway_zero_counters_and_date_index(client: &Client) {
         client,
         "LiteLLM_DailyGatewayRequests",
         &[
-            (
-                "successful_requests",
-                "bigint",
-                false,
-                Some("0"),
-                "int8",
-                None,
-            ),
-            ("failed_requests", "bigint", false, Some("0"), "int8", None),
+            int8_zero("successful_requests"),
+            int8_zero("failed_requests"),
         ],
     )
     .await;
@@ -283,95 +269,45 @@ async fn check_budget_window_key_excludes_start(client: &Client) {
     assert_eq!(sql_state(&conflict), SqlState::UNIQUE_VIOLATION.code());
 }
 
-async fn check_autorouter_fourteen_integer_counters_tokens_spend_models_tiers(client: &Client) {
-    exec_params(
-        client,
-        r#"INSERT INTO "LiteLLM_AutoRouterSession" (api_key, session_id, router_name, router_type, first_turn_at, last_turn_at, last_model) VALUES ($1, $2, $3, $4, now(), now(), $5)"#,
-        &[&"key-a", &"session-a", &"router-a", &"adaptive", &"model-a"],
-    )
-    .await;
-    assert_columns(
+async fn check_autorouter_integer_counters(client: &Client) {
+    for name in [
+        "turns",
+        "unordered_turns",
+        "covered_turns",
+        "cache_hits",
+        "same_model_turns",
+        "same_model_hits",
+        "first_visit_turns",
+        "first_visit_hits",
+        "return_turns",
+        "return_hits",
+        "return_expired_misses",
+        "return_within_ttl_misses",
+        "ttl_5m_turns",
+        "ttl_1h_turns",
+    ] {
+        assert_column(client, "LiteLLM_AutoRouterSession", int4_zero(name)).await;
+    }
+    assert_column(
         client,
         "LiteLLM_AutoRouterSession",
-        &[
-            ("turns", "integer", false, Some("0"), "int4", None),
-            ("unordered_turns", "integer", false, Some("0"), "int4", None),
-            ("covered_turns", "integer", false, Some("0"), "int4", None),
-            ("cache_hits", "integer", false, Some("0"), "int4", None),
-            (
-                "same_model_turns",
-                "integer",
-                false,
-                Some("0"),
-                "int4",
-                None,
-            ),
-            ("same_model_hits", "integer", false, Some("0"), "int4", None),
-            (
-                "first_visit_turns",
-                "integer",
-                false,
-                Some("0"),
-                "int4",
-                None,
-            ),
-            (
-                "first_visit_hits",
-                "integer",
-                false,
-                Some("0"),
-                "int4",
-                None,
-            ),
-            ("return_turns", "integer", false, Some("0"), "int4", None),
-            ("return_hits", "integer", false, Some("0"), "int4", None),
-            (
-                "return_expired_misses",
-                "integer",
-                false,
-                Some("0"),
-                "int4",
-                None,
-            ),
-            (
-                "return_within_ttl_misses",
-                "integer",
-                false,
-                Some("0"),
-                "int4",
-                None,
-            ),
-            ("ttl_5m_turns", "integer", false, Some("0"), "int4", None),
-            ("ttl_1h_turns", "integer", false, Some("0"), "int4", None),
-            ("total_tokens", "bigint", false, Some("0"), "int8", None),
-            (
-                "spend",
-                "double precision",
-                false,
-                Some("0"),
-                "float8",
-                None,
-            ),
-            (
-                "saved_spend",
-                "double precision",
-                false,
-                Some("0"),
-                "float8",
-                None,
-            ),
-            ("models", "jsonb", false, Some("'{}'::jsonb"), "jsonb", None),
-            (
-                "tier_turns",
-                "jsonb",
-                false,
-                Some("'{}'::jsonb"),
-                "jsonb",
-                None,
-            ),
-        ],
+        int8_zero("total_tokens"),
     )
     .await;
+}
+
+async fn check_autorouter_spend_and_tiers(client: &Client) {
+    for name in ["spend", "saved_spend"] {
+        assert_column(
+            client,
+            "LiteLLM_AutoRouterSession",
+            float8_default(name, "0"),
+        )
+        .await;
+    }
+    for name in ["models", "tier_turns"] {
+        assert_column(client, "LiteLLM_AutoRouterSession", empty_jsonb(name)).await;
+    }
 }
 
 async fn run_usage_rollups_check(client: &Client, cohort: UsageRollupsCohort) {
@@ -400,7 +336,14 @@ async fn run_usage_rollups_check(client: &Client, cohort: UsageRollupsCohort) {
             check_budget_window_key_excludes_start(client).await;
         }
         UsageRollupsCohort::AutorouterFourteenIntegerCountersTokensSpendModelsTiers => {
-            check_autorouter_fourteen_integer_counters_tokens_spend_models_tiers(client).await;
+            exec_params(
+                client,
+                r#"INSERT INTO "LiteLLM_AutoRouterSession" (api_key, session_id, router_name, router_type, first_turn_at, last_turn_at, last_model) VALUES ($1, $2, $3, $4, now(), now(), $5)"#,
+                &[&"key-a", &"session-a", &"router-a", &"adaptive", &"model-a"],
+            )
+            .await;
+            check_autorouter_integer_counters(client).await;
+            check_autorouter_spend_and_tiers(client).await;
         }
     }
 }

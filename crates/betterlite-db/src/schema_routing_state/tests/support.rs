@@ -4,6 +4,7 @@ use crate::schema_identity_history::MIGRATION_CATALOG as IDENTITY_HISTORY_CATALO
 use crate::schema_managed_resources::MIGRATION_CATALOG as MANAGED_RESOURCES_CATALOG;
 use crate::schema_policy_resources::MIGRATION_CATALOG as POLICY_RESOURCES_CATALOG;
 use crate::schema_routing_state::fixtures::PINNED_MIGRATION_CATALOG;
+use crate::schema_routing_state::migrations::*;
 use crate::schema_routing_state::*;
 use betterlite_postgres_fixture::connection::{PostgresFixture, RandomDatabaseName};
 use betterlite_postgres_fixture::error::FixtureError;
@@ -396,6 +397,56 @@ async fn assert_single_column(client: &Client, tables: &[&str], spec: ColumnSpec
     for table in tables {
         assert_columns(client, table, &[spec]).await;
     }
+}
+
+fn int4_zero(name: &'static str) -> ColumnSpec {
+    (name, "integer", false, Some("0"), "int4", None)
+}
+
+fn int8_zero(name: &'static str) -> ColumnSpec {
+    (name, "bigint", false, Some("0"), "int8", None)
+}
+
+fn nullable_text(name: &'static str) -> ColumnSpec {
+    (name, "text", true, None, "text", None)
+}
+
+fn nullable_bool(name: &'static str) -> ColumnSpec {
+    (name, "boolean", true, None, "bool", None)
+}
+
+fn bool_false(name: &'static str) -> ColumnSpec {
+    (name, "boolean", false, Some("false"), "bool", None)
+}
+
+fn float8_default(name: &'static str, default: &'static str) -> ColumnSpec {
+    (
+        name,
+        "double precision",
+        false,
+        Some(default),
+        "float8",
+        None,
+    )
+}
+
+fn empty_jsonb(name: &'static str) -> ColumnSpec {
+    (name, "jsonb", false, Some("'{}'::jsonb"), "jsonb", None)
+}
+
+async fn assert_exec_params_err_state(
+    client: &Client,
+    sql: &str,
+    params: &[&(dyn ToSql + Sync)],
+    code: SqlState,
+) {
+    let result = exec_params_err(client, sql, params).await;
+    assert_eq!(sql_state(&result), code.code());
+}
+
+async fn assert_batch_execute_err_state(client: &Client, sql: &str, code: SqlState) {
+    let result = batch_execute_err(client, sql).await;
+    assert_eq!(sql_state(&result), code.code());
 }
 
 async fn catalog_snapshot(client: &Client) -> Vec<String> {
