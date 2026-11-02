@@ -1,0 +1,8 @@
+task: B3420
+deviations:
+  - what: The class LiteLLM names DataSourceConfigStoredCompletions is ported as DataSourceStoredCompletions, dropping the repeated "Config" segment.
+    why: betterlite's 30-character identifier cap has no suppression mechanism, and the struct already sits inside the DataSourceConfig enum, so the dropped word repeats the enum's own name rather than adding information.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai_evals.py#L36-L43
+  - what: RunDeleteResponse.object and RunDeleteResponse.deleted are both Option types that default to specific values ("eval.run.deleted" and true respectively), matching LiteLLM's wire contract.
+    why: The response may omit these fields on the wire, so they must be Optional in the model to allow deserialization of partial responses while preserving LiteLLM's default values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai_evals.py#L410-L416
