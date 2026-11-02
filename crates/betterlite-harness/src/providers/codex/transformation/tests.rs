@@ -28,7 +28,7 @@ fn config_toml_managed_keys() {
     assert_eq!(super::config::toml_value(value, 0).unwrap(), "[true, 2]");
     assert!(matches!(
         super::config::config_overrides(&config).unwrap_err(),
-        HarnessError::ManagedConfigKey { key, harness: Harness::Codex } if key == "model"
+        HarnessError::ManagedConfigKey { key } if key == "model"
     ));
 }
 
@@ -325,11 +325,7 @@ fn config_values(#[case] raw: &str, #[case] expected: &str) {
     assert_eq!(super::config::toml_value(value, 0).unwrap(), expected);
     assert!(matches!(
         super::config::toml_value(value, DEFAULT_MAX_RECURSE_DEPTH + 1).unwrap_err(),
-        HarnessError::OptionsMismatch {
-            given: "CodexOptions.config value",
-            harness: Harness::Codex,
-            expected: "a value within the Codex config nesting limit",
-        }
+        HarnessError::CodexNestedTooDeep
     ));
 }
 
@@ -337,11 +333,7 @@ fn config_values(#[case] raw: &str, #[case] expected: &str) {
 fn null_config_value_is_rejected() {
     assert!(matches!(
         super::config::toml_value(&serde_json::Value::Null, 0).unwrap_err(),
-        HarnessError::OptionsMismatch {
-            given: "CodexOptions.config value",
-            harness: Harness::Codex,
-            expected: "a bool, number, string, array or object",
-        }
+        HarnessError::CodexNullValue
     ));
 }
 
@@ -357,7 +349,7 @@ fn rejects_managed_config(#[case] key: &str) {
     let config: JsonObject = serde_json::from_str(&format!("{{\"{key}\":true}}")).unwrap();
     assert!(matches!(
         super::config::config_overrides(&config).unwrap_err(),
-        HarnessError::ManagedConfigKey { key: reported, harness: Harness::Codex } if reported == key
+        HarnessError::ManagedConfigKey { key: reported } if reported == key
     ));
 }
 
@@ -368,6 +360,47 @@ fn rejects_invalid_config_key() {
         super::config::config_overrides(&config).unwrap_err(),
         HarnessError::InvalidConfigKey { key } if key == "has=equals"
     ));
+}
+
+fn deeply_nested_config() -> String {
+    let mut nested = "0".to_owned();
+    for _ in 0_u32..110_u32 {
+        nested = format!("[{nested}]");
+    }
+    format!("{{\"clean\":{nested}}}")
+}
+
+#[rstest::rstest]
+#[case::invalid(
+    r#"{"has=equals":true}"#,
+    "Invalid CodexOptions.config key: 'has=equals'"
+)]
+#[case::empty(r#"{"":true}"#, "Invalid CodexOptions.config key: ''")]
+#[case::managed(
+    r#"{"model":true}"#,
+    "CodexOptions.config['model'] is managed by LiteLLM; use the matching agent() argument instead"
+)]
+#[case::managed_dotted(
+    r#"{"model_providers.litellm.base_url":true}"#,
+    "CodexOptions.config['model_providers.litellm.base_url'] is managed by LiteLLM; use the matching agent() argument instead"
+)]
+#[case::quote_holding(
+    r#"{"it's=broken":true}"#,
+    r#"Invalid CodexOptions.config key: "it's=broken""#
+)]
+#[case::null_value(
+    r#"{"clean":null}"#,
+    "CodexOptions.config value of type NoneType cannot be passed to codex"
+)]
+#[case::too_deep(&deeply_nested_config(), "CodexOptions.config is nested deeper than 100 levels")]
+fn config_errors_match_litellm(#[case] raw: &str, #[case] expected: &str) {
+    let config: JsonObject = serde_json::from_str(raw).unwrap();
+    assert_eq!(
+        super::config::config_overrides(&config)
+            .unwrap_err()
+            .to_string(),
+        expected
+    );
 }
 
 #[test]

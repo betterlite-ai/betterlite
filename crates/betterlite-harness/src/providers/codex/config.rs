@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use crate::errors::HarnessError;
 use crate::payloads::DEFAULT_MAX_RECURSE_DEPTH;
-use crate::types::{Harness, JsonObject};
+use crate::types::JsonObject;
 
 pub(super) const CODEX_TOKEN_ENV: &str = "LITELLM_HARNESS_TOKEN";
 pub(super) const CODEX_SCHEMA_FILENAME: &str = "output_schema.json";
@@ -37,11 +37,7 @@ pub(super) fn toml_key(key: &str) -> String {
 
 pub(super) fn toml_value(raw: &Value, depth: usize) -> Result<String, HarnessError> {
     if depth > DEFAULT_MAX_RECURSE_DEPTH {
-        return Err(HarnessError::OptionsMismatch {
-            given: "CodexOptions.config value",
-            harness: Harness::Codex,
-            expected: "a value within the Codex config nesting limit",
-        });
+        return Err(HarnessError::CodexNestedTooDeep);
     }
     match raw {
         Value::Bool(flag) => Ok(flag.to_string()),
@@ -63,11 +59,7 @@ pub(super) fn toml_value(raw: &Value, depth: usize) -> Result<String, HarnessErr
             })
             .collect::<Result<Vec<_>, HarnessError>>()
             .map(|encoded| format!("{{{}}}", encoded.join(", "))),
-        Value::Null => Err(HarnessError::OptionsMismatch {
-            given: "CodexOptions.config value",
-            harness: Harness::Codex,
-            expected: "a bool, number, string, array or object",
-        }),
+        Value::Null => Err(HarnessError::CodexNullValue),
     }
 }
 
@@ -79,10 +71,7 @@ pub(super) fn config_overrides(config: &JsonObject) -> Result<Vec<String>, Harne
             return Err(HarnessError::InvalidConfigKey { key: key.clone() });
         }
         if MANAGED_CONFIG_KEYS.contains(&first) {
-            return Err(HarnessError::ManagedConfigKey {
-                key: key.clone(),
-                harness: Harness::Codex,
-            });
+            return Err(HarnessError::ManagedConfigKey { key: key.clone() });
         }
         overrides.push(format!("{}={}", key, toml_value(value, 0)?));
     }

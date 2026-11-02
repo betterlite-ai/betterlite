@@ -18,7 +18,7 @@ fn opencode_validation_rejects_managed_keys() {
     let config: JsonObject = serde_json::from_str(r#"{"permission":{"edit":"allow"}}"#).unwrap();
     assert!(matches!(
         super::config::validate_user_config(&config),
-        Err(HarnessError::OpenCodeManagedKeys { keys, .. }) if keys == ["permission".to_owned()]
+        Err(HarnessError::OpenCodeManagedTopLevelKey { key }) if key == "permission"
     ));
 }
 
@@ -28,9 +28,50 @@ fn opencode_validation_rejects_agent_managed_keys() {
         serde_json::from_str(r#"{"agent":{"build":{"model":"other"}}}"#).unwrap();
     assert!(matches!(
         super::config::validate_user_config(&config),
-        Err(HarnessError::OpenCodeManagedKeys { section, agent, keys })
-            if section == "agent" && agent.as_deref() == Some("build") && keys == ["model".to_owned()]
+        Err(HarnessError::OpenCodeAgentManagedKeys { section, agent, keys })
+            if section == "agent" && agent == "build" && keys == ["model".to_owned()]
     ));
+}
+
+#[rstest::rstest]
+#[case::top_level(
+    r#"{"permission":{"edit":"allow"}}"#,
+    "OpenCodeOptions.config['permission'] is managed by LiteLLM; use the matching agent() argument (model=, permissions=, disable_tools=) instead"
+)]
+#[case::agent(
+    r#"{"agent":{"build":{"model":"other"}}}"#,
+    "OpenCodeOptions.config['agent']['build'] sets ['model'], which LiteLLM manages; use permissions=/disable_tools=/model= instead"
+)]
+#[case::mode(
+    r#"{"mode":{"plan":{"tools":false}}}"#,
+    "OpenCodeOptions.config['mode']['plan'] sets ['tools'], which LiteLLM manages; use permissions=/disable_tools=/model= instead"
+)]
+#[case::not_a_mapping(
+    r#"{"agent":"nope"}"#,
+    "OpenCodeOptions.config['agent'] must be a mapping"
+)]
+fn config_errors_match_litellm(#[case] raw: &str, #[case] expected: &str) {
+    let config: JsonObject = serde_json::from_str(raw).unwrap();
+    assert_eq!(
+        super::config::validate_user_config(&config)
+            .unwrap_err()
+            .to_string(),
+        expected
+    );
+}
+
+#[rstest::rstest]
+#[case::null_section(r#"{"agent":null}"#)]
+#[case::null_agent(r#"{"agent":{"build":null}}"#)]
+#[case::false_agent(r#"{"agent":{"build":false}}"#)]
+#[case::zero_agent(r#"{"agent":{"build":0}}"#)]
+#[case::empty_string_agent(r#"{"agent":{"build":""}}"#)]
+#[case::non_empty_string_agent(r#"{"agent":{"build":"model"}}"#)]
+#[case::empty_list_agent(r#"{"agent":{"build":[]}}"#)]
+#[case::empty_mapping_agent(r#"{"agent":{"build":{}}}"#)]
+fn section_shapes_follow_litellm(#[case] raw: &str) {
+    let config: JsonObject = serde_json::from_str(raw).unwrap();
+    super::config::validate_user_config(&config).unwrap();
 }
 
 #[test]
@@ -201,7 +242,7 @@ fn opencode_config_rejects_managed_keys_before_merge() {
     let user_config: JsonObject = serde_json::from_str(r#"{"model":"other"}"#).unwrap();
     assert!(matches!(
         super::config::build_opencode_config(&base_config_inputs(&user_config, &[])),
-        Err(HarnessError::OpenCodeManagedKeys { keys, .. }) if keys == ["model".to_owned()]
+        Err(HarnessError::OpenCodeManagedTopLevelKey { key }) if key == "model"
     ));
 }
 
