@@ -1,0 +1,5 @@
+kind: helper
+name: text-completion-policy-seed-config-values
+call: {text_completion_policy: {text_config_values: {settings: {max_tokens: 0, echo: false, stop: [], best_of: 3, temperature: 0.0}}}}
+env: {}
+compare: {ignore: []}
