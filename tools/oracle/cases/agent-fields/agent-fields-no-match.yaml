@@ -1,0 +1,6 @@
+kind: helper
+name: agent-fields-no-match
+call:
+  b3191: {function: get_agent_field, agent_type: azure_ai_foundry}
+env: {}
+compare: {ignore: []}

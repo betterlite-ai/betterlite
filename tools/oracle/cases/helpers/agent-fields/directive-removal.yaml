@@ -1,0 +1,6 @@
+kind: helper
+name: directive-removal
+call:
+  b3191: {function: get_agent_field, agent_type: pydantic_ai_agents}
+env: {}
+compare: {ignore: []}

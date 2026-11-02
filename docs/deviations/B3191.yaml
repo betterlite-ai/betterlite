@@ -1,0 +1,8 @@
+task: B3191
+deviations:
+  - what: Agent catalog is loaded from a bundled file path constructed relative to the module, not through importlib.resources.files.
+    why: Rust crates include data files in the build output directory; runtime path resolution matches the runtime layout.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L605-L611
+  - what: Provider-to-agent name matching is exact and case-sensitive; Azure AI in the agent record does not match Azure_AI_Studio in the bundled provider catalog.
+    why: LiteLLM matches by string equality; Azure AI and Azure_AI_Studio are distinct keys and no mapping layer bridges them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L626-L627

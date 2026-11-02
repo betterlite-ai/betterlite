@@ -1,0 +1,6 @@
+kind: helper
+name: field-order
+call:
+  b3191: {function: agent_credential_fields, agent_type: watsonx_orchestrate}
+env: {}
+compare: {ignore: []}

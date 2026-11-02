@@ -1,0 +1,6 @@
+kind: helper
+name: azure-no-inheritance
+call:
+  b3191: {function: agent_credential_fields, agent_type: azure_ai_foundry}
+env: {}
+compare: {ignore: []}
