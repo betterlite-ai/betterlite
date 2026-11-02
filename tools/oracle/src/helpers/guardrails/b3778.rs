@@ -104,7 +104,7 @@ impl crate::helpers::Helper for Op {
                     &cache,
                 );
                 serde_json::to_value(payload)
-                    .map_err(|error| failure("SerializationError", error.to_string()))
+                    .map_err(|error| failure("SerializationError", None, error.to_string()))
             }
             Input::ProcessResponse { settings, response } => {
                 let result = guardrail(settings)?.process_response(response.clone());
@@ -149,12 +149,12 @@ fn conversation(
     let key = format!("lasso_conversation_id:{}", call_id.unwrap_or("None"));
     if let Some(value) = cached {
         let seeded = cache.set_cache(&key, value, Duration::ZERO);
-        seeded.map_err(|error| failure("CacheError", error.to_string()))?;
+        seeded.map_err(|error| failure("CacheError", None, error.to_string()))?;
     }
     let id = guardrail(settings)?.conversation_id(call_id, &cache);
     let stored = cache
         .get_cache(&key)
-        .map_err(|error| failure("CacheError", error.to_string()))?;
+        .map_err(|error| failure("CacheError", None, error.to_string()))?;
     Ok(json!({"stored": stored.as_deref() == Some(id.as_str()), "id": id}))
 }
 
@@ -163,8 +163,8 @@ fn call(
     answer: Option<&UpstreamAnswer>,
     api_path: Option<&str>,
 ) -> HelperResult {
-    let io = |error: std::io::Error| failure("OSError", error.to_string());
-    let mock_error = |error: crate::OracleError| failure("MockError", error.to_string());
+    let io = |error: std::io::Error| failure("OSError", None, error.to_string());
+    let mock_error = |error: crate::OracleError| failure("MockError", None, error.to_string());
     // with no answer the listener accepts the connection and never replies, so the call times out
     let silent = TcpListener::bind(("127.0.0.1", 0)).map_err(io)?;
     let start =
@@ -216,13 +216,13 @@ fn configure(
             | ConfigError::InvalidInteger { .. }
             | ConfigError::InvalidScalar { .. } => "ConfigError",
         };
-        failure(class, error.to_string())
+        failure(class, None, error.to_string())
     })?;
     let guardrails = config.sections.lasso_classification.guardrails;
     guardrails
         .into_iter()
         .next()
-        .ok_or_else(|| failure("ConfigError", "no Lasso guardrail".to_owned()))
+        .ok_or_else(|| failure("ConfigError", None, "no Lasso guardrail".to_owned()))
 }
 
 fn guardrail(settings: &Settings) -> Result<LassoGuardrail, Box<HelperError>> {
@@ -247,17 +247,20 @@ fn lasso_failure(error: &LassoError) -> Box<HelperError> {
         | LassoError::ResponseTooLarge { .. }
         | LassoError::ResponseJson { .. } => "LassoGuardrailAPIError",
     };
-    failure(class, error.to_string())
+    let status = matches!(error, LassoError::Blocked { .. }).then_some(400);
+    failure(class, status, error.to_string())
 }
 
-fn failure(class_name: &str, message: String) -> Box<HelperError> {
+fn failure(class_name: &str, status: Option<u16>, message: String) -> Box<HelperError> {
     let class = class_name.to_owned();
     Box::new(HelperError {
         class,
-        status: None,
+        status,
         error_type: None,
         param: None,
         code: None,
         message,
     })
 }
+
+mod tests;

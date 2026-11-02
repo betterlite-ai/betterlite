@@ -1,0 +1,8 @@
+kind: helper
+name: provider-defaults-b-modelscope
+call:
+  provider_defaults_b:
+    provider: modelscope
+    model: modelscope-model
+env: {}
+compare: {ignore: []}

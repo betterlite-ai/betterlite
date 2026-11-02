@@ -1,0 +1,8 @@
+kind: helper
+name: provider-defaults-b-moonshot
+call:
+  provider_defaults_b:
+    provider: moonshot
+    model: moonshot-model
+env: {}
+compare: {ignore: []}

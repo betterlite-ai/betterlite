@@ -4,6 +4,7 @@ description: >-
   Forward complete native Google GenAI SSE events from the provider to the client without injecting an OpenAI DONE marker or breaking large inline media payloads. Collect every chunk to support async-only EOF logging through the pass-through endpoint callback, which reports completion and hidden metadata after the stream ends. Preserve the distinction between Gemini and Vertex providers. Implement sync and async iterators that yield whole SSE events as bytes. Events are formed by joining lines with LF (0x0A) and terminating with a blank line (0x0A 0x0A). Never inject OpenAI-shaped chunks. Reject sync-mode async iteration with NotImplementedError. Replay every split UTF-8 sequence, blank line delimiter, and unterminated final event through the production SSE parser to ensure correctness.
 scope:
   paths:
+  - crates/betterlite-core/src/google_genai.rs
   - crates/betterlite-core/src/google_genai/**
   - crates/betterlite-core/fuzz/fuzz_targets/genai_sse.rs
   - crates/betterlite-core/fuzz/corpus/genai_sse/**

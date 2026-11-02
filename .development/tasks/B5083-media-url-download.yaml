@@ -19,7 +19,7 @@ description: >-
   Many URLs (_fetch_data_url and _fetch_data_urls). fetch_all(urls) converts every URL with at most 20 in flight (MAX_CONCURRENT_REMOTE_MEDIA_FETCHES), returns the results in input order, and on the first failure cancels the rest and returns that failure.
 
 
-  Tests. media_fetch::tests::response_reading_matches_litellm covers the status, Content-Length, body count, media type and cache store paths. media_fetch::tests::url_conversion_matches_litellm runs a local server on 127.0.0.1 with 127.0.0.1 allowlisted and covers the data URL pass-through, a 0 limit, a cache hit, three tries then the attempts text, no retry after an ImageFetchError, the SSRF rejection text and the total deadline. media_fetch::tests::parallel_fetches_are_bounded checks the 20-fetch limit, the result order and cancel-on-failure. sections::image_url_download::tests::download_limit_follows_litellm loads the default, a set value, 0, a value with spaces and a bad value. The skeleton gives this task the helper operation b5083 with two calls: `{call: read_response, status, headers, body_base64 | body_repeat: {byte, count}, url}`, which builds an httpx.Response (dropping the Content-Length httpx adds by itself unless the case sets one) and runs _process_image_response, and `{call: convert, url}`, which runs async_convert_url_to_base64 for URLs that never reach the network.
+  Tests. media_fetch::tests::response_reading_matches_litellm covers the status, Content-Length, body count, media type and cache store paths. media_fetch::tests::url_conversion_matches_litellm runs a local server on 127.0.0.1 with 127.0.0.1 allowlisted and covers the data URL pass-through, a 0 limit, a cache hit, three tries then the attempts text, no retry after an ImageFetchError, the SSRF rejection text and the total deadline. media_fetch::tests::parallel_fetches_are_bounded checks the 20-fetch limit, the result order and cancel-on-failure. sections::image_url_download::tests::download_limit_follows_litellm loads the default, a set value, 0, a value with spaces and a bad value. The helper cases run through oracle operation b5083, registered with a stub in the prompts helper group; replace the stub in tools/oracle/src/helpers/prompts/b5083.rs and write tools/oracle/helpers/b5083.py. It takes two calls: `{call: read_response, status, headers, body_base64 | body_repeat: {byte, count}, url}`, which builds an httpx.Response (dropping the Content-Length httpx adds by itself unless the case sets one) and runs _process_image_response, and `{call: convert, url}`, which runs async_convert_url_to_base64 for URLs that never reach the network.
 scope:
   paths:
     - crates/betterlite-prompts/src/media_fetch.rs
@@ -29,6 +29,10 @@ scope:
     - crates/betterlite-config/src/sections/image_url_download.rs
     - crates/betterlite-config/src/sections/image_url_download/**
     - tools/oracle/cases/helpers/media-fetch/**
+    - tools/oracle/helpers/b5083.py
+    - tools/oracle/helpers/b5083/**
+    - tools/oracle/src/helpers/prompts/b5083.rs
+    - tools/oracle/src/helpers/prompts/b5083/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/image_handling.py#L23-L81

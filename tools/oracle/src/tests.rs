@@ -604,31 +604,35 @@ fn helper_comparison_compares_error_codes(
     assert_eq!(difference.pointer, pointer);
 }
 
-fn warning_output(subject: &str, message: &str) -> HelperOutput {
+fn warning_output(warnings: &[(&str, &str)]) -> HelperOutput {
     HelperOutput {
         ok: true,
         value: None,
         error: None,
-        warnings: vec![compare::helper::HelperWarning {
-            subject: subject.to_owned(),
-            message: message.to_owned(),
-        }],
+        warnings: warnings
+            .iter()
+            .map(|(subject, message)| compare::helper::HelperWarning {
+                subject: (*subject).to_owned(),
+                message: (*message).to_owned(),
+            })
+            .collect(),
         effects: Vec::new(),
     }
 }
 
-#[rstest::rstest]
-#[case::same_subject("alpha", "alpha", true)]
-#[case::different_subject("alpha", "beta", false)]
-fn helper_comparison_skips_warning_messages(
-    #[case] left_subject: &str,
-    #[case] right_subject: &str,
-    #[case] expect_match: bool,
-) {
-    let left = warning_output(left_subject, "left message");
-    let right = warning_output(right_subject, "right message");
-    let matches = compare::compare_helper(&left, &right, &[]).is_none();
-    assert_eq!(matches, expect_match);
+#[test]
+fn helper_comparison_skips_every_warning_message() {
+    let left = warning_output(&[("alpha", "left one"), ("beta", "left two")]);
+    let right = warning_output(&[("alpha", "right one"), ("beta", "right two")]);
+    assert!(compare::compare_helper(&left, &right, &[]).is_none());
+}
+
+#[test]
+fn helper_comparison_names_the_differing_warning_subject() {
+    let left = warning_output(&[("alpha", "left message"), ("beta", "left message")]);
+    let right = warning_output(&[("alpha", "right message"), ("gamma", "right message")]);
+    let difference = compare::compare_helper(&left, &right, &[]).unwrap();
+    assert_eq!(difference.pointer, "/warnings/1/subject");
 }
 
 #[rstest::rstest]

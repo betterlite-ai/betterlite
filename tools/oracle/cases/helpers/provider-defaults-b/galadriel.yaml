@@ -1,0 +1,8 @@
+kind: helper
+name: provider-defaults-b-galadriel
+call:
+  provider_defaults_b:
+    provider: galadriel
+    model: galadriel-model
+env: {}
+compare: {ignore: []}

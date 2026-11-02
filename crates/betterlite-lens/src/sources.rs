@@ -3,6 +3,7 @@ pub mod agent_row;
 pub mod count_row;
 pub mod execution_row;
 pub mod part_row;
+mod tests;
 
 pub mod execution_id;
 pub mod parameters;

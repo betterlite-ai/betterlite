@@ -1,0 +1,15 @@
+task: B5081
+deviations:
+  - what: "When a config holds two offending keys, betterlite reports the first in alphabetical order;
+         LiteLLM reports the first in the order the user wrote them. The same holds for agent names
+         inside a section."
+    why: "Harness options keep config in JsonObject, a BTreeMap (crates/betterlite-harness/src/types.rs
+         L14), so the insertion order is gone before validation runs. The texts are the same; only which
+         key is named can differ."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/opencode/harness/transformation.py#L200-L205
+  - what: "An OpenCode agent or mode entry that is a non-zero number, true, or a list holding an object or
+         a list fails with OptionsMismatch `OpenCodeOptions.config['agent']['build'] must be a mapping`."
+    why: "LiteLLM crashes there with a Python TypeError (\"'int' object is not iterable\", \"unhashable
+         type: 'dict'\"). An options error in LiteLLM's own wording for the section tells the user what
+         to fix."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/opencode/harness/transformation.py#L212-L213
