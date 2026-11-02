@@ -35,6 +35,8 @@ fn credentials_cases(#[case] case: u8) { match case {
     assert_eq!(only_env.organization.as_deref(), Some("env-org"));
     let nothing = get_openai_credentials(ExplicitCredentials::default(), LiteLlmGlobals::default(), &BTreeMap::new());
     assert!(nothing.api_key.is_none() && nothing.organization.is_none());
+    let empty_explicit_key = get_openai_credentials(ExplicitCredentials { api_base: None, api_key: Some(SecretString::from("")), organization: None }, LiteLlmGlobals { api_base: None, api_key: Some(SecretString::from("global-key")), openai_key: None, organization: None }, &BTreeMap::new());
+    assert_eq!(empty_explicit_key.api_key.as_ref().map(ExposeSecret::expose_secret), Some("global-key"));
 },
 1 => {
     let lookup = env(&[("OPENAI_BASE_URL", "https://base-url.example/v1?foo=bar"), ("OPENAI_API_BASE", "https://api-base.example/v1/")]);
