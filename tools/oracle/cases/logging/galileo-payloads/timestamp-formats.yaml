@@ -1,0 +1,5 @@
+kind: helper
+name: timestamp-formats
+call: {"b3963": {"operation": "timestamp_formats", "naive": "2026-01-02T03:04:05", "offset_minutes": -300, "aware": "2026-01-02T03:04:05+02:00", "normalize": ["2026-01-02T03:04:05", "2026-01-02T03:04:05Z", "2026-01-02T03:04:05+05:30", "2026-01-02T03:04:05-0500", ""]}}
+env: {}
+compare: {ignore: []}
