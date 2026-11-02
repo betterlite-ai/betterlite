@@ -1,6 +1,9 @@
 #![cfg(test)]
 
+use std::env::consts::ARCH;
+
 use betterlite_config::sections::chatgpt_headers::Settings as HeaderSettings;
+use nix::sys::utsname::uname;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Map, Value, json};
@@ -126,8 +129,8 @@ fn default_user_agent_matches_the_pinned_fallback() {
 fn system_platform_environment_reads_the_real_os_release_and_arch() {
     let platform = SystemPlatformEnvironment;
     assert_eq!(platform.os_type(), "Linux");
-    assert_eq!(platform.arch(), std::env::consts::ARCH);
-    let uname_release = nix::sys::utsname::uname()
+    assert_eq!(platform.arch(), ARCH);
+    let uname_release = uname()
         .expect("uname succeeds on this platform")
         .release()
         .to_str()
@@ -233,7 +236,7 @@ fn metadata_session_id(value: &str) -> Value {
 #[case(mapping(&[("litellm_session_id", json!(42_i64))]), "42")]
 #[case(mapping(&[("litellm_session_id", json!(true))]), "True")]
 #[case(mapping(&[("litellm_session_id", json!(["a", "b"]))]), "['a', 'b']")]
-#[case(mapping(&[("litellm_session_id", json!({"x": "y"}))]), "{'x': 'y'}")]
+#[case(mapping(&[("litellm_session_id", Value::Object(mapping(&[("x", json!("y"))])))]), "{'x': 'y'}")]
 fn session_id_precedence_and_stringification(#[case] params: ParamsRecord, #[case] expected: &str) {
     let input = LitellmParamsInput::Mapping(params);
     assert_eq!(get_chatgpt_session_id(&input), Some(expected.to_owned()));
