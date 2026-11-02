@@ -28,6 +28,28 @@ description: >-
   function, and no test is deleted.
 scope:
   paths:
+  - crates/betterlite-db/src/migration_deploy/tests.rs
+  - crates/betterlite-guardrails/src/cisco_inspection/chat.rs
+  - crates/betterlite-guardrails/src/cisco_inspection/chat/tests.rs
+  - crates/betterlite-guardrails/src/cisco_inspection/hooks.rs
+  - crates/betterlite-guardrails/src/cisco_inspection/hooks/tests.rs
+  - crates/betterlite-guardrails/src/cisco_redaction.rs
+  - crates/betterlite-guardrails/src/cisco_redaction/chat_input.rs
+  - crates/betterlite-guardrails/src/cisco_redaction/chat_output.rs
+  - crates/betterlite-guardrails/src/cisco_redaction/chat_output/list_field.rs
+  - crates/betterlite-guardrails/src/cisco_redaction/mcp.rs
+  - crates/betterlite-guardrails/src/cisco_redaction/tests.rs
+  - crates/betterlite-guardrails/src/cisco_verdict_enforcement.rs
+  - crates/betterlite-guardrails/src/cisco_verdict_enforcement/finalize/tests.rs
+  - crates/betterlite-guardrails/src/cisco_verdict_enforcement/logging.rs
+  - crates/betterlite-guardrails/src/cisco_verdict_enforcement/metadata/tests.rs
+  - crates/betterlite-guardrails/src/cisco_verdict_enforcement/support.rs
+  - crates/betterlite-guardrails/src/cisco_verdict_enforcement/tests.rs
+  - crates/betterlite-guardrails/src/cisco_verdict_enforcement/verdict_resolution.rs
+  - crates/betterlite-guardrails/src/content_filter/competitor_intent_base/classify_ambiguous/tests.rs
+  - crates/betterlite-mcp/src/envelope/tests.rs
+  - crates/betterlite-prompts/src/factory.rs
+  - tools/oracle/src/http/browser_flow/tests.rs
   - .ast-grep/rules/no-padded-one-line-functions.yml
   - .ast-grep/rules/no-impl-trait-arguments.yml
   - .ast-grep/rules/no-unnamed-into.yml
