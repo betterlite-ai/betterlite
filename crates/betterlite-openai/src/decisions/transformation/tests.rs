@@ -348,6 +348,7 @@ fn systemone_request_wire_omits_a_question_with_no_criteria() {
     let request = request_with(vec![predicate_question("a")]);
     let built = ir_to_systemone_request("systemone-1", &request).unwrap();
     let payload = serde_json::to_value(RequestWire::from(&built)).unwrap();
+    assert_eq!(payload["questions"]["a"]["type"], "noul");
     assert!(payload["questions"]["a"].get("criteria").is_none());
 }
 
@@ -361,6 +362,7 @@ fn systemone_request_wire_omits_a_question_with_no_instructions() {
     });
     let built = ir_to_systemone_request("systemone-1", &request_with(vec![question])).unwrap();
     let payload = serde_json::to_value(RequestWire::from(&built)).unwrap();
+    assert_eq!(payload["questions"]["a"]["type"], "noul");
     assert!(payload["questions"]["a"].get("instructions").is_none());
 }
 
