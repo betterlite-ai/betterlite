@@ -1,0 +1,8 @@
+kind: helper
+name: cache-settings-secrets-parse-stored-invalid
+call:
+  b4306:
+    function: parse_stored
+    value: "{not valid"
+env: {}
+compare: {ignore: []}

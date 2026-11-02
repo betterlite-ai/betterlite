@@ -1,0 +1,8 @@
+kind: helper
+name: cache-settings-secrets-has-target-string
+call:
+  b4306:
+    function: has_target
+    value: "host"
+env: {}
+compare: {ignore: []}
