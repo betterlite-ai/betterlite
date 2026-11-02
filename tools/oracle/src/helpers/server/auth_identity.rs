@@ -1,12 +1,16 @@
 use betterlite_auth::auth_identity::errors::AuthError;
 use betterlite_auth::auth_identity::records::{
     CredentialRef, EndUserIdentity, NetworkContext, OrganizationIdentity, Principal,
-    ProjectIdentity, TeamIdentity, UserIdentity,
+    ProjectIdentity, SourceKey, TeamIdentity, UserIdentity,
 };
 use betterlite_auth::auth_identity::roles::{
-    AuthMethod, PrincipalType, TeamRole, effective_user_role, map_role, team_role,
+    AuthMethod, PrincipalType, TeamRole, effective_user_role, get_user_role, is_user_proxy_admin,
+    map_role, team_role,
 };
+use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use serde::Deserialize;
+
+use crate::compare::helper::HelperError;
 
 pub(crate) struct Op;
 
@@ -23,6 +27,7 @@ pub(crate) enum Input {
 #[serde(deny_unknown_fields)]
 pub(crate) struct RoleInput {
     user_role: Option<String>,
+    user_present: bool,
 }
 
 #[derive(Deserialize)]
@@ -52,21 +57,52 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         match input {
-            Input::Role(fields) => Ok(run_role(fields)),
+            Input::Role(fields) => run_role(fields),
             Input::Records(fields) => Ok(run_records(fields)),
-            Input::Principal(fields) => Ok(run_principal(fields)),
+            Input::Principal(fields) => run_principal(fields),
             Input::Error(fields) => Ok(run_error(fields)),
         }
     }
 }
 
-fn run_role(fields: &RoleInput) -> serde_json::Value {
-    let value = fields.user_role.as_deref();
+fn serialization_error(message: String) -> Box<HelperError> {
+    Box::new(HelperError {
+        class: "SerializationError".to_owned(),
+        status: None,
+        error_type: None,
+        param: None,
+        code: None,
+        message,
+    })
+}
+
+fn user_row(fields: &RoleInput) -> Result<Option<LiteLLMUserTable>, Box<HelperError>> {
+    fields
+        .user_present
+        .then(|| {
+            serde_json::from_value(serde_json::json!({
+                "user_id": "u1",
+                "user_role": fields.user_role,
+            }))
+        })
+        .transpose()
+        .map_err(|error| serialization_error(error.to_string()))
+}
+
+fn role_fields(value: Option<&str>, user: Option<&LiteLLMUserTable>) -> serde_json::Value {
     serde_json::json!({
         "map_role": map_role(value),
         "team_role": team_role(value),
         "effective_user_role": effective_user_role(value),
+        "get_user_role": get_user_role(user),
+        "is_user_proxy_admin": is_user_proxy_admin(user),
     })
+}
+
+fn run_role(fields: &RoleInput) -> crate::helpers::HelperResult {
+    let user = user_row(fields)?;
+    let value = fields.user_role.as_deref();
+    Ok(role_fields(value, user.as_ref()))
 }
 
 fn run_records(fields: &RecordsInput) -> serde_json::Value {
@@ -104,13 +140,25 @@ fn run_records(fields: &RecordsInput) -> serde_json::Value {
     })
 }
 
-fn run_principal(fields: &PrincipalInput) -> serde_json::Value {
-    let principal = Principal::new(
-        PrincipalType::Human,
-        fields.subject.clone(),
-        AuthMethod::ApiKey,
-    );
-    serde_json::to_value(&principal).unwrap_or(serde_json::Value::Null)
+fn run_principal(fields: &PrincipalInput) -> crate::helpers::HelperResult {
+    let principal = Principal {
+        principal_type: PrincipalType::Human,
+        subject: fields.subject.clone(),
+        issuer: None,
+        audience: Vec::new(),
+        user: None,
+        organization: None,
+        teams: Vec::new(),
+        project: None,
+        end_user: None,
+        roles: Vec::new(),
+        scopes: Vec::new(),
+        auth_method: AuthMethod::ApiKey,
+        credential_ref: CredentialRef::default(),
+        network: NetworkContext::default(),
+        source_key: SourceKey::default(),
+    };
+    serde_json::to_value(&principal).map_err(|error| serialization_error(error.to_string()))
 }
 
 fn run_error(fields: &ErrorInput) -> serde_json::Value {

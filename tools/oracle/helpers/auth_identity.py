@@ -1,7 +1,12 @@
 from typing import Literal, TypedDict, cast
 
+from litellm.models.user import LiteLLM_UserTable
 from litellm.proxy._types import ProxyException
-from litellm.proxy.auth.auth_checks import effective_user_role
+from litellm.proxy.auth.auth_checks import (
+    _get_user_role,  # pyright: ignore[reportPrivateUsage]
+    _is_user_proxy_admin,  # pyright: ignore[reportPrivateUsage]
+    effective_user_role,
+)
 from litellm.proxy.auth.auth_method import AuthMethod
 from litellm.proxy.auth.network import NetworkContext
 from litellm.proxy.auth.resolvers.exceptions import (
@@ -27,6 +32,7 @@ from litellm.types.proxy.auth.auth_checks import UserNotFoundError
 class RoleInput(TypedDict):
     aspect: Literal["role"]
     user_role: str | None
+    user_present: bool
 
 
 class RecordsInput(TypedDict):
@@ -81,10 +87,14 @@ Input = RoleInput | RecordsInput | PrincipalInput | ErrorInput
 def _run_role(fields: RoleInput) -> dict[str, object]:
     value = fields["user_role"]
     role = map_role(value)
+    user_obj = LiteLLM_UserTable(user_id="u1", user_role=value) if fields["user_present"] else None
+    user_role = _get_user_role(user_obj)
     return {
         "map_role": role.value if role is not None else None,
         "team_role": team_role(value).value,
         "effective_user_role": effective_user_role(value).value,
+        "get_user_role": user_role.value if user_role is not None else None,
+        "is_user_proxy_admin": _is_user_proxy_admin(user_obj),
     }
 
 
