@@ -72,6 +72,7 @@ fn credentials_cases(#[case] case: u8) { match case {
     assert!(!is_openai_backed_api_base("https://").expect("missing host, not an error"));
     assert!(!is_openai_backed_api_base("api.openai.com/v1").expect("scheme-less, not an error"));
     assert!(is_openai_backed_api_base("https://api.openai.com:99999/v1").expect("out-of-range port, host still extracted"));
+    assert!(!is_openai_backed_api_base("https://api.openai.com:12xyz/v1").expect("non-digit port, host not extracted"));
     assert!(matches!(is_openai_backed_api_base("http://[::1"), Err(CredentialsError::InvalidApiBase(_))));
 },
 4 => {
