@@ -50,85 +50,59 @@ where
     (result, fs::read_to_string(log.path()).unwrap())
 }
 
-pub(crate) struct MockSink {
-    calls: Mutex<Vec<SinkCall>>,
-    fails: bool,
+macro_rules! define_mock {
+    ($name:ident, $trait:ident, $call:ty, $failure:literal, ($($arg:ident: $ty:ty),+), $tuple:expr) => {
+        pub(crate) struct $name {
+            calls: Mutex<Vec<$call>>,
+            fails: bool,
+        }
+
+        impl $name {
+            pub(crate) fn new(fails: bool) -> Arc<Self> {
+                Arc::new(Self {
+                    calls: Mutex::new(Vec::new()),
+                    fails,
+                })
+            }
+
+            pub(crate) fn calls(&self) -> Vec<$call> {
+                self.calls
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .clone()
+            }
+        }
+
+        impl $trait for $name {
+            fn record(&self, $($arg: $ty),+) -> Result<(), BoxError> {
+                record_or_fail(&self.calls, $tuple, self.fails, $failure)
+            }
+        }
+    };
 }
 
-impl MockSink {
-    pub(crate) fn new(fails: bool) -> Arc<Self> {
-        Arc::new(Self {
-            calls: Mutex::new(Vec::new()),
-            fails,
-        })
-    }
+define_mock!(
+    MockSink,
+    GatewayRequestSink,
+    SinkCall,
+    "mock sink failure",
+    (category: BillableCategory, route: &str, status_code: StatusCode),
+    (category, route.to_owned(), status_code)
+);
 
-    pub(crate) fn calls(&self) -> Vec<SinkCall> {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-}
-
-impl GatewayRequestSink for MockSink {
-    fn record(
-        &self,
+define_mock!(
+    MockRecorder,
+    BillingRecorder,
+    RecorderCall,
+    "mock recorder failure",
+    (
         category: BillableCategory,
         route: &str,
         status_code: StatusCode,
-    ) -> Result<(), BoxError> {
-        record_or_fail(
-            &self.calls,
-            (category, route.to_owned(), status_code),
-            self.fails,
-            "mock sink failure",
-        )
-    }
-}
-
-pub(crate) struct MockRecorder {
-    calls: Mutex<Vec<RecorderCall>>,
-    fails: bool,
-}
-
-impl MockRecorder {
-    pub(crate) fn new(fails: bool) -> Arc<Self> {
-        Arc::new(Self {
-            calls: Mutex::new(Vec::new()),
-            fails,
-        })
-    }
-
-    pub(crate) fn calls(&self) -> Vec<RecorderCall> {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-}
-
-impl BillingRecorder for MockRecorder {
-    fn record(
-        &self,
-        category: BillableCategory,
-        route: &str,
-        status_code: StatusCode,
-        model_id: Option<&str>,
-    ) -> Result<(), BoxError> {
-        record_or_fail(
-            &self.calls,
-            (
-                category,
-                route.to_owned(),
-                status_code,
-                model_id.map(str::to_owned),
-            ),
-            self.fails,
-            "mock recorder failure",
-        )
-    }
-}
+        model_id: Option<&str>
+    ),
+    (category, route.to_owned(), status_code, model_id.map(str::to_owned))
+);
 
 pub(crate) fn sink_factory(sink: Arc<MockSink>) -> SinkFactory {
     Box::new(move || {
