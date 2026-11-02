@@ -14,3 +14,20 @@ deviations:
       without a request, never reaches a mapper there, and the status betterlite answers is the one LiteLLM answers on
       that path.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L41-L64
+  - what: >-
+      map_cloudflare_exception keeps its original two-argument signature instead of gaining the status_code
+      parameter the task describes, with a separate map_cloudflare_with_status added alongside it for the new
+      status-carrying tests and the oracle. OllamaOriginalException::Text keeps its original shape instead of
+      gaining a status_code field, with a separate TextStatus variant added for the same callers. native.rs's
+      dispatch table, which is the only production caller of either function, still calls the old
+      map_cloudflare_exception(error_str, model) and still builds OllamaOriginalException::Text, so cloudflare's
+      and ollama's live request path still answers the class default on every branch, whatever status the provider
+      sent.
+    why: >-
+      native.rs sits outside this task's scope.paths. Changing either signature in place, the way the task
+      describes, would have left native.rs's one call site for each function failing to compile, and native.rs is
+      not a file this task may touch. Adding the status-carrying path alongside the untouched original keeps the
+      crate building and lets the new tests and oracle cases exercise the real mapper logic, but it leaves the
+      production gap open until native.rs is back in scope, which B5095's planned move onto dispatch.rs will need
+      to close for both providers.
+    link: ""
