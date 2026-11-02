@@ -348,50 +348,30 @@ async fn check_existing_group_id_preserved(client: &Client) {
     .await;
 }
 
-async fn check_stopped_future_only_unknown_backfill(client: &Client) {
-    exec_params(
-        client,
-        r#"INSERT INTO "LiteLLM_ShadowEvalJob" (id, api_key_id, router_name, judge_model, shadow_percentage, max_turns, group_id, stopped_at, ends_at) VALUES ($1, $2, $3, $4, $5, $6, $1, now(), now() + interval '1 hour')"#,
-        &[
-            &"job-stop-future",
-            &"key-stop-future",
-            &"router-a",
-            &"judge-a",
-            &10.0_f64,
-            &5_i32,
-        ],
-    )
-    .await;
-    check_shadow_eval_scalar_backfill(
-        client,
-        "job-stop-future",
-        ADD_SHADOW_EVAL_STOPPED_BY.directory,
-        "stopped_by",
-        Some("unknown"),
-    )
-    .await;
+enum StoppedAtDirection {
+    Future,
+    Expired,
 }
 
-async fn check_stopped_equal_now_or_expired_unchanged(client: &Client) {
+async fn check_stopped_at_offset_backfill(client: &Client, direction: StoppedAtDirection) {
+    let (id, ends_at_offset, expected) = match direction {
+        StoppedAtDirection::Future => ("job-stop-future", "+ interval '1 hour'", Some("unknown")),
+        StoppedAtDirection::Expired => ("job-stop-expired", "- interval '1 hour'", None),
+    };
     exec_params(
         client,
-        r#"INSERT INTO "LiteLLM_ShadowEvalJob" (id, api_key_id, router_name, judge_model, shadow_percentage, max_turns, group_id, stopped_at, ends_at) VALUES ($1, $2, $3, $4, $5, $6, $1, now(), now() - interval '1 hour')"#,
-        &[
-            &"job-stop-expired",
-            &"key-stop-expired",
-            &"router-a",
-            &"judge-a",
-            &10.0_f64,
-            &5_i32,
-        ],
+        &format!(
+            r#"INSERT INTO "LiteLLM_ShadowEvalJob" (id, api_key_id, router_name, judge_model, shadow_percentage, max_turns, group_id, stopped_at, ends_at) VALUES ($1, $2, $3, $4, $5, $6, $1, now(), now() {ends_at_offset})"#
+        ),
+        &[&id, &"key-stop", &"router-a", &"judge-a", &10.0_f64, &5_i32],
     )
     .await;
     check_shadow_eval_scalar_backfill(
         client,
-        "job-stop-expired",
+        id,
         ADD_SHADOW_EVAL_STOPPED_BY.directory,
         "stopped_by",
-        None,
+        expected,
     )
     .await;
 }
@@ -413,12 +393,14 @@ async fn run_shadow_history_check(client: &Client, cohort: ShadowHistoryCohort) 
         }
         GroupIdNullFillBeforeNotNull => Box::pin(check_group_id_null_fill_before_not_null(client)),
         ExistingGroupIdPreserved => Box::pin(check_existing_group_id_preserved(client)),
-        StoppedFutureOnlyUnknownBackfill => {
-            Box::pin(check_stopped_future_only_unknown_backfill(client))
-        }
-        StoppedEqualNowOrExpiredUnchanged => {
-            Box::pin(check_stopped_equal_now_or_expired_unchanged(client))
-        }
+        StoppedFutureOnlyUnknownBackfill => Box::pin(check_stopped_at_offset_backfill(
+            client,
+            StoppedAtDirection::Future,
+        )),
+        StoppedEqualNowOrExpiredUnchanged => Box::pin(check_stopped_at_offset_backfill(
+            client,
+            StoppedAtDirection::Expired,
+        )),
         BudgetAndComparisonCostDefaults => {
             Box::pin(check_budget_and_comparison_cost_defaults(client))
         }

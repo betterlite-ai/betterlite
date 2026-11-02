@@ -305,92 +305,89 @@ async fn check_observation_text_data_false_conflict_and_order_indexes(client: &C
     .await;
 }
 
+async fn check_session_classifier_and_baseline_defaults(client: &Client) {
+    let specs = [
+        float8_default("classifier_cost", "0"),
+        int4_zero("classifier_cost_recorded_turns"),
+        empty_jsonb("baseline_models"),
+    ];
+    check_autorouter_session_defaults(client, &specs).await;
+}
+
+async fn check_savings_estimate_coverage_defaults(client: &Client) {
+    let mut specs = vec![int4_zero("savings_estimated_turns")];
+    specs.push(float8_default("savings_estimated_actual_spend", "0"));
+    specs.push(float8_default("savings_estimated_saved_spend", "0"));
+    specs.push(empty_jsonb("savings_estimated_baseline_models"));
+    check_autorouter_session_defaults(client, &specs).await;
+}
+
 async fn check_user_session_all_counter_json_and_spend_defaults(client: &Client) {
+    let specs = [
+        empty_jsonb("models"),
+        int4_zero("turns"),
+        int4_zero("unordered_turns"),
+        int4_zero("covered_turns"),
+        int4_zero("cache_hits"),
+        int4_zero("same_model_turns"),
+        int4_zero("same_model_hits"),
+        int4_zero("first_visit_turns"),
+        int4_zero("first_visit_hits"),
+        int4_zero("return_turns"),
+        int4_zero("return_hits"),
+        int4_zero("return_expired_misses"),
+        int4_zero("return_within_ttl_misses"),
+        int4_zero("ttl_5m_turns"),
+        int4_zero("ttl_1h_turns"),
+        int8_zero("total_tokens"),
+        float8_default("spend", "0"),
+        float8_default("saved_spend", "0"),
+        int4_zero("savings_estimated_turns"),
+        float8_default("savings_estimated_actual_spend", "0"),
+        float8_default("savings_estimated_saved_spend", "0"),
+        empty_jsonb("savings_estimated_baseline_models"),
+        float8_default("classifier_cost", "0"),
+        int4_zero("classifier_cost_recorded_turns"),
+        empty_jsonb("tier_turns"),
+        empty_jsonb("baseline_models"),
+    ];
     insert_then_assert_columns(
         client,
         r#"INSERT INTO "LiteLLM_AutoRouterUserSession" (user_id, api_key, session_id, router_name, router_type, first_turn_at, last_turn_at, last_model) VALUES ($1, $2, 'session-a', 'router-a', 'classifier', now(), now(), 'model-a')"#,
         &[&"user-a", &"key-a"],
         "LiteLLM_AutoRouterUserSession",
-        &[
-            empty_jsonb("models"),
-            int4_zero("turns"),
-            int4_zero("unordered_turns"),
-            int4_zero("covered_turns"),
-            int4_zero("cache_hits"),
-            int4_zero("same_model_turns"),
-            int4_zero("same_model_hits"),
-            int4_zero("first_visit_turns"),
-            int4_zero("first_visit_hits"),
-            int4_zero("return_turns"),
-            int4_zero("return_hits"),
-            int4_zero("return_expired_misses"),
-            int4_zero("return_within_ttl_misses"),
-            int4_zero("ttl_5m_turns"),
-            int4_zero("ttl_1h_turns"),
-            int8_zero("total_tokens"),
-            float8_default("spend", "0"),
-            float8_default("saved_spend", "0"),
-            int4_zero("savings_estimated_turns"),
-            float8_default("savings_estimated_actual_spend", "0"),
-            float8_default("savings_estimated_saved_spend", "0"),
-            empty_jsonb("savings_estimated_baseline_models"),
-            float8_default("classifier_cost", "0"),
-            int4_zero("classifier_cost_recorded_turns"),
-            empty_jsonb("tier_turns"),
-            empty_jsonb("baseline_models"),
-        ],
+        &specs,
     )
     .await;
 }
 
 async fn check_global_ten_bigint_five_spend_defaults(client: &Client) {
+    let mut specs = vec![
+        int8_zero("prompt_tokens"),
+        int8_zero("completion_tokens"),
+        int8_zero("cache_read_input_tokens"),
+        int8_zero("cache_creation_input_tokens"),
+        int8_zero("compression_saved_tokens"),
+        int8_zero("api_requests"),
+        int8_zero("successful_requests"),
+        int8_zero("failed_requests"),
+        int8_zero("total_response_time_ms"),
+        int8_zero("timed_requests"),
+    ];
+    specs.push(float8_default("compression_savings_spend", "0.0"));
+    specs.push(float8_default("prompt_caching_savings_spend", "0.0"));
+    specs.push(float8_default(
+        "gateway_injected_caching_savings_spend",
+        "0.0",
+    ));
+    specs.push(float8_default("autorouter_savings_spend", "0.0"));
+    specs.push(float8_default("spend", "0.0"));
     insert_then_assert_columns(
         client,
         r#"INSERT INTO "LiteLLM_DailyGlobalSpend" (id, date, updated_at) VALUES ($1, 'date-a', now())"#,
         &[&"global-a"],
         "LiteLLM_DailyGlobalSpend",
-        &[
-            int8_zero("prompt_tokens"),
-            int8_zero("completion_tokens"),
-            int8_zero("cache_read_input_tokens"),
-            int8_zero("cache_creation_input_tokens"),
-            int8_zero("compression_saved_tokens"),
-            int8_zero("api_requests"),
-            int8_zero("successful_requests"),
-            int8_zero("failed_requests"),
-            int8_zero("total_response_time_ms"),
-            int8_zero("timed_requests"),
-            float8_default("compression_savings_spend", "0.0"),
-            float8_default("prompt_caching_savings_spend", "0.0"),
-            float8_default("gateway_injected_caching_savings_spend", "0.0"),
-            float8_default("autorouter_savings_spend", "0.0"),
-            float8_default("spend", "0.0"),
-        ],
-    )
-    .await;
-}
-
-async fn check_session_classifier_and_baseline_defaults(client: &Client) {
-    check_autorouter_session_defaults(
-        client,
-        &[
-            float8_default("classifier_cost", "0"),
-            int4_zero("classifier_cost_recorded_turns"),
-            empty_jsonb("baseline_models"),
-        ],
-    )
-    .await;
-}
-
-async fn check_savings_estimate_coverage_defaults(client: &Client) {
-    check_autorouter_session_defaults(
-        client,
-        &[
-            int4_zero("savings_estimated_turns"),
-            float8_default("savings_estimated_actual_spend", "0"),
-            float8_default("savings_estimated_saved_spend", "0"),
-            empty_jsonb("savings_estimated_baseline_models"),
-        ],
+        &specs,
     )
     .await;
 }

@@ -280,11 +280,8 @@ async fn scalar_opt_bool(
     sql: &str,
     params: &[&(dyn ToSql + Sync)],
 ) -> Option<bool> {
-    client
-        .query_opt(sql, params)
-        .await
-        .unwrap()
-        .map(|row| row.get(0))
+    let maybe_row = client.query_opt(sql, params).await.unwrap();
+    maybe_row.map(|row| row.get(0))
 }
 
 struct ColumnInfo {
@@ -328,13 +325,12 @@ async fn query_one_row(client: &Client, sql: &str, params: &[&(dyn ToSql + Sync)
 }
 
 async fn string_rows(client: &Client, sql: &str, params: &[&(dyn ToSql + Sync)]) -> Vec<String> {
-    client
-        .query(sql, params)
-        .await
-        .unwrap()
-        .iter()
-        .map(|row| row.get(0))
-        .collect()
+    let rows = client.query(sql, params).await.unwrap();
+    let mut values = Vec::with_capacity(rows.len());
+    for row in &rows {
+        values.push(row.get(0));
+    }
+    values
 }
 
 struct IndexFacts {
