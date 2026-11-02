@@ -1,0 +1,63 @@
+use serde::Deserialize;
+use serde_json::{Map, Value};
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum ReplyError {
+    #[error("Error in response object format")]
+    MissingResponseFormat,
+    #[error("{0}")]
+    MalformedChoices(#[from] serde_json::Error),
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct TextCompletionChoice {
+    text: String,
+    finish_reason: Value,
+    #[serde(default)]
+    logprobs: Option<Value>,
+}
+
+impl TextCompletionChoice {
+    fn into_chat_choice(self, index: usize) -> Value {
+        let mut message = Map::new();
+        message.insert("role".to_owned(), Value::String("assistant".to_owned()));
+        message.insert("content".to_owned(), Value::String(self.text));
+        let mut choice = Map::new();
+        choice.insert("finish_reason".to_owned(), self.finish_reason);
+        choice.insert("index".to_owned(), Value::from(index));
+        choice.insert("message".to_owned(), Value::Object(message));
+        choice.insert("logprobs".to_owned(), self.logprobs.unwrap_or(Value::Null));
+        Value::Object(choice)
+    }
+}
+
+// Rebuilds choices with a sequential index, since the text completion response's own index is ignored.
+pub fn to_chat_model_response(
+    response_object: Option<Value>,
+    model_response_object: Option<Map<String, Value>>,
+) -> Result<Map<String, Value>, ReplyError> {
+    let (Some(response), Some(mut target)) = (response_object, model_response_object) else {
+        return Err(ReplyError::MissingResponseFormat);
+    };
+    let choices_value = response.get("choices").cloned().unwrap_or(Value::Null);
+    let choices: Vec<TextCompletionChoice> = serde_json::from_value(choices_value)?;
+    let chat_choices = choices
+        .into_iter()
+        .enumerate()
+        .map(|(index, choice)| choice.into_chat_choice(index))
+        .collect();
+    target.insert("choices".to_owned(), Value::Array(chat_choices));
+    for key in ["usage", "id", "model"] {
+        if let Some(value) = response.get(key) {
+            target.insert(key.to_owned(), value.clone());
+        }
+    }
+    let mut hidden_params = match target.remove("_hidden_params") {
+        Some(Value::Object(existing)) => existing,
+        _ => Map::new(),
+    };
+    hidden_params.insert("original_response".to_owned(), response);
+    target.insert("_hidden_params".to_owned(), Value::Object(hidden_params));
+    Ok(target)
+}
