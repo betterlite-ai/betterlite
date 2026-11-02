@@ -50,6 +50,30 @@ fn parses_a_file_field_into_an_upload_document() {
 }
 
 #[test]
+fn closing_boundary_with_no_trailing_crlf_still_ends_the_file() {
+    // The closing boundary line's second hyphen can be the body's literal last byte, with no CRLF after it, so the last part's data must not keep the boundary line.
+    let body = b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.pdf\"\r\n\r\ndata\r\n--B--".to_vec();
+    let form = parse_body(&body, "multipart/form-data; boundary=B").unwrap();
+    let (document, _) = build(&form).unwrap();
+    let Some(OcrDocument::Upload { bytes, .. }) = document else {
+        panic!("expected an upload document");
+    };
+    assert_eq!(bytes, b"data");
+}
+
+#[test]
+fn a_data_line_that_only_starts_with_the_boundary_stays_in_the_content() {
+    // "--Bxyz" merely starts with the dash-boundary "--B"; a real boundary line needs dash_boundary followed by CRLF or "--", so this line is ordinary content.
+    let body = b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.pdf\"\r\n\r\ndata\r\n--Bxyz\r\nmore\r\n--B--\r\n".to_vec();
+    let form = parse_body(&body, "multipart/form-data; boundary=B").unwrap();
+    let (document, _) = build(&form).unwrap();
+    let Some(OcrDocument::Upload { bytes, .. }) = document else {
+        panic!("expected an upload document");
+    };
+    assert_eq!(bytes, b"data\r\n--Bxyz\r\nmore");
+}
+
+#[test]
 fn strips_mime_type_parameters() {
     let mut body = Vec::new();
     body.extend_from_slice(
@@ -200,6 +224,23 @@ fn non_utf8_text_field_falls_back_to_latin1() {
 
 #[test]
 fn charset_param_picks_the_decoding() {
+    // 0xE9 under windows-1251 is "\u{439}" (й), while the utf-8-then-latin-1 fallback path would give "\u{e9}": a mutant that ignores charset_param and always decodes as utf-8 still fails to decode 0xE9, but lands on the wrong character.
+    let mut body = Vec::new();
+    body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.pdf\"\r\nContent-Type: application/pdf\r\n\r\ndata\r\n");
+    body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n");
+    body.extend_from_slice(&[0xE9]);
+    body.extend_from_slice(b"\r\n--B--\r\n");
+    let form = parse_body(
+        &body,
+        "multipart/form-data; boundary=B; charset=windows-1251",
+    )
+    .unwrap();
+    let (_, fields) = build(&form).unwrap();
+    assert_eq!(fields.get("model"), Some(&Json::Text("\u{439}".to_owned())));
+}
+
+#[test]
+fn iso_8859_1_decodes_as_true_latin1_not_windows_1252() {
     // 0x80 is invalid UTF-8 either way, but encoding_rs's windows-1252 alias for "iso-8859-1" decodes it as U+20AC rather than true latin-1's U+0080.
     let mut body = Vec::new();
     body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.pdf\"\r\nContent-Type: application/pdf\r\n\r\ndata\r\n");
@@ -209,6 +250,51 @@ fn charset_param_picks_the_decoding() {
     let form = parse_body(&body, "multipart/form-data; boundary=B; charset=iso-8859-1").unwrap();
     let (_, fields) = build(&form).unwrap();
     assert_eq!(fields.get("model"), Some(&Json::Text("\u{80}".to_owned())));
+}
+
+#[test]
+fn iso_8859_9_keeps_c1_controls_byte_identical_not_windows_1254() {
+    // 0x80 is invalid UTF-8 either way, but encoding_rs's windows-1254 alias for "iso-8859-9" leaves it undefined rather than true iso8859_9's byte-identical U+0080.
+    let mut body = Vec::new();
+    body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.pdf\"\r\nContent-Type: application/pdf\r\n\r\ndata\r\n");
+    body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n");
+    body.extend_from_slice(&[0x80]);
+    body.extend_from_slice(b"\r\n--B--\r\n");
+    let form = parse_body(&body, "multipart/form-data; boundary=B; charset=iso-8859-9").unwrap();
+    let (_, fields) = build(&form).unwrap();
+    assert_eq!(fields.get("model"), Some(&Json::Text("\u{80}".to_owned())));
+}
+
+#[test]
+fn tis_620_leaves_0xa0_undefined_unlike_iso_8859_11() {
+    // iso8859-11 decodes 0xA0 as U+00A0, but tis-620 (a distinct Python codec, not an alias) has no mapping for it and falls back to latin-1 for the whole value.
+    let mut body = Vec::new();
+    body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.pdf\"\r\nContent-Type: application/pdf\r\n\r\ndata\r\n");
+    body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n");
+    body.extend_from_slice(&[0xA0, 0xA1]);
+    body.extend_from_slice(b"\r\n--B--\r\n");
+    let form = parse_body(&body, "multipart/form-data; boundary=B; charset=tis-620").unwrap();
+    let (_, fields) = build(&form).unwrap();
+    assert_eq!(
+        fields.get("model"),
+        Some(&Json::Text("\u{a0}\u{a1}".to_owned()))
+    );
+}
+
+#[test]
+fn gb2312_rejects_gbk_only_bytes() {
+    // 0x81 0x40 decodes as GBK's "丂" through encoding_rs's gb2312 label, but Python's strict gb2312 codec has no such lead byte and falls back to latin-1.
+    let mut body = Vec::new();
+    body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.pdf\"\r\nContent-Type: application/pdf\r\n\r\ndata\r\n");
+    body.extend_from_slice(b"--B\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n");
+    body.extend_from_slice(&[0x81, 0x40]);
+    body.extend_from_slice(b"\r\n--B--\r\n");
+    let form = parse_body(&body, "multipart/form-data; boundary=B; charset=gb2312").unwrap();
+    let (_, fields) = build(&form).unwrap();
+    assert_eq!(
+        fields.get("model"),
+        Some(&Json::Text("\u{81}\u{40}".to_owned()))
+    );
 }
 
 #[test]
@@ -306,6 +392,13 @@ fn one_thousand_fields_are_accepted() {
 #[test]
 fn one_thousand_and_one_fields_are_rejected() {
     let body = parts_body("B", 1001, None);
+    parse_body(&body, "multipart/form-data; boundary=B").unwrap_err();
+}
+
+#[test]
+fn well_past_the_combined_cap_is_rejected_without_collecting_every_part() {
+    // split_items itself bails once it holds more than MAX_FIELDS + MAX_FILES items, rather than collecting all 2001 parts before parse_body's own counters ever run.
+    let body = parts_body("B", 2001, None);
     parse_body(&body, "multipart/form-data; boundary=B").unwrap_err();
 }
 
@@ -411,4 +504,25 @@ fn escaped_quote_in_filename_is_unescaped() {
         panic!("expected an upload document");
     };
     assert_eq!(filename, Some("a\"b.pdf".to_owned()));
+}
+
+#[test]
+fn semicolon_inside_quoted_filename_does_not_end_the_parameter() {
+    // parse_options_header only splits on a ';' outside a quoted string, so "report;v2.pdf" stays one filename rather than being cut at the first semicolon.
+    let body = b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"report;v2.pdf\"\r\n\r\ndata\r\n--B--\r\n".to_vec();
+    let form = parse_body(&body, "multipart/form-data; boundary=B").unwrap();
+    let (document, _) = build(&form).unwrap();
+    let Some(OcrDocument::Upload { filename, .. }) = document else {
+        panic!("expected an upload document");
+    };
+    assert_eq!(filename, Some("report;v2.pdf".to_owned()));
+}
+
+#[test]
+fn disposition_param_key_is_case_and_space_insensitive() {
+    // parse_options_header lowercases and trims each parameter key, so "NAME" and extra spaces around '=' are accepted the same as "name".
+    let body = b"--B\r\nContent-Disposition: form-data; NAME = \"file\"; filename=\"a.pdf\"\r\n\r\ndata\r\n--B--\r\n".to_vec();
+    let form = parse_body(&body, "multipart/form-data; boundary=B").unwrap();
+    let (document, _) = build(&form).unwrap();
+    assert!(document.is_some());
 }
