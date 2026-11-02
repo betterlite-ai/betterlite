@@ -1637,6 +1637,7 @@ name = "betterlite-server"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "betterlite-auth",
  "betterlite-billing",
  "betterlite-config",
  "betterlite-error",
