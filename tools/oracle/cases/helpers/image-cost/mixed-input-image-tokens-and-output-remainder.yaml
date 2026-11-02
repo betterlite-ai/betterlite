@@ -1,0 +1,22 @@
+kind: helper
+name: mixed-input-image-tokens-and-output-remainder
+call:
+  image_cost:
+    operation: usage
+    model: image-cost-mixed-model
+    model_info:
+      input_cost_per_token: 0.00001
+      output_cost_per_token: 0.00002
+      input_cost_per_image_token: 0.00003
+      output_cost_per_image_token: 0.00004
+    usage:
+      input_tokens: 30
+      output_tokens: 25
+      total_tokens: 55
+      input_tokens_details:
+        text_tokens: 20
+        image_tokens: 10
+      completion_tokens_details:
+        image_tokens: 15
+compare: {ignore: []}
+env: {}
