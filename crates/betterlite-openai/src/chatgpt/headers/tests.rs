@@ -6,12 +6,13 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Map, Value, json};
 
 use super::session::{
-    LitellmParamsInput, ModelDumpOutcome, ParamsRecord, SessionIdentity, ensure_chatgpt_session_id,
-    get_chatgpt_session_id,
+    LitellmParamsInput, ModelDumpOutcome, ParamsRecord, SessionIdentity, UuidSessionIdentity,
+    ensure_chatgpt_session_id, get_chatgpt_session_id,
 };
 use super::{
-    DEFAULT_ORIGINATOR, DEFAULT_USER_AGENT, PlatformEnvironment, get_chatgpt_default_headers,
-    get_chatgpt_instructions, get_chatgpt_originator, get_chatgpt_user_agent,
+    DEFAULT_ORIGINATOR, DEFAULT_USER_AGENT, PlatformEnvironment, SystemPlatformEnvironment,
+    get_chatgpt_default_headers, get_chatgpt_instructions, get_chatgpt_originator,
+    get_chatgpt_user_agent,
 };
 
 struct FakePlatform;
@@ -119,6 +120,20 @@ fn default_user_agent_matches_the_pinned_fallback() {
         DEFAULT_USER_AGENT,
         "codex_cli_rs/0.0.0 (Unknown 0; unknown) unknown"
     );
+}
+
+#[test]
+fn system_platform_environment_reads_the_real_os_release_and_arch() {
+    let platform = SystemPlatformEnvironment;
+    assert_eq!(platform.os_type(), "Linux");
+    assert_eq!(platform.arch(), std::env::consts::ARCH);
+    let uname_release = nix::sys::utsname::uname()
+        .expect("uname succeeds on this platform")
+        .release()
+        .to_str()
+        .expect("release is valid UTF-8")
+        .to_owned();
+    assert_eq!(platform.os_release(), uname_release);
 }
 
 #[test]
@@ -274,4 +289,11 @@ fn ensure_chatgpt_session_id_falls_back_to_the_injected_identity() {
         ensure_chatgpt_session_id(&LitellmParamsInput::Absent, &FakeIdentity("fallback")),
         "fallback"
     );
+}
+
+#[test]
+fn uuid_session_identity_generates_a_random_v4_uuid() {
+    let generated = UuidSessionIdentity.generate();
+    let parsed = uuid::Uuid::parse_str(&generated).expect("a valid uuid string");
+    assert_eq!(parsed.get_version_num(), 4);
 }
