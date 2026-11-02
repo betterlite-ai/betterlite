@@ -1,0 +1,16 @@
+kind: helper
+name: all-zero-usage-requests-flat-fallback
+call:
+  image_cost:
+    operation: openai
+    model: image-cost-flat-fallback-model
+    image_count: 3
+    model_info:
+      output_cost_per_image: 0.04
+    usage:
+      kind: image
+      input_tokens: 0
+      output_tokens: 0
+      total_tokens: 0
+compare: {ignore: []}
+env: {}

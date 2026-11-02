@@ -1,0 +1,15 @@
+kind: helper
+name: default-video-calculator-reads-raw-catalog-without-model-info
+call:
+  duration_cost:
+    operation: video
+    calculator: default
+    model: veo-3
+    duration_seconds: "3"
+    custom_llm_provider: null
+    model_info: null
+    video_resolution: null
+    raw_catalog:
+      output_cost_per_second: "2"
+compare: {ignore: []}
+env: {}

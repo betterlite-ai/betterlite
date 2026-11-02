@@ -1,7 +1,7 @@
 id: B1676
 milestone: M4 keys, spend and management
 title: Price audio, video and wall-clock calls in their declared units
-status: todo
+status: done
 depends_on: [B171, B193, B204, B1668, B1672, B1678]
 file: tasks/B1676-time-and-character-costs.yaml
 covers:
@@ -11,7 +11,7 @@ covers:
   - "litellm/llms/azure/cost_calculation.py"
 parent: B068
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 502

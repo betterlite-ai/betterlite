@@ -1,3 +1,4 @@
+use betterlite_postgres_fixture::connection::{DatabaseNameGenerator, RandomDatabaseName};
 use reqwest::blocking::Client;
 use secrecy::SecretString;
 use std::collections::BTreeMap;
@@ -88,15 +89,25 @@ pub(crate) fn run_group(
 ) -> Result<Vec<bool>, OracleError> {
     let environment =
         <DatabaseEnvironment as clap::Parser>::try_parse_from([env!("CARGO_PKG_NAME")])?;
-    run_group_with_url(options, root, cases, environment.postgres_test_url.as_ref())
+    run_group_with_url(
+        options,
+        root,
+        cases,
+        environment.postgres_test_url.as_ref(),
+        &mut RandomDatabaseName,
+    )
 }
 
-pub(crate) fn run_group_with_url(
+pub(crate) fn run_group_with_url<G>(
     options: &Options,
     root: &Path,
     cases: &[Case],
     configured_url: Option<&SecretString>,
-) -> Result<Vec<bool>, OracleError> {
+    generator: &mut G,
+) -> Result<Vec<bool>, OracleError>
+where
+    G: DatabaseNameGenerator,
+{
     if cases.is_empty() {
         return Err(OracleError::MissingCapture(0));
     }
@@ -107,7 +118,7 @@ pub(crate) fn run_group_with_url(
         .collect::<Vec<_>>();
     let mock = MockProvider::start(MockScript::try_from(upstream_answers.as_slice())?)?;
     let first_case = cases.first().ok_or(OracleError::MissingCapture(0))?;
-    let fixtures = fixtures::provision(cases, configured_url)?;
+    let fixtures = fixtures::provision_with_generator(cases, configured_url, generator)?;
     let operation_result = run_group_capture(GroupCaptureInput {
         options,
         root,
