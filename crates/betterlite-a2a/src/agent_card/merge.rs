@@ -77,7 +77,10 @@ pub fn merge_agent_card(
 fn filtered_capabilities(value: Option<WireValue<Capabilities>>) -> WireValue<Capabilities> {
     let streaming = match value {
         Some(WireValue::Typed(capabilities)) => {
-            capabilities.streaming.flatten().and_then(truthy_wire)
+            capabilities.streaming.flatten().and_then(|value| {
+                let json = serde_json::to_value(&value).ok()?;
+                is_truthy(&json).then_some(value)
+            })
         }
         _ => None,
     };
@@ -151,11 +154,6 @@ where
         .and_then(Option::as_ref)
         .and_then(|value| serde_json::to_value(value).ok())
         .is_some_and(|value| is_truthy(&value))
-}
-
-fn truthy_wire(value: WireValue<bool>) -> Option<WireValue<bool>> {
-    let json = serde_json::to_value(&value).ok()?;
-    is_truthy(&json).then_some(value)
 }
 
 fn valid_suffix(suffix: &str) -> bool {
