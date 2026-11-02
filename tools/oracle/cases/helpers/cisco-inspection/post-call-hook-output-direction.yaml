@@ -1,0 +1,22 @@
+kind: helper
+name: post-call-hook-output-direction
+call:
+  b3762:
+    post_call_hook:
+      settings:
+        api_key: test-key
+        api_base: "https://cisco.test"
+        inspection_type: chat
+        on_flagged_action: block
+        fallback_on_error: block
+        timeout: 5
+      request_data:
+        messages:
+          - {role: user, content: "hello there"}
+      response:
+        choices:
+          - message: {role: assistant, content: "hi back"}
+      answer: {status: 200, headers: {}, body: {is_safe: true}}
+env: {}
+compare:
+  ignore: []
