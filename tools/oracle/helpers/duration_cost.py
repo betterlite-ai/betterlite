@@ -70,9 +70,10 @@ def _run_wall_clock_per_second(input_value: dict[str, Json]) -> Json:
             response_time_ms=None if response_time_ms is None else float(response_time_ms),
         )
     if result is None:
-        return None
+        return {"charged": False}
     prompt_cost, completion_cost = result
     return {
+        "charged": True,
         "prompt_cost": _decimal_str(prompt_cost),
         "completion_cost": _decimal_str(completion_cost),
     }

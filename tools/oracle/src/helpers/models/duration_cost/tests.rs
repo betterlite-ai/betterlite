@@ -51,7 +51,7 @@ fn wall_clock_per_second_an_empty_tiered_table_still_declines() {
         },
     }));
     let output = Op::run(&request).expect("wall clock lookup succeeds");
-    assert!(output.is_null());
+    assert_eq!(output["charged"], false);
 }
 
 #[test]
@@ -68,6 +68,7 @@ fn wall_clock_per_second_zero_token_prices_with_no_tiered_table_charges_the_inpu
         },
     }));
     let output = Op::run(&request).expect("wall clock lookup succeeds");
+    assert_eq!(output["charged"], true);
     assert_eq!(output["prompt_cost"], "0.1");
     assert_eq!(output["completion_cost"], "0");
 }

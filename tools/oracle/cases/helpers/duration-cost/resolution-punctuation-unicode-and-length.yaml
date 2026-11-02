@@ -9,7 +9,7 @@ call:
     custom_llm_provider: null
     model_info:
       output_cost_per_second: "0.1"
-      output_cost_per_second_ã1080p: "0.4"
+      output_cost_per_second_ã1080p: "4"
     video_resolution: "Ã1,080P"
     raw_catalog: null
 compare: {ignore: []}

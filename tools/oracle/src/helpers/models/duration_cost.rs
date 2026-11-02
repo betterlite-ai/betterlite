@@ -136,6 +136,17 @@ fn cost_pair_json(prompt_cost: Decimal, completion_cost: Decimal) -> serde_json:
     })
 }
 
+fn wall_clock_json(result: Option<(Decimal, Decimal)>) -> serde_json::Value {
+    match result {
+        Some((prompt_cost, completion_cost)) => serde_json::json!({
+            "charged": true,
+            "prompt_cost": prompt_cost.normalize().to_string(),
+            "completion_cost": completion_cost.normalize().to_string(),
+        }),
+        None => serde_json::json!({ "charged": false }),
+    }
+}
+
 fn run_inner(input: &Input) -> Result<serde_json::Value, DurationCostError> {
     match input {
         Input::AudioCostPerSecond(fields) => {
@@ -156,11 +167,7 @@ fn run_inner(input: &Input) -> Result<serde_json::Value, DurationCostError> {
                 fields.response_time_ms,
                 &lookup,
             )?;
-            Ok(
-                result.map_or(serde_json::Value::Null, |(prompt_cost, completion_cost)| {
-                    cost_pair_json(prompt_cost, completion_cost)
-                }),
-            )
+            Ok(wall_clock_json(result))
         }
         Input::Video(fields) => run_video(fields),
         Input::CharacterMetric(fields) => {
