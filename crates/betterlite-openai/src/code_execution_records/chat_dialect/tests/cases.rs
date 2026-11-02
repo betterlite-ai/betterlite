@@ -132,7 +132,7 @@ fn build_assistant_message_nests_name_and_arguments_under_function() {
         arguments: "{\"code\": \"1\"}".to_owned(),
     }];
     let message = build_assistant_message(&tool_calls);
-    assert_eq!(message.role, "assistant");
+    assert_eq!(message.role, Role::Assistant);
     let built = &message.tool_calls.unwrap()[0];
     assert_eq!(built.id, "call_1");
     assert_eq!(built.function.name, CODE_EXECUTION_TOOL_NAME);
@@ -151,4 +151,20 @@ fn build_assistant_message_falls_back_to_call_id_when_id_is_absent() {
     }];
     let message = build_assistant_message(&tool_calls);
     assert_eq!(message.tool_calls.unwrap()[0].id, "resp_1");
+}
+
+#[cfg(test)]
+#[test]
+fn build_assistant_message_serializes_with_only_role_and_tool_calls() {
+    let tool_calls = vec![CodeExecutionToolCall {
+        id: Some("call_1".to_owned()),
+        call_id: None,
+        kind: Some("function".to_owned()),
+        name: "ignored".to_owned(),
+        arguments: "{}".to_owned(),
+    }];
+    let message = build_assistant_message(&tool_calls);
+    let serialized = serde_json::to_value(&message).unwrap();
+    let keys: Vec<&String> = serialized.as_object().unwrap().keys().collect();
+    assert_eq!(keys, vec!["role", "tool_calls"]);
 }

@@ -1,8 +1,9 @@
+use indexmap::IndexMap;
 use serde_json::Value;
 
 use super::{CODE_EXECUTION_TOOL_NAME, CodeExecutionToolCall};
-use crate::chat::response::{AssistantMessage, ChatResponse, MessageProviderFields};
-use crate::chat::{FunctionCall, ToolCall};
+use crate::chat::response::ChatResponse;
+use crate::chat::{ChatMessage, FunctionCall, Role, ToolCall};
 
 #[must_use]
 pub fn to_model_response(response: &Value) -> Option<ChatResponse> {
@@ -41,10 +42,11 @@ pub fn extract_tool_calls(response: &Value) -> Vec<CodeExecutionToolCall> {
 
 // LiteLLM reads only the id field here; an absent id falls back to call_id, matching how an id-less Responses-dialect CodeExecutionToolCall threaded through this chat-completion-only path would resolve
 #[must_use]
-pub fn build_assistant_message(tool_calls: &[CodeExecutionToolCall]) -> AssistantMessage {
-    AssistantMessage {
-        role: "assistant".to_owned(),
+pub fn build_assistant_message(tool_calls: &[CodeExecutionToolCall]) -> ChatMessage {
+    ChatMessage {
+        role: Role::Assistant,
         content: None,
+        name: None,
         tool_calls: Some(
             tool_calls
                 .iter()
@@ -62,10 +64,8 @@ pub fn build_assistant_message(tool_calls: &[CodeExecutionToolCall]) -> Assistan
                 })
                 .collect(),
         ),
-        annotations: None,
-        audio: None,
-        refusal: None,
-        provider_specific_fields: MessageProviderFields::default(),
+        tool_call_id: None,
+        passthrough: IndexMap::new(),
     }
 }
 
