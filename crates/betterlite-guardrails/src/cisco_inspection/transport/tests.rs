@@ -35,20 +35,12 @@ fn configured(timeout: f64) -> Configured {
     }
 }
 
-#[expect(
-    clippy::disallowed_methods,
-    reason = "unit tests need a local client for pure request construction"
-)]
 fn plain_client() -> reqwest::Client {
-    reqwest::Client::builder().build().expect("client")
+    reqwest::Client::default()
 }
 
-#[expect(
-    clippy::disallowed_methods,
-    reason = "unit tests need a local client for pure request construction"
-)]
 fn client_without_redirects() -> reqwest::Client {
-    reqwest::Client::builder()
+    reqwest::ClientBuilder::new()
         .redirect(Policy::none())
         .build()
         .expect("client")

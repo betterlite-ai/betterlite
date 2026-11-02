@@ -25,12 +25,8 @@ fn configured() -> Configured {
     }
 }
 
-#[expect(
-    clippy::disallowed_methods,
-    reason = "unit tests need a local client for pure request construction"
-)]
 fn plain_client() -> reqwest::Client {
-    reqwest::Client::builder().build().expect("client")
+    reqwest::Client::default()
 }
 
 #[test]

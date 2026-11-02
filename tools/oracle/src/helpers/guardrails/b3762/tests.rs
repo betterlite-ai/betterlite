@@ -6,7 +6,7 @@ use betterlite_guardrails::cisco_verdict_enforcement::api_error::{
 use betterlite_guardrails::cisco_verdict_enforcement::finalize::FinalizeOutcome;
 use serde_json::json;
 
-use super::{json_to_value, outcome_tag};
+use super::support::{json_to_value, outcome_tag};
 
 #[test]
 fn json_to_value_round_trips_every_variant() {

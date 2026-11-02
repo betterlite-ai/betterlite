@@ -29,10 +29,6 @@ fn obj(json: &str) -> Fields {
     fields
 }
 
-#[expect(
-    clippy::disallowed_methods,
-    reason = "unit tests need a local client for pure request construction"
-)]
 fn guardrail(inspection_type: InspectionType, api_base: String) -> CiscoInspectionGuardrail {
     let settings = Configured {
         guardrail_name: "cisco-ai-defense".to_owned(),
@@ -51,7 +47,7 @@ fn guardrail(inspection_type: InspectionType, api_base: String) -> CiscoInspecti
     };
     CiscoInspectionGuardrail {
         settings,
-        client: reqwest::Client::new(),
+        client: reqwest::Client::default(),
     }
 }
 

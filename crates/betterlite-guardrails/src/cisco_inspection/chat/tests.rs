@@ -30,12 +30,8 @@ fn obj(json: &str) -> Fields {
     fields
 }
 
-#[expect(
-    clippy::disallowed_methods,
-    reason = "unit tests need a local client for pure request construction"
-)]
 fn plain_client() -> reqwest::Client {
-    reqwest::Client::builder().build().expect("client")
+    reqwest::Client::default()
 }
 
 fn guardrail(api_base: String, client: reqwest::Client) -> CiscoInspectionGuardrail {
