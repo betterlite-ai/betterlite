@@ -541,11 +541,16 @@ fn text_completion_policy_cases(#[case] case: u8) {
                 json!(4_i32)
             );
             assert_eq!(
+                result_cache_mappings["usage"]["prompt_tokens_details"]["cache_creation_tokens"],
+                json!(4_i32)
+            );
+            assert_eq!(
                 result_cache_mappings["_hidden_params"]["original_response"]["usage"]["prompt_tokens_details"],
                 json!({
                     "audio_tokens": null,
                     "cached_tokens": 3_i32,
                     "cache_write_tokens": 4_i32,
+                    "cache_creation_tokens": 4_i32,
                     "text_tokens": null,
                     "image_tokens": null,
                     "video_tokens": null,
@@ -568,7 +573,11 @@ fn text_completion_policy_cases(#[case] case: u8) {
             .expect("cache mapping merges into the existing details object");
             assert_eq!(
                 result_cache_merge["usage"]["prompt_tokens_details"],
-                json!({"text_tokens": 7_i32, "cache_write_tokens": 4_i32})
+                json!({
+                    "text_tokens": 7_i32,
+                    "cache_write_tokens": 4_i32,
+                    "cache_creation_tokens": 4_i32,
+                })
             );
 
             let response_u64_cache_token = json!({
@@ -586,6 +595,10 @@ fn text_completion_policy_cases(#[case] case: u8) {
                 result_u64_cache_token["usage"]["prompt_tokens_details"]["cache_write_tokens"],
                 json!(u64::MAX)
             );
+            assert_eq!(
+                result_u64_cache_token["usage"]["prompt_tokens_details"]["cache_creation_tokens"],
+                json!(u64::MAX)
+            );
 
             let response_non_integer_cache = json!({
                 "choices": [],
@@ -601,6 +614,181 @@ fn text_completion_policy_cases(#[case] case: u8) {
             assert_eq!(
                 result_non_integer_cache["usage"]["prompt_tokens_details"],
                 json!(null)
+            );
+
+            let response_reasoning_tokens = json!({
+                "choices": [],
+                "usage": {"completion_tokens": 10_i32, "reasoning_tokens": 3_i32},
+            });
+            let result_reasoning_tokens = reply::to_chat_model_response(
+                Some(response_reasoning_tokens),
+                Some(Map::new()),
+                &fixed_identifier,
+                &fixed_clock,
+            )
+            .expect("reasoning_tokens folds into completion_tokens_details");
+            assert_eq!(
+                result_reasoning_tokens["usage"]["completion_tokens_details"],
+                json!({"reasoning_tokens": 3_i32, "text_tokens": 7_i32})
+            );
+            assert!(
+                !result_reasoning_tokens["usage"]
+                    .as_object()
+                    .expect("usage object")
+                    .contains_key("reasoning_tokens")
+            );
+
+            let response_reasoning_with_modalities = json!({
+                "choices": [],
+                "usage": {
+                    "completion_tokens": 10_i32,
+                    "reasoning_tokens": 3_i32,
+                    "completion_tokens_details": {"image_tokens": 2_i32, "audio_tokens": 1_i32},
+                },
+            });
+            let result_reasoning_with_modalities = reply::to_chat_model_response(
+                Some(response_reasoning_with_modalities),
+                Some(Map::new()),
+                &fixed_identifier,
+                &fixed_clock,
+            )
+            .expect("image and audio tokens are subtracted from the calculated text_tokens");
+            assert_eq!(
+                result_reasoning_with_modalities["usage"]["completion_tokens_details"],
+                json!({
+                    "reasoning_tokens": 3_i32,
+                    "text_tokens": 4_i32,
+                    "image_tokens": 2_i32,
+                    "audio_tokens": 1_i32,
+                })
+            );
+
+            let response_reasoning_text_tokens_set = json!({
+                "choices": [],
+                "usage": {
+                    "completion_tokens": 10_i32,
+                    "reasoning_tokens": 3_i32,
+                    "completion_tokens_details": {"text_tokens": 99_i32},
+                },
+            });
+            let result_reasoning_text_tokens_set = reply::to_chat_model_response(
+                Some(response_reasoning_text_tokens_set),
+                Some(Map::new()),
+                &fixed_identifier,
+                &fixed_clock,
+            )
+            .expect("an already-set text_tokens is not recalculated");
+            assert_eq!(
+                result_reasoning_text_tokens_set["usage"]["completion_tokens_details"],
+                json!({"reasoning_tokens": 3_i32, "text_tokens": 99_i32})
+            );
+
+            let response_reasoning_zero = json!({
+                "choices": [],
+                "usage": {"completion_tokens": 10_i32, "reasoning_tokens": 0_i32},
+            });
+            let result_reasoning_zero = reply::to_chat_model_response(
+                Some(response_reasoning_zero),
+                Some(Map::new()),
+                &fixed_identifier,
+                &fixed_clock,
+            )
+            .expect("a zero reasoning_tokens is falsy and does not fold");
+            assert_eq!(
+                result_reasoning_zero["usage"]["completion_tokens_details"],
+                json!(null)
+            );
+
+            let response_cost_and_server_tool_use = json!({
+                "choices": [],
+                "usage": {
+                    "cost": 1.5_f64,
+                    "server_tool_use": {"web_search_requests": 5_i32},
+                },
+            });
+            let result_cost_and_server_tool_use = reply::to_chat_model_response(
+                Some(response_cost_and_server_tool_use),
+                Some(Map::new()),
+                &fixed_identifier,
+                &fixed_clock,
+            )
+            .expect("cost and server_tool_use are kept when present");
+            assert_eq!(
+                result_cost_and_server_tool_use["usage"]["cost"],
+                json!(1.5_f64)
+            );
+            assert_eq!(
+                result_cost_and_server_tool_use["usage"]["server_tool_use"],
+                json!({"web_search_requests": 5_i32})
+            );
+            assert_eq!(
+                result_cost_and_server_tool_use["_hidden_params"]["original_response"]["usage"]["server_tool_use"],
+                json!({
+                    "web_search_requests": 5_i32,
+                    "tool_search_requests": null,
+                    "browser_open_requests": null,
+                })
+            );
+
+            let response_cost_and_server_tool_use_null = json!({
+                "choices": [],
+                "usage": {"cost": null, "server_tool_use": null},
+            });
+            let result_cost_and_server_tool_use_null = reply::to_chat_model_response(
+                Some(response_cost_and_server_tool_use_null),
+                Some(Map::new()),
+                &fixed_identifier,
+                &fixed_clock,
+            )
+            .expect("a null cost or server_tool_use is left unset");
+            let usage_cost_and_server_tool_use_null = result_cost_and_server_tool_use_null["usage"]
+                .as_object()
+                .expect("usage object");
+            assert!(!usage_cost_and_server_tool_use_null.contains_key("cost"));
+            assert!(!usage_cost_and_server_tool_use_null.contains_key("server_tool_use"));
+
+            let response_nested_cache_creation = json!({
+                "choices": [],
+                "usage": {
+                    "prompt_tokens_details": {"cache_creation_input_tokens": 6_i32},
+                },
+            });
+            let result_nested_cache_creation = reply::to_chat_model_response(
+                Some(response_nested_cache_creation),
+                Some(Map::new()),
+                &fixed_identifier,
+                &fixed_clock,
+            )
+            .expect("a nested cache_creation_input_tokens key backfills cache_write_tokens");
+            assert_eq!(
+                result_nested_cache_creation["usage"]["prompt_tokens_details"]["cache_write_tokens"],
+                json!(6_i32)
+            );
+            assert_eq!(
+                result_nested_cache_creation["usage"]["prompt_tokens_details"]["cache_creation_tokens"],
+                json!(6_i32)
+            );
+
+            let response_cache_creation_tokens_given = json!({
+                "choices": [],
+                "usage": {
+                    "prompt_tokens_details": {"cache_creation_tokens": 8_i32},
+                },
+            });
+            let result_cache_creation_tokens_given = reply::to_chat_model_response(
+                Some(response_cache_creation_tokens_given),
+                Some(Map::new()),
+                &fixed_identifier,
+                &fixed_clock,
+            )
+            .expect("cache_creation_tokens mirrors onto cache_write_tokens");
+            assert_eq!(
+                result_cache_creation_tokens_given["usage"]["prompt_tokens_details"]["cache_write_tokens"],
+                json!(8_i32)
+            );
+            assert_eq!(
+                result_cache_creation_tokens_given["usage"]["prompt_tokens_details"]["cache_creation_tokens"],
+                json!(8_i32)
             );
 
             let response_object_override = json!({"choices": [], "object": "something-else"});
