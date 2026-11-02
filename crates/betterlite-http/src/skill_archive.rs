@@ -11,6 +11,8 @@ use zip::result::{ZipError, ZipResult};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, DateTime, ZipArchive, ZipWriter};
 
+mod cp437;
+
 const MAX_ARCHIVE_UNPACKED_BYTES: u64 = 50 * 1024 * 1024;
 const MAX_ARCHIVE_ENTRIES: usize = 1_000;
 const SKILL_MANIFEST_FILENAME: &str = "SKILL.md";
@@ -23,24 +25,6 @@ const CENTRAL_HEADER_FIXED_LEN: usize = 46;
 const CENTRAL_HEADER_FLAGS_RANGE: Range<usize> = 8..10;
 const CENTRAL_HEADER_NAME_LEN_RANGE: Range<usize> = 28..30;
 const LANGUAGE_ENCODING_FLAG: u16 = 0x0800;
-const CP437_HIGH_BYTES: [char; 128] = [
-    '\u{00c7}', '\u{00fc}', '\u{00e9}', '\u{00e2}', '\u{00e4}', '\u{00e0}', '\u{00e5}', '\u{00e7}',
-    '\u{00ea}', '\u{00eb}', '\u{00e8}', '\u{00ef}', '\u{00ee}', '\u{00ec}', '\u{00c4}', '\u{00c5}',
-    '\u{00c9}', '\u{00e6}', '\u{00c6}', '\u{00f4}', '\u{00f6}', '\u{00f2}', '\u{00fb}', '\u{00f9}',
-    '\u{00ff}', '\u{00d6}', '\u{00dc}', '\u{00a2}', '\u{00a3}', '\u{00a5}', '\u{20a7}', '\u{0192}',
-    '\u{00e1}', '\u{00ed}', '\u{00f3}', '\u{00fa}', '\u{00f1}', '\u{00d1}', '\u{00aa}', '\u{00ba}',
-    '\u{00bf}', '\u{2310}', '\u{00ac}', '\u{00bd}', '\u{00bc}', '\u{00a1}', '\u{00ab}', '\u{00bb}',
-    '\u{2591}', '\u{2592}', '\u{2593}', '\u{2502}', '\u{2524}', '\u{2561}', '\u{2562}', '\u{2556}',
-    '\u{2555}', '\u{2563}', '\u{2551}', '\u{2557}', '\u{255d}', '\u{255c}', '\u{255b}', '\u{2510}',
-    '\u{2514}', '\u{2534}', '\u{252c}', '\u{251c}', '\u{2500}', '\u{253c}', '\u{255e}', '\u{255f}',
-    '\u{255a}', '\u{2554}', '\u{2569}', '\u{2566}', '\u{2560}', '\u{2550}', '\u{256c}', '\u{2567}',
-    '\u{2568}', '\u{2564}', '\u{2565}', '\u{2559}', '\u{2558}', '\u{2552}', '\u{2553}', '\u{256b}',
-    '\u{256a}', '\u{2518}', '\u{250c}', '\u{2588}', '\u{2584}', '\u{258c}', '\u{2590}', '\u{2580}',
-    '\u{03b1}', '\u{00df}', '\u{0393}', '\u{03c0}', '\u{03a3}', '\u{03c3}', '\u{00b5}', '\u{03c4}',
-    '\u{03a6}', '\u{0398}', '\u{03a9}', '\u{03b4}', '\u{221e}', '\u{03c6}', '\u{03b5}', '\u{2229}',
-    '\u{2261}', '\u{00b1}', '\u{2265}', '\u{2264}', '\u{2320}', '\u{2321}', '\u{00f7}', '\u{2248}',
-    '\u{00b0}', '\u{2219}', '\u{00b7}', '\u{221a}', '\u{207f}', '\u{00b2}', '\u{25a0}', '\u{00a0}',
-];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SkillArchive {
@@ -139,21 +123,38 @@ fn read_validated_member(
     Some(ArchiveMember::File(path, data))
 }
 
+fn header_name_bytes(
+    stored_content: &[u8],
+    header_start: u64,
+    fixed_len: usize,
+    signature: [u8; 4],
+    name_len_range: Range<usize>,
+) -> Option<(&[u8], &[u8])> {
+    let start = usize::try_from(header_start).ok()?;
+    let fixed = stored_content.get(start..start.checked_add(fixed_len)?)?;
+    let actual_signature: [u8; 4] = fixed.get(..4)?.try_into().ok()?;
+    if actual_signature != signature {
+        return None;
+    }
+    let name_length_bytes: [u8; 2] = fixed.get(name_len_range)?.try_into().ok()?;
+    let name_length = usize::from(u16::from_le_bytes(name_length_bytes));
+    let name_start = start.checked_add(fixed_len)?;
+    let name_raw = stored_content.get(name_start..name_start.checked_add(name_length)?)?;
+    Some((fixed, name_raw))
+}
+
 fn central_header_name_and_flags(
     stored_content: &[u8],
     central_header_start: u64,
 ) -> Option<(&[u8], u16)> {
-    let start = usize::try_from(central_header_start).ok()?;
-    let fixed = stored_content.get(start..start.checked_add(CENTRAL_HEADER_FIXED_LEN)?)?;
-    let signature: [u8; 4] = fixed.get(..4)?.try_into().ok()?;
-    if signature != CENTRAL_HEADER_SIGNATURE {
-        return None;
-    }
+    let (fixed, name_raw) = header_name_bytes(
+        stored_content,
+        central_header_start,
+        CENTRAL_HEADER_FIXED_LEN,
+        CENTRAL_HEADER_SIGNATURE,
+        CENTRAL_HEADER_NAME_LEN_RANGE,
+    )?;
     let flags_bytes: [u8; 2] = fixed.get(CENTRAL_HEADER_FLAGS_RANGE)?.try_into().ok()?;
-    let name_length_bytes: [u8; 2] = fixed.get(CENTRAL_HEADER_NAME_LEN_RANGE)?.try_into().ok()?;
-    let name_length = usize::from(u16::from_le_bytes(name_length_bytes));
-    let name_start = start.checked_add(CENTRAL_HEADER_FIXED_LEN)?;
-    let name_raw = stored_content.get(name_start..name_start.checked_add(name_length)?)?;
     Some((name_raw, u16::from_le_bytes(flags_bytes)))
 }
 
@@ -161,21 +162,7 @@ fn decode_central_name(raw: &[u8], is_utf8: bool) -> Option<String> {
     if is_utf8 {
         str::from_utf8(raw).ok().map(ToOwned::to_owned)
     } else {
-        Some(
-            raw.iter()
-                .map(|&byte| {
-                    usize::from(byte).checked_sub(0x80).map_or_else(
-                        || char::from(byte),
-                        |index| {
-                            CP437_HIGH_BYTES
-                                .get(index)
-                                .copied()
-                                .unwrap_or(char::REPLACEMENT_CHARACTER)
-                        },
-                    )
-                })
-                .collect(),
-        )
+        Some(raw.iter().copied().map(cp437::decode).collect())
     }
 }
 
@@ -184,16 +171,13 @@ fn local_header_name_matches(
     header_start: u64,
     central_name_raw: &[u8],
 ) -> Option<bool> {
-    let start = usize::try_from(header_start).ok()?;
-    let fixed = stored_content.get(start..start.checked_add(LOCAL_HEADER_FIXED_LEN)?)?;
-    let signature: [u8; 4] = fixed.get(..4)?.try_into().ok()?;
-    if signature != LOCAL_HEADER_SIGNATURE {
-        return None;
-    }
-    let name_length_bytes: [u8; 2] = fixed.get(LOCAL_HEADER_NAME_LEN_RANGE)?.try_into().ok()?;
-    let name_length = usize::from(u16::from_le_bytes(name_length_bytes));
-    let name_start = start.checked_add(LOCAL_HEADER_FIXED_LEN)?;
-    let local_name_raw = stored_content.get(name_start..name_start.checked_add(name_length)?)?;
+    let (_, local_name_raw) = header_name_bytes(
+        stored_content,
+        header_start,
+        LOCAL_HEADER_FIXED_LEN,
+        LOCAL_HEADER_SIGNATURE,
+        LOCAL_HEADER_NAME_LEN_RANGE,
+    )?;
     Some(local_name_raw == central_name_raw)
 }
 

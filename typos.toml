@@ -5,5 +5,3 @@ extend-exclude = ["**/fixtures/**", "**/snapshots/**", "**/fuzz/corpus/**", "**/
 # LiteLLM spells its own file client_initalization_utils.py this way, and the backlog quotes it
 initalization = "initalization"
 asend = "asend"
-# cp437 code point 0xba in skill_archive.rs's high-byte table, not a misspelling of "by"/"be"
-ba = "ba"
