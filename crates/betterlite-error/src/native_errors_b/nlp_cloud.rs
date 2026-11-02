@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
-use crate::error::details::{ApiDetails, RateLimitDetails, TimeoutDetails, TimeoutStatus};
+use crate::error::details::{
+    ApiDetails, RateLimitDetails, ResponseDetails, TimeoutDetails, TimeoutStatus,
+};
 use crate::error::{ErrorClass, ErrorContext};
 use crate::rate_limit::RateLimitCategory;
 
@@ -17,11 +19,9 @@ pub struct NlpCloudExceptionInput {
 
 #[must_use]
 pub fn map_nlp_cloud_exception(input: &NlpCloudExceptionInput) -> Option<ErrorClass> {
-    // "detail" in error_str always raises, independent of status_code, ahead of the status chain below
-    if input.error_str.contains("detail") {
-        return Some(detail_classification(input));
-    }
-    status_classification(input)
+    let family = classify(input)?;
+    let context = context(input);
+    Some(build(family, context, input.status_code))
 }
 
 fn context(input: &NlpCloudExceptionInput) -> ErrorContext {
@@ -41,60 +41,74 @@ fn context(input: &NlpCloudExceptionInput) -> ErrorContext {
     }
 }
 
-type TextPredicate = fn(&str) -> bool;
-type ErrorClassBuilder = fn(Box<ErrorContext>) -> ErrorClass;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Family {
+    ContextWindowExceeded,
+    BadRequest,
+    Authentication,
+    // Timeout.__init__ defaults exception_status_code to 408 when the caller never passes it
+    Timeout,
+    RateLimit,
+    // ServiceUnavailableError.__init__ hardcodes status_code=503 regardless of the original status
+    ServiceUnavailable,
+    Api(u16),
+}
 
-const DETAIL_CANDIDATES: [(TextPredicate, ErrorClassBuilder); 2] = [
+type TextPredicate = fn(&str) -> bool;
+
+const DETAIL_CANDIDATES: [(TextPredicate, Family); 2] = [
     (
         |error_str| error_str.contains("Input text length should not exceed"),
-        ErrorClass::ContextWindowExceeded,
+        Family::ContextWindowExceeded,
     ),
     (
         |error_str| error_str.contains("value is not a valid"),
-        ErrorClass::BadRequest,
+        Family::BadRequest,
     ),
 ];
 
-fn detail_classification(input: &NlpCloudExceptionInput) -> ErrorClass {
-    let found = DETAIL_CANDIDATES
-        .into_iter()
-        .find(|(matches, _)| matches(&input.error_str));
-    match found {
-        Some((_, build)) => build(Box::new(context(input))),
-        None => ErrorClass::Api(Box::new(ApiDetails {
-            context: context(input),
-            status: 500,
-        })),
+// "detail" in error_str always raises, independent of status_code, ahead of the status chain below (https://docs.nlpcloud.com/?shell#errors)
+fn classify(input: &NlpCloudExceptionInput) -> Option<Family> {
+    if input.error_str.contains("detail") {
+        let found = DETAIL_CANDIDATES
+            .into_iter()
+            .find(|(matches, _)| matches(&input.error_str));
+        return Some(found.map_or(Family::Api(500), |(_, family)| family));
     }
+    Some(match input.status_code? {
+        400 | 406 | 413 | 422 => Family::BadRequest,
+        401 | 403 => Family::Authentication,
+        522 | 524 => Family::Timeout,
+        429 | 402 => Family::RateLimit,
+        500 | 503 => Family::Api(input.status_code?),
+        504 | 520 => Family::ServiceUnavailable,
+        other => Family::Api(other),
+    })
 }
 
-// https://docs.nlpcloud.com/?shell#errors; every status reaching this chain raises something, even the trailing else
-fn status_classification(input: &NlpCloudExceptionInput) -> Option<ErrorClass> {
-    let status = input.status_code?;
-    let ctx = context(input);
-    Some(match status {
-        400 | 406 | 413 | 422 => ErrorClass::BadRequest(Box::new(ctx)),
-        401 | 403 => ErrorClass::Authentication(Box::new(ctx)),
-        // Timeout.__init__ defaults exception_status_code to 408 when the caller never passes it
-        522 | 524 => ErrorClass::Timeout(Box::new(TimeoutDetails {
-            context: ctx,
+// every detail branch, and every status branch that carries a class, passes response=getattr(original_exception, "response", None)
+fn build(family: Family, context: ErrorContext, status_code: Option<u16>) -> ErrorClass {
+    match family {
+        Family::ContextWindowExceeded => ErrorClass::ContextWindowExceeded(Box::new(
+            ResponseDetails::with_status(context, status_code),
+        )),
+        Family::BadRequest => {
+            ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(context, status_code)))
+        }
+        Family::Authentication => {
+            ErrorClass::Authentication(Box::new(ResponseDetails::with_status(context, status_code)))
+        }
+        Family::Timeout => ErrorClass::Timeout(Box::new(TimeoutDetails {
+            context,
             original_status: TimeoutStatus(408),
         })),
-        429 | 402 => ErrorClass::RateLimit(Box::new(RateLimitDetails {
-            context: ctx,
+        Family::RateLimit => ErrorClass::RateLimit(Box::new(RateLimitDetails {
+            context,
             category: RateLimitCategory::VendorRateLimit,
             dimension: None,
             headers: BTreeMap::new(),
         })),
-        500 | 503 => ErrorClass::Api(Box::new(ApiDetails {
-            context: ctx,
-            status,
-        })),
-        // ServiceUnavailableError.__init__ hardcodes status_code=503 regardless of the original status
-        504 | 520 => ErrorClass::ServiceUnavailable(Box::new(ctx)),
-        other => ErrorClass::Api(Box::new(ApiDetails {
-            context: ctx,
-            status: other,
-        })),
-    })
+        Family::ServiceUnavailable => ErrorClass::ServiceUnavailable(Box::new(context)),
+        Family::Api(status) => ErrorClass::Api(Box::new(ApiDetails { context, status })),
+    }
 }

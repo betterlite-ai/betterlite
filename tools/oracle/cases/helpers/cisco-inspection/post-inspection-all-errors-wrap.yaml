@@ -1,0 +1,19 @@
+kind: helper
+name: post-inspection-all-errors-wrap
+call:
+  b3762:
+    post_inspection:
+      settings:
+        api_key: test-key
+        api_base: "https://cisco.test"
+        inspection_type: chat
+        inspect_path: "/api/v1/inspect/chat"
+        on_flagged_action: block
+        fallback_on_error: block
+        timeout: 5
+      payload: {messages: [{role: user, content: hi}]}
+      surface: chat
+      answer: {status: 400, headers: {}, body: {error: "bad request"}}
+env: {}
+compare:
+  ignore: []

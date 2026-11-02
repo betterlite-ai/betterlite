@@ -42,7 +42,7 @@ fn input(
 )]
 #[case::hasattr_status_unmatched("generic failure", "APIError", Some(599), "api", Some(500))]
 #[case::status_401("generic failure", "APIError", Some(401), "authentication", Some(401))]
-#[case::status_413("generic failure", "APIError", Some(413), "bad_request", Some(400))]
+#[case::status_413("generic failure", "APIError", Some(413), "bad_request", Some(413))]
 #[case::status_422(
     "generic failure",
     "APIError",
@@ -73,6 +73,25 @@ fn anthropic_replicate_errors_behavior_tests_behavior(
     if let Some(status) = expected_wire_status {
         assert_eq!(class.metadata().status_code, status);
     }
+}
+
+#[rstest]
+#[case::context_on_server_status("input is too long for this model", "APIError", Some(500), 500)]
+#[case::authentication_predicate_on_status(
+    "Incorrect authentication token provided",
+    "APIError",
+    Some(403),
+    403
+)]
+#[case::model_error_predicate_on_status("generic failure", "ModelError", Some(422), 422)]
+fn response_branches_answer_the_provider_status(
+    #[case] error_str: &str,
+    #[case] exception_type: &str,
+    #[case] status_code: Option<u16>,
+    #[case] expected_status: u16,
+) {
+    let class = map_replicate_exception(&input(error_str, exception_type, status_code));
+    assert_eq!(class.metadata().status_code, expected_status);
 }
 
 #[test]

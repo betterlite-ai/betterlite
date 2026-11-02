@@ -9,7 +9,8 @@ use rust_decimal::Decimal;
 
 use super::details::{
     ApiDetails, BudgetExceededDetails, GuardrailDetails, MidStreamFallbackDetails, MidStreamStatus,
-    RateLimitDetails, SchemaValidationDetails, TimeoutDetails, TimeoutStatus,
+    RateLimitDetails, ResponseDetails, ResponseStatus, SchemaValidationDetails, TimeoutDetails,
+    TimeoutStatus,
 };
 use super::{ErrorClass, ErrorContext, TaxonomyError};
 use crate::envelope::WireField;
@@ -44,19 +45,28 @@ fn context_with_body(
 
 #[rstest]
 #[case::authentication_type_and_param_are_null(
-    ErrorClass::Authentication(Box::new(context("bad key"))),
+    ErrorClass::Authentication(Box::new(ResponseDetails {
+        status: ResponseStatus::default(),
+        ..ResponseDetails::from(context("bad key"))
+    })),
     401,
     WireField::Null,
     WireField::Null
 )]
 #[case::not_found_type_and_param_are_null(
-    ErrorClass::NotFound(Box::new(context("no such model"))),
+    ErrorClass::NotFound(Box::new(ResponseDetails {
+        status: ResponseStatus::default(),
+        ..ResponseDetails::from(context("no such model"))
+    })),
     404,
     WireField::Null,
     WireField::Null
 )]
 #[case::bad_request_type_and_param_are_null(
-    ErrorClass::BadRequest(Box::new(context("bad body"))),
+    ErrorClass::BadRequest(Box::new(ResponseDetails {
+        status: ResponseStatus::default(),
+        ..ResponseDetails::from(context("bad body"))
+    })),
     400,
     WireField::Null,
     WireField::Null
@@ -98,51 +108,66 @@ fn context_with_body(
     WireField::Null
 )]
 #[case::bad_request_with_a_body_sets_type_and_param_from_it(
-    ErrorClass::BadRequest(Box::new(context_with_body(
-        "bad body",
-        "invalid_request_error",
-        Some("messages"),
-        None
-    ))),
+    ErrorClass::BadRequest(Box::new(ResponseDetails {
+        status: ResponseStatus::default(),
+        ..ResponseDetails::from(context_with_body(
+            "bad body",
+            "invalid_request_error",
+            Some("messages"),
+            None
+        ))
+    })),
     400,
     WireField::Text("invalid_request_error".to_owned()),
     WireField::Text("messages".to_owned())
 )]
 #[case::content_policy_violation_with_a_body_but_no_param(
-    ErrorClass::ContentPolicyViolation(Box::new(context_with_body(
-        "flagged",
-        "invalid_request_error",
-        None,
-        Some("vector_store_search_failed")
-    ))),
+    ErrorClass::ContentPolicyViolation(Box::new(ResponseDetails {
+        status: ResponseStatus::default(),
+        ..ResponseDetails::from(context_with_body(
+            "flagged",
+            "invalid_request_error",
+            None,
+            Some("vector_store_search_failed")
+        ))
+    })),
     400,
     WireField::Text("invalid_request_error".to_owned()),
     WireField::Null
 )]
 #[case::context_window_exceeded_has_no_body_and_stays_null(
-    ErrorClass::ContextWindowExceeded(Box::new(context("too many tokens"))),
+    ErrorClass::ContextWindowExceeded(Box::new(ResponseDetails {
+        status: ResponseStatus::default(),
+        ..ResponseDetails::from(context("too many tokens"))
+    })),
     400,
     WireField::Null,
     WireField::Null
 )]
 #[case::authentication_never_takes_a_body_even_when_one_is_sent(
-    ErrorClass::Authentication(Box::new(context_with_body(
-        "bad key",
-        "invalid_request_error",
-        Some("authorization"),
-        Some("invalid_api_key")
-    ))),
+    ErrorClass::Authentication(Box::new(ResponseDetails {
+        status: ResponseStatus::default(),
+        ..ResponseDetails::from(context_with_body(
+            "bad key",
+            "invalid_request_error",
+            Some("authorization"),
+            Some("invalid_api_key")
+        ))
+    })),
     401,
     WireField::Null,
     WireField::Null
 )]
 #[case::context_window_exceeded_never_takes_a_body_even_when_one_is_sent(
-    ErrorClass::ContextWindowExceeded(Box::new(context_with_body(
-        "too many tokens",
-        "invalid_request_error",
-        Some("messages"),
-        Some("context_length_exceeded")
-    ))),
+    ErrorClass::ContextWindowExceeded(Box::new(ResponseDetails {
+        status: ResponseStatus::default(),
+        ..ResponseDetails::from(context_with_body(
+            "too many tokens",
+            "invalid_request_error",
+            Some("messages"),
+            Some("context_length_exceeded")
+        ))
+    })),
     400,
     WireField::Null,
     WireField::Null
@@ -235,12 +260,15 @@ fn error_types_error_type_tests_behavior(
 
 #[test]
 fn bad_request_with_a_body_code_keeps_it_as_openai_code() {
-    let class = ErrorClass::BadRequest(Box::new(context_with_body(
-        "vector store search failed",
-        "invalid_request_error",
-        None,
-        Some("vector_store_search_failed"),
-    )));
+    let class = ErrorClass::BadRequest(Box::new(ResponseDetails {
+        status: ResponseStatus::default(),
+        ..ResponseDetails::from(context_with_body(
+            "vector store search failed",
+            "invalid_request_error",
+            None,
+            Some("vector_store_search_failed"),
+        ))
+    }));
     let metadata = class.metadata();
     assert_eq!(
         metadata.openai_code,
@@ -250,29 +278,38 @@ fn bad_request_with_a_body_code_keeps_it_as_openai_code() {
 
 #[test]
 fn bad_request_without_a_body_leaves_openai_code_absent() {
-    let class = ErrorClass::BadRequest(Box::new(context("bad body")));
+    let class = ErrorClass::BadRequest(Box::new(ResponseDetails {
+        status: ResponseStatus::default(),
+        ..ResponseDetails::from(context("bad body"))
+    }));
     assert_eq!(class.metadata().openai_code, None);
 }
 
 #[test]
 fn authentication_with_a_body_code_never_sets_openai_code() {
-    let class = ErrorClass::Authentication(Box::new(context_with_body(
-        "bad key",
-        "invalid_request_error",
-        None,
-        Some("invalid_api_key"),
-    )));
+    let class = ErrorClass::Authentication(Box::new(ResponseDetails {
+        status: ResponseStatus::default(),
+        ..ResponseDetails::from(context_with_body(
+            "bad key",
+            "invalid_request_error",
+            None,
+            Some("invalid_api_key"),
+        ))
+    }));
     assert_eq!(class.metadata().openai_code, None);
 }
 
 #[test]
 fn context_window_exceeded_with_a_body_code_never_sets_openai_code() {
-    let class = ErrorClass::ContextWindowExceeded(Box::new(context_with_body(
-        "too many tokens",
-        "invalid_request_error",
-        None,
-        Some("context_length_exceeded"),
-    )));
+    let class = ErrorClass::ContextWindowExceeded(Box::new(ResponseDetails {
+        status: ResponseStatus::default(),
+        ..ResponseDetails::from(context_with_body(
+            "too many tokens",
+            "invalid_request_error",
+            None,
+            Some("context_length_exceeded"),
+        ))
+    }));
     assert_eq!(class.metadata().openai_code, None);
 }
 
@@ -487,6 +524,35 @@ fn json_schema_validation_keeps_the_model_and_provider_identity() {
     assert_eq!(metadata.status_code, 500);
     assert_eq!(metadata.model, Some("gpt-4".to_owned()));
     assert_eq!(metadata.provider, Some("openai".to_owned()));
+}
+
+#[test]
+fn metadata_answers_the_carried_response_status() {
+    let class = ErrorClass::BadRequest(Box::new(ResponseDetails {
+        status: ResponseStatus(422),
+        ..ResponseDetails::from(context("unprocessable"))
+    }));
+    let metadata = class.metadata();
+    assert_eq!(metadata.status_code, 422);
+    assert_eq!(metadata.code, "422");
+}
+
+#[rstest]
+#[case::authentication("authentication", 401)]
+#[case::not_found("not_found", 404)]
+#[case::permission_denied("permission_denied", 403)]
+#[case::bad_request("bad_request", 400)]
+#[case::unprocessable_entity("unprocessable_entity", 422)]
+#[case::context_window_exceeded("context_window_exceeded", 400)]
+#[case::content_policy_violation("content_policy_violation", 400)]
+fn response_class_wire_input_without_a_status_keeps_the_class_default(
+    #[case] family: &str,
+    #[case] expected_status: u16,
+) {
+    let json =
+        format!(r#"{{"family": "{family}", "message": "boom", "model": null, "provider": null}}"#);
+    let class: ErrorClass = serde_json::from_str(&json).expect("decodes without a status key");
+    assert_eq!(class.metadata().status_code, expected_status);
 }
 
 fn timeout_cause() -> IoError {

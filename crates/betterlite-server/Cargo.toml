@@ -7,6 +7,7 @@ publish.workspace = true
 
 [dependencies]
 axum.workspace = true
+betterlite-billing = { path = "../betterlite-billing" }
 betterlite-config = { path = "../betterlite-config" }
 betterlite-error = { path = "../betterlite-error" }
 betterlite-http = { path = "../betterlite-http" }
@@ -37,7 +38,9 @@ uuid.workspace = true
 [dev-dependencies]
 rquickjs = "0.14.0"
 rstest = "=0.27.0"
+tempfile = "3.27.0"
 tower = { workspace = true, features = ["util"] }
+tracing-subscriber.workspace = true
 
 [lints]
 workspace = true

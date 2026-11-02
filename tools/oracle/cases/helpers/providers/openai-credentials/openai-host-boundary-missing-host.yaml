@@ -1,0 +1,5 @@
+kind: helper
+name: openai-host-boundary-missing-host
+call: {openai_credentials: {openai_host_boundary: {api_base: 'https://'}}}
+env: {}
+compare: {ignore: []}
