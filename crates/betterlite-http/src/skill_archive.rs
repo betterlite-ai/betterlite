@@ -19,6 +19,7 @@ const SKILL_MANIFEST_FILENAME: &str = "SKILL.md";
 const FRONTMATTER_PATTERN: &str = r"(?s)^---\s*\n(.*?)\n---\s*(?:\n|$)";
 const LOCAL_HEADER_SIGNATURE: [u8; 4] = [0x50, 0x4b, 0x03, 0x04];
 const LOCAL_HEADER_FIXED_LEN: usize = 30;
+const LOCAL_HEADER_FLAGS_RANGE: Range<usize> = 6..8;
 const LOCAL_HEADER_NAME_LEN_RANGE: Range<usize> = 26..28;
 const CENTRAL_HEADER_SIGNATURE: [u8; 4] = [0x50, 0x4b, 0x01, 0x02];
 const CENTRAL_HEADER_FIXED_LEN: usize = 46;
@@ -103,17 +104,18 @@ fn read_validated_member(
     index: usize,
     unpacked_bytes: &mut u64,
 ) -> Option<ArchiveMember> {
-    let mut info = uploaded.by_index(index).ok()?;
+    let entry = uploaded.by_index_data(index).ok()?;
     let (central_name_raw, flags) =
-        central_header_name_and_flags(stored_content, info.central_header_start())?;
-    let name = decode_central_name(central_name_raw, flags & LANGUAGE_ENCODING_FLAG != 0)?;
+        central_header_name_and_flags(stored_content, entry.central_header_start())?;
+    let name = decode_header_name(central_name_raw, flags & LANGUAGE_ENCODING_FLAG != 0)?;
     if name.ends_with('/') {
         return Some(ArchiveMember::Directory);
     }
-    if !local_header_name_matches(stored_content, info.header_start(), central_name_raw)? {
+    if !local_header_name_matches(stored_content, entry.header_start(), &name)? {
         return None;
     }
     let path = normalize_path(&name)?;
+    let mut info = uploaded.by_index(index).ok()?;
     *unpacked_bytes = unpacked_bytes.checked_add(info.size())?;
     if *unpacked_bytes > MAX_ARCHIVE_UNPACKED_BYTES {
         return None;
@@ -158,7 +160,7 @@ fn central_header_name_and_flags(
     Some((name_raw, u16::from_le_bytes(flags_bytes)))
 }
 
-fn decode_central_name(raw: &[u8], is_utf8: bool) -> Option<String> {
+fn decode_header_name(raw: &[u8], is_utf8: bool) -> Option<String> {
     if is_utf8 {
         str::from_utf8(raw).ok().map(ToOwned::to_owned)
     } else {
@@ -169,16 +171,19 @@ fn decode_central_name(raw: &[u8], is_utf8: bool) -> Option<String> {
 fn local_header_name_matches(
     stored_content: &[u8],
     header_start: u64,
-    central_name_raw: &[u8],
+    central_name: &str,
 ) -> Option<bool> {
-    let (_, local_name_raw) = header_name_bytes(
+    let (fixed, local_name_raw) = header_name_bytes(
         stored_content,
         header_start,
         LOCAL_HEADER_FIXED_LEN,
         LOCAL_HEADER_SIGNATURE,
         LOCAL_HEADER_NAME_LEN_RANGE,
     )?;
-    Some(local_name_raw == central_name_raw)
+    let flags_bytes: [u8; 2] = fixed.get(LOCAL_HEADER_FLAGS_RANGE)?.try_into().ok()?;
+    let flags = u16::from_le_bytes(flags_bytes);
+    let local_name = decode_header_name(local_name_raw, flags & LANGUAGE_ENCODING_FLAG != 0)?;
+    Some(local_name == central_name)
 }
 
 fn normalize_path(raw_path: &str) -> Option<String> {

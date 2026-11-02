@@ -422,6 +422,151 @@ fn skill_archive_rejects_duplicate_central_directory_names() {
 }
 
 #[test]
+fn skill_archive_builds_an_archive_with_an_unreadable_directory_entry() {
+    let mut output = Cursor::new(Vec::new());
+    let mut writer = ZipWriter::new(&mut output);
+    writer
+        .start_file(
+            "skill/SKILL.md",
+            SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
+        )
+        .unwrap();
+    writer.write_all(b"manifest").unwrap();
+    writer
+        .add_directory("skill/docs/", SimpleFileOptions::default())
+        .unwrap();
+    writer.finish().unwrap();
+    let mut bytes = output.into_inner();
+    let marker = b"skill/docs/";
+    let offsets = find_all(&bytes, marker);
+    assert_eq!(offsets.len(), 2);
+    bytes[offsets[0] - 24] |= 0x01;
+    bytes[offsets[1] - 38] |= 0x01;
+    let archive = build_skill_archive(&bytes).unwrap();
+    let repacked = ZipArchive::new(Cursor::new(archive.content)).unwrap();
+    assert_eq!(repacked.len(), 1);
+}
+
+#[test]
+fn skill_archive_rejects_a_local_utf8_name_that_mismatches_the_central_cp437_decode() {
+    let mut bytes = upload(&[("skill/SKILL.md", b"manifest"), ("skill/café.md", b"body")]);
+    let marker = "skill/café.md".as_bytes();
+    let offsets = find_all(&bytes, marker);
+    assert_eq!(offsets.len(), 2);
+    bytes[offsets[1] - 38 + 1] &= !0x08;
+    assert!(build_skill_archive(&bytes).is_none());
+}
+
+fn raw_local_header(name: &[u8], flags: u16, data: &[u8]) -> Vec<u8> {
+    let mut header = Vec::new();
+    header.extend_from_slice(&[0x50, 0x4b, 0x03, 0x04]);
+    header.extend_from_slice(&20_u16.to_le_bytes());
+    header.extend_from_slice(&flags.to_le_bytes());
+    header.extend_from_slice(&0_u16.to_le_bytes());
+    header.extend_from_slice(&0_u16.to_le_bytes());
+    header.extend_from_slice(&0x21_u16.to_le_bytes());
+    header.extend_from_slice(&crc32fast::hash(data).to_le_bytes());
+    header.extend_from_slice(&u32::try_from(data.len()).unwrap().to_le_bytes());
+    header.extend_from_slice(&u32::try_from(data.len()).unwrap().to_le_bytes());
+    header.extend_from_slice(&u16::try_from(name.len()).unwrap().to_le_bytes());
+    header.extend_from_slice(&0_u16.to_le_bytes());
+    header.extend_from_slice(name);
+    header.extend_from_slice(data);
+    header
+}
+
+fn raw_central_header(name: &[u8], flags: u16, data: &[u8], local_header_offset: u32) -> Vec<u8> {
+    let mut header = Vec::new();
+    header.extend_from_slice(&[0x50, 0x4b, 0x01, 0x02]);
+    header.extend_from_slice(&20_u16.to_le_bytes());
+    header.extend_from_slice(&20_u16.to_le_bytes());
+    header.extend_from_slice(&flags.to_le_bytes());
+    header.extend_from_slice(&0_u16.to_le_bytes());
+    header.extend_from_slice(&0_u16.to_le_bytes());
+    header.extend_from_slice(&0x21_u16.to_le_bytes());
+    header.extend_from_slice(&crc32fast::hash(data).to_le_bytes());
+    header.extend_from_slice(&u32::try_from(data.len()).unwrap().to_le_bytes());
+    header.extend_from_slice(&u32::try_from(data.len()).unwrap().to_le_bytes());
+    header.extend_from_slice(&u16::try_from(name.len()).unwrap().to_le_bytes());
+    header.extend_from_slice(&0_u16.to_le_bytes());
+    header.extend_from_slice(&0_u16.to_le_bytes());
+    header.extend_from_slice(&0_u16.to_le_bytes());
+    header.extend_from_slice(&0_u16.to_le_bytes());
+    header.extend_from_slice(&0_u32.to_le_bytes());
+    header.extend_from_slice(&local_header_offset.to_le_bytes());
+    header.extend_from_slice(name);
+    header
+}
+
+#[test]
+fn skill_archive_accepts_a_local_and_central_name_that_decode_to_the_same_string() {
+    let manifest_local = raw_local_header(b"skill/SKILL.md", 0, b"manifest");
+    let second_local_offset = u32::try_from(manifest_local.len()).unwrap();
+    let utf8_name = [b"skill/caf".as_slice(), &[0xc3, 0xa9], b".md"].concat();
+    let cp437_name = [b"skill/caf".as_slice(), &[0x82], b".md"].concat();
+    let second_local = raw_local_header(&utf8_name, 0x0800, b"body");
+
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&manifest_local);
+    bytes.extend_from_slice(&second_local);
+    let central_start = u32::try_from(bytes.len()).unwrap();
+    let manifest_central = raw_central_header(b"skill/SKILL.md", 0, b"manifest", 0);
+    let second_central = raw_central_header(&cp437_name, 0, b"body", second_local_offset);
+    bytes.extend_from_slice(&manifest_central);
+    bytes.extend_from_slice(&second_central);
+    let central_size = u32::try_from(manifest_central.len() + second_central.len()).unwrap();
+
+    bytes.extend_from_slice(&[0x50, 0x4b, 0x05, 0x06]);
+    bytes.extend_from_slice(&0_u16.to_le_bytes());
+    bytes.extend_from_slice(&0_u16.to_le_bytes());
+    bytes.extend_from_slice(&2_u16.to_le_bytes());
+    bytes.extend_from_slice(&2_u16.to_le_bytes());
+    bytes.extend_from_slice(&central_size.to_le_bytes());
+    bytes.extend_from_slice(&central_start.to_le_bytes());
+    bytes.extend_from_slice(&0_u16.to_le_bytes());
+
+    let archive = build_skill_archive(&bytes).unwrap();
+    let mut repacked = ZipArchive::new(Cursor::new(archive.content)).unwrap();
+    let mut data = Vec::new();
+    repacked
+        .by_name("café.md")
+        .unwrap()
+        .read_to_end(&mut data)
+        .unwrap();
+    assert_eq!(data, b"body");
+}
+
+fn write_member_with_unicode_path_to(writer: &mut ZipWriter<&mut Cursor<Vec<u8>>>, raw_name: &str) {
+    let mut options = FullFileOptions::default().compression_method(CompressionMethod::Stored);
+    let mut unicode_path_field = vec![1_u8];
+    unicode_path_field.extend_from_slice(&crc32fast::hash(raw_name.as_bytes()).to_le_bytes());
+    unicode_path_field.extend_from_slice(b"skill/x.txt");
+    options
+        .add_extra_field(0x7075, unicode_path_field, true)
+        .unwrap();
+    writer.start_file(raw_name, options).unwrap();
+    writer.write_all(b"body").unwrap();
+}
+
+#[test]
+fn skill_archive_rejects_distinct_members_that_share_a_unicode_path_extra_field() {
+    let mut output = Cursor::new(Vec::new());
+    let mut writer = ZipWriter::new(&mut output);
+    writer
+        .start_file(
+            "skill/SKILL.md",
+            SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
+        )
+        .unwrap();
+    writer.write_all(b"manifest").unwrap();
+    write_member_with_unicode_path_to(&mut writer, "skill/a.txt");
+    write_member_with_unicode_path_to(&mut writer, "skill/b.txt");
+    writer.finish().unwrap();
+    let bytes = output.into_inner();
+    assert!(build_skill_archive(&bytes).is_none());
+}
+
+#[test]
 fn skill_archive_replays_the_skill_archive_zip_corpus() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/skill_archive_zip");
     fs::read_dir(path)
