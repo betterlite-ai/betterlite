@@ -40,3 +40,17 @@ pub(crate) fn common_dir(directory: &Path) -> Result<PathBuf, GateError> {
     )?;
     Ok(PathBuf::from(common.trim()))
 }
+
+pub(crate) fn coordinator(directory: &Path) -> Result<PathBuf, GateError> {
+    if let Ok(configured) = git(directory, &["config", "--get", "betterlite.coordinator"]) {
+        let path = PathBuf::from(configured.trim());
+        if path.is_absolute() {
+            return Ok(path);
+        }
+        return Err(GateError::Dispatch {
+            task: String::new(),
+            reason: "betterlite.coordinator must be absolute".to_owned(),
+        });
+    }
+    common_dir(directory)
+}
