@@ -6,17 +6,6 @@ deviations:
     why: Truncating a name on a NUL byte is a path-construction trick, not a behavior worth copying; rejecting the whole upload is the safer, intended answer.
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/agent_skills_archive.py#L87-L95"
   - what: >-
-      An upload where two distinct members each carry a valid Info-ZIP Unicode Path extra field
-      (0x7075) that points to the same decoded name is rejected, where LiteLLM builds the archive
-      from the two members' own central directory names and never looks at the extra field.
-    why: >-
-      The zip crate applies a valid 0x7075 field onto the entry's name before indexing it, so the
-      two members collapse to one key in its name map and the archive looks like it has a duplicate
-      name; recovering the member the map drops would mean walking the central directory by hand
-      instead of through the crate's own index, which is disproportionate to an edge case that needs
-      a crafted, colliding extra field to reach.
-    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/agent_skills_archive.py#L60-L77"
-  - what: >-
       A corrupt or truncated DEFLATE member returns None, so the skill is left out of the index and
       its archive route answers 404, where LiteLLM's own except clause lets the read error escape
       and the route answers an unhandled 500.

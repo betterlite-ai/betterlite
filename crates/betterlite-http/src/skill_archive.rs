@@ -1,5 +1,5 @@
 use std::collections::BTreeSet;
-use std::io::{Cursor, Read as _, Write as _};
+use std::io::{Cursor, Write as _};
 use std::ops::Range;
 use std::str;
 
@@ -11,6 +11,7 @@ use zip::result::{ZipError, ZipResult};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, DateTime, ZipArchive, ZipWriter};
 
+mod central_directory;
 mod cp437;
 
 const MAX_ARCHIVE_UNPACKED_BYTES: u64 = 50 * 1024 * 1024;
@@ -37,8 +38,8 @@ pub struct SkillArchive {
 
 #[must_use]
 pub fn build_skill_archive(stored_content: &[u8]) -> Option<SkillArchive> {
-    let mut uploaded = ZipArchive::new(Cursor::new(stored_content)).ok()?;
-    let members = flattened_members(stored_content, &mut uploaded)?;
+    let uploaded = ZipArchive::new(Cursor::new(stored_content)).ok()?;
+    let members = flattened_members(stored_content, &uploaded)?;
     let manifest = members
         .iter()
         .find_map(|(name, data)| (name == SKILL_MANIFEST_FILENAME).then_some(data.as_slice()))?;
@@ -55,15 +56,15 @@ pub fn build_skill_archive(stored_content: &[u8]) -> Option<SkillArchive> {
 
 fn flattened_members(
     stored_content: &[u8],
-    uploaded: &mut ZipArchive<Cursor<&[u8]>>,
+    uploaded: &ZipArchive<Cursor<&[u8]>>,
 ) -> Option<Vec<(String, Vec<u8>)>> {
-    if uploaded.has_duplicate_names() {
-        return None;
-    }
+    let starts =
+        central_directory::header_starts(stored_content, uploaded.central_directory_start());
     let mut entries = Vec::new();
     let mut unpacked_bytes = 0_u64;
-    for index in 0..uploaded.len() {
-        let member = read_validated_member(stored_content, uploaded, index, &mut unpacked_bytes)?;
+    for central_header_start in starts {
+        let member =
+            read_validated_member(stored_content, central_header_start, &mut unpacked_bytes)?;
         let ArchiveMember::File(path, data) = member else {
             continue;
         };
@@ -100,28 +101,22 @@ enum ArchiveMember {
 
 fn read_validated_member(
     stored_content: &[u8],
-    uploaded: &mut ZipArchive<Cursor<&[u8]>>,
-    index: usize,
+    central_header_start: u64,
     unpacked_bytes: &mut u64,
 ) -> Option<ArchiveMember> {
-    let entry = uploaded.by_index_data(index).ok()?;
-    let (central_name_raw, flags) =
-        central_header_name_and_flags(stored_content, entry.central_header_start())?;
-    let name = decode_header_name(central_name_raw, flags & LANGUAGE_ENCODING_FLAG != 0)?;
-    if name.ends_with('/') {
+    let entry = central_directory::read_entry(stored_content, central_header_start)?;
+    if entry.name.ends_with('/') {
         return Some(ArchiveMember::Directory);
     }
-    if !local_header_name_matches(stored_content, entry.header_start(), &name)? {
+    if !local_header_name_matches(stored_content, entry.local_header_start, &entry.name)? {
         return None;
     }
-    let path = normalize_path(&name)?;
-    let mut info = uploaded.by_index(index).ok()?;
-    *unpacked_bytes = unpacked_bytes.checked_add(info.size())?;
+    let path = normalize_path(&entry.name)?;
+    *unpacked_bytes = unpacked_bytes.checked_add(entry.declared_uncompressed_size)?;
     if *unpacked_bytes > MAX_ARCHIVE_UNPACKED_BYTES {
         return None;
     }
-    let mut data = Vec::new();
-    info.read_to_end(&mut data).ok()?;
+    let data = central_directory::decompress(stored_content, central_header_start)?;
     Some(ArchiveMember::File(path, data))
 }
 

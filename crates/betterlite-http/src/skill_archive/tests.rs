@@ -448,6 +448,10 @@ fn skill_archive_builds_an_archive_with_an_unreadable_directory_entry() {
 }
 
 #[test]
+#[expect(
+    clippy::non_ascii_literal,
+    reason = "the test needs a name that decodes differently as utf8 and cp437"
+)]
 fn skill_archive_rejects_a_local_utf8_name_that_mismatches_the_central_cp437_decode() {
     let mut bytes = upload(&[("skill/SKILL.md", b"manifest"), ("skill/café.md", b"body")]);
     let marker = "skill/café.md".as_bytes();
@@ -457,19 +461,25 @@ fn skill_archive_rejects_a_local_utf8_name_that_mismatches_the_central_cp437_dec
     assert!(build_skill_archive(&bytes).is_none());
 }
 
+fn member_descriptor_fields(name: &[u8], data: &[u8]) -> Vec<u8> {
+    let mut fields = Vec::new();
+    fields.extend_from_slice(&0_u16.to_le_bytes());
+    fields.extend_from_slice(&0_u16.to_le_bytes());
+    fields.extend_from_slice(&0x21_u16.to_le_bytes());
+    fields.extend_from_slice(&crc32fast::hash(data).to_le_bytes());
+    fields.extend_from_slice(&u32::try_from(data.len()).unwrap().to_le_bytes());
+    fields.extend_from_slice(&u32::try_from(data.len()).unwrap().to_le_bytes());
+    fields.extend_from_slice(&u16::try_from(name.len()).unwrap().to_le_bytes());
+    fields.extend_from_slice(&0_u16.to_le_bytes());
+    fields
+}
+
 fn raw_local_header(name: &[u8], flags: u16, data: &[u8]) -> Vec<u8> {
     let mut header = Vec::new();
     header.extend_from_slice(&[0x50, 0x4b, 0x03, 0x04]);
     header.extend_from_slice(&20_u16.to_le_bytes());
     header.extend_from_slice(&flags.to_le_bytes());
-    header.extend_from_slice(&0_u16.to_le_bytes());
-    header.extend_from_slice(&0_u16.to_le_bytes());
-    header.extend_from_slice(&0x21_u16.to_le_bytes());
-    header.extend_from_slice(&crc32fast::hash(data).to_le_bytes());
-    header.extend_from_slice(&u32::try_from(data.len()).unwrap().to_le_bytes());
-    header.extend_from_slice(&u32::try_from(data.len()).unwrap().to_le_bytes());
-    header.extend_from_slice(&u16::try_from(name.len()).unwrap().to_le_bytes());
-    header.extend_from_slice(&0_u16.to_le_bytes());
+    header.extend_from_slice(&member_descriptor_fields(name, data));
     header.extend_from_slice(name);
     header.extend_from_slice(data);
     header
@@ -481,14 +491,7 @@ fn raw_central_header(name: &[u8], flags: u16, data: &[u8], local_header_offset:
     header.extend_from_slice(&20_u16.to_le_bytes());
     header.extend_from_slice(&20_u16.to_le_bytes());
     header.extend_from_slice(&flags.to_le_bytes());
-    header.extend_from_slice(&0_u16.to_le_bytes());
-    header.extend_from_slice(&0_u16.to_le_bytes());
-    header.extend_from_slice(&0x21_u16.to_le_bytes());
-    header.extend_from_slice(&crc32fast::hash(data).to_le_bytes());
-    header.extend_from_slice(&u32::try_from(data.len()).unwrap().to_le_bytes());
-    header.extend_from_slice(&u32::try_from(data.len()).unwrap().to_le_bytes());
-    header.extend_from_slice(&u16::try_from(name.len()).unwrap().to_le_bytes());
-    header.extend_from_slice(&0_u16.to_le_bytes());
+    header.extend_from_slice(&member_descriptor_fields(name, data));
     header.extend_from_slice(&0_u16.to_le_bytes());
     header.extend_from_slice(&0_u16.to_le_bytes());
     header.extend_from_slice(&0_u16.to_le_bytes());
@@ -499,6 +502,10 @@ fn raw_central_header(name: &[u8], flags: u16, data: &[u8], local_header_offset:
 }
 
 #[test]
+#[expect(
+    clippy::non_ascii_literal,
+    reason = "the test needs a name that decodes differently as utf8 and cp437"
+)]
 fn skill_archive_accepts_a_local_and_central_name_that_decode_to_the_same_string() {
     let manifest_local = raw_local_header(b"skill/SKILL.md", 0, b"manifest");
     let second_local_offset = u32::try_from(manifest_local.len()).unwrap();
@@ -536,7 +543,11 @@ fn skill_archive_accepts_a_local_and_central_name_that_decode_to_the_same_string
     assert_eq!(data, b"body");
 }
 
-fn write_member_with_unicode_path_to(writer: &mut ZipWriter<&mut Cursor<Vec<u8>>>, raw_name: &str) {
+fn write_member_with_unicode_path_to(
+    writer: &mut ZipWriter<&mut Cursor<Vec<u8>>>,
+    raw_name: &str,
+    body: &[u8],
+) {
     let mut options = FullFileOptions::default().compression_method(CompressionMethod::Stored);
     let mut unicode_path_field = vec![1_u8];
     unicode_path_field.extend_from_slice(&crc32fast::hash(raw_name.as_bytes()).to_le_bytes());
@@ -545,11 +556,11 @@ fn write_member_with_unicode_path_to(writer: &mut ZipWriter<&mut Cursor<Vec<u8>>
         .add_extra_field(0x7075, unicode_path_field, true)
         .unwrap();
     writer.start_file(raw_name, options).unwrap();
-    writer.write_all(b"body").unwrap();
+    writer.write_all(body).unwrap();
 }
 
 #[test]
-fn skill_archive_rejects_distinct_members_that_share_a_unicode_path_extra_field() {
+fn skill_archive_keeps_distinct_members_that_share_a_unicode_path_extra_field() {
     let mut output = Cursor::new(Vec::new());
     let mut writer = ZipWriter::new(&mut output);
     writer
@@ -559,11 +570,26 @@ fn skill_archive_rejects_distinct_members_that_share_a_unicode_path_extra_field(
         )
         .unwrap();
     writer.write_all(b"manifest").unwrap();
-    write_member_with_unicode_path_to(&mut writer, "skill/a.txt");
-    write_member_with_unicode_path_to(&mut writer, "skill/b.txt");
+    write_member_with_unicode_path_to(&mut writer, "skill/a.txt", b"body a");
+    write_member_with_unicode_path_to(&mut writer, "skill/b.txt", b"body b");
     writer.finish().unwrap();
     let bytes = output.into_inner();
-    assert!(build_skill_archive(&bytes).is_none());
+    let archive = build_skill_archive(&bytes).unwrap();
+    let mut repacked = ZipArchive::new(Cursor::new(archive.content)).unwrap();
+    let mut data_a = Vec::new();
+    repacked
+        .by_name("a.txt")
+        .unwrap()
+        .read_to_end(&mut data_a)
+        .unwrap();
+    let mut data_b = Vec::new();
+    repacked
+        .by_name("b.txt")
+        .unwrap()
+        .read_to_end(&mut data_b)
+        .unwrap();
+    assert_eq!(data_a, b"body a");
+    assert_eq!(data_b, b"body b");
 }
 
 #[test]

@@ -5,6 +5,4 @@ call:
     stored_content: UEsDBAoAAAAAAAAAIQBAaPqmCAAAAAgAAAAOAAAAc2tpbGwvU0tJTEwubWRtYW5pZmVzdFBLAwQKAAAAAAAAACEAsguo2wQAAAAEAAAACwAAAHNraWxsL2EudHh0Ym9keVBLAwQKAAAAAAAAACEAsguo2wQAAAAEAAAACwAAAHNraWxsL2IudHh0Ym9keVBLAQIKAwoAAAAAAAAAIQBAaPqmCAAAAAgAAAAOAAAAAAAAAAAAAACkgQAAAABza2lsbC9TS0lMTC5tZFBLAQIKAwoAAAAAAAAAIQCyC6jbBAAAAAQAAAALABQAAAAAAAAAAACkgTQAAABza2lsbC9hLnR4dHVwEAABR2nh73NraWxsL3gudHh0UEsBAgoDCgAAAAAAAAAhALILqNsEAAAABAAAAAsAFAAAAAAAAAAAAKSBYQAAAHNraWxsL2IudHh0dXAQAAGXE0Goc2tpbGwveC50eHRQSwUGAAAAAAMAAwDWAAAAjgAAAAAA
 env: {}
 compare:
-  ignore:
-    - pointer: ""
-      why: betterlite rejects two distinct members that share a valid 0x7075 Unicode Path extra field while LiteLLM ignores the extra field and builds the archive from the members' own names, a recorded deviation (docs/deviations/B3210.yaml)
+  ignore: []
