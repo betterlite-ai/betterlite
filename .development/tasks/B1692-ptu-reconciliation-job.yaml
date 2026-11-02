@@ -50,7 +50,6 @@ scope:
     - crates/betterlite-db/src/ptu/rollup.rs
     - crates/betterlite-db/src/ptu/rollup/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/src/state.rs
     - crates/betterlite-server/src/state/**
     - crates/betterlite-server/src/jobs.rs

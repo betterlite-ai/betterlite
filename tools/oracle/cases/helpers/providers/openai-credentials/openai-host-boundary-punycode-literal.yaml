@@ -1,0 +1,5 @@
+kind: helper
+name: openai-host-boundary-punycode-literal
+call: {openai_credentials: {openai_host_boundary: {api_base: 'https://xn--a.api.openai.com/'}}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,12 @@
+kind: helper
+name: resolve_local_image_returns_the_realpath_resolved_symlink_target
+call:
+  assets:
+    op: resolve_local_image
+    fixture:
+      - {kind: file, path: real/image.png, content_hex: "89504e470d0a1a0a"}
+      - {kind: symlink, path: logo.png, target: real/image.png}
+    candidate: "<root>/logo.png"
+env: {}
+compare:
+  ignore: []

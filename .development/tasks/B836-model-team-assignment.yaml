@@ -106,7 +106,6 @@ scope:
   paths:
     - crates/betterlite-server/src/model_team_assignment.rs
     - crates/betterlite-server/src/model_team_assignment/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/src/helpers/server/model_team_assignment.rs
     - tools/oracle/src/helpers/server/model_team_assignment/**
@@ -115,6 +114,7 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/model-team-assignment/**
     - tools/oracle/fuzz/corpus/helper_case/model-team-assignment-*
+    - crates/betterlite-server/src/model_team_assignment/fixtures.rs
     - crates/betterlite-server/src/model_team_assignment/fixtures/**
   lint_tables: false
 references:

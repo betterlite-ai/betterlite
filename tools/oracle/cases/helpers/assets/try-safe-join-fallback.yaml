@@ -1,0 +1,12 @@
+kind: helper
+name: try_safe_join_returns_null_instead_of_raising_on_escape
+call:
+  assets:
+    op: try_safe_join
+    fixture:
+      - {kind: dir, path: "../outside"}
+      - {kind: symlink, path: escape, target: "../outside"}
+    parts: [escape, secret.txt]
+env: {}
+compare:
+  ignore: []

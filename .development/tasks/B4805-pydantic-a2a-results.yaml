@@ -32,6 +32,7 @@ scope:
     - tools/oracle/helpers/b4805/**
     - tools/oracle/src/helpers/a2a/b4805.rs
     - tools/oracle/src/helpers/a2a/b4805/**
+    - tools/oracle/cases/a2a/pydantic*
   lint_tables: false
 
 references:

@@ -86,7 +86,6 @@ scope:
   paths:
     - crates/betterlite-server/src/object_permissions.rs
     - crates/betterlite-server/src/object_permissions/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/src/helpers/server/object_permissions.rs
     - tools/oracle/src/helpers/server/object_permissions/**
@@ -95,6 +94,7 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/object-permissions/**
     - tools/oracle/fuzz/corpus/helper_case/object-permissions-*
+    - crates/betterlite-server/src/object_permissions/fixtures.rs
     - crates/betterlite-server/src/object_permissions/fixtures/**
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/object_permissions.rs

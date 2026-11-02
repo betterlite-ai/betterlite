@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::error::details::{RateLimitDetails, TimeoutDetails, TimeoutStatus};
+use crate::error::details::{RateLimitDetails, ResponseDetails, TimeoutDetails, TimeoutStatus};
 use crate::error::{ErrorClass, ErrorContext};
 use crate::rate_limit::RateLimitCategory;
 
@@ -78,8 +78,12 @@ pub fn map_sagemaker_exception(input: &SagemakerExceptionInput) -> Option<ErrorC
     Some(build(input, family, input.custom_llm_provider.clone()))
 }
 
-fn build(input: &SagemakerExceptionInput, family: Family, provider: String) -> ErrorClass {
-    let context = ErrorContext {
+fn sagemaker_context(
+    input: &SagemakerExceptionInput,
+    family: Family,
+    provider: String,
+) -> ErrorContext {
+    ErrorContext {
         message: format!("{provider}: {}", reason(family)),
         model: Some(input.model.clone()),
         provider: Some(provider),
@@ -88,12 +92,27 @@ fn build(input: &SagemakerExceptionInput, family: Family, provider: String) -> E
         body_type: None,
         body_param: None,
         body_code: None,
-    };
+    }
+}
+
+fn build(input: &SagemakerExceptionInput, family: Family, provider: String) -> ErrorClass {
+    let context = sagemaker_context(input, family, provider);
+    // _map_sagemaker_exception passes a response on every branch of these four families
     match family {
-        Family::BadRequest => ErrorClass::BadRequest(Box::new(context)),
-        Family::ContextWindowExceeded => ErrorClass::ContextWindowExceeded(Box::new(context)),
-        Family::Authentication => ErrorClass::Authentication(Box::new(context)),
-        Family::NotFound => ErrorClass::NotFound(Box::new(context)),
+        Family::BadRequest => ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(
+            context,
+            input.status_code,
+        ))),
+        Family::ContextWindowExceeded => ErrorClass::ContextWindowExceeded(Box::new(
+            ResponseDetails::with_status(context, input.status_code),
+        )),
+        Family::Authentication => ErrorClass::Authentication(Box::new(
+            ResponseDetails::with_status(context, input.status_code),
+        )),
+        Family::NotFound => ErrorClass::NotFound(Box::new(ResponseDetails::with_status(
+            context,
+            input.status_code,
+        ))),
         Family::RateLimit => ErrorClass::RateLimit(Box::new(RateLimitDetails {
             context,
             category: RateLimitCategory::VendorRateLimit,

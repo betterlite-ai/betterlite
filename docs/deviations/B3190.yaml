@@ -1,0 +1,5 @@
+task: B3190
+deviations:
+  - what: Provider catalog is loaded from a bundled file path constructed relative to the module, not through importlib.resources.files.
+    why: Rust crates include data files in the build output directory; runtime path resolution matches the runtime layout.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L409-L414

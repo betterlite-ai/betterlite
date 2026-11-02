@@ -1,0 +1,13 @@
+kind: helper
+name: json_url_request
+call:
+  b3300:
+    json_body:
+      model: mistral/mistral-ocr-latest
+      document:
+        type: document_url
+        document_url: https://example.com/a.pdf
+      pages: [0, 1, 2]
+env: {}
+compare:
+  ignore: []

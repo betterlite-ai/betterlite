@@ -7,6 +7,7 @@ cargo-fuzz = true
 [dependencies]
 betterlite-server = { path = ".." }
 libfuzzer-sys = "0.4.9"
+serde_json = "1.0.154"
 
 [[bin]]
 name = "key_header"
@@ -16,8 +17,36 @@ doc = false
 bench = false
 
 [[bin]]
+name = "local_image_header"
+path = "fuzz_targets/local_image_header.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ocr_json_body"
+path = "fuzz_targets/ocr_json_body.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ocr_multipart_form"
+path = "fuzz_targets/ocr_multipart_form.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "scim_resource"
 path = "fuzz_targets/scim_resource.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "cache_settings_parser"
+path = "fuzz_targets/cache_settings_parser.rs"
 test = false
 doc = false
 bench = false

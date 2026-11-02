@@ -36,7 +36,6 @@ scope:
   paths:
     - crates/betterlite-server/src/tracing_routes.rs
     - crates/betterlite-server/src/tracing_routes/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/cases/traces/**
     - tools/oracle/Cargo.toml

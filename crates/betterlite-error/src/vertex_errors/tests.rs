@@ -61,7 +61,7 @@ fn facts(status_code: Option<u16>) -> ProviderErrorFacts {
     "403 PERMISSION_DENIED: the caller does not have permission",
     None,
     Some("bad_request"),
-    Some(400)
+    Some(403)
 )]
 // branch-1213: the two content-blocked phrases
 #[case::response_blocked(

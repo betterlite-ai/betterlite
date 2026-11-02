@@ -1,0 +1,6 @@
+--FUZZ
+Content-Disposition: form-data; name="thumbnail"
+Content-Type: image/png
+
+inline-bytes
+--FUZZ--

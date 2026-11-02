@@ -61,7 +61,6 @@ scope:
   paths:
     - crates/betterlite-server/src/team_parent_limits.rs
     - crates/betterlite-server/src/team_parent_limits/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/src/helpers/server/team_parent_limits.rs
     - tools/oracle/src/helpers/server/team_parent_limits/**

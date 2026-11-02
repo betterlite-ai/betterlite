@@ -4,22 +4,30 @@ use rstest::rstest;
 
 use super::*;
 
-fn dict_input(error: &str) -> OllamaExceptionInput {
+fn exception_input(original_exception: OllamaOriginalException) -> OllamaExceptionInput {
     OllamaExceptionInput {
         model: "ollama/some-model".to_owned(),
-        original_exception: OllamaOriginalException::Dict {
-            error: error.to_owned(),
-        },
+        original_exception,
     }
 }
 
+fn dict_input(error: &str) -> OllamaExceptionInput {
+    exception_input(OllamaOriginalException::Dict {
+        error: error.to_owned(),
+    })
+}
+
 fn text_input(text: &str) -> OllamaExceptionInput {
-    OllamaExceptionInput {
-        model: "ollama/some-model".to_owned(),
-        original_exception: OllamaOriginalException::Text {
-            text: text.to_owned(),
-        },
-    }
+    exception_input(OllamaOriginalException::Text {
+        text: text.to_owned(),
+    })
+}
+
+fn text_status_input(text: &str, status_code: u16) -> OllamaExceptionInput {
+    exception_input(OllamaOriginalException::TextStatus {
+        text: text.to_owned(),
+        status_code: Some(status_code),
+    })
 }
 
 fn family(class: &ErrorClass) -> &'static str {
@@ -74,6 +82,26 @@ fn native_errors_b_behavior_tests_behavior(
             assert_eq!(family(&class), expected);
         }
     }
+}
+
+#[rstest]
+#[case::no_such_file_on_500("no such file or directory", 500)]
+fn response_branches_answer_the_provider_status(#[case] text: &str, #[case] status: u16) {
+    let class =
+        map_ollama_exception(&text_status_input(text, status)).expect("expected a classification");
+    assert_eq!(class.metadata().status_code, status);
+}
+
+#[test]
+fn the_text_variant_native_rs_always_builds_keeps_the_class_default() {
+    let class = map_ollama_exception(&text_input("no such file or directory"))
+        .expect("expected a classification");
+    assert_eq!(
+        class.metadata().status_code,
+        400,
+        "native.rs's dispatch table always builds OllamaOriginalException::Text, which carries no \
+status, so the provider's real status can never reach the class on the live request path"
+    );
 }
 
 #[test]

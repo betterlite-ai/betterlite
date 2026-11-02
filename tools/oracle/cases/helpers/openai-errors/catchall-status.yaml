@@ -1,0 +1,11 @@
+kind: helper
+name: openai-errors-catchall-status
+call:
+  provider_error:
+    kind: raw
+    model: gpt-4
+    custom_llm_provider: triton
+    error_str: "an unmatched failure"
+    status_code: 409
+env: {}
+compare: {ignore: []}

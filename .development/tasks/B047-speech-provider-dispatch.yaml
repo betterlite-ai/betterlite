@@ -54,7 +54,6 @@ scope:
     - crates/betterlite-config/src/providers/riva/**
     - crates/betterlite-server/src/speech_providers.rs
     - crates/betterlite-server/src/speech_providers/**
-    - crates/betterlite-server/src/lib.rs
     - tools/oracle/src/helpers/core_ops/speech_provider_dispatch.rs
     - tools/oracle/src/helpers/core_ops/speech_provider_dispatch/**
     - tools/oracle/helpers/speech_provider_dispatch.py

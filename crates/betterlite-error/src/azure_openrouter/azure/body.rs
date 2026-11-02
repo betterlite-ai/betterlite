@@ -1,5 +1,7 @@
-use crate::facts::ProviderErrorBody;
+use super::{AzureExceptionInput, azure_context};
+use crate::error::ErrorContext;
 use crate::facts::presence::Field;
+use crate::facts::{ExceptionCheckers, ProviderErrorBody};
 
 // the body fields openai.APIError and AzureOpenAIExceptionMapping read: top-level type/param/code plus the nested "error" object used for content-policy and structured-code detection
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -86,4 +88,23 @@ pub(super) fn content_policy_fields(
         Some(plain) => (plain.kind.clone(), plain.code.clone()),
         None => (None, None),
     }
+}
+
+pub(super) fn is_content_policy(input: &AzureExceptionInput) -> bool {
+    azure_error_code(input.body.as_ref()).as_deref() == Some("content_policy_violation")
+        || ExceptionCheckers::azure_policy(&input.error_str)
+}
+
+pub(super) fn content_policy_context(input: &AzureExceptionInput, message: &str) -> ErrorContext {
+    let (error_type, error_code) = content_policy_fields(input.body.as_ref());
+    azure_context(
+        input,
+        "azure",
+        format!("litellm.BadRequestError: litellm.ContentPolicyViolationError: {message}"),
+        (
+            Some(error_type.unwrap_or_else(|| "invalid_request_error".to_owned())),
+            None,
+            Some(error_code.unwrap_or_else(|| "content_policy_violation".to_owned())),
+        ),
+    )
 }

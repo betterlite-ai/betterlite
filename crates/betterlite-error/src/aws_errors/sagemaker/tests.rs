@@ -161,6 +161,18 @@ fn aws_errors_behavior_tests_behavior(
     }
 }
 
+#[rstest]
+#[case::status_422("an unmatched failure", Some(422), 422)]
+fn response_branches_answer_the_provider_status(
+    #[case] error_str: &str,
+    #[case] status_code: Option<u16>,
+    #[case] expected_status: u16,
+) {
+    let class = map_sagemaker_exception(&input("my_sagemaker_proxy", error_str, status_code))
+        .expect("the status_code elif chain must match");
+    assert_eq!(class.metadata().status_code, expected_status);
+}
+
 #[test]
 fn message_carries_the_family_specific_reason() {
     let mapped = map_sagemaker_exception(&input(

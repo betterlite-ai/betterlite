@@ -253,7 +253,7 @@ checks:
       run: grep -qE 'fn.*active.*submissions|fn.*get.*active.*server' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'MCPApprovalStatus.*active' crates/betterlite-db/src/mcp/table_access.rs && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^mcp_table_access::tests::.*active.*submission/)'
     - id: management-tests
       why: Management accessor tests are missing or fail.
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp_management_access::tests::/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::management_access::tests::/) - test(/replays_the_/)'
     - id: prisma-throw-status
       why: get_prisma_client_or_throw does not raise 500 status.
       run: grep -qE 'fn get_prisma_client_or_throw' crates/betterlite-server/src/mcp/management_access.rs && grep -qE 'HTTP_500|status.*500|status_code.*500' crates/betterlite-server/src/mcp/management_access.rs && grep -qE 'detail.*error|"error"' crates/betterlite-server/src/mcp/management_access.rs

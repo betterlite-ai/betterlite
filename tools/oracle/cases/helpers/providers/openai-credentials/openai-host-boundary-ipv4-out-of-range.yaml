@@ -1,0 +1,5 @@
+kind: helper
+name: openai-host-boundary-ipv4-out-of-range
+call: {openai_credentials: {openai_host_boundary: {api_base: 'https://999.1.1.1/v1'}}}
+env: {}
+compare: {ignore: []}

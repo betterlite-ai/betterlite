@@ -1,0 +1,11 @@
+kind: helper
+name: collision-detect-exact-match
+call:
+  b3614:
+    collision:
+      existing_routes:
+        - {path: /foo, methods: [GET], lazy_owned: false}
+      new_path: /foo
+      new_methods: [GET]
+env: {}
+compare: {ignore: []}

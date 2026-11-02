@@ -37,7 +37,6 @@ scope:
   paths:
     - crates/betterlite-server/src/login_form.rs
     - crates/betterlite-server/src/login_form/**
-    - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/src/helpers/server/login_form.rs
     - tools/oracle/src/helpers/server/login_form/**

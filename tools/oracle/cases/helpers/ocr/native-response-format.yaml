@@ -1,0 +1,13 @@
+kind: helper
+name: native_response_format
+call:
+  b3300:
+    json_body:
+      model: mistral/mistral-ocr-latest
+      document:
+        type: document_url
+        document_url: https://example.com/a.pdf
+      req_format: native
+env: {}
+compare:
+  ignore: []

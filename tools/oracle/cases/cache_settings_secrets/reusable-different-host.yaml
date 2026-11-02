@@ -1,0 +1,9 @@
+kind: helper
+name: cache-settings-secrets-reusable-different-host
+call:
+  b4306:
+    function: reusable
+    incoming: {host: "b", port: 1}
+    saved: {host: "a", port: 1}
+env: {}
+compare: {ignore: []}

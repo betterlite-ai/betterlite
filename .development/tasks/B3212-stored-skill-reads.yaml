@@ -41,6 +41,11 @@ scope:
   - tools/oracle/helpers/b3212/**
   - tools/oracle/src/helpers/core_ops/b3212.rs
   - tools/oracle/src/helpers/core_ops/b3212/**
+  - tools/oracle/cases/helpers/stored-skill-reads/cache-policy.yaml
+  - tools/oracle/cases/helpers/stored-skill-reads/list-pagination.yaml
+  - tools/oracle/cases/helpers/stored-skill-reads/missing-principal-bypass.yaml
+  - tools/oracle/cases/helpers/stored-skill-reads/ownership-checks.yaml
+  - tools/oracle/cases/helpers/stored-skill-reads/skill-to-typed-conversion.yaml
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/handler.py#L37-L51

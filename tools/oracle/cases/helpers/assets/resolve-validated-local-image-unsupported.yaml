@@ -1,0 +1,11 @@
+kind: helper
+name: resolve_local_image_warns_and_returns_null_for_an_unsupported_format
+call:
+  assets:
+    op: resolve_local_image
+    fixture:
+      - {kind: file, path: notes.txt, content_hex: "6e6f7420616e20696d61676520617420616c6c"}
+    candidate: "<root>/notes.txt"
+env: {}
+compare:
+  ignore: []
