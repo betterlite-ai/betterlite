@@ -92,6 +92,8 @@ fn get_supported_event_hooks_returns_the_six_hooks() {
 #[case::exclusively_mcp(&[EventHook::PreMcpCall, EventHook::DuringMcpCall], InspectionType::Chat, InspectionType::Mcp)]
 #[case::exclusively_chat(&[EventHook::PreCall, EventHook::PostCall], InspectionType::Mcp, InspectionType::Chat)]
 #[case::mixed_preserves_current(&[EventHook::PreCall, EventHook::PreMcpCall], InspectionType::Chat, InspectionType::Chat)]
+#[case::mixed_keeps_current_mcp(&[EventHook::PreCall, EventHook::PreMcpCall], InspectionType::Mcp, InspectionType::Mcp)]
+#[case::logging_only_keeps_current(&[EventHook::LoggingOnly], InspectionType::Mcp, InspectionType::Mcp)]
 #[case::empty_preserves_current(&[], InspectionType::Mcp, InspectionType::Mcp)]
 fn infer_inspection_from_mode_flips_only_for_exclusive_surfaces(
     #[case] hooks: &[EventHook],
@@ -137,4 +139,21 @@ fn warn_if_mode_surface_mismatch_names_the_unused_hooks_for_mixed_configuration(
     fs::remove_file(&log_path).expect("remove log");
     assert!(written.contains("firewall"));
     assert!(written.contains("{PreMcpCall}"));
+}
+
+#[test]
+fn warn_if_mode_surface_mismatch_names_the_chat_hooks_for_mcp_inspection() {
+    let log_path = env::temp_dir().join(format!("betterlite-cisco-mismatch-mcp-{}", process::id()));
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::WARN)
+        .with_writer(Arc::new(fs::File::create(&log_path).expect("log file")))
+        .finish();
+    let configured = BTreeSet::from([EventHook::PreCall, EventHook::PreMcpCall]);
+    let guard = set_default(subscriber);
+    warn_if_mode_surface_mismatch("firewall", InspectionType::Mcp, &configured);
+    drop(guard);
+    let written = fs::read_to_string(&log_path).expect("log contents");
+    fs::remove_file(&log_path).expect("remove log");
+    assert!(written.contains("{PreCall}"));
+    assert!(!written.contains("{PreMcpCall}"));
 }

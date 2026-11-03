@@ -18,12 +18,12 @@ fn full_inputs() -> ChatPayloadInputs {
         litellm_call_id: Some("call-1".to_owned()),
         request_metadata: RequestMetadata {
             src_app: Some("gateway".to_owned()),
-            dst_app: None,
-            src_ip: None,
-            dst_ip: None,
-            dst_host: None,
-            sni: None,
-            user_agent: None,
+            dst_app: Some("dst-app".to_owned()),
+            src_ip: Some("src-ip".to_owned()),
+            dst_ip: Some("dst-ip".to_owned()),
+            dst_host: Some("dst-host".to_owned()),
+            sni: Some("sni".to_owned()),
+            user_agent: Some("user-agent".to_owned()),
         },
         enabled_rules: vec![WireRule {
             rule_name: Some("pii".to_owned()),
@@ -39,27 +39,45 @@ fn full_inputs() -> ChatPayloadInputs {
 }
 
 #[test]
-fn build_chat_payload_assembles_messages_and_metadata() {
+fn build_chat_payload_serializes_every_metadata_key() {
     let payload = build_chat_payload(full_inputs());
-    assert_eq!(payload.messages.len(), 1);
-    assert_eq!(payload.metadata.user, Some("alice".to_owned()));
+    let serialized = serde_json::to_value(&payload).expect("payload serializes");
     assert_eq!(
-        payload.metadata.client_transaction_id,
-        Some("call-1".to_owned())
+        serialized["metadata"],
+        serde_json::json!({
+            "user":"alice", "client_transaction_id":"call-1", "src_app":"gateway",
+            "dst_app":"dst-app", "src_ip":"src-ip", "dst_ip":"dst-ip", "dst_host":"dst-host",
+            "sni":"sni", "user_agent":"user-agent"
+        })
     );
-    assert_eq!(payload.metadata.src_app, Some("gateway".to_owned()));
-    assert_eq!(payload.metadata.dst_app, None);
 }
 
 #[test]
-fn build_chat_payload_assembles_config() {
-    let payload = build_chat_payload(full_inputs());
-    assert_eq!(payload.config.enabled_rules.len(), 1);
+fn build_chat_payload_serializes_the_full_config() {
+    let mut inputs = full_inputs();
+    inputs.enabled_rules[0].rule_id = Some("rule-id".to_owned());
+    inputs.integration_profile_version = Some("v2".to_owned());
+    inputs.integration_tenant_id = Some("tenant".to_owned());
+    inputs.integration_type = Some("type".to_owned());
+    let payload = build_chat_payload(inputs);
+    let serialized = serde_json::to_value(&payload).expect("payload serializes");
     assert_eq!(
-        payload.config.integration_profile_id,
-        Some("profile-1".to_owned())
+        serialized["config"],
+        serde_json::json!({
+            "enabled_rules":[{"rule_name":"pii","rule_id":"rule-id"}],
+            "integration_profile_id":"profile-1", "integration_profile_version":"v2",
+            "integration_tenant_id":"tenant", "integration_type":"type"
+        })
     );
-    assert_eq!(payload.config.integration_profile_version, None);
+}
+
+#[test]
+fn build_chat_payload_serializes_empty_inputs() {
+    let payload = build_chat_payload(ChatPayloadInputs::default());
+    assert_eq!(
+        serde_json::to_value(payload).expect("payload serializes"),
+        serde_json::json!({"messages":[],"metadata":{},"config":{}})
+    );
 }
 
 #[test]
@@ -95,7 +113,7 @@ fn build_chat_payload_omits_metadata_fields_that_are_absent() {
 #[test]
 fn normalize_rule_wraps_a_bare_rule_name_with_no_entity_types() {
     let rule = Rule {
-        rule_name: "pii-detector".to_owned(),
+        rule_name: Some("pii-detector".to_owned()),
         entity_types: Vec::new(),
         rule_id: None,
         classification: None,
@@ -114,7 +132,7 @@ fn normalize_rule_wraps_a_bare_rule_name_with_no_entity_types() {
 #[test]
 fn normalize_rule_passes_through_a_fully_populated_rule() {
     let rule = Rule {
-        rule_name: String::new(),
+        rule_name: Some("PII".to_owned()),
         entity_types: vec!["EMAIL".to_owned()],
         rule_id: Some("rule-1".to_owned()),
         classification: Some("SEVERE".to_owned()),
@@ -122,10 +140,22 @@ fn normalize_rule_passes_through_a_fully_populated_rule() {
     assert_eq!(
         normalize_rule(&rule),
         WireRule {
-            rule_name: Some(String::new()),
+            rule_name: Some("PII".to_owned()),
             entity_types: Some(vec!["EMAIL".to_owned()]),
             rule_id: Some("rule-1".to_owned()),
             classification: Some("SEVERE".to_owned()),
         }
     );
+}
+
+#[test]
+fn normalize_rule_omits_an_absent_rule_name() {
+    let rule = Rule {
+        rule_name: None,
+        entity_types: Vec::new(),
+        rule_id: Some("r1".to_owned()),
+        classification: None,
+    };
+    let serialized = serde_json::to_value(normalize_rule(&rule)).expect("rule serializes");
+    assert_eq!(serialized, serde_json::json!({"rule_id":"r1"}));
 }
