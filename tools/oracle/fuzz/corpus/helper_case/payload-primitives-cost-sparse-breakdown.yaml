@@ -1,0 +1,5 @@
+kind: helper
+name: payload-primitives-cost-sparse-breakdown
+call: {b3843: {function: total_masked_entities, value: {email: 2, phone: 1}}}
+env: {}
+compare: {ignore: []}

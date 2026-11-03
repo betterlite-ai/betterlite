@@ -1,0 +1,5 @@
+kind: helper
+name: payload-primitives-sanitize-bounds-count-and-length
+call: {b3843: {function: sanitize_event_metadata, value: {safe: ok, function_args: hidden}}}
+env: {}
+compare: {ignore: []}
