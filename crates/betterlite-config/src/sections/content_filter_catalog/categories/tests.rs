@@ -176,10 +176,33 @@ fn json_category_titlecase_uses_contextual_greek_final_sigma() {
 }
 
 #[test]
+fn json_category_titlecase_matches_python_15_1_case_ignorable_spacing_mark() {
+    let entry = category_entry(
+        Path::new("unused"),
+        "\u{039f}\u{03a3}\u{1171e}\u{0391}.json",
+    )
+    .unwrap();
+    assert_eq!(entry.display_name, "\u{039f}\u{03c3}\u{1171e}\u{0391}");
+    assert_eq!(
+        entry.description,
+        "Content category: \u{039f}\u{03c3}\u{1171e}\u{0391}"
+    );
+}
+
+#[test]
 fn yaml_category_titlecase_uses_contextual_greek_final_sigma_when_display_name_is_missing() {
     let greek_name = "\u{039f}\u{03a3}";
     let yaml = format!("category_name: {greek_name}\n");
     let (_tmp, root) = root_with_categories(&[("greek.yaml", yaml.as_str())]);
     let entry = category_entry(&root.join("categories"), "greek.yaml").unwrap();
     assert_eq!(entry.display_name, "\u{039f}\u{03c2}");
+}
+
+#[test]
+fn yaml_category_titlecase_matches_python_15_1_case_ignorable_spacing_mark() {
+    let greek_name = "\u{039f}\u{03a3}\u{1171e}\u{0391}";
+    let yaml = format!("category_name: {greek_name}\n");
+    let (_tmp, root) = root_with_categories(&[("greek-spacing-mark.yaml", yaml.as_str())]);
+    let entry = category_entry(&root.join("categories"), "greek-spacing-mark.yaml").unwrap();
+    assert_eq!(entry.display_name, "\u{039f}\u{03c3}\u{1171e}\u{0391}");
 }

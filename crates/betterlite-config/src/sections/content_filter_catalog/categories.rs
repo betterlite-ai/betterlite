@@ -43,6 +43,9 @@ const CASE_IGNORABLE_PUNCTUATION: &[(char, char)] = &[
     ('\u{1e5ee}', '\u{1e5ef}'),
 ];
 
+// Python 3.13 uses Unicode 15.1, where U+1171E is a nonspacing mark.
+const PYTHON_15_1_NONSPACING_MARKS: &[char] = &['\u{1171e}'];
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct CategoryCatalogEntry {
     pub name: String,
@@ -211,7 +214,7 @@ fn is_ignorable_category(character: char) -> bool {
             | GeneralCategory::Format
             | GeneralCategory::ModifierLetter
             | GeneralCategory::ModifierSymbol
-    )
+    ) || PYTHON_15_1_NONSPACING_MARKS.contains(&character)
 }
 
 fn is_case_ignorable_punctuation(character: char) -> bool {
