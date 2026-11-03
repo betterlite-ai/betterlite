@@ -57,3 +57,35 @@ fn loopback_wait_deadline_cuts_off_a_slow_sender() {
         assert!(matches!(result, Err(PkceFailure::CallbackTimeout)));
     });
 }
+
+#[test]
+fn loopback_drops_an_idle_connection_after_its_timeout() {
+    let listener = TcpLoopbackListener::bind().expect("listener");
+    let server = LoopbackServer::with_listener(listener, "state", Duration::from_millis(200))
+        .expect("server");
+    let address = server.address;
+    let (release_sender, release_receiver) = sync_channel(0);
+    thread::scope(|scope| {
+        scope.spawn(move || {
+            let idle = TcpStream::connect(address).expect("idle connect");
+            release_receiver.recv().expect("release signal");
+            drop(idle);
+        });
+        scope.spawn(move || {
+            thread::sleep(Duration::from_millis(400));
+            let mut valid = TcpStream::connect(address).expect("valid connect");
+            valid
+                .write_all(b"GET /callback?state=state&code=good HTTP/1.1\r\n\r\n")
+                .expect("valid request");
+        });
+        let mut callback_server = server;
+        let outcome = callback_server
+            .wait(Duration::from_secs(2), &SystemClock)
+            .expect("valid callback");
+        release_sender.send(()).expect("release idle stream");
+        let CallbackOutcome::Code(code) = outcome else {
+            panic!("expected code");
+        };
+        assert_eq!(code.code.expose_secret(), "good");
+    });
+}
