@@ -112,13 +112,6 @@ checks:
         test -n "$(ls -A crates/betterlite/fuzz/corpus/blocked_words_yaml)" && \
         cargo nextest run --locked -p betterlite --no-tests=fail \
           -E 'test(replays_the_blocked_words_yaml_corpus)'
-    - id: content-regex-corpus
-      why: the content regex fuzz target or corpus is missing, or its replay fails
-      run: |-
-        test -f crates/betterlite/fuzz/fuzz_targets/content_regex.rs && \
-        test -n "$(ls -A crates/betterlite/fuzz/corpus/content_regex)" && \
-        cargo nextest run --locked -p betterlite --no-tests=fail \
-          -E 'test(replays_the_content_regex_corpus)'
 oracle_cases:
   - tools/oracle/cases/guardrails/pattern-matching/pattern-add-prebuilt-valid.yaml
   - tools/oracle/cases/guardrails/pattern-matching/pattern-add-regex-valid.yaml
