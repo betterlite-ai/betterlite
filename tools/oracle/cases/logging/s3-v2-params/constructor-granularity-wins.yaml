@@ -1,0 +1,5 @@
+kind: helper
+name: constructor-granularity-wins
+call: {"b3992": {"operation": "params", "constructor": {"s3_log_prompts_only":false,"s3_partition_granularity":"hour"}, "global": {"s3_log_prompts_only":true,"s3_partition_granularity":"day"}}}
+env: {}
+compare: {ignore: []}

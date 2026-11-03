@@ -18,3 +18,6 @@ deviations:
   - what: A negative configured recursion depth is treated as invalid and falls back to the default of 10 instead of being used directly.
     why: A negative max_depth makes depth=0 exceed it immediately, so LiteLLM redacts nothing and returns "[MAX_DEPTH_REACHED]" for the whole top-level value on every call; no sane deployment configures a negative depth on purpose.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L1083-L1085
+  - what: A DEFAULT_S3_MAX_CONCURRENT_UPLOADS value of 0 falls back to an upload limit of 16 with a warning, instead of a limit of 0.
+    why: LiteLLM builds asyncio.Semaphore(0) from it, so every upload waits forever and logs never reach S3 with no error; no working setup relies on that hang.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L213-L221
