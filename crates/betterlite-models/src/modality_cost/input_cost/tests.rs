@@ -238,7 +238,18 @@ fn video_seconds_bill_at_the_per_second_price() {
         video_length_seconds: Decimal::from(3_i64),
         ..details()
     };
-    let cost = calculate_input_cost(&usage, &model, &modality_rates(), None).expect("no overflow");
+    let cost = calculate_input_cost(
+        &usage,
+        &model,
+        &InputCostRates {
+            prompt_base_cost: Decimal::new(5, 1),
+            cache_read_cost: Decimal::ZERO,
+            cache_creation_cost: Decimal::ZERO,
+            cache_creation_cost_above_1hr: Decimal::ZERO,
+        },
+        None,
+    )
+    .expect("no overflow");
     assert_eq!(cost, Decimal::new(575, 2));
 }
 
