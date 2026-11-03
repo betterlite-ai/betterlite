@@ -1,0 +1,13 @@
+id: B5107
+milestone: M0 foundation
+title: Oracle gateway ports come from below the kernel's ephemeral range
+status: todo
+depends_on: [B001]
+file: tasks/B5107-oracle-gateway-port-range.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,17 @@
+{
+  "kind": "helper",
+  "name": "adapter-class-literal-open",
+  "call": {
+    "route_match": {
+      "function": "check_route_access",
+      "route": "/[",
+      "allowed_routes": [
+        "/(?i:[[])"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

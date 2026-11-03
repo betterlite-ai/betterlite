@@ -1,0 +1,15 @@
+{
+  "kind": "helper",
+  "name": "backref-negative-lookahead",
+  "call": {
+    "route_match": {
+      "function": "route_matches_pattern",
+      "route": "/kK",
+      "pattern": "/(?i:(k))(?!(?ai:\\1))(?i:\\1)"
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

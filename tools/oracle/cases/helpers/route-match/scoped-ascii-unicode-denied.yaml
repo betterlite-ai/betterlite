@@ -1,0 +1,11 @@
+kind: helper
+name: scoped-ascii-unicode-denied
+call:
+  route_match:
+    function: check_route_access
+    route: "/models/gpt-é"
+    allowed_routes:
+      - "/models/(?a:gpt-\\w+)"
+env: {}
+compare:
+  ignore: []

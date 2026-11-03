@@ -1,0 +1,17 @@
+{
+  "kind": "helper",
+  "name": "adapter-dot-newline",
+  "call": {
+    "route_match": {
+      "function": "check_route_access",
+      "route": "/a\nb",
+      "allowed_routes": [
+        "/(?s:a.b)"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

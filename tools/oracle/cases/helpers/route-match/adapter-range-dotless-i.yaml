@@ -1,0 +1,17 @@
+{
+  "kind": "helper",
+  "name": "adapter-range-dotless-i",
+  "call": {
+    "route_match": {
+      "function": "check_route_access",
+      "route": "/ı",
+      "allowed_routes": [
+        "/(?i:[A-Z])"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

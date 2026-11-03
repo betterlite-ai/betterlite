@@ -1,0 +1,17 @@
+{
+  "kind": "helper",
+  "name": "adapter-named-capture",
+  "call": {
+    "route_match": {
+      "function": "check_route_access",
+      "route": "/aa",
+      "allowed_routes": [
+        "/(?P<letter>a)(?P=letter)"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

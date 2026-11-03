@@ -1,0 +1,17 @@
+{
+  "kind": "helper",
+  "name": "adapter-class-brackets",
+  "call": {
+    "route_match": {
+      "function": "check_route_access",
+      "route": "/]",
+      "allowed_routes": [
+        "/(?i:[]a])"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

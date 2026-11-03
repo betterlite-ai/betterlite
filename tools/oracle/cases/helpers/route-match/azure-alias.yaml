@@ -1,0 +1,9 @@
+kind: helper
+name: azure-alias
+call:
+  route_match:
+    function: is_azure_openai_route
+    route: /openai/deployments/model/version/chat/completions
+env: {}
+compare:
+  ignore: []
