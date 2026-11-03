@@ -1,0 +1,9 @@
+kind: helper
+name: semantic-cache-records-cached-json-values
+call:
+  b4380:
+    operation: decode_cached_response
+    payload: '{"choices":[{"message":{"content":"cached"}}],"metadata":{"null":null,"enabled":true}}'
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,127 @@
+id: B5140
+title: Fuzz crates as workspace members
+description: >-
+  Every fuzz crate under crates/*/fuzz and tools/oracle/fuzz declares its own [workspace], so cargo
+  clippy, cargo deny, cargo shear and the crates check never see it. Six of the 30 fuzz crates no
+  longer compile against main, and three target files have no [[bin]] entry, so nothing ever built
+  them. This task makes every fuzz crate a member of the root workspace and fixes what that shows.
+  The existing clippy, deny, shear and crates checks then keep the targets compiling from here on.
+
+
+  The root Cargo.toml gets members ["crates/*", "crates/*/fuzz", "tools/*", "tools/*/fuzz"] and
+  exclude ["crates/betterlite-openapi/fuzz", "tools/management-cli"]. crates/betterlite-openapi/fuzz
+  holds only a corpus and no Cargo.toml, so the members glob would fail to load it. Each fuzz
+  manifest drops its [workspace] table and adds license.workspace = true and [lints] workspace = true.
+  The streaming manifest has no [workspace] today and only needs the other two. Cargo.lock gains the
+  fuzz crates and libfuzzer-sys.
+
+
+  Six crates fail to compile. In crates/betterlite-core/fuzz, proc_statm_meminfo.rs imports
+  diagnostic_snapshots::parse_proc_memory; the function lives in diagnostic_snapshots::process. In
+  crates/betterlite-http/fuzz, proxy_policy.rs calls ProxyPolicy::resolve with
+  &LiteLlmSettings::default(); resolve now takes &ProxyTrust (crates/betterlite-config/src/proxy.rs),
+  LiteLlmSettings has no Default, and ProxyTrust derives Default. In crates/betterlite-cli/fuzz,
+  wire_responses.rs imports wire::parse_contract and wire::parse_registered_client; B4573 folded both
+  into the private wire::parse_and_require. The target keeps parse_token and error_detail and reaches
+  the contract and registration parsers through the public discover_cli_auth and register_client. A
+  small Http impl in the target answers every get and post with status 200 and the fuzz bytes as the
+  body, and register_client gets a fixed CliAuthContract literal (every field is pub). In
+  crates/betterlite-harness/fuzz (claude_code.rs) and crates/betterlite-models/fuzz (price_fields.rs)
+  the targets use serde_json without the manifest declaring it. crates/betterlite-streaming/fuzz has
+  no [workspace], so cargo refuses to load it on its own; as a member it loads.
+
+
+  Three target files have no [[bin]]: crates/betterlite-guardrails/fuzz/fuzz_targets/grayswan_response.rs,
+  crates/betterlite-harness/fuzz/fuzz_targets/cli_jsonl_framing.rs and
+  crates/betterlite-prompts/fuzz/fuzz_targets/tool_schema.rs. Each gets a [[bin]] named after its file,
+  with test = false, doc = false and bench = false like its siblings, and is fixed until it compiles.
+
+
+  Under the workspace lint table the targets show about 325 clippy errors, mostly
+  let_underscore_untyped, let_underscore_must_use, let_underscore_drop, absolute_paths, unwrap_used,
+  disallowed_methods, decimal_literal_representation and unused_trait_names. Fix each in the code. A
+  discarded result becomes a named underscore binding, let _outcome = f(bytes);, the form
+  crates/betterlite-cli/fuzz/fuzz_targets/callback_request.rs already uses. No #[expect] and no
+  #[allow].
+scope:
+  paths:
+    - crates/*/fuzz/**
+    - tools/oracle/fuzz/**
+  lint_tables: false
+references:
+  - url: https://doc.rust-lang.org/cargo/reference/workspaces.html#the-members-and-exclude-fields
+    why: Glob members and exclude; a directory a members glob matches must hold a Cargo.toml unless exclude names it.
+  - url: https://doc.rust-lang.org/cargo/reference/cargo-targets.html#configuring-a-target
+    why: test = false, doc = false and bench = false keep a fuzz bin out of cargo test, nextest and llvm-cov builds.
+  - url: https://github.com/rust-fuzz/libfuzzer/blob/main/README.md
+    why: fuzz_target! and libfuzzer-sys, whose build script compiles libFuzzer with a C++ compiler.
+dod:
+  - text: >-
+      Every tracked */fuzz/Cargo.toml is a workspace member, none declares its own [workspace], and
+      every file under a fuzz_targets folder is a [[bin]] with test = false. On today's main cargo
+      metadata lists no fuzz package, so the check fails there.
+    proof: [fuzz-members]
+  - text: >-
+      Every fuzz target compiles and passes clippy under the workspace lint table, with no new
+      #[expect] or #[allow].
+    proof: [fmt, clippy, expect-budget]
+  - text: Every fuzz crate is MIT through license.workspace and inherits the workspace lints.
+    proof: [crates]
+  - text: >-
+      Licenses, bans and advisories pass with libfuzzer-sys in the graph, and no fuzz crate declares
+      a dependency it doesn't use.
+    proof: [deny, shear]
+  - text: The prek hooks pass on every tracked file.
+    proof: [hooks]
+checks:
+  optional: []
+  commands:
+    - id: fuzz-members
+      why: a fuzz crate is outside the workspace or keeps its own [workspace], or a fuzz target file has no [[bin]] with test = false
+      run: |-
+        root="$PWD/"
+        metadata=$(cargo metadata --locked --no-deps --format-version 1) || exit 1
+        manifests=$(git ls-files '*/fuzz/Cargo.toml' | sort)
+        members=$(jq -r --arg root "$root" '.packages[].manifest_path | ltrimstr($root) | select(endswith("/fuzz/Cargo.toml"))' <<<"$metadata" | sort)
+        targets=$(git ls-files '*/fuzz/fuzz_targets/*.rs' | sort)
+        bins=$(jq -r --arg root "$root" '.packages[] | select(.manifest_path | endswith("/fuzz/Cargo.toml")) | .targets[] | select(.kind == ["bin"] and .test == false) | .src_path | ltrimstr($root)' <<<"$metadata" | sort)
+        status=0
+        test -n "$manifests" || { echo "no fuzz manifest is tracked"; status=1; }
+        [ "$members" = "$manifests" ] || { echo "fuzz manifests that are not workspace members:"; comm -23 <(echo "$manifests") <(echo "$members"); status=1; }
+        [ "$bins" = "$targets" ] || { echo "fuzz target files and test = false bins that don't match:"; comm -3 <(echo "$targets") <(echo "$bins"); status=1; }
+        git grep -n '^\[workspace\]' -- '*/fuzz/Cargo.toml' && status=1
+        exit $status
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - Running cargo fuzz or any fuzzing campaign, and new targets or corpus files.
+  - Code under crates/*/src or tools/*/src. A target follows today's public API; no crate API changes to suit one.
+  - deny.toml, CI workflows and .development/checks.yaml. The NCSA exception for libfuzzer-sys, g++ in CI and leaving fuzz targets out of the mutants diff are already on main.
+  - Fuzz crate names and versions.
+pitfalls:
+  - >-
+    libfuzzer-sys's build script compiles libFuzzer with g++ even under cargo clippy. g++ is on the
+    machine and in CI. A link error is not expected, since no gate check links a fuzz bin.
+  - >-
+    Never commit a Cargo.lock or a target folder inside a fuzz crate. The root Cargo.lock is the only
+    lockfile, and the committed check fails on any untracked file.
+  - >-
+    The changed root Cargo.toml and the new members make cargo gate affected pick every fuzz
+    crate, so the clippy check lints all of them. Run cargo clippy --workspace --all-targets --locked
+    -- -D warnings while working.
+  - >-
+    proc_statm_meminfo.rs slices the input with &input[..split], and the lint table denies indexing.
+    split_at_checked returns the two halves without a panic path.
+  - >-
+    The cli target's fixed CliAuthContract uses https://example.test endpoints and the issuer in the
+    discovery-contract.json seed, so a seed gets past the issuer and origin checks.
+  - >-
+    Keep #![no_main] as the first line of every target. A file never starts with a comment.
+  - >-
+    The harness and models fuzz manifests declare serde_json = "1.0.154", the version their parent
+    crates use. Features unify across the workspace, so the targets see the parent's
+    arbitrary_precision behavior either way.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
