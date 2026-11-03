@@ -17,8 +17,9 @@ use std::time::Instant;
 
 use super::{
     HttpBody, HttpResponse,
-    callback::LoopbackServer,
+    callback::{CallbackError, LoopbackServer},
     discovery::{discover_cli_auth, origin},
+    loopback::TcpLoopbackListener,
     models::{CallbackCode, CallbackOutcome, CliAuthContract, PkceFailure},
     oauth::{
         RedeemCodeRequest, RefreshCredentialRequest, authorize_url, pkce_pair, redeem_code,
@@ -164,28 +165,27 @@ fn discover_rejects_issuer_mismatch() {
 #[test]
 fn callback_validation_waits_for_matching_state() {
     let (sender, receiver) = sync_channel(1);
-    let mut server = LoopbackServer::bind("state").expect("bind");
+    let mut server = TcpLoopbackListener::bind()
+        .map_err(CallbackError::Bind)
+        .and_then(|listener| LoopbackServer::with_listener(listener, "state"))
+        .expect("bind");
     let address = server.address;
     let outcome = thread::scope(|scope| {
         scope.spawn(move || {
+            let wrong_state =
+                b"GET /callback?state=wrong&code=bad HTTP/1.1\r\nHost: localhost\r\n\r\n";
             let mut stream = TcpStream::connect(address).expect("connect");
-            stream
-                .write_all(
-                    b"GET /callback?state=wrong&code=bad HTTP/1.1\r\nHost: localhost\r\n\r\n",
-                )
-                .expect("write");
+            stream.write_all(wrong_state).expect("write");
             let mut response = [0; 256];
             let size = stream.read(&mut response).expect("read");
             let payload = response.get(..size).expect("read within buffer").to_vec();
             sender
                 .send(String::from_utf8(payload).expect("response UTF-8"))
                 .expect("send");
+            let matching_state =
+                b"GET /callback?state=state&code=good HTTP/1.1\r\nHost: localhost\r\n\r\n";
             let mut next_stream = TcpStream::connect(address).expect("connect");
-            next_stream
-                .write_all(
-                    b"GET /callback?state=state&code=good HTTP/1.1\r\nHost: localhost\r\n\r\n",
-                )
-                .expect("write");
+            next_stream.write_all(matching_state).expect("write");
         });
         server
             .wait(Duration::from_secs(2), &FixedClock(Instant::now()))
@@ -205,7 +205,10 @@ fn callback_validation_waits_for_matching_state() {
 
 #[test]
 fn callback_idle_connection_then_valid_callback_settles() {
-    let server = LoopbackServer::bind("state").expect("bind");
+    let server = TcpLoopbackListener::bind()
+        .map_err(CallbackError::Bind)
+        .and_then(|listener| LoopbackServer::with_listener(listener, "state"))
+        .expect("bind");
     let address = server.address;
     let (sender, receiver) = sync_channel(1);
     thread::scope(|scope| {
@@ -232,7 +235,10 @@ fn callback_idle_connection_then_valid_callback_settles() {
 
 #[test]
 fn loopback_server_exposes_callback_redirect() {
-    let server = LoopbackServer::bind("state").expect("bind");
+    let server = TcpLoopbackListener::bind()
+        .map_err(CallbackError::Bind)
+        .and_then(|listener| LoopbackServer::with_listener(listener, "state"))
+        .expect("bind");
     assert!(server.redirect_uri().starts_with("http://127.0.0.1:"));
     assert!(server.redirect_uri().ends_with("/callback"));
 }
@@ -390,7 +396,10 @@ fn callback_query_debug_output_never_reveals_code() {
 
 #[test]
 fn callback_unsupported_method_responds_501() {
-    let server = LoopbackServer::bind("state").expect("bind");
+    let server = TcpLoopbackListener::bind()
+        .map_err(CallbackError::Bind)
+        .and_then(|listener| LoopbackServer::with_listener(listener, "state"))
+        .expect("bind");
     let address = server.address;
     let (sender, receiver) = sync_channel(1);
     thread::scope(|scope| {

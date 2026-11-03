@@ -2,6 +2,8 @@ use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use std::error::Error;
 use std::future::Future;
+use std::mem;
+use std::sync::PoisonError;
 
 pub mod batch;
 pub mod queue;
@@ -137,7 +139,7 @@ where
 }
 
 macro_rules! unit_of_work_entry {
-    ($name:ident, $batch:ty, $unit:ty) => {
+    ($name:ident, $batch:ty, $unit:ty, $queue:ident) => {
         pub async fn $name<NewBatch, Body, Outcome, AppError>(
             new_batch: NewBatch,
             body: Body,
@@ -149,7 +151,15 @@ macro_rules! unit_of_work_entry {
         {
             let batch = new_batch();
             run_unit_of_work(<$unit>::default(), body, |unit| async move {
-                batch.commit(unit).await
+                let entries = mem::take(
+                    &mut *unit
+                        .$queue
+                        .queue
+                        .entries
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner),
+                );
+                batch::commit_entries(&batch.store, entries).await
             })
             .await
         }
@@ -159,10 +169,12 @@ macro_rules! unit_of_work_entry {
 unit_of_work_entry!(
     spend_reset_unit_of_work,
     SpendResetBatch,
-    SpendResetUnitOfWork
+    SpendResetUnitOfWork,
+    keys
 );
 unit_of_work_entry!(
     budget_cascade_unit_of_work,
     BudgetCascadeBatch,
-    BudgetCascadeUnitOfWork
+    BudgetCascadeUnitOfWork,
+    budgets
 );

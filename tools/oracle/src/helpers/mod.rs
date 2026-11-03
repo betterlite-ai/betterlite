@@ -77,7 +77,7 @@ use crate::case::HelperCase;
 use crate::compare;
 use crate::process::sync_litellm;
 use answers::Answers;
-use python::run_python;
+use python::python_stdout;
 
 pub(crate) use crate::compare::helper::{HelperError, HelperOutput};
 
@@ -241,8 +241,17 @@ pub(crate) fn run_case(case: &HelperCase, self_check: bool) -> Result<HelperRun,
         }
         HelperLeft::Python => {
             sync_litellm(&root)?;
-            let first = run_python(&root, &case.call, &case.env)?;
-            (first, run_python(&root, &case.call, &case.env)?)
+            let first = python_stdout(&root, &case.call, &case.env).and_then(|stdout_output| {
+                serde_json::from_slice::<HelperOutput>(&stdout_output)
+                    .map_err(OracleError::HelperJson)
+            })?;
+            (
+                first,
+                python_stdout(&root, &case.call, &case.env).and_then(|stdout_output| {
+                    serde_json::from_slice::<HelperOutput>(&stdout_output)
+                        .map_err(OracleError::HelperJson)
+                })?,
+            )
         }
     };
     if let Some(difference) = compare::compare_helper(&left, &right, &case.compare.ignore) {

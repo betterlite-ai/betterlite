@@ -5,8 +5,8 @@ use betterlite_db::database_url_policy::policy::{
     unsupported_db_scheme_message,
 };
 use betterlite_db::database_url_policy::query::{
-    AppendQueryParam, QueryValue, add_missing_query_params, append_query_params,
-    connection_params_from_url, idle_lifetime_params, reader_shareable_params,
+    AppendQueryParam, IDLE_LIFETIME_DEFAULT, QueryValue, add_missing_query_params,
+    append_query_params, connection_params_from_url, reader_shareable_params,
     token_refresh_params_from_url, url_query_value, with_query_value,
 };
 pub(crate) struct Op;
@@ -16,9 +16,12 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         match input {
-            Input::IdleLifetimeParams { configured } => {
-                Ok(params_value(&idle_lifetime_params(configured.clone())))
-            }
+            Input::IdleLifetimeParams { configured } => Ok(params_value(&[(
+                "max_idle_connection_lifetime".to_owned(),
+                configured
+                    .clone()
+                    .unwrap_or(QueryValue::Integer(IDLE_LIFETIME_DEFAULT)),
+            )])),
             Input::AddMissingQueryParams { url, params } => {
                 run_add_missing_query_params(url, params)
             }

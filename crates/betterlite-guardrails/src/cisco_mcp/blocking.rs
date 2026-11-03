@@ -132,7 +132,10 @@ fn replace_in_object(fields: &Fields, replacement: &[TextContent]) -> ReplacedRe
     if let Some(wrapped) = replace_in_wrapper(fields, replacement) {
         return wrapped;
     }
-    if matches!(Json::field(fields, "content"), Json::List(_)) {
+    if matches!(
+        Json::parse(fields.get("content").map_or("null", |raw| raw.get())),
+        Json::List(_)
+    ) {
         return replace_in_content_list(fields, replacement);
     }
     replace_in_result(fields, replacement)
@@ -169,7 +172,7 @@ fn replace_in_content_list(fields: &Fields, replacement: &[TextContent]) -> Repl
 
 fn replace_in_result(fields: &Fields, replacement: &[TextContent]) -> ReplacedResponse {
     let mut rest = fields.clone();
-    let result_rest = match Json::field(fields, "result") {
+    let result_rest = match Json::parse(fields.get("result").map_or("null", |raw| raw.get())) {
         Json::Object(existing) => {
             let mut result_fields = existing;
             for key in CONTENT_MIRROR_KEYS {

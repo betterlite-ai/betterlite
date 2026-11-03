@@ -22,9 +22,8 @@ identity_enum! { ExecutionMode { Autonomous, Delegated, Both } }
 identity_enum! { SubjectKind { Application, DelegatedSubject } }
 identity_enum! { SubjectMode { Autonomous, Delegated } }
 identity_enum! { FailureCode { IdentityDenied, PolicyUnavailable } }
-fn delegated_scopes() -> Vec<String> {
-    let scope = String::from("user_impersonation");
-    vec![scope]
+fn default_required_scopes() -> Vec<String> {
+    vec![String::from("user_impersonation")]
 }
 record! { EntraIdentityConfig {
     pub provider: IdentityProvider,
@@ -32,7 +31,7 @@ record! { EntraIdentityConfig {
     pub client_id: Uuid,
     pub service_principal_id: Option<Uuid>,
     #[serde(default)] pub required_roles: Vec<String>,
-    #[serde(default = "delegated_scopes")] pub required_scopes: Vec<String>,
+    #[serde(default = "default_required_scopes")] pub required_scopes: Vec<String>,
 }}
 impl EntraIdentityConfig {
     #[must_use]
@@ -50,7 +49,7 @@ record! { AgentIdentityBinding {
     pub service_principal_id: Option<Uuid>,
     pub issuer: String,
     #[serde(default)] pub required_roles: Vec<String>,
-    #[serde(default = "delegated_scopes")] pub required_scopes: Vec<String>,
+    #[serde(default = "default_required_scopes")] pub required_scopes: Vec<String>,
     pub revision: String,
     pub last_authenticated_at: Option<DateTime<Utc>>,
 }}

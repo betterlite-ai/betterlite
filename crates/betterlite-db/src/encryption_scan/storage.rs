@@ -4,8 +4,7 @@ use super::{
 };
 use futures_util::TryStreamExt as _;
 use secrecy::{ExposeSecret as _, SecretString};
-use std::{iter, pin::pin, time::Duration};
-use tokio::time::timeout;
+use std::{iter, pin::pin};
 use tokio_postgres::error::SqlState;
 use tokio_postgres::{GenericClient, Row};
 
@@ -138,7 +137,7 @@ fn scan_row(
     Ok(())
 }
 
-async fn scan_tables<C>(client: &C, cipher: &DbCipher) -> Result<MigrationReport, ScanError>
+pub async fn scan_tables<C>(client: &C, cipher: &DbCipher) -> Result<MigrationReport, ScanError>
 where
     C: GenericClient + Sync,
 {
@@ -171,15 +170,3 @@ fn scan_json_value(
 }
 
 mod tests;
-
-pub async fn scan_covered_tables<C>(
-    client: &C,
-    cipher: &DbCipher,
-    deadline: Duration,
-) -> Result<MigrationReport, ScanError>
-where
-    C: GenericClient + Sync,
-{
-    let scan = scan_tables(client, cipher);
-    timeout(deadline, scan).await.map_err(ScanError::Timeout)?
-}

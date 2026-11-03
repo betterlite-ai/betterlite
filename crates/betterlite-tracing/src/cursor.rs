@@ -23,7 +23,7 @@ pub enum CursorError {
 }
 
 #[derive(Deserialize, Serialize)]
-struct TraceCursorPayload(i64, String);
+pub(crate) struct TraceCursorPayload(pub(crate) i64, pub(crate) String);
 
 fn decode_payload<T>(
     cursor: Option<&str>,
@@ -41,12 +41,6 @@ where
     let payload: T = serde_json::from_slice(&bytes)
         .map_err(|source| make_error(Some(CursorSource::Json(source))))?;
     Ok(Some(payload))
-}
-
-#[must_use]
-pub fn encode_trace_cursor(start_ms: i64, trace_id: &str) -> String {
-    let payload = TraceCursorPayload(start_ms, trace_id.to_owned());
-    URL_SAFE.encode(serde_json::to_string(&payload).unwrap_or_default())
 }
 
 pub fn decode_trace_cursor(cursor: Option<&str>) -> Result<(i64, String), CursorError> {

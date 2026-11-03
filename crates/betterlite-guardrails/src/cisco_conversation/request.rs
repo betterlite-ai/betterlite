@@ -6,20 +6,24 @@ use crate::cisco_conversation::{
 #[must_use]
 pub fn request_messages(data: &Fields) -> Vec<InspectMessage> {
     let mut messages = Vec::new();
-    let instructions = normalize_content(&Json::field(data, "instructions"));
+    let instructions = normalize_content(&Json::parse(
+        data.get("instructions").map_or("null", |raw| raw.get()),
+    ));
     if !instructions.is_empty() {
         messages.push(InspectMessage {
             role: Role::System,
             content: instructions,
         });
     }
-    for message in Json::field(data, "messages").objects() {
+    for message in Json::parse(data.get("messages").map_or("null", |raw| raw.get())).objects() {
         messages.extend(chat_message(&message));
     }
     if data.contains_key("input") {
-        messages.extend(flatten_input(&Json::field(data, "input")));
+        messages.extend(flatten_input(&Json::parse(
+            data.get("input").map_or("null", |raw| raw.get()),
+        )));
     }
-    let prompt = Json::field(data, "prompt");
+    let prompt = Json::parse(data.get("prompt").map_or("null", |raw| raw.get()));
     let prompt_text = normalize_content(&prompt);
     if messages.is_empty() && !prompt_text.is_empty() {
         messages.push(InspectMessage {
@@ -40,7 +44,9 @@ pub fn request_messages(data: &Fields) -> Vec<InspectMessage> {
 fn chat_message(message: &Fields) -> Option<InspectMessage> {
     let role = caller_role(message)?;
     let mut parts = Vec::new();
-    let text = normalize_content(&Json::field(message, "content"));
+    let text = normalize_content(&Json::parse(
+        message.get("content").map_or("null", |raw| raw.get()),
+    ));
     if !text.is_empty() {
         parts.push(text);
     }
@@ -91,10 +97,16 @@ pub fn flatten_input(input: &Json) -> Vec<InspectMessage> {
 #[must_use]
 pub fn tool_argument_parts(message: &Fields) -> Vec<String> {
     let mut parts = Vec::new();
-    for call in Json::field(message, "tool_calls").objects() {
-        push_arguments(&Json::field(&call, "function"), &mut parts);
+    for call in Json::parse(message.get("tool_calls").map_or("null", |raw| raw.get())).objects() {
+        push_arguments(
+            &Json::parse(call.get("function").map_or("null", |raw| raw.get())),
+            &mut parts,
+        );
     }
-    push_arguments(&Json::field(message, "function_call"), &mut parts);
+    push_arguments(
+        &Json::parse(message.get("function_call").map_or("null", |raw| raw.get())),
+        &mut parts,
+    );
     parts
 }
 
@@ -118,7 +130,10 @@ fn push_arguments(function: &Json, parts: &mut Vec<String>) {
 pub fn tool_definition_text(data: &Fields) -> String {
     let mut parts = Vec::new();
     for key in ["tools", "functions"] {
-        collect_strings(&Json::field(data, key), &mut parts);
+        collect_strings(
+            &Json::parse(data.get(key).map_or("null", |raw| raw.get())),
+            &mut parts,
+        );
     }
     parts.join(" ")
 }

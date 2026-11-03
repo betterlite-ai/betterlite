@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
-use super::fields::{Fields, encode};
+use super::fields::Fields;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AnthropicMetadata {
@@ -93,7 +93,8 @@ macro_rules! wire_record {
         }
         impl $name {
             pub fn from_head(head: $head) -> Result<Self, serde_json::Error> {
-                let fields = encode(&head)?;
+                let fields =
+                    serde_json::to_string(&head).and_then(|json| serde_json::from_str(&json))?;
                 Ok(Self { head, fields })
             }
         }

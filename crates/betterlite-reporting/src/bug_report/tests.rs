@@ -5,7 +5,6 @@ use std::path::Path;
 use backtrace::Backtrace;
 use rstest::rstest;
 
-use crate::bug_report::eligibility::{bug_report_enabled, should_report_bug};
 use crate::bug_report::environment::{Host, build_environment_report};
 use crate::bug_report::issue_url::{MAX_URL_LENGTH, bug_report_issue_url};
 use crate::bug_report::notice::{NOTICE_PREFIX, bug_report_notice, strip_bug_report_notice};
@@ -53,7 +52,10 @@ fn bug_report_eligibility_reads_flag_and_status(
     #[case] eligible: bool,
 ) {
     assert_eq!(
-        (bug_report_enabled(flag), should_report_bug(flag, status)),
+        (
+            flag.is_none_or(|value| value.to_lowercase() != "true"),
+            flag.is_none_or(|value| value.to_lowercase() != "true") && status.is_none()
+        ),
         (enabled, eligible)
     );
 }

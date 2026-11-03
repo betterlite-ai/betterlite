@@ -1,5 +1,6 @@
 use super::decimal_lexeme::{DecimalLexemeError, parse_decimal_lexeme};
 use rust_decimal::Decimal;
+use serde::de::Error as _;
 use serde::{Deserialize, Deserializer};
 use serde_json::Number;
 
@@ -28,6 +29,8 @@ pub(crate) fn optional_price<'de, Input>(
 where
     Input: Deserializer<'de>,
 {
-    let value = ExactDecimal::deserialize(deserializer)?;
-    Ok(Some(Decimal::from(value)))
+    let number = Number::deserialize(deserializer)?;
+    parse_decimal_lexeme(&number.to_string())
+        .map(Some)
+        .map_err(Input::Error::custom)
 }

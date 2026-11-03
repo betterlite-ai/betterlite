@@ -7,8 +7,6 @@ use betterlite_db::team_rows::member::Member;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
-use crate::resolved_key::materialize;
-
 mod tests;
 
 const BUDGET_TABLE_PREFIX: &str = "litellm_budget_table_";
@@ -92,7 +90,9 @@ pub enum ViewError {
 impl VerificationTokenView {
     pub fn construct(mut fields: BTreeMap<String, JsonData>) -> Result<Self, ViewError> {
         normalize_fields(&mut fields);
-        materialize(fields).map_err(ViewError::Json)
+        serde_json::to_string(&JsonData::Object(fields))
+            .and_then(|text| serde_json::from_str(&text))
+            .map_err(ViewError::Json)
     }
 }
 

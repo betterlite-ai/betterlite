@@ -6,7 +6,8 @@ use secrecy::{ExposeSecret, SecretString};
 
 use super::resolve_overrides_os_environ;
 use crate::redis_connection_settings::model::scalars::{FloatOrText, IntOrText, PassthroughValue};
-use crate::redis_connection_settings::model::settings::RedisOverrides;
+use crate::redis_connection_settings::model::settings::{ClientKind, RedisOverrides};
+use crate::redis_connection_settings::resolve::resolve_redis_kwargs;
 
 fn env_with(name: &str, value: &str) -> BTreeMap<String, String> {
     BTreeMap::from([(name.to_owned(), value.to_owned())])
@@ -57,6 +58,21 @@ fn an_os_environ_reference_resolves_before_any_other_field_is_touched() {
 
     let resolved = resolve_overrides_os_environ(overrides, &env);
     assert_eq!(resolved.host, Some("cache.internal".to_owned()));
+}
+
+#[test]
+fn a_username_reference_survives_connection_settings_resolution() {
+    let overrides = RedisOverrides {
+        host: Some("localhost".to_owned()),
+        username: Some("os.environ/CACHE_USER".to_owned()),
+        ..blank_overrides()
+    };
+    let env = BTreeMap::from([
+        ("CACHE_USER".to_owned(), "alice".to_owned()),
+        ("REDIS_USERNAME".to_owned(), "fallback".to_owned()),
+    ]);
+    let resolved = resolve_redis_kwargs(overrides, ClientKind::Sync, &env).unwrap();
+    assert_eq!(resolved.username.as_deref(), Some("alice"));
 }
 
 #[test]

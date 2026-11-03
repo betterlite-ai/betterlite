@@ -170,11 +170,6 @@ pub(super) fn block(value: &WireValue) -> Result<Block, StreamError> {
     decode(python_json_text(value), kind)
 }
 
-pub(super) fn object(value: &WireValue) -> JsonObject {
-    let text = python_json_text(&value).unwrap_or_default();
-    serde_json::from_str(&text).unwrap_or_default()
-}
-
 #[derive(Deserialize)]
 pub(super) struct SystemLine {
     #[serde(default)]

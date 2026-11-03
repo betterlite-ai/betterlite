@@ -102,29 +102,6 @@ fn run_base(fields: &BaseInput) -> Result<serde_json::Value, RunError> {
     }))
 }
 
-fn run_batch(
-    model_info: &ModelInfo,
-    usage: Usage,
-    provider: Option<&str>,
-) -> Result<serde_json::Value, RunError> {
-    let rates = token_rates::batch::get_batch_cost_rates(model_info, usage, provider)?;
-    Ok(serde_json::to_value(rates)?)
-}
-
-fn run_component(
-    model_info: &ModelInfo,
-    cost_key: &str,
-    usage: Option<Decimal>,
-) -> Result<serde_json::Value, RunError> {
-    let component = token_rates::component::calculate_cost_component(model_info, cost_key, usage)?;
-    Ok(serde_json::to_value(component.normalize().to_string())?)
-}
-
-fn run_deployment(model_info: Option<&ModelInfo>) -> Result<serde_json::Value, RunError> {
-    let pricing = token_rates::deployment::deployment_pricing(model_info)?;
-    Ok(serde_json::to_value(pricing)?)
-}
-
 impl crate::helpers::Helper for Op {
     type Input = Input;
 
@@ -135,13 +112,23 @@ impl crate::helpers::Helper for Op {
                 model_info,
                 usage,
                 provider,
-            } => run_batch(model_info, *usage, provider.as_deref()),
+            } => token_rates::batch::get_batch_cost_rates(model_info, *usage, provider.as_deref())
+                .map_err(RunError::from)
+                .and_then(|rates| serde_json::to_value(rates).map_err(RunError::from)),
             Input::Component {
                 model_info,
                 cost_key,
                 usage,
-            } => run_component(model_info, cost_key, *usage),
-            Input::Deployment { model_info } => run_deployment(model_info.as_ref()),
+            } => token_rates::component::calculate_cost_component(model_info, cost_key, *usage)
+                .map_err(RunError::from)
+                .and_then(|component| {
+                    serde_json::to_value(component.normalize().to_string()).map_err(RunError::from)
+                }),
+            Input::Deployment { model_info } => {
+                token_rates::deployment::deployment_pricing(model_info.as_ref())
+                    .map_err(RunError::from)
+                    .and_then(|pricing| serde_json::to_value(pricing).map_err(RunError::from))
+            }
         };
         Ok(result?)
     }

@@ -22,7 +22,8 @@ fn split_refuses_empty_and_unsplittable_content() {
     assert_eq!(nearest_whitespace("abcd "), 2);
     assert_eq!(nearest_whitespace("ab\u{1f}cdefgh"), 3);
     assert_eq!(bin_pack(&[], 4).len(), 1);
-    assert!(!is_input_too_large(None));
+    let lowered = None::<&str>.map(str::to_lowercase).unwrap_or_default();
+    assert!(!TOO_LARGE.iter().any(|pattern| lowered.contains(pattern)));
 }
 
 #[test]
@@ -44,4 +45,23 @@ fn merge_refuses_a_usage_total_past_i64() {
     let huge = format!(r#"{{"usage":{{"u":{}}}}}"#, i64::MAX);
     let overflow = merge(&[chunk(&huge, "a", 1), chunk(&huge, "b", 1)]);
     assert!(matches!(overflow, Err(ChunkingError::UsageOverflow { counter }) if counter == "u"));
+}
+
+#[test]
+fn bin_pack_preserves_content_and_splits_at_the_character_budget() {
+    let content: Vec<_> = ["ab", "cd", "\u{e9}x"]
+        .into_iter()
+        .flat_map(|text| chunk("{}", text, 1).content)
+        .collect();
+    let batches = bin_pack(&content, 4);
+    let texts: Vec<Vec<_>> = batches
+        .iter()
+        .map(|batch| {
+            batch
+                .iter()
+                .map(|item| item.text.as_ref().unwrap().text.as_deref().unwrap())
+                .collect()
+        })
+        .collect();
+    assert_eq!(texts, vec![vec!["ab", "cd"], vec!["\u{e9}x"]]);
 }

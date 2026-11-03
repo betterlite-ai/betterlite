@@ -19,7 +19,8 @@ pub(crate) fn rule_violations(rules: &[Fields]) -> Vec<String> {
         let Some(name) = rule_name(rule).filter(|name| !name.is_empty()) else {
             continue;
         };
-        let classification = Json::field(rule, "classification");
+        let classification =
+            Json::parse(rule.get("classification").map_or("null", |raw| raw.get()));
         let excluded = matches!(classification, Json::Null)
             || matches!(&classification, Json::Text(value) if value == "NONE_VIOLATION");
         if !excluded {

@@ -136,13 +136,7 @@ pub fn process_memory_snapshot(
     }
 }
 
-#[must_use]
-pub fn snapshot_process_memory() -> ProcessMemorySnapshot {
-    let result = read_process_memory();
-    process_memory_snapshot(result)
-}
-
-pub(super) fn read_process_memory() -> Result<ProcessMemory, ProcessMemoryError> {
+pub fn read_process_memory() -> Result<ProcessMemory, ProcessMemoryError> {
     let platform_supported = cfg!(target_os = "linux");
     if !platform_supported {
         let error = ProcessMemoryError::Unsupported;
