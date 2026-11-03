@@ -882,7 +882,6 @@ dependencies = [
  "chrono",
  "fancy-regex",
  "hex",
- "regex",
  "rstest",
  "rust_decimal",
  "secrecy",

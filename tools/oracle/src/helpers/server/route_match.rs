@@ -56,17 +56,7 @@ pub(crate) enum Input {
     },
 }
 
-enum Operation<'input> {
-    ActualRoutes(Option<&'input [String]>),
-    RequestMethod(Option<&'input str>),
-    Bool(BoolOp<'input>),
-}
-
 enum BoolOp<'input> {
-    LlmRoute(Option<&'input str>),
-    AzureRoute(Option<&'input str>),
-    ManagementRoute(Option<&'input str>),
-    InfoRoute(Option<&'input str>),
     McpDiscovery(Option<&'input str>, Option<&'input str>),
     Pattern(Option<&'input str>, Option<&'input str>),
     WildcardPattern(Option<&'input str>),
@@ -75,53 +65,11 @@ enum BoolOp<'input> {
     RouteAccess(Option<&'input str>, Option<&'input [String]>),
 }
 
-impl Input {
-    fn operation(&self) -> Operation<'_> {
-        match self {
-            Self::GetActualRoutes { routes } => Operation::ActualRoutes(routes.as_deref()),
-            Self::GetRequestMethod { method } => Operation::RequestMethod(method.as_deref()),
-            Self::IsLlmApiRoute { route } => {
-                Operation::Bool(BoolOp::LlmRoute(route_text(route.as_ref())))
-            }
-            Self::IsAzureOpenaiRoute { route } => {
-                Operation::Bool(BoolOp::AzureRoute(route_text(route.as_ref())))
-            }
-            Self::IsManagementRoute { route } => {
-                Operation::Bool(BoolOp::ManagementRoute(route_text(route.as_ref())))
-            }
-            Self::IsInfoRoute { route } => {
-                Operation::Bool(BoolOp::InfoRoute(route_text(route.as_ref())))
-            }
-            Self::IsMcpDiscoveryRoute { route, method } => Operation::Bool(BoolOp::McpDiscovery(
-                route_text(route.as_ref()),
-                method.as_deref(),
-            )),
-            Self::RouteMatchesPattern { route, pattern } => Operation::Bool(BoolOp::Pattern(
-                route_text(route.as_ref()),
-                pattern.as_deref(),
-            )),
-            Self::IsWildcardPattern { pattern } => {
-                Operation::Bool(BoolOp::WildcardPattern(pattern.as_deref()))
-            }
-            Self::RouteMatchesWildcardPattern { route, pattern } => Operation::Bool(
-                BoolOp::WildcardMatch(route_text(route.as_ref()), pattern.as_deref()),
-            ),
-            Self::RouteMatchesAllowedRoute {
-                route,
-                allowed_route,
-            } => Operation::Bool(BoolOp::AllowedRoute(
-                route_text(route.as_ref()),
-                allowed_route.as_deref(),
-            )),
-            Self::CheckRouteAccess {
-                route,
-                allowed_routes,
-            } => Operation::Bool(BoolOp::RouteAccess(
-                route_text(route.as_ref()),
-                allowed_routes.as_deref(),
-            )),
-        }
-    }
+enum RouteClassifier {
+    Llm,
+    Azure,
+    Management,
+    Info,
 }
 
 pub(crate) struct Op;
@@ -130,10 +78,54 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        match input.operation() {
-            Operation::ActualRoutes(routes) => actual_routes(routes),
-            Operation::RequestMethod(method) => request_method(method),
-            Operation::Bool(operation) => Ok(Value::Bool(boolean_result(&operation))),
+        match input {
+            Input::GetActualRoutes { routes } => actual_routes(routes.as_deref()),
+            Input::GetRequestMethod { method } => request_method(method.as_deref()),
+            Input::IsLlmApiRoute { route } => Ok(Value::Bool(classifier_result(
+                &RouteClassifier::Llm,
+                route_text(route.as_ref()),
+            ))),
+            Input::IsAzureOpenaiRoute { route } => Ok(Value::Bool(classifier_result(
+                &RouteClassifier::Azure,
+                route_text(route.as_ref()),
+            ))),
+            Input::IsManagementRoute { route } => Ok(Value::Bool(classifier_result(
+                &RouteClassifier::Management,
+                route_text(route.as_ref()),
+            ))),
+            Input::IsInfoRoute { route } => Ok(Value::Bool(classifier_result(
+                &RouteClassifier::Info,
+                route_text(route.as_ref()),
+            ))),
+            Input::IsMcpDiscoveryRoute { route, method } => Ok(Value::Bool(boolean_result(
+                &BoolOp::McpDiscovery(route_text(route.as_ref()), method.as_deref()),
+            ))),
+            Input::RouteMatchesPattern { route, pattern } => Ok(Value::Bool(boolean_result(
+                &BoolOp::Pattern(route_text(route.as_ref()), pattern.as_deref()),
+            ))),
+            Input::IsWildcardPattern { pattern } => Ok(Value::Bool(boolean_result(
+                &BoolOp::WildcardPattern(pattern.as_deref()),
+            ))),
+            Input::RouteMatchesWildcardPattern { route, pattern } => {
+                Ok(Value::Bool(boolean_result(&BoolOp::WildcardMatch(
+                    route_text(route.as_ref()),
+                    pattern.as_deref(),
+                ))))
+            }
+            Input::RouteMatchesAllowedRoute {
+                route,
+                allowed_route,
+            } => Ok(Value::Bool(boolean_result(&BoolOp::AllowedRoute(
+                route_text(route.as_ref()),
+                allowed_route.as_deref(),
+            )))),
+            Input::CheckRouteAccess {
+                route,
+                allowed_routes,
+            } => Ok(Value::Bool(boolean_result(&BoolOp::RouteAccess(
+                route_text(route.as_ref()),
+                allowed_routes.as_deref(),
+            )))),
         }
     }
 }
@@ -147,16 +139,6 @@ fn route_text(route: Option<&Value>) -> Option<&str> {
 
 fn boolean_result(operation: &BoolOp<'_>) -> bool {
     match operation {
-        BoolOp::LlmRoute(route) => {
-            is_llm_api_route(&route.map_or(RouteValue::NonString, RouteValue::Text))
-        }
-        BoolOp::AzureRoute(route) => {
-            is_azure_openai_route(&route.map_or(RouteValue::NonString, RouteValue::Text))
-        }
-        BoolOp::ManagementRoute(Some(path)) => {
-            check_route_access(path, &management_routes::management_routes())
-        }
-        BoolOp::InfoRoute(Some(path)) => auxiliary_routes::INFO_ROUTES.contains(path),
         BoolOp::McpDiscovery(Some(path), method) => is_mcp_discovery_route(path, *method),
         BoolOp::Pattern(Some(path), Some(expression)) => {
             route_matches_pattern(&RouteValue::Text(path), expression)
@@ -174,14 +156,24 @@ fn boolean_result(operation: &BoolOp<'_>) -> bool {
             path,
             &allowed.iter().map(String::as_str).collect::<Vec<_>>(),
         ),
-        BoolOp::ManagementRoute(None)
-        | BoolOp::InfoRoute(None)
-        | BoolOp::McpDiscovery(None, _)
+        BoolOp::McpDiscovery(None, _)
         | BoolOp::Pattern(_, _)
         | BoolOp::WildcardPattern(None)
         | BoolOp::WildcardMatch(_, _)
         | BoolOp::AllowedRoute(_, _)
         | BoolOp::RouteAccess(_, _) => false,
+    }
+}
+
+fn classifier_result(classifier: &RouteClassifier, route: Option<&str>) -> bool {
+    match (classifier, route) {
+        (RouteClassifier::Llm, Some(path)) => is_llm_api_route(&RouteValue::Text(path)),
+        (RouteClassifier::Azure, Some(path)) => is_azure_openai_route(&RouteValue::Text(path)),
+        (RouteClassifier::Management, Some(path)) => {
+            check_route_access(path, &management_routes::management_routes())
+        }
+        (RouteClassifier::Info, Some(path)) => auxiliary_routes::INFO_ROUTES.contains(&path),
+        (_, None) => false,
     }
 }
 

@@ -10,7 +10,6 @@ betterlite-db = { path = "../betterlite-db" }
 chrono = { version = "0.4.45", default-features = false, features = ["serde"] }
 fancy-regex = "0.19.2"
 hex.workspace = true
-regex.workspace = true
 rust_decimal.workspace = true
 secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
