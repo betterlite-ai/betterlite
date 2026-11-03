@@ -41,14 +41,10 @@ fn full_inputs() -> ChatPayloadInputs {
 #[test]
 fn build_chat_payload_serializes_every_metadata_key() {
     let payload = build_chat_payload(full_inputs());
-    let serialized = serde_json::to_value(&payload).expect("payload serializes");
+    let serialized = serde_json::to_string(&payload).expect("payload serializes");
     assert_eq!(
-        serialized["metadata"],
-        serde_json::json!({
-            "user":"alice", "client_transaction_id":"call-1", "src_app":"gateway",
-            "dst_app":"dst-app", "src_ip":"src-ip", "dst_ip":"dst-ip", "dst_host":"dst-host",
-            "sni":"sni", "user_agent":"user-agent"
-        })
+        serialized,
+        r#"{"messages":[{"role":"user","content":"hello"}],"metadata":{"user":"alice","client_transaction_id":"call-1","src_app":"gateway","dst_app":"dst-app","src_ip":"src-ip","dst_ip":"dst-ip","dst_host":"dst-host","sni":"sni","user_agent":"user-agent"},"config":{"enabled_rules":[{"rule_name":"pii"}],"integration_profile_id":"profile-1"}}"#
     );
 }
 
@@ -60,14 +56,10 @@ fn build_chat_payload_serializes_the_full_config() {
     inputs.integration_tenant_id = Some("tenant".to_owned());
     inputs.integration_type = Some("type".to_owned());
     let payload = build_chat_payload(inputs);
-    let serialized = serde_json::to_value(&payload).expect("payload serializes");
+    let serialized = serde_json::to_string(&payload).expect("payload serializes");
     assert_eq!(
-        serialized["config"],
-        serde_json::json!({
-            "enabled_rules":[{"rule_name":"pii","rule_id":"rule-id"}],
-            "integration_profile_id":"profile-1", "integration_profile_version":"v2",
-            "integration_tenant_id":"tenant", "integration_type":"type"
-        })
+        serialized,
+        r#"{"messages":[{"role":"user","content":"hello"}],"metadata":{"user":"alice","client_transaction_id":"call-1","src_app":"gateway","dst_app":"dst-app","src_ip":"src-ip","dst_ip":"dst-ip","dst_host":"dst-host","sni":"sni","user_agent":"user-agent"},"config":{"enabled_rules":[{"rule_name":"pii","rule_id":"rule-id"}],"integration_profile_id":"profile-1","integration_profile_version":"v2","integration_tenant_id":"tenant","integration_type":"type"}}"#
     );
 }
 
@@ -75,8 +67,8 @@ fn build_chat_payload_serializes_the_full_config() {
 fn build_chat_payload_serializes_empty_inputs() {
     let payload = build_chat_payload(ChatPayloadInputs::default());
     assert_eq!(
-        serde_json::to_value(payload).expect("payload serializes"),
-        serde_json::json!({"messages":[],"metadata":{},"config":{}})
+        serde_json::to_string(&payload).expect("payload serializes"),
+        r#"{"messages":[],"metadata":{},"config":{}}"#
     );
 }
 
@@ -156,6 +148,6 @@ fn normalize_rule_omits_an_absent_rule_name() {
         rule_id: Some("r1".to_owned()),
         classification: None,
     };
-    let serialized = serde_json::to_value(normalize_rule(&rule)).expect("rule serializes");
-    assert_eq!(serialized, serde_json::json!({"rule_id":"r1"}));
+    let serialized = serde_json::to_string(&normalize_rule(&rule)).expect("rule serializes");
+    assert_eq!(serialized, r#"{"rule_id":"r1"}"#);
 }
