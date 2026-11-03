@@ -1,0 +1,124 @@
+id: B4687
+title: MCP BYOK authorization form HTML builder
+description: >-
+  Port the pure `_build_authorize_html` builder from
+  `litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py` into
+  `crates/betterlite-mcp/src/byok_authorization_html.rs`. Export a typed
+  `AuthorizePage` input and `build_authorize_html(&AuthorizePage) -> String`
+  so the dependent B4677 GET handler can supply server display data and OAuth
+  form values without owning the markup. Keep server name/initial, client_id,
+  redirect_uri, code_challenge, code_challenge_method, state, server_id,
+  access_items and help_url as the complete input surface; the builder never
+  receives or renders an API key value.
+
+  Preserve the visible two-step consent flow: overview and key-entry steps,
+  navigation/cancel controls, requested-access checklist, optional help link,
+  password field named api_key, hidden OAuth fields, save-key toggle and the
+  1h/24h/7d/30d/until_revoked duration choices. Preserve the form field names,
+  IDs and JavaScript behavior consumed by the page. Escape every dynamic value
+  in text and attribute contexts using HTML escaping for &, <, >, double quote
+  and apostrophe. Empty access_items omits the access checklist; an empty
+  help_url omits its link. The task owns the builder only; B4677 owns the GET
+  handler, request validation, metadata lookup and HTTP cases.
+scope:
+  paths:
+    - crates/betterlite-mcp/src/byok_authorization_html.rs
+    - crates/betterlite-mcp/src/byok_authorization_html/**
+    - tools/oracle/cases/helpers/mcp-byok-authorization-html/**
+    - tools/oracle/fuzz/corpus/helper_case/mcp-byok-authorization-html-*
+    - tools/oracle/helpers/b4687.py
+    - tools/oracle/helpers/b4687/**
+    - tools/oracle/src/helpers/mcp/b4687.rs
+    - tools/oracle/src/helpers/mcp/b4687/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L187-L644
+    why: >-
+      The complete builder, its input values, optional access/help sections,
+      hidden form fields, two-step navigation, credential input and escaping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L750-L768
+    why: The GET caller and the exact builder arguments supplied by B4677.
+dod:
+  - text: >-
+      build_authorize_html emits a usable two-step form with the overview/key
+      steps, navigation controls, API-key password input and duration choices;
+      the builder accepts no credential value. Preserve the initial hidden
+      duration `until_revoked` even though the 24h pill is initially selected;
+      toggleDur only shows/hides choices and selDur changes the hidden value.
+    proof: [form-behavior-tests, helper-python, helper-case-corpus]
+  - text: >-
+      The form contains hidden inputs named client_id, redirect_uri,
+      code_challenge, code_challenge_method, state and server_id, with their
+      supplied values escaped for HTML attributes.
+    proof: [form-field-tests, helper-python, helper-case-corpus]
+  - text: >-
+      Server display text, initials, access items and help_url are escaped in
+      their respective HTML contexts; empty access_items and help_url omit
+      their optional sections.
+    proof: [html-escaping-tests, helper-python, helper-case-corpus]
+  - text: >-
+      The test contract checks observable form structure and values without
+      requiring CSS, whitespace or complete serialized HTML to match LiteLLM.
+    proof: [form-behavior-tests, helper-python, helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: form-behavior-tests
+      why: The builder must retain the two-step user flow, required key input, buttons and duration choices.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^byok_authorization_html::behavior::/)'
+    - id: form-field-tests
+      why: OAuth field names and escaped attribute values are consumed by the B4677 POST handler.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^byok_authorization_html::fields::/)'
+    - id: html-escaping-tests
+      why: Dynamic text and attributes must not permit injected HTML or script markup.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^byok_authorization_html::escaping::/)'
+    - id: helper-python
+      why: The independent LiteLLM helper and Rust builder must agree on semantic form facts and escaped values, and the adapter must pass strict Python checks.
+      run: test -f tools/oracle/helpers/b4687.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::mcp::b4687::/)'
+    - id: helper-case-corpus
+      why: New semantic authorization-form cases and new corpus entries must both replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/mcp-byok-authorization-html/)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/mcp-byok-authorization-html-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-byok-authorization-html/basic-two-step-form.yaml
+  - tools/oracle/cases/helpers/mcp-byok-authorization-html/escaped-dynamic-values.yaml
+  - tools/oracle/cases/helpers/mcp-byok-authorization-html/optional-sections-omitted.yaml
+deviations: []
+out_of_scope:
+  - >-
+    GET /v1/mcp/oauth/authorize validation, server metadata lookup and HTMLResponse
+    construction are owned by B4677; it calls this builder with already-resolved values.
+  - >-
+    The generated HTML's exact CSS, whitespace and serialized formatting are not
+    contracts; preserve user-visible fields, step behavior, escaping and optional sections.
+  - >-
+    The source HTML-escapes help_url but does not restrict its URL scheme. B4677
+    supplies it from the MCP server registry, not from authorization query
+    parameters; this task preserves that source behavior for configured values.
+  - >-
+    API-key persistence, session authentication, OAuth code storage and token
+    exchange are owned by B4677 and its dependent tasks; this builder handles no secrets.
+pitfalls:
+  - >-
+    Escape every interpolation, including server_initial and access_items as well
+    as the OAuth fields; help_url is an href attribute and needs the same escaping.
+  - >-
+    Keep the form's hidden input names and `name="api_key"` stable because the
+    dependent POST handler parses those exact values.
+  - >-
+    The API key input starts blank and must never receive a credential value;
+    the builder input type intentionally has no API-key field.
+  - >-
+    Build the large page without one-line forwarding helpers; keep escaping logic
+    shared only where the same implementation is used for multiple interpolations.
+  - >-
+    The 24h duration pill is initially marked selected while the hidden duration
+    field is `until_revoked`; preserve this source behavior rather than silently
+    changing the saved-key default. `toggleDur` only changes visibility.
+  - >-
+    Help URLs are HTML-escaped but their scheme is not validated by LiteLLM;
+    this value comes from configured server metadata, and should not be treated
+    as request-controlled input.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

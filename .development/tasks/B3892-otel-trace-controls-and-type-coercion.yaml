@@ -1,0 +1,155 @@
+id: B3892
+title: OTel trace controls and type coercion utilities
+description: >-
+  Port the shared OTel model utilities in
+  `litellm/integrations/otel/model/{trace_controls,utils}.py` into the
+  `betterlite-logging` crate as independent modules `otel::model::utils` and
+  `otel::model::trace_controls`. These modules are consumed by metadata and
+  payload projections and by B3841; keep them free of OTel SDK dependencies.
+  Provide typed Rust APIs for scalar coercion, string-keyed JSON objects and
+  string tuples, epoch/date conversion, and the immutable TraceControls record.
+
+  TraceControls carries name, user_id, session_id and tags. Read scalar values
+  from litellm_params.metadata first and litellm_params.litellm_metadata second;
+  nonempty `langfuse_trace_name`, `langfuse_trace_user_id` and
+  `langfuse_session_id` request headers override the corresponding body values.
+  Tags are the first nonempty string-only tag sequence from those two body
+  metadata objects. Ignore non-string and empty tags and do not carry mutation
+  controls such as trace_id, existing_trace_id or update_trace_keys.
+
+  Implement as_str, as_int, as_float, as_bool, as_str_mapping, as_str_tuple,
+  to_ns and to_seconds for their declared input types. Represent decimal input
+  and results with rust_decimal::Decimal, never f32/f64. Use checked arithmetic
+  and checked conversion to the timestamp integer type; return None for invalid
+  values, non-finite values and values outside the supported range. Preserve
+  numeric-string parsing and truncation toward zero. as_bool accepts only a JSON
+  boolean or null, while mappings and tuples accept only their declared JSON
+  shapes; do not copy Python repr, duck typing or arbitrary truthiness beyond
+  docs/compatibility.md. DateTime inputs carry explicit timezone state. Parse
+  naive formatted dates through an injected LocalTimeResolver passed to the
+  conversion instead of reading ambient timezone state inside these pure
+  helpers. The resolver tests cover UTC, non-UTC and DST gaps/folds.
+scope:
+  paths:
+    - crates/betterlite-logging/src/otel/model/utils.rs
+    - crates/betterlite-logging/src/otel/model/utils/**
+    - crates/betterlite-logging/src/otel/model/trace_controls.rs
+    - crates/betterlite-logging/src/otel/model/trace_controls/**
+    - tools/oracle/cases/helpers/otel-trace-controls/**
+    - tools/oracle/fuzz/corpus/helper_case/otel-trace-controls-*
+    - tools/oracle/helpers/b3892.py
+    - tools/oracle/helpers/b3892/**
+    - tools/oracle/src/helpers/logging/b3892.rs
+    - tools/oracle/src/helpers/logging/b3892/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/utils.py#L1-L106
+    why: >-
+      All eight shared coercion and time conversion functions, including accepted
+      input types, parse formats and result units.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/trace_controls.py#L1-L61
+    why: TraceControls fields, precedence rules, tag filtering and ignored mutation controls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/metadata.py#L80-L96
+    why: Existing metadata caller uses as_str and the string-keyed mapping helper.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/payloads.py#L680-L728
+    why: Payload projections use the string, integer, float and tuple coercions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L300-L310
+    why: OTel span logging converts current and callback datetimes to nanoseconds with to_ns.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/metadata.py#L284-L294
+    why: Request metadata uses to_seconds for callback timing values.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/metrics.py#L390-L430
+    why: Metric timestamps use to_seconds for datetime and epoch inputs.
+  - url: https://docs.rs/chrono/0.4/chrono/
+    why: The workspace already uses chrono for explicit datetime and epoch conversion.
+dod:
+  - text: >-
+      TraceControls is immutable and caller_trace_controls reads litellm_params
+      metadata in priority order, with nonempty langfuse_* headers overriding
+      body scalar values; tags use the first nonempty filtered body sequence.
+    proof: [trace-control-tests, helper-python, helper-case-corpus]
+  - text: >-
+      caller_trace_controls ignores malformed/missing nested maps and does not
+      carry trace_id, existing_trace_id or update_trace_keys into TraceControls.
+    proof: [trace-control-tests, helper-python, helper-case-corpus]
+  - text: >-
+      The coercion functions preserve typed scalar parsing, numeric-string
+      conversion, float truncation, string-keyed object validation and string
+      tuple behavior without relying on Python repr or truthiness.
+    proof: [coercion-tests, helper-python, helper-case-corpus]
+  - text: >-
+      to_ns and to_seconds preserve seconds/nanoseconds units, support the
+      declared epoch/date inputs and reject unsupported values; formatted
+      strings accept the two LiteLLM formats only.
+    proof: [time-conversion-tests, helper-python, helper-case-corpus]
+  - text: >-
+      The utility modules expose explicit typed APIs and receive local-time
+      resolution through an injected resolver; they do not read ambient timezone
+      state or depend on the OTel SDK.
+    proof: [module-api-tests]
+checks:
+  optional: []
+  commands:
+    - id: trace-control-tests
+      why: Header precedence, metadata fallback, tag filtering and mutation-field exclusion must all be covered.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::trace_controls::/)'
+    - id: coercion-tests
+      why: Typed coercion, invalid input handling and string-keyed mapping/tuple behavior must be covered.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::utils::coercion::/)'
+    - id: time-conversion-tests
+      why: Epoch, datetime and accepted formatted-string conversions must retain their units, checked ranges and injected timezone behavior.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::utils::time::/)'
+    - id: module-api-tests
+      why: The explicit public API and injected local-time resolver must be exercised by a named test absent on the base branch.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::utils::api_surface::/)'
+    - id: helper-python
+      why: The independent LiteLLM helper must agree with production values and pass strict Python checks.
+      run: test -f tools/oracle/helpers/b3892.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::logging::b3892::/)'
+    - id: helper-case-corpus
+      why: New trace-control, coercion and time cases and their corpus entries must both replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/otel-trace-controls/)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/otel-trace-controls-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/otel-trace-controls/header-precedence-and-body-fallback.yaml
+  - tools/oracle/cases/helpers/otel-trace-controls/tags-filter-and-mutation-fields.yaml
+  - tools/oracle/cases/helpers/otel-trace-controls/coercion-typed-values.yaml
+  - tools/oracle/cases/helpers/otel-trace-controls/time-units-and-formats.yaml
+deviations: []
+out_of_scope:
+  - >-
+    Metadata and payload projection callers are owned by their OTel model tasks;
+    this task supplies the public utility APIs and TraceControls value they consume.
+  - >-
+    Langfuse span creation, attribute emission and propagation are outside this
+    task; it only extracts the controls from callback/request values.
+  - >-
+    Python repr text, duck typing and arbitrary truthiness are governed by
+    docs/compatibility.md, not ported as Rust coercion rules.
+pitfalls:
+  - >-
+    Headers are read from litellm_params.proxy_server_request.headers and use
+    the exact `langfuse_trace_name`, `langfuse_trace_user_id` and
+    `langfuse_session_id` keys; only nonempty header strings override body values.
+  - >-
+    Body order is metadata before litellm_metadata for both scalar controls and
+    tags. Empty strings do not win a fallback, and tag entries must be nonempty strings.
+  - >-
+    Do not include trace_id, existing_trace_id or update_trace_keys in
+    TraceControls; they mutate a trace and are deliberately excluded here.
+  - >-
+    Python datetime inputs become explicit Rust date/time values at the caller
+    boundary; to_seconds string parsing accepts `%Y-%m-%d %H:%M:%S.%f` and then
+    `%Y-%m-%d %H:%M:%S`, not arbitrary RFC3339 input.
+  - >-
+    as_int truncates floating-point values toward zero, while to_ns multiplies
+    epoch seconds by 1e9; do not round either result.
+  - >-
+    to_ns and to_seconds are used by logger.py, metadata.py and plumbing/metrics.py.
+    Keep Decimal values through conversion, use checked operations and never
+    introduce binary floating-point intermediates.
+  - >-
+    Formatted naive datetimes call the injected local-time resolver. Do not read
+    the machine timezone inside utils; tests must cover UTC, non-UTC and
+    ambiguous/nonexistent DST local times with explicit resolver behavior.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard
