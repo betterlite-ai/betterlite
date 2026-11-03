@@ -113,28 +113,31 @@ impl TryFrom<RawUsage> for Usage {
     type Error = UsageError;
 
     fn try_from(raw: RawUsage) -> Result<Self, Self::Error> {
-        let mut details = raw
-            .prompt_tokens_details
-            .map(PromptTokensDetails::try_from)
-            .transpose()?;
-        let cache_hit = extra_counter(&raw.extra, "prompt_cache_hit_tokens")?;
-        if let Some(cached) = raw.cache_read_input_tokens.or(cache_hit) {
-            details.get_or_insert_default().cached_tokens = Some(cached);
-        }
-        if let Some(creation) = raw.cache_creation_input_tokens {
-            let prompt_details = details.get_or_insert_default();
-            prompt_details.cache_creation_tokens = Some(creation);
-            prompt_details.cache_write_tokens = Some(creation);
-        }
-        Ok(Self {
+        let mut usage = Self {
             prompt_tokens: raw.prompt_tokens,
             completion_tokens: raw.completion_tokens,
             total_tokens: raw.total_tokens,
-            prompt_tokens_details: details,
+            prompt_tokens_details: raw
+                .prompt_tokens_details
+                .map(PromptTokensDetails::try_from)
+                .transpose()?,
             cache_read_input_tokens: raw.cache_read_input_tokens,
             cache_creation_input_tokens: raw.cache_creation_input_tokens,
             extra: raw.extra,
-        })
+        };
+        let cache_hit = extra_counter(&usage.extra, "prompt_cache_hit_tokens")?;
+        if let Some(cached) = usage.cache_read_input_tokens.or(cache_hit) {
+            usage
+                .prompt_tokens_details
+                .get_or_insert_default()
+                .cached_tokens = Some(cached);
+        }
+        if let Some(creation) = usage.cache_creation_input_tokens {
+            let details = usage.prompt_tokens_details.get_or_insert_default();
+            details.cache_creation_tokens = Some(creation);
+            details.cache_write_tokens = Some(creation);
+        }
+        Ok(usage)
     }
 }
 
