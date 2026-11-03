@@ -369,3 +369,16 @@ fn route_getter_debug_fallback() {
 fn python_regex_boundaries(#[case] route: &str, #[case] pattern: &str, #[case] expected: bool) {
     assert_eq!(check_route_access(route, &[pattern]), expected);
 }
+
+#[rstest::rstest]
+#[case::ascii_kelvin_denied("/models/\u{212a}", "/models/(?ai:k)", false)]
+#[case::unicode_multichar_denied("/models/\u{df}", "/models/(?i:ss)", false)]
+#[case::unicode_flag("/models/gpt-4", r"/models/(?u:gpt-\w+)", true)]
+#[case::unicode_inside_ascii("/models/\u{e9}", r"/models/(?a:(?u:\w+))", true)]
+#[case::ascii_case("/models/K", "/models/(?ai:k)", true)]
+#[case::unicode_kelvin("/models/\u{212a}", "/models/(?i:k)", true)]
+#[case::ascii_nonascii_literal("/models/\u{c9}", "/models/(?ai:\u{e9})", false)]
+#[case::ascii_after_unicode("/models/\u{e9}\u{e9}", r"/models/(?a:(?u:\w)\w)", false)]
+fn python_flag_scopes(#[case] route: &str, #[case] pattern: &str, #[case] expected: bool) {
+    assert_eq!(check_route_access(route, &[pattern]), expected);
+}

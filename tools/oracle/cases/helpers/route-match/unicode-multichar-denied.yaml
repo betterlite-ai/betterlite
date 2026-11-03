@@ -1,0 +1,11 @@
+kind: helper
+name: unicode-multichar-denied
+call:
+  route_match:
+    function: check_route_access
+    route: "/models/ß"
+    allowed_routes:
+      - "/models/(?i:ss)"
+env: {}
+compare:
+  ignore: []
