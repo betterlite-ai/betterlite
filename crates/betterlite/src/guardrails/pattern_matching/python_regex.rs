@@ -124,28 +124,8 @@ impl Translator {
                     self.scopes.pop();
                 }
             }
-            Some('(') => self.condition(characters),
+            Some('(') => self.output.push_str(&condition_header(characters)),
             _ => {}
-        }
-    }
-
-    fn condition(&mut self, characters: &mut Peekable<Chars<'_>>) {
-        characters.next();
-        self.output.push('(');
-        let named = characters
-            .peek()
-            .is_some_and(|value| value.is_alphabetic() || *value == '_');
-        if !named {
-            copy_until(&mut self.output, characters, ')');
-            return;
-        }
-        self.output.push('<');
-        for character in characters.by_ref() {
-            if character == ')' {
-                self.output.push_str(">)");
-                return;
-            }
-            self.output.push(character);
         }
     }
 
@@ -200,5 +180,18 @@ fn copy_until(output: &mut String, characters: &mut Peekable<Chars<'_>>, end: ch
         if character == end {
             break;
         }
+    }
+}
+
+fn condition_header(characters: &mut Peekable<Chars<'_>>) -> String {
+    characters.next();
+    let name: String = characters
+        .by_ref()
+        .take_while(|value| *value != ')')
+        .collect();
+    if name.starts_with(|value: char| value.is_alphabetic() || value == '_') {
+        format!("(<{name}>)")
+    } else {
+        format!("({name})")
     }
 }
