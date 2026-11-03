@@ -30,7 +30,10 @@ fn invalid_reinitialize_steps_names_the_key_and_the_value() {
 
 #[test]
 fn invalid_max_connections_names_the_field_and_the_value() {
-    let error = FactoryError::InvalidMaxConnections { value: 0 };
+    let error = FactoryError::InvalidMaxConnections {
+        value: 0,
+        source: None,
+    };
     assert!(error.to_string().contains("max_connections"));
     assert!(error.to_string().contains("0"));
 }

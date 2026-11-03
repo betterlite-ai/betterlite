@@ -35,19 +35,25 @@ where
 {
     let timeout_seconds = pool_timeout_seconds(env)?;
     if let Some(value) = settings.max_connections.filter(|value| *value < 1) {
-        return Err(FactoryError::InvalidMaxConnections { value });
+        return Err(FactoryError::InvalidMaxConnections {
+            value,
+            source: None,
+        });
     }
-    let settings = credential_provider_auth(settings);
-    let max_connections = match settings.max_connections {
+    let auth_settings = credential_provider_auth(settings);
+    let max_connections = match auth_settings.max_connections {
         Some(value) => {
-            u64::try_from(value).map_err(|_| FactoryError::InvalidMaxConnections { value })?
+            u64::try_from(value).map_err(|source| FactoryError::InvalidMaxConnections {
+                value,
+                source: Some(source),
+            })?
         }
         None => 50,
     };
     let connection = match target {
         Target::Cluster | Target::Sentinel => return Ok(None),
-        Target::Url => PoolConnection::Url(url::build(&settings)?),
-        Target::Direct => PoolConnection::Direct(ConnectionFields::from(&settings)),
+        Target::Url => PoolConnection::Url(url::build(&auth_settings)?),
+        Target::Direct => PoolConnection::Direct(ConnectionFields::from(&auth_settings)),
     };
     Ok(Some(PoolConfig {
         timeout_seconds,
