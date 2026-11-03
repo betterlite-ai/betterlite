@@ -113,16 +113,16 @@ checks:
   commands:
     - id: identity-parsing-tests
       why: RequestIdentity must parse all fields from StandardLoggingPayload metadata and resolve provider_model correctly.
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::request_identity::parse::/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::metadata::request_identity::parse::/)'
     - id: identity-from-auth-tests
       why: RequestIdentity.from_user_api_key_auth must seed identity at auth boundary with key/team fields and flatten requester_metadata.
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::request_identity::from_auth::/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::metadata::request_identity::from_auth::/)'
     - id: context-parsing-tests
       why: RequestContext must wrap identity and resolve request_model, response_model, model_group correctly on both proxy and SDK paths.
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::request_context::/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::metadata::request_context::/)'
     - id: llm-call-event-tests
       why: LLMCallEvent must parse live callback kwargs with all fields including dynamic_params, auth_metadata, and upstream_started flag.
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::llm_call_event::/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::metadata::llm_call_event::/)'
     - id: session-id-tests
       why: caller_session_id must filter minted ids and prefer header over body, falling back to trace.session_id only when no minted ids exist.
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::metadata::session_id::/)'
