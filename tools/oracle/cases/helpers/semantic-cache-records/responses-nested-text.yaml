@@ -1,0 +1,13 @@
+kind: helper
+name: semantic-cache-records-responses-nested-text
+call:
+  b4380:
+    operation: extract_semantic_prompt
+    input:
+      - content:
+          - {type: input_text, text: " First piece "}
+          - {type: input_text, text: "Second piece"}
+      - " Third piece "
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,13 @@
+kind: helper
+name: semantic-cache-records-responses-text-precedence
+call:
+  b4380:
+    operation: extract_semantic_prompt
+    input:
+      text: " first key "
+      output: second key
+      input_text: third key
+      output_text: fourth key
+env: {}
+compare:
+  ignore: []

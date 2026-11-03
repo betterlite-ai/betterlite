@@ -1,0 +1,1 @@
+{"kind":"helper","name":"semantic_cache_records_chat","call":{"b4380":{"operation":"extract_semantic_prompt","messages":[{"role":"user","content":"cached prompt"}]}},"env":{},"compare":{"ignore":[]}}

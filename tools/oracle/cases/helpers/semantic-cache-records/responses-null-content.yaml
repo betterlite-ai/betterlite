@@ -1,0 +1,13 @@
+kind: helper
+name: semantic-cache-records-responses-null-content
+call:
+  b4380:
+    operation: extract_semantic_prompt
+    input:
+      content: null
+      output: second key
+      input_text: " first fallback "
+      output_text: third key
+env: {}
+compare:
+  ignore: []

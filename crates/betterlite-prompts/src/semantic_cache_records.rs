@@ -49,40 +49,23 @@ fn collect_responses_text(
             }
         }
         Json::List(items) => {
-            let next_depth = depth
-                .checked_add(1)
-                .ok_or(SemanticCacheRecordsError::ResponsesDepthExceeded)?;
             for item in items {
-                collect_responses_text(item, next_depth, parts)?;
+                collect_responses_text(item, depth.saturating_add(1), parts)?;
             }
         }
         Json::Object(fields) => {
-            collect_responses_object(fields, depth, parts)?;
+            if let Some(content) = fields
+                .get("content")
+                .filter(|content| !matches!(content, Json::Null))
+            {
+                collect_responses_text(content, depth.saturating_add(1), parts)?;
+            } else if let Some(text) = first_text_field(fields) {
+                parts.push(text.to_owned());
+            }
         }
         Json::Null | Json::Bool(_) | Json::Number(_) => {}
     }
     Ok(())
-}
-
-fn collect_responses_object(
-    fields: &Object,
-    depth: usize,
-    parts: &mut Vec<String>,
-) -> Result<(), SemanticCacheRecordsError> {
-    if let Some(content) = fields
-        .get("content")
-        .filter(|content| !matches!(content, Json::Null))
-    {
-        let next_depth = depth
-            .checked_add(1)
-            .ok_or(SemanticCacheRecordsError::ResponsesDepthExceeded)?;
-        collect_responses_text(content, next_depth, parts)
-    } else if let Some(text) = first_text_field(fields) {
-        parts.push(text.to_owned());
-        Ok(())
-    } else {
-        Ok(())
-    }
 }
 
 fn first_text_field(fields: &Object) -> Option<&str> {
