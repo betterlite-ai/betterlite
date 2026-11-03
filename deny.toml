@@ -30,6 +30,7 @@ allow = [
   "Zlib",
   "bzip2-1.0.6",
 ]
+exceptions = [{ allow = ["NCSA"], crate = "libfuzzer-sys" }]
 
 [bans]
 multiple-versions = "deny"
