@@ -23,22 +23,4 @@ mod path_resolution;
 #[path = "content_category/severity/tests.rs"]
 mod severity;
 
-use crate::loader::{ConfigError, EnvironmentLookup};
-use crate::sections::Section;
-
-#[derive(Debug, Default, serde::Deserialize)]
-pub struct Raw {}
-
-#[derive(Debug, Clone, Default)]
-pub struct Settings;
-
-impl Section for Raw {
-    type Settings = Settings;
-
-    fn convert<L>(self, _lookup: &L) -> Result<Self::Settings, ConfigError>
-    where
-        L: EnvironmentLookup,
-    {
-        Ok(Settings)
-    }
-}
+crate::sections::stub_section!();
