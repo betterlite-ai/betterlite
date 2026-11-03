@@ -7,6 +7,7 @@ fn bounds_and_secrets() {
     let record = decode_auth_record(br#"{"access_token":"private-access","refresh_token":"private-refresh","id_token":"private-id","extra":{"password":"private-extra"}}"#).unwrap();
     let debug = format!("{record:?}");
     assert!(!debug.contains("private-"));
+    assert_eq!(debug, "AuthRecord { .. }");
     decode_auth_record(b"[]").unwrap_err();
     let bounded = format!("{{}}{}", " ".repeat(super::codec::RECORD_LIMIT - 2));
     decode_auth_record(bounded.as_bytes()).unwrap();
@@ -26,6 +27,7 @@ use std::collections::{BTreeMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use std::{fs, io};
+use tracing::subscriber::with_default;
 
 use betterlite_config::sections::chatgpt_token_store::Settings;
 use rstest::rstest;
@@ -197,14 +199,16 @@ fn failures_and_polling() {
         b"{}".to_vec(),
         br#"{"access_token":"fresh","expires_at":500}"#.to_vec(),
     ]);
-    assert_eq!(
-        subject
-            .wait_for_access_token(Duration::from_secs(12))
-            .unwrap()
-            .expose_secret(),
-        "fresh"
-    );
+    let token = subject
+        .wait_for_access_token(Duration::from_secs(12))
+        .unwrap();
+    assert_eq!(token.expose_secret(), "fresh");
     assert_eq!(subject.clock.sleeps, [Duration::from_secs(5)]);
+    subject.files.records.extend([
+        b"{}".to_vec(),
+        b"{}".to_vec(),
+        br#"{"access_token":"too-late","expires_at":500}"#.to_vec(),
+    ]);
     assert!(
         subject
             .wait_for_access_token(Duration::from_secs(7))
@@ -254,10 +258,12 @@ fn replays_auth_record(#[files("fuzz/corpus/auth_record/*")] path: PathBuf) {
 }
 
 #[rstest]
-#[case::cached(Some("cached"), Some("h.e30.s"), Some("cached"), 0)]
-#[case::priority(None, Some("h.e30.s"), None, 0)]
+#[case::cached(Some("cached"), Some(r#""h.e30.s""#), Some("cached"), 0)]
+#[case::priority(None, Some(r#""h.e30.s""#), None, 0)]
 #[case::fallback(None, None, Some("access-account"), 1)]
-#[case::empty_id(None, Some(""), Some("access-account"), 1)]
+#[case::empty_id(None, Some(r#""""#), Some("access-account"), 1)]
+#[case::null_id(None, Some("null"), Some("access-account"), 1)]
+#[case::nonstring_id(None, Some("42"), None, 0)]
 fn account_priority(
     #[case] cached: Option<&str>,
     #[case] id: Option<&str>,
@@ -269,7 +275,7 @@ fn account_priority(
         .encode(br#"{"https://api.openai.com/auth":{"chatgpt_account_id":"access-account"}}"#);
     let record = AuthRecord {
         access_token: Some(Member::Known(SecretString::from(format!("h.{payload}.s")))),
-        id_token: id.map(SecretString::from).map(Member::Known),
+        id_token: id.map(|value| serde_json::from_str(value).unwrap()),
         account_id: cached.map(str::to_owned).map(Member::Known),
         refresh_token: None,
         expires_at: None,
@@ -343,5 +349,25 @@ fn integer_expiry_preserves_precision() {
     assert_eq!(
         super::codec::expires_at(&token).unwrap().as_str(),
         "9007199254740993"
+    );
+}
+
+#[test]
+fn default_diagnostics_emit_logs() {
+    let log = tempfile::NamedTempFile::new().unwrap();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .without_time()
+        .with_target(false)
+        .with_writer(log.reopen().unwrap())
+        .finish();
+    with_default(subscriber, || {
+        LocalFiles.report(StoreEvent::InvalidRecord);
+        LocalFiles.report(StoreEvent::WriteFailure);
+    });
+    let output = fs::read_to_string(log.path()).unwrap();
+    assert_eq!(
+        output,
+        " WARN Invalid ChatGPT auth file\nERROR Failed to write ChatGPT auth file\n"
     );
 }
