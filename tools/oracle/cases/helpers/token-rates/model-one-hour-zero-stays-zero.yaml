@@ -1,0 +1,14 @@
+kind: helper
+name: model-one-hour-zero-stays-zero
+call:
+  token_rates:
+    operation: base
+    model_info:
+      cache_creation_input_token_cost: "0.000002"
+      cache_creation_input_token_cost_above_1hr: 0
+    usage:
+      prompt_tokens: 1
+    service_tier: null
+    provider: null
+compare: {ignore: []}
+env: {}
