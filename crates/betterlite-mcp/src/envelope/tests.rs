@@ -2,7 +2,7 @@
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE};
 use betterlite_secrets::error::SecretError;
-use betterlite_secrets::secret_codec::{NonceSource, OsNonces, sealing};
+use betterlite_secrets::secret_codec::{Algorithm, NonceSource, OsNonces, sealing};
 use chrono::{DateTime, Utc};
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -247,10 +247,12 @@ fn mint_rejects_grant_validation_and_limits() {
 fn signed_candidate(kind: EnvelopeKind, plaintext: &str, prefix: &str) -> String {
     let signing_keys = keys();
     let grant = URL_SAFE.encode(
-        sealing::seal_legacy(
-            &SecretString::from(plaintext),
+        sealing::seal(
+            Algorithm::XSalsa20Poly1305,
             &signing_keys.encryption_key,
             &FixedNonce,
+            SecretString::from(plaintext).expose_secret().as_bytes(),
+            b"",
         )
         .expect("seal"),
     );
@@ -301,10 +303,12 @@ fn open_rejects_a_decrypted_grant_that_breaks_model_constraints() {
     let signing_keys = keys();
     let plaintext = r#"{"access_token":"","token_type":"Bearer","expires_in":0}"#;
     let grant = URL_SAFE.encode(
-        sealing::seal_legacy(
-            &SecretString::from(plaintext),
+        sealing::seal(
+            Algorithm::XSalsa20Poly1305,
             &signing_keys.encryption_key,
             &FixedNonce,
+            SecretString::from(plaintext).expose_secret().as_bytes(),
+            b"",
         )
         .expect("seal"),
     );
@@ -548,10 +552,14 @@ fn opening_rejects_weak_keys(#[case] signing_key: &str) {
         subject_type: SubjectType::KeyHash,
         subject: String::from("hash"),
         grant: URL_SAFE.encode(
-            sealing::seal_legacy(
-                &SecretString::from(r#"{"access_token":"a","token_type":"Bearer"}"#),
+            sealing::seal(
+                Algorithm::XSalsa20Poly1305,
                 &encryption,
                 &FixedNonce,
+                SecretString::from(r#"{"access_token":"a","token_type":"Bearer"}"#)
+                    .expose_secret()
+                    .as_bytes(),
+                b"",
             )
             .unwrap(),
         ),

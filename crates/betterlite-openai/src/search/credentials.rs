@@ -52,7 +52,11 @@ impl ServerCredential {
     }
 
     fn is_trusted(&self, api_base: &str, lookup: &dyn EnvironmentLookup) -> bool {
-        let Some(candidate) = netloc(api_base).filter(|host| !host.is_empty()) else {
+        let Some(candidate) = Url::parse(api_base)
+            .ok()
+            .map(|parsed| parsed[Position::BeforeUsername..Position::AfterPort].to_lowercase())
+            .filter(|host| !host.is_empty())
+        else {
             return false;
         };
         let override_base = self.base_var.and_then(|name| lookup.lookup(name));
@@ -60,10 +64,14 @@ impl ServerCredential {
             .into_iter()
             .flatten()
             .filter(|base| !base.is_empty())
-            .any(|base| netloc(base).as_ref() == Some(&candidate))
+            .any(|base| {
+                Url::parse(base)
+                    .ok()
+                    .map(|parsed| {
+                        parsed[Position::BeforeUsername..Position::AfterPort].to_lowercase()
+                    })
+                    .as_ref()
+                    == Some(&candidate)
+            })
     }
-}
-fn netloc(url: &str) -> Option<String> {
-    let parsed = Url::parse(url).ok()?;
-    Some(parsed[Position::BeforeUsername..Position::AfterPort].to_lowercase())
 }

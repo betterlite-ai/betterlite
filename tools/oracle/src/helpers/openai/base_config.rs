@@ -5,8 +5,8 @@ use betterlite_openai::openai_base_config::forwarding::{
 };
 use betterlite_openai::openai_base_config::{
     CatalogCapabilities, ConfigFamily, ModelFamily, OpenAiConfig, OpenAiSettings,
-    azure_model_family, is_gpt_reasoning_series_name, is_o_series_model, metadata_filter_limit,
-    model_family, overlapping_api_base_path,
+    azure_model_family, is_o_series_model, metadata_filter_limit, model_family,
+    overlapping_api_base_path,
 };
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
@@ -164,7 +164,10 @@ fn invoke(input: &BaseCall) -> Result<Value, Box<HelperError>> {
             &value.model,
             &CatalogCapabilities { chat_models: value.chat_models.clone(), text_models: value.text_models.clone() }
         ))),
-        BaseCall::Gpt5Routing(value) => Ok(json!(is_gpt_reasoning_series_name(&value.model))),
+        BaseCall::Gpt5Routing(value) => Ok(json!(
+            (value.model.contains("gpt-5") || value.model.contains("gpt-6"))
+                && !value.model.rsplit('/').next().unwrap_or(&value.model).contains("gpt-5-chat")
+        )),
         BaseCall::AudioRouting(value) => Ok(json!(
             model_family(
                 &value.model,

@@ -88,7 +88,7 @@ pub enum FileTypeError {
     #[error("Unknown extension for mime type: {0}")]
     UnknownMime(String),
 }
-fn find_type(extension: &str) -> Option<FileType> {
+pub fn find_type(extension: &str) -> Option<FileType> {
     let lower = extension.to_lowercase();
     EXTENSIONS.iter().find_map(|(file_type, values)| {
         values
@@ -96,10 +96,6 @@ fn find_type(extension: &str) -> Option<FileType> {
             .any(|value| *value == lower)
             .then_some(*file_type)
     })
-}
-pub fn type_from_extension(extension: &str) -> Result<FileType, FileTypeError> {
-    let file_type = find_type(extension);
-    file_type.ok_or_else(|| FileTypeError::UnknownExtension(extension.to_owned()))
 }
 #[must_use]
 pub fn extension_from_type(file_type: FileType) -> &'static str {
@@ -118,10 +114,6 @@ pub fn mime_from_type(file_type: FileType) -> &'static str {
         }
     }
     ""
-}
-pub fn mime_from_extension(extension: &str) -> Result<&'static str, FileTypeError> {
-    let file_type = type_from_extension(extension);
-    file_type.map(mime_from_type)
 }
 pub fn extension_from_mime(mime_type: &str) -> Result<&'static str, FileTypeError> {
     let lower = mime_type.to_lowercase();

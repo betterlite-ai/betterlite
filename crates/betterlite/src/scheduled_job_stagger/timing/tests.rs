@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use tracing::subscriber::with_default;
 
-use super::attach_job_timing_logger;
+use super::log_job_submitted;
 use crate::scheduled_job_stagger::{
     JobScheduler, JobSnapshot, JobSubmission, SubmissionListener, Trigger,
 };
@@ -65,7 +65,9 @@ impl io::Write for Captured {
 
 fn submit_with_capture(event: &FakeSubmission, now: DateTime<Utc>) -> String {
     let mut scheduler = FakeScheduler { listener: None };
-    attach_job_timing_logger(&mut scheduler, move || now);
+    let clock = move || now;
+    let listener: SubmissionListener = Box::new(move |event| log_job_submitted(event, &clock));
+    scheduler.add_submission_listener(listener);
     let listener = scheduler
         .listener
         .expect("a listener should have been attached");

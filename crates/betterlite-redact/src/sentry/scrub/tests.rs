@@ -1,7 +1,8 @@
 #![cfg(test)]
 
+use super::super::pattern;
 use super::super::settings::build_sentry_init_options;
-use super::{EventValue, MAX_SCRUB_DEPTH, scrub_event};
+use super::{EventValue, MAX_SCRUB_DEPTH, walk};
 use std::collections::BTreeMap;
 
 const DEFAULT_CUSTOM_KEY_MINIMUM: usize = 16;
@@ -61,12 +62,12 @@ fn nested_array(depth: usize, leaf: EventValue) -> EventValue {
 #[test]
 fn sentry_scrubbing_behavior_tests_behavior() {
     let at_limit = nested_object(MAX_SCRUB_DEPTH, text("api_key='secret'"));
-    let scrubbed_at_limit = scrub_event(
-        &at_limit,
+    let scrubbed_at_limit = pattern::build(
         false,
         DEFAULT_CUSTOM_KEY_MINIMUM,
         DEFAULT_GENERATED_KEY_BYTES,
     )
+    .map(|patterns| walk(&at_limit, &patterns, &[]))
     .unwrap();
     assert_eq!(
         innermost_object(&scrubbed_at_limit),
@@ -74,12 +75,12 @@ fn sentry_scrubbing_behavior_tests_behavior() {
     );
 
     let beyond_limit = nested_object(MAX_SCRUB_DEPTH.saturating_add(1), text("harmless"));
-    let scrubbed_beyond_limit = scrub_event(
-        &beyond_limit,
+    let scrubbed_beyond_limit = pattern::build(
         false,
         DEFAULT_CUSTOM_KEY_MINIMUM,
         DEFAULT_GENERATED_KEY_BYTES,
     )
+    .map(|patterns| walk(&beyond_limit, &patterns, &[]))
     .unwrap();
     assert_eq!(
         innermost_object(&scrubbed_beyond_limit),
@@ -91,24 +92,24 @@ fn sentry_scrubbing_behavior_tests_behavior() {
 fn a_lowered_custom_key_minimum_scrubs_shorter_keys() {
     let event = text("key is sk-abcde here");
 
-    let default_lengths = scrub_event(
-        &event,
+    let default_lengths = pattern::build(
         false,
         DEFAULT_CUSTOM_KEY_MINIMUM,
         DEFAULT_GENERATED_KEY_BYTES,
     )
+    .map(|patterns| walk(&event, &patterns, &[]))
     .unwrap();
     assert_eq!(default_lengths, event);
 
     let mut env = BTreeMap::new();
     env.insert("MINIMUM_CUSTOM_KEY_LENGTH".to_owned(), "8".to_owned());
     let options = build_sentry_init_options(&env).unwrap();
-    let lowered_minimum = scrub_event(
-        &event,
+    let lowered_minimum = pattern::build(
         false,
         options.custom_key_minimum,
         options.generated_key_bytes,
     )
+    .map(|patterns| walk(&event, &patterns, &[]))
     .unwrap();
     assert_eq!(lowered_minimum, text("key is [Filtered] here"));
 }
@@ -116,12 +117,12 @@ fn a_lowered_custom_key_minimum_scrubs_shorter_keys() {
 #[test]
 fn array_nesting_also_counts_toward_scrub_depth() {
     let nested = nested_array(MAX_SCRUB_DEPTH.saturating_add(1), text("harmless"));
-    let scrubbed = scrub_event(
-        &nested,
+    let scrubbed = pattern::build(
         false,
         DEFAULT_CUSTOM_KEY_MINIMUM,
         DEFAULT_GENERATED_KEY_BYTES,
     )
+    .map(|patterns| walk(&nested, &patterns, &[]))
     .unwrap();
     let innermost = innermost_by(&scrubbed, |value| {
         let EventValue::Array(items) = value else {
@@ -183,12 +184,12 @@ fn source_context_keys_survive_inside_known_stack_frame_shapes() {
     ]);
     let event = wrap_frame_in_stacktrace(built_frame);
 
-    let scrubbed = scrub_event(
-        &event,
+    let scrubbed = pattern::build(
         false,
         DEFAULT_CUSTOM_KEY_MINIMUM,
         DEFAULT_GENERATED_KEY_BYTES,
     )
+    .map(|patterns| walk(&event, &patterns, &[]))
     .unwrap();
     let frame = first_frame(&scrubbed);
 
@@ -210,12 +211,12 @@ fn source_context_keys_survive_inside_known_stack_frame_shapes() {
 #[test]
 fn source_context_keys_are_scrubbed_outside_a_known_stack_frame_shape() {
     let event = object(&[("context_line", text("token=abc"))]);
-    let scrubbed = scrub_event(
-        &event,
+    let scrubbed = pattern::build(
         false,
         DEFAULT_CUSTOM_KEY_MINIMUM,
         DEFAULT_GENERATED_KEY_BYTES,
     )
+    .map(|patterns| walk(&event, &patterns, &[]))
     .unwrap();
     let EventValue::Object(root) = &scrubbed else {
         panic!("expected an object root");

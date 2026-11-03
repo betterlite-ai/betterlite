@@ -3,7 +3,7 @@ pub mod models;
 mod tests;
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE};
-use betterlite_secrets::secret_codec::{NonceSource, sealing};
+use betterlite_secrets::secret_codec::{Algorithm, NonceSource, sealing};
 use chrono::{DateTime, TimeDelta, Utc};
 use secrecy::{ExposeSecret as _, SecretString};
 
@@ -202,10 +202,13 @@ where
     N: NonceSource,
 {
     let expires_at = expiry(request.now, request.lifetime)?;
-    let sealed = sealing::seal_legacy(
-        &SecretString::from(request.plaintext),
+    let plaintext = SecretString::from(request.plaintext);
+    let sealed = sealing::seal(
+        Algorithm::XSalsa20Poly1305,
         &request.keys.encryption_key,
         request.nonces,
+        plaintext.expose_secret().as_bytes(),
+        b"",
     )
     .map_err(|source| EnvelopeMintError::Seal { source })?;
     let grant = URL_SAFE.encode(sealed);

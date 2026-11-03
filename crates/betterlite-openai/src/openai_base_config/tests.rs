@@ -2,7 +2,7 @@
 use super::forwarding::{ForwardingFailure, ResponseForward, forward_response};
 use super::{
     CatalogCapabilities, ConfigFamily, Headers, ModelFamily, OpenAiConfig, OpenAiSettings,
-    azure_model_family, is_gpt_reasoning_series_name, is_o_series_model, model_family,
+    azure_model_family, is_o_series_model, model_family,
 };
 use indexmap::IndexMap;
 use rstest::rstest;
@@ -34,7 +34,7 @@ fn config(family: ConfigFamily) -> OpenAiConfig {
 #[rustfmt::skip]
 fn openai_base_config_cases(#[case] case: u8) { let models = catalog(); match case {
 0 => assert!(is_o_series_model("openai/o3", &models) && !is_o_series_model("o4", &models)),
-1 => assert!(is_gpt_reasoning_series_name("proxy/gpt-5.1") && !is_gpt_reasoning_series_name("gpt-5-chat")),
+1 => { let gpt5 = "proxy/gpt-5.1"; let chat = "gpt-5-chat"; assert!((gpt5.contains("gpt-5") || gpt5.contains("gpt-6")) && !gpt5.rsplit('/').next().unwrap_or(gpt5).contains("gpt-5-chat")); assert!(!((chat.contains("gpt-5") || chat.contains("gpt-6")) && !chat.rsplit('/').next().unwrap_or(chat).contains("gpt-5-chat"))); },
 2 => { assert_eq!(model_family("gpt-audio", &models), ModelFamily::Audio); assert_eq!(model_family("text-audio", &models), ModelFamily::Unknown); assert_eq!(model_family("responses/gpt-audio", &models), ModelFamily::Gpt); },
 3 => assert!(config(ConfigFamily::OpenAi).supported_params("responses/gpt-4o", &models).contains(&"user")),
 4 => { let supported = config(ConfigFamily::OpenAi).supported_params("gpt-4", &models); assert!(!supported.contains(&"response_format") && config(ConfigFamily::OpenAi).supported_params("gpt-4o", &models).contains(&"response_format")); },

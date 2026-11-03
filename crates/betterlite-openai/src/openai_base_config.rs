@@ -144,7 +144,13 @@ impl OpenAiConfig {
 pub fn model_family(model: &str, catalog: &CatalogCapabilities) -> ModelFamily {
     if is_o_series_model(model, catalog) {
         ModelFamily::OSeries
-    } else if is_gpt_reasoning_series_name(model) {
+    } else if (model.contains("gpt-5") || model.contains("gpt-6"))
+        && !model
+            .rsplit('/')
+            .next()
+            .unwrap_or(model)
+            .contains("gpt-5-chat")
+    {
         ModelFamily::GptReasoning
     } else if catalog.chat_models.contains(model) && model.contains("audio") {
         ModelFamily::Audio
@@ -156,7 +162,13 @@ pub fn model_family(model: &str, catalog: &CatalogCapabilities) -> ModelFamily {
 }
 #[must_use]
 pub fn azure_model_family(model: &str) -> ModelFamily {
-    if is_gpt_reasoning_series_name(model) || model.contains("gpt5_series") {
+    let is_reasoning = (model.contains("gpt-5") || model.contains("gpt-6"))
+        && !model
+            .rsplit('/')
+            .next()
+            .unwrap_or(model)
+            .contains("gpt-5-chat");
+    if is_reasoning || model.contains("gpt5_series") {
         ModelFamily::GptReasoning
     } else {
         ModelFamily::Gpt
@@ -167,11 +179,6 @@ pub fn is_o_series_model(model: &str, catalog: &CatalogCapabilities) -> bool {
     name.starts_with('o')
         && name.as_bytes().get(1).is_some_and(u8::is_ascii_digit)
         && catalog.chat_models.contains(name)
-}
-#[must_use]
-pub fn is_gpt_reasoning_series_name(model: &str) -> bool {
-    let final_component = model.rsplit('/').next().unwrap_or(model);
-    (model.contains("gpt-5") || model.contains("gpt-6")) && !final_component.contains("gpt-5-chat")
 }
 #[must_use]
 pub fn metadata_filter_limit(
