@@ -14,6 +14,10 @@ description: >-
   and betterlite-openai reads config.sections.chatgpt_token_store.
   Directory/file env values use getenv semantics, including explicit empty strings; API base uses truthy
   fallthrough. Expand only the default home path and preserve absolute auth-file override behavior.
+  When HOME is absent, inject the system-home fallback at the binary boundary through
+  EnvironmentLookup; the resolver must not read process state itself. Preserve explicit empty HOME
+  and token-directory overrides. A missing system home leaves the literal default path unchanged.
+  Cover HOME present, empty, absent with injected home, and absent without a home in loader tests.
 
   An absent/unreadable file returns None; malformed/non-object JSON warns then returns None. Writes
   truncate the file and log OSError without throwing, preserving source effect order rather than adding
@@ -47,6 +51,8 @@ scope:
     - crates/betterlite-config/src/providers/chatgpt/**
     - crates/betterlite-config/src/providers/chatgpt/token_store.rs
     - crates/betterlite-config/src/providers/chatgpt/token_store/**
+    - crates/betterlite-config/src/loader.rs
+    - crates/betterlite/src/main.rs
     - crates/betterlite-config/src/sections/chatgpt_token_store.rs
     - crates/betterlite-config/src/sections/chatgpt_token_store/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/chatgpt_token_store*
