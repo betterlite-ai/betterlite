@@ -31,10 +31,7 @@ pub enum CategoryFileError {
 }
 
 pub fn read_category_yaml(path: &Path) -> Result<CategoryFileData, CategoryFileError> {
-    let text = fs::read_to_string(path).map_err(|source| CategoryFileError::Read {
-        path: path.display().to_string(),
-        source,
-    })?;
+    let text = read_text(path)?;
     serde_saphyr::from_str(&text).map_err(|source| CategoryFileError::Yaml {
         path: path.display().to_string(),
         source: Box::new(source),
@@ -73,13 +70,17 @@ fn load_json(path: &Path) -> Result<CategoryConfig, CategoryFileError> {
 }
 
 fn parse_json_entries(path: &Path) -> Result<JsonEntries, CategoryFileError> {
-    let text = fs::read_to_string(path).map_err(|source| CategoryFileError::Read {
-        path: path.display().to_string(),
-        source,
-    })?;
+    let text = read_text(path)?;
     serde_json::from_str(&text).map_err(|source| CategoryFileError::Json {
         path: path.display().to_string(),
         source: Box::new(source),
+    })
+}
+
+fn read_text(path: &Path) -> Result<String, CategoryFileError> {
+    fs::read_to_string(path).map_err(|source| CategoryFileError::Read {
+        path: path.display().to_string(),
+        source,
     })
 }
 
