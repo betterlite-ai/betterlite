@@ -1,4 +1,4 @@
-use std::iter::{Peekable, from_fn};
+use std::iter::Peekable;
 use std::str::Chars;
 
 use fancy_regex::{Error, ParseError};
@@ -138,9 +138,9 @@ fn named(characters: &mut Peekable<Chars<'_>>) -> Result<char, Error> {
     if characters.next_if_eq(&'{').is_none() {
         return Err(Error::ParseError(0, ParseError::UnclosedUnicodeName));
     }
-    let name: String = from_fn(|| characters.next_if(|value| *value != '}')).collect();
+    while characters.next_if(|value| *value != '}').is_some() {}
     if characters.next_if_eq(&'}').is_none() {
         return Err(Error::ParseError(0, ParseError::UnclosedUnicodeName));
     }
-    unicode_names2::character(&name).ok_or(Error::ParseError(0, ParseError::InvalidCodepointValue))
+    Err(Error::ParseError(0, ParseError::InvalidCodepointValue))
 }

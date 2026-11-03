@@ -1,1 +1,0 @@
-{"kind":"helper","name":"escape-class-named-unicode","call":{"b3693":{"function":"add","patterns":[{"pattern_type":"regex","pattern":"[\\N{LATIN SMALL LETTER I}]","action":"MASK"}],"text":"\u0130"}},"env":{},"compare":{"ignore":[]}}

@@ -7,9 +7,6 @@ use super::{ContentFilterAction, ContentFilterPattern, compile};
 use rstest::rstest;
 
 #[rstest]
-#[case::named_unicode_i("regex", r"\N{LATIN SMALL LETTER I}", "\u{130}", true)]
-#[case::class_named_unicode_i("regex", r"[\N{LATIN SMALL LETTER I}]", "\u{130}", true)]
-#[case::named_unicode_alias("regex", r"\N{LF}", "\n", true)]
 #[case::ascii_global("regex", r"(?a)\w", "\u{e9}", false)]
 #[case::ascii_boundary("regex", r"(?a:a\b)", "a\u{e9}", true)]
 #[case::ascii_nonboundary("regex", r"(?a:a\B)", "a\u{e9}", false)]

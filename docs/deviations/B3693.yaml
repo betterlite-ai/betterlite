@@ -6,3 +6,6 @@ deviations:
   - what: Duplicate blocked-word keys emit a warning while retaining the last entry.
     why: Preserve the resulting lookup without silently replacing configuration.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L810
+  - what: "A custom regex with a \\N{...} named Unicode escape fails to compile with the same error as any other invalid pattern, inside a character class too, where Python re resolves the name."
+    why: "The only maintained Unicode name crate, unicode_names2, is licensed under Unicode-DFS-2016, which deny.toml does not allow, and a hand-written name table is out of proportion for guardrail patterns. B4350 made the same call for cache bodies."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L732-L770
