@@ -38,6 +38,8 @@ impl CacheControlPermissions {
         data: &CacheControlCallData,
         _call_type: &str,
     ) -> Result<(), CacheControlPermissionsError> {
+        tracing::debug!("Inside Cache Control Check Pre-Call Hook");
+
         let Some(JsonData::Object(cache_args)) = &data.cache else {
             return ready(Ok(())).await;
         };
