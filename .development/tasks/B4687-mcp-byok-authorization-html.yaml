@@ -20,8 +20,18 @@ description: >-
   and apostrophe. Empty access_items omits the access checklist; an empty
   help_url omits its link. The task owns the builder only; B4677 owns the GET
   handler, request validation, metadata lookup and HTTP cases.
+
+  Add the already-locked `url` crate to betterlite-mcp and use its WHATWG URL
+  parser to suppress `javascript`, `data` and `vbscript` help-link schemes after
+  browser-compatible normalization. Keep safe HTTP(S) and relative links and
+  HTML-escape the retained href. Native security cases cover mixed-case schemes,
+  leading whitespace and embedded control characters; keep those unsafe inputs
+  out of the LiteLLM differential cases because this is a documented security
+  deviation.
 scope:
   paths:
+    - Cargo.lock
+    - crates/betterlite-mcp/Cargo.toml
     - crates/betterlite-mcp/src/byok_authorization_html.rs
     - crates/betterlite-mcp/src/byok_authorization_html/**
     - tools/oracle/cases/helpers/mcp-byok-authorization-html/**
@@ -38,6 +48,10 @@ references:
       hidden form fields, two-step navigation, credential input and escaping.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L750-L768
     why: The GET caller and the exact builder arguments supplied by B4677.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L229-L231
+    why: LiteLLM escapes help_url for the href but does not reject active-content schemes.
+  - url: https://docs.rs/url/2.5.8/url/struct.Url.html
+    why: Existing locked WHATWG URL parser used by betterlite-server; use its normalized scheme instead of handwritten prefix checks.
 dod:
   - text: >-
       build_authorize_html emits a usable two-step form with the overview/key
@@ -45,21 +59,26 @@ dod:
       the builder accepts no credential value. Preserve the initial hidden
       duration `until_revoked` even though the 24h pill is initially selected;
       toggleDur only shows/hides choices and selDur changes the hidden value.
-    proof: [form-behavior-tests, helper-python, helper-case-corpus]
+    proof: [form-behavior-tests, oracle, helper-python, helper-case-corpus]
   - text: >-
       The form contains hidden inputs named client_id, redirect_uri,
       code_challenge, code_challenge_method, state and server_id, with their
       supplied values escaped for HTML attributes.
-    proof: [form-field-tests, helper-python, helper-case-corpus]
+    proof: [form-field-tests, oracle, helper-python, helper-case-corpus]
   - text: >-
       Server display text, initials, access items and help_url are escaped in
       their respective HTML contexts; empty access_items and help_url omit
       their optional sections.
-    proof: [html-escaping-tests, helper-python, helper-case-corpus]
+    proof: [html-escaping-tests, oracle, helper-python, helper-case-corpus]
   - text: >-
       The test contract checks observable form structure and values without
       requiring CSS, whitespace or complete serialized HTML to match LiteLLM.
-    proof: [form-behavior-tests, helper-python, helper-case-corpus]
+    proof: [form-behavior-tests, oracle, helper-python, helper-case-corpus]
+  - text: >-
+      The builder omits help links whose browser-normalized URL scheme is
+      javascript, data or vbscript, including mixed case, leading whitespace and
+      embedded control characters; ordinary HTTP(S) and relative help links remain.
+    proof: [active-help-url-tests]
 checks:
   optional: []
   commands:
@@ -72,6 +91,9 @@ checks:
     - id: html-escaping-tests
       why: Dynamic text and attributes must not permit injected HTML or script markup.
       run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^byok_authorization_html::escaping::/)'
+    - id: active-help-url-tests
+      why: HTML escaping alone does not prevent executable schemes in a credential-page link; URL parsing must reject browser-normalized active-content schemes.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^byok_authorization_html::help_url::/)'
     - id: helper-python
       why: The independent LiteLLM helper and Rust builder must agree on semantic form facts and escaped values, and the adapter must pass strict Python checks.
       run: test -f tools/oracle/helpers/b4687.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::mcp::b4687::/)'
@@ -82,7 +104,16 @@ oracle_cases:
   - tools/oracle/cases/helpers/mcp-byok-authorization-html/basic-two-step-form.yaml
   - tools/oracle/cases/helpers/mcp-byok-authorization-html/escaped-dynamic-values.yaml
   - tools/oracle/cases/helpers/mcp-byok-authorization-html/optional-sections-omitted.yaml
-deviations: []
+deviations:
+  - what: >-
+      The builder omits `help_url` values whose WHATWG-normalized parsed scheme is
+      javascript, data or vbscript, while LiteLLM emits these links after HTML
+      escaping. Ordinary HTTP(S) and relative links remain supported.
+    why: >-
+      HTML escaping does not neutralize executable URL schemes. Suppressing
+      active-content links prevents script navigation from the API-key entry page;
+      the value comes from configured MCP server metadata.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L229-L231
 out_of_scope:
   - >-
     GET /v1/mcp/oauth/authorize validation, server metadata lookup and HTMLResponse
@@ -90,10 +121,6 @@ out_of_scope:
   - >-
     The generated HTML's exact CSS, whitespace and serialized formatting are not
     contracts; preserve user-visible fields, step behavior, escaping and optional sections.
-  - >-
-    The source HTML-escapes help_url but does not restrict its URL scheme. B4677
-    supplies it from the MCP server registry, not from authorization query
-    parameters; this task preserves that source behavior for configured values.
   - >-
     API-key persistence, session authentication, OAuth code storage and token
     exchange are owned by B4677 and its dependent tasks; this builder handles no secrets.
@@ -115,9 +142,10 @@ pitfalls:
     field is `until_revoked`; preserve this source behavior rather than silently
     changing the saved-key default. `toggleDur` only changes visibility.
   - >-
-    Help URLs are HTML-escaped but their scheme is not validated by LiteLLM;
-    this value comes from configured server metadata, and should not be treated
-    as request-controlled input.
+    Use `url::Url` scheme parsing after browser-compatible normalization when
+    filtering javascript, data and vbscript help URLs; HTML escaping does not
+    make these schemes safe. The registry value is configuration-derived, not
+    authorization-query input.
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

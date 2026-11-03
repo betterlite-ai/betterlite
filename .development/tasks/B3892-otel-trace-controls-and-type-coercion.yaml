@@ -66,21 +66,21 @@ dod:
       TraceControls is immutable and caller_trace_controls reads litellm_params
       metadata in priority order, with nonempty langfuse_* headers overriding
       body scalar values; tags use the first nonempty filtered body sequence.
-    proof: [trace-control-tests, helper-python, helper-case-corpus]
+    proof: [trace-control-tests, oracle, helper-python, helper-case-corpus]
   - text: >-
       caller_trace_controls ignores malformed/missing nested maps and does not
       carry trace_id, existing_trace_id or update_trace_keys into TraceControls.
-    proof: [trace-control-tests, helper-python, helper-case-corpus]
+    proof: [trace-control-tests, oracle, helper-python, helper-case-corpus]
   - text: >-
       The coercion functions preserve typed scalar parsing, numeric-string
       conversion, float truncation, string-keyed object validation and string
       tuple behavior without relying on Python repr or truthiness.
-    proof: [coercion-tests, helper-python, helper-case-corpus]
+    proof: [coercion-tests, oracle, helper-python, helper-case-corpus]
   - text: >-
       to_ns and to_seconds preserve seconds/nanoseconds units, support the
       declared epoch/date inputs and reject unsupported values; formatted
       strings accept the two LiteLLM formats only.
-    proof: [time-conversion-tests, helper-python, helper-case-corpus]
+    proof: [time-conversion-tests, oracle, helper-python, helper-case-corpus]
   - text: >-
       The utility modules expose explicit typed APIs and receive local-time
       resolution through an injected resolver; they do not read ambient timezone
