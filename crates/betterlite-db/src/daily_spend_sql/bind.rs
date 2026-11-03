@@ -1,14 +1,17 @@
+use super::values::JsonMoney;
 use deadpool_postgres::GenericClient;
 use rust_decimal::Decimal;
 use serde::Serialize;
+use serde_with::{FromInto, serde_as};
 use tokio_postgres::types::{ToSql, Type};
 
+#[serde_as]
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
 pub enum SqlBind {
     Text(Option<String>),
     Integer(Option<i64>),
-    Money(#[serde(with = "rust_decimal::serde::arbitrary_precision")] Decimal),
+    Money(#[serde_as(serialize_as = "FromInto<JsonMoney>")] Decimal),
 }
 
 impl SqlBind {

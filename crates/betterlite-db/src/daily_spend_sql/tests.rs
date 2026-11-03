@@ -120,28 +120,7 @@ async fn postgres_daily_collisions_and_tag_request_retention() {
     left.unwrap();
     right.unwrap();
     check_daily(&first).await;
-    let mut replacement = row("tag", Null, 0);
-    replacement.insert("request_id".to_owned(), Text("new".to_owned()));
-    write_bulk_upsert(
-        &first,
-        DailySpendEntity::Tag,
-        &[replacement],
-        uuid::Uuid::new_v4,
-    )
-    .await
-    .unwrap();
-    let updated = first
-        .query_one("SELECT request_id FROM \"LiteLLM_DailyTagSpend\"", &[])
-        .await
-        .unwrap();
-    assert_eq!(updated.get::<_, String>(0), "new");
-    first
-        .batch_execute("DROP TABLE \"LiteLLM_DailyTagSpend\"")
-        .await
-        .unwrap();
-    write_bulk_upsert(&first, DailySpendEntity::Tag, &[], uuid::Uuid::new_v4)
-        .await
-        .unwrap();
+    replace_request_and_skip_empty(&first).await;
     drop((first, second));
     pool.close();
     fixture.close_async().await.unwrap();
@@ -240,19 +219,25 @@ fn sums_money_without_binary_roundoff() {
     );
 }
 
-#[test]
-fn exact_decimal_survives_column_and_bind_serialization() {
-    let token = "0.1234567890123456789";
+#[rstest]
+#[case::fraction("0.1234567890123456789", "0.1234567890123456789")]
+#[case::zero("0", "0.0")]
+#[case::whole("100", "100.0")]
+#[case::maximum("79228162514264337593543950335", "79228162514264337593543950335")]
+fn exact_decimal_survives_column_and_bind_serialization(
+    #[case] token: &str,
+    #[case] expected: &str,
+) {
     let amount = token.parse::<rust_decimal::Decimal>().unwrap();
     let column = Decimal(amount);
     let encoded = serde_json::to_string(&column).unwrap();
-    assert_eq!(encoded, token);
+    assert_eq!(encoded, expected);
     assert_eq!(
         serde_json::from_str::<super::values::SpendColumnValue>(&encoded).unwrap(),
         column
     );
     let bind = serde_json::to_string(&super::bind::SqlBind::Money(amount)).unwrap();
-    assert_eq!(bind, token);
+    assert_eq!(bind, expected);
     assert_eq!(
         serde_json::from_str::<super::values::SpendColumnValue>(&bind).unwrap(),
         column
@@ -305,4 +290,30 @@ fn uses_injected_ids_in_batch_order() {
     })
     .unwrap();
     assert!(empty.is_empty());
+}
+
+async fn replace_request_and_skip_empty(client: &deadpool_postgres::Client) {
+    use super::write::write_bulk_upsert;
+    let mut replacement = row("tag", Null, 0);
+    replacement.insert("request_id".to_owned(), Text("new".to_owned()));
+    write_bulk_upsert(
+        client,
+        DailySpendEntity::Tag,
+        &[replacement],
+        uuid::Uuid::new_v4,
+    )
+    .await
+    .unwrap();
+    let updated = client
+        .query_one("SELECT request_id FROM \"LiteLLM_DailyTagSpend\"", &[])
+        .await
+        .unwrap();
+    assert_eq!(updated.get::<_, String>(0), "new");
+    client
+        .batch_execute("DROP TABLE \"LiteLLM_DailyTagSpend\"")
+        .await
+        .unwrap();
+    write_bulk_upsert(client, DailySpendEntity::Tag, &[], uuid::Uuid::new_v4)
+        .await
+        .unwrap();
 }

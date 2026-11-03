@@ -2,8 +2,10 @@ use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
+use serde_with::{FromInto, serde_as};
 use std::collections::BTreeMap;
 
+#[serde_as]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged, try_from = "Box<RawValue>")]
 pub enum SpendColumnValue {
@@ -11,7 +13,7 @@ pub enum SpendColumnValue {
     Bool(bool),
     Int(i64),
     Text(String),
-    Decimal(#[serde(with = "rust_decimal::serde::arbitrary_precision")] Decimal),
+    Decimal(#[serde_as(serialize_as = "FromInto<JsonMoney>")] Decimal),
     Array(Vec<Self>),
     Object(BTreeMap<String, Self>),
 }
@@ -78,13 +80,27 @@ impl TryFrom<Box<RawValue>> for SpendColumnValue {
             Some(b'"') => serde_json::from_str(text).map(Self::Text),
             Some(b'[') => serde_json::from_str(text).map(Self::Array),
             Some(b'{') => serde_json::from_str(text).map(Self::Object),
-            _ => match text.parse::<i64>() {
-                Ok(whole) => Ok(Self::Int(whole)),
-                Err(_) => {
+            _ => text.parse::<i64>().map_or_else(
+                |_| {
                     serde_json::from_str::<ExactDecimal>(text).map(|number| Self::Decimal(number.0))
-                }
-            },
+                },
+                |whole| Ok(Self::Int(whole)),
+            ),
         }
         .map_err(DailySpendValueError::Json)
+    }
+}
+
+#[derive(Serialize)]
+#[serde(transparent)]
+pub(super) struct JsonMoney(#[serde(with = "rust_decimal::serde::arbitrary_precision")] Decimal);
+
+impl From<Decimal> for JsonMoney {
+    fn from(mut amount: Decimal) -> Self {
+        // Whole money retains LiteLLM's decimal-point JSON form without converting through f64.
+        if amount.scale() == 0 {
+            amount.rescale(1);
+        }
+        Self(amount)
     }
 }
