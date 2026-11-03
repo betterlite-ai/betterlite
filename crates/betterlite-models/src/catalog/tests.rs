@@ -6,6 +6,8 @@ use super::{
     UnknownFields,
 };
 use crate::metadata::identity::Mode;
+use crate::token_rates::Usage;
+use crate::token_rates::batch::get_batch_cost_rates;
 use rstest::rstest;
 use std::sync::Arc;
 use std::{
@@ -14,6 +16,26 @@ use std::{
 };
 
 const WARNING_BOUNDARY_ENTRIES: usize = MAX_CATALOG_WARNINGS.div_euclid(2);
+
+#[rstest]
+#[case::below(199_999, Some("xai"), 1)]
+#[case::exclusive_boundary(200_000, Some("openai"), 1)]
+#[case::inclusive_boundary(200_000, Some("xai"), 2)]
+#[case::above(200_001, Some("openai"), 2)]
+fn catalog_batch_prices_retain_provider_specific_threshold_boundaries(
+    #[case] prompt_tokens: i64,
+    #[case] provider: Option<&str>,
+    #[case] expected: i64,
+) {
+    let catalog = ModelCatalog::parse(
+        br#"{"model":{"input_cost_per_token_batches":1,"input_cost_per_token_above_200k_tokens_batches":2}}"#,
+        UnknownFields::Reject,
+    ).unwrap();
+    let prices = &catalog.entries["model"].prices;
+    let record = serde_json::from_str(&serde_json::to_string(prices).unwrap()).unwrap();
+    let rates = get_batch_cost_rates(&record, Usage { prompt_tokens }, provider).unwrap();
+    assert_eq!(rates.input, Some(rust_decimal::Decimal::from(expected)));
+}
 
 #[derive(Clone, Copy, Debug)]
 enum Outcome {
@@ -136,7 +158,9 @@ fn model_catalog_tests_behavior(
             let catalog = result.unwrap();
             check_lookup(&catalog, "model");
             let price = catalog
-                .lookup("model")
+                .lookup
+                .get("model")
+                .and_then(|canonical| catalog.entries.get(canonical.as_ref()))
                 .unwrap()
                 .prices
                 .values
@@ -174,7 +198,9 @@ fn model_catalog_tests_behavior(
             assert!(catalog.warnings.contains(&path.to_owned()));
             assert_eq!(
                 catalog
-                    .lookup("model")
+                    .lookup
+                    .get("model")
+                    .and_then(|canonical| catalog.entries.get(canonical.as_ref()))
                     .unwrap()
                     .prices
                     .off_peak
@@ -199,12 +225,24 @@ fn model_catalog_tests_behavior(
         Outcome::NoWarnings => {
             let catalog = result.unwrap();
             assert!(catalog.warnings.is_empty());
-            assert!(catalog.lookup("model").is_some());
+            assert!(
+                catalog
+                    .lookup
+                    .get("model")
+                    .and_then(|canonical| catalog.entries.get(canonical.as_ref()))
+                    .is_some()
+            );
         }
         Outcome::AliasInvalid => {
             let catalog = result.unwrap();
             assert_eq!(catalog.entries.len(), 1);
-            assert!(catalog.lookup("bad").is_none());
+            assert!(
+                catalog
+                    .lookup
+                    .get("bad")
+                    .and_then(|canonical| catalog.entries.get(canonical.as_ref()))
+                    .is_none()
+            );
             assert_eq!(catalog.warnings.len(), 1);
             assert!(catalog.warnings[0].contains("aliases"));
         }
@@ -323,12 +361,22 @@ fn check_warning_bytes(error: &CatalogError) {
 }
 
 fn check_lookup(catalog: &ModelCatalog, name: &str) {
-    let entry = catalog.lookup(name).unwrap();
+    let entry = catalog
+        .lookup
+        .get(name)
+        .and_then(|canonical| catalog.entries.get(canonical.as_ref()))
+        .unwrap();
     let metadata = catalog.metadata(name).unwrap();
     assert_eq!(entry.name, "model");
     assert_eq!(metadata.model, "model");
     assert_eq!(metadata.provider, "openai");
-    assert!(catalog.lookup("missing").is_none());
+    assert!(
+        catalog
+            .lookup
+            .get("missing")
+            .and_then(|canonical| catalog.entries.get(canonical.as_ref()))
+            .is_none()
+    );
     assert!(catalog.metadata("missing").is_none());
     if catalog.entries.len() > 1 {
         assert_eq!(catalog.warnings.len(), 1);

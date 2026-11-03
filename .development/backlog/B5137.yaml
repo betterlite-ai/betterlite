@@ -1,0 +1,13 @@
+id: B5137
+milestone: M1 openai data plane
+title: Model catalog keeps loading past a malformed generalization rule
+status: todo
+depends_on: [B193, B5094]
+file: tasks/B5137-model-catalog-gaps.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

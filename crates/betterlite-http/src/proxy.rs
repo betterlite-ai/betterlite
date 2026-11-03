@@ -92,12 +92,11 @@ impl ProxiedClient {
         StreamResponse { response }.buffered(limit).await
     }
 
-    pub async fn post_stream(&self, post: JsonPost<'_>) -> Result<Response, HttpError> {
-        let request = self.json_request(post, "text/event-stream")?;
-        self.execute(request).await.map_err(timed_out)
-    }
-
-    fn json_request(&self, post: JsonPost<'_>, accept: &'static str) -> Result<Request, HttpError> {
+    pub fn json_request(
+        &self,
+        post: JsonPost<'_>,
+        accept: &'static str,
+    ) -> Result<Request, HttpError> {
         let mut builder = self
             .client
             .post(post.url)
@@ -112,7 +111,8 @@ impl ProxiedClient {
     }
 }
 
-fn timed_out(error: HttpError) -> HttpError {
+#[must_use]
+pub fn timed_out(error: HttpError) -> HttpError {
     if let HttpError::Request(source) = &error
         && source.is_timeout()
     {

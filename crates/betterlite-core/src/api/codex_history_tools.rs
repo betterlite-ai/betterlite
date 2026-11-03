@@ -113,7 +113,7 @@ pub fn hoist_additional_tools(input: &Value, tools: Option<&[Value]>) -> Hoisted
 fn additional_tools_count(items: &[Value]) -> usize {
     let mut count: usize = 0;
     for item in items {
-        if is_additional_tools(item) {
+        if item.get("type").and_then(Value::as_str) == Some(ADDITIONAL_TOOLS) {
             count = count.saturating_add(1);
         }
     }
@@ -124,7 +124,7 @@ fn split_additional_tools(input: &Value) -> (Vec<Value>, Vec<Value>) {
     let mut hoisted = Vec::new();
     let mut remaining = Vec::new();
     for item in input.as_array().into_iter().flatten() {
-        if !is_additional_tools(item) {
+        if item.get("type").and_then(Value::as_str) != Some(ADDITIONAL_TOOLS) {
             remaining.push(item.clone());
             continue;
         }
@@ -144,7 +144,12 @@ fn normalize_item(item: &Value) -> (Option<Value>, Option<&str>) {
     };
     match object.get("type").and_then(Value::as_str) {
         Some("agent_message") => (normalize_agent_message(object), Some("agent_message")),
-        Some("context_compaction") => (normalize_compaction(object), Some("context_compaction")),
+        Some("context_compaction") => (
+            nonempty_field(object, "encrypted_content").map(
+                |encrypted| serde_json::json!({"type":"compaction","encrypted_content":encrypted}),
+            ),
+            Some("context_compaction"),
+        ),
         Some("local_shell_call") => (normalize_local_shell(object), Some("local_shell_call")),
         _ => (Some(item.clone()), None),
     }
@@ -171,11 +176,6 @@ fn normalize_agent_message(item: &Map<String, Value>) -> Option<Value> {
     )
 }
 
-fn normalize_compaction(item: &Map<String, Value>) -> Option<Value> {
-    let encrypted = nonempty_field(item, "encrypted_content")?;
-    Some(serde_json::json!({"type":"compaction","encrypted_content":encrypted}))
-}
-
 fn normalize_local_shell(item: &Map<String, Value>) -> Option<Value> {
     let call_id = nonempty_field(item, "call_id")?;
     let arguments = item
@@ -185,11 +185,6 @@ fn normalize_local_shell(item: &Map<String, Value>) -> Option<Value> {
     Some(
         serde_json::json!({"type":"function_call","call_id":call_id,"name":"local_shell","arguments":arguments}),
     )
-}
-
-fn is_additional_tools(item: &Value) -> bool {
-    let item_type = item.get("type").and_then(Value::as_str);
-    item_type == Some(ADDITIONAL_TOOLS)
 }
 
 fn nonempty_field<'value>(item: &'value Map<String, Value>, field: &str) -> Option<&'value str> {

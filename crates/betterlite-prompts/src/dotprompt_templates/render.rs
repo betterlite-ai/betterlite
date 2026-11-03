@@ -24,9 +24,4 @@ pub enum RenderError {
     OutputTooLarge,
 }
 
-pub(super) fn format_available<'ids>(prompt_ids: impl Iterator<Item = &'ids String>) -> String {
-    let items: Vec<String> = prompt_ids.map(|id| format!("'{id}'")).collect();
-    format!("[{}]", items.join(", "))
-}
-
 mod tests;

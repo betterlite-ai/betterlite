@@ -12,8 +12,3 @@ pub fn drop_non_python_regex_patterns(schema: &Object) -> Object {
     drop_regexes(&mut result, 0);
     result
 }
-
-pub(super) fn flatten_and_drop_schema(schema: &Object) -> Object {
-    let filtered = drop_non_python_regex_patterns(schema);
-    flatten::flatten_top_level(&filtered)
-}

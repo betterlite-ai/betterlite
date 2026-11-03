@@ -145,7 +145,8 @@ pub fn pg_options_with_timeouts(
         let Some(seconds) = configured_seconds else {
             continue;
         };
-        if already_spelled(existing_options, name) {
+        let pattern = format!(r"(?:-c\s*|--){}=", regex::escape(name));
+        if Regex::new(&pattern).is_ok_and(|spelling| spelling.is_match(existing_options)) {
             continue;
         }
         let millis = millis_from_seconds(seconds)?;
@@ -159,11 +160,6 @@ pub fn pg_options_with_timeouts(
         parts.push(part);
     }
     Ok(parts.join(" "))
-}
-
-fn already_spelled(existing_options: &str, name: &str) -> bool {
-    let pattern = format!(r"(?:-c\s*|--){}=", regex::escape(name));
-    Regex::new(&pattern).is_ok_and(|spelling| spelling.is_match(existing_options))
 }
 
 // Matches Python's unbounded int(seconds * 1000): no 64-bit ceiling on the result.

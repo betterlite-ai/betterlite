@@ -1,0 +1,14 @@
+kind: helper
+name: aws-errors-bedrock-image-status-500
+call:
+  aws_errors:
+    provider: bedrock
+    model: claude-3
+    custom_llm_provider: bedrock_mantle
+    error_str: "Could not process image data"
+    status_code: 500
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

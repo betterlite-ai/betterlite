@@ -1,0 +1,13 @@
+id: B5128
+milestone: M8 platform
+title: Close the B4323 Redis client factory audit gaps
+status: done
+depends_on: [B4323]
+file: tasks/B5128-redis-factory-audit-gaps.yaml
+covers: []
+parent: null
+split_from: null
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 590

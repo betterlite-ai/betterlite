@@ -1,8 +1,8 @@
 mod tests;
 
 use std::fs::{self, File, OpenOptions, TryLockError};
-use std::io::{self, Write as _};
-use std::path::Path;
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -29,7 +29,7 @@ fn own_group() -> Result<String, GateError> {
         })
 }
 
-pub(crate) fn hold(log_dir: &Path) -> Result<File, GateError> {
+pub(crate) fn hold(log_dir: &Path, notice: &mut dyn Write) -> Result<File, GateError> {
     let path = log_dir.join("gate.lock");
     // no truncation before the lock: a waiting run must not wipe the group the holder wrote
     let mut file = OpenOptions::new()
@@ -41,10 +41,25 @@ pub(crate) fn hold(log_dir: &Path) -> Result<File, GateError> {
             path: path.clone(),
             source,
         })?;
-    file.lock().map_err(|source| GateError::Lock {
-        path: path.clone(),
-        source,
-    })?;
+    if !is_free(&file, &path)? {
+        let holder = fs::read_to_string(&path).map_err(|source| GateError::Read {
+            path: path.clone(),
+            source,
+        })?;
+        writeln!(
+            notice,
+            "gate: waiting for the gate lock held by process group {}",
+            holder.trim()
+        )
+        .map_err(|source| GateError::Write {
+            path: PathBuf::from("stderr"),
+            source,
+        })?;
+        file.lock().map_err(|source| GateError::Lock {
+            path: path.clone(),
+            source,
+        })?;
+    }
     let group = own_group()?;
     file.set_len(0)
         .and_then(|()| file.write_all(group.as_bytes()))

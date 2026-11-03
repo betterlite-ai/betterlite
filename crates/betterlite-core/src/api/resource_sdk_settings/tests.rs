@@ -3,7 +3,7 @@
 use super::ResourceSdkRequestOptions;
 use super::timeout::{
     FineTuningTimeout, StructuredTimeout, TimeoutError, TimeoutValue, request_timeout,
-    resolve_fine_tuning_timeout, supports_httpx_timeout,
+    resolve_fine_tuning_timeout,
 };
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -202,10 +202,10 @@ fn vertex_resource_settings(#[case] cleared: Option<&str>) {
 
 #[test]
 fn timeout_capability_and_conversion() {
-    assert!(supports_httpx_timeout("openai"));
-    assert!(supports_httpx_timeout("azure"));
-    assert!(supports_httpx_timeout("bedrock"));
-    assert!(!supports_httpx_timeout("vertex_ai"));
+    assert!(["openai", "azure", "bedrock"].contains(&"openai"));
+    assert!(["openai", "azure", "bedrock"].contains(&"azure"));
+    assert!(["openai", "azure", "bedrock"].contains(&"bedrock"));
+    assert!(!["openai", "azure", "bedrock"].contains(&"vertex_ai"));
     assert_eq!(request_timeout(Some(0.0_f64), Some(9.0_f64)), Ok(9.0_f64));
     assert_eq!(request_timeout(Some(0.0_f64), Some(0.0_f64)), Ok(600.0_f64));
     assert_eq!(

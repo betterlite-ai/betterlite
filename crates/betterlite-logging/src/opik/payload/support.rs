@@ -76,10 +76,10 @@ pub(super) fn common_payload(
     payload
 }
 
-pub(super) fn extend_payload(
-    payload: &mut IndexMap<String, Json>,
-    entries: impl IntoIterator<Item = (&'static str, Json)>,
-) {
+pub(super) fn extend_payload<Entries>(payload: &mut IndexMap<String, Json>, entries: Entries)
+where
+    Entries: IntoIterator<Item = (&'static str, Json)>,
+{
     for (key, value) in entries {
         payload.insert(key.to_owned(), value);
     }

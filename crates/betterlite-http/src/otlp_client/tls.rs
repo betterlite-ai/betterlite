@@ -35,7 +35,7 @@ pub enum TlsError {
     },
 }
 
-pub(super) fn tls_config(metering: &Metering) -> Result<ClientConfig, TlsError> {
+pub fn tls_config(metering: &Metering) -> Result<ClientConfig, TlsError> {
     let certificates = certificates(&metering.client_cert)?;
     if certificates.is_empty() {
         return Err(TlsError::NoCertificate {

@@ -6,7 +6,9 @@ use fancy_regex::Regex as FancyRegex;
 use regex::Regex;
 use serde::Deserialize;
 
-use super::competitor_intent_base::{BaseCompetitorIntentChecker, CompetitorIntentError, Meaning};
+use super::competitor_intent_base::{
+    BaseCompetitorIntentChecker, CompetitorIntentError, Meaning, normalize,
+};
 
 pub mod settings;
 mod tests;
@@ -140,7 +142,7 @@ impl AirlineCompetitorIntentChecker {
 
     #[must_use]
     pub fn run(&self, text: &str) -> CompetitorIntentResult {
-        let mut result = self.base.run_with(text, |segment, token| {
+        let mut result = self.base.evaluate(&normalize(text), |segment, token| {
             self.classify_ambiguous(segment, token)
         });
         if result.intent.as_deref() == Some("log_only") {

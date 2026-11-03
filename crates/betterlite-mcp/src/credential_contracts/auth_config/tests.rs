@@ -84,7 +84,7 @@ fn illegal_state_unrepresentable() {
         | AuthConfig::None(_) => panic!("constructed as AwsSigv4"),
     };
     assert_eq!(config.region, "eu-west-1");
-    assert_eq!(config.service, DEFAULT_AWS_SIGV4_SERVICE);
+    assert_eq!(config.service, "bedrock-agentcore");
 
     let id_jag = AuthConfig::IdJag(id_jag_config());
     let jag_config = match id_jag {

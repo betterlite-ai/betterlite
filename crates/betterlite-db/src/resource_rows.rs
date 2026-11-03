@@ -71,7 +71,7 @@ pub enum ResourceRow {
 pub fn decode_resource_rows(bytes: &[u8]) -> Result<ResourceRow, ResourceRowsError> {
     let value = parse_data(bytes)?;
     validate_nested(&value)?;
-    convert(&value)
+    convert(&value, MAX_JSON_DEPTH)
 }
 
 fn validate_nested(value: &JsonData) -> Result<(), ResourceRowsError> {
@@ -90,7 +90,7 @@ fn validate_nested(value: &JsonData) -> Result<(), ResourceRowsError> {
             if text.len() > MAX_ROW_BYTES {
                 return Err(ResourceRowsError::TooLarge { len: text.len() });
             }
-            check_depth(&text)?;
+            check_depth(&text, MAX_JSON_DEPTH + 1)?;
         }
         "credential_create" => {
             credential::check_create_guard(row)?;
@@ -109,11 +109,11 @@ pub(crate) fn parse_data(bytes: &[u8]) -> Result<JsonData, ResourceRowsError> {
         return Err(ResourceRowsError::TooLarge { len: bytes.len() });
     }
     let text = from_utf8(bytes).map_err(ResourceRowsError::InvalidUtf8)?;
-    check_depth(text)?;
+    check_depth(text, MAX_JSON_DEPTH)?;
     serde_json::from_str(text).map_err(ResourceRowsError::Json)
 }
 
-pub(crate) fn convert<T>(value: &JsonData) -> Result<T, ResourceRowsError>
+pub(crate) fn convert<T>(value: &JsonData, max_depth: usize) -> Result<T, ResourceRowsError>
 where
     T: DeserializeOwned,
 {
@@ -121,7 +121,7 @@ where
     if text.len() > MAX_ROW_BYTES {
         return Err(ResourceRowsError::TooLarge { len: text.len() });
     }
-    check_depth(&text)?;
+    check_depth(&text, max_depth)?;
     serde_json::from_str(&text).map_err(ResourceRowsError::Json)
 }
 
@@ -143,14 +143,14 @@ enum ScanState {
     Escaped,
 }
 
-fn check_depth(text: &str) -> Result<(), ResourceRowsError> {
+fn check_depth(text: &str, max_depth: usize) -> Result<(), ResourceRowsError> {
     let mut state = ScanState::Structural;
     let mut depth = 0_u8;
     for byte in text.bytes() {
         match (state, byte) {
             (ScanState::Structural, b'{' | b'[') => {
                 depth = depth.saturating_add(1);
-                if usize::from(depth) > MAX_JSON_DEPTH {
+                if usize::from(depth) > max_depth {
                     return Err(ResourceRowsError::TooDeep);
                 }
             }

@@ -1,13 +1,15 @@
 use serde::{Deserialize, Serialize};
 
-use crate::sources::row_decode::bool_from_bool_or_zero_one;
-
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ActivityAvailability {
-    #[serde(deserialize_with = "bool_from_bool_or_zero_one")]
+    #[serde(
+        deserialize_with = "serde_with::As::<serde_with::PickFirst<(serde_with::Same, serde_with::BoolFromInt)>>::deserialize"
+    )]
     pub traces: bool,
-    #[serde(deserialize_with = "bool_from_bool_or_zero_one")]
+    #[serde(
+        deserialize_with = "serde_with::As::<serde_with::PickFirst<(serde_with::Same, serde_with::BoolFromInt)>>::deserialize"
+    )]
     pub requests: bool,
 }
 

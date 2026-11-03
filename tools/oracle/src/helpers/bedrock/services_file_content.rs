@@ -27,12 +27,13 @@ impl crate::helpers::Helper for Op {
                 "error": {
                     "status_code": error.cause.error.status_code,
                     "message": error.cause.error.message,
-                    "headers": error.cause.response_headers,
+                    "headers": error.cause.error.headers,
+                    "request": error.cause.error.request,
                     "response": {
-                        "status_code": error.cause.error.status_code,
+                        "status_code": error.cause.error.response.status_code,
                         "body": body,
                         "headers": error.cause.response_headers,
-                        "request": error.cause.error.request,
+                        "request": error.cause.error.response.request,
                     },
                 },
             }),

@@ -194,17 +194,6 @@ impl McpClient {
         auth.close();
         result
     }
-
-    pub fn discovery_auth_fingerprint(&self) -> Result<String, CredentialError> {
-        let request = self.prepare_request_auth()?;
-        hash_discovery_auth(&request)
-    }
-}
-
-#[must_use]
-pub fn to_basic_auth(auth_value: &str) -> String {
-    let bytes = auth_value.as_bytes();
-    STANDARD.encode(bytes)
 }
 
 #[must_use]
@@ -228,12 +217,12 @@ pub fn strip_auth_scheme(auth_value: &str, scheme: &str) -> String {
 pub fn to_basic_credentials(auth_value: &str) -> String {
     let credentials = strip_auth_scheme(auth_value, "Basic");
     if credentials == auth_value {
-        return to_basic_auth(auth_value);
+        return STANDARD.encode(auth_value.as_bytes());
     }
     if STANDARD.decode(credentials.as_bytes()).is_ok() {
         credentials
     } else {
-        to_basic_auth(&credentials)
+        STANDARD.encode(credentials.as_bytes())
     }
 }
 
@@ -245,7 +234,7 @@ pub fn strip_header_whitespace(headers: BTreeMap<String, String>) -> BTreeMap<St
         .collect()
 }
 
-fn hash_discovery_auth(request: &Request) -> Result<String, CredentialError> {
+pub fn hash_discovery_auth(request: &Request) -> Result<String, CredentialError> {
     let material = (
         request.url.as_str(),
         request

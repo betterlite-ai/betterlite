@@ -221,7 +221,9 @@ fn rewrite_mcp_output(response: &Value, update: &redact::TextUpdate) -> Value {
 }
 
 fn choice_sub_field(response: &Fields, key: &str) -> Value {
-    let Json::List(raw_choices) = Json::field(response, "choices") else {
+    let Json::List(raw_choices) =
+        Json::parse(response.get("choices").map_or("null", |raw| raw.get()))
+    else {
         return Value::Array(Vec::new());
     };
     Value::Array(
@@ -231,7 +233,9 @@ fn choice_sub_field(response: &Fields, key: &str) -> Value {
                 let Json::Object(choice) = Json::parse(raw_choice.get()) else {
                     return Value::Null;
                 };
-                json_to_value(&Json::field(&choice, key))
+                json_to_value(&Json::parse(
+                    choice.get(key).map_or("null", |raw| raw.get()),
+                ))
             })
             .collect(),
     )

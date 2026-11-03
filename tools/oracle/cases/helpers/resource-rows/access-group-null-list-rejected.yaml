@@ -1,0 +1,9 @@
+kind: helper
+name: access_group_null_list_rejected
+call:
+  resource_rows:
+    operation: access_group
+    row: {access_group_id: g, access_group_name: n, assigned_key_ids: null}
+env: {}
+compare:
+  ignore: []

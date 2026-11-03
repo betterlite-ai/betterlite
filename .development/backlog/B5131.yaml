@@ -1,0 +1,13 @@
+id: B5131
+milestone: M4 keys, spend and management
+title: Close the B872 database fault audit gaps
+status: todo
+depends_on: [B872, B5094]
+file: tasks/B5131-database-faults-gaps.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

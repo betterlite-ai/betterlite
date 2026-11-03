@@ -57,7 +57,7 @@ fn guardrail(api_base: String) -> CiscoInspectionGuardrail {
 fn guardrail_with_config(api_base: String) -> CiscoInspectionGuardrail {
     let mut settings = configured(api_base);
     settings.enabled_rules = vec![Rule {
-        rule_name: "Prompt Injection".to_owned(),
+        rule_name: Some("Prompt Injection".to_owned()),
         entity_types: Vec::new(),
         rule_id: None,
         classification: None,
@@ -103,7 +103,7 @@ async fn serve_capturing(
 macro_rules! typed_field {
     ($name:ident, $variant:ident, $ty:ty, $noun:literal, $other:pat) => {
         fn $name(fields: &Fields, key: &str) -> $ty {
-            match Json::field(fields, key) {
+            match Json::parse(fields.get(key).map_or("null", |raw| raw.get())) {
                 Json::$variant(value) => value,
                 other @ $other => panic!("expected {key} to be {}, got {other:?}", $noun),
             }

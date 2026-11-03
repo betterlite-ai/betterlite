@@ -1,9 +1,10 @@
 #![cfg(test)]
 
 use crate::credentials::{
-    AuthValue, CredentialError, McpAuthType, McpClient, Request, ResolvedAuth, strip_auth_scheme,
-    strip_header_whitespace, to_basic_auth, to_basic_credentials,
+    AuthValue, CredentialError, McpAuthType, McpClient, Request, ResolvedAuth, hash_discovery_auth,
+    strip_auth_scheme, strip_header_whitespace, to_basic_credentials,
 };
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use secrecy::SecretString;
 use std::collections::BTreeMap;
 use std::sync::{
@@ -20,7 +21,10 @@ fn credentials_tests_behavior() {
 }
 
 fn assert_basic_credential_behavior() {
-    assert_eq!(to_basic_auth("user:p\u{e4}ss"), "dXNlcjpww6Rzcw==");
+    assert_eq!(
+        STANDARD.encode("user:p\u{e4}ss".as_bytes()),
+        "dXNlcjpww6Rzcw=="
+    );
     assert_eq!(strip_auth_scheme("bEaReR token", "Bearer"), "token");
     assert_eq!(
         strip_auth_scheme("Bearer token with spaces", "Bearer"),
@@ -114,11 +118,9 @@ fn assert_resolved_auth_behavior() {
     assert_eq!(request.headers.get("X-Resolved"), Some(&"yes".to_owned()));
     assert_eq!(closed.load(Ordering::SeqCst), 1);
     assert_eq!(
-        resolved_client
-            .discovery_auth_fingerprint()
+        hash_discovery_auth(&resolved_client.prepare_request_auth().expect("auth flow"))
             .expect("fingerprint"),
-        resolved_client
-            .discovery_auth_fingerprint()
+        hash_discovery_auth(&resolved_client.prepare_request_auth().expect("auth flow"))
             .expect("fingerprint")
     );
 }

@@ -41,7 +41,9 @@ impl Helper for Op {
                 text,
             } => split(*chunk_size, *chunk_overlap, separators.clone(), text),
             Input::ExtractPdf { pdf_base64 } => extract_pdf(pdf_base64),
-            Input::ProviderLookup { provider } => provider_lookup(provider),
+            Input::ProviderLookup { provider } => get_ingestion_class(provider)
+                .map_err(|error| value_error(&error))
+                .map(|resolved| Value::String(resolved.wire_name_and_class().1.to_owned())),
         }
     }
 }
@@ -68,11 +70,6 @@ fn extract_pdf(pdf_base64: &str) -> HelperResult {
         .map_err(|error| value_error(&error))?;
     let text = extract_text_from_pdf(&bytes).map_or(Value::Null, Value::String);
     Ok(serde_json::json!({ "text": text }))
-}
-
-fn provider_lookup(provider: &str) -> HelperResult {
-    let resolved = get_ingestion_class(provider).map_err(|error| value_error(&error))?;
-    Ok(Value::String(resolved.wire_name_and_class().1.to_owned()))
 }
 
 fn value_error(error: &dyn std::fmt::Display) -> Box<HelperError> {

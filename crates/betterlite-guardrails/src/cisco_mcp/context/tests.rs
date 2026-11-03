@@ -16,7 +16,7 @@ fn fields_of(text: &str) -> Fields {
 }
 
 fn field_text(fields: &Fields, key: &str) -> Option<String> {
-    match Json::field(fields, key) {
+    match Json::parse(fields.get(key).map_or("null", |raw| raw.get())) {
         Json::Text(text) => Some(text),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
     }

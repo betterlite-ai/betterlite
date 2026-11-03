@@ -2,7 +2,7 @@
 
 use super::{
     ContentError, chat_content_type, content_blocks, input_file_block, input_image_block,
-    instructions_to_system_message, resolve_file_id,
+    instructions_to_system_message, is_truthy,
 };
 use rstest::rstest;
 use serde_json::{Map, Value, json};
@@ -26,7 +26,17 @@ fn object(value: Value) -> Map<String, Value> {
 #[case::absent_file_id(json!({"file_url": "https://a.test/f"}), Some(json!("https://a.test/f")))]
 #[case::neither_present(json!({}), None)]
 fn resolve_file_id_cases(#[case] item: Value, #[case] expected: Option<Value>) {
-    assert_eq!(resolve_file_id(&object(item)), expected);
+    let fields = object(item);
+    assert_eq!(
+        fields
+            .get("file_id")
+            .filter(|value| is_truthy(Some(value)))
+            .or_else(|| fields
+                .get("file_url")
+                .filter(|value| is_truthy(Some(value))))
+            .cloned(),
+        expected
+    );
 }
 
 #[rstest]

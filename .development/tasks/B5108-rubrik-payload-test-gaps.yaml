@@ -1,0 +1,281 @@
+id: B5108
+title: Close the B3975 Rubrik payload test gaps
+description: >-
+  B3975 built Rubrik's moderation payloads and block decisions in crates/betterlite-logging/src/rubrik/. An Opus
+  review after merge found nine places where a test stays green whatever the code does, or where a built branch has
+  no test at all. Each one was checked against LiteLLM at the pin. In all nine the code already does what LiteLLM
+  does, so no product file changes: only the four test files under crates/betterlite-logging/src/rubrik/tests/ do.
+  They compile into the rubrik_payloads integration test target (the [[test]] entry in
+  crates/betterlite-logging/Cargo.toml points at src/rubrik/tests.rs), so they import from
+  betterlite_logging::rubrik::... and their names start with rubrik_payloads::. For every new or rewritten test,
+  apply the mutation its DoD item names to the product file, watch the test fail for that reason, then revert the
+  mutation before you commit.
+
+
+  Serialized payloads are compared the same way everywhere below: serialize the payload with serde_json::to_string,
+  parse that text and the expected JSON text into betterlite_models::decisions::Json, and assert the two are equal.
+  Json objects are IndexMaps, and IndexMap equality ignores key order, so the test pins keys and values but not
+  Python's key order. docs/compatibility.md leaves key order out of the contract.
+
+
+  Gap one, in tests/block_decision.rs. LiteLLM counts sent and returned tool call ids with Counter, so when two sent
+  calls share an id and the webhook swaps one of them for another id, that is a tool block
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L1210-L1221).
+  response_block_uses_counter_semantics_so_a_missing_duplicate_id_is_still_caught sends [call_1, call_1] and gets one
+  call back, so the length check on block_decision.rs line 105 returns true before the counts run. A set in place of
+  count_ids keeps it green, and it only asserts is_some. It is replaced by
+  response_block_catches_a_duplicate_id_swapped_for_another: sent [call_1, call_1], returned ids ["call_1",
+  "call_2"], content "" and sent_content "", expecting the explanation "Tool call blocked by policy.".
+
+
+  Gap two. LiteLLM's cardinality check, len(returned_tool_calls) < len(all_tool_calls), is the only thing that
+  blocks tool calls without an id, because `if tc.id` keeps them out of the Counter (same link, L1216-L1221). A dict
+  tool call with no "id" key normalizes to id ""
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L510-L532).
+  response_block_detects_a_missing_tool_call_by_cardinality drops call_2. The id count catches that too, so
+  deleting the length check keeps it green. It is replaced by the rstest
+  response_block_catches_a_missing_tool_call_without_an_id. Two calls with id "" are sent, sent_content is "" and the
+  returned message has no content. Case one_of_two_returned returns one entry with id None and case none_returned returns none; both expect "Tool call
+  blocked by policy.". Case both_returned returns two entries with id None and expects Ok(None).
+
+
+  Gap three. When the response had no text, LiteLLM sees neither an append nor a text block, because both need
+  bool(sent_content), and a tool block then returns the webhook's content exactly as it came
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L1232-L1245).
+  No test sends a tool-only response with returned content. So replacing returned_content with "" on
+  block_decision.rs line 90, or dropping the !sent_content.is_empty() guard on line 74, keeps every test green. A new
+  rstest response_block_reads_a_tool_only_response, with sent_content "", has three cases.
+  blocked_call_keeps_the_webhook_text sends [call_1, call_2], returns [call_1] with content "tool X not allowed" and
+  expects that explanation. leading_separator_stays_in_the_explanation sends the same calls with content "\n\ntool X
+  not allowed" and expects the explanation unchanged, leading "\n\n" included. every_call_returned_with_a_note sends
+  [call_1], returns [call_1] with content "note" and expects Ok(None). The review did not name the second case; it
+  pins the same guard on line 73, where appended would otherwise strip the leading newlines.
+
+
+  Gap four, in tests/prompt_payload.rs. LiteLLM's _moderation_text_parts adds the deprecated function_call arguments
+  as their own segment (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L600-L614,
+  line 613). convert_content_list_to_str appends a tool message's search_results text (source, title, each
+  content[].text and the compact JSON of citations) straight onto the content
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L128-L182).
+  flatten_includes_tool_call_and_function_call_arguments_as_extra_segments names function_call but its message has
+  none, so removing prompt_payload.rs line 98 keeps it green, and nothing tests the search_results text on line 140.
+  The test is renamed flatten_joins_content_tool_call_and_function_call_arguments. Its message gains "function_call":
+  {"arguments": "{\"q\":\"x\"}"}, and it expects the content "thinking\n{\"city\":\"NY\"}\n{\"q\":\"x\"}". A new
+  flatten_appends_search_results_text_to_the_message_content sends a "tool" message with content "result" and
+  search_results [{"source": "src", "title": "Doc", "content": [{"type": "text", "text": "body"}], "citations":
+  {"enabled": true}}], and expects the content "resultsrcDocbody{\"enabled\":true}".
+
+
+  Gap five, in tests/moderation_payload.rs. LiteLLM's after_completion envelope has a tool_calls key only when there
+  are tool calls, sends content null for a tool-only response, and dumps each tool call with a "type" key
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L554-L575,
+  https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1288-L1310).
+  response_payload_uses_null_content_and_stop_when_there_is_no_text_or_tool_calls and
+  response_payload_carries_content_and_tool_calls_with_finish_reason_tool_calls read Rust fields and never serialize.
+  Dropping skip_serializing_if on moderation_payload.rs line 26 (the webhook gets "tool_calls": []) or rename =
+  "type" on tool_calls.rs line 15 (the webhook gets "kind") keeps both green. Both are replaced by the rstest
+  response_payload_serializes_to_the_after_completion_json, building with request id Some("chatcmpl-known") and
+  created 1_700_000_000. Case no_tool_calls passes no tool calls and content "" and expects
+  {"id":"chatcmpl-known","object":"chat.completion","created":1700000000,"model":"","choices":[{"index":0,"message":{"role":"assistant","content":null},"finish_reason":"stop"}]}.
+  Case one_tool_call passes [call("call_1")] and content "hello" and expects the same envelope with message
+  {"role":"assistant","content":"hello","tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{}"}}]}
+  and finish_reason "tool_calls".
+
+
+  Gap six. LiteLLM's before_prompt payload leaves out tools when it is None, and user and correlation_key when they
+  are empty
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L616-L644,
+  lines 641 to 643). prompt_payload_includes_tools_only_when_present and
+  prompt_payload_omits_correlation_key_when_both_sources_are_empty assert that an Option is None. That still holds if
+  skip_serializing_if goes from prompt_payload.rs lines 15 to 20 and the webhook gets "tools": null, "user": null and
+  "correlation_key": null. Both are replaced by the rstest prompt_payload_serializes_only_the_optional_keys_it_has,
+  with inputs model Some("gpt-4") and no structured messages. Case all_unset leaves tools, user, correlation_key and
+  litellm_call_id None and expects {"model":"gpt-4","messages":[]}. Case empty_strings sets user, correlation_key and
+  litellm_call_id to Some("") and expects the same. Case all_set sets tools Some(Json::List(vec![])), user
+  Some("user-1") and correlation_key Some("ck") and expects
+  {"model":"gpt-4","messages":[],"tools":[],"user":"user-1","correlation_key":"ck"}.
+
+
+  Gap seven. In the same function an explicit correlation_key beats litellm_call_id (line 637) and the inputs model
+  beats the request model (line 639). No test sets both sources, so swapping either or_else order in
+  build_prompt_moderation keeps every test green. A new prompt_payload_prefers_the_inputs_model_and_an_explicit_correlation_key
+  sets inputs model "a", request model "b", correlation_key "ck" and litellm_call_id "call-1", and expects model "a"
+  and correlation_key Some("ck").
+
+
+  Gap eight, in tests/moderation_payload.rs. Without a request id LiteLLM builds the id as "chatcmpl-" plus a fresh
+  uuid4 (rubrik.py line 564, link in gap five), and `request_id or ...` treats an empty id the same way.
+  response_payload_falls_back_to_a_generated_chatcmpl_id_when_request_id_is_absent only checks the prefix, so a
+  constant id passes, and no test sends an empty request id. It is replaced by the rstest
+  response_payload_generates_a_chatcmpl_uuid4_id with cases absent_request_id (None) and empty_request_id (Some("")).
+  Each case strips "chatcmpl-", parses the rest with uuid::Uuid::parse_str, asserts get_version_num() is 4 and that
+  the hyphenated form equals the suffix, asserts that two builds give different ids, and keeps the created
+  assertion.
+
+
+  Gap nine, in tests/request_data.rs. LiteLLM's _extract_request_data takes messages and model from call_details
+  only, never from request_data
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L646-L682,
+  lines 678 to 682). extract_request_data_falls_back_to_optional_params_tools_when_request_data_lacks_the_key sets
+  messages but never asserts them, and no other test does, so returning None for messages, or reading request_data's
+  messages, keeps every test green. A new rstest extract_request_data_forwards_messages_and_model_from_call_details_only
+  asserts the whole RequestDataPayload. Case from_call_details passes call_details with messages Json::Text("hi") and
+  model "gpt-4" and no request_data, and expects messages Some(Json::Text("hi")), model Some("gpt-4") and tools None.
+  Case never_from_request_data passes no call_details and request_data with messages Json::Text("other") and model
+  "other-model", and expects messages None, model None and tools None.
+scope:
+  paths:
+    - crates/betterlite-logging/src/rubrik/tests/block_decision.rs
+    - crates/betterlite-logging/src/rubrik/tests/moderation_payload.rs
+    - crates/betterlite-logging/src/rubrik/tests/prompt_payload.rs
+    - crates/betterlite-logging/src/rubrik/tests/request_data.rs
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L1202-L1247
+    why: _extract_response_block, with the Counter and cardinality checks (L1214-L1221), the bool(sent_content) guards on appended and text_blocked (L1232-L1233) and the tool-block explanation (L1238-L1245).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L510-L532
+    why: _normalize_tool_call, where a dict tool call without an "id" key gets id "".
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L554-L575
+    why: The after_completion envelope, with tool_calls only when present, content null for no text and the chatcmpl-uuid4 fallback id.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1288-L1310
+    why: ChatCompletionMessageToolCall keeps its kind under the "type" attribute, the key model_dump writes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L600-L614
+    why: _moderation_text_parts, with the deprecated function_call arguments as their own segment on line 613.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L128-L182
+    why: convert_content_list_to_str and extract_search_results_text glue a tool message's search_results text onto its content.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L616-L644
+    why: The before_prompt payload, with correlation_key and model precedence (L637, L639) and the optional keys left out when unset (L641-L643).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L646-L682
+    why: _extract_request_data takes messages and model from call_details only.
+dod:
+  - text: >-
+      response_block_catches_a_duplicate_id_swapped_for_another replaces
+      response_block_uses_counter_semantics_so_a_missing_duplicate_id_is_still_caught. It sends [call_1, call_1], gets
+      ids ["call_1", "call_2"] back and asserts the explanation "Tool call blocked by policy.". It fails when
+      count_ids is swapped for a set of ids.
+    proof: [rubrik-block-decision-tests]
+  - text: >-
+      The rstest response_block_catches_a_missing_tool_call_without_an_id replaces
+      response_block_detects_a_missing_tool_call_by_cardinality. It sends two calls with id "", and its cases
+      one_of_two_returned and none_returned expect "Tool call blocked by policy." while both_returned expects
+      Ok(None). It fails when the length check on block_decision.rs line 105 is deleted.
+    proof: [rubrik-block-decision-tests]
+  - text: >-
+      The rstest response_block_reads_a_tool_only_response, with sent_content "", has the cases
+      blocked_call_keeps_the_webhook_text ("tool X not allowed"), leading_separator_stays_in_the_explanation ("\n\ntool
+      X not allowed" kept whole) and every_call_returned_with_a_note (Ok(None)). It fails when returned_content on
+      block_decision.rs line 90 becomes "", or when the !sent_content.is_empty() guard on line 73 or line 74 is
+      dropped.
+    proof: [rubrik-block-decision-tests]
+  - text: >-
+      flatten_joins_content_tool_call_and_function_call_arguments replaces
+      flatten_includes_tool_call_and_function_call_arguments_as_extra_segments and expects
+      "thinking\n{\"city\":\"NY\"}\n{\"q\":\"x\"}". A new flatten_appends_search_results_text_to_the_message_content
+      expects "resultsrcDocbody{\"enabled\":true}". They fail when prompt_payload.rs line 98 or line 140 is removed.
+    proof: [rubrik-prompt-payload-tests]
+  - text: >-
+      The rstest response_payload_serializes_to_the_after_completion_json, with cases no_tool_calls and one_tool_call,
+      replaces the two response payload tests that read Rust fields. It compares the serialized envelope with the
+      JSON in the description and fails when skip_serializing_if on moderation_payload.rs line 26 or rename = "type"
+      on tool_calls.rs line 15 is removed.
+    proof: [rubrik-response-payload-tests]
+  - text: >-
+      The rstest prompt_payload_serializes_only_the_optional_keys_it_has, with cases all_unset, empty_strings and
+      all_set, replaces prompt_payload_includes_tools_only_when_present and
+      prompt_payload_omits_correlation_key_when_both_sources_are_empty. It fails when any skip_serializing_if on
+      prompt_payload.rs lines 15 to 20 is removed.
+    proof: [rubrik-prompt-payload-tests]
+  - text: >-
+      prompt_payload_prefers_the_inputs_model_and_an_explicit_correlation_key expects model "a" and correlation_key
+      Some("ck") when both sources of each are set. It fails when either or_else order in build_prompt_moderation is
+      swapped.
+    proof: [rubrik-prompt-payload-tests]
+  - text: >-
+      The rstest response_payload_generates_a_chatcmpl_uuid4_id, with cases absent_request_id and empty_request_id,
+      replaces response_payload_falls_back_to_a_generated_chatcmpl_id_when_request_id_is_absent. It parses the suffix
+      as a hyphenated version 4 uuid and asserts two builds differ. It fails when the fallback id becomes a constant,
+      and its empty_request_id case fails when the non_empty filter on the request id is dropped.
+    proof: [rubrik-response-payload-tests]
+  - text: >-
+      The rstest extract_request_data_forwards_messages_and_model_from_call_details_only, with cases from_call_details
+      and never_from_request_data, asserts the whole RequestDataPayload. It fails when extract_request_data returns
+      None for messages or takes messages or model from request_data.
+    proof: [rubrik-request-data-tests]
+checks:
+  optional: []
+  commands:
+    - id: rubrik-block-decision-tests
+      why: a block decision test for the swapped duplicate id, the ID-less tool calls or the tool-only response is missing, a weak test it replaces is still there, or a block decision test fails
+      run: >-
+        grep -q 'fn response_block_catches_a_duplicate_id_swapped_for_another' crates/betterlite-logging/src/rubrik/tests/block_decision.rs &&
+        grep -q 'fn response_block_catches_a_missing_tool_call_without_an_id' crates/betterlite-logging/src/rubrik/tests/block_decision.rs &&
+        grep -q 'case::both_returned' crates/betterlite-logging/src/rubrik/tests/block_decision.rs &&
+        grep -q 'fn response_block_reads_a_tool_only_response' crates/betterlite-logging/src/rubrik/tests/block_decision.rs &&
+        grep -q 'case::leading_separator_stays_in_the_explanation' crates/betterlite-logging/src/rubrik/tests/block_decision.rs &&
+        grep -q 'case::every_call_returned_with_a_note' crates/betterlite-logging/src/rubrik/tests/block_decision.rs &&
+        ! grep -q 'fn response_block_uses_counter_semantics_so_a_missing_duplicate_id_is_still_caught' crates/betterlite-logging/src/rubrik/tests/block_decision.rs &&
+        ! grep -q 'fn response_block_detects_a_missing_tool_call_by_cardinality' crates/betterlite-logging/src/rubrik/tests/block_decision.rs &&
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^rubrik_payloads::block_decision::/)'
+    - id: rubrik-response-payload-tests
+      why: the serialized after_completion envelope or the uuid4 fallback id has no test, a field-reading or prefix-only test it replaces is still there, or a response payload test fails
+      run: >-
+        grep -q 'fn response_payload_serializes_to_the_after_completion_json' crates/betterlite-logging/src/rubrik/tests/moderation_payload.rs &&
+        grep -q 'case::one_tool_call' crates/betterlite-logging/src/rubrik/tests/moderation_payload.rs &&
+        grep -q 'fn response_payload_generates_a_chatcmpl_uuid4_id' crates/betterlite-logging/src/rubrik/tests/moderation_payload.rs &&
+        grep -q 'case::empty_request_id' crates/betterlite-logging/src/rubrik/tests/moderation_payload.rs &&
+        grep -q 'Uuid::parse_str' crates/betterlite-logging/src/rubrik/tests/moderation_payload.rs &&
+        grep -q 'get_version_num' crates/betterlite-logging/src/rubrik/tests/moderation_payload.rs &&
+        ! grep -q 'fn response_payload_uses_null_content_and_stop_when_there_is_no_text_or_tool_calls' crates/betterlite-logging/src/rubrik/tests/moderation_payload.rs &&
+        ! grep -q 'fn response_payload_carries_content_and_tool_calls_with_finish_reason_tool_calls' crates/betterlite-logging/src/rubrik/tests/moderation_payload.rs &&
+        ! grep -q 'fn response_payload_falls_back_to_a_generated_chatcmpl_id_when_request_id_is_absent' crates/betterlite-logging/src/rubrik/tests/moderation_payload.rs &&
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^rubrik_payloads::moderation_payload::/)'
+    - id: rubrik-prompt-payload-tests
+      why: the function_call or search_results segment, the serialized before_prompt payload or the model and correlation_key precedence has no test, an Option-only test it replaces is still there, or a prompt payload test fails
+      run: >-
+        grep -q 'fn flatten_joins_content_tool_call_and_function_call_arguments' crates/betterlite-logging/src/rubrik/tests/prompt_payload.rs &&
+        grep -q '"function_call"' crates/betterlite-logging/src/rubrik/tests/prompt_payload.rs &&
+        grep -q 'fn flatten_appends_search_results_text_to_the_message_content' crates/betterlite-logging/src/rubrik/tests/prompt_payload.rs &&
+        grep -q '"search_results"' crates/betterlite-logging/src/rubrik/tests/prompt_payload.rs &&
+        grep -q 'fn prompt_payload_serializes_only_the_optional_keys_it_has' crates/betterlite-logging/src/rubrik/tests/prompt_payload.rs &&
+        grep -q 'case::empty_strings' crates/betterlite-logging/src/rubrik/tests/prompt_payload.rs &&
+        grep -q 'case::all_set' crates/betterlite-logging/src/rubrik/tests/prompt_payload.rs &&
+        grep -q 'fn prompt_payload_prefers_the_inputs_model_and_an_explicit_correlation_key' crates/betterlite-logging/src/rubrik/tests/prompt_payload.rs &&
+        ! grep -q 'fn flatten_includes_tool_call_and_function_call_arguments_as_extra_segments' crates/betterlite-logging/src/rubrik/tests/prompt_payload.rs &&
+        ! grep -q 'fn prompt_payload_includes_tools_only_when_present' crates/betterlite-logging/src/rubrik/tests/prompt_payload.rs &&
+        ! grep -q 'fn prompt_payload_omits_correlation_key_when_both_sources_are_empty' crates/betterlite-logging/src/rubrik/tests/prompt_payload.rs &&
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^rubrik_payloads::prompt_payload::/)'
+    - id: rubrik-request-data-tests
+      why: no test asserts that messages and model come from call_details only, or a request data test fails
+      run: >-
+        grep -q 'fn extract_request_data_forwards_messages_and_model_from_call_details_only' crates/betterlite-logging/src/rubrik/tests/request_data.rs &&
+        grep -q 'case::never_from_request_data' crates/betterlite-logging/src/rubrik/tests/request_data.rs &&
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^rubrik_payloads::request_data::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - >-
+    The product files under crates/betterlite-logging/src/rubrik/ (block_decision.rs, moderation_payload.rs,
+    prompt_payload.rs, request_data.rs, tool_calls.rs, system_prompt.rs). All nine findings were checked against
+    LiteLLM and the code already matches, so only the tests change.
+  - >-
+    Padded one-line functions such as the non_empty helpers, and the impl Trait argument of count_ids in
+    block_decision.rs. They belong to B5094, and it is clearing those legacy lists now. This task does not touch
+    .ast-grep/rules/.
+  - >-
+    tests/tool_calls.rs and tests/system_prompt.rs. No finding names them.
+  - >-
+    Oracle cases. No route reaches the Rubrik payload code yet, since rubrik_moderation.rs, rubrik_delivery.rs and
+    rubrik_event_logging.rs are still empty stubs for B3978, B3976 and B3977, and B3975 has no helper operation.
+    B3978 wires the moderation hooks and adds the HTTP cases.
+pitfalls:
+  - clippy's disallowed-types bans naming serde_json::Value and serde_json::Map in tests too, so a serialized comparison parses both sides into betterlite_models::decisions::Json instead of writing a Value type or an rstest parameter of that type.
+  - A returned entry with no "id" key is a ReturnedToolCall whose id is None, and the response() helper in tests/block_decision.rs always builds Some(id), so the ID-less cases build ModerationServiceResponse by hand; LiteLLM's tc.get("id") drops such an entry from the Counter while len() still counts it.
+  - With sent_content "" the separator prefix is just "\n\n", so the leading_separator_stays_in_the_explanation case is the only test that tells LiteLLM's bool(sent_content) guard on appended from a plain startswith.
+  - The search_results text joins the content with no separator (texts += on common_utils.py line 181), while tool call and function_call arguments are separate segments joined by "\n", so the two tests expect different glue.
+  - LiteLLM writes citations with json.dumps(separators=(",", ":")) and betterlite with serde_json::to_string; keep the citations value ASCII with no floats, as in the test's {"enabled":true}, so both write the same text.
+  - The fallback id is random, so the uuid4 test never compares it with a fixed string; it checks the parsed version, the hyphenated form and that two builds differ.
+  - Each rewritten test takes a new name and the old name goes, because the checks grep for both; keep the other existing tests in these files unchanged.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

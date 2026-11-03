@@ -1,7 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-use crate::sources::row_decode::i64_from_int_or_numeric_string;
-
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct PartRow {
@@ -10,7 +8,9 @@ pub struct PartRow {
     pub name: String,
     pub kind: String,
     pub content: String,
-    #[serde(deserialize_with = "i64_from_int_or_numeric_string")]
+    #[serde(
+        deserialize_with = "serde_with::As::<serde_with::PickFirst<(serde_with::Same, serde_with::DisplayFromStr)>>::deserialize"
+    )]
     pub truncated: i64,
 }
 
