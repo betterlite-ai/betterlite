@@ -2,8 +2,7 @@ use std::collections::BTreeMap;
 
 use crate::helpers::HelperError;
 use betterlite_models::usage_sum::{
-    CachedTokensDetails, CompletionTokensDetails, PromptTokensDetails, Usage, UsageNumber,
-    usage_sum,
+    CompletionTokensDetails, PromptTokensDetails, Usage, UsageNumber, usage_sum,
 };
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;

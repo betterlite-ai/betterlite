@@ -1,1 +1,8 @@
-{"usage_sum":{"usages":[{"prompt_tokens_details":{"audio_length_seconds":1.5,"query_count":6}}]}}
+kind: helper
+name: usage-sum-prompt-counters
+call:
+  usage_sum:
+    usages:
+      - prompt_tokens_details: {audio_length_seconds: 1.5, query_count: 6}
+compare: {ignore: []}
+env: {}
