@@ -9,3 +9,6 @@ deviations:
   - what: Daily money aggregation uses exact Decimal arithmetic instead of binary float summation.
     why: The money-is-decimal rule prevents roundoff accumulation; for example, 0.1 plus 0.2 binds as 0.3.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/daily_spend_bulk_upsert.py#L137-L145
+  - what: Daily JSON column values are limited to one MiB and 64 nested containers along each path.
+    why: A shared nesting budget prevents stack exhaustion across arrays and objects; borrowing child JSON avoids repeated subtree allocation, and the byte limit bounds parsing work.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/daily_spend_bulk_upsert.py#L25

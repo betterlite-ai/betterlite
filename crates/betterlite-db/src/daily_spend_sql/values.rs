@@ -1,3 +1,4 @@
+use super::value_decode::{MAX_DAILY_VALUE_BYTES, MAX_DAILY_VALUE_DEPTH, decode_daily_value};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
 use serde::{Deserialize, Serialize};
@@ -20,6 +21,10 @@ pub enum SpendColumnValue {
 
 #[derive(Debug, thiserror::Error)]
 pub enum DailySpendValueError {
+    #[error("daily spend value exceeds {MAX_DAILY_VALUE_BYTES} bytes")]
+    TooLarge,
+    #[error("daily spend value exceeds depth {MAX_DAILY_VALUE_DEPTH}")]
+    TooDeep,
     #[error("daily spend value cannot be represented as JSON text")]
     Json(#[source] serde_json::Error),
     #[error("{field} overflows its column type")]
@@ -65,29 +70,11 @@ pub(super) fn as_counter(
         })
 }
 
-#[derive(Deserialize)]
-struct ExactDecimal(#[serde(with = "rust_decimal::serde::arbitrary_precision")] Decimal);
-
 impl TryFrom<Box<RawValue>> for SpendColumnValue {
     type Error = DailySpendValueError;
 
     fn try_from(raw: Box<RawValue>) -> Result<Self, Self::Error> {
-        // RawValue keeps JSON objects distinct from serde_json's private numeric map encoding.
-        let text = raw.get();
-        match text.as_bytes().first() {
-            Some(b'n') => Ok(Self::Null),
-            Some(b't' | b'f') => serde_json::from_str(text).map(Self::Bool),
-            Some(b'"') => serde_json::from_str(text).map(Self::Text),
-            Some(b'[') => serde_json::from_str(text).map(Self::Array),
-            Some(b'{') => serde_json::from_str(text).map(Self::Object),
-            _ => text.parse::<i64>().map_or_else(
-                |_| {
-                    serde_json::from_str::<ExactDecimal>(text).map(|number| Self::Decimal(number.0))
-                },
-                |whole| Ok(Self::Int(whole)),
-            ),
-        }
-        .map_err(DailySpendValueError::Json)
+        decode_daily_value(raw.get().as_bytes())
     }
 }
 

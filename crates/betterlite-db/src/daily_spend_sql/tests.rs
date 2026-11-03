@@ -317,3 +317,75 @@ async fn replace_request_and_skip_empty(client: &deadpool_postgres::Client) {
         .await
         .unwrap();
 }
+
+#[rstest]
+#[case::arrays("[", "]", 65)]
+#[case::objects(r#"{"nested":"#, "}", 65)]
+#[case::mixed(r#"[{"nested":"#, "}]", 33)]
+#[case::deep_arrays("[", "]", 4096)]
+#[case::deep_objects(r#"{"nested":"#, "}", 4096)]
+#[case::deep_mixed(r#"[{"nested":"#, "}]", 2048)]
+fn rejects_excessive_daily_nesting(
+    #[case] prefix: &str,
+    #[case] suffix: &str,
+    #[case] count: usize,
+) {
+    let text = format!("{}null{}", prefix.repeat(count), suffix.repeat(count));
+    let raw = serde_json::value::RawValue::from_string(text.clone()).unwrap();
+    assert!(matches!(
+        super::values::SpendColumnValue::try_from(raw),
+        Err(super::values::DailySpendValueError::TooDeep)
+    ));
+    let row_json = format!(r#"{{"spend":{text}}}"#);
+    assert!(serde_json::from_str::<SpendRow>(&row_json).is_err());
+}
+
+#[rstest]
+#[case::arrays("[", "]", 64)]
+#[case::objects(r#"{"nested":"#, "}", 64)]
+#[case::mixed(r#"[{"nested":"#, "}]", 32)]
+fn accepts_daily_nesting_boundary(
+    #[case] prefix: &str,
+    #[case] suffix: &str,
+    #[case] count: usize,
+) {
+    let source = format!("{}null{}", prefix.repeat(count), suffix.repeat(count));
+    let decoded = super::value_decode::decode_daily_value(source.as_bytes()).unwrap();
+    assert_eq!(serde_json::to_string(&decoded).unwrap(), source);
+    let through_serde: super::values::SpendColumnValue = serde_json::from_str(&source).unwrap();
+    assert_eq!(through_serde, decoded);
+}
+
+#[test]
+fn daily_siblings_keep_their_depth_budget() {
+    let child = format!("{}0{}", "[".repeat(63), "]".repeat(63));
+    let source = format!("[{child},{child}]");
+    let decoded = super::value_decode::decode_daily_value(source.as_bytes()).unwrap();
+    assert_eq!(serde_json::to_string(&decoded).unwrap(), source);
+}
+
+#[test]
+fn daily_value_size_is_bounded() {
+    use super::value_decode::{MAX_DAILY_VALUE_BYTES, decode_daily_value};
+    use super::values::{DailySpendValueError, SpendColumnValue};
+    let source = format!("\"{}\"", "x".repeat(MAX_DAILY_VALUE_BYTES - 2));
+    let decoded = decode_daily_value(source.as_bytes()).unwrap();
+    assert_eq!(serde_json::to_string(&decoded).unwrap(), source);
+    let oversized = format!("\"{}\"", "x".repeat(MAX_DAILY_VALUE_BYTES - 1));
+    assert!(matches!(
+        decode_daily_value(oversized.as_bytes()),
+        Err(DailySpendValueError::TooLarge)
+    ));
+    let raw = serde_json::value::RawValue::from_string(oversized).unwrap();
+    assert!(matches!(
+        SpendColumnValue::try_from(raw),
+        Err(DailySpendValueError::TooLarge)
+    ));
+}
+
+#[rstest]
+fn replays_the_daily_values_corpus(#[files("fuzz/corpus/daily_values/*")] path: PathBuf) {
+    drop(super::value_decode::decode_daily_value(
+        &read(path).unwrap(),
+    ));
+}

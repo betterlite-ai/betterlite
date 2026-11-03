@@ -5,6 +5,7 @@ pub mod entities;
 pub mod merge;
 pub mod records;
 pub mod tags;
+pub mod value_decode;
 pub mod values;
 pub mod write;
 
