@@ -25,16 +25,16 @@ pub enum DynamicLoggerCacheError {
 }
 
 pub struct Entry<V> {
-    pub value: V,
-    pub expiry: f64,
+    value: V,
+    expiry: f64,
 }
 
 pub struct DynamicLoggerCache<V> {
-    pub default_ttl: f64,
-    pub capacity: usize,
-    pub clock: Arc<dyn Fn() -> f64 + Send + Sync>,
-    pub on_remove: RemovalEffect<V>,
-    pub entries: Mutex<BTreeMap<String, Entry<V>>>,
+    default_ttl: f64,
+    capacity: usize,
+    clock: Arc<dyn Fn() -> f64 + Send + Sync>,
+    on_remove: RemovalEffect<V>,
+    entries: Mutex<BTreeMap<String, Entry<V>>>,
 }
 
 pub fn get_cache_key(
@@ -51,6 +51,18 @@ pub fn get_cache_key(
     let mut hasher = Sha256::new();
     hasher.update(serialized.as_bytes());
     Ok(hex::encode(hasher.finalize()))
+}
+
+impl<V> DynamicLoggerCache<V> {
+    pub fn new(on_remove: RemovalEffect<V>, clock: Arc<dyn Fn() -> f64 + Send + Sync>) -> Self {
+        Self {
+            default_ttl: DEFAULT_TTL_FOR_HTTPX_CLIENTS,
+            capacity: DEFAULT_MAX_SIZE_IN_MEMORY,
+            clock,
+            on_remove,
+            entries: Mutex::new(BTreeMap::new()),
+        }
+    }
 }
 
 impl<V: Clone> DynamicLoggerCache<V> {
@@ -99,8 +111,11 @@ impl<V: Clone> DynamicLoggerCache<V> {
             Some(entry) if entry.expiry >= now => entry.expiry,
             _ => fresh_expiry,
         };
-        entries.insert(key, Entry { value, expiry });
+        let replaced = entries.insert(key, Entry { value, expiry });
         drop(entries);
+        if let Some(entry) = replaced {
+            evicted.push(entry.value);
+        }
         for stopped_value in evicted {
             self.stop(stopped_value);
         }

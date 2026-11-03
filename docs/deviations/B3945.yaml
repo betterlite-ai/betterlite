@@ -3,3 +3,10 @@ deviations:
   - what: Cache removal effects are injected through a closure (RemovalEffect<V>) rather than calling logger constructors or importing logger crates, preventing circular dependencies with B3944 and B113.
     why: Exporters register themselves into the cache; the cache must not depend on exporter code.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/specialty_caches/dynamic_logging_cache.py#L30-L50
+  - what: >-
+      set_cache stops a live value it replaces, after releasing the cache lock. LiteLLM overwrites
+      cache_dict[key] without removing or stopping the previous value.
+    why: >-
+      A concurrent pair of cache misses can overwrite a logger with a running background task or
+      export channel; leaking that resource is not behavior a working setup can rely on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L170
