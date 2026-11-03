@@ -156,6 +156,7 @@ pub(crate) fn path_resolution_uses_root_and_rejects_escape() {
     let root = temp.path().join("data");
     fs::create_dir_all(root.join("categories")).unwrap();
     fs::write(root.join("categories/a.yaml"), "keywords: []").unwrap();
+    fs::write(root.join("categories/external.yaml"), "keywords: []").unwrap();
     let found = resolve_category_file_path(
         Path::new("prefix/categories/a.yaml"),
         slice::from_ref(&root),
@@ -164,6 +165,14 @@ pub(crate) fn path_resolution_uses_root_and_rejects_escape() {
     )
     .unwrap();
     assert_eq!(found, root.join("categories/a.yaml"));
+    let external = resolve_category_file_path(
+        Path::new("mounted/categories/external.yaml"),
+        slice::from_ref(&root),
+        &root,
+        true,
+    )
+    .unwrap();
+    assert_eq!(external, root.join("categories/external.yaml"));
     let error = resolve_category_file_path(
         Path::new("../../outside"),
         slice::from_ref(&root),

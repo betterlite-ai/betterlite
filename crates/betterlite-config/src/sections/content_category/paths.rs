@@ -40,13 +40,13 @@ pub fn resolve_category_file_path(
         return Ok(file_path.to_path_buf());
     }
     let parts: Vec<_> = file_path.components().collect();
-    for root in roots {
-        for start in 0..parts.len() {
+    for start in 0..parts.len() {
+        for root in roots {
             let Some(suffix_parts) = parts.get(start..) else {
                 continue;
             };
             let suffix: PathBuf = suffix_parts.iter().collect();
-            let Some(candidate) = safe_join(root, &suffix) else {
+            let Some(candidate) = joined_candidate(root, &suffix, allow_external) else {
                 continue;
             };
             if candidate.exists() {
@@ -55,12 +55,18 @@ pub fn resolve_category_file_path(
         }
     }
     if allow_external {
-        tracing::warn!(path = %file_path.display(), "LITELLM_CONTENT_FILTER_ALLOW_EXTERNAL_PATHS is set; bypassing category path jail");
         return Ok(file_path.to_path_buf());
     }
     let data_relative = data_dir.join(file_path);
     assert_within_data_roots(&data_relative, roots)?;
     Ok(file_path.to_path_buf())
+}
+
+fn joined_candidate(root: &Path, suffix: &Path, allow_external: bool) -> Option<PathBuf> {
+    if allow_external {
+        return Some(root.join(suffix));
+    }
+    safe_join(root, suffix)
 }
 
 fn safe_join(root: &Path, suffix: &Path) -> Option<PathBuf> {
