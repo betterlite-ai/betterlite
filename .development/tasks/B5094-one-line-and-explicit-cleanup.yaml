@@ -457,5 +457,5 @@ pitfalls:
 - tests.rs files are exempt from the padded rule but not from the other two, and redact/sentry/scrub/tests.rs has an impl Trait argument.
 review_level: standard
 budget:
-  max_changed_lines: 3000
+  max_changed_lines: 4000
   max_new_expects: 0
