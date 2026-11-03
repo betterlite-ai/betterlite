@@ -94,22 +94,25 @@ impl Scanner<'_> {
             content.push('^');
         }
         loop {
-            content.push_str(&self.class_atom()?);
-            match self.rest.as_bytes() {
-                [b'-', b']', ..] => {
-                    self.take();
-                    content.push_str(r"\-");
-                }
-                [b'-', ..] => {
-                    self.take();
-                    content.push('-');
-                    content.push_str(&self.class_atom()?);
-                }
-                _ => {}
-            }
+            content.push_str(&self.class_range()?);
             if let Some(tail) = self.rest.strip_prefix(']') {
                 self.rest = tail;
                 return Ok(content);
+            }
+        }
+    }
+
+    fn class_range(&mut self) -> Result<String, RegexError> {
+        let start = self.class_atom()?;
+        match self.rest.strip_prefix('-') {
+            None => Ok(start),
+            Some(tail) if tail.starts_with(']') => {
+                self.rest = tail;
+                Ok(format!(r"{start}\-"))
+            }
+            Some(tail) => {
+                self.rest = tail;
+                Ok(format!("{start}-{}", self.class_atom()?))
             }
         }
     }
