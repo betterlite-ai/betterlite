@@ -45,7 +45,9 @@ impl From<RawPromptTokensDetails> for PromptTokensDetails {
             .get("cache_creation_input_tokens")
             .and_then(|value| match value {
                 Json::Number(number) => number.as_i64(),
-                _ => None,
+                Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => {
+                    None
+                }
             });
         let mirrored = raw
             .cache_write_tokens
@@ -101,7 +103,9 @@ impl From<RawUsage> for Usage {
             .get("prompt_cache_hit_tokens")
             .and_then(|value| match value {
                 Json::Number(number) => number.as_i64(),
-                _ => None,
+                Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => {
+                    None
+                }
             });
         if let Some(cached) = raw.cache_read_input_tokens.or(cache_hit) {
             details.get_or_insert_default().cached_tokens = Some(cached);

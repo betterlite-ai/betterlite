@@ -168,7 +168,7 @@ fn usage_copies_top_level_cache_counters_into_prompt_details() {
     assert_eq!(usage.cache_creation_input_tokens, Some(20));
     assert_eq!(
         usage.extra.get("prompt_cache_hit_tokens"),
-        Some(&Json::Number(serde_json::Number::from(5)))
+        Some(&Json::Number(serde_json::Number::from(5_i64)))
     );
 }
 

@@ -16,7 +16,7 @@ call:
         expires_at: 9000.0
         uncertain: false
       - fingerprint: large
-        content_fingerprint: y
+        content_fingerprint: outside-large
         tokens: 60
         ttl_seconds: 300
         available_at: 0.0
