@@ -1,0 +1,5 @@
+kind: helper
+name: catalog_strip_prefix_null_server
+call: {b4682: {operation: strip_prefix, name: server-tool}}
+env: {}
+compare: {ignore: []}

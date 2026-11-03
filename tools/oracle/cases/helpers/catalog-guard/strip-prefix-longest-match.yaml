@@ -1,0 +1,5 @@
+kind: helper
+name: catalog_strip_prefix_longest_match
+call: {b4682: {operation: strip_prefix, name: server-id-tool, server: {server_id: server-id, alias: server}}}
+env: {}
+compare: {ignore: []}

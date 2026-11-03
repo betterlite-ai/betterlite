@@ -1080,6 +1080,7 @@ name = "betterlite-db"
 version = "0.1.0"
 dependencies = [
  "betterlite-postgres-fixture",
+ "betterlite-roi",
  "betterlite-secrets",
  "chrono",
  "clap",
@@ -1646,13 +1647,18 @@ dependencies = [
  "betterlite-auth",
  "betterlite-billing",
  "betterlite-config",
+ "betterlite-db",
  "betterlite-error",
  "betterlite-http",
  "betterlite-models",
  "betterlite-ocr",
  "betterlite-openai",
+ "betterlite-postgres-fixture",
  "betterlite-redact",
+ "betterlite-roi",
  "chrono",
+ "clap",
+ "deadpool-postgres",
  "email_address",
  "encoding_rs",
  "form_urlencoded",
@@ -1669,6 +1675,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
+ "sha2 0.11.1",
  "soft-canonicalize",
  "speedate",
  "strum",
@@ -1676,6 +1683,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tokio-postgres",
  "tower",
  "tracing",
  "tracing-subscriber",
@@ -4570,6 +4578,8 @@ dependencies = [
  "chrono",
  "fallible-iterator 0.2.0",
  "postgres-protocol",
+ "serde_core",
+ "serde_json",
 ]
 
 [[package]]

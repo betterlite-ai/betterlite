@@ -10,17 +10,19 @@ axum.workspace = true
 betterlite-auth = { path = "../betterlite-auth" }
 betterlite-billing = { path = "../betterlite-billing" }
 betterlite-config = { path = "../betterlite-config" }
+betterlite-db = { path = "../betterlite-db" }
 betterlite-error = { path = "../betterlite-error" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-ocr = { path = "../betterlite-ocr" }
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-redact = { path = "../betterlite-redact" }
-chrono.workspace = true
+betterlite-roi = { path = "../betterlite-roi" }
+chrono = { workspace = true }
 email_address = "0.2.9"
 encoding_rs = "0.8.42"
 form_urlencoded = "1.2.2"
-futures-util = { version = "0.3.34", default-features = false, features = ["async-await"] }
+futures-util = { version = "0.3.34", default-features = false, features = ["alloc", "async-await"] }
 hyper-util = { workspace = true, features = ["server-auto", "tokio", "service"] }
 indexmap = { version = "2.14.2", features = ["serde"] }
 multipart-rs = "0.2.3"
@@ -31,6 +33,7 @@ secrecy.workspace = true
 serde.workspace = true
 serde_json = { version = "1.0.154", features = ["raw_value"] }
 serde_with = { version = "3.24.0", default-features = false, features = ["alloc", "macros"] }
+sha2.workspace = true
 soft-canonicalize = "0.5.6"
 speedate = "0.18.0"
 strum = { version = "0.28.0", features = ["derive"] }
@@ -43,9 +46,13 @@ url = "2.5.8"
 uuid.workspace = true
 
 [dev-dependencies]
+betterlite-postgres-fixture = { path = "../../tools/postgres-fixture" }
+clap = { version = "4.6.7", features = ["derive", "env"] }
+deadpool-postgres.workspace = true
 rquickjs = "0.14.0"
 rstest = "=0.27.0"
 tempfile = "3.27.0"
+tokio-postgres = { workspace = true, features = ["with-chrono-0_4"] }
 tower = { workspace = true, features = ["util"] }
 tracing-subscriber.workspace = true
 

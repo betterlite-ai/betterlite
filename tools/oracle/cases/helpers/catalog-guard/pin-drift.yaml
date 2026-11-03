@@ -1,0 +1,5 @@
+kind: helper
+name: catalog_pin_drift
+call: {b4682: {operation: pin, tools: [{name: current, description: same, input_schema: {}}], pinned: {removed: {description: gone, input_schema: {}}}}}
+env: {}
+compare: {ignore: []}
