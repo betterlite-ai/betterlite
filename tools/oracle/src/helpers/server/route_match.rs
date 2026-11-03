@@ -126,21 +126,12 @@ impl MethodInput {
 impl RouteCheckInput {
     fn result(&self) -> bool {
         match self {
-            Self::LlmApi { route }
-            | Self::AzureOpenai { route }
-            | Self::Management { route }
-            | Self::Info { route } => {
-                let classifier = if matches!(self, Self::LlmApi { .. }) {
-                    Classifier::Llm
-                } else if matches!(self, Self::AzureOpenai { .. }) {
-                    Classifier::Azure
-                } else if matches!(self, Self::Management { .. }) {
-                    Classifier::Management
-                } else {
-                    Classifier::Info
-                };
-                classify(classifier, route_text(route.as_ref()))
+            Self::LlmApi { route } => classify(Classifier::Llm, route_text(route.as_ref())),
+            Self::AzureOpenai { route } => classify(Classifier::Azure, route_text(route.as_ref())),
+            Self::Management { route } => {
+                classify(Classifier::Management, route_text(route.as_ref()))
             }
+            Self::Info { route } => classify(Classifier::Info, route_text(route.as_ref())),
             Self::IsMcpDiscoveryRoute { route, method } => route_text(route.as_ref())
                 .is_some_and(|path| is_mcp_discovery_route(path, method.as_deref())),
             Self::RouteMatchesPattern { route, pattern }
