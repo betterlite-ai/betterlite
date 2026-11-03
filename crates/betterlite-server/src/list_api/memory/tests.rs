@@ -15,6 +15,10 @@ fn cells(entries: [(&str, Cell); 2]) -> Cells {
         .collect()
 }
 
+fn row<Row>(name: Row, first: (&str, Cell), second: (&str, Cell)) -> (Row, Cells) {
+    (name, cells([first, second]))
+}
+
 #[tokio::test]
 async fn repeated_cells_match_any_and_empty_tuple_is_not_null() {
     let executor = InMemoryListExecutor::new(vec![
@@ -174,21 +178,13 @@ async fn mixed_numeric_filters_membership_and_sorting_are_numeric() {
 
 fn mixed_numeric_executor() -> InMemoryListExecutor<&'static str> {
     InMemoryListExecutor::new(vec![
-        (
-            "two",
-            cells([("value", Cell::Int(2)), ("other", Cell::Int(0))]),
-        ),
-        (
+        row("two", ("value", Cell::Int(2)), ("other", Cell::Int(0))),
+        row(
             "one_point_five",
-            cells([
-                ("value", Cell::Money("1.5".parse().unwrap())),
-                ("other", Cell::Int(0)),
-            ]),
+            ("value", Cell::Money("1.5".parse().unwrap())),
+            ("other", Cell::Int(0)),
         ),
-        (
-            "one",
-            cells([("value", Cell::Int(1)), ("other", Cell::Int(0))]),
-        ),
+        row("one", ("value", Cell::Int(1)), ("other", Cell::Int(0))),
     ])
 }
 
@@ -212,26 +208,20 @@ async fn any_of_uses_each_clause_field_for_count_page_and_facets() {
 
 fn cross_field_executor() -> InMemoryListExecutor<&'static str> {
     InMemoryListExecutor::new(vec![
-        (
+        row(
             "title",
-            cells([
-                ("title", Cell::Text("hit".to_owned())),
-                ("description", Cell::Text("miss".to_owned())),
-            ]),
+            ("title", Cell::Text("hit".to_owned())),
+            ("description", Cell::Text("miss".to_owned())),
         ),
-        (
+        row(
             "description",
-            cells([
-                ("title", Cell::Text("miss".to_owned())),
-                ("description", Cell::Text("hit".to_owned())),
-            ]),
+            ("title", Cell::Text("miss".to_owned())),
+            ("description", Cell::Text("hit".to_owned())),
         ),
-        (
+        row(
             "neither",
-            cells([
-                ("title", Cell::Text("miss".to_owned())),
-                ("description", Cell::Text("miss".to_owned())),
-            ]),
+            ("title", Cell::Text("miss".to_owned())),
+            ("description", Cell::Text("miss".to_owned())),
         ),
     ])
 }
