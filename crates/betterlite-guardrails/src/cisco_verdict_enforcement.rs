@@ -86,7 +86,7 @@ pub fn build_block_payload(
 pub fn http_exception_to_error_obj(exception: &GuardrailException, guardrail_name: &str) -> Fields {
     let mut error_obj = error_fields_from_detail(&exception.detail);
     if !error_obj.contains_key("message") {
-        let message = match Json::field(&error_obj, "error") {
+        let message = match Json::parse(error_obj.get("error").map_or("null", |raw| raw.get())) {
             Json::Text(text) => text,
             Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
                 "Guardrail block".to_owned()
@@ -124,7 +124,8 @@ pub fn log_decision(
         &duration_ms.mul(10.0_f64).round().div(10.0_f64),
     );
     for (source_key, target_key) in REQUEST_CONTEXT_KEYS {
-        if let Json::Text(value) = Json::field(request_data, source_key)
+        if let Json::Text(value) =
+            Json::parse(request_data.get(source_key).map_or("null", |raw| raw.get()))
             && !value.is_empty()
         {
             insert_serialized(&mut fields, target_key, &value);

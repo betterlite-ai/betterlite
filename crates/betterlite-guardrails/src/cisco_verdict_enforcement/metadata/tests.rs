@@ -43,7 +43,9 @@ fn context() -> ScanContext {
 fn stash_verdict_on_request_creates_metadata_when_absent() {
     let mut request_data = obj("{}");
     stash_verdict_on_request(&mut request_data, context(), &empty_verdict());
-    let Json::Object(metadata) = Json::field(&request_data, "metadata") else {
+    let Json::Object(metadata) =
+        Json::parse(request_data.get("metadata").map_or("null", |raw| raw.get()))
+    else {
         panic!("metadata missing");
     };
     assert!(metadata.contains_key("cisco_ai_defense_chat_input_is_safe"));
@@ -53,7 +55,9 @@ fn stash_verdict_on_request_creates_metadata_when_absent() {
 fn stash_verdict_on_request_always_sets_is_safe_even_when_none() {
     let mut request_data = obj("{}");
     stash_verdict_on_request(&mut request_data, context(), &empty_verdict());
-    let Json::Object(metadata) = Json::field(&request_data, "metadata") else {
+    let Json::Object(metadata) =
+        Json::parse(request_data.get("metadata").map_or("null", |raw| raw.get()))
+    else {
         panic!("metadata missing");
     };
     assert_eq!(
@@ -73,7 +77,9 @@ fn stash_verdict_on_request_sets_conditional_fields_when_present() {
     verdict.event_id = Some("evt-1".to_owned());
     verdict.rules = vec![obj(r#"{"rule_name": "pii"}"#)];
     stash_verdict_on_request(&mut request_data, context(), &verdict);
-    let Json::Object(metadata) = Json::field(&request_data, "metadata") else {
+    let Json::Object(metadata) =
+        Json::parse(request_data.get("metadata").map_or("null", |raw| raw.get()))
+    else {
         panic!("metadata missing");
     };
     assert!(metadata.contains_key("cisco_ai_defense_chat_input_action"));
@@ -87,7 +93,9 @@ fn stash_verdict_on_request_sets_conditional_fields_when_present() {
 fn stash_verdict_on_request_skips_conditional_fields_when_empty() {
     let mut request_data = obj("{}");
     stash_verdict_on_request(&mut request_data, context(), &empty_verdict());
-    let Json::Object(metadata) = Json::field(&request_data, "metadata") else {
+    let Json::Object(metadata) =
+        Json::parse(request_data.get("metadata").map_or("null", |raw| raw.get()))
+    else {
         panic!("metadata missing");
     };
     assert!(!metadata.contains_key("cisco_ai_defense_chat_input_classifications"));

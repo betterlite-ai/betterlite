@@ -1,5 +1,5 @@
 use betterlite_openai::api::file_type_records::{
-    FileType, extension_from_mime, gemini_accepts, mime_from_extension,
+    FileType, FileTypeError, extension_from_mime, find_type, gemini_accepts, mime_from_type,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -22,7 +22,10 @@ pub(crate) enum Input {
 fn mime_table(extensions: &[String]) -> Result<Value, String> {
     let mut rows = Vec::new();
     for extension in extensions {
-        let mime = mime_from_extension(extension).map_err(|error| error.to_string())?;
+        let mime = find_type(extension)
+            .ok_or_else(|| FileTypeError::UnknownExtension(extension.to_owned()))
+            .map(mime_from_type)
+            .map_err(|error| error.to_string())?;
         rows.push(json!({"extension": extension, "mime": mime}));
     }
     Ok(json!(rows))
@@ -32,7 +35,9 @@ fn lookup_edges(extensions: &[String], mimes: &[String]) -> Result<Value, String
     let mut mime_per_extension = Vec::new();
     for extension in extensions {
         mime_per_extension.push(
-            mime_from_extension(extension)
+            find_type(extension)
+                .ok_or_else(|| FileTypeError::UnknownExtension(extension.to_owned()))
+                .map(mime_from_type)
                 .map_err(|error| error.to_string())?
                 .to_owned(),
         );

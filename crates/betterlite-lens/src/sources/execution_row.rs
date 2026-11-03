@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 
 use crate::models::execution::ExecutionSource;
-use crate::sources::row_decode::i64_from_int_or_numeric_string;
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -15,13 +14,22 @@ pub struct ExecutionRow {
     pub team_id: String,
     pub name: String,
     pub start_time: String,
-    #[serde(deserialize_with = "i64_from_int_or_numeric_string")]
+    #[serde(
+        deserialize_with = "serde_with::As::<serde_with::PickFirst<(serde_with::Same, serde_with::DisplayFromStr)>>::deserialize"
+    )]
     pub span_count: i64,
-    #[serde(deserialize_with = "i64_from_int_or_numeric_string")]
+    #[serde(
+        deserialize_with = "serde_with::As::<serde_with::PickFirst<(serde_with::Same, serde_with::DisplayFromStr)>>::deserialize"
+    )]
     pub root_seen: i64,
-    #[serde(deserialize_with = "i64_from_int_or_numeric_string")]
+    #[serde(
+        deserialize_with = "serde_with::As::<serde_with::PickFirst<(serde_with::Same, serde_with::DisplayFromStr)>>::deserialize"
+    )]
     pub eligible: i64,
-    #[serde(default, deserialize_with = "i64_from_int_or_numeric_string")]
+    #[serde(
+        default,
+        deserialize_with = "serde_with::As::<serde_with::PickFirst<(serde_with::Same, serde_with::DisplayFromStr)>>::deserialize"
+    )]
     pub selected: i64,
     #[serde(default)]
     pub service: String,

@@ -3,8 +3,8 @@
 use std::{fs, path::Path, str};
 
 use rstest::rstest;
+use sha2::{Digest as _, Sha256};
 
-use crate::cache_plan::json::digest;
 use crate::cache_plan::{
     CacheBoundary, PromptCachePlan, UnsupportedCachePlan, parse_cache_plan, parse_prompt,
 };
@@ -377,7 +377,9 @@ fn cache_scope_matches_litellm() {
         "2023-06-01",
     );
     assert_eq!(
-        digest(&scope).unwrap(),
+        serde_json::to_vec(&scope)
+            .map(|text| hex::encode(Sha256::digest(text)))
+            .unwrap(),
         "fe4d5470d0c652f15fc02a884968aaa32a2aeed61d8cbbafabdf0d583203de98"
     );
 }

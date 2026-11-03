@@ -9,7 +9,7 @@ use crate::helpers::HelperCall;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct HelperCase {
+pub struct HelperCase {
     pub(crate) kind: HelperKind,
     pub(crate) name: String,
     pub(crate) call: HelperCall,
@@ -29,7 +29,7 @@ pub(crate) struct HelperCompare {
     pub(crate) ignore: Vec<Ignore>,
 }
 
-pub(crate) fn validate_helper(path: &Path, case: &HelperCase) -> Result<(), OracleError> {
+pub fn validate_helper(path: &Path, case: &HelperCase) -> Result<(), OracleError> {
     let invalid = |message: &str| OracleError::CaseInvalid {
         path: path.to_owned(),
         message: message.to_owned(),

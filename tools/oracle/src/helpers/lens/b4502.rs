@@ -121,14 +121,6 @@ where
     })
 }
 
-fn value<T>(result: T) -> HelperResult
-where
-    T: serde::Serialize,
-{
-    let encoded = serde_json::to_value(result);
-    encoded.or_else(|error| failure("TypeError", error.to_string()))
-}
-
 fn runtime<F>(future: F) -> HelperResult
 where
     F: Future<Output = HelperResult>,
@@ -155,7 +147,7 @@ async fn availability(scope: &Scope, rows: &[ActivityAvailability]) -> HelperRes
         .availability(scope)
         .await
         .map_err(source_error)?;
-    value(result)
+    serde_json::to_value(result).or_else(|error| failure("TypeError", error.to_string()))
 }
 
 async fn agents(scope: &Scope, rows: &[AgentRow]) -> HelperResult {
@@ -163,7 +155,7 @@ async fn agents(scope: &Scope, rows: &[AgentRow]) -> HelperResult {
         .agents(scope)
         .await
         .map_err(source_error)?;
-    value(result)
+    serde_json::to_value(result).or_else(|error| failure("TypeError", error.to_string()))
 }
 
 async fn sample(
@@ -176,7 +168,7 @@ async fn sample(
         .sample(scope, settings, window)
         .await
         .map_err(source_error)?;
-    value(result)
+    serde_json::to_value(result).or_else(|error| failure("TypeError", error.to_string()))
 }
 
 async fn content(
@@ -190,7 +182,7 @@ async fn content(
         .content(scope, execution, cursor, offset)
         .await
         .map_err(source_error)?;
-    value(result)
+    serde_json::to_value(result).or_else(|error| failure("TypeError", error.to_string()))
 }
 
 async fn verify_evidence(
@@ -203,48 +195,49 @@ async fn verify_evidence(
         .verify_evidence(scope, execution, evidence)
         .await
         .map_err(source_error)?;
-    value(result)
+    serde_json::to_value(result).or_else(|error| failure("TypeError", error.to_string()))
 }
 
 fn run(input: &Input) -> HelperResult {
-    match input {
+    let serialized = match input {
         Input::ExecutionId {
             source,
             team_id,
             trace_id,
             trace_ref,
-        } => value(execution_id(source, team_id, trace_id, trace_ref)),
-        Input::ParseExecution { value: id } => parse_execution(id).map_or_else(
-            |error| failure("ParseExecutionError", error.to_string()),
-            |(source, team_id, trace_id, trace_ref)| value((source, team_id, trace_id, trace_ref)),
-        ),
-        Input::SelectionId { value: id } => selection_id(id).map_or_else(
-            |error| failure("ParseExecutionError", error.to_string()),
-            value,
-        ),
-        Input::Parameters { scope, filters } => value(parameters(scope, filters)),
-        Input::Availability { scope, rows } => runtime(availability(scope, rows)),
-        Input::Agents { scope, rows } => runtime(agents(scope, rows)),
+        } => serde_json::to_value(execution_id(source, team_id, trace_id, trace_ref)),
+        Input::ParseExecution { value: id } => match parse_execution(id) {
+            Ok(parsed) => serde_json::to_value(parsed),
+            Err(error) => return failure("ParseExecutionError", error.to_string()),
+        },
+        Input::SelectionId { value: id } => match selection_id(id) {
+            Ok(selected) => serde_json::to_value(selected),
+            Err(error) => return failure("ParseExecutionError", error.to_string()),
+        },
+        Input::Parameters { scope, filters } => serde_json::to_value(parameters(scope, filters)),
+        Input::Availability { scope, rows } => return runtime(availability(scope, rows)),
+        Input::Agents { scope, rows } => return runtime(agents(scope, rows)),
         Input::Sample {
             scope,
             settings,
             window,
             rows,
-        } => runtime(sample(scope, settings, to_window(window), rows)),
+        } => return runtime(sample(scope, settings, to_window(window), rows)),
         Input::Content {
             scope,
             execution,
             cursor,
             offset,
             rows,
-        } => runtime(content(scope, execution, cursor, *offset, rows)),
+        } => return runtime(content(scope, execution, cursor, *offset, rows)),
         Input::VerifyEvidence {
             scope,
             execution,
             evidence,
             rows,
-        } => runtime(verify_evidence(scope, execution, evidence, rows)),
-    }
+        } => return runtime(verify_evidence(scope, execution, evidence, rows)),
+    };
+    serialized.or_else(|error| failure("TypeError", error.to_string()))
 }
 
 pub(crate) struct Op;

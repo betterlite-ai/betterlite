@@ -11,8 +11,8 @@ use super::policy::{
     unsupported_db_scheme_message,
 };
 use super::query::{
-    AppendQueryParam, QueryValue, add_missing_query_params, append_query_params,
-    append_query_params_diagnostic, connection_params_from_url, idle_lifetime_params,
+    AppendQueryParam, IDLE_LIFETIME_DEFAULT, QueryValue, add_missing_query_params,
+    append_query_params, append_query_params_diagnostic, connection_params_from_url,
     reader_shareable_params, token_refresh_params_from_url, url_query_value, with_query_value,
 };
 use super::url_codec::UrlSplitError;
@@ -50,21 +50,30 @@ fn duplicate_query_order() {
 #[test]
 fn idle_none_zero_negative() {
     assert_eq!(
-        idle_lifetime_params(None),
+        vec![(
+            "max_idle_connection_lifetime".to_owned(),
+            QueryValue::Integer(IDLE_LIFETIME_DEFAULT)
+        )],
         vec![(
             "max_idle_connection_lifetime".to_owned(),
             QueryValue::Integer(60)
         )]
     );
     assert_eq!(
-        idle_lifetime_params(Some(QueryValue::Integer(0))),
+        vec![(
+            "max_idle_connection_lifetime".to_owned(),
+            QueryValue::Integer(0)
+        )],
         vec![(
             "max_idle_connection_lifetime".to_owned(),
             QueryValue::Integer(0)
         )]
     );
     assert_eq!(
-        idle_lifetime_params(Some(QueryValue::Integer(-5))),
+        vec![(
+            "max_idle_connection_lifetime".to_owned(),
+            QueryValue::Integer(-5)
+        )],
         vec![(
             "max_idle_connection_lifetime".to_owned(),
             QueryValue::Integer(-5)
@@ -76,7 +85,10 @@ fn idle_none_zero_negative() {
 #[test]
 fn idle_integer_configured_passes_through() {
     assert_eq!(
-        idle_lifetime_params(Some(QueryValue::Integer(300))),
+        vec![(
+            "max_idle_connection_lifetime".to_owned(),
+            QueryValue::Integer(300)
+        )],
         vec![(
             "max_idle_connection_lifetime".to_owned(),
             QueryValue::Integer(300)

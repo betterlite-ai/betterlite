@@ -29,27 +29,37 @@ pub fn hydrate_tool_context(data: &mut Fields) {
 }
 
 fn tool_call_metadata(data: &Fields) -> Option<Fields> {
-    if let Json::Object(metadata) = Json::field(data, "mcp_tool_call_metadata") {
+    if let Json::Object(metadata) = Json::parse(
+        data.get("mcp_tool_call_metadata")
+            .map_or("null", |raw| raw.get()),
+    ) {
         return Some(metadata);
     }
     for key in ["metadata", "litellm_metadata"] {
-        let Json::Object(nested) = Json::field(data, key) else {
+        let Json::Object(nested) = Json::parse(data.get(key).map_or("null", |raw| raw.get()))
+        else {
             continue;
         };
-        if let Json::Object(metadata) = Json::field(&nested, "mcp_tool_call_metadata") {
+        if let Json::Object(metadata) = Json::parse(
+            nested
+                .get("mcp_tool_call_metadata")
+                .map_or("null", |raw| raw.get()),
+        ) {
             return Some(metadata);
         }
     }
     None
 }
 
-fn set_if(
+fn set_if<Keep>(
     data: &mut Fields,
     metadata: &Fields,
     source_key: &str,
     targets: &[&str],
-    keep: impl Fn(&Json) -> bool,
-) {
+    keep: Keep,
+) where
+    Keep: Fn(&Json) -> bool,
+{
     let Some(raw) = metadata.get(source_key) else {
         return;
     };

@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
+use std::mem;
 
 pub mod record;
 use record::{HandleKind, RequestRecord};
@@ -156,22 +157,25 @@ impl RequestRecordProjection {
     fn filter_object(fields: BTreeMap<String, RequestRecord>, depth: i32) -> RequestRecord {
         let filtered = fields
             .into_iter()
-            .filter_map(|(key, value)| Self::filter_item(value, depth).map(|item| (key, item)))
+            .filter_map(|(key, value)| {
+                let filtered = Self::filter_value(value, depth.saturating_sub(1));
+                (!matches!(filtered, RequestRecord::Null))
+                    .then_some(filtered)
+                    .map(|item| (key, item))
+            })
             .collect();
         RequestRecord::Object(filtered)
     }
 
-    fn filter_array(values: Vec<RequestRecord>, depth: i32) -> RequestRecord {
-        let filtered = values
-            .into_iter()
-            .filter_map(|value| Self::filter_item(value, depth))
-            .collect();
-        RequestRecord::Array(filtered)
-    }
-
-    fn filter_item(value: RequestRecord, depth: i32) -> Option<RequestRecord> {
-        let filtered = Self::filter_value(value, depth.saturating_sub(1));
-        (!matches!(filtered, RequestRecord::Null)).then_some(filtered)
+    fn filter_array(mut values: Vec<RequestRecord>, depth: i32) -> RequestRecord {
+        values.retain_mut(|value| {
+            *value = Self::filter_value(
+                mem::replace(value, RequestRecord::Null),
+                depth.saturating_sub(1),
+            );
+            !matches!(value, RequestRecord::Null)
+        });
+        RequestRecord::Array(values)
     }
 
     #[must_use]

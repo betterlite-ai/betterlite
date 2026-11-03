@@ -14,7 +14,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use tokio::fs;
 use tokio::task::JoinSet;
 use tokio::time::{Instant, sleep, timeout};
-use tokio_postgres::{Config, NoTls, Row};
+use tokio_postgres::{Config, NoTls};
 use uuid::Uuid;
 
 use super::catalog::Migration;
@@ -154,24 +154,19 @@ impl Database {
         }
     }
 
-    pub(super) async fn sql(&self, sql: &str) {
-        let client = self.pool.get().await.unwrap();
-        client.batch_execute(sql).await.unwrap();
-    }
-
-    pub(super) async fn rows(&self) -> Vec<Row> {
-        let client = self.pool.get().await.unwrap();
-        client.query("SELECT id, migration_name, checksum, applied_steps_count, logs, finished_at IS NOT NULL AS finished, rolled_back_at IS NOT NULL AS rolled_back, started_at IS NOT NULL AS started FROM _prisma_migrations ORDER BY started_at, id", &[]).await.unwrap()
-    }
-
-    pub(super) async fn count(&self, sql: &str) -> i64 {
-        let client = self.pool.get().await.unwrap();
-        client.query_one(sql, &[]).await.unwrap().get(0)
-    }
-
     pub(super) async fn wait_for(&self, sql: &str) {
         let deadline = Instant::now().checked_add(Duration::from_secs(5)).unwrap();
-        while self.count(sql).await == 0 {
+        while self
+            .pool
+            .get()
+            .await
+            .unwrap()
+            .query_one(sql, &[])
+            .await
+            .unwrap()
+            .get::<_, i64>(0)
+            == 0
+        {
             assert!(Instant::now() < deadline, "checkpoint was not reached");
             sleep(Duration::from_millis(10)).await;
         }
@@ -187,18 +182,13 @@ impl Database {
             Instant::now().checked_add(Duration::from_secs(10)).unwrap(),
         ));
         checkpoint(deployment.as_mut(), sleep(Duration::from_millis(100))).await;
-        assert!(self.rows().await.is_empty());
+        assert!(self.pool.get().await.unwrap().query("SELECT id, migration_name, checksum, applied_steps_count, logs, finished_at IS NOT NULL AS finished, rolled_back_at IS NOT NULL AS rolled_back, started_at IS NOT NULL AS started FROM _prisma_migrations ORDER BY started_at, id", &[]).await.unwrap().is_empty());
         blocker
             .batch_execute("COMMIT; SELECT pg_advisory_unlock_all()")
             .await
             .unwrap();
         deployment.await.unwrap();
-        assert!(self.rows().await[0].get::<_, bool>("finished"));
-    }
-
-    pub(super) async fn columns(&self) -> Vec<String> {
-        let client = self.pool.get().await.unwrap();
-        client.query("SELECT column_name || ':' || data_type || ':' || is_nullable || ':' || coalesce(column_default, '') || ':' || coalesce(character_maximum_length::text, '') FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = '_prisma_migrations' ORDER BY ordinal_position", &[]).await.unwrap().iter().map(|row| row.get(0)).collect()
+        assert!(self.pool.get().await.unwrap().query("SELECT id, migration_name, checksum, applied_steps_count, logs, finished_at IS NOT NULL AS finished, rolled_back_at IS NOT NULL AS rolled_back, started_at IS NOT NULL AS started FROM _prisma_migrations ORDER BY started_at, id", &[]).await.unwrap()[0].get::<_, bool>("finished"));
     }
 }
 

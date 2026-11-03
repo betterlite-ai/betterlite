@@ -28,19 +28,13 @@ pub enum TimeoutError {
     InvalidNumber { source: ParseFloatError },
 }
 
-#[must_use]
-pub fn supports_httpx_timeout(provider: &str) -> bool {
-    let supported = ["openai", "azure", "bedrock"];
-    supported.contains(&provider)
-}
-
 pub fn resolve_fine_tuning_timeout(
     raw: Option<&TimeoutValue>,
     provider: &str,
     structured: Option<StructuredTimeout>,
 ) -> Result<FineTuningTimeout, TimeoutError> {
     if let Some(timeout) = structured {
-        if supports_httpx_timeout(provider) {
+        if ["openai", "azure", "bedrock"].contains(&provider) {
             validate_structured(timeout)?;
             return Ok(FineTuningTimeout::Structured(timeout));
         }

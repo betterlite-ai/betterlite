@@ -65,7 +65,7 @@ pub fn messages_to_input(messages: &[Box<RawValue>]) -> Option<Vec<InputMessage>
             continue;
         };
         let role = caller_role(&fields).unwrap_or(Role::User);
-        let content = match Json::field(&fields, "content") {
+        let content = match Json::parse(fields.get("content").map_or("null", |raw| raw.get())) {
             Json::Text(text) => {
                 let assistant = matches!(&role, Role::Caller(raw) if matches!(Json::parse(raw.get()), Json::Text(name) if name == "assistant"));
                 let kind = if assistant {
@@ -114,7 +114,7 @@ fn rewrite_last_user(items: &[Box<RawValue>], sanitized: &str) -> Option<Vec<Rew
     rewrite_matching(
         items,
         SearchOrder::Last,
-        |message| matches!(Json::field(message, "role"), Json::Text(role) if role == "user"),
+        |message| matches!(Json::parse(message.get("role").map_or("null", |raw| raw.get())), Json::Text(role) if role == "user"),
         |mut message| {
             let content = rewrite_content(&message, sanitized)?;
             message.shift_remove("content");
@@ -124,7 +124,7 @@ fn rewrite_last_user(items: &[Box<RawValue>], sanitized: &str) -> Option<Vec<Rew
 }
 
 fn rewrite_content(message: &Fields, sanitized: &str) -> Option<EditedContent> {
-    match Json::field(message, "content") {
+    match Json::parse(message.get("content").map_or("null", |raw| raw.get())) {
         Json::Text(_) => Some(EditedContent::Text(sanitized.to_owned())),
         Json::List(parts) => {
             rewrite_matching(&parts, SearchOrder::First, is_text_part, |mut part| {

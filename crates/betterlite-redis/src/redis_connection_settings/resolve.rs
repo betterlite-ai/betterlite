@@ -3,13 +3,14 @@ mod tests;
 
 use secrecy::{ExposeSecret, SecretString};
 
-use self::lookup::{resolve_nodes, resolve_passthrough, resolve_scalar};
+use self::lookup::{Coerce, resolve_nodes, resolve_passthrough};
 use super::allowlists::filter_passthrough_for_target;
 use super::coercion::coerce_passthrough;
 use super::environment::EnvironmentLookup;
 use super::error::RedisSettingsError;
 use super::iam::apply_iam_precedence;
 use super::model::nodes::ClusterNodeConfig;
+use super::model::scalars::Scalar;
 use super::model::settings::{
     ClientKind, CredentialProviderSettings, RedisConnectionSettings, RedisOverrides, Target,
 };
@@ -68,7 +69,7 @@ where
 }
 
 fn merge_settings<E>(
-    overrides: RedisOverrides,
+    mut overrides: RedisOverrides,
     env: &E,
     startup_nodes: Option<Vec<ClusterNodeConfig>>,
     sentinel_nodes: Option<Vec<(String, i64)>>,
@@ -76,34 +77,26 @@ fn merge_settings<E>(
 where
     E: EnvironmentLookup,
 {
-    let url = resolve_url(&overrides, env);
+    let mut settings = RedisConnectionSettings::default();
+    resolve_network_limits(&mut settings, &mut overrides, env);
+    let url = match overrides.url.clone() {
+        Some(explicit) => explicit,
+        None if overrides.host.is_some()
+            || overrides.startup_nodes.is_some()
+            || overrides.sentinel_nodes.is_some() =>
+        {
+            None
+        }
+        None => env.lookup("REDIS_URL").map(SecretString::from),
+    };
     let secrets = resolve_secret_fields(&overrides, env);
     RedisConnectionSettings {
         host: overrides.host.or_else(|| env.lookup("REDIS_HOST")),
-        port: resolve_scalar(overrides.port, env, "REDIS_PORT"),
-        db: resolve_scalar(overrides.db, env, "REDIS_DB"),
-        username: overrides
-            .username
-            .clone()
-            .or_else(|| env.lookup("REDIS_USERNAME")),
+        username: overrides.username.or_else(|| env.lookup("REDIS_USERNAME")),
         password: overrides
             .password
             .unwrap_or_else(|| env.lookup("REDIS_PASSWORD").map(SecretString::from)),
         url,
-        ssl: resolve_scalar(overrides.ssl, env, "REDIS_SSL"),
-        socket_timeout: resolve_scalar(overrides.socket_timeout, env, "REDIS_SOCKET_TIMEOUT"),
-        socket_connect_timeout: resolve_scalar(
-            overrides.socket_connect_timeout,
-            env,
-            "REDIS_SOCKET_CONNECT_TIMEOUT",
-        ),
-        socket_keepalive: resolve_scalar(overrides.socket_keepalive, env, "REDIS_SOCKET_KEEPALIVE"),
-        max_connections: resolve_scalar(overrides.max_connections, env, "REDIS_MAX_CONNECTIONS"),
-        health_check_interval: resolve_scalar(
-            overrides.health_check_interval,
-            env,
-            "REDIS_HEALTH_CHECK_INTERVAL",
-        ),
         credential_provider: overrides.credential_provider,
         credential_provider_settings: overrides
             .credential_provider
@@ -114,6 +107,7 @@ where
         service_name: secrets.service_name,
         ssl_password: secrets.ssl_password,
         passthrough: resolve_passthrough(overrides.passthrough, env),
+        ..settings
     }
 }
 
@@ -128,45 +122,24 @@ fn resolve_secret_fields<E>(overrides: &RedisOverrides, env: &E) -> SecretFields
 where
     E: EnvironmentLookup,
 {
-    let sentinel_password = overrides
-        .sentinel_password
-        .clone()
-        .filter(|secret| !secret.expose_secret().is_empty())
-        .or_else(|| {
-            env.lookup("REDIS_SENTINEL_PASSWORD")
-                .map(SecretString::from)
-        });
-    let service_name = overrides
-        .service_name
-        .clone()
-        .filter(|text| !text.is_empty())
-        .or_else(|| env.lookup("REDIS_SERVICE_NAME"));
-    let ssl_password = overrides
-        .ssl_password
-        .clone()
-        .or_else(|| env.lookup("REDIS_SSL_PASSWORD").map(SecretString::from));
     SecretFields {
-        sentinel_password,
-        service_name,
-        ssl_password,
-    }
-}
-
-fn resolve_url<E>(overrides: &RedisOverrides, env: &E) -> Option<SecretString>
-where
-    E: EnvironmentLookup,
-{
-    // litellm's `{**environment_kwargs, **env_overrides}` merge lets an explicit `url: null` overwrite an environment-sourced url instead of falling back to REDIS_URL; a present value always wins and an omitted field falls back exactly as before.
-    if let Some(explicit) = overrides.url.clone() {
-        return explicit;
-    }
-    let caller_named_a_target = overrides.host.is_some()
-        || overrides.startup_nodes.is_some()
-        || overrides.sentinel_nodes.is_some();
-    if caller_named_a_target {
-        None
-    } else {
-        env.lookup("REDIS_URL").map(SecretString::from)
+        sentinel_password: overrides
+            .sentinel_password
+            .clone()
+            .filter(|secret| !secret.expose_secret().is_empty())
+            .or_else(|| {
+                env.lookup("REDIS_SENTINEL_PASSWORD")
+                    .map(SecretString::from)
+            }),
+        service_name: overrides
+            .service_name
+            .clone()
+            .filter(|text| !text.is_empty())
+            .or_else(|| env.lookup("REDIS_SERVICE_NAME")),
+        ssl_password: overrides
+            .ssl_password
+            .clone()
+            .or_else(|| env.lookup("REDIS_SSL_PASSWORD").map(SecretString::from)),
     }
 }
 
@@ -185,4 +158,44 @@ fn apply_credential_provider(
         settings.url = Some(SecretString::from(stripped));
     }
     Ok(())
+}
+
+fn resolve_network_limits<E>(
+    settings: &mut RedisConnectionSettings,
+    overrides: &mut RedisOverrides,
+    env: &E,
+) where
+    E: EnvironmentLookup,
+{
+    let [port, db, max_connections, health_check_interval] = [
+        (overrides.port.take(), "REDIS_PORT"),
+        (overrides.db.take(), "REDIS_DB"),
+        (overrides.max_connections.take(), "REDIS_MAX_CONNECTIONS"),
+        (
+            overrides.health_check_interval.take(),
+            "REDIS_HEALTH_CHECK_INTERVAL",
+        ),
+    ]
+    .map(|(value, name)| Coerce::coerce(value.or_else(|| env.lookup(name).map(Scalar::Text))));
+    let [ssl, socket_keepalive] = [
+        (overrides.ssl.take(), "REDIS_SSL"),
+        (overrides.socket_keepalive.take(), "REDIS_SOCKET_KEEPALIVE"),
+    ]
+    .map(|(value, name)| Coerce::coerce(value.or_else(|| env.lookup(name).map(Scalar::Text))));
+    let [socket_timeout, socket_connect_timeout] = [
+        (overrides.socket_timeout.take(), "REDIS_SOCKET_TIMEOUT"),
+        (
+            overrides.socket_connect_timeout.take(),
+            "REDIS_SOCKET_CONNECT_TIMEOUT",
+        ),
+    ]
+    .map(|(value, name)| Coerce::coerce(value.or_else(|| env.lookup(name).map(Scalar::Text))));
+    settings.port = port;
+    settings.db = db;
+    settings.ssl = ssl;
+    settings.socket_timeout = socket_timeout;
+    settings.socket_connect_timeout = socket_connect_timeout;
+    settings.socket_keepalive = socket_keepalive;
+    settings.max_connections = max_connections;
+    settings.health_check_interval = health_check_interval;
 }

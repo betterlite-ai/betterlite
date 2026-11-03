@@ -2,7 +2,9 @@ use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use betterlite_http::error::HttpError;
-use betterlite_http::proxy::{JsonPost, ProxiedClient, StreamResponse, UpstreamResponse};
+use betterlite_http::proxy::{
+    JsonPost, ProxiedClient, StreamResponse, UpstreamResponse, timed_out,
+};
 use rand::RngExt as _;
 use rand::rngs::StdRng;
 use secrecy::SecretString;
@@ -126,7 +128,16 @@ impl ChatExecutor {
         request: &ChatRequest,
     ) -> Result<StreamResponse, ChatError> {
         let post = self.post(deployment, request)?;
-        let response = self.client.post_stream(post).await.map_err(http_failure)?;
+        let upstream_request = self
+            .client
+            .json_request(post, "text/event-stream")
+            .map_err(http_failure)?;
+        let response = self
+            .client
+            .execute(upstream_request)
+            .await
+            .map_err(timed_out)
+            .map_err(http_failure)?;
         if !response.status().is_success() {
             let upstream = StreamResponse::from(response)
                 .buffered(RESPONSE_LIMIT)

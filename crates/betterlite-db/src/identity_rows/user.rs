@@ -1,6 +1,4 @@
-use super::{
-    OptionalPayload, Payload, PydanticBool, empty_vec_or_null, integer_option, null_decimal,
-};
+use super::{OptionalPayload, Payload, PydanticBool, integer_option, null_decimal};
 use crate::budget_permission_rows::{
     JsonData, LiteLLMObjectPermissionTable, OrganizationMembership, Timestamp,
 };
@@ -27,7 +25,10 @@ pub struct LiteLLMUserTable {
     pub password_reset_required: Option<PydanticBool>,
     #[serde(default)]
     pub last_breach_check_at: Option<Timestamp>,
-    #[serde(default, deserialize_with = "empty_vec_or_null")]
+    #[serde(
+        default,
+        deserialize_with = "serde_with::As::<serde_with::DefaultOnNull>::deserialize"
+    )]
     pub teams: Vec<String>,
     #[serde(default)]
     pub user_role: Option<String>,
@@ -41,7 +42,10 @@ pub struct LiteLLMUserTable {
     pub spend: Decimal,
     #[serde(default)]
     pub user_email: Option<String>,
-    #[serde(default, deserialize_with = "empty_vec_or_null")]
+    #[serde(
+        default,
+        deserialize_with = "serde_with::As::<serde_with::DefaultOnNull>::deserialize"
+    )]
     pub models: Vec<JsonData>,
     #[serde(default)]
     pub metadata: Option<Payload>,

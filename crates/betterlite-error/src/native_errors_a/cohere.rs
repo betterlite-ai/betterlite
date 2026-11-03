@@ -24,12 +24,6 @@ enum Outcome {
     Unclassified,
 }
 
-// the first matching clause wins, mirroring an elif chain
-fn first_match(clauses: &[(bool, Family, &'static str)]) -> Option<(Family, &'static str)> {
-    let hit = clauses.iter().find(|(matched, _, _)| *matched);
-    hit.map(|(_, family, reason)| (*family, *reason))
-}
-
 // the four elif branches checked before status_code is ever consulted
 fn classify_by_text(error_str: &str) -> Option<(Family, &'static str)> {
     let clauses = [
@@ -54,7 +48,10 @@ fn classify_by_text(error_str: &str) -> Option<(Family, &'static str)> {
             "the provider reported an internal server error",
         ),
     ];
-    first_match(&clauses)
+    clauses
+        .iter()
+        .find(|(matched, _, _)| *matched)
+        .map(|(_, family, reason)| (*family, *reason))
 }
 
 fn classify(facts: &ProviderErrorFacts, error_str: &str, exception_type: &str) -> Outcome {
@@ -93,9 +90,13 @@ fn classify(facts: &ProviderErrorFacts, error_str: &str, exception_type: &str) -
             "the provider reported an internal server error",
         ),
     ];
-    first_match(&tail_clauses).map_or(Outcome::Unclassified, |(family, reason)| {
-        Outcome::Classified(family, reason)
-    })
+    tail_clauses
+        .iter()
+        .find(|(matched, _, _)| *matched)
+        .map(|(_, family, reason)| (*family, *reason))
+        .map_or(Outcome::Unclassified, |(family, reason)| {
+            Outcome::Classified(family, reason)
+        })
 }
 
 fn build(family: Family, context: ErrorContext, status_code: Option<u16>) -> ErrorClass {

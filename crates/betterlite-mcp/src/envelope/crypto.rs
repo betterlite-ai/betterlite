@@ -3,9 +3,8 @@ use base64::{
     Engine as _,
     engine::general_purpose::{URL_SAFE, URL_SAFE_NO_PAD},
 };
-use betterlite_secrets::error::SecretError;
+use betterlite_secrets::secret_codec::Algorithm;
 use betterlite_secrets::secret_codec::sealing;
-use betterlite_secrets::secret_codec::{Algorithm, NonceSource};
 use chrono::{DateTime, Utc};
 use secrecy::{ExposeSecret as _, SecretString};
 
@@ -89,18 +88,6 @@ fn verify_jwt(compact: &str, key: &SecretString) -> Result<Claims, EnvelopeOpenE
         .decode(payload_segment)
         .map_err(|_error| EnvelopeOpenError::MalformedPayload)?;
     serde_json::from_slice(&payload).map_err(|_error| EnvelopeOpenError::MalformedPayload)
-}
-
-pub(crate) fn encrypt_grant<N>(
-    plaintext: &str,
-    key: &SecretString,
-    nonces: &N,
-) -> Result<String, SecretError>
-where
-    N: NonceSource,
-{
-    let sealed = sealing::seal_legacy(&SecretString::from(plaintext), key, nonces)?;
-    Ok(URL_SAFE.encode(sealed))
 }
 
 pub(crate) fn decrypt_text(

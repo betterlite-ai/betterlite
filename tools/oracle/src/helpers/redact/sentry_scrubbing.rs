@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
-use betterlite_redact::sentry::pattern::scrub as scrub_text;
-use betterlite_redact::sentry::scrub::{EventValue, scrub_event};
-use betterlite_redact::sentry::settings::{build_sentry_init_options, send_default_pii_from_env};
+use betterlite_redact::sentry::pattern::{self, scrub as scrub_text};
+use betterlite_redact::sentry::scrub::{EventValue, walk};
+use betterlite_redact::sentry::settings::{SEND_DEFAULT_PII_ENV, build_sentry_init_options};
 
 const DEFAULT_CUSTOM_KEY_MINIMUM: usize = 16;
 const DEFAULT_GENERATED_KEY_BYTES: usize = 16;
@@ -53,9 +53,10 @@ impl crate::helpers::Helper for Op {
                 event_json,
                 send_default_pii,
             } => decode_and_scrub_event(event, event_json.as_ref(), *send_default_pii)?,
-            Input::SendDefaultPiiFromEnv { env } => {
-                serde_json::Value::Bool(send_default_pii_from_env(env))
-            }
+            Input::SendDefaultPiiFromEnv { env } => serde_json::Value::Bool(
+                env.get(SEND_DEFAULT_PII_ENV)
+                    .is_some_and(|value| value.trim().eq_ignore_ascii_case("true")),
+            ),
             Input::BuildSentryInitOptions { env } => {
                 let options = build_sentry_init_options(env)
                     .map_err(|error| as_helper_error("SettingsError", error.to_string()))?;
@@ -111,12 +112,12 @@ fn decode_and_scrub_event(
     send_default_pii: bool,
 ) -> Result<serde_json::Value, Box<crate::helpers::HelperError>> {
     let typed = decode_event(event, event_json)?;
-    let scrubbed = scrub_event(
-        &typed,
+    let scrubbed = pattern::build(
         send_default_pii,
         DEFAULT_CUSTOM_KEY_MINIMUM,
         DEFAULT_GENERATED_KEY_BYTES,
     )
+    .map(|patterns| walk(&typed, &patterns, &[]))
     .map_err(|error| as_helper_error("PatternError", error.to_string()))?;
     serde_json::to_value(scrubbed)
         .map_err(|error| as_helper_error("InvalidEvent", error.to_string()))

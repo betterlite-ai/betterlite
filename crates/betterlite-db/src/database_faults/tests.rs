@@ -24,6 +24,36 @@ fn connection_allowlist() {
     assert!(is_database_connection_error(ErrorType::Deadline));
     assert!(!is_database_connection_error(ErrorType::Prisma));
 }
+
+#[rstest::rstest]
+#[case::unrelated_prisma(ErrorType::Prisma, "permission denied", None, (false, false))]
+#[case::deadlock_code(ErrorType::Prisma, "conflict", Some("P2034"), (true, false))]
+#[case::deadlock_message(ErrorType::Data, "DEADLOCK DETECTED", None, (true, false))]
+#[case::read_only_sqlstate(
+    ErrorType::Data,
+    "PostgresError { code: \"25006\" }",
+    None,
+    (false, true)
+)]
+#[case::read_only_message(ErrorType::Prisma, "READ-ONLY TRANSACTION", None, (false, true))]
+#[case::non_prisma(
+    ErrorType::Other,
+    "deadlock detected; read-only transaction",
+    Some("P2034"),
+    (false, false)
+)]
+fn transaction_faults_require_matching_prisma_errors(
+    #[case] kind: ErrorType,
+    #[case] message: &str,
+    #[case] code: Option<&str>,
+    #[case] expected: (bool, bool),
+) {
+    let mut value = error(kind);
+    value.message = message.to_owned();
+    value.code = code.map(str::to_owned);
+    assert_eq!(is_deadlock_error(&value), expected.0);
+    assert_eq!(is_read_only_transaction_error(&value), expected.1);
+}
 #[test]
 fn infrastructure_data_exclusions() {
     assert!(!is_infrastructure_error(ErrorType::UniqueViolation));

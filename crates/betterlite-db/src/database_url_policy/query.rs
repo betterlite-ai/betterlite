@@ -24,7 +24,7 @@ impl QueryValue {
     }
 }
 
-const IDLE_LIFETIME_DEFAULT: i64 = 60;
+pub const IDLE_LIFETIME_DEFAULT: i64 = 60;
 
 pub(super) const CONNECTION_PARAM_KEYS: [&str; 6] = [
     "connection_limit",
@@ -36,12 +36,6 @@ pub(super) const CONNECTION_PARAM_KEYS: [&str; 6] = [
 ];
 
 const PRISMA_TLS_PARAM_KEYS: [&str; 3] = ["sslmode", "sslcert", "sslaccept"];
-
-#[must_use]
-pub fn idle_lifetime_params(configured: Option<QueryValue>) -> Vec<(String, QueryValue)> {
-    let value = configured.unwrap_or(QueryValue::Integer(IDLE_LIFETIME_DEFAULT));
-    vec![("max_idle_connection_lifetime".to_owned(), value)]
-}
 
 // Must return the exact bytes the operator configured: re-serializing could reorder duplicate keys or change percent-escape case.
 pub fn add_missing_query_params(

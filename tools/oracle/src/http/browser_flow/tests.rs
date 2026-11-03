@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use crate::case::browser_flow::form::{FormCaptureError, parse_form_projection};
+
 use std::collections::{BTreeMap, VecDeque};
 use std::io::Error;
 use std::net::{SocketAddr, TcpListener};
@@ -26,7 +28,7 @@ use tokio_postgres::NoTls;
 use super::{CapturedValue, run_case_steps};
 use crate::OracleError;
 use crate::case::browser_flow::{Capture, CaptureSource, Step};
-use crate::case::{BodyKind, Case, Compare, Request, decode_html_form_capture};
+use crate::case::{BodyKind, Case, Compare, Request};
 use crate::cli::Options;
 use crate::http::client;
 use crate::paths::unique_id;
@@ -42,7 +44,11 @@ fn replays_the_browser_form_corpus() {
         .map(|entry| {
             let bytes = fs::read(entry.expect("corpus entry is readable").path())
                 .expect("corpus file is readable");
-            drop(decode_html_form_capture(&bytes));
+            drop(
+                str::from_utf8(&bytes)
+                    .map_err(FormCaptureError::Utf8)
+                    .and_then(parse_form_projection),
+            );
         })
         .count();
     assert!(seen > 0, "browser_form corpus must not be empty");
