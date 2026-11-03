@@ -1,144 +1,154 @@
 use serde::Serialize;
+use serde_json::Value;
 use serde_json::value::RawValue;
 
-use crate::cisco_conversation::Fields;
 use crate::cisco_conversation::json::Json;
-use crate::cisco_mcp::blocking::StructuredMirror;
-use crate::cisco_mcp::normalize::{is_pair_list, pairs_to_fields};
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(untagged)]
-pub enum ContentItemUpdate {
-    TextReplaced {
-        #[serde(flatten)]
-        fields: Fields,
-        text: String,
-    },
-    Unchanged(Box<RawValue>),
-}
-
-#[derive(Debug, Clone)]
 pub struct TextUpdate {
-    pub content: Option<Vec<ContentItemUpdate>>,
-    pub structured_content: Option<StructuredMirror>,
+    pub response: Value,
     pub replaced: bool,
 }
 
 #[must_use]
 pub fn set_tool_response_text(response: &Json, text: &str) -> TextUpdate {
-    let target = unwrap_wrapper(response);
-    let content = coerce_to_content_list(&target).map(|items| replace_text_items(&items, text));
-    let content_replaced = content.as_ref().is_some_and(|items| {
-        items
-            .iter()
-            .any(|item| matches!(item, ContentItemUpdate::TextReplaced { .. }))
-    });
-    let (structured_content, structured_replaced) = update_structured_mirror(&target, text);
-    TextUpdate {
-        content,
-        structured_content,
-        replaced: content_replaced || structured_replaced,
-    }
+    let value = serde_json::from_str(response_json(response).as_str()).unwrap_or(Value::Null);
+    let (response, replaced) = rewrite_value(value, text);
+    TextUpdate { response, replaced }
 }
 
-fn unwrap_wrapper(response: &Json) -> Json {
-    let mut current = response.clone();
-    loop {
-        let Json::Object(fields) = &current else {
-            return current;
-        };
-        match fields.get("mcp_tool_call_response") {
-            Some(raw) if !matches!(Json::parse(raw.get()), Json::Null) => {
-                current = Json::parse(raw.get());
-            }
-            _ => return current,
-        }
-    }
-}
-
-#[must_use]
-pub fn coerce_to_content_list(response: &Json) -> Option<Vec<Box<RawValue>>> {
+fn response_json(response: &Json) -> String {
     match response {
-        Json::Object(fields) => {
-            match Json::parse(fields.get("content").map_or("null", |raw| raw.get())) {
-                Json::List(items) => Some(items),
-                Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => {
-                    None
-                }
-            }
-        }
-        Json::List(items) => {
-            if is_pair_list(items) {
-                let fields = pairs_to_fields(items);
-                match Json::parse(fields.get("content").map_or("null", |raw| raw.get())) {
-                    Json::List(inner) => Some(inner),
-                    Json::Null
-                    | Json::Bool(_)
-                    | Json::Number(_)
-                    | Json::Text(_)
-                    | Json::Object(_) => None,
-                }
-            } else {
-                Some(items.clone())
-            }
-        }
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => None,
+        Json::Null => "null".to_owned(),
+        Json::Bool(value) => value.to_string(),
+        Json::Number(value) => value.clone(),
+        Json::Text(value) => serde_json::to_string(value).unwrap_or_default(),
+        Json::List(items) => format!("[{}]", raw_items(items)),
+        Json::Object(fields) => serde_json::to_string(fields).unwrap_or_default(),
     }
 }
 
-#[must_use]
-pub fn replace_text_items(items: &[Box<RawValue>], text: &str) -> Vec<ContentItemUpdate> {
-    let mut updated = Vec::with_capacity(items.len());
-    for item in items {
-        updated.push(replace_text_item(item, text));
-    }
-    updated
+fn raw_items(items: &[Box<RawValue>]) -> String {
+    items
+        .iter()
+        .map(|item| item.get())
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
-fn replace_text_item(item: &RawValue, text: &str) -> ContentItemUpdate {
-    if let Json::Object(mut fields) = Json::parse(item.get())
-        && matches!(Json::parse(fields.get("type").map_or("null", |raw| raw.get())), Json::Text(kind) if kind == "text")
+fn rewrite_value(mut value: Value, text: &str) -> (Value, bool) {
+    if let Some(fields) = value.as_object_mut()
+        && let Some(inner) = fields.get_mut("mcp_tool_call_response")
+        && !inner.is_null()
     {
-        fields.shift_remove("text");
-        return ContentItemUpdate::TextReplaced {
-            fields,
-            text: text.to_owned(),
-        };
+        let (updated, replaced) = rewrite_value(inner.clone(), text);
+        *inner = updated;
+        return (value, replaced);
     }
-    ContentItemUpdate::Unchanged(item.to_owned())
+    if let Some(fields) = value.as_object_mut() {
+        let model = fields.get("content").is_some_and(Value::is_array);
+        let replaced = fields
+            .get_mut("content")
+            .and_then(Value::as_array_mut)
+            .map_or(false, |items| rewrite_items(items, text));
+        if model {
+            let key = if fields.contains_key("structured_content") {
+                "structured_content"
+            } else {
+                "structuredContent"
+            };
+            fields.insert(key.to_owned(), serde_json::json!({"result": text}));
+            return (value, true);
+        }
+        if let Some(target) = fields.get_mut("result").and_then(Value::as_object_mut) {
+            if target.contains_key("structured_content") {
+                target.insert(
+                    "structured_content".to_owned(),
+                    serde_json::json!({"result": text}),
+                );
+                return (value, true);
+            }
+            if target.contains_key("structuredContent") {
+                target.insert(
+                    "structuredContent".to_owned(),
+                    serde_json::json!({"result": text}),
+                );
+                return (value, true);
+            }
+        } else {
+            if fields.contains_key("structured_content") {
+                fields.insert(
+                    "structured_content".to_owned(),
+                    serde_json::json!({"result": text}),
+                );
+                return (value, true);
+            }
+            if fields.contains_key("structuredContent") {
+                fields.insert(
+                    "structuredContent".to_owned(),
+                    serde_json::json!({"result": text}),
+                );
+                return (value, true);
+            }
+        }
+        return (value, replaced);
+    }
+    if let Some(items) = value.as_array_mut() {
+        if pair_list(items) {
+            let mut content_replaced = false;
+            for pair in items.iter_mut() {
+                let Some(parts) = pair.as_array_mut() else {
+                    continue;
+                };
+                let Some(key) = parts.first().and_then(Value::as_str) else {
+                    continue;
+                };
+                if key == "content" {
+                    if let Some(content) = parts.get_mut(1).and_then(Value::as_array_mut) {
+                        content_replaced = rewrite_items(content, text);
+                    }
+                }
+            }
+            for pair in items.iter_mut() {
+                let Some(parts) = pair.as_array_mut() else {
+                    continue;
+                };
+                if parts
+                    .first()
+                    .and_then(Value::as_str)
+                    .is_some_and(|key| matches!(key, "structuredContent" | "structured_content"))
+                    && let Some(mirror) = parts.get_mut(1)
+                {
+                    *mirror = serde_json::json!({"result": text});
+                    return (value, true);
+                }
+            }
+            return (value, content_replaced);
+        }
+        return (value, rewrite_items(items, text));
+    }
+    (value, false)
 }
 
-fn update_structured_mirror(target: &Json, text: &str) -> (Option<StructuredMirror>, bool) {
-    let has_structured_key = match target {
-        Json::List(items) if is_pair_list(items) => {
-            let fields = pairs_to_fields(items);
-            fields.contains_key("structuredContent") || fields.contains_key("structured_content")
+fn pair_list(items: &[Value]) -> bool {
+    !items.is_empty()
+        && items.iter().all(|item| {
+            item.as_array()
+                .is_some_and(|pair| pair.len() == 2 && pair.first().is_some_and(Value::is_string))
+        })
+}
+
+fn rewrite_items(items: &mut [Value], text: &str) -> bool {
+    let mut replaced = false;
+    for item in items {
+        if let Some(fields) = item.as_object_mut()
+            && fields.get("type").and_then(Value::as_str) == Some("text")
+        {
+            fields.insert("text".to_owned(), Value::String(text.to_owned()));
+            replaced = true;
         }
-        Json::Object(fields) => {
-            let result_target =
-                match Json::parse(fields.get("result").map_or("null", |raw| raw.get())) {
-                    Json::Object(result_fields) => result_fields,
-                    Json::Null
-                    | Json::Bool(_)
-                    | Json::Number(_)
-                    | Json::Text(_)
-                    | Json::List(_) => fields.clone(),
-                };
-            result_target.contains_key("structured_content")
-                || result_target.contains_key("structuredContent")
-        }
-        Json::List(_) | Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => false,
-    };
-    if has_structured_key {
-        (
-            Some(StructuredMirror {
-                result: text.to_owned(),
-            }),
-            true,
-        )
-    } else {
-        (None, false)
     }
+    replaced
 }
 
 mod tests;

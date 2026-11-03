@@ -197,27 +197,7 @@ fn mcp_output(response: Option<&Value>, sanitized_text: Option<&str>) -> Value {
     let Some(update) = apply_redaction_mcp_output(Some(&parsed), sanitized_text) else {
         return json!({"applied": false, "response": present_response});
     };
-    json!({"applied": update.replaced, "response": rewrite_mcp_output(present_response, &update)})
-}
-
-fn rewrite_mcp_output(response: &Value, update: &redact::TextUpdate) -> Value {
-    let mut rewritten = response.clone();
-    if let Some(items) = &update.content
-        && let Value::Array(_) = rewritten
-    {
-        rewritten = to_value(items);
-    }
-    if let Some(mirror) = &update.structured_content
-        && let Value::Object(fields) = &mut rewritten
-    {
-        let key = if fields.contains_key("structured_content") {
-            "structured_content"
-        } else {
-            "structuredContent"
-        };
-        fields.insert(key.to_owned(), to_value(mirror));
-    }
-    rewritten
+    json!({"applied": update.replaced, "response": update.response})
 }
 
 fn choice_sub_field(response: &Fields, key: &str) -> Value {

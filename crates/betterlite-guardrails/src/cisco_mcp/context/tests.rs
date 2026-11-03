@@ -39,6 +39,21 @@ fn hydration_populates_name_aliases(#[case] input: &str) {
     assert_eq!(field_text(&data, "name").as_deref(), Some("search"));
 }
 
+#[rstest]
+#[case::empty_metadata_uses_litellm_metadata(
+    r#"{"metadata":{},"litellm_metadata":{"mcp_tool_call_metadata":{"name":"search"}}}"#,
+    Some("search")
+)]
+#[case::non_empty_metadata_hides_litellm_metadata(r#"{"metadata":{"user_api_key_alias":"team-a"},"litellm_metadata":{"mcp_tool_call_metadata":{"name":"search"}}}"#, None)]
+fn hydration_selects_one_nested_metadata_object(
+    #[case] input: &str,
+    #[case] expected: Option<&str>,
+) {
+    let mut data = fields_of(input);
+    hydrate_tool_context(&mut data);
+    assert_eq!(field_text(&data, "name").as_deref(), expected);
+}
+
 #[test]
 fn hydration_populates_arguments_and_server_name() {
     let mut data = fields_of(
@@ -47,7 +62,11 @@ fn hydration_populates_arguments_and_server_name() {
     hydrate_tool_context(&mut data);
     assert_eq!(
         data.get("mcp_arguments").map(|raw| raw.get()),
-        data.get("arguments").map(|raw| raw.get())
+        Some(r#"{"q":"x"}"#)
+    );
+    assert_eq!(
+        data.get("arguments").map(|raw| raw.get()),
+        Some(r#"{"q":"x"}"#)
     );
     assert_eq!(field_text(&data, "mcp_server_name").as_deref(), Some("srv"));
     assert_eq!(field_text(&data, "server_name").as_deref(), Some("srv"));
@@ -104,4 +123,23 @@ fn hydration_ignores_non_object_metadata() {
     let mut data = fields_of(r#"{"mcp_tool_call_metadata": "nope"}"#);
     hydrate_tool_context(&mut data);
     assert!(!data.contains_key("name"));
+}
+
+#[rstest]
+#[case::metadata_without_tool_metadata(r#"{"metadata":{"user_api_key_alias":"team-a"},"litellm_metadata":{"mcp_tool_call_metadata":{"name":"search"}}}"#)]
+#[case::non_object_tool_metadata(r#"{"mcp_tool_call_metadata":"search","metadata":{"mcp_tool_call_metadata":{"name":"search"}}}"#)]
+fn hydration_ignores_shadowed_metadata(#[case] input: &str) {
+    let mut data = fields_of(input);
+    hydrate_tool_context(&mut data);
+    for key in [
+        "mcp_tool_name",
+        "tool_name",
+        "name",
+        "mcp_arguments",
+        "arguments",
+        "mcp_server_name",
+        "server_name",
+    ] {
+        assert!(!data.contains_key(key), "unexpected hydrated field {key}");
+    }
 }
