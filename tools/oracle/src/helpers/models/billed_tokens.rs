@@ -23,10 +23,18 @@ impl crate::helpers::Helper for Op {
             })
             .transpose()?;
         let cost = custom_cost(
-            integer(field("prompt_tokens"))?,
-            integer(field("completion_tokens"))?,
-            integer(field("cached_tokens"))?,
-            integer(field("cache_creation_tokens"))?,
+            field("prompt_tokens")
+                .and_then(Value::as_i64)
+                .unwrap_or_default(),
+            field("completion_tokens")
+                .and_then(Value::as_i64)
+                .unwrap_or_default(),
+            field("cached_tokens")
+                .and_then(Value::as_i64)
+                .unwrap_or_default(),
+            field("cache_creation_tokens")
+                .and_then(Value::as_i64)
+                .unwrap_or_default(),
             token_rates,
             optional_decimal(field("custom_cost_per_second"))?,
             optional_decimal(field("response_time_ms"))?,
@@ -60,15 +68,6 @@ fn optional_decimal(value: Option<&Value>) -> Result<Option<Decimal>, Box<Helper
         .filter(|value| !value.is_null())
         .map(|value| decimal(Some(value)))
         .transpose()
-}
-
-fn integer(value: Option<&Value>) -> Result<i64, Box<HelperError>> {
-    match value {
-        Some(value) => value
-            .as_i64()
-            .ok_or_else(|| helper_error("InvalidInput", "expected an integer".to_owned())),
-        None => Ok(0),
-    }
 }
 
 fn helper_error(class: &str, message: String) -> Box<HelperError> {
