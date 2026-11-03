@@ -1,0 +1,17 @@
+{
+  "kind": "helper",
+  "name": "class-pipe-negative",
+  "call": {
+    "route_match": {
+      "function": "check_route_access",
+      "route": "/models/|",
+      "allowed_routes": [
+        "/models/[^a||b]"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

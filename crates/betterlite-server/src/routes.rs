@@ -3,6 +3,7 @@ pub(crate) mod embeddings;
 pub(crate) mod prompts;
 
 use crate::auth::authenticate;
+use crate::auth::route_match::stage;
 use crate::error_body::json_error;
 use crate::model_list::model_routes;
 use axum::Json;
@@ -43,7 +44,7 @@ pub(crate) fn router(
         master_key.clone(),
         authenticate,
     ));
-    Router::new()
+    let application = Router::new()
         .route("/health/liveliness", get(health_liveliness))
         .route("/health/liveness", get(health_liveliness))
         .route("/health/readiness", get(health_readiness))
@@ -60,7 +61,8 @@ pub(crate) fn router(
         .layer(middleware::from_fn_with_state(master_key, authenticate))
         .layer(timeout_layers)
         .merge(guarded_chat)
-        .merge(embeddings)
+        .merge(embeddings);
+    application.layer(middleware::from_fn(stage))
 }
 async fn health_liveliness(State(shutting_down): State<Arc<AtomicBool>>) -> Response {
     if shutting_down.load(Ordering::Acquire) {

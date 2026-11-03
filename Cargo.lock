@@ -881,6 +881,8 @@ dependencies = [
  "betterlite-db",
  "chrono",
  "hex",
+ "pcre2",
+ "regex-syntax",
  "rstest",
  "rust_decimal",
  "secrecy",
@@ -1674,6 +1676,7 @@ dependencies = [
  "hyper-util",
  "indexmap 2.14.2",
  "multipart-rs",
+ "percent-encoding",
  "rand 0.10.3",
  "regex",
  "rquickjs",
@@ -4357,6 +4360,28 @@ checksum = "f8ed6a7761f76e3b9f92dfb0a60a6a6477c61024b775147ff0973a02653abaf2"
 dependencies = [
  "digest 0.10.7",
  "hmac 0.12.1",
+]
+
+[[package]]
+name = "pcre2"
+version = "0.2.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9e970b0fcce0c7ee6ef662744ff711f21ccd6f11b7cf03cd187a80e89797fc67"
+dependencies = [
+ "libc",
+ "log",
+ "pcre2-sys",
+]
+
+[[package]]
+name = "pcre2-sys"
+version = "0.2.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "18b9073c1a2549bd409bf4a32c94d903bb1a09bf845bc306ae148897fa0760a4"
+dependencies = [
+ "cc",
+ "libc",
+ "pkg-config",
 ]
 
 [[package]]

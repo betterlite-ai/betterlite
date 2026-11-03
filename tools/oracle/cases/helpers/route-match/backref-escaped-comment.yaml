@@ -1,0 +1,15 @@
+{
+  "kind": "helper",
+  "name": "backref-escaped-comment",
+  "call": {
+    "route_match": {
+      "function": "route_matches_pattern",
+      "route": "/kK",
+      "pattern": "/(?i:(k)\\1)(?# ignored \\) comment)"
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

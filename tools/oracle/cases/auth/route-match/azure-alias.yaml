@@ -1,0 +1,19 @@
+name: route-match-azure-alias
+config: |
+  general_settings:
+    master_key: oracle-master
+env: {}
+request:
+  method: GET
+  path: /openai/deployments/model/version/chat/completions
+  headers:
+    Authorization: Bearer rejected-master
+  body: null
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore:
+    - pointer: /error/message
+      why: betterlite and LiteLLM use different no database authentication messages

@@ -1,0 +1,17 @@
+{
+  "kind": "helper",
+  "name": "adapter-ascii-space",
+  "call": {
+    "route_match": {
+      "function": "check_route_access",
+      "route": "/\u001c",
+      "allowed_routes": [
+        "/(?a:\\s)"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

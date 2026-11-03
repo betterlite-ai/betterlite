@@ -1,0 +1,10 @@
+kind: helper
+name: classifier-and-method-matrix
+call:
+  route_match:
+    function: is_mcp_discovery_route
+    route: /v1/mcp/server/example
+    method: GET
+env: {}
+compare:
+  ignore: []

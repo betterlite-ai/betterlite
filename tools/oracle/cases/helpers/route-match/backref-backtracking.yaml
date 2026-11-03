@@ -1,0 +1,15 @@
+{
+  "kind": "helper",
+  "name": "backref-backtracking",
+  "call": {
+    "route_match": {
+      "function": "route_matches_pattern",
+      "route": "/abAB",
+      "pattern": "/(?i:(a|ab)\\1)"
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
