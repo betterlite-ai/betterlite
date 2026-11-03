@@ -12,8 +12,8 @@ use crate::dispatch::prompt::Brief;
 use crate::dispatch::review::{Bench, PARITY_RULES, review, reviewer_rungs};
 use crate::dispatch::vendor::mark;
 use crate::dispatch::{
-    Attempt, EarlierReview, Places, Round, Step, apply_step, climb_rung, find_runner, note_blocked,
-    overflow_rung, pick_rung, run_ladder,
+    Attempt, BLOCKED_NOTE, EarlierReview, Places, Round, Step, apply_step, climb_rung, find_runner,
+    note_blocked, overflow_rung, pick_rung, run_ladder,
 };
 use crate::error::GateError;
 use crate::git::git;
@@ -167,8 +167,7 @@ fn a_restarted_dispatch_goes_on_from_the_saved_rung() {
 
 #[test]
 fn two_blocked_reports_in_a_row_go_back_to_the_architect() {
-    let (mut agents, task) = fixtures();
-    agents.policy.max_blocked_reports = 2;
+    let (agents, task) = fixtures();
     let brief = Brief {
         task: &task,
         file: "tasks/B000-workspace.yaml",
@@ -189,51 +188,51 @@ fn two_blocked_reports_in_a_row_go_back_to_the_architect() {
     assert!(
         error
             .to_string()
-            .contains("2 workers in a row reported blocked; last feedback: scope again")
+            .contains("2 blocked reports in a row; last feedback: scope again")
     );
 }
 
 #[test]
-fn one_blocked_worker_returns_to_the_architect_before_the_next_rung() {
-    let (agents, task) = fixtures();
-    assert_eq!(agents.policy.max_blocked_reports, 1);
-    let brief = Brief {
-        task: &task,
-        file: "tasks/B000-workspace.yaml",
-        branch: "task/B000-workspace",
-        base: "abc123",
-    };
-    let path = Path::new("");
-    let places = Places {
-        worktree: path,
-        journal: path,
-        git_common_dir: path,
-        home: path,
-        writable: &[],
-    };
+fn a_blocked_worker_resumes_its_session_once_then_stops_on_its_rung() {
+    let (mut agents, task) = fixtures();
+    claude_answers(
+        &mut agents,
+        r#"{"task":"B000","status":"blocked","summary":"Nothing is built yet, the implementation is still missing.","blocker":"implementation is still missing","owned":[],"prior_art":[],"notes":[]}"#,
+    );
+    let folder = tempfile::tempdir().unwrap();
+    worktree(folder.path());
+    let first = &agents.roles.worker.ladder[0];
     let mut progress = progress();
-    progress.number = 1;
-    let error = apply_step(
+    let error = climb_rung(
         &agents,
-        &brief,
-        &places,
+        &brief(&task),
+        &places(folder.path()),
+        first,
         &mut progress,
-        Step::Climb(vec!["implementation is still missing".to_owned()]),
     )
     .unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("1 workers in a row reported blocked")
+    assert!(error.to_string().contains(
+        "2 blocked reports in a row; last feedback: The last run reported blocked: implementation is still missing"
+    ));
+    let resumed = fs::read_to_string(folder.path().join("resumed")).unwrap();
+    assert_eq!(resumed, "s1\n");
+    let prompts = fs::read_to_string(folder.path().join("prompts")).unwrap();
+    assert!(prompts.contains(BLOCKED_NOTE), "{prompts}");
+    assert_eq!(
+        (
+            progress.number,
+            progress.used,
+            progress.rung,
+            progress.rung_used
+        ),
+        (2, 1, 0, 1)
     );
-    assert_eq!(progress.rung, 0);
-    assert_eq!(progress.blocked_reports, 1);
+    assert_eq!(progress.next, NextRun::Fresh);
 }
 
 #[test]
 fn a_blocked_report_after_another_outcome_starts_the_count_over() {
-    let (mut agents, task) = fixtures();
-    agents.policy.max_blocked_reports = 2;
+    let (agents, task) = fixtures();
     let brief = Brief {
         task: &task,
         file: "tasks/B000-workspace.yaml",
@@ -843,8 +842,8 @@ fn a_granted_start_runs_on_the_last_rung_once_the_attempts_ran_out() {
     );
 }
 
-fn claude_answers(agents: &mut Agents) {
-    let answer = r#"printf '{"structured_output":{},"session_id":"s1"}'"#;
+fn claude_answers(agents: &mut Agents, report: &str) {
+    let answer = format!(r#"printf '{{"structured_output":{report},"session_id":"s1"}}'"#);
     for runner in &mut agents.runners {
         "sh".clone_into(&mut runner.program);
         runner.args = vec!["-c".to_owned(), format!("cat > /dev/null; {answer}")];
@@ -859,7 +858,7 @@ fn claude_answers(agents: &mut Agents) {
 #[test]
 fn fix_turns_go_on_in_the_session_of_the_run_before_them() {
     let (mut agents, task) = fixtures();
-    claude_answers(&mut agents);
+    claude_answers(&mut agents, "{}");
     let folder = tempfile::tempdir().unwrap();
     worktree(folder.path());
     let first = &agents.roles.worker.ladder[0];
@@ -892,7 +891,7 @@ fn fix_turns_go_on_in_the_session_of_the_run_before_them() {
 #[test]
 fn a_session_from_another_model_starts_a_new_one() {
     let (mut agents, task) = fixtures();
-    claude_answers(&mut agents);
+    claude_answers(&mut agents, "{}");
     let folder = tempfile::tempdir().unwrap();
     worktree(folder.path());
     let first = &agents.roles.worker.ladder[0];
