@@ -23,6 +23,7 @@ futures-util = { version = "0.3.34", default-features = false, features = ["asyn
 hyper-util = { workspace = true, features = ["server-auto", "tokio", "service"] }
 indexmap = { version = "2.14.2", features = ["serde"] }
 multipart-rs = "0.2.3"
+percent-encoding.workspace = true
 rand = { version = "0.10.3", default-features = false, features = ["std_rng"] }
 regex.workspace = true
 rust_decimal.workspace = true

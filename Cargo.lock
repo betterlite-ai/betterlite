@@ -880,6 +880,7 @@ version = "0.1.0"
 dependencies = [
  "betterlite-db",
  "chrono",
+ "fancy-regex",
  "hex",
  "regex",
  "rstest",
@@ -1660,6 +1661,7 @@ dependencies = [
  "hyper-util",
  "indexmap 2.14.2",
  "multipart-rs",
+ "percent-encoding",
  "rand 0.10.3",
  "regex",
  "rquickjs",

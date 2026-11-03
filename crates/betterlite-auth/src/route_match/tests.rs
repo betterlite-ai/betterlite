@@ -4,16 +4,14 @@ use super::canonical::{
     RequestRouteSource, ScopeFields, get_request_route, is_assistants_api_request,
     is_generate_content_route,
 };
-use super::classifier::{
-    is_azure_openai_route, is_info_route, is_llm_api_route, is_management_route,
-    is_mcp_discovery_route,
-};
+use super::classifier::{is_azure_openai_route, is_llm_api_route, is_mcp_discovery_route};
 use super::groups::get_actual_routes;
 use super::method::{MethodAccess, MethodAccessError, get_request_method};
 use super::templates::{
     RouteValue, check_route_access, route_matches_allowed_route, route_matches_pattern,
     route_matches_wildcard_pattern,
 };
+use crate::auxiliary_routes;
 use crate::inference_routes::ANTHROPIC_ROUTES;
 use crate::management_routes;
 
@@ -114,6 +112,28 @@ fn azure_two_segments_and_engine() {
     assert!(is_azure_openai_route(&RouteValue::Text(
         "/engines/gpt-4/chat/completions"
     )));
+    assert!(is_azure_openai_route(&RouteValue::Text(
+        "/engines/gpt-4/chat/completions\n"
+    )));
+    assert!(!is_azure_openai_route(&RouteValue::Text(
+        "/engines/gpt-4/chat/completions\n\n"
+    )));
+}
+
+#[test]
+fn python_regex_matching_starts_at_zero_and_accepts_lookahead() {
+    assert!(!route_matches_pattern(
+        &RouteValue::Text("/prefix/bar"),
+        "/foo|/bar"
+    ));
+    assert!(route_matches_pattern(
+        &RouteValue::Text("/foo/anything"),
+        "/foo|/bar"
+    ));
+    assert!(route_matches_pattern(
+        &RouteValue::Text("/models/gpt-4"),
+        "/models/(?=gpt-)[^/]+"
+    ));
 }
 
 #[test]
@@ -131,10 +151,11 @@ fn mcp_get_one_segment_only() {
 
 #[test]
 fn info_exact_management_patterns() {
-    assert!(is_info_route("/health"));
-    assert!(!is_info_route("/health/"));
-    assert!(is_management_route(
-        "/v1/mcp/server/longer/path/with/slashes"
+    assert!(auxiliary_routes::INFO_ROUTES.contains(&"/health"));
+    assert!(!auxiliary_routes::INFO_ROUTES.contains(&"/health/"));
+    assert!(check_route_access(
+        "/v1/mcp/server/longer/path/with/slashes",
+        &management_routes::management_routes()
     ));
 }
 
