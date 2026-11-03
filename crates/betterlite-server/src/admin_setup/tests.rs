@@ -2,7 +2,7 @@
 
 use super::{ProxyAvailability, admin_ui_disabled, show_missing_vars_in_env};
 use axum::body::to_bytes;
-use axum::http::StatusCode;
+use axum::http::{StatusCode, header::CONTENT_TYPE};
 use axum::response::Response;
 use rstest::rstest;
 
@@ -11,13 +11,13 @@ const ADMIN_UI_DISABLED_FIXTURE: &str = include_str!("fixtures/litellm_admin_ui_
 
 async fn response_parts(response: Response) -> (StatusCode, String, String) {
     let status = response.status();
-    let content_type = response
+    let content_type_header = response
         .headers()
-        .get(axum::http::header::CONTENT_TYPE)
+        .get(CONTENT_TYPE)
         .expect("HTML response has content type")
         .to_str()
         .expect("content type is text");
-    let content_type = content_type.to_owned();
+    let content_type = content_type_header.to_owned();
     let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     (
         status,
