@@ -24,13 +24,18 @@ pub struct CategoryConfig {
     pub phrase_patterns: Vec<CompiledPhrasePattern>,
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum CategoryConfigError {
+    #[error("category '{category}' has unsupported default action '{action}'")]
+    InvalidAction { category: String, action: String },
+}
+
 impl CategoryConfig {
-    #[must_use]
-    pub fn from_data(data: CategoryFileData) -> Self {
+    pub fn from_data(data: CategoryFileData) -> Result<Self, CategoryConfigError> {
         let category_name = data.category_name.unwrap_or_else(|| "unknown".to_owned());
-        let default_action = parse_action(data.default_action.as_deref(), &category_name);
+        let default_action = parse_action(data.default_action.as_deref(), &category_name)?;
         let phrase_patterns = compile_patterns(data.phrase_patterns, &category_name);
-        Self {
+        Ok(Self {
             category_name,
             description: data.description.unwrap_or_default(),
             default_action,
@@ -53,22 +58,21 @@ impl CategoryConfig {
                 .map(|word| word.to_lowercase())
                 .collect(),
             phrase_patterns,
-        }
+        })
     }
 }
 
-fn parse_action(action: Option<&str>, category: &str) -> ContentFilterAction {
+fn parse_action(
+    action: Option<&str>,
+    category: &str,
+) -> Result<ContentFilterAction, CategoryConfigError> {
     match action.unwrap_or("BLOCK") {
-        "BLOCK" => ContentFilterAction::Block,
-        "MASK" => ContentFilterAction::Mask,
-        unknown => {
-            tracing::warn!(
-                category,
-                action = unknown,
-                "unknown category action; using BLOCK"
-            );
-            ContentFilterAction::Block
-        }
+        "BLOCK" => Ok(ContentFilterAction::Block),
+        "MASK" => Ok(ContentFilterAction::Mask),
+        unknown => Err(CategoryConfigError::InvalidAction {
+            category: category.to_owned(),
+            action: unknown.to_owned(),
+        }),
     }
 }
 

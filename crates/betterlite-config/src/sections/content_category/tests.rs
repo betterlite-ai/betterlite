@@ -35,7 +35,7 @@ pub(crate) fn category_config_lowercases_words_and_skips_invalid_regex() {
         additional_block_words: vec!["Word".to_owned()],
         phrase_patterns: vec!["[".to_owned(), "foo".to_owned()],
     };
-    let category = CategoryConfig::from_data(data);
+    let category = CategoryConfig::from_data(data).unwrap();
     assert_eq!(category.exceptions, ["bad"]);
     assert_eq!(category.identifier_words, ["child"]);
     assert_eq!(category.additional_block_words, ["word"]);
@@ -55,8 +55,30 @@ pub(crate) fn category_config_default_action_is_block() {
         inherit_from: None,
         additional_block_words: Vec::new(),
         phrase_patterns: Vec::new(),
-    });
+    })
+    .unwrap();
     assert_eq!(category.default_action, ContentFilterAction::Block);
+}
+
+#[test]
+pub(crate) fn category_config_rejects_invalid_action() {
+    let error = CategoryConfig::from_data(CategoryFileData {
+        category_name: Some("sample".to_owned()),
+        description: None,
+        default_action: Some("INVALID".to_owned()),
+        keywords: Vec::new(),
+        exceptions: Vec::new(),
+        identifier_words: Vec::new(),
+        always_block_keywords: Vec::new(),
+        inherit_from: None,
+        additional_block_words: Vec::new(),
+        phrase_patterns: Vec::new(),
+    })
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        super::model::CategoryConfigError::InvalidAction { .. }
+    ));
 }
 
 #[test]
@@ -107,7 +129,7 @@ pub(crate) fn conditional_inheritance_is_severity_filtered() {
         phrase_patterns: Vec::new(),
     };
     let conditional = super::loading::load_conditional_category(
-        &CategoryConfig::from_data(child_data),
+        &CategoryConfig::from_data(child_data).unwrap(),
         ContentFilterAction::Block,
         ContentFilterSeverity::Medium,
         &[temp.path().to_path_buf()],

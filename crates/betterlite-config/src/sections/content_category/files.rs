@@ -6,7 +6,7 @@ use std::{
 
 use crate::sections::content_filter_records::category_types::CategoryFileData;
 
-use super::model::CategoryConfig;
+use super::model::{CategoryConfig, CategoryConfigError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum CategoryFileError {
@@ -28,6 +28,12 @@ pub enum CategoryFileError {
         #[source]
         source: Box<serde_json::Error>,
     },
+    #[error("invalid category file '{path}': {source}")]
+    InvalidConfig {
+        path: String,
+        #[source]
+        source: CategoryConfigError,
+    },
 }
 
 pub fn read_category_yaml(path: &Path) -> Result<CategoryFileData, CategoryFileError> {
@@ -46,7 +52,11 @@ pub fn load_category_file(path: &Path) -> Result<CategoryConfig, CategoryFileErr
     {
         return load_json(path);
     }
-    read_category_yaml(path).map(CategoryConfig::from_data)
+    let data = read_category_yaml(path)?;
+    CategoryConfig::from_data(data).map_err(|source| CategoryFileError::InvalidConfig {
+        path: path.display().to_string(),
+        source,
+    })
 }
 
 fn load_json(path: &Path) -> Result<CategoryConfig, CategoryFileError> {
@@ -55,7 +65,7 @@ fn load_json(path: &Path) -> Result<CategoryConfig, CategoryFileError> {
         JsonEntries::Many(entries) => entries,
         JsonEntries::One(entry) => vec![entry],
     };
-    Ok(CategoryConfig::from_data(CategoryFileData {
+    CategoryConfig::from_data(CategoryFileData {
         category_name: Some(category_name(path)),
         description: Some("Detects harmful, toxic, or abusive language and content".to_owned()),
         default_action: Some("BLOCK".to_owned()),
@@ -66,7 +76,11 @@ fn load_json(path: &Path) -> Result<CategoryConfig, CategoryFileError> {
         inherit_from: None,
         additional_block_words: Vec::new(),
         phrase_patterns: Vec::new(),
-    }))
+    })
+    .map_err(|source| CategoryFileError::InvalidConfig {
+        path: path.display().to_string(),
+        source,
+    })
 }
 
 fn parse_json_entries(path: &Path) -> Result<JsonEntries, CategoryFileError> {
