@@ -65,7 +65,10 @@ class Logs(logging.Handler):
 def _request(row: dict[str, Json]) -> Json:
     logs = Logs()
     old_level = verbose_proxy_logger.level
-    verbose_proxy_logger.addHandler(logs)
+    old_handlers = verbose_proxy_logger.handlers
+    old_propagate = verbose_proxy_logger.propagate
+    verbose_proxy_logger.handlers = [logs]
+    verbose_proxy_logger.propagate = False
     verbose_proxy_logger.setLevel(logging.DEBUG)
     try:
         request = cast(Request, cast(object, RequestSource(row)))
@@ -73,7 +76,8 @@ def _request(row: dict[str, Json]) -> Json:
         template = get_request_route_template(request)
         return {"name": row["name"], "route": route, "template": template, "logs": logs.levels}
     finally:
-        verbose_proxy_logger.removeHandler(logs)
+        verbose_proxy_logger.handlers = old_handlers
+        verbose_proxy_logger.propagate = old_propagate
         verbose_proxy_logger.setLevel(old_level)
 
 
