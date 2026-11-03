@@ -15,11 +15,27 @@ pub struct AlephAlphaExceptionInput {
     pub message: Option<String>,
 }
 
-// a status present but unmatched, and a missing status_code attribute, both re-raise the original provider exception unmodified in LiteLLM; betterlite has no typed class for that, so both fall through as None
+// An unmatched status or missing status becomes the outer API connection error.
 #[must_use]
 pub fn map_aleph_alpha_exception(input: &AlephAlphaExceptionInput) -> Option<ErrorClass> {
-    let family = classify(input)?;
+    let family = classify(input).unwrap_or(Family::ApiConnection);
     let context = context(input);
+    if family == Family::ApiConnection {
+        let context = ErrorContext {
+            message: context.message,
+            model: Some(String::new()),
+            provider: Some(String::new()),
+            max_retries: context.max_retries,
+            num_retries: context.num_retries,
+            body_type: None,
+            body_param: None,
+            body_code: None,
+        };
+        return Some(ErrorClass::ApiConnection(Box::new(context)));
+    }
+    if family == Family::ApiConnection {
+        return Some(ErrorClass::ApiConnection(Box::new(context)));
+    }
     Some(build(family, context, input.status_code))
 }
 
@@ -48,6 +64,7 @@ enum Family {
     Authentication,
     RateLimit,
     ServiceUnavailable,
+    ApiConnection,
 }
 
 type TextPredicate = fn(&str) -> bool;
@@ -98,5 +115,6 @@ fn build(family: Family, context: ErrorContext, status_code: Option<u16>) -> Err
             headers: BTreeMap::new(),
         })),
         Family::ServiceUnavailable => ErrorClass::ServiceUnavailable(Box::new(context)),
+        Family::ApiConnection => ErrorClass::ApiConnection(Box::new(context)),
     }
 }
