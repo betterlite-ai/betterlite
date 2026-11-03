@@ -1,0 +1,22 @@
+kind: helper
+name: flex-tier-prices-audio-cache-and-tokens
+call:
+  modality_cost:
+    operation: prompt
+    service_tier: flex
+    cached_tokens: 4
+    cache_hit_audio_tokens: 4
+    prompt_tokens: 10
+    text_tokens: 10
+    audio_tokens: 6
+    model_info:
+      cache_read_input_audio_token_cost: "0.5"
+      cache_read_input_audio_token_cost_flex: "0.25"
+      input_cost_per_audio_token: "1"
+      input_cost_per_audio_token_flex: "0.5"
+    prompt_base_cost: "1"
+    cache_read_cost: "0.5"
+    cache_creation_cost: "2"
+    cache_creation_cost_above_1hr: "4"
+compare: {ignore: []}
+env: {}
