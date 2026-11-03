@@ -1,0 +1,6 @@
+responses_shapes:
+  operation: web_search_sources
+  tool_id: t
+  tool_input: {query: cats}
+  result: {content: []}
+  status: null
