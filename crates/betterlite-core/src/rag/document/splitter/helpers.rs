@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use super::{MAX_SPLIT_OUTPUT_BYTES, SplitError};
+use super::{SplitError, SplitOutput};
 
 pub(super) fn select_separator<'sep>(
     text: &str,
@@ -19,8 +19,7 @@ pub(super) fn select_separator<'sep>(
 }
 
 pub(super) fn push_joined(
-    chunks: &mut Vec<String>,
-    total_bytes: &mut usize,
+    output: &mut SplitOutput,
     current_chunk: &VecDeque<&str>,
     separator: &str,
 ) -> Result<(), SplitError> {
@@ -31,28 +30,8 @@ pub(super) fn push_joined(
         .join(separator);
     let trimmed = joined.trim_matches(is_strip_whitespace);
     if !trimmed.is_empty() {
-        push_chunk(chunks, total_bytes, trimmed.to_owned())?;
+        output.push(trimmed.to_owned())?;
     }
-    Ok(())
-}
-
-pub(super) fn push_chunk(
-    chunks: &mut Vec<String>,
-    total_bytes: &mut usize,
-    chunk: String,
-) -> Result<(), SplitError> {
-    let next = total_bytes
-        .checked_add(chunk.len())
-        .ok_or(SplitError::OutputTooLarge {
-            limit: MAX_SPLIT_OUTPUT_BYTES,
-        })?;
-    if next > MAX_SPLIT_OUTPUT_BYTES {
-        return Err(SplitError::OutputTooLarge {
-            limit: MAX_SPLIT_OUTPUT_BYTES,
-        });
-    }
-    *total_bytes = next;
-    chunks.push(chunk);
     Ok(())
 }
 
@@ -70,8 +49,7 @@ pub(super) fn char_slices(text: &str) -> Vec<&str> {
 pub(super) fn chunk_by_chars(
     text: &str,
     chunk_size: usize,
-    output: &mut Vec<String>,
-    total_bytes: &mut usize,
+    output: &mut SplitOutput,
 ) -> Result<(), SplitError> {
     let mut chunk = String::new();
     let mut chunk_chars = 0_usize;
@@ -79,13 +57,13 @@ pub(super) fn chunk_by_chars(
         chunk.push(character);
         chunk_chars = chunk_chars.saturating_add(1);
         if chunk_chars == chunk_size {
-            push_chunk(output, total_bytes, chunk)?;
+            output.push(chunk)?;
             chunk = String::new();
             chunk_chars = 0;
         }
     }
     if !chunk.is_empty() {
-        push_chunk(output, total_bytes, chunk)?;
+        output.push(chunk)?;
     }
     Ok(())
 }

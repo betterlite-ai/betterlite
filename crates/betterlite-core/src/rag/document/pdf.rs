@@ -1,6 +1,7 @@
+use std::ops::{Add as _, Neg as _, Sub as _};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use lopdf::content::Content;
+use lopdf::content::{Content, Operation};
 use lopdf::{Document, Encoding, LoadOptions, Object};
 
 const MAX_DECOMPRESSED_PDF_BYTES: usize = 64 * 1024 * 1024;
@@ -14,212 +15,250 @@ pub fn extract_text_from_pdf(file_content: &[u8]) -> Option<String> {
         let mut output = String::new();
         for page_id in document.get_pages().values().copied() {
             let page_text = extract_page_text(&document, page_id)?;
-            let separator = if output.is_empty() || page_text.is_empty() {
-                ""
-            } else {
-                "\n\n"
-            };
-            let needed = output
-                .len()
-                .checked_add(separator.len())?
-                .checked_add(page_text.len())?;
-            if needed > MAX_EXTRACTED_PDF_TEXT_BYTES {
-                return None;
-            }
-            output.push_str(separator);
-            output.push_str(&page_text);
+            append_page(&mut output, &page_text)?;
         }
         (!output.is_empty()).then_some(output)
     }))
     .unwrap_or_default()
 }
 
+fn append_page(output: &mut String, page_text: &str) -> Option<()> {
+    let separator = if output.is_empty() || page_text.is_empty() {
+        ""
+    } else {
+        "\n\n"
+    };
+    let needed = output
+        .len()
+        .checked_add(separator.len())?
+        .checked_add(page_text.len())?;
+    if needed > MAX_EXTRACTED_PDF_TEXT_BYTES {
+        return None;
+    }
+    output.push_str(separator);
+    output.push_str(page_text);
+    Some(())
+}
+
 fn extract_page_text(document: &Document, page_id: lopdf::ObjectId) -> Option<String> {
-    let fonts = document.get_page_fonts(page_id).ok()?;
-    let encodings: Vec<(Vec<u8>, Encoding<'_>)> = fonts
-        .into_iter()
-        .filter_map(|(name, font)| {
-            font.get_font_encoding_with_limit(document, MAX_DECOMPRESSED_PDF_BYTES)
-                .ok()
-                .map(|encoding| (name, encoding))
-        })
-        .collect();
+    let fonts = page_encodings(document, page_id)?;
     let data = document
         .get_page_content_with_limit(page_id, MAX_DECOMPRESSED_PDF_BYTES)
         .ok()?;
     let content = Content::decode(&data).ok()?;
-    let mut text = String::new();
-    let mut font: Option<&Encoding<'_>> = None;
-    let mut font_size = 0.0_f64;
-    let mut scale_y = 1.0_f64;
-    let mut leading = 0.0_f64;
-    let mut y = 0.0_f64;
-    let mut previous_y: Option<f64> = None;
-    let mut line_start_y = 0.0_f64;
-    let mut line_end_y = 0.0_f64;
-    for operation in content.operations {
-        match operation.operator.as_str() {
-            "Tf" => {
-                let name = operation.operands.first()?.as_name().ok()?;
-                font = encodings
-                    .iter()
-                    .find(|(candidate, _)| candidate.as_slice() == name)
-                    .map(|(_, encoding)| encoding);
-                font_size = operation.operands.get(1).and_then(number).unwrap_or(0.0);
-            }
-            "TL" => leading = operation.operands.first().and_then(number)?,
-            "Td" | "TD" => {
-                let tx = operation.operands.first().and_then(number)?;
-                let ty = operation.operands.get(1).and_then(number)?;
-                if operation.operator == "TD" {
-                    leading = -ty;
-                }
-                move_text(
-                    &mut text,
-                    &mut previous_y,
-                    &mut line_start_y,
-                    &mut line_end_y,
-                    y,
-                    y + ty,
-                    font_size * scale_y,
-                );
-                let _ = tx;
-                y += ty;
-            }
-            "Tm" => {
-                let matrix = operation
-                    .operands
-                    .iter()
-                    .filter_map(number)
-                    .collect::<Vec<_>>();
-                let new_x = *matrix.get(4)?;
-                let new_y = *matrix.get(5)?;
-                scale_y = matrix.get(3)?.abs();
-                move_text(
-                    &mut text,
-                    &mut previous_y,
-                    &mut line_start_y,
-                    &mut line_end_y,
-                    y,
-                    new_y,
-                    font_size * scale_y,
-                );
-                let _ = new_x;
-                y = new_y;
-            }
-            "T*" => {
-                let next_y = y - leading;
-                move_text(
-                    &mut text,
-                    &mut previous_y,
-                    &mut line_start_y,
-                    &mut line_end_y,
-                    y,
-                    next_y,
-                    font_size * scale_y,
-                );
-                y = next_y;
-            }
-            "Tj" => append_text(&mut text, font, operation.operands.first()?)?,
-            "TJ" => {
-                let values = operation.operands.first()?.as_array().ok()?;
-                for value in values {
-                    match value {
-                        Object::String(bytes, _) => append_bytes(&mut text, font?, &bytes)?,
-                        Object::Integer(offset) if *offset < -100 => text.push(' '),
-                        _ => {}
-                    }
-                }
-            }
-            "'" => {
-                let next_y = y - leading;
-                move_text(
-                    &mut text,
-                    &mut previous_y,
-                    &mut line_start_y,
-                    &mut line_end_y,
-                    y,
-                    next_y,
-                    font_size * scale_y,
-                );
-                y = next_y;
-                append_text(&mut text, font, operation.operands.first()?)?;
-            }
-            "\"" => {
-                let next_y = y - leading;
-                move_text(
-                    &mut text,
-                    &mut previous_y,
-                    &mut line_start_y,
-                    &mut line_end_y,
-                    y,
-                    next_y,
-                    font_size * scale_y,
-                );
-                y = next_y;
-                append_text(&mut text, font, operation.operands.get(2)?)?;
-            }
-            "ET" | "BT" => {}
-            _ => {}
-        }
-        if text.len() > MAX_EXTRACTED_PDF_TEXT_BYTES {
+    let mut extractor = PageText::new(fonts);
+    for operation in &content.operations {
+        extractor.apply(operation)?;
+        if extractor.text.len() > MAX_EXTRACTED_PDF_TEXT_BYTES {
             return None;
         }
     }
-    Some(text)
+    Some(extractor.text)
+}
+
+fn page_encodings(
+    document: &Document,
+    page_id: lopdf::ObjectId,
+) -> Option<Vec<(Vec<u8>, Encoding<'_>)>> {
+    let fonts = document.get_page_fonts(page_id).ok()?;
+    Some(
+        fonts
+            .into_iter()
+            .filter_map(|(name, font)| {
+                font.get_font_encoding_with_limit(document, MAX_DECOMPRESSED_PDF_BYTES)
+                    .ok()
+                    .map(|encoding| (name, encoding))
+            })
+            .collect(),
+    )
+}
+
+struct PageText<'doc> {
+    text: String,
+    encodings: Vec<(Vec<u8>, Encoding<'doc>)>,
+    active_font: Option<usize>,
+    font_size: f64,
+    scale_y: f64,
+    leading: f64,
+    text_y: f64,
+    previous_y: Option<f64>,
+    line_start_y: f64,
+    line_end_y: f64,
+}
+
+impl<'doc> PageText<'doc> {
+    const fn new(encodings: Vec<(Vec<u8>, Encoding<'doc>)>) -> Self {
+        Self {
+            text: String::new(),
+            encodings,
+            active_font: None,
+            font_size: 0.0_f64,
+            scale_y: 1.0_f64,
+            leading: 0.0_f64,
+            text_y: 0.0_f64,
+            previous_y: None,
+            line_start_y: 0.0_f64,
+            line_end_y: 0.0_f64,
+        }
+    }
+
+    fn apply(&mut self, operation: &Operation) -> Option<()> {
+        match operation.operator.as_str() {
+            "Tf" => self.select_font(&operation.operands),
+            "TL" => self.set_leading(&operation.operands),
+            "Td" => self.move_by(&operation.operands, false),
+            "TD" => self.move_by(&operation.operands, true),
+            "Tm" => self.set_text_matrix(&operation.operands),
+            "T*" => {
+                self.move_to(self.text_y.sub(self.leading));
+                Some(())
+            }
+            "Tj" => self.show_text(operation.operands.first()?),
+            "TJ" => self.show_text_array(operation.operands.first()?),
+            "'" => self.show_next_line_text(operation.operands.first()?),
+            "\"" => self.show_next_line_text(operation.operands.get(2)?),
+            _ => Some(()),
+        }
+    }
+
+    fn select_font(&mut self, operands: &[Object]) -> Option<()> {
+        let name = operands.first()?.as_name().ok()?;
+        self.active_font = self
+            .encodings
+            .iter()
+            .position(|(candidate, _)| candidate.as_slice() == name);
+        self.font_size = operands.get(1).and_then(number).unwrap_or(0.0_f64);
+        Some(())
+    }
+
+    fn set_leading(&mut self, operands: &[Object]) -> Option<()> {
+        self.leading = number(operands.first()?)?;
+        Some(())
+    }
+
+    fn move_by(&mut self, operands: &[Object], set_leading: bool) -> Option<()> {
+        number(operands.first()?)?;
+        let vertical_delta = number(operands.get(1)?)?;
+        if set_leading {
+            self.leading = vertical_delta.neg();
+        }
+        self.move_to(self.text_y.add(vertical_delta));
+        Some(())
+    }
+
+    fn set_text_matrix(&mut self, operands: &[Object]) -> Option<()> {
+        number(operands.first()?)?;
+        number(operands.get(1)?)?;
+        number(operands.get(2)?)?;
+        self.scale_y = number(operands.get(3)?)?.abs();
+        number(operands.get(4)?)?;
+        let next_y = number(operands.get(5)?)?;
+        self.move_to(next_y);
+        Some(())
+    }
+
+    fn show_next_line_text(&mut self, object: &Object) -> Option<()> {
+        self.move_to(self.text_y.sub(self.leading));
+        self.show_text(object)
+    }
+
+    fn show_text(&mut self, object: &Object) -> Option<()> {
+        let bytes = match object {
+            Object::String(bytes, _) => bytes,
+            Object::Null
+            | Object::Boolean(_)
+            | Object::Integer(_)
+            | Object::Real(_)
+            | Object::Name(_)
+            | Object::Array(_)
+            | Object::Dictionary(_)
+            | Object::Stream(_)
+            | Object::Reference(_) => return None,
+        };
+        let encoding_index = self.active_font?;
+        let encoding = &self.encodings.get(encoding_index)?.1;
+        let decoded = Document::decode_text(encoding, bytes).ok()?;
+        self.text.push_str(&decoded);
+        Some(())
+    }
+
+    fn show_text_array(&mut self, object: &Object) -> Option<()> {
+        let values = object.as_array().ok()?;
+        for value in values {
+            self.show_text_array_value(value)?;
+        }
+        Some(())
+    }
+
+    fn show_text_array_value(&mut self, value: &Object) -> Option<()> {
+        match value {
+            Object::String(_, _) => self.show_text(value),
+            Object::Integer(offset) if *offset < -100 => {
+                self.text.push(' ');
+                Some(())
+            }
+            Object::Integer(_) | Object::Real(_) => Some(()),
+            Object::Boolean(_)
+            | Object::Name(_)
+            | Object::Array(_)
+            | Object::Dictionary(_)
+            | Object::Stream(_)
+            | Object::Null
+            | Object::Reference(_) => None,
+        }
+    }
+
+    fn move_to(&mut self, next_y: f64) {
+        let Some(previous_y) = self.previous_y else {
+            self.previous_y = Some(next_y);
+            self.line_start_y = next_y;
+            self.line_end_y = next_y;
+            self.text_y = next_y;
+            return;
+        };
+        self.update_line_span(next_y);
+        self.previous_y = Some(previous_y.add(next_y.sub(self.text_y)));
+        self.text_y = next_y;
+    }
+
+    fn update_line_span(&mut self, next_y: f64) {
+        let low = self.line_start_y.min(self.line_end_y);
+        let high = self.line_start_y.max(self.line_end_y);
+        let distance = vertical_distance(next_y, low, high);
+        let scaled_font_size = self.font_size.abs().mul_add(self.scale_y.abs(), 0.0_f64);
+        let threshold = 0.8_f64.mul_add(scaled_font_size, 0.0_f64);
+        if distance > threshold {
+            self.text.push('\n');
+            self.line_start_y = next_y;
+            self.line_end_y = next_y;
+        } else {
+            self.line_start_y = self.line_start_y.min(next_y);
+            self.line_end_y = self.line_end_y.max(next_y);
+        }
+    }
+}
+
+fn vertical_distance(position: f64, low: f64, high: f64) -> f64 {
+    if position > high {
+        position.sub(high)
+    } else if position < low {
+        low.sub(position)
+    } else {
+        0.0_f64
+    }
 }
 
 fn number(object: &Object) -> Option<f64> {
     match object {
-        Object::Integer(value) => value.to_string().parse().ok(),
+        Object::Integer(value) => value.to_string().parse::<f64>().ok(),
         Object::Real(value) => Some(f64::from(*value)),
-        _ => None,
+        Object::Boolean(_)
+        | Object::Name(_)
+        | Object::String(_, _)
+        | Object::Array(_)
+        | Object::Dictionary(_)
+        | Object::Stream(_)
+        | Object::Null
+        | Object::Reference(_) => None,
     }
-}
-
-fn append_text(text: &mut String, encoding: Option<&Encoding<'_>>, object: &Object) -> Option<()> {
-    match object {
-        Object::String(bytes, _) => append_bytes(text, encoding?, bytes),
-        _ => None,
-    }
-}
-
-fn append_bytes(text: &mut String, encoding: &Encoding<'_>, bytes: &[u8]) -> Option<()> {
-    text.push_str(&Document::decode_text(encoding, bytes).ok()?);
-    Some(())
-}
-
-fn move_text(
-    text: &mut String,
-    previous_y: &mut Option<f64>,
-    line_start_y: &mut f64,
-    line_end_y: &mut f64,
-    old_y: f64,
-    new_y: f64,
-    font_size: f64,
-) {
-    let Some(previous) = *previous_y else {
-        *previous_y = Some(new_y);
-        *line_start_y = new_y;
-        *line_end_y = new_y;
-        return;
-    };
-    let low = line_start_y.min(*line_end_y);
-    let high = line_start_y.max(*line_end_y);
-    let distance = if new_y > high {
-        new_y - high
-    } else if new_y < low {
-        low - new_y
-    } else {
-        0.0
-    };
-    if distance > 0.8 * font_size.abs() {
-        text.push('\n');
-        *line_start_y = new_y;
-        *line_end_y = new_y;
-    } else {
-        *line_start_y = line_start_y.min(new_y);
-        *line_end_y = line_end_y.max(new_y);
-    }
-    *previous_y = Some(previous + (new_y - old_y));
 }

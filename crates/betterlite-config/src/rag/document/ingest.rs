@@ -1,8 +1,21 @@
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
+use serde_json::value::RawValue;
 use thiserror::Error;
 
-use super::RAGChunkingStrategy;
+use super::chunking::RAGChunkingStrategy;
+
+#[expect(
+    clippy::disallowed_types,
+    reason = "Vertex forwards provider-owned vector database config unchanged"
+)]
+pub type VertexVectorDbConfig = serde_json::Value;
+
+#[expect(
+    clippy::disallowed_types,
+    reason = "Gemini forwards provider-owned metadata unchanged"
+)]
+pub type GeminiCustomMetadata = serde_json::Value;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -23,7 +36,7 @@ pub struct RAGIngestEmbeddingOptions {
 pub struct OpenAIVectorStoreOptions {
     #[serde(default)]
     #[serde(rename = "custom_llm_provider")]
-    _custom_llm_provider: Option<String>,
+    pub custom_llm_provider: Option<String>,
     #[serde(default)]
     pub vector_store_id: Option<String>,
     #[serde(default)]
@@ -41,7 +54,7 @@ pub struct OpenAIVectorStoreOptions {
 pub struct BedrockVectorStoreOptions {
     #[serde(default)]
     #[serde(rename = "custom_llm_provider")]
-    _custom_llm_provider: Option<String>,
+    pub custom_llm_provider: Option<String>,
     #[serde(default)]
     pub vector_store_id: Option<String>,
     #[serde(default)]
@@ -87,7 +100,7 @@ pub struct BedrockVectorStoreOptions {
 pub struct VertexAIVectorStoreOptions {
     #[serde(default)]
     #[serde(rename = "custom_llm_provider")]
-    _custom_llm_provider: Option<String>,
+    pub custom_llm_provider: Option<String>,
     #[serde(default)]
     pub vector_store_id: Option<String>,
     #[serde(default)]
@@ -119,11 +132,7 @@ pub struct VertexAIVectorStoreOptions {
     #[serde(default)]
     pub litellm_credential_name: Option<String>,
     #[serde(default)]
-    #[expect(
-        clippy::disallowed_types,
-        reason = "Vertex passes provider-specific vector database config through unchanged"
-    )]
-    pub vector_db_config: Option<serde_json::Value>,
+    pub vector_db_config: Option<VertexVectorDbConfig>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -145,7 +154,7 @@ pub enum S3VectorsDistanceMetric {
 pub struct S3VectorsVectorStoreOptions {
     #[serde(default)]
     #[serde(rename = "custom_llm_provider")]
-    _custom_llm_provider: Option<String>,
+    pub custom_llm_provider: Option<String>,
     #[serde(default)]
     pub vector_bucket_name: Option<String>,
     #[serde(default)]
@@ -193,7 +202,7 @@ pub struct S3VectorsVectorStoreOptions {
 pub struct GeminiVectorStoreOptions {
     #[serde(default)]
     #[serde(rename = "custom_llm_provider")]
-    _custom_llm_provider: Option<String>,
+    pub custom_llm_provider: Option<String>,
     #[serde(default)]
     pub vector_store_id: Option<String>,
     #[serde(default)]
@@ -203,15 +212,11 @@ pub struct GeminiVectorStoreOptions {
     #[serde(default)]
     pub litellm_credential_name: Option<String>,
     #[serde(default)]
-    #[expect(
-        clippy::disallowed_types,
-        reason = "Gemini metadata is a provider-owned passthrough"
-    )]
-    pub custom_metadata: Option<serde_json::Value>,
+    pub custom_metadata: Option<GeminiCustomMetadata>,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(try_from = "Box<serde_json::value::RawValue>")]
+#[serde(try_from = "Box<RawValue>")]
 pub enum RAGIngestVectorStoreOptions {
     Openai(OpenAIVectorStoreOptions),
     Bedrock(BedrockVectorStoreOptions),
@@ -226,10 +231,10 @@ struct ProviderTag {
     custom_llm_provider: Option<String>,
 }
 
-impl TryFrom<Box<serde_json::value::RawValue>> for RAGIngestVectorStoreOptions {
+impl TryFrom<Box<RawValue>> for RAGIngestVectorStoreOptions {
     type Error = VectorStoreOptionsError;
 
-    fn try_from(raw: Box<serde_json::value::RawValue>) -> Result<Self, Self::Error> {
+    fn try_from(raw: Box<RawValue>) -> Result<Self, Self::Error> {
         let tag: ProviderTag = serde_json::from_str(raw.get())?;
         let provider = tag.custom_llm_provider.as_deref().unwrap_or("openai");
         match provider {

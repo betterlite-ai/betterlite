@@ -3,6 +3,7 @@
 use std::fs;
 use std::path::PathBuf;
 
+use betterlite_config::rag::document::IngestionProvider;
 use rstest::rstest;
 
 use super::pdf::extract_text_from_pdf;
@@ -262,34 +263,33 @@ fn splitter_recursion_depth_bound_separates_normal_splitting_from_character_fall
     let splitter = RecursiveCharacterTextSplitter::new(4, 2, vec![String::new()]).expect("valid");
     let separators = vec![String::new()];
 
-    let mut at_limit = Vec::new();
-    let mut at_limit_bytes = 0;
+    let mut at_limit = super::splitter::SplitOutput::default();
     splitter
         .split_recursive(
             "abcdefgh",
             &separators,
             DEFAULT_MAX_RECURSE_DEPTH,
             &mut at_limit,
-            &mut at_limit_bytes,
         )
         .expect("under cap");
     assert_eq!(
-        at_limit,
+        at_limit.chunks,
         vec!["abcd".to_owned(), "cdef".to_owned(), "efgh".to_owned()]
     );
 
-    let mut past_limit = Vec::new();
-    let mut past_limit_bytes = 0;
+    let mut past_limit = super::splitter::SplitOutput::default();
     splitter
         .split_recursive(
             "abcdefgh",
             &separators,
             DEFAULT_MAX_RECURSE_DEPTH.saturating_add(1),
             &mut past_limit,
-            &mut past_limit_bytes,
         )
         .expect("under cap");
-    assert_eq!(past_limit, vec!["abcd".to_owned(), "efgh".to_owned()]);
+    assert_eq!(
+        past_limit.chunks,
+        vec!["abcd".to_owned(), "efgh".to_owned()]
+    );
 }
 
 #[test]
@@ -458,23 +458,14 @@ fn pdf_returns_none_past_the_total_text_cap() {
 }
 
 #[rstest]
-#[case::openai("openai", betterlite_config::rag::document::IngestionProvider::Openai)]
-#[case::bedrock(
-    "bedrock",
-    betterlite_config::rag::document::IngestionProvider::Bedrock
-)]
-#[case::gemini("gemini", betterlite_config::rag::document::IngestionProvider::Gemini)]
-#[case::s3_vectors(
-    "s3_vectors",
-    betterlite_config::rag::document::IngestionProvider::S3Vectors
-)]
-#[case::vertex_ai(
-    "vertex_ai",
-    betterlite_config::rag::document::IngestionProvider::VertexAi
-)]
+#[case::openai("openai", IngestionProvider::Openai)]
+#[case::bedrock("bedrock", IngestionProvider::Bedrock)]
+#[case::gemini("gemini", IngestionProvider::Gemini)]
+#[case::s3_vectors("s3_vectors", IngestionProvider::S3Vectors)]
+#[case::vertex_ai("vertex_ai", IngestionProvider::VertexAi)]
 fn get_ingestion_class_maps_each_name_to_its_variant(
     #[case] provider: &str,
-    #[case] expected: betterlite_config::rag::document::IngestionProvider,
+    #[case] expected: IngestionProvider,
 ) {
     assert_eq!(get_ingestion_class(provider), Ok(expected));
 }

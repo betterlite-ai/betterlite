@@ -1,8 +1,5 @@
-mod chunking;
-mod ingest;
-
-pub use chunking::*;
-pub use ingest::*;
+pub mod chunking;
+pub mod ingest;
 
 use serde::{Deserialize, Serialize};
 
@@ -10,7 +7,7 @@ use serde::{Deserialize, Serialize};
 #[serde(deny_unknown_fields)]
 pub struct RAGIngestResponse {
     pub id: String,
-    pub status: RAGIngestStatus,
+    pub status: ingest::RAGIngestStatus,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vector_store_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

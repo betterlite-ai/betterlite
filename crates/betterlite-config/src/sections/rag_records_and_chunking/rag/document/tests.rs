@@ -6,13 +6,13 @@ mod types {
 
     use secrecy::ExposeSecret as _;
 
-    use crate::rag::document::{
-        BedrockVectorStoreOptions, INGESTION_PROVIDERS, IngestionProvider,
-        OpenAIVectorStoreOptions, RAGChunkingStrategy, RAGIngestEmbeddingOptions,
-        RAGIngestOCROptions, RAGIngestOptions, RAGIngestResponse, RAGIngestStatus,
-        RAGIngestVectorStoreOptions, S3VectorsDistanceMetric, S3VectorsVectorStoreOptions,
-        VertexAIVectorStoreOptions,
+    use crate::rag::document::chunking::RAGChunkingStrategy;
+    use crate::rag::document::ingest::{
+        BedrockVectorStoreOptions, OpenAIVectorStoreOptions, RAGIngestEmbeddingOptions,
+        RAGIngestOCROptions, RAGIngestOptions, RAGIngestStatus, RAGIngestVectorStoreOptions,
+        S3VectorsDistanceMetric, S3VectorsVectorStoreOptions, VertexAIVectorStoreOptions,
     };
+    use crate::rag::document::{INGESTION_PROVIDERS, IngestionProvider, RAGIngestResponse};
 
     #[test]
     fn chunking_strategy_fields() {
@@ -98,12 +98,19 @@ mod types {
         assert!(matches!(options, RAGIngestVectorStoreOptions::Gemini(_)));
     }
 
-    #[test]
-    fn vector_store_options_accept_a_key_litellm_reads() {
-        let _options: BedrockVectorStoreOptions =
-            serde_json::from_str(r#"{"knowledge_base_id":"kb"}"#).expect("known key");
-        let _options: VertexAIVectorStoreOptions = serde_json::from_str(r#"{"description":"d","vector_db_config":{},"embedding_model":"e","vertex_ai_project":"p","vertex_ai_location":"l","vertex_ai_credentials":"secret","file_description":"f","max_embedding_requests_per_min":2,"litellm_credential_name":"c"}"#).expect("known keys");
-        let _options: S3VectorsVectorStoreOptions = serde_json::from_str(r#"{"vector_store_id":"vs","ssl_verify":false,"embedding_model":"e","litellm_embedding_model":"le","litellm_credential_name":"c"}"#).expect("known keys");
+    #[rstest::rstest]
+    #[case::bedrock(r#"{"custom_llm_provider":"bedrock","knowledge_base_id":"kb"}"#)]
+    #[case::vertex_ai(r#"{"custom_llm_provider":"vertex_ai","description":"d","vector_db_config":{},"embedding_model":"e","vertex_ai_project":"p","vertex_ai_location":"l","vertex_ai_credentials":"secret","file_description":"f","max_embedding_requests_per_min":2,"litellm_credential_name":"c"}"#)]
+    #[case::s3_vectors(r#"{"custom_llm_provider":"s3_vectors","vector_store_id":"vs","ssl_verify":false,"embedding_model":"e","litellm_embedding_model":"le","litellm_credential_name":"c"}"#)]
+    fn vector_store_options_accept_a_key_litellm_reads(#[case] input: &str) {
+        let options: RAGIngestVectorStoreOptions =
+            serde_json::from_str(input).expect("known provider key");
+        assert!(matches!(
+            options,
+            RAGIngestVectorStoreOptions::Bedrock(_)
+                | RAGIngestVectorStoreOptions::VertexAi(_)
+                | RAGIngestVectorStoreOptions::S3Vectors(_)
+        ));
     }
 
     #[rstest::rstest]
@@ -324,6 +331,15 @@ mod types {
                 .expose_secret(),
             "secret"
         );
+    }
+
+    #[test]
+    fn s3_vectors_options_parse_with_only_a_vector_store_id() {
+        let options: S3VectorsVectorStoreOptions =
+            serde_json::from_str(r#"{"vector_store_id":"vs_1"}"#)
+                .expect("store id is an alternative ingestion target");
+        assert_eq!(options.vector_store_id, Some("vs_1".to_owned()));
+        assert_eq!(options.vector_bucket_name, None);
     }
 
     #[test]
