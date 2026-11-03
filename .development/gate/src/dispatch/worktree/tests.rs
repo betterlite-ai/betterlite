@@ -54,6 +54,45 @@ fn migration_preserves_commits_staging_and_working_files() {
 }
 
 #[test]
+fn migration_preserves_local_excludes_with_staged_and_unstaged_files() {
+    let (folder, root) = fixture();
+    let target = folder.path().join("B123");
+    let branch = "task/B123-counter";
+    git(
+        &root,
+        &["worktree", "add", "-qb", branch, target.to_str().unwrap()],
+    )
+    .unwrap();
+    let exclude = common_dir(&root).unwrap().join("info/exclude");
+    fs::create_dir_all(exclude.parent().unwrap()).unwrap();
+    fs::write(&exclude, "scratch-ignored/\n").unwrap();
+    fs::write(target.join("counter"), "staged\n").unwrap();
+    git(&target, &["add", "counter"]).unwrap();
+    fs::write(target.join("counter"), "unstaged\n").unwrap();
+    let artifact = target.join("scratch-ignored/artifact");
+    fs::create_dir_all(artifact.parent().unwrap()).unwrap();
+    fs::write(&artifact, "ignored\n").unwrap();
+    let status = ["status", "--porcelain=v1", "-z", "--untracked-files=all"];
+    let before = git(&target, &status).unwrap();
+    let branch_head = git(&target, &["rev-parse", "HEAD"]).unwrap();
+
+    prepare(&root, &target, branch).unwrap();
+
+    assert_eq!(git(&target, &status).unwrap(), before);
+    assert_eq!(git(&target, &["rev-parse", "HEAD"]).unwrap(), branch_head);
+    assert_eq!(git(&target, &["show", ":counter"]).unwrap(), "staged\n");
+    assert_eq!(
+        fs::read_to_string(target.join("counter")).unwrap(),
+        "unstaged\n"
+    );
+    assert_eq!(
+        fs::read_to_string(target.join(".git/info/exclude")).unwrap(),
+        "scratch-ignored/\n"
+    );
+    assert!(artifact.is_file());
+}
+
+#[test]
 fn an_existing_task_branch_is_reused_in_a_private_checkout() {
     let (folder, root) = fixture();
     let target = folder.path().join("B123");

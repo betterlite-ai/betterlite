@@ -1,0 +1,10 @@
+kind: helper
+name: management-plan-child-validation-suppresses-parent-length
+call:
+  management_plan:
+    function: problem
+    errors:
+      - {error_type: too_short, loc: [body, items], msg: need one}
+      - {error_type: string_type, loc: [body, items, 0], msg: not a string}
+env: {}
+compare: {ignore: []}

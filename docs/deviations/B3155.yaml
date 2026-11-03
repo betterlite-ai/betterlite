@@ -1,0 +1,8 @@
+task: B3155
+deviations:
+  - what: Spend queries use parameterized SQL instead of Prisma's group_by and find_many helpers.
+    why: The Rust driver aggregates daily spend and batches user IDs with one array parameter.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L115-L159
+  - what: The sync store binds typed Rust values through tokio-postgres instead of Prisma's raw-query interface.
+    why: Rust driver bindings preserve LiteLLM's lease predicates and atomic report-publication CTE.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync_store.py#L33-L143
