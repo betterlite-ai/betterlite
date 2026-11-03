@@ -1,0 +1,15 @@
+{
+  "kind": "helper",
+  "name": "backref-ascii-mixed",
+  "call": {
+    "route_match": {
+      "function": "route_matches_pattern",
+      "route": "/Kéké",
+      "pattern": "/(?ai:(..)\\1)"
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

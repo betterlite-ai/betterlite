@@ -1,0 +1,17 @@
+{
+  "kind": "helper",
+  "name": "adapter-lookbehind",
+  "call": {
+    "route_match": {
+      "function": "check_route_access",
+      "route": "/Ké",
+      "allowed_routes": [
+        "/(?ai:k)(?<=K)(?u:é)"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

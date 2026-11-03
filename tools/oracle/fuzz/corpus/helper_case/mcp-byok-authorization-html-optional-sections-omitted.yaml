@@ -1,0 +1,16 @@
+kind: helper
+name: optional-sections-omitted
+call:
+  b4687:
+    server_name: MCP
+    server_initial: M
+    client_id: client
+    redirect_uri: https://app.test/return
+    code_challenge: challenge
+    code_challenge_method: S256
+    state: state
+    server_id: server
+    access_items: []
+    help_url: ""
+env: {}
+compare: {ignore: []}

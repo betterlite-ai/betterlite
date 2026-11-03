@@ -26,13 +26,13 @@ description: >-
   license and omits the premium gate. Test those successes natively; equality cases use the actual
   MIT fallback through HTTP, not a helper that imports proxy_server globals.
 
-  Move route_checks.py RouteChecks.route_matches_wildcard_pattern L558-L584 here, below the other
-  route classifiers: a trailing '*' removes exactly one final character and checks startswith;
+  Wildcard matching is B882's route_matches_wildcard_pattern in crates/betterlite-auth/src/route_match/templates.rs,
+  merged in PR 564. The public-route check calls it for each configured entry after the exact check, and leaves
+  templates.rs unchanged: no move, copy or second matcher. Named public-route cases wildcard_empty_prefix,
+  wildcard_one_terminal_star, embedded_star_literal and wildcard_case_sensitive send a route and a public_routes
+  list through this task's check: a trailing '*' removes exactly one final character and checks startswith;
   otherwise require exact equality. '*' matches every route, '/x/**' means the literal '/x/*' prefix,
-  embedded stars are literals and matching is case-sensitive. Named cases wildcard_empty_prefix,
-  wildcard_one_terminal_star, embedded_star_literal and wildcard_case_sensitive compare this pure
-  helper. This removes the B741/B882 function cycle; B882's assistants classifier consumes this task's
-  get_request_route, while public-route matching no longer calls back into B882.
+  embedded stars are literals and matching is case-sensitive.
 
 
   Build the production auth_route_patterns module in betterlite-auth; reuse the typed dependencies listed
@@ -116,7 +116,7 @@ scope:
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L558-L584
-    why: Pure terminal-star matching moved below route classification.
+    why: Terminal-star matching, built by B882 in route_match/templates.rs and called here for each public route.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L621-L837
     why: Pinned implementation and exact ownership boundary for auth_route_patterns.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L385-L652
@@ -142,7 +142,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
-  - text: The four terminal-star cases call the shared matcher now owned here, without a route-classifier back edge.
+  - text: The four terminal-star public-route cases go through B882's route_matches_wildcard_pattern, and templates.rs is unchanged.
     proof: [behavior-tests, helper-python, oracle]
   - text: 'Path cases: scope_path_beats_host_url, missing_scope_path_fallback, app_root_wins,
       root_trailing_slashes, root_exact_becomes_slash, root_whole_segment, sibling_root_kept,
@@ -413,6 +413,7 @@ pitfalls:
   - Root /proxy must not strip the prefix from /proxy-other.
   - Configured public routes are enabled deliberately, so their success cases are native deviation tests
     when LiteLLM lacks premium_user.
+  - general_settings.public_routes loads in the config section crates/betterlite-config/src/sections/auth_route_patterns.rs. It is a stub already registered in sections.rs; replace it with its own Raw view of general_settings, as sections/rate_limit_usage.rs does, and read it in the server as config.sections.auth_route_patterns. raw.rs, loader.rs and types.rs stay unchanged.
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

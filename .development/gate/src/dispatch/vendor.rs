@@ -210,11 +210,39 @@ pub(crate) fn available(git: &Path, agents: &Agents, task: &str) -> Result<(), G
             return Ok(());
         }
     }
-    Err(GateError::UsageLimit {
+    Err(GateError::Unavailable {
         task: task.to_owned(),
-        reason: "every worker vendor is unavailable; inspect betterlite/limits before retrying"
-            .to_owned(),
+        reason: format!(
+            "every worker vendor is unavailable ({})",
+            causes(git, agents)?
+        ),
     })
+}
+
+pub(crate) fn causes(git: &Path, agents: &Agents) -> Result<String, GateError> {
+    let mut found = Vec::new();
+    for vendor in &agents.vendors {
+        if !limited(git, agents, &vendor.id)? {
+            continue;
+        }
+        let path = git.join("betterlite/limits").join(&vendor.id);
+        let line = match fs::read_to_string(&path) {
+            Ok(line) => line,
+            Err(error) if error.kind() == ErrorKind::NotFound => continue,
+            Err(source) => return Err(GateError::Read { path, source }),
+        };
+        let state = match backoff::cause(&line) {
+            backoff::Cause::LoggedOut => "is logged out",
+            backoff::Cause::Offline => "can't reach its API",
+            backoff::Cause::Limit => "is at its usage limit",
+        };
+        found.push(format!(
+            "{} {state}: {}",
+            vendor.id,
+            backoff::message(line.trim())
+        ));
+    }
+    Ok(found.join("; "))
 }
 
 pub(crate) fn marker_time(git: &Path, vendor: &str) -> Option<SystemTime> {

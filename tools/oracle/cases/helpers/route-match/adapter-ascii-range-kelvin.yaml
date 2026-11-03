@@ -1,0 +1,17 @@
+{
+  "kind": "helper",
+  "name": "adapter-ascii-range-kelvin",
+  "call": {
+    "route_match": {
+      "function": "check_route_access",
+      "route": "/K",
+      "allowed_routes": [
+        "/(?ai:[a-z])"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

@@ -1,0 +1,9 @@
+kind: helper
+name: bedrock-invoke
+call:
+  route_match:
+    function: is_llm_api_route
+    route: /bedrock/invoke
+env: {}
+compare:
+  ignore: []
