@@ -1,0 +1,8 @@
+kind: helper
+name: managed-resource-store-missing-owner-context
+call:
+  managed_resource_store:
+    principal: null
+    owner: null
+compare:
+  ignore: []

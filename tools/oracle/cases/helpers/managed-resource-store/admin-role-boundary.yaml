@@ -1,0 +1,9 @@
+kind: helper
+name: managed-resource-store-admin-role-boundary
+call:
+  managed_resource_store:
+    principal:
+      user_role: proxy_admin
+    owner: unrelated
+compare:
+  ignore: []

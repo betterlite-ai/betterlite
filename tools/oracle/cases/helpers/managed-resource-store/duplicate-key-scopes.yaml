@@ -1,0 +1,11 @@
+kind: helper
+name: managed-resource-store-duplicate-key-scopes
+call:
+  managed_resource_store:
+    principal:
+      user_id: user:u
+      api_key: a
+      token: a
+    owner: key:a
+compare:
+  ignore: []

@@ -1,0 +1,12 @@
+kind: helper
+name: managed-resource-store-primary-scope-fallback
+call:
+  managed_resource_store:
+    principal:
+      team_id: t
+      org_id: o
+      api_key: a
+      token: b
+    owner: team:t
+compare:
+  ignore: []

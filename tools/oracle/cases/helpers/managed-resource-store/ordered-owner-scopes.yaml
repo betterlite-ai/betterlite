@@ -1,0 +1,13 @@
+kind: helper
+name: managed-resource-store-ordered-owner-scopes
+call:
+  managed_resource_store:
+    principal:
+      user_id: u
+      team_id: t
+      org_id: o
+      api_key: a
+      token: b
+    owner: user:v
+compare:
+  ignore: []
