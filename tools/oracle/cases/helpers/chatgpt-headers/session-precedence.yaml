@@ -2,6 +2,10 @@ kind: helper
 name: chatgpt-headers-session-precedence
 call:
   chatgpt_headers:
+    platform:
+      system: "Linux"
+      release: "6.1.0-oracle"
+      machine: "x86_64"
     environment: {}
     access_token: "session-precedence-token"
     account_id: null

@@ -5,7 +5,7 @@ use betterlite_openai::chatgpt::headers::session::{
     LitellmParamsInput, ModelDumpOutcome, get_chatgpt_session_id,
 };
 use betterlite_openai::chatgpt::headers::{
-    SystemPlatformEnvironment, get_chatgpt_default_headers, get_chatgpt_instructions,
+    PlatformEnvironment, get_chatgpt_default_headers, get_chatgpt_instructions,
     get_chatgpt_originator, get_chatgpt_user_agent,
 };
 use secrecy::SecretString;
@@ -17,6 +17,7 @@ use crate::helpers::{Helper, HelperError, HelperResult};
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
+    platform: PlatformInput,
     #[serde(default)]
     environment: BTreeMap<String, String>,
     #[serde(default)]
@@ -27,6 +28,28 @@ pub(crate) struct Input {
     session_id: Option<String>,
     #[serde(default)]
     litellm_params: ParamsInput,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PlatformInput {
+    system: String,
+    release: String,
+    machine: String,
+}
+
+impl PlatformEnvironment for PlatformInput {
+    fn os_type(&self) -> String {
+        self.system.clone()
+    }
+
+    fn os_release(&self) -> String {
+        self.release.clone()
+    }
+
+    fn arch(&self) -> String {
+        self.machine.clone()
+    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -91,13 +114,13 @@ impl Helper for Op {
         })?
         .sections
         .chatgpt_headers;
-        let platform = SystemPlatformEnvironment;
+        let platform = &input.platform;
         let originator = get_chatgpt_originator(&settings);
-        let user_agent = get_chatgpt_user_agent(&settings, &platform, &originator);
+        let user_agent = get_chatgpt_user_agent(&settings, platform, &originator);
         let token = SecretString::from(input.access_token.clone());
         let headers = get_chatgpt_default_headers(
             &settings,
-            &platform,
+            platform,
             &token,
             input.account_id.as_deref(),
             input.session_id.as_deref(),

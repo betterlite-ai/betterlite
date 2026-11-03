@@ -1,0 +1,197 @@
+id: B5125
+title: OCR pricing tests and cases that fail when a billing rule breaks
+description: >-
+  B1678 built betterlite-models::ocr_pricing and the PriceLookup interface in
+  betterlite-models::price_lookup. An Opus review after merge found six tests and oracle cases
+  that can't fail on the rule they name. The code in ocr_pricing.rs already matches LiteLLM, so
+  this task changes tests, one module line in price_lookup.rs and two oracle cases. It changes no
+  production logic. For each new test or case the worker first applies the break the DoD item
+  names, watches the test or case fail for that reason, then restores the code. The break is
+  never committed.
+
+
+  Gap one. LiteLLM bills credits whenever credits and ocr_cost_per_credit are both present, even
+  at a rate of 0 (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2207-L2209).
+  The rstest case credit_precedence_wins_even_at_zero_rate in
+  ocr_cost_follows_credit_and_page_precedence sends no pages. A port that skipped the credit
+  branch for a zero rate would still answer 0 through missing_pages_outcome, since a credit rate
+  is present. The case keeps its name and changes to usage(Some(3), Some(100), 0) with
+  deployment(Some(1), Some(0), None), still expecting "0". A port that falls through on a zero
+  rate bills 100 pages at 1.
+
+
+  Gap two. With pages present, no ocr_cost_per_page and no billable annotation pages, LiteLLM
+  warns and returns 0.0 before it multiplies anything
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2235-L2253).
+  Billable means an annotation rate is known and annotation pages are above 0
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2213-L2217).
+  The case present_pages_no_rate_no_annotation_warns_zero has no rate at all. It still passes
+  with the early return in ocr_cost deleted, because checked_page_total bills an absent rate at 0.
+  The early return only changes the answer when an annotation rate meets annotation pages that
+  are 0 or below. That case is replaced by present_pages_no_page_rate_negative_annotation_warns_zero
+  with usage(None, Some(5), -2) and deployment(None, None, Some(3)), expecting "0". Without the
+  early return the code answers -6.
+
+
+  Gap three. When the public lookup fails, LiteLLM's ocr_batch_cost warns and still bills every
+  family the deployment prices
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2290-L2317).
+  The test batch_cost_bills_only_the_families_that_remain_priced_after_a_failed_lookup prices no
+  family at all, so a port that returns 0 for the whole call after any failed lookup passes it
+  too. It is replaced by batch_cost_still_bills_the_deployment_annotation_family_after_a_failed_lookup.
+  The new test passes deployment_info {annotation_cost_per_page: 3}, pages_processed 2,
+  pages_processed_annotation 4 and CountingLookup::new(None). It expects 12 (pages at no rate,
+  annotation pages at 3) and exactly one lookup call.
+
+
+  Gap four. In batch OCR, LiteLLM takes the deployment's page rate from ocr_cost_per_page_batches
+  and then ocr_cost_per_page, and uses public pricing for the page family only when the deployment
+  has neither
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2278-L2284,
+  https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2298-L2302).
+  The oracle case synchronous-deployment-rate-before-public-batch.yaml gives the catalog entry no
+  ocr_cost_per_page_batches, so a port that tried the public batch page rate before the
+  deployment's ocr_cost_per_page still answers 22. The catalog entry becomes
+  {annotation_cost_per_page_batches: 4, ocr_cost_per_page_batches: 99}. LiteLLM still answers 22
+  (5 pages at 2 plus 3 annotation pages at 4). The wrong precedence answers 507.
+
+
+  Gap five. LiteLLM fetches public pricing for batch OCR only when a family with a count above 0
+  lacks its own rate
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2278-L2289).
+  The oracle case zero-counts-suppress-public-lookup.yaml sends both counts at 0 with catalog
+  null, so a lookup can't move the answer and the case returns 0 whether or not betterlite
+  consults the catalog. The case keeps its file name and name. It changes to model
+  fixture-missing, custom_llm_provider openai, model_info null, usage {pages_processed: 0,
+  pages_processed_annotation: -3} and catalog {key: openai/fixture-missing, entry:
+  {annotation_cost_per_page: 4}}. LiteLLM skips the lookup and answers 0. A port that looks up
+  anyway, or that gates the lookup on a nonzero count instead of a positive one, answers -12.
+
+
+  Gap six. LiteLLM's ocr_cost reads public pricing only through _cost_map_model_info, a soft
+  get_model_info call
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2129-L2133,
+  https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2204-L2205).
+  ocr_batch_cost reads it only through _lookup_model_info_or_none, the same soft call
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2324-L2328).
+  Neither reads _raw_cost_map_entry; only _deployment_model_info and pricing_entry_for_cost_calc
+  do, and they are B068's
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2136-L2138).
+  The three tests in crates/betterlite-models/src/price_lookup/tests.rs call only a test-local
+  Fixture, so no change to production code can make them fail. That file and the mod tests; line
+  in price_lookup.rs are removed. They are replaced in ocr_pricing/tests.rs by a lookup fixture
+  with separate effective and raw records and a Cell counter of raw_cost_map_entry calls, plus two
+  tests. ocr_cost_reads_effective_model_info_never_the_raw_entry uses effective
+  {ocr_cost_per_page: 2}, raw {ocr_cost_per_credit: 7, annotation_cost_per_page: 50,
+  ocr_cost_per_page: 99}, no deployment override and usage(Some(3), Some(4), 1). It expects 10
+  and zero raw calls; a cost that layers the raw entry answers 21.
+  ocr_batch_cost_reads_effective_model_info_never_the_raw_entry uses effective
+  {ocr_cost_per_page: 2}, raw {ocr_cost_per_page_batches: 99, annotation_cost_per_page_batches:
+  50}, no deployment_info, pages_processed 4 and pages_processed_annotation 1. It expects 10 and
+  zero raw calls; a cost that reads the raw entry instead answers 446.
+scope:
+  paths:
+    - crates/betterlite-models/src/ocr_pricing/tests.rs
+    - crates/betterlite-models/src/price_lookup.rs
+    - crates/betterlite-models/src/price_lookup/tests.rs
+    - tools/oracle/cases/helpers/ocr-pricing/synchronous-deployment-rate-before-public-batch.yaml
+    - tools/oracle/cases/helpers/ocr-pricing/zero-counts-suppress-public-lookup.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2174-L2253
+    why: ocr_cost's presence-only credit branch, the billable annotation rule, the no-page-rate early return and the final multiplication.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2260-L2317
+    why: ocr_batch_cost's deployment family rates, the lookup gated on a positive count, the failed-lookup warning and the per-family sum.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2129-L2138
+    why: The soft effective lookup both OCR costs use, next to the raw entry access neither of them calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2324-L2334
+    why: _lookup_model_info_or_none swallows a failed get_model_info as None, and _first_price reads only numeric values.
+dod:
+  - text: >-
+      The case credit_precedence_wins_even_at_zero_rate uses usage(Some(3), Some(100), 0) and
+      deployment(Some(1), Some(0), None) and still expects "0". With the credit branch in ocr_cost
+      changed to skip a zero rate, the case bills 100 and fails; with today's code it passes. On
+      today's main the case sends no pages and passes with that break too.
+    proof: [case-zero-credit-rate, ocr-price-tests]
+  - text: >-
+      The case present_pages_no_rate_no_annotation_warns_zero is gone and
+      present_pages_no_page_rate_negative_annotation_warns_zero takes its place, with usage(None,
+      Some(5), -2) and deployment(None, None, Some(3)), expecting "0". With the no-page-rate early
+      return deleted from ocr_cost, the case answers -6 and fails; with today's code it passes.
+    proof: [case-unpriced-pages-negative-annotation, ocr-price-tests]
+  - text: >-
+      batch_cost_bills_only_the_families_that_remain_priced_after_a_failed_lookup is gone and
+      batch_cost_still_bills_the_deployment_annotation_family_after_a_failed_lookup takes its
+      place. It passes deployment_info {annotation_cost_per_page: 3}, pages_processed 2,
+      pages_processed_annotation 4 and CountingLookup::new(None), and asserts a cost of 12 and one
+      lookup call. With ocr_batch_cost changed to return 0 whenever the lookup comes back empty,
+      the test fails; with today's code it passes.
+    proof: [case-failed-lookup-bills-priced-family, ocr-price-tests]
+  - text: >-
+      The catalog entry in synchronous-deployment-rate-before-public-batch.yaml carries
+      ocr_cost_per_page_batches 99 next to annotation_cost_per_page_batches 4, and both LiteLLM and
+      betterlite answer 22. With the public batch page rate tried before the deployment's
+      ocr_cost_per_page, betterlite answers 507 and the case fails.
+    proof: [case-public-batch-page-rate-loses, oracle]
+  - text: >-
+      zero-counts-suppress-public-lookup.yaml sends model fixture-missing, provider openai,
+      pages_processed 0, pages_processed_annotation -3 and a catalog entry
+      {annotation_cost_per_page: 4} under key openai/fixture-missing, and both sides answer 0. With
+      ocr_batch_cost changed to look up public pricing regardless of the counts, betterlite answers
+      -12 and the case fails.
+    proof: [case-negative-annotation-skips-lookup, oracle]
+  - text: >-
+      crates/betterlite-models/src/price_lookup/tests.rs and the mod tests; line in price_lookup.rs
+      are gone. ocr_cost_reads_effective_model_info_never_the_raw_entry and
+      ocr_batch_cost_reads_effective_model_info_never_the_raw_entry run the real cost functions
+      through a lookup whose raw entry carries prices the effective record lacks, and assert costs
+      of 10 and zero raw_cost_map_entry calls. With either cost function changed to layer the raw
+      entry, its test fails (21 or 446); with today's code both pass.
+    proof: [raw-entry-ignored, ocr-price-tests]
+checks:
+  optional: []
+  commands:
+    - id: ocr-price-tests
+      why: a changed fixture or case in ocr_pricing/tests.rs breaks another OCR pricing test, or the test file was not changed at all
+      run: test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-models/src/ocr_pricing/tests.rs)" && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^ocr_pricing::/)'
+    - id: case-zero-credit-rate
+      why: the zero-rate credit case still sends no pages, so it can't fail when a zero credit rate stops winning
+      run: grep -qF 'usage(Some(3), Some(100), 0)' crates/betterlite-models/src/ocr_pricing/tests.rs && grep -qF 'deployment(Some(1), Some(0), None)' crates/betterlite-models/src/ocr_pricing/tests.rs && ! grep -qF 'usage(Some(3), None, 0)' crates/betterlite-models/src/ocr_pricing/tests.rs && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^ocr_pricing::tests::ocr_cost_follows_credit_and_page_precedence::case_[0-9]+_credit_precedence_wins_even_at_zero_rate$/)'
+    - id: case-unpriced-pages-negative-annotation
+      why: the no-page-rate case has no annotation rate, so it passes with the early return deleted
+      run: grep -qF 'usage(None, Some(5), -2)' crates/betterlite-models/src/ocr_pricing/tests.rs && grep -qF 'deployment(None, None, Some(3))' crates/betterlite-models/src/ocr_pricing/tests.rs && ! grep -q 'present_pages_no_rate_no_annotation_warns_zero' crates/betterlite-models/src/ocr_pricing/tests.rs && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^ocr_pricing::tests::ocr_cost_follows_credit_and_page_precedence::case_[0-9]+_present_pages_no_page_rate_negative_annotation_warns_zero$/)'
+    - id: case-failed-lookup-bills-priced-family
+      why: the failed-lookup batch test prices no family, so returning 0 for the whole call still passes it
+      run: grep -q 'fn batch_cost_still_bills_the_deployment_annotation_family_after_a_failed_lookup()' crates/betterlite-models/src/ocr_pricing/tests.rs && ! grep -q 'fn batch_cost_bills_only_the_families_that_remain_priced_after_a_failed_lookup' crates/betterlite-models/src/ocr_pricing/tests.rs && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^ocr_pricing::tests::batch_cost_still_bills_the_deployment_annotation_family_after_a_failed_lookup$/)'
+    - id: case-public-batch-page-rate-loses
+      why: the catalog entry has no public batch page rate, so a wrong page-rate precedence still answers 22
+      run: 'grep -qF "ocr_cost_per_page_batches: 99" tools/oracle/cases/helpers/ocr-pricing/synchronous-deployment-rate-before-public-batch.yaml && grep -qF "annotation_cost_per_page_batches: 4" tools/oracle/cases/helpers/ocr-pricing/synchronous-deployment-rate-before-public-batch.yaml && grep -qF "model_info: {ocr_cost_per_page: 2}" tools/oracle/cases/helpers/ocr-pricing/synchronous-deployment-rate-before-public-batch.yaml'
+    - id: case-negative-annotation-skips-lookup
+      why: with zero counts and no catalog, a lookup can't move the answer, so the case can't fail when lookup gating breaks
+      run: 'grep -qF "pages_processed_annotation: -3" tools/oracle/cases/helpers/ocr-pricing/zero-counts-suppress-public-lookup.yaml && grep -qF "key: openai/fixture-missing" tools/oracle/cases/helpers/ocr-pricing/zero-counts-suppress-public-lookup.yaml && grep -qF "annotation_cost_per_page: 4" tools/oracle/cases/helpers/ocr-pricing/zero-counts-suppress-public-lookup.yaml && grep -qF "model: fixture-missing" tools/oracle/cases/helpers/ocr-pricing/zero-counts-suppress-public-lookup.yaml && grep -qF "custom_llm_provider: openai" tools/oracle/cases/helpers/ocr-pricing/zero-counts-suppress-public-lookup.yaml'
+    - id: raw-entry-ignored
+      why: the price_lookup tests check only a test-local stub, and no test runs a cost function through a lookup whose raw entry differs from its effective record
+      run: test ! -e crates/betterlite-models/src/price_lookup/tests.rs && ! grep -q '^mod tests;' crates/betterlite-models/src/price_lookup.rs && grep -q 'fn ocr_cost_reads_effective_model_info_never_the_raw_entry()' crates/betterlite-models/src/ocr_pricing/tests.rs && grep -q 'fn ocr_batch_cost_reads_effective_model_info_never_the_raw_entry()' crates/betterlite-models/src/ocr_pricing/tests.rs && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^ocr_pricing::tests::ocr_(batch_)?cost_reads_effective_model_info_never_the_raw_entry$/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/ocr-pricing/synchronous-deployment-rate-before-public-batch.yaml
+  - tools/oracle/cases/helpers/ocr-pricing/zero-counts-suppress-public-lookup.yaml
+deviations: []
+out_of_scope:
+  - Production logic in crates/betterlite-models/src/ocr_pricing.rs. All six findings are weak tests on code that already matches LiteLLM, so the file stays as it is.
+  - Padded one-line functions in ocr_pricing.rs, such as first_price, belong to B5094. This task does not touch .ast-grep/rules/.
+  - The fixed status per error class is B5102's and already merged.
+  - The oracle adapters tools/oracle/src/helpers/models/ocr_pricing.rs and tools/oracle/helpers/ocr_pricing.py, the corpus seeds and the other three ocr-pricing cases have no finding and stay unchanged.
+  - _deployment_model_info and pricing_entry_for_cost_calc, the only LiteLLM callers of _raw_cost_map_entry, stay with B068.
+pitfalls:
+  - In the zero-rate credit case, missing_pages_outcome also answers 0 when pages are absent and a credit rate is set, so the case only proves credit precedence once pages_processed is Some(100) and ocr_cost_per_page is Some(1).
+  - The no-page-rate early return in ocr_cost only changes the answer when annotation_cost_per_page is set and pages_processed_annotation is 0 or below; with no rates at all, checked_page_total already bills 0.
+  - In the oracle, a lookup with both batch counts at 0 can never show, because every rate multiplies a 0 count. Only a negative count with a catalog rate makes the skipped lookup visible.
+  - Keep the file name and name field of zero-counts-suppress-public-lookup.yaml, because B1678's oracle_cases lists that path.
+  - The oracle catalog key openai/fixture-missing resolves in LiteLLM for model fixture-missing with provider openai, and an entry with no litellm_provider passes the provider match. Don't add litellm_provider to the entry.
+  - The new lookup fixture counts raw_cost_map_entry calls with a Cell, the way CountingLookup counts effective_model_info calls. Its effective_priced_model answers from the effective record, never the raw one.
+  - Don't build the new tests on first_price; B5094 deletes it, and its tests in this file go with it.
+  - Removing price_lookup/tests.rs is the finding's fix, not a skipped test; its two replacements must run real ocr_cost and ocr_batch_cost calls, never a method of the fixture alone.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

@@ -35,6 +35,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "semantic_cache_response"
+path = "fuzz_targets/semantic_cache_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "schema_definitions"
 path = "fuzz_targets/schema_definitions.rs"
 test = false

@@ -1,0 +1,7 @@
+kind: helper
+name: expiry_boundary
+call:
+  chatgpt_token_store: {"record": "{\"access_token\": \"opaque\", \"expires_at\": 1000, \"extra\": {\"kept\": true}}", "replacement": null, "now": 940, "fail_write": false, "actions": ["expired", {"wait": 1}]}
+env: {}
+compare:
+  ignore: []

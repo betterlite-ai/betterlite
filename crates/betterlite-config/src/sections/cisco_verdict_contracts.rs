@@ -46,7 +46,7 @@ enum RawRule {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 struct RuleEntry {
-    rule_name: String,
+    rule_name: Option<String>,
     entity_types: Option<Vec<String>>,
     rule_id: Option<String>,
     classification: Option<String>,
@@ -56,7 +56,7 @@ impl RawRule {
     fn resolve(self) -> Rule {
         match self {
             Self::Name(rule_name) => Rule {
-                rule_name,
+                rule_name: Some(rule_name),
                 entity_types: Vec::new(),
                 rule_id: None,
                 classification: None,
@@ -78,7 +78,7 @@ impl RawRule {
 
 #[derive(Debug, Clone)]
 pub struct Rule {
-    pub rule_name: String,
+    pub rule_name: Option<String>,
     pub entity_types: Vec<String>,
     pub rule_id: Option<String>,
     pub classification: Option<String>,

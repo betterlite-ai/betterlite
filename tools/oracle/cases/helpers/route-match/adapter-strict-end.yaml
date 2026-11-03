@@ -1,0 +1,17 @@
+{
+  "kind": "helper",
+  "name": "adapter-strict-end",
+  "call": {
+    "route_match": {
+      "function": "check_route_access",
+      "route": "/foo\n",
+      "allowed_routes": [
+        "/foo\\Z"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

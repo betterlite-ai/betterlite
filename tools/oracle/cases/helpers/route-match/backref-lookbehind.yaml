@@ -1,0 +1,15 @@
+{
+  "kind": "helper",
+  "name": "backref-lookbehind",
+  "call": {
+    "route_match": {
+      "function": "route_matches_pattern",
+      "route": "/aA",
+      "pattern": "/(?i:(a)\\1)(?<=A)"
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

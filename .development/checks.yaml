@@ -136,7 +136,7 @@ optional:
     after_green: true
     run: cargo llvm-cov nextest --workspace --locked --fail-under-lines 85
   - id: mutants
-    why: every mutant in the changed Rust code outside tools/oracle is caught by a test; the oracle tests start LiteLLM once per case, so mutants there take hours; the task commands and a push to main still run them; verification builds in the worktree target and freshly checks every selected mutant
+    why: every mutant in the changed Rust code outside tools/oracle is caught by a test; test binaries run under a 4 GB address space limit through cargo's target runner, so a mutant that loops and allocates aborts its own test instead of the whole flow; the oracle tests start LiteLLM once per case, so mutants there take hours; the task commands and a push to main still run them; verification builds in the worktree target and freshly checks every selected mutant; fuzz targets are left out, since no test runs them
     after_green: true
     run: |-
       set -e
@@ -144,8 +144,8 @@ optional:
       rm -rf "$scratch"
       mkdir -p "$scratch"
       trap 'rm -rf "$scratch"' EXIT
-      git diff "$GATE_BASE" -- '*.rs' ':(exclude)tools/oracle' > "$GATE_LOG_DIR/mutants.diff"
-      CARGO_INCREMENTAL=1 RUSTC_WRAPPER= TMPDIR="$scratch" cargo mutants --in-diff "$GATE_LOG_DIR/mutants.diff" --test-tool nextest --no-shuffle --in-place --output "$GATE_LOG_DIR"
+      git diff "$GATE_BASE" -- '*.rs' ':(exclude)tools/oracle' ':(exclude,glob)**/fuzz/**' > "$GATE_LOG_DIR/mutants.diff"
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER='prlimit --as=4294967296 --' CARGO_INCREMENTAL=1 RUSTC_WRAPPER= TMPDIR="$scratch" cargo mutants --in-diff "$GATE_LOG_DIR/mutants.diff" --test-tool nextest --no-shuffle --in-place --output "$GATE_LOG_DIR"
   - id: oracle
     why: betterlite answers the oracle cases the same way the pinned LiteLLM does
     run: cargo build --locked --quiet -p betterlite && cargo run --locked --quiet -p betterlite-oracle -- $GATE_ORACLE_CASES

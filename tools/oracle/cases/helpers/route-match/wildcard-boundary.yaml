@@ -1,0 +1,10 @@
+kind: helper
+name: wildcard-boundary
+call:
+  route_match:
+    function: route_matches_allowed_route
+    route: /fake-openai-proxy-600
+    allowed_route: /fake-openai-proxy
+env: {}
+compare:
+  ignore: []

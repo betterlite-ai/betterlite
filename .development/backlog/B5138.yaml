@@ -1,0 +1,13 @@
+id: B5138
+milestone: M4 keys, spend and management
+title: Close the B2305 MCP stored contract audit gap
+status: todo
+depends_on: [B2305]
+file: tasks/B5138-mcp-stored-contracts-gaps.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

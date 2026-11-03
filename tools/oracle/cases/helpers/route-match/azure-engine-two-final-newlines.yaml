@@ -1,0 +1,9 @@
+kind: helper
+name: azure-engine-two-final-newlines
+call:
+  route_match:
+    function: is_azure_openai_route
+    route: "/engines/model/chat/completions\n\n"
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,68 @@
+id: B5107
+title: Oracle gateway ports come from below the kernel's ephemeral range
+description: >-
+  Main's run 41548774026 on 28c82fc0 failed two oracle tests that met on 127.0.0.1:34841.
+  http::native_feature_eligibility::tests::the_real_runner_resolves_the_fixture_and_the_mit_handler_answers ended
+  with ProcessReady after 13 s, since its readiness probe to http://127.0.0.1:34841/health/liveliness got
+  IncompleteMessage. routing_mock_scripts::...::each_run_starts_from_the_first_reply::case_3_delay_then_close got that
+  stray /health/liveliness request. free_port in tools/oracle/src/paths.rs binds 127.0.0.1:0, reads the port and drops
+  the listener. The gateway then needs seconds to start and bind it (LiteLLM's Python startup), and in that window
+  any other test process that binds port 0, like the mock in mock.rs, can get the same port from the kernel.
+
+
+  free_port picks ports the kernel never hands out for port 0: from 10000 up to the start of the ephemeral range read
+  from /proc/sys/net/ipv4/ip_local_port_range. It starts at an offset taken from the process id, so concurrent test
+  processes start apart, and walks up to the first port where a bind on 127.0.0.1 succeeds, then drops that listener
+  and returns the port. A gateway that already holds a port fails the bind and is skipped. When the file can't be
+  read or no port in the range binds, free_port returns an error that names the file or the range; it never falls
+  back to port 0. Mock servers keep binding port 0, so the two sets of ports never meet.
+scope:
+  paths:
+    - tools/oracle/src/paths.rs
+    - tools/oracle/src/paths/**
+    - tools/oracle/src/lib.rs
+  lint_tables: false
+references:
+  - url: https://github.com/betterlite-ai/betterlite/actions/runs/41548774026
+    why: Main's run on 28c82fc0 failed both tests on port 34841; the gate-logs-tests artifact holds tests.log.
+  - url: https://github.com/betterlite-ai/betterlite/blob/4d250403/tools/oracle/src/paths.rs#L23-L31
+    why: free_port releases the port the kernel picked before the gateway binds it.
+  - url: https://github.com/betterlite-ai/betterlite/blob/4d250403/tools/oracle/src/gateway.rs#L18-L29
+    why: start passes the port to the gateway and waits for readiness on it.
+  - url: https://github.com/betterlite-ai/betterlite/blob/4d250403/tools/oracle/src/process.rs#L58-L80
+    why: wait_ready treats any answer other than a refused connection or a timeout as a readiness failure.
+dod:
+  - text: free_port returns a port at or above 10000 and below the start of ip_local_port_range, a bind on 127.0.0.1 at that port succeeds, and paths.rs never binds port 0.
+    proof: [no-port-zero, free-port-tests]
+  - text: While a listener holds the port free_port returned, the next call returns a different port.
+    proof: [free-port-tests]
+  - text: The oracle's gateway, readiness and mock tests still pass.
+    proof: [oracle-gateway-tests]
+checks:
+  optional: []
+  commands:
+    - id: no-port-zero
+      why: free_port still asks the kernel for port 0.
+      run: |-
+        ! grep -n -E '"127\.0\.0\.1", 0\)|127\.0\.0\.1:0' tools/oracle/src/paths.rs
+    - id: free-port-tests
+      why: A free_port test fails.
+      run: |-
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^paths::tests::/)'
+    - id: oracle-gateway-tests
+      why: An oracle gateway, readiness or mock test fails.
+      run: |-
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^(routing_mock_scripts|http::native_feature_eligibility)::/) | test(=tests::runner_helpers_create_safe_artifact_paths_and_ports)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - Mock servers and helper servers keep binding port 0.
+  - Handing the bound listener to the gateway. LiteLLM's CLI takes only --host and --port.
+pitfalls:
+  - Keeping the probe listener open until the spawn doesn't help, since the gateway binds the port itself seconds later.
+  - The portpicker crate is Unlicense, and deny.toml doesn't allow that license, so no new dependency.
+  - A retry around wait_ready would hide the race instead of closing it.
+budget:
+  max_changed_lines: 90
+  max_new_expects: 0
+review_level: standard
