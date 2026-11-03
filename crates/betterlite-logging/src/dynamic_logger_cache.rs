@@ -24,7 +24,7 @@ pub enum DynamicLoggerCacheError {
     },
 }
 
-pub struct Entry<V> {
+struct Entry<V> {
     value: V,
     expiry: f64,
 }

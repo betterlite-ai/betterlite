@@ -46,6 +46,21 @@ fn cache_with(
     DynamicLoggerCache::new(capturing_removal(stopped), fake_clock(time))
 }
 
+fn set_first_two_hundred_credentials(
+    cache: &DynamicLoggerCache<FixtureLogger>,
+    time: &Arc<Mutex<f64>>,
+) {
+    (0_u32..200_u32).for_each(|index| {
+        let credential = format!("team-{index}");
+        let creds = credentials(&[("api_key", &credential)]);
+        *time.lock().expect("fixture clock lock is not poisoned") = f64::from(index);
+        let name = if index == 0 { "earliest" } else { "filler" };
+        cache
+            .set_cache(&creds, "langfuse", FixtureLogger { name })
+            .expect("set succeeds");
+    });
+}
+
 #[test]
 fn set_cache_stops_the_live_value_it_replaces() {
     let time = Arc::new(Mutex::new(0.0_f64));
@@ -315,15 +330,7 @@ fn new_cache_evicts_the_earliest_entry_on_the_201st_credential_set() {
     let cache = cache_with(&time, &stopped);
     let earliest = credentials(&[("api_key", "team-0")]);
 
-    (0_u32..200_u32).for_each(|index| {
-        let credential = format!("team-{index}");
-        let creds = credentials(&[("api_key", &credential)]);
-        *time.lock().expect("fixture clock lock is not poisoned") = f64::from(index);
-        let name = if index == 0 { "earliest" } else { "filler" };
-        cache
-            .set_cache(&creds, "langfuse", FixtureLogger { name })
-            .expect("set succeeds");
-    });
+    set_first_two_hundred_credentials(&cache, &time);
     assert!(
         stopped
             .lock()
