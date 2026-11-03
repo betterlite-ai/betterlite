@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use rstest::rstest;
 use secrecy::SecretString;
 
 use super::{connection_type_label, redacted_config_rows};
@@ -83,7 +84,7 @@ fn redaction_masks_the_data_node_password() {
     };
     let rows = redacted_config_rows(&settings);
     let value = row_value(&rows, "password").expect("password row exists");
-    assert!(!value.contains("super-secret-value"));
+    assert_eq!(value, "******************");
 }
 
 #[test]
@@ -94,7 +95,62 @@ fn redaction_masks_the_sentinel_password_too() {
     };
     let rows = redacted_config_rows(&settings);
     let value = row_value(&rows, "sentinel_password").expect("sentinel_password row exists");
-    assert!(!value.contains("monitor-only-secret"));
+    assert_eq!(value, "*******************");
+}
+
+#[rstest]
+#[case::nine_chars("123456789")]
+#[case::twelve_chars("abcdefghijkl")]
+#[case::twenty_three_chars("12345678901234567890123")]
+#[case::unicode_chars("pässwörd-12")]
+#[case::eight_chars("12345678")]
+#[case::empty("")]
+fn redaction_masks_a_secret_under_24_characters_fully(#[case] secret: &str) {
+    let settings = RedisConnectionSettings {
+        password: Some(SecretString::from(secret.to_owned())),
+        sentinel_password: Some(SecretString::from(secret.to_owned())),
+        ssl_password: Some(SecretString::from(secret.to_owned())),
+        ..blank_settings()
+    };
+    let expected = Some("*".repeat(secret.chars().count()));
+    let rows = redacted_config_rows(&settings);
+    assert_eq!(row_value(&rows, "password"), expected);
+    assert_eq!(row_value(&rows, "sentinel_password"), expected);
+    assert_eq!(row_value(&rows, "ssl_password"), expected);
+}
+
+#[rstest]
+#[case::twenty_four_chars("123456789012345678901234")]
+#[case::thirty_chars("123456789012345678901234567890")]
+fn redaction_keeps_four_and_four_of_a_secret_of_24_characters_or_more(#[case] secret: &str) {
+    let settings = RedisConnectionSettings {
+        password: Some(SecretString::from(secret.to_owned())),
+        ..blank_settings()
+    };
+    let value = row_value(&redacted_config_rows(&settings), "password").expect("password row");
+    assert_eq!(&value[..4], &secret[..4]);
+    assert!(value.ends_with(&secret[secret.len() - 4..]));
+}
+
+#[test]
+fn redaction_keeps_litellms_mask_for_non_secret_rows() {
+    let settings = RedisConnectionSettings {
+        credential_provider_settings: Some(CredentialProviderSettings::Explicit),
+        passthrough: BTreeMap::from([(
+            "ssl_keyfile".to_owned(),
+            PassthroughValue::Text("/etc/redis/client.key".to_owned()),
+        )]),
+        ..blank_settings()
+    };
+    let rows = redacted_config_rows(&settings);
+    assert_eq!(
+        row_value(&rows, "credential_provider"),
+        Some("<cre*************der>".to_owned())
+    );
+    assert_eq!(
+        row_value(&rows, "ssl_keyfile"),
+        Some("/etc*************.key".to_owned())
+    );
 }
 
 #[test]

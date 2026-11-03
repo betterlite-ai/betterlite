@@ -45,6 +45,19 @@ fn builds_a_url_client_from_the_url_field() {
 }
 
 #[test]
+fn url_client_takes_tls_from_the_scheme_alone() {
+    let settings = RedisConnectionSettings {
+        url: Some(SecretString::from("redis://cache:6379".to_owned())),
+        ssl: Some(true),
+        ssl_password: Some(SecretString::from("secret".to_owned())),
+        ..blank_settings()
+    };
+    let client = build(&settings).expect("url client builds");
+    assert_eq!(client.url.expose_secret(), "redis://cache:6379");
+    assert!(!format!("{client:?}").contains("ssl"));
+}
+
+#[test]
 fn a_missing_url_is_rejected() {
     let settings = blank_settings();
     let error = build(&settings).expect_err("no url cannot build a url client");

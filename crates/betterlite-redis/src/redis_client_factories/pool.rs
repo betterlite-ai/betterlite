@@ -1,5 +1,6 @@
 mod tests;
 
+use super::dispatch::credential_provider_auth;
 use super::error::FactoryError;
 use super::fields::ConnectionFields;
 use super::url::{self, UrlClient};
@@ -19,6 +20,7 @@ pub enum PoolConnection {
 #[derive(Debug, Clone)]
 pub struct PoolConfig {
     pub timeout_seconds: u32,
+    pub max_connections: u64,
     pub connection: PoolConnection,
 }
 
@@ -32,13 +34,24 @@ where
     E: EnvironmentLookup,
 {
     let timeout_seconds = pool_timeout_seconds(env)?;
+    if let Some(value) = settings.max_connections.filter(|value| *value < 1) {
+        return Err(FactoryError::InvalidMaxConnections { value });
+    }
+    let settings = credential_provider_auth(settings);
+    let max_connections = match settings.max_connections {
+        Some(value) => {
+            u64::try_from(value).map_err(|_| FactoryError::InvalidMaxConnections { value })?
+        }
+        None => 50,
+    };
     let connection = match target {
         Target::Cluster | Target::Sentinel => return Ok(None),
-        Target::Url => PoolConnection::Url(url::build(settings)?),
-        Target::Direct => PoolConnection::Direct(ConnectionFields::from(settings)),
+        Target::Url => PoolConnection::Url(url::build(&settings)?),
+        Target::Direct => PoolConnection::Direct(ConnectionFields::from(&settings)),
     };
     Ok(Some(PoolConfig {
         timeout_seconds,
+        max_connections,
         connection,
     }))
 }

@@ -17,6 +17,8 @@ pub enum FactoryError {
         #[source]
         source: ParseIntError,
     },
+    #[error("max_connections must be a positive integer, got {value}")]
+    InvalidMaxConnections { value: i64 },
     #[error("'reinitialize_steps' must be a whole number between 0 and 4294967295, got {value}")]
     InvalidReinitializeSteps { value: String },
 }

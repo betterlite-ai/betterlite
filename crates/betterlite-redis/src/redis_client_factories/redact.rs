@@ -49,7 +49,11 @@ pub fn connection_type_label(settings: &RedisConnectionSettings) -> &'static str
 }
 
 fn mask_if_sensitive(masker: &SensitiveDataMasker, key: &str, text: String) -> String {
-    if masker.is_sensitive_key(key, &[]) {
+    if matches!(key, "password" | "sentinel_password" | "ssl_password") && text.chars().count() < 24
+    {
+        return "*".repeat(text.chars().count());
+    }
+    if key == "ssl_keyfile" || masker.is_sensitive_key(key, &[]) {
         masker.mask_value(&text)
     } else {
         text

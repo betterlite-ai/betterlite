@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use rstest::rstest;
 use secrecy::{ExposeSecret, SecretString};
 
 use super::{PoolConnection, build_connection_pool};
@@ -125,4 +126,109 @@ fn a_sentinel_target_never_gets_a_pool() {
     let pool = build_connection_pool(&blank_settings(), Target::Sentinel, &env)
         .expect("sentinel pool construction does not error");
     assert!(pool.is_none());
+}
+
+#[rstest]
+#[case::direct(Target::Direct)]
+#[case::url(Target::Url)]
+fn pool_size_defaults_to_50_connections(#[case] target: Target) {
+    let settings = RedisConnectionSettings {
+        url: (target == Target::Url).then(|| SecretString::from("redis://cache:6379".to_owned())),
+        ..blank_settings()
+    };
+    let pool = build_connection_pool(&settings, target, &BTreeMap::<String, String>::new())
+        .expect("pool builds")
+        .expect("pool exists");
+    assert_eq!(pool.max_connections, 50);
+}
+
+#[rstest]
+#[case::direct(Target::Direct)]
+#[case::url(Target::Url)]
+fn pool_size_follows_the_configured_max_connections(#[case] target: Target) {
+    let settings = RedisConnectionSettings {
+        url: (target == Target::Url).then(|| SecretString::from("redis://cache:6379".to_owned())),
+        max_connections: Some(12),
+        ..blank_settings()
+    };
+    let pool = build_connection_pool(&settings, target, &BTreeMap::<String, String>::new())
+        .expect("pool builds")
+        .expect("pool exists");
+    assert_eq!(pool.max_connections, 12);
+}
+
+#[rstest]
+#[case::zero(0)]
+#[case::negative(-3)]
+fn pool_size_rejects_max_connections_below_one(#[case] value: i64) {
+    let settings = RedisConnectionSettings {
+        max_connections: Some(value),
+        ..blank_settings()
+    };
+    let error = build_connection_pool(
+        &settings,
+        Target::Direct,
+        &BTreeMap::<String, String>::new(),
+    )
+    .expect_err("invalid size rejected");
+    assert!(error.to_string().contains(&value.to_string()));
+}
+
+#[test]
+fn url_pool_takes_tls_from_the_scheme_alone() {
+    let settings = RedisConnectionSettings {
+        url: Some(SecretString::from("redis://cache:6379".to_owned())),
+        ssl: Some(true),
+        ssl_password: Some(SecretString::from("secret".to_owned())),
+        ..blank_settings()
+    };
+    let pool = build_connection_pool(&settings, Target::Url, &BTreeMap::<String, String>::new())
+        .expect("pool builds")
+        .expect("pool exists");
+    let PoolConnection::Url(client) = pool.connection else {
+        panic!("expected url pool")
+    };
+    assert_eq!(client.url.expose_secret(), "redis://cache:6379");
+    assert!(!format!("{client:?}").contains("ssl"));
+}
+
+#[rstest]
+#[case::direct_gcp(Target::Direct, CredentialProviderSettings::Gcp { service_account: "svc".to_owned(), ssl_ca_certs: None })]
+#[case::url_azure(Target::Url, CredentialProviderSettings::Azure { client_id: None, tenant_id: None, client_secret: None })]
+fn iam_provider_pool_replaces_static_credentials(
+    #[case] target: Target,
+    #[case] provider: CredentialProviderSettings,
+) {
+    let passthrough = BTreeMap::from([(
+        "redis_connect_func".to_owned(),
+        crate::redis_connection_settings::model::scalars::PassthroughValue::Text(
+            "callback".to_owned(),
+        ),
+    )]);
+    let settings = RedisConnectionSettings {
+        url: (target == Target::Url)
+            .then(|| SecretString::from("redis://user:pass@cache:6379".to_owned())),
+        username: Some("user".to_owned()),
+        password: Some(SecretString::from("pass".to_owned())),
+        credential_provider_settings: Some(provider),
+        passthrough,
+        ..blank_settings()
+    };
+    let pool = build_connection_pool(&settings, target, &BTreeMap::<String, String>::new())
+        .expect("pool builds")
+        .expect("pool exists");
+    match pool.connection {
+        PoolConnection::Direct(fields) => {
+            assert!(fields.credential_provider);
+            assert!(fields.username.is_none());
+            assert!(fields.password.is_none());
+            assert!(!fields.passthrough.contains_key("redis_connect_func"));
+        }
+        PoolConnection::Url(client) => {
+            assert!(client.credential_provider);
+            assert!(client.username.is_none());
+            assert!(!client.passthrough.contains_key("redis_connect_func"));
+            assert!(client.url.expose_secret().contains("user:pass@"));
+        }
+    }
 }
