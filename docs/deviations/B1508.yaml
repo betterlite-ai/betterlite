@@ -9,3 +9,6 @@ deviations:
   - what: Nonfinite cooldown markers and timestamps outside the checked decimal clock range yield zero remaining cooldown.
     why: These cannot represent a real wall-clock device-code request and can otherwise cause an unrepresentable or infinite wait.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/chatgpt/authenticator.py#L356-L369
+  - what: Expiry values outside both Decimal and finite f64 ranges are treated as expired.
+    why: An uncomparable timestamp cannot safely establish that a cached credential is still valid.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/chatgpt/authenticator.py#L113-L116

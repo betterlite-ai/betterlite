@@ -79,7 +79,17 @@ impl<F: FileAccess, C: Clock> ChatGptTokenStore<F, C> {
         };
         expiry.is_none_or(|value| {
             value.as_str().parse::<Decimal>().map_or_else(
-                |_| value.as_str().starts_with('-'),
+                |_| {
+                    value
+                        .as_f64()
+                        .zip(
+                            self.clock
+                                .now()
+                                .checked_add(Decimal::from(60_i32))
+                                .and_then(|boundary| boundary.to_f64()),
+                        )
+                        .is_none_or(|(seconds, boundary)| boundary >= seconds)
+                },
                 |seconds| {
                     seconds
                         .checked_sub(Decimal::from(60_i32))

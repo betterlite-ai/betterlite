@@ -100,12 +100,18 @@ fn store(now: i64) -> ChatGptTokenStore<Files, Time> {
 }
 
 #[rstest]
-#[case(939, false)]
-#[case(940, true)]
-#[case(941, true)]
-fn expiry_boundary(#[case] now: i64, #[case] expired: bool) {
+#[case(939, "1000", false)]
+#[case(940, "1000", true)]
+#[case(941, "1000", true)]
+#[case::underflow(1000, "1e-29", true)]
+#[case::negative_underflow(1000, "-1e-29", true)]
+#[case::positive_overflow(1000, "1e100", false)]
+#[case::negative_overflow(1000, "-1e100", true)]
+#[case::uncomparable(1000, "1e999", true)]
+fn expiry_boundary(#[case] now: i64, #[case] expiry: &str, #[case] expired: bool) {
     let mut subject = store(now);
-    let mut record = decode_auth_record(br#"{"expires_at":1000}"#).unwrap();
+    let mut record =
+        decode_auth_record(format!(r#"{{"expires_at":{expiry}}}"#).as_bytes()).unwrap();
     assert_eq!(
         subject.is_expired(&mut record, &SecretString::from("opaque")),
         expired
@@ -370,4 +376,23 @@ fn default_diagnostics_emit_logs() {
         output,
         " WARN Invalid ChatGPT auth file\nERROR Failed to write ChatGPT auth file\n"
     );
+}
+
+#[rstest]
+#[case::payload_array("[2000000000,null]")]
+#[case::auth_array(r#"{"https://api.openai.com/auth":["acct-example"]}"#)]
+fn array_claims_provide_no_hints(#[case] claims: &str) {
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+    let payload = URL_SAFE_NO_PAD.encode(claims);
+    let token = SecretString::from(format!("h.{payload}.s"));
+    let mut record = decode_auth_record(b"{}").unwrap();
+    record.access_token = Some(Member::Known(token.clone()));
+    let mut subject = store(1000);
+    assert!(subject.is_expired(&mut record, &token));
+    subject
+        .files
+        .records
+        .push_back(serde_json::to_vec(&record).unwrap());
+    assert!(subject.get_account_id().is_none());
+    assert!(subject.files.writes.is_empty());
 }

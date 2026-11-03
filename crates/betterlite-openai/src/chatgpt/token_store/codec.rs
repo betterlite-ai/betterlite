@@ -4,7 +4,7 @@ use std::fmt;
 use super::member::{ExposedSecret, ExtraValue, Member, PresentMember};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use secrecy::{ExposeSecret as _, SecretString};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::IgnoredAny};
 use serde_json::Number;
 use serde_with::{FromInto, FromIntoRef, serde_as};
 
@@ -71,11 +71,15 @@ pub struct TokenClaims {
     pub exp: Option<Member<Number>>,
     #[serde(rename = "https://api.openai.com/auth")]
     pub auth: Option<Member<AccountClaim>>,
+    #[serde(flatten)]
+    pub unknown: IgnoredAny,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct AccountClaim {
     pub chatgpt_account_id: Option<Member<String>>,
+    #[serde(flatten)]
+    pub unknown: IgnoredAny,
 }
 
 #[must_use]
