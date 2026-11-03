@@ -28,8 +28,13 @@ impl crate::helpers::Helper for Op {
                 serde_json::to_value(RequestContext::from_standard_logging_payload(&payload))
                     .map_err(|error| invalid(&error.to_string()))
             }
-            Some("session") => session(input),
-            Some("flatten") => flatten(input),
+            Some("session" | "flatten") => session_or_flatten(
+                input,
+                input
+                    .get("function")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default(),
+            ),
             Some("baggage") => baggage(input),
             _ => Err(invalid("unknown b3841 function")),
         }
@@ -39,19 +44,18 @@ impl crate::helpers::Helper for Op {
 #[path = "b3841/tests.rs"]
 mod tests;
 
-fn session(input: &Value) -> crate::helpers::HelperResult {
-    let kwargs_value = input
-        .get("kwargs")
-        .ok_or_else(|| invalid("kwargs is required"))?;
-    let kwargs = serde_json::from_value::<OtelModelValue>(kwargs_value.clone())
-        .map_err(|error| invalid(&error.to_string()))?;
-    let trace = betterlite_logging::otel::model::trace_controls::caller_trace_controls(&kwargs);
-    Ok(
-        json!({"session_id": betterlite_logging::otel::model::metadata::callback::caller_session_id(&kwargs, &trace)}),
-    )
-}
-
-fn flatten(input: &Value) -> crate::helpers::HelperResult {
+fn session_or_flatten(input: &Value, action: &str) -> crate::helpers::HelperResult {
+    if action == "session" {
+        let kwargs_value = input
+            .get("kwargs")
+            .ok_or_else(|| invalid("kwargs is required"))?;
+        let kwargs = serde_json::from_value::<OtelModelValue>(kwargs_value.clone())
+            .map_err(|error| invalid(&error.to_string()))?;
+        let trace = betterlite_logging::otel::model::trace_controls::caller_trace_controls(&kwargs);
+        return Ok(
+            json!({"session_id": betterlite_logging::otel::model::metadata::callback::caller_session_id(&kwargs, &trace)}),
+        );
+    }
     let metadata_value = input.get("metadata").cloned().unwrap_or_else(|| json!({}));
     let metadata = serde_json::from_value::<OtelModelValue>(metadata_value)
         .map_err(|error| invalid(&error.to_string()))?;
