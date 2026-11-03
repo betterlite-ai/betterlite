@@ -3,6 +3,14 @@
 use super::{redaction_tag, rstest};
 
 #[rstest]
+#[case::multidigit_unicode("{pattern_name[\u{ff11}\u{ff12}]}", "abcdefghijklmn", "M")]
+#[case::fullwidth_index("[{pattern_name[\u{ff10}]}]", "email", "[E]")]
+#[case::arabic_index("{pattern_name[\u{661}]}", "email", "M")]
+#[case::mixed_index("{pattern_name[\u{660}0\u{ff12}]}", "email", "A")]
+#[case::mathematical_index("{pattern_name[\u{1d7e3}]}", "email", "M")]
+#[case::unicode_nested_index("{pattern_name[\u{ff11}][\u{660}]}", "email", "M")]
+#[case::decimal_nine("{pattern_name[\u{19d9}]}", "abcdefghij", "J")]
+#[case::unicode_index_padding("[{pattern_name[\u{ff10}]:>3}]", "email", "[  E]")]
 #[case::indexed_first("[{pattern_name[0]}]", "email", "[E]")]
 #[case::indexed_last("{pattern_name[4]}", "email", "L")]
 #[case::indexed_unicode("{pattern_name[1]}", "\u{e9}mail", "M")]

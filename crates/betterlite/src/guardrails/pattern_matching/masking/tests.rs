@@ -32,3 +32,6 @@ mod spans;
 
 #[path = "tests/index_errors/tests.rs"]
 mod index_errors;
+
+#[path = "tests/decimal_indices/tests.rs"]
+mod decimal_indices;

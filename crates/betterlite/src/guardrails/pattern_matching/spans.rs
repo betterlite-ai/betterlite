@@ -6,7 +6,7 @@ use unicode_general_category::{GeneralCategory, get_general_category};
 use super::{CompiledPattern, PatternError};
 
 pub const MAX_TEXT_BYTES: usize = 0x0010_0000;
-const DIGIT_RANGES: &[(char, char)] = &[
+pub(super) const DIGIT_RANGES: &[(char, char)] = &[
     ('\u{30}', '\u{39}'),
     ('\u{b2}', '\u{b3}'),
     ('\u{b9}', '\u{b9}'),

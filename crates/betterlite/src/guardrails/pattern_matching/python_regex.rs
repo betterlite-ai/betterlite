@@ -77,6 +77,9 @@ impl Translator {
                 escaped(&mut class, characters.next(), true)?;
                 continue;
             }
+            if character == '-' && characters.peek() == Some(&']') {
+                class.push('\\');
+            }
             class.push(character);
         }
         self.output.push_str(&class);

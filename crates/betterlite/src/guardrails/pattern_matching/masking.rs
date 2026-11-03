@@ -1,6 +1,9 @@
 use std::ops::Range;
 
-use super::{PatternError, spans::MAX_TEXT_BYTES};
+use unicode_general_category::{GeneralCategory, get_general_category};
+
+use super::PatternError;
+use super::spans::{DIGIT_RANGES, MAX_TEXT_BYTES};
 
 #[derive(Debug, thiserror::Error)]
 pub enum MaskError {
@@ -84,12 +87,8 @@ fn indexed_name<'name>(key: &str, uppercase: &'name str) -> Result<&'name str, s
             .strip_prefix('[')
             .and_then(|tail| tail.split_once(']'))
             .ok_or_else(|| strfmt::FmtError::KeyError(key.to_owned()))?;
-        if index.is_empty() || !index.bytes().all(|byte| byte.is_ascii_digit()) {
-            return Err(strfmt::FmtError::KeyError(key.to_owned()));
-        }
-        let position = index
-            .parse::<usize>()
-            .map_err(|_source| strfmt::FmtError::KeyError(key.to_owned()))?;
+        let position =
+            decimal_index(index).ok_or_else(|| strfmt::FmtError::KeyError(key.to_owned()))?;
         let (start, character) = value
             .char_indices()
             .nth(position)
@@ -101,4 +100,26 @@ fn indexed_name<'name>(key: &str, uppercase: &'name str) -> Result<&'name str, s
         suffix = rest;
     }
     Ok(value)
+}
+
+fn decimal_index(index: &str) -> Option<usize> {
+    if index.is_empty() {
+        return None;
+    }
+    index.chars().try_fold(0_usize, |value, character| {
+        if get_general_category(character) != GeneralCategory::DecimalNumber {
+            return None;
+        }
+        // The pinned ranges exclude decimal characters from newer Unicode versions.
+        let (start, _) = DIGIT_RANGES
+            .iter()
+            .find(|(start, end)| (*start..=*end).contains(&character))?;
+        // Consecutive mathematical digit alphabets each restart at zero.
+        let digit = u32::from(character)
+            .checked_sub(u32::from(*start))?
+            .checked_rem(10)?;
+        value
+            .checked_mul(10)?
+            .checked_add(usize::try_from(digit).ok()?)
+    })
 }

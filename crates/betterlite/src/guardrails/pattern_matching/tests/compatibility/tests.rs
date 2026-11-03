@@ -7,6 +7,15 @@ use super::{ContentFilterAction, ContentFilterPattern, compile};
 use rstest::rstest;
 
 #[rstest]
+#[case::trailing_hyphen_lower("regex", "[i-]", "-", true)]
+#[case::trailing_hyphen_upper("regex", "[I-]", "-", true)]
+#[case::trailing_hyphen_no_range("regex", "[I-]", "[", false)]
+#[case::negated_trailing_hyphen("regex", "[^i-]", "-", false)]
+#[case::negated_upper_hyphen("regex", "[^I-]", "[", true)]
+#[case::escaped_trailing_hyphen("regex", r"[i\-]", "-", true)]
+#[case::leading_hyphen("regex", "[-i]", "-", true)]
+#[case::hyphen_after_close_literal("regex", "[]i-]", "-", true)]
+#[case::hyphen_dotted_case("regex", "[i-]", "\u{130}", true)]
 #[case::comment_flags("regex", "(?x)# (?-i: \ni$", "\u{130}\n", true)]
 #[case::named_scoped_flags("regex", "(?-i:(?P<id>a)i)$", "a\u{130}\n", false)]
 #[case::named_condition_underscore("regex", "(?P<_id>a)(?(_id)i|x)$", "ai\n", true)]
