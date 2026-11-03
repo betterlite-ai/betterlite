@@ -400,6 +400,7 @@ scope:
   - "tools/oracle/src/helpers/logging/otel_vocabulary/**"
   - tools/oracle/src/helpers/logging/otel_vocabulary.rs
   - tools/oracle/src/helpers/logging/verbose_hooks/tests.rs
+  - tools/oracle/src/helpers/mcp/b4687/tests.rs
   - tools/oracle/src/helpers/mcp/b4740.rs
   - tools/oracle/src/helpers/models/catalog_generalizations/tests.rs
   - tools/oracle/src/helpers/models/model_metadata_projection/tests.rs
