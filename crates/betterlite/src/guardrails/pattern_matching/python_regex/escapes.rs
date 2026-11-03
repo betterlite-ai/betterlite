@@ -84,7 +84,7 @@ pub(super) fn literal(
         'u' => 4,
         'U' => 8,
         '0'..='7' => return octal(character, characters, in_class),
-        'N' => return named(characters).map(Some),
+        'N' => return Err(named(characters)),
         'a' => return Ok(Some('\x07')),
         'f' => return Ok(Some('\x0c')),
         'n' => return Ok(Some('\n')),
@@ -134,13 +134,13 @@ fn octal(
     Ok(Some(value))
 }
 
-fn named(characters: &mut Peekable<Chars<'_>>) -> Result<char, Error> {
+fn named(characters: &mut Peekable<Chars<'_>>) -> Error {
     if characters.next_if_eq(&'{').is_none() {
-        return Err(Error::ParseError(0, ParseError::UnclosedUnicodeName));
+        return Error::ParseError(0, ParseError::UnclosedUnicodeName);
     }
     while characters.next_if(|value| *value != '}').is_some() {}
     if characters.next_if_eq(&'}').is_none() {
-        return Err(Error::ParseError(0, ParseError::UnclosedUnicodeName));
+        return Error::ParseError(0, ParseError::UnclosedUnicodeName);
     }
-    Err(Error::ParseError(0, ParseError::InvalidCodepointValue))
+    Error::ParseError(0, ParseError::InvalidCodepointValue)
 }
