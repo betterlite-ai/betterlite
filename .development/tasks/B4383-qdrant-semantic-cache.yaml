@@ -9,6 +9,8 @@ description: >-
   Key filtering and post-search payload validation both enforce isolation: every hit with matching cache key proceeds, old payloads without the cache_key field miss with zero similarity, and mismatched keys miss the same way.
   Searches use one result with payloads, quantization rescore with 3.0 oversampling, and equality meets the threshold.
   Reads propagate operation errors; batch operations propagate gather errors without Redis's broad error-to-miss conversion.
+  Use B4380's `extract_semantic_prompt(Some(messages), None)` for Qdrant read and write prompts and its `decode_cached_response` for hit payloads.
+  Serialize the betterlite-prompts `arguments::json::Json` cache response as JSON text accepted by that decoder; do not write Python `str(value)` output.
   Copy the async httpx client lookup from B173 and UUID generation from B198 instead of using LiteLLM's functions.
   Config loading replaces environment lookups at the constructor boundary using B002's lookup and secret resolution (os.environ/ prefix only).
 scope:
@@ -57,7 +59,7 @@ dod:
     proof: [key-filter-tests, search-oracle]
   - text: "Similarities equal to and above the threshold return a cached response; below the threshold return None and set zero similarity in metadata."
     proof: [similarity-threshold-tests, search-oracle]
-  - text: "Sync set_cache and get_cache work end-to-end with the embedding service; async versions use the provided execution context."
+  - text: "Sync set_cache and get_cache work end-to-end with the embedding service; async versions use the provided execution context, shared prompt extraction and JSON response serialization/decoding."
     proof: [cache-roundtrip-tests]
   - text: "async_set_cache_pipeline gathers all async_set_cache tasks and propagates any gather error, not individual cache write errors."
     proof: [batch-write-tests]
@@ -124,7 +126,7 @@ deviations:
 out_of_scope:
   - The cache factory (caching.py:221-261) that constructs backends; owned by the eventual backend composition task.
   - Embedding service dispatch and router/direct model selection; owned by B4381 and its prerequisites.
-  - TTL handling (Qdrant does not use per-call TTL like Redis); B4380's `_get_ttl` and B002 config apply to Redis/Valkey only.
+  - TTL handling; Qdrant has no per-call TTL. B4382 owns Redis `_get_ttl` and its synchronous/asynchronous callers.
   - The _collection_info method (qdrant_semantic_cache.py:503-504); no caller at the pin, kept for struct completeness.
 pitfalls:
   - LiteLLM accepts strings for quantization_config ("binary", "scalar", "product") but rejects anything else with a generic exception, not a named error; preserve that behavior and error message exactly.
