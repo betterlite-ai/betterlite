@@ -1,0 +1,16 @@
+kind: helper
+name: malformed-price-on-highest-crossed-threshold
+call:
+  token_rates:
+    operation: base
+    model_info:
+      input_cost_per_token: "0.000001"
+      input_cost_per_token_above_100_tokens: garbage
+      input_cost_per_token_above_50_tokens: "0.000003"
+      output_cost_per_token_above_100_tokens: "0.000008"
+    usage:
+      prompt_tokens: 200
+    service_tier: null
+    provider: null
+compare: {ignore: []}
+env: {}

@@ -79,12 +79,12 @@ async fn exchange(
     request: &str,
     call_id: &str,
     reply: (u16, &str),
-    delay: Duration,
+    (delay, deployment_timeout): (Duration, &str),
 ) -> Exchange {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}/v1", listener.local_addr().unwrap());
     let source = format!(
-        "model_list:\n  - {{model_name: g, litellm_params: {{model: openai/up, api_base: '{base}', timeout: 0.4}}, model_info: {{id: dep-1}}}}\n"
+        "model_list:\n  - {{model_name: g, litellm_params: {{model: openai/up, api_base: '{base}', timeout: {deployment_timeout}}}, model_info: {{id: dep-1}}}}\n"
     );
     let environment = BTreeMap::from([
         ("OPENAI_API_KEY".to_owned(), "env-key".to_owned()),
@@ -140,7 +140,7 @@ async fn serves_every_chat_route_with_litellm_headers(
     #[case] request: &str,
     #[case] model: &str,
 ) {
-    let answered = exchange(path, request, "call-1", (200, ANSWER), NO_DELAY).await;
+    let answered = exchange(path, request, "call-1", (200, ANSWER), (NO_DELAY, "30")).await;
     assert_eq!(answered.status, 200);
     assert_eq!(
         serde_json::from_slice::<Completion>(&answered.body)
@@ -233,7 +233,7 @@ async fn echoes_a_valid_call_id_and_generates_one_otherwise(
         r#"{"model":"g","messages":[]}"#,
         call_id,
         (200, ANSWER),
-        NO_DELAY,
+        (NO_DELAY, "30"),
     )
     .await;
     assert_eq!(
@@ -262,7 +262,7 @@ async fn answers_failures_in_litellm_shape(
         request,
         "call-2",
         (reply_status, reply),
-        delay,
+        (delay, "0.4"),
     )
     .await;
     assert_eq!(answered.status, status);
@@ -304,7 +304,7 @@ async fn stream_error_preserves_param() {
         r#"{"model":"g","messages":[],"stream":true}"#,
         "stream-error",
         (429, r#"{"error":{"type":"requests","param":"p"}}"#),
-        NO_DELAY,
+        (NO_DELAY, "0.4"),
     )
     .await;
     assert_eq!(answered.status, 429);
@@ -328,7 +328,7 @@ async fn stream_finishes_once(#[case] input: &str) {
         r#"{"model":"g","messages":[],"stream":true}"#,
         "stream-done",
         (200, input),
-        NO_DELAY,
+        (NO_DELAY, "30"),
     )
     .await;
     assert_eq!(answered.body, b"data: [DONE]\n\n");
@@ -359,7 +359,7 @@ async fn stream_has_success_headers(#[case] name: &str, #[case] value: &str) {
         r#"{"model":"g","messages":[],"stream":true}"#,
         "stream-headers",
         (200, "data: [DONE]\n\n"),
-        NO_DELAY,
+        (NO_DELAY, "30"),
     )
     .await;
     assert_eq!(header(&answered.headers, name), Some(value));
@@ -382,4 +382,47 @@ async fn stream_has_success_headers(#[case] name: &str, #[case] value: &str) {
             .unwrap()
             >= rust_decimal::Decimal::ZERO
     );
+}
+
+#[tokio::test]
+async fn a_streaming_success_survives_a_one_second_provider_delay() {
+    let answered = exchange(
+        "/v1/chat/completions",
+        r#"{"model":"g","messages":[],"stream":true}"#,
+        "slow-stream",
+        (200, "data: [DONE]\n\n"),
+        (Duration::from_secs(1), "30"),
+    )
+    .await;
+    assert_eq!(answered.status, 200);
+    assert_eq!(answered.body, b"data: [DONE]\n\n");
+    let expected = [
+        ("x-litellm-call-id", "slow-stream"),
+        ("x-litellm-model-id", "dep-1"),
+        ("x-litellm-model-name", "openai/up"),
+        ("x-litellm-model-group", "g"),
+        ("x-litellm-version", env!("CARGO_PKG_VERSION")),
+        ("x-litellm-callback-duration-ms", "0.0"),
+        ("x-litellm-attempted-retries", "0"),
+        ("x-litellm-attempted-fallbacks", "0"),
+        ("content-type", "text/event-stream; charset=utf-8"),
+        ("cache-control", "no-cache"),
+        ("x-accel-buffering", "no"),
+        ("x-ratelimit-remaining-requests", "9"),
+        ("x-ratelimit-reset-requests", "1s"),
+        ("llm_provider-x-ratelimit-remaining-requests", "9"),
+        ("llm_provider-x-ratelimit-reset-requests", "1s"),
+    ];
+    assert!(
+        expected
+            .iter()
+            .all(|(name, value)| header(&answered.headers, name) == Some(value))
+    );
+    assert!(header(&answered.headers, "x-litellm-timeout").is_none());
+    assert!(
+        header(&answered.headers, "x-litellm-model-api-base")
+            .is_some_and(|base| base.ends_with("/v1"))
+    );
+    assert!(header(&answered.headers, "x-litellm-response-duration-ms").is_some());
+    assert!(header(&answered.headers, "x-litellm-overhead-duration-ms").is_some());
 }

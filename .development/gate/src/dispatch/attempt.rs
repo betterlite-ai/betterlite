@@ -150,8 +150,8 @@ fn answered(
         }
     };
     if report.status == ReportStatus::Blocked {
-        return Ok(Some(Step::Climb(vec![format!(
-            "A previous worker reported blocked: {}",
+        return Ok(Some(Step::Blocked(vec![format!(
+            "The last run reported blocked: {}",
             report.blocker
         )])));
     }

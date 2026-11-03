@@ -170,7 +170,7 @@ pub(crate) struct Policy {
     )]
     pub(crate) max_review_rounds: u32,
     #[schemars(
-        description = "Blocked reports in a row before a task goes back to the architect instead of climbing to the next rung."
+        description = "Blocked reports in a row before a task goes back to the architect. A report before that resumes the worker's session on the same rung, with a note that unfinished work is not a blocker."
     )]
     pub(crate) max_blocked_reports: u32,
     #[schemars(

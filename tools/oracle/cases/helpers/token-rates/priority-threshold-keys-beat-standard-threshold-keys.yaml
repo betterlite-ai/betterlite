@@ -1,0 +1,16 @@
+kind: helper
+name: priority-threshold-keys-beat-standard-threshold-keys
+call:
+  token_rates:
+    operation: base
+    model_info:
+      input_cost_per_token_above_100_tokens: "0.000002"
+      input_cost_per_token_above_100_tokens_priority: "0.000003"
+      output_cost_per_token_above_100_tokens: "0.000004"
+      output_cost_per_token_above_100_tokens_priority: "0.000005"
+    usage:
+      prompt_tokens: 200
+    service_tier: priority
+    provider: null
+compare: {ignore: []}
+env: {}
