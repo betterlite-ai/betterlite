@@ -28,11 +28,10 @@ pub(super) fn perl_class(character: char, flags: Flags) -> Option<String> {
 }
 
 pub(super) fn literal(character: char, flags: Flags) -> String {
-    if !flags.caseless {
-        return format!(r"\x{{{:x}}}", u32::from(character));
-    }
     let mut class = ClassUnicode::new([ClassUnicodeRange::new(character, character)]);
-    fold(&mut class, flags);
+    if flags.caseless {
+        fold(&mut class, flags);
+    }
     render(&class)
 }
 
