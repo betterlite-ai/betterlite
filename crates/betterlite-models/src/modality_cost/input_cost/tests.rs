@@ -266,9 +266,23 @@ fn flex_tier_prices_cached_audio_and_audio_tokens_at_their_flex_keys() {
     let usage = PromptTokensDetailsResult {
         cache_hit_tokens: 4,
         cache_hit_audio_tokens: 4,
-        audio_tokens: 6,
+        audio_tokens: 2,
         ..details()
     };
     let cost = calculate_input_cost(&usage, &model, &rates(), Some("flex")).expect("no overflow");
-    assert_eq!(cost, Decimal::from(14_i64));
+    assert_eq!(cost, Decimal::from(12_i64));
+
+    let mut generic_cache_rate = model.clone();
+    generic_cache_rate.remove("cache_read_input_audio_token_cost_flex");
+    let cache_fallback_cost =
+        calculate_input_cost(&usage, &generic_cache_rate, &rates(), Some("flex"))
+            .expect("no overflow");
+    assert_eq!(cache_fallback_cost, Decimal::from(13_i64));
+
+    let mut generic_audio_rate = model;
+    generic_audio_rate.remove("input_cost_per_audio_token_flex");
+    let audio_fallback_cost =
+        calculate_input_cost(&usage, &generic_audio_rate, &rates(), Some("flex"))
+            .expect("no overflow");
+    assert_eq!(audio_fallback_cost, Decimal::from(13_i64));
 }

@@ -5,7 +5,7 @@ call:
     operation: prompt
     service_tier: flex
     cached_tokens: 4
-    cache_hit_audio_tokens: 4
+    cached_tokens_details: {audio_tokens: 4}
     prompt_tokens: 10
     text_tokens: 10
     audio_tokens: 6
