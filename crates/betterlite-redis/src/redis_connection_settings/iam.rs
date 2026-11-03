@@ -48,11 +48,12 @@ where
     }
 
     let aws_iam_enabled = coerce_bool(
+        "REDIS_AWS_IAM_AUTH",
         overrides
             .aws_iam_auth
             .clone()
             .or_else(|| env.lookup("REDIS_AWS_IAM_AUTH").map(BoolOrText::Text)),
-    )
+    )?
     .unwrap_or(false);
     if aws_iam_enabled {
         apply_aws(overrides, settings, env)?;
@@ -170,11 +171,12 @@ where
         cache_name: cache,
         region: location,
         serverless: coerce_bool(
+            "REDIS_AWS_IAM_SERVERLESS",
             overrides
                 .aws_iam_serverless
                 .clone()
                 .or_else(|| env.lookup("REDIS_AWS_IAM_SERVERLESS").map(BoolOrText::Text)),
-        )
+        )?
         .unwrap_or(false),
     })
 }

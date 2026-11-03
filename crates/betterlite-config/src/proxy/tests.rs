@@ -101,8 +101,37 @@ fn http_proxies_proxy_policy_tests_behavior(
     }
     .load(settings)
     .unwrap();
-    let policy = ProxyPolicy::resolve(&config.litellm_settings.proxy_trust, &environment);
+    let policy = ProxyPolicy::resolve(&config.litellm_settings.proxy_trust, &environment).unwrap();
     fs::remove_dir_all(&home).unwrap();
     assert_eq!(render(&policy, target), expected);
     assert!(!format!("{policy:?}").contains("secret"));
+}
+
+#[rstest]
+#[case::disable("DISABLE_AIOHTTP_TRUST_ENV")]
+#[case::enable("AIOHTTP_TRUST_ENV")]
+fn shared_env_proxy_trust(#[case] name: &str) {
+    let mut environment = BTreeMap::from([
+        (name.to_owned(), " Yes ".to_owned()),
+        (
+            "HTTP_PROXY".to_owned(),
+            "http://proxy.local:3128".to_owned(),
+        ),
+    ]);
+    let policy = ProxyPolicy::resolve(&Default::default(), &environment).unwrap();
+    assert_eq!(
+        policy.primary.is_empty(),
+        name == "DISABLE_AIOHTTP_TRUST_ENV"
+    );
+    assert_eq!(policy.fallback.is_empty(), name != "AIOHTTP_TRUST_ENV");
+    environment.insert(name.to_owned(), String::new());
+    let defaults = ProxyPolicy::resolve(&Default::default(), &environment).unwrap();
+    assert!(!defaults.primary.is_empty());
+    assert!(defaults.fallback.is_empty());
+    environment.insert(name.to_owned(), "maybe".to_owned());
+    let error = ProxyPolicy::resolve(&Default::default(), &environment)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains(name));
+    assert!(!error.contains("maybe"));
 }

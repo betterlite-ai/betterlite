@@ -83,11 +83,23 @@ pub(super) fn resolve_number<T, F>(
     parser: F,
 ) -> Result<Option<T>, ConfigError>
 where
+    T: std::str::FromStr,
     F: Fn(&str, &str) -> Result<T, ConfigError>,
 {
     let Some(number) = value else {
         return Ok(None);
     };
+    if let RawNumber::Text(value) = &number {
+        if let Some(name) = value.strip_prefix("os.environ/") {
+            let Some(text) = lookup.lookup(name) else {
+                return Err(ConfigError::MissingEnvironment {
+                    variable: name.to_owned(),
+                    path: path.to_owned(),
+                });
+            };
+            return Ok(betterlite_env::number::<T>(name, &text)?);
+        }
+    }
     let text = number_text(number, path, lookup)?;
     Ok(Some(parser(&text, path)?))
 }

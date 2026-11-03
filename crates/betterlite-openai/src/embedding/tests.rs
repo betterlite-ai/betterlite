@@ -137,10 +137,7 @@ fn embedding_executor(base: &str) -> (ChatExecutor, ChatDeployment) {
         &OpenAiDefaults::default(),
     )
     .expect("deployment");
-    let policy = Arc::new(ProxyPolicy::resolve(
-        &ProxyTrust::default(),
-        &BTreeMap::new(),
-    ));
+    let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap());
     let executor = ChatExecutor {
         client: ProxiedClient::outbound(&policy).expect("client"),
         deployments: vec![deployment.clone()],

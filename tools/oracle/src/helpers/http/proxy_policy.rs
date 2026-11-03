@@ -21,7 +21,8 @@ pub(crate) fn invoke(
         aiohttp_trust_env: input.aiohttp_trust_env,
         disable_aiohttp_trust_env: input.disable_aiohttp_trust_env,
     };
-    let policy = ProxyPolicy::resolve(&trust, &input.environment);
+    let policy = ProxyPolicy::resolve(&trust, &input.environment)
+        .map_err(|error| helper_error("ValueError", error.to_string()))?;
     let message = match Url::parse(&input.url).map(|url| policy.route(&url)) {
         Err(error) => error.to_string(),
         Ok(None) => return Ok(serde_json::json!({"proxy": null})),
@@ -54,6 +55,17 @@ pub(crate) fn invoke(
 }
 
 pub(crate) struct Op;
+
+fn helper_error(class: &str, message: String) -> Box<crate::helpers::HelperError> {
+    Box::new(crate::helpers::HelperError {
+        class: class.to_owned(),
+        status: None,
+        error_type: None,
+        param: None,
+        code: None,
+        message,
+    })
+}
 
 impl crate::helpers::Helper for Op {
     type Input = ProxyPolicyInput;

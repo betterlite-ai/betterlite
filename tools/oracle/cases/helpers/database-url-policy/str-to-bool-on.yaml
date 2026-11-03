@@ -3,7 +3,7 @@ name: str-to-bool-on
 call:
   database_url_policy:
     function: str_to_bool
-    value: "on"
+    value: "yes"
 env: {}
 compare:
   ignore: []

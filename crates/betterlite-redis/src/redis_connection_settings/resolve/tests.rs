@@ -157,15 +157,41 @@ fn redis_target_resolution_prefers_environment_url_over_environment_sentinel_nod
     assert!(settings.sentinel_nodes.is_some());
 }
 
+#[rstest]
+#[case::port("REDIS_PORT", "1_000")]
+#[case::db("REDIS_DB", "1_000")]
+#[case::connections("REDIS_MAX_CONNECTIONS", "1_000")]
+#[case::health("REDIS_HEALTH_CHECK_INTERVAL", "1_000")]
+#[case::ssl("REDIS_SSL", "maybe")]
+#[case::keepalive("REDIS_SOCKET_KEEPALIVE", "maybe")]
+#[case::timeout("REDIS_SOCKET_TIMEOUT", "1_000")]
+#[case::connect_timeout("REDIS_SOCKET_CONNECT_TIMEOUT", "1_000")]
+fn shared_env_redis_coercion_rejects_invalid_settings(#[case] name: &str, #[case] value: &str) {
+    let environment = env(&[("REDIS_HOST", "cache.internal"), (name, value)]);
+    let error = resolve_redis_kwargs(RedisOverrides::default(), ClientKind::Sync, &environment)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains(name));
+    assert!(!error.contains(value));
+}
+
 #[test]
-fn redis_coerce_drops_a_value_that_does_not_parse() {
-    let env = env(&[
+fn shared_env_redis_coercion_resolves_defaults_and_flags() {
+    let environment = env(&[
         ("REDIS_HOST", "cache.internal"),
-        ("REDIS_PORT", "not-a-port"),
+        ("REDIS_SSL", " Yes "),
+        ("REDIS_SOCKET_KEEPALIVE", " OFF "),
+        ("REDIS_PORT", ""),
+        ("REDIS_SOCKET_TIMEOUT", ""),
+        ("REDIS_DECODE_RESPONSES", ""),
     ]);
-    let settings = resolve_redis_kwargs(RedisOverrides::default(), ClientKind::Sync, &env)
-        .expect("host names a target");
+    let settings =
+        resolve_redis_kwargs(RedisOverrides::default(), ClientKind::Sync, &environment).unwrap();
+    assert_eq!(settings.ssl, Some(true));
+    assert_eq!(settings.socket_keepalive, Some(false));
     assert_eq!(settings.port, None);
+    assert_eq!(settings.socket_timeout, None);
+    assert!(!settings.passthrough.contains_key("decode_responses"));
 }
 
 #[test]

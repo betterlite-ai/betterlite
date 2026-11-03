@@ -193,30 +193,23 @@ where
     L: EnvironmentLookup,
 {
     let Some(value) = configured else {
-        return Ok(lookup
-            .lookup(variable)
-            .is_some_and(|value| coerces_to_true(&ScalarBool::Text(value))));
+        let text = lookup.lookup(variable).unwrap_or_default();
+        return Ok(betterlite_env::flag(variable, &text)?.unwrap_or(false));
     };
     let resolved = match value {
         ScalarBool::Boolean(boolean) => ScalarBool::Boolean(*boolean),
         ScalarBool::Text(text) => ScalarBool::Text(resolve_string(text.clone(), path, lookup)?),
     };
-    Ok(coerces_to_true(&resolved))
+    match resolved {
+        ScalarBool::Boolean(boolean) => Ok(boolean),
+        ScalarBool::Text(text) => Ok(betterlite_env::flag(variable, &text)?.unwrap_or(false)),
+    }
 }
 
 fn non_empty(value: Option<String>) -> Option<String> {
     match value {
         Some(text) if !text.is_empty() => Some(text),
         _ => None,
-    }
-}
-
-fn coerces_to_true(setting: &ScalarBool) -> bool {
-    match setting {
-        ScalarBool::Boolean(boolean) => *boolean,
-        ScalarBool::Text(text) => {
-            matches!(text.to_ascii_lowercase().as_str(), "true" | "1" | "yes")
-        }
     }
 }
 

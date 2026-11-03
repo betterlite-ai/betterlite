@@ -2,8 +2,9 @@ use secrecy::SecretString;
 use serde::de::DeserializeOwned;
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::{ParseFloatError, ParseIntError};
-use std::path::PathBuf;
 use thiserror::Error;
+
+pub use betterlite_env::EnvironmentLookup;
 
 use crate::providers::bedrock::request_policy::metadata_fields;
 use crate::raw::{
@@ -18,19 +19,13 @@ use crate::types::{
     Config, GeneralSettings, LiteLlmParams, LiteLlmSettings, ModelDeployment, ModelInfo,
     ProxyTrust, RouterSettings,
 };
-pub trait EnvironmentLookup {
-    fn lookup(&self, name: &str) -> Option<String>;
-    fn system_home(&self) -> Option<PathBuf> {
-        None
-    }
-}
-impl EnvironmentLookup for BTreeMap<String, String> {
-    fn lookup(&self, name: &str) -> Option<String> {
-        self.get(name).cloned()
-    }
-}
 #[derive(Debug, Error)]
 pub enum ConfigError {
+    #[error(transparent)]
+    Environment {
+        #[from]
+        source: betterlite_env::EnvError,
+    },
     #[error("invalid YAML: {source}")]
     Yaml {
         #[source]
@@ -263,22 +258,19 @@ fn environment_defaults<L>(configured: Option<bool>, lookup: &L) -> Result<(bool
 where
     L: EnvironmentLookup,
 {
-    // LiteLLM reads bool(os.getenv(...)), so every nonempty value, "false" included, turns it on
-    let modify_params = configured.unwrap_or_else(|| {
-        lookup
-            .lookup("LITELLM_MODIFY_PARAMS")
-            .is_some_and(|value| !value.is_empty())
-    });
-    let default_max_tokens = lookup
-        .lookup("DEFAULT_MAX_TOKENS")
-        .map_or(Ok(4096), |text| {
-            text.trim()
-                .parse::<i64>()
-                .map_err(|source| ConfigError::InvalidInteger {
-                    path: "DEFAULT_MAX_TOKENS".to_owned(),
-                    source,
-                })
-        })?;
+    let modify_params = match configured {
+        Some(value) => value,
+        None => betterlite_env::flag(
+            "LITELLM_MODIFY_PARAMS",
+            &lookup.lookup("LITELLM_MODIFY_PARAMS").unwrap_or_default(),
+        )?
+        .unwrap_or(false),
+    };
+    let default_max_tokens = betterlite_env::number::<i64>(
+        "DEFAULT_MAX_TOKENS",
+        &lookup.lookup("DEFAULT_MAX_TOKENS").unwrap_or_default(),
+    )?
+    .unwrap_or(4096);
     Ok((modify_params, default_max_tokens))
 }
 

@@ -7,6 +7,7 @@ publish.workspace = true
 
 [dependencies]
 betterlite-config = { path = "../betterlite-config" }
+betterlite-env = { path = "../betterlite-env" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-prometheus = { path = "../betterlite-prometheus" }
 betterlite-redact = { path = "../betterlite-redact" }
