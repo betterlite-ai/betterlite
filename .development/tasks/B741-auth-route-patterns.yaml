@@ -106,6 +106,8 @@ scope:
     - crates/betterlite-server/src/state/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
+    - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/server.rs
     - tools/oracle/cases/auth/auth-route-patterns/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/auth-route-patterns-*
@@ -414,6 +416,7 @@ pitfalls:
   - Configured public routes are enabled deliberately, so their success cases are native deviation tests
     when LiteLLM lacks premium_user.
   - general_settings.public_routes loads in the config section crates/betterlite-config/src/sections/auth_route_patterns.rs. It is a stub already registered in sections.rs; replace it with its own Raw view of general_settings, as sections/rate_limit_usage.rs does, and read it in the server as config.sections.auth_route_patterns. raw.rs, loader.rs and types.rs stay unchanged.
+  - The router is built in crates/betterlite-server/src/routes.rs, and server.rs application() passes it only the master key and the model list. Pass config.sections.auth_route_patterns from application() into routes::router and wire this stage there, the way B882 layers route_match::stage. Change nothing else in those two files.
 budget:
   max_changed_lines: 1500
   max_new_expects: 0
