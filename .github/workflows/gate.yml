@@ -109,8 +109,9 @@ jobs:
       POSTGRES_TEST_URL: postgresql://betterlite:betterlite@postgres:5432/betterlite
       BETTERLITE_ORACLE_CACHE: ${{ github.event_name == 'push' && 'shared' || 'own' }}
     steps:
+      # g++: libfuzzer-sys compiles libFuzzer from C++ even under cargo check
       - name: Install system packages
-        run: apt-get update && apt-get install --yes --no-install-recommends ca-certificates curl git jq procps zstd
+        run: apt-get update && apt-get install --yes --no-install-recommends ca-certificates curl git jq procps zstd g++
 
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
