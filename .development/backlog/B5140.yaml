@@ -1,0 +1,13 @@
+id: B5140
+milestone: M0 foundation
+title: Fuzz crates as workspace members
+status: todo
+depends_on: [B5094]
+file: tasks/B5140-fuzz-workspace-members.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
