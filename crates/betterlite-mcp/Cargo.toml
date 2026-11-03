@@ -24,6 +24,7 @@ strum = { version = "0.28.0", features = ["derive"] }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["time"] }
 tracing.workspace = true
+url = "2.5.8"
 
 [dev-dependencies]
 rstest = "=0.27.0"
