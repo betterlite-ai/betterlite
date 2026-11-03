@@ -35,5 +35,5 @@ fn invalid_max_connections_names_the_field_and_the_value() {
         source: None,
     };
     assert!(error.to_string().contains("max_connections"));
-    assert!(error.to_string().contains("0"));
+    assert!(error.to_string().contains('0'));
 }

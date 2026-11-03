@@ -6,6 +6,7 @@ use rstest::rstest;
 use secrecy::{ExposeSecret, SecretString};
 
 use super::{PoolConnection, build_connection_pool};
+use crate::redis_connection_settings::model::scalars::PassthroughValue;
 use crate::redis_connection_settings::model::settings::{
     CredentialProviderSettings, RedisConnectionSettings, Target,
 };
@@ -203,9 +204,7 @@ fn iam_provider_pool_replaces_static_credentials(
 ) {
     let passthrough = BTreeMap::from([(
         "redis_connect_func".to_owned(),
-        crate::redis_connection_settings::model::scalars::PassthroughValue::Text(
-            "callback".to_owned(),
-        ),
+        PassthroughValue::Text("callback".to_owned()),
     )]);
     let settings = RedisConnectionSettings {
         url: (target == Target::Url)

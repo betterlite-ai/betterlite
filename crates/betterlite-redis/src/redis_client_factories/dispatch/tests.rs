@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 use super::build_client;
 use crate::redis_client_factories::RedisClient;
 use crate::redis_connection_settings::model::nodes::ClusterNodeConfig;
+use crate::redis_connection_settings::model::scalars::PassthroughValue;
 use crate::redis_connection_settings::model::settings::{
     ClientKind, CredentialProviderSettings, RedisConnectionSettings, Target,
 };
@@ -184,48 +185,57 @@ fn iam_provider_dispatch_replaces_static_credentials(
         credential_provider_settings: Some(provider),
         passthrough: BTreeMap::from([(
             "redis_connect_func".to_owned(),
-            crate::redis_connection_settings::model::scalars::PassthroughValue::Text(
-                "callback".to_owned(),
-            ),
+            PassthroughValue::Text("callback".to_owned()),
         )]),
         ..blank_settings()
     };
-    let client = build_client(&settings, kind).expect("client builds");
+    let built_client = build_client(&settings, kind).expect("client builds");
     let should_replace = kind == ClientKind::Async || target == Target::Cluster;
-    match client {
-        RedisClient::Cluster(client) => {
-            assert_eq!(client.credential_provider, should_replace);
-            assert_eq!(client.username.is_none(), should_replace);
-            assert_eq!(client.password.is_none(), should_replace);
+    match built_client {
+        RedisClient::Cluster(cluster_client) => {
+            assert_eq!(cluster_client.credential_provider, should_replace);
+            assert_eq!(cluster_client.username.is_none(), should_replace);
+            assert_eq!(cluster_client.password.is_none(), should_replace);
             assert_eq!(
-                client.passthrough.contains_key("redis_connect_func"),
+                cluster_client
+                    .passthrough
+                    .contains_key("redis_connect_func"),
                 !should_replace
             );
         }
-        RedisClient::Url(client) => {
-            assert_eq!(client.credential_provider, should_replace);
-            assert_eq!(client.username.is_none(), should_replace);
+        RedisClient::Url(url_client) => {
+            assert_eq!(url_client.credential_provider, should_replace);
+            assert_eq!(url_client.username.is_none(), should_replace);
             assert_eq!(
-                client.passthrough.contains_key("redis_connect_func"),
+                url_client.passthrough.contains_key("redis_connect_func"),
                 !should_replace
             );
         }
-        RedisClient::Sentinel(client) => {
-            assert_eq!(client.connection_kwargs.credential_provider, should_replace);
-            assert_eq!(client.connection_kwargs.username.is_none(), should_replace);
-            assert_eq!(client.connection_kwargs.password.is_none(), should_replace);
+        RedisClient::Sentinel(sentinel_client) => {
             assert_eq!(
-                client
+                sentinel_client.connection_kwargs.credential_provider,
+                should_replace
+            );
+            assert_eq!(
+                sentinel_client.connection_kwargs.username.is_none(),
+                should_replace
+            );
+            assert_eq!(
+                sentinel_client.connection_kwargs.password.is_none(),
+                should_replace
+            );
+            assert_eq!(
+                sentinel_client
                     .monitor_password
                     .as_ref()
                     .map(ExposeSecret::expose_secret),
                 Some("monitor")
             );
         }
-        RedisClient::Direct(client) => {
-            assert_eq!(client.credential_provider, should_replace);
-            assert_eq!(client.username.is_none(), should_replace);
-            assert_eq!(client.password.is_none(), should_replace);
+        RedisClient::Direct(direct_client) => {
+            assert_eq!(direct_client.credential_provider, should_replace);
+            assert_eq!(direct_client.username.is_none(), should_replace);
+            assert_eq!(direct_client.password.is_none(), should_replace);
         }
     }
 }
@@ -235,7 +245,7 @@ fn iam_provider_dispatch_replaces_static_credentials(
 #[case::sync_sentinel_azure(Target::Sentinel)]
 #[case::sync_direct_gcp(Target::Direct)]
 fn iam_provider_dispatch_keeps_static_credentials_on_sync_paths(#[case] target: Target) {
-    let settings = match target {
+    let target_settings = match target {
         Target::Url => RedisConnectionSettings {
             url: Some(secrecy::SecretString::from("redis://cache:6379".to_owned())),
             ..blank_settings()
@@ -261,24 +271,24 @@ fn iam_provider_dispatch_keeps_static_credentials_on_sync_paths(#[case] target: 
         }),
         passthrough: BTreeMap::from([(
             "redis_connect_func".to_owned(),
-            crate::redis_connection_settings::model::scalars::PassthroughValue::Text(
-                "callback".to_owned(),
-            ),
+            PassthroughValue::Text("callback".to_owned()),
         )]),
-        ..settings
+        ..target_settings
     };
-    let client = build_client(&settings, ClientKind::Sync).expect("sync client builds");
-    assert!(match client {
-        RedisClient::Url(client) =>
-            client.username.is_some() && client.passthrough.contains_key("redis_connect_func"),
-        RedisClient::Sentinel(client) =>
-            client.connection_kwargs.username.is_some()
-                && client
+    let built_client = build_client(&settings, ClientKind::Sync).expect("sync client builds");
+    assert!(match built_client {
+        RedisClient::Url(url_client) =>
+            url_client.username.is_some()
+                && url_client.passthrough.contains_key("redis_connect_func"),
+        RedisClient::Sentinel(sentinel_client) =>
+            sentinel_client.connection_kwargs.username.is_some()
+                && sentinel_client
                     .connection_kwargs
                     .passthrough
                     .contains_key("redis_connect_func"),
-        RedisClient::Direct(client) =>
-            client.username.is_some() && client.passthrough.contains_key("redis_connect_func"),
+        RedisClient::Direct(direct_client) =>
+            direct_client.username.is_some()
+                && direct_client.passthrough.contains_key("redis_connect_func"),
         RedisClient::Cluster(_) => false,
     });
 }

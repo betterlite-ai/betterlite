@@ -102,7 +102,7 @@ fn redaction_masks_the_sentinel_password_too() {
 #[case::nine_chars("123456789")]
 #[case::twelve_chars("abcdefghijkl")]
 #[case::twenty_three_chars("12345678901234567890123")]
-#[case::unicode_chars("pässwörd-12")]
+#[case::unicode_chars("p\u{e4}ssw\u{f6}rd-12")]
 #[case::eight_chars("12345678")]
 #[case::empty("")]
 fn redaction_masks_a_secret_under_24_characters_fully(#[case] secret: &str) {
@@ -128,8 +128,17 @@ fn redaction_keeps_four_and_four_of_a_secret_of_24_characters_or_more(#[case] se
         ..blank_settings()
     };
     let value = row_value(&redacted_config_rows(&settings), "password").expect("password row");
-    assert_eq!(&value[..4], &secret[..4]);
-    assert!(value.ends_with(&secret[secret.len() - 4..]));
+    let prefix: String = secret.chars().take(4).collect();
+    let suffix: String = secret
+        .chars()
+        .rev()
+        .take(4)
+        .collect::<String>()
+        .chars()
+        .rev()
+        .collect();
+    assert_eq!(value.chars().take(4).collect::<String>(), prefix);
+    assert!(value.ends_with(&suffix));
 }
 
 #[test]
