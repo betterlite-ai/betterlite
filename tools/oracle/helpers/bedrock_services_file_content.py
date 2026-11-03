@@ -6,6 +6,8 @@ from litellm.llms.bedrock.common_utils import BedrockError
 from litellm.llms.bedrock.files.transformation import BedrockFilesConfig
 from pydantic import BaseModel, ConfigDict
 
+from bedrock_settings import ErrorView
+
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
 
@@ -40,13 +42,24 @@ def run(argument: Json) -> Json:
             raw_response=response, logging_obj=cast(Logging, None), litellm_params={}
         )
     except BedrockError as error:
-        error_response = error.response
+        viewed_error = cast(ErrorView, error)
+        error_response = viewed_error.response
+        exception_headers = viewed_error.headers
+        own_headers = (
+            list(exception_headers.multi_items())
+            if isinstance(exception_headers, httpx.Headers)
+            else exception_headers
+        )
         return cast(Json, {
             "ok": False,
             "error": {
-                "status_code": error.status_code,
-                "message": error.message,
-                "headers": list(error_response.headers.multi_items()),
+                "status_code": viewed_error.status_code,
+                "message": viewed_error.message,
+                "headers": own_headers,
+                "request": {
+                    "method": viewed_error.request.method,
+                    "url": str(viewed_error.request.url),
+                },
                 "response": {
                     "status_code": error_response.status_code,
                     "body": list(error_response.content),
