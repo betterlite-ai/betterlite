@@ -1,0 +1,22 @@
+kind: helper
+name: escaped-search-and-offset-datetime-binds
+call:
+  management_executor:
+    cases:
+      escaped_search:
+        function: sql
+        first_index: 4
+        where:
+          - kind: compare
+            field: name
+            op: contains
+            value: 'a%_\b'
+          - kind: compare
+            field: created_at
+            op: gte
+            value_type: timestamp
+            value: '2024-01-02T03:04:05+02:00'
+        order:
+          - {field: created_at, descending: true}
+env: {}
+compare: {ignore: []}

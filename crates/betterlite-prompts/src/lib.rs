@@ -45,6 +45,7 @@ pub mod reasoning_fields;
 pub mod registry;
 pub mod response_tool_calls;
 pub mod schema;
+pub mod semantic_cache_records;
 pub mod system;
 pub mod system_placement;
 mod tests;

@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod bridge_credentials;
+pub mod byok_authorization_html;
 pub mod client;
 pub mod credential_contracts;
 pub mod credentials;
