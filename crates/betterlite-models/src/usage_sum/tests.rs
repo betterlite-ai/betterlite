@@ -127,14 +127,25 @@ fn usage_sum_skips_private_extras() {
 #[test]
 fn usage_sum_zero_fills_declared_completion_details() {
     let mut first = empty_usage();
-    let mut first_details = CompletionTokensDetails::default();
-    first_details.audio_tokens = Some(2);
-    first_details.reasoning_tokens = Some(1);
-    first.completion_tokens_details = Some(first_details);
+    first.completion_tokens_details = Some(CompletionTokensDetails {
+        text_tokens: None,
+        audio_tokens: Some(2),
+        image_tokens: None,
+        video_tokens: None,
+        reasoning_tokens: Some(1),
+        accepted_prediction_tokens: None,
+        rejected_prediction_tokens: None,
+    });
     let mut second = empty_usage();
-    let mut second_details = CompletionTokensDetails::default();
-    second_details.text_tokens = Some(3);
-    second.completion_tokens_details = Some(second_details);
+    second.completion_tokens_details = Some(CompletionTokensDetails {
+        text_tokens: Some(3),
+        audio_tokens: None,
+        image_tokens: None,
+        video_tokens: None,
+        reasoning_tokens: None,
+        accepted_prediction_tokens: None,
+        rejected_prediction_tokens: None,
+    });
 
     assert_eq!(
         usage_sum(&[first, second])
