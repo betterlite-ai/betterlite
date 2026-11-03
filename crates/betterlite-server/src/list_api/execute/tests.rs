@@ -198,14 +198,17 @@ async fn facet_reuses_counted_pagination_parsers() {
 async fn handle_list_serializes_executor_enrichment() {
     use super::super::memory::{Cell, InMemoryListExecutor};
     use std::collections::BTreeMap;
+    use std::sync::Arc;
 
-    let executor = InMemoryListExecutor::with_enricher(
-        vec![(
+    let executor = InMemoryListExecutor {
+        rows: vec![(
             "row".to_owned(),
             BTreeMap::from([("id".to_owned(), Cell::Int(1))]),
         )],
-        |rows| Box::pin(async move { rows.into_iter().map(|row| format!("{row}! ")).collect() }),
-    );
+        enrich_page: Some(Arc::new(|rows| {
+            Box::pin(async move { rows.into_iter().map(|row| format!("{row}! ")).collect() })
+        })),
+    };
     let params = BTreeMap::new();
     let response = handle_list(
         &spec(),

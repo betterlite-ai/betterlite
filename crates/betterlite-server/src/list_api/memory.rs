@@ -108,7 +108,7 @@ fn holds_field(cell: Option<&Cell>, predicate: &Predicate) -> bool {
 }
 
 pub type EnricherFuture<Row> = Pin<Box<dyn Future<Output = Vec<Row>> + Send>>;
-type PageEnricher<Row> = Arc<dyn Fn(Vec<Row>) -> EnricherFuture<Row> + Send + Sync>;
+pub type PageEnricher<Row> = Arc<dyn Fn(Vec<Row>) -> EnricherFuture<Row> + Send + Sync>;
 
 fn compare_cells(left_cell: Option<&Cell>, right_cell: Option<&Cell>, key: &SortKey) -> Ordering {
     let ordering = match (left_cell, right_cell) {
@@ -144,30 +144,11 @@ fn compare_repeated(left: &[Cell], right: &[Cell]) -> Ordering {
 
 #[derive(Clone)]
 pub struct InMemoryListExecutor<Row> {
-    rows: Vec<(Row, Cells)>,
-    enrich_page: PageEnricher<Row>,
+    pub rows: Vec<(Row, Cells)>,
+    pub enrich_page: Option<PageEnricher<Row>>,
 }
 
 impl<Row: Clone + Send + 'static> InMemoryListExecutor<Row> {
-    #[must_use]
-    pub fn new(rows: Vec<(Row, Cells)>) -> Self {
-        Self {
-            rows,
-            enrich_page: Arc::new(|page| Box::pin(async move { page })),
-        }
-    }
-
-    #[must_use]
-    pub fn with_enricher<Enricher>(rows: Vec<(Row, Cells)>, enrich_page: Enricher) -> Self
-    where
-        Enricher: Fn(Vec<Row>) -> EnricherFuture<Row> + Send + Sync + 'static,
-    {
-        Self {
-            rows,
-            enrich_page: Arc::new(enrich_page),
-        }
-    }
-
     #[must_use]
     pub fn count_rows(&self, where_: &[Predicate]) -> u64 {
         u64::try_from(
@@ -241,7 +222,13 @@ impl<Row: Clone + Send + Sync + 'static> super::plan::types::ListExecutor<Row>
 
     fn find_many(&self, plan: &QueryPlan) -> impl Future<Output = Vec<Row>> + Send {
         let page = self.find_page(plan, ready);
-        async move { (self.enrich_page)(page.await).await }
+        async move {
+            let enriched_page = page.await;
+            match &self.enrich_page {
+                Some(enricher) => enricher(enriched_page).await,
+                None => enriched_page,
+            }
+        }
     }
 }
 

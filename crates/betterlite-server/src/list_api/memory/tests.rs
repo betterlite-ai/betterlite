@@ -30,7 +30,10 @@ fn fixture_executor(fixture: Fixture) -> InMemoryListExecutor<&'static str> {
     let rows = (0..3)
         .map(|index| fixture_row(fixture, index).unwrap())
         .collect();
-    InMemoryListExecutor::new(rows)
+    InMemoryListExecutor {
+        rows,
+        enrich_page: None,
+    }
 }
 
 fn fixture_row(fixture: Fixture, index: usize) -> Option<(&'static str, Cells)> {
@@ -78,22 +81,25 @@ fn search_row(name: &'static str, title: &str, description: &str) -> (&'static s
 
 #[tokio::test]
 async fn repeated_cells_match_any_and_empty_tuple_is_not_null() {
-    let executor = InMemoryListExecutor::new(vec![
-        (
-            1_i32,
-            cells([
-                ("tags", Cell::Repeated(vec![Cell::Text("alpha".to_owned())])),
-                ("value", Cell::Int(2)),
-            ]),
-        ),
-        (
-            2_i32,
-            cells([
-                ("tags", Cell::Repeated(Vec::new())),
-                ("value", Cell::Int(3)),
-            ]),
-        ),
-    ]);
+    let executor = InMemoryListExecutor {
+        rows: vec![
+            (
+                1_i32,
+                cells([
+                    ("tags", Cell::Repeated(vec![Cell::Text("alpha".to_owned())])),
+                    ("value", Cell::Int(2)),
+                ]),
+            ),
+            (
+                2_i32,
+                cells([
+                    ("tags", Cell::Repeated(Vec::new())),
+                    ("value", Cell::Int(3)),
+                ]),
+            ),
+        ],
+        enrich_page: None,
+    };
     let matches = Predicate::Compare(Compare {
         field: "tags".to_owned(),
         op: ComparisonOp::Contains,

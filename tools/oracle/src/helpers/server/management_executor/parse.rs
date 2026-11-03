@@ -16,7 +16,7 @@ pub(crate) struct Input {
 #[serde(untagged)]
 pub(super) enum CellInput {
     Repeated(Vec<Self>),
-    Null(Option<()>),
+    Null,
     Text(String),
     Int(i64),
 }
@@ -100,8 +100,8 @@ pub(super) fn predicate(
         })),
         PredicateInput::Within { field, values } => {
             let parsed_values = values
-                .iter()
-                .map(|value| filter_value(value.clone(), None))
+                .into_iter()
+                .map(|value| filter_value(value, None))
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(Predicate::Within(Within {
                 field,
@@ -158,7 +158,7 @@ fn timestamp_filter(value: ValueInput) -> Result<FilterValue, Box<crate::helpers
 pub(super) fn cell(value: &CellInput) -> Cell {
     match value {
         CellInput::Repeated(items) => Cell::Repeated(items.iter().map(cell).collect()),
-        CellInput::Null(_) => Cell::Null,
+        CellInput::Null => Cell::Null,
         CellInput::Text(text) => Cell::Text(text.clone()),
         CellInput::Int(number) => Cell::Int(*number),
     }

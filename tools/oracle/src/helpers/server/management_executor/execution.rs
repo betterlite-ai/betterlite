@@ -67,7 +67,10 @@ fn evaluate_memory(
                 .collect::<Cells>()
         })
         .collect::<Vec<_>>();
-    let executor = InMemoryListExecutor::new(rows.iter().cloned().zip(row_cells).collect());
+    let executor = InMemoryListExecutor {
+        rows: rows.iter().cloned().zip(row_cells).collect(),
+        enrich_page: None,
+    };
     block_on(async {
         let count = executor.count(&where_).await;
         let plan = QueryPlan {
