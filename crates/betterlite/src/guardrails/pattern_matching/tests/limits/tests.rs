@@ -39,3 +39,14 @@ fn pattern_matching_behavior(#[case] input: &str) {
         }
     }
 }
+
+#[path = "compile/tests.rs"]
+mod compile_limits;
+#[path = "masking/tests.rs"]
+mod mask_limits;
+#[path = "redaction/tests.rs"]
+mod redaction;
+#[path = "text/tests.rs"]
+mod text;
+#[path = "yaml/tests.rs"]
+mod yaml;

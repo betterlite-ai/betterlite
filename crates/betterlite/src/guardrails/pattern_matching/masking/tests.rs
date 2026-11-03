@@ -26,3 +26,6 @@ fn masks_original_unicode_spans_left_to_right() {
     assert_eq!(mask_spans("abc", &[], "x").unwrap(), "abc");
     mask_spans("\u{e9}", &[Range { start: 1, end: 2 }], "x").unwrap_err();
 }
+
+#[path = "tests/spans/tests.rs"]
+mod spans;
