@@ -1,82 +1,92 @@
-use betterlite_models::billed_tokens::custom_cost;
-use rust_decimal::Decimal;
+use betterlite_models::billed_tokens::{
+    BilledTokenError, BilledTokenRates, TokenTypeCostBreakdown, breakdown,
+    custom_billed_token_rates, custom_breakdown, custom_cost, project_billed_token_counts,
+};
 use serde_json::{Value, json};
 
-use crate::helpers::{HelperError, HelperResult};
+mod catalog;
+mod input;
+use input::{Input, Operation};
 
 pub(crate) struct Op;
 
 impl crate::helpers::Helper for Op {
-    type Input = Value;
+    type Input = Input;
 
-    fn run(input: &Self::Input) -> HelperResult {
-        let field = |name: &str| input.get(name);
-        let token_rates = field("custom_cost_per_token")
-            .and_then(Value::as_object)
-            .map(|rates| {
-                Ok::<_, Box<HelperError>>((
-                    decimal(rates.get("input_cost_per_token"))?,
-                    decimal(rates.get("output_cost_per_token"))?,
-                    optional_decimal(rates.get("cache_read_input_token_cost"))?,
-                    optional_decimal(rates.get("cache_creation_input_token_cost"))?,
-                ))
-            })
-            .transpose()?;
-        let cost = custom_cost(
-            field("prompt_tokens")
-                .and_then(Value::as_i64)
-                .unwrap_or_default(),
-            field("completion_tokens")
-                .and_then(Value::as_i64)
-                .unwrap_or_default(),
-            field("cached_tokens")
-                .and_then(Value::as_i64)
-                .unwrap_or_default(),
-            field("cache_creation_tokens")
-                .and_then(Value::as_i64)
-                .unwrap_or_default(),
-            token_rates,
-            optional_decimal(field("custom_cost_per_second"))?,
-            optional_decimal(field("response_time_ms"))?,
-        )
-        .map_err(|error| helper_error("BilledTokenError", error.to_string()))?;
-        let Some((input_cost, output_cost)) = cost else {
-            return Ok(Value::Null);
+    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+        let result = match input.operation {
+            Operation::CustomCost => run_cost(input),
+            Operation::Counts => Ok(json!(project_billed_token_counts(input.usage))),
+            Operation::CustomBreakdown => run_custom(input),
+            Operation::Catalog | Operation::Savings => catalog::run(input),
         };
-        Ok(json!({
-            "input_cost": input_cost.normalize().to_string(),
-            "output_cost": output_cost.normalize().to_string(),
-        }))
+        result.map_err(|error| {
+            Box::new(crate::helpers::HelperError {
+                class: "BilledTokenError".to_owned(),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+                message: error.to_string(),
+            })
+        })
     }
 }
 
-fn decimal(value: Option<&Value>) -> Result<Decimal, Box<HelperError>> {
-    let text = value
-        .and_then(Value::as_str)
-        .map(str::to_owned)
-        .or_else(|| {
-            value
-                .and_then(Value::as_number)
-                .map(|number| number.to_string())
+fn run_cost(input: &Input) -> Result<Value, BilledTokenError> {
+    custom_cost(
+        input.totals,
+        input.custom_cost_per_token.as_ref().map(|rates| {
+            (
+                rates.input_cost_per_token,
+                rates.output_cost_per_token,
+                rates.cache_read_input_token_cost,
+                rates.cache_write,
+            )
+        }),
+        input.custom_cost_per_second,
+        input.response_time_ms,
+    )
+    .map(|cost| {
+        cost.map_or(Value::Null, |(prompt, completion)| {
+            json!({
+                "input_cost": prompt.normalize().to_string(),
+                "output_cost": completion.normalize().to_string(),
+            })
         })
-        .ok_or_else(|| helper_error("InvalidInput", "expected a decimal".to_owned()))?;
-    Decimal::from_str_exact(&text).map_err(|error| helper_error("InvalidInput", error.to_string()))
+    })
 }
 
-fn optional_decimal(value: Option<&Value>) -> Result<Option<Decimal>, Box<HelperError>> {
-    value
-        .filter(|value| !value.is_null())
-        .map(|value| decimal(Some(value)))
-        .transpose()
+fn run_custom(input: &Input) -> Result<Value, BilledTokenError> {
+    let Some(custom) = &input.custom_cost_per_token else {
+        return breakdown(project_billed_token_counts(input.usage), None).map(breakdown_value);
+    };
+    let rates = custom_billed_token_rates(
+        custom.input_cost_per_token,
+        custom.output_cost_per_token,
+        custom.cache_read_input_token_cost,
+        custom.cache_write,
+    );
+    custom_breakdown(project_billed_token_counts(input.usage), rates).map(breakdown_value)
 }
 
-fn helper_error(class: &str, message: String) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: class.to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
+fn breakdown_value(result: TokenTypeCostBreakdown) -> Value {
+    json!({
+        "reasoning_cost": result.reasoning_cost.normalize().to_string(),
+        "cache_read_cost": result.cache_read_cost.normalize().to_string(),
+        "cache_creation_cost": result.cache_creation_cost.normalize().to_string(),
+        "rates": result.rates.map(rates_value),
+    })
+}
+
+fn rates_value(rates: BilledTokenRates) -> Value {
+    json!({
+        "input_cost_per_token": rates.input_cost_per_token.normalize().to_string(),
+        "output_cost_per_token": rates.output_cost_per_token.normalize().to_string(),
+        "cache_read_input_token_cost": rates.cache_read_input_token_cost.normalize().to_string(),
+        "cache_read_input_audio_token_cost": rates.audio_read.normalize().to_string(),
+        "cache_creation_input_token_cost": rates.cache_write.normalize().to_string(),
+        "cache_creation_input_token_cost_above_1hr": rates.cache_write_1h.normalize().to_string(),
+        "output_cost_per_reasoning_token": rates.reasoning.normalize().to_string(),
     })
 }
