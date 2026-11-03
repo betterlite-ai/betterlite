@@ -3,30 +3,51 @@ mod tests;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
-pub(super) fn waiting(line: &str, age: Duration, fallback: Duration, now: u64) -> bool {
-    if line.contains("Not logged in") || line.contains("authentication failed") {
-        return true;
-    }
-    if line.contains("Can't reach the API server") || line.contains("EAI_AGAIN") {
-        return age < Duration::from_secs(60);
-    }
-    let observed = now.saturating_sub(age.as_secs());
-    reset(line, observed).map_or(age < fallback, |deadline| {
-        if deadline < observed {
-            age < fallback
-        } else {
-            now < deadline
-        }
-    })
+pub(super) enum Cause {
+    LoggedOut,
+    Offline,
+    Limit,
 }
 
-fn reset(line: &str, observed: u64) -> Option<u64> {
+pub(super) fn cause(line: &str) -> Cause {
+    if line.contains("Not logged in") || line.contains("authentication failed") {
+        Cause::LoggedOut
+    } else if line.contains("Can't reach the API server") || line.contains("EAI_AGAIN") {
+        Cause::Offline
+    } else {
+        Cause::Limit
+    }
+}
+
+pub(super) fn waiting(line: &str, age: Duration, fallback: Duration, now: u64) -> bool {
+    match cause(line) {
+        Cause::LoggedOut => true,
+        Cause::Offline => age < Duration::from_secs(60),
+        Cause::Limit => {
+            let observed = now.saturating_sub(age.as_secs());
+            reset(line, observed).map_or(age < fallback, |deadline| {
+                if deadline < observed {
+                    age < fallback
+                } else {
+                    now < deadline
+                }
+            })
+        }
+    }
+}
+
+pub(super) fn message(line: &str) -> String {
     let decoded = serde_json::from_str::<serde_json::Value>(line).ok();
-    let message = decoded
+    decoded
         .as_ref()
         .and_then(|value| value.get("result"))
         .and_then(serde_json::Value::as_str)
-        .unwrap_or(line);
+        .unwrap_or(line)
+        .to_owned()
+}
+
+fn reset(line: &str, observed: u64) -> Option<u64> {
+    let message = message(line);
     let raw = message
         .split_once("try again at ")
         .or_else(|| message.split_once("resets "))?

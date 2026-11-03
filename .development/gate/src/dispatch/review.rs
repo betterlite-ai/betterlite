@@ -98,9 +98,12 @@ fn review_text(
             reason,
         });
     }
-    Err(GateError::UsageLimit {
+    Err(GateError::Unavailable {
         task: brief.task.id.clone(),
-        reason: "every runner on the reviewer ladder is at its usage limit".to_owned(),
+        reason: format!(
+            "every runner on the reviewer ladder is unavailable ({})",
+            vendor::causes(attempt.places.git_common_dir, attempt.agents)?
+        ),
     })
 }
 

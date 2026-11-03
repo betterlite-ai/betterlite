@@ -57,7 +57,7 @@ pub(crate) enum GateError {
     #[error("cannot dispatch {task}: {reason}")]
     Dispatch { task: String, reason: String },
     #[error("cannot dispatch {task}: {reason}")]
-    UsageLimit { task: String, reason: String },
+    Unavailable { task: String, reason: String },
     #[error("{program} failed: {stderr}")]
     Failed { program: String, stderr: String },
     #[error("cannot read {what}: {source}")]
