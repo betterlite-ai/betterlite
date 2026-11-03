@@ -447,6 +447,7 @@ dod:
   - hooks
 - text: Tests in the explicitly selected files pass, and the workspace builds without new warnings.
   proof:
+  - selected-file-tests
   - clippy
 checks:
   optional: [mutants]
