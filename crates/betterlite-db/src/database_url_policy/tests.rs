@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::error::Error as _;
 use std::fs;
 use std::path::Path;
 
@@ -520,7 +521,7 @@ fn token_invalid_flag_message_omits_non_printable_unicode() {
     let error =
         token_auth_flag_enabled(Some(&FlagValue::Text(text.to_owned())), "TOKEN").unwrap_err();
     assert!(!error.to_string().contains(text));
-    assert!(std::error::Error::source(&error).is_some());
+    assert!(error.source().is_some());
 }
 
 #[test]

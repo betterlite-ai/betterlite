@@ -1,6 +1,8 @@
 mod lookup;
 mod tests;
 
+use std::mem;
+
 use secrecy::{ExposeSecret, SecretString};
 
 use self::lookup::{Coerce, resolve_nodes, resolve_passthrough};
@@ -70,7 +72,7 @@ fn coerce_settings_passthrough(
     target: Target,
     client: ClientKind,
 ) -> Result<(), RedisSettingsError> {
-    let passthrough = std::mem::take(&mut settings.passthrough);
+    let passthrough = mem::take(&mut settings.passthrough);
     settings.passthrough = passthrough
         .into_iter()
         .filter_map(

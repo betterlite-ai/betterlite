@@ -1,11 +1,12 @@
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::str::FromStr;
 
 use thiserror::Error;
 
 pub trait EnvironmentLookup {
     fn lookup(&self, name: &str) -> Option<String>;
-    fn system_home(&self) -> Option<std::path::PathBuf> {
+    fn system_home(&self) -> Option<PathBuf> {
         None
     }
 }
@@ -64,10 +65,11 @@ where
             name: name.to_owned(),
         });
     }
+    // A generic parser's error may disclose the environment value.
     trimmed
         .parse::<T>()
         .map(Some)
-        .map_err(|_| EnvError::Number {
+        .map_err(|_source| EnvError::Number {
             name: name.to_owned(),
         })
 }

@@ -63,8 +63,7 @@ fn coerce_bool_accepts_known_words_and_rejects_unknown_words() {
 fn coerce_passthrough_rejects_a_failed_int_conversion() {
     let mut value = PassthroughValue::Text("three".to_owned());
     assert!(
-        super::coerce_passthrough("cluster_error_retry_attempts", &mut value, Target::Cluster)
-            .is_err()
+        coerce_passthrough("cluster_error_retry_attempts", &mut value, Target::Cluster).is_err()
     );
 }
 
@@ -134,7 +133,7 @@ fn coerce_options(
     _client: ClientKind,
     options: &mut BTreeMap<String, PassthroughValue>,
 ) {
-    options.retain(|name, value| super::coerce_passthrough(name, value, target).unwrap());
+    options.retain(|name, value| coerce_passthrough(name, value, target).unwrap());
 }
 
 #[test]
@@ -163,7 +162,7 @@ fn redis_coerce_preserves_untyped_signature_parameters() {
 #[case::read_size("socket_read_size", "32768", 0x8000)]
 fn redis_coerce_signature_integers(#[case] name: &str, #[case] text: &str, #[case] expected: i64) {
     let mut value = PassthroughValue::Text(text.to_owned());
-    assert!(super::coerce_passthrough(name, &mut value, Target::Direct).unwrap());
+    assert!(coerce_passthrough(name, &mut value, Target::Direct).unwrap());
     assert_eq!(
         value,
         PassthroughValue::Number(serde_json::Number::from(expected))
@@ -183,7 +182,7 @@ fn redis_coerce_leaves_cluster_options_untyped_elsewhere(
     #[case] text: &str,
 ) {
     let mut value = PassthroughValue::Text(text.to_owned());
-    assert!(super::coerce_passthrough(name, &mut value, target).unwrap());
+    assert!(coerce_passthrough(name, &mut value, target).unwrap());
     assert_eq!(value, PassthroughValue::Text(text.to_owned()));
 }
 

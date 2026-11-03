@@ -1,5 +1,7 @@
 mod tests;
 
+use std::str::FromStr;
+
 use super::error::RedisSettingsError;
 use super::model::scalars::{BoolOrText, CoercionKind, PassthroughValue, Scalar};
 use super::model::settings::Target;
@@ -9,7 +11,7 @@ pub fn coerce_number<T>(
     value: Option<Scalar<T>>,
 ) -> Result<Option<T>, RedisSettingsError>
 where
-    T: std::str::FromStr,
+    T: FromStr,
 {
     match value {
         None => Ok(None),

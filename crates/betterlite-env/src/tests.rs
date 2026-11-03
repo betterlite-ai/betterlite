@@ -41,7 +41,7 @@ fn reads_numbers(#[case] text: &str, #[case] expected: Option<f64>) {
 #[case::infinity("inf")]
 #[case::nan("NaN")]
 #[case::hexadecimal("0x10")]
-#[case::unicode_digit("١")]
+#[case::unicode_digit("\u{0661}")]
 #[case::zero_width_space("1\u{200b}")]
 #[case::syntax("1e+")]
 #[case::sign_only("+")]

@@ -1,4 +1,4 @@
-use std::str::FromStr as _;
+use std::str::FromStr;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::raw::RawNumber;
@@ -83,22 +83,22 @@ pub(super) fn resolve_number<T, F>(
     parser: F,
 ) -> Result<Option<T>, ConfigError>
 where
-    T: std::str::FromStr,
+    T: FromStr,
     F: Fn(&str, &str) -> Result<T, ConfigError>,
 {
     let Some(number) = value else {
         return Ok(None);
     };
-    if let RawNumber::Text(value) = &number {
-        if let Some(name) = value.strip_prefix("os.environ/") {
-            let Some(text) = lookup.lookup(name) else {
-                return Err(ConfigError::MissingEnvironment {
-                    variable: name.to_owned(),
-                    path: path.to_owned(),
-                });
-            };
-            return Ok(betterlite_env::number::<T>(name, &text)?);
-        }
+    if let RawNumber::Text(reference) = &number
+        && let Some(name) = reference.strip_prefix("os.environ/")
+    {
+        let Some(text) = lookup.lookup(name) else {
+            return Err(ConfigError::MissingEnvironment {
+                variable: name.to_owned(),
+                path: path.to_owned(),
+            });
+        };
+        return Ok(betterlite_env::number::<T>(name, &text)?);
     }
     let text = number_text(number, path, lookup)?;
     Ok(Some(parser(&text, path)?))
