@@ -19,7 +19,7 @@ mod helpers;
 pub mod http;
 pub mod mock;
 pub mod multipart_oracle;
-mod paths;
+pub mod paths;
 pub mod process;
 pub mod routing_mock_scripts;
 pub mod routing_probe_ipc;

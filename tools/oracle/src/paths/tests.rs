@@ -3,9 +3,8 @@
 use std::fs;
 use std::net::TcpListener;
 
-use rstest::rstest;
-
 use super::{free_port, port_in_range};
+use rstest::rstest;
 
 #[test]
 fn gateway_ports_are_below_the_ephemeral_range_and_rebindable() {
