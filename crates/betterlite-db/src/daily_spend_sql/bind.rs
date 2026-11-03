@@ -8,7 +8,7 @@ use tokio_postgres::types::{ToSql, Type};
 pub enum SqlBind {
     Text(Option<String>),
     Integer(Option<i64>),
-    Money(#[serde(with = "rust_decimal::serde::float")] Decimal),
+    Money(#[serde(with = "rust_decimal::serde::arbitrary_precision")] Decimal),
 }
 
 impl SqlBind {

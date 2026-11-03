@@ -22,11 +22,11 @@ pub(crate) struct Input {
 enum Step {
     Extract {
         entity: DailySpendEntity,
-        payload: SpendRow,
+        payload_json: String,
     },
     Daily {
         entity: DailySpendEntity,
-        rows: Vec<SpendRow>,
+        rows_json: String,
     },
     Turn {
         transaction: Box<AutoRouterTurnTransaction>,
@@ -38,18 +38,22 @@ impl crate::helpers::Helper for Op {
         let mut output = BTreeMap::new();
         for (name, step) in &input.steps {
             let value = match step {
-                Step::Extract { entity, payload } => {
-                    let ids = serde_json::from_str::<DailySpendEntityPayload>(
-                        &serde_json::to_string(payload).map_err(failure)?,
-                    )
-                    .ok()
-                    .and_then(|record| daily_spend_entity_ids(&record, *entity).ok());
+                Step::Extract {
+                    entity,
+                    payload_json,
+                } => {
+                    let ids = serde_json::from_str::<DailySpendEntityPayload>(payload_json)
+                        .ok()
+                        .and_then(|record| daily_spend_entity_ids(&record, *entity).ok());
                     ids.map_or_else(
                         || serde_json::json!({"invalid": true}),
                         |entities| serde_json::json!({"ids": entities}),
                     )
                 }
-                Step::Daily { entity, rows } => daily(*entity, rows)?,
+                Step::Daily { entity, rows_json } => daily(
+                    *entity,
+                    &serde_json::from_str::<Vec<SpendRow>>(rows_json).map_err(failure)?,
+                )?,
                 Step::Turn { transaction } => serde_json::json!({
                     "sql": upsert_autorouter_session_sql().split_whitespace().collect::<Vec<_>>().join(" "),
                     "params": upsert_params(transaction),
@@ -66,7 +70,7 @@ fn daily(
 ) -> Result<Value, Box<crate::helpers::HelperError>> {
     let table = entity.table();
     let groups = merge_by_conflict_key(&table, rows).map_err(failure)?;
-    let (sql, params) = build_bulk_upsert(&table, &groups).map_err(failure)?;
+    let (sql, params) = build_bulk_upsert(&table, &groups, uuid::Uuid::nil).map_err(failure)?;
     Ok(
         serde_json::json!({"groups": groups, "sql": sql.split_whitespace().collect::<Vec<_>>().join(" "), "params": params}),
     )

@@ -5,17 +5,25 @@ use super::values::{DailySpendValueError, SpendColumnValue, as_counter, as_optio
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
-pub fn build_bulk_upsert(
+pub fn build_bulk_upsert<G>(
     table: &DailySpendTable,
     batch: &[(Vec<String>, SpendRow)],
-) -> Result<(String, Vec<SqlBind>), DailySpendValueError> {
+    mut generate_id: G,
+) -> Result<(String, Vec<SqlBind>), DailySpendValueError>
+where
+    G: FnMut() -> Uuid,
+{
     let columns = insert_columns(table);
     let quoted_table = format!("\"{}\"", table.name);
     let mut params: Vec<SqlBind> = Vec::new();
     let mut rows = Vec::with_capacity(batch.len());
     for (key, transaction) in batch {
         let mut placeholders = Vec::with_capacity(columns.len());
-        for (column, value) in columns.iter().zip(row_params(table, key, transaction)?) {
+        for (column, value) in
+            columns
+                .iter()
+                .zip(row_params(table, key, transaction, generate_id())?)
+        {
             params.push(value);
             placeholders.push(format!("${}::{}", params.len(), sql_cast(column)));
         }
@@ -59,9 +67,10 @@ fn row_params(
     table: &DailySpendTable,
     key: &[String],
     transaction: &SpendRow,
+    id: Uuid,
 ) -> Result<Vec<SqlBind>, DailySpendValueError> {
     let mut params: Vec<SqlBind> = Vec::new();
-    params.push(SqlBind::Text(Some(Uuid::new_v4().to_string())));
+    params.push(SqlBind::Text(Some(id.to_string())));
     for value in key {
         params.push(SqlBind::Text(Some(value.clone())));
     }

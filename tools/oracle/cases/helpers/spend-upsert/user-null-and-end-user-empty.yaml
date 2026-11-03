@@ -3,21 +3,21 @@ name: user-null-and-end-user-empty
 call:
   spend_upsert:
     steps:
-      user_missing: {"kind":"extract","entity":"user","payload":{}}
-      user_null: {"kind":"extract","entity":"user","payload":{"user":null}}
-      user_empty: {"kind":"extract","entity":"user","payload":{"user":""}}
-      team_missing: {"kind":"extract","entity":"team","payload":{}}
-      team_null: {"kind":"extract","entity":"team","payload":{"team_id":null}}
-      team_empty: {"kind":"extract","entity":"team","payload":{"team_id":""}}
-      org_missing: {"kind":"extract","entity":"org","payload":{}}
-      org_null: {"kind":"extract","entity":"org","payload":{"organization_id":null}}
-      org_empty: {"kind":"extract","entity":"org","payload":{"organization_id":""}}
-      end_user_missing: {"kind":"extract","entity":"end_user","payload":{}}
-      end_user_null: {"kind":"extract","entity":"end_user","payload":{"end_user":null}}
-      end_user_empty: {"kind":"extract","entity":"end_user","payload":{"end_user":""}}
-      agent_missing: {"kind":"extract","entity":"agent","payload":{}}
-      agent_null: {"kind":"extract","entity":"agent","payload":{"agent_id":null}}
-      agent_empty: {"kind":"extract","entity":"agent","payload":{"agent_id":""}}
+      user_missing: {"kind":"extract","entity":"user","payload_json":"{}"}
+      user_null: {"kind":"extract","entity":"user","payload_json":"{\"user\":null}"}
+      user_empty: {"kind":"extract","entity":"user","payload_json":"{\"user\":\"\"}"}
+      team_missing: {"kind":"extract","entity":"team","payload_json":"{}"}
+      team_null: {"kind":"extract","entity":"team","payload_json":"{\"team_id\":null}"}
+      team_empty: {"kind":"extract","entity":"team","payload_json":"{\"team_id\":\"\"}"}
+      org_missing: {"kind":"extract","entity":"org","payload_json":"{}"}
+      org_null: {"kind":"extract","entity":"org","payload_json":"{\"organization_id\":null}"}
+      org_empty: {"kind":"extract","entity":"org","payload_json":"{\"organization_id\":\"\"}"}
+      end_user_missing: {"kind":"extract","entity":"end_user","payload_json":"{}"}
+      end_user_null: {"kind":"extract","entity":"end_user","payload_json":"{\"end_user\":null}"}
+      end_user_empty: {"kind":"extract","entity":"end_user","payload_json":"{\"end_user\":\"\"}"}
+      agent_missing: {"kind":"extract","entity":"agent","payload_json":"{}"}
+      agent_null: {"kind":"extract","entity":"agent","payload_json":"{\"agent_id\":null}"}
+      agent_empty: {"kind":"extract","entity":"agent","payload_json":"{\"agent_id\":\"\"}"}
 env: {}
 compare:
   ignore: []

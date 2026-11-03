@@ -1,24 +1,23 @@
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
 use serde::{Deserialize, Serialize};
+use serde_json::value::RawValue;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(untagged)]
+#[serde(untagged, try_from = "Box<RawValue>")]
 pub enum SpendColumnValue {
     Null,
     Bool(bool),
     Int(i64),
     Text(String),
-    Decimal(#[serde(with = "rust_decimal::serde::float")] Decimal),
+    Decimal(#[serde(with = "rust_decimal::serde::arbitrary_precision")] Decimal),
     Array(Vec<Self>),
-    Object(SpendObject),
+    Object(BTreeMap<String, Self>),
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum DailySpendValueError {
-    #[error("daily numeric value exceeds Decimal range")]
-    NumberRange,
     #[error("daily spend value cannot be represented as JSON text")]
     Json(#[source] serde_json::Error),
     #[error("{field} overflows its column type")]
@@ -64,17 +63,28 @@ pub(super) fn as_counter(
         })
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "BTreeMap<String, SpendColumnValue>")]
-pub struct SpendObject(BTreeMap<String, SpendColumnValue>);
+#[derive(Deserialize)]
+struct ExactDecimal(#[serde(with = "rust_decimal::serde::arbitrary_precision")] Decimal);
 
-impl TryFrom<BTreeMap<String, SpendColumnValue>> for SpendObject {
+impl TryFrom<Box<RawValue>> for SpendColumnValue {
     type Error = DailySpendValueError;
-    fn try_from(fields: BTreeMap<String, SpendColumnValue>) -> Result<Self, Self::Error> {
-        // serde_json preserves out-of-range numbers in this map; they must not fall through to zero.
-        if fields.contains_key("$serde_json::private::Number") {
-            return Err(DailySpendValueError::NumberRange);
+
+    fn try_from(raw: Box<RawValue>) -> Result<Self, Self::Error> {
+        // RawValue keeps JSON objects distinct from serde_json's private numeric map encoding.
+        let text = raw.get();
+        match text.as_bytes().first() {
+            Some(b'n') => Ok(Self::Null),
+            Some(b't' | b'f') => serde_json::from_str(text).map(Self::Bool),
+            Some(b'"') => serde_json::from_str(text).map(Self::Text),
+            Some(b'[') => serde_json::from_str(text).map(Self::Array),
+            Some(b'{') => serde_json::from_str(text).map(Self::Object),
+            _ => match text.parse::<i64>() {
+                Ok(whole) => Ok(Self::Int(whole)),
+                Err(_) => {
+                    serde_json::from_str::<ExactDecimal>(text).map(|number| Self::Decimal(number.0))
+                }
+            },
         }
-        Ok(Self(fields))
+        .map_err(DailySpendValueError::Json)
     }
 }

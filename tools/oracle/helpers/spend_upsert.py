@@ -1,3 +1,4 @@
+import json
 from typing import Literal, TypeAlias, cast
 
 from litellm.proxy.db import autorouter_session_rollup as turns
@@ -16,14 +17,17 @@ def probe(step: dict[str, Json]) -> Json:
     if kind == "extract":
         try:
             ids = daily.daily_spend_entity_ids(
-                cast(dict[str, object], step["payload"]), cast(Entity, step["entity"])
+                cast(dict[str, object], json.loads(cast(str, step["payload_json"]))),
+                cast(Entity, step["entity"]),
             )
             return {"ids": list(ids)}
         except ValidationError:
             return {"invalid": True}
     if kind == "daily":
         table = daily.DAILY_SPEND_TABLES[cast(Entity, step["entity"])]
-        groups = daily.merge_by_conflict_key(table, cast(list[dict[str, object]], step["rows"]))
+        groups = daily.merge_by_conflict_key(
+            table, cast(list[dict[str, object]], json.loads(cast(str, step["rows_json"])))
+        )
         sql, params = daily.build_bulk_upsert(table, groups)
         return {"groups": cast(Json, groups), "sql": " ".join(sql.split()), "params": list(params)}
     if kind == "turn":

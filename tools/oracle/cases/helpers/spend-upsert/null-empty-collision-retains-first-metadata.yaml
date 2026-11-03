@@ -3,7 +3,7 @@ name: null-empty-collision-retains-first-metadata
 call:
   spend_upsert:
     steps:
-      collision: {"kind":"daily","entity":"user","rows":[{"user_id":"z","prompt_tokens":"4","spend":"5","model_group":"singleton"},{"user_id":null,"model":null,"model_group":"first","prompt_tokens":3,"spend":1.25},{"user_id":"","model":"","model_group":"second","prompt_tokens":4,"spend":0.5}]}
+      collision: {"kind":"daily","entity":"user","rows_json":"[{\"user_id\":\"z\",\"prompt_tokens\":\"4\",\"spend\":\"5\",\"model_group\":\"singleton\"},{\"user_id\":null,\"model\":null,\"model_group\":\"first\",\"prompt_tokens\":3,\"spend\":1.25},{\"user_id\":\"\",\"model\":\"\",\"model_group\":\"second\",\"prompt_tokens\":4,\"spend\":0.5}]"}
 env: {}
 compare:
   ignore: [{"pointer":"/value/collision/params/0","why":"Each daily row receives a newly generated UUID."},{"pointer":"/value/collision/params/24","why":"Each daily row receives a newly generated UUID."}]

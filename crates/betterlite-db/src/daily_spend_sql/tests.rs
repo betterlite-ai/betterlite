@@ -46,7 +46,12 @@ fn tag_upsert_keeps_request_id_and_uses_fixed_table() {
     let mut row = row("tag", Text("m".to_owned()), 1);
     row.insert("request_id".to_owned(), Null);
     let key = super::merge::conflict_key(&DailySpendEntity::Tag.table(), &row).unwrap();
-    let (sql, params) = build_bulk_upsert(&DailySpendEntity::Tag.table(), &[(key, row)]).unwrap();
+    let (sql, params) = build_bulk_upsert(
+        &DailySpendEntity::Tag.table(),
+        &[(key, row)],
+        uuid::Uuid::nil,
+    )
+    .unwrap();
     assert!(
         sql.contains("COALESCE(EXCLUDED.\"request_id\", \"LiteLLM_DailyTagSpend\".\"request_id\")")
     );
@@ -99,22 +104,32 @@ async fn postgres_daily_collisions_and_tag_request_retention() {
     let mut initial = row("tag", Null, 2);
     initial.insert("model_group".to_owned(), Text("first".to_owned()));
     initial.insert("request_id".to_owned(), Text("request".to_owned()));
-    write_bulk_upsert(&first, DailySpendEntity::Tag, &[initial])
-        .await
-        .unwrap();
+    write_bulk_upsert(
+        &first,
+        DailySpendEntity::Tag,
+        &[initial],
+        uuid::Uuid::new_v4,
+    )
+    .await
+    .unwrap();
     let rows = [row("tag", Null, 3), row("tag", Text(String::new()), 4)];
     let (left, right) = tokio::join!(
-        write_bulk_upsert(&first, DailySpendEntity::Tag, &rows),
-        write_bulk_upsert(&second, DailySpendEntity::Tag, &rows)
+        write_bulk_upsert(&first, DailySpendEntity::Tag, &rows, uuid::Uuid::new_v4),
+        write_bulk_upsert(&second, DailySpendEntity::Tag, &rows, uuid::Uuid::new_v4)
     );
     left.unwrap();
     right.unwrap();
     check_daily(&first).await;
     let mut replacement = row("tag", Null, 0);
     replacement.insert("request_id".to_owned(), Text("new".to_owned()));
-    write_bulk_upsert(&first, DailySpendEntity::Tag, &[replacement])
-        .await
-        .unwrap();
+    write_bulk_upsert(
+        &first,
+        DailySpendEntity::Tag,
+        &[replacement],
+        uuid::Uuid::new_v4,
+    )
+    .await
+    .unwrap();
     let updated = first
         .query_one("SELECT request_id FROM \"LiteLLM_DailyTagSpend\"", &[])
         .await
@@ -124,7 +139,7 @@ async fn postgres_daily_collisions_and_tag_request_retention() {
         .batch_execute("DROP TABLE \"LiteLLM_DailyTagSpend\"")
         .await
         .unwrap();
-    write_bulk_upsert(&first, DailySpendEntity::Tag, &[])
+    write_bulk_upsert(&first, DailySpendEntity::Tag, &[], uuid::Uuid::new_v4)
         .await
         .unwrap();
     drop((first, second));
@@ -223,4 +238,71 @@ fn sums_money_without_binary_roundoff() {
         groups[0].1.get("spend"),
         Some(&Decimal(rust_decimal::Decimal::new(3, 1)))
     );
+}
+
+#[test]
+fn exact_decimal_survives_column_and_bind_serialization() {
+    let token = "0.1234567890123456789";
+    let amount = token.parse::<rust_decimal::Decimal>().unwrap();
+    let column = Decimal(amount);
+    let encoded = serde_json::to_string(&column).unwrap();
+    assert_eq!(encoded, token);
+    assert_eq!(
+        serde_json::from_str::<super::values::SpendColumnValue>(&encoded).unwrap(),
+        column
+    );
+    let bind = serde_json::to_string(&super::bind::SqlBind::Money(amount)).unwrap();
+    assert_eq!(bind, token);
+    assert_eq!(
+        serde_json::from_str::<super::values::SpendColumnValue>(&bind).unwrap(),
+        column
+    );
+}
+
+#[test]
+fn reserved_number_object_is_nonnumeric() {
+    let source = r#"{"spend":{"$serde_json::private::Number":"100"},"prompt_tokens":{"$serde_json::private::Number":"2"}}"#;
+    let object: SpendRow = serde_json::from_str(source).unwrap();
+    let numeric: SpendRow = serde_json::from_str(r#"{"spend":3,"prompt_tokens":4}"#).unwrap();
+    assert!(matches!(
+        object.get("spend"),
+        Some(super::values::SpendColumnValue::Object(_))
+    ));
+    let groups =
+        merge_by_conflict_key(&DailySpendEntity::Team.table(), &[object, numeric]).unwrap();
+    assert_eq!(
+        groups[0].1.get("spend"),
+        Some(&Decimal(rust_decimal::Decimal::from(3_i32)))
+    );
+    assert_eq!(groups[0].1.get("prompt_tokens"), Some(&Int(4)));
+}
+
+#[test]
+fn uses_injected_ids_in_batch_order() {
+    let groups = merge_by_conflict_key(
+        &DailySpendEntity::Team.table(),
+        &serde_json::from_str::<Vec<SpendRow>>(r#"[{"team_id":"b"},{"team_id":"a"}]"#).unwrap(),
+    )
+    .unwrap();
+    let mut identifiers = [uuid::Uuid::from_u128(1), uuid::Uuid::from_u128(2)].into_iter();
+    let (_, params) = build_bulk_upsert(&DailySpendEntity::Team.table(), &groups, || {
+        identifiers.next().unwrap()
+    })
+    .unwrap();
+    assert_eq!(
+        serde_json::to_string(&params[0]).unwrap(),
+        r#""00000000-0000-0000-0000-000000000001""#
+    );
+    assert_eq!(serde_json::to_string(&params[1]).unwrap(), r#""a""#);
+    assert_eq!(
+        serde_json::to_string(&params[24]).unwrap(),
+        r#""00000000-0000-0000-0000-000000000002""#
+    );
+    assert_eq!(serde_json::to_string(&params[25]).unwrap(), r#""b""#);
+    assert_eq!(identifiers.next(), None);
+    let (_, empty) = build_bulk_upsert(&DailySpendEntity::Team.table(), &[], || {
+        identifiers.next().unwrap()
+    })
+    .unwrap();
+    assert!(empty.is_empty());
 }
