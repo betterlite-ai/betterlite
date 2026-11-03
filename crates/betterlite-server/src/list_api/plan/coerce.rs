@@ -1,5 +1,5 @@
 #[path = "coerce/numeric.rs"]
-pub(in crate::list_api::plan) mod numeric;
+pub(in crate::list_api) mod numeric;
 
 use std::collections::{BTreeMap, BTreeSet};
 
