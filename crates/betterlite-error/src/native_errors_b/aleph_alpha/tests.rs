@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use crate::envelope::WireField;
 use rstest::rstest;
 
 use super::*;
@@ -127,5 +128,5 @@ fn unmatched_and_missing_status_answer_the_outer_api_connection() {
     assert_eq!(metadata.status_code, 500);
     assert_eq!(details.model.as_deref(), Some(""));
     assert_eq!(details.provider.as_deref(), Some(""));
-    assert_eq!(metadata.error_type, crate::envelope::WireField::Null);
+    assert_eq!(metadata.error_type, WireField::Null);
 }
