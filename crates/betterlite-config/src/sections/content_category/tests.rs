@@ -128,11 +128,11 @@ pub(crate) fn file_yaml_defaults_action_and_json_deduplicates_and_maps_severity(
     let json = temp.path().join("harm.json");
     fs::write(
         &json,
-        r#"[{"match":" Foo |foo|bar","severity":3},{"match":"baz","severity":"bad"}]"#,
+        r#"[{"match":" Foo |foo|bar","severity":3},{"match":"baz","severity":"bad"},{"match":"qux","severity":2.7}]"#,
     )
     .unwrap();
     let category = load_category_file(&json).unwrap();
-    assert_eq!(category.keywords.len(), 3);
+    assert_eq!(category.keywords.len(), 4);
     assert_eq!(
         category.keywords[0].get("severity").map(String::as_str),
         Some("high")

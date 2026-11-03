@@ -136,14 +136,14 @@ struct JsonEntry {
 #[derive(serde::Deserialize)]
 #[serde(untagged)]
 enum JsonSeverity {
-    Integer(i64),
+    Number(serde_json::Number),
     Text(String),
 }
 
 fn severity_name(severity: Option<&JsonSeverity>) -> &'static str {
     match severity {
-        Some(JsonSeverity::Integer(1)) => "low",
-        Some(JsonSeverity::Integer(3 | 4)) => "high",
+        Some(JsonSeverity::Number(number)) if number.as_i64() == Some(1) => "low",
+        Some(JsonSeverity::Number(number)) if matches!(number.as_i64(), Some(3 | 4)) => "high",
         Some(JsonSeverity::Text(value)) => {
             tracing::debug!(
                 severity = value,
@@ -151,6 +151,6 @@ fn severity_name(severity: Option<&JsonSeverity>) -> &'static str {
             );
             "medium"
         }
-        None | Some(JsonSeverity::Integer(_)) => "medium",
+        None | Some(JsonSeverity::Number(_)) => "medium",
     }
 }
