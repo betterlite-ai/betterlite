@@ -1,0 +1,7 @@
+kind: helper
+name: id_token_priority
+call:
+  chatgpt_token_store: {"record": "{\"access_token\": \"h.eyJleHAiOiAxMDAwLjksICJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOiB7ImNoYXRncHRfYWNjb3VudF9pZCI6ICJhY2N0LWFjY2VzcyJ9fQ.unverified\", \"id_token\": \"h.eyJleHAiOiAyMDAwfQ.unverified\"}", "replacement": null, "now": 940, "fail_write": false, "actions": ["account", "expired"]}
+env: {}
+compare:
+  ignore: []

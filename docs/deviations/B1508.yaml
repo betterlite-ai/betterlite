@@ -1,0 +1,20 @@
+task: B1508
+deviations:
+  - what: Auth files are created with owner-only mode 0600, and permissions on the opened file are set to 0600 before serializing credentials; permission failures follow the existing write-failure path.
+    why: LiteLLM's ordinary file creation can expose tokens to other local users. Restricting the opened file preserves truncate-first writes while preventing new credentials from being written with permissive access bits.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/chatgpt/authenticator.py#L106-L111
+  - what: An injected system home that is not UTF-8 warns and leaves the literal default token path unchanged.
+    why: Configuration paths are UTF-8 strings; replacing invalid bytes would target a different credential directory.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/chatgpt/authenticator.py#L44-L47
+  - what: Auth files above 1 MiB warn and behave as unreadable; JWT hints above 16 KiB yield no claims.
+    why: Local credentials are outside bytes and decoding must have finite allocation limits.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/chatgpt/authenticator.py#L96-L140
+  - what: Invalid-record and write-failure logs omit exception text.
+    why: Parser exception text can include credential material; fixed messages preserve diagnostics without exposing secrets.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/chatgpt/authenticator.py#L103-L112
+  - what: Nonfinite cooldown markers and timestamps outside the checked decimal clock range yield zero remaining cooldown.
+    why: These cannot represent a real wall-clock device-code request and can otherwise cause an unrepresentable or infinite wait.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/chatgpt/authenticator.py#L356-L369
+  - what: Expiry values that fail Decimal conversion or checked skew subtraction are treated as expired; fractional JWT expiry uses Decimal truncation and yields no hint when conversion fails.
+    why: Timestamp processing must avoid floats. Uncomparable values cannot establish validity, and decimal truncation avoids binary floating-point precision loss.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/chatgpt/authenticator.py#L113-L129
