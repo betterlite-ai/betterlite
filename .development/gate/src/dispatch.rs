@@ -423,10 +423,11 @@ fn run_ladder(
         }
         if progress.limited {
             let reason = format!(
-                "every runner left on the worker ladder is at its usage limit; last feedback: {}",
+                "every runner left on the worker ladder is unavailable ({}); last feedback: {}",
+                vendor::causes(places.git_common_dir, agents)?,
                 progress.feedback.join("; ")
             );
-            return Err(GateError::UsageLimit {
+            return Err(GateError::Unavailable {
                 task: brief.task.id.clone(),
                 reason,
             });
