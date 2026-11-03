@@ -1,8 +1,8 @@
 use super::super::utils::coercion::{OtelModelValue, as_int};
-use rust_decimal::prelude::ToPrimitive as _;
+use super::helpers::float_value;
 use std::collections::BTreeMap;
 
-#[derive(Clone, Debug, Default)]
+#[derive(serde::Serialize, Clone, Debug, Default)]
 pub struct LLMRequestParams {
     pub temperature: Option<f64>,
     pub top_p: Option<f64>,
@@ -22,24 +22,12 @@ impl LLMRequestParams {
             .and_then(as_int)
             .or_else(|| params.get("max_completion_tokens").and_then(as_int));
         Self {
-            temperature: params
-                .get("temperature")
-                .and_then(OtelModelValue::as_decimal)
-                .and_then(|number| number.to_f64()),
-            top_p: params
-                .get("top_p")
-                .and_then(OtelModelValue::as_decimal)
-                .and_then(|number| number.to_f64()),
+            temperature: params.get("temperature").and_then(float_value),
+            top_p: params.get("top_p").and_then(float_value),
             top_k: params.get("top_k").and_then(as_int),
             max_tokens,
-            frequency_penalty: params
-                .get("frequency_penalty")
-                .and_then(OtelModelValue::as_decimal)
-                .and_then(|number| number.to_f64()),
-            presence_penalty: params
-                .get("presence_penalty")
-                .and_then(OtelModelValue::as_decimal)
-                .and_then(|number| number.to_f64()),
+            frequency_penalty: params.get("frequency_penalty").and_then(float_value),
+            presence_penalty: params.get("presence_penalty").and_then(float_value),
             stop_sequences: params.get("stop").and_then(|value| {
                 value
                     .as_array()

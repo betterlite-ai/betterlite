@@ -1,7 +1,7 @@
 use super::super::utils::coercion::OtelModelValue;
 use std::collections::BTreeMap;
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(serde::Serialize, Clone, Debug, Default, PartialEq, Eq)]
 pub struct SpanError {
     pub error_type: Option<String>,
     pub message: Option<String>,

@@ -1,5 +1,15 @@
 use super::super::utils::coercion::{OtelModelValue, as_int};
+use rust_decimal::prelude::ToPrimitive as _;
 use std::collections::BTreeMap;
+
+#[must_use]
+pub(super) fn float_value(value: &OtelModelValue) -> Option<f64> {
+    if let OtelModelValue::Number(number) = value {
+        number.as_f64()
+    } else {
+        value.as_decimal()?.to_f64()
+    }
+}
 
 #[must_use]
 pub fn cache_token_value(values: &[OtelModelValue]) -> Option<i64> {
@@ -39,16 +49,27 @@ pub fn guardrail_mode_str(value: &OtelModelValue) -> Option<String> {
         }
         return (!joined.is_empty()).then_some(joined);
     }
+    if value.as_object().is_some() {
+        return json_or_none(value);
+    }
     value.as_str().map(str::to_owned)
 }
 
 #[must_use]
 pub fn total_masked_entities(value: &OtelModelValue) -> Option<i64> {
     value.as_object().map_or_else(
-        || as_int(value).filter(|count| *count != 0),
+        || as_int(value),
         |items| {
             let total = items.values().fold(0_i64, |sum, item| {
-                sum.saturating_add(as_int(item).unwrap_or(0))
+                let count = match item {
+                    OtelModelValue::Number(number) => number.as_i64(),
+                    OtelModelValue::Bool(boolean) => Some(i64::from(*boolean)),
+                    OtelModelValue::Null(())
+                    | OtelModelValue::String(_)
+                    | OtelModelValue::Array(_)
+                    | OtelModelValue::Object(_) => None,
+                };
+                sum.saturating_add(count.unwrap_or(0))
             });
             (total != 0).then_some(total)
         },

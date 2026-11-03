@@ -1,0 +1,18 @@
+{
+  "kind": "helper",
+  "name": "payload-primitives-params-zero",
+  "call": {
+    "b3843": {
+      "function": "request_params",
+      "value": {
+        "max_tokens": 0,
+        "max_completion_tokens": 12,
+        "stop": []
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

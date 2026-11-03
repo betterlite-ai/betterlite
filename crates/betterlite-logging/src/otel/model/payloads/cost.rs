@@ -2,18 +2,29 @@ use super::super::utils::coercion::OtelModelValue;
 use rust_decimal::Decimal;
 use std::collections::BTreeMap;
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(serde::Serialize, Clone, Debug, Default, PartialEq, Eq)]
 pub struct LLMCost {
+    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
     pub input: Option<Decimal>,
+    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
     pub output: Option<Decimal>,
+    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
     pub cache_read: Option<Decimal>,
+    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
     pub cache_creation: Option<Decimal>,
+    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
     pub tool_usage: Option<Decimal>,
+    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
     pub original: Option<Decimal>,
+    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
     pub discount_amount: Option<Decimal>,
+    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
     pub discount_percent: Option<Decimal>,
+    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
     pub margin_fixed_amount: Option<Decimal>,
+    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
     pub margin_percent: Option<Decimal>,
+    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
     pub margin_total_amount: Option<Decimal>,
 }
 

@@ -1,5 +1,5 @@
 kind: helper
 name: payload-primitives-request-params-all-fields-optional
-call: {b3843: {function: cache_token_value, values: [0, 12]}}
+call: {b3843: {function: request_params, value: {temperature: 0.2, top_p: 0.9, top_k: 4, max_completion_tokens: 128, frequency_penalty: 0.1, presence_penalty: 0.3, stop: [END], seed: 42}}}
 env: {}
 compare: {ignore: []}

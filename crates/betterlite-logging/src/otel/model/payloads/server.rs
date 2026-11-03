@@ -1,4 +1,4 @@
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(serde::Serialize, Clone, Debug, Default, PartialEq, Eq)]
 pub struct ServerInfo {
     pub address: Option<String>,
     pub port: Option<u16>,
@@ -16,31 +16,29 @@ impl ServerInfo {
         } else {
             format!("http://{trimmed}")
         };
-        let parsed = url::Url::parse(&parseable).ok()?;
-        let host = match parsed.host()? {
-            url::Host::Ipv6(address) => address.to_string(),
-            url::Host::Domain(domain) => domain.to_owned(),
-            url::Host::Ipv4(address) => address.to_string(),
-        };
         let raw_authority = parseable
             .split_once("://")
             .map_or(parseable.as_str(), |(_, rest)| rest)
             .split(['/', '?', '#'])
             .next()?;
-        let host_authority = raw_authority.rsplit('@').next()?;
-        let explicit_port = if host_authority.starts_with('[') {
-            host_authority
-                .find(']')
-                .and_then(|end| end.checked_add(1))
-                .and_then(|start| host_authority.get(start..))
-                .and_then(|suffix| suffix.strip_prefix(':'))
-        } else {
-            host_authority.rsplit_once(':').map(|(_, port)| port)
+        if raw_authority.is_empty() {
+            return None;
         }
-        .and_then(|port| port.parse::<u16>().ok());
+        url::Url::parse(&parseable).ok()?.host()?;
+        let host_authority = raw_authority.rsplit('@').next()?;
+        let (host, port) = if let Some(bracketed) = host_authority.strip_prefix('[') {
+            let (address, suffix) = bracketed.split_once(']')?;
+            (address, suffix.strip_prefix(':'))
+        } else {
+            host_authority
+                .rsplit_once(':')
+                .map_or((host_authority, None), |(address, port)| {
+                    (address, Some(port))
+                })
+        };
         Some(Self {
-            address: Some(host),
-            port: explicit_port,
+            address: Some(host.to_lowercase()),
+            port: port.and_then(|value| value.parse::<u16>().ok()),
         })
     }
 }

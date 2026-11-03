@@ -1,6 +1,6 @@
 use super::RequestIdentity;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 pub struct ProxyRequestSpanData {
     pub http_method: String,
     pub route: String,

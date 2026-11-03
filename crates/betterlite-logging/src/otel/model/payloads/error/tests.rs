@@ -30,3 +30,16 @@ fn error_class_falls_back_to_error_code() {
     assert_eq!(error.code.as_deref(), Some("E42"));
     assert_eq!(error.message.as_deref(), Some("bad response"));
 }
+
+#[test]
+fn error_information_precedes_fallback_and_retains_provider() {
+    let payload = serde_json::from_str(r#"{"status":"failure","error_str":"fallback","error_information":{"error_message":"primary","llm_provider":"provider"}}"#).unwrap();
+    let error = SpanError::from_payload(&payload).unwrap();
+    assert_eq!(error.message.as_deref(), Some("primary"));
+    assert_eq!(error.llm_provider.as_deref(), Some("provider"));
+    let empty_failure = serde_json::from_str(r#"{"status":"failure"}"#).unwrap();
+    assert_eq!(
+        SpanError::from_payload(&empty_failure),
+        Some(SpanError::default())
+    );
+}

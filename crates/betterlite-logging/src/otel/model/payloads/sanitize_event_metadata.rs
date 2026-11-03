@@ -27,11 +27,9 @@ pub fn sanitize_event_metadata(
         }
         let text = match value {
             OtelModelValue::String(text) => Some(text.chars().take(1024).collect()),
-            OtelModelValue::Number(number) => Some(number.to_string()),
-            OtelModelValue::Null(())
-            | OtelModelValue::Bool(_)
-            | OtelModelValue::Array(_)
-            | OtelModelValue::Object(_) => None,
+            OtelModelValue::Number(number) => Some(number.as_str().chars().take(1024).collect()),
+            OtelModelValue::Bool(boolean) => Some(boolean.to_string()),
+            OtelModelValue::Null(()) | OtelModelValue::Array(_) | OtelModelValue::Object(_) => None,
         };
         if let Some(text_value) = text {
             clean.insert(key.clone(), text_value);

@@ -16,3 +16,17 @@ fn usage_skips_zero_cache_creation_before_fallback_source() {
     assert_eq!(usage.cache_creation_input_tokens, Some(7));
     assert_eq!(usage.uncached_input_tokens(), Some(13));
 }
+
+#[rstest::rstest]
+#[case::absent("{}", None, None)]
+#[case::clamp(r#"{"prompt_tokens":1,"completion_tokens":2,"metadata":{"usage_object":{"cache_read_input_tokens":5,"completion_tokens_details":{"reasoning_tokens":4}}}}"#, Some(0), Some(0))]
+#[case::both_caches(r#"{"prompt_tokens":20,"completion_tokens":8,"metadata":{"usage_object":{"cache_creation_input_tokens":3,"cache_read_input_tokens":4}}}"#, Some(13), Some(8))]
+fn computed_usage_handles_absence_and_clamping(
+    #[case] raw: &str,
+    #[case] input: Option<i64>,
+    #[case] output: Option<i64>,
+) {
+    let usage = LLMUsage::from_payload(&serde_json::from_str(raw).unwrap());
+    assert_eq!(usage.uncached_input_tokens(), input);
+    assert_eq!(usage.non_reasoning_output_tokens(), output);
+}

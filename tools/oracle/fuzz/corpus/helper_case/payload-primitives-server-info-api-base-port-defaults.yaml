@@ -1,5 +1,5 @@
 kind: helper
 name: payload-primitives-server-info-api-base-port-defaults
-call: {b3843: {function: guardrail_mode_str, value: [pre_call, post_call]}}
+call: {b3843: {function: server_info, value: "https://[::1]:8443/path"}}
 env: {}
 compare: {ignore: []}

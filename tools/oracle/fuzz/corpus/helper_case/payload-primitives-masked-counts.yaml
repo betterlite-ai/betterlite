@@ -1,0 +1,17 @@
+{
+  "kind": "helper",
+  "name": "payload-primitives-masked-counts",
+  "call": {
+    "b3843": {
+      "function": "total_masked_entities",
+      "value": {
+        "email": 2,
+        "phone": 3
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

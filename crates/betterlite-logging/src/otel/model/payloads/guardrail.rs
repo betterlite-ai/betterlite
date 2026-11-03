@@ -1,13 +1,12 @@
 use super::super::utils::coercion::OtelModelValue;
 use super::{
     error::SpanError,
-    helpers::{guardrail_mode_str, json_or_none, total_masked_entities},
+    helpers::{float_value, guardrail_mode_str, json_or_none, total_masked_entities},
 };
 use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive as _;
 use std::collections::BTreeMap;
 
-#[derive(Clone, Debug, Default)]
+#[derive(serde::Serialize, Clone, Debug, Default)]
 pub struct GuardrailSpanData {
     pub guardrail_name: String,
     pub mode: Option<String>,
@@ -26,6 +25,7 @@ pub struct GuardrailSpanData {
     pub policy_template: Option<String>,
     pub detection_method: Option<String>,
     pub usage_json: Option<String>,
+    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
     pub cost: Option<Decimal>,
     pub cost_in_spend: Option<bool>,
     pub error: Option<SpanError>,
@@ -50,11 +50,11 @@ impl GuardrailSpanData {
                 .filter(|value| !matches!(value, OtelModelValue::Null(())))
                 .and_then(json_or_none),
             violation_categories: violation_categories(entry),
-            confidence_score: float_field(entry, "confidence_score"),
-            risk_score: float_field(entry, "risk_score"),
-            duration: float_field(entry, "duration"),
-            start_time: float_field(entry, "start_time"),
-            end_time: float_field(entry, "end_time"),
+            confidence_score: entry.get("confidence_score").and_then(float_value),
+            risk_score: entry.get("risk_score").and_then(float_value),
+            duration: entry.get("duration").and_then(float_value),
+            start_time: entry.get("start_time").and_then(float_value),
+            end_time: entry.get("end_time").and_then(float_value),
             guardrail_id: string_field(entry, "guardrail_id"),
             policy_template: string_field(entry, "policy_template"),
             detection_method: string_field(entry, "detection_method"),
@@ -78,16 +78,6 @@ fn string_field(entry: &BTreeMap<String, OtelModelValue>, field: &str) -> Option
         .get(field)
         .and_then(OtelModelValue::as_str)
         .map(str::to_owned)
-}
-
-fn float_field(entry: &BTreeMap<String, OtelModelValue>, field: &str) -> Option<f64> {
-    match entry.get(field) {
-        Some(raw) => {
-            let decimal = raw.as_decimal()?;
-            decimal.to_f64()
-        }
-        None => None,
-    }
 }
 
 fn status_error(entry: &BTreeMap<String, OtelModelValue>) -> (Option<String>, Option<SpanError>) {
