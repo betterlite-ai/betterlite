@@ -323,6 +323,33 @@ fn a_limited_rung_lends_its_try_to_a_later_rung_and_keeps_its_attempts() {
 }
 
 #[test]
+fn an_unavailable_claude_rung_borrows_the_final_astra_rung() {
+    let (agents, _) = fixtures();
+    let folder = tempfile::tempdir().unwrap();
+    let places = Places {
+        worktree: folder.path(),
+        journal: folder.path(),
+        git_common_dir: folder.path(),
+        home: folder.path(),
+        writable: &[],
+    };
+    let ladder = &agents.roles.worker.ladder;
+    let claude_rung = ladder.len() - 2;
+    mark(folder.path(), "anthropic", "You've hit your limit").unwrap();
+    let borrowed = pick_rung(&agents, &places, claude_rung, &ladder[claude_rung])
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (
+            borrowed.runner.id.as_str(),
+            borrowed.rung.model.as_str(),
+            borrowed.counted
+        ),
+        ("codex-worker", "gpt-6-astra", false)
+    );
+}
+
+#[test]
 fn a_dispatch_stopped_by_a_usage_limit_keeps_its_place() {
     let (agents, task) = fixtures();
     let brief = Brief {
