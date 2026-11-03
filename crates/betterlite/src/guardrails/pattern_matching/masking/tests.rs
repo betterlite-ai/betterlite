@@ -29,3 +29,6 @@ fn masks_original_unicode_spans_left_to_right() {
 
 #[path = "tests/spans/tests.rs"]
 mod spans;
+
+#[path = "tests/index_errors/tests.rs"]
+mod index_errors;

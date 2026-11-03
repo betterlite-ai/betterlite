@@ -8,6 +8,7 @@ use fancy_regex::Regex;
 
 pub mod blocked_words;
 pub mod masking;
+mod python_regex;
 pub mod spans;
 mod tests;
 
@@ -50,7 +51,7 @@ pub fn compile(config: &ContentFilterPattern) -> Result<CompiledPattern, Pattern
                 return Err(PatternError::TooLarge);
             }
             Ok(CompiledPattern {
-                regex: Regex::new(&format!("(?i){source}"))?,
+                regex: python_regex::compile(source)?,
                 pattern_name: config
                     .name
                     .clone()
@@ -77,9 +78,7 @@ fn compile_prebuilt(config: &ContentFilterPattern) -> Result<CompiledPattern, Pa
         regex,
         pattern_name: name.clone(),
         action: config.action,
-        keyword_regex: keyword
-            .map(|value| Regex::new(&format!("(?i){value}")))
-            .transpose()?,
+        keyword_regex: keyword.map(python_regex::compile).transpose()?,
         allow_word_numbers: extra
             .and_then(|value| value.allow_word_numbers)
             .unwrap_or(false),

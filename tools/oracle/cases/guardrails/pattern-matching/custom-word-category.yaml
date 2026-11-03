@@ -1,0 +1,1 @@
+{"kind":"helper","name":"custom-word-category","call":{"b3693":{"function":"add","patterns":[{"pattern_type":"regex","pattern":"[\\w]","action":"MASK"}],"text":"\u0301"}},"env":{},"compare":{"ignore":[]}}

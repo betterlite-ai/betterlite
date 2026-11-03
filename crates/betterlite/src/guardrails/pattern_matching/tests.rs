@@ -64,3 +64,6 @@ fn pattern_order_wins_over_text_order() {
 
 #[path = "tests/limits/tests.rs"]
 mod limits;
+
+#[path = "tests/compatibility/tests.rs"]
+mod compatibility;

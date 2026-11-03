@@ -1,0 +1,1 @@
+{"kind":"helper","name":"custom-multiline-dollar","call":{"b3693":{"function":"add","patterns":[{"pattern_type":"regex","pattern":"(?m)secret$","action":"MASK"}],"text":"secret\nother"}},"env":{},"compare":{"ignore":[]}}
