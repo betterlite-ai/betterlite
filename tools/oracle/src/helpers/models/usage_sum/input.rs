@@ -9,13 +9,13 @@ use serde_json::Value;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Input {
-    pub(super) usages: Vec<UsageInput>,
+pub(crate) struct Input {
+    pub(crate) usages: Vec<UsageInput>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct UsageInput {
+pub(crate) struct UsageInput {
     #[serde(default)]
     pub(super) prompt_tokens: Option<i64>,
     #[serde(default)]
@@ -32,7 +32,7 @@ pub(super) struct UsageInput {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct PromptInput {
+pub(crate) struct PromptInput {
     #[serde(default)]
     pub(super) text_tokens: Option<i64>,
     #[serde(default)]
@@ -72,7 +72,7 @@ pub(super) struct PromptInput {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct CachedInput {
+pub(crate) struct CachedInput {
     #[serde(default, rename = "text_tokens")]
     pub(super) text: Option<i64>,
     #[serde(default)]
@@ -83,7 +83,7 @@ pub(super) struct CachedInput {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct CompletionInput {
+pub(crate) struct CompletionInput {
     #[serde(default, rename = "text_tokens")]
     pub(super) text: Option<i64>,
     #[serde(default)]

@@ -8,9 +8,9 @@ use betterlite_models::usage_sum::{
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
 use serde_json::{Value, json};
-mod input;
+pub(crate) mod input;
 
-use input::{CachedInput, CompletionInput, Input, PromptInput};
+use input::Input;
 
 pub(crate) struct Op;
 
