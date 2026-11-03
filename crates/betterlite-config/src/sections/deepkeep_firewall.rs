@@ -1,8 +1,9 @@
+use std::fmt::Display;
 use std::time::Duration;
 
 use secrecy::SecretString;
 use serde::Deserialize;
-use serde::de::IgnoredAny;
+use serde::de::{Error as DeserializeError, IgnoredAny};
 use thiserror::Error;
 
 mod resolve;
@@ -111,10 +112,10 @@ impl Section for Raw {
 
 fn yaml_error<M>(path: &str, message: M) -> ConfigError
 where
-    M: std::fmt::Display,
+    M: Display,
 {
     ConfigError::Yaml {
-        source: <serde_saphyr::Error as serde::de::Error>::custom(format!("{path}: {message}")),
+        source: <serde_saphyr::Error as DeserializeError>::custom(format!("{path}: {message}")),
     }
 }
 

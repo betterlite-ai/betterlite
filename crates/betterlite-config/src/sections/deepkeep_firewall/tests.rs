@@ -216,13 +216,13 @@ fn deepkeep_config_leaves_other_guardrails_values_alone(#[case] parameter: &str)
 #[test]
 fn deepkeep_config_ignores_nested_optional_params_fallback() {
     let source = "guardrails:\n  - guardrail_name: firewall\n    litellm_params:\n      guardrail: deepkeep\n      api_key: key\n      api_base: https://deepkeep.test\n      deepkeep_firewall_id: fixed\n      optional_params:\n        unreachable_fallback: fail_open\n";
-    let (config, log) = logged(|| {
+    let (loaded, log) = logged(|| {
         ConfigLoader {
             lookup: BTreeMap::new(),
         }
         .load(source)
     });
-    let config = config.expect("config");
+    let config = loaded.expect("config");
     let settings = &config.sections.deepkeep_firewall.guardrails[0];
     assert_eq!(
         settings.unreachable_fallback,

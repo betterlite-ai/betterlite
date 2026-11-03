@@ -6,9 +6,10 @@ pub(super) struct CallIdentity {
     pub litellm_trace_id: Option<String>,
 }
 
-pub(super) enum Outcome<'a> {
+#[derive(Clone, Copy)]
+pub(super) enum Outcome<'call> {
     Rejected,
-    Bypassed(&'a CallIdentity),
+    Bypassed(&'call CallIdentity),
 }
 
 pub(super) fn failure(
