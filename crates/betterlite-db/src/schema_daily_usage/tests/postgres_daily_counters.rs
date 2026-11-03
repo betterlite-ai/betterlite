@@ -71,35 +71,36 @@ async fn tag_counter_defaults() {
     .await;
 }
 
+#[rstest]
+#[case::user_counters("LiteLLM_DailyUserSpend", "user_id", "u1")]
+#[case::team_counters("LiteLLM_DailyTeamSpend", "team_id", "t1")]
+#[case::tag_counters("LiteLLM_DailyTagSpend", "tag", "tag1")]
 #[tokio::test]
-async fn seven_counters_widen_preserving_values() {
+async fn seven_counters_widen_preserving_values(
+    #[case] table: &str,
+    #[case] entity_column: &str,
+    #[case] entity_id: &str,
+) {
     harness(|[client]| async move {
-        client
-            .batch_execute(&migration_sql_through(ADD_STATUS_TO_SPENDLOGS))
-            .await
-            .unwrap();
-        insert_user_row(&client, "row-widen", Some("openai")).await;
-        exec_params(
-            &client,
-            r#"UPDATE "LiteLLM_DailyUserSpend" SET prompt_tokens = 42 WHERE id = $1"#,
-            &[&"row-widen"],
-        )
-        .await;
-        client
-            .batch_execute(migration_sql_of(USE_BIG_INT))
-            .await
-            .unwrap();
-        let info = column(&client, "LiteLLM_DailyUserSpend", "prompt_tokens").await;
-        assert_eq!(info.data_type, "bigint");
-        let value = scalar_i64(
-            &client,
-            r#"SELECT prompt_tokens FROM "LiteLLM_DailyUserSpend" WHERE id = $1"#,
-            &[&"row-widen"],
-        )
-        .await;
-        assert_eq!(value, 42);
-    })
-    .await;
+        client.batch_execute(&migration_sql_through(ADD_STATUS_TO_SPENDLOGS)).await.unwrap();
+        let insert = format!(
+            "INSERT INTO \"{table}\" (id, \"{entity_column}\", date, api_key, model, updated_at) VALUES ('row-widen', $1, 'd1', 'k1', 'm1', NOW())"
+        );
+        exec_params(&client, &insert, &[&entity_id]).await;
+        let update = format!(
+            "UPDATE \"{table}\" SET prompt_tokens = 11, completion_tokens = 22, api_requests = 33, successful_requests = 44, failed_requests = 55, cache_creation_input_tokens = 66, cache_read_input_tokens = 77 WHERE id = 'row-widen'"
+        );
+        client.batch_execute(&update).await.unwrap();
+        client.batch_execute(migration_sql_of(USE_BIG_INT)).await.unwrap();
+        let types = client.query(
+            "SELECT data_type FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1 AND column_name = ANY($2) ORDER BY array_position($2, column_name)",
+            &[&table, &&SEVEN_COUNTERS[..]],
+        ).await.unwrap();
+        assert_eq!(types.iter().map(|row| row.get::<_, String>(0)).collect::<Vec<_>>(), vec!["bigint"; 7]);
+        let select = format!("SELECT {} FROM \"{table}\" WHERE id = 'row-widen'", SEVEN_COUNTERS.join(", "));
+        let values = client.query_one(&select, &[]).await.unwrap();
+        assert_counter_values(&values, table);
+    }).await;
 }
 
 #[tokio::test]
@@ -188,29 +189,24 @@ async fn tag_global_unique_then_dropped() {
     .await;
 }
 
+#[rstest]
+#[case::null_user_id("LiteLLM_DailyUserSpend", "user_id")]
+#[case::null_team_id("LiteLLM_DailyTeamSpend", "team_id")]
+#[case::null_tag("LiteLLM_DailyTagSpend", "tag")]
 #[tokio::test]
-async fn nullable_entities_and_distinct_null_uniqueness() {
+async fn nullable_entities_and_distinct_null_uniqueness(
+    #[case] table: &str,
+    #[case] entity_column: &str,
+) {
     harness(|[client]| async move {
         client
             .batch_execute(&migration_sql_through(ALLOW_NULL_ENTITY_ID))
             .await
             .unwrap();
-        let info = column(&client, "LiteLLM_DailyUserSpend", "user_id").await;
-        assert!(info.is_nullable);
-        exec_params(
-            &client,
-            r#"INSERT INTO "LiteLLM_DailyUserSpend" (id, user_id, date, api_key, model, updated_at)
-               VALUES ('null-a', NULL, 'd1', 'k1', 'm1', NOW())"#,
-            &[],
-        )
-        .await;
-        exec_params(
-            &client,
-            r#"INSERT INTO "LiteLLM_DailyUserSpend" (id, user_id, date, api_key, model, updated_at)
-               VALUES ('null-b', NULL, 'd1', 'k1', 'm1', NOW())"#,
-            &[],
-        )
-        .await;
+        let info = column(&client, table, entity_column).await;
+        assert!(info.is_nullable, "{table}.{entity_column}");
+        insert_null_entity_row(&client, table, entity_column, "null-a").await;
+        insert_null_entity_row(&client, table, entity_column, "null-b").await;
     })
     .await;
 }
