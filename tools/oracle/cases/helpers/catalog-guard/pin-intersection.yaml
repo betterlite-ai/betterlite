@@ -1,0 +1,5 @@
+kind: helper
+name: catalog_pin_intersection
+call: {b4682: {operation: pin, tools: [{name: kept, description: new, input_schema: {}}, {name: added, description: x, input_schema: {}}], pinned: {kept: {description: old, input_schema: {}}}}}
+env: {}
+compare: {ignore: []}

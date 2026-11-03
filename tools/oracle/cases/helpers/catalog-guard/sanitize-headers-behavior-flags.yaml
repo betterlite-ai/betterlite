@@ -1,0 +1,5 @@
+kind: helper
+name: catalog_sanitize_headers_behavior_flags
+call: {b4682: {operation: sanitize_headers, headers: {litellm-disable-message-redaction: 'true', X-Trace: trace}}}
+env: {}
+compare: {ignore: []}

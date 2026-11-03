@@ -1,0 +1,15 @@
+{
+  "kind": "helper",
+  "name": "unknown-pattern-raises-error",
+  "call": {
+    "b3691": {
+      "function": "compile",
+      "name": "missing",
+      "texts": []
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

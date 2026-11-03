@@ -1,0 +1,13 @@
+{
+  "kind": "helper",
+  "name": "all-pattern-names-and-metadata",
+  "call": {
+    "b3691": {
+      "function": "catalog"
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
