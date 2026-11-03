@@ -84,7 +84,10 @@ pub async fn run(
 fn application(config: &Config, chat: ChatExecutor, shutting_down: Arc<AtomicBool>) -> Router {
     let executor = Arc::new(chat);
     router(
-        config.general_settings.master_key.clone(),
+        crate::auth::auth_route_patterns::AuthSettings {
+            master_key: config.general_settings.master_key.clone(),
+            routes: config.sections.auth_route_patterns.clone(),
+        },
         shutting_down,
         &config.model_list,
         chat_routes(Arc::clone(&executor)),

@@ -46,15 +46,22 @@ fn public_routes_list_loaded() {
 }
 
 #[rstest]
-#[case::scalar("public_routes: /api/*")]
-#[case::nonstring_entry("public_routes: [17]")]
-fn invalid_public_routes(#[case] setting: &str) {
+#[case::scalar("public_routes: /api/*", "sequence")]
+#[case::nonstring_entry("public_routes: [17]", "a string in general_settings.public_routes")]
+#[case::boolean_entry("public_routes: [true]", "a string in general_settings.public_routes")]
+#[case::null_entry("public_routes: [null]", "a string in general_settings.public_routes")]
+#[case::mapping_entry(
+    "public_routes: [{path: /api}]",
+    "a string in general_settings.public_routes"
+)]
+fn invalid_public_routes(#[case] setting: &str, #[case] expected: &str) {
     let error = ConfigLoader {
         lookup: BTreeMap::new(),
     }
     .load(&format!("general_settings:\n  {setting}\n"))
     .unwrap_err();
     assert!(error.to_string().contains("public_routes"));
+    assert!(error.to_string().contains(expected), "{error}");
 }
 
 #[rstest]
@@ -78,4 +85,27 @@ fn top_level_public_routes_is_unsupported() {
     .load("public_routes: ['/api/*']")
     .unwrap_err();
     assert!(error.to_string().contains("public_routes"));
+}
+
+#[test]
+fn quoted_scalar_routes_remain_strings() {
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load("general_settings: {public_routes: ['17', 'true']}")
+    .unwrap();
+    assert_eq!(
+        config.sections.auth_route_patterns.public_routes,
+        ["17", "true"]
+    );
+}
+
+#[test]
+fn unknown_general_settings_stay_rejected() {
+    let error = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load("general_settings: {public_routez: ['/v1/models']}")
+    .unwrap_err();
+    assert!(error.to_string().contains("general_settings.public_routez"));
 }

@@ -4,7 +4,7 @@ use betterlite_auth::auth_route_patterns::canonical::{
 use betterlite_auth::auth_route_patterns::normalize::RouteNormalizer;
 use serde::Deserialize;
 use serde_json::json;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use tracing_subscriber::layer::{Context, SubscriberExt as _};
 use tracing_subscriber::{Layer, Registry};
 
@@ -46,9 +46,10 @@ struct Logs(Arc<Mutex<Vec<String>>>);
 
 impl<Inner: tracing::Subscriber> Layer<Inner> for Logs {
     fn on_event(&self, event: &tracing::Event<'_>, _context: Context<'_, Inner>) {
-        if let Ok(mut levels) = self.0.lock() {
-            levels.push(event.metadata().level().to_string());
-        }
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(event.metadata().level().to_string());
     }
 }
 
@@ -107,7 +108,7 @@ fn run_request(input: &RequestInput) -> serde_json::Value {
     let levels = logs
         .0
         .lock()
-        .map(|entries| entries.clone())
-        .unwrap_or_default();
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
     json!({"name": input.name, "route": route, "template": template, "logs": levels})
 }

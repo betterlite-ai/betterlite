@@ -41,7 +41,7 @@ class RequestSource:
         fields: dict[str, object] = {
             key: self.row[key]
             for key in ("path", "root_path", "app_root_path")
-            if key in self.row
+            if self.row.get(key) is not None
         }
         access = self.row.get("template_access")
         if access == "error":

@@ -9,13 +9,13 @@ use crate::sections::Section;
 #[derive(Debug, Default, Deserialize)]
 pub struct Raw {
     #[serde(default)]
-    general_settings: Option<RawGeneral>,
+    general_settings: RawGeneral,
 }
 
 #[derive(Debug, Default, Deserialize)]
 struct RawGeneral {
     #[serde(default)]
-    public_routes: Option<Vec<String>>,
+    public_routes: Vec<RawRoute>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -33,8 +33,17 @@ impl Section for Raw {
         Ok(Settings {
             public_routes: self
                 .general_settings
-                .and_then(|settings| settings.public_routes)
-                .unwrap_or_default(),
+                .public_routes
+                .into_iter()
+                .map(|RawRoute::String(route)| route)
+                .collect(),
         })
     }
+}
+
+// Untagged content preserves scalar types instead of coercing YAML numbers to strings.
+#[derive(Debug, Deserialize)]
+#[serde(untagged, expecting = "a string in general_settings.public_routes")]
+enum RawRoute {
+    String(String),
 }

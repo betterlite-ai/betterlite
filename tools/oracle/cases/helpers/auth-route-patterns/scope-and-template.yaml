@@ -20,3 +20,6 @@ call:
       - {"name": "absent_empty_nonstring_template", "url_path": "/url", "template_access": "malformed"}
       - {"name": "template_exception_debug_none", "url_path": "/url", "template_access": "error"}
       - {"name": "empty_app_root_wins", "url_path": "/url", "path": "/proxy/v1/models", "app_root_path": "", "root_path": "/proxy"}
+      - {"name": "explicit_empty_scope_path", "path": "", "url_path": "/fallback"}
+      - {"name": "fallback_path_root_removed", "url_path": "/api/chat", "root_path": "/api"}
+      - {"name": "whitespace_template", "url_path": "/url", "template": " "}

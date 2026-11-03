@@ -10,6 +10,8 @@ use super::public_routes::{RoutePatternError, check_configured_public_routes, is
 
 #[rstest]
 #[case::scope_path_beats_host_url(Some("/api/chat"), None, None, "/wrong", "/api/chat")]
+#[case::explicit_empty_scope_path(Some(""), None, None, "/fallback", "")]
+#[case::fallback_path_root_removed(None, Some("/api"), None, "/api/chat", "/chat")]
 #[case::missing_scope_path_fallback(None, None, None, "/api/chat", "/api/chat")]
 #[case::app_root_wins(Some("/api/chat"), Some("/api"), Some("/other"), "/url", "/chat")]
 #[case::root_trailing_slashes(Some("/api/chat"), Some("/api///"), None, "/url", "/chat")]
@@ -47,6 +49,7 @@ fn malformed_scope_fallback() {
 #[rstest]
 #[case::nonempty_route_template(Some("/v1/models/{model}"), Some("/v1/models/{model}"))]
 #[case::absent_empty_nonstring_template(None, None)]
+#[case::whitespace_template(Some(" "), Some(" "))]
 #[case::empty_template(Some(""), None)]
 fn route_template(#[case] template: Option<&str>, #[case] expected: Option<&str>) {
     assert_eq!(get_request_route_template(Ok(template)), expected);
@@ -56,8 +59,8 @@ fn route_template(#[case] template: Option<&str>, #[case] expected: Option<&str>
 #[case::wildcard_empty_prefix("/anything", "*", true)]
 #[case::wildcard_one_terminal_star("/api/*thing", "/api/**", true)]
 #[case::double_star_not_glob("/api/thing", "/api/**", false)]
-#[case::embedded_star_no_expansion("/api/abc", "/api/a*c", false)]
-#[case::embedded_star_literal("/api/a*b", "/api/a*b", true)]
+#[case::embedded_star_literal("/api/abc", "/api/a*c", false)]
+#[case::embedded_star_exact("/api/a*b", "/api/a*b", true)]
 #[case::wildcard_case_sensitive("/API/x", "/api/*", false)]
 fn wildcard_cases(#[case] path: &str, #[case] pattern: &str, #[case] expected: bool) {
     assert_eq!(is_public_route(path, &[pattern.to_owned()]), expected);

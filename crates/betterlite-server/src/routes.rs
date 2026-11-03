@@ -2,7 +2,7 @@ pub(crate) mod chat;
 pub(crate) mod embeddings;
 pub(crate) mod prompts;
 
-use crate::auth::authenticate;
+use crate::auth::auth_route_patterns::{self, AuthSettings};
 use crate::auth::route_match::stage;
 use crate::error_body::json_error;
 use crate::model_list::model_routes;
@@ -15,20 +15,23 @@ use axum::middleware;
 use axum::response::{IntoResponse as _, Response};
 use axum::routing::get;
 use betterlite_config::types::ModelDeployment;
-use secrecy::SecretString;
 use serde::Serialize;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tower::ServiceBuilder;
 use tower::timeout::TimeoutLayer;
-pub(crate) fn router(
-    master_key: Option<SecretString>,
+pub(crate) fn router<Auth>(
+    auth: Auth,
     shutting_down: Arc<AtomicBool>,
     model_list: &[ModelDeployment],
     chat: Router,
     embeddings: Router,
-) -> Router {
+) -> Router
+where
+    AuthSettings: From<Auth>,
+{
+    let settings = AuthSettings::from(auth);
     let timeout_layers = ServiceBuilder::new()
         .layer(HandleErrorLayer::new(|_: tower::BoxError| async {
             json_error(
@@ -39,11 +42,6 @@ pub(crate) fn router(
             )
         }))
         .layer(TimeoutLayer::new(Duration::from_secs(30)));
-    // the deployment timeout bounds a chat call, and LiteLLM's default is 6000 seconds
-    let guarded_chat = chat.layer(middleware::from_fn_with_state(
-        master_key.clone(),
-        authenticate,
-    ));
     let application = Router::new()
         .route("/health/liveliness", get(health_liveliness))
         .route("/health/liveness", get(health_liveliness))
@@ -58,11 +56,15 @@ pub(crate) fn router(
                 }),
             )
         })
-        .layer(middleware::from_fn_with_state(master_key, authenticate))
         .layer(timeout_layers)
-        .merge(guarded_chat)
+        .merge(chat)
         .merge(embeddings);
-    application.layer(middleware::from_fn(stage))
+    application
+        .layer(middleware::from_fn_with_state(
+            settings,
+            auth_route_patterns::stage,
+        ))
+        .layer(middleware::from_fn(stage))
 }
 async fn health_liveliness(State(shutting_down): State<Arc<AtomicBool>>) -> Response {
     if shutting_down.load(Ordering::Acquire) {

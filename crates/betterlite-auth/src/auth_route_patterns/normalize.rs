@@ -141,6 +141,29 @@ impl RouteNormalizer {
             cache: Mutex::new(VecDeque::new()),
         })
     }
+
+    #[must_use]
+    pub fn normalize_request_route(&self, route: &str) -> String {
+        let mut entries = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(position) = entries.iter().position(|(key, _)| key == route)
+            && let Some(entry) = entries.remove(position)
+        {
+            let value = entry.1.clone();
+            entries.push_front(entry);
+            return value;
+        }
+        let normalized = self
+            .patterns
+            .iter()
+            .find_map(|(pattern, replacement)| {
+                let value = pattern.replace(route, replacement.as_str()).into_owned();
+                (value != route).then_some(value)
+            })
+            .unwrap_or_else(|| route.to_owned());
+        entries.push_front((route.to_owned(), normalized.clone()));
+        entries.truncate(CACHE_CAPACITY);
+        normalized
+    }
 }
 
 fn append_patterns(
@@ -156,32 +179,4 @@ fn append_patterns(
         compiled.push((regex, format!("{replacement}${{final_newline}}")));
     }
     Ok(())
-}
-
-impl RouteNormalizer {
-    #[must_use]
-    pub fn normalize_request_route(&self, route: &str) -> String {
-        let mut cached = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
-        if let Some(position) = cached.iter().position(|(key, _)| key == route)
-            && let Some(entry) = cached.remove(position)
-        {
-            let value = entry.1.clone();
-            cached.push_front(entry);
-            return value;
-        }
-        drop(cached);
-        let normalized = self
-            .patterns
-            .iter()
-            .find_map(|(pattern, replacement)| {
-                let value = pattern.replace(route, replacement.as_str()).into_owned();
-                (value != route).then_some(value)
-            })
-            .unwrap_or_else(|| route.to_owned());
-        let mut entries = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
-        entries.retain(|(key, _)| key != route);
-        entries.push_front((route.to_owned(), normalized.clone()));
-        entries.truncate(CACHE_CAPACITY);
-        normalized
-    }
 }
