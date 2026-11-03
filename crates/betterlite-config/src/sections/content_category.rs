@@ -27,7 +27,7 @@ use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
 
 #[derive(Debug, Default, serde::Deserialize)]
-pub struct Raw;
+pub struct Raw {}
 
 #[derive(Debug, Clone, Default)]
 pub struct Settings;

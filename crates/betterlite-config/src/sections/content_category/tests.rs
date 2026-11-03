@@ -1,11 +1,13 @@
 #![cfg(test)]
 
 use std::{
+    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
     slice,
 };
 
+use crate::loader::{ConfigError, ConfigLoader};
 use crate::sections::content_filter_records::{
     ContentFilterAction, ContentFilterSeverity, category_types::CategoryFileData,
 };
@@ -19,6 +21,30 @@ use super::{
 
 fn fixture() -> tempfile::TempDir {
     tempfile::tempdir().unwrap()
+}
+
+#[test]
+fn loader_accepts_normal_mapping() {
+    let loader = ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
+    };
+    let config = loader.load("router_settings:\n  num_retries: 3\n").unwrap();
+    assert_eq!(config.router_settings.num_retries, Some(3));
+}
+
+#[test]
+fn loader_reports_missing_environment() {
+    let loader = ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
+    };
+    let error = loader
+        .load("general_settings:\n  master_key: os.environ/MISSING_MASTER_KEY\n")
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        ConfigError::MissingEnvironment { variable, path }
+            if variable == "MISSING_MASTER_KEY" && path == "general_settings.master_key"
+    ));
 }
 
 #[test]
