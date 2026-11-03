@@ -632,21 +632,7 @@ fn nested_object(depth: usize) -> String {
 
 #[test]
 fn native_nested_model_json_limits() {
-    let at_limit = serde_json::to_string(&nested_object(64)).unwrap();
-    let envelope = format!(
-        r#"{{"kind":"model","row":{{"model_id":"m","model_name":"n","litellm_params":{at_limit}}}}}"#
-    );
-    decode_resource_rows(envelope.as_bytes()).unwrap();
-    let direct_row = format!(r#"{{"model_id":"m","model_name":"n","litellm_params":{at_limit}}}"#);
-    parse::<ProxyModelTable>(&direct_row);
-    let info_envelope = format!(
-        r#"{{"kind":"model","row":{{"model_id":"m","model_name":"n","litellm_params":{{}},"model_info":{at_limit}}}}}"#
-    );
-    decode_resource_rows(info_envelope.as_bytes()).unwrap();
-    let direct_info_row = format!(
-        r#"{{"model_id":"m","model_name":"n","litellm_params":{{}},"model_info":{at_limit}}}"#
-    );
-    parse::<ProxyModelTable>(&direct_info_row);
+    assert_model_json_strings_decode_at_limit();
     let over_limit = serde_json::to_string(&nested_object(65)).unwrap();
     let over_envelope = format!(
         r#"{{"kind":"model","row":{{"model_id":"m","model_name":"n","litellm_params":{over_limit}}}}}"#
@@ -677,6 +663,24 @@ fn native_nested_model_json_limits() {
         decode_resource_rows(past_serde_envelope.as_bytes()),
         Err(ResourceRowsError::TooDeep)
     ));
+}
+
+fn assert_model_json_strings_decode_at_limit() {
+    let at_limit = serde_json::to_string(&nested_object(64)).unwrap();
+    let params_envelope = format!(
+        r#"{{"kind":"model","row":{{"model_id":"m","model_name":"n","litellm_params":{at_limit}}}}}"#
+    );
+    decode_resource_rows(params_envelope.as_bytes()).unwrap();
+    let params_row = format!(r#"{{"model_id":"m","model_name":"n","litellm_params":{at_limit}}}"#);
+    parse::<ProxyModelTable>(&params_row);
+    let info_envelope = format!(
+        r#"{{"kind":"model","row":{{"model_id":"m","model_name":"n","litellm_params":{{}},"model_info":{at_limit}}}}}"#
+    );
+    decode_resource_rows(info_envelope.as_bytes()).unwrap();
+    let info_row = format!(
+        r#"{{"model_id":"m","model_name":"n","litellm_params":{{}},"model_info":{at_limit}}}"#
+    );
+    parse::<ProxyModelTable>(&info_row);
 }
 
 #[test]
