@@ -1,0 +1,9 @@
+kind: helper
+name: completion-modalities-zero-fill
+call:
+  usage_sum:
+    usages:
+      - completion_tokens_details: {audio_tokens: 2, reasoning_tokens: 1}
+      - completion_tokens_details: {text_tokens: 3}
+compare: {ignore: []}
+env: {}
