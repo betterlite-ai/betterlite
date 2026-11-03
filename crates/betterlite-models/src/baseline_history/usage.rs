@@ -1,7 +1,27 @@
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 use crate::baseline_history::error::BaselineHistoryError;
 use crate::decisions::{Extra, Json};
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum UsageError {
+    #[error("invalid accounting data: {field} is outside the signed 64-bit integer range")]
+    CounterOutOfRange { field: &'static str },
+}
+
+fn extra_counter(extra: &Extra, field: &'static str) -> Result<Option<i64>, UsageError> {
+    let Some(Json::Number(number)) = extra.get(field) else {
+        return Ok(None);
+    };
+    if number.as_str().contains(['.', 'e', 'E']) {
+        return Ok(None);
+    }
+    number
+        .as_i64()
+        .map(Some)
+        .ok_or(UsageError::CounterOutOfRange { field })
+}
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub struct CacheCreationTokenDetails {
@@ -26,7 +46,7 @@ struct RawPromptTokensDetails {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(from = "RawPromptTokensDetails")]
+#[serde(try_from = "RawPromptTokensDetails")]
 pub struct PromptTokensDetails {
     pub text_tokens: Option<i64>,
     pub cached_tokens: Option<i64>,
@@ -38,29 +58,23 @@ pub struct PromptTokensDetails {
     pub extra: Extra,
 }
 
-impl From<RawPromptTokensDetails> for PromptTokensDetails {
-    fn from(raw: RawPromptTokensDetails) -> Self {
-        let nested_creation = raw
-            .extra
-            .get("cache_creation_input_tokens")
-            .and_then(|value| match value {
-                Json::Number(number) => number.as_i64(),
-                Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => {
-                    None
-                }
-            });
+impl TryFrom<RawPromptTokensDetails> for PromptTokensDetails {
+    type Error = UsageError;
+
+    fn try_from(raw: RawPromptTokensDetails) -> Result<Self, Self::Error> {
+        let nested_creation = extra_counter(&raw.extra, "cache_creation_input_tokens")?;
         let mirrored = raw
             .cache_write_tokens
             .or(raw.cache_creation_tokens)
             .or(nested_creation);
-        Self {
+        Ok(Self {
             text_tokens: raw.text_tokens,
             cached_tokens: raw.cached_tokens,
             cache_creation_tokens: mirrored,
             cache_creation_token_details: raw.cache_creation_token_details,
             cache_write_tokens: mirrored,
             extra: raw.extra,
-        }
+        })
     }
 }
 
@@ -80,7 +94,7 @@ struct RawUsage {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(from = "RawUsage")]
+#[serde(try_from = "RawUsage")]
 pub struct Usage {
     pub prompt_tokens: i64,
     pub completion_tokens: i64,
@@ -95,18 +109,15 @@ pub struct Usage {
     pub extra: Extra,
 }
 
-impl From<RawUsage> for Usage {
-    fn from(raw: RawUsage) -> Self {
-        let mut details = raw.prompt_tokens_details.map(PromptTokensDetails::from);
-        let cache_hit = raw
-            .extra
-            .get("prompt_cache_hit_tokens")
-            .and_then(|value| match value {
-                Json::Number(number) => number.as_i64(),
-                Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => {
-                    None
-                }
-            });
+impl TryFrom<RawUsage> for Usage {
+    type Error = UsageError;
+
+    fn try_from(raw: RawUsage) -> Result<Self, Self::Error> {
+        let mut details = raw
+            .prompt_tokens_details
+            .map(PromptTokensDetails::try_from)
+            .transpose()?;
+        let cache_hit = extra_counter(&raw.extra, "prompt_cache_hit_tokens")?;
         if let Some(cached) = raw.cache_read_input_tokens.or(cache_hit) {
             details.get_or_insert_default().cached_tokens = Some(cached);
         }
@@ -115,7 +126,7 @@ impl From<RawUsage> for Usage {
             prompt_details.cache_creation_tokens = Some(creation);
             prompt_details.cache_write_tokens = Some(creation);
         }
-        Self {
+        Ok(Self {
             prompt_tokens: raw.prompt_tokens,
             completion_tokens: raw.completion_tokens,
             total_tokens: raw.total_tokens,
@@ -123,7 +134,7 @@ impl From<RawUsage> for Usage {
             cache_read_input_tokens: raw.cache_read_input_tokens,
             cache_creation_input_tokens: raw.cache_creation_input_tokens,
             extra: raw.extra,
-        }
+        })
     }
 }
 

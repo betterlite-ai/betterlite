@@ -3,10 +3,11 @@
 use rstest::rstest;
 
 use super::{
-    CacheCreationTokenDetails, PromptTokensDetails, RawPromptTokensDetails, Usage,
-    is_usage_complete, usage_with_cache,
+    CacheCreationTokenDetails, PromptTokensDetails, RawPromptTokensDetails, Usage, UsageError,
+    extra_counter, is_usage_complete, usage_with_cache,
 };
 use crate::baseline_history::error::BaselineHistoryError;
+use crate::baseline_history::model::BaselineObservation;
 use crate::decisions::{Extra, Json};
 
 fn complete_usage(prompt: i64, completion: i64, text: i64, cached: i64, creation: i64) -> Usage {
@@ -98,7 +99,7 @@ fn prompt_tokens_details_mirrors_cache_creation_and_write_tokens_on_parse(
         cache_write_tokens,
         extra: Extra::default(),
     };
-    let details = PromptTokensDetails::from(raw);
+    let details = PromptTokensDetails::try_from(raw).expect("valid detail counters");
     assert_eq!(details.cache_creation_tokens, expected);
     assert_eq!(details.cache_write_tokens, expected);
 }
@@ -138,7 +139,7 @@ fn prompt_tokens_details_takes_the_nested_creation_count_last(
         extra,
     };
     let original_extra = raw.extra.clone();
-    let details = PromptTokensDetails::from(raw);
+    let details = PromptTokensDetails::try_from(raw).expect("valid detail counters");
     assert_eq!(details.extra, original_extra);
     assert_eq!(details.cache_creation_tokens, expected);
     assert_eq!(details.cache_write_tokens, expected);
@@ -221,4 +222,116 @@ fn prompt_cache_hit_only_copies_integers(#[case] value: &str, #[case] expected: 
     let details = usage.prompt_tokens_details.expect("details remain");
     assert_eq!(details.cached_tokens, expected);
     assert!(usage.extra.contains_key("prompt_cache_hit_tokens"));
+}
+
+fn observation_with_extra_counter(field: &str, value: &str) -> String {
+    let detail_fields = r#""text_tokens":10,"cached_tokens":0,"cache_creation_tokens":0,
+        "cache_creation_token_details":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0}"#;
+    let counters = if field == "prompt_cache_hit_tokens" {
+        format!(r#""{field}":{value},"prompt_tokens_details":{{{detail_fields}}}"#)
+    } else {
+        format!(r#""prompt_tokens_details":{{{detail_fields},"{field}":{value}}}"#)
+    };
+    format!(
+        r#"{{"request_id":"counter","started_at":0.0,"available_at":0.0,
+            "outcome":"complete","baseline_equivalent":true,
+            "usage":{{"prompt_tokens":10,"completion_tokens":0,"total_tokens":10,{counters}}}}}"#
+    )
+}
+
+#[rstest]
+#[case::above_max("9223372036854775808")]
+#[case::below_min("-9223372036854775809")]
+#[case::beyond_u64("18446744073709551616")]
+#[case::beyond_i128("170141183460469231731687303715884105728")]
+fn extra_cache_counter_overflow_rejects_observation(
+    #[case] value: &str,
+    #[values("prompt_cache_hit_tokens", "cache_creation_input_tokens")] field: &str,
+) {
+    let input = observation_with_extra_counter(field, value);
+    let error = serde_json::from_str::<BaselineObservation>(&input)
+        .expect_err("out-of-range accounting data must not reach replay");
+    assert!(error.to_string().contains(field));
+    assert!(error.to_string().contains("invalid accounting data"));
+}
+
+#[rstest]
+#[case::minimum(i64::MIN)]
+#[case::maximum(i64::MAX)]
+fn extra_cache_counter_boundaries_are_preserved(
+    #[case] value: i64,
+    #[values("prompt_cache_hit_tokens", "cache_creation_input_tokens")] field: &str,
+) {
+    let counter = if field == "prompt_cache_hit_tokens" {
+        format!(r#""{field}":{value}"#)
+    } else {
+        format!(r#""prompt_tokens_details":{{"{field}":{value}}}"#)
+    };
+    let input =
+        format!(r#"{{"prompt_tokens":10,"completion_tokens":0,"total_tokens":10,{counter}}}"#);
+    let usage: Usage = serde_json::from_str(&input).expect("boundary counter fits");
+    let details = usage.prompt_tokens_details.expect("details created");
+    let (copied, extra) = if field == "prompt_cache_hit_tokens" {
+        (details.cached_tokens, usage.extra)
+    } else {
+        assert_eq!(details.cache_write_tokens, Some(value));
+        (details.cache_creation_tokens, details.extra)
+    };
+    assert_eq!(copied, Some(value));
+    assert_eq!(
+        extra.get(field),
+        Some(&Json::Number(serde_json::Number::from(value)))
+    );
+}
+
+#[rstest]
+#[case::fraction("20.5")]
+#[case::large_fraction("9223372036854775808.5")]
+#[case::large_exponent("1e400")]
+fn non_integer_extra_cache_counters_remain_ignored(
+    #[case] value: &str,
+    #[values("prompt_cache_hit_tokens", "cache_creation_input_tokens")] field: &str,
+) {
+    let input = observation_with_extra_counter(field, value);
+    let observation: BaselineObservation = serde_json::from_str(&input).expect("non-integer extra");
+    assert!(is_usage_complete(observation.usage.as_ref()));
+}
+
+#[rstest]
+#[case::positive("9223372036854775808")]
+#[case::negative("-9223372036854775809")]
+fn extra_cache_counter_overflow_has_a_typed_field_error(
+    #[case] value: &str,
+    #[values("prompt_cache_hit_tokens", "cache_creation_input_tokens")] field: &'static str,
+) {
+    let mut extra = Extra::default();
+    extra.insert(
+        field.to_owned(),
+        Json::Number(value.parse().expect("JSON integer")),
+    );
+    assert_eq!(
+        extra_counter(&extra, field).expect_err("integer overflow"),
+        UsageError::CounterOutOfRange { field }
+    );
+}
+
+#[test]
+fn a_read_override_does_not_hide_an_overflowing_hit_counter() {
+    let input = observation_with_extra_counter("prompt_cache_hit_tokens", "9223372036854775808")
+        .replace(
+            "\"prompt_cache_hit_tokens\":",
+            "\"cache_read_input_tokens\":0,\"prompt_cache_hit_tokens\":",
+        );
+    let error =
+        serde_json::from_str::<BaselineObservation>(&input).expect_err("invalid hit counter");
+    assert!(error.to_string().contains("prompt_cache_hit_tokens"));
+}
+
+#[test]
+fn standalone_prompt_details_reject_an_overflowing_creation_counter() {
+    let error = serde_json::from_str::<PromptTokensDetails>(
+        r#"{"cache_creation_input_tokens":9223372036854775808}"#,
+    )
+    .expect_err("invalid creation counter");
+    assert!(error.to_string().contains("cache_creation_input_tokens"));
 }
