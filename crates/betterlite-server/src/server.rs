@@ -1,5 +1,6 @@
 pub mod chat_setup;
 
+use crate::auth::auth_route_patterns::AuthSettings;
 use crate::routes::chat::chat_routes;
 use crate::routes::embeddings::embedding_routes;
 use crate::routes::router;
@@ -84,7 +85,7 @@ pub async fn run(
 fn application(config: &Config, chat: ChatExecutor, shutting_down: Arc<AtomicBool>) -> Router {
     let executor = Arc::new(chat);
     router(
-        crate::auth::auth_route_patterns::AuthSettings {
+        AuthSettings {
             master_key: config.general_settings.master_key.clone(),
             routes: config.sections.auth_route_patterns.clone(),
         },
