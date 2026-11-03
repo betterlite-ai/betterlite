@@ -137,14 +137,14 @@ struct JsonEntry {
 #[serde(untagged)]
 enum JsonSeverity {
     Integer(i64),
-    Other(String),
+    Text(String),
 }
 
 fn severity_name(severity: Option<&JsonSeverity>) -> &'static str {
     match severity {
         Some(JsonSeverity::Integer(1)) => "low",
         Some(JsonSeverity::Integer(3 | 4)) => "high",
-        Some(JsonSeverity::Other(value)) => {
+        Some(JsonSeverity::Text(value)) => {
             tracing::debug!(
                 severity = value,
                 "non-integer category severity defaults to medium"
