@@ -68,7 +68,22 @@ fn parse_formatted_datetime(input: &str) -> Option<NaiveDateTime> {
 }
 
 fn normalize_formatted_datetime(input: &str) -> Option<String> {
-    let (date_text, time_text) = input.split_once(' ')?;
+    let separator = input
+        .char_indices()
+        .filter(|(_, character)| character.is_whitespace())
+        .find_map(|(index, _)| {
+            input
+                .get(..index)
+                .and_then(parse_date_fields)
+                .map(|_| index)
+        })?;
+    let date_text = input.get(..separator)?;
+    let time_text = input
+        .get(separator..)?
+        .trim_start_matches(char::is_whitespace);
+    if time_text.is_empty() {
+        return None;
+    }
     let (year, month, day) = parse_date_fields(date_text)?;
     let (clock, fraction) = time_text
         .split_once('.')
@@ -105,10 +120,18 @@ fn parse_date_fields(input: &str) -> Option<(u32, u32, u32)> {
     if year == 0 {
         return None;
     }
+    let day_digits = day_text.trim_start_matches(' ');
+    if day_digits.len() == day_text.len() {
+        return Some((
+            year,
+            parse_clock_component(month_text)?,
+            parse_clock_component(day_text)?,
+        ));
+    }
     Some((
         year,
         parse_clock_component(month_text)?,
-        parse_clock_component(day_text)?,
+        parse_clock_component(day_digits)?,
     ))
 }
 

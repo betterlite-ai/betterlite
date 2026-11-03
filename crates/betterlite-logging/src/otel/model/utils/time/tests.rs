@@ -1,6 +1,7 @@
 #![cfg(test)]
 use super::{DateTimeInput, FixedLocalTimeResolver, LocalTimeResolver, to_ns, to_seconds};
 use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, TimeZone as _};
+use rstest::rstest;
 use rust_decimal::Decimal;
 
 fn resolver() -> FixedLocalTimeResolver {
@@ -64,6 +65,17 @@ fn formatted_time_accepts_unpadded_date_and_clock_fields() {
     assert_eq!(
         to_seconds(None, None, Some("1970-1-1 0:0:0.1"), &resolver()),
         Some(Decimal::new(1, 1))
+    );
+}
+
+#[rstest]
+#[case::space_padded_day("1970-01- 1 00:00:00")]
+#[case::repeated_separator_space("1970-01-01  00:00:00")]
+#[case::tab_separator("1970-01-01\t00:00:00")]
+fn formatted_time_accepts_whitespace_variants(#[case] input: &str) {
+    assert_eq!(
+        to_seconds(None, None, Some(input), &resolver()),
+        Some(Decimal::ZERO)
     );
 }
 
