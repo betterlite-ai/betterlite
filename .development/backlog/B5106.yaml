@@ -1,13 +1,13 @@
 id: B5106
 milestone: M1 openai data plane
 title: The chat route success tests do not race a 0.4 second deployment timeout
-status: todo
+status: done
 depends_on: [B005]
 file: tasks/B5106-chat-test-deployment-timeout.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 600
