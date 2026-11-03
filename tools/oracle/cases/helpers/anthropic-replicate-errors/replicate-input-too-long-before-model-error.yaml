@@ -1,0 +1,14 @@
+kind: helper
+name: anthropic-replicate-errors-replicate-input-too-long-before-model-error
+call:
+  anthropic_replicate_errors:
+    provider: replicate
+    model: replicate/some-model
+    error_str: "input is too long for this model"
+    exception_type: ModelError
+    status_code: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

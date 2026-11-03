@@ -1,13 +1,13 @@
 id: B5117
 milestone: M8 platform
 title: Close the B4263 admin UI page audit gaps
-status: todo
+status: done
 depends_on: [B4263]
 file: tasks/B5117-admin-ui-page-gaps.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 580
