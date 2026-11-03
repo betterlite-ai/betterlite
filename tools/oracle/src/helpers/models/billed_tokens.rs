@@ -15,9 +15,8 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         let result = match input.operation {
-            Operation::CustomCost => run_cost(input),
             Operation::Counts => Ok(json!(project_billed_token_counts(input.usage))),
-            Operation::CustomBreakdown => run_custom(input),
+            Operation::CustomCost | Operation::CustomBreakdown => run_custom(input),
             Operation::Catalog | Operation::Savings => catalog::run(input),
         };
         result.map_err(|error| {
@@ -33,41 +32,40 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn run_cost(input: &Input) -> Result<Value, BilledTokenError> {
-    custom_cost(
-        input.totals,
-        input.custom_cost_per_token.as_ref().map(|rates| {
-            (
-                rates.input_cost_per_token,
-                rates.output_cost_per_token,
-                rates.cache_read_input_token_cost,
-                rates.cache_write,
-            )
-        }),
-        input.custom_cost_per_second,
-        input.response_time_ms,
-    )
-    .map(|cost| {
-        cost.map_or(Value::Null, |(prompt, completion)| {
-            json!({
-                "input_cost": prompt.normalize().to_string(),
-                "output_cost": completion.normalize().to_string(),
-            })
-        })
-    })
-}
-
 fn run_custom(input: &Input) -> Result<Value, BilledTokenError> {
-    let Some(custom) = &input.custom_cost_per_token else {
-        return breakdown(project_billed_token_counts(input.usage), None).map(breakdown_value);
+    let prices = input.custom_cost_per_token.as_ref().map(|rates| {
+        (
+            rates.input_cost_per_token,
+            rates.output_cost_per_token,
+            rates.cache_read_input_token_cost,
+            rates.cache_write,
+        )
+    });
+    if matches!(input.operation, Operation::CustomCost) {
+        return custom_cost(
+            input.totals,
+            prices,
+            input.custom_cost_per_second,
+            input.response_time_ms,
+        )
+        .map(|cost| {
+            cost.map_or(Value::Null, |(prompt, completion)| {
+                json!({
+                    "input_cost": prompt.normalize().to_string(),
+                    "output_cost": completion.normalize().to_string(),
+                })
+            })
+        });
+    }
+    let counts = project_billed_token_counts(input.usage);
+    let result = match prices {
+        Some((prompt, completion, read, write)) => custom_breakdown(
+            counts,
+            custom_billed_token_rates(prompt, completion, read, write),
+        ),
+        None => breakdown(counts, None),
     };
-    let rates = custom_billed_token_rates(
-        custom.input_cost_per_token,
-        custom.output_cost_per_token,
-        custom.cache_read_input_token_cost,
-        custom.cache_write,
-    );
-    custom_breakdown(project_billed_token_counts(input.usage), rates).map(breakdown_value)
+    result.map(breakdown_value)
 }
 
 fn breakdown_value(result: TokenTypeCostBreakdown) -> Value {
