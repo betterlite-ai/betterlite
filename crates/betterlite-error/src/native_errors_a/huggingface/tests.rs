@@ -54,6 +54,27 @@ fn facts(status_code: Option<u16>) -> ProviderErrorFacts {
     None,
     "context_window_exceeded"
 )]
+#[case::length_limit_before_user_token(
+    "length limit exceeded; A valid user token is required",
+    None,
+    "context_window_exceeded"
+)]
+#[case::user_token_before_rate_limit(
+    "A valid user token is required, Rate limit reached",
+    None,
+    "bad_request"
+)]
+#[case::length_limit_before_rate_limit(
+    "length limit exceeded, Rate limit reached",
+    None,
+    "context_window_exceeded"
+)]
+#[case::length_limit_on_401(
+    "length limit exceeded for this model",
+    Some(401),
+    "context_window_exceeded"
+)]
+#[case::user_token_on_429("A valid user token is required", Some(429), "bad_request")]
 #[case::invalid_user_token("A valid user token is required", None, "bad_request")]
 #[case::rate_limit_reached("Rate limit reached for this endpoint", None, "rate_limit")]
 #[case::status_401("unrecognized failure", Some(401), "authentication")]

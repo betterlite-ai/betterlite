@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::envelope::WireField;
 use rstest::rstest;
 
 use super::*;
@@ -51,7 +52,49 @@ fn facts(status_code: Option<u16>) -> ProviderErrorFacts {
 #[rstest]
 #[case::invalid_api_token("invalid api token", "", None, "authentication")]
 #[case::missing_api_key("No API key provided.", "", None, "authentication")]
-#[case::invalid_type_parameter("invalid type: parameter 'model'", "", None, "bad_request")]
+#[case::invalid_type_parameter_on_403(
+    "invalid type: parameter 'model'",
+    "",
+    Some(403),
+    "bad_request"
+)]
+#[case::auth_before_invalid_type_parameter(
+    "invalid api token; invalid type: parameter 'model'",
+    "",
+    None,
+    "authentication"
+)]
+#[case::invalid_type_parameter_before_too_many_tokens(
+    "invalid type: parameter 'model'; too many tokens",
+    "",
+    None,
+    "bad_request"
+)]
+#[case::too_many_tokens_before_internal_server_error(
+    "too many tokens; internal server error",
+    "",
+    None,
+    "context_window_exceeded"
+)]
+#[case::connection_error_before_invalid_type(
+    "invalid type: of request",
+    "CohereConnectionError",
+    None,
+    "rate_limit"
+)]
+#[case::invalid_type_before_unexpected_server_error(
+    "invalid type: of request; Unexpected server error",
+    "SomeOtherError",
+    None,
+    "bad_request"
+)]
+#[case::too_many_tokens_on_429(
+    "too many tokens in prompt",
+    "",
+    Some(429),
+    "context_window_exceeded"
+)]
+#[case::internal_server_error_on_403("Internal Server Error", "", Some(403), "internal_server")]
 #[case::too_many_tokens("too many tokens in prompt", "", None, "context_window_exceeded")]
 #[case::internal_server_error_lowercase("internal server error", "", None, "internal_server")]
 #[case::internal_server_error_mixed_case("Internal Server Error", "", None, "internal_server")]
@@ -78,15 +121,17 @@ fn native_errors_a_behavior_tests_behavior(
     assert_eq!(describe(&class), expected);
 }
 
-#[test]
-fn status_present_but_unmatched_returns_none_even_with_matching_text_later() {
+#[rstest]
+#[case::connection_error_on_403("connection reset", "CohereConnectionError", 403)]
+#[case::invalid_type_on_403("invalid type: of request", "SomeOtherError", 403)]
+#[case::unexpected_server_error_on_403("Unexpected server error occurred", "SomeOtherError", 403)]
+fn unmatched_status_skips_the_tail_clauses(
+    #[case] error_str: &str,
+    #[case] exception_type: &str,
+    #[case] status_code: u16,
+) {
     // the matching text predicate below never runs: the hasattr(status_code) elif already resolved to NoMatch
-    let outcome = map_cohere_exception(
-        &facts(Some(403)),
-        "Unexpected server error occurred",
-        "SomeOtherError",
-        None,
-    );
+    let outcome = map_cohere_exception(&facts(Some(status_code)), error_str, exception_type, None);
     assert!(outcome.is_none());
 }
 
@@ -98,32 +143,23 @@ fn text_predicate_wins_over_status_code() {
 }
 
 #[test]
-fn totally_unmatched_input_is_unclassified() {
+fn unmatched_input_answers_the_outer_api_connection() {
     let class = map_cohere_exception(
         &facts(None),
         "a completely unrelated failure",
         "SomeOtherError",
-        None,
+        Some("command-r".to_owned()),
     )
     .expect("expected a classification");
-    assert_eq!(describe(&class), "unclassified");
-}
-
-#[test]
-fn unclassified_carries_the_raw_message_and_no_identity() {
-    let class = map_cohere_exception(
-        &facts(None),
-        "a completely unrelated failure",
-        "SomeOtherError",
-        None,
-    )
-    .expect("expected a classification");
-    let ErrorClass::Unclassified(context) = class else {
-        panic!("expected Unclassified, got {class:?}");
+    assert_eq!(class.metadata().status_code, 500);
+    assert_eq!(class.metadata().error_type, WireField::Null);
+    assert_eq!(class.metadata().param, WireField::Null);
+    let ErrorClass::ApiConnection(context) = class else {
+        panic!("expected ApiConnection, got {class:?}");
     };
     assert_eq!(context.message, "a completely unrelated failure");
-    assert_eq!(context.model, None);
-    assert_eq!(context.provider, None);
+    assert_eq!(context.model.as_deref(), Some(""));
+    assert_eq!(context.provider.as_deref(), Some(""));
 }
 
 #[rstest]
