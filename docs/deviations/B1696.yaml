@@ -3,6 +3,6 @@ deviations:
   - what: Baseline timestamp/counter operations use checked finite arithmetic; values outside the representable domain fail as invalid accounting data.
     why: Replay must not wrap token counts or admit an infinite cache lifetime into persisted estimates.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/baseline_accounting.py#L142-L169
-  - what: A complete usage with zero cache writes and no cache_creation_token_details is accepted; LiteLLM's own completeness check reads that attribute unconditionally and raises AttributeError before its `writes == 0` short circuit runs.
-    why: No caller can rely on a pure completeness predicate crashing instead of returning a bool, and a working setup always supplies the split whenever it reaches this code, so the crash is unreachable outside a hand-built input.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/baseline_accounting.py#L78
+  - what: A usage with no creation count (no cache_write_tokens, cache_creation_tokens or integer cache_creation_input_tokens, nested or top level) raises AttributeError in LiteLLM at line 75. Missing cache_creation_token_details raises at line 78 with zero or positive writes. betterlite instead returns incomplete for missing counts or positive writes without a split, and complete for otherwise consistent usage with zero writes without a split.
+    why: No caller can rely on a pure completeness predicate crashing instead of returning a bool, and a working setup sends these fields whenever it reaches this code, so the crash only occurs on a hand-built input.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/baseline_accounting.py#L75-L78
