@@ -52,7 +52,7 @@ pub fn prompt_factory(
 
 fn anthropic(lower: &str, messages: &[Message]) -> Result<Output, FactoryError> {
     if lower == "claude-2" || lower == "claude-instant-1" {
-        builtin::claude(messages)
+        builtin::families::anthropic(messages, builtin::families::Style::Claude)
             .map(Output::Text)
             .map_err(FactoryError::from)
     } else {
@@ -67,7 +67,7 @@ fn clarifai(lower: &str, messages: &[Message]) -> Option<Result<Output, FactoryE
         return None;
     }
     Some(
-        builtin::claude(messages)
+        builtin::families::anthropic(messages, builtin::families::Style::Claude)
             .map(Output::Text)
             .map_err(FactoryError::from),
     )
