@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use rstest::rstest;
+
 include!("tests/support.rs");
 include!("tests/pinned_sql_checksums.rs");
 include!("tests/postgres_budget_foreign_key_history.rs");
