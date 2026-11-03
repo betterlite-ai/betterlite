@@ -7,7 +7,6 @@ use betterlite_logging::s3_v2::parameters::resolve_s3_parameters;
 use betterlite_logging::s3_v2::source::Source;
 use betterlite_logging::s3_v2::{Feature, PartitionGranularityCache, S3Parameters};
 use chrono::NaiveDateTime;
-use secrecy::ExposeSecret as _;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
