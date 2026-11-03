@@ -1,0 +1,11 @@
+kind: helper
+name: user_row_id_request_ignores_row_email
+call:
+  member_removal_identity:
+    operation: addresses_user
+    user: {user_id: "u2", user_email: "a@example.com"}
+    user_id: "u1"
+    user_email: "a@example.com"
+env: {}
+compare:
+  ignore: []

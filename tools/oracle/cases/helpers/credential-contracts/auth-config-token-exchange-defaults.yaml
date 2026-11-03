@@ -1,0 +1,8 @@
+kind: helper
+name: auth-config-token-exchange-defaults
+call:
+  b4650:
+    function: auth_config_variants
+    kind: token_exchange
+env: {}
+compare: {ignore: []}

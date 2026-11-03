@@ -1,13 +1,13 @@
 id: B5121
 milestone: M9 agents and mcp
 title: BYOK cache eviction by LiteLLM's key and credential default cases
-status: todo
+status: done
 depends_on: [B4650]
 file: tasks/B5121-credential-contracts-gaps.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 585
