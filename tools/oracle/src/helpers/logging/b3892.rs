@@ -102,14 +102,18 @@ fn coerce(item: &Value) -> Value {
     match kind {
         "string" => json!(parsed.as_str()),
         "integer" => json!(as_int(&parsed)),
-        "decimal" => json!(
-            parsed
-                .as_decimal()
-                .map(|number| number.normalize().to_string())
-        ),
+        "decimal" => json!(parsed.as_decimal().map(decimal_text)),
         "boolean" => json!(parsed.as_bool()),
         "mapping" => json!(parsed.as_object()),
         "tuple" => json!(as_str_tuple(&parsed)),
         _ => Value::Null,
     }
+}
+
+fn decimal_text(decimal: Decimal) -> String {
+    let mut text = decimal.normalize().to_string();
+    if !text.contains('.') && !text.contains('e') {
+        text.push_str(".0");
+    }
+    text
 }

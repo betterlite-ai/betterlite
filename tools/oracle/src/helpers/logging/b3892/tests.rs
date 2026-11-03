@@ -29,9 +29,14 @@ fn coercion_helper_uses_production_boolean_and_mapping_accessors() {
         {"kind":"boolean","value":true},
         {"kind":"boolean","value":false},
         {"kind":"boolean","value":"false"},
+        {"kind":"decimal","value":true},
+        {"kind":"decimal","value":false},
         {"kind":"mapping","value":{"key":3_i64}},
         {"kind":"mapping","value":[3_i64]}
     ]});
     let output = Op::run(&input).expect("coercion helper succeeds");
-    assert_eq!(output, json!([true, false, null, {"key": 3_i64}, null]));
+    assert_eq!(
+        output,
+        json!([true, false, null, "1.0", "0.0", {"key": 3_i64}, null])
+    );
 }

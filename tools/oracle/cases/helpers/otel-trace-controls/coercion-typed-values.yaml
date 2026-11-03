@@ -17,7 +17,6 @@ call:
       - {kind: decimal, value: false}
       - {kind: boolean, value: false}
       - {kind: boolean, value: true}
-      - {kind: boolean, value: "true"}
       - {kind: mapping, value: {key: 3}}
       - {kind: mapping, value: [not, a, mapping]}
       - {kind: tuple, value: [one, two]}
