@@ -1,4 +1,4 @@
-use fancy_regex::Regex;
+use onig::{MatchParam, Regex, RegexOptions, SearchOptions, Syntax};
 
 pub enum RouteValue<'text> {
     Text(&'text str),
@@ -11,22 +11,18 @@ pub fn route_matches_pattern(route: &RouteValue<'_>, pattern: &str) -> bool {
         return false;
     };
     let substituted = substitute_placeholders(pattern);
-    let Ok(compiled) = Regex::new(&format!("^{substituted}$")) else {
+    let Ok(compiled) = Regex::with_options(
+        &format!("^{substituted}$"),
+        RegexOptions::REGEX_OPTION_NONE,
+        Syntax::python(),
+    ) else {
         return false;
     };
-    if regex_matches_at_start(&compiled, text) {
-        return true;
-    }
-    text.strip_suffix('\n')
-        .is_some_and(|trimmed| regex_matches_at_start(&compiled, trimmed))
-}
-
-fn regex_matches_at_start(regex: &Regex, text: &str) -> bool {
-    regex
-        .find(text)
-        .ok()
-        .flatten()
-        .is_some_and(|matched| matched.start() == 0)
+    let mut limits = MatchParam::default();
+    limits.set_retry_limit_in_match(1_000_000);
+    compiled
+        .match_with_param(*text, 0, SearchOptions::SEARCH_OPTION_NONE, None, limits)
+        .is_ok_and(|matched| matched.is_some())
 }
 
 // A :path placeholder stops before a following literal colon, but otherwise accepts router path input.

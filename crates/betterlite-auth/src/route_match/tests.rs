@@ -355,3 +355,17 @@ fn route_getter_debug_fallback() {
     };
     assert_eq!(get_request_route(&source), "/raw/fallback/path");
 }
+
+#[rstest::rstest]
+#[case::negative_final_newline("/foo\n", r"/foo(?!\n)", false)]
+#[case::positive_final_newline("/foo\n", r"/foo(?=\n)", true)]
+#[case::negative_without_newline("/foo", r"/foo(?!\n)", true)]
+#[case::positive_without_newline("/foo", r"/foo(?=\n)", false)]
+#[case::inner_end_anchor("/foo\n", r"/foo$(?=\n)", true)]
+#[case::ascii_word("/models/gpt-4", r"/models/(?a:gpt-\w+)", true)]
+#[case::ascii_rejects_unicode("/models/gpt-\u{e9}", r"/models/(?a:gpt-\w+)", false)]
+#[case::ascii_complement("/\u{e9}", r"/(?a:\W)", true)]
+#[case::unicode_restored("/a\u{e9}", r"/(?a:\w)\w", true)]
+fn python_regex_boundaries(#[case] route: &str, #[case] pattern: &str, #[case] expected: bool) {
+    assert_eq!(check_route_access(route, &[pattern]), expected);
+}

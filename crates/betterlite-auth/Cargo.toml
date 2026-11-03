@@ -8,8 +8,8 @@ publish.workspace = true
 [dependencies]
 betterlite-db = { path = "../betterlite-db" }
 chrono = { version = "0.4.45", default-features = false, features = ["serde"] }
-fancy-regex = "0.19.2"
 hex.workspace = true
+onig = { version = "6.5.3", default-features = false }
 rust_decimal.workspace = true
 secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
