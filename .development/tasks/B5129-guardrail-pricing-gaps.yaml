@@ -1,0 +1,237 @@
+id: B5129
+title: Guardrail entry shapes, catalog price lookup and JSON number costs
+description: >-
+  B1667 built guardrail_pricing and cost_breakdown in betterlite-models. An Opus review after merge
+  found four behavior gaps and four tests that can't fail. This task closes them in the same modules,
+  with the same guardrail_costs oracle helper and the tools/oracle/cases/helpers/guardrail-costs
+  folder. GuardrailInformation, the helper's Input and its Python side stay as they are.
+
+
+  Gap one. GuardrailInformationEntry::Object in crates/betterlite-models/src/guardrail_pricing/entries.rs
+  also accepts a JSON array. Serde's derived visitor for GuardrailEntryFields reads a sequence by
+  position (guardrail_cost, guardrail_cost_in_spend, guardrail_cost_by_unit), so guardrail_information
+  [[5]] bills 5 and the rollup entry [null, null, {"a": 1}] returns {"a": 1}. LiteLLM validates each
+  entry with a pydantic model, and pydantic rejects a list for a model. So the entry logs a warning,
+  bills 0.0 and has no rollup
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/guardrail_cost.py#L46-L55,
+  https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/guardrail_cost.py#L127-L138).
+  Make the entry map-only. One way that needs no expect is a flattened catch-all field on
+  GuardrailEntryFields, such as _ignored: BTreeMap<String, IgnoredAny>. Serde then generates no
+  visit_seq, a list falls to GuardrailInformationEntry::Other, and unknown keys stay ignored the way
+  LiteLLM's extra="ignore" ignores them. Two rstest cases in guardrail_pricing/tests.rs can't fail
+  today: a_malformed_shape_zeros_only_that_entry ([1, 2, 3]) and an_uncoercible_shape_is_malformed
+  ([1, 2]). Serde reads both as entries whose guardrail_cost_in_spend is 2, and they are zeroed only
+  because 2 is not a bool. Replace them in the same two rstest functions. In
+  guardrail_information_cost_matches_the_source_behavior, a_list_shaped_entry_bills_nothing expects
+  [{"guardrail_cost": 2}, [5], [5, true]] to bill 2; main bills 12. In
+  billed_guardrail_cost_by_unit_matches_the_source_behavior, a_list_shaped_entry_has_no_rollup expects
+  None for the entry [null, null, {"a": 1}]; main returns {"a": 1}.
+
+
+  Gap two. The models crate turns on serde_json's arbitrary_precision. A non-integer number parsed
+  from JSON text reaches an untagged enum as the one-key map {"$serde_json::private::Number": "2.5"},
+  and CounterMapField::Map accepts it. So {"guardrail_cost_by_unit": 2.5} makes
+  billed_guardrail_cost_by_unit return a map keyed by that private token. LiteLLM declares
+  guardrail_cost_by_unit as Mapping[str, float >= 0 | None] | None, so a bare number fails validation
+  and the rollup is None
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/guardrail_cost.py#L33-L55).
+  Add a Number(serde_json::Number) variant ahead of Map in CounterMapField and treat it as malformed.
+  serde_json::Number reads that private map back as a number. clippy.toml bans serde_json::Value, so
+  decoding through Value would cost an expect. Give GuardrailInformationEntry the same Number variant
+  ahead of Object. The new rstest case a_bare_number_is_not_a_counter_map in
+  billed_guardrail_cost_by_unit_matches_the_source_behavior parses {"guardrail_cost_by_unit": 2.5}
+  with serde_json::from_str and expects None. The oracle case bare-number-counter-map-has-no-rollup.yaml
+  pins LiteLLM's answer, but it passes on main too: the helper reads its case through
+  serde_json::Value, where 2.5 arrives as an f64 that CounterMapField already rejects.
+
+
+  Gap three. The GuardrailPricing check is not built over the catalog. bedrock_guardrail_cost_by_unit
+  takes a closure that already answers Usable or Malformed, and nothing turns a catalog entry into
+  either. PriceFields.guardrail_units in crates/betterlite-models/src/price_fields.rs defaults a
+  missing guardrail_cost_per_unit to an empty map, and a null one fails the whole load. LiteLLM's
+  _bedrock_guardrail_pricing tries bedrock/<region>/guardrails when aws_region_name is truthy, then
+  bedrock/guardrails. It skips a key that is not in litellm.model_cost and validates a present entry
+  with GuardrailPricing, whose guardrail_cost_per_unit: Mapping[str, float] has no default
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/guardrail_cost.py#L14-L17,
+  https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/guardrail_cost.py#L58-L85).
+  An entry without the field, or with null, fails validation, logs "Ignoring malformed guardrail
+  pricing entry" and the loop goes on to the next key. A present map wins, even {}. Change
+  PriceFields.guardrail_units to Option<BTreeMap<String, Decimal>>, keeping MapPreventDuplicates and
+  ExactDecimal inside the Option: absent and null give None, {} gives an empty map, and None is
+  skipped when serializing so a present map serializes as before. Then bedrock_guardrail_cost_by_unit
+  takes &ModelCatalog in place of the closure. ModelCatalog::lookup returning None skips the key, an
+  entry whose prices.guardrail_units is None warns with the key and falls through, and Some(map) wins.
+  GuardrailPriceLookup and the closure parameter go away; nothing outside the tests calls them.
+  Rewrite the closure tests in guardrail_pricing/tests.rs over a catalog that ModelCatalog::parse reads
+  from a JSON string, with "litellm_provider": "bedrock" and "mode": "guardrail" on each entry.
+  bedrock_guardrail_cost_by_unit_falls_through_a_regional_entry_without_unit_prices and
+  bedrock_guardrail_cost_by_unit_falls_through_a_regional_entry_with_null_unit_prices give
+  bedrock/us-east-1/guardrails no guardrail_cost_per_unit, or null, and bedrock/guardrails a
+  contentPolicyUnits rate of 5, and expect 2 units to cost 10. They replace
+  bedrock_guardrail_cost_by_unit_falls_through_a_malformed_regional_entry_to_global. The new test
+  price_case_guardrail_units_keep_absent_null_and_empty_apart in price_fields/tests.rs expects None,
+  None and an empty map for the three inputs, and the two helpers there that index guardrail_units
+  read through the Option. No file under crates/betterlite-models/src/catalog/ changes.
+
+
+  The empty-region test can't fail today. bedrock_guardrail_cost_by_unit_ignores_the_regional_key_for_a_falsy_region
+  answers Malformed for every key but the global one, so without the empty-region filter the key
+  bedrock//guardrails just falls through to the global rate 5. LiteLLM builds the regional key only
+  for a truthy aws_region_name (same link, L59). Its catalog rewrite,
+  bedrock_guardrail_cost_by_unit_skips_a_priced_regional_key_for_an_empty_region, gives
+  bedrock//guardrails a contentPolicyUnits rate of 9 and bedrock/guardrails a rate of 5, and expects
+  5 for one unit with region Some("").
+
+
+  Gap four. CostBreakdown in crates/betterlite-models/src/cost_breakdown.rs uses rust_decimal's
+  default Serialize, so every money field, additional_costs value and extra value goes out as a JSON
+  string. LiteLLM's CostBreakdown TypedDict declares them as float
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3503-L3532),
+  so a logging consumer of cost_breakdown gets numbers. Serialize each Option<Decimal> field with
+  serialize_with = "rust_decimal::serde::arbitrary_precision_option::serialize", and the
+  additional_costs and extra values as numbers too, for example through a #[serde(transparent)]
+  newtype over rust_decimal::serde::arbitrary_precision with serde_with::FromInto, as JsonMoney in
+  crates/betterlite-db/src/daily_spend_sql/values.rs does. Deserialization stays as it is.
+  cost_breakdown_serializes_only_the_fields_that_were_present pins {"input_cost":"1"} today. Replace
+  it with cost_breakdown_serializes_money_as_json_numbers: it serializes input_cost 1, one
+  additional_costs entry and one extra key, and expects a JSON number for each.
+
+
+  The merge test can't fail on a dropped field.
+  cost_breakdown_with_guardrail_preserves_every_prior_field_and_adds_to_the_total sets and checks only
+  service_tier, input_cost, output_cost and total_cost, and the oracle case
+  repeated-breakdown-addition-preserves-basis.yaml sets the same few. A merge that dropped
+  additional_costs, the cache, reasoning, tool, discount or margin fields, data_residency or
+  vertex_location would still pass. LiteLLM spreads the whole existing record and changes only
+  guardrail_cost and total_cost
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/guardrail_cost.py#L149-L158).
+  Replace the test with cost_breakdown_with_guardrail_changes_only_guardrail_and_total_cost. It fills
+  every field, an existing guardrail_cost, one additional_costs entry and one extra key, and compares
+  the whole merged record with the expected one; CostBreakdown derives PartialEq for that. Add the
+  oracle case breakdown-addition-keeps-every-field.yaml with the same fields filled.
+
+
+  The null-flag oracle case can't fail either. In null-and-false-spend-flags.yaml the null-flag entry
+  has guardrail_cost null and no guardrail_cost_by_unit, so it bills 0 and has no rollup whether a
+  null flag keeps billing or opts out. LiteLLM declares guardrail_cost_in_spend: bool | None = True,
+  and only False opts out
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/guardrail_cost.py#L118-L124).
+  Give the null-flag entry guardrail_cost 2.0 and guardrail_cost_by_unit {contentPolicyUnits: 1.5},
+  and give the false entry a guardrail_cost_by_unit map too. LiteLLM then bills 2.0, returns the null
+  entry's map and no map for the false entry, so a null-as-false regression changes both scalar_cost
+  and the rollup.
+scope:
+  paths:
+    - crates/betterlite-models/src/guardrail_pricing.rs
+    - crates/betterlite-models/src/guardrail_pricing/**
+    - crates/betterlite-models/src/cost_breakdown.rs
+    - crates/betterlite-models/src/cost_breakdown/**
+    - crates/betterlite-models/src/price_fields.rs
+    - crates/betterlite-models/src/price_fields/tests.rs
+    - tools/oracle/cases/helpers/guardrail-costs/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/guardrail_cost.py#L14-L55
+    why: GuardrailPricing with its required guardrail_cost_per_unit map, the two entry models and billed_guardrail_cost_by_unit, where a list entry or a bare-number counter map fails validation and the rollup is None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/guardrail_cost.py#L58-L85
+    why: The regional-then-global lookup that skips a missing key, warns on an entry that fails GuardrailPricing and returns the first valid map, even an empty one.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/guardrail_cost.py#L118-L158
+    why: Scalar entry billing where only False opts out, per-entry validation that zeros a malformed entry, and the breakdown merge that spreads every existing field.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3503-L3532
+    why: CostBreakdown TypedDict, whose money fields and additional_costs values are floats on the wire.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L481-L533
+    why: Aliases become top-level model_cost keys, so the guardrail lookup's key in litellm.model_cost also matches an alias.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/model_prices_and_context_window.json#L12765-L12779
+    why: The bundled bedrock/guardrails entry, the shape the catalog-based tests copy.
+dod:
+  - text: >-
+      A list-shaped guardrail_information entry counts as malformed instead of being read by position:
+      [{"guardrail_cost": 2}, [5], [5, true]] bills 2 and [null, null, {"a": 1}] has no rollup. The
+      rstest cases a_list_shaped_entry_bills_nothing and a_list_shaped_entry_has_no_rollup replace the
+      two cases that passed only because 2 is not a bool, and list-shaped-entries-bill-nothing.yaml
+      matches LiteLLM.
+    proof:
+      - list-shaped-entries
+      - oracle
+  - text: >-
+      A bare number for guardrail_cost_by_unit, parsed from JSON text, gives a None rollup instead of a
+      map keyed by serde_json's private number token.
+    proof:
+      - bare-number-counter-map
+      - oracle
+  - text: >-
+      bedrock_guardrail_cost_by_unit reads a &ModelCatalog. A regional entry without
+      guardrail_cost_per_unit, or with null, warns and falls through to bedrock/guardrails, a present
+      map wins even when empty, and PriceFields keeps absent, null and {} apart.
+    proof:
+      - catalog-guardrail-pricing
+  - text: >-
+      The empty-region test gives bedrock//guardrails its own usable rate, so it fails if an empty
+      aws_region_name builds the regional key.
+    proof:
+      - empty-region-test
+  - text: >-
+      CostBreakdown serializes every money value as a JSON number, additional_costs and extra values
+      included.
+    proof:
+      - cost-breakdown-json-numbers
+  - text: >-
+      The merge test and a new oracle case fill every CostBreakdown field and fail if the merge drops or
+      changes anything but guardrail_cost and total_cost.
+    proof:
+      - merge-keeps-every-field
+      - oracle
+  - text: >-
+      null-and-false-spend-flags.yaml fails if a null guardrail_cost_in_spend opts out like false.
+    proof:
+      - null-flag-case
+      - oracle
+checks:
+  optional: []
+  commands:
+    - id: list-shaped-entries
+      why: a JSON array still decodes as a guardrail_information entry by position and bills or rolls up its elements
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/guardrail-costs/list-shaped-entries-bill-nothing.yaml)" && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::case_[0-9]+_a_list_shaped_entry_bills_nothing$/)' && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::case_[0-9]+_a_list_shaped_entry_has_no_rollup$/)'
+    - id: bare-number-counter-map
+      why: a non-integer guardrail_cost_by_unit read from JSON text still lands in CounterMapField::Map as serde_json's private number map
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/guardrail-costs/bare-number-counter-map-has-no-rollup.yaml)" && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::case_[0-9]+_a_bare_number_is_not_a_counter_map$/)'
+    - id: catalog-guardrail-pricing
+      why: the Bedrock lookup still takes a closure, or a catalog entry without guardrail_cost_per_unit still blocks the global fallback
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^guardrail_pricing::tests::bedrock_guardrail_cost_by_unit_falls_through_a_regional_entry_without_unit_prices$/)' && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^guardrail_pricing::tests::bedrock_guardrail_cost_by_unit_falls_through_a_regional_entry_with_null_unit_prices$/)' && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^price_fields::tests::price_case_guardrail_units_keep_absent_null_and_empty_apart$/)' && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^(guardrail_pricing|price_fields|catalog)::/)'
+    - id: empty-region-test
+      why: the empty-region test still passes when an empty aws_region_name builds bedrock//guardrails
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^guardrail_pricing::tests::bedrock_guardrail_cost_by_unit_skips_a_priced_regional_key_for_an_empty_region$/)'
+    - id: cost-breakdown-json-numbers
+      why: CostBreakdown still serializes money as JSON strings
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^cost_breakdown::tests::cost_breakdown_serializes_money_as_json_numbers$/)' && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^cost_breakdown::/)'
+    - id: merge-keeps-every-field
+      why: the merge test still checks four fields, so a merge that drops the rest passes
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/guardrail-costs/breakdown-addition-keeps-every-field.yaml)" && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^cost_breakdown::tests::cost_breakdown_with_guardrail_changes_only_guardrail_and_total_cost$/)'
+    - id: null-flag-case
+      why: the null-flag entry still has a null cost and no counter map, so treating null like false changes nothing
+      run: grep -q 'guardrail_cost_by_unit' tools/oracle/cases/helpers/guardrail-costs/null-and-false-spend-flags.yaml && grep -qE 'guardrail_cost_in_spend:[[:space:]]*null' tools/oracle/cases/helpers/guardrail-costs/null-and-false-spend-flags.yaml && ! grep -qE 'guardrail_cost:[[:space:]]*null' tools/oracle/cases/helpers/guardrail-costs/null-and-false-spend-flags.yaml
+oracle_cases:
+  - tools/oracle/cases/helpers/guardrail-costs/list-shaped-entries-bill-nothing.yaml
+  - tools/oracle/cases/helpers/guardrail-costs/bare-number-counter-map-has-no-rollup.yaml
+  - tools/oracle/cases/helpers/guardrail-costs/breakdown-addition-keeps-every-field.yaml
+  - tools/oracle/cases/helpers/guardrail-costs/null-and-false-spend-flags.yaml
+  - tools/oracle/cases/helpers/guardrail-costs/malformed-entry-keeps-valid-sibling.yaml
+  - tools/oracle/cases/helpers/guardrail-costs/forged-counter-map-does-not-zero-scalar.yaml
+  - tools/oracle/cases/helpers/guardrail-costs/unpriced-counter-versus-explicit-zero.yaml
+  - tools/oracle/cases/helpers/guardrail-costs/azure-free-missing-price-and-text-records.yaml
+  - tools/oracle/cases/helpers/guardrail-costs/repeated-breakdown-addition-preserves-basis.yaml
+deviations: []
+out_of_scope:
+  - Padded one-line functions in these files belong to B5094. It clears the no-one-line-functions and no-padded-one-line-functions legacy lists. This task does not touch .ast-grep/rules/.
+  - B193's catalog files stay as they are. B5137 fixes the malformed fallback_generalizations rule that fails the whole load in crates/betterlite-models/src/catalog/loader.rs and the provider_specific_known test in catalog/tests.rs.
+  - A guardrail_cost_per_unit that is not a map of numbers still fails the catalog load, as every typed price field does under B204 and docs/compatibility.md, where LiteLLM's lookup would warn and fall through.
+  - No caller is added. B068's final calculator and B069's spend paths pass their catalog snapshot to bedrock_guardrail_cost_by_unit and write CostBreakdown into their records.
+pitfalls:
+  - With only a flattened catch-all on GuardrailEntryFields, a bare 2.5 entry from JSON text decodes as an empty object and bills 0 with no warning; the Number variant has to sit ahead of Object in GuardrailInformationEntry so it warns like LiteLLM's ValidationError.
+  - serde(with = "rust_decimal::serde::arbitrary_precision_option") also swaps the deserializer, and a with field no longer defaults to None when absent, so a breakdown missing input_cost would stop parsing; serialize_with changes only the output.
+  - Look candidate keys up with ModelCatalog::lookup, since LiteLLM's model_cost also holds alias keys; entries.get sees canonical names only.
+  - In breakdown-addition-keeps-every-field.yaml use binary-exact amounts such as 0.25, 0.5 and 3.0, so LiteLLM's float total matches the Decimal total digit for digit.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

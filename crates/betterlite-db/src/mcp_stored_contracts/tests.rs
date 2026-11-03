@@ -106,14 +106,12 @@ fn list_fields() {
         ["a"]
     );
 }
-#[test]
-fn unknown_credential_keys() {
-    assert!(
-        serde_json::from_str::<MCPCredentials>(r#"{"future":true}"#)
-            .unwrap()
-            .client_id
-            .is_none()
-    );
+#[rstest]
+#[case::extra_only(r#"{"future":true}"#, "{}")]
+#[case::extra_beside_known(r#"{"client_id":"id","future":true}"#, r#"{"client_id":"id"}"#)]
+fn unknown_credential_keys(#[case] source: &str, #[case] expected: &str) {
+    let credentials: MCPCredentials = serde_json::from_str(source).unwrap();
+    assert_eq!(serde_json::to_string(&credentials).unwrap(), expected);
 }
 #[test]
 fn docstring_defaults_not_materialized() {

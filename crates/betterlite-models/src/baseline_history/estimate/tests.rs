@@ -118,13 +118,24 @@ fn markers_for_drops_breakpoints_below_the_minimum() {
     assert_eq!(markers[0].fingerprint, "b");
 }
 
-#[test]
-fn entry_status_requires_the_window_the_fingerprint_and_the_ttl_to_match() {
-    let fp = breakpoint("fp", 300, 100);
-    let markers = vec![&fp];
-    let hit = entry("fp", 50, 300, 0.0, 10.0);
-    assert!(entry_status(&hit, &markers, 5.0).matches);
-    assert!(!entry_status(&hit, &markers, 20.0).matches);
+#[rstest]
+#[case::matching(entry("fp", 50, 300, 0.0_f64, 10.0_f64), 5.0_f64, true)]
+#[case::expired(entry("fp", 50, 300, 0.0_f64, 5.0_f64), 5.0_f64, false)]
+#[case::not_yet_available(entry("fp", 50, 300, 6.0_f64, 10.0_f64), 5.0_f64, false)]
+#[case::fingerprint_outside_lookback(entry("other", 50, 300, 0.0_f64, 10.0_f64), 5.0_f64, false)]
+#[case::tokens_above_prefix(entry("fp", 101, 300, 0.0_f64, 10.0_f64), 5.0_f64, false)]
+#[case::ttl_differs(entry("fp", 50, 3600, 0.0_f64, 10.0_f64), 5.0_f64, false)]
+fn entry_status_matches_only_when_every_condition_holds(
+    #[case] mut candidate: CacheEntry,
+    #[case] started_at: f64,
+    #[case] expected: bool,
+) {
+    let marker = breakpoint("fp", 300, 100);
+    candidate.content_fingerprint = "outside".to_owned();
+    assert_eq!(
+        entry_status(&candidate, &[&marker], started_at).matches,
+        expected
+    );
 }
 
 #[test]
@@ -133,6 +144,14 @@ fn entry_status_flags_a_changed_ttl_on_the_same_content_as_ambiguous() {
     let markers = vec![&fp];
     let changed_ttl = entry("fp", 50, 300, 0.0, 10.0);
     assert!(entry_status(&changed_ttl, &markers, 5.0).ambiguous);
+}
+
+#[test]
+fn entry_status_flags_an_uncertain_entry_with_the_same_ttl_as_ambiguous() {
+    let marker = breakpoint("fp", 300, 100);
+    let mut uncertain = entry("fp", 50, 300, 0.0, 10.0);
+    uncertain.uncertain = true;
+    assert!(entry_status(&uncertain, &[&marker], 5.0).ambiguous);
 }
 
 #[test]

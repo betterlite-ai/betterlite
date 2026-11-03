@@ -64,7 +64,8 @@ fn strip_sensitive_keys_drops_underscore_prefixed_and_redacted_keys() {
 fn strip_sensitive_keys_recurses_into_nested_objects() {
     let fields = obj(r#"{"result": {"raw_request": "secret", "is_safe": true}}"#);
     let stripped = strip_sensitive_keys(&fields);
-    let Json::Object(nested) = Json::field(&stripped, "result") else {
+    let Json::Object(nested) = Json::parse(stripped.get("result").map_or("null", |raw| raw.get()))
+    else {
         panic!("result missing");
     };
     assert!(!nested.contains_key("raw_request"));

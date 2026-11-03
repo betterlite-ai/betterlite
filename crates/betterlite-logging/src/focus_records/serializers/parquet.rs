@@ -127,7 +127,14 @@ fn plain_cells(values: &ColumnValues) -> Result<Vec<Option<Vec<u8>>>, SerializeE
     match values {
         ColumnValues::Text(texts) => texts
             .iter()
-            .map(|text| text.as_deref().map(byte_array).transpose())
+            .map(|text| {
+                text.as_deref()
+                    .map(|value| {
+                        let length = u32::try_from(value.len()).map_err(SerializeError::Length)?;
+                        Ok([length.to_le_bytes().as_slice(), value.as_bytes()].concat())
+                    })
+                    .transpose()
+            })
             .collect(),
         ColumnValues::Decimal(decimals) => decimals
             .iter()
@@ -138,11 +145,6 @@ fn plain_cells(values: &ColumnValues) -> Result<Vec<Option<Vec<u8>>>, SerializeE
             .map(|time| time.map(|value| value.and_utc().timestamp_micros().to_le_bytes().to_vec()))
             .collect()),
     }
-}
-
-fn byte_array(text: &str) -> Result<Vec<u8>, SerializeError> {
-    let length = u32::try_from(text.len()).map_err(SerializeError::Length)?;
-    Ok([length.to_le_bytes().as_slice(), text.as_bytes()].concat())
 }
 
 fn unscaled(value: Decimal) -> Result<Vec<u8>, SerializeError> {

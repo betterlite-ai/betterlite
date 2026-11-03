@@ -1,0 +1,408 @@
+id: B5111
+title: Close the B703 daily usage migration audit gaps
+description: >-
+  B703 added LiteLLM's 28 migrations from 20250326171002_add_daily_user_table through
+  20250707212517_add_mcp_info_column_mcp_servers to crates/betterlite-db/migrations, with their
+  MigrationFile consts in crates/betterlite-db/src/schema_daily_usage.rs and Postgres tests under
+  crates/betterlite-db/src/schema_daily_usage/tests/. An Opus review after merge found one behavior
+  gap and five tests that can't fail on the behavior they name. This task closes all six in the same
+  crate and module. The byte gap is not B703's alone, so the task restores every migration file the
+  sibling schema tasks changed the same way.
+
+
+  Gap one, the migration bytes. LiteLLM records the sha256 of each migration.sql's raw bytes in
+  _prisma_migrations.checksum. migration_files hashes every file
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migration_recovery.py#L82-L86),
+  baseline_current_schema writes those sums into the ledger
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migration_recovery.py#L137-L152),
+  and recover_completed_migration and confirms_completion only accept a ledger row whose checksum
+  equals the file's sum
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migration_recovery.py#L26-L31
+  and https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migration_recovery.py#L52-L65). On main 95 of the 195 files under crates/betterlite-db/migrations differ from
+  LiteLLM's. 94 lost a final blank line or a trailing space to a whitespace hook. The 95th,
+  20250918083359_drop_spec_version_column_from_mcp_table/migration.sql, moved its statement above
+  the /* Warnings */ block LiteLLM's file opens with
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20250918083359_drop_spec_version_column_from_mcp_table/migration.sql#L1-L8).
+  So for those 95 migrations an operator who shares one database between LiteLLM and betterlite
+  gets ledger checksums the other side never matches. By module the 95 are 1 baseline
+  (schema_baseline), 28 daily usage (schema_daily_usage), 27 managed resources, 21 identity
+  history, 12 policy resources, 5 routing state and 1 budget windows.
+
+
+  Restore every file byte for byte. crates/betterlite-db/src/schema_contract/fixtures/sql/<dir>.sql
+  already holds LiteLLM's exact bytes for all 195 migrations, and
+  crates/betterlite-db/src/schema_contract/fixtures/sql.sha256 lists LiteLLM's sum for each one as
+  "<sum>  <dir>.sql", in catalog order. Copy with cp from those files, or from
+  litellm-proxy-extras/litellm_proxy_extras/migrations/<dir>/migration.sql in the LiteLLM checkout;
+  `sha256sum` of the checkout file prints the same sum the manifest lists. The same stale bytes sit
+  in 39 test fixture copies (21 in schema_identity_history/fixtures, 12 in
+  schema_policy_resources/fixtures, 5 in schema_routing_state/fixtures, 1 in
+  schema_budget_windows/fixtures) and in tools/postgres-fixture/fixtures/baseline.sql. Restore them
+  from the same copies. Then every MigrationFile sha256 literal takes LiteLLM's sum for its
+  directory: 95 production consts in schema_baseline.rs, schema_daily_usage.rs,
+  schema_managed_resources.rs, schema_identity_history.rs, schema_policy_resources.rs,
+  schema_routing_state/migrations.rs and schema_budget_windows/migrations.rs, and 39 consts in the
+  four fixtures.rs files. The awk half of the pinned-consts check prints every stale const as
+  "<old sum>  <dir>.sql", and the manifest line for that <dir>.sql holds the sum to write.
+  schema_baseline/tests/identity.rs pins PINNED_SHA256 to
+  35afca4826335f8bd2bc2b733c0540de51c6a199d39c27a2d1910c53e1a02647 and the baseline length to 15_828
+  bytes, LiteLLM's size.
+
+
+  LiteLLM's files keep trailing spaces and final blank lines, and the gate's whitespace check and CI
+  both run git diff --check. Add a .gitattributes file holding the one line "*.sql -whitespace" to
+  crates/betterlite-db/migrations, to the four module fixtures folders above and to
+  tools/postgres-fixture/fixtures, the way crates/betterlite-db/src/schema_contract/fixtures/.gitattributes
+  already does. A parent folder's attribute reaches every nested migration.sql. migration_deploy's
+  catalog only reads entries that are folders, so the new file in migrations/ is never taken for a
+  migration. The pre-commit global exclude on main already skips crates/betterlite-db/migrations/
+  and every /fixtures/ path, so no hook rewrites the files again.
+
+
+  Once the bytes match, betterlite has no deviation here. There is no docs/deviations/B703.yaml and
+  this task adds none. docs/deviations/B702.yaml, B704.yaml, B705.yaml, B706.yaml and B707.yaml
+  record only the byte changes this task undoes (a dropped final blank line, a dropped trailing
+  space, the moved warning block). They become false, so delete them.
+
+
+  Gap two. pinned_sql_checksums in schema_daily_usage/tests/pinned_sql_checksums.rs hashes each
+  file's bytes and compares the result with the sha256 field of the same const. Both come from the
+  committed file, so it passes for any bytes and could not catch gap one. Replace it with an rstest
+  named pinned_sql_checksums with 28 cases, one per migration, named after the directory without its
+  timestamp (case::add_daily_user_table and so on). Each case carries the catalog position, the
+  directory and LiteLLM's sum as a string literal, taken from lines 2 to 29 of sql.sha256. It
+  asserts the directory at that position of MIGRATION_CATALOG.files, that the sha256 of the file's
+  bytes equals the literal, and that the const's sha256 field equals the literal. A plain test,
+  pinned_sql_catalog_size, asserts the catalog holds exactly 28 files.
+
+
+  Gap three. LiteLLM gives team_member_permissions, allowed_routes and flat_model_file_ids the
+  default ARRAY[]::TEXT[]
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20250412081753_team_member_permissions/migration.sql#L2,
+  https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20250416185146_add_allowed_routes_litellm_verification_token/migration.sql#L2,
+  https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20250522223020_managed_object_table/migration.sql#L2-L4),
+  and the same to ObjectPermissionTable.mcp_servers and vector_stores
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20250507184818_add_mcp_key_team_permission_mgmt/migration.sql#L14-L19,
+  https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20250528185438_add_vector_stores_to_object_permissions/migration.sql#L2).
+  In postgres_resource_defaults.rs, team_permissions_and_key_routes_empty_nullable_arrays,
+  managed_file_actor_and_flat_ids and object_permission_empty_arrays_and_four_set_null_foreign_keys
+  only assert default.is_some() for these five columns, so any default passes. Each of the five
+  becomes an exact assert that column_default is "ARRAY[]::text[]", Postgres's rendering of that
+  default.
+
+
+  Gap four. 20250509141545_use_big_int_for_daily_spend_tables widens all seven counters
+  (prompt_tokens, completion_tokens, api_requests, successful_requests, failed_requests,
+  cache_creation_input_tokens, cache_read_input_tokens) to BIGINT on DailyTagSpend, DailyTeamSpend and
+  DailyUserSpend
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20250509141545_use_big_int_for_daily_spend_tables/migration.sql#L1-L26).
+  seven_counters_widen_preserving_values in postgres_daily_counters.rs checks the type and kept
+  value of DailyUserSpend.prompt_tokens only, so 20 of the 21 widenings can be dropped and it still
+  passes. It becomes an rstest with cases user_counters, team_counters and tag_counters, each giving
+  the table and its entity column. Each case migrates through 20250508072103_add_status_to_spendlogs,
+  inserts one row with the seven counters set to seven different nonzero values, applies the bigint
+  migration, then asserts all seven data types are bigint with one information_schema query and all
+  seven values are kept with one SELECT.
+
+
+  Gap five. 20250526154401_allow_null_entity_id drops NOT NULL on DailyTagSpend.tag,
+  DailyTeamSpend.team_id and DailyUserSpend.user_id
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20250526154401_allow_null_entity_id/migration.sql#L1-L8).
+  nullable_entities_and_distinct_null_uniqueness checks only user_id. It becomes an rstest with cases
+  null_user_id, null_team_id and null_tag. Each case asserts the column is nullable after the
+  migration and inserts two rows with a NULL entity and the same date, api_key and model, proving
+  NULLs stay distinct under the table's unique index.
+
+
+  Gap six. No test reads the columns LiteLLM's CREATE TABLE statements make: types, nullability,
+  defaults such as spend DOUBLE PRECISION DEFAULT 0.0 and created_at TIMESTAMP(3) DEFAULT
+  CURRENT_TIMESTAMP, or precision. postgres_catalog only checks index names, so a dropped column or
+  a changed default passes. Add tests/postgres_catalog_columns.rs, included from
+  schema_daily_usage/tests.rs. postgres_catalog_columns is an rstest with one case per table the
+  cohort creates: daily_user_spend, cron_job, managed_file_table, daily_team_spend, daily_tag_spend,
+  managed_vector_stores_table, mcp_server_table, object_permission_table, guardrails_table,
+  managed_object_table and health_check_table. Each case applies migration_sql_all() and compares
+  the table's full column list, in ordinal order, with a literal list written from LiteLLM's SQL
+  (the CREATE plus every later ALTER in the cohort). Each entry gives column_name, data_type,
+  nullable, column_default, udt_name and datetime_precision, the ColumnSpec shape
+  schema_routing_state/tests/support.rs uses. postgres_catalog_added_columns does the same for the
+  columns the cohort adds to baseline tables, read by name in ordinal order: team_table
+  (team_member_permissions, object_permission_id), verification_token (allowed_routes,
+  object_permission_id), user_table and organization_table (object_permission_id), and spend_logs
+  (proxy_server_request, session_id, status). Extend columns_in in schema_daily_usage/tests/support.rs
+  to also select udt_name and datetime_precision after the five columns it reads now, so column()
+  keeps its indexes. The source lines are in the references.
+
+
+  Foreign-key actions are already pinned by postgres_budget_foreign_key_history.rs and
+  object_permission_empty_arrays_and_four_set_null_foreign_keys, so gap six adds no FK test.
+scope:
+  paths:
+    - crates/betterlite-db/migrations/20250326162113_baseline/migration.sql
+    - crates/betterlite-db/migrations/20250326171002_add_daily_user_table/migration.sql
+    - crates/betterlite-db/migrations/20250327180120_add_api_requests_to_daily_user_table/migration.sql
+    - crates/betterlite-db/migrations/20250329084805_new_cron_job_table/migration.sql
+    - crates/betterlite-db/migrations/20250331215456_track_success_and_failed_requests_daily_agg_table/migration.sql
+    - crates/betterlite-db/migrations/20250411215431_add_managed_file_table/migration.sql
+    - crates/betterlite-db/migrations/20250412081753_team_member_permissions/migration.sql
+    - crates/betterlite-db/migrations/20250415151647_add_cache_read_write_tokens_daily_spend_transactions/migration.sql
+    - crates/betterlite-db/migrations/20250415191926_add_daily_team_table/migration.sql
+    - crates/betterlite-db/migrations/20250416115320_add_tag_table_to_db/migration.sql
+    - crates/betterlite-db/migrations/20250416151339_drop_tag_uniqueness_requirement/migration.sql
+    - crates/betterlite-db/migrations/20250416185146_add_allowed_routes_litellm_verification_token/migration.sql
+    - crates/betterlite-db/migrations/20250425182129_add_session_id/migration.sql
+    - crates/betterlite-db/migrations/20250430193429_add_managed_vector_stores/migration.sql
+    - crates/betterlite-db/migrations/20250507161526_add_mcp_table_to_db/migration.sql
+    - crates/betterlite-db/migrations/20250507161527_add_health_check_fields_to_mcp_servers/migration.sql
+    - crates/betterlite-db/migrations/20250507184818_add_mcp_key_team_permission_mgmt/migration.sql
+    - crates/betterlite-db/migrations/20250508072103_add_status_to_spendlogs/migration.sql
+    - crates/betterlite-db/migrations/20250509141545_use_big_int_for_daily_spend_tables/migration.sql
+    - crates/betterlite-db/migrations/20250510142544_add_session_id_index_spend_logs/migration.sql
+    - crates/betterlite-db/migrations/20250514142245_add_guardrails_table/migration.sql
+    - crates/betterlite-db/migrations/20250522223020_managed_object_table/migration.sql
+    - crates/betterlite-db/migrations/20250526154401_allow_null_entity_id/migration.sql
+    - crates/betterlite-db/migrations/20250528185438_add_vector_stores_to_object_permissions/migration.sql
+    - crates/betterlite-db/migrations/20250603210143_cascade_budget_changes/migration.sql
+    - crates/betterlite-db/migrations/20250618225828_add_health_check_table/migration.sql
+    - crates/betterlite-db/migrations/20250625145206_cascade_budget_and_loosen_managed_file_json/migration.sql
+    - crates/betterlite-db/migrations/20250625213625_add_status_to_managed_object_table/migration.sql
+    - crates/betterlite-db/migrations/20250707212517_add_mcp_info_column_mcp_servers/migration.sql
+    - crates/betterlite-db/migrations/20250707230009_add_mcp_namespaced_tool_name/migration.sql
+    - crates/betterlite-db/migrations/20250711220620_add_stdio_mcp/migration.sql
+    - crates/betterlite-db/migrations/20250718125714_add_litellm_params_to_vector_stores/migration.sql
+    - crates/betterlite-db/migrations/20250802162330_prompt_table/migration.sql
+    - crates/betterlite-db/migrations/20250806095134_rename_alias_to_server_name_mcp_table/migration.sql
+    - crates/betterlite-db/migrations/20250918083359_drop_spec_version_column_from_mcp_table/migration.sql
+    - crates/betterlite-db/migrations/20250926194702_unnamed_migration/migration.sql
+    - crates/betterlite-db/migrations/20251003165142_add_allowed_tools_to_mcp/migration.sql
+    - crates/betterlite-db/migrations/20251003190954_extra_headers_to_mcp_table/migration.sql
+    - crates/betterlite-db/migrations/20251006143948_add_mcp_tool_permissions/migration.sql
+    - crates/betterlite-db/migrations/20251011084309_add_tag_table/migration.sql
+    - crates/betterlite-db/migrations/20251023141814_add_search_tool_table/migration.sql
+    - crates/betterlite-db/migrations/20251031181430_add_cache_config_table/migration.sql
+    - crates/betterlite-db/migrations/20251101131415_add_managed_vector_store_index_table/migration.sql
+    - crates/betterlite-db/migrations/20251113000000_add_project_table/migration.sql
+    - crates/betterlite-db/migrations/20251113000001_add_project_fields/migration.sql
+    - crates/betterlite-db/migrations/20251114173537_add_request_id_to_daily_tag_spend/migration.sql
+    - crates/betterlite-db/migrations/20251114180624_Add_org_usage_table/migration.sql
+    - crates/betterlite-db/migrations/20251114182247_agents_table/migration.sql
+    - crates/betterlite-db/migrations/20251119131227_add_prompt_versioning/migration.sql
+    - crates/betterlite-db/migrations/20251122125322_Add organization_id to spend logs/migration.sql
+    - crates/betterlite-db/migrations/20251204124859_add_end_user_spend_table/migration.sql
+    - crates/betterlite-db/migrations/20251204142718_add_agent_permissions/migration.sql
+    - crates/betterlite-db/migrations/20251209112246_add_ui_settings_table/migration.sql
+    - crates/betterlite-db/migrations/20251210125210_add_storage_backend_to_managed_files/migration.sql
+    - crates/betterlite-db/migrations/20251210205007_add_daily_agent_spend_table/migration.sql
+    - crates/betterlite-db/migrations/20251211100212_schema_sync/migration.sql
+    - crates/betterlite-db/migrations/20251219110931_add_deleted_keys_and_deleted_teams_tables/migration.sql
+    - crates/betterlite-db/migrations/20251220144550_schema_update/migration.sql
+    - crates/betterlite-db/migrations/20260102131258_add_metadata_urls_to_mcp_servers/migration.sql
+    - crates/betterlite-db/migrations/20260105151539_add_allow_all_keys_to_mcp_servers/migration.sql
+    - crates/betterlite-db/migrations/20260106155622_add_endpoint_to_daily_activity_tables/migration.sql
+    - crates/betterlite-db/migrations/20260107111013_add_router_settings_to_keys_teams/migration.sql
+    - crates/betterlite-db/migrations/20260108_add_user_email_lower_idx/migration.sql
+    - crates/betterlite-db/migrations/20260116142756_update_deleted_keys_teams_table_routing_settings/migration.sql
+    - crates/betterlite-db/migrations/20260123131407_add_policy_tables_and_policies_field/migration.sql
+    - crates/betterlite-db/migrations/20260131150814_add_team_user_to_vector_stores/migration.sql
+    - crates/betterlite-db/migrations/20260205091235_allow_team_guardrail_config/migration.sql
+    - crates/betterlite-db/migrations/20260205144610_add_soft_budget_to_team_table/migration.sql
+    - crates/betterlite-db/migrations/20260207093506_add_available_on_public_internet_to_mcp_servers/migration.sql
+    - crates/betterlite-db/migrations/20260207110613_add_soft_budget_to_deleted_teams_table/migration.sql
+    - crates/betterlite-db/migrations/20260212103349_adjust_tags_policy_table/migration.sql
+    - crates/betterlite-db/migrations/20260212143306_add_access_group_table/migration.sql
+    - crates/betterlite-db/migrations/20260214094754_schema_sync/migration.sql
+    - crates/betterlite-db/migrations/20260214163027_add_pipeline_to_policy_table/migration.sql
+    - crates/betterlite-db/migrations/20260214185341_object_permissions_for_end_users/migration.sql
+    - crates/betterlite-db/migrations/20260218231534_add_last_active_to_key_table/migration.sql
+    - crates/betterlite-db/migrations/20260219105005_add_project_id_to_deleted_keys/migration.sql
+    - crates/betterlite-db/migrations/20260219181415_baseline_diff/migration.sql
+    - crates/betterlite-db/migrations/20260220153844_add_composite_index_aggregate_tables/migration.sql
+    - crates/betterlite-db/migrations/20260221183800_add_policy_versioning/migration.sql
+    - crates/betterlite-db/migrations/20260224201417_spend_logs_request_duration/migration.sql
+    - crates/betterlite-db/migrations/20260224203854_add_agent_object_permissions_table/migration.sql
+    - crates/betterlite-db/migrations/20260226202727_add_agent_id_to_delete_keys/migration.sql
+    - crates/betterlite-db/migrations/20260228170127_support_team_based_guardrails/migration.sql
+    - crates/betterlite-db/migrations/20260304175016_add_spend_to_agent_table/migration.sql
+    - crates/betterlite-db/migrations/20260306175056_add_configs_override_table/migration.sql
+    - crates/betterlite-db/migrations/20260306233848_schema_sync/migration.sql
+    - crates/betterlite-db/migrations/20260312124619_schema_sync/migration.sql
+    - crates/betterlite-db/migrations/20260318140652_add_index_to_team_table/migration.sql
+    - crates/betterlite-db/migrations/20260421135425_add_team_membership_total_spend/migration.sql
+    - crates/betterlite-db/migrations/20260429161855_workflow_runs_tables/migration.sql
+    - crates/betterlite-db/migrations/20260605182307_add_timeout_to_mcp_server_table/migration.sql
+    - crates/betterlite-db/migrations/20260713230852_add_key_type_to_litellm_verification_token/migration.sql
+    - crates/betterlite-db/migrations/20260804162853_add_budget_window_spend_table/migration.sql
+    - crates/betterlite-db/migrations/20260824000000_add_gateway_injected_caching_savings_spend/migration.sql
+    - crates/betterlite-db/migrations/.gitattributes
+    - crates/betterlite-db/src/schema_baseline.rs
+    - crates/betterlite-db/src/schema_baseline/tests/identity.rs
+    - crates/betterlite-db/src/schema_daily_usage.rs
+    - crates/betterlite-db/src/schema_daily_usage/**
+    - crates/betterlite-db/src/schema_managed_resources.rs
+    - crates/betterlite-db/src/schema_identity_history.rs
+    - crates/betterlite-db/src/schema_identity_history/fixtures.rs
+    - crates/betterlite-db/src/schema_identity_history/fixtures/**
+    - crates/betterlite-db/src/schema_policy_resources.rs
+    - crates/betterlite-db/src/schema_policy_resources/fixtures.rs
+    - crates/betterlite-db/src/schema_policy_resources/fixtures/**
+    - crates/betterlite-db/src/schema_routing_state/migrations.rs
+    - crates/betterlite-db/src/schema_routing_state/fixtures.rs
+    - crates/betterlite-db/src/schema_routing_state/fixtures/**
+    - crates/betterlite-db/src/schema_budget_windows/migrations.rs
+    - crates/betterlite-db/src/schema_budget_windows/fixtures.rs
+    - crates/betterlite-db/src/schema_budget_windows/fixtures/**
+    - tools/postgres-fixture/fixtures/baseline.sql
+    - tools/postgres-fixture/fixtures/.gitattributes
+    - docs/deviations/B702.yaml
+    - docs/deviations/B704.yaml
+    - docs/deviations/B705.yaml
+    - docs/deviations/B706.yaml
+    - docs/deviations/B707.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migration_recovery.py#L82-L86
+    why: migration_files pairs each migration directory with hashlib.sha256 of its migration.sql bytes, the sum the ledger holds.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migration_recovery.py#L137-L152
+    why: baseline_current_schema creates _prisma_migrations and inserts those sums as each row's checksum.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migration_recovery.py#L26-L65
+    why: confirms_completion and recover_completed_migration accept a ledger row only when its checksum equals the file's sha256.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20250918083359_drop_spec_version_column_from_mcp_table/migration.sql#L1-L8
+    why: LiteLLM's file opens with the /* Warnings */ block and puts the DROP COLUMN statement after it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20250509141545_use_big_int_for_daily_spend_tables/migration.sql#L1-L26
+    why: The 21 counter widenings, seven per daily table, that seven_counters_widen_preserving_values must cover.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20250526154401_allow_null_entity_id/migration.sql#L1-L8
+    why: tag, team_id and user_id each drop NOT NULL.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20250326171002_add_daily_user_table/migration.sql#L2-L17
+    why: DailyUserSpend's CREATE TABLE. api_requests (20250327180120 L2), failed_requests then successful_requests (20250331215456 L2-L3) and cache_creation_input_tokens then cache_read_input_tokens (20250415151647 L2-L3) are appended after it in that order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20250415191926_add_daily_team_table/migration.sql#L2-L20
+    why: DailyTeamSpend's CREATE TABLE. Its two cache counters are appended by 20250416115320 L2-L3.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20250416115320_add_tag_table_to_db/migration.sql#L2-L26
+    why: The DailyTeamSpend cache columns and DailyTagSpend's CREATE TABLE.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20250329084805_new_cron_job_table/migration.sql#L1-L13
+    why: The JobStatus enum and CronJob's CREATE TABLE with status DEFAULT 'INACTIVE'.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20250411215431_add_managed_file_table/migration.sql#L2-L11
+    why: ManagedFileTable's CREATE TABLE. file_object drops NOT NULL at 20250625145206 L10 and created_by, flat_model_file_ids and updated_by are appended at 20250522223020 L2-L4.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20250430193429_add_managed_vector_stores/migration.sql#L2-L13
+    why: ManagedVectorStoresTable's CREATE TABLE.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20250507161526_add_mcp_table_to_db/migration.sql#L2-L16
+    why: MCPServerTable's CREATE TABLE. status DEFAULT 'unknown', last_health_check and health_check_error follow at 20250507161527 L2-L4 and mcp_info JSONB DEFAULT '{}' at 20250707212517 L2.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20250507184818_add_mcp_key_team_permission_mgmt/migration.sql#L2-L19
+    why: object_permission_id on four baseline tables and ObjectPermissionTable's CREATE TABLE. vector_stores is appended at 20250528185438 L2.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20250514142245_add_guardrails_table/migration.sql#L2-L11
+    why: GuardrailsTable's CREATE TABLE.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20250522223020_managed_object_table/migration.sql#L7-L19
+    why: ManagedObjectTable's CREATE TABLE. status is appended at 20250625213625 L2.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20250618225828_add_health_check_table/migration.sql#L2-L18
+    why: HealthCheckTable's CREATE TABLE.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20250425182129_add_session_id/migration.sql#L2-L3
+    why: SpendLogs gains proxy_server_request JSONB DEFAULT '{}' and session_id. status follows at 20250508072103 L2.
+dod:
+  - text: >-
+      Every crates/betterlite-db/migrations/<dir>/migration.sql, every .sql copy under a
+      schema_*/fixtures folder and tools/postgres-fixture/fixtures/baseline.sql equals LiteLLM's file
+      byte for byte, so its sha256 is the checksum LiteLLM writes to _prisma_migrations. The six folders
+      holding them carry "*.sql -whitespace" and git diff --check passes.
+    proof:
+      - litellm-bytes
+      - whitespace-attributes
+  - text: >-
+      Every MigrationFile sha256 literal, in the production consts and in the fixtures.rs consts,
+      equals LiteLLM's sum for its directory, and the schema, row and postgres-fixture tests that load
+      these files pass on the restored bytes.
+    proof:
+      - pinned-consts
+  - text: >-
+      pinned_sql_checksums is an rstest with 28 cases that each compare a daily usage migration's bytes
+      and const with LiteLLM's sum written as a literal, and pinned_sql_catalog_size pins 28 files.
+      Today's self-hash version passes for any bytes.
+    proof:
+      - daily-usage-checksums
+  - text: >-
+      The five TEXT[] defaults (team_member_permissions, allowed_routes, flat_model_file_ids,
+      mcp_servers, vector_stores) are asserted equal to "ARRAY[]::text[]" instead of default.is_some().
+    proof:
+      - array-defaults
+  - text: >-
+      seven_counters_widen_preserving_values covers all seven counters on DailyUserSpend,
+      DailyTeamSpend and DailyTagSpend, both type and kept value, instead of DailyUserSpend.prompt_tokens
+      alone.
+    proof:
+      - counter-widening
+  - text: >-
+      nullable_entities_and_distinct_null_uniqueness covers tag, team_id and user_id, instead of
+      user_id alone.
+    proof:
+      - null-entities
+  - text: >-
+      postgres_catalog_columns pins every column of the 11 tables the cohort creates, and
+      postgres_catalog_added_columns pins the columns it adds to five baseline tables: name, type,
+      nullability, default, udt_name and precision, in ordinal order.
+    proof:
+      - catalog-columns
+  - text: >-
+      No deviation log records a byte change: docs/deviations/B702.yaml, B704.yaml, B705.yaml,
+      B706.yaml and B707.yaml are deleted, and neither B703 nor B5111 has one.
+    proof:
+      - stale-deviations
+checks:
+  optional: []
+  commands:
+    - id: litellm-bytes
+      why: A migration.sql, a module fixture copy or the postgres-fixture baseline differs from LiteLLM's bytes, so its checksum differs from the one LiteLLM records.
+      run: >-
+        M=crates/betterlite-db/src/schema_contract/fixtures/sql.sha256 && sed 's#^\([0-9a-f]\{64\}\)  \(.*\)\.sql$#\1  crates/betterlite-db/migrations/\2/migration.sql#' "$M" | sha256sum --check --quiet --strict && for f in crates/betterlite-db/src/schema_*/fixtures/*.sql; do grep -qxF "$(sha256sum "$f" | cut -c1-64)  ${f##*/}" "$M" || { echo "$f differs from LiteLLM"; exit 1; }; done && grep -qxF "$(sha256sum tools/postgres-fixture/fixtures/baseline.sql | cut -c1-64)  20250326162113_baseline.sql" "$M"
+    - id: whitespace-attributes
+      why: A folder of restored files lacks its .gitattributes, so git diff --check rejects LiteLLM's trailing spaces or final blank lines.
+      run: >-
+        for d in crates/betterlite-db/migrations crates/betterlite-db/src/schema_identity_history/fixtures crates/betterlite-db/src/schema_policy_resources/fixtures crates/betterlite-db/src/schema_routing_state/fixtures crates/betterlite-db/src/schema_budget_windows/fixtures tools/postgres-fixture/fixtures; do grep -qxF '*.sql -whitespace' "$d/.gitattributes" || { echo "$d/.gitattributes lacks *.sql -whitespace"; exit 1; }; done && git diff --check "$GATE_BASE" HEAD
+    - id: pinned-consts
+      why: A MigrationFile sha256 literal still holds the hash of the old bytes, or a test that loads the migrations fails on LiteLLM's bytes.
+      run: >-
+        ! awk -F'"' '/directory: "/{d=$2} /sha256: "/{print $2"  "d".sql"}' crates/betterlite-db/src/schema_*.rs crates/betterlite-db/src/schema_*/migrations.rs crates/betterlite-db/src/schema_*/fixtures.rs | grep -vxFf crates/betterlite-db/src/schema_contract/fixtures/sql.sha256 && cargo nextest run --locked -p betterlite-db -p betterlite-postgres-fixture --no-tests=fail -E '(test(/^schema_(baseline|daily_usage|managed_resources|identity_history|policy_resources|routing_state|budget_windows|contract)::tests::/) | test(/^(resource_rows|identity_rows|team_rows|budget_permission_rows)::tests::/) | package(betterlite-postgres-fixture)) - test(/replays_the_/)'
+    - id: daily-usage-checksums
+      why: pinned_sql_checksums still compares each file with its own hash instead of LiteLLM's sum, or a case is missing.
+      run: >-
+        for s in $(sed -n '2,29s/  .*//p' crates/betterlite-db/src/schema_contract/fixtures/sql.sha256); do grep -qF "\"$s\"" crates/betterlite-db/src/schema_daily_usage/tests/pinned_sql_checksums.rs || { echo "pinned_sql_checksums lacks LiteLLM sum $s"; exit 1; }; done && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^schema_daily_usage::tests::pinned_sql_(checksums::|catalog_size$)/)'
+    - id: array-defaults
+      why: A TEXT[] default is still checked with is_some(), so any default passes.
+      run: >-
+        F=crates/betterlite-db/src/schema_daily_usage/tests/postgres_resource_defaults.rs && ! grep -qF 'default.is_some()' "$F" && grep -qF 'ARRAY[]::text[]' "$F" && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^schema_daily_usage::tests::(team_permissions_and_key_routes_empty_nullable_arrays|managed_file_actor_and_flat_ids|object_permission_empty_arrays_and_four_set_null_foreign_keys)$/)'
+    - id: counter-widening
+      why: The bigint widening test still covers one counter on one table.
+      run: >-
+        F=crates/betterlite-db/src/schema_daily_usage/tests/postgres_daily_counters.rs && for c in user_counters team_counters tag_counters; do grep -qF "#[case::$c(" "$F" || { echo "seven_counters_widen_preserving_values lacks case $c"; exit 1; }; done && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^schema_daily_usage::tests::seven_counters_widen_preserving_values::case_/)'
+    - id: null-entities
+      why: The nullable entity test still covers user_id alone.
+      run: >-
+        F=crates/betterlite-db/src/schema_daily_usage/tests/postgres_daily_counters.rs && for c in null_user_id null_team_id null_tag; do grep -qF "#[case::$c(" "$F" || { echo "nullable_entities_and_distinct_null_uniqueness lacks case $c"; exit 1; }; done && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^schema_daily_usage::tests::nullable_entities_and_distinct_null_uniqueness::case_/)'
+    - id: catalog-columns
+      why: No test pins the columns, types, defaults and precision LiteLLM's CREATE and ALTER statements produce.
+      run: >-
+        D=crates/betterlite-db/src/schema_daily_usage && grep -qxF 'include!("tests/postgres_catalog_columns.rs");' "$D/tests.rs" && for c in daily_user_spend cron_job managed_file_table daily_team_spend daily_tag_spend managed_vector_stores_table mcp_server_table object_permission_table guardrails_table managed_object_table health_check_table team_table verification_token user_table organization_table spend_logs; do grep -qF "#[case::$c(" "$D/tests/postgres_catalog_columns.rs" || { echo "postgres_catalog_columns.rs lacks case $c"; exit 1; }; done && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^schema_daily_usage::tests::postgres_catalog_(added_)?columns::case_/)'
+    - id: stale-deviations
+      why: A deviation log still records a byte change betterlite no longer makes.
+      run: >-
+        for t in B702 B703 B704 B705 B706 B707 B5111; do test ! -e "docs/deviations/$t.yaml" || { echo "docs/deviations/$t.yaml records a byte change LiteLLM does not have"; exit 1; }; done
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - Padded one-line functions in the schema test files. They belong to B5094. It clears the no-one-line-functions and no-padded-one-line-functions legacy lists. This task does not touch .ast-grep/rules/.
+  - The fixed status per error class. B5102 owns it and has merged.
+  - migration_deploy and how betterlite writes or recovers _prisma_migrations rows. That is B873's; this task only makes the bytes it hashes equal LiteLLM's.
+  - The final schema contract under crates/betterlite-db/src/schema_contract, its sql.sha256 manifest and its sql/ copies. B701 owns them and they already hold LiteLLM's bytes.
+  - The test shapes of the other schema modules (B702, B704 to B708). Their pinned_sql_checksums tests keep their form; this task changes only the sha256 literals and fixture bytes they read, and the litellm-bytes check guards their files.
+pitfalls:
+  - Three LiteLLM files end without a final newline, 20250507161527_add_health_check_fields_to_mcp_servers and 20250806095134_rename_alias_to_server_name_mcp_table in "TEXT; " with a trailing space and 20251119131227_add_prompt_versioning in ");", so copy bytes with cp and never retype a file in an editor that adds a newline.
+  - The folder "20251122125322_Add organization_id to spend logs" has spaces in its name, so quote every path and read the manifest with while IFS= read -r, not a for loop over words.
+  - ADD_CONFIGS_OVERRIDE_TABLE in schema_policy_resources.rs and PINNED_CONFIG_OVERRIDE in schema_policy_resources/fixtures.rs pin e49454e7f5be2ba0e46da7e5be61900942398f971dcfb0ab70ff4fcef9cfd50e, the sum of 20260220124742_add_spec_path_to_mcp_servers, because LiteLLM's 20260306175056_add_configs_override_table repeats that ALTER; with its extra blank line restored its own sum is f4b1682d40d1999b98215a0677481980372e4cb5659d071e878a343a7a65944b.
+  - harness.rs pins sql.sha256's own hash at c2a1e005f73eda0bb5f5496f90299688872f1e56e71f749b52d81009eae0d5ee, so read the manifest and the sql/ copies but never edit them.
+  - migration_sql_through and its siblings in support.rs join file bytes with no separator. That stays safe because the three files without a final newline end in ";".
+  - The worker sandbox can't reach docker, so the Postgres tests first run in the dispatcher's gate and CI; write Postgres's exact renderings, "ARRAY[]::text[]", "'{}'::jsonb", "'unknown'::text", "'sse'::text", "CURRENT_TIMESTAMP", "0.0", "0" for an integer or bigint counter, "false", data_type "ARRAY" with udt_name "_text", and "timestamp without time zone" with datetime_precision Some(3).
+  - CronJob.status reads data_type USER-DEFINED, udt_name JobStatus and column_default 'INACTIVE'::"JobStatus".
+  - ALTER COLUMN TYPE and DROP NOT NULL keep a column's ordinal position while ADD COLUMN appends, so after migration_sql_all() DailyUserSpend.user_id, DailyTeamSpend.team_id, DailyTagSpend.tag and ManagedFileTable.file_object are nullable in place and every counter is bigint in place.
+  - rstest zero-pads case numbers past nine (case_01_add_daily_user_table), so a filter names the rstest module path and never a case number.
+  - B5094 is changing pinned_sql_checksums.rs and schema_baseline/tests/identity.rs; merge main before starting and keep its changes.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

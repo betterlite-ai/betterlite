@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use super::scan_covered_tables;
+use super::scan_tables;
 use crate::encryption_scan::ScanError;
 use crate::encryption_scan::report::MigrationReport;
 use crate::encryption_scan::tests::cipher;
@@ -9,13 +9,25 @@ use clap::Parser;
 use deadpool_postgres::{Client, Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
 use std::fmt::Debug;
+use std::future::Future;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use tokio::time::timeout;
 use tokio_postgres::NoTls;
 use tracing::Subscriber;
 use tracing::dispatcher::set_default;
 use tracing::field::{Field, Visit};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
+
+async fn scanned_within<F>(deadline: Duration, future: F) -> Result<MigrationReport, ScanError>
+where
+    F: Future<Output = Result<MigrationReport, ScanError>>,
+{
+    match timeout(deadline, future).await {
+        Ok(outcome) => outcome,
+        Err(elapsed) => Err(ScanError::Timeout(elapsed)),
+    }
+}
 
 #[derive(Clone, Default)]
 struct CapturedLogs(Arc<Mutex<Vec<String>>>);
@@ -86,9 +98,12 @@ async fn scans_every_column_without_writes() {
         .start()
         .await
         .unwrap();
-    let report = scan_covered_tables(&*transaction, &cipher(), Duration::from_secs(10))
-        .await
-        .unwrap();
+    let report = scanned_within(
+        Duration::from_secs(10),
+        scan_tables(&*transaction, &cipher()),
+    )
+    .await
+    .unwrap();
     assert_counts(&report);
     transaction.commit().await.unwrap();
     assert_eq!(snapshot(&client).await, before);
@@ -128,7 +143,7 @@ async fn unavailable_tables_do_not_stop_later_scans() {
     "#).await.unwrap();
     let (logs, dispatch) = captured_logs();
     let _guard = set_default(&dispatch);
-    let report = scan_covered_tables(&**client, &cipher(), Duration::from_secs(10))
+    let report = scanned_within(Duration::from_secs(10), scan_tables(&**client, &cipher()))
         .await
         .unwrap();
     assert_eq!(report.locations.len(), 6);
@@ -167,9 +182,12 @@ async fn unavailable_table_recovers_inside_a_transaction() {
         .unwrap();
     let (logs, dispatch) = captured_logs();
     let _guard = set_default(&dispatch);
-    let report = scan_covered_tables(&*transaction, &cipher(), Duration::from_secs(10))
-        .await
-        .unwrap();
+    let report = scanned_within(
+        Duration::from_secs(10),
+        scan_tables(&*transaction, &cipher()),
+    )
+    .await
+    .unwrap();
     transaction.commit().await.unwrap();
     assert_eq!(report.locations[0].scanned, 0);
     assert_eq!(
@@ -195,7 +213,7 @@ async fn malformed_config_is_empty_and_json_text_is_decoded() {
         INSERT INTO "LiteLLM_ProxyModelTable" (model_id, model_name, litellm_params, created_by, updated_by)
         VALUES ('one', 'test', '"{\"key\":\"v2:gcm:nested\"}"', 'test', 'test');
     "#).await.unwrap();
-    let report = scan_covered_tables(&**client, &cipher(), Duration::from_secs(10))
+    let report = scanned_within(Duration::from_secs(10), scan_tables(&**client, &cipher()))
         .await
         .unwrap();
     assert_eq!(report.locations.first().unwrap().already_v2, 1);
@@ -209,7 +227,7 @@ async fn malformed_config_is_empty_and_json_text_is_decoded() {
 async fn scan_deadline_is_enforced() {
     let (fixture, pool, client) = database().await;
     client.batch_execute(r#"DROP TABLE "LiteLLM_ProxyModelTable"; CREATE VIEW "LiteLLM_ProxyModelTable" AS SELECT '{}'::jsonb AS litellm_params FROM pg_sleep(0.1);"#).await.unwrap();
-    let result = scan_covered_tables(&**client, &cipher(), Duration::from_millis(10)).await;
+    let result = scanned_within(Duration::from_millis(10), scan_tables(&**client, &cipher())).await;
     assert!(matches!(result, Err(ScanError::Timeout(_))));
     drop(client);
     pool.close();

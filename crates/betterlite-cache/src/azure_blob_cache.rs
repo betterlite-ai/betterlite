@@ -35,7 +35,12 @@ impl AzureBlobCache {
         let create = container_client.create(None);
         match timeout(operation_timeout, create).await {
             Ok(Ok(_)) => {}
-            Ok(Err(source)) if is_container_already_exists(&source) => {}
+            Ok(Err(source))
+                if is_error(
+                    &source,
+                    StatusCode::Conflict,
+                    &StorageErrorCode::ContainerAlreadyExists,
+                ) => {}
             Ok(Err(source)) => return Err(CacheError::ContainerCreate { source }),
             Err(source) => return Err(CacheError::ContainerCreateTimeout { source }),
         }
@@ -54,11 +59,6 @@ impl AzureBlobCache {
             return;
         }
         runtime.block_on(self.put(key, value, false));
-    }
-
-    pub async fn async_set_cache(&self, key: &str, value: &CachedEntry) {
-        let overwrite = true;
-        self.put(key, value, overwrite).await;
     }
 
     async fn put(&self, key: &str, value: &CachedEntry, overwrite: bool) {
@@ -96,38 +96,45 @@ impl AzureBlobCache {
     }
 
     pub async fn async_get_cache(&self, key: &str) -> Option<CachedEntry> {
-        let fetch = async {
-            let blob_client = self.container_client.blob_client(key);
-            let download = match blob_client.download(None).await {
-                Ok(download) => download,
-                Err(source) if is_blob_not_found(&source) => {
-                    tracing::debug!(error = %source, "Azure Blob cache miss");
-                    return None;
-                }
-                Err(source) => {
-                    tracing::error!(error = %source, "Azure Blob cache read failed");
-                    return None;
-                }
-            };
-            let bytes = match download.body.collect().await {
-                Ok(bytes) => bytes,
-                Err(source) => {
-                    tracing::error!(error = %source, "Azure Blob cache body failed");
-                    return None;
-                }
-            };
-            match decode_body(&bytes) {
-                Ok(value) => Some(value),
-                Err(source) => {
-                    tracing::error!(error = %source, "Azure Blob cache decode failed");
-                    None
-                }
-            }
-        };
-        match timeout(self.operation_timeout, fetch).await {
+        match timeout(self.operation_timeout, self.fetch(key)).await {
             Ok(result) => result,
             Err(source) => {
                 tracing::error!(error = %source, "Azure Blob cache read timed out");
+                None
+            }
+        }
+    }
+
+    async fn fetch(&self, key: &str) -> Option<CachedEntry> {
+        let blob_client = self.container_client.blob_client(key);
+        let download = match blob_client.download(None).await {
+            Ok(download) => download,
+            Err(source)
+                if is_error(
+                    &source,
+                    StatusCode::NotFound,
+                    &StorageErrorCode::BlobNotFound,
+                ) =>
+            {
+                tracing::debug!(error = %source, "Azure Blob cache miss");
+                return None;
+            }
+            Err(source) => {
+                tracing::error!(error = %source, "Azure Blob cache read failed");
+                return None;
+            }
+        };
+        let bytes = match download.body.collect().await {
+            Ok(bytes) => bytes,
+            Err(source) => {
+                tracing::error!(error = %source, "Azure Blob cache body failed");
+                return None;
+            }
+        };
+        match decode_body(&bytes) {
+            Ok(value) => Some(value),
+            Err(source) => {
+                tracing::error!(error = %source, "Azure Blob cache decode failed");
                 None
             }
         }
@@ -143,7 +150,7 @@ impl AzureBlobCache {
             }
             let cache = self.clone();
             tasks.spawn(async move {
-                cache.async_set_cache(&key, &value).await;
+                cache.put(&key, &value, true).await;
             });
         }
         while let Some(result) = tasks.join_next().await {
@@ -152,16 +159,6 @@ impl AzureBlobCache {
             }
         }
     }
-}
-
-fn is_container_already_exists(error: &AzureError) -> bool {
-    let status = StatusCode::Conflict;
-    is_error(error, status, &StorageErrorCode::ContainerAlreadyExists)
-}
-
-fn is_blob_not_found(error: &AzureError) -> bool {
-    let status = StatusCode::NotFound;
-    is_error(error, status, &StorageErrorCode::BlobNotFound)
 }
 
 fn is_error(error: &AzureError, status: StatusCode, storage_code: &StorageErrorCode) -> bool {

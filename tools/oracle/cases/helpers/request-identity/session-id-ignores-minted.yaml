@@ -1,0 +1,14 @@
+kind: helper
+name: session-id-ignores-minted
+call:
+  b3841:
+    function: session
+    kwargs:
+      litellm_params:
+        litellm_session_id: minted
+        metadata:
+          session_id: minted
+          session_id_generated: true
+          trace_id: trace
+env: {}
+compare: {ignore: []}

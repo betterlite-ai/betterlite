@@ -1,6 +1,6 @@
 use betterlite_core::api::responses_input_content::{
     ContentError, chat_content_type, content_blocks, input_file_block, input_image_block,
-    instructions_to_system_message, resolve_file_id,
+    instructions_to_system_message, is_truthy,
 };
 use serde::Deserialize;
 use serde_json::{Map, Value};
@@ -36,7 +36,12 @@ impl Helper for Op {
     type Input = Input;
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::ResolveFileId { item } => Ok(resolve_file_id(item).unwrap_or(Value::Null)),
+            Input::ResolveFileId { item } => Ok(item
+                .get("file_id")
+                .filter(|value| is_truthy(Some(value)))
+                .or_else(|| item.get("file_url").filter(|value| is_truthy(Some(value))))
+                .cloned()
+                .unwrap_or(Value::Null)),
             Input::FileBlock { item } => Ok(input_file_block(item)),
             Input::ImageBlock { item } => Ok(input_image_block(item)),
             Input::ContentBlocks { content } => {

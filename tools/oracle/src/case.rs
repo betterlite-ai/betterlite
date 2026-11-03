@@ -15,7 +15,7 @@ use serde::de::IgnoredAny;
 pub mod browser_flow;
 mod config_inspection;
 mod group;
-mod helper;
+pub mod helper;
 
 pub(crate) use group::{LoadedCase, ScenarioCase};
 pub(crate) use helper::HelperCase;
@@ -161,16 +161,6 @@ pub(crate) fn parse_case(path: &Path, text: &str) -> Result<LoadedCase, OracleEr
     Ok(LoadedCase::Http(case))
 }
 
-pub fn parse_helper_case(source: &str) -> Result<(), String> {
-    let case: HelperCase = serde_saphyr::from_str(source).map_err(|error| error.to_string())?;
-    helper::validate_helper(Path::new("<helper>"), &case).map_err(|error| error.to_string())
-}
-
-pub fn decode_http_case(bytes: &[u8]) -> Result<HttpCase, OracleError> {
-    let path = Path::new("<bytes>");
-    decode_case(path, bytes)
-}
-
 pub fn decode_http_body(bytes: &[u8]) -> Result<RequestBody, MultipartError> {
     let text = str::from_utf8(bytes).map_err(MultipartError::RequestUtf8)?;
     let request: Request = serde_saphyr::from_str(text)
@@ -178,14 +168,7 @@ pub fn decode_http_body(bytes: &[u8]) -> Result<RequestBody, MultipartError> {
     request_body(&request.body, request.body_kind)
 }
 
-pub fn decode_html_form_capture(
-    bytes: &[u8],
-) -> Result<browser_flow::form::FormProjection, browser_flow::form::FormCaptureError> {
-    let text = str::from_utf8(bytes).map_err(browser_flow::form::FormCaptureError::Utf8)?;
-    browser_flow::form::parse_form_projection(text)
-}
-
-fn decode_case(path: &Path, bytes: &[u8]) -> Result<HttpCase, OracleError> {
+pub fn decode_case(path: &Path, bytes: &[u8]) -> Result<HttpCase, OracleError> {
     let text = str::from_utf8(bytes).map_err(|source| OracleError::CaseUtf8 { source })?;
     let case: Case = serde_saphyr::from_str(text).map_err(|source| OracleError::CaseParse {
         path: path.to_owned(),

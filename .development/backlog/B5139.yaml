@@ -1,0 +1,13 @@
+id: B5139
+milestone: M7 observability
+title: Close the B3992 S3 v2 parameter audit gaps
+status: done
+depends_on: [B3992]
+file: tasks/B5139-s3-params-audit-gaps.yaml
+covers: []
+parent: null
+split_from: null
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 595

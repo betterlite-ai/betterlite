@@ -150,3 +150,139 @@ fn character_image_duration_and_query_components_are_all_added() {
     let cost = calculate_input_cost(&usage, &model, &rates(), None).expect("no overflow");
     assert_eq!(cost, Decimal::from(15_i64));
 }
+
+#[test]
+fn negative_image_count_and_audio_seconds_still_suppress_their_token_charges() {
+    let mut model = ModelInfo::new();
+    model.insert("input_cost_per_image".to_owned(), price("1"));
+    model.insert("input_cost_per_image_token".to_owned(), price("0.5"));
+    model.insert("input_cost_per_audio_per_second".to_owned(), price("1"));
+    model.insert("input_cost_per_audio_token".to_owned(), price("0.25"));
+    let usage = PromptTokensDetailsResult {
+        audio_tokens: 2,
+        image_tokens: 4,
+        image_count: -1,
+        audio_length_seconds: Decimal::new(-15, 1),
+        ..details()
+    };
+    let cost = calculate_input_cost(
+        &usage,
+        &model,
+        &InputCostRates {
+            prompt_base_cost: Decimal::new(5, 1),
+            cache_read_cost: Decimal::ZERO,
+            cache_creation_cost: Decimal::ZERO,
+            cache_creation_cost_above_1hr: Decimal::ZERO,
+        },
+        None,
+    )
+    .expect("no overflow");
+    assert_eq!(cost, Decimal::from(5_i64));
+}
+
+#[test]
+fn video_tokens_fall_back_to_the_generic_token_price_when_no_video_token_price_is_set() {
+    let mut model = ModelInfo::new();
+    model.insert("input_cost_per_token".to_owned(), price("0.5"));
+    let usage = PromptTokensDetailsResult {
+        video_tokens: 4,
+        ..details()
+    };
+    let cost = calculate_input_cost(
+        &usage,
+        &model,
+        &InputCostRates {
+            prompt_base_cost: Decimal::new(5, 1),
+            cache_read_cost: Decimal::ZERO,
+            cache_creation_cost: Decimal::ZERO,
+            cache_creation_cost_above_1hr: Decimal::ZERO,
+        },
+        None,
+    )
+    .expect("no overflow");
+    assert_eq!(cost, Decimal::from(7_i64));
+}
+
+#[test]
+fn a_free_per_second_video_price_with_positive_seconds_suppresses_the_video_token_charge() {
+    let mut model = ModelInfo::new();
+    model.insert("input_cost_per_video_token".to_owned(), price("0.5"));
+    model.insert("input_cost_per_video_per_second".to_owned(), price("0"));
+    let usage = PromptTokensDetailsResult {
+        video_tokens: 4,
+        video_length_seconds: Decimal::from(3_i64),
+        ..details()
+    };
+    let cost = calculate_input_cost(
+        &usage,
+        &model,
+        &InputCostRates {
+            prompt_base_cost: Decimal::new(5, 1),
+            cache_read_cost: Decimal::ZERO,
+            cache_creation_cost: Decimal::ZERO,
+            cache_creation_cost_above_1hr: Decimal::ZERO,
+        },
+        None,
+    )
+    .expect("no overflow");
+    assert_eq!(cost, Decimal::from(5_i64));
+}
+
+#[test]
+fn video_seconds_bill_at_the_per_second_price() {
+    let mut model = ModelInfo::new();
+    model.insert("input_cost_per_video_token".to_owned(), price("0.5"));
+    model.insert("input_cost_per_video_per_second".to_owned(), price("0.25"));
+    let usage = PromptTokensDetailsResult {
+        video_tokens: 4,
+        video_length_seconds: Decimal::from(3_i64),
+        ..details()
+    };
+    let cost = calculate_input_cost(
+        &usage,
+        &model,
+        &InputCostRates {
+            prompt_base_cost: Decimal::new(5, 1),
+            cache_read_cost: Decimal::ZERO,
+            cache_creation_cost: Decimal::ZERO,
+            cache_creation_cost_above_1hr: Decimal::ZERO,
+        },
+        None,
+    )
+    .expect("no overflow");
+    assert_eq!(cost, Decimal::new(575, 2));
+}
+
+#[test]
+fn flex_tier_prices_cached_audio_and_audio_tokens_at_their_flex_keys() {
+    let mut model = ModelInfo::new();
+    model.insert("cache_read_input_audio_token_cost".to_owned(), price("0.5"));
+    model.insert(
+        "cache_read_input_audio_token_cost_flex".to_owned(),
+        price("0.25"),
+    );
+    model.insert("input_cost_per_audio_token".to_owned(), price("1"));
+    model.insert("input_cost_per_audio_token_flex".to_owned(), price("0.5"));
+    let usage = PromptTokensDetailsResult {
+        cache_hit_tokens: 4,
+        cache_hit_audio_tokens: 4,
+        audio_tokens: 2,
+        ..details()
+    };
+    let cost = calculate_input_cost(&usage, &model, &rates(), Some("flex")).expect("no overflow");
+    assert_eq!(cost, Decimal::from(12_i64));
+
+    let mut generic_cache_rate = model.clone();
+    generic_cache_rate.remove("cache_read_input_audio_token_cost_flex");
+    let cache_fallback_cost =
+        calculate_input_cost(&usage, &generic_cache_rate, &rates(), Some("flex"))
+            .expect("no overflow");
+    assert_eq!(cache_fallback_cost, Decimal::from(13_i64));
+
+    let mut generic_audio_rate = model;
+    generic_audio_rate.remove("input_cost_per_audio_token_flex");
+    let audio_fallback_cost =
+        calculate_input_cost(&usage, &generic_audio_rate, &rates(), Some("flex"))
+            .expect("no overflow");
+    assert_eq!(audio_fallback_cost, Decimal::from(13_i64));
+}

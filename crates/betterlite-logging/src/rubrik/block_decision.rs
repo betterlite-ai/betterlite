@@ -122,7 +122,10 @@ fn tools_were_blocked(
         .any(|(id, count)| returned_id_counts.get(id).copied().unwrap_or(0) < *count)
 }
 
-fn count_ids<'ids>(ids: impl Iterator<Item = &'ids str>) -> HashMap<&'ids str, usize> {
+fn count_ids<'ids, Ids>(ids: Ids) -> HashMap<&'ids str, usize>
+where
+    Ids: Iterator<Item = &'ids str>,
+{
     let mut counts = HashMap::new();
     for id in ids {
         counts

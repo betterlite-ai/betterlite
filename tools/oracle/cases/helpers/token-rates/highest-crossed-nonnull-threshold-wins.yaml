@@ -1,0 +1,16 @@
+kind: helper
+name: highest-crossed-nonnull-threshold-wins
+call:
+  token_rates:
+    operation: base
+    model_info:
+      input_cost_per_token: "0.000001"
+      input_cost_per_token_above_100_tokens: "0.000002"
+      input_cost_per_token_above_200_tokens: "0.000003"
+      input_cost_per_token_above_250_tokens: null
+    usage:
+      prompt_tokens: 300
+    service_tier: null
+    provider: null
+compare: {ignore: []}
+env: {}

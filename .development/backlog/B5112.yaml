@@ -1,0 +1,13 @@
+id: B5112
+milestone: M1 openai data plane
+title: Close the B239 Bedrock error test gaps
+status: done
+depends_on: [B239]
+file: tasks/B5112-bedrock-error-test-gaps.yaml
+covers: []
+parent: null
+split_from: null
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 575

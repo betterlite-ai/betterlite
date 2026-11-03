@@ -1,0 +1,303 @@
+id: B5109
+title: Close the B3761 Cisco MCP audit gaps
+description: >-
+  Fix the gaps an Opus review found in B3761's Cisco AI Defense MCP helpers after it merged. All six
+  findings hold against LiteLLM: three are behavior gaps and three are tests or oracle cases that
+  can't fail. The work stays in betterlite-guardrails under cisco_mcp::*, with the b3761 oracle helper
+  operation and cases in tools/oracle/cases/guardrails/cisco/mcp-*. No deviation is added.
+
+  Tool-context hydration. LiteLLM's _hydrate_mcp_tool_context reads the top-level
+  mcp_tool_call_metadata first. Only when that value is None does it pick one nested dict,
+  `request_data.get("metadata") or request_data.get("litellm_metadata")`, and it reads
+  mcp_tool_call_metadata from that dict alone
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L429-L452).
+  So a non-empty metadata dict without the key hides litellm_metadata, and a top-level value that is
+  set but isn't a dict ends the lookup. context.rs's tool_call_metadata skips a non-object top-level
+  value and then tries metadata and litellm_metadata in turn. It fills mcp_tool_name, tool_name and
+  name where LiteLLM leaves them unset. betterlite then builds an /inspect/mcp payload and calls Cisco
+  where LiteLLM's _build_mcp_request_payload returns None for want of a tool name
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L361-L400).
+  The fix ports the selection as written. A top-level value that isn't null is used only when it is
+  an object, and any other value stops hydration. Otherwise take metadata when Json::truthy says it is
+  set, else litellm_metadata, and read mcp_tool_call_metadata only from that one object.
+
+  Text rewrite. In LiteLLM's real flow the redaction target is kwargs["original_response"]. That is the
+  CallToolResult the MCP server passes to post_call
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L2258-L2270),
+  with the hook's content list as the fallback
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L145-L173).
+  _set_mcp_tool_response_text rewrites text items in place
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L531-L580).
+  On a CallToolResult, hasattr(response_obj, "structured_content") is always true, because mcp 2.x
+  declares the field with a None default. So LiteLLM always sets structured_content to
+  {"result": text} and returns True, even when the model had no structured content or held only an
+  image. On a plain dict it rewrites structured_content or structuredContent, under result when result
+  is a dict and on the dict itself otherwise, and only when the key is already there. On a list of
+  (key, value) pairs it replaces an existing structuredContent pair. A bare content list gets no mirror.
+  LiteLLM's logging keeps a changed structured_content on the result it returns to the client
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1633-L1695).
+
+  B3761's convention stays. A JSON object with a content list stands for the CallToolResult model, an
+  object with a non-null mcp_tool_call_response stands for MCPPostCallResponseObject, and any other
+  object is a dict. redact.rs gets two things wrong. update_structured_mirror mirrors a model only when
+  the key already exists, so a CallToolResult without structuredContent gets no mirror and an
+  image-only result reports replaced false. And TextUpdate carries a detached content list and a
+  StructuredMirror with no location. Its only appliers, the b3761 and b3757 oracle adapters, write the
+  mirror at the top level and lose the result-nested, wrapped and pair-list shapes. Once the post-call
+  hook is wired, the structuredContent a client reads would be missing or stale.
+
+  The fix makes set_tool_response_text return the rewritten response next to replaced, the way
+  blocking::replace_tool_response returns a ReplacedResponse for the block path. TextUpdate keeps its
+  name and becomes a response plus replaced, with no content or structured_content field of its own.
+  The response is a Serialize type in the input's shape: the wrapper with its inner response
+  rewritten, the model object with its content items and mirror, the dict with the mirror under
+  result or on itself, the pair list with its pairs, and the bare list. A model object always gets
+  {"result": text} and counts as replaced. The mirror goes under structured_content when the object
+  already uses that key, else under structuredContent. A dict keeps the key-exists rule.
+  cisco_redaction::mcp's apply_redaction_mcp_output keeps returning Option<TextUpdate>, and
+  cisco_verdict_enforcement::finalize passes it through as before. The b3757 adapter's
+  rewrite_mcp_output serializes update.response instead of rebuilding the mirror, and
+  apply-redaction-mcp-output.yaml keeps passing. blocking.rs's comment above
+  replacement_structured_content says the SDK model only exposes camelCase fields. mcp 2.x declares
+  structured_content with a camelCase alias, so the comment says that, or goes.
+
+  Weak tests and cases. The b3761 adapter's rewrite_text in tools/oracle/src/helpers/guardrails/b3761.rs
+  writes its own top-level mirror and drops content updates for objects, so the rewrite cases test the
+  adapter and not the crate. It now serializes update.response and writes nothing of its own.
+  mcp-blocking-response-with-string-detail.yaml and mcp-blocking-response-with-error-dict.yaml ignore
+  /value/result/mcp_tool_call_response/0/text. That text is the whole JSON payload LiteLLM builds
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L175-L211),
+  so both cases pass whatever payload betterlite writes. Both adapters' blocking_response now put the
+  parsed payload in place of that text (json.loads in Python, serde_json::from_str in Rust), and the
+  ignore comes out of both cases. context/tests.rs's hydration_populates_arguments_and_server_name
+  compares mcp_arguments with arguments. With argument hydration removed both are None and it still
+  passes. It now asserts that each holds the metadata's {"q": "x"}.
+
+  The Python adapter tools/oracle/helpers/b3761.py gets three functions so cases can send the shapes
+  LiteLLM sees. rewrite_model_text builds a CallToolResult with model_result, extended to build
+  ImageContent for image items, and returns model_dump(exclude_none=True, by_alias=True,
+  exclude={"result_type"}). rewrite_field_tuples_text turns the pairs into tuples and returns them as
+  lists. rewrite_wrapped_text builds MCPPostCallResponseObject from TextContent items and
+  HiddenParams() and returns model_dump(exclude_none=True, by_alias=True). The Rust Input enum maps all
+  three to the one rewrite_text handler, the way normalize_model shares normalize_response.
+scope:
+  paths:
+  - crates/betterlite-guardrails/src/cisco_mcp/context.rs
+  - crates/betterlite-guardrails/src/cisco_mcp/context/tests.rs
+  - crates/betterlite-guardrails/src/cisco_mcp/redact.rs
+  - crates/betterlite-guardrails/src/cisco_mcp/redact/tests.rs
+  - crates/betterlite-guardrails/src/cisco_mcp/blocking.rs
+  - crates/betterlite-guardrails/src/cisco_redaction/mcp.rs
+  - crates/betterlite-guardrails/src/cisco_redaction/tests.rs
+  - crates/betterlite-guardrails/src/cisco_verdict_enforcement/finalize.rs
+  - crates/betterlite-guardrails/src/cisco_verdict_enforcement/finalize/tests.rs
+  - tools/oracle/helpers/b3761.py
+  - tools/oracle/src/helpers/guardrails/b3761.rs
+  - tools/oracle/src/helpers/guardrails/b3757.rs
+  - tools/oracle/cases/guardrails/cisco/mcp-**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L429-L452
+  why: _hydrate_mcp_tool_context, whose `metadata or litellm_metadata` picks one nested dict and whose is-None test lets only a missing or null top-level value fall through
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L361-L400
+  why: _build_mcp_request_payload returns None without a tool name, so a wrongly hydrated name sends an inspection LiteLLM skips
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L531-L602
+  why: _set_mcp_tool_response_text and _coerce_to_content_list, the model, dict, pair-list and wrapper branches of the text rewrite
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L145-L173
+  why: The post-call hook passes original_response, or the content list when it is absent, as the redaction target
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L175-L211
+  why: _build_blocking_mcp_response, whose json.dumps payload the blocking cases must compare once parsed
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L2258-L2270
+  why: post_call(original_response=result) puts the CallToolResult model in kwargs, so the rewrite sees a model and not a dict
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1633-L1695
+  why: Logging.async_post_mcp_tool_call_hook keeps a changed structured_content on the result the client gets
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp.py#L462-L468
+  why: MCPPostCallResponseObject, the wrapper rewrite_wrapped_text builds; hidden_params has no default
+dod:
+- text: >-
+    context.rs picks the nested dict the way LiteLLM does. A new rstest hydration_ignores_shadowed_metadata
+    in context/tests.rs has case metadata_without_tool_metadata ({"metadata": {"user_api_key_alias":
+    "team-a"}, "litellm_metadata": {"mcp_tool_call_metadata": {"name": "search"}}}) and case
+    non_object_tool_metadata ({"mcp_tool_call_metadata": "search", "metadata": {"mcp_tool_call_metadata":
+    {"name": "search"}}}). Both assert that no name, argument or server key is set, and both fail on
+    today's main. hydration_populates_name_aliases gains case empty_metadata_uses_litellm_metadata
+    ({"metadata": {}} next to litellm_metadata holding the name), pinning the fallback that already
+    matches. The new oracle case mcp-context-hydration-metadata-shadows-litellm-metadata.yaml calls
+    hydrate_context with metadata {user_api_key_alias: team-a} and litellm_metadata holding
+    mcp_tool_call_metadata {name: search_docs, arguments: {q: x}, mcp_server_name: docs-server}. LiteLLM
+    returns the input unchanged. It fails on today's main, where betterlite adds seven keys, and passes
+    once fixed.
+  proof: [context-tests, new-cases, oracle]
+- text: >-
+    hydration_populates_arguments_and_server_name asserts that mcp_arguments and arguments each hold
+    the metadata's {"q": "x"} instead of comparing the two with each other. Today it passes with
+    argument hydration removed. Once rewritten, it fails if set_if skips arguments.
+  proof: [arguments-assertion, context-tests]
+- text: >-
+    A model object, meaning one with a content list, always gets {"result": text} as its structured
+    content and counts as replaced. A new redact test set_text_mirrors_model_without_structured_content
+    fails on today's main, since no mirror comes back. set_text_leaves_non_text_items_unchanged keeps
+    the image item as is but now asserts replaced and the mirror. It fails on today's main, where
+    replaced is false. Two new oracle cases call rewrite_model_text and fail on today's main.
+    mcp-text-rewrite-model-without-structured-content.yaml sends {content: [{type: text, text: old}],
+    isError: false}. mcp-text-rewrite-model-image-only.yaml sends {content: [{type: image, data: abc,
+    mimeType: image/png}], isError: false}.
+  proof: [redact-tests, helper-python, new-cases, oracle]
+- text: >-
+    set_tool_response_text returns the rewritten response in the input's shape, and TextUpdate has no
+    detached content or structured_content field. New redact tests set_text_rewrites_mirror_under_result,
+    set_text_keeps_wrapper_shape and set_text_keeps_pair_list_shape assert the whole rewritten response.
+    Three new oracle cases fail on today's main. mcp-text-rewrite-result-nested-structured-content.yaml
+    calls the existing rewrite_text on {jsonrpc: "2.0", id: 1, result: {structuredContent: {result:
+    old}}}; today's adapter adds a second structuredContent at the top level and leaves the nested one
+    old. mcp-text-rewrite-field-tuples.yaml calls rewrite_field_tuples_text on [[content, [{type: text,
+    text: old}]], [structuredContent, {result: old}], [isError, false]]; today's adapter swaps the pair
+    list for the bare content items. mcp-text-rewrite-wrapped.yaml calls rewrite_wrapped_text on
+    {mcp_tool_call_response: [{type: text, text: old}], hidden_params: {}}; today's adapter returns the
+    old text.
+  proof: [redact-tests, consumer-tests, helper-python, new-cases, oracle]
+- text: >-
+    The b3761 adapter's rewrite_text and the b3757 adapter's rewrite_mcp_output serialize update.response
+    and build no structuredContent or structured_content key of their own.
+    mcp-text-rewrite-in-content-list.yaml, mcp-text-rewrite-structured-content.yaml and
+    tools/oracle/cases/helpers/cisco-redaction/apply-redaction-mcp-output.yaml keep passing, and so do
+    the cisco_redaction, cisco_verdict_enforcement::finalize and cisco_inspection tests.
+  proof: [adapter-uses-crate, consumer-tests, oracle]
+- text: >-
+    Both blocking_response adapters, Python and Rust, return mcp_tool_call_response[0].text parsed as
+    JSON. mcp-blocking-response-with-string-detail.yaml and mcp-blocking-response-with-error-dict.yaml
+    have no ignore entry. Today both pass whatever payload betterlite writes. After the change a
+    missing, renamed or changed payload key, such as surface, guardrail or message, fails them.
+  proof: [blocking-cases, helper-python, oracle]
+- text: >-
+    blocking.rs's comment above replacement_structured_content no longer says the SDK model only exposes
+    camelCase fields. It names the mcp 2.x field structured_content with its structuredContent alias, or
+    it is removed.
+  proof: [style-comment]
+checks:
+  optional: []
+  commands:
+  - id: context-tests
+    why: the shadowed-metadata hydration tests must exist and the whole context module must still pass
+    run: >-
+      grep -q 'fn hydration_ignores_shadowed_metadata' crates/betterlite-guardrails/src/cisco_mcp/context/tests.rs
+      && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^cisco_mcp::context::/)'
+  - id: arguments-assertion
+    why: the arguments test must compare against the metadata literal, not one hydrated value against the other
+    run: >-
+      test "$(sed -n '/fn hydration_populates_arguments_and_server_name/,/^}/p'
+      crates/betterlite-guardrails/src/cisco_mcp/context/tests.rs | grep -c '"q"')" -ge 2
+  - id: redact-tests
+    why: the model mirror and shape tests must exist and every redact and blocking test must pass
+    run: >-
+      grep -q 'fn set_text_mirrors_model_without_structured_content' crates/betterlite-guardrails/src/cisco_mcp/redact/tests.rs
+      && grep -q 'fn set_text_rewrites_mirror_under_result' crates/betterlite-guardrails/src/cisco_mcp/redact/tests.rs
+      && grep -q 'fn set_text_keeps_wrapper_shape' crates/betterlite-guardrails/src/cisco_mcp/redact/tests.rs
+      && grep -q 'fn set_text_keeps_pair_list_shape' crates/betterlite-guardrails/src/cisco_mcp/redact/tests.rs
+      && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^cisco_mcp::(redact|blocking)::/)'
+  - id: consumer-tests
+    why: TextUpdate changes shape, and the gate runs no other test of the modules that use it
+    run: >-
+      ! grep -q 'pub structured_content: Option<StructuredMirror>' crates/betterlite-guardrails/src/cisco_mcp/redact.rs
+      && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail
+      -E 'test(/^cisco_redaction::/) + test(/^cisco_verdict_enforcement::finalize::/) + test(/^cisco_inspection::/)'
+  - id: adapter-uses-crate
+    why: the oracle adapters must serialize the crate's rewritten response instead of building a mirror themselves
+    run: >-
+      ! grep -qE 'structuredContent|structured_content' tools/oracle/src/helpers/guardrails/b3761.rs
+      && ! grep -qE 'structuredContent|structured_content' tools/oracle/src/helpers/guardrails/b3757.rs
+  - id: blocking-cases
+    why: the blocking cases must compare the synthesized payload instead of ignoring it
+    run: >-
+      ! grep -q 'mcp_tool_call_response/0/text' tools/oracle/cases/guardrails/cisco/mcp-blocking-response-with-string-detail.yaml
+      && ! grep -q 'mcp_tool_call_response/0/text' tools/oracle/cases/guardrails/cisco/mcp-blocking-response-with-error-dict.yaml
+      && grep -q 'json.loads' tools/oracle/helpers/b3761.py
+  - id: style-comment
+    why: the wrong comment about the MCP SDK's field names must not stay
+    run: '! grep -q "only exposes camelCase fields" crates/betterlite-guardrails/src/cisco_mcp/blocking.rs'
+  - id: helper-python
+    why: the b3761 Python adapter must gain the model, pair and wrapper functions and stay lint- and type-clean
+    run: >-
+      grep -q 'rewrite_model_text' tools/oracle/helpers/b3761.py
+      && grep -q 'rewrite_field_tuples_text' tools/oracle/helpers/b3761.py
+      && grep -q 'rewrite_wrapped_text' tools/oracle/helpers/b3761.py
+      && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers
+      && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: new-cases
+    why: each kept gap needs its own new oracle case, not only a code change
+    run: >-
+      test "$(git diff --name-only --diff-filter=A "$GATE_BASE" --
+      tools/oracle/cases/guardrails/cisco/mcp-context-hydration-metadata-shadows-litellm-metadata.yaml
+      tools/oracle/cases/guardrails/cisco/mcp-text-rewrite-model-without-structured-content.yaml
+      tools/oracle/cases/guardrails/cisco/mcp-text-rewrite-model-image-only.yaml
+      tools/oracle/cases/guardrails/cisco/mcp-text-rewrite-result-nested-structured-content.yaml
+      tools/oracle/cases/guardrails/cisco/mcp-text-rewrite-field-tuples.yaml
+      tools/oracle/cases/guardrails/cisco/mcp-text-rewrite-wrapped.yaml | wc -l)" -eq 6
+oracle_cases:
+- tools/oracle/cases/guardrails/cisco/mcp-request-envelope-from-call-data.yaml
+- tools/oracle/cases/guardrails/cisco/mcp-request-envelope-from-jsonrpc.yaml
+- tools/oracle/cases/guardrails/cisco/mcp-response-envelope-with-result.yaml
+- tools/oracle/cases/guardrails/cisco/mcp-response-envelope-with-error.yaml
+- tools/oracle/cases/guardrails/cisco/mcp-context-hydration-from-metadata.yaml
+- tools/oracle/cases/guardrails/cisco/mcp-context-hydration-metadata-shadows-litellm-metadata.yaml
+- tools/oracle/cases/guardrails/cisco/mcp-normalize-dict-response.yaml
+- tools/oracle/cases/guardrails/cisco/mcp-normalize-model-response.yaml
+- tools/oracle/cases/guardrails/cisco/mcp-normalize-field-tuple-list.yaml
+- tools/oracle/cases/guardrails/cisco/mcp-blocking-response-with-error-dict.yaml
+- tools/oracle/cases/guardrails/cisco/mcp-blocking-response-with-string-detail.yaml
+- tools/oracle/cases/guardrails/cisco/mcp-text-rewrite-in-content-list.yaml
+- tools/oracle/cases/guardrails/cisco/mcp-text-rewrite-structured-content.yaml
+- tools/oracle/cases/guardrails/cisco/mcp-text-rewrite-model-without-structured-content.yaml
+- tools/oracle/cases/guardrails/cisco/mcp-text-rewrite-model-image-only.yaml
+- tools/oracle/cases/guardrails/cisco/mcp-text-rewrite-result-nested-structured-content.yaml
+- tools/oracle/cases/guardrails/cisco/mcp-text-rewrite-field-tuples.yaml
+- tools/oracle/cases/guardrails/cisco/mcp-text-rewrite-wrapped.yaml
+- tools/oracle/cases/helpers/cisco-redaction/apply-redaction-mcp-output.yaml
+deviations: []
+out_of_scope:
+- >-
+    Padded one-line functions in these files (no-one-line-functions, no-padded-one-line-functions) stay
+    as they are; B5094 owns them and the legacy lists under .ast-grep/rules/.
+- The fixed status per error class belongs to B5102 and has merged.
+- >-
+    The post-call hook itself, async_post_mcp_tool_call_hook
+    (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L97-L173),
+    is not built here. B3761 hands it to B3762 and B3762 hands it back, so its owner is the architect's
+    call.
+pitfalls:
+- >-
+    A rewrite_text case must not send an object with a content list or an mcp_tool_call_response key.
+    Python then passes a raw dict, where getattr(dict, "content") and getattr(dict,
+    "mcp_tool_call_response") are None, so LiteLLM rewrites neither, while betterlite reads those
+    objects as the models. Use rewrite_model_text or rewrite_wrapped_text for those shapes.
+- >-
+    CallToolResult.model_dump(by_alias=True) in mcp 2.3.0 always emits resultType "complete" and
+    isError. rewrite_model_text excludes result_type, and its cases send isError false so both sides
+    carry it, as mcp-normalize-model-response.yaml already does.
+- >-
+    model_dump(by_alias=True) prints the mirror as structuredContent whatever key the model was built
+    from, so the model cases send structuredContent or no structured key at all, never
+    structured_content.
+- >-
+    The pair-list branch only replaces an existing structuredContent or structured_content pair and
+    never appends one. A bare content list and a wrapper whose inner value is a list get no mirror.
+- >-
+    metadata is chosen by Python truthiness (`metadata or litellm_metadata`). An empty metadata object
+    falls through to litellm_metadata and a non-empty one without mcp_tool_call_metadata does not, so
+    the choice uses Json::truthy and not a key check.
+- >-
+    A top-level mcp_tool_call_metadata of null counts as absent, since LiteLLM tests `is None`. Any
+    other value that isn't an object ends hydration without looking at the nested dicts.
+- >-
+    MCPPostCallResponseObject's hidden_params has no default, so rewrite_wrapped_text passes
+    HiddenParams(). Its exclude_none dump is {}, so the wrapped case sends hidden_params {}.
+- >-
+    json.dumps escapes non-ASCII and puts a space after each comma and colon, and serde_json does
+    neither, so the blocking adapters parse the text on both sides and never compare the string.
+- >-
+    Keeping the TextUpdate name lets finalize.rs, cisco_inspection's hooks tests and b3762/support.rs,
+    which only match FinalizeOutcome::Redacted(_), build unchanged.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

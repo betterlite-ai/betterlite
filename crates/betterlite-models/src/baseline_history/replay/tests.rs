@@ -87,20 +87,30 @@ fn a_timestamp_that_does_not_advance_is_rejected_without_mutating_the_history() 
 }
 
 #[test]
-fn an_invalid_observation_blocks_every_relevant_observation_in_its_group() {
-    let history = BaselineHistory::default();
+fn an_invalid_group_blocks_until_its_latest_relevant_observation_is_available() {
+    let history = BaselineHistory {
+        first_at: Some(0.0_f64),
+        last_at: Some(0.0_f64),
+        equivalent: true,
+        uncertain_before: 0.0,
+        entries: Vec::new(),
+        blocked_until: 0.0,
+    };
     let mut valid = observation("req-1", 10.0, Outcome::Complete, false);
     valid.usage = Some(usage(100, 1));
     valid.plan = Some(CountedPromptCachePlan {
         total_tokens: 100,
         breakpoints: vec![breakpoint("a", 3600, 80)],
     });
-    valid.available_at = 15.0_f64;
-    let mut invalid = observation("req-2", 10.0, Outcome::Complete, false);
+    valid.available_at = 30.0_f64;
+    let mut invalid = observation("req-2", 10.0, Outcome::Uncertain, false);
     invalid.available_at = 20.0_f64;
-    let group = [valid, invalid];
+    let mut cached = observation("req-3", 10.0, Outcome::ResponseCache, false);
+    cached.available_at = 40.0_f64;
+    let group = [valid, invalid, cached];
     let (next, _estimates) = advance_baseline_history(&history, &group).expect("checked replay");
-    assert_timestamp(next.blocked_until, 20.0_f64);
+    assert_timestamp(next.blocked_until, 30.0_f64);
+    assert_timestamp(next.uncertain_before, 30.0_f64);
     assert!(next.entries.is_empty());
 }
 

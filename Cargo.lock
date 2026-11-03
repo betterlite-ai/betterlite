@@ -971,6 +971,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -1256,6 +1257,7 @@ dependencies = [
  "serde",
  "serde-inline-default",
  "serde_json",
+ "serde_with",
  "sha2 0.11.1",
  "tempfile",
  "thiserror",
@@ -1287,6 +1289,7 @@ dependencies = [
  "serde",
  "serde-saphyr",
  "serde_json",
+ "serde_path_to_error",
  "serde_with",
  "sha2 0.11.1",
  "strum",
@@ -1344,6 +1347,7 @@ dependencies = [
  "strum",
  "thiserror",
  "tracing",
+ "tracing-subscriber",
  "unicode-general-category",
  "url",
 ]

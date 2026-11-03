@@ -1,0 +1,13 @@
+id: B5141
+milestone: M3 providers
+title: Pin the platform in the chatgpt-headers oracle cases
+status: done
+depends_on: [B1507]
+file: tasks/B5141-chatgpt-headers-pinned-platform.yaml
+covers: []
+parent: null
+split_from: null
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 572

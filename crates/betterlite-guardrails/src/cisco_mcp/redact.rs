@@ -59,14 +59,18 @@ fn unwrap_wrapper(response: &Json) -> Json {
 #[must_use]
 pub fn coerce_to_content_list(response: &Json) -> Option<Vec<Box<RawValue>>> {
     match response {
-        Json::Object(fields) => match Json::field(fields, "content") {
-            Json::List(items) => Some(items),
-            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => None,
-        },
+        Json::Object(fields) => {
+            match Json::parse(fields.get("content").map_or("null", |raw| raw.get())) {
+                Json::List(items) => Some(items),
+                Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => {
+                    None
+                }
+            }
+        }
         Json::List(items) => {
             if is_pair_list(items) {
                 let fields = pairs_to_fields(items);
-                match Json::field(&fields, "content") {
+                match Json::parse(fields.get("content").map_or("null", |raw| raw.get())) {
                     Json::List(inner) => Some(inner),
                     Json::Null
                     | Json::Bool(_)
@@ -93,7 +97,7 @@ pub fn replace_text_items(items: &[Box<RawValue>], text: &str) -> Vec<ContentIte
 
 fn replace_text_item(item: &RawValue, text: &str) -> ContentItemUpdate {
     if let Json::Object(mut fields) = Json::parse(item.get())
-        && matches!(Json::field(&fields, "type"), Json::Text(kind) if kind == "text")
+        && matches!(Json::parse(fields.get("type").map_or("null", |raw| raw.get())), Json::Text(kind) if kind == "text")
     {
         fields.shift_remove("text");
         return ContentItemUpdate::TextReplaced {
@@ -111,12 +115,15 @@ fn update_structured_mirror(target: &Json, text: &str) -> (Option<StructuredMirr
             fields.contains_key("structuredContent") || fields.contains_key("structured_content")
         }
         Json::Object(fields) => {
-            let result_target = match Json::field(fields, "result") {
-                Json::Object(result_fields) => result_fields,
-                Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-                    fields.clone()
-                }
-            };
+            let result_target =
+                match Json::parse(fields.get("result").map_or("null", |raw| raw.get())) {
+                    Json::Object(result_fields) => result_fields,
+                    Json::Null
+                    | Json::Bool(_)
+                    | Json::Number(_)
+                    | Json::Text(_)
+                    | Json::List(_) => fields.clone(),
+                };
             result_target.contains_key("structured_content")
                 || result_target.contains_key("structuredContent")
         }

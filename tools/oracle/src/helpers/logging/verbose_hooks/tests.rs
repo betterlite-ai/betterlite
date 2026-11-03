@@ -3,7 +3,7 @@
 use std::fs;
 use std::path::Path;
 
-use crate::case::{HelperCase, parse_helper_case};
+use crate::case::{HelperCase, helper::validate_helper};
 
 #[test]
 fn helper_seeds_select_verbose_hooks() {
@@ -22,7 +22,12 @@ fn helper_seeds_select_verbose_hooks() {
     assert!(!seeds.is_empty());
     assert!(seeds.iter().all(|source| {
         let case = serde_saphyr::from_str::<HelperCase>(source).expect("seed should parse");
-        parse_helper_case(source).is_ok()
+        serde_saphyr::from_str(source)
+            .map_err(|error| error.to_string())
+            .and_then(|parsed| {
+                validate_helper(Path::new("<helper>"), &parsed).map_err(|error| error.to_string())
+            })
+            .is_ok()
             && case.call.operation == "verbose_hooks"
             && case.call.input.get("function").is_some()
     }));

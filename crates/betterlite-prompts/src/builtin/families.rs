@@ -55,13 +55,13 @@ pub(super) fn labelled(
 }
 
 #[derive(Clone, Copy)]
-pub(super) enum Style {
+pub enum Style {
     Claude,
     Claude21,
     Titan,
 }
 
-pub(super) fn anthropic(messages: &[Message], style: Style) -> Result<String, PromptError> {
+pub fn anthropic(messages: &[Message], style: Style) -> Result<String, PromptError> {
     bounds::check(messages)?;
     let final_message = messages.last().ok_or(PromptError::Empty)?;
     let assistant = match style {

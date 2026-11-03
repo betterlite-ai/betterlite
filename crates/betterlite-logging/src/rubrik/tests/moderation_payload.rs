@@ -1,5 +1,8 @@
-use betterlite_logging::rubrik::moderation_payload::{build_response_moderation, join_texts};
+use betterlite_logging::rubrik::moderation_payload::{
+    ResponseModerationPayload, build_response_moderation, join_texts,
+};
 use betterlite_logging::rubrik::tool_calls::{ChatCompletionMessageToolCall, Function};
+use betterlite_models::decisions::Json;
 use rstest::rstest;
 
 #[rstest]
@@ -24,23 +27,24 @@ fn call(id: &str) -> ChatCompletionMessageToolCall {
     }
 }
 
-#[test]
-fn response_payload_uses_null_content_and_stop_when_there_is_no_text_or_tool_calls() {
-    let payload = build_response_moderation(&[], "", None, 1_700_000_000);
-    assert_eq!(payload.model, "");
-    assert_eq!(payload.object, "chat.completion");
-    assert_eq!(payload.choices[0].finish_reason, "stop");
-    assert_eq!(payload.choices[0].message.content, None);
-    assert!(payload.choices[0].message.tool_calls.is_empty());
+fn assert_payload_json(payload: &ResponseModerationPayload, expected: &str) {
+    let serialized = serde_json::to_string(payload).expect("payload serializes");
+    let actual_json = serde_json::from_str::<Json>(&serialized).expect("payload is JSON");
+    let expected_json = serde_json::from_str::<Json>(expected).expect("expected value is JSON");
+    assert_eq!(actual_json, expected_json);
 }
 
-#[test]
-fn response_payload_carries_content_and_tool_calls_with_finish_reason_tool_calls() {
-    let tool_calls = [call("call_1")];
-    let payload = build_response_moderation(&tool_calls, "hello", None, 1_700_000_000);
-    assert_eq!(payload.choices[0].finish_reason, "tool_calls");
-    assert_eq!(payload.choices[0].message.content, Some("hello".to_owned()));
-    assert_eq!(payload.choices[0].message.tool_calls, tool_calls);
+#[rstest]
+#[case::no_tool_calls(&[], "", r#"{"id":"chatcmpl-known","object":"chat.completion","created":1700000000,"model":"","choices":[{"index":0,"message":{"role":"assistant","content":null},"finish_reason":"stop"}]}"#)]
+#[case::one_tool_call(&[call("call_1")], "hello", r#"{"id":"chatcmpl-known","object":"chat.completion","created":1700000000,"model":"","choices":[{"index":0,"message":{"role":"assistant","content":"hello","tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}"#)]
+fn response_payload_serializes_to_the_after_completion_json(
+    #[case] tool_calls: &[ChatCompletionMessageToolCall],
+    #[case] content: &str,
+    #[case] expected: &str,
+) {
+    let payload =
+        build_response_moderation(tool_calls, content, Some("chatcmpl-known"), 1_700_000_000);
+    assert_payload_json(&payload, expected);
 }
 
 #[test]
@@ -49,9 +53,19 @@ fn response_payload_uses_the_given_request_id_when_present() {
     assert_eq!(payload.id, "chatcmpl-known");
 }
 
-#[test]
-fn response_payload_falls_back_to_a_generated_chatcmpl_id_when_request_id_is_absent() {
-    let payload = build_response_moderation(&[], "", None, 1_700_000_000);
-    assert!(payload.id.starts_with("chatcmpl-"));
+#[rstest]
+#[case::absent_request_id(None)]
+#[case::empty_request_id(Some(""))]
+fn response_payload_generates_a_chatcmpl_uuid4_id(#[case] request_id: Option<&str>) {
+    let payload = build_response_moderation(&[], "", request_id, 1_700_000_000);
+    let suffix = payload
+        .id
+        .strip_prefix("chatcmpl-")
+        .expect("chat completion id");
+    let uuid = uuid::Uuid::parse_str(suffix).expect("id suffix is a UUID");
+    assert_eq!(uuid.get_version_num(), 4);
+    assert_eq!(uuid.hyphenated().to_string(), suffix);
+    let second_payload = build_response_moderation(&[], "", request_id, 1_700_000_000);
+    assert_ne!(payload.id, second_payload.id);
     assert_eq!(payload.created, 1_700_000_000);
 }

@@ -3,6 +3,7 @@ mod tests;
 
 use std::env;
 use std::fs::{self, File};
+use std::io;
 use std::path::Path;
 use std::process::ExitStatus;
 
@@ -135,6 +136,7 @@ fn build_slot(root: &Path, command: &Command) -> Result<Option<File>, GateError>
         Some(slots::acquire(
             &coordinator(root)?.join("betterlite/builds"),
             count,
+            &mut io::stderr(),
         )?)
     } else {
         None

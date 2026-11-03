@@ -84,13 +84,9 @@ pub struct ModelCatalog {
 
 impl ModelCatalog {
     #[must_use]
-    pub fn lookup(&self, name: &str) -> Option<&CatalogEntry> {
-        let canonical = self.lookup.get(name)?;
-        self.entries.get(canonical.as_ref())
-    }
-    #[must_use]
     pub fn metadata(&self, name: &str) -> Option<ModelMetadataProjection<'_>> {
-        let entry = self.lookup(name)?;
+        let canonical = self.lookup.get(name)?;
+        let entry = self.entries.get(canonical.as_ref())?;
         Some(ModelMetadataProjection {
             model: entry.name.as_str(),
             provider: entry.fields.metadata.litellm_provider.as_str(),

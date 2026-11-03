@@ -13,18 +13,27 @@ pub fn to_str_messages(messages: &Json) -> Json {
                     items
                         .iter()
                         .map(|item| {
-                            input_entry(Json::Text(serde_json::to_string(item).unwrap_or_default()))
+                            let entry = Object::from_iter([(
+                                "input".to_owned(),
+                                Json::Text(serde_json::to_string(item).unwrap_or_default()),
+                            )]);
+                            Json::Object(entry)
                         })
                         .collect(),
                 )
             },
             Json::List,
         ),
-        Json::Text(text) => Json::List(vec![input_entry(Json::Text(text.clone()))]),
+        Json::Text(text) => {
+            let entry = Object::from_iter([("input".to_owned(), Json::Text(text.clone()))]);
+            Json::List(vec![Json::Object(entry)])
+        }
         other @ (Json::Null | Json::Bool(_) | Json::Number(_) | Json::Object(_)) => {
-            Json::List(vec![input_entry(Json::Text(
-                serde_json::to_string(other).unwrap_or_default(),
-            ))])
+            let entry = Object::from_iter([(
+                "input".to_owned(),
+                Json::Text(serde_json::to_string(other).unwrap_or_default()),
+            )]);
+            Json::List(vec![Json::Object(entry)])
         }
     }
 }
@@ -64,11 +73,6 @@ fn content_list_to_str(message: &Object) -> Option<String> {
     };
     text.push_str(&extract_search_results_text(message.get("search_results")));
     Some(text)
-}
-
-fn input_entry(value: Json) -> Json {
-    let entry = Object::from_iter([("input".to_owned(), value)]);
-    Json::Object(entry)
 }
 
 mod tests;
