@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use crate::envelope::WireField;
 use rstest::rstest;
 
 use super::*;
@@ -20,6 +21,7 @@ fn family(class: &ErrorClass) -> &'static str {
         ErrorClass::Authentication(_) => "authentication",
         ErrorClass::RateLimit(_) => "rate_limit",
         ErrorClass::ServiceUnavailable(_) => "service_unavailable",
+        ErrorClass::ApiConnection(_) => "api_connection",
         ErrorClass::NotFound(_)
         | ErrorClass::PermissionDenied(_)
         | ErrorClass::UnprocessableEntity(_)
@@ -29,7 +31,6 @@ fn family(class: &ErrorClass) -> &'static str {
         | ErrorClass::BadGateway(_)
         | ErrorClass::InternalServer(_)
         | ErrorClass::Api(_)
-        | ErrorClass::ApiConnection(_)
         | ErrorClass::ApiResponseValidation(_)
         | ErrorClass::JsonSchemaValidation(_)
         | ErrorClass::UnsupportedParams(_)
@@ -47,6 +48,13 @@ fn family(class: &ErrorClass) -> &'static str {
     input("This is longer than the model's maximum context length", None),
     Some("context_window_exceeded")
 )]
+#[case::context_window_before_invalid_token(
+    input(
+        "This is longer than the model's maximum context length; InvalidToken",
+        None
+    ),
+    Some("context_window_exceeded")
+)]
 #[case::invalid_token(input("InvalidToken supplied", None), Some("bad_request"))]
 #[case::no_token_provided(input("No token provided", None), Some("bad_request"))]
 // status fallback, lines 1830-1860
@@ -54,8 +62,8 @@ fn family(class: &ErrorClass) -> &'static str {
 #[case::status_400(input("boom", Some(400)), Some("bad_request"))]
 #[case::status_429(input("boom", Some(429)), Some("rate_limit"))]
 #[case::status_500(input("boom", Some(500)), Some("service_unavailable"))]
-#[case::status_present_but_unmatched_falls_through(input("boom", Some(418)), None)]
-#[case::no_status_code_falls_through(input("boom", None), None)]
+#[case::status_present_but_unmatched_reraises(input("boom", Some(418)), Some("api_connection"))]
+#[case::no_status_code_reraises(input("boom", None), Some("api_connection"))]
 fn native_errors_b_behavior_tests_behavior(
     #[case] input: AlephAlphaExceptionInput,
     #[case] expected_family: Option<&str>,
@@ -110,8 +118,15 @@ fn status_401_keeps_the_class_default() {
 }
 
 #[test]
-fn unmatched_status_and_missing_status_never_panic() {
-    // LiteLLM re-raises the original provider exception unmodified in both cases; betterlite has no typed class to hand back either, so both defer to the caller's generic classifier
-    assert!(map_aleph_alpha_exception(&input("boom", Some(999))).is_none());
-    assert!(map_aleph_alpha_exception(&input("boom", None)).is_none());
+fn unmatched_and_missing_status_answer_the_outer_api_connection() {
+    let class = map_aleph_alpha_exception(&input("boom", Some(404)))
+        .expect("unmatched status is handled by the outer connection error");
+    let metadata = class.metadata();
+    let ErrorClass::ApiConnection(details) = class else {
+        panic!("expected API connection error");
+    };
+    assert_eq!(metadata.status_code, 500);
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert_eq!(details.provider.as_deref(), Some(""));
+    assert_eq!(metadata.error_type, WireField::Null);
 }

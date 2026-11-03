@@ -51,6 +51,13 @@ fn family(class: &ErrorClass) -> &'static str {
     input("detail: value is not a valid integer", None),
     Some("bad_request")
 )]
+#[case::context_window_before_invalid_value(
+    input(
+        "detail: Input text length should not exceed 512; value is not a valid integer",
+        None
+    ),
+    Some("context_window_exceeded")
+)]
 #[case::detail_generic_api(input("detail: something else entirely", None), Some("api"))]
 // hasattr(status_code), line 1658-1713
 #[case::status_400(input("boom", Some(400)), Some("bad_request"))]

@@ -64,6 +64,22 @@ fn family(class: &ErrorClass) -> &'static str {
 )]
 #[case::invalid_response(text_input("Invalid response object from API"), Some("bad_request"))]
 #[case::read_timed_out(text_input("Read timed out"), Some("timeout"))]
+#[case::no_such_file_before_connection_refused(
+    text_input("no such file or directory; Failed to establish a new connection"),
+    Some("bad_request")
+)]
+#[case::connection_refused_before_invalid_response(
+    text_input("Failed to establish a new connection; Invalid response object from API"),
+    Some("service_unavailable")
+)]
+#[case::invalid_response_before_read_timed_out(
+    text_input("Invalid response object from API, Read timed out"),
+    Some("bad_request")
+)]
+#[case::connection_refused_before_read_timed_out(
+    text_input("Failed to establish a new connection: Read timed out"),
+    Some("service_unavailable")
+)]
 #[case::unmatched_text_falls_through(text_input("boom"), None)]
 #[case::dict_error_field_is_the_match_target(dict_input("Read timed out"), Some("timeout"))]
 #[case::dict_without_error_key_falls_through(dict_input(""), None)]

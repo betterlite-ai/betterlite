@@ -37,6 +37,18 @@ pub(crate) fn ensure(
         &["sync", "--locked", "--quiet"],
         &path.join("tools/oracle/litellm"),
     )?;
+    // the alias builds the gate quietly, and workers took that silent first cargo gate for a hang and quit
+    finish(
+        "cargo",
+        &[
+            "build",
+            "--quiet",
+            "--locked",
+            "--manifest-path",
+            ".development/gate/Cargo.toml",
+        ],
+        &path,
+    )?;
     // Claude's sandbox matches writable paths literally, so a path through .. would not cover the worktree
     let canonical = fs::canonicalize(&path).map_err(|source| GateError::Read {
         path: path.clone(),
