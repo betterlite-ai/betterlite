@@ -156,10 +156,10 @@ fn decimal_value(name: &str, value: Option<Decimal>) -> Result<Value, Box<Helper
     let Some(decimal) = value else {
         return Ok(Value::Null);
     };
-    decimal_to_value(decimal, format!("decimal {name}"))
+    decimal_to_value(decimal, &format!("decimal {name}"))
 }
 
-fn decimal_to_value(decimal: Decimal, label: String) -> Result<Value, Box<HelperError>> {
+fn decimal_to_value(decimal: Decimal, label: &str) -> Result<Value, Box<HelperError>> {
     decimal.to_f64().map(|float| json!(float)).ok_or_else(|| {
         Box::new(HelperError {
             class: "InvalidInput".to_owned(),
@@ -176,6 +176,6 @@ fn number_value(value: &UsageNumber) -> Result<Value, Box<HelperError>> {
     match value {
         UsageNumber::Boolean(inner) => Ok(json!(inner)),
         UsageNumber::Integer(inner) => Ok(json!(inner)),
-        UsageNumber::Decimal(inner) => decimal_to_value(*inner, "decimal extra".to_owned()),
+        UsageNumber::Decimal(inner) => decimal_to_value(*inner, "decimal extra"),
     }
 }
