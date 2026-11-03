@@ -1,0 +1,35 @@
+{
+  "kind": "helper",
+  "name": "bundled-root-shadows-legacy",
+  "call": {
+    "b3691": {
+      "function": "categories",
+      "roots": [
+        [
+          {
+            "filename": "shared.yaml",
+            "content": "category_name: shared\ndisplay_name: Bundled Shared\n"
+          },
+          {
+            "filename": "z.yaml",
+            "content": "category_name: aa\n"
+          }
+        ],
+        [
+          {
+            "filename": "shared.yaml",
+            "content": "category_name: shared\ndisplay_name: Legacy Shared\n"
+          },
+          {
+            "filename": "legacy.yaml",
+            "content": "category_name: legacy\n"
+          }
+        ]
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

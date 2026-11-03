@@ -1,0 +1,11 @@
+kind: helper
+name: python-unicode-case-fold
+call:
+  b3691:
+    function: compile
+    name: aws_access_key
+    texts:
+      - AKİA1234567890ABCDEF
+env: {}
+compare:
+  ignore: []
