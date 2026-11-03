@@ -4,6 +4,7 @@ pub(crate) mod selection;
 mod tests;
 
 use std::fs;
+use std::io;
 use std::path::Path;
 use std::time::Instant;
 
@@ -105,7 +106,7 @@ pub(crate) fn run(
         source,
     })?;
     // a dispatch reads the holder's process group from it to stop a check run whose worker died
-    let _held = gate_lock::hold(&log_dir)?;
+    let _held = gate_lock::hold(&log_dir, &mut io::stderr())?;
     let run_dir = history::start(&log_dir)?;
     run_checks(development, task, selection, &facts, &run_dir)
 }

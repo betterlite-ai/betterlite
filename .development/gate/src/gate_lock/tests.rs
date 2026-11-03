@@ -1,13 +1,14 @@
 #![cfg(test)]
 
 use std::fs::{self, File, TryLockError};
+use std::io;
 use std::os::unix::process::{CommandExt as _, ExitStatusExt as _};
 use std::path::Path;
 use std::process::{self, Child, Command};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use super::{GRACE, hold, stop_orphan};
+use super::{GRACE, hold, own_group, stop_orphan};
 
 fn hold_in_own_group(path: &Path, script: &str) -> Child {
     let child = Command::new("bash")
@@ -31,7 +32,7 @@ fn hold_in_own_group(path: &Path, script: &str) -> Child {
 #[test]
 fn a_held_gate_lock_names_the_holders_process_group() {
     let log_dir = tempfile::tempdir().unwrap();
-    let held = hold(log_dir.path()).unwrap();
+    let held = hold(log_dir.path(), &mut io::sink()).unwrap();
     let path = log_dir.path().join("gate.lock");
     let ps = Command::new("ps")
         .args(["-o", "pgid=", "-p", &process::id().to_string()])
@@ -84,4 +85,26 @@ fn a_holder_that_ignores_the_interrupt_is_killed_after_the_grace() {
     let mut holder = hold_in_own_group(&path, r#"trap "" INT; exec flock "$0" sleep 600"#);
     stop_orphan(log_dir.path(), Duration::from_secs(1)).unwrap();
     assert_eq!(holder.wait().unwrap().signal(), Some(9_i32));
+}
+
+#[test]
+fn a_run_waiting_for_the_gate_lock_names_the_holders_process_group() {
+    let log_dir = tempfile::tempdir().unwrap();
+    let mut quiet = Vec::new();
+    let held = hold(log_dir.path(), &mut quiet).unwrap();
+    assert!(quiet.is_empty());
+    let release = thread::spawn(move || {
+        thread::sleep(Duration::from_millis(350));
+        drop(held);
+    });
+    let mut notice = Vec::new();
+    let _held = hold(log_dir.path(), &mut notice).unwrap();
+    release.join().unwrap();
+    assert_eq!(
+        String::from_utf8(notice).unwrap(),
+        format!(
+            "gate: waiting for the gate lock held by process group {}\n",
+            own_group().unwrap()
+        )
+    );
 }
