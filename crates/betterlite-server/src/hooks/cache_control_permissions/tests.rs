@@ -70,3 +70,16 @@ async fn rejects_a_key_outside_a_nonempty_allowlist() {
         }
     }
 }
+
+#[tokio::test]
+async fn rejects_a_key_when_allowlist_contains_nonstring_entries() {
+    let auth = principal(r#"{"allowed_cache_controls": ["no-cache", 123]}"#);
+    let data = data(r#"{"cache": {"ttl": 60}}"#);
+
+    let error = run(&auth, &data)
+        .await
+        .expect_err("unauthorized key must be rejected despite mixed allowlist entries");
+
+    assert_eq!(error.status_code(), StatusCode::FORBIDDEN);
+    assert!(error.to_string().contains("ttl"));
+}

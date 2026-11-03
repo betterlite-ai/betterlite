@@ -42,20 +42,13 @@ impl CacheControlPermissions {
             return ready(Ok(())).await;
         };
 
-        let allowed_cache_controls = match allowed_cache_controls(user_api_key_dict) {
-            Ok(allowed_cache_controls) => allowed_cache_controls,
-            Err(source) => {
-                // Mirrors LiteLLM's catch-all: log at debug and permit the request rather than fail it.
-                tracing::debug!(error = %source, "cache control permissions: could not read the authenticated principal");
-                return ready(Ok(())).await;
-            }
-        };
+        let allowed_cache_controls = user_api_key_dict.allowed_cache_controls();
         if allowed_cache_controls.is_empty() {
             return ready(Ok(())).await;
         }
 
         for key in cache_args.keys() {
-            if !allowed_cache_controls.contains(key) {
+            if !allowed_cache_controls.contains(&key.as_str()) {
                 return ready(Err(CacheControlPermissionsError::Forbidden {
                     key: key.clone(),
                 }))
@@ -64,18 +57,4 @@ impl CacheControlPermissions {
         }
         ready(Ok(())).await
     }
-}
-
-#[derive(Debug, Deserialize)]
-struct AuthenticatedPrincipalView {
-    #[serde(default)]
-    allowed_cache_controls: Option<Vec<String>>,
-}
-
-fn allowed_cache_controls(
-    user_api_key_dict: &UserAPIKeyAuth,
-) -> Result<Vec<String>, serde_json::Error> {
-    let text = serde_json::to_string(user_api_key_dict)?;
-    let principal: AuthenticatedPrincipalView = serde_json::from_str(&text)?;
-    Ok(principal.allowed_cache_controls.unwrap_or_default())
 }
