@@ -103,11 +103,6 @@ base:
       run: |-
         packages=$(cargo gate affected) || exit 1
         if [ -z "$packages" ]; then echo "the change affects no package"; else cargo clippy --all-targets --locked $packages -- -D warnings; fi
-    - id: tests
-      why: the tests of every package the change can affect pass, and a push to main runs the whole suite
-      run: |-
-        packages=$(cargo gate affected) || exit 1
-        if [ -z "$packages" ]; then echo "the change affects no package"; else cargo nextest run --locked --no-tests=warn $packages; fi
     - id: deny
       why: licenses, advisories, bans, crate layering and sources follow deny.toml
       run: cargo deny --locked check
@@ -141,7 +136,7 @@ optional:
     after_green: true
     run: cargo llvm-cov nextest --workspace --locked --fail-under-lines 85
   - id: mutants
-    why: every mutant in the changed Rust code outside tools/oracle is caught by a test; the oracle tests start LiteLLM once per case, so mutants there take hours; the tests check still runs them; verification builds in the worktree target and freshly checks every selected mutant
+    why: every mutant in the changed Rust code outside tools/oracle is caught by a test; the oracle tests start LiteLLM once per case, so mutants there take hours; the task commands and a push to main still run them; verification builds in the worktree target and freshly checks every selected mutant
     after_green: true
     run: |-
       set -e
