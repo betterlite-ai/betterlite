@@ -1,7 +1,13 @@
-managed_resource_store:
-  principal:
-    user_id: u
-    team_id: t
-    api_key: a
-    token: b
-  owner: user:u
+kind: helper
+name: managed-resource-store-owner-seed
+call:
+  managed_resource_store:
+    principal:
+      user_id: u
+      team_id: t
+      api_key: a
+      token: b
+    owner: "user:u"
+env: {}
+compare:
+  ignore: []
