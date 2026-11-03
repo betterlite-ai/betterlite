@@ -21,7 +21,7 @@ pub fn map_aleph_alpha_exception(input: &AlephAlphaExceptionInput) -> Option<Err
     let family = classify(input).unwrap_or(Family::ApiConnection);
     let context = context(input);
     if family == Family::ApiConnection {
-        let context = ErrorContext {
+        let fallback_context = ErrorContext {
             message: context.message,
             model: Some(String::new()),
             provider: Some(String::new()),
@@ -31,7 +31,7 @@ pub fn map_aleph_alpha_exception(input: &AlephAlphaExceptionInput) -> Option<Err
             body_param: None,
             body_code: None,
         };
-        return Some(ErrorClass::ApiConnection(Box::new(context)));
+        return Some(ErrorClass::ApiConnection(Box::new(fallback_context)));
     }
     Some(build(family, context, input.status_code))
 }
