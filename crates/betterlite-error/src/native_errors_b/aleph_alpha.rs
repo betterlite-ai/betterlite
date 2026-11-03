@@ -33,9 +33,6 @@ pub fn map_aleph_alpha_exception(input: &AlephAlphaExceptionInput) -> Option<Err
         };
         return Some(ErrorClass::ApiConnection(Box::new(context)));
     }
-    if family == Family::ApiConnection {
-        return Some(ErrorClass::ApiConnection(Box::new(context)));
-    }
     Some(build(family, context, input.status_code))
 }
 
