@@ -54,6 +54,14 @@ fn formatted_time_rejects_excess_precision_and_leap_seconds() {
         to_seconds(None, None, Some("1970-01-01 00:00:60.1"), &resolver()),
         None
     );
+    assert_eq!(
+        to_seconds(None, None, Some("1970-01-  1 00:00:00"), &resolver()),
+        None
+    );
+    assert_eq!(
+        to_seconds(None, None, Some("1970-01- 01 00:00:00"), &resolver()),
+        None
+    );
 }
 
 #[test]

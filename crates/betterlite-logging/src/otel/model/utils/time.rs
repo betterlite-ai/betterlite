@@ -120,19 +120,21 @@ fn parse_date_fields(input: &str) -> Option<(u32, u32, u32)> {
     if year == 0 {
         return None;
     }
-    let day_digits = day_text.trim_start_matches(' ');
-    if day_digits.len() == day_text.len() {
+    if !day_text.starts_with(' ') {
         return Some((
             year,
             parse_clock_component(month_text)?,
             parse_clock_component(day_text)?,
         ));
     }
-    Some((
-        year,
-        parse_clock_component(month_text)?,
-        parse_clock_component(day_digits)?,
-    ))
+    let [b' ', day_digit] = day_text.as_bytes() else {
+        return None;
+    };
+    if !day_digit.is_ascii_digit() {
+        return None;
+    }
+    let day_value = day_text.chars().nth(1)?.to_digit(10)?;
+    Some((year, parse_clock_component(month_text)?, day_value))
 }
 
 fn parse_clock_fields(input: &str) -> Option<(u32, u32, u32)> {
