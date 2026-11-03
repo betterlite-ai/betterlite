@@ -1019,6 +1019,7 @@ dependencies = [
  "serde-saphyr",
  "serde_ignored",
  "serde_json",
+ "soft-canonicalize",
  "strum",
  "tempfile",
  "thiserror",

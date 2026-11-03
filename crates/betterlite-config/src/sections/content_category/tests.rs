@@ -59,13 +59,19 @@ pub(crate) fn category_config_lowercases_words_and_skips_invalid_regex() {
         always_block_keywords: Vec::new(),
         inherit_from: None,
         additional_block_words: vec!["Word".to_owned()],
-        phrase_patterns: vec!["[".to_owned(), "foo".to_owned()],
+        phrase_patterns: vec!["[".to_owned(), "DANGER".to_owned()],
     };
     let category = CategoryConfig::from_data(data).unwrap();
     assert_eq!(category.exceptions, ["bad"]);
     assert_eq!(category.identifier_words, ["child"]);
     assert_eq!(category.additional_block_words, ["word"]);
     assert_eq!(category.phrase_patterns.len(), 1);
+    assert!(
+        category.phrase_patterns[0]
+            .regex
+            .is_match("dAnGeR")
+            .unwrap()
+    );
 }
 
 #[test]
@@ -128,7 +134,7 @@ pub(crate) fn load_categories_resolves_custom_category_files() {
         &[config],
         &[temp.path().to_path_buf()],
         temp.path(),
-        false,
+        &super::Settings::default(),
     );
     assert_eq!(
         result.category_keywords.get("danger").map(|entry| entry.2),
@@ -159,8 +165,9 @@ pub(crate) fn conditional_inheritance_is_severity_filtered() {
         ContentFilterAction::Block,
         ContentFilterSeverity::Medium,
         &[temp.path().to_path_buf()],
-    );
-    assert_eq!(conditional.block_words, ["extra", "high-word"]);
+    )
+    .unwrap();
+    assert_eq!(conditional.block_words, ["high-word", "extra"]);
     assert_eq!(conditional.severity, "high");
 }
 
@@ -265,7 +272,7 @@ pub(crate) fn partial_updates_survive_later_load_failure() {
         ],
         &[temp.path().to_path_buf()],
         temp.path(),
-        false,
+        &super::Settings::default(),
     );
     assert!(result.category_keywords.contains_key("safe"));
 }

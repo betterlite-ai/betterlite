@@ -1,19 +1,26 @@
-use std::path::{Component, Path, PathBuf};
+use std::{
+    io,
+    path::{Path, PathBuf},
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum CategoryPathError {
+    #[error("cannot resolve category path {path}: {source}")]
+    Resolve {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
     #[error("category file path '{path}' is outside the allowed data roots ({roots})")]
     OutsideRoots { path: String, roots: String },
 }
 
 pub fn assert_within_data_roots(path: &Path, roots: &[PathBuf]) -> Result<(), CategoryPathError> {
-    let normalized = normalize(path);
-    if roots
-        .iter()
-        .map(|root| normalize(root))
-        .any(|root| normalized.starts_with(root))
-    {
-        return Ok(());
+    let normalized = resolve_real(path)?;
+    for root in roots {
+        if normalized.starts_with(resolve_real(root)?) {
+            return Ok(());
+        }
     }
     Err(CategoryPathError::OutsideRoots {
         path: path.display().to_string(),
@@ -46,7 +53,7 @@ pub fn resolve_category_file_path(
                 continue;
             };
             let suffix: PathBuf = suffix_parts.iter().collect();
-            let Some(candidate) = joined_candidate(root, &suffix, allow_external) else {
+            let Some(candidate) = joined_candidate(root, &suffix, allow_external)? else {
                 continue;
             };
             if candidate.exists() {
@@ -62,35 +69,22 @@ pub fn resolve_category_file_path(
     Ok(file_path.to_path_buf())
 }
 
-fn joined_candidate(root: &Path, suffix: &Path, allow_external: bool) -> Option<PathBuf> {
+fn joined_candidate(
+    root: &Path,
+    suffix: &Path,
+    allow_external: bool,
+) -> Result<Option<PathBuf>, CategoryPathError> {
     if allow_external {
-        return Some(root.join(suffix));
+        return Ok(Some(root.join(suffix)));
     }
-    safe_join(root, suffix)
+    let base = resolve_real(root)?;
+    let candidate = resolve_real(&base.join(suffix))?;
+    Ok(candidate.starts_with(&base).then_some(candidate))
 }
 
-fn safe_join(root: &Path, suffix: &Path) -> Option<PathBuf> {
-    if suffix
-        .components()
-        .any(|component| !matches!(component, Component::Normal(_)))
-    {
-        return None;
-    }
-    Some(root.join(suffix))
-}
-
-fn normalize(path: &Path) -> PathBuf {
-    let mut normalized = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                normalized.pop();
-            }
-            Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
-            Component::RootDir => normalized.push(Component::RootDir.as_os_str()),
-            Component::Normal(part) => normalized.push(part),
-        }
-    }
-    normalized
+fn resolve_real(path: &Path) -> Result<PathBuf, CategoryPathError> {
+    soft_canonicalize::soft_canonicalize(path).map_err(|source| CategoryPathError::Resolve {
+        path: path.to_path_buf(),
+        source,
+    })
 }

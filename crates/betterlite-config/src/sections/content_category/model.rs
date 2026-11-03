@@ -77,7 +77,7 @@ fn parse_action(
 }
 
 fn compile_patterns(patterns: Vec<String>, category: &str) -> Vec<CompiledPhrasePattern> {
-    patterns.into_iter().filter_map(|source| match fancy_regex::Regex::new(&source) {
+    patterns.into_iter().filter_map(|source| match fancy_regex::RegexBuilder::new(&source).case_insensitive(true).build() {
         Ok(regex) => Some(CompiledPhrasePattern { source, regex }),
         Err(error) => {
             tracing::warn!(category, pattern = source, %error, "invalid category phrase pattern");

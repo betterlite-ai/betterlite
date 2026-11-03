@@ -23,4 +23,38 @@ mod path_resolution;
 #[path = "content_category/severity/tests.rs"]
 mod severity;
 
-crate::sections::stub_section!();
+use crate::loader::{ConfigError, EnvironmentLookup};
+use crate::sections::{
+    Section,
+    settings::{JsonValue, coerce_bool::coerce_bool},
+};
+
+#[derive(Debug, Default, serde::Deserialize)]
+pub struct Raw {
+    #[serde(skip)]
+    _environment: (),
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Settings {
+    pub allow_external_paths: bool,
+}
+
+impl Section for Raw {
+    type Settings = Settings;
+
+    fn convert<L>(self, lookup: &L) -> Result<Settings, ConfigError>
+    where
+        L: EnvironmentLookup,
+    {
+        let value = lookup
+            .lookup("LITELLM_CONTENT_FILTER_ALLOW_EXTERNAL_PATHS")
+            .unwrap_or_default();
+        Ok(Settings {
+            allow_external_paths: matches!(
+                coerce_bool(JsonValue::String(value)),
+                JsonValue::Bool(true)
+            ),
+        })
+    }
+}

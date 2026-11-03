@@ -11,7 +11,19 @@ use crate::sections::{
     },
 };
 
-use super::{files::load_category_file, model::CategoryConfig, paths::resolve_category_file_path};
+use super::{
+    files::{CategoryFileError, load_category_file},
+    model::CategoryConfig,
+    paths::resolve_category_file_path,
+};
+
+#[derive(Debug, thiserror::Error)]
+pub enum CategoryLoadError {
+    #[error("keyword record lacks {field}")]
+    MissingField { field: &'static str },
+    #[error(transparent)]
+    File(#[from] CategoryFileError),
+}
 
 #[derive(Debug, Default)]
 pub struct CategoryLoadResult {
@@ -36,7 +48,7 @@ pub fn load_categories(
     categories: &[ContentFilterCategoryConfig],
     roots: &[PathBuf],
     data_dir: &Path,
-    allow_external: bool,
+    settings: &super::Settings,
 ) -> CategoryLoadResult {
     let mut result = CategoryLoadResult::default();
     for config in categories {
@@ -50,7 +62,13 @@ pub fn load_categories(
         if !config.enabled {
             continue;
         }
-        load_one_category(config, roots, data_dir, allow_external, &mut result);
+        load_one_category(
+            config,
+            roots,
+            data_dir,
+            settings.allow_external_paths,
+            &mut result,
+        );
     }
     result
 }
@@ -110,14 +128,23 @@ fn load_category_result(
 ) {
     let name = &config.category;
     if conditional_category_applies(&category) {
-        let conditional =
-            load_conditional_category(&category, config.action, config.severity_threshold, roots);
-        result
-            .conditional_categories
-            .insert(name.clone(), conditional);
+        match load_conditional_category(&category, config.action, config.severity_threshold, roots)
+        {
+            Ok(conditional) => {
+                result
+                    .conditional_categories
+                    .insert(name.clone(), conditional);
+            }
+            Err(error) => {
+                tracing::error!(category = name, inherit = ?category.inherit_from, %error, "failed to load conditional category");
+            }
+        }
     }
-    add_keywords(&category.always_block_keywords, config, true, result);
-    add_keywords(&category.keywords, config, false, result);
+    let updates = add_keywords(&category.always_block_keywords, config, true, result)
+        .and_then(|()| add_keywords(&category.keywords, config, false, result));
+    if let Err(error) = updates {
+        tracing::error!(category = name, %error, "stopped loading category keywords");
+    }
     result.loaded_categories.insert(name.clone(), category);
 }
 
@@ -131,12 +158,9 @@ fn add_keywords(
     config: &ContentFilterCategoryConfig,
     always_block: bool,
     result: &mut CategoryLoadResult,
-) {
+) -> Result<(), CategoryLoadError> {
     for keyword in keywords {
-        let Some(word) = keyword.get("keyword") else {
-            continue;
-        };
-        let severity = keyword.get("severity").map_or("high", String::as_str);
+        let (word, severity) = keyword_fields(keyword, always_block)?;
         if !should_apply_severity(severity, severity_name(config.severity_threshold)) {
             continue;
         }
@@ -150,6 +174,22 @@ fn add_keywords(
             (config.category.clone(), severity.to_owned(), config.action),
         );
     }
+    Ok(())
+}
+
+fn keyword_fields(
+    keyword: &BTreeMap<String, String>,
+    always_block: bool,
+) -> Result<(&str, &str), CategoryLoadError> {
+    let word = keyword
+        .get("keyword")
+        .ok_or(CategoryLoadError::MissingField { field: "keyword" })?;
+    let severity = keyword
+        .get("severity")
+        .map(String::as_str)
+        .or_else(|| always_block.then_some("high"))
+        .ok_or(CategoryLoadError::MissingField { field: "severity" })?;
+    Ok((word, severity))
 }
 
 const fn severity_name(severity: ContentFilterSeverity) -> &'static str {
@@ -160,24 +200,24 @@ const fn severity_name(severity: ContentFilterSeverity) -> &'static str {
     }
 }
 
-#[must_use]
 pub fn load_conditional_category(
     category: &CategoryConfig,
     action: ContentFilterAction,
     threshold: ContentFilterSeverity,
     roots: &[PathBuf],
-) -> ConditionalCategoryConfig {
-    let mut block_words = category.additional_block_words.clone();
+) -> Result<ConditionalCategoryConfig, CategoryLoadError> {
+    let mut block_words = Vec::new();
     if let Some(inherit) = &category.inherit_from {
         let base = inherit.trim_end_matches(".yaml").trim_end_matches(".json");
-        append_inherited_words(base, threshold, roots, &mut block_words);
+        append_inherited_words(base, threshold, roots, &mut block_words)?;
     }
-    ConditionalCategoryConfig {
+    block_words.extend(category.additional_block_words.iter().cloned());
+    Ok(ConditionalCategoryConfig {
         identifier_words: category.identifier_words.clone(),
         block_words,
         action,
         severity: "high".to_owned(),
-    }
+    })
 }
 
 fn append_inherited_words(
@@ -185,27 +225,18 @@ fn append_inherited_words(
     threshold: ContentFilterSeverity,
     roots: &[PathBuf],
     words: &mut Vec<String>,
-) {
+) -> Result<(), CategoryLoadError> {
     let root_refs: Vec<_> = roots.iter().map(PathBuf::as_path).collect();
     let Some(path) = find_category_file(base, &root_refs) else {
-        return;
+        tracing::warn!(inherit = base, ?roots, "inherited category file not found");
+        return Ok(());
     };
-    let inherited = match load_category_file(&path) {
-        Ok(category) => category,
-        Err(error) => {
-            tracing::warn!(inherit = base, %error, "failed to load inherited category");
-            return;
-        }
-    };
+    let inherited = load_category_file(&path)?;
     for keyword in inherited.keywords {
-        let Some(word) = keyword.get("keyword") else {
-            continue;
-        };
-        let Some(severity) = keyword.get("severity") else {
-            continue;
-        };
+        let (word, severity) = keyword_fields(&keyword, false)?;
         if should_apply_severity(severity, severity_name(threshold)) {
             words.push(word.to_lowercase());
         }
     }
+    Ok(())
 }

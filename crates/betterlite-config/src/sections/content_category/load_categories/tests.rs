@@ -34,7 +34,12 @@ fn load_categories_rejects_invalid_or_disabled(#[case] name: &str, #[case] enabl
         severity_threshold: ContentFilterSeverity::Low,
         category_file: Some(path.display().to_string()),
     };
-    let loaded = load_categories(&[config], &[temp.path().to_path_buf()], temp.path(), false);
+    let loaded = load_categories(
+        &[config],
+        &[temp.path().to_path_buf()],
+        temp.path(),
+        &super::Settings::default(),
+    );
     assert!(loaded.loaded_categories.is_empty());
     assert!(loaded.category_keywords.is_empty());
 }
@@ -57,7 +62,12 @@ fn load_categories_filters_both_maps(
         severity_threshold: threshold,
         category_file: Some(path.display().to_string()),
     };
-    let loaded = load_categories(&[config], &[temp.path().to_path_buf()], temp.path(), false);
+    let loaded = load_categories(
+        &[config],
+        &[temp.path().to_path_buf()],
+        temp.path(),
+        &super::Settings::default(),
+    );
     let expected = (
         "Mixed_Name-1".to_owned(),
         "high".to_owned(),
@@ -96,7 +106,12 @@ fn load_categories_warns_when_the_file_is_missing() {
     };
     let root = temp.path().to_path_buf();
     let loaded = with_default(subscriber, || {
-        load_categories(&[config], slice::from_ref(&root), &root, false)
+        load_categories(
+            &[config],
+            slice::from_ref(&root),
+            &root,
+            &super::Settings::default(),
+        )
     });
     assert!(loaded.loaded_categories.is_empty());
     let output = fs::read_to_string(log.path()).unwrap();
