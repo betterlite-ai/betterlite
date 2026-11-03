@@ -44,10 +44,9 @@ impl CacheControlPermissions {
             return ready(Ok(())).await;
         };
 
-        let allowed_cache_controls = user_api_key_dict.allowed_cache_controls();
-        if allowed_cache_controls.is_empty() {
+        let Some(allowed_cache_controls) = user_api_key_dict.allowed_cache_controls() else {
             return ready(Ok(())).await;
-        }
+        };
 
         for key in cache_args.keys() {
             if !allowed_cache_controls.contains(&key.as_str()) {

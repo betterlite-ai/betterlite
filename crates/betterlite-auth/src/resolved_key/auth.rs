@@ -202,23 +202,24 @@ impl UserAPIKeyAuth {
     }
 
     #[must_use]
-    pub fn allowed_cache_controls(&self) -> Vec<&str> {
-        self.view
-            .token
-            .allowed_cache_controls
-            .0
-            .as_deref()
-            .unwrap_or_default()
-            .iter()
-            .filter_map(|control| match control {
-                JsonData::String(value) => Some(value.as_str()),
-                JsonData::Null
-                | JsonData::Bool(_)
-                | JsonData::Number(_)
-                | JsonData::Array(_)
-                | JsonData::Object(_) => None,
-            })
-            .collect()
+    pub fn allowed_cache_controls(&self) -> Option<Vec<&str>> {
+        let controls = self.view.token.allowed_cache_controls.0.as_deref()?;
+        if controls.is_empty() {
+            return None;
+        }
+        Some(
+            controls
+                .iter()
+                .filter_map(|control| match control {
+                    JsonData::String(value) => Some(value.as_str()),
+                    JsonData::Null
+                    | JsonData::Bool(_)
+                    | JsonData::Number(_)
+                    | JsonData::Array(_)
+                    | JsonData::Object(_) => None,
+                })
+                .collect(),
+        )
     }
 }
 

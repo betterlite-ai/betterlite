@@ -83,3 +83,16 @@ async fn rejects_a_key_when_allowlist_contains_nonstring_entries() {
     assert_eq!(error.status_code(), StatusCode::FORBIDDEN);
     assert!(error.to_string().contains("ttl"));
 }
+
+#[tokio::test]
+async fn rejects_a_key_when_allowlist_has_only_nonstring_entries() {
+    let auth = principal(r#"{"allowed_cache_controls": [123]}"#);
+    let data = data(r#"{"cache": {"ttl": 60}}"#);
+
+    let error = run(&auth, &data)
+        .await
+        .expect_err("nonempty allowlist must reject an unlisted key");
+
+    assert_eq!(error.status_code(), StatusCode::FORBIDDEN);
+    assert!(error.to_string().contains("ttl"));
+}

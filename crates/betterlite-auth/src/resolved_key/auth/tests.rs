@@ -349,7 +349,7 @@ fn cache_control_accessor_reads_allowlist_with_opaque_span() {
     );
     auth.extra.parent_otel_span = Some(ParentOtelSpan::Opaque);
 
-    assert_eq!(auth.allowed_cache_controls(), vec!["no-cache"]);
+    assert_eq!(auth.allowed_cache_controls(), Some(vec!["no-cache"]));
 }
 
 #[test]
