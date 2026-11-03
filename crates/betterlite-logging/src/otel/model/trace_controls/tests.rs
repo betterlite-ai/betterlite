@@ -1,8 +1,8 @@
 #![cfg(test)]
 use super::{TraceControls, caller_trace_controls};
-use crate::otel::model::utils::coercion::JsonValue;
+use crate::otel::model::utils::coercion::OtelModelValue;
 
-fn input(source: &str) -> JsonValue {
+fn input(source: &str) -> OtelModelValue {
     serde_json::from_str(source).expect("test JSON is valid")
 }
 
