@@ -534,6 +534,8 @@ fn service_tier_threshold_keys_follow_the_request_tier(
     let prices = model(&[
         ("input_cost_per_token_priority", "\"0.000001\""),
         (key, "\"0.000003\""),
+        ("output_cost_per_token", "\"0.000004\""),
+        ("output_cost_per_token_above_100_tokens", "\"0.000005\""),
     ]);
     let pricing = ModelPricing {
         model: &prices,
@@ -543,6 +545,9 @@ fn service_tier_threshold_keys_follow_the_request_tier(
     let rates = get_token_base_cost(&pricing, usage(200), &context(tier, None, &database))
         .expect("tier threshold resolves");
     assert_eq!(rates.input_rate, expected);
+    if tier == Some("flex") {
+        assert_eq!(rates.output_rate, Decimal::new(4, 6));
+    }
 }
 
 #[test]
