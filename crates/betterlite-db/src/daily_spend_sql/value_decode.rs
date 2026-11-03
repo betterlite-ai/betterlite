@@ -2,13 +2,21 @@ use super::values::{DailySpendValueError, SpendColumnValue};
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde_json::value::RawValue;
-use std::collections::BTreeMap;
+use serde_with::{Map, serde_as};
 
 pub const MAX_DAILY_VALUE_BYTES: usize = 0x0010_0000;
 pub const MAX_DAILY_VALUE_DEPTH: usize = 64;
 
 #[derive(Deserialize)]
 struct ExactDecimal(#[serde(with = "rust_decimal::serde::arbitrary_precision")] Decimal);
+
+#[serde_as]
+#[derive(Deserialize)]
+struct ObjectEntries<'input>(
+    #[serde_as(as = "Map<_, _>")]
+    #[serde(borrow)]
+    Vec<(String, &'input RawValue)>,
+);
 
 pub fn decode_daily_value(bytes: &[u8]) -> Result<SpendColumnValue, DailySpendValueError> {
     if bytes.len() > MAX_DAILY_VALUE_BYTES {
@@ -57,9 +65,11 @@ fn decode_container(
             .collect::<Result<_, _>>()
             .map(SpendColumnValue::Array)
     } else {
-        let fields: BTreeMap<String, &RawValue> =
+        let fields: ObjectEntries<'_> =
             serde_json::from_str(text).map_err(DailySpendValueError::Json)?;
+        // Validate overwritten entries too, so duplicate keys cannot hide excessive nesting.
         fields
+            .0
             .into_iter()
             .map(|(key, child)| decode_value(child, next_depth).map(|value| (key, value)))
             .collect::<Result<_, _>>()

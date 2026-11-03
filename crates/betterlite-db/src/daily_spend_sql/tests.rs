@@ -9,6 +9,7 @@ use super::tags::decode_daily_tags;
 use super::values::SpendColumnValue::{Decimal, Int, Null, Text};
 use crate::autorouter_turn_sql::tests::database;
 use rstest::rstest;
+use serde_json::value::RawValue;
 use std::fs::read;
 use std::path::PathBuf;
 
@@ -331,13 +332,13 @@ fn rejects_excessive_daily_nesting(
     #[case] count: usize,
 ) {
     let text = format!("{}null{}", prefix.repeat(count), suffix.repeat(count));
-    let raw = serde_json::value::RawValue::from_string(text.clone()).unwrap();
+    let raw = RawValue::from_string(text.clone()).unwrap();
     assert!(matches!(
         super::values::SpendColumnValue::try_from(raw),
         Err(super::values::DailySpendValueError::TooDeep)
     ));
     let row_json = format!(r#"{{"spend":{text}}}"#);
-    assert!(serde_json::from_str::<SpendRow>(&row_json).is_err());
+    serde_json::from_str::<SpendRow>(&row_json).unwrap_err();
 }
 
 #[rstest]
@@ -376,7 +377,7 @@ fn daily_value_size_is_bounded() {
         decode_daily_value(oversized.as_bytes()),
         Err(DailySpendValueError::TooLarge)
     ));
-    let raw = serde_json::value::RawValue::from_string(oversized).unwrap();
+    let raw = RawValue::from_string(oversized).unwrap();
     assert!(matches!(
         SpendColumnValue::try_from(raw),
         Err(DailySpendValueError::TooLarge)
@@ -388,4 +389,20 @@ fn replays_the_daily_values_corpus(#[files("fuzz/corpus/daily_values/*")] path: 
     drop(super::value_decode::decode_daily_value(
         &read(path).unwrap(),
     ));
+}
+
+#[test]
+fn duplicate_daily_keys_cannot_hide_depth() {
+    let nested = format!("{}0{}", "[".repeat(64), "]".repeat(64));
+    let source = format!(r#"{{"a":{nested},"a":0}}"#);
+    assert!(matches!(
+        super::value_decode::decode_daily_value(source.as_bytes()),
+        Err(super::values::DailySpendValueError::TooDeep)
+    ));
+}
+
+#[test]
+fn duplicate_daily_keys_keep_last_value() {
+    let decoded = super::value_decode::decode_daily_value(br#"{"a":[1],"a":2}"#).unwrap();
+    assert_eq!(serde_json::to_string(&decoded).unwrap(), r#"{"a":2}"#);
 }
