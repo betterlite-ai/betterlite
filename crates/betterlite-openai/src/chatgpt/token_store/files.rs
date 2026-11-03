@@ -1,5 +1,6 @@
 use std::fs::{self, File};
 use std::io::{self, Read as _};
+use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
 use std::path::Path;
 
 use super::codec::AuthRecord;
@@ -45,7 +46,13 @@ impl FileAccess for LocalFiles {
     }
 
     fn write(&mut self, path: &Path, record: &AuthRecord) -> io::Result<()> {
-        let file = File::create(path)?;
+        let file = File::options()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)?;
+        file.set_permissions(fs::Permissions::from_mode(0o600))?;
         serde_json::to_writer(file, record).map_err(io::Error::other)
     }
 }

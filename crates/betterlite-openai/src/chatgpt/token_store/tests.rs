@@ -276,6 +276,36 @@ fn local_files_truncate_and_fail() {
 }
 
 #[rstest]
+#[case::new_file(None)]
+#[case::existing_permissive(Some(0o666))]
+fn local_files_owner_only(#[case] initial_mode: Option<u32>) {
+    use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
+
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("auth.json");
+    let original_inode = initial_mode.map(|mode| {
+        fs::write(
+            &path,
+            "old credential contents longer than the replacement record",
+        )
+        .unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(mode)).unwrap();
+        fs::metadata(&path).unwrap().ino()
+    });
+    let bytes = br#"{"access_token":"fixture-secret"}"#;
+    let record = decode_auth_record(bytes).unwrap();
+
+    LocalFiles.write(&path, &record).unwrap();
+
+    let metadata = fs::metadata(&path).unwrap();
+    assert_eq!(metadata.permissions().mode() & 0o7777, 0o600);
+    assert_eq!(fs::read(&path).unwrap(), bytes);
+    if let Some(inode) = original_inode {
+        assert_eq!(metadata.ino(), inode);
+    }
+}
+
+#[rstest]
 fn replays_auth_record(#[files("fuzz/corpus/auth_record/*")] path: PathBuf) {
     let bytes = fs::read(path).unwrap();
     let _record = decode_auth_record(&bytes);
