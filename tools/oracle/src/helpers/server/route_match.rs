@@ -74,6 +74,25 @@ pub(crate) enum RouteCheckInput {
     },
 }
 
+#[derive(Clone, Copy)]
+enum Classifier {
+    Llm,
+    Azure,
+    Management,
+    Info,
+}
+
+#[derive(Clone, Copy)]
+enum PatternMatcher {
+    Template,
+    Wildcard,
+}
+
+enum AllowList<'routes> {
+    One(&'routes str),
+    Many(&'routes [String]),
+}
+
 pub(crate) struct Op;
 
 impl Helper for Op {
@@ -107,52 +126,47 @@ impl MethodInput {
 impl RouteCheckInput {
     fn result(&self) -> bool {
         match self {
-            Self::LlmApi { route } | Self::AzureOpenai { route } => route_text(route.as_ref())
-                .is_some_and(|path| {
-                    if matches!(self, Self::LlmApi { .. }) {
-                        is_llm_api_route(&RouteValue::Text(path))
-                    } else {
-                        is_azure_openai_route(&RouteValue::Text(path))
-                    }
-                }),
-            Self::Management { route } | Self::Info { route } => route_text(route.as_ref())
-                .is_some_and(|path| {
-                    if matches!(self, Self::Management { .. }) {
-                        check_route_access(path, &management_routes::management_routes())
-                    } else {
-                        auxiliary_routes::INFO_ROUTES.contains(&path)
-                    }
-                }),
+            Self::LlmApi { route }
+            | Self::AzureOpenai { route }
+            | Self::Management { route }
+            | Self::Info { route } => {
+                let classifier = if matches!(self, Self::LlmApi { .. }) {
+                    Classifier::Llm
+                } else if matches!(self, Self::AzureOpenai { .. }) {
+                    Classifier::Azure
+                } else if matches!(self, Self::Management { .. }) {
+                    Classifier::Management
+                } else {
+                    Classifier::Info
+                };
+                classify(classifier, route_text(route.as_ref()))
+            }
             Self::IsMcpDiscoveryRoute { route, method } => route_text(route.as_ref())
                 .is_some_and(|path| is_mcp_discovery_route(path, method.as_deref())),
-            Self::RouteMatchesPattern { route, pattern } => route_text(route.as_ref())
-                .zip(pattern.as_deref())
-                .is_some_and(|(path, expression)| {
-                    route_matches_pattern(&RouteValue::Text(path), expression)
-                }),
-            Self::IsWildcardPattern { pattern } => {
-                pattern.as_deref().is_some_and(|value| value.ends_with('*'))
-            }
-            Self::RouteMatchesWildcardPattern { route, pattern } => route_text(route.as_ref())
-                .zip(pattern.as_deref())
-                .is_some_and(|(path, expression)| route_matches_wildcard_pattern(path, expression)),
+            Self::RouteMatchesPattern { route, pattern }
+            | Self::RouteMatchesWildcardPattern { route, pattern } => route_pattern_match(
+                route.as_ref(),
+                pattern.as_deref(),
+                if matches!(self, Self::RouteMatchesPattern { .. }) {
+                    PatternMatcher::Template
+                } else {
+                    PatternMatcher::Wildcard
+                },
+            ),
+            Self::IsWildcardPattern { pattern } => pattern
+                .as_deref()
+                .is_some_and(|expression| expression.ends_with('*')),
             Self::RouteMatchesAllowedRoute {
                 route,
                 allowed_route,
-            } => route_text(route.as_ref())
-                .zip(allowed_route.as_deref())
-                .is_some_and(|(path, allowed)| route_matches_allowed_route(path, allowed)),
+            } => allowed_check(route.as_ref(), allowed_route.as_deref().map(AllowList::One)),
             Self::CheckRouteAccess {
                 route,
                 allowed_routes,
-            } => route_text(route.as_ref())
-                .zip(allowed_routes.as_deref())
-                .is_some_and(|(path, allowed)| {
-                    check_route_access(
-                        path,
-                        &allowed.iter().map(String::as_str).collect::<Vec<_>>(),
-                    )
-                }),
+            } => allowed_check(
+                route.as_ref(),
+                allowed_routes.as_deref().map(AllowList::Many),
+            ),
         }
     }
 }
@@ -161,6 +175,46 @@ fn route_text(route: Option<&Value>) -> Option<&str> {
     match route {
         Some(Value::String(path)) => Some(path),
         Some(_) | None => None,
+    }
+}
+
+fn route_pattern_match(
+    route: Option<&Value>,
+    pattern: Option<&str>,
+    matcher: PatternMatcher,
+) -> bool {
+    route_text(route)
+        .zip(pattern)
+        .is_some_and(|(path, expression)| match matcher {
+            PatternMatcher::Template => route_matches_pattern(&RouteValue::Text(path), expression),
+            PatternMatcher::Wildcard => route_matches_wildcard_pattern(path, expression),
+        })
+}
+
+fn allowed_check(route: Option<&Value>, allowed: Option<AllowList<'_>>) -> bool {
+    route_text(route)
+        .zip(allowed)
+        .is_some_and(|(path, routes)| match routes {
+            AllowList::One(allowed_route) => route_matches_allowed_route(path, allowed_route),
+            AllowList::Many(allowed_routes) => check_route_access(
+                path,
+                &allowed_routes
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>(),
+            ),
+        })
+}
+
+fn classify(classifier: Classifier, route: Option<&str>) -> bool {
+    let Some(path) = route else {
+        return false;
+    };
+    match classifier {
+        Classifier::Llm => is_llm_api_route(&RouteValue::Text(path)),
+        Classifier::Azure => is_azure_openai_route(&RouteValue::Text(path)),
+        Classifier::Management => check_route_access(path, &management_routes::management_routes()),
+        Classifier::Info => auxiliary_routes::INFO_ROUTES.contains(&path),
     }
 }
 
