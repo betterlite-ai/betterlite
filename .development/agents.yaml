@@ -11,13 +11,13 @@ runners:
   - id: codex-worker
     vendor: openai
     program: codex
-    args: [exec, --model, "{model}", -c, "model_reasoning_effort=\"{effort}\"", --sandbox, workspace-write, -c, sandbox_workspace_write.network_access=true, -c, sandbox_workspace_write.exclude_slash_tmp=true, -c, "web_search=\"live\"", -c, "approval_policy=\"never\"", --dangerously-bypass-hook-trust, --json, --output-schema, "{schema}", -o, "{output}", -c, "sandbox_workspace_write.writable_roots={writable_roots}", --cd, "{worktree}", "-"]
-    resume: [exec, resume, --model, "{model}", -c, "model_reasoning_effort=\"{effort}\"", -c, 'sandbox_mode="workspace-write"', -c, sandbox_workspace_write.network_access=true, -c, sandbox_workspace_write.exclude_slash_tmp=true, -c, "web_search=\"live\"", -c, "approval_policy=\"never\"", --dangerously-bypass-hook-trust, --json, --output-schema, "{schema}", -o, "{output}", -c, "sandbox_workspace_write.writable_roots={writable_roots}", "{session}", "-"]
+    args: [exec, -c, 'service_tier="default"', --model, "{model}", -c, "model_reasoning_effort=\"{effort}\"", --sandbox, workspace-write, -c, sandbox_workspace_write.network_access=true, -c, sandbox_workspace_write.exclude_slash_tmp=true, -c, "web_search=\"live\"", -c, "approval_policy=\"never\"", --dangerously-bypass-hook-trust, --json, --output-schema, "{schema}", -o, "{output}", -c, "sandbox_workspace_write.writable_roots={writable_roots}", --cd, "{worktree}", "-"]
+    resume: [exec, resume, -c, 'service_tier="default"', --model, "{model}", -c, "model_reasoning_effort=\"{effort}\"", -c, 'sandbox_mode="workspace-write"', -c, sandbox_workspace_write.network_access=true, -c, sandbox_workspace_write.exclude_slash_tmp=true, -c, "web_search=\"live\"", -c, "approval_policy=\"never\"", --dangerously-bypass-hook-trust, --json, --output-schema, "{schema}", -o, "{output}", -c, "sandbox_workspace_write.writable_roots={writable_roots}", "{session}", "-"]
     output: file
   - id: codex-reviewer
     vendor: openai
     program: codex
-    args: [exec, --model, "{model}", -c, "model_reasoning_effort=\"{effort}\"", --sandbox, read-only, -c, "web_search=\"live\"", -c, "approval_policy=\"never\"", --ephemeral, --output-schema, "{schema}", -o, "{output}", --cd, "{worktree}", "-"]
+    args: [exec, -c, 'service_tier="default"', --model, "{model}", -c, "model_reasoning_effort=\"{effort}\"", --sandbox, read-only, -c, "web_search=\"live\"", -c, "approval_policy=\"never\"", --ephemeral, --output-schema, "{schema}", -o, "{output}", --cd, "{worktree}", "-"]
     output: file
   - id: claude-worker
     vendor: anthropic
@@ -35,10 +35,10 @@ roles:
     instructions: roles/worker.md
     ladder:
       - runner: codex-worker
-        model: gpt-reserve
+        model: gpt-6-luna
         effort: medium
-        attempts: 3
-        timeout_minutes: 90
+        attempts: 2
+        timeout_minutes: 45
       - runner: codex-worker
         model: gpt-6-astra
         effort: high
@@ -109,7 +109,7 @@ policy:
   overflow: true
   max_fix_turns: 2
   max_review_rounds: 3
-  max_blocked_reports: 2
+  max_blocked_reports: 1
   max_hook_blocks: 6
   writable:
     - "{git_common_dir}"
