@@ -3,7 +3,7 @@ use std::ops::Range;
 use fancy_regex::Regex;
 use unicode_general_category::{GeneralCategory, get_general_category};
 
-use super::{CompiledPattern, PatternError};
+use super::{CompiledPattern, PatternError, python_regex};
 
 pub const MAX_TEXT_BYTES: usize = 0x0010_0000;
 pub(super) const DIGIT_RANGES: &[(char, char)] = &[
@@ -119,8 +119,8 @@ impl CompiledPattern {
 
 fn word_spans(regex: &Regex, text: &str) -> Result<Vec<Range<usize>>, PatternError> {
     let mut spans = Vec::new();
-    let sequences = Regex::new(&format!(
-        "(?i)(?<![A-Za-z])(?:{NUMBER_WORDS})(?:[\\s\\x{{1c}}-\\x{{1f}}-]+(?:{NUMBER_WORDS}))+(?![A-Za-z])"
+    let sequences = python_regex::compile(&format!(
+        "(?i)(?<![A-Za-z])(?:{NUMBER_WORDS})(?:[\\s\\-]+(?:{NUMBER_WORDS}))+(?![A-Za-z])"
     ))?;
     let full = Regex::new(&format!("(?:{})\\z", regex.as_str()))?;
     for matched in sequences.find_iter(text) {
@@ -133,17 +133,6 @@ fn word_spans(regex: &Regex, text: &str) -> Result<Vec<Range<usize>>, PatternErr
         }
     }
     Ok(spans)
-}
-
-fn matches(regex: &Regex, text: &str) -> Result<Vec<Range<usize>>, PatternError> {
-    regex
-        .find_iter(text)
-        .map(|result| {
-            result
-                .map(|found| found.start()..found.end())
-                .map_err(PatternError::Regex)
-        })
-        .collect()
 }
 
 #[must_use]
@@ -219,7 +208,7 @@ pub fn merge_spans(mut spans: Vec<Range<usize>>) -> Vec<Range<usize>> {
 }
 
 pub fn convert_word_numbers(sequence: &str) -> Result<Option<String>, PatternError> {
-    let tokens = Regex::new(&format!("(?i){NUMBER_WORDS}"))?;
+    let tokens = python_regex::compile(NUMBER_WORDS)?;
     let mut digits = String::new();
     for found in tokens.find_iter(sequence) {
         let digit = match found?.as_str().to_ascii_lowercase().as_str() {
@@ -241,3 +230,7 @@ pub fn convert_word_numbers(sequence: &str) -> Result<Option<String>, PatternErr
 }
 
 mod tests;
+
+#[path = "spans/iteration.rs"]
+mod iteration;
+use iteration::matches;

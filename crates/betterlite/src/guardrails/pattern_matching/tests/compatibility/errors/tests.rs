@@ -4,6 +4,18 @@ use super::{ContentFilterAction, ContentFilterPattern, compile};
 use rstest::rstest;
 
 #[rstest]
+#[case::unicode_name_missing_brace(r"\Ninvalid")]
+#[case::unicode_name_unclosed(r"\N{LATIN SMALL LETTER I")]
+#[case::unicode_name_unknown(r"\N{UNKNOWN NAME}")]
+#[case::incompatible_flags("(?au:i)")]
+#[case::disable_ascii("(?-a:i)")]
+#[case::disable_unicode("(?-u:i)")]
+#[case::hex_incomplete(r"\x6")]
+#[case::hex_invalid(r"\xgg")]
+#[case::unicode_invalid(r"\uD800")]
+#[case::unicode_too_large(r"\U00110000")]
+#[case::octal_too_large(r"\400")]
+#[case::octal_class_too_large(r"[\400]")]
 #[case::start_anchor_in_class(r"[\A]")]
 #[case::nonboundary_in_class(r"[\B]")]
 #[case::unclosed_group("(i")]

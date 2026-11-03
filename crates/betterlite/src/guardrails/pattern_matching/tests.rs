@@ -67,3 +67,6 @@ mod limits;
 
 #[path = "tests/compatibility/tests.rs"]
 mod compatibility;
+
+#[path = "tests/iteration/tests.rs"]
+mod iteration;

@@ -7,6 +7,79 @@ use super::{ContentFilterAction, ContentFilterPattern, compile};
 use rstest::rstest;
 
 #[rstest]
+#[case::named_unicode_i("regex", r"\N{LATIN SMALL LETTER I}", "\u{130}", true)]
+#[case::class_named_unicode_i("regex", r"[\N{LATIN SMALL LETTER I}]", "\u{130}", true)]
+#[case::named_unicode_alias("regex", r"\N{LF}", "\n", true)]
+#[case::ascii_global("regex", r"(?a)\w", "\u{e9}", false)]
+#[case::ascii_boundary("regex", r"(?a:a\b)", "a\u{e9}", true)]
+#[case::ascii_nonboundary("regex", r"(?a:a\B)", "a\u{e9}", false)]
+#[case::ascii_space("regex", r"(?a:\s)", "\u{1c}", false)]
+#[case::ascii_nonspace("regex", r"(?a:\S)", "\u{1c}", true)]
+#[case::ascii_digit("regex", r"(?a:\d)", "\u{661}", false)]
+#[case::ascii_nondigit("regex", r"(?a:\D)", "\u{661}", true)]
+#[case::ascii_disabled_case("regex", "(?a-i:i)", "I", false)]
+#[case::ascii_upper_class("regex", "(?a:[A])", "a", true)]
+#[case::ascii_class_nonmember("regex", "(?a:[A])", "b", false)]
+#[case::ascii_negated_class("regex", "(?a:[^a-z])", "\u{130}", true)]
+#[case::case_disabled_range("regex", "(?-i:[a-z])", "A", false)]
+#[case::unicode_digit("regex", r"\d", "\u{661}", true)]
+#[case::octal_zero("regex", r"\0", "\0", true)]
+#[case::octal_two_digits("regex", r"\01", "\x01", true)]
+#[case::octal_maximum("regex", r"\377", "\u{ff}", true)]
+#[case::class_short_octal("regex", r"[\1]", "\x01", true)]
+#[case::octal_followed_digit("regex", r"\0123", "\n3", true)]
+#[case::two_digit_backreference(
+    "regex",
+    r"(a)(b)(c)(d)(e)(f)(g)(h)(i)(j)(k)(l)\12",
+    "abcdefghijkll",
+    true
+)]
+#[case::escaped_bell("regex", r"\a", "\x07", true)]
+#[case::escaped_formfeed("regex", r"\f", "\x0c", true)]
+#[case::escaped_return("regex", r"\r", "\r", true)]
+#[case::escaped_tab("regex", r"\t", "\t", true)]
+#[case::escaped_vertical_tab("regex", r"\v", "\x0b", true)]
+#[case::ascii_escaped_i("regex", r"(?a:\x69)", "\u{130}", false)]
+#[case::escaped_metacharacter("regex", r"\x2e", "a", false)]
+#[case::hex_control("regex", r"\x1c", "\u{1c}", true)]
+#[case::unicode_flags("regex", "(?ui)secret", "SECRET", true)]
+#[case::ascii_scope("regex", r"(?a:\w+)", "SECRET", true)]
+#[case::ascii_word_excludes_unicode("regex", r"(?a:\w+)", "\u{e9}", false)]
+#[case::ascii_case_excludes_dotted("regex", "(?ai:i)", "\u{130}", false)]
+#[case::ascii_case_excludes_kelvin("regex", "(?a:k)", "\u{212a}", false)]
+#[case::ascii_nonascii_literal("regex", "(?a:\u{e9})", "\u{c9}", false)]
+#[case::unicode_scope_restores("regex", r"(?a:(?u:\w))", "\u{e9}", true)]
+#[case::ascii_scope_restores("regex", r"(?a:a)\w", "a\u{e9}", true)]
+#[case::ascii_class_case("regex", "(?a:[a-z])", "Z", true)]
+#[case::ascii_class_no_unicode("regex", "(?a:[a-z])", "\u{130}", false)]
+#[case::octal_literal("regex", r"\141", "a", true)]
+#[case::octal_i("regex", r"\151", "\u{130}", true)]
+#[case::hex_i("regex", r"\x69", "\u{130}", true)]
+#[case::unicode_i("regex", r"\u0069", "\u{130}", true)]
+#[case::long_unicode_i("regex", r"\U00000069", "\u{130}", true)]
+#[case::class_octal("regex", r"[\141]", "A", true)]
+#[case::class_hex_i("regex", r"[\x69]", "\u{130}", true)]
+#[case::numeric_backreference("regex", r"(a)\1", "aa", true)]
+#[case::class_literal_open("regex", "[[]", "[", true)]
+#[case::word_not_folded("regex", r"\w", "\u{345}", false)]
+#[case::nonword_not_folded("regex", r"\W", "\u{345}", true)]
+#[case::class_word_not_folded("regex", r"[\w]", "\u{345}", false)]
+#[case::class_nonword_not_folded("regex", r"[\W]", "\u{345}", true)]
+#[case::mixed_word_class("regex", r"[\wi]", "\u{130}", true)]
+#[case::mixed_word_class_excludes_mark("regex", r"[\wi]", "\u{345}", false)]
+#[case::negated_word_class("regex", r"[^\w]", "\u{345}", true)]
+#[case::word_numbers_dotted_prefix(
+    "prebuilt",
+    "nl_bsn_contextual",
+    "BSN \u{130}one two three four five six seven eight nine",
+    false
+)]
+#[case::word_numbers_dotted_suffix(
+    "prebuilt",
+    "nl_bsn_contextual",
+    "BSN one two three four five six seven eight nine\u{130}",
+    false
+)]
 #[case::trailing_hyphen_lower("regex", "[i-]", "-", true)]
 #[case::trailing_hyphen_upper("regex", "[I-]", "-", true)]
 #[case::trailing_hyphen_no_range("regex", "[I-]", "[", false)]

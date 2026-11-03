@@ -3,6 +3,12 @@
 use super::{redaction_tag, rstest};
 
 #[rstest]
+#[case::zero_pad("{pattern_name:08}", "email", "EMAIL000")]
+#[case::zero_pad_right("{pattern_name:>08}", "email", "000EMAIL")]
+#[case::zero_pad_center("{pattern_name:^08}", "email", "0EMAIL00")]
+#[case::zero_pad_precision("{pattern_name:08.3}", "email", "EMA00000")]
+#[case::zero_pad_index("{pattern_name[0]:03}", "email", "E00")]
+#[case::literal_zero_spec("{{pattern_name:08}}", "email", "{pattern_name:08}")]
 #[case::multidigit_unicode("{pattern_name[\u{ff11}\u{ff12}]}", "abcdefghijklmn", "M")]
 #[case::fullwidth_index("[{pattern_name[\u{ff10}]}]", "email", "[E]")]
 #[case::arabic_index("{pattern_name[\u{661}]}", "email", "M")]

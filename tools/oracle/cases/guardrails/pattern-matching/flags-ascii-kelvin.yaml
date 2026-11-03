@@ -1,0 +1,1 @@
+{"kind":"helper","name":"flags-ascii-kelvin","call":{"b3693":{"function":"add","patterns":[{"pattern_type":"regex","pattern":"(?a:k)","action":"MASK"}],"text":"\u212a"}},"env":{},"compare":{"ignore":[]}}

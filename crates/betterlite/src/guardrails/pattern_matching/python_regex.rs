@@ -1,15 +1,22 @@
-use std::iter::Peekable;
+use std::iter::{Peekable, from_fn};
 use std::str::Chars;
 
 use fancy_regex::{Error, ParseError, Regex};
 
-const BOUNDARY: &str =
-    r"(?-i:(?:(?<=[\p{L}\p{N}_])(?![\p{L}\p{N}_])|(?<![\p{L}\p{N}_])(?=[\p{L}\p{N}_])))";
+mod classes;
+mod escapes;
+
+#[derive(Clone, Copy, PartialEq)]
+enum Alphabet {
+    Ascii,
+    Unicode,
+}
 
 #[derive(Clone, Copy)]
 struct Flags {
     case_insensitive: bool,
     verbose: bool,
+    alphabet: Alphabet,
 }
 
 struct Translator {
@@ -24,6 +31,7 @@ pub(super) fn compile(source: &str) -> Result<Regex, Error> {
         flags: Flags {
             case_insensitive: true,
             verbose: false,
+            alphabet: Alphabet::Unicode,
         },
         scopes: Vec::new(),
     };
@@ -41,9 +49,14 @@ impl Translator {
         characters: &mut Peekable<Chars<'_>>,
     ) -> Result<(), Error> {
         match character {
-            '\\' => escaped(&mut self.output, characters.next(), false)?,
-            '[' => self.character_class(characters)?,
-            '(' => self.group(characters),
+            '\\' => {
+                let escaped = escapes::translate(characters, self.flags)?;
+                self.output.push_str(&escaped);
+            }
+            '[' => self
+                .output
+                .push_str(&classes::translate(characters, self.flags)?),
+            '(' => self.group(characters)?,
             ')' => {
                 self.flags = self.scopes.pop().unwrap_or(self.flags);
                 self.output.push(character);
@@ -53,59 +66,17 @@ impl Translator {
                 copy_until(&mut self.output, characters, '\n');
             }
             '$' => self.output.push_str(r"(?:$|(?=\n\z))"),
-            'i' | 'I' | '\u{130}' | '\u{131}' if self.flags.case_insensitive => {
-                self.output.push_str("[iI\u{130}\u{131}]");
-            }
+            value if value.is_alphabetic() => self.output.push_str(&self.flags.literal(value)),
             other => self.output.push(other),
         }
         Ok(())
     }
 
-    fn character_class(&mut self, characters: &mut Peekable<Chars<'_>>) -> Result<(), Error> {
-        let mut class = "[".to_owned();
-        if characters.next_if_eq(&'^').is_some() {
-            class.push('^');
-        }
-        if characters.next_if_eq(&']').is_some() {
-            class.push(']');
-        }
-        while let Some(character) = characters.next() {
-            if character == ']' {
-                return self.finish_class(class);
-            }
-            if character == '\\' {
-                escaped(&mut class, characters.next(), true)?;
-                continue;
-            }
-            if character == '-' && characters.peek() == Some(&']') {
-                class.push('\\');
-            }
-            class.push(character);
-        }
-        self.output.push_str(&class);
-        Ok(())
-    }
-
-    fn finish_class(&mut self, mut class: String) -> Result<(), Error> {
-        if self.flags.case_insensitive {
-            let positive = class
-                .strip_prefix("[^")
-                .map_or_else(|| class.clone(), |body| format!("[{body}"));
-            let probe = Regex::new(&format!("(?i){positive}]"))?;
-            if probe.is_match("i")? || probe.is_match("\u{130}")? || probe.is_match("\u{131}")? {
-                class.push_str("iI\u{130}\u{131}");
-            }
-        }
-        class.push(']');
-        self.output.push_str(&class);
-        Ok(())
-    }
-
-    fn group(&mut self, characters: &mut Peekable<Chars<'_>>) {
+    fn group(&mut self, characters: &mut Peekable<Chars<'_>>) -> Result<(), Error> {
         self.output.push('(');
         self.scopes.push(self.flags);
         if characters.next_if_eq(&'?').is_none() {
-            return;
+            return Ok(());
         }
         self.output.push('?');
         match characters.peek().copied() {
@@ -113,7 +84,7 @@ impl Translator {
                 copy_until(&mut self.output, characters, ')');
                 self.scopes.pop();
             }
-            Some('i' | 'm' | 's' | 'x' | '-') => self.flag_group(characters),
+            Some('a' | 'u' | 'i' | 'm' | 's' | 'x' | '-') => self.flag_group(characters)?,
             Some('P') => {
                 self.output.push('P');
                 characters.next();
@@ -130,51 +101,36 @@ impl Translator {
             Some('(') => self.output.push_str(&condition_header(characters)),
             _ => {}
         }
+        Ok(())
     }
 
-    fn flag_group(&mut self, characters: &mut Peekable<Chars<'_>>) {
-        let mut enabled = true;
-        for character in characters.by_ref() {
-            self.output.push(character);
-            match character {
-                '-' => enabled = false,
-                'i' => self.flags.case_insensitive = enabled,
-                'x' => self.flags.verbose = enabled,
-                ')' => {
-                    self.scopes.pop();
-                    break;
-                }
-                ':' => break,
-                _ => {}
-            }
+    fn flag_group(&mut self, characters: &mut Peekable<Chars<'_>>) -> Result<(), Error> {
+        let header: String =
+            from_fn(|| characters.next_if(|value| !matches!(value, ':' | ')'))).collect();
+        let (enabled, disabled) = header.split_once('-').unwrap_or((&header, ""));
+        if (enabled.contains('a') && enabled.contains('u')) || disabled.contains(['a', 'u']) {
+            return Err(Error::ParseError(0, ParseError::UnknownFlag(header)));
         }
+        self.flags.case_insensitive =
+            (self.flags.case_insensitive || enabled.contains('i')) && !disabled.contains('i');
+        self.flags.verbose =
+            (self.flags.verbose || enabled.contains('x')) && !disabled.contains('x');
+        if enabled.contains('a') {
+            self.flags.alphabet = Alphabet::Ascii;
+        }
+        if enabled.contains('u') {
+            self.flags.alphabet = Alphabet::Unicode;
+        }
+        self.output.push_str(&header.replace('a', "u"));
+        let delimiter = characters
+            .next()
+            .ok_or(Error::ParseError(0, ParseError::UnclosedOpenParen))?;
+        self.output.push(delimiter);
+        if delimiter == ')' {
+            self.scopes.pop();
+        }
+        Ok(())
     }
-}
-
-fn escaped(output: &mut String, character: Option<char>, in_class: bool) -> Result<(), Error> {
-    match character {
-        Some('A' | 'B' | 'Z') if in_class => {
-            return Err(Error::ParseError(output.len(), ParseError::InvalidClass));
-        }
-        Some('b') if !in_class => output.push_str(BOUNDARY),
-        Some('B') => {
-            output.push_str(r"(?!\A\z)(?!");
-            output.push_str(BOUNDARY);
-            output.push(')');
-        }
-        Some('b') => output.push_str(r"\x08"),
-        Some('s') => output.push_str(r"[\s\x{1c}-\x{1f}]"),
-        Some('S') => output.push_str(r"[^\s\x{1c}-\x{1f}]"),
-        Some('w') => output.push_str(r"[\p{L}\p{N}_]"),
-        Some('W') => output.push_str(r"[^\p{L}\p{N}_]"),
-        Some('Z') => output.push_str(r"\z"),
-        Some(other) => {
-            output.push('\\');
-            output.push(other);
-        }
-        None => output.push('\\'),
-    }
-    Ok(())
 }
 
 fn copy_until(output: &mut String, characters: &mut Peekable<Chars<'_>>, end: char) {

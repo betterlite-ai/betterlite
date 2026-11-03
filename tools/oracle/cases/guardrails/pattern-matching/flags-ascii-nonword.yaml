@@ -1,0 +1,1 @@
+{"kind":"helper","name":"flags-ascii-nonword","call":{"b3693":{"function":"add","patterns":[{"pattern_type":"regex","pattern":"(?a:\\w+)","action":"MASK"}],"text":"\u00e9"}},"env":{},"compare":{"ignore":[]}}

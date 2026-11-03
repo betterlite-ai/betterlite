@@ -1,0 +1,1 @@
+{"kind":"helper","name":"class-mixed-category-i","call":{"b3693":{"function":"add","patterns":[{"pattern_type":"regex","pattern":"[\\wi]","action":"MASK"}],"text":"\u0130"}},"env":{},"compare":{"ignore":[]}}

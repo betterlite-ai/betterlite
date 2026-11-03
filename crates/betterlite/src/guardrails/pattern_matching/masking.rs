@@ -17,9 +17,10 @@ pub fn redaction_tag(format: &str, pattern_name: &str) -> Result<String, MaskErr
     if format.len() > MAX_TEXT_BYTES || pattern_name.len() > MAX_TEXT_BYTES {
         return Err(MaskError::TooLarge);
     }
+    let normalized = format::string_padding(format);
     let uppercase = pattern_name.to_uppercase();
     let mut remaining = MAX_TEXT_BYTES.saturating_sub(format.len());
-    Ok(strfmt::strfmt_map(format, |mut field| {
+    Ok(strfmt::strfmt_map(&normalized, |mut field| {
         let value = indexed_name(field.key, &uppercase)?;
         let maximum = field
             .width()
@@ -75,6 +76,7 @@ pub fn keyword_pattern(keyword: &str) -> String {
     escaped
 }
 
+mod format;
 mod tests;
 
 fn indexed_name<'name>(key: &str, uppercase: &'name str) -> Result<&'name str, strfmt::FmtError> {
