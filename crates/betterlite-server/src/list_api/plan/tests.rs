@@ -3,7 +3,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::build::{build_query_plan, facet_where};
-use super::coerce::{coerce, parse_filters, parse_page_size, parse_positive_int, parse_sort};
+use super::coerce::numeric::{parse_page_size, parse_positive_int};
+use super::coerce::{coerce, parse_filters, parse_sort};
 use super::params::facet_allowed_params;
 use super::query::decode_list_query;
 use super::types::{
