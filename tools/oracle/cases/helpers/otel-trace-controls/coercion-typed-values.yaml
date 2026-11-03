@@ -1,0 +1,17 @@
+kind: helper
+name: coercion-typed-values
+call:
+  b3892:
+    function: coercion
+    values:
+      - {kind: string, value: hello}
+      - {kind: integer, value: -12.9}
+      - {kind: integer, value: "42"}
+      - {kind: decimal, value: "1.25"}
+      - {kind: boolean, value: false}
+      - {kind: mapping, value: {key: 3}}
+      - {kind: tuple, value: [one, two]}
+      - {kind: tuple, value: invalid}
+env: {}
+compare:
+  ignore: []
