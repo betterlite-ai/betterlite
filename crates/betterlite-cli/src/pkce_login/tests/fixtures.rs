@@ -180,6 +180,10 @@ pub(super) struct RecordedConnection {
 }
 
 impl LoopbackConnection for RecordedConnection {
+    fn set_read_timeout(&mut self, _timeout: std::time::Duration) -> Result<(), IoError> {
+        Ok(())
+    }
+
     fn read(&mut self, buffer: &mut [u8]) -> Result<usize, IoError> {
         match self.reads.pop_front() {
             Some(Ok(bytes)) => {

@@ -11,16 +11,15 @@ use std::sync::atomic::AtomicI64;
 use std::sync::mpsc::sync_channel;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::thread::park_timeout;
 use std::time::Duration;
 use std::time::Instant;
 
 use super::{
     HttpBody, HttpResponse,
-    callback::{CallbackError, LoopbackServer},
+    callback::{CONNECTION_TIMEOUT, CallbackError, LoopbackServer},
     discovery::{discover_cli_auth, origin},
     loopback::TcpLoopbackListener,
-    models::{CallbackCode, CallbackOutcome, CliAuthContract, PkceFailure},
+    models::{CallbackOutcome, CliAuthContract, PkceFailure},
     oauth::{
         RedeemCodeRequest, RefreshCredentialRequest, authorize_url, pkce_pair, redeem_code,
         refresh_credential, register_client,
@@ -163,11 +162,11 @@ fn discover_rejects_issuer_mismatch() {
 }
 
 #[test]
-fn callback_validation_waits_for_matching_state() {
+fn callback_settles_only_on_a_code_for_the_expected_state() {
     let (sender, receiver) = sync_channel(1);
     let mut server = TcpLoopbackListener::bind()
         .map_err(CallbackError::Bind)
-        .and_then(|listener| LoopbackServer::with_listener(listener, "state"))
+        .and_then(|listener| LoopbackServer::with_listener(listener, "state", CONNECTION_TIMEOUT))
         .expect("bind");
     let address = server.address;
     let outcome = thread::scope(|scope| {
@@ -197,50 +196,56 @@ fn callback_validation_waits_for_matching_state() {
             .expect("response")
             .starts_with("HTTP/1.1 400")
     );
-    assert!(matches!(
-        outcome,
-        CallbackOutcome::Code(CallbackCode { .. })
-    ));
+    let CallbackOutcome::Code(code) = outcome else {
+        panic!("expected code");
+    };
+    assert_eq!(code.code.expose_secret(), "good");
 }
 
 #[test]
-fn callback_idle_connection_then_valid_callback_settles() {
-    let server = TcpLoopbackListener::bind()
+fn loopback_drops_an_idle_connection_after_its_timeout() {
+    let listener = TcpLoopbackListener::bind()
         .map_err(CallbackError::Bind)
-        .and_then(|listener| LoopbackServer::with_listener(listener, "state"))
-        .expect("bind");
+        .expect("listener");
+    let server =
+        LoopbackServer::with_listener(listener, "state", Duration::from_millis(200)).expect("bind");
     let address = server.address;
-    let (sender, receiver) = sync_channel(1);
+    let (connected_tx, connected_rx) = sync_channel(1);
+    let (release_tx, release_rx) = sync_channel(1);
     thread::scope(|scope| {
         scope.spawn(move || {
             let _idle = TcpStream::connect(address).expect("idle connect");
-            park_timeout(Duration::from_millis(100));
+            connected_tx.send(()).expect("connected");
             let mut valid = TcpStream::connect(address).expect("valid connect");
             valid
                 .write_all(
                     b"GET /callback?state=state&code=good HTTP/1.1\r\nHost: localhost\r\n\r\n",
                 )
                 .expect("write");
-            sender.send(()).expect("send");
-            park_timeout(Duration::from_millis(100));
+            release_rx.recv().expect("release idle connection");
         });
+        connected_rx.recv().expect("idle accepted soon");
         let mut callback_server = server;
         let outcome = callback_server
-            .wait(Duration::from_secs(10), &FixedClock(Instant::now()))
+            .wait(Duration::from_secs(2), &SystemClock)
             .expect("outcome");
         assert!(matches!(outcome, CallbackOutcome::Code(_)));
+        release_tx.send(()).expect("release");
     });
-    receiver.recv().expect("valid callback");
 }
 
 #[test]
-fn loopback_server_exposes_callback_redirect() {
+fn loopback_server_binds_127_0_0_1_and_redirects_to_its_port() {
     let server = TcpLoopbackListener::bind()
         .map_err(CallbackError::Bind)
-        .and_then(|listener| LoopbackServer::with_listener(listener, "state"))
+        .and_then(|listener| LoopbackServer::with_listener(listener, "state", CONNECTION_TIMEOUT))
         .expect("bind");
-    assert!(server.redirect_uri().starts_with("http://127.0.0.1:"));
-    assert!(server.redirect_uri().ends_with("/callback"));
+    assert_eq!(server.address.ip(), std::net::Ipv4Addr::LOCALHOST);
+    assert_ne!(server.address.port(), 0);
+    assert_eq!(
+        server.redirect_uri(),
+        format!("http://127.0.0.1:{}/callback", server.address.port())
+    );
 }
 
 #[test]
@@ -249,7 +254,8 @@ fn loopback_wait_surfaces_accept_failure() {
         address: "127.0.0.1:0".parse().expect("address"),
         attempts: Mutex::new(VecDeque::from([Err(ErrorKind::PermissionDenied)])),
     };
-    let mut server = LoopbackServer::with_listener(listener, "state").expect("bind");
+    let mut server =
+        LoopbackServer::with_listener(listener, "state", CONNECTION_TIMEOUT).expect("bind");
     let error = server
         .wait(Duration::from_secs(1), &FixedClock(Instant::now()))
         .unwrap_err();
@@ -270,7 +276,8 @@ fn loopback_wait_ignores_aborted_accept_before_valid_callback() {
             })),
         ])),
     };
-    let mut server = LoopbackServer::with_listener(listener, "state").expect("bind");
+    let mut server =
+        LoopbackServer::with_listener(listener, "state", CONNECTION_TIMEOUT).expect("bind");
     let outcome = server
         .wait(Duration::from_secs(1), &FixedClock(Instant::now()))
         .expect("outcome");
@@ -289,7 +296,8 @@ fn loopback_write_failure_is_swallowed_and_connection_still_settles() {
         address: "127.0.0.1:0".parse().expect("address"),
         attempts: Mutex::new(VecDeque::from([Ok(Some(connection))])),
     };
-    let mut server = LoopbackServer::with_listener(listener, "state").expect("bind");
+    let mut server =
+        LoopbackServer::with_listener(listener, "state", CONNECTION_TIMEOUT).expect("bind");
     let outcome = server
         .wait(Duration::from_secs(1), &FixedClock(Instant::now()))
         .expect("outcome");
@@ -302,7 +310,8 @@ fn loopback_no_pending_connection_keeps_waiting_until_timeout() {
         address: "127.0.0.1:0".parse().expect("address"),
         attempts: Mutex::new(VecDeque::new()),
     };
-    let mut server = LoopbackServer::with_listener(listener, "state").expect("bind");
+    let mut server =
+        LoopbackServer::with_listener(listener, "state", CONNECTION_TIMEOUT).expect("bind");
     let error = server
         .wait(Duration::from_millis(20), &SystemClock)
         .unwrap_err();
@@ -346,9 +355,9 @@ fn callback_request_rejects_extra_request_line_tokens() {
 }
 
 #[test]
-fn callback_request_rejects_oversized_buffer() {
-    let request = vec![b'A'; super::request::MAX_REQUEST_BYTES + 1];
-    assert!(matches!(parse_request(&request), RequestRead::TooLarge));
+fn callback_request_rejects_oversized_request_line() {
+    let request = vec![b'A'; super::request::MAX_LINE_BYTES + 1];
+    assert!(matches!(parse_request(&request), RequestRead::UriTooLong));
 }
 
 #[rstest]
@@ -398,7 +407,7 @@ fn callback_query_debug_output_never_reveals_code() {
 fn callback_unsupported_method_responds_501() {
     let server = TcpLoopbackListener::bind()
         .map_err(CallbackError::Bind)
-        .and_then(|listener| LoopbackServer::with_listener(listener, "state"))
+        .and_then(|listener| LoopbackServer::with_listener(listener, "state", CONNECTION_TIMEOUT))
         .expect("bind");
     let address = server.address;
     let (sender, receiver) = sync_channel(1);
@@ -903,3 +912,9 @@ fn replays_the_wire_responses_corpus(#[files("fuzz/corpus/wire_responses/*")] pa
     );
     let _detail = wire::error_detail(&bytes);
 }
+
+mod callback;
+mod discover;
+mod loopback;
+mod revoke;
+mod token;
