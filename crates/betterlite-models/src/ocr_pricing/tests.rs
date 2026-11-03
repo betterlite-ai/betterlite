@@ -190,6 +190,35 @@ struct CountingLookup {
     calls: Cell<u32>,
 }
 
+struct EffectiveAndRawLookup {
+    effective: PriceRecord,
+    raw: PriceRecord,
+    raw_calls: Cell<u32>,
+}
+
+impl PriceLookup for EffectiveAndRawLookup {
+    fn effective_model_info(
+        &self,
+        _model: &str,
+        _custom_llm_provider: Option<&str>,
+    ) -> Option<PriceRecord> {
+        Some(self.effective.clone())
+    }
+
+    fn raw_cost_map_entry(&self, _key: &str) -> Option<PriceRecord> {
+        self.raw_calls.set(self.raw_calls.get().saturating_add(1));
+        Some(self.raw.clone())
+    }
+
+    fn effective_priced_model(
+        &self,
+        _model: &str,
+        _custom_llm_provider: Option<&str>,
+    ) -> Option<PricedModel> {
+        Some(no_tables(self.effective.clone()))
+    }
+}
+
 impl CountingLookup {
     fn new(answer: Option<PriceRecord>) -> Self {
         Self {
@@ -320,8 +349,8 @@ enum Expected {
     Expected::Cost("0")
 )]
 #[case::credit_precedence_wins_even_at_zero_rate(
-    usage(Some(3), None, 0),
-    deployment(None, Some(0), None),
+    usage(Some(3), Some(100), 0),
+    deployment(Some(1), Some(0), None),
     Expected::Cost("0")
 )]
 #[case::annotation_rate_falls_back_to_page_rate(
@@ -354,9 +383,9 @@ enum Expected {
     deployment(Some(10), None, None),
     Expected::MissingPages
 )]
-#[case::present_pages_no_rate_no_annotation_warns_zero(
-    usage(None, Some(5), 0),
-    deployment(None, None, None),
+#[case::present_pages_no_page_rate_negative_annotation_warns_zero(
+    usage(None, Some(5), -2),
+    deployment(None, None, Some(3)),
     Expected::Cost("0")
 )]
 #[case::negative_pages_retain_arithmetic_sign(
@@ -487,17 +516,58 @@ fn batch_cost_still_fetches_public_annotation_price_when_deployment_only_prices_
 }
 
 #[test]
-fn batch_cost_bills_only_the_families_that_remain_priced_after_a_failed_lookup() {
+fn batch_cost_still_bills_the_deployment_annotation_family_after_a_failed_lookup() {
     let lookup = CountingLookup::new(None);
     let usage = OcrBatchUsage {
         pages_processed: 2,
-        pages_processed_annotation: 0,
+        pages_processed_annotation: 4,
+    };
+    let deployment_info = deployment(None, None, Some(3));
+
+    let cost = ocr_batch_cost("model", None, &usage, Some(&deployment_info), &lookup).unwrap();
+
+    assert_eq!(cost, dec("12"));
+    assert_eq!(lookup.calls.get(), 1);
+}
+
+#[test]
+fn ocr_cost_reads_effective_model_info_never_the_raw_entry() {
+    let lookup = EffectiveAndRawLookup {
+        effective: record(&[("ocr_cost_per_page", number(2))]),
+        raw: record(&[
+            ("ocr_cost_per_credit", number(7)),
+            ("annotation_cost_per_page", number(50)),
+            ("ocr_cost_per_page", number(99)),
+        ]),
+        raw_calls: Cell::new(0),
+    };
+    let billing = billing(usage(None, Some(3), 1));
+
+    let cost = ocr_cost("model", None, &billing, None, &lookup).unwrap();
+
+    assert_eq!(cost, dec("10"));
+    assert_eq!(lookup.raw_calls.get(), 0);
+}
+
+#[test]
+fn ocr_batch_cost_reads_effective_model_info_never_the_raw_entry() {
+    let lookup = EffectiveAndRawLookup {
+        effective: record(&[("ocr_cost_per_page", number(2))]),
+        raw: record(&[
+            ("ocr_cost_per_page_batches", number(99)),
+            ("annotation_cost_per_page_batches", number(50)),
+        ]),
+        raw_calls: Cell::new(0),
+    };
+    let usage = OcrBatchUsage {
+        pages_processed: 4,
+        pages_processed_annotation: 1,
     };
 
     let cost = ocr_batch_cost("model", None, &usage, None, &lookup).unwrap();
 
-    assert_eq!(cost, Decimal::ZERO);
-    assert_eq!(lookup.calls.get(), 1);
+    assert_eq!(cost, dec("10"));
+    assert_eq!(lookup.raw_calls.get(), 0);
 }
 
 // Proves docs/deviations/B1678.yaml: a product too large for Decimal is a typed error, not a rounded float.
