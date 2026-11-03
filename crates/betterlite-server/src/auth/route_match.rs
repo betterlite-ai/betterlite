@@ -79,7 +79,8 @@ fn mark_admitted(mut request: Request) -> Request {
     request
 }
 
-fn decoded_route_path(path: &str) -> Option<String> {
+#[must_use]
+pub fn decoded_route_path(path: &str) -> Option<String> {
     if path.len() > MAX_ROUTE_PATH_BYTES {
         return None;
     }

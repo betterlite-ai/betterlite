@@ -7,6 +7,8 @@ use axum::extract::{Extension, State};
 use axum::http::{Request, StatusCode};
 use axum::routing::get;
 use rstest::rstest;
+use std::fs;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use tower::ServiceExt as _;
@@ -78,4 +80,30 @@ async fn encoded_separator_is_decoded_before_template_admission(#[case] path: &s
         .unwrap();
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     assert_eq!(calls.load(Ordering::Relaxed), 0);
+}
+
+#[rstest]
+#[case::slash("/a%2Fb", Some("/a/b"))]
+#[case::newline("/a%0Ab", Some("/a\nb"))]
+#[case::unicode("/%C3%A9", Some("/\u{e9}"))]
+#[case::invalid_utf8("/%FF", None)]
+#[case::malformed_escape("/%GG%", Some("/%GG%"))]
+#[case::single_decode("/%252F", Some("/%2F"))]
+fn path_decoder(#[case] encoded: &str, #[case] expected: Option<&str>) {
+    assert_eq!(super::decoded_route_path(encoded).as_deref(), expected);
+}
+
+#[test]
+fn path_decoder_size_limit() {
+    assert!(super::decoded_route_path(&"/".repeat(8_192)).is_some());
+    assert!(super::decoded_route_path(&"/".repeat(8_193)).is_none());
+}
+
+#[rstest]
+fn replays_the_route_path_corpus(#[files("fuzz/corpus/route_path/*")] path: PathBuf) {
+    let encoded = fs::read_to_string(path).unwrap();
+    if let Some(decoded) = super::decoded_route_path(&encoded) {
+        assert!(encoded.len() <= 8_192);
+        assert!(decoded.len() <= encoded.len());
+    }
 }
