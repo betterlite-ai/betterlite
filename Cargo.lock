@@ -1080,6 +1080,7 @@ name = "betterlite-db"
 version = "0.1.0"
 dependencies = [
  "betterlite-postgres-fixture",
+ "betterlite-roi",
  "betterlite-secrets",
  "chrono",
  "clap",
@@ -1652,7 +1653,12 @@ dependencies = [
  "betterlite-models",
  "betterlite-ocr",
  "betterlite-openai",
+ "betterlite-postgres-fixture",
  "betterlite-redact",
+ "betterlite-roi",
+ "chrono",
+ "clap",
+ "deadpool-postgres",
  "email_address",
  "encoding_rs",
  "form_urlencoded",
@@ -1676,6 +1682,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tokio-postgres",
  "tower",
  "tracing",
  "tracing-subscriber",
@@ -4570,6 +4577,8 @@ dependencies = [
  "chrono",
  "fallible-iterator 0.2.0",
  "postgres-protocol",
+ "serde_core",
+ "serde_json",
 ]
 
 [[package]]
