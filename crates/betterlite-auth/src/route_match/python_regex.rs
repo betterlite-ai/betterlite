@@ -1,5 +1,4 @@
 use std::num::ParseIntError;
-use std::str::Utf8Error;
 
 use pcre2::bytes::{Regex, RegexBuilder};
 use regex_syntax::hir::ClassUnicode;
@@ -17,8 +16,6 @@ pub(super) enum RegexError {
     Limit,
     #[error("invalid character set")]
     CharacterSet(#[source] Box<regex_syntax::Error>),
-    #[error("invalid UTF-8 literal")]
-    Utf8(#[source] Utf8Error),
     #[error("invalid character escape")]
     Number(#[source] ParseIntError),
     #[error("cannot compile route pattern")]

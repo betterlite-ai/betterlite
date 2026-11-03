@@ -93,32 +93,55 @@ impl Scanner<'_> {
             self.take();
             content.push('^');
         }
-        if self.rest.starts_with(']') {
-            self.take();
-            content.push_str(r"\]");
-        }
         loop {
-            match self.take().ok_or(RegexError::Syntax)? {
-                ']' => return Ok(content),
-                '\\' => {
-                    let escaped = self.take().ok_or(RegexError::Syntax)?;
-                    content.push_str(&self.class_escape(escaped));
+            content.push_str(&self.class_atom()?);
+            match self.rest.as_bytes() {
+                [b'-', b']', ..] => {
+                    self.take();
+                    content.push_str(r"\-");
                 }
-                literal @ ('[' | '&' | '~') => {
-                    content.push('\\');
-                    content.push(literal);
+                [b'-', ..] => {
+                    self.take();
+                    content.push('-');
+                    content.push_str(&self.class_atom()?);
                 }
-                literal => content.push(literal),
+                _ => {}
+            }
+            if let Some(tail) = self.rest.strip_prefix(']') {
+                self.rest = tail;
+                return Ok(content);
             }
         }
     }
-    fn class_escape(&self, escaped: char) -> String {
-        characters::perl_class(escaped, self.flags).unwrap_or_else(|| {
-            if escaped == 'b' {
-                r"\x08".to_owned()
-            } else {
-                format!(r"\{escaped}")
-            }
-        })
+
+    fn class_atom(&mut self) -> Result<String, RegexError> {
+        match self.take().ok_or(RegexError::Syntax)? {
+            '\\' => self.class_escape(),
+            literal @ ('[' | ']' | '-' | '&' | '~' | '|') => Ok(format!(r"\{literal}")),
+            literal => Ok(literal.to_string()),
+        }
+    }
+
+    fn class_escape(&mut self) -> Result<String, RegexError> {
+        let escaped = self.take().ok_or(RegexError::Syntax)?;
+        if escaped == 'b' {
+            return Ok(r"\x08".to_owned());
+        }
+        let length = match escaped {
+            'x' => 2,
+            'u' => 4,
+            'U' => 8,
+            '0'..='7' => self
+                .rest
+                .chars()
+                .take(2)
+                .take_while(|digit| ('0'..='7').contains(digit))
+                .count(),
+            _ => 0,
+        };
+        let digits = self.rest.get(..length).ok_or(RegexError::Syntax)?;
+        let atom = format!(r"\{escaped}{digits}");
+        self.rest = self.rest.get(length..).ok_or(RegexError::Syntax)?;
+        Ok(atom)
     }
 }

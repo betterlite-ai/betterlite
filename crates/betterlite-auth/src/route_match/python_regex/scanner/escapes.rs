@@ -5,7 +5,7 @@ pub(super) fn escape(scanner: &mut Scanner<'_>) -> Result<String, RegexError> {
     let escaped = scanner.take().ok_or(RegexError::Syntax)?;
     if let Some(class) = characters::perl_class(escaped, scanner.flags) {
         return if scanner.classes.is_some() {
-            characters::character_set(&class, scanner.flags, &mut scanner.classes)
+            characters::character_set(&format!(r"\{escaped}"), scanner.flags, &mut scanner.classes)
         } else {
             Ok(format!("(?-i:{class})"))
         };
@@ -82,7 +82,7 @@ fn number(scanner: &mut Scanner<'_>, first: char) -> Result<String, RegexError> 
 fn boundary(scanner: &mut Scanner<'_>, kind: char) -> Result<String, RegexError> {
     let class = characters::perl_class('w', scanner.flags).ok_or(RegexError::Syntax)?;
     let word = if scanner.classes.is_some() {
-        characters::character_set(&class, scanner.flags, &mut scanner.classes)?
+        characters::character_set(r"\w", scanner.flags, &mut scanner.classes)?
     } else {
         class
     };

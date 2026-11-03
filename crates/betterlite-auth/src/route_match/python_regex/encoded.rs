@@ -78,7 +78,7 @@ pub(super) fn operator(
     classes: &mut Option<Vec<ClassUnicode>>,
 ) -> Result<String, RegexError> {
     if character == '.' {
-        let source = if newlines.dot { r"[\s\S]" } else { r"[^\n]" };
+        let source = if newlines.dot { r"\s\S" } else { r"^\n" };
         return characters::character_set(source, Flags::default(), classes);
     }
     let newline = characters::literal('\n', Flags::default(), classes);

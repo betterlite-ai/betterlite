@@ -1,7 +1,7 @@
 use std::fmt::Write as _;
-use std::str;
 
 use regex_syntax::ParserBuilder;
+use regex_syntax::ast::{self, Ast, ClassPerl, ClassPerlKind, ClassSet, ClassSetItem};
 use regex_syntax::hir::{Class, ClassUnicode, ClassUnicodeRange, HirKind};
 
 use super::{Alphabet, Flags, RegexError};
@@ -44,38 +44,71 @@ pub(super) fn character_set(
     flags: Flags,
     registry: &mut Option<Vec<ClassUnicode>>,
 ) -> Result<String, RegexError> {
-    let (negated, content) = source
-        .strip_prefix('^')
-        .map_or((false, source), |tail| (true, tail));
-    let hir = ParserBuilder::new()
+    let ast = ast::parse::ParserBuilder::new()
         .octal(true)
         .build()
-        .parse(&format!("[{content}]"))
-        .map_err(|error| RegexError::CharacterSet(Box::new(error)))?;
-    let mut class = match hir.kind() {
-        HirKind::Class(Class::Unicode(class)) => class.clone(),
-        HirKind::Literal(literal) => {
-            let text = str::from_utf8(&literal.0).map_err(RegexError::Utf8)?;
-            ClassUnicode::new(
-                text.chars()
-                    .map(|value| ClassUnicodeRange::new(value, value)),
-            )
-        }
-        HirKind::Empty
-        | HirKind::Class(Class::Bytes(_))
-        | HirKind::Look(_)
-        | HirKind::Repetition(_)
-        | HirKind::Capture(_)
-        | HirKind::Concat(_)
-        | HirKind::Alternation(_) => return Err(RegexError::Syntax),
+        .parse(&format!("[{source}]"))
+        .map_err(|error| RegexError::CharacterSet(Box::new(regex_syntax::Error::Parse(error))))?;
+    let Ast::ClassBracketed(bracketed) = &ast else {
+        return Err(RegexError::Syntax);
     };
-    if flags.caseless {
-        fold(&mut class, flags);
+    let ClassSet::Item(item) = &bracketed.kind else {
+        return Err(RegexError::Syntax);
+    };
+    let mut class = ClassUnicode::empty();
+    let mut pending = vec![item];
+    while let Some(member) = pending.pop() {
+        if let ClassSetItem::Union(union) = member {
+            pending.extend(&union.items);
+        } else {
+            class.union(&class_member(member, flags)?);
+        }
     }
-    if negated {
+    if bracketed.negated {
         class.negate();
     }
     Ok(render(&class, registry))
+}
+
+fn class_member(member: &ClassSetItem, flags: Flags) -> Result<ClassUnicode, RegexError> {
+    let range = match member {
+        ClassSetItem::Literal(literal) => ClassUnicodeRange::new(literal.c, literal.c),
+        ClassSetItem::Range(range) => ClassUnicodeRange::new(range.start.c, range.end.c),
+        // Folding an expanded category would add nonmembers such as U+0345 to \w.
+        ClassSetItem::Perl(perl) => return category(perl, flags),
+        ClassSetItem::Empty(_)
+        | ClassSetItem::Ascii(_)
+        | ClassSetItem::Unicode(_)
+        | ClassSetItem::Bracketed(_)
+        | ClassSetItem::Union(_) => return Err(RegexError::Syntax),
+    };
+    let mut class = ClassUnicode::new([range]);
+    if flags.caseless {
+        fold(&mut class, flags);
+    }
+    Ok(class)
+}
+
+fn category(perl: &ClassPerl, flags: Flags) -> Result<ClassUnicode, RegexError> {
+    let kind = match perl.kind {
+        ClassPerlKind::Digit => 'd',
+        ClassPerlKind::Space => 's',
+        ClassPerlKind::Word => 'w',
+    };
+    let letter = if perl.negated {
+        kind.to_ascii_uppercase()
+    } else {
+        kind
+    };
+    let source = perl_class(letter, flags).ok_or(RegexError::Syntax)?;
+    let hir = ParserBuilder::new()
+        .build()
+        .parse(&source)
+        .map_err(|error| RegexError::CharacterSet(Box::new(error)))?;
+    let HirKind::Class(Class::Unicode(class)) = hir.kind() else {
+        return Err(RegexError::Syntax);
+    };
+    Ok(class.clone())
 }
 
 fn fold(class: &mut ClassUnicode, flags: Flags) {
