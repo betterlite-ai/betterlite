@@ -1,7 +1,7 @@
 id: B1697
 milestone: M4 keys, spend and management
 title: Build daily spend batches and atomic auto-router turn upserts
-status: in-progress
+status: done
 depends_on: [B171, B204, B700, B703, B707, B708, B860]
 file: tasks/B1697-daily-and-session-upserts.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/proxy/_types.py"
 parent: B070
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 548
