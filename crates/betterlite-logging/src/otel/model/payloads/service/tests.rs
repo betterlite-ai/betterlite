@@ -7,6 +7,12 @@ fn service_payload_sanitizes_metadata() {
         r#"{"token":"secret","zone":"west"}"#,
     )
     .unwrap();
-    let data = ServiceSpanData::from_payload("embedding".to_owned(), None, None, None, &metadata);
+    let payload = ServiceLoggerPayload {
+        service: ServiceType::Redis,
+        call_type: "get".to_owned(),
+        caller: None,
+        error: None,
+    };
+    let data = ServiceSpanData::from_payload(&payload, &metadata);
     assert_eq!(data.event_metadata.get("zone"), Some(&"west".to_owned()));
 }

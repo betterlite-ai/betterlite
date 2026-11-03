@@ -45,7 +45,10 @@ impl GuardrailSpanData {
                 .and_then(total_masked_entities),
             provider: string_field(entry, "guardrail_provider"),
             action: string_field(entry, "guardrail_action"),
-            response_json: entry.get("guardrail_response").and_then(json_or_none),
+            response_json: entry
+                .get("guardrail_response")
+                .filter(|value| !matches!(value, OtelModelValue::Null(())))
+                .and_then(json_or_none),
             violation_categories: violation_categories(entry),
             confidence_score: float_field(entry, "confidence_score"),
             risk_score: float_field(entry, "risk_score"),
@@ -55,7 +58,10 @@ impl GuardrailSpanData {
             guardrail_id: string_field(entry, "guardrail_id"),
             policy_template: string_field(entry, "policy_template"),
             detection_method: string_field(entry, "detection_method"),
-            usage_json: entry.get("guardrail_usage").and_then(json_or_none),
+            usage_json: entry
+                .get("guardrail_usage")
+                .filter(|value| !matches!(value, OtelModelValue::Null(())))
+                .and_then(json_or_none),
             cost: entry
                 .get("guardrail_cost")
                 .and_then(OtelModelValue::as_decimal),

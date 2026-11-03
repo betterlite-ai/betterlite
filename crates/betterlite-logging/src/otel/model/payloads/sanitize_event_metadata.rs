@@ -11,6 +11,7 @@ const SENSITIVE: &[&str] = &[
     "header",
     "hidden_params",
 ];
+const DROPPED_KEYS: &[&str] = &["function_kwargs", "function_args", "function_name"];
 
 #[must_use]
 pub fn sanitize_event_metadata(
@@ -19,11 +20,13 @@ pub fn sanitize_event_metadata(
     let mut clean = BTreeMap::new();
     for (key, value) in values {
         let lowered = key.to_lowercase();
-        if key.starts_with("function_") || SENSITIVE.iter().any(|needle| lowered.contains(needle)) {
+        if DROPPED_KEYS.contains(&key.as_str())
+            || SENSITIVE.iter().any(|needle| lowered.contains(needle))
+        {
             continue;
         }
         let text = match value {
-            OtelModelValue::String(text) => Some(text.clone()),
+            OtelModelValue::String(text) => Some(text.chars().take(1024).collect()),
             OtelModelValue::Number(number) => Some(number.to_string()),
             OtelModelValue::Null(())
             | OtelModelValue::Bool(_)
@@ -31,7 +34,7 @@ pub fn sanitize_event_metadata(
             | OtelModelValue::Object(_) => None,
         };
         if let Some(text_value) = text {
-            clean.insert(key.clone(), text_value.chars().take(1024).collect());
+            clean.insert(key.clone(), text_value);
         }
         if clean.len() == 32 {
             break;

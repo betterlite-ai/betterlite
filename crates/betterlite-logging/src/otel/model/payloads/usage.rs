@@ -38,25 +38,34 @@ impl LLMUsage {
             input_tokens: payload.get("prompt_tokens").and_then(as_int),
             output_tokens: payload.get("completion_tokens").and_then(as_int),
             total_tokens: payload.get("total_tokens").and_then(as_int),
-            cache_creation_input_tokens: cache_tokens(
-                details.usage_object,
-                details.prompt_details,
-                &[
-                    "cache_creation_input_tokens",
-                    "cache_write_tokens",
-                    "cache_creation_tokens",
-                ],
-            ),
-            cache_read_input_tokens: cache_tokens(
-                details.usage_object,
-                details.prompt_details,
-                &[
-                    "cache_read_input_tokens",
-                    "cached_tokens",
-                    "prompt_cache_hit_tokens",
-                ],
-            ),
-            reasoning_tokens: cache_tokens(details.completion_details, None, &["reasoning_tokens"]),
+            cache_creation_input_tokens: cache_tokens(&[
+                details
+                    .usage_object
+                    .and_then(|fields| fields.get("cache_creation_input_tokens")),
+                details
+                    .prompt_details
+                    .and_then(|fields| fields.get("cache_write_tokens")),
+                details
+                    .prompt_details
+                    .and_then(|fields| fields.get("cache_creation_tokens")),
+                details
+                    .prompt_details
+                    .and_then(|fields| fields.get("cache_creation_input_tokens")),
+            ]),
+            cache_read_input_tokens: cache_tokens(&[
+                details
+                    .usage_object
+                    .and_then(|fields| fields.get("cache_read_input_tokens")),
+                details
+                    .prompt_details
+                    .and_then(|fields| fields.get("cached_tokens")),
+                details
+                    .usage_object
+                    .and_then(|fields| fields.get("prompt_cache_hit_tokens")),
+            ]),
+            reasoning_tokens: cache_tokens(&[details
+                .completion_details
+                .and_then(|fields| fields.get("reasoning_tokens"))]),
         }
     }
 }
@@ -86,19 +95,11 @@ fn usage_details(payload: &BTreeMap<String, OtelModelValue>) -> UsageDetails<'_>
     }
 }
 
-fn cache_tokens(
-    primary: Option<&BTreeMap<String, OtelModelValue>>,
-    fallback: Option<&BTreeMap<String, OtelModelValue>>,
-    keys: &[&str],
-) -> Option<i64> {
-    let mut values = Vec::new();
-    for key in keys {
-        let primary_value = primary.and_then(|fields| fields.get(*key));
-        let fallback_value = fallback.and_then(|fields| fields.get(*key));
-        if let Some(found_value) = primary_value.or(fallback_value) {
-            values.push(found_value.clone());
-        }
-    }
+fn cache_tokens(raw_values: &[Option<&OtelModelValue>]) -> Option<i64> {
+    let values = raw_values
+        .iter()
+        .filter_map(|value| (*value).cloned())
+        .collect::<Vec<_>>();
     cache_token_value(&values)
 }
 
