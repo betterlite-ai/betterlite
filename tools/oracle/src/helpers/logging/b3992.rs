@@ -7,6 +7,7 @@ use betterlite_logging::s3_v2::parameters::resolve_s3_parameters;
 use betterlite_logging::s3_v2::source::Source;
 use betterlite_logging::s3_v2::{Feature, PartitionGranularityCache, S3Parameters};
 use chrono::NaiveDateTime;
+use secrecy::ExposeSecret as _;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -123,6 +124,10 @@ fn summary(parameters: &S3Parameters<Value>) -> Value {
         "max_retry_age_seconds": parameters.max_retry_age_seconds.map(|age| age.as_secs()),
         "max_adaptive_concurrency": parameters.max_adaptive_concurrency,
         "use_ssl": option_value_json(Some(&connection.use_ssl)),
+        "verify": connection.verify.as_ref().map(|value| option_value_json(Some(value))),
+        "credentials": credentials_summary(&connection.credentials),
+        "log_prompts_only": connection.log_prompts_only.as_ref().map(|value| option_value_json(Some(value))),
+        "partition_granularity": connection.partition_granularity.as_ref().map(|value| option_value_json(Some(value))),
         "use_team_prefix": parameters.features.contains(&Feature::TeamPrefix),
         "use_key_prefix": parameters.features.contains(&Feature::KeyPrefix),
         "strip_base64_files": parameters.features.contains(&Feature::StripBase64),
@@ -132,6 +137,19 @@ fn summary(parameters: &S3Parameters<Value>) -> Value {
         "batch_file_upload": parameters.features.contains(&Feature::BatchFileUpload),
         "server_side_encryption": parameters.encryption.as_ref().map(|encryption| &encryption.algorithm),
         "sse_kms_key_id": parameters.encryption.as_ref().and_then(|encryption| encryption.kms_key_id.as_ref()),
+    })
+}
+
+fn credentials_summary(credentials: &betterlite_logging::s3_v2::connection::Credentials) -> Value {
+    json!({
+        "aws_access_key_id": credentials.aws_access_key_id.as_ref().map(|value| value.expose_secret()),
+        "aws_secret_access_key": credentials.aws_secret_access_key.as_ref().map(|value| value.expose_secret()),
+        "aws_session_token": credentials.aws_session_token.as_ref().map(|value| value.expose_secret()),
+        "aws_session_name": credentials.aws_session_name,
+        "aws_profile_name": credentials.aws_profile_name,
+        "aws_role_name": credentials.aws_role_name,
+        "aws_web_identity_token": credentials.aws_web_identity_token.as_ref().map(|value| value.expose_secret()),
+        "aws_sts_endpoint": credentials.aws_sts_endpoint,
     })
 }
 
