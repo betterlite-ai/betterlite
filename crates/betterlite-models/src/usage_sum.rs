@@ -102,6 +102,9 @@ pub fn usage_sum(usages: &[Usage]) -> Result<Usage, UsageSumError> {
             combine::sum_completion_details(base, details)?;
         }
         for (name, value) in &usage.numeric_extras {
+            if name.starts_with('_') {
+                continue;
+            }
             let merged = combined.numeric_extras.get(name).map_or_else(
                 || add_number(&UsageNumber::Integer(0), value, name),
                 |current| add_number(current, value, name),

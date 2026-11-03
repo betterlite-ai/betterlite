@@ -8,10 +8,14 @@ Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Js
 _PROMPT_DETAIL_KEYS = (
     "text_tokens", "audio_tokens", "image_tokens", "video_tokens",
     "cache_write_tokens", "cache_creation_tokens", "cached_tokens",
+    "web_search_requests", "google_maps_grounding_requests", "tool_use_tokens",
+    "character_count", "image_count", "video_length_seconds", "audio_length_seconds",
+    "query_count",
 )
 _CACHED_DETAIL_KEYS = ("text_tokens", "audio_tokens", "image_tokens")
 _COMPLETION_DETAIL_KEYS = (
     "text_tokens", "reasoning_tokens", "accepted_prediction_tokens", "rejected_prediction_tokens",
+    "audio_tokens", "image_tokens", "video_tokens",
 )
 
 

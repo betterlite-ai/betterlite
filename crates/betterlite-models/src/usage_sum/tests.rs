@@ -100,6 +100,134 @@ fn usage_sum_merges_cached_modalities() {
 }
 
 #[test]
+fn usage_sum_skips_private_extras() {
+    let mut first = empty_usage();
+    first
+        .numeric_extras
+        .insert("_private".to_owned(), UsageNumber::Integer(1));
+    first
+        .numeric_extras
+        .insert("duration".to_owned(), UsageNumber::Integer(2));
+    let mut second = empty_usage();
+    second
+        .numeric_extras
+        .insert("_private".to_owned(), UsageNumber::Integer(1));
+    second
+        .numeric_extras
+        .insert("duration".to_owned(), UsageNumber::Integer(3));
+
+    let result = usage_sum(&[first, second]).expect("usage sums");
+    assert!(!result.numeric_extras.contains_key("_private"));
+    assert_eq!(
+        result.numeric_extras.get("duration"),
+        Some(&UsageNumber::Integer(5))
+    );
+}
+
+#[test]
+fn usage_sum_zero_fills_declared_completion_details() {
+    let mut first = empty_usage();
+    let mut first_details = CompletionTokensDetails::default();
+    first_details.audio_tokens = Some(2);
+    first_details.reasoning_tokens = Some(1);
+    first.completion_tokens_details = Some(first_details);
+    let mut second = empty_usage();
+    let mut second_details = CompletionTokensDetails::default();
+    second_details.text_tokens = Some(3);
+    second.completion_tokens_details = Some(second_details);
+
+    assert_eq!(
+        usage_sum(&[first, second])
+            .expect("usage sums")
+            .completion_tokens_details,
+        Some(CompletionTokensDetails {
+            text_tokens: Some(3),
+            audio_tokens: Some(2),
+            image_tokens: Some(0),
+            video_tokens: Some(0),
+            reasoning_tokens: Some(1),
+            accepted_prediction_tokens: Some(0),
+            rejected_prediction_tokens: Some(0),
+        })
+    );
+}
+
+#[test]
+fn usage_sum_keeps_cache_writes_and_cached_detail_through_a_record_without_them() {
+    let mut first = empty_usage();
+    let mut first_details = empty_prompt_details();
+    first_details.cache_write_tokens = Some(4);
+    first_details.cached_tokens_details = Some(CachedTokensDetails {
+        text_tokens: Some(2),
+        audio_tokens: None,
+        image_tokens: None,
+    });
+    first.prompt_tokens_details = Some(first_details);
+    let mut second = empty_usage();
+    let mut second_details = empty_prompt_details();
+    second_details.cache_creation_tokens = Some(3);
+    second_details.cached_tokens_details = Some(CachedTokensDetails {
+        text_tokens: None,
+        audio_tokens: Some(1),
+        image_tokens: None,
+    });
+    second.prompt_tokens_details = Some(second_details);
+    let mut third = empty_usage();
+    let mut third_details = empty_prompt_details();
+    third_details.cached_tokens = Some(1);
+    third.prompt_tokens_details = Some(third_details);
+
+    let details = usage_sum(&[first, second, third])
+        .expect("usage sums")
+        .prompt_tokens_details
+        .expect("details");
+    assert_eq!(details.cache_write_tokens, Some(7));
+    assert_eq!(details.cache_creation_tokens, Some(7));
+    assert_eq!(details.cached_tokens, Some(1));
+    assert_eq!(
+        details.cached_tokens_details,
+        Some(CachedTokensDetails {
+            text_tokens: Some(2),
+            audio_tokens: Some(1),
+            image_tokens: None,
+        })
+    );
+}
+
+#[test]
+fn usage_sum_keeps_cached_modality_null_only_when_both_absent() {
+    let mut first = empty_usage();
+    let mut first_details = empty_prompt_details();
+    first_details.cached_tokens_details = Some(CachedTokensDetails {
+        text_tokens: None,
+        audio_tokens: Some(2),
+        image_tokens: Some(0),
+    });
+    first.prompt_tokens_details = Some(first_details);
+    let mut second = empty_usage();
+    let mut second_details = empty_prompt_details();
+    second_details.cached_tokens_details = Some(CachedTokensDetails {
+        text_tokens: None,
+        audio_tokens: Some(1),
+        image_tokens: None,
+    });
+    second.prompt_tokens_details = Some(second_details);
+
+    assert_eq!(
+        usage_sum(&[first, second])
+            .expect("usage sums")
+            .prompt_tokens_details
+            .expect("details")
+            .cached_tokens_details,
+        Some(CachedTokensDetails {
+            text_tokens: None,
+            audio_tokens: Some(3),
+            image_tokens: Some(0)
+        })
+    );
+}
+
+#[test]
 fn usage_sum_merges_cached_tokens() {
     let mut first_details = empty_prompt_details();
     first_details.cached_tokens = Some(3);
