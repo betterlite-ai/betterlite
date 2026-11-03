@@ -1,5 +1,12 @@
 #![cfg(test)]
 
+use std::collections::BTreeSet;
+use std::str;
+
+use axum::body::to_bytes;
+use axum::http::header::CONTENT_TYPE;
+use axum::response::IntoResponse as _;
+
 use super::{LocPart, ValidationErrorDetail, request_validation_problem};
 
 #[test]
@@ -60,8 +67,8 @@ fn empty_validation_uses_query_fallback() {
 
 #[test]
 fn unknown_query_uses_only_explicit_aliases() {
-    let declared = std::collections::BTreeSet::from(["alias"]);
-    assert!(super::reject_unknown_query_params(&["alias".to_owned()], &declared).is_ok());
+    let declared = BTreeSet::from(["alias"]);
+    super::reject_unknown_query_params(&["alias".to_owned()], &declared).unwrap();
     let error =
         super::reject_unknown_query_params(&["internal_name".to_owned()], &declared).unwrap_err();
     assert_eq!(error.0.status, 400);
@@ -97,5 +104,22 @@ fn remaining_body_error_takes_precedence_over_query() {
     assert_eq!(
         problem.detail,
         "page: integer required; name: name required"
+    );
+}
+
+#[tokio::test]
+async fn problem_response_preserves_status_and_omits_null_fields() {
+    let problem = super::invalid_query_parameter("bad page".to_owned());
+    let response = super::ManagementProblem(problem).into_response();
+    assert_eq!(response.status(), 400);
+    assert_eq!(
+        response.headers().get(CONTENT_TYPE).unwrap(),
+        "application/problem+json"
+    );
+    let body = to_bytes(response.into_body(), 1024).await.unwrap();
+    let text = str::from_utf8(&body).unwrap();
+    assert_eq!(
+        text,
+        r#"{"type":"urn:litellm:error:invalid-query-parameter","title":"Invalid query parameter","status":400,"detail":"bad page"}"#
     );
 }

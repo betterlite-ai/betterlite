@@ -309,7 +309,7 @@ fn oversized_page_size_still_validates_all_digits(#[case] raw: &str, #[case] val
 #[case::minimum("-9223372036854775808", Some(i64::MIN))]
 #[case::maximum("9223372036854775807", Some(i64::MAX))]
 #[case::overflow("340282366920938463463374607431768211456", None)]
-#[case::unicode("-١_٢", Some(-12))]
+#[case::unicode("-\u{661}_\u{662}", Some(-12))]
 fn signed_integer_filter_limits(#[case] raw: &str, #[case] expected: Option<i64>) {
     let result = coerce(
         "count",
