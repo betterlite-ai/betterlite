@@ -32,11 +32,13 @@ pub fn parse_sort(
         .filter(|field| !spec.sortable.contains(*field))
         .collect();
     if !rejected.is_empty() {
-        return Err(problem::sort_problem(&problem::SortProblem::Invalid {
-            resource: &spec.resource,
-            fields: &rejected,
-            sortable: &spec.sortable,
-        }));
+        return Err(problem::sort_problem(
+            problem::SortProblem::Invalid {
+                resource: &spec.resource,
+            },
+            &rejected,
+            &spec.sortable,
+        ));
     }
     let fields: Vec<&str> = keys.iter().map(|key| key.field.as_str()).collect();
     let repeated: BTreeSet<&str> = fields
@@ -45,10 +47,11 @@ pub fn parse_sort(
         .copied()
         .collect();
     if !repeated.is_empty() {
-        return Err(problem::sort_problem(&problem::SortProblem::Duplicate {
-            fields: &repeated,
-            sortable: &spec.sortable,
-        }));
+        return Err(problem::sort_problem(
+            problem::SortProblem::Duplicate,
+            &repeated,
+            &spec.sortable,
+        ));
     }
     Ok(keys)
 }

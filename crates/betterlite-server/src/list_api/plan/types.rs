@@ -9,7 +9,8 @@ pub const PAGE_SIZE_PARAM: &str = "page_size";
 pub const SORT_PARAM: &str = "sort";
 pub const SEARCH_PARAM: &str = "q";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum ComparisonOp {
     Eq,
     Gte,
@@ -119,7 +120,7 @@ pub struct FilterSpec {
     pub ops: BTreeSet<FilterOp>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct SortKey {
     pub field: String,
     pub descending: bool,

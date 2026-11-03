@@ -9,12 +9,6 @@ use crate::list_api::plan::types::{ListSpec, PAGE_PARAM, PAGE_SIZE_PARAM};
 use crate::list_api::problem;
 use crate::management_envelopes::ProblemDetail;
 
-struct ParsedInteger {
-    magnitude: u128,
-    negative: bool,
-    overflow: bool,
-}
-
 const DECIMAL_DIGIT_BLOCKS: &[u32] = &[
     0x0030, 0x0660, 0x06f0, 0x07c0, 0x0966, 0x09e6, 0x0a66, 0x0ae6, 0x0b66, 0x0be6, 0x0c66, 0x0ce6,
     0x0d66, 0x0de6, 0x0e50, 0x0ed0, 0x0f20, 0x1040, 0x1090, 0x17e0, 0x1810, 0x1946, 0x19d0, 0x1a80,
@@ -32,82 +26,41 @@ fn decimal_digit(character: char) -> Option<u32> {
         .find_map(|start| codepoint.checked_sub(*start).filter(|digit| *digit < 10))
 }
 
-fn signed_digits(raw: &str) -> (bool, &str) {
+fn parse_query_integer(raw: &str) -> Option<(bool, u128)> {
     let trimmed = raw.trim();
-    let (negative, digits) = trimmed.strip_prefix('-').map_or_else(
-        || (false, trimmed.strip_prefix('+').unwrap_or(trimmed)),
-        |rest| (true, rest),
-    );
-    (negative, digits)
-}
-
-fn parse_magnitude(digits: &str) -> Option<(u128, bool)> {
-    if digits.is_empty() {
-        return None;
-    }
+    let negative = trimmed.starts_with('-');
+    let digits = trimmed.strip_prefix(['-', '+']).unwrap_or(trimmed);
     let mut magnitude = 0_u128;
-    let mut overflow = false;
     let mut previous_was_digit = false;
-    let mut characters = digits.chars().peekable();
-    while let Some(character) = characters.next() {
-        if character == '_' {
-            if !previous_was_digit
-                || characters
-                    .peek()
-                    .and_then(|next| decimal_digit(*next))
-                    .is_none()
-            {
-                return None;
-            }
+    for character in digits.chars() {
+        if character == '_' && previous_was_digit {
             previous_was_digit = false;
-            continue;
-        }
-        let digit = u128::from(decimal_digit(character)?);
-        if let Some(next_magnitude) = magnitude
-            .checked_mul(10)
-            .and_then(|value| value.checked_add(digit))
-        {
-            magnitude = next_magnitude;
         } else {
-            overflow = true;
+            let digit = u128::from(decimal_digit(character)?);
+            // Saturation preserves positivity and permits capping before native conversion.
+            magnitude = magnitude.saturating_mul(10).saturating_add(digit);
+            previous_was_digit = true;
         }
-        previous_was_digit = true;
     }
-    previous_was_digit.then_some((magnitude, overflow))
+    previous_was_digit.then_some((negative, magnitude))
 }
 
-fn parse_query_integer(raw: &str) -> Option<ParsedInteger> {
-    let (negative, digits) = signed_digits(raw);
-    let (magnitude, overflow) = parse_magnitude(digits)?;
-    Some(ParsedInteger {
-        magnitude,
-        negative,
-        overflow,
-    })
-}
-
-fn positive_query_integer(name: &str, raw: &str) -> Result<ParsedInteger, ProblemDetail> {
-    let parsed = parse_query_integer(raw)
+fn positive_query_integer(name: &str, raw: &str) -> Result<u128, ProblemDetail> {
+    let (negative, magnitude) = parse_query_integer(raw)
         .ok_or_else(|| problem::invalid_query_parameter(format!("'{name}' must be an integer.")))?;
-    if parsed.negative || parsed.magnitude == 0 {
+    if negative || magnitude == 0 {
         return Err(problem::invalid_query_parameter(format!(
             "'{name}' must be 1 or greater."
         )));
     }
-    Ok(parsed)
+    Ok(magnitude)
 }
 
 pub(in crate::list_api::plan) fn parse_positive_int(
     name: &str,
     raw: &str,
 ) -> Result<u64, ProblemDetail> {
-    let parsed = positive_query_integer(name, raw)?;
-    if parsed.overflow {
-        return Err(problem::invalid_query_parameter(format!(
-            "'{name}' is too large."
-        )));
-    }
-    u64::try_from(parsed.magnitude)
+    u64::try_from(positive_query_integer(name, raw)?)
         .map_err(|_too_large| problem::invalid_query_parameter(format!("'{name}' is too large.")))
 }
 
@@ -126,11 +79,9 @@ pub(in crate::list_api::plan) fn parse_page_size(
     match params.get(PAGE_SIZE_PARAM) {
         None => Ok(spec.default_page_size),
         Some(raw) => {
-            let parsed = positive_query_integer(PAGE_SIZE_PARAM, raw)?;
-            if parsed.overflow || parsed.magnitude > u128::from(spec.max_page_size) {
-                return Ok(spec.max_page_size);
-            }
-            u64::try_from(parsed.magnitude).map_err(|_too_large| {
+            let capped =
+                positive_query_integer(PAGE_SIZE_PARAM, raw)?.min(u128::from(spec.max_page_size));
+            u64::try_from(capped).map_err(|_too_large| {
                 problem::invalid_query_parameter(format!("'{PAGE_SIZE_PARAM}' is too large."))
             })
         }
@@ -138,11 +89,11 @@ pub(in crate::list_api::plan) fn parse_page_size(
 }
 
 pub(super) fn parse_integer_filter(raw: &str) -> Option<i64> {
-    let parsed = parse_query_integer(raw).filter(|parsed| !parsed.overflow)?;
-    let signed = if parsed.negative {
-        i128::try_from(parsed.magnitude).ok()?.checked_neg()?
+    let (negative, magnitude) = parse_query_integer(raw)?;
+    let signed = if negative {
+        i128::try_from(magnitude).ok()?.checked_neg()?
     } else {
-        i128::try_from(parsed.magnitude).ok()?
+        i128::try_from(magnitude).ok()?
     };
     i64::try_from(signed).ok()
 }

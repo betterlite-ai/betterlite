@@ -35,21 +35,16 @@ pub fn build_query_plan(
     params: &BTreeMap<String, String>,
     scope: &Scope,
 ) -> Result<QueryPlan, ProblemDetail> {
-    let scope_predicates = scope_predicates(scope)?;
+    let mut where_ = scope_predicates(scope)?;
     if let Some(problem) = unknown_params(spec, params) {
         return Err(problem);
     }
     let page = parse_page(params)?;
     let page_size = parse_page_size(spec, params)?;
-    let sort = parse_sort(spec, params)?;
-    let filters = parse_filters(spec, params)?;
-    let search = search_predicate(spec, params);
+    let mut order = parse_sort(spec, params)?;
+    where_.extend(parse_filters(spec, params)?);
+    where_.extend(search_predicate(spec, params));
 
-    let mut where_ = scope_predicates;
-    where_.extend(filters);
-    where_.extend(search);
-
-    let mut order = sort;
     order.push(SortKey {
         field: spec.tiebreaker.clone(),
         descending: false,
@@ -77,12 +72,8 @@ pub fn facet_where(
     params: &BTreeMap<String, String>,
     scope: &Scope,
 ) -> Result<Vec<Predicate>, ProblemDetail> {
-    let scope_predicates = scope_predicates(scope)?;
-    let filters = parse_filters(spec, params)?;
-    let search = search_predicate(spec, params);
-
-    let mut where_ = scope_predicates;
-    where_.extend(filters);
-    where_.extend(search);
+    let mut where_ = scope_predicates(scope)?;
+    where_.extend(parse_filters(spec, params)?);
+    where_.extend(search_predicate(spec, params));
     Ok(where_)
 }

@@ -37,15 +37,12 @@ pub fn build_list_links(
     total_pages: u64,
 ) -> ListLinks {
     let last = total_pages.max(1);
-    let first_link = page_url(path, pairs, 1);
-    let last_link = page_url(path, pairs, last);
-    let prev = (page > 1).then(|| page_url(path, pairs, page.saturating_sub(1)));
-    let next = (page < last).then(|| page_url(path, pairs, page.saturating_add(1)));
+    let links = build_page_links(path, pairs, page, page < last);
     ListLinks {
-        self_link: page_url(path, pairs, page),
-        first: first_link,
-        prev,
-        next,
-        last: last_link,
+        self_link: links.self_link,
+        first: page_url(path, pairs, 1),
+        prev: links.prev,
+        next: links.next,
+        last: page_url(path, pairs, last),
     }
 }

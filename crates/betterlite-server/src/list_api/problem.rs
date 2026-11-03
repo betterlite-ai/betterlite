@@ -2,6 +2,7 @@ use axum::Json;
 use axum::http::header::CONTENT_TYPE;
 use axum::http::{HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
+use serde::Deserialize;
 use std::collections::BTreeSet;
 
 use crate::list_api::plan::types::FilterOp;
@@ -63,49 +64,36 @@ pub fn invalid_query_parameter(detail: String) -> ProblemDetail {
 
 #[derive(Clone, Copy)]
 pub enum SortProblem<'borrow> {
-    Invalid {
-        resource: &'borrow str,
-        fields: &'borrow BTreeSet<&'borrow str>,
-        sortable: &'borrow BTreeSet<String>,
-    },
-    Duplicate {
-        fields: &'borrow BTreeSet<&'borrow str>,
-        sortable: &'borrow BTreeSet<String>,
-    },
+    Invalid { resource: &'borrow str },
+    Duplicate,
 }
 
 #[must_use]
-pub fn sort_problem(problem_kind: &SortProblem<'_>) -> ProblemDetail {
-    match problem_kind {
-        SortProblem::Invalid {
-            resource,
-            fields,
-            sortable,
-        } => {
-            let quoted = fields
-                .iter()
-                .map(|field| format!("'{field}'"))
-                .collect::<Vec<_>>()
-                .join(", ");
-            problem(
-                "invalid-sort-field",
-                "Invalid sort field",
-                400,
-                format!("Cannot sort {resource} by: {quoted}."),
-                Some(sortable.iter().cloned().collect()),
-            )
-        }
-        SortProblem::Duplicate { fields, sortable } => {
-            let names = fields.iter().copied().collect::<Vec<_>>().join(", ");
-            problem(
-                "duplicate-sort-field",
-                "Duplicate sort field",
-                400,
-                format!("Sort field(s) named more than once: {names}. Each may appear once."),
-                Some(sortable.iter().cloned().collect()),
-            )
-        }
-    }
+pub fn sort_problem(
+    kind: SortProblem<'_>,
+    fields: &BTreeSet<&str>,
+    sortable: &BTreeSet<String>,
+) -> ProblemDetail {
+    let names = fields.iter().copied().collect::<Vec<_>>().join(", ");
+    let (slug, title, detail) = match kind {
+        SortProblem::Invalid { resource } => (
+            "invalid-sort-field",
+            "Invalid sort field",
+            format!("Cannot sort {resource} by: {names}."),
+        ),
+        SortProblem::Duplicate => (
+            "duplicate-sort-field",
+            "Duplicate sort field",
+            format!("Sort field(s) named more than once: {names}. Each may appear once."),
+        ),
+    };
+    problem(
+        slug,
+        title,
+        400,
+        detail,
+        Some(sortable.iter().cloned().collect()),
+    )
 }
 
 #[must_use]
@@ -168,13 +156,14 @@ pub fn escape_like(value: &str) -> String {
         .replace('_', "\\_")
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(untagged)]
 pub enum LocPart {
     Field(String),
     Index(usize),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct ValidationErrorDetail {
     pub error_type: String,
     pub loc: Vec<LocPart>,
@@ -207,43 +196,40 @@ fn joined_error_detail(errors: &[&ValidationErrorDetail]) -> String {
         .join("; ")
 }
 
-fn is_body_validation_error(errors: &[&ValidationErrorDetail]) -> bool {
-    errors
-        .iter()
-        .any(|error| matches!(error.loc.first(), Some(LocPart::Field(field)) if field == "body"))
-}
-
 #[must_use]
 pub fn request_validation_problem(raw_errors: &[ValidationErrorDetail]) -> ProblemDetail {
     let errors: Vec<&ValidationErrorDetail> = raw_errors
         .iter()
         .filter(|error| !suppress_parent_length(error, raw_errors))
         .collect();
-    let joined_detail = joined_error_detail(&errors);
-    if is_body_validation_error(&errors) {
-        let body_detail = if joined_detail.is_empty() {
-            "The request body is invalid.".to_owned()
-        } else {
-            joined_detail
-        };
-        return problem(
+    let (slug, title, status, fallback) = if errors
+        .iter()
+        .any(|error| matches!(error.loc.first(), Some(LocPart::Field(field)) if field == "body"))
+    {
+        (
             "invalid-request-body",
             "Invalid request body",
             422,
-            body_detail,
-            None,
-        );
-    }
-    let query_detail = if joined_detail.is_empty() {
-        "The request query parameters are invalid.".to_owned()
+            "The request body is invalid.",
+        )
     } else {
-        joined_detail
+        (
+            "invalid-query-parameter",
+            "Invalid query parameter",
+            400,
+            "The request query parameters are invalid.",
+        )
     };
+    let detail = joined_error_detail(&errors);
     problem(
-        "invalid-query-parameter",
-        "Invalid query parameter",
-        400,
-        query_detail,
+        slug,
+        title,
+        status,
+        if detail.is_empty() {
+            fallback.to_owned()
+        } else {
+            detail
+        },
         None,
     )
 }

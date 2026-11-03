@@ -6,9 +6,7 @@ use betterlite_server::list_api::plan::types::{
     ComparisonOp, FilterOp, FilterSpec, FilterType, FilterValue, ListSpec, Predicate, Scope,
     SortKey,
 };
-use betterlite_server::list_api::problem::{
-    LocPart, ValidationErrorDetail, request_validation_problem,
-};
+use betterlite_server::list_api::problem::{ValidationErrorDetail, request_validation_problem};
 use betterlite_server::management_envelopes::ProblemDocument;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -25,7 +23,7 @@ pub(crate) enum Input {
         raw: String,
     },
     Problem {
-        errors: Vec<ErrorInput>,
+        errors: Vec<ValidationErrorDetail>,
     },
 }
 
@@ -35,7 +33,7 @@ pub(crate) struct SpecInput {
     sortable: BTreeSet<String>,
     searchable: BTreeSet<String>,
     filters: BTreeMap<String, FilterInput>,
-    default_sort: Vec<SortInput>,
+    default_sort: Vec<SortKey>,
     default_page_size: u64,
     max_page_size: u64,
     tiebreaker: String,
@@ -45,12 +43,6 @@ pub(crate) struct SpecInput {
 pub(crate) struct FilterInput {
     value_type: FilterType,
     ops: BTreeSet<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub(crate) struct SortInput {
-    field: String,
-    descending: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -66,27 +58,13 @@ pub(crate) enum ScopeInput {
 pub(crate) enum PredicateInput {
     Compare {
         field: String,
-        op: String,
+        op: ComparisonOp,
         value: String,
     },
     IsNull {
         field: String,
         negated: bool,
     },
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub(crate) struct ErrorInput {
-    error_type: String,
-    loc: Vec<LocInput>,
-    msg: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
-pub(crate) enum LocInput {
-    Field(String),
-    Index(i64),
 }
 
 pub(crate) struct Op;
@@ -118,50 +96,13 @@ fn make_spec(input: SpecInput) -> Result<ListSpec, Box<crate::helpers::HelperErr
         sortable: input.sortable,
         searchable: input.searchable,
         filters,
-        default_sort: input
-            .default_sort
-            .into_iter()
-            .map(|sort| SortKey {
-                field: sort.field,
-                descending: sort.descending,
-            })
-            .collect(),
+        default_sort: input.default_sort,
         default_page_size: input.default_page_size,
         max_page_size: input.max_page_size,
         tiebreaker: input.tiebreaker,
     }
     .validate()
     .map_err(|error| helper_error(error.to_string()))
-}
-
-fn comparison_from_wire(op: &str) -> Result<ComparisonOp, Box<crate::helpers::HelperError>> {
-    match op {
-        "eq" => Ok(ComparisonOp::Eq),
-        "contains" => Ok(ComparisonOp::Contains),
-        "gte" => Ok(ComparisonOp::Gte),
-        other => Err(helper_error(format!("unknown comparison {other}"))),
-    }
-}
-
-fn loc_part(location: LocInput) -> Result<LocPart, Box<crate::helpers::HelperError>> {
-    match location {
-        LocInput::Field(field) => Ok(LocPart::Field(field)),
-        LocInput::Index(raw_index) => usize::try_from(raw_index)
-            .map(LocPart::Index)
-            .map_err(|_overflow| helper_error("invalid error index".to_owned())),
-    }
-}
-
-const fn comparison_name(op: ComparisonOp) -> &'static str {
-    match op {
-        ComparisonOp::Eq => "eq",
-        ComparisonOp::Gte => "gte",
-        ComparisonOp::Lte => "lte",
-        ComparisonOp::Gt => "gt",
-        ComparisonOp::Lt => "lt",
-        ComparisonOp::Contains => "contains",
-        ComparisonOp::Not => "not",
-    }
 }
 
 fn value_json(filter_value: FilterValue) -> Value {
@@ -183,7 +124,7 @@ fn problem_json(
 fn predicate_json(predicate: Predicate) -> Value {
     match predicate {
         Predicate::Compare(compare) => {
-            json!({"kind":"compare", "field":compare.field, "op":comparison_name(compare.op), "value":value_json(compare.value)})
+            json!({"kind":"compare", "field":compare.field, "op":FilterOp::Compare(compare.op).as_wire_name(), "value":value_json(compare.value)})
         }
         Predicate::IsNull(null_predicate) => {
             json!({"kind":"isnull", "field":null_predicate.field, "negated":null_predicate.negated})
@@ -192,7 +133,7 @@ fn predicate_json(predicate: Predicate) -> Value {
             json!({"kind":"within", "field":within.field, "values":within.values.into_iter().map(value_json).collect::<Vec<_>>() })
         }
         Predicate::AnyOf(any) => {
-            json!({"kind":"anyof", "clauses":any.clauses.into_iter().map(|compare| json!({"field":compare.field, "op":comparison_name(compare.op), "value":value_json(compare.value)})).collect::<Vec<_>>()})
+            json!({"kind":"anyof", "clauses":any.clauses.into_iter().map(|compare| json!({"field":compare.field, "op":FilterOp::Compare(compare.op).as_wire_name(), "value":value_json(compare.value)})).collect::<Vec<_>>()})
         }
     }
 }
@@ -211,7 +152,7 @@ impl crate::helpers::Helper for Op {
                 params,
                 scope,
             } => plan_result(spec, params, scope),
-            Input::Problem { errors } => validation_result(errors),
+            Input::Problem { errors } => problem_json(&request_validation_problem(errors)),
         }
     }
 }
@@ -228,20 +169,21 @@ fn plan_result(
             predicates
                 .into_iter()
                 .map(|predicate| match predicate {
-                    PredicateInput::IsNull { field, negated } => Ok(Predicate::IsNull(
-                        betterlite_server::list_api::plan::types::IsNull { field, negated },
-                    )),
+                    PredicateInput::IsNull { field, negated } => {
+                        Predicate::IsNull(betterlite_server::list_api::plan::types::IsNull {
+                            field,
+                            negated,
+                        })
+                    }
                     PredicateInput::Compare { field, op, value } => {
-                        comparison_from_wire(&op).map(|comparison| {
-                            Predicate::Compare(betterlite_server::list_api::plan::types::Compare {
-                                field,
-                                op: comparison,
-                                value: FilterValue::Text(value),
-                            })
+                        Predicate::Compare(betterlite_server::list_api::plan::types::Compare {
+                            field,
+                            op,
+                            value: FilterValue::Text(value),
                         })
                     }
                 })
-                .collect::<Result<Vec<_>, _>>()?,
+                .collect(),
         ),
     };
     let planned = build_query_plan(&make_spec(spec.clone())?, params, &scope);
@@ -254,25 +196,4 @@ fn plan_result(
         })),
         Err(problem) => problem_json(&problem),
     }
-}
-
-fn validation_result(raw_errors: &[ErrorInput]) -> crate::helpers::HelperResult {
-    let validated_errors = raw_errors
-        .iter()
-        .map(|error| {
-            let loc = error
-                .loc
-                .iter()
-                .cloned()
-                .map(loc_part)
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(ValidationErrorDetail {
-                error_type: error.error_type.clone(),
-                loc,
-                msg: error.msg.clone(),
-            })
-        })
-        .collect::<Result<Vec<_>, Box<crate::helpers::HelperError>>>()?;
-    let problem = request_validation_problem(&validated_errors);
-    problem_json(&problem)
 }
