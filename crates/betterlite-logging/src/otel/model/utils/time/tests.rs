@@ -83,9 +83,16 @@ fn formatted_time_rejects_excess_precision_and_leap_seconds() {
         to_seconds(None, None, Some("1970-01- 01 00:00:00"), &resolver()),
         None
     );
-    let oversized_malformed = format!("1970-01-{}", " ".repeat(1_024));
+    let at_limit = format!("1970-01-01{}00:00:00", " ".repeat(46));
+    assert_eq!(at_limit.len(), 64);
     assert_eq!(
-        to_seconds(None, None, Some(&oversized_malformed), &resolver()),
+        to_seconds(None, None, Some(&at_limit), &resolver()),
+        Some(Decimal::ZERO)
+    );
+    let above_limit = format!("1970-01-01{}00:00:00", " ".repeat(47));
+    assert_eq!(above_limit.len(), 65);
+    assert_eq!(
+        to_seconds(None, None, Some(&above_limit), &resolver()),
         None
     );
 }
