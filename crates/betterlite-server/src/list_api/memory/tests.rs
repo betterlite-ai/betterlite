@@ -19,6 +19,58 @@ fn row<Row>(name: Row, first: (&str, Cell), second: (&str, Cell)) -> (Row, Cells
     (name, cells([first, second]))
 }
 
+#[derive(Clone, Copy)]
+enum Fixture {
+    Sorted,
+    MixedNumeric,
+    CrossField,
+}
+
+fn fixture_executor(fixture: Fixture) -> InMemoryListExecutor<&'static str> {
+    let rows = (0..3)
+        .map(|index| fixture_row(fixture, index).unwrap())
+        .collect();
+    InMemoryListExecutor::new(rows)
+}
+
+fn fixture_row(fixture: Fixture, index: usize) -> Option<(&'static str, Cells)> {
+    let row = match (fixture, index) {
+        (Fixture::Sorted, 0) => rank_row("first", Cell::Int(1), vec!["b", "a"]),
+        (Fixture::Sorted, 1) => rank_row("second", Cell::Int(1), vec!["a", "b"]),
+        (Fixture::Sorted, 2) => rank_row("null", Cell::Null, vec![""]),
+        (Fixture::MixedNumeric, 0) => value_row("two", Cell::Int(2)),
+        (Fixture::MixedNumeric, 1) => {
+            value_row("one_point_five", Cell::Money("1.5".parse().unwrap()))
+        }
+        (Fixture::MixedNumeric, 2) => value_row("one", Cell::Int(1)),
+        (Fixture::CrossField, 0) => search_row("title", "hit", "miss"),
+        (Fixture::CrossField, 1) => search_row("description", "miss", "hit"),
+        (Fixture::CrossField, 2) => search_row("neither", "miss", "miss"),
+        (_, _) => return None,
+    };
+    Some(row)
+}
+
+fn rank_row(name: &'static str, rank: Cell, tags: Vec<&str>) -> (&'static str, Cells) {
+    let tag_cells = tags
+        .into_iter()
+        .map(|tag| Cell::Text(tag.to_owned()))
+        .collect();
+    row(name, ("rank", rank), ("tags", Cell::Repeated(tag_cells)))
+}
+
+fn value_row(name: &'static str, value: Cell) -> (&'static str, Cells) {
+    row(name, ("value", value), ("other", Cell::Int(0)))
+}
+
+fn search_row(name: &'static str, title: &str, description: &str) -> (&'static str, Cells) {
+    row(
+        name,
+        ("title", Cell::Text(title.to_owned())),
+        ("description", Cell::Text(description.to_owned())),
+    )
+}
+
 #[tokio::test]
 async fn repeated_cells_match_any_and_empty_tuple_is_not_null() {
     let executor = InMemoryListExecutor::new(vec![
@@ -56,41 +108,9 @@ async fn repeated_cells_match_any_and_empty_tuple_is_not_null() {
     assert_eq!(executor.count_rows(&[type_mismatch]), 0);
 }
 
-fn sorted_executor() -> InMemoryListExecutor<&'static str> {
-    InMemoryListExecutor::new(vec![
-        (
-            "first",
-            cells([
-                ("rank", Cell::Int(1)),
-                (
-                    "tags",
-                    Cell::Repeated(vec![Cell::Text("b".to_owned()), Cell::Text("a".to_owned())]),
-                ),
-            ]),
-        ),
-        (
-            "second",
-            cells([
-                ("rank", Cell::Int(1)),
-                (
-                    "tags",
-                    Cell::Repeated(vec![Cell::Text("a".to_owned()), Cell::Text("b".to_owned())]),
-                ),
-            ]),
-        ),
-        (
-            "null",
-            cells([
-                ("rank", Cell::Null),
-                ("tags", Cell::Repeated(vec![Cell::Text(String::new())])),
-            ]),
-        ),
-    ])
-}
-
 #[tokio::test]
 async fn stable_sort_keeps_null_last_in_descending_order() {
-    let executor = sorted_executor();
+    let executor = fixture_executor(Fixture::Sorted);
     let plan = QueryPlan {
         where_: Vec::new(),
         order: vec![SortKey {
@@ -109,7 +129,7 @@ async fn stable_sort_keeps_null_last_in_descending_order() {
 #[test]
 fn facet_distinct_flattens_repeated_cells_and_discards_empty_strings() {
     assert_eq!(
-        sorted_executor().distinct_values("tags", &[]),
+        fixture_executor(Fixture::Sorted).distinct_values("tags", &[]),
         vec!["a", "b"]
     );
 }
@@ -149,7 +169,7 @@ fn not_matches_unlike_non_null_values_and_rejects_null() {
 
 #[tokio::test]
 async fn mixed_numeric_filters_membership_and_sorting_are_numeric() {
-    let executor = mixed_numeric_executor();
+    let executor = fixture_executor(Fixture::MixedNumeric);
     let greater = Predicate::Compare(Compare {
         field: "value".to_owned(),
         op: ComparisonOp::Gt,
@@ -176,21 +196,9 @@ async fn mixed_numeric_filters_membership_and_sorting_are_numeric() {
     );
 }
 
-fn mixed_numeric_executor() -> InMemoryListExecutor<&'static str> {
-    InMemoryListExecutor::new(vec![
-        row("two", ("value", Cell::Int(2)), ("other", Cell::Int(0))),
-        row(
-            "one_point_five",
-            ("value", Cell::Money("1.5".parse().unwrap())),
-            ("other", Cell::Int(0)),
-        ),
-        row("one", ("value", Cell::Int(1)), ("other", Cell::Int(0))),
-    ])
-}
-
 #[tokio::test]
 async fn any_of_uses_each_clause_field_for_count_page_and_facets() {
-    let executor = cross_field_executor();
+    let executor = fixture_executor(Fixture::CrossField);
     let predicate = cross_field_predicate();
     assert_eq!(executor.count_rows(slice::from_ref(&predicate)), 2);
     let plan = QueryPlan {
@@ -204,26 +212,6 @@ async fn any_of_uses_each_clause_field_for_count_page_and_facets() {
         executor.distinct_values("title", &[predicate]),
         vec!["hit", "miss"]
     );
-}
-
-fn cross_field_executor() -> InMemoryListExecutor<&'static str> {
-    InMemoryListExecutor::new(vec![
-        row(
-            "title",
-            ("title", Cell::Text("hit".to_owned())),
-            ("description", Cell::Text("miss".to_owned())),
-        ),
-        row(
-            "description",
-            ("title", Cell::Text("miss".to_owned())),
-            ("description", Cell::Text("hit".to_owned())),
-        ),
-        row(
-            "neither",
-            ("title", Cell::Text("miss".to_owned())),
-            ("description", Cell::Text("miss".to_owned())),
-        ),
-    ])
 }
 
 fn cross_field_predicate() -> Predicate {
@@ -245,7 +233,7 @@ fn cross_field_predicate() -> Predicate {
 
 #[tokio::test]
 async fn enrichment_receives_only_the_filtered_page() {
-    let executor = sorted_executor();
+    let executor = fixture_executor(Fixture::Sorted);
     let plan = QueryPlan {
         where_: Vec::new(),
         order: vec![SortKey {
