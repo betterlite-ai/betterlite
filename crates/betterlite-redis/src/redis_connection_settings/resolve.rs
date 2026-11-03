@@ -61,6 +61,15 @@ where
         settings.db = None;
         settings.password = None;
     }
+    coerce_settings_passthrough(&mut settings, target, client)?;
+    Ok(settings)
+}
+
+fn coerce_settings_passthrough(
+    settings: &mut RedisConnectionSettings,
+    target: Target,
+    client: ClientKind,
+) -> Result<(), RedisSettingsError> {
     let passthrough = std::mem::take(&mut settings.passthrough);
     settings.passthrough = passthrough
         .into_iter()
@@ -73,7 +82,7 @@ where
         )
         .collect::<Result<_, _>>()?;
     filter_passthrough_for_target(target, client, &mut settings.passthrough)?;
-    Ok(settings)
+    Ok(())
 }
 
 fn merge_settings<E>(
@@ -176,56 +185,42 @@ fn resolve_network_limits<E>(
 where
     E: EnvironmentLookup,
 {
-    for (field, value, name) in [
-        (&mut settings.port, overrides.port.take(), "REDIS_PORT"),
-        (&mut settings.db, overrides.db.take(), "REDIS_DB"),
+    let [port, db, max_connections, health_check_interval] = [
+        (overrides.port.take(), "REDIS_PORT"),
+        (overrides.db.take(), "REDIS_DB"),
+        (overrides.max_connections.take(), "REDIS_MAX_CONNECTIONS"),
         (
-            &mut settings.max_connections,
-            overrides.max_connections.take(),
-            "REDIS_MAX_CONNECTIONS",
-        ),
-        (
-            &mut settings.health_check_interval,
             overrides.health_check_interval.take(),
             "REDIS_HEALTH_CHECK_INTERVAL",
         ),
-    ] {
-        *field = Coerce::coerce(name, value.or_else(|| env.lookup(name).map(Scalar::Text)))?;
-    }
-    resolve_socket_options(settings, overrides, env)
-}
-
-fn resolve_socket_options<E>(
-    settings: &mut RedisConnectionSettings,
-    overrides: &mut RedisOverrides,
-    env: &E,
-) -> Result<(), RedisSettingsError>
-where
-    E: EnvironmentLookup,
-{
-    for (field, value, name) in [
-        (&mut settings.ssl, overrides.ssl.take(), "REDIS_SSL"),
+    ]
+    .map(|(value, name)| {
+        Coerce::coerce(name, value.or_else(|| env.lookup(name).map(Scalar::Text)))
+    });
+    let [ssl, socket_keepalive] = [
+        (overrides.ssl.take(), "REDIS_SSL"),
+        (overrides.socket_keepalive.take(), "REDIS_SOCKET_KEEPALIVE"),
+    ]
+    .map(|(value, name)| {
+        Coerce::coerce(name, value.or_else(|| env.lookup(name).map(Scalar::Text)))
+    });
+    let [socket_timeout, socket_connect_timeout] = [
+        (overrides.socket_timeout.take(), "REDIS_SOCKET_TIMEOUT"),
         (
-            &mut settings.socket_keepalive,
-            overrides.socket_keepalive.take(),
-            "REDIS_SOCKET_KEEPALIVE",
-        ),
-    ] {
-        *field = Coerce::coerce(name, value.or_else(|| env.lookup(name).map(Scalar::Text)))?;
-    }
-    for (field, value, name) in [
-        (
-            &mut settings.socket_timeout,
-            overrides.socket_timeout.take(),
-            "REDIS_SOCKET_TIMEOUT",
-        ),
-        (
-            &mut settings.socket_connect_timeout,
             overrides.socket_connect_timeout.take(),
             "REDIS_SOCKET_CONNECT_TIMEOUT",
         ),
-    ] {
-        *field = Coerce::coerce(name, value.or_else(|| env.lookup(name).map(Scalar::Text)))?;
-    }
+    ]
+    .map(|(value, name)| {
+        Coerce::coerce(name, value.or_else(|| env.lookup(name).map(Scalar::Text)))
+    });
+    settings.port = port?;
+    settings.db = db?;
+    settings.ssl = ssl?;
+    settings.socket_timeout = socket_timeout?;
+    settings.socket_connect_timeout = socket_connect_timeout?;
+    settings.socket_keepalive = socket_keepalive?;
+    settings.max_connections = max_connections?;
+    settings.health_check_interval = health_check_interval?;
     Ok(())
 }

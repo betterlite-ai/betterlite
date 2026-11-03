@@ -125,7 +125,7 @@ fn shared_env_sentry_settings() {
     ]);
     let options = build_sentry_init_options(&values).unwrap();
     assert!(options.send_default_pii);
-    assert_eq!(options.traces_sample_rate, 1.0);
+    assert!((options.traces_sample_rate - 1.0).abs() < f64::EPSILON);
     let invalid = build_sentry_init_options(&env(&[("SENTRY_SEND_DEFAULT_PII", "maybe-secret")]))
         .unwrap_err()
         .to_string();

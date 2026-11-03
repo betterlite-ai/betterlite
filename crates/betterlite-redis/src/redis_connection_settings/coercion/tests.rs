@@ -205,7 +205,10 @@ fn shared_env_redis_coercion() {
     .to_string();
     assert!(bool_error.contains("REDIS_SSL"));
     assert!(!bool_error.contains("maybe-secret"));
+}
 
+#[test]
+fn shared_env_redis_coercion_numbers() {
     assert_eq!(
         coerce_number("REDIS_PORT", Some(IntOrText::Text(" 6380 ".to_owned()))).unwrap(),
         Some(6380)

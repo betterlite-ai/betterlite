@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::path::PathBuf;
 
 use rstest::rstest;
 
@@ -77,18 +78,11 @@ fn map_lookup_distinguishes_missing_and_empty() {
     assert_eq!(environment.system_home(), None);
 }
 
-#[test]
-fn replays_the_env_values_corpus() {
-    let entries = fs::read_dir(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/fuzz/corpus/env_values"
-    ))
-    .unwrap();
-    entries.for_each(|entry| {
-        let text = fs::read_to_string(entry.unwrap().path()).unwrap();
-        drop(flag("CORPUS", &text));
-        drop(number::<i64>("CORPUS", &text));
-        drop(number::<u32>("CORPUS", &text));
-        drop(number::<f64>("CORPUS", &text));
-    });
+#[rstest]
+fn replays_the_env_values_corpus(#[files("fuzz/corpus/env_values/*")] path: PathBuf) {
+    let text = fs::read_to_string(path).unwrap();
+    drop(flag("CORPUS", &text));
+    drop(number::<i64>("CORPUS", &text));
+    drop(number::<u32>("CORPUS", &text));
+    drop(number::<f64>("CORPUS", &text));
 }

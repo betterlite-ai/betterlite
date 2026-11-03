@@ -688,3 +688,15 @@ fn shared_env_redis_credential_flag() {
     assert!(error.contains("REDIS_AWS_IAM_AUTH"));
     assert!(!error.contains("maybe-secret"));
 }
+
+#[test]
+fn shared_env_redis_credential_flag_names_reference() {
+    let source = "litellm_settings: {cache_params: {aws_iam_auth: os.environ/CACHE_AUTH_FLAG}}";
+    let lookup = BTreeMap::from([("CACHE_AUTH_FLAG".to_owned(), "maybe".to_owned())]);
+    let error = ConfigLoader { lookup }
+        .load(source)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("CACHE_AUTH_FLAG"), "{error}");
+    assert!(!error.contains("maybe"));
+}

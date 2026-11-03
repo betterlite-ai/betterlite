@@ -196,13 +196,13 @@ where
         let text = lookup.lookup(variable).unwrap_or_default();
         return Ok(betterlite_env::flag(variable, &text)?.unwrap_or(false));
     };
-    let resolved = match value {
-        ScalarBool::Boolean(boolean) => ScalarBool::Boolean(*boolean),
-        ScalarBool::Text(text) => ScalarBool::Text(resolve_string(text.clone(), path, lookup)?),
-    };
-    match resolved {
-        ScalarBool::Boolean(boolean) => Ok(boolean),
-        ScalarBool::Text(text) => Ok(betterlite_env::flag(variable, &text)?.unwrap_or(false)),
+    match value {
+        ScalarBool::Boolean(boolean) => Ok(*boolean),
+        ScalarBool::Text(text) => {
+            let name = text.strip_prefix("os.environ/").unwrap_or(variable);
+            let resolved = resolve_string(text.clone(), path, lookup)?;
+            Ok(betterlite_env::flag(name, &resolved)?.unwrap_or(false))
+        }
     }
 }
 
