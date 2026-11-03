@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use betterlite_models::decisions::Json;
 use serde_json::value::RawValue;
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
@@ -105,5 +106,25 @@ async fn injected_protocols_preserve_values_and_errors() {
             .await
             .unwrap(),
         "masked"
+    );
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(tag = "operation")]
+enum DefaultsInput {
+    Merge {
+        #[serde(flatten)]
+        defaults: super::WsRequestDefaults<Json>,
+        request: BTreeMap<String, Json>,
+    },
+}
+
+#[test]
+fn defaults_support_tagged_frames() {
+    let DefaultsInput::Merge { defaults, request } = serde_json::from_str::<DefaultsInput>(r#"{"operation":"Merge","fill_missing":{"model":"a","temperature":1},"overrides":{"model":"c"},"request":{"input":"hi"}}"#).unwrap();
+    let merged = defaults.merged_into(&request);
+    assert_eq!(
+        serde_json::to_string(&merged).unwrap(),
+        r#"{"input":"hi","model":"c","temperature":1}"#
     );
 }

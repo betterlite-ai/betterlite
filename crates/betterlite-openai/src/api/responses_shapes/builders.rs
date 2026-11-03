@@ -143,11 +143,22 @@ pub struct InterpreterContent {
     pub stderr: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum InterpreterInput {
+    Content(InterpreterContent),
+    Null(()),
+    Bool(bool),
+    Number(serde_json::Number),
+    Text(String),
+    List(Vec<IgnoredAny>),
+}
+
 #[must_use]
 pub fn build_interpreter_logs(
-    content: &Field<InterpreterContent>,
+    content: &InterpreterInput,
 ) -> Option<Vec<OutputCodeInterpreterCallLog>> {
-    let Field::Known(fields) = content else {
+    let InterpreterInput::Content(fields) = content else {
         return None;
     };
     let mut logs = fields.stdout.clone().unwrap_or_default();

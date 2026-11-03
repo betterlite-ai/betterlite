@@ -43,17 +43,17 @@ pub trait PresidioGuardrailCallback {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsRequestDefaults {
-    pub fill_missing: BTreeMap<String, Box<RawValue>>,
-    pub overrides: BTreeMap<String, Box<RawValue>>,
+pub struct WsRequestDefaults<T = Box<RawValue>> {
+    pub fill_missing: BTreeMap<String, T>,
+    pub overrides: BTreeMap<String, T>,
 }
 
-impl WsRequestDefaults {
+impl<T> WsRequestDefaults<T>
+where
+    T: Clone,
+{
     #[must_use]
-    pub fn merged_into(
-        &self,
-        request: &BTreeMap<String, Box<RawValue>>,
-    ) -> BTreeMap<String, Box<RawValue>> {
+    pub fn merged_into(&self, request: &BTreeMap<String, T>) -> BTreeMap<String, T> {
         let mut merged = self.fill_missing.clone();
         merged.extend(request.clone());
         merged.extend(self.overrides.clone());

@@ -6,7 +6,9 @@ use serde_json::value::RawValue;
 use std::fs;
 
 use super::DeleteResponseResult;
-use super::builders::{WebSearchStatus, build_interpreter_logs, build_web_search_call};
+use super::builders::{
+    InterpreterInput, WebSearchStatus, build_interpreter_logs, build_web_search_call,
+};
 use super::wire::{WireDecodeLimits, decode_responses_shapes};
 
 #[test]
@@ -471,4 +473,11 @@ fn rejects_invalid_literals_and_missing_image_result() {
         r#"{"type":"image","logs":"text"}"#,
     )
     .unwrap_err();
+}
+
+#[rstest]
+#[case::stdout(r#"{"stdout":1}"#)]
+#[case::stderr(r#"{"stderr":false}"#)]
+fn log_fields_reject_wrong_types(#[case] input: &str) {
+    serde_json::from_str::<InterpreterInput>(input).unwrap_err();
 }

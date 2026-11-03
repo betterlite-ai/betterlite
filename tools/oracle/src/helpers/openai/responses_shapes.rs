@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
+use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_shapes::builders::{
-    Field, InterpreterContent, SearchInput, SearchResult, WebSearchStatus, build_interpreter_logs,
+    Field, InterpreterInput, SearchInput, SearchResult, WebSearchStatus, build_interpreter_logs,
     build_web_search_call,
 };
 use betterlite_openai::api::responses_shapes::websocket::WsRequestDefaults;
@@ -10,7 +11,6 @@ use betterlite_openai::api::responses_shapes::{
     OutputCodeInterpreterCall, OutputFunctionToolCall, OutputImageGenerationCall, OutputText,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::value::RawValue;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]
@@ -22,12 +22,12 @@ pub(crate) enum Input {
         status: Option<WebSearchStatus>,
     },
     InterpreterLogs {
-        content: Field<InterpreterContent>,
+        content: InterpreterInput,
     },
     WebsocketDefaults {
         #[serde(flatten)]
-        defaults: WsRequestDefaults,
-        request: BTreeMap<String, Box<RawValue>>,
+        defaults: WsRequestDefaults<Json>,
+        request: BTreeMap<String, Json>,
     },
     NullableRecords(Box<Records>),
 }

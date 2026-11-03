@@ -1,6 +1,16 @@
-responses_shapes:
-  operation: web_search_sources
-  tool_id: t
-  tool_input: {query: cats}
-  result: {content: []}
-  status: null
+kind: helper
+name: responses-shapes-web-search-sources
+call:
+  responses_shapes:
+    operation: web_search_sources
+    tool_id: t
+    tool_input: {query: cats}
+    result:
+      content:
+        - {type: web_search_result, url: https://a.test}
+        - {type: ignored, url: https://b.test}
+        - {type: web_search_result, url: 4}
+    status: null
+env: {}
+compare:
+  ignore: []
