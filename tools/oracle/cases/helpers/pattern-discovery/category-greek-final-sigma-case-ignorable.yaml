@@ -1,0 +1,15 @@
+kind: helper
+name: category-greek-final-sigma-case-ignorable
+call:
+  b3691:
+    function: categories
+    roots:
+      -
+        - filename: ΟΣ𑜞Α.json
+          content: "{}"
+        - filename: greek-spacing-mark.yaml
+          content: |
+            category_name: ΟΣ𑜞Α
+env: {}
+compare:
+  ignore: []

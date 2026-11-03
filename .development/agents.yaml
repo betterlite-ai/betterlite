@@ -49,6 +49,11 @@ roles:
         effort: high
         attempts: 3
         timeout_minutes: 180
+      - runner: codex-worker
+        model: gpt-6-astra
+        effort: high
+        attempts: 1
+        timeout_minutes: 120
   reviewer:
     instructions: roles/reviewer.md
     ladder:
