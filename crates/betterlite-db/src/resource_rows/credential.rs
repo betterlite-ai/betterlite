@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::{ResourceRowsError, convert, json_value_is_set};
+use super::{MAX_JSON_DEPTH, ResourceRowsError, convert, json_value_is_set};
 use crate::budget_permission_rows::JsonData;
 use crate::identity_rows::Payload;
 
@@ -29,7 +29,7 @@ impl TryFrom<JsonData> for CredentialItem {
     fn try_from(value: JsonData) -> Result<Self, Self::Error> {
         check_value_shape(&value)?;
         Ok(Self {
-            fields: convert(&value)?,
+            fields: convert(&value, MAX_JSON_DEPTH)?,
         })
     }
 }
@@ -71,7 +71,7 @@ impl TryFrom<JsonData> for CreateCredentialItem {
         check_create_guard(&value)?;
         check_value_shape(&value)?;
         Ok(Self {
-            fields: convert(&value)?,
+            fields: convert(&value, MAX_JSON_DEPTH)?,
         })
     }
 }
@@ -98,7 +98,7 @@ impl TryFrom<JsonData> for UpdateCredentialItem {
     fn try_from(value: JsonData) -> Result<Self, Self::Error> {
         check_value_shape(&value)?;
         Ok(Self {
-            fields: convert(&value)?,
+            fields: convert(&value, MAX_JSON_DEPTH)?,
         })
     }
 }
