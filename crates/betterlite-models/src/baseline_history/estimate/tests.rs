@@ -119,12 +119,12 @@ fn markers_for_drops_breakpoints_below_the_minimum() {
 }
 
 #[rstest]
-#[case::matching(entry("fp", 50, 300, 0.0, 10.0), 5.0, true)]
-#[case::expired(entry("fp", 50, 300, 0.0, 5.0), 5.0, false)]
-#[case::not_yet_available(entry("fp", 50, 300, 6.0, 10.0), 5.0, false)]
-#[case::fingerprint_outside_lookback(entry("other", 50, 300, 0.0, 10.0), 5.0, false)]
-#[case::tokens_above_prefix(entry("fp", 101, 300, 0.0, 10.0), 5.0, false)]
-#[case::ttl_differs(entry("fp", 50, 3600, 0.0, 10.0), 5.0, false)]
+#[case::matching(entry("fp", 50, 300, 0.0_f64, 10.0_f64), 5.0_f64, true)]
+#[case::expired(entry("fp", 50, 300, 0.0_f64, 5.0_f64), 5.0_f64, false)]
+#[case::not_yet_available(entry("fp", 50, 300, 6.0_f64, 10.0_f64), 5.0_f64, false)]
+#[case::fingerprint_outside_lookback(entry("other", 50, 300, 0.0_f64, 10.0_f64), 5.0_f64, false)]
+#[case::tokens_above_prefix(entry("fp", 101, 300, 0.0_f64, 10.0_f64), 5.0_f64, false)]
+#[case::ttl_differs(entry("fp", 50, 3600, 0.0_f64, 10.0_f64), 5.0_f64, false)]
 fn entry_status_matches_only_when_every_condition_holds(
     #[case] mut candidate: CacheEntry,
     #[case] started_at: f64,

@@ -89,8 +89,8 @@ fn a_timestamp_that_does_not_advance_is_rejected_without_mutating_the_history() 
 #[test]
 fn an_invalid_group_blocks_until_its_latest_relevant_observation_is_available() {
     let history = BaselineHistory {
-        first_at: Some(0.0),
-        last_at: Some(0.0),
+        first_at: Some(0.0_f64),
+        last_at: Some(0.0_f64),
         equivalent: true,
         uncertain_before: 0.0,
         entries: Vec::new(),

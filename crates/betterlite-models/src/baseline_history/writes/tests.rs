@@ -114,8 +114,11 @@ fn writes_for_emits_a_refresh_before_the_marker_entry() {
     let entries = writes_for(&history, &observation).expect("checked writes");
     assert_eq!(entries.len(), 2);
     assert_eq!(entries[0].fingerprint, "stale");
-    assert_eq!(entries[0].available_at.total_cmp(&5.0), Ordering::Equal);
-    assert_eq!(entries[0].expires_at.total_cmp(&3605.0), Ordering::Equal);
+    assert_eq!(entries[0].available_at.total_cmp(&5.0_f64), Ordering::Equal);
+    assert_eq!(
+        entries[0].expires_at.total_cmp(&3605.0_f64),
+        Ordering::Equal
+    );
     assert_eq!(entries[1].fingerprint, "fresh");
 }
 
@@ -155,7 +158,10 @@ fn writes_for_an_ambiguous_write_expires_at_the_longest_conflicting_ttl() {
     assert_eq!(entries.len(), 1);
     assert!(entries[0].uncertain);
     assert_eq!(entries[0].ttl_seconds, 300);
-    assert_eq!(entries[0].expires_at.total_cmp(&3605.0), Ordering::Equal);
+    assert_eq!(
+        entries[0].expires_at.total_cmp(&3605.0_f64),
+        Ordering::Equal
+    );
 }
 
 #[test]

@@ -39,8 +39,8 @@ fn complete_usage(prompt: i64, completion: i64, text: i64, cached: i64, creation
 #[case::none(None, false)]
 #[case::negative_prompt(Some(complete_usage(-1, 0, -1, 0, 0)), false)]
 #[case::missing_details(Some(Usage { prompt_tokens: 1, completion_tokens: 0, total_tokens: 1, prompt_tokens_details: None, cache_read_input_tokens: None, cache_creation_input_tokens: None, extra: Extra::default() }), false)]
-#[case::mismatched_total(Some(Usage { prompt_tokens: 5, completion_tokens: 1, total_tokens: 9, prompt_tokens_details: Some(PromptTokensDetails { text_tokens: Some(5), cached_tokens: Some(0), cache_creation_tokens: Some(0), cache_creation_token_details: None, cache_write_tokens: None, extra: Extra::default() }), cache_read_input_tokens: None, cache_creation_input_tokens: None, extra: Extra::default() }), false)]
-#[case::detail_sum_mismatch(Some(Usage { prompt_tokens: 5, completion_tokens: 1, total_tokens: 6, prompt_tokens_details: Some(PromptTokensDetails { text_tokens: Some(1), cached_tokens: Some(1), cache_creation_tokens: Some(0), cache_creation_token_details: None, cache_write_tokens: None, extra: Extra::default() }), cache_read_input_tokens: None, cache_creation_input_tokens: None, extra: Extra::default() }), false)]
+#[case::mismatched_total(Some(Usage { prompt_tokens: 5, completion_tokens: 1, total_tokens: 9, prompt_tokens_details: Some(PromptTokensDetails { text_tokens: Some(5_i64), cached_tokens: Some(0_i64), cache_creation_tokens: Some(0_i64), cache_creation_token_details: None, cache_write_tokens: None, extra: Extra::default() }), cache_read_input_tokens: None, cache_creation_input_tokens: None, extra: Extra::default() }), false)]
+#[case::detail_sum_mismatch(Some(Usage { prompt_tokens: 5, completion_tokens: 1, total_tokens: 6, prompt_tokens_details: Some(PromptTokensDetails { text_tokens: Some(1_i64), cached_tokens: Some(1_i64), cache_creation_tokens: Some(0_i64), cache_creation_token_details: None, cache_write_tokens: None, extra: Extra::default() }), cache_read_input_tokens: None, cache_creation_input_tokens: None, extra: Extra::default() }), false)]
 #[case::writes_without_split(Some(complete_usage(10, 1, 5, 0, 5)).map(|mut usage| { usage.prompt_tokens_details.as_mut().expect("details").cache_creation_token_details = None; usage }), false)]
 #[case::complete_without_writes(Some(complete_usage(10, 2, 10, 0, 0)), true)]
 #[case::complete_with_writes(Some(complete_usage(10, 2, 2, 3, 5)), true)]
@@ -82,8 +82,8 @@ fn usage_with_cache_retains_unrelated_extra_fields() {
 }
 
 #[rstest]
-#[case::creation_only(Some(5), None, Some(5))]
-#[case::write_only(None, Some(5), Some(5))]
+#[case::creation_only(Some(5_i64), None, Some(5_i64))]
+#[case::write_only(None, Some(5_i64), Some(5_i64))]
 #[case::neither(None, None, None)]
 fn prompt_tokens_details_mirrors_cache_creation_and_write_tokens_on_parse(
     #[case] cache_creation_tokens: Option<i64>,
@@ -104,9 +104,9 @@ fn prompt_tokens_details_mirrors_cache_creation_and_write_tokens_on_parse(
 }
 
 #[rstest]
-#[case::write_wins(Some(20), Some(10), Some(5), Some(20))]
-#[case::creation_beats_nested(None, Some(20), Some(5), Some(20))]
-#[case::nested_alone_counts(None, None, Some(20), Some(20))]
+#[case::write_wins(Some(20_i64), Some(10_i64), Some(5_i64), Some(20_i64))]
+#[case::creation_beats_nested(None, Some(20_i64), Some(5_i64), Some(20_i64))]
+#[case::nested_alone_counts(None, None, Some(20_i64), Some(20_i64))]
 #[case::nested_float_is_ignored(None, None, None, None)]
 fn prompt_tokens_details_takes_the_nested_creation_count_last(
     #[case] cache_write_tokens: Option<i64>,
@@ -146,7 +146,7 @@ fn prompt_tokens_details_takes_the_nested_creation_count_last(
 
 #[test]
 fn usage_copies_top_level_cache_counters_into_prompt_details() {
-    let raw = serde_json::json!({
+    let raw = r#"{
         "prompt_tokens": 100,
         "completion_tokens": 10,
         "total_tokens": 110,
@@ -158,8 +158,8 @@ fn usage_copies_top_level_cache_counters_into_prompt_details() {
             "cached_tokens": 0,
             "cache_creation_tokens": 0
         }
-    });
-    let usage: Usage = serde_json::from_value(raw).expect("usage parses");
+    }"#;
+    let usage: Usage = serde_json::from_str(raw).expect("usage parses");
     let details = usage.prompt_tokens_details.expect("details");
     assert_eq!(details.cached_tokens, Some(20));
     assert_eq!(details.cache_creation_tokens, Some(20));
@@ -181,9 +181,9 @@ fn usage_with_cache_propagates_a_typed_error_instead_of_wrapping_the_total() {
 }
 
 #[rstest]
-#[case::hit("prompt_cache_hit_tokens", Some(20), None)]
-#[case::read("cache_read_input_tokens", Some(20), None)]
-#[case::creation("cache_creation_input_tokens", None, Some(20))]
+#[case::hit("prompt_cache_hit_tokens", Some(20_i64), None)]
+#[case::read("cache_read_input_tokens", Some(20_i64), None)]
+#[case::creation("cache_creation_input_tokens", None, Some(20_i64))]
 fn top_level_counters_create_missing_prompt_details(
     #[case] field: &str,
     #[case] cached: Option<i64>,
@@ -207,11 +207,11 @@ fn usage_without_any_creation_count_is_incomplete() {
 }
 
 #[rstest]
-#[case::zero("0", Some(0))]
-#[case::float("20.5", Some(7))]
-#[case::text("\"20\"", Some(7))]
-#[case::boolean("true", Some(7))]
-#[case::null("null", Some(7))]
+#[case::zero("0", Some(0_i64))]
+#[case::float("20.5", Some(7_i64))]
+#[case::text("\"20\"", Some(7_i64))]
+#[case::boolean("true", Some(7_i64))]
+#[case::null("null", Some(7_i64))]
 fn prompt_cache_hit_only_copies_integers(#[case] value: &str, #[case] expected: Option<i64>) {
     let input = format!(
         r#"{{"prompt_tokens":10,"completion_tokens":0,"total_tokens":10,

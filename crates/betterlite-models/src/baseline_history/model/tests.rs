@@ -57,10 +57,10 @@ fn an_invalid_field_is_rejected_at_the_deserialize_boundary(
 }
 
 #[rstest]
-#[case::started_at_infinity(f64::INFINITY, 0.0, ObservationError::InvalidStartedAt)]
-#[case::started_at_nan(f64::NAN, 0.0, ObservationError::InvalidStartedAt)]
-#[case::available_at_infinity(0.0, f64::INFINITY, ObservationError::InvalidAvailableAt)]
-#[case::available_at_nan(0.0, f64::NAN, ObservationError::InvalidAvailableAt)]
+#[case::started_at_infinity(f64::INFINITY, 0.0_f64, ObservationError::InvalidStartedAt)]
+#[case::started_at_nan(f64::NAN, 0.0_f64, ObservationError::InvalidStartedAt)]
+#[case::available_at_infinity(0.0_f64, f64::INFINITY, ObservationError::InvalidAvailableAt)]
+#[case::available_at_nan(0.0_f64, f64::NAN, ObservationError::InvalidAvailableAt)]
 fn a_non_finite_timestamp_is_rejected_by_its_own_check(
     #[case] started_at: f64,
     #[case] available_at: f64,
