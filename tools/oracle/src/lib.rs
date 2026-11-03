@@ -44,6 +44,8 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum OracleError {
     #[error(transparent)]
+    GatewayPort(#[from] paths::PortError),
+    #[error(transparent)]
     Cli(#[from] clap::Error),
     #[error("cannot read case {path}: {source}")]
     CaseRead {
