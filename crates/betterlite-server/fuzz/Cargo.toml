@@ -50,9 +50,17 @@ path = "fuzz_targets/cache_settings_parser.rs"
 test = false
 doc = false
 bench = false
+
 [[bin]]
 name = "route_path"
 path = "fuzz_targets/route_path.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "list_query"
+path = "fuzz_targets/list_query.rs"
 test = false
 doc = false
 bench = false
