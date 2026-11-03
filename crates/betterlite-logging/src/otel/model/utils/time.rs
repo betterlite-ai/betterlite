@@ -53,10 +53,50 @@ where
         return Some(*epoch_value);
     }
     let input_text = text?;
-    let parsed = NaiveDateTime::parse_from_str(input_text, "%Y-%m-%d %H:%M:%S%.f")
-        .or_else(|_| NaiveDateTime::parse_from_str(input_text, "%Y-%m-%d %H:%M:%S"))
-        .ok()?;
+    let parsed = parse_formatted_datetime(input_text)?;
     timestamp_seconds(DateTimeInput::Naive(parsed), resolver)
+}
+
+fn parse_formatted_datetime(input: &str) -> Option<NaiveDateTime> {
+    if !valid_formatted_datetime(input) {
+        return None;
+    }
+    let format = if input.contains('.') {
+        "%Y-%m-%d %H:%M:%S%.f"
+    } else {
+        "%Y-%m-%d %H:%M:%S"
+    };
+    NaiveDateTime::parse_from_str(input, format).ok()
+}
+
+fn valid_formatted_datetime(input: &str) -> bool {
+    let (base, fraction) = input
+        .split_once('.')
+        .map_or((input, None), |(base, fraction)| (base, Some(fraction)));
+    if base.len() != 19 {
+        return false;
+    }
+    let bytes = base.as_bytes();
+    let separators = [(4, b'-'), (7, b'-'), (10, b' '), (13, b':'), (16, b':')];
+    if separators
+        .iter()
+        .any(|(position, expected)| bytes.get(*position) != Some(expected))
+    {
+        return false;
+    }
+    if bytes
+        .iter()
+        .enumerate()
+        .any(|(position, byte)| !matches!(position, 4 | 7 | 10 | 13 | 16) && !byte.is_ascii_digit())
+    {
+        return false;
+    }
+    if bytes.get(17..19) == Some(b"60") {
+        return false;
+    }
+    fraction.is_none_or(|digits| {
+        (1..=6).contains(&digits.len()) && digits.bytes().all(|byte| byte.is_ascii_digit())
+    })
 }
 
 fn timestamp_seconds<R>(value: DateTimeInput, resolver: &R) -> Option<Decimal>

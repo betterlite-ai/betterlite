@@ -35,14 +35,18 @@ def run(input_value: dict[str, Json]) -> Json:
         values = input_value.get("values")
         if not isinstance(values, list):
             raise ValueError("values must be a list")
-        return [
-            {
-                "seconds": to_seconds(value) if isinstance(value, (int, float)) else None,
-                "nanoseconds": to_ns(value) if isinstance(value, (int, float)) else None,
-            }
-            for value in values
-        ]
+        return [convert_time(value) for value in values]
     raise ValueError(f"unknown b3892 function {function}")
+
+
+def convert_time(value: Json) -> Json:
+    if isinstance(value, bool):
+        return {"seconds": None, "nanoseconds": None}
+    if isinstance(value, (int, float)):
+        return {"seconds": to_seconds(value), "nanoseconds": to_ns(value)}
+    if isinstance(value, str):
+        return {"seconds": to_seconds(value), "nanoseconds": None}
+    return {"seconds": None, "nanoseconds": None}
 
 
 def coerce(item: Json) -> Json:

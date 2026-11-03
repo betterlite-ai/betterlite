@@ -25,6 +25,10 @@ fn formatted_time_uses_injected_local_resolution() {
         to_seconds(None, None, Some("1970-01-01 01:00:00.5"), &resolver()),
         Some(Decimal::new(36005, 1))
     );
+    assert_eq!(
+        to_seconds(None, None, Some("1970-01-01 00:00:00.123456"), &resolver()),
+        Some(Decimal::new(123_456, 6))
+    );
     let naive = NaiveDate::from_ymd_opt(1970, 1, 1)
         .expect("valid date")
         .and_hms_opt(1, 0, 0)
@@ -32,6 +36,22 @@ fn formatted_time_uses_injected_local_resolution() {
     assert_eq!(
         to_ns(None, Some(DateTimeInput::Naive(naive)), &resolver()),
         Some(3_600_000_000_000)
+    );
+}
+
+#[test]
+fn formatted_time_rejects_excess_precision_and_leap_seconds() {
+    assert_eq!(
+        to_seconds(None, None, Some("1970-01-01 00:00:00.1234567"), &resolver()),
+        None
+    );
+    assert_eq!(
+        to_seconds(None, None, Some("1970-01-01 00:00:60"), &resolver()),
+        None
+    );
+    assert_eq!(
+        to_seconds(None, None, Some("1970-01-01 00:00:60.1"), &resolver()),
+        None
     );
 }
 

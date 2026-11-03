@@ -60,7 +60,7 @@ impl OtelModelValue {
             return Decimal::from_str(&number.to_string()).ok();
         }
         if let Self::String(text) = self {
-            return Decimal::from_str(text).ok();
+            return Decimal::from_str(&numeric_text(text)?).ok();
         }
         None
     }
@@ -69,9 +69,30 @@ impl OtelModelValue {
 #[must_use]
 pub fn as_int(value: &OtelModelValue) -> Option<i64> {
     if let OtelModelValue::String(text) = value {
-        return text.parse::<i64>().ok();
+        return numeric_text(text)?.parse::<i64>().ok();
     }
     value.as_decimal()?.trunc().to_i64()
+}
+
+fn numeric_text(text: &str) -> Option<String> {
+    let trimmed = text.trim();
+    let bytes = trimmed.as_bytes();
+    if trimmed.is_empty() {
+        return None;
+    }
+    for (index, byte) in bytes.iter().enumerate() {
+        if *byte == b'_' {
+            let previous = index
+                .checked_sub(1)
+                .and_then(|position| bytes.get(position))?;
+            let next_position = index.checked_add(1)?;
+            let next = bytes.get(next_position)?;
+            if !previous.is_ascii_digit() || !next.is_ascii_digit() {
+                return None;
+            }
+        }
+    }
+    Some(trimmed.replace('_', ""))
 }
 
 #[must_use]

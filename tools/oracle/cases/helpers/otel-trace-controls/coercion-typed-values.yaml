@@ -7,7 +7,10 @@ call:
       - {kind: string, value: hello}
       - {kind: integer, value: -12.9}
       - {kind: integer, value: "42"}
+      - {kind: integer, value: " 42 "}
+      - {kind: integer, value: "1_000"}
       - {kind: decimal, value: "1.25"}
+      - {kind: decimal, value: " 1.25 "}
       - {kind: boolean, value: false}
       - {kind: mapping, value: {key: 3}}
       - {kind: tuple, value: [one, two]}

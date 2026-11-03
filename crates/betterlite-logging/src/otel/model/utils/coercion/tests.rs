@@ -20,6 +20,20 @@ fn parses_numeric_strings_and_truncates_toward_zero() {
 }
 
 #[test]
+fn numeric_strings_allow_surrounding_whitespace_and_digit_separators() {
+    assert_eq!(as_int(&OtelModelValue::String(" 42 ".to_owned())), Some(42));
+    assert_eq!(
+        as_int(&OtelModelValue::String("1_000".to_owned())),
+        Some(1_000)
+    );
+    assert_eq!(
+        OtelModelValue::String(" 1.25 ".to_owned()).as_decimal(),
+        Some(Decimal::new(125, 2))
+    );
+    assert_eq!(as_int(&OtelModelValue::String("1__000".to_owned())), None);
+}
+
+#[test]
 fn validates_json_shapes_for_scalars_mappings_and_tuples() {
     assert_eq!(OtelModelValue::Bool(false).as_bool(), Some(false));
     assert_eq!(OtelModelValue::String("false".to_owned()).as_bool(), None);
