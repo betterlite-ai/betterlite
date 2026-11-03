@@ -18,6 +18,7 @@ betterlite-ocr = { path = "../betterlite-ocr" }
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-redact = { path = "../betterlite-redact" }
 betterlite-roi = { path = "../betterlite-roi" }
+caseless = "0.2.2"
 chrono = { workspace = true }
 email_address = "0.2.9"
 encoding_rs = "0.8.42"

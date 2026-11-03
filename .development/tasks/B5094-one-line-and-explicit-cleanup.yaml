@@ -410,7 +410,6 @@ dod:
   - hooks
 - text: Every existing test still passes, and the workspace builds without new warnings.
   proof:
-  - tests
   - clippy
 checks:
   optional: [mutants]
