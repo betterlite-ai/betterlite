@@ -1,0 +1,18 @@
+kind: helper
+name: category-unicode-titlecase
+call:
+  b3691:
+    function: categories
+    roots:
+      -
+        - filename: foo2bar.json
+          content: "{}"
+        - filename: ßFOO.json
+          content: "{}"
+        - filename: aⅠb.json
+          content: "{}"
+        - filename: foo中bar.json
+          content: "{}"
+env: {}
+compare:
+  ignore: []

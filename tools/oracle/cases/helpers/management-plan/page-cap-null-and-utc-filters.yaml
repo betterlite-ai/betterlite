@@ -1,0 +1,23 @@
+kind: helper
+name: management-plan-page-cap-null-and-utc-filters
+call:
+  management_plan:
+    function: plan
+    spec:
+      resource: widgets
+      sortable: [created_at]
+      searchable: []
+      filters:
+        created_at: {value_type: timestamp, ops: [gte]}
+        deleted_at: {value_type: timestamp, ops: [is_null]}
+      default_sort: []
+      default_page_size: 25
+      max_page_size: 100
+      tiebreaker: created_at
+    params:
+      page_size: "1000"
+      filter[created_at][gte]: "2024-01-01T01:00:00+01:00"
+      filter[deleted_at][is_null]: "false"
+    scope: {kind: all}
+env: {}
+compare: {ignore: []}

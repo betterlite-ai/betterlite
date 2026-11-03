@@ -1,14 +1,14 @@
 id: B1701
 milestone: M4 keys, spend and management
 title: Plan scoped management queries and format problem documents
-status: todo
+status: done
 depends_on: [B003, B171, B204, B732, B1665]
 file: tasks/B1701-management-query-plans.yaml
 covers:
   - "litellm/proxy/list_api/{common,list_framework}.py"
 parent: B007
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 547
