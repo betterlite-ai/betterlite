@@ -882,6 +882,7 @@ dependencies = [
  "chrono",
  "hex",
  "pcre2",
+ "regex",
  "regex-syntax",
  "rstest",
  "rust_decimal",
@@ -893,6 +894,7 @@ dependencies = [
  "speedate",
  "strum",
  "thiserror",
+ "tracing",
  "unicode-normalization",
  "uuid",
 ]
