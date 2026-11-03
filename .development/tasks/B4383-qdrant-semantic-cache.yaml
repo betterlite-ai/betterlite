@@ -10,7 +10,7 @@ description: >-
   Searches use one result with payloads, quantization rescore with 3.0 oversampling, and equality meets the threshold.
   Reads propagate operation errors; batch operations propagate gather errors without Redis's broad error-to-miss conversion.
   Use B4380's `extract_semantic_prompt(Some(messages), None)` for Qdrant read and write prompts and its `decode_cached_response` for hit payloads.
-  Serialize the betterlite-prompts `Json` cache response as JSON text accepted by that decoder; do not write Python `str(value)` output.
+  Serialize the betterlite-prompts `arguments::json::Json` cache response as JSON text accepted by that decoder; do not write Python `str(value)` output.
   Copy the async httpx client lookup from B173 and UUID generation from B198 instead of using LiteLLM's functions.
   Config loading replaces environment lookups at the constructor boundary using B002's lookup and secret resolution (os.environ/ prefix only).
 scope:

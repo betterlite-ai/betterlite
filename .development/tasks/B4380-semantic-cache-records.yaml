@@ -7,7 +7,7 @@ description: >-
   `Message` type and `get_str_from_messages` projection, preserving message
   order and its direct text concatenation. Implement the public function
   `extract_semantic_prompt(messages: Option<&[Message]>, responses_input:
-  Option<&Json>) -> Result<Option<String>, SemanticCacheRecordsError>`. When a
+  Option<&arguments::json::Json>) -> Result<Option<String>, SemanticCacheRecordsError>`. When a
   messages input is present, it takes precedence over Responses input even when
   the message list is empty; an empty extracted chat prompt remains an empty
   string.
@@ -22,9 +22,9 @@ description: >-
   objects or call model_dump/dict.
 
   Implement `decode_cached_response(payload: Option<&[u8]>) ->
-  Result<Option<Json>, SemanticCacheRecordsError>` for cache payloads. Reject
+  Result<Option<arguments::json::Json>, SemanticCacheRecordsError>` for cache payloads. Reject
   payloads larger than 1 MiB before parsing. Decode UTF-8 JSON into the
-  betterlite-prompts `Json` type; missing payload remains absent and JSON null
+  `arguments::json::Json` type; missing payload remains absent and JSON null
   remains `Json::Null`. Malformed UTF-8/JSON and oversized input are typed
   errors. Rely on serde_json's default recursion limit of 128 rather than
   adding another JSON parser or an unbounded-depth feature. Redis callers
@@ -35,10 +35,9 @@ description: >-
   round-trip supported response values; those writes remain in their backend
   tasks. B4382 owns Redis `_get_ttl` and its sync/async callers at
   redis_semantic_cache.py:244, 435 and 581. Qdrant has no TTL behavior. Valkey
-  overrides its four read/write methods and is not covered by B4382's current
-  `redis_semantic_cache.py` backlog glob; its writer migration requires the
-  architect to extend an existing backend task's scope. Add helper cases for
-  declared message/Responses inputs and valid JSON cached values only.
+  overrides its read/write methods, and B128 owns those backend operations and
+  their JSON writes. Add helper cases for declared message/Responses inputs
+  and valid JSON cached values only.
 
   Name independent native tests for each branch: prompt presence precedence,
   empty-message presence, Responses string input, content-null fallback,
@@ -142,19 +141,23 @@ oracle_cases:
   - tools/oracle/cases/helpers/semantic-cache-records/responses-null-content.yaml
   - tools/oracle/cases/helpers/semantic-cache-records/cached-json-values.yaml
 
-deviations: []
+deviations:
+  - what: Responses prompt extraction rejects nested input deeper than 64 containers.
+    why: The bounded-inputs rule caps traversal work and call-stack use for untrusted nested request data.
+  - what: Cached response payloads are limited to 1 MiB and JSON nesting uses serde_json's default maximum depth of 128.
+    why: The bounded-inputs rule caps untrusted cache payload allocation and parser recursion.
 
 out_of_scope:
   - Redis cache writes, storage, vector search, similarity and error-to-miss handling; B4382 owns those operations and calls this module.
   - Qdrant cache writes, storage, vector search, similarity and error propagation; B4383 owns those operations and calls this module.
-  - Valkey-specific read/write methods at valkey_semantic_cache.py:258-331; B128 covers that source file, but no current child task covers its backend operations, so the architect must assign them before those operations are implemented. Valkey inherits the shared prompt/decode methods from RedisSemanticCache.
+  - Valkey-specific read/write methods at valkey_semantic_cache.py:258-331; B128 owns those backend operations and JSON writes. Valkey inherits shared prompt extraction and response decoding from RedisSemanticCache.
   - Redis TTL extraction from kwargs and Redis TTL storage; B4382 owns `_get_ttl` and its two callers. Qdrant has no per-call TTL.
   - Embedding dispatch, truncation and timeouts; B4381 owns those operations.
   - Chat message projection; B218 owns Message and get_str_from_messages.
   - Python model_dump/dict duck typing and Python literal/repr compatibility; docs/compatibility.md excludes these runtime behaviors.
 
 pitfalls:
-  - Redis, Qdrant and Valkey currently write str(value), while their decoders accept Python literal syntax. B4382 and B4383 must switch their covered writers to typed JSON serialization; Valkey-specific writer ownership is not assigned in the current B128 split.
+  - Redis, Qdrant and Valkey currently write str(value), while their decoders accept Python literal syntax. B4382, B4383 and B128 own the respective writer changes to `arguments::json::Json` serialization.
   - Qdrant currently calls get_str_from_messages directly at qdrant_semantic_cache.py:327-328 and 402-403; B4383 must use this module's shared prompt API.
   - ValkeySemanticCache inherits RedisSemanticCache, so its four cache operations consume Redis prompt extraction and decode behavior without a separate implementation.
   - Redis turns malformed cached responses into a miss inside get_cache/async_get_cache; Qdrant lets decoding failures propagate. Keep those caller policies in B4382 and B4383.
