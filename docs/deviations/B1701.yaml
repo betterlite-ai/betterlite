@@ -1,0 +1,5 @@
+task: B1701
+deviations:
+  - what: Nonfinite numeric filters and offsets beyond the native index range return a 400 invalid-query-parameter problem.
+    why: Decimal money and checked bounded indexing cannot represent Python infinity, NaN or arbitrary-size offsets.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/list_api/list_framework.py#L406-L416

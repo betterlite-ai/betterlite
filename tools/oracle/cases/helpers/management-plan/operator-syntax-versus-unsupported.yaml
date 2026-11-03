@@ -1,0 +1,18 @@
+kind: helper
+name: management-plan-operator-syntax-versus-unsupported
+call:
+  management_plan:
+    function: plan
+    spec:
+      resource: widgets
+      sortable: [name]
+      searchable: [name]
+      filters: {name: {value_type: text, ops: [eq]}}
+      default_sort: []
+      default_page_size: 25
+      max_page_size: 100
+      tiebreaker: name
+    params: {"filter[name][gte]": value}
+    scope: {kind: all}
+env: {}
+compare: {ignore: []}

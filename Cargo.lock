@@ -1677,6 +1677,7 @@ dependencies = [
  "serde_with",
  "sha2 0.11.1",
  "soft-canonicalize",
+ "speedate",
  "strum",
  "subtle",
  "tempfile",
