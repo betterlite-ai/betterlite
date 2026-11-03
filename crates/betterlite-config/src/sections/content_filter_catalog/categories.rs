@@ -134,9 +134,16 @@ fn title_case(value: &str) -> String {
         if character == '_' {
             titled.push(' ');
             capitalize = true;
-        } else if character.is_alphanumeric() {
-            if capitalize && character.is_alphabetic() {
-                titled.extend(character.to_uppercase());
+        } else if character.is_numeric() {
+            titled.push(character);
+            capitalize = true;
+        } else if character.is_alphabetic() {
+            if capitalize {
+                titled.extend(
+                    unicode_titlecase::to_titlecase(character)
+                        .into_iter()
+                        .take_while(|titlecase| *titlecase != '\0'),
+                );
                 capitalize = false;
             } else {
                 titled.extend(character.to_lowercase());

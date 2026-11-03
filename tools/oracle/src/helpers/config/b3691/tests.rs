@@ -134,7 +134,15 @@ fn available_content_categories_prefers_the_bundled_root_for_a_same_named_catego
 }
 
 #[test]
-fn json_titles_words_after_punctuation_and_digits() {
-    let entry = category_entry(std::path::Path::new("unused"), "mixed-UP_42title.json").unwrap();
-    assert_eq!(entry.display_name, "Mixed-Up 42Title");
+fn category_parse_warnings_capture_filename_and_error_from_discovery() {
+    let result = Op::decode_and_run(&serde_json::json!({
+        "function": "categories",
+        "roots": [[{
+            "filename": "broken.yaml",
+            "content": "category_name: [unterminated\n"
+        }]]
+    }))
+    .unwrap();
+    assert_eq!(result["warnings"][0]["filename"], "broken.yaml");
+    assert_eq!(result["warnings"][0]["error"], true);
 }

@@ -14,12 +14,17 @@ class CategoryFile(TypedDict):
     content: str
 
 
+class CategoryWarning(TypedDict):
+    filename: str
+    error: bool
+
+
 def _categories(roots: list[list[CategoryFile]]) -> Json:
-    warnings: list[str] = []
+    warnings: list[CategoryWarning] = []
 
     def warning(_message: str, filename: str, error: object) -> None:
         if str(error):
-            warnings.append(filename)
+            warnings.append({"filename": filename, "error": True})
 
     with tempfile.TemporaryDirectory() as temporary:
         paths: list[str] = []

@@ -1,0 +1,11 @@
+kind: helper
+name: python-unicode-word-boundary
+call:
+  b3691:
+    function: compile
+    name: us_ssn
+    texts:
+      - "123-45-6789́"
+env: {}
+compare:
+  ignore: []

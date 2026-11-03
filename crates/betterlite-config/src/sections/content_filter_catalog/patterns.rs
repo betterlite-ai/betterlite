@@ -19,12 +19,19 @@ pub struct PatternExtraConfig {
     pub allow_word_numbers: Option<bool>,
 }
 
-#[derive(Debug, Clone, thiserror::Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum PatternCatalogError {
-    #[error("failed to parse patterns.json: {message}")]
-    Parse { message: String },
-    #[error("failed to compile pattern '{name}': {message}")]
-    Compile { name: String, message: String },
+    #[error("failed to parse patterns.json: {source}")]
+    Parse {
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("failed to compile pattern '{name}': {source}")]
+    Compile {
+        name: String,
+        #[source]
+        source: fancy_regex::Error,
+    },
     #[error("Unknown pattern name: '{name}'. Available patterns: {available}")]
     UnknownPattern { name: String, available: String },
 }
@@ -59,12 +66,12 @@ pub struct PatternCatalog {
 }
 
 const PATTERNS_JSON: &str = include_str!("../../../assets/content_filter/patterns.json");
+const PYTHON_WORD_BOUNDARY: &str =
+    r"(?:(?<=[\p{L}\p{N}_])(?![\p{L}\p{N}_])|(?<![\p{L}\p{N}_])(?=[\p{L}\p{N}_]))";
 
 fn load_patterns() -> Result<Vec<PatternEntry>, PatternCatalogError> {
-    let parsed: PatternsFile =
-        serde_json::from_str(PATTERNS_JSON).map_err(|source| PatternCatalogError::Parse {
-            message: source.to_string(),
-        })?;
+    let parsed: PatternsFile = serde_json::from_str(PATTERNS_JSON)
+        .map_err(|source| PatternCatalogError::Parse { source })?;
     Ok(parsed.patterns)
 }
 
@@ -76,10 +83,49 @@ pub fn get_compiled_pattern(pattern_name: &str) -> Result<Regex, PatternCatalogE
             available: catalog.names.join(", "),
         });
     };
-    Regex::new(&format!("(?i){pattern}")).map_err(|source| PatternCatalogError::Compile {
-        name: pattern_name.to_owned(),
-        message: source.to_string(),
+    Regex::new(&format!("(?i){}", compatible_regex_pattern(pattern))).map_err(|source| {
+        PatternCatalogError::Compile {
+            name: pattern_name.to_owned(),
+            source,
+        }
     })
+}
+
+fn compatible_regex_pattern(pattern: &str) -> String {
+    let expanded_ranges = pattern
+        .replace("A-Z", "A-Z\u{130}\u{131}\u{17f}\u{212a}")
+        .replace("a-z", "a-z\u{130}\u{131}\u{17f}\u{212a}");
+    let mut compatible = String::with_capacity(expanded_ranges.len());
+    let mut characters = expanded_ranges.chars();
+    let mut in_character_class = false;
+    while let Some(character) = characters.next() {
+        match character {
+            '\\' => match characters.next() {
+                Some('b') if !in_character_class => compatible.push_str(PYTHON_WORD_BOUNDARY),
+                Some(escaped) => {
+                    compatible.push('\\');
+                    compatible.push(escaped);
+                }
+                None => compatible.push('\\'),
+            },
+            '[' if !in_character_class => {
+                in_character_class = true;
+                compatible.push(character);
+            }
+            ']' if in_character_class => {
+                in_character_class = false;
+                compatible.push(character);
+            }
+            'I' | 'i' if in_character_class => compatible.push_str("Ii\u{130}\u{131}"),
+            'S' | 's' if in_character_class => compatible.push_str("Ss\u{17f}"),
+            'K' | 'k' if in_character_class => compatible.push_str("Kk\u{212a}"),
+            'I' | 'i' => compatible.push_str("[Ii\u{130}\u{131}]"),
+            'S' | 's' => compatible.push_str("[Ss\u{17f}]"),
+            'K' | 'k' => compatible.push_str("[Kk\u{212a}]"),
+            other => compatible.push(other),
+        }
+    }
+    compatible
 }
 
 pub fn get_all_pattern_names() -> Result<Vec<String>, PatternCatalogError> {

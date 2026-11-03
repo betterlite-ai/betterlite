@@ -1,10 +1,11 @@
 #![cfg(test)]
 
+use std::error::Error as _;
+
 use super::{
-    get_all_pattern_names, get_compiled_pattern, get_pattern_metadata, pattern_categories,
-    pattern_extra_config,
+    PatternCatalogError, get_all_pattern_names, get_compiled_pattern, get_pattern_metadata,
+    pattern_categories, pattern_extra_config,
 };
-use crate::sections::content_filter_catalog::patterns::PatternCatalogError;
 
 #[test]
 fn get_compiled_pattern_compiles_a_lookaround_pattern_from_the_bundled_json() {
@@ -17,6 +18,29 @@ fn get_compiled_pattern_compiles_a_lookaround_pattern_from_the_bundled_json() {
 fn get_compiled_pattern_matches_case_insensitively() {
     let pattern = get_compiled_pattern("aws_access_key").unwrap();
     assert!(pattern.is_match("akia1234567890abcdef").unwrap());
+}
+
+#[test]
+fn get_compiled_pattern_matches_python_unicode_casefold_and_word_boundaries() {
+    let ssn = get_compiled_pattern("us_ssn").unwrap();
+    assert!(ssn.is_match("123-45-6789\u{0301}").unwrap());
+    let aws_key = get_compiled_pattern("aws_access_key").unwrap();
+    assert!(aws_key.is_match("AK\u{130}A1234567890ABCDEF").unwrap());
+}
+
+#[test]
+fn pattern_errors_preserve_typed_sources() {
+    let parse_source = serde_json::from_str::<super::PatternsFile>("{").unwrap_err();
+    let parse_error = PatternCatalogError::Parse {
+        source: parse_source,
+    };
+    assert!(parse_error.source().is_some());
+    let compile_source = fancy_regex::Regex::new("(").unwrap_err();
+    let compile_error = PatternCatalogError::Compile {
+        name: "broken".to_owned(),
+        source: compile_source,
+    };
+    assert!(compile_error.source().is_some());
 }
 
 #[test]

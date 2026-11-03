@@ -2,7 +2,7 @@
 
 use std::fs;
 use std::os::unix::fs::symlink;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use rstest::rstest;
 use tempfile::TempDir;
@@ -119,4 +119,14 @@ fn available_content_categories_prefers_the_bundled_root_for_a_same_named_catego
         .collect();
     assert_eq!(shared.len(), 1);
     assert_eq!(shared[0].display_name, "Bundled Shared");
+}
+
+#[test]
+fn json_titles_words_after_digits_and_uses_unicode_titlecase() {
+    let dir = Path::new("unused");
+    let digit_title = category_entry(dir, "foo2bar.json").unwrap();
+    assert_eq!(digit_title.display_name, "Foo2Bar");
+    let unicode_title = category_entry(dir, "\u{df}FOO.json").unwrap();
+    assert_eq!(unicode_title.display_name, "Ssfoo");
+    assert_eq!(unicode_title.description, "Content category: Ssfoo");
 }
