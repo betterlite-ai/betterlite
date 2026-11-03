@@ -1,6 +1,6 @@
 use super::super::{FileContentError, FileContentRequest, RawResponse, transform_file_response};
-use crate::bedrock_settings::{ErrorHeaders, ErrorRequest, ErrorResponse, error_response_text};
-use betterlite_openai::error::ProviderError;
+use crate::bedrock_settings::{ErrorHeaders, error_response_text};
+use betterlite_openai::error::{ErrorRequest, ErrorResponse, ProviderError};
 use rstest::rstest;
 use std::error::Error as _;
 
