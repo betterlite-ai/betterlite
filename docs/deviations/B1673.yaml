@@ -1,0 +1,5 @@
+task: B1673
+deviations:
+  - what: Billed rates, costs and savings retain exact decimals and report arithmetic overflow or invalid nonfinite rates.
+    why: Reported rates must reproduce stored charges without binary floating-point drift.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L1695-L1719

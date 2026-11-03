@@ -1,9 +1,14 @@
+use crate::cost_usage::modality_projection::CacheCreationTokenDetails;
+use crate::modality_cost::cache_write::calculate_cache_writing_cost;
+use crate::modality_cost::error::ModalityCostError;
+use crate::token_cost::error::TokenCostError;
 use rust_decimal::Decimal;
 
 use crate::price_lookup::{PriceRecord, PricedModel};
 use crate::token_rates::TokenRateError;
 
 pub mod catalog;
+pub mod savings;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BilledTokenRates {
@@ -48,11 +53,12 @@ pub enum BilledTokenError {
     #[error(transparent)]
     Rate(#[from] TokenRateError),
     #[error(transparent)]
-    Modality(#[from] crate::modality_cost::error::ModalityCostError),
+    Modality(#[from] ModalityCostError),
     #[error(transparent)]
-    TokenCost(#[from] crate::token_cost::error::TokenCostError),
+    TokenCost(#[from] TokenCostError),
 }
 
+#[derive(Clone, Copy, Debug, serde::Serialize)]
 pub struct BilledTokenCounts {
     pub reasoning: i64,
     pub cache_read: i64,
@@ -62,7 +68,21 @@ pub struct BilledTokenCounts {
     pub cache_creation_1h: Option<i64>,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+impl BilledTokenCounts {
+    #[must_use]
+    pub const fn cache_creation_details(self) -> Option<CacheCreationTokenDetails> {
+        if self.cache_creation_5m.is_some() || self.cache_creation_1h.is_some() {
+            Some(CacheCreationTokenDetails {
+                ephemeral_5m_input_tokens: self.cache_creation_5m,
+                ephemeral_1h_input_tokens: self.cache_creation_1h,
+            })
+        } else {
+            None
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Deserialize)]
 pub struct BilledTokenUsage {
     pub detail_reasoning: Option<i64>,
     pub top_level_reasoning: Option<i64>,
@@ -75,38 +95,28 @@ pub struct BilledTokenUsage {
     pub detail_cache_creation_1h: Option<i64>,
 }
 
+#[must_use]
 pub fn project_billed_token_counts(usage: BilledTokenUsage) -> BilledTokenCounts {
     BilledTokenCounts {
-        reasoning: usage
-            .detail_reasoning
-            .filter(|count| *count != 0)
-            .unwrap_or_else(|| {
-                usage
-                    .top_level_reasoning
-                    .filter(|count| *count > 0)
-                    .unwrap_or(0)
-            }),
-        cache_read: usage
-            .detail_cache_read
-            .filter(|count| *count != 0)
-            .unwrap_or_else(|| {
-                usage
-                    .top_level_cache_read
-                    .filter(|count| *count > 0)
-                    .unwrap_or(0)
-            }),
-        cached_audio: usage.detail_cached_audio.unwrap_or(0),
-        cache_creation: usage
-            .detail_cache_creation
-            .filter(|count| *count != 0)
-            .unwrap_or_else(|| {
-                usage
-                    .top_level_cache_creation
-                    .filter(|count| *count > 0)
-                    .unwrap_or(0)
-            }),
+        reasoning: detail_or_positive(usage.detail_reasoning, usage.top_level_reasoning),
+        cache_read: detail_or_positive(usage.detail_cache_read, usage.top_level_cache_read),
+        cached_audio: usage
+            .detail_cached_audio
+            .unwrap_or(0)
+            .min(usage.detail_cache_read.unwrap_or(0)),
+        cache_creation: detail_or_positive(
+            usage.detail_cache_creation,
+            usage.top_level_cache_creation,
+        ),
         cache_creation_5m: usage.detail_cache_creation_5m,
         cache_creation_1h: usage.detail_cache_creation_1h,
+    }
+}
+
+fn detail_or_positive(detail: Option<i64>, top_level: Option<i64>) -> i64 {
+    match detail {
+        Some(count) if count != 0 => count,
+        _ => top_level.filter(|count| *count > 0).unwrap_or(0),
     }
 }
 
@@ -123,6 +133,7 @@ pub struct BilledTokenRequest<'request> {
     pub prompt_tokens: i64,
 }
 
+#[must_use]
 pub fn custom_billed_token_rates(
     input: Decimal,
     output: Decimal,
@@ -142,35 +153,52 @@ pub fn custom_billed_token_rates(
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, serde::Deserialize)]
+pub struct CustomTokenUsage {
+    #[serde(default)]
+    pub prompt_tokens: i64,
+    #[serde(default)]
+    pub completion_tokens: i64,
+    #[serde(default)]
+    pub cached_tokens: i64,
+    #[serde(default)]
+    pub cache_creation_tokens: i64,
+}
+
 pub fn custom_cost(
-    prompt_tokens: i64,
-    completion_tokens: i64,
-    cached_tokens: i64,
-    cache_creation_tokens: i64,
+    usage: CustomTokenUsage,
     rates: Option<(Decimal, Decimal, Option<Decimal>, Option<Decimal>)>,
     cost_per_second: Option<Decimal>,
     response_time_ms: Option<Decimal>,
 ) -> Result<Option<(Decimal, Decimal)>, BilledTokenError> {
     if let Some((input, output, read, write)) = rates {
-        let normal = prompt_tokens
-            .checked_sub(cached_tokens)
-            .and_then(|count| count.checked_sub(cache_creation_tokens))
+        let billed = custom_billed_token_rates(input, output, read, write);
+        let normal = usage
+            .prompt_tokens
+            .checked_sub(usage.cached_tokens)
+            .and_then(|count| count.checked_sub(usage.cache_creation_tokens))
             .ok_or(BilledTokenError::Overflow)?
             .max(0);
-        let input_cost = mul(normal, input)?
-            .checked_add(mul(cached_tokens, read.unwrap_or(input))?)
+        let input_cost = mul(normal, billed.input_cost_per_token)?
+            .checked_add(mul(
+                usage.cached_tokens,
+                billed.cache_read_input_token_cost,
+            )?)
             .and_then(|value| {
-                value.checked_add(mul(cache_creation_tokens, write.unwrap_or(input)).ok()?)
+                value.checked_add(mul(usage.cache_creation_tokens, billed.cache_write).ok()?)
             })
             .ok_or(BilledTokenError::Overflow)?;
-        return Ok(Some((input_cost, mul(completion_tokens, output)?)));
+        return Ok(Some((
+            input_cost,
+            mul(usage.completion_tokens, billed.output_cost_per_token)?,
+        )));
     }
     let Some(price) = cost_per_second else {
         return Ok(None);
     };
     let duration = response_time_ms
         .unwrap_or(Decimal::ZERO)
-        .checked_div(Decimal::from(1000))
+        .checked_div(Decimal::from(1000_u32))
         .ok_or(BilledTokenError::Overflow)?;
     Ok(Some((
         Decimal::ZERO,
@@ -182,9 +210,9 @@ pub fn custom_cost(
 
 pub fn breakdown(
     counts: BilledTokenCounts,
-    rates: Option<BilledTokenRates>,
+    resolved_rates: Option<BilledTokenRates>,
 ) -> Result<TokenTypeCostBreakdown, BilledTokenError> {
-    let Some(rates) = rates else {
+    let Some(rates) = resolved_rates else {
         return Ok(TokenTypeCostBreakdown {
             reasoning_cost: Decimal::ZERO,
             cache_read_cost: Decimal::ZERO,
@@ -199,14 +227,12 @@ pub fn breakdown(
     let read = mul(uncached_read, rates.cache_read_input_token_cost)?
         .checked_add(mul(counts.cached_audio, rates.audio_read)?)
         .ok_or(BilledTokenError::Overflow)?;
-    let creation =
-        if let (Some(five), Some(one)) = (counts.cache_creation_5m, counts.cache_creation_1h) {
-            mul(five, rates.cache_write)?
-                .checked_add(mul(one, rates.cache_write_1h)?)
-                .ok_or(BilledTokenError::Overflow)?
-        } else {
-            mul(counts.cache_creation, rates.cache_write)?
-        };
+    let creation = calculate_cache_writing_cost(
+        counts.cache_creation,
+        counts.cache_creation_details(),
+        rates.cache_write,
+        rates.cache_write_1h,
+    )?;
     Ok(TokenTypeCostBreakdown {
         reasoning_cost: mul(counts.reasoning, rates.reasoning)?,
         cache_read_cost: read,
@@ -215,39 +241,13 @@ pub fn breakdown(
     })
 }
 
-pub fn caching_savings(
-    input_rate: Decimal,
-    cache_read_rate: Option<Decimal>,
-    cache_creation_rate: Option<Decimal>,
-    cache_creation_above_1hr_rate: Option<Decimal>,
-    cache_read_tokens: i64,
-    cache_creation_tokens: i64,
-    cache_creation_5m_tokens: Option<i64>,
-    cache_creation_1h_tokens: Option<i64>,
-    multiplier: Decimal,
-) -> Result<Decimal, BilledTokenError> {
-    let write = cache_creation_rate
-        .filter(|rate| !rate.is_zero())
-        .unwrap_or(input_rate);
-    let write_1h = cache_creation_above_1hr_rate
-        .filter(|rate| !rate.is_zero())
-        .unwrap_or(write);
-    let read = cache_read_rate.unwrap_or(input_rate);
-    let read_discount = mul(
-        cache_read_tokens.max(0),
-        (input_rate - read).max(Decimal::ZERO),
-    )?;
-    let five_minute = cache_creation_5m_tokens
-        .unwrap_or(cache_creation_tokens)
-        .max(0);
-    let one_hour = cache_creation_1h_tokens.unwrap_or(0).max(0);
-    let write_premium = mul(five_minute, write - input_rate)?
-        .checked_add(mul(one_hour, write_1h - input_rate)?)
-        .ok_or(BilledTokenError::Overflow)?;
-    read_discount
-        .checked_sub(write_premium)
-        .and_then(|value| value.checked_mul(multiplier))
-        .ok_or(BilledTokenError::Overflow)
+pub fn custom_breakdown(
+    mut counts: BilledTokenCounts,
+    rates: BilledTokenRates,
+) -> Result<TokenTypeCostBreakdown, BilledTokenError> {
+    counts.cache_creation_5m = None;
+    counts.cache_creation_1h = None;
+    breakdown(counts, Some(rates))
 }
 
 fn scale(value: Decimal, multiplier: Decimal) -> Result<Decimal, BilledTokenError> {
