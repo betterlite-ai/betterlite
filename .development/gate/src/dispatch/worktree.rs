@@ -1,6 +1,7 @@
 mod tests;
 
 use std::fs;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use crate::affected::finish;
@@ -238,7 +239,30 @@ fn migrate(root: &Path, target: &Path) -> Result<(), GateError> {
     git(&copied, &["symbolic-ref", "HEAD", branch.trim()])?;
     configure(root, &copied)?;
     fs::copy(old.join("index"), copied.join(".git/index")).map_err(failed)?;
+    preserve_info(&common_dir(root)?, &copied.join(".git/info"), target)?;
     replace(target, &copied, &old, &backup)
+}
+
+fn preserve_info(common: &Path, info: &Path, target: &Path) -> Result<(), GateError> {
+    let failed = |source| GateError::Write {
+        path: target.to_owned(),
+        source,
+    };
+    fs::create_dir_all(info).map_err(failed)?;
+    for name in ["exclude", "attributes"] {
+        let metadata = common.join("info").join(name);
+        let destination = info.join(name);
+        if metadata.is_file() {
+            fs::copy(metadata, destination).map_err(failed)?;
+        } else {
+            match fs::remove_file(destination) {
+                Ok(()) => {}
+                Err(error) if error.kind() == ErrorKind::NotFound => {}
+                Err(error) => return Err(failed(error)),
+            }
+        }
+    }
+    Ok(())
 }
 
 fn replace(target: &Path, copied: &Path, old: &Path, backup: &Path) -> Result<(), GateError> {
