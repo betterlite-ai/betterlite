@@ -1,11 +1,10 @@
 import base64
+import importlib
 import importlib.abc
-import re
 import sys
 import types
 from collections.abc import Callable, Sequence
 from importlib.machinery import ModuleSpec
-from io import BytesIO
 from typing import TypeAlias, cast
 
 from litellm.rag.ingestion.file_parsers.pdf_parser import extract_text_from_pdf
@@ -15,29 +14,6 @@ from litellm.rag.text_splitters.recursive_character_text_splitter import (
 )
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
-
-_TEXT_SHOW_OPERATOR = re.compile(rb"\(((?:[^()\\]|\\.)*)\)\s*Tj")
-
-
-class _StubPage:
-    def __init__(self, text: str) -> None:
-        self._text = text
-
-    def extract_text(self) -> str:
-        return self._text
-
-
-class _StubReader:
-    def __init__(self, stream: BytesIO) -> None:
-        matches: list[bytes] = _TEXT_SHOW_OPERATOR.findall(stream.read())
-        self.pages = [_StubPage(match.decode("latin-1")) for match in matches]
-
-
-def _install_stub_reader(module_name: str) -> None:
-    stub = types.ModuleType(module_name)
-    stub.__dict__["PdfReader"] = _StubReader
-    sys.modules[module_name] = stub
-
 
 class _BlockedImportFinder(importlib.abc.MetaPathFinder):
     def __init__(self, blocked_name: str) -> None:
@@ -73,12 +49,17 @@ def _extract_pdf(input_value: dict[str, Json]) -> Json:
     saved_modules = {name: sys.modules.get(name) for name in ("pypdf", "PyPDF2")}
     saved_meta_path = list(sys.meta_path)
     try:
+        pypdf = importlib.import_module("pypdf")
+        # LiteLLM's fallback import name aliases the installed pypdf package in this case.
+        sys.modules["PyPDF2"] = pypdf
         for name, blocked in (("pypdf", block_pypdf), ("PyPDF2", block_pypdf2)):
             sys.modules.pop(name, None)
             if blocked:
                 sys.meta_path.insert(0, _BlockedImportFinder(name))
+            elif name == "pypdf":
+                sys.modules[name] = pypdf
             else:
-                _install_stub_reader(name)
+                sys.modules[name] = pypdf
         extracted = extract_text_from_pdf(pdf_bytes)
     finally:
         sys.meta_path[:] = saved_meta_path

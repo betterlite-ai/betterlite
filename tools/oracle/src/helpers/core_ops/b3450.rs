@@ -58,7 +58,9 @@ fn split(
         requested_separators.unwrap_or_else(|| RAGChunkingStrategy::default().separators);
     let splitter = RecursiveCharacterTextSplitter::new(chunk_size, chunk_overlap, separators)
         .map_err(|error| value_error(&error))?;
-    let chunks = splitter.split_text(text);
+    let chunks = splitter
+        .split_text(text)
+        .map_err(|error| value_error(&error))?;
     Ok(Value::Array(
         chunks.into_iter().map(Value::String).collect(),
     ))

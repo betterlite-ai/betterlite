@@ -110,7 +110,9 @@ fn chunk_defaults_are_hardcoded_constants() {
 fn splitter_basic_splits_on_the_default_separators() {
     let splitter = RecursiveCharacterTextSplitter::new(10, 0, default_separators())
         .expect("the configuration is valid");
-    let chunks = splitter.split_text("one two three four five six seven");
+    let chunks = splitter
+        .split_text("one two three four five six seven")
+        .expect("under cap");
     assert_eq!(
         chunks,
         vec![
@@ -128,7 +130,9 @@ fn splitter_basic_splits_on_the_default_separators() {
 fn splitter_overlap_repeats_text_between_adjacent_chunks() {
     let splitter = RecursiveCharacterTextSplitter::new(20, 5, vec![" ".to_owned(), String::new()])
         .expect("the configuration is valid");
-    let chunks = splitter.split_text("alpha beta gamma delta epsilon zeta eta theta");
+    let chunks = splitter
+        .split_text("alpha beta gamma delta epsilon zeta eta theta")
+        .expect("under cap");
     assert_eq!(
         chunks,
         vec![
@@ -144,7 +148,7 @@ fn splitter_overlap_repeats_text_between_adjacent_chunks() {
 fn splitter_separators_prefers_the_earliest_separator_present_in_the_text() {
     let splitter = RecursiveCharacterTextSplitter::new(5, 0, default_separators())
         .expect("valid configuration");
-    let chunks = splitter.split_text("a\n\nb\nc");
+    let chunks = splitter.split_text("a\n\nb\nc").expect("under cap");
     assert_eq!(chunks, vec!["a".to_owned(), "a\n\nb\nc".to_owned()]);
 }
 
@@ -156,7 +160,7 @@ fn splitter_recursion_falls_back_to_the_narrower_separator() {
         vec!["\n\n".to_owned(), " ".to_owned(), String::new()],
     )
     .expect("valid configuration");
-    let chunks = splitter.split_text("ab cd\n\nef gh");
+    let chunks = splitter.split_text("ab cd\n\nef gh").expect("under cap");
     assert_eq!(
         chunks,
         vec![
@@ -172,7 +176,7 @@ fn splitter_recursion_falls_back_to_the_narrower_separator() {
 fn splitter_force_split_strides_with_overlap_when_no_separator_matches() {
     let splitter = RecursiveCharacterTextSplitter::new(4, 1, vec!["Q".to_owned(), "Z".to_owned()])
         .expect("valid configuration");
-    let chunks = splitter.split_text("abcdefgh");
+    let chunks = splitter.split_text("abcdefgh").expect("under cap");
     assert_eq!(
         chunks,
         vec!["abcd".to_owned(), "defg".to_owned(), "gh".to_owned()]
@@ -183,15 +187,41 @@ fn splitter_force_split_strides_with_overlap_when_no_separator_matches() {
 fn splitter_force_split_stops_exactly_at_the_end_of_the_text() {
     let splitter = RecursiveCharacterTextSplitter::new(4, 1, vec!["Q".to_owned(), "Z".to_owned()])
         .expect("valid configuration");
-    let chunks = splitter.split_text("abcdefg");
+    let chunks = splitter.split_text("abcdefg").expect("under cap");
     assert_eq!(chunks, vec!["abcd".to_owned(), "defg".to_owned()]);
+}
+
+#[test]
+fn chunk_output_cap_force_split_returns_a_typed_error() {
+    let splitter = RecursiveCharacterTextSplitter::new(1000, 999, vec!["Q".to_owned()])
+        .expect("valid overlap");
+    let text = "a".repeat(270_000);
+    assert_eq!(
+        splitter.split_text(&text),
+        Err(super::splitter::SplitError::OutputTooLarge {
+            limit: super::splitter::MAX_SPLIT_OUTPUT_BYTES
+        })
+    );
+}
+
+#[test]
+fn chunk_output_cap_force_split_handles_shorter_chunks() {
+    let splitter =
+        RecursiveCharacterTextSplitter::new(500, 499, vec!["Q".to_owned()]).expect("valid overlap");
+    let text = "a".repeat(540_000);
+    assert_eq!(
+        splitter.split_text(&text),
+        Err(super::splitter::SplitError::OutputTooLarge {
+            limit: super::splitter::MAX_SPLIT_OUTPUT_BYTES
+        })
+    );
 }
 
 #[test]
 fn assemble_chunks_sends_a_split_at_the_chunk_size_boundary_to_force_split() {
     let splitter = RecursiveCharacterTextSplitter::new(4, 0, vec!["|".to_owned()])
         .expect("valid configuration");
-    let chunks = splitter.split_text("abcd|efgh");
+    let chunks = splitter.split_text("abcd|efgh").expect("under cap");
     assert_eq!(chunks, vec!["abcd".to_owned(), "efgh".to_owned()]);
 }
 
@@ -199,7 +229,7 @@ fn assemble_chunks_sends_a_split_at_the_chunk_size_boundary_to_force_split() {
 fn assemble_chunks_flushes_pending_good_splits_before_force_splitting_an_oversized_one() {
     let splitter = RecursiveCharacterTextSplitter::new(5, 0, vec!["|".to_owned()])
         .expect("valid configuration");
-    let chunks = splitter.split_text("ab|verylongpiece");
+    let chunks = splitter.split_text("ab|verylongpiece").expect("under cap");
     assert_eq!(
         chunks,
         vec![
@@ -215,7 +245,7 @@ fn assemble_chunks_flushes_pending_good_splits_before_force_splitting_an_oversiz
 fn splitter_force_split_trims_python_whitespace_control_characters() {
     let splitter = RecursiveCharacterTextSplitter::new(3, 0, vec!["Q".to_owned()])
         .expect("valid configuration");
-    let chunks = splitter.split_text("\u{1c}doc\u{1f}");
+    let chunks = splitter.split_text("\u{1c}doc\u{1f}").expect("under cap");
     assert_eq!(chunks, vec!["do".to_owned(), "c".to_owned()]);
 }
 
@@ -223,7 +253,7 @@ fn splitter_force_split_trims_python_whitespace_control_characters() {
 fn splitter_merge_splits_trims_python_whitespace_control_characters() {
     let splitter = RecursiveCharacterTextSplitter::new(10, 0, vec![String::new()])
         .expect("valid configuration");
-    let chunks = splitter.split_text("\u{1c}doc\u{1f}");
+    let chunks = splitter.split_text("\u{1c}doc\u{1f}").expect("under cap");
     assert_eq!(chunks, vec!["doc".to_owned()]);
 }
 
@@ -232,24 +262,42 @@ fn splitter_recursion_depth_bound_separates_normal_splitting_from_character_fall
     let splitter = RecursiveCharacterTextSplitter::new(4, 2, vec![String::new()]).expect("valid");
     let separators = vec![String::new()];
 
-    let at_limit = splitter.split_recursive("abcdefgh", &separators, DEFAULT_MAX_RECURSE_DEPTH);
+    let mut at_limit = Vec::new();
+    let mut at_limit_bytes = 0;
+    splitter
+        .split_recursive(
+            "abcdefgh",
+            &separators,
+            DEFAULT_MAX_RECURSE_DEPTH,
+            &mut at_limit,
+            &mut at_limit_bytes,
+        )
+        .expect("under cap");
     assert_eq!(
         at_limit,
         vec!["abcd".to_owned(), "cdef".to_owned(), "efgh".to_owned()]
     );
 
-    let past_limit = splitter.split_recursive(
-        "abcdefgh",
-        &separators,
-        DEFAULT_MAX_RECURSE_DEPTH.saturating_add(1),
-    );
+    let mut past_limit = Vec::new();
+    let mut past_limit_bytes = 0;
+    splitter
+        .split_recursive(
+            "abcdefgh",
+            &separators,
+            DEFAULT_MAX_RECURSE_DEPTH.saturating_add(1),
+            &mut past_limit,
+            &mut past_limit_bytes,
+        )
+        .expect("under cap");
     assert_eq!(past_limit, vec!["abcd".to_owned(), "efgh".to_owned()]);
 }
 
 #[test]
 fn splitter_counts_unicode_characters_not_bytes() {
     let splitter = RecursiveCharacterTextSplitter::new(4, 0, vec![String::new()]).expect("valid");
-    let chunks = splitter.split_text("\u{65e5}\u{672c}\u{8a9e}\u{306e}\u{30c6}\u{30b9}\u{30c8}");
+    let chunks = splitter
+        .split_text("\u{65e5}\u{672c}\u{8a9e}\u{306e}\u{30c6}\u{30b9}\u{30c8}")
+        .expect("under cap");
     assert_eq!(
         chunks,
         vec![
@@ -264,6 +312,83 @@ fn pdf_extracts_text_from_a_well_formed_document() {
     let pdf = minimal_pdf("Test PDF File");
     let extracted = extract_text_from_pdf(&pdf);
     assert_eq!(extracted, Some("Test PDF File".to_owned()));
+}
+
+#[test]
+fn pdf_line_move_td_starts_a_new_line() {
+    assert_eq!(
+        extract_text_from_pdf(&pdf_with_stream(
+            "BT /F1 12 Tf 100 700 Td (Hello) Tj 0 -14 Td (World) Tj ET"
+        ))
+        .as_deref(),
+        Some("Hello\nWorld")
+    );
+}
+
+#[test]
+fn pdf_line_move_td_leading_starts_a_new_line() {
+    assert_eq!(
+        extract_text_from_pdf(&pdf_with_stream(
+            "BT /F1 12 Tf 14 TL 100 700 Td (Hello) Tj 0 -14 TD (World) Tj ET"
+        ))
+        .as_deref(),
+        Some("Hello\nWorld")
+    );
+}
+
+#[test]
+fn pdf_line_move_tm_starts_a_new_line() {
+    assert_eq!(
+        extract_text_from_pdf(&pdf_with_stream(
+            "BT /F1 12 Tf 1 0 0 1 100 700 Tm (Hello) Tj 1 0 0 1 100 680 Tm (World) Tj ET"
+        ))
+        .as_deref(),
+        Some("Hello\nWorld")
+    );
+}
+
+#[test]
+fn pdf_line_move_bare_t_star_does_not_start_a_line() {
+    assert_eq!(
+        extract_text_from_pdf(&pdf_with_stream(
+            "BT /F1 12 Tf 100 700 Td (Hello) Tj T* (World) Tj ET"
+        ))
+        .as_deref(),
+        Some("HelloWorld")
+    );
+}
+
+#[test]
+fn pdf_line_move_scaled_tm_uses_font_scale() {
+    assert_eq!(
+        extract_text_from_pdf(&pdf_with_stream(
+            "BT /F1 1 Tf 12 0 0 12 100 700 Tm (Hello) Tj 12 0 0 12 100 695 Tm (World) Tj ET"
+        ))
+        .as_deref(),
+        Some("HelloWorld")
+    );
+}
+
+#[test]
+fn pdf_line_move_tj_uses_vertical_baseline() {
+    assert_eq!(
+        extract_text_from_pdf(&pdf_with_stream(
+            "BT /F1 12 Tf 100 700 Td (Hello) Tj 0 -20 Td (World) Tj ET"
+        ))
+        .as_deref(),
+        Some("Hello\nWorld")
+    );
+}
+
+#[test]
+fn pdf_line_move_t_star_uses_text_leading() {
+    assert_eq!(
+        extract_text_from_pdf(&pdf_with_stream(
+            "BT /F1 12 Tf 14 TL 100 700 Td (Hello) Tj T* (World) Tj ET"
+        ))
+        .as_deref(),
+        Some("Hello\nWorld")
+    );
 }
 
 #[test]
@@ -304,14 +429,54 @@ fn pdf_extracts_a_page_within_the_decompressed_size_limit() {
     assert_eq!(extract_text_from_pdf(&pdf), Some(large_text));
 }
 
+#[test]
+fn pdf_returns_none_past_the_decompressed_page_limit() {
+    let text = " ".repeat(65 * 1024 * 1024);
+    let pdf = pdf_with_stream(&format!("BT /F1 12 Tf ({text}) Tj ET"));
+    assert_eq!(extract_text_from_pdf(&pdf), None);
+}
+
+#[test]
+fn pdf_returns_none_past_the_total_text_cap() {
+    let text = "a".repeat(33 * 1024 * 1024);
+    let stream = format!("BT /F1 12 Tf ({text}) Tj ET");
+    let bodies = [
+        "<< /Type /Catalog /Pages 2 0 R >>".to_owned(),
+        "<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>".to_owned(),
+        "<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 5 0 R >> >> /Contents 6 0 R >>"
+            .to_owned(),
+        "<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 5 0 R >> >> /Contents 6 0 R >>"
+            .to_owned(),
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_owned(),
+        format!(
+            "<< /Length {} >>\nstream\n{stream}\nendstream",
+            stream.len()
+        ),
+    ];
+    let pdf = build_pdf(7, &bodies);
+    assert_eq!(extract_text_from_pdf(&pdf), None);
+}
+
 #[rstest]
-#[case::openai("openai")]
-#[case::bedrock("bedrock")]
-#[case::gemini("gemini")]
-#[case::s3_vectors("s3_vectors")]
-#[case::vertex_ai("vertex_ai")]
-fn get_ingestion_class_resolves_every_supported_provider(#[case] provider: &str) {
-    get_ingestion_class(provider).expect("provider is supported");
+#[case::openai("openai", betterlite_config::rag::document::IngestionProvider::Openai)]
+#[case::bedrock(
+    "bedrock",
+    betterlite_config::rag::document::IngestionProvider::Bedrock
+)]
+#[case::gemini("gemini", betterlite_config::rag::document::IngestionProvider::Gemini)]
+#[case::s3_vectors(
+    "s3_vectors",
+    betterlite_config::rag::document::IngestionProvider::S3Vectors
+)]
+#[case::vertex_ai(
+    "vertex_ai",
+    betterlite_config::rag::document::IngestionProvider::VertexAi
+)]
+fn get_ingestion_class_maps_each_name_to_its_variant(
+    #[case] provider: &str,
+    #[case] expected: betterlite_config::rag::document::IngestionProvider,
+) {
+    assert_eq!(get_ingestion_class(provider), Ok(expected));
 }
 
 #[test]

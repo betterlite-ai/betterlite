@@ -1,0 +1,8 @@
+#![no_main]
+
+use betterlite_config::rag::document::RAGIngestOptions;
+use libfuzzer_sys::fuzz_target;
+
+fuzz_target!(|data: &[u8]| {
+    let _ = serde_json::from_slice::<RAGIngestOptions>(data);
+});
