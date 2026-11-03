@@ -1,6 +1,7 @@
 mod tests;
 
 use secrecy::ExposeSecret;
+use std::borrow::Cow;
 
 use super::error::FactoryError;
 use super::fields::ConnectionFields;
@@ -21,10 +22,32 @@ pub fn build_client(
         settings.url.as_ref().map(ExposeSecret::expose_secret),
         settings.host.as_deref(),
     )?;
+    let use_provider_auth = settings.credential_provider_settings.is_some()
+        && (kind == ClientKind::Async || target == Target::Cluster);
+    let auth_settings = if use_provider_auth {
+        Cow::Owned(credential_provider_auth(settings))
+    } else {
+        Cow::Borrowed(settings)
+    };
     match target {
-        Target::Cluster => cluster::build(settings, kind).map(RedisClient::Cluster),
-        Target::Url => url::build(settings).map(RedisClient::Url),
-        Target::Sentinel => sentinel::build(settings).map(RedisClient::Sentinel),
-        Target::Direct => Ok(RedisClient::Direct(ConnectionFields::from(settings))),
+        Target::Cluster => cluster::build(auth_settings.as_ref(), kind).map(RedisClient::Cluster),
+        Target::Url => url::build(auth_settings.as_ref()).map(RedisClient::Url),
+        Target::Sentinel => sentinel::build(auth_settings.as_ref()).map(RedisClient::Sentinel),
+        Target::Direct => Ok(RedisClient::Direct(ConnectionFields::from(
+            auth_settings.as_ref(),
+        ))),
     }
+}
+
+pub(super) fn credential_provider_auth(
+    settings: &RedisConnectionSettings,
+) -> RedisConnectionSettings {
+    let mut auth_settings = settings.clone();
+    if auth_settings.credential_provider_settings.is_some() {
+        auth_settings.credential_provider = true;
+        auth_settings.username = None;
+        auth_settings.password = None;
+        auth_settings.passthrough.remove("redis_connect_func");
+    }
+    auth_settings
 }

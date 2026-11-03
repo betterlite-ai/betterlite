@@ -26,7 +26,10 @@ fn cost_usage_round_trips() {
             reasoning_tokens: Some(3),
         }),
         cache_read_tokens: Some(9),
-        numeric_extras: BTreeMap::new(),
+        numeric_extras: BTreeMap::from([(
+            "duration".to_owned(),
+            rust_decimal::Decimal::new(15, 1),
+        )]),
     };
 
     let usage = Usage::from(&original);
