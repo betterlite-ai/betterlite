@@ -56,6 +56,10 @@ scope:
     - crates/betterlite-prompts/fuzz/corpus/semantic_cache_response/**
     - tools/oracle/cases/helpers/semantic-cache-records/**
     - "tools/oracle/fuzz/corpus/helper_case/semantic_cache_records-*"
+    - tools/oracle/helpers/b4380.py
+    - tools/oracle/helpers/b4380/**
+    - tools/oracle/src/helpers/prompts/b4380.rs
+    - tools/oracle/src/helpers/prompts/b4380/**
   lint_tables: false
 
 references:
