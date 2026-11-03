@@ -1,0 +1,194 @@
+id: B5133
+title: Close the B721 resource rows audit gaps
+description: >-
+  B721 built typed access group, config, credential, model, organization and project rows in
+  crates/betterlite-db/src/resource_rows.rs and crates/betterlite-db/src/resource_rows/. An Opus
+  review after merge found one behavior gap and three tests that can't fail on the behavior they
+  name. This task closes all four in the same module and with the same resource_rows oracle helper
+  operation. The helper itself doesn't change.
+
+
+  Gap one. A model row whose litellm_params or model_info string decodes to JSON exactly 64 levels
+  deep fails with ResourceRowsError::TooDeep today. LiteLLM's check_potential_json_str runs
+  json.loads on both strings and keeps the result, with no depth limit of its own
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/model.py#L29-L44).
+  docs/deviations/B721.yaml only rejects decoded strings deeper than 64. The cause is in
+  resource_rows.rs. parse_data already bounds each decoded string at MAX_JSON_DEPTH (64). The
+  decoded value then goes back under the row object, so the row is one level deeper than the string.
+  Two places check that row against 64 again: the check_depth call in validate_nested's "model"
+  branch, and the convert call in ProxyModelTable::try_from in resource_rows/model.rs. The fix gives
+  check_depth and convert a max depth parameter. Those two model paths pass MAX_JSON_DEPTH + 1.
+  parse_data, the envelope convert in decode_resource_rows and the three convert calls in
+  resource_rows/credential.rs pass MAX_JSON_DEPTH. native_nested_model_json_limits in
+  resource_rows/tests.rs can't fail today, since it uses nested_object(63) as at_limit and
+  nested_object(64) as over_limit and so locks the off-by-one in. It changes to nested_object(64) as
+  at_limit, sent once as litellm_params and once as model_info, and nested_object(65) as over_limit.
+  Its past_serde_limit part stays. It also asserts that a model envelope 64 levels deep with
+  litellm_params sent as a dict (nested_object(62)) decodes, and that the same envelope with
+  nested_object(63) fails with TooDeep, so the outer bound stays at 64. A new oracle case,
+  model-json-strings-at-depth-limit.yaml (name model_json_strings_at_depth_limit), sends a model row
+  with both strings 64 levels deep. Two new corpus seeds, model-string-depth-64.json and
+  model-string-depth-65.json, hold a full model envelope with a litellm_params string at each depth.
+
+
+  Gap two. LiteLLM's CreateCredentialItem guard only asks whether credential_values or model_id is
+  truthy (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/credentials.py#L22-L31).
+  Pydantic then checks that credential_values is a dict. So a non-empty string or list passes the
+  guard and fails field validation. betterlite already does the same: check_create_guard in
+  resource_rows/credential.rs passes, then check_value_shape returns ResourceRowsError::FieldShape.
+  But credential_create_wrong_shape_after_guard in tests.rs only checks that serde decoding fails. If
+  json_value_is_set treated a non-empty string or list as unset, both rows would fail with
+  CredentialValueRequired and the test would still pass. Its oracle case can't tell either, since the
+  resource_rows helper reports every decode failure as ValidationError and LiteLLM raises
+  ValidationError for both. The test becomes an rstest with two cases, text ("nonempty") and list
+  (["nonempty"]), on rows with credential_name and credential_info and no model_id. Each case parses
+  the row into super::JsonData, calls CreateCredentialItem::try_from and asserts
+  ResourceRowsError::FieldShape { field: "credential_values", .. }. The credential code and the oracle
+  case credential-create-wrong-shape-after-guard.yaml stay as they are.
+
+
+  Gap three. LiteLLM_AccessGroupTable declares description, five lists, two timestamps, created_by and
+  updated_by (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/access_group.py#L13-L25),
+  and model_dump returns all of them. The oracle case access-group-all-fields-and-null-lists.yaml
+  (name access_group_all_fields_and_null_lists) sends assigned_key_ids: null, so both sides fail with
+  ValidationError and the full projection is never compared. A broken dump of any filled field would
+  still pass. The case keeps its file and name and sends assigned_key_ids: [k] instead, so it compares
+  the whole AccessGroupTable dump. The null list moves to a new case,
+  access-group-null-list-rejected.yaml (name access_group_null_list_rejected). It sends
+  access_group_id, access_group_name and assigned_key_ids: null, and both sides fail. The native test
+  access_group_all_fields_and_null_lists already rejects null for each list and doesn't change.
+
+
+  Gap four. LiteLLM_OrganizationTable declares model_spend: dict | None = {}
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/organization.py#L14-L29,
+  line 23). A missing key gets {} and an explicit null stays None. OrganizationTable.model_spend in
+  resource_rows/organization.rs is an OptionalPayload whose Default is Some of an empty Payload, so
+  the code already does the same. No test or case sends model_spend: null, though, so a change that
+  turned null into {} would pass everything, and organization_all_fields_nested_users sends no
+  explicit null at all. A new native test, organization_null_model_spend_stays_null, sends budget_id,
+  created_by, updated_by and spend: 0, plus null for model_spend, organization_id,
+  organization_alias, metadata, users, litellm_budget_table, object_permission and
+  object_permission_id. It asserts that model_spend.0 is None, spend is Decimal::ZERO and every other
+  optional field is None, and that serde_json::to_value of the row holds "model_spend": null. A new
+  oracle case, organization-null-model-spend.yaml (name organization_null_model_spend), sends the
+  same row.
+scope:
+  paths:
+    - crates/betterlite-db/src/resource_rows.rs
+    - crates/betterlite-db/src/resource_rows/model.rs
+    - crates/betterlite-db/src/resource_rows/credential.rs
+    - crates/betterlite-db/src/resource_rows/tests.rs
+    - crates/betterlite-db/fuzz/corpus/resource_rows/model-string-depth-64.json
+    - crates/betterlite-db/fuzz/corpus/resource_rows/model-string-depth-65.json
+    - tools/oracle/cases/helpers/resource-rows/access-group-all-fields-and-null-lists.yaml
+    - tools/oracle/cases/helpers/resource-rows/access-group-null-list-rejected.yaml
+    - tools/oracle/cases/helpers/resource-rows/model-json-strings-at-depth-limit.yaml
+    - tools/oracle/cases/helpers/resource-rows/organization-null-model-spend.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/model.py#L29-L44
+    why: check_potential_json_str decodes litellm_params and model_info strings with json.loads and keeps a decoded value of any depth.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/credentials.py#L22-L31
+    why: The CreateCredentialItem guard checks only truthiness, so a non-empty string or list for credential_values reaches dict validation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/access_group.py#L13-L25
+    why: Every field of the access group row that the all-fields oracle case has to compare.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/organization.py#L14-L29
+    why: model_spend defaults to {} when the key is missing and keeps an explicit null.
+dod:
+  - text: >-
+      A model row whose litellm_params or model_info string decodes to JSON 64 levels deep decodes,
+      both through decode_resource_rows and through ProxyModelTable's serde path. A decoded string 65
+      levels deep and an outer envelope 65 levels deep still fail with ResourceRowsError::TooDeep.
+      native_nested_model_json_limits uses nested_object(64) as at_limit and nested_object(65) as
+      over_limit, and the oracle case model_json_strings_at_depth_limit matches LiteLLM.
+    proof:
+      - behavior-tests
+      - parser-corpus
+      - oracle
+  - text: >-
+      credential_create_wrong_shape_after_guard is an rstest with cases text and list. Each calls
+      CreateCredentialItem::try_from on a row with no model_id and asserts
+      ResourceRowsError::FieldShape { field: "credential_values", .. }, so it fails if
+      check_create_guard treats a non-empty string or list as unset.
+    proof:
+      - credential-guard-variant
+  - text: >-
+      The oracle case access_group_all_fields_and_null_lists sends assigned_key_ids: [k] and compares
+      the full AccessGroupTable dump with LiteLLM's model_dump. The new case
+      access_group_null_list_rejected sends assigned_key_ids: null and fails on both sides.
+    proof:
+      - access-group-projection
+      - oracle
+  - text: >-
+      organization_null_model_spend_stays_null and the oracle case organization_null_model_spend
+      prove that an explicit model_spend: null stays null in the row and in its dump, while a missing
+      key still defaults to {}.
+    proof:
+      - organization-null-spend
+      - oracle
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: A decoded model string 64 levels deep still fails with TooDeep, or the native limit test still locks the off-by-one in.
+      run: grep -q 'nested_object(65)' crates/betterlite-db/src/resource_rows/tests.rs && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^resource_rows::tests::/) - test(replays_the_resource_rows_corpus)'
+    - id: parser-corpus
+      why: The fuzz corpus has no seed at the new decoded string depth limit or one level past it.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-db/fuzz/corpus/resource_rows/model-string-depth-64.json)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-db/fuzz/corpus/resource_rows/model-string-depth-65.json)" && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(replays_the_resource_rows_corpus)'
+    - id: credential-guard-variant
+      why: Nothing proves that a truthy credential_values of the wrong shape gets past the create guard and then fails with FieldShape.
+      run: grep -A12 'fn credential_create_wrong_shape_after_guard' crates/betterlite-db/src/resource_rows/tests.rs | grep -q 'CreateCredentialItem::try_from' && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^resource_rows::tests::credential_create_wrong_shape_after_guard::case_[0-9]+_(text|list)$/)'
+    - id: access-group-projection
+      why: The all-fields access group case fails on both sides, so the full projection is never compared with LiteLLM.
+      run: 'grep -qF ''assigned_key_ids: [k]'' tools/oracle/cases/helpers/resource-rows/access-group-all-fields-and-null-lists.yaml && grep -qF ''assigned_key_ids: null'' tools/oracle/cases/helpers/resource-rows/access-group-null-list-rejected.yaml && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/resource-rows/access-group-null-list-rejected.yaml)"'
+    - id: organization-null-spend
+      why: No test or case sends model_spend null, so turning it into an empty dict would pass everything.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/resource-rows/organization-null-model-spend.yaml)" && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^resource_rows::tests::organization_null_model_spend_stays_null$/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/resource-rows/access-group-all-fields-and-null-lists.yaml
+  - tools/oracle/cases/helpers/resource-rows/access-group-and-config-fields.yaml
+  - tools/oracle/cases/helpers/resource-rows/access-group-null-list-rejected.yaml
+  - tools/oracle/cases/helpers/resource-rows/config-requires-dict-without-string-decode.yaml
+  - tools/oracle/cases/helpers/resource-rows/credential-base-and-item-required-fields.yaml
+  - tools/oracle/cases/helpers/resource-rows/credential-create-both-allowed.yaml
+  - tools/oracle/cases/helpers/resource-rows/credential-create-truthy-alternatives.yaml
+  - tools/oracle/cases/helpers/resource-rows/credential-create-update-contracts.yaml
+  - tools/oracle/cases/helpers/resource-rows/credential-create-wrong-shape-after-guard.yaml
+  - tools/oracle/cases/helpers/resource-rows/credential-payload-is-unmodified.yaml
+  - tools/oracle/cases/helpers/resource-rows/credential-update-empty-and-null-allowed.yaml
+  - tools/oracle/cases/helpers/resource-rows/fresh-defaults-and-unknown-fields.yaml
+  - tools/oracle/cases/helpers/resource-rows/model-dict-unchanged.yaml
+  - tools/oracle/cases/helpers/resource-rows/model-json-strings-at-depth-limit.yaml
+  - tools/oracle/cases/helpers/resource-rows/model-json-validation.yaml
+  - tools/oracle/cases/helpers/resource-rows/model-malformed-strings-fail-field-validation.yaml
+  - tools/oracle/cases/helpers/resource-rows/model-null-params-vs-null-info.yaml
+  - tools/oracle/cases/helpers/resource-rows/model-required-fields-and-all-defaults.yaml
+  - tools/oracle/cases/helpers/resource-rows/model-scalar-array-and-double-encoded-text-rejected.yaml
+  - tools/oracle/cases/helpers/resource-rows/nested-user-password-stays-excluded.yaml
+  - tools/oracle/cases/helpers/resource-rows/old-access-model-ids-not-an-alias.yaml
+  - tools/oracle/cases/helpers/resource-rows/organization-all-fields-nested-users.yaml
+  - tools/oracle/cases/helpers/resource-rows/organization-and-project-fields.yaml
+  - tools/oracle/cases/helpers/resource-rows/organization-null-model-spend.yaml
+  - tools/oracle/cases/helpers/resource-rows/organization-project-nulls-not-normalized.yaml
+  - tools/oracle/cases/helpers/resource-rows/project-all-fields-nested-budget-and-permissions.yaml
+  - tools/oracle/cases/helpers/resource-rows/project-required-id-and-all-defaults.yaml
+  - tools/oracle/cases/helpers/resource-rows/scalar-coercion-and-timestamp-boundaries.yaml
+deviations: []
+out_of_scope:
+  - Padded one-line functions in resource_rows belong to B5094. B5094 clears the no-one-line-functions and no-padded-one-line-functions legacy lists. This task doesn't touch .ast-grep/rules/.
+  - docs/deviations/B721.yaml. Its size and depth rule still matches the code after the fix, so it isn't edited.
+  - check_create_guard, check_value_shape and the oracle case credential-create-wrong-shape-after-guard.yaml are right as they are. credential.rs changes only to pass the new depth argument to convert.
+  - crates/betterlite-db/src/team_rows/decoder.rs checks a team row against depth 64 after decoding its nested strings in the same way. That is B859's code and not one of B721's findings.
+pitfalls:
+  - Only the two model row checks get MAX_JSON_DEPTH + 1, and MAX_JSON_DEPTH itself stays 64, so parse_data still rejects a decoded string or an outer envelope 65 levels deep.
+  - The MAX_ROW_BYTES checks next to both model depth checks stay as they are.
+  - No helper case can tell CredentialValueRequired from FieldShape, because the resource_rows helper maps every decode failure to ValidationError, so gap two is proven only by the native try_from asserts.
+  - A credential row in gap two that also sets model_id passes the guard through model_id and proves nothing about credential_values, so those rows carry no model_id.
+  - OptionalPayload's Default is Some of an empty Payload, so the organization row must send "model_spend":null explicitly; leaving the key out tests the {} default instead.
+  - Rust's Decimal dumps a zero spend as 0 while Python's float dumps 0.0, so organization-null-model-spend.yaml ignores /value/spend with the same reason organization-and-project-fields.yaml gives.
+  - 'litellm_params and model_info are dict fields, so each depth-limit string must decode to a JSON object, for example {"x": then 63 [ then 0, 63 ] and a closing } for depth 64.'
+  - The access group case keeps its file and its name access_group_all_fields_and_null_lists, and only assigned_key_ids changes.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

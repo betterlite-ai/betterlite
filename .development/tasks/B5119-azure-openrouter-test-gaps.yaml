@@ -1,0 +1,287 @@
+id: B5119
+title: Close the B237 Azure and OpenRouter error test gaps
+description: >-
+  B237 ported LiteLLM's _map_azure_exception and _map_openrouter_exception as map_azure_exception in
+  crates/betterlite-error/src/azure_openrouter/azure.rs and map_openrouter_exception in
+  crates/betterlite-error/src/azure_openrouter/openrouter.rs. They are tested in azure/tests.rs and
+  openrouter/tests.rs next to them and by helper cases in tools/oracle/cases/helpers/azure-openrouter-errors/
+  that call the azure_openrouter_errors operation. An Opus review after merge found five places where a branch
+  has no test or a test can't fail. In all five both classifiers already give LiteLLM's answer, so this task
+  changes only those two tests.rs files and adds case files. azure.rs, azure/body.rs and openrouter.rs stay as
+  they are. Each new Azure case copies azure-status.yaml: provider azure, model gpt-4, exception_provider Azure,
+  error_str "upstream request failed", env {}, compare {ignore: []} and the name
+  azure-openrouter-errors-<file stem>. Each new OpenRouter case copies openrouter-provider-error.yaml: provider
+  and custom_llm_provider openrouter, exception_provider OpenRouterException and status_code_is_synthesized
+  false.
+
+
+  Gap one. LiteLLM sends a body whose error.code is "invalid_encrypted_content" to BadRequestError with
+  llm_provider "azure", before the "invalid_request_error" text and every status branch
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2002-L2021).
+  BadRequestError keeps the status of the response it gets, and with no response it answers 400
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L219-L251).
+  invalid_encrypted_content_body_code_routes_bad_request sends status 400, and the 400 status branch gives
+  BadRequest as well, so deleting the azure_error_code check in encrypted_or_invalid_request keeps it green.
+  Replace that test with a new rstest body_code_decides_the_class. Its columns are the body, the status code,
+  the expected family and the expected metadata().status_code, and every row sends error_str "boom". Rows
+  nested_encrypted_on_server_status (error.code invalid_encrypted_content, status 500, bad_request, 500) and
+  nested_encrypted_without_status (the same body, no status, bad_request, 400) cover gap one. Add case
+  azure-encrypted-code-no-status.yaml with body error.code invalid_encrypted_content and no status_code. Without
+  the check the rows give api and api_connection, and the case answers status 500 where LiteLLM answers 400.
+
+
+  Gap two. When the body has no error object, LiteLLM takes azure_error_code from the body's top-level code
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1946-L1963).
+  That value feeds the content policy branch and the encrypted branch
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1989-L2002).
+  For content policy, create_content_policy_violation_error reads type and code from the body itself and falls
+  back to invalid_request_error and content_policy_violation
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/exception_mapping.py#L11-L83).
+  azure_error_code_falls_back_to_top_level_code_without_error_object sends status 400, and the 400 branch gives
+  BadRequest anyway, so deleting the fields.code fallback in azure_error_code in azure/body.rs keeps it green. No
+  test or case reaches content policy through the top-level code. Replace that test with rows
+  top_level_encrypted_on_server_status (top-level code invalid_encrypted_content, status 500, bad_request, 500)
+  and top_level_policy_on_server_status (top-level code content_policy_violation, status 500,
+  content_policy_violation, 500) in body_code_decides_the_class. Add cases azure-encrypted-top-level-code.yaml
+  and azure-content-policy-top-level-code.yaml with those bodies and status 500. Without the fallback both rows
+  give api, and both cases lose their openai_code (invalid_encrypted_content and content_policy_violation).
+
+
+  Gap three. LiteLLM's Azure 408 branch raises Timeout without exception_status_code, so it answers 408. The 504
+  branch passes exception_status_code and answers 504, and any other status becomes APIError with that status
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2072-L2127,
+  https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L356-L383).
+  Rows status_408, status_504 and status_other of azure_openrouter_errors_behavior_tests_behavior check only the
+  family, and no case sends 408, 504 or an unmapped status. So TimeoutStatus(504) changed to TimeoutStatus(408)
+  in status_classification, or Api given a fixed 500, keeps everything green. Those three rows stay as family
+  checks. Add rows request_timeout_408 ("boom", 408, expects 408), gateway_timeout_504 ("boom", 504, expects
+  504) and unmapped_status_418 ("boom", 418, expects 418) to Azure's response_branches_answer_the_provider_status,
+  and cases azure-request-timeout.yaml (408), azure-gateway-timeout.yaml (504) and azure-unmapped-status.yaml
+  (418).
+
+
+  Gap four. LiteLLM's OpenRouter 408 branch answers 408 and its 504 branch passes exception_status_code, so it
+  answers 504
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2177-L2215).
+  Rows status_408 and status_504 of OpenRouter's azure_openrouter_errors_behavior_tests_behavior check only the
+  family, so TimeoutStatus(504) changed to TimeoutStatus(408) in openrouter.rs keeps them green. They stay as
+  family checks. Add rows status_408 and status_504 to OpenRouter's response_branches_answer_the_provider_status,
+  next to status_422, and cases openrouter-request-timeout.yaml (408) and openrouter-gateway-timeout.yaml (504).
+
+
+  Gap five. LiteLLM's dispatcher sends both azure and azure_text into _map_azure_exception
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2640-L2649).
+  Inside it only the missing-credential and "Connection error" branches pass the caller's custom_llm_provider
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2031-L2045).
+  Every other branch sets llm_provider "azure", content policy included
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1965-L2030,
+  https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2046-L2136,
+  https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/exception_mapping.py#L37-L42).
+  Every Azure test and case sends custom_llm_provider azure, the same string as the literal. So
+  credential_or_connection could use "azure", or another branch could use input.custom_llm_provider, and nothing
+  would fail, while an azure_text client would see the wrong provider. Add a new rstest
+  provider_split_for_azure_text whose rows set custom_llm_provider azure_text and assert metadata().provider.
+  Rows missing_credential_keeps_caller (the api_key sentence, no status) and connection_error_keeps_caller
+  ("Connection error talking to Azure", no status) expect azure_text. Rows text_branch_answers_azure ("Internal
+  server error occurred", no status), content_policy_answers_azure ("content_policy_violation detected in
+  prompt", 400), encrypted_answers_azure ("the signature could not be verified", 500),
+  invalid_request_answers_azure ("invalid_request_error: bad field", no status), status_branch_answers_azure
+  ("boom", 401) and no_status_answers_azure ("boom", no status) expect azure. Add cases
+  azure-text-missing-credential.yaml (the api_key sentence, no status), azure-text-connection-error.yaml
+  ("Connection error talking to Azure", no status), azure-text-status.yaml (401) and azure-text-no-status.yaml
+  (no status), all with custom_llm_provider azure_text.
+scope:
+  paths:
+  - crates/betterlite-error/src/azure_openrouter/azure/tests.rs
+  - crates/betterlite-error/src/azure_openrouter/openrouter/tests.rs
+  - tools/oracle/cases/helpers/azure-openrouter-errors/azure-encrypted-code-no-status.yaml
+  - tools/oracle/cases/helpers/azure-openrouter-errors/azure-encrypted-top-level-code.yaml
+  - tools/oracle/cases/helpers/azure-openrouter-errors/azure-content-policy-top-level-code.yaml
+  - tools/oracle/cases/helpers/azure-openrouter-errors/azure-request-timeout.yaml
+  - tools/oracle/cases/helpers/azure-openrouter-errors/azure-gateway-timeout.yaml
+  - tools/oracle/cases/helpers/azure-openrouter-errors/azure-unmapped-status.yaml
+  - tools/oracle/cases/helpers/azure-openrouter-errors/openrouter-request-timeout.yaml
+  - tools/oracle/cases/helpers/azure-openrouter-errors/openrouter-gateway-timeout.yaml
+  - tools/oracle/cases/helpers/azure-openrouter-errors/azure-text-missing-credential.yaml
+  - tools/oracle/cases/helpers/azure-openrouter-errors/azure-text-connection-error.yaml
+  - tools/oracle/cases/helpers/azure-openrouter-errors/azure-text-status.yaml
+  - tools/oracle/cases/helpers/azure-openrouter-errors/azure-text-no-status.yaml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1946-L1963
+  why: azure_error_code reads error.code, or the top-level code when the body has no error object (gap two).
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1989-L2021
+  why: The content policy and encrypted branches that azure_error_code feeds, both before any status branch (gaps one and two).
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L219-L251
+  why: BadRequestError keeps the response status and answers 400 without one (gap one).
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/exception_mapping.py#L11-L83
+  why: The content policy error reads type and code from body["error"] or the body itself, sets llm_provider "azure" and keeps the response (gaps two and five).
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2072-L2127
+  why: Azure's 408 Timeout, 504 Timeout with exception_status_code and the APIError fallback with the given status (gap three).
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L356-L383
+  why: Timeout answers exception_status_code or 408 (gaps three and four).
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2177-L2215
+  why: OpenRouter's 408 and 504 Timeout branches (gap four).
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2031-L2045
+  why: The two Azure branches that pass the caller's custom_llm_provider; every other branch says "azure" (gap five).
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2640-L2649
+  why: The dispatcher sends both azure and azure_text into _map_azure_exception, so azure_text tells the caller's value from the literal (gap five).
+dod:
+- text: >-
+    Rows nested_encrypted_on_server_status and nested_encrypted_without_status of body_code_decides_the_class and
+    case azure-encrypted-code-no-status.yaml send body error.code invalid_encrypted_content with status 500 and
+    with no status, and expect bad_request with status 500 and 400. Today's
+    invalid_encrypted_content_body_code_routes_bad_request sends status 400 and passes with the body-code check
+    deleted. It is gone after the change. The rows and the case don't exist on today's main, so encrypted-body-code
+    fails there. Once they exist, deleting the azure_error_code check in encrypted_or_invalid_request turns the
+    rows and the case red.
+  proof: [encrypted-body-code, azure-tests, oracle]
+- text: >-
+    Rows top_level_encrypted_on_server_status and top_level_policy_on_server_status of
+    body_code_decides_the_class, and cases azure-encrypted-top-level-code.yaml and
+    azure-content-policy-top-level-code.yaml, send a body with only a top-level code and status 500. They expect
+    bad_request with openai_code invalid_encrypted_content and content_policy_violation with type
+    invalid_request_error and openai_code content_policy_violation, both with status 500. Today's
+    azure_error_code_falls_back_to_top_level_code_without_error_object sends status 400 and passes with the
+    fallback deleted. It is gone after the change. None of the rows or cases exists on today's main, so
+    top-level-body-code fails there. Once they exist, deleting the fields.code fallback in azure_error_code turns
+    them red.
+  proof: [top-level-body-code, azure-tests, oracle]
+- text: >-
+    Rows request_timeout_408, gateway_timeout_504 and unmapped_status_418 of Azure's
+    response_branches_answer_the_provider_status, and cases azure-request-timeout.yaml, azure-gateway-timeout.yaml
+    and azure-unmapped-status.yaml, expect status 408, 504 and 418. Today the behavior rows status_408,
+    status_504 and status_other check only the family, and azure-status-codes fails on main. Once the rows and
+    cases exist, TimeoutStatus(504) changed to TimeoutStatus(408) or Api given a fixed status turns them red.
+  proof: [azure-status-codes, azure-tests, oracle]
+- text: >-
+    Rows status_408 and status_504 of OpenRouter's response_branches_answer_the_provider_status, and cases
+    openrouter-request-timeout.yaml and openrouter-gateway-timeout.yaml, expect status 408 and 504. Today the
+    behavior rows status_408 and status_504 check only the family, and openrouter-status-codes fails on main.
+    Once the rows and cases exist, TimeoutStatus(504) changed to TimeoutStatus(408) in openrouter.rs turns them
+    red.
+  proof: [openrouter-status-codes, openrouter-tests, oracle]
+- text: >-
+    The eight rows of provider_split_for_azure_text send custom_llm_provider azure_text and expect provider
+    azure_text from the missing-credential and "Connection error" branches and azure from the text, content
+    policy, encrypted, invalid_request_error, status and no-status branches. Cases
+    azure-text-missing-credential.yaml, azure-text-connection-error.yaml, azure-text-status.yaml and
+    azure-text-no-status.yaml do the same through the oracle. Today every test and case sends azure, and
+    azure-text-provider fails on main. Once they exist, swapping the caller's value and the "azure" literal on
+    any branch turns its row red.
+  proof: [azure-text-provider, azure-tests, oracle]
+checks:
+  optional: []
+  commands:
+  - id: azure-tests
+    why: the Azure tests were not touched, or a changed row or one of the other Azure tests fails
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-error/src/azure_openrouter/azure/tests.rs)"
+      && cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(/^azure_openrouter::azure::tests::/)'
+  - id: openrouter-tests
+    why: the OpenRouter tests were not touched, or a changed row or one of the other OpenRouter tests fails
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-error/src/azure_openrouter/openrouter/tests.rs)"
+      && cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(/^azure_openrouter::openrouter::tests::/)'
+  - id: encrypted-body-code
+    why: the nested invalid_encrypted_content code is still tested only on status 400, where the status branch gives the same class
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" --
+      tools/oracle/cases/helpers/azure-openrouter-errors/azure-encrypted-code-no-status.yaml)"
+      && ! grep -q 'fn invalid_encrypted_content_body_code_routes_bad_request(' crates/betterlite-error/src/azure_openrouter/azure/tests.rs
+      && cargo nextest run --locked -p betterlite-error --no-tests=fail
+      -E 'test(/^azure_openrouter::azure::tests::body_code_decides_the_class::case_[0-9]+_(nested_encrypted_on_server_status|nested_encrypted_without_status)$/)'
+  - id: top-level-body-code
+    why: the top-level body code is still tested only on status 400, and never for content policy
+    run: >-
+      test "$(git diff --name-only --diff-filter=A "$GATE_BASE" --
+      tools/oracle/cases/helpers/azure-openrouter-errors/azure-encrypted-top-level-code.yaml
+      tools/oracle/cases/helpers/azure-openrouter-errors/azure-content-policy-top-level-code.yaml | wc -l)" -eq 2
+      && ! grep -q 'fn azure_error_code_falls_back_to_top_level_code_without_error_object(' crates/betterlite-error/src/azure_openrouter/azure/tests.rs
+      && cargo nextest run --locked -p betterlite-error --no-tests=fail
+      -E 'test(/^azure_openrouter::azure::tests::body_code_decides_the_class::case_[0-9]+_(top_level_encrypted_on_server_status|top_level_policy_on_server_status)$/)'
+  - id: azure-status-codes
+    why: Azure's 408, 504 and unmapped status branches still have no status assertion or case
+    run: >-
+      test "$(git diff --name-only --diff-filter=A "$GATE_BASE" --
+      tools/oracle/cases/helpers/azure-openrouter-errors/azure-request-timeout.yaml
+      tools/oracle/cases/helpers/azure-openrouter-errors/azure-gateway-timeout.yaml
+      tools/oracle/cases/helpers/azure-openrouter-errors/azure-unmapped-status.yaml | wc -l)" -eq 3
+      && cargo nextest run --locked -p betterlite-error --no-tests=fail
+      -E 'test(/^azure_openrouter::azure::tests::response_branches_answer_the_provider_status::case_[0-9]+_(request_timeout_408|gateway_timeout_504|unmapped_status_418)$/)'
+  - id: openrouter-status-codes
+    why: OpenRouter's 408 and 504 branches still have no status assertion or case
+    run: >-
+      test "$(git diff --name-only --diff-filter=A "$GATE_BASE" --
+      tools/oracle/cases/helpers/azure-openrouter-errors/openrouter-request-timeout.yaml
+      tools/oracle/cases/helpers/azure-openrouter-errors/openrouter-gateway-timeout.yaml | wc -l)" -eq 2
+      && cargo nextest run --locked -p betterlite-error --no-tests=fail
+      -E 'test(/^azure_openrouter::openrouter::tests::response_branches_answer_the_provider_status::case_[0-9]+_(status_408|status_504)$/)'
+  - id: azure-text-provider
+    why: no test or case sends azure_text, so the caller's provider and the "azure" literal can be swapped unseen
+    run: >-
+      test "$(git diff --name-only --diff-filter=A "$GATE_BASE" --
+      tools/oracle/cases/helpers/azure-openrouter-errors/azure-text-missing-credential.yaml
+      tools/oracle/cases/helpers/azure-openrouter-errors/azure-text-connection-error.yaml
+      tools/oracle/cases/helpers/azure-openrouter-errors/azure-text-status.yaml
+      tools/oracle/cases/helpers/azure-openrouter-errors/azure-text-no-status.yaml | wc -l)" -eq 4
+      && cargo nextest run --locked -p betterlite-error --no-tests=fail
+      -E 'test(/^azure_openrouter::azure::tests::provider_split_for_azure_text::case_[0-9]+_(missing_credential_keeps_caller|connection_error_keeps_caller|text_branch_answers_azure|content_policy_answers_azure|encrypted_answers_azure|invalid_request_answers_azure|status_branch_answers_azure|no_status_answers_azure)$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/azure-openrouter-errors/azure-encrypted-code-no-status.yaml
+- tools/oracle/cases/helpers/azure-openrouter-errors/azure-encrypted-top-level-code.yaml
+- tools/oracle/cases/helpers/azure-openrouter-errors/azure-content-policy-top-level-code.yaml
+- tools/oracle/cases/helpers/azure-openrouter-errors/azure-request-timeout.yaml
+- tools/oracle/cases/helpers/azure-openrouter-errors/azure-gateway-timeout.yaml
+- tools/oracle/cases/helpers/azure-openrouter-errors/azure-unmapped-status.yaml
+- tools/oracle/cases/helpers/azure-openrouter-errors/openrouter-request-timeout.yaml
+- tools/oracle/cases/helpers/azure-openrouter-errors/openrouter-gateway-timeout.yaml
+- tools/oracle/cases/helpers/azure-openrouter-errors/azure-text-missing-credential.yaml
+- tools/oracle/cases/helpers/azure-openrouter-errors/azure-text-connection-error.yaml
+- tools/oracle/cases/helpers/azure-openrouter-errors/azure-text-status.yaml
+- tools/oracle/cases/helpers/azure-openrouter-errors/azure-text-no-status.yaml
+deviations: []
+out_of_scope:
+- >-
+  azure.rs, azure/body.rs and openrouter.rs. Both classifiers already give LiteLLM's answer for every input
+  above, so no product code changes. A new row or case that fails on today's code is a classifier bug to report
+  as a blocker, not something to patch around in tests.rs.
+- >-
+  The oracle adapters tools/oracle/src/helpers/error/azure_openrouter_errors.rs and
+  tools/oracle/helpers/azure_openrouter_errors.py. They already pass body, status_code and custom_llm_provider
+  through and leave status_code unset when a case omits it.
+- >-
+  The fixed status per error class. B5102 already merged it, so the context_window_on_server_status and
+  status_422 rows, azure-context-on-server-status.yaml and openrouter-unprocessable.yaml stay as they are.
+- >-
+  Padded one-line functions. They belong to B5094, and this task doesn't touch the legacy lists under
+  .ast-grep/rules/.
+pitfalls:
+- >-
+  Each row and case must reach only the branch it names. error_str must not hold "Internal server error",
+  "This model's maximum context length is", "DeploymentNotFound", "could not be verified",
+  "invalid_request_error", the api_key sentence, "Connection error" or a content policy substring
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L117-L134)
+  unless that is the branch under test. Otherwise a row stays green when its own branch breaks. That is why
+  body_code_decides_the_class sends "boom".
+- >-
+  A no-status row passes None, and a no-status case leaves status_code out entirely. LiteLLM's no-status path
+  depends on hasattr(original_exception, "status_code"), and the Python adapter sets status_code and a response
+  only when the case gives one.
+- >-
+  A nested body is `body: {error: {code: ...}}` and a top-level body is `body: {code: ...}` with no error key.
+  In Rust, AzureErrorBody and AzureErrorDetail derive Default, so a row can set code and leave the rest to
+  Default.
+- >-
+  Only azure and azure_text reach _map_azure_exception at the pin, so the provider rows use azure_text, not an
+  invented provider.
+- >-
+  The new status rows go into the existing response_branches_answer_the_provider_status functions. Both
+  already assert metadata().status_code, so don't add a second function with the same columns.
+- >-
+  rstest names each row case_<position>_<name>, and inserting rows shifts the positions, so every filter
+  matches case_[0-9]+_ before the row name.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

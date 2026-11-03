@@ -1,0 +1,13 @@
+id: B5108
+milestone: M7 observability
+title: Close the B3975 Rubrik payload test gaps
+status: todo
+depends_on: [B3975]
+file: tasks/B5108-rubrik-payload-test-gaps.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,13 @@
+id: B5115
+milestone: M1 openai data plane
+title: Cohere re-raise answer and native error clause order tests
+status: todo
+depends_on: [B241, B5094]
+file: tasks/B5115-native-errors-a-gaps.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

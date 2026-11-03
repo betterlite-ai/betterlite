@@ -2,7 +2,7 @@ id: B3463
 milestone: M5 api families
 title: Authorize nested RAG stores and project managed settings
 status: todo
-depends_on: [B3450, B1061, B1067]
+depends_on: [B3450, B1061, B1067, B5134]
 file: tasks/B3463-rag-store-authorization.yaml
 covers:
   - "litellm/proxy/rag_endpoints/endpoints.py"
