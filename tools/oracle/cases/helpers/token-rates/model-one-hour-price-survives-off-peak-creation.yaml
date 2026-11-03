@@ -10,9 +10,9 @@ call:
       prompt_tokens: 1
     service_tier: null
     provider: null
-compare: {ignore: []}
-env: {}
     off_peak_pricing:
       hours_utc: "00:00-00:00"
       cache_creation_input_token_cost: "0.0000001"
     moment: "2024-06-16T10:30:00Z"
+compare: {ignore: []}
+env: {}

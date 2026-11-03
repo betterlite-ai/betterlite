@@ -483,27 +483,7 @@ fn malformed_price_on_crossed_threshold_keeps_that_threshold() {
 #[test]
 fn crossed_threshold_overrides_every_rate() {
     let database = TimeZoneDatabase::from_env();
-    let prices = model(&[
-        ("input_cost_per_token", "\"0.000001\""),
-        ("output_cost_per_token", "\"0.000002\""),
-        ("cache_read_input_token_cost", "\"0.000003\""),
-        ("cache_creation_input_token_cost", "\"0.000004\""),
-        ("cache_creation_input_token_cost_above_1hr", "\"0.000005\""),
-        ("input_cost_per_token_above_100_tokens", "\"0.000011\""),
-        ("output_cost_per_token_above_100_tokens", "\"0.000012\""),
-        (
-            "cache_read_input_token_cost_above_100_tokens",
-            "\"0.000013\"",
-        ),
-        (
-            "cache_creation_input_token_cost_above_100_tokens",
-            "\"0.000014\"",
-        ),
-        (
-            "cache_creation_input_token_cost_above_1hr_above_100_tokens",
-            "\"0.000015\"",
-        ),
-    ]);
+    let prices: ModelInfo = serde_json::from_str(r#"{"input_cost_per_token":"0.000001","output_cost_per_token":"0.000002","cache_read_input_token_cost":"0.000003","cache_creation_input_token_cost":"0.000004","cache_creation_input_token_cost_above_1hr":"0.000005","input_cost_per_token_above_100_tokens":"0.000011","output_cost_per_token_above_100_tokens":"0.000012","cache_read_input_token_cost_above_100_tokens":"0.000013","cache_creation_input_token_cost_above_100_tokens":"0.000014","cache_creation_input_token_cost_above_1hr_above_100_tokens":"0.000015"}"#).expect("fixture prices parse");
     let pricing = ModelPricing {
         model: &prices,
         tiered_pricing: &[],
@@ -512,20 +492,20 @@ fn crossed_threshold_overrides_every_rate() {
     let rates = get_token_base_cost(&pricing, usage(200), &context(None, None, &database))
         .expect("threshold rates resolve");
     assert_eq!(
-        (
+        [
             rates.input_rate,
             rates.output_rate,
             rates.cache_read_rate,
             rates.cache_creation_rate,
             rates.cache_creation_above_1hr_rate
-        ),
-        (
+        ],
+        [
             Decimal::new(11, 6),
             Decimal::new(12, 6),
             Decimal::new(13, 6),
             Decimal::new(14, 6),
             Decimal::new(15, 6)
-        )
+        ]
     );
 }
 
