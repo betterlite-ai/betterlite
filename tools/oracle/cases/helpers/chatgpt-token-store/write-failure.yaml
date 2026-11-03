@@ -1,0 +1,7 @@
+kind: helper
+name: write_failure
+call:
+  chatgpt_token_store: {"record": "{\"access_token\": \"h.eyJleHAiOiAxMDAwLjksICJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOiB7ImNoYXRncHRfYWNjb3VudF9pZCI6ICJhY2N0LWFjY2VzcyJ9fQ.unverified\"}", "replacement": null, "now": 100, "fail_write": true, "actions": ["expired", "account", "record"]}
+env: {}
+compare:
+  ignore: []

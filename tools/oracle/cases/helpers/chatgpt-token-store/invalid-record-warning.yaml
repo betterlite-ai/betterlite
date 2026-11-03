@@ -1,0 +1,7 @@
+kind: helper
+name: invalid_record_warning
+call:
+  chatgpt_token_store: {"record": "[]", "replacement": null, "now": 1, "fail_write": false, "actions": ["read", "record", "read"]}
+env: {}
+compare:
+  ignore: []
