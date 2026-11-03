@@ -227,7 +227,7 @@ def _run_aleph_alpha(input_value: AlephAlphaInput) -> JsonValue:
         return _classify(error, model, "aleph_alpha")
     except _ProviderCauseError:
         # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1859-L1860
-        return None
+        return _result_for_family("api_connection", "", "", 500)
     return None
 
 

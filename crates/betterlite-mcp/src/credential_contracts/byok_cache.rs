@@ -29,13 +29,11 @@ pub struct CachedByokCredential {
     pub credential: Option<SecretString>,
 }
 
-type CacheKey = (String, String);
-
 pub struct ByokCredentialCache {
     pub max_size: usize,
     pub ttl: Duration,
     pub clock: Box<dyn Clock>,
-    pub entries: Mutex<HashMap<CacheKey, (CachedByokCredential, Instant)>>,
+    pub entries: Mutex<HashMap<String, (CachedByokCredential, Instant)>>,
 }
 
 impl ByokCredentialCache {
@@ -45,7 +43,7 @@ impl ByokCredentialCache {
         user_id: &str,
         server_id: &str,
     ) -> Option<CachedByokCredential> {
-        let key = (user_id.to_owned(), server_id.to_owned());
+        let key = format!("{CACHE_KEY_PREFIX}:{user_id}:{server_id}");
         let now = self.clock.now();
         let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
         match entries.get(&key) {
@@ -67,7 +65,7 @@ impl ByokCredentialCache {
         server_id: &str,
         credential: Option<SecretString>,
     ) {
-        let key = (user_id.to_owned(), server_id.to_owned());
+        let key = format!("{CACHE_KEY_PREFIX}:{user_id}:{server_id}");
         let now = self.clock.now();
         let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
         if entries.len() >= self.max_size && !entries.contains_key(&key) {
@@ -80,5 +78,12 @@ impl ByokCredentialCache {
             }
         }
         entries.insert(key, (CachedByokCredential { credential }, now));
+    }
+
+    pub fn invalidate_byok_credential(&self, user_id: &str, server_id: &str) -> String {
+        let key = format!("{CACHE_KEY_PREFIX}:{user_id}:{server_id}");
+        let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
+        entries.remove(&key);
+        key
     }
 }
