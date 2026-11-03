@@ -96,6 +96,7 @@ Max's product decisions so far. A task that contradicts one of them is wrong, no
 - 2026-11-02: after the two-task trial, Max authorized resuming the pipeline with cheaper suitable workers. Luna at medium effort gets two 45-minute starts before the existing Astra and Sonnet escalation rungs. Codex runners use the standard service tier; review models, attempt history, required checks and the merge queue remain in force. Begin with six disjoint flows and four build slots, prioritizing B5094 before work that needs its auth-model files.
 - 2026-11-02: Max approved excluding only the frozen upstream data under crates/betterlite-config/assets/content_filter/ from the no-file-start-comments and typos hooks. The original comments, multilingual terms and regex spellings are part of B3691's imported data; all other hooks and behavioral checks still apply.
 - 2026-11-03: routine coding and operations stay on Luna. A first blocked report returns to the architect for clarification before the worker ladder advances; Astra remains available for genuine escalation after cheaper attempts fail. Required review models and gates stay unchanged (Max).
+- 2026-11-03: a final Astra worker rung gives a bounded rescue after the cheaper Luna and Sonnet attempts, including when Claude's vendor is unavailable at its rung. It is one fresh start, uses the existing attempt history and max_worker_attempts cap, and further work requires an explicit grant on the last rung. Review models and gates stay unchanged (Max).
 
 ## Writing a task
 
