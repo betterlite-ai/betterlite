@@ -1,0 +1,18 @@
+kind: helper
+name: unicode-casefold-and-facet-distinct
+call:
+  management_executor:
+    cases:
+      unicode_facets:
+        function: memory
+        rows:
+          - {id: one, name: Straße, tags: [z, a, a]}
+          - {id: two, name: OTHER, tags: [b, '']}
+        where:
+          - kind: compare
+            field: name
+            op: contains
+            value: STRASSE
+        distinct_field: tags
+env: {}
+compare: {ignore: []}

@@ -3,10 +3,11 @@
 betterlite is a Rust workspace. The binary crate lives in `crates/betterlite`;
 later gateway, configuration, provider, and routing crates live beside it.
 
-Run `cargo gate run <ID>` for the complete task gate. During development,
-`cargo fmt --all`, `cargo clippy --workspace --all-targets --locked -- -D warnings`,
-and `cargo nextest run --workspace --locked --no-tests=warn` cover formatting,
-linting, and tests. Use `cargo deny --locked check` for dependency policy.
+Run `cargo gate run <ID>` for the complete task gate. It runs only the tests the
+task's own commands name; a push to main runs the whole suite. During development,
+`cargo fmt --all` and `cargo clippy --workspace --all-targets --locked -- -D warnings`
+cover formatting and linting, and `cargo gate run <ID> --only <check>` runs one of
+the task's test commands. Use `cargo deny --locked check` for dependency policy.
 
 Run the oracle with `cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases`.
 It compares LiteLLM and betterlite against the same mock provider; omit `--self-check`
