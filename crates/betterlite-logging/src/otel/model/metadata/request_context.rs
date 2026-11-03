@@ -1,6 +1,9 @@
 use super::request_identity::RequestIdentity;
 use super::request_identity::parse::from_payload;
-use super::wire::{MetadataError, payload::Payload};
+use super::wire::{
+    MetadataError,
+    payload::{Payload, Response},
+};
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 pub struct RequestContext {
@@ -23,7 +26,10 @@ impl RequestContext {
                 .clone()
                 .or_else(|| payload.model.clone())
                 .unwrap_or_default(),
-            response_model: payload.response.model.clone(),
+            response_model: match &payload.response {
+                Response::Object { model, .. } => model.clone(),
+                Response::Text(_) | Response::Items(_) | Response::Null => None,
+            },
             model_group,
             model_id: payload
                 .model_id
