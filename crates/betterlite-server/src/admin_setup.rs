@@ -3,10 +3,8 @@ use axum::response::{Html, IntoResponse as _, Response};
 
 mod tests;
 
-const MISSING_KEYS_TEMPLATE: &str =
-    include_str!("admin_setup/fixtures/litellm_missing_keys_form.html");
-const ADMIN_UI_DISABLED_TEMPLATE: &str =
-    include_str!("admin_setup/fixtures/litellm_admin_ui_disabled.html");
+const MISSING_KEYS_TEMPLATE: &str = include_str!("admin_setup/missing_keys_page.html");
+const ADMIN_UI_DISABLED_TEMPLATE: &str = include_str!("admin_setup/admin_ui_disabled_page.html");
 
 #[derive(Clone, Copy)]
 pub struct ProxyAvailability {
@@ -33,7 +31,7 @@ pub fn missing_keys_form(missing_key_names: &str) -> String {
         MISSING_KEYS_TEMPLATE
             .replace("{{", "{")
             .replace("}}", "}")
-            .replace("{missing_keys}", missing_key_names)
+            .replace("@@MISSING_KEYS@@", missing_key_names)
     )
 }
 
