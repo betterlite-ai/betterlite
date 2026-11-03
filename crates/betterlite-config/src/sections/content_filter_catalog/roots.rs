@@ -12,3 +12,5 @@ pub const LEGACY_DATA_DIR: &str =
     concat!(env!("CARGO_MANIFEST_DIR"), "/assets/content_filter_legacy");
 
 pub const DATA_ROOTS: [&str; 2] = [DATA_DIR, LEGACY_DATA_DIR];
+
+mod tests;

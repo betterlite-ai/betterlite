@@ -7,7 +7,9 @@ use std::path::{Path, PathBuf};
 use rstest::rstest;
 use tempfile::TempDir;
 
-use super::{available_content_categories, category_dirs, category_entry, find_category_file};
+use super::{
+    available_content_categories, category_dirs, category_entry, category_files, find_category_file,
+};
 use crate::sections::content_filter_records::ContentFilterAction;
 
 fn root_with_categories(files: &[(&str, &str)]) -> (TempDir, PathBuf) {
@@ -28,6 +30,20 @@ fn category_dirs_lists_only_roots_that_have_a_categories_folder() {
     let roots = [bundled.as_path(), empty_tmp.path()];
     let dirs = category_dirs(&roots);
     assert_eq!(dirs, vec![bundled.join("categories")]);
+}
+
+#[test]
+fn category_files_are_sorted_alphabetically_within_each_root() {
+    let (_tmp, root) = root_with_categories(&[
+        ("z.yaml", "category_name: z\n"),
+        ("a.yaml", "category_name: a\n"),
+    ]);
+    let files = category_files(&[root.as_path()]);
+    let filenames: Vec<_> = files
+        .iter()
+        .map(|(_, filename)| filename.as_str())
+        .collect();
+    assert_eq!(filenames, ["a.yaml", "z.yaml"]);
 }
 
 #[test]
