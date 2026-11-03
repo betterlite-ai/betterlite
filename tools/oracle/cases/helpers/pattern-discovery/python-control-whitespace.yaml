@@ -1,0 +1,14 @@
+kind: helper
+name: python-control-whitespace
+call:
+  b3691:
+    function: compile
+    name: visa
+    texts:
+      - "4111\u001c1111\u001c1111\u001c1111"
+      - "4111\u001d1111\u001d1111\u001d1111"
+      - "4111\u001e1111\u001e1111\u001e1111"
+      - "4111\u001f1111\u001f1111\u001f1111"
+env: {}
+compare:
+  ignore: []
