@@ -64,7 +64,7 @@ pub(in crate::list_api::plan) fn parse_positive_int(
         .map_err(|_too_large| problem::invalid_query_parameter(format!("'{name}' is too large.")))
 }
 
-pub(in crate::list_api::plan) fn parse_page(
+pub(in crate::list_api) fn parse_page(
     params: &BTreeMap<String, String>,
 ) -> Result<u64, ProblemDetail> {
     params
@@ -72,7 +72,7 @@ pub(in crate::list_api::plan) fn parse_page(
         .map_or(Ok(1), |raw| parse_positive_int(PAGE_PARAM, raw))
 }
 
-pub(in crate::list_api::plan) fn parse_page_size(
+pub(in crate::list_api) fn parse_page_size(
     spec: &ListSpec,
     params: &BTreeMap<String, String>,
 ) -> Result<u64, ProblemDetail> {

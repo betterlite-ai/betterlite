@@ -1,8 +1,9 @@
 use super::links::{build_list_links, build_page_links};
 use super::plan::build::{build_query_plan, facet_where};
+use super::plan::coerce::numeric::{parse_page, parse_page_size};
 use super::plan::params::{facet_allowed_params, is_known_param};
 use super::plan::types::{FacetExecutor, ListExecutor, ListSpec, SORT_PARAM, Scope};
-use super::problem::{ManagementProblem, invalid_query_parameter, unknown_query_parameter};
+use super::problem::{ManagementProblem, unknown_query_parameter};
 use crate::management_envelopes::{
     FacetListResponse, ListMeta, ListResponse, PageMeta, ProblemDetail,
 };
@@ -103,27 +104,6 @@ fn facet_unknown(spec: &ListSpec, params: &BTreeMap<String, String>) -> Vec<Stri
     unknown
 }
 
-fn parse_positive(
-    name: &str,
-    raw_value: Option<&String>,
-    default: u64,
-    max: Option<u64>,
-) -> Result<u64, ManagementProblem> {
-    let Some(raw) = raw_value else {
-        return Ok(default);
-    };
-    let parsed = raw
-        .parse::<u64>()
-        .ok()
-        .filter(|value| *value > 0)
-        .ok_or_else(|| {
-            ManagementProblem(invalid_query_parameter(format!(
-                "'{name}' must be a positive integer."
-            )))
-        })?;
-    Ok(max.map_or(parsed, |limit| parsed.min(limit)))
-}
-
 pub async fn handle_facet<Executor>(
     spec: &ListSpec,
     executor: &Executor,
@@ -176,13 +156,8 @@ fn facet_pagination(
     spec: &ListSpec,
     params: &BTreeMap<String, String>,
 ) -> Result<(u64, u64), ManagementProblem> {
-    let page = parse_positive("page", params.get("page"), 1, None)?;
-    let page_size = parse_positive(
-        "page_size",
-        params.get("page_size"),
-        spec.default_page_size,
-        Some(spec.max_page_size),
-    )?;
+    let page = parse_page(params).map_err(ManagementProblem)?;
+    let page_size = parse_page_size(spec, params).map_err(ManagementProblem)?;
     Ok((page, page_size))
 }
 

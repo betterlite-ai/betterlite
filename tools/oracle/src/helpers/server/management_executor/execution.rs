@@ -8,35 +8,29 @@ use betterlite_server::list_api::plan::types::{
 use betterlite_server::list_api::sql::{order_by_sql, where_sql};
 use serde_json::{Value, json};
 
-use super::parse::{Case, PredicateInput, cell};
+use super::parse::{Case, Input, PredicateInput, cell};
 
-pub(super) fn run(input: &Value) -> Result<Value, Box<crate::helpers::HelperError>> {
-    let cases = input
-        .get("cases")
-        .and_then(Value::as_object)
-        .ok_or_else(|| helper_error!("InvalidInput", "cases must be an object".to_owned()))?;
+pub(super) fn run(input: &Input) -> Result<Value, Box<crate::helpers::HelperError>> {
     let mut output = serde_json::Map::new();
-    for (name, raw_case) in cases {
-        output.insert(name.clone(), evaluate(raw_case)?);
+    for (name, case) in &input.cases {
+        output.insert(name.clone(), evaluate(case)?);
     }
     Ok(Value::Object(output))
 }
 
-fn evaluate(raw: &Value) -> Result<Value, Box<crate::helpers::HelperError>> {
-    let case: Case = serde_json::from_value(raw.clone())
-        .map_err(|error| helper_error!("InvalidInput", error.to_string()))?;
+fn evaluate(case: &Case) -> Result<Value, Box<crate::helpers::HelperError>> {
     match case {
         Case::Sql {
             predicates: inputs,
             first_index,
             order,
-        } => evaluate_sql(inputs, first_index, &order),
+        } => evaluate_sql(inputs.clone(), *first_index, order),
         Case::Memory {
             predicates: inputs,
             rows,
             order,
             distinct_field,
-        } => evaluate_memory(inputs, &rows, &order, distinct_field.as_deref()),
+        } => evaluate_memory(inputs.clone(), rows, order, distinct_field.as_deref()),
     }
 }
 
@@ -57,7 +51,7 @@ fn evaluate_sql(
 
 fn evaluate_memory(
     inputs: Vec<PredicateInput>,
-    rows: &[BTreeMap<String, Value>],
+    rows: &[BTreeMap<String, super::parse::CellInput>],
     order: &[SortKey],
     distinct_field: Option<&str>,
 ) -> Result<Value, Box<crate::helpers::HelperError>> {
@@ -69,13 +63,11 @@ fn evaluate_memory(
         .iter()
         .map(|row| {
             row.iter()
-                .map(|(name, value)| Ok((name.clone(), cell(value)?)))
-                .collect::<Result<Cells, Box<crate::helpers::HelperError>>>()
+                .map(|(name, value)| (name.clone(), cell(value)))
+                .collect::<Cells>()
         })
-        .collect::<Result<Vec<_>, _>>()?;
-    let executor = InMemoryListExecutor {
-        rows: rows.iter().cloned().zip(row_cells).collect(),
-    };
+        .collect::<Vec<_>>();
+    let executor = InMemoryListExecutor::new(rows.iter().cloned().zip(row_cells).collect());
     block_on(async {
         let count = executor.count(&where_).await;
         let plan = QueryPlan {

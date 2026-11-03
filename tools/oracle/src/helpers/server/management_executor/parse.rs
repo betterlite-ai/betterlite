@@ -5,8 +5,28 @@ use betterlite_server::list_api::plan::types::{
     AnyOf, Compare, ComparisonOp, FilterValue, IsNull, Predicate, SortKey, Within,
 };
 use chrono::{DateTime, Utc};
-use serde::Deserialize;
-use serde_json::Value;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct Input {
+    pub(super) cases: BTreeMap<String, Case>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(untagged)]
+pub(super) enum CellInput {
+    Repeated(Vec<Self>),
+    Null(Option<()>),
+    Text(String),
+    Int(i64),
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(untagged)]
+pub(super) enum ValueInput {
+    Text(String),
+    Int(i64),
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
@@ -23,7 +43,7 @@ pub(super) enum Case {
         #[serde(rename = "where", default)]
         predicates: Vec<PredicateInput>,
         #[serde(default)]
-        rows: Vec<BTreeMap<String, Value>>,
+        rows: Vec<BTreeMap<String, CellInput>>,
         #[serde(default)]
         order: Vec<SortKey>,
         distinct_field: Option<String>,
@@ -34,18 +54,18 @@ const fn default_first_index() -> usize {
     1
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(super) enum PredicateInput {
     Compare {
         field: String,
         op: ComparisonOp,
-        value: Value,
+        value: ValueInput,
         value_type: Option<String>,
     },
     Within {
         field: String,
-        values: Vec<Value>,
+        values: Vec<ValueInput>,
     },
     IsNull {
         field: String,
@@ -57,11 +77,11 @@ pub(super) enum PredicateInput {
     },
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub(super) struct CompareInput {
     field: String,
     op: ComparisonOp,
-    value: Value,
+    value: ValueInput,
 }
 
 pub(super) fn predicate(
@@ -76,12 +96,12 @@ pub(super) fn predicate(
         } => Ok(Predicate::Compare(Compare {
             field,
             op,
-            value: filter_value(&value, value_type.as_deref())?,
+            value: filter_value(value, value_type.as_deref())?,
         })),
         PredicateInput::Within { field, values } => {
             let parsed_values = values
                 .iter()
-                .map(|value| filter_value(value, None))
+                .map(|value| filter_value(value.clone(), None))
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(Predicate::Within(Within {
                 field,
@@ -98,7 +118,7 @@ pub(super) fn predicate(
                     Ok(Compare {
                         field: clause.field,
                         op: clause.op,
-                        value: filter_value(&clause.value, None)?,
+                        value: filter_value(clause.value, None)?,
                     })
                 })
                 .collect::<Result<Vec<_>, Box<crate::helpers::HelperError>>>()?;
@@ -110,51 +130,36 @@ pub(super) fn predicate(
 }
 
 fn filter_value(
-    value: &Value,
+    value: ValueInput,
     value_type: Option<&str>,
 ) -> Result<FilterValue, Box<crate::helpers::HelperError>> {
     if value_type == Some("timestamp") {
         return timestamp_filter(value);
     }
-    if let Some(text) = value.as_str() {
-        return Ok(FilterValue::Text(text.to_owned()));
+    match value {
+        ValueInput::Text(text) => Ok(FilterValue::Text(text)),
+        ValueInput::Int(number) => Ok(FilterValue::Int(number)),
     }
-    if let Some(number) = value.as_i64() {
-        return Ok(FilterValue::Int(number));
-    }
-    Err(helper_error!(
-        "InvalidInput",
-        "unsupported filter value".to_owned()
-    ))
 }
 
-fn timestamp_filter(value: &Value) -> Result<FilterValue, Box<crate::helpers::HelperError>> {
-    let raw = value
-        .as_str()
-        .ok_or_else(|| helper_error!("InvalidInput", "timestamp value must be text".to_owned()))?;
-    let timestamp = DateTime::parse_from_rfc3339(raw)
+fn timestamp_filter(value: ValueInput) -> Result<FilterValue, Box<crate::helpers::HelperError>> {
+    let ValueInput::Text(raw) = value else {
+        return Err(helper_error!(
+            "InvalidInput",
+            "timestamp value must be text".to_owned()
+        ));
+    };
+    let timestamp = DateTime::parse_from_rfc3339(&raw)
         .map_err(|error| helper_error!("InvalidInput", error.to_string()))?
         .with_timezone(&Utc);
     Ok(FilterValue::Timestamp(timestamp))
 }
 
-pub(super) fn cell(value: &Value) -> Result<Cell, Box<crate::helpers::HelperError>> {
-    if value.is_null() {
-        return Ok(Cell::Null);
+pub(super) fn cell(value: &CellInput) -> Cell {
+    match value {
+        CellInput::Repeated(items) => Cell::Repeated(items.iter().map(cell).collect()),
+        CellInput::Null(_) => Cell::Null,
+        CellInput::Text(text) => Cell::Text(text.clone()),
+        CellInput::Int(number) => Cell::Int(*number),
     }
-    if let Some(text) = value.as_str() {
-        return Ok(Cell::Text(text.to_owned()));
-    }
-    if let Some(number) = value.as_i64() {
-        return Ok(Cell::Int(number));
-    }
-    if let Some(items) = value.as_array() {
-        return Ok(Cell::Repeated(
-            items.iter().map(cell).collect::<Result<Vec<_>, _>>()?,
-        ));
-    }
-    Err(helper_error!(
-        "InvalidInput",
-        "unsupported cell value".to_owned()
-    ))
 }

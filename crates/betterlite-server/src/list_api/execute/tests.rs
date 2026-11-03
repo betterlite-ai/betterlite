@@ -172,3 +172,48 @@ async fn facet_duplicates_precede_page_and_scope() {
     );
     assert!(executor.calls.lock().unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn facet_reuses_counted_pagination_parsers() {
+    let executor = Recorder {
+        calls: Mutex::new(Vec::new()),
+    };
+    let params = BTreeMap::from([
+        ("page".to_owned(), " 2 ".to_owned()),
+        ("page_size".to_owned(), "18446744073709551616".to_owned()),
+    ]);
+    let call = FacetCall {
+        params: &params,
+        pairs: &[],
+        scope: &Scope::All,
+        path: "/widgets/facets/tags",
+        field: "tags",
+    };
+    let response = handle_facet(&spec(), &executor, call).await.unwrap();
+    assert_eq!(response.meta.page, 2);
+    assert_eq!(response.meta.page_size, 10);
+}
+
+#[tokio::test]
+async fn handle_list_serializes_executor_enrichment() {
+    use super::super::memory::{Cell, InMemoryListExecutor};
+    use std::collections::BTreeMap;
+
+    let executor = InMemoryListExecutor::with_enricher(
+        vec![(
+            "row".to_owned(),
+            BTreeMap::from([("id".to_owned(), Cell::Int(1))]),
+        )],
+        |rows| Box::pin(async move { rows.into_iter().map(|row| format!("{row}! ")).collect() }),
+    );
+    let params = BTreeMap::new();
+    let response = handle_list(
+        &spec(),
+        &executor,
+        call(&params, &[], &Scope::All),
+        |value| value,
+    )
+    .await
+    .unwrap();
+    assert_eq!(response.data, vec!["row! "]);
+}

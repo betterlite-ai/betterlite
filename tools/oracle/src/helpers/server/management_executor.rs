@@ -1,5 +1,4 @@
 use crate::helpers::{Helper, HelperResult};
-use serde_json::Value;
 
 macro_rules! helper_error {
     ($class:expr, $message:expr) => {
@@ -20,7 +19,7 @@ mod parse;
 pub(crate) struct Op;
 
 impl Helper for Op {
-    type Input = Value;
+    type Input = parse::Input;
 
     fn run(input: &Self::Input) -> HelperResult {
         execution::run(input)
