@@ -1,0 +1,13 @@
+id: B5109
+milestone: M6 guardrails
+title: Close the B3761 Cisco MCP audit gaps
+status: todo
+depends_on: [B3761]
+file: tasks/B5109-cisco-mcp-audit-gaps.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

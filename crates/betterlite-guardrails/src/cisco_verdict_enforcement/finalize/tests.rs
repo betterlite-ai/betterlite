@@ -114,7 +114,9 @@ fn finalize_inspection_stashes_the_verdict_on_request_metadata() {
         &finalize,
     );
     assert!(matches!(outcome, FinalizeOutcome::Monitored));
-    let Json::Object(metadata) = Json::field(&request_data, "metadata") else {
+    let Json::Object(metadata) =
+        Json::parse(request_data.get("metadata").map_or("null", |raw| raw.get()))
+    else {
         panic!("metadata missing");
     };
     assert_eq!(

@@ -1,0 +1,11 @@
+kind: helper
+name: failed-binary-reply-not-found
+call:
+  bedrock_services_file_content:
+    response:
+      status_code: 404
+      body: [60, 69, 114, 114, 111, 114, 62, 60, 67, 111, 100, 101, 62, 78, 111, 83, 117, 99, 104, 75, 101, 121, 60, 47, 67, 111, 100, 101, 62, 60, 47, 69, 114, 114, 111, 114, 62]
+      headers: [[content-type, application/xml], [x-amz-request-id, 'first'], [x-amz-request-id, 'second'], [content-length, '37']]
+      request: {method: GET, url: 'https://bedrock.example/files/id/content'}
+env: {}
+compare: {ignore: []}

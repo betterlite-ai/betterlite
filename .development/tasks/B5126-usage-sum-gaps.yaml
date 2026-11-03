@@ -1,0 +1,240 @@
+id: B5126
+title: Close the B1680 usage aggregation audit gaps
+description: >-
+  B1680 built usage aggregation in betterlite-models::usage_sum (crates/betterlite-models/src/usage_sum.rs
+  and usage_sum/), the CostUsage round trip test in cost_usage::aggregation_projection, and the usage_sum
+  oracle helper in the models group. An Opus review after merge found one behavior gap and five tests or
+  oracle cases that can't fail on the behavior they name. This task closes all six in the same crate,
+  module paths, helper operation and case folder. combine.rs and projection.rs already do the right thing
+  for gaps two to six, so those gaps add tests, helper fields and cases, not product code.
+
+
+  Gap one: private extras survive the merge. LiteLLM's combine_usage_objects walks dir(usage) and skips
+  every name that starts with an underscore
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2778-L2789,
+  line 2781). Usage.__init__ stores provider extras with setattr
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1986-L1987),
+  and pydantic 2.14.1, the version tools/oracle/litellm/uv.lock pins, puts a non-field name like _private
+  in the instance dict with object.__setattr__, outside model_extra. So the merged Usage never carries it.
+  B1680's own task text says to omit private counters too. usage_sum sums every numeric_extras key in its
+  loop today, so two records with _private: 1 merge to _private: 2. The fix skips names that start with
+  "_" in that loop. numeric-extras-private-fields-and-total-mismatch.yaml names private fields but holds
+  none, so it can't fail today. It gains _private: 1 in the numeric_extras of both records, with no ignore
+  entry for it, and then fails on today's main: betterlite answers _private: 2 where LiteLLM answers no
+  such key. A new test usage_sum_skips_private_extras in usage_sum/tests.rs merges two records that each
+  carry _private and the public extra duration, and asserts _private is absent while duration is summed.
+  The B1680 deviation for public numeric extras stays as it is.
+
+
+  Gap two: the declared prompt counters can't reach the oracle. LiteLLM declares eight optional prompt
+  counters on PromptTokensDetailsWrapper: web_search_requests, google_maps_grounding_requests,
+  tool_use_tokens, character_count, image_count, video_length_seconds, audio_length_seconds and
+  query_count (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1760-L1782).
+  The two seconds counters are floats. __init__ deletes each one that is None (same file, L1803-L1843).
+  _combine_prompt_tokens_details adds the new value to the base when the new record has the field and
+  keeps the base value when it doesn't
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2739-L2761).
+  combine.rs sums all eight. But the helper's PromptInput in tools/oracle/src/helpers/models/usage_sum.rs
+  uses deny_unknown_fields and leaves them out, and neither prompt_details_value nor _PROMPT_DETAIL_KEYS in
+  tools/oracle/helpers/usage_sum.py writes them out. duration-and-prediction-token-details.yaml can't fail
+  on duration: its only duration is numeric_extras.duration, and its compare.ignore drops it. The fix adds
+  the eight fields to PromptInput (the two seconds counters as Option<Decimal>, the other six as
+  Option<i64>), maps them in From<&PromptInput> instead of None, and writes all eight in
+  prompt_details_value and in _PROMPT_DETAIL_KEYS. prompt_details_value writes a Decimal the way
+  number_value writes a decimal extra, with the same error when it has no f64. The duration case drops its
+  numeric_extras and its ignore entry and sends prompt_tokens_details {audio_length_seconds: 1.5,
+  video_length_seconds: 0.25} in the first record and {audio_length_seconds: 2.25} in the second, next to
+  its existing completion details. LiteLLM answers audio_length_seconds 3.75 and video_length_seconds
+  0.25. A new case prompt-counters-sum-and-keep-absent-values.yaml sends web_search_requests 1,
+  google_maps_grounding_requests 2, tool_use_tokens 3, character_count 4, image_count 5 and query_count 6
+  in the first record, then only web_search_requests 10, tool_use_tokens 30 and image_count 50. A new
+  corpus seed tools/oracle/fuzz/corpus/helper_case/usage-sum-prompt-counters.yaml sends
+  audio_length_seconds and query_count, so replays_the_helper_case_corpus parses the new fields. On today's
+  main the Rust helper rejects all three inputs as unknown fields.
+
+
+  Gap three: completion modalities zero fill without a test. LiteLLM's completion loop runs over every
+  declared field of CompletionTokensDetailsWrapper and sets each to (current or 0) + (new or 0), so it
+  answers 0 for audio_tokens, image_tokens and video_tokens that a record omits
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2795-L2813).
+  The wrapper adds text_tokens, image_tokens and video_tokens to openai's accepted_prediction_tokens,
+  audio_tokens, reasoning_tokens and rejected_prediction_tokens
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1732-L1740).
+  sum_completion_details in combine.rs does this with .or(Some(0)). But no Rust test covers completion
+  details, and CompletionInput, the completion output in usage_value and _COMPLETION_DETAIL_KEYS all leave
+  the three fields out, so dropping .or(Some(0)) on them still passes. The fix adds audio_tokens,
+  image_tokens and video_tokens to CompletionInput, to From<&CompletionInput> instead of None, to the
+  completion output in usage_value and to _COMPLETION_DETAIL_KEYS. A new case
+  completion-modalities-zero-fill.yaml sends completion_tokens_details {audio_tokens: 2,
+  reasoning_tokens: 1} then {text_tokens: 3}. LiteLLM answers text_tokens 3, audio_tokens 2,
+  image_tokens 0, video_tokens 0, reasoning_tokens 1, accepted_prediction_tokens 0 and
+  rejected_prediction_tokens 0. A new test usage_sum_zero_fills_declared_completion_details asserts that
+  whole CompletionTokensDetails for the same records.
+
+
+  Gap four: a later record without cache writes or cached detail. When the new record leaves
+  cache_write_tokens unset, both aliases are deleted on it, so hasattr fails for them and base_values
+  carries the running write count into the rebuilt wrapper
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2717-L2721
+  and L2742-L2761). A new record without cached_tokens_details keeps the base's (L2753-L2758). combine.rs
+  does both, in the early returns of combine_cache_aliases and combine_cached_tokens_details. But every
+  test and case reports cache writes and cached detail in all of its records, so returning (None, None) or
+  Ok(None) there passes while a batch loses its earlier write count. A new case
+  cache-writes-survive-a-record-without-them.yaml sends three prompt_tokens_details records:
+  {cache_write_tokens: 4, cached_tokens_details: {text_tokens: 2}}, then {cache_creation_tokens: 3,
+  cached_tokens_details: {audio_tokens: 1}}, then {cached_tokens: 1}. LiteLLM answers cache_write_tokens 7,
+  cache_creation_tokens 7, cached_tokens 1 and cached_tokens_details {text_tokens: 2, audio_tokens: 1,
+  image_tokens: null}. A new test
+  usage_sum_keeps_cache_writes_and_cached_detail_through_a_record_without_them asserts the same values.
+
+
+  Gap five: no cached modality ends null. _sum_optional returns None only when both operands are None and
+  otherwise adds them with None as 0
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2724-L2736).
+  cached-modality-none-and-explicit-zero.yaml and usage_sum_merges_cached_modalities end with every
+  modality set (3, 2 and 4), so both still pass if a modality missing from both sides became 0 or an
+  explicit 0 became None. The case changes its two cached_tokens_details to {audio_tokens: 2,
+  image_tokens: 0} and {audio_tokens: 1}, with no text_tokens anywhere. LiteLLM answers text_tokens null,
+  audio_tokens 3 and image_tokens 0. The Rust test is renamed
+  usage_sum_keeps_cached_modality_null_only_when_both_absent and asserts those values for the same
+  records.
+
+
+  Gap six: the CostUsage round trip leaves extras empty. This is betterlite's own billing projection with
+  no LiteLLM counterpart. cost_usage_round_trips in
+  crates/betterlite-models/src/cost_usage/aggregation_projection/tests.rs builds its CostUsage with
+  numeric_extras: BTreeMap::new(), so deleting the copy loop in From<&CostUsage> for Usage
+  (usage_sum/projection.rs) still passes, although B1680's third DoD item says the projection carries
+  numeric extras. The original CostUsage gains the fractional extra duration: Decimal::new(15, 1), and the
+  test keeps asserting that the round trip equals the original.
+scope:
+  paths:
+    - crates/betterlite-models/src/usage_sum.rs
+    - crates/betterlite-models/src/usage_sum/tests.rs
+    - crates/betterlite-models/src/cost_usage/aggregation_projection/tests.rs
+    - tools/oracle/src/helpers/models/usage_sum.rs
+    - tools/oracle/src/helpers/models/usage_sum/**
+    - tools/oracle/helpers/usage_sum.py
+    - tools/oracle/cases/helpers/usage-sum/**
+    - tools/oracle/fuzz/corpus/helper_case/usage-sum-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2778-L2789
+    why: The top-level merge loop over dir(usage), skipping every name that starts with an underscore on line 2781.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1986-L1987
+    why: Usage.__init__ sets every extra param with setattr, the path a _private extra takes in the Python helper.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1760-L1782
+    why: The eight optional prompt counters, two of them float seconds, that the helper must accept and write out.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1803-L1843
+    why: __init__ deletes each unset optional prompt counter and alias, so hasattr fails for them on a new record.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2717-L2761
+    why: The summable field list, base_values carrying cache writes and counters through a record without them, and the cached detail fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2724-L2736
+    why: _sum_optional keeps a cached modality None only when both operands are None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2795-L2813
+    why: The completion detail loop that turns every declared field into an int, 0 when a record omits it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1732-L1740
+    why: CompletionTokensDetailsWrapper's own text_tokens, image_tokens and video_tokens next to openai's four fields.
+dod:
+  - text: >-
+      usage_sum skips numeric_extras names that start with "_". numeric-extras-private-fields-and-total-mismatch.yaml
+      sends _private: 1 in both records without ignoring it and matches LiteLLM's answer with no _private
+      key; on today's main betterlite answers _private: 2. usage_sum_skips_private_extras asserts the key is
+      gone while duration is still summed.
+    proof: [private-extras, usage-sum-tests, oracle]
+  - text: >-
+      PromptInput accepts, and both helpers write out, web_search_requests, google_maps_grounding_requests,
+      tool_use_tokens, character_count, image_count, video_length_seconds, audio_length_seconds and
+      query_count. duration-and-prediction-token-details.yaml compares summed and carried seconds counters
+      with no ignore entry, prompt-counters-sum-and-keep-absent-values.yaml compares the six integer
+      counters, and the usage-sum-prompt-counters corpus seed parses. On today's main the Rust helper
+      rejects all three inputs as unknown fields.
+    proof: [prompt-counter-cases, usage-sum-python, usage-sum-corpus, oracle]
+  - text: >-
+      CompletionInput accepts, and both helpers write out, completion audio_tokens, image_tokens and
+      video_tokens. completion-modalities-zero-fill.yaml matches LiteLLM's 0 for every declared field a
+      record omits, and usage_sum_zero_fills_declared_completion_details asserts the whole merged
+      CompletionTokensDetails, so dropping .or(Some(0)) in sum_completion_details fails both.
+    proof: [completion-zero-fill, usage-sum-python, usage-sum-tests, oracle]
+  - text: >-
+      cache-writes-survive-a-record-without-them.yaml and
+      usage_sum_keeps_cache_writes_and_cached_detail_through_a_record_without_them show that a third record
+      with only cached_tokens keeps the running cache_write_tokens, cache_creation_tokens and
+      cached_tokens_details, so an early return of (None, None) in combine_cache_aliases or Ok(None) in
+      combine_cached_tokens_details fails them.
+    proof: [kept-through-record, usage-sum-tests, oracle]
+  - text: >-
+      cached-modality-none-and-explicit-zero.yaml sends no text_tokens and an explicit image_tokens 0, and
+      it and usage_sum_keeps_cached_modality_null_only_when_both_absent expect text_tokens null,
+      audio_tokens 3 and image_tokens 0, so a modality absent on both sides turning 0, or a 0 turning
+      None, fails them.
+    proof: [cached-modality-null, usage-sum-tests, oracle]
+  - text: >-
+      cost_usage_round_trips carries the extra duration: Decimal::new(15, 1) through Usage and back, so
+      deleting the numeric_extras copy loop in From<&CostUsage> for Usage fails it.
+    proof: [round-trip-extras, usage-sum-tests]
+checks:
+  optional: []
+  commands:
+    - id: usage-sum-tests
+      why: A change to the extras loop or a new test breaks usage totals, aliases, cached detail or the CostUsage projection.
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^usage_sum::/) | test(/^cost_usage::aggregation_projection::/)'
+    - id: private-extras
+      why: usage_sum still sums a numeric extra whose name starts with an underscore, or the oracle case still has no private field to compare.
+      run: |-
+        grep -q '_private' tools/oracle/cases/helpers/usage-sum/numeric-extras-private-fields-and-total-mismatch.yaml && ! grep -q 'numeric_extras/_private' tools/oracle/cases/helpers/usage-sum/numeric-extras-private-fields-and-total-mismatch.yaml && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^usage_sum::tests::usage_sum_skips_private_extras$/)'
+    - id: prompt-counter-cases
+      why: The duration case still compares only an ignored extra, the integer prompt counters have no case, or the Python helper still leaves any of the eight declared counters out of its output.
+      run: |-
+        case=tools/oracle/cases/helpers/usage-sum/duration-and-prediction-token-details.yaml && grep -q audio_length_seconds "$case" && grep -q video_length_seconds "$case" && ! grep -q numeric_extras "$case" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/usage-sum/prompt-counters-sum-and-keep-absent-values.yaml)" && test "$(sed -n '/^_PROMPT_DETAIL_KEYS/,/^)/p' tools/oracle/helpers/usage_sum.py | grep -oE '"(web_search_requests|google_maps_grounding_requests|tool_use_tokens|character_count|image_count|video_length_seconds|audio_length_seconds|query_count)"' | sort -u | wc -l)" -eq 8
+    - id: completion-zero-fill
+      why: The zero fill of completion audio, image and video tokens has no oracle case, no Rust test, or no field in the Python helper's output.
+      run: |-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/usage-sum/completion-modalities-zero-fill.yaml)" && test "$(sed -n '/^_COMPLETION_DETAIL_KEYS/,/^)/p' tools/oracle/helpers/usage_sum.py | grep -oE '"(audio_tokens|image_tokens|video_tokens)"' | sort -u | wc -l)" -eq 3 && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^usage_sum::tests::usage_sum_zero_fills_declared_completion_details$/)'
+    - id: kept-through-record
+      why: No case or test sends a record without cache writes or cached detail after records that have both.
+      run: |-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/usage-sum/cache-writes-survive-a-record-without-them.yaml)" && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^usage_sum::tests::usage_sum_keeps_cache_writes_and_cached_detail_through_a_record_without_them$/)'
+    - id: cached-modality-null
+      why: The cached modality case and its Rust twin still end with every modality set, so they can't see a null turn into 0 or a 0 turn into null.
+      run: |-
+        case=tools/oracle/cases/helpers/usage-sum/cached-modality-none-and-explicit-zero.yaml && ! grep -q text_tokens "$case" && grep -q 'image_tokens: 0' "$case" && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^usage_sum::tests::usage_sum_keeps_cached_modality_null_only_when_both_absent$/)'
+    - id: round-trip-extras
+      why: The CostUsage round trip still sends no numeric extra, so it can't see the projection drop one.
+      run: |-
+        ! grep -q 'numeric_extras: BTreeMap::new()' crates/betterlite-models/src/cost_usage/aggregation_projection/tests.rs && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^cost_usage::aggregation_projection::tests::cost_usage_round_trips$/)'
+    - id: usage-sum-python
+      why: The Python adapter's new detail keys must stay lint and type clean.
+      run: test -f tools/oracle/helpers/usage_sum.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: usage-sum-corpus
+      why: No corpus seed sends the new prompt counters through shared helper parsing.
+      run: grep -lq audio_length_seconds tools/oracle/fuzz/corpus/helper_case/usage-sum-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/usage-sum/cache-write-alias-is-counted-once.yaml
+  - tools/oracle/cases/helpers/usage-sum/cache-writes-survive-a-record-without-them.yaml
+  - tools/oracle/cases/helpers/usage-sum/cached-modality-none-and-explicit-zero.yaml
+  - tools/oracle/cases/helpers/usage-sum/cached-tokens-sum-across-records.yaml
+  - tools/oracle/cases/helpers/usage-sum/completion-modalities-zero-fill.yaml
+  - tools/oracle/cases/helpers/usage-sum/duration-and-prediction-token-details.yaml
+  - tools/oracle/cases/helpers/usage-sum/incoming-ttl-detail-is-not-copied.yaml
+  - tools/oracle/cases/helpers/usage-sum/numeric-extras-private-fields-and-total-mismatch.yaml
+  - tools/oracle/cases/helpers/usage-sum/prompt-counters-sum-and-keep-absent-values.yaml
+deviations: []
+out_of_scope:
+  - Padded one-line functions in these files belong to B5094. It clears the no-one-line-functions and no-padded-one-line-functions legacy lists. This task doesn't touch .ast-grep/rules/.
+  - combine.rs and projection.rs keep their code. The kept cache writes, the cached detail fallback, the completion zero fill and the extras copy are already right there, so gaps two to six only add tests, helper fields and cases.
+  - docs/deviations/B1680.yaml stays as it is. Its numeric extras entry covers public names, and skipping underscore names matches LiteLLM, so this task logs no deviation.
+pitfalls:
+  - Use seconds values a binary float holds exactly (1.5, 2.25, 0.25), since LiteLLM sums Python floats and betterlite sums Decimal, and a pair like 0.1 and 0.2 would only restate B1680's precision deviation.
+  - Read video_length_seconds and audio_length_seconds with rust_decimal::serde::arbitrary_precision_option, the Option form of the module tools/oracle/src/helpers/openai/chatgpt_token_store.rs already uses, so a case's 1.5 never passes through f64 on the way in.
+  - The Python side answers numeric_extras {} for _private because pydantic's _setattr_handler stores a non-field name that starts with "_" outside model_extra, so the case must not list /value/numeric_extras/_private in compare.ignore.
+  - Never send prompt_tokens_details {} or completion_tokens_details {} in a case, since Usage.__init__ tests `if prompt_tokens_details:` and `if completion_tokens_details:` (types/utils.py L1890 and L1924) and drops an empty dict that the Rust helper turns into an all-None record.
+  - The third record of cache-writes-survive-a-record-without-them.yaml must still carry prompt_tokens_details, with only cached_tokens 1 in it, so the merge runs through _combine_prompt_tokens_details in LiteLLM and through combine_cache_aliases in combine.rs.
+  - cache_write_tokens and cache_creation_tokens come out equal after every LiteLLM merge, because the rebuilt PromptTokensDetailsWrapper's __init__ assigns cache_write_tokens and its __setattr__ mirrors it.
+  - tools/oracle/src/helpers/models/usage_sum.rs is at 278 of the 300 source lines file-size allows, so move the input structs and their From impls into a child module such as usage_sum/input.rs rather than growing the file.
+  - Keep _PROMPT_DETAIL_KEYS and _COMPLETION_DETAIL_KEYS as module-level tuples whose closing parenthesis starts its own line, since two checks read them with a sed range from the name to that line.
+  - The helper operation stays usage_sum in the models group; this task adds no operation and edits no registry file (helpers/mod.rs, helpers/models.rs, dispatch.py).
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

@@ -1,0 +1,270 @@
+id: B5131
+title: Close the B872 database fault audit gaps
+description: >-
+  Fix the gaps an Opus review found in B872's database fault classifiers after it merged. One is a
+  behavior gap in the native SQLSTATE map. The other four are tests that can't fail on the behavior they
+  name. All five findings hold against the LiteLLM checkout at the pin, so none is left out. The code
+  change is one line in crates/betterlite-db/src/database_faults/native.rs. The rest is tests in
+  crates/betterlite-db/src/database_faults/tests.rs and native/tests.rs, plus four new helper oracle
+  cases for the existing database_faults operation.
+
+
+  Gap one. LiteLLM's is_deadlock_error answers true for any prisma error whose code is P2034
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L224-L237).
+  The spend writer retries a failed update when it does
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L1998-L2017,
+  line 2010), and so does the spend log writer through _is_transient_spend_log_write_error
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L7836-L7837).
+  LiteLLM locks prisma 0.11.0
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/uv.lock#L7202-L7204),
+  and that client runs prisma engines 5.4.2
+  (https://github.com/RobertCraigie/prisma-client-py/blob/v0.11.0/src/prisma/_config.py#L25-L28). That
+  engine maps SQLSTATE 40001, serialization_failure, to TransactionWriteConflict
+  (https://github.com/prisma/prisma-engines/blob/5.4.2/quaint/src/connector/postgres/error.rs#L174-L181)
+  and reports it as P2034 with the message "Transaction failed due to a write conflict or a deadlock.
+  Please retry your transaction"
+  (https://github.com/prisma/prisma-engines/blob/5.4.2/libs/user-facing-errors/src/query_engine/mod.rs#L318-L323).
+  So under repeatable read or serializable isolation LiteLLM treats a serialization failure as a
+  deadlock and retries it. betterlite's classify_sqlstate maps only 40P01
+  (SqlState::T_R_DEADLOCK_DETECTED) to NativeFault::Deadlock and leaves 40001 as
+  NativeFault::Unclassified. The fix adds SqlState::T_R_SERIALIZATION_FAILURE to the Deadlock branch.
+  sqlstate_classification_matrix in native/tests.rs has no 40001 row, so nothing on main can catch this.
+  It gains the case serialization_failure("40001", NativeFault::Deadlock). B872's behavior-tests filter
+  (^database_faults::tests::) never ran native/tests.rs at all. This task's checks do.
+
+
+  Gap two. LiteLLM's is_database_transport_error lowercases the message of any PrismaError and answers
+  true when it holds one of twelve phrases
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L175-L215,
+  the list at L197-L210). betterlite keeps the same list as TRANSPORT_WORDS in database_faults.rs.
+  transport_keyword_matrix only checks "NETWORK IS UNREACHABLE", and the other unit tests and oracle
+  cases only add "can't reach database server" and "connection refused". Any of the other nine phrases
+  can be deleted with every test still green. transport_keyword_matrix becomes an rstest with one case
+  per phrase: cant_reach_database_server, cannot_reach_database_server, cant_connect, cannot_connect,
+  connection_error, connection_closed, timed_out, timeout, connection_refused, network_is_unreachable,
+  no_route_to_host and broken_pipe. Each case holds its phrase alone in mixed case. It asserts true on
+  ErrorType::Prisma and false on ErrorType::Other with the same message, so deleting a phrase or the
+  lowercase step fails a case. The HttpClientClosed assertion moves to a plain test of its own. The new
+  oracle case transport-phrases.yaml sends the same twelve messages on prisma errors, plus an other row
+  carrying a phrase, and compares every predicate with LiteLLM.
+
+
+  Gap three. LiteLLM's is_deadlock_error returns false for anything that isn't a PrismaError. For a
+  PrismaError it answers true on code P2034 or when the lowercased message holds "deadlock detected",
+  "40p01" or "write conflict or a deadlock"
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L224-L237).
+  LiteLLM's own tests pin the engine's write conflict text as a positive and a plain
+  RuntimeError("deadlock detected") as a negative
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/unit/proxy/db/test_exception_handler.py#L635-L664).
+  deadlock_code_and_phrases only checks a Prisma error with code P2034. No test or case uses the write
+  conflict phrase, and none gives a non-Prisma error a deadlock code or phrase. So dropping that phrase
+  or the Prisma gate in is_deadlock_error leaves every test green. The test becomes an rstest over error
+  type, code, message and the expected answer, with these cases: prisma_code (Prisma, P2034, empty
+  message, true), write_conflict_phrase (Prisma, "Transaction failed due to a write conflict or a
+  deadlock. Please retry your transaction", true), deadlock_phrase (Prisma, "Deadlock Detected", true),
+  sqlstate_phrase (Prisma, "ERROR: 40P01", true), connect_with_code (Connect, P2034, false) and
+  other_with_phrase (Other, "deadlock detected", false). The new oracle case deadlock-markers.yaml sends
+  the same rows.
+
+
+  Gap four. LiteLLM's is_read_only_transaction_error returns false for anything that isn't a
+  PrismaError. Otherwise it answers true when the lowercased message holds the quoted '"25006"' or
+  "read-only transaction"
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L254-L263).
+  Its own tests use "cannot execute INSERT in a read-only transaction" as a positive and
+  ValueError('"25006"') as a negative
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/unit/proxy/db/test_exception_handler.py#L712-L738).
+  read_only_code_and_phrase only checks a Prisma error holding the quoted code, and no oracle case sets
+  any read-only marker. Dropping the phrase, the Prisma gate or the quotes around 25006 leaves every test
+  green. The test becomes an rstest with these cases: quoted_code (Prisma, 'ERROR "25006"', true), phrase
+  (Prisma, "cannot execute INSERT in a READ-ONLY TRANSACTION", true), unquoted_code (Prisma, "SQLSTATE
+  25006", false), connect_quoted_code (Connect, '"25006"', false) and other_phrase (Other, "read-only
+  transaction", false). The new oracle case read-only-markers.yaml sends the same rows.
+
+
+  Gap five. LiteLLM's postgres_sqlstate returns None for anything that isn't a prisma DataError, before
+  it looks at meta or the message
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L240-L251,
+  the gate at L244). nondata_no_sqlstate passes a Prisma error with no meta_code and an empty message.
+  postgres_sqlstate returns None for that even with its is_data_type gate deleted, and no oracle case
+  gives a non-data error a meta_code or a PostgresError message. The test becomes an rstest with the
+  cases prisma and client_not_connected. Each sets meta_code to "23505" and the message to
+  'PostgresError { code: "40001"' and asserts None. The new oracle case sqlstate-non-data.yaml sends
+  those two rows plus a data row with the same fields, where both sides answer "23505".
+scope:
+  paths:
+  - crates/betterlite-db/src/database_faults/native.rs
+  - crates/betterlite-db/src/database_faults/native/tests.rs
+  - crates/betterlite-db/src/database_faults/tests.rs
+  - tools/oracle/cases/helpers/database-faults/transport-phrases.yaml
+  - tools/oracle/cases/helpers/database-faults/deadlock-markers.yaml
+  - tools/oracle/cases/helpers/database-faults/read-only-markers.yaml
+  - tools/oracle/cases/helpers/database-faults/sqlstate-non-data.yaml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L175-L215
+  why: is_database_transport_error, with the twelve lowercase transport phrases at L197-L210
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L224-L237
+  why: is_deadlock_error, its PrismaError gate, the P2034 code and the three deadlock phrases
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L240-L251
+  why: postgres_sqlstate and its DataError gate at L244
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L254-L263
+  why: is_read_only_transaction_error, its PrismaError gate, the quoted 25006 and the read-only phrase
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L1998-L2017
+  why: _handle_spend_update_failure retries a spend update when is_deadlock_error is true (line 2010)
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L7836-L7837
+  why: _is_transient_spend_log_write_error treats a deadlock as transient
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/uv.lock#L7202-L7204
+  why: LiteLLM's lock pins prisma 0.11.0
+- url: https://github.com/RobertCraigie/prisma-client-py/blob/v0.11.0/src/prisma/_config.py#L25-L28
+  why: prisma 0.11.0 runs prisma engines 5.4.2 by default
+- url: https://github.com/prisma/prisma-engines/blob/5.4.2/quaint/src/connector/postgres/error.rs#L174-L181
+  why: the 5.4.2 engine maps SQLSTATE 40001 to TransactionWriteConflict; it has no 40P01 arm
+- url: https://github.com/prisma/prisma-engines/blob/5.4.2/libs/user-facing-errors/src/query_engine/mod.rs#L318-L323
+  why: TransactionWriteConflict is reported as P2034 with the write conflict or deadlock message
+- url: https://github.com/prisma/prisma-engines/blob/5.4.2/query-engine/connectors/sql-query-connector/src/error.rs#L50-L70
+  why: on the raw query path a 40001 falls to the RawError::Database catch-all instead of TransactionWriteConflict
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/unit/proxy/db/test_exception_handler.py#L635-L664
+  why: LiteLLM's own deadlock positives and negatives, including the write conflict text
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/unit/proxy/db/test_exception_handler.py#L712-L738
+  why: LiteLLM's own read-only positives and negatives, including a non-prisma error holding the quoted 25006
+- url: https://docs.rs/tokio-postgres/0.7.18/tokio_postgres/error/struct.SqlState.html#associatedconstant.T_R_SERIALIZATION_FAILURE
+  why: the tokio-postgres constant for SQLSTATE 40001
+dod:
+- text: >-
+    classify_sqlstate maps SQLSTATE 40001 (SqlState::T_R_SERIALIZATION_FAILURE) to NativeFault::Deadlock
+    next to 40P01, matching the P2034 answer LiteLLM's pinned prisma engine gives a serialization
+    failure. sqlstate_classification_matrix in native/tests.rs gains the case
+    serialization_failure("40001", NativeFault::Deadlock). The case is missing on today's main, and once
+    written it fails until classify_sqlstate changes, since 40001 comes back Unclassified there.
+  proof: [serialization-failure, behavior-tests]
+- text: >-
+    transport_keyword_matrix is an rstest with the twelve cases cant_reach_database_server,
+    cannot_reach_database_server, cant_connect, cannot_connect, connection_error, connection_closed,
+    timed_out, timeout, connection_refused, network_is_unreachable, no_route_to_host and broken_pipe.
+    Each holds one phrase alone in mixed case, asserts true on ErrorType::Prisma and false on
+    ErrorType::Other. The new oracle case transport-phrases.yaml sends the same twelve messages on
+    prisma errors plus an other row and matches LiteLLM. Today's main has neither the cases nor the case
+    file, and deleting any one phrase from TRANSPORT_WORDS fails both once they exist.
+  proof: [transport-phrases, oracle]
+- text: >-
+    deadlock_code_and_phrases is an rstest with the cases prisma_code, write_conflict_phrase,
+    deadlock_phrase, sqlstate_phrase, connect_with_code and other_with_phrase, the last two expecting
+    false. The new oracle case deadlock-markers.yaml sends the same rows and matches LiteLLM. Today's main
+    has neither, and once they exist, dropping the P2034 check, any of the three phrases or the Prisma
+    gate in is_deadlock_error fails a case.
+  proof: [deadlock-markers, oracle]
+- text: >-
+    read_only_code_and_phrase is an rstest with the cases quoted_code, phrase, unquoted_code,
+    connect_quoted_code and other_phrase, the last three expecting false. The new oracle case
+    read-only-markers.yaml sends the same rows and matches LiteLLM. Today's main has neither, and once
+    they exist, dropping the read-only phrase, the Prisma gate or the quotes around 25006 fails a case.
+  proof: [read-only-markers, oracle]
+- text: >-
+    nondata_no_sqlstate is an rstest with the cases prisma and client_not_connected. Each sets meta_code
+    "23505" and the message 'PostgresError { code: "40001"' and asserts postgres_sqlstate returns None.
+    The new oracle case sqlstate-non-data.yaml sends both rows plus a data row with the same fields and
+    matches LiteLLM. Today's main has neither, and once they exist, deleting the is_data_type gate in
+    postgres_sqlstate fails both cases.
+  proof: [non-data-sqlstate, oracle]
+- text: >-
+    Every test under database_faults::, the reconnect tests and the native tests included, still passes
+    after the edits to the shared test files.
+  proof: [behavior-tests]
+checks:
+  optional: []
+  commands:
+  - id: serialization-failure
+    why: SQLSTATE 40001 still comes back Unclassified, or the matrix has no 40001 row
+    run: >-
+      list=$(cargo nextest list --locked -p betterlite-db -E 'test(/^database_faults::native::tests::sqlstate_classification_matrix::/)' --message-format oneline) &&
+      for name in serialization_failure; do grep -qE "sqlstate_classification_matrix::case_[0-9]+_${name}$" <<< "$list" || { echo "missing case $name"; exit 1; }; done &&
+      cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_faults::native::tests::/)'
+  - id: transport-phrases
+    why: a transport phrase has no case of its own, or the matching oracle case is missing
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/database-faults/transport-phrases.yaml)" &&
+      list=$(cargo nextest list --locked -p betterlite-db -E 'test(/^database_faults::tests::transport_keyword_matrix::/)' --message-format oneline) &&
+      for name in cant_reach_database_server cannot_reach_database_server cant_connect cannot_connect connection_error connection_closed timed_out timeout connection_refused network_is_unreachable no_route_to_host broken_pipe; do grep -qE "transport_keyword_matrix::case_[0-9]+_${name}$" <<< "$list" || { echo "missing case $name"; exit 1; }; done &&
+      cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_faults::tests::transport_keyword_matrix::/)'
+  - id: deadlock-markers
+    why: the write conflict phrase or the Prisma gate of is_deadlock_error has no case, or the matching oracle case is missing
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/database-faults/deadlock-markers.yaml)" &&
+      list=$(cargo nextest list --locked -p betterlite-db -E 'test(/^database_faults::tests::deadlock_code_and_phrases::/)' --message-format oneline) &&
+      for name in prisma_code write_conflict_phrase deadlock_phrase sqlstate_phrase connect_with_code other_with_phrase; do grep -qE "deadlock_code_and_phrases::case_[0-9]+_${name}$" <<< "$list" || { echo "missing case $name"; exit 1; }; done &&
+      cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_faults::tests::deadlock_code_and_phrases::/)'
+  - id: read-only-markers
+    why: the read-only phrase, the Prisma gate or the quotes around 25006 have no case, or the matching oracle case is missing
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/database-faults/read-only-markers.yaml)" &&
+      list=$(cargo nextest list --locked -p betterlite-db -E 'test(/^database_faults::tests::read_only_code_and_phrase::/)' --message-format oneline) &&
+      for name in quoted_code phrase unquoted_code connect_quoted_code other_phrase; do grep -qE "read_only_code_and_phrase::case_[0-9]+_${name}$" <<< "$list" || { echo "missing case $name"; exit 1; }; done &&
+      cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_faults::tests::read_only_code_and_phrase::/)'
+  - id: non-data-sqlstate
+    why: a non-data error with a meta_code and a PostgresError message has no case, or the matching oracle case is missing
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/database-faults/sqlstate-non-data.yaml)" &&
+      list=$(cargo nextest list --locked -p betterlite-db -E 'test(/^database_faults::tests::nondata_no_sqlstate::/)' --message-format oneline) &&
+      for name in prisma client_not_connected; do grep -qE "nondata_no_sqlstate::case_[0-9]+_${name}$" <<< "$list" || { echo "missing case $name"; exit 1; }; done &&
+      cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_faults::tests::nondata_no_sqlstate::/)'
+  - id: behavior-tests
+    why: the edits to the shared test files broke another database_faults test
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-db/src/database_faults)" &&
+      cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_faults::/)'
+oracle_cases:
+- tools/oracle/cases/helpers/database-faults/classification-matrix.yaml
+- tools/oracle/cases/helpers/database-faults/data-error-not-outage.yaml
+- tools/oracle/cases/helpers/database-faults/deadlock-markers.yaml
+- tools/oracle/cases/helpers/database-faults/deadlock-sqlstate.yaml
+- tools/oracle/cases/helpers/database-faults/permanent-fault-no-retry.yaml
+- tools/oracle/cases/helpers/database-faults/read-only-markers.yaml
+- tools/oracle/cases/helpers/database-faults/reconnect-effects.yaml
+- tools/oracle/cases/helpers/database-faults/reconnect-timeouts.yaml
+- tools/oracle/cases/helpers/database-faults/sqlstate-extraction.yaml
+- tools/oracle/cases/helpers/database-faults/sqlstate-non-data.yaml
+- tools/oracle/cases/helpers/database-faults/transport-phrases.yaml
+deviations: []
+out_of_scope:
+- >-
+    crates/betterlite-db/src/database_faults.rs stays as it is. Its padded contains_any helper is on
+    B5094's no-padded-one-line-functions list, and B5094 is running now; this task edits no
+    .ast-grep/rules/ file.
+- >-
+    The database_faults helper operation, tools/oracle/src/helpers/db/database_faults.rs,
+    tools/oracle/helpers/database_faults.py and the helper_case fuzz corpus stay unchanged. The new
+    cases only add rows of the input shape both adapters already read.
+- >-
+    The fixed status per error class belongs to B5102, already merged. The service unavailable
+    functions in exception_handler.py stay with B1217, as B872's out_of_scope says.
+pitfalls:
+- >-
+    The Python adapter sets code and meta only on the prisma family; a connect row becomes
+    httpx.ConnectError(message) and drops its code. So connect_with_code in deadlock-markers.yaml pins
+    only betterlite's Prisma gate, and other_with_phrase is the row that pins both sides.
+- >-
+    Keep each transport message to one phrase. "connection closed after a timeout" or "can't connect:
+    connection refused" match two of the twelve, and deleting one of them would then leave the case green.
+- >-
+    The quoted code is the five digits inside double quotes, '"25006"'. A message holding 25006
+    without the quotes must answer false, so don't strip the quotes from the test messages.
+- >-
+    Map 40001 inside the existing Deadlock branch of classify_sqlstate. No new NativeFault variant: a
+    serialization failure (P2034) and a real deadlock (the "deadlock detected" or "40p01" text) get the
+    same answer from LiteLLM's is_deadlock_error, and its callers retry both the same way.
+- >-
+    On the engine's raw query path
+    (https://github.com/prisma/prisma-engines/blob/5.4.2/query-engine/connectors/sql-query-connector/src/error.rs#L50-L70)
+    a 40001 raised by the statement itself falls to RawError::Database instead of P2034. It surfaces as
+    P2010 "Raw query failed", and LiteLLM's raw daily spend upsert
+    (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L2490-L2560)
+    doesn't retry it. classify_sqlstate has no caller yet, so a later native caller that mirrors that raw
+    path checks the SQLSTATE itself.
+- >-
+    The case names above must stay exactly as written: each check greps
+    case_<number>_<name> at the end of the nextest name, so a renamed case fails its check.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

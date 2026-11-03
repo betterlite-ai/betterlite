@@ -1,0 +1,13 @@
+kind: helper
+name: semantic-cache-records-chat-messages
+call:
+  b4380:
+    operation: extract_semantic_prompt
+    messages:
+      - role: user
+        content: "First request."
+      - role: assistant
+        content: "Second message."
+env: {}
+compare:
+  ignore: []

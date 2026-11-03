@@ -1,8 +1,9 @@
 #![cfg(test)]
 
+use super::families::{Style, anthropic};
 use super::{
-    Message, PromptError, alpaca, claude, claude_2_1, default_pt, falcon::falcon_instruct,
-    falcon_chat, granite, llama2, mistral, mpt, phind, titan, wizardcoder,
+    Message, PromptError, alpaca, default_pt, falcon::falcon_instruct, falcon_chat, granite,
+    llama2, mistral, mpt, phind, wizardcoder,
 };
 use rstest::rstest;
 type Render = fn(&[Message]) -> Result<String, PromptError>;
@@ -17,10 +18,10 @@ type Render = fn(&[Message]) -> Result<String, PromptError>;
 #[case::mpt(mpt, r#"[{"role":"system","content":"s"},{"role":"user","content":"u"},{"role":"assistant","content":"a"}]"#, Some("<|im_start|>systems<|im_end|>\n<|im_start|>useru<|im_end|>\n<|im_start|>assistanta<|im_end|>\n"))]
 #[case::wizardcoder(wizardcoder, r#"[{"role":"system","content":"s"},{"role":"user","content":"u"},{"role":"assistant","content":"a"}]"#, Some("s\n\n### Instruction:\nu\n\n### Response:\na\n\n"))]
 #[case::phind(phind, r#"[{"role":"system","content":"s"},{"role":"user","content":"u"},{"role":"assistant","content":"a"}]"#, Some("### System Prompt\ns\n\n### User Message\nu\n\n### Assistant\na\n\n"))]
-#[case::claude(claude, r#"[{"role":"system","content":"s"},{"role":"user","content":"u"},{"role":"assistant","content":"a"}]"#, Some("\n\nHuman: <admin>s</admin>\n\nHuman: u\n\nAssistant: a"))]
-#[case::claude_2_1(claude_2_1, r#"[{"role":"system","content":"s"},{"role":"user","content":"u"},{"role":"assistant","content":"a"}]"#, Some("s\n\nHuman: u\n\nAssistant: a"))]
+#[case::claude(|messages: &[Message]| anthropic(messages, Style::Claude), r#"[{"role":"system","content":"s"},{"role":"user","content":"u"},{"role":"assistant","content":"a"}]"#, Some("\n\nHuman: <admin>s</admin>\n\nHuman: u\n\nAssistant: a"))]
+#[case::claude_2_1(|messages: &[Message]| anthropic(messages, Style::Claude21), r#"[{"role":"system","content":"s"},{"role":"user","content":"u"},{"role":"assistant","content":"a"}]"#, Some("s\n\nHuman: u\n\nAssistant: a"))]
 #[case::granite(granite, r#"[{"role":"system","content":"s"},{"role":"user","content":"u"},{"role":"assistant","content":"a"}]"#, Some("<|system|>\ns\n<|user|>\nu\n<|assistant|>\na"))]
-#[case::titan(titan, r#"[{"role":"system","content":"s"},{"role":"user","content":"u"},{"role":"assistant","content":"a"}]"#, Some("\n\nUser: <admin>s</admin>\n\nUser: u\n\nBot: a"))]
+#[case::titan(|messages: &[Message]| anthropic(messages, Style::Titan), r#"[{"role":"system","content":"s"},{"role":"user","content":"u"},{"role":"assistant","content":"a"}]"#, Some("\n\nUser: <admin>s</admin>\n\nUser: u\n\nBot: a"))]
 #[case::alpaca_reopen(alpaca, r#"[{"role":"assistant","content":"a"},{"role":"system","content":"s"},{"role":"human","content":"h"},{"role":"other","content":"x"},{"role":"user","content":[{"type":"text","text":"t"},{"type":"other","text":"z"},{"type":"image_url","image_url":"raw"}]}]"#, Some("<s>### Response:\na\n\n</s><s>### Instruction:\ns\n\nhx### Instruction:\ntz\n\n"))]
 #[case::alpaca_empty(alpaca, "[]", Some("<s>"))]
 #[case::llama2_reopen(llama2, r#"[{"role":"assistant","content":"a"},{"role":"system","content":"s"},{"role":"human","content":"h"},{"role":"other","content":"x"},{"role":"user","content":[{"type":"text","text":"t"},{"type":"other","text":"z"},{"type":"image_url","image_url":"raw"}]}]"#, Some("<s>a\n</s><s>[INST] <<SYS>>\ns\n<</SYS>>\n [/INST]\nhx[INST] tz [/INST]\n"))]
@@ -34,68 +35,68 @@ type Render = fn(&[Message]) -> Result<String, PromptError>;
 #[case::wizardcoder_omission(wizardcoder, r#"[{"role":"tool","content":"x"}]"#, Some(""))]
 #[case::phind_omission(phind, r#"[{"role":"tool","content":"x"}]"#, Some(""))]
 #[case::claude_first_assistant(
-    claude,
+    |messages: &[Message]| anthropic(messages, Style::Claude),
     r#"[{"role":"assistant","content":"a"}]"#,
     Some("\n\nHuman: \n\nAssistant: a")
 )]
 #[case::claude_system_assistant(
-    claude,
+    |messages: &[Message]| anthropic(messages, Style::Claude),
     r#"[{"role":"system","content":"s"},{"role":"assistant","content":"a"}]"#,
     Some("\n\nHuman: <admin>s</admin>\n\nAssistant: a")
 )]
 #[case::claude_final_user(
-    claude,
+    |messages: &[Message]| anthropic(messages, Style::Claude),
     r#"[{"role":"user","content":"u"}]"#,
     Some("\n\nHuman: u\n\nAssistant: ")
 )]
 #[case::claude_unknown(
-    claude,
+    |messages: &[Message]| anthropic(messages, Style::Claude),
     r#"[{"role":"other","content":"x"}]"#,
     Some("\n\nAssistant: x\n\nAssistant: ")
 )]
-#[case::claude_empty(claude, "[]", None)]
+#[case::claude_empty(|messages: &[Message]| anthropic(messages, Style::Claude), "[]", None)]
 #[case::claude21_first_assistant(
-    claude_2_1,
+    |messages: &[Message]| anthropic(messages, Style::Claude21),
     r#"[{"role":"assistant","content":"a"}]"#,
     Some("\n\nAssistant: a")
 )]
 #[case::claude21_system_assistant(
-    claude_2_1,
+    |messages: &[Message]| anthropic(messages, Style::Claude21),
     r#"[{"role":"system","content":"s"},{"role":"assistant","content":"a"}]"#,
     Some("s\n\nHuman: \n\nAssistant: a")
 )]
 #[case::claude21_final_user(
-    claude_2_1,
+    |messages: &[Message]| anthropic(messages, Style::Claude21),
     r#"[{"role":"user","content":"u"}]"#,
     Some("\n\nHuman: u\n\nAssistant: ")
 )]
 #[case::claude21_unknown(
-    claude_2_1,
+    |messages: &[Message]| anthropic(messages, Style::Claude21),
     r#"[{"role":"other","content":"x"}]"#,
     Some("\n\nAssistant: ")
 )]
-#[case::claude21_empty(claude_2_1, "[]", None)]
+#[case::claude21_empty(|messages: &[Message]| anthropic(messages, Style::Claude21), "[]", None)]
 #[case::titan_first_assistant(
-    titan,
+    |messages: &[Message]| anthropic(messages, Style::Titan),
     r#"[{"role":"assistant","content":"a"}]"#,
     Some("\n\nUser: \n\nBot: a")
 )]
 #[case::titan_system_assistant(
-    titan,
+    |messages: &[Message]| anthropic(messages, Style::Titan),
     r#"[{"role":"system","content":"s"},{"role":"assistant","content":"a"}]"#,
     Some("\n\nUser: <admin>s</admin>\n\nBot: a")
 )]
 #[case::titan_final_user(
-    titan,
+    |messages: &[Message]| anthropic(messages, Style::Titan),
     r#"[{"role":"user","content":"u"}]"#,
     Some("\n\nUser: u\n\nBot: ")
 )]
 #[case::titan_unknown(
-    titan,
+    |messages: &[Message]| anthropic(messages, Style::Titan),
     r#"[{"role":"other","content":"x"}]"#,
     Some("\n\nBot: x\n\nBot: ")
 )]
-#[case::titan_empty(titan, "[]", None)]
+#[case::titan_empty(|messages: &[Message]| anthropic(messages, Style::Titan), "[]", None)]
 #[case::default_empty(default_pt, "[]", Some(""))]
 #[case::default_parts(default_pt, r#"[{"role":"user","content":[]}]"#, None)]
 #[case::falcon_newlines(
@@ -108,32 +109,32 @@ type Render = fn(&[Message]) -> Result<String, PromptError>;
 #[case::mistral_null(mistral, r#"[{"role":"assistant","content":null}]"#, Some("<s>"))]
 #[case::granite_null(granite, r#"[{"role":"assistant","content":null}]"#, Some(""))]
 #[case::claude_null(
-    claude,
+    |messages: &[Message]| anthropic(messages, Style::Claude),
     r#"[{"role":"assistant","content":null}]"#,
     Some("\n\nHuman: \n\nAssistant: None")
 )]
 #[case::claude21_null(
-    claude_2_1,
+    |messages: &[Message]| anthropic(messages, Style::Claude21),
     r#"[{"role":"assistant","content":null}]"#,
     Some("\n\nAssistant: None")
 )]
 #[case::titan_null(
-    titan,
+    |messages: &[Message]| anthropic(messages, Style::Titan),
     r#"[{"role":"assistant","content":null}]"#,
     Some("\n\nUser: \n\nBot: None")
 )]
 #[case::claude_parts(
-    claude,
+    |messages: &[Message]| anthropic(messages, Style::Claude),
     r#"[{"role":"user","content":[{"type":"text","text":"don't\n"}]}]"#,
     Some("\n\nHuman: [{'type': 'text', 'text': \"don't\\n\"}]\n\nAssistant: ")
 )]
 #[case::claude21_parts(
-    claude_2_1,
+    |messages: &[Message]| anthropic(messages, Style::Claude21),
     r#"[{"role":"user","content":[{"type":"text","text":"don't\n"}]}]"#,
     Some("\n\nHuman: [{'type': 'text', 'text': \"don't\\n\"}]\n\nAssistant: ")
 )]
 #[case::titan_parts(
-    titan,
+    |messages: &[Message]| anthropic(messages, Style::Titan),
     r#"[{"role":"user","content":[{"type":"text","text":"don't\n"}]}]"#,
     Some("\n\nUser: [{'type': 'text', 'text': \"don't\\n\"}]\n\nBot: ")
 )]

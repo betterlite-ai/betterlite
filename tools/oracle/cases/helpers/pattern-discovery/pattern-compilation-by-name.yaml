@@ -1,0 +1,19 @@
+{
+  "kind": "helper",
+  "name": "pattern-compilation-by-name",
+  "call": {
+    "b3691": {
+      "function": "compile",
+      "name": "aws_access_key",
+      "texts": [
+        "akia1234567890abcdef",
+        "no token",
+        "AKIA1234567890ABCDEF"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

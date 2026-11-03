@@ -33,7 +33,8 @@ const VALID_CONTENT_TYPES: [&str; 12] = [
     "redacted_thinking",
 ];
 
-fn is_truthy(value: Option<&Value>) -> bool {
+#[must_use]
+pub fn is_truthy(value: Option<&Value>) -> bool {
     match value {
         None | Some(Value::Null) => false,
         Some(Value::Bool(flag)) => *flag,
@@ -44,27 +45,29 @@ fn is_truthy(value: Option<&Value>) -> bool {
     }
 }
 
-fn truthy_str(item: &Map<String, Value>, key: &str) -> Option<Value> {
-    let value = item.get(key)?;
-    is_truthy(Some(value)).then(|| value.clone())
-}
-
-#[must_use]
-pub fn resolve_file_id(item: &Map<String, Value>) -> Option<Value> {
-    let file_id = truthy_str(item, "file_id");
-    file_id.or_else(|| truthy_str(item, "file_url"))
-}
-
 #[must_use]
 pub fn input_file_block(item: &Map<String, Value>) -> Value {
     let mut file_dict = Map::new();
-    if let Some(file_id) = resolve_file_id(item) {
+    if let Some(file_id) = item
+        .get("file_id")
+        .filter(|value| is_truthy(Some(value)))
+        .or_else(|| item.get("file_url").filter(|value| is_truthy(Some(value))))
+        .cloned()
+    {
         file_dict.insert("file_id".to_owned(), file_id);
     }
-    if let Some(file_data) = truthy_str(item, "file_data") {
+    if let Some(file_data) = item
+        .get("file_data")
+        .filter(|value| is_truthy(Some(value)))
+        .cloned()
+    {
         file_dict.insert("file_data".to_owned(), file_data);
     }
-    if let Some(filename) = truthy_str(item, "filename") {
+    if let Some(filename) = item
+        .get("filename")
+        .filter(|value| is_truthy(Some(value)))
+        .cloned()
+    {
         file_dict.insert("filename".to_owned(), filename);
     }
 
@@ -79,17 +82,27 @@ pub fn input_file_block(item: &Map<String, Value>) -> Value {
 
 #[must_use]
 pub fn input_image_block(item: &Map<String, Value>) -> Value {
-    let url = truthy_str(item, "image_url").unwrap_or_else(|| Value::String(String::new()));
-    let detail = truthy_str(item, "detail").unwrap_or_else(|| Value::String("auto".to_owned()));
+    let url = item
+        .get("image_url")
+        .filter(|value| is_truthy(Some(value)))
+        .cloned()
+        .unwrap_or_else(|| Value::String(String::new()));
+    let detail = item
+        .get("detail")
+        .filter(|value| is_truthy(Some(value)))
+        .cloned()
+        .unwrap_or_else(|| Value::String("auto".to_owned()));
 
-    let mut image_url = Map::new();
-    image_url.insert("url".to_owned(), url);
-    image_url.insert("detail".to_owned(), detail);
-
-    let mut image = Map::new();
-    image.insert("type".to_owned(), Value::String("image_url".to_owned()));
-    image.insert("image_url".to_owned(), Value::Object(image_url));
-    Value::Object(image)
+    Value::Object(Map::from_iter([
+        ("type".to_owned(), Value::String("image_url".to_owned())),
+        (
+            "image_url".to_owned(),
+            Value::Object(Map::from_iter([
+                ("url".to_owned(), url),
+                ("detail".to_owned(), detail),
+            ])),
+        ),
+    ]))
 }
 
 #[must_use]

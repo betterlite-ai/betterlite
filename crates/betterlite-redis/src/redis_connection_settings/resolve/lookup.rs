@@ -77,12 +77,3 @@ impl Coerce for bool {
         coerce_bool(value)
     }
 }
-
-pub(super) fn resolve_scalar<T, E>(value: Option<Scalar<T>>, env: &E, var: &str) -> Option<T>
-where
-    T: Coerce,
-    E: EnvironmentLookup,
-{
-    let raw = value.or_else(|| env.lookup(var).map(Scalar::Text));
-    T::coerce(raw)
-}

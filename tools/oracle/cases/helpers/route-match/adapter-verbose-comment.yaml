@@ -1,0 +1,17 @@
+{
+  "kind": "helper",
+  "name": "adapter-verbose-comment",
+  "call": {
+    "route_match": {
+      "function": "check_route_access",
+      "route": "/K",
+      "allowed_routes": [
+        "/(?ix: # ) ignored\n k)"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

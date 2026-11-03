@@ -28,9 +28,9 @@ macro_rules! provider_of {
 
 #[rstest]
 // neither "invalid_request_error" nor "validation_error" is present: the mantle guard returns before the regex runs
-#[case::branch_863_mantle_guard_neither_keyword(
+#[case::branch_863_mantle_guard_rejects_bare_token_message(
     "bedrock_mantle",
-    "an unrelated failure",
+    "prompt tokens (500) exceed model maximum (400)",
     None,
     None,
     None
@@ -44,12 +44,12 @@ macro_rules! provider_of {
     None
 )]
 // a non-mantle provider skips the mantle block entirely and falls straight into the shared elif chain
-#[case::branch_882_non_mantle_provider_skips_mantle_block(
+#[case::branch_882_bedrock_provider_skips_mantle_match(
     "bedrock",
-    "too many tokens were supplied",
+    "invalid_request_error: prompt tokens (500) exceed model maximum (400)",
     None,
-    Some("context_window_exceeded"),
-    Some("bedrock")
+    None,
+    None
 )]
 // both mantle guards pass: the structured validation error carries a matching token-count message
 #[case::branch_884_mantle_positive_match(
@@ -68,56 +68,56 @@ macro_rules! provider_of {
     Some("bedrock_mantle")
 )]
 #[case::branch_891_context_window_text(
-    "bedrock",
+    "bedrock_mantle",
     "too many tokens were supplied",
     None,
     Some("context_window_exceeded"),
     Some("bedrock")
 )]
 #[case::branch_905_conversation_tool_blocks(
-    "bedrock",
+    "bedrock_mantle",
     "Conversation blocks and tool result blocks cannot be provided in the same turn.",
     None,
     Some("bad_request"),
     Some("bedrock")
 )]
 #[case::branch_912_malformed_input(
-    "bedrock",
+    "bedrock_mantle",
     "Malformed input request body",
     None,
     Some("bad_request"),
     Some("bedrock")
 )]
 #[case::branch_919_conversation_must_start_user(
-    "bedrock",
+    "bedrock_mantle",
     "A conversation must start with a user message.",
     None,
     Some("bad_request"),
     Some("bedrock")
 )]
 #[case::branch_926_credentials_auth(
-    "bedrock",
+    "bedrock_mantle",
     "Unable to locate credentials for this request",
     None,
     Some("authentication"),
     Some("bedrock")
 )]
 #[case::branch_936_access_denied(
-    "bedrock",
+    "bedrock_mantle",
     "AccessDeniedException: no permission",
     None,
     Some("permission_denied"),
     Some("bedrock")
 )]
 #[case::branch_943_throttling(
-    "bedrock",
+    "bedrock_mantle",
     "ThrottlingException: slow down",
     None,
     Some("rate_limit"),
     Some("bedrock")
 )]
 #[case::branch_950_connect_timeout(
-    "bedrock",
+    "bedrock_mantle",
     "Connect timeout on endpoint URL",
     None,
     Some("timeout"),
@@ -125,7 +125,7 @@ macro_rules! provider_of {
 )]
 // no status_code at all: getattr(original_exception, "status_code", 500) defaults to 500 and the predicate matches
 #[case::branch_957_image_processing_default_status(
-    "bedrock",
+    "bedrock_mantle",
     "Could not process image data",
     None,
     Some("internal_server"),
@@ -139,31 +139,38 @@ macro_rules! provider_of {
     Some("service_unavailable"),
     Some("bedrock_edge")
 )]
+#[case::could_not_process_image_explicit_500_status(
+    "bedrock_mantle",
+    "Could not process image data",
+    Some(500),
+    Some("internal_server"),
+    Some("bedrock")
+)]
 // hasattr(original_exception, "status_code") is false: nothing in the elif chain matches and the function returns None
 #[case::branch_964_hasattr_false_falls_through("bedrock", "an unmatched failure", None, None, None)]
 #[case::branch_965_status_500(
-    "bedrock",
+    "bedrock_mantle",
     "an unmatched failure",
     Some(500),
     Some("service_unavailable"),
     Some("bedrock")
 )]
 #[case::branch_972_status_401(
-    "bedrock",
+    "bedrock_mantle",
     "an unmatched failure",
     Some(401),
     Some("authentication"),
     Some("bedrock")
 )]
 #[case::branch_979_status_400(
-    "bedrock",
+    "bedrock_mantle",
     "an unmatched failure",
     Some(400),
     Some("bad_request"),
     Some("bedrock")
 )]
 #[case::branch_986_status_404(
-    "bedrock",
+    "bedrock_mantle",
     "an unmatched failure",
     Some(404),
     Some("not_found"),
@@ -206,6 +213,62 @@ macro_rules! provider_of {
     Some("my_bedrock_proxy")
 )]
 #[case::generic_fallback_unmatched_status("bedrock", "an unmatched failure", Some(418), None, None)]
+#[case::context_window_input_is_too_long(
+    "bedrock_mantle",
+    "Input is too long for requested model.",
+    None,
+    Some("context_window_exceeded"),
+    Some("bedrock")
+)]
+#[case::context_window_prompt_is_too_long(
+    "bedrock_mantle",
+    "prompt is too long: 210000 tokens > 200000 maximum",
+    None,
+    Some("context_window_exceeded"),
+    Some("bedrock")
+)]
+#[case::context_window_prompt_length_range(
+    "bedrock_mantle",
+    "prompt: length: 1..200000",
+    None,
+    Some("context_window_exceeded"),
+    Some("bedrock")
+)]
+#[case::context_window_too_many_input_tokens(
+    "bedrock_mantle",
+    "Too many input tokens. Max input tokens: 8192",
+    None,
+    Some("context_window_exceeded"),
+    Some("bedrock")
+)]
+#[case::security_token_invalid_auth(
+    "bedrock_mantle",
+    "The security token included in the request is invalid.",
+    None,
+    Some("authentication"),
+    Some("bedrock")
+)]
+#[case::lowercase_throttling_rate_limit(
+    "bedrock_mantle",
+    "throttlingException: rate exceeded",
+    None,
+    Some("rate_limit"),
+    Some("bedrock")
+)]
+#[case::read_timed_out_timeout(
+    "bedrock_mantle",
+    "Read timed out. (read timeout=600)",
+    None,
+    Some("timeout"),
+    Some("bedrock")
+)]
+#[case::mantle_match_wins_over_chain_needle(
+    "bedrock_mantle",
+    "invalid_request_error: prompt tokens (500) exceed model maximum (400); prompt is too long",
+    None,
+    Some("context_window_exceeded"),
+    Some("bedrock_mantle")
+)]
 fn aws_errors_behavior_tests_behavior(
     #[case] custom_llm_provider: &str,
     #[case] error_str: &str,

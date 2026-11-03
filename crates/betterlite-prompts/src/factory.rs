@@ -51,24 +51,20 @@ pub fn prompt_factory(
 }
 
 fn anthropic(lower: &str, messages: &[Message]) -> Result<Output, FactoryError> {
-    if lower == "claude-2" || lower == "claude-instant-1" {
-        builtin::claude(messages)
-            .map(Output::Text)
-            .map_err(FactoryError::from)
-    } else {
-        Err(FactoryError::Unsupported {
+    if lower != "claude-2" && lower != "claude-instant-1" {
+        return Err(FactoryError::Unsupported {
             operation: "anthropic_messages",
-        })
+        });
     }
+    Ok(Output::Text(builtin::families::anthropic(
+        messages,
+        builtin::families::Style::Claude,
+    )?))
 }
 
 fn clarifai(lower: &str, messages: &[Message]) -> Option<Result<Output, FactoryError>> {
-    if !lower.contains("claude") {
-        return None;
-    }
-    Some(
-        builtin::claude(messages)
-            .map(Output::Text)
-            .map_err(FactoryError::from),
-    )
+    lower.contains("claude").then(|| {
+        let prompt = builtin::families::anthropic(messages, builtin::families::Style::Claude)?;
+        Ok(Output::Text(prompt))
+    })
 }

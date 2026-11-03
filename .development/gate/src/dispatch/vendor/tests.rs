@@ -5,7 +5,9 @@ use std::path::Path;
 use std::time::{Duration, SystemTime};
 
 use crate::dispatch::seat::Seat;
-use crate::dispatch::vendor::{find_vendor, limit_line, limited, mark, seat_free, take_seat};
+use crate::dispatch::vendor::{
+    causes, find_vendor, limit_line, limited, mark, seat_free, take_seat,
+};
 use crate::spec::agents::{Agents, Vendor};
 use crate::yaml::read_yaml;
 
@@ -88,6 +90,34 @@ fn a_fresh_mark_skips_the_vendor_and_an_old_one_does_not() {
         .set_modified(old)
         .unwrap();
     assert!(!limited(git.path(), &agents, "openai").unwrap());
+}
+
+#[test]
+fn an_unreachable_or_logged_out_vendor_is_not_reported_as_a_usage_limit() {
+    let agents = agents();
+    let git = tempfile::tempdir().unwrap();
+    mark(git.path(), "openai", "ERROR: You've hit your usage limit.").unwrap();
+    mark(
+        git.path(),
+        "anthropic",
+        r#"{"is_error":true,"result":"API Error: Can't reach the API server (EAI_AGAIN)","type":"result"}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        causes(git.path(), &agents).unwrap(),
+        "openai is at its usage limit: ERROR: You've hit your usage limit.; anthropic can't reach its API: API Error: Can't reach the API server (EAI_AGAIN)"
+    );
+    mark(
+        git.path(),
+        "anthropic",
+        "Not logged in \u{b7} Please run /login",
+    )
+    .unwrap();
+    assert!(
+        causes(git.path(), &agents)
+            .unwrap()
+            .ends_with("; anthropic is logged out: Not logged in \u{b7} Please run /login")
+    );
 }
 
 #[test]

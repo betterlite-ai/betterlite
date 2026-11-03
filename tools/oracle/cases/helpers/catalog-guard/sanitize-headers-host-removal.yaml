@@ -1,0 +1,5 @@
+kind: helper
+name: catalog_sanitize_headers_host_removal
+call: {b4682: {operation: sanitize_headers, headers: {host: example, X-Trace: trace}}}
+env: {}
+compare: {ignore: []}

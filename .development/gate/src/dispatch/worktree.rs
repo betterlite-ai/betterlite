@@ -1,6 +1,7 @@
 mod tests;
 
 use std::fs;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use crate::affected::finish;
@@ -35,6 +36,18 @@ pub(crate) fn ensure(
         "uv",
         &["sync", "--locked", "--quiet"],
         &path.join("tools/oracle/litellm"),
+    )?;
+    // the alias builds the gate quietly, and workers took that silent first cargo gate for a hang and quit
+    finish(
+        "cargo",
+        &[
+            "build",
+            "--quiet",
+            "--locked",
+            "--manifest-path",
+            ".development/gate/Cargo.toml",
+        ],
+        &path,
     )?;
     // Claude's sandbox matches writable paths literally, so a path through .. would not cover the worktree
     let canonical = fs::canonicalize(&path).map_err(|source| GateError::Read {
@@ -238,7 +251,30 @@ fn migrate(root: &Path, target: &Path) -> Result<(), GateError> {
     git(&copied, &["symbolic-ref", "HEAD", branch.trim()])?;
     configure(root, &copied)?;
     fs::copy(old.join("index"), copied.join(".git/index")).map_err(failed)?;
+    preserve_info(&common_dir(root)?, &copied.join(".git/info"), target)?;
     replace(target, &copied, &old, &backup)
+}
+
+fn preserve_info(common: &Path, info: &Path, target: &Path) -> Result<(), GateError> {
+    let failed = |source| GateError::Write {
+        path: target.to_owned(),
+        source,
+    };
+    fs::create_dir_all(info).map_err(failed)?;
+    for name in ["exclude", "attributes"] {
+        let metadata = common.join("info").join(name);
+        let destination = info.join(name);
+        if metadata.is_file() {
+            fs::copy(metadata, destination).map_err(failed)?;
+        } else {
+            match fs::remove_file(destination) {
+                Ok(()) => {}
+                Err(error) if error.kind() == ErrorKind::NotFound => {}
+                Err(error) => return Err(failed(error)),
+            }
+        }
+    }
+    Ok(())
 }
 
 fn replace(target: &Path, copied: &Path, old: &Path, backup: &Path) -> Result<(), GateError> {

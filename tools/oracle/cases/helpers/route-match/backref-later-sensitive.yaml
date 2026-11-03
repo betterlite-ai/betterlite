@@ -1,0 +1,15 @@
+{
+  "kind": "helper",
+  "name": "backref-later-sensitive",
+  "call": {
+    "route_match": {
+      "function": "route_matches_pattern",
+      "route": "/KkK",
+      "pattern": "/(?i:(k)\\1)\\1"
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

@@ -881,6 +881,8 @@ dependencies = [
  "betterlite-db",
  "chrono",
  "hex",
+ "pcre2",
+ "regex-syntax",
  "rstest",
  "rust_decimal",
  "secrecy",
@@ -962,6 +964,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -1006,6 +1009,7 @@ dependencies = [
  "betterlite-rate-limit",
  "betterlite-secrets",
  "dec_from_char",
+ "fancy-regex",
  "indexmap 2.14.2",
  "insta",
  "netrc-rs",
@@ -1023,6 +1027,8 @@ dependencies = [
  "thiserror",
  "tracing",
  "tracing-subscriber",
+ "unicode-general-category",
+ "unicode_titlecase",
  "url",
 ]
 
@@ -1080,6 +1086,7 @@ name = "betterlite-db"
 version = "0.1.0"
 dependencies = [
  "betterlite-postgres-fixture",
+ "betterlite-roi",
  "betterlite-secrets",
  "chrono",
  "clap",
@@ -1243,6 +1250,7 @@ dependencies = [
  "serde",
  "serde-inline-default",
  "serde_json",
+ "serde_with",
  "sha2 0.11.1",
  "tempfile",
  "thiserror",
@@ -1274,6 +1282,7 @@ dependencies = [
  "serde",
  "serde-saphyr",
  "serde_json",
+ "serde_path_to_error",
  "serde_with",
  "sha2 0.11.1",
  "strum",
@@ -1308,6 +1317,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "url",
 ]
 
 [[package]]
@@ -1330,6 +1340,7 @@ dependencies = [
  "strum",
  "thiserror",
  "tracing",
+ "tracing-subscriber",
  "unicode-general-category",
  "url",
 ]
@@ -1348,6 +1359,7 @@ dependencies = [
 name = "betterlite-openai"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
  "betterlite-config",
  "betterlite-http",
  "betterlite-models",
@@ -1363,9 +1375,11 @@ dependencies = [
  "serde_json",
  "serde_with",
  "sha2 0.11.1",
+ "tempfile",
  "thiserror",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "unicode-normalization",
  "url",
  "uuid",
@@ -1652,7 +1666,13 @@ dependencies = [
  "betterlite-models",
  "betterlite-ocr",
  "betterlite-openai",
+ "betterlite-postgres-fixture",
  "betterlite-redact",
+ "betterlite-roi",
+ "caseless",
+ "chrono",
+ "clap",
+ "deadpool-postgres",
  "email_address",
  "encoding_rs",
  "form_urlencoded",
@@ -1660,6 +1680,7 @@ dependencies = [
  "hyper-util",
  "indexmap 2.14.2",
  "multipart-rs",
+ "percent-encoding",
  "rand 0.10.3",
  "regex",
  "rquickjs",
@@ -1669,12 +1690,15 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
+ "sha2 0.11.1",
  "soft-canonicalize",
+ "speedate",
  "strum",
  "subtle",
  "tempfile",
  "thiserror",
  "tokio",
+ "tokio-postgres",
  "tower",
  "tracing",
  "tracing-subscriber",
@@ -2693,7 +2717,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4343,6 +4367,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "pcre2"
+version = "0.2.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9e970b0fcce0c7ee6ef662744ff711f21ccd6f11b7cf03cd187a80e89797fc67"
+dependencies = [
+ "libc",
+ "log",
+ "pcre2-sys",
+]
+
+[[package]]
+name = "pcre2-sys"
+version = "0.2.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "18b9073c1a2549bd409bf4a32c94d903bb1a09bf845bc306ae148897fa0760a4"
+dependencies = [
+ "cc",
+ "libc",
+ "pkg-config",
+]
+
+[[package]]
 name = "pem"
 version = "4.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4569,6 +4615,8 @@ dependencies = [
  "chrono",
  "fallible-iterator 0.2.0",
  "postgres-protocol",
+ "serde_core",
+ "serde_json",
 ]
 
 [[package]]
@@ -4776,7 +4824,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5181,7 +5229,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5238,7 +5286,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5890,10 +5938,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6448,6 +6496,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ca718471876992059f251e33aafc334346ada08042b7661dd1fe313a9bced557"
 
 [[package]]
+name = "unicode_titlecase"
+version = "2.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "de023a2c2eb3e07fdf1be663df7010e23968a3b9a5e94d1a860f620bdfd233e2"
+
+[[package]]
 name = "universal-hash"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6756,7 +6810,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

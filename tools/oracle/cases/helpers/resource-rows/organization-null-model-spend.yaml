@@ -1,0 +1,13 @@
+kind: helper
+name: organization_null_model_spend
+call:
+  resource_rows:
+    operation: organization
+    row: {budget_id: b, created_by: c, updated_by: u, spend: 0, model_spend: null,
+      organization_id: null, organization_alias: null, metadata: null, users: null,
+      litellm_budget_table: null, object_permission: null, object_permission_id: null}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/spend
+      why: Decimal and float serializers use different zero representations

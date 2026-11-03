@@ -1,0 +1,20 @@
+kind: helper
+name: repeated-cells-and-empty-tuples
+call:
+  management_executor:
+    cases:
+      repeated_cells:
+        function: memory
+        rows:
+          - {id: matching, tags: [one, target]}
+          - {id: empty, tags: []}
+          - {id: absent, other: value}
+        where:
+          - kind: compare
+            field: tags
+            op: eq
+            value: target
+        order:
+          - {field: id, descending: false}
+env: {}
+compare: {ignore: []}

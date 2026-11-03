@@ -2,7 +2,12 @@ use betterlite_logging::rubrik::block_decision::{
     BlockedResponseResult, ModerationChoice, ModerationMessage, ModerationServiceResponse,
     ResponseBlockError, ReturnedToolCall, extract_prompt_refusal, extract_response_block,
 };
-use betterlite_logging::rubrik::tool_calls::{ChatCompletionMessageToolCall, Function};
+use betterlite_logging::rubrik::tool_calls::{
+    ChatCompletionMessageToolCall, Function, ToolCallSource, normalize_tool_call,
+};
+use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
+use rstest::rstest;
 
 fn call(id: &str) -> ChatCompletionMessageToolCall {
     ChatCompletionMessageToolCall {
@@ -13,6 +18,13 @@ fn call(id: &str) -> ChatCompletionMessageToolCall {
             arguments: "{}".to_owned(),
         },
     }
+}
+
+#[test]
+fn response_block_normalizes_a_missing_tool_call_id_to_empty() {
+    let raw = ToolCallSource::Raw(Json::Object(IndexMap::new()));
+    let normalized = normalize_tool_call(&raw).expect("raw object normalizes");
+    assert_eq!(normalized.id, "");
 }
 
 fn response(content: Option<&str>, tool_call_ids: &[&str]) -> ModerationServiceResponse {
@@ -83,22 +95,58 @@ fn response_block_defaults_the_text_block_explanation_when_content_is_empty() {
     assert_eq!(result.explanation, "Response blocked by policy.");
 }
 
-#[test]
-fn response_block_detects_a_missing_tool_call_by_cardinality() {
-    let sent = [call("call_1"), call("call_2")];
-    let response = response(Some(""), &["call_1"]);
-    let result = extract_response_block(&response, &sent, "")
-        .expect("ok")
-        .expect("blocked");
-    assert_eq!(result.explanation, "Tool call blocked by policy.");
+#[rstest]
+#[case::one_of_two_returned(vec![ReturnedToolCall { id: None }], Some("Tool call blocked by policy."))]
+#[case::none_returned(vec![], Some("Tool call blocked by policy."))]
+#[case::both_returned(vec![ReturnedToolCall { id: None }, ReturnedToolCall { id: None }], None)]
+fn response_block_catches_a_missing_tool_call_without_an_id(
+    #[case] returned: Vec<ReturnedToolCall>,
+    #[case] expected: Option<&str>,
+) {
+    let sent = [call(""), call("")];
+    let response = ModerationServiceResponse {
+        choices: vec![ModerationChoice {
+            message: Some(ModerationMessage {
+                content: None,
+                tool_calls: returned,
+            }),
+        }],
+    };
+    let result = extract_response_block(&response, &sent, "").expect("valid response");
+    assert_eq!(
+        result.map(|blocked| blocked.explanation),
+        expected.map(str::to_owned)
+    );
 }
 
 #[test]
-fn response_block_uses_counter_semantics_so_a_missing_duplicate_id_is_still_caught() {
+fn response_block_catches_a_duplicate_id_swapped_for_another() {
     let sent = [call("call_1"), call("call_1")];
-    let response = response(Some(""), &["call_1"]);
-    let result = extract_response_block(&response, &sent, "").expect("ok");
-    assert!(result.is_some());
+    let response = response(Some(""), &["call_1", "call_2"]);
+    let result = extract_response_block(&response, &sent, "").expect("valid response");
+    assert_eq!(
+        result.map(|blocked| blocked.explanation),
+        Some("Tool call blocked by policy.".to_owned())
+    );
+}
+
+#[rstest]
+#[case::blocked_call_keeps_the_webhook_text(&["call_1", "call_2"], &["call_1"], "tool X not allowed", Some("tool X not allowed"))]
+#[case::leading_separator_stays_in_the_explanation(&["call_1", "call_2"], &["call_1"], "\n\ntool X not allowed", Some("\n\ntool X not allowed"))]
+#[case::every_call_returned_with_a_note(&["call_1"], &["call_1"], "note", None)]
+fn response_block_reads_a_tool_only_response(
+    #[case] sent_ids: &[&str],
+    #[case] returned_ids: &[&str],
+    #[case] content: &str,
+    #[case] expected: Option<&str>,
+) {
+    let sent = sent_ids.iter().map(|id| call(id)).collect::<Vec<_>>();
+    let response = response(Some(content), returned_ids);
+    let result = extract_response_block(&response, &sent, "").expect("valid response");
+    assert_eq!(
+        result.map(|blocked| blocked.explanation),
+        expected.map(str::to_owned)
+    );
 }
 
 #[test]

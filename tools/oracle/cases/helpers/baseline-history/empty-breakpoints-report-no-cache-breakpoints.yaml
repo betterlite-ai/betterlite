@@ -1,0 +1,27 @@
+kind: helper
+name: empty_breakpoints_report_no_cache_breakpoints
+call:
+  baseline_history:
+    groups:
+    - - request_id: empty
+        started_at: 10000.0
+        available_at: 10000.0
+        outcome: complete
+        baseline_equivalent: false
+        usage:
+          prompt_tokens: 100
+          completion_tokens: 5
+          total_tokens: 105
+          prompt_tokens_details:
+            text_tokens: 100
+            cached_tokens: 0
+            cache_creation_tokens: 0
+            cache_creation_token_details:
+              ephemeral_5m_input_tokens: 0
+              ephemeral_1h_input_tokens: 0
+        plan:
+          total_tokens: 100
+          breakpoints: []
+compare:
+  ignore: []
+env: {}

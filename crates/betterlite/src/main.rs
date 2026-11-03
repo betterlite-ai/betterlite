@@ -1,4 +1,5 @@
 use betterlite_config::loader::{ConfigError, ConfigLoader};
+use betterlite_config::sections::chatgpt_token_store::home::HomeEnvironment;
 use betterlite_config::types::Config;
 use betterlite_server::server::chat_setup::chat_executor;
 use betterlite_server::server::run;
@@ -90,7 +91,10 @@ fn load_config(location: &Path, environment: BTreeMap<String, String>) -> Option
     use betterlite_config::sections::includes::{IncludeError, LoadError, load_file};
 
     let loader = ConfigLoader {
-        lookup: environment,
+        lookup: HomeEnvironment {
+            variables: environment,
+            home: env::home_dir(),
+        },
     };
     match load_file(&loader, location) {
         Ok(config) => Some(config),

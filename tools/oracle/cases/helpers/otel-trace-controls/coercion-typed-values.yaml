@@ -1,0 +1,26 @@
+kind: helper
+name: coercion-typed-values
+call:
+  b3892:
+    function: coercion
+    values:
+      - {kind: string, value: hello}
+      - {kind: integer, value: -12.9}
+      - {kind: integer, value: "42"}
+      - {kind: integer, value: " 42 "}
+      - {kind: integer, value: "1_000"}
+      - {kind: integer, value: true}
+      - {kind: integer, value: false}
+      - {kind: decimal, value: "1.25"}
+      - {kind: decimal, value: " 1.25 "}
+      - {kind: decimal, value: true}
+      - {kind: decimal, value: false}
+      - {kind: boolean, value: false}
+      - {kind: boolean, value: true}
+      - {kind: mapping, value: {key: 3}}
+      - {kind: mapping, value: [not, a, mapping]}
+      - {kind: tuple, value: [one, two]}
+      - {kind: tuple, value: invalid}
+env: {}
+compare:
+  ignore: []

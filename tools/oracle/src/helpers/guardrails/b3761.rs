@@ -49,14 +49,15 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn fields_to_value(source: &Fields) -> Value {
-    let text = serde_json::to_string(source).unwrap_or_default();
-    serde_json::from_str(&text).unwrap_or(Value::Null)
-}
-
 fn outcome(input: &Input) -> Value {
     match input {
-        Input::RequestEnvelope { data } => request_envelope(data),
+        Input::RequestEnvelope { data } => envelope::build_request_payload(
+            &serde_json::from_value::<Fields>(Value::Object(data.clone())).unwrap_or_default(),
+        )
+        .map_or(Value::Null, |payload| {
+            serde_json::from_str(&serde_json::to_string(&payload).unwrap_or_default())
+                .unwrap_or(Value::Null)
+        }),
         Input::ResponseEnvelope {
             request_data,
             response,
@@ -71,24 +72,21 @@ fn outcome(input: &Input) -> Value {
     }
 }
 
-fn request_envelope(data: &Map<String, Value>) -> Value {
-    let fields: Fields = serde_json::from_value(Value::Object(data.clone())).unwrap_or_default();
-    envelope::build_request_payload(&fields).map_or(Value::Null, |payload| to_value(&payload))
-}
-
 fn response_envelope(request_data: &Map<String, Value>, response: &Value) -> Value {
     let fields: Fields =
         serde_json::from_value(Value::Object(request_data.clone())).unwrap_or_default();
     let parsed = Json::parse(&response.to_string());
-    envelope::build_response_payload(&fields, &parsed)
-        .map_or(Value::Null, |payload| to_value(&payload))
+    envelope::build_response_payload(&fields, &parsed).map_or(Value::Null, |payload| {
+        serde_json::from_str(&serde_json::to_string(&payload).unwrap_or_default())
+            .unwrap_or(Value::Null)
+    })
 }
 
 fn hydrate_context(request_data: &Map<String, Value>) -> Value {
     let mut data: Fields =
         serde_json::from_value(Value::Object(request_data.clone())).unwrap_or_default();
     context::hydrate_tool_context(&mut data);
-    fields_to_value(&data)
+    serde_json::from_str(&serde_json::to_string(&data).unwrap_or_default()).unwrap_or(Value::Null)
 }
 
 fn normalize_response(response: &Value) -> Value {
@@ -105,30 +103,34 @@ fn blocking_response(detail: &Value) -> Value {
         Some("cisco-ai-defense"),
         None,
     );
-    to_value(&response)
-}
-
-fn to_value<T>(value: &T) -> Value
-where
-    T: serde::Serialize,
-{
-    let text = serde_json::to_string(value).unwrap_or_default();
-    serde_json::from_str(&text).unwrap_or(Value::Null)
+    serde_json::from_str(&serde_json::to_string(&response).unwrap_or_default())
+        .unwrap_or(Value::Null)
 }
 
 fn normalized_to_value(normalized: &normalize::NormalizedResponse) -> Value {
     let mut map = Map::new();
     map.insert("jsonrpc".to_owned(), json!("2.0"));
-    let id = normalized
-        .id_override
-        .as_ref()
-        .map_or_else(|| json!("litellm-mcp"), to_value);
+    let id = normalized.id_override.as_ref().map_or_else(
+        || json!("litellm-mcp"),
+        |value| {
+            serde_json::from_str(&serde_json::to_string(value).unwrap_or_default())
+                .unwrap_or(Value::Null)
+        },
+    );
     map.insert("id".to_owned(), id);
     if let Some(result) = &normalized.result {
-        map.insert("result".to_owned(), to_value(result));
+        map.insert(
+            "result".to_owned(),
+            serde_json::from_str(&serde_json::to_string(result).unwrap_or_default())
+                .unwrap_or(Value::Null),
+        );
     }
     if let Some(error) = &normalized.error {
-        map.insert("error".to_owned(), to_value(error));
+        map.insert(
+            "error".to_owned(),
+            serde_json::from_str(&serde_json::to_string(error).unwrap_or_default())
+                .unwrap_or(Value::Null),
+        );
     }
     Value::Object(map)
 }
@@ -140,7 +142,8 @@ fn rewrite_text(response: &Value, text: &str) -> Value {
     if let Some(items) = &update.content
         && let Value::Array(_) = &rewritten
     {
-        rewritten = to_value(items);
+        rewritten = serde_json::from_str(&serde_json::to_string(items).unwrap_or_default())
+            .unwrap_or(Value::Null);
     }
     if update.structured_content.is_some()
         && let Value::Object(fields) = &mut rewritten

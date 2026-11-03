@@ -1,0 +1,333 @@
+id: B5136
+title: Close the B4573 CLI PKCE audit gaps
+description: >-
+  An Opus-model review of merged task B4573 found ten gaps in betterlite-cli's pkce_login
+  module. The callback reader caps a request far below LiteLLM's limits, one slow connection can
+  hold the callback wait past its deadline, and eight branches have no test that fails when they
+  break. This task closes all ten. The code stays in crates/betterlite-cli/src/pkce_login.rs,
+  crates/betterlite-cli/src/pkce_login/ and the crate's callback_request fuzz corpus.
+
+
+  LiteLLM's LoopbackServer is a Python http.server HTTPServer bound to 127.0.0.1 (pkce_login.py
+  L118-L131). http.server reads the request line with readline(65537) and answers 414 when it is
+  longer than 65536 bytes, its line ending included (server.py L419-L425 in CPython 3.13.16, the
+  version the oracle pins). Headers go through http.client._read_headers: a header line over 65536
+  bytes, or more than 99 header lines, gets 431 (client.py L225-L241, server.py L361-L375). Today
+  parse_request in request.rs gives up once the whole buffer passes MAX_REQUEST_BYTES (8192) or
+  holds more than 32 headers, and read_callback_request answers 400 "Invalid callback." for both. A
+  browser sends every cookie it holds for 127.0.0.1 on the redirect back, so a 16 KiB Cookie header
+  left by another local app makes the betterlite sign-in time out where LiteLLM settles it. The fix
+  drops the 8192-byte total and the 32-slot header array. Each line may be 65536 bytes with its line
+  ending, and up to 99 header lines pass. RequestRead::TooLarge splits into RequestRead::UriTooLong,
+  answered 414, and RequestRead::HeadersTooLarge, answered 431. Both keep the wait going, as the 400
+  does today. One request still tops out near 6.5 MB (a request line and 99 header lines of 64 KiB
+  each), so the input stays bounded.
+
+
+  LiteLLM sets connection_timeout_seconds (5 by default) on each accepted socket in get_request
+  (pkce_login.py L136-L139). That times every recv but not the whole request, and wait checks its
+  deadline only between requests (L141-L150). betterlite copies this: loopback.rs sets a fixed 5 s
+  read timeout at accept, and read_callback_request keeps reading 1024-byte chunks until the request
+  is complete. A local process that sends one byte every 4 s keeps the single-threaded wait busy
+  long past its deadline: up to 8192 reads of nearly 5 s each on main, over 11 hours, and months with
+  the higher limits above. Max decided betterlite gives each connection a total deadline instead, as
+  a deviation. The deadline is the connection timeout counted from accept, or the wait's own
+  deadline if that comes first. Before every read the reader sets the socket's read timeout to the
+  time left. When no time is left, it drops the connection without a response, the way http.server
+  drops a connection whose read timed out (server.py L441-L445), and the wait goes on to the next
+  connection. A browser sends its callback in one go, so a real sign-in never meets this deadline.
+  What a user sees when it is hit: the slow sender's connection closes with no answer, the sign-in
+  keeps waiting for the real callback, and if none comes, wait returns PkceFailure::CallbackTimeout
+  ("timed out waiting for the browser sign-in to finish") at its own deadline instead of hours
+  later. The new entry goes in docs/deviations/B4573.yaml next to the existing one.
+
+
+  To build that, LoopbackServer takes the connection timeout the way LiteLLM's __init__ takes
+  connection_timeout_seconds (L125). bind(expected_state, connection_timeout) and
+  with_listener(listener, expected_state, connection_timeout) store it, and a pub CONNECTION_TIMEOUT
+  of 5 s in callback.rs is the value callers pass by default. It replaces the private constant in
+  loopback.rs, and TcpLoopbackListener::accept stops setting a fixed read timeout. LoopbackConnection
+  gains set_read_timeout(&mut self, timeout: Duration), and TcpLoopbackConnection forwards it to
+  TcpStream::set_read_timeout. wait passes its clock and its deadline down to read_callback_request,
+  and the reader reads the time left from that clock before each read. RecordedConnection in
+  tests/fixtures.rs implements the new method. Nothing outside pkce_login calls LoopbackServer on
+  main, so the signature change touches no other crate.
+
+
+  callback_idle_connection_then_valid_callback_settles can't fail today: its _idle stream drops when
+  the spawned closure ends, so the server reads EOF and moves on with or without any timeout. It is
+  replaced by loopback_drops_an_idle_connection_after_its_timeout, after LiteLLM's
+  test_loopback_drops_an_idle_connection_instead_of_waiting_on_it (test_pkce_login.py L172-L186).
+  The server gets a 200 ms connection timeout, the idle stream stays open until wait returns, and a
+  valid callback must settle inside a 2 s wait on SystemClock. loopback_server_exposes_callback_redirect
+  checks only the http://127.0.0.1: prefix and the /callback suffix, so binding 0.0.0.0 or building
+  the URI from another port still passes. It is replaced by
+  loopback_server_binds_127_0_0_1_and_redirects_to_its_port. That test asserts address.ip() is
+  127.0.0.1, the port is not 0, and redirect_uri() equals http://127.0.0.1:<address.port()>/callback,
+  as LiteLLM's own test asserts (L136-L156).
+
+
+  LiteLLM's _CallbackHandler answers 404 off the /callback path and 400 for a wrong state. With the
+  right state it settles CallbackDenied when error is set, answers 400 when there is no code, and
+  only then settles CallbackCode (pkce_login.py L155-L174). No betterlite test sends another path, a
+  missing code or an error. callback_validation_waits_for_matching_state also only matches
+  CallbackOutcome::Code { .. }, so a server that settled on the wrong state's code "bad" would still
+  pass it. It is replaced by callback_settles_only_on_a_code_for_the_expected_state, after LiteLLM's
+  test of the same name (test_pkce_login.py L136-L156). GET /nope gets 404,
+  state=wrong&code=stolen gets 400, state=state with no code gets 400, and only then
+  state=state&code=the-code settles, with the exposed code compared to "the-code". A new
+  callback_denied_settles_only_for_the_expected_state, after LiteLLM's test at L159-L169, sends
+  state=wrong&error=access_denied and gets 400 while the wait goes on. It then sends
+  state=state&error=access_denied&error_description=nope and gets 200, and the wait settles on
+  CallbackDenied { error: "access_denied", description: Some("nope") }.
+
+
+  discover_cli_auth compares the issuer through _canonical_url, and _canonical_url keeps the path
+  (pkce_login.py L194-L217 and L246-L250). So issuer https://example.test/other is refused for base
+  https://example.test, and a proxy mounted at /litellm is accepted only at that path. The only
+  issuer test, discover_rejects_issuer_mismatch, changes the host, so a check that compared origins
+  only would pass it. A new discover_rejects_an_issuer_on_another_path covers the first case. A new
+  discover_accepts_a_proxy_mounted_under_a_path_only_at_that_path follows LiteLLM's test at
+  test_pkce_login.py L247-L265: base https://example.test/litellm/ fetches
+  https://example.test/litellm/.well-known/litellm-cli-auth and accepts the contract, and base
+  https://example.test refuses the same document.
+
+
+  _token_request copies access_token, refresh_token, user_id and team_id from the token response and
+  client_id, token_endpoint, revocation_endpoint and resource from its arguments into PkceCredential,
+  after posting to token_endpoint (pkce_login.py L369-L401). token_requests_capture_expiry reads
+  only expires_at and the form, so swapping the two tokens, dropping user_id or team_id, or posting
+  to another contract endpoint passes every test. New token_redeem_binds_the_credential_to_the_contract
+  and token_refresh_binds_the_credential_to_the_contract answer a body with access_token
+  "sk-cli-new", refresh_token "llm_srefresh_new", user_id "u1" and team_id "team-b", after LiteLLM's
+  test at test_pkce_login.py L328-L351. Each asserts every PkceCredential field and that the request
+  went to contract.token_endpoint.
+
+
+  revoke_credential posts token, token_type_hint=refresh_token and client_id to
+  revocation_endpoint. It returns RevocationUnavailable on 503, PkceFailure on any other status but
+  200, and nothing on 200 (pkce_login.py L404-L423). revoke_503_is_unavailable and
+  revoke_rejects_redirect cover only 503 and 3xx, so turning the status != 200 branch into Ok(()),
+  rejecting 200 or dropping token_type_hint passes both. A new
+  revoke_posts_an_rfc7009_request_for_the_refresh_token answers 200 and expects Ok(()). It asserts the
+  URL is contract.revocation_endpoint and the form is exactly token, token_type_hint=refresh_token
+  and client_id in that order (test_pkce_login.py L386-L396). A new revoke_non_503_errors_are_failures
+  runs 401 {"error":"invalid_client"} and 500 and expects RevocationUnavailableOrFailure::Failure for
+  both, with the 401 text naming invalid_client (L399-L409).
+scope:
+  paths:
+    - crates/betterlite-cli/src/pkce_login.rs
+    - crates/betterlite-cli/src/pkce_login/**
+    - crates/betterlite-cli/fuzz/corpus/callback_request/**
+    - docs/deviations/B4573.yaml
+  lint_tables: false
+references:
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/pkce_login.py#L118-L150"
+    why: LoopbackServer binds 127.0.0.1 on an OS-assigned port, takes connection_timeout_seconds=5, sets it on each accepted socket as a per-read timeout, and checks the wait deadline only between requests.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/pkce_login.py#L155-L174"
+    why: do_GET answers 404 off /callback, 400 for a wrong state, settles CallbackDenied on error, answers 400 without a code, then settles CallbackCode.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/pkce_login.py#L194-L250"
+    why: discover_cli_auth compares the issuer through _canonical_url, the origin plus the path with its trailing slash dropped.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/pkce_login.py#L369-L423"
+    why: _token_request builds every PkceCredential field, and revoke_credential posts the RFC 7009 form and splits 503 from other failures.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/unit/proxy/client/cli/test_pkce_login.py#L136-L186"
+    why: LiteLLM's loopback tests for state, path, missing code, denial and the idle connection, the shape the new betterlite tests follow.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/unit/proxy/client/cli/test_pkce_login.py#L247-L265"
+    why: The mounted-proxy discovery test, accepted only at its own path.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/unit/proxy/client/cli/test_pkce_login.py#L328-L409"
+    why: LiteLLM's redeem, refresh and revoke tests assert the whole credential, the revocation form and the 401 failure.
+  - url: "https://github.com/python/cpython/blob/v3.13.16/Lib/http/server.py#L410-L445"
+    why: handle_one_request answers 414 past a 65536-byte request line and drops a connection whose read timed out without a response.
+  - url: "https://github.com/python/cpython/blob/v3.13.16/Lib/http/server.py#L361-L375"
+    why: parse_request answers 431 for a header line that is too long and for too many headers.
+  - url: "https://github.com/python/cpython/blob/v3.13.16/Lib/http/client.py#L225-L241"
+    why: _read_headers caps each header line at _MAXLINE (65536) and appends the blank line before it checks _MAXHEADERS (100), so 99 header lines pass.
+dod:
+  - text: >-
+      The callback reader takes a request line and each header line up to 65536 bytes with their
+      line ending, and up to 99 header lines, as http.server does. Past the request line limit it
+      answers 414, past either header limit 431, and the wait keeps going. New
+      callback_settles_with_a_16_kib_cookie_header and callback_settles_with_99_header_lines fail on
+      today's main, where both get 400 and the wait times out. New
+      callback_answers_414_past_a_64_kib_request_line and callback_answers_431_past_the_header_limits
+      fail on main, where both get 400. A new callback_request_limits_match_http_server checks the
+      boundary bytes on parse_request. callback_request_rejects_oversized_buffer, built on the 8192
+      cap, is gone.
+    proof: [callback-tests, pkce-login-suite]
+  - text: >-
+      Each callback connection has a total deadline: the server's connection timeout from accept, or
+      the wait's deadline if that comes first. When it passes, the connection is dropped with no
+      response and the wait goes on. A new loopback_drops_a_slow_sender_at_the_connection_deadline
+      steps the clock 1 s per call and has a first connection drip a valid code=drip callback one
+      byte per read, then a second connection send code=good whole; it expects good, where today's
+      main settles drip. A new loopback_wait_deadline_cuts_off_a_slow_sender uses a 60 s connection
+      timeout and a 3 s wait with the same drip; it expects PkceFailure::CallbackTimeout, where main
+      settles drip.
+    proof: [loopback-tests, pkce-login-suite]
+  - text: >-
+      LoopbackServer::bind and with_listener take the connection timeout, as LiteLLM's
+      connection_timeout_seconds does, and CONNECTION_TIMEOUT is 5 s. A new
+      loopback_drops_an_idle_connection_after_its_timeout keeps an idle stream open until wait
+      returns and expects a valid callback to settle inside a 2 s wait with a 200 ms connection
+      timeout. It replaces callback_idle_connection_then_valid_callback_settles. That test passes with
+      no timeout at all because its idle stream closes early.
+    proof: [loopback-tests, pkce-login-suite]
+  - text: >-
+      A new loopback_server_binds_127_0_0_1_and_redirects_to_its_port asserts the bound address is
+      127.0.0.1 on a non-zero port and that redirect_uri() is exactly
+      http://127.0.0.1:<port>/callback for that port. It replaces
+      loopback_server_exposes_callback_redirect. That test passes with a 0.0.0.0 bind or a wrong port.
+    proof: [loopback-tests]
+  - text: >-
+      A new callback_settles_only_on_a_code_for_the_expected_state sends GET /nope (404), a wrong
+      state with a code (400), the right state with no code (400), then the right state with code
+      the-code, and compares the settled code to "the-code". It replaces
+      callback_validation_waits_for_matching_state. That test matches any CallbackCode, so it passes
+      when the wrong state's code settles.
+    proof: [callback-tests]
+  - text: >-
+      A new callback_denied_settles_only_for_the_expected_state sends error=access_denied with a
+      wrong state and gets 400 while the wait goes on. Then it sends the right state and
+      error_description=nope, and the wait settles on CallbackDenied { error: "access_denied", description:
+      Some("nope") }. No test on today's main sends error= at all.
+    proof: [callback-tests]
+  - text: >-
+      New discover_rejects_an_issuer_on_another_path and
+      discover_accepts_a_proxy_mounted_under_a_path_only_at_that_path pin the path part of the
+      issuer check. No test on today's main changes the issuer's path, so an origin-only check
+      passes discover_rejects_issuer_mismatch.
+    proof: [discover-tests]
+  - text: >-
+      New token_redeem_binds_the_credential_to_the_contract and
+      token_refresh_binds_the_credential_to_the_contract assert every PkceCredential field, user_id
+      and team_id included, and that the request URL is contract.token_endpoint. No test on today's
+      main reads the tokens, user_id, team_id or the URL.
+    proof: [token-tests]
+  - text: >-
+      New revoke_posts_an_rfc7009_request_for_the_refresh_token and
+      revoke_non_503_errors_are_failures pin the 200 answer, the URL, the exact form and the 401 and
+      500 failures. No test on today's main reads the revocation request or answers 200, 401 or 500.
+    proof: [revoke-tests]
+  - text: >-
+      docs/deviations/B4573.yaml keeps its task: B4573 line and its error_detail entry and gains a
+      second entry for the per-connection deadline, linking LiteLLM's per-read timeout at
+      pkce_login.py L118-L139.
+    proof: [deadline-deviation-recorded]
+checks:
+  optional: []
+  commands:
+    - id: callback-tests
+      why: a test for the http.server request limits or the callback outcomes is missing, a weak test it replaces is still there, or any callback server test fails
+      run: >-
+        grep -q 'fn callback_settles_with_a_16_kib_cookie_header' crates/betterlite-cli/src/pkce_login/tests/callback.rs &&
+        grep -q 'fn callback_settles_with_99_header_lines' crates/betterlite-cli/src/pkce_login/tests/callback.rs &&
+        grep -q 'fn callback_answers_414_past_a_64_kib_request_line' crates/betterlite-cli/src/pkce_login/tests/callback.rs &&
+        grep -q 'fn callback_answers_431_past_the_header_limits' crates/betterlite-cli/src/pkce_login/tests/callback.rs &&
+        grep -q 'fn callback_request_limits_match_http_server' crates/betterlite-cli/src/pkce_login/tests/callback.rs &&
+        grep -q 'fn callback_settles_only_on_a_code_for_the_expected_state' crates/betterlite-cli/src/pkce_login/tests/callback.rs &&
+        grep -q 'fn callback_denied_settles_only_for_the_expected_state' crates/betterlite-cli/src/pkce_login/tests/callback.rs &&
+        ! grep -rq 'fn callback_request_rejects_oversized_buffer' crates/betterlite-cli/src/pkce_login &&
+        ! grep -rq 'fn callback_validation_waits_for_matching_state' crates/betterlite-cli/src/pkce_login &&
+        cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^pkce_login::tests::callback::/)'
+    - id: loopback-tests
+      why: a test for the connection deadline, the idle timeout or the bound address is missing, a weak test it replaces is still there, or any loopback test fails
+      run: >-
+        grep -q 'fn loopback_drops_a_slow_sender_at_the_connection_deadline' crates/betterlite-cli/src/pkce_login/tests/loopback.rs &&
+        grep -q 'fn loopback_wait_deadline_cuts_off_a_slow_sender' crates/betterlite-cli/src/pkce_login/tests/loopback.rs &&
+        grep -q 'fn loopback_drops_an_idle_connection_after_its_timeout' crates/betterlite-cli/src/pkce_login/tests/loopback.rs &&
+        grep -q 'fn loopback_server_binds_127_0_0_1_and_redirects_to_its_port' crates/betterlite-cli/src/pkce_login/tests/loopback.rs &&
+        ! grep -rq 'fn callback_idle_connection_then_valid_callback_settles' crates/betterlite-cli/src/pkce_login &&
+        ! grep -rq 'fn loopback_server_exposes_callback_redirect' crates/betterlite-cli/src/pkce_login &&
+        cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^pkce_login::tests::loopback::/)'
+    - id: discover-tests
+      why: no test pins the path part of the discovery issuer check
+      run: >-
+        grep -q 'fn discover_rejects_an_issuer_on_another_path' crates/betterlite-cli/src/pkce_login/tests/discover.rs &&
+        grep -q 'fn discover_accepts_a_proxy_mounted_under_a_path_only_at_that_path' crates/betterlite-cli/src/pkce_login/tests/discover.rs &&
+        cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^pkce_login::tests::discover::/)'
+    - id: token-tests
+      why: no test reads every PkceCredential field and the token endpoint a redeem or refresh posts to
+      run: >-
+        grep -q 'fn token_redeem_binds_the_credential_to_the_contract' crates/betterlite-cli/src/pkce_login/tests/token.rs &&
+        grep -q 'fn token_refresh_binds_the_credential_to_the_contract' crates/betterlite-cli/src/pkce_login/tests/token.rs &&
+        cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^pkce_login::tests::token::/)'
+    - id: revoke-tests
+      why: no test reads the revocation request or tells a 200 from a 401 or a 500
+      run: >-
+        grep -q 'fn revoke_posts_an_rfc7009_request_for_the_refresh_token' crates/betterlite-cli/src/pkce_login/tests/revoke.rs &&
+        grep -q 'fn revoke_non_503_errors_are_failures' crates/betterlite-cli/src/pkce_login/tests/revoke.rs &&
+        cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^pkce_login::tests::revoke::/)'
+    - id: pkce-login-suite
+      why: the new test files are missing, or a pkce_login test the parser and LoopbackServer changes reach fails, corpus replays included
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-cli/src/pkce_login/tests)" &&
+        cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^pkce_login::/)'
+    - id: deadline-deviation-recorded
+      why: docs/deviations/B4573.yaml does not hold the per-connection deadline next to its first entry
+      run: >-
+        grep -q '^task: B4573$' docs/deviations/B4573.yaml &&
+        test "$(grep -c '^  - what:' docs/deviations/B4573.yaml)" = "2" &&
+        grep -q 'commands/pkce_login.py#L118-L139' docs/deviations/B4573.yaml
+oracle_cases: []
+deviations:
+  - what: >-
+      Each callback connection has a total deadline: the connection timeout (5 s) from accept, or
+      the wait's own deadline if that comes first. When it passes, the connection is closed with no
+      response and the wait goes on to the next connection. LiteLLM times each read only, so a
+      sender that trickles one byte every few seconds holds its single-threaded wait past the
+      sign-in deadline.
+    why: >-
+      A per-read timeout lets any local process keep the sign-in from settling or timing out for as
+      long as it keeps sending. A browser sends its callback in one go, so a real sign-in never meets
+      the deadline, and a user with no callback still sees "timed out waiting for the browser sign-in
+      to finish" at the wait's own deadline.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/pkce_login.py#L118-L139"
+out_of_scope:
+  - None of the findings is a padded one-line function; B5094 owns that rule and its legacy lists in .ast-grep/rules/.
+  - The fixed HTTP status per error class is B5102's and already merged.
+  - The callback page texts ("Signed in. You can close this window." against LiteLLM's longer one) and PkceFailure wording stay betterlite's own words under errors-match-litellm.
+  - fuzz_targets/wire_responses.rs no longer compiles. Fixing it and building every fuzz crate belong to B5140.
+  - run_pkce_login, its LOGIN_TIMEOUT_SECONDS of 300 and the first real caller of LoopbackServer::bind belong to B4574.
+pitfalls:
+  - >-
+    http.client._read_headers appends the blank line that ends the headers before it checks
+    len(headers) > 100, so 99 header lines pass and a 100th fails with 431; both 65536-byte limits
+    count every byte up to and including the "\n".
+  - >-
+    TcpStream::set_read_timeout returns InvalidInput for Some(Duration::ZERO), so drop the
+    connection when no time is left instead of passing a zero timeout.
+  - >-
+    Linux resets a connection that closes with unread bytes in its receive buffer, so the 414 and
+    431 tests send exactly 65537 bytes of the oversized line with no line ending after it, or the
+    client can lose the response.
+  - >-
+    Parsing the whole buffer again after every 1024-byte read turns quadratic once a request can
+    reach about 6.5 MB; read 64 KiB at a time.
+  - >-
+    Keep parse_request(buffer: &[u8]) -> RequestRead as it is, so fuzz_targets/callback_request.rs
+    still compiles; the limits add variants, not parameters.
+  - >-
+    The idle test keeps its idle TcpStream alive until wait returns, for example by having the
+    client thread block on a channel the main thread sends to after wait. Dropping it earlier sends
+    EOF, and the test passes with no timeout at all, as the one it replaces does.
+  - >-
+    The 16 KiB Cookie, 414 and 431 tests use a real TcpStream: RecordedConnection drops the part of
+    a read longer than the read buffer and throws away what the server writes.
+  - >-
+    CallbackOutcome has no PartialEq because CallbackCode holds a SecretString; compare a code with
+    expose_secret and a denial by matching out the CallbackDenied, since CallbackDenied derives PartialEq.
+  - >-
+    tests.rs is at 896 of its 1000 lines, so the new tests go in tests/callback.rs,
+    tests/loopback.rs, tests/discover.rs, tests/token.rs and tests/revoke.rs, declared from tests.rs
+    like mod fixtures. Their paths still start with B4573's prefixes, such as
+    pkce_login::tests::callback.
+  - >-
+    The oversized-request seed is 9000 bytes of A and no longer passes any limit; grow it past
+    65536 bytes so the corpus still holds an over-limit request line.
+  - >-
+    docs/deviations/B4573.yaml keeps its task: B4573 line and its error_detail entry; the new entry
+    goes below it, not into a new docs/deviations/B5136.yaml.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

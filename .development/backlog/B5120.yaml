@@ -1,0 +1,13 @@
+id: B5120
+milestone: M7 observability
+title: Close the B3945 logger cache audit gaps
+status: done
+depends_on: [B3945]
+file: tasks/B5120-logger-cache-gaps.yaml
+covers: []
+parent: null
+split_from: null
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 578

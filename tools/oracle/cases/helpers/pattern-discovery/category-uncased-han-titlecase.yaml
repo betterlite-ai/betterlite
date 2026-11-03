@@ -1,0 +1,12 @@
+kind: helper
+name: category-uncased-han-titlecase
+call:
+  b3691:
+    function: categories
+    roots:
+      -
+        - filename: foo中bar.json
+          content: "{}"
+env: {}
+compare:
+  ignore: []

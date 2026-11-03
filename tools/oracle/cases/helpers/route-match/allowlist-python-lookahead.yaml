@@ -1,0 +1,11 @@
+kind: helper
+name: allowlist-python-lookahead
+call:
+  route_match:
+    function: check_route_access
+    route: /models/gpt-4
+    allowed_routes:
+      - /models/(?=gpt-)[^/]+
+env: {}
+compare:
+  ignore: []

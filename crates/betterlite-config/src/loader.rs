@@ -1,8 +1,8 @@
-use std::collections::{BTreeMap, BTreeSet};
-use std::num::{ParseFloatError, ParseIntError};
-
 use secrecy::SecretString;
 use serde::de::DeserializeOwned;
+use std::collections::{BTreeMap, BTreeSet};
+use std::num::{ParseFloatError, ParseIntError};
+use std::path::PathBuf;
 use thiserror::Error;
 
 use crate::providers::bedrock::request_policy::metadata_fields;
@@ -18,17 +18,17 @@ use crate::types::{
     Config, GeneralSettings, LiteLlmParams, LiteLlmSettings, ModelDeployment, ModelInfo,
     ProxyTrust, RouterSettings,
 };
-
 pub trait EnvironmentLookup {
     fn lookup(&self, name: &str) -> Option<String>;
+    fn system_home(&self) -> Option<PathBuf> {
+        None
+    }
 }
-
 impl EnvironmentLookup for BTreeMap<String, String> {
     fn lookup(&self, name: &str) -> Option<String> {
         self.get(name).cloned()
     }
 }
-
 #[derive(Debug, Error)]
 pub enum ConfigError {
     #[error("invalid YAML: {source}")]

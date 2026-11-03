@@ -1,0 +1,13 @@
+id: B5130
+milestone: M4 keys, spend and management
+title: Resolved key edge inputs in tests and oracle cases
+status: todo
+depends_on: [B2314]
+file: tasks/B5130-resolved-key-test-gaps.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

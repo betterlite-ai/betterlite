@@ -195,7 +195,9 @@ fn card_input_is_not_mutated() {
 fn replays_protocol_version_fuzz_corpus() {
     let corpus = include_bytes!("../../fuzz/corpus/normalize_protocol_version/semver");
     assert_eq!(
-        super::version_parser::normalize_version_bytes(corpus),
+        serde_json::from_slice::<AgentJson>(corpus)
+            .ok()
+            .and_then(|value| normalize_protocol_version(&value)),
         Some(ProtocolVersion::V0_3)
     );
 }

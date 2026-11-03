@@ -259,12 +259,3 @@ pub(crate) fn capture_gateway(
     gateway.stop()?;
     Ok(captures)
 }
-
-pub(crate) fn request_slice(
-    requests: &[ProviderRequest],
-    offset: usize,
-    count: usize,
-) -> &[ProviderRequest] {
-    let end = offset.saturating_add(count);
-    requests.get(offset..end).unwrap_or_default()
-}

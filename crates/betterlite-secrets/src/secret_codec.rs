@@ -170,14 +170,6 @@ where
         };
         Some(opened)
     }
-
-    pub fn decode_secret_map(
-        &self,
-        bytes: &[u8],
-    ) -> Result<Option<secret_map::SecretMap>, SecretError> {
-        let text = str::from_utf8(bytes).map_err(|source| SecretError::Utf8 { source })?;
-        secret_map::decode_secret_map(self, Some(text), "fuzz")
-    }
 }
 
 pub(crate) fn open_stored(text: &str, key: &SecretString) -> Result<SecretString, SecretError> {

@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
-use betterlite_anthropic::cache_plan::json::digest;
 use betterlite_anthropic::cache_plan::{parse_cache_plan, parse_prompt};
+use sha2::{Digest as _, Sha256};
 
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
@@ -41,14 +41,14 @@ impl crate::helpers::Helper for Op {
                 provider_key,
                 model,
                 anthropic_version,
-            } => digest(&(
+            } => serde_json::to_vec(&(
                 caller_key_hash,
                 deployment_id,
                 provider_key,
                 model,
                 anthropic_version,
             ))
-            .map(serde_json::Value::String),
+            .map(|text| serde_json::Value::String(hex::encode(Sha256::digest(text)))),
         };
         value.map_err(|error| {
             Box::new(crate::helpers::HelperError {

@@ -167,7 +167,8 @@ fn a_restarted_dispatch_goes_on_from_the_saved_rung() {
 
 #[test]
 fn two_blocked_reports_in_a_row_go_back_to_the_architect() {
-    let (agents, task) = fixtures();
+    let (mut agents, task) = fixtures();
+    agents.policy.max_blocked_reports = 2;
     let brief = Brief {
         task: &task,
         file: "tasks/B000-workspace.yaml",
@@ -193,8 +194,46 @@ fn two_blocked_reports_in_a_row_go_back_to_the_architect() {
 }
 
 #[test]
-fn a_blocked_report_after_another_outcome_starts_the_count_over() {
+fn one_blocked_worker_returns_to_the_architect_before_the_next_rung() {
     let (agents, task) = fixtures();
+    assert_eq!(agents.policy.max_blocked_reports, 1);
+    let brief = Brief {
+        task: &task,
+        file: "tasks/B000-workspace.yaml",
+        branch: "task/B000-workspace",
+        base: "abc123",
+    };
+    let path = Path::new("");
+    let places = Places {
+        worktree: path,
+        journal: path,
+        git_common_dir: path,
+        home: path,
+        writable: &[],
+    };
+    let mut progress = progress();
+    progress.number = 1;
+    let error = apply_step(
+        &agents,
+        &brief,
+        &places,
+        &mut progress,
+        Step::Climb(vec!["implementation is still missing".to_owned()]),
+    )
+    .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("1 workers in a row reported blocked")
+    );
+    assert_eq!(progress.rung, 0);
+    assert_eq!(progress.blocked_reports, 1);
+}
+
+#[test]
+fn a_blocked_report_after_another_outcome_starts_the_count_over() {
+    let (mut agents, task) = fixtures();
+    agents.policy.max_blocked_reports = 2;
     let brief = Brief {
         task: &task,
         file: "tasks/B000-workspace.yaml",
@@ -256,8 +295,8 @@ fn a_limited_rung_lends_its_try_to_a_later_rung_and_keeps_its_attempts() {
     let ladder = &agents.roles.worker.ladder;
     let own = pick_rung(&agents, &places, 0, &ladder[0]).unwrap().unwrap();
     assert_eq!(
-        (own.rung.model.as_str(), own.counted),
-        ("gpt-reserve", true)
+        (own.runner.id.as_str(), own.rung.model.as_str(), own.counted),
+        (ladder[0].runner.as_str(), ladder[0].model.as_str(), true)
     );
     mark(
         folder.path(),
@@ -280,6 +319,33 @@ fn a_limited_rung_lends_its_try_to_a_later_rung_and_keeps_its_attempts() {
         pick_rung(&agents, &places, last, &ladder[last])
             .unwrap()
             .is_none()
+    );
+}
+
+#[test]
+fn an_unavailable_claude_rung_borrows_the_final_astra_rung() {
+    let (agents, _) = fixtures();
+    let folder = tempfile::tempdir().unwrap();
+    let places = Places {
+        worktree: folder.path(),
+        journal: folder.path(),
+        git_common_dir: folder.path(),
+        home: folder.path(),
+        writable: &[],
+    };
+    let ladder = &agents.roles.worker.ladder;
+    let claude_rung = ladder.len() - 2;
+    mark(folder.path(), "anthropic", "You've hit your limit").unwrap();
+    let borrowed = pick_rung(&agents, &places, claude_rung, &ladder[claude_rung])
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (
+            borrowed.runner.id.as_str(),
+            borrowed.rung.model.as_str(),
+            borrowed.counted
+        ),
+        ("codex-worker", "gpt-6-astra", false)
     );
 }
 
@@ -316,9 +382,9 @@ fn a_dispatch_stopped_by_a_usage_limit_keeps_its_place() {
     saved.save(folder.path()).unwrap();
     let mut loaded = Progress::load(folder.path(), Vec::new()).unwrap();
     let error = run_ladder(&agents, &brief, &places, &mut loaded, 0).unwrap_err();
-    assert!(matches!(error, GateError::UsageLimit { .. }));
+    assert!(matches!(error, GateError::Unavailable { .. }));
     assert!(error.to_string().contains(
-        "every runner left on the worker ladder is at its usage limit; last feedback: the saved findings"
+        "every runner left on the worker ladder is unavailable (openai is at its usage limit: ERROR: You've hit your usage limit.; anthropic is at its usage limit: You've hit your limit); last feedback: the saved findings"
     ));
     saved.limited = true;
     assert_eq!(loaded, saved);

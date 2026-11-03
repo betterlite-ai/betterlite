@@ -5,7 +5,7 @@ call:
     provider: bedrock
     model: claude-3
     custom_llm_provider: bedrock_mantle
-    error_str: "an unrelated failure"
+    error_str: "prompt tokens (500) exceed model maximum (400)"
     status_code: null
 env: {}
 compare:

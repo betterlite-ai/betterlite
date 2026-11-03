@@ -1,0 +1,15 @@
+{
+  "kind": "helper",
+  "name": "backref-newline-lookahead",
+  "call": {
+    "route_match": {
+      "function": "route_matches_pattern",
+      "route": "/kK\n",
+      "pattern": "/(?i:(k)\\1)(?=\\n)"
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

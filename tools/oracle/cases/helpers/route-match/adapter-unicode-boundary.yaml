@@ -1,0 +1,17 @@
+{
+  "kind": "helper",
+  "name": "adapter-unicode-boundary",
+  "call": {
+    "route_match": {
+      "function": "check_route_access",
+      "route": "/²",
+      "allowed_routes": [
+        "/\\b\\w+\\b"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

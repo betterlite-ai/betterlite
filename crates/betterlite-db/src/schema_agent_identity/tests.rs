@@ -1,0 +1,10 @@
+#![cfg(test)]
+include!("tests/fixture_lifecycle.rs");
+include!("tests/support.rs");
+include!("tests/migration_application.rs");
+include!("tests/pinned_sql_checksums.rs");
+include!("tests/postgres_catalog.rs");
+include!("tests/postgres_identity_defaults.rs");
+include!("tests/postgres_identity_cascades.rs");
+include!("tests/postgres_lens_rename.rs");
+include!("tests/postgres_usage_and_lens.rs");

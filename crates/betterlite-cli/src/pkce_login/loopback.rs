@@ -25,7 +25,7 @@ pub struct TcpLoopbackListener {
 }
 
 impl TcpLoopbackListener {
-    pub(super) fn bind() -> Result<Self, IoError> {
+    pub fn bind() -> Result<Self, IoError> {
         let listener = TcpListener::bind(("127.0.0.1", 0))?;
         listener.set_nonblocking(true)?;
         Ok(Self { listener })

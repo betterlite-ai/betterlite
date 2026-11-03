@@ -1,0 +1,395 @@
+id: B5132
+title: Close the B3767 DeepKeep audit gaps
+description: >-
+  B3767 built the DeepKeep AI Firewall guardrail: the deepkeep_firewall config section in
+  betterlite-config, DeepKeepGuardrail in betterlite-guardrails and the b3767 oracle helper. An Opus
+  review after the merge found config gaps and four tests that can't fail. Checking them against
+  LiteLLM found more gaps in the same files: a parse that rejects other guardrails' values, an
+  extra_headers mapping LiteLLM can't load, and three missing or different log lines. This task closes
+  seven gaps and the four weak tests in the same crates, modules and case folder. B3767's two checks
+  filtered betterlite-guardrails only, so the section tests in
+  crates/betterlite-config/src/sections/deepkeep_firewall/tests.rs never ran in its gate; this task
+  runs them.
+
+
+  Gap one, os.environ/ references. LiteLLM replaces every os.environ/ string in the config before it
+  builds a guardrail
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5748-L5788).
+  Then coerce_timeout turns timeout text into a float
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1240-L1250)
+  and normalize_lowercase lowercases unreachable_fallback
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1160-L1176).
+  In betterlite, `timeout: os.environ/FIREWALL_TIMEOUT` fails with "timeout must be numeric" in
+  deepkeep_firewall/timeout.rs, and `unreachable_fallback: os.environ/FIREWALL_FALLBACK` fails in
+  UnreachableFallback::try_from. Resolve both with crate::resolve::resolve_string before parsing them.
+  An empty variable counts as unset, as docs/compatibility.md says, so the timeout keeps its 600 second
+  default and the fallback stays fail_closed. An unset variable is ConfigError::MissingEnvironment
+  naming the variable, the same as every other betterlite field; that is a deviation below. Tests:
+  deepkeep_config_reads_timeout_from_environment, deepkeep_config_reads_fallback_from_environment and
+  deepkeep_config_rejects_unset_environment_reference.
+
+
+  Gap two, other guardrails' values. The section's Raw view deserializes every guardrails entry,
+  whatever its guardrail, into Parameters, and timeout::Timeout and UnreachableFallback validate during
+  that parse. So a generic_guardrail_api or cisco_ai_defense entry with `timeout: -1`,
+  `timeout: os.environ/OTHER_TIMEOUT` or `unreachable_fallback: os.environ/OTHER_FALLBACK` fails the
+  whole load before the deepkeep filter in convert runs. LiteLLM declares both keys on the shared
+  LitellmParams for every guardrail
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1066-L1072
+  and https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1103-L1109),
+  so such an entry loads there, and DeepKeep's initializer only ever reads its own entry. Keep both
+  fields raw in Parameters and validate them in Entry::resolve. That runs only for guardrail: deepkeep,
+  and cisco_verdict_contracts.rs keeps its timeout raw as Option<RawNumber> the same way. Test:
+  deepkeep_config_leaves_other_guardrails_values_alone loads such entries through ConfigLoader with
+  OTHER_TIMEOUT and OTHER_FALLBACK set and gets an empty deepkeep list.
+
+
+  Gap three, optional_params.unreachable_fallback. LiteLLM's DeepKeep config model declares
+  optional_params.unreachable_fallback
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/deepkeep.py#L6-L17)
+  and LitellmParams allows extra keys
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1184),
+  so an entry with `optional_params: {unreachable_fallback: fail_open}` loads. initialize_guardrail
+  reads only the top-level unreachable_fallback
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/deepkeep/__init__.py#L11-L27),
+  so the nested value changes nothing and the guardrail stays fail_closed. betterlite rejects the entry
+  as an unsupported key, and the nested_fallback case of deepkeep_config_rejects_invalid_parameters
+  asserts that rejection; B3767's DoD wrongly said the key lives under optional_params. Add
+  optional_params with unreachable_fallback to Parameters, keep the top-level value (or fail_closed),
+  log a warning that the nested key is ignored (a deviation below) and delete the nested_fallback case.
+  Test: deepkeep_config_ignores_nested_optional_params_fallback. Oracle case:
+  nested-optional-fallback.yaml, a construct call with that optional_params; on main the Rust side
+  answers with a config error.
+
+
+  Gap four, an extra_headers mapping. LiteLLM declares extra_headers as list[str] | None on
+  LitellmParams
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1088-L1095).
+  A mapping fails `LitellmParams(**litellm_params_data)`
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_registry.py#L515-L521),
+  and init_guardrails_v2 logs the error and starts the proxy without that guardrail
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/init_guardrails.py#L28-L42).
+  docs/compatibility.md says a value the declared type can't hold is rejected where it enters, with an
+  error that names the field. betterlite instead sends every key of the mapping as a request header.
+  Make a deepkeep entry whose extra_headers is anything but a list fail the load with an error that
+  names extra_headers. Check the shape in Entry::resolve, as in gap two, so another guardrail's
+  extra_headers never fails the DeepKeep view. A list stays ignored with the "DeepKeep extra_headers
+  list ignored" warning, as LiteLLM's DeepKeep class ignores it
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/deepkeep/deepkeep.py#L156-L162).
+  Then remove the mapping path: the extra_headers field of Configured, the header loop in
+  DeepKeepGuardrail::request_headers (deepkeep.rs line 106), the extra header values in the
+  redact_message chain (transport.rs line 70), and DeepKeepError::InvalidHeaderName with its arms in
+  deepkeep.rs and in deepkeep_failure in the b3767 helper. The tests that set a mapping drop it.
+  deepkeep_config_normalizes_and_loads_required_values loses its X-Test header, and
+  deepkeep_config_debug_never_shows_secrets and deepkeep_raw_debug_never_shows_secrets keep only the
+  api_key secret. The guardrail() fixture loses extra_headers, and
+  deepkeep_guardrail_headers_include_secrets_without_debug_disclosure checks only content-type and
+  X-API-Key. deepkeep_guardrail_fail_open_never_logs_upstream_response_body and
+  deepkeep_guardrail_errors_redact_echoed_credentials keep the api key secret and the echoed body. The
+  invalid_header_name fixture and its assertion leave tools/oracle/src/helpers/guardrails/b3767/tests.rs.
+  Test: deepkeep_config_rejects_extra_headers_mapping, with a mapping case and a plain string case.
+
+
+  Gap five, the BLOCKED log. When DeepKeep answers action BLOCKED, LiteLLM logs the warning "DeepKeep
+  guardrail blocked request: <reason>" before it raises
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/deepkeep/deepkeep.py#L404-L414).
+  betterlite returns DeepKeepError::Blocked with no log line. Log a warn! line that carries the reason.
+  Test: deepkeep_guardrail_blocked_action_logs_a_warning.
+
+
+  Gap six, the API error log. When a call fails and isn't let through, LiteLLM logs the error "DeepKeep
+  guardrail API error: ..." before it raises DeepKeepGuardrailAPIError
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/deepkeep/deepkeep.py#L260-L279).
+  That covers a timeout, a connection error or a 502, 503 or 504 under fail_closed, and any other
+  status or unexpected error under either fallback
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/deepkeep/deepkeep.py#L425-L438).
+  recover_from_failure in deepkeep.rs returns Err(error) with no log. Log an error! line there with
+  guardrail_name, failure_category and status. Test: deepkeep_guardrail_fail_closed_logs_the_api_error.
+
+
+  Gap seven, the fail-open log. LiteLLM logs the fail-open pass-through at critical, with
+  guardrail_name, api_base, input_type, litellm_call_id and litellm_trace_id
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/deepkeep/deepkeep.py#L234-L258).
+  betterlite logs it with warn! and leaves out the last three fields. tracing has no critical level, so
+  use error!, the level generic_guardrail_api.rs uses for its own fail-open line, and add the three
+  fields. deepkeep_guardrail_fail_open_logs_an_error_with_call_identity replaces
+  deepkeep_guardrail_fail_open_logs_a_warning_with_guardrail_identity. It captures at Level::ERROR, so a
+  warn! line can't reach it, and it sets litellm_call_id call-1, litellm_trace_id trace-1 and input_type
+  response.
+
+
+  Four tests on main can't fail on what they name. First,
+  deepkeep_guardrail_config_default_timeout_matches_http_handler in deepkeep/tests.rs reads the
+  fixture's own Duration::from_secs(600), so changing the default leaves it green. Delete it. The config
+  test deepkeep_config_defaults_timeout_and_fallback already loads an entry with no timeout through
+  ConfigLoader and asserts 600 seconds, so it is the test of that default. Second, nothing checks the
+  blocked reason. blocked-action.yaml can't, since the oracle drops /error/message, and
+  deepkeep_guardrail_blocked_action_has_default_reason only checks Display text. LiteLLM uses
+  blocked_reason, or "Content violates policy" when it is missing or empty (deepkeep.py line 407).
+  Replace that test with deepkeep_guardrail_blocked_action_keeps_the_reason, an rstest with the cases
+  "banned content", missing and "", each matching DeepKeepError::Blocked { reason } exactly. Third, no
+  test sends an api_base that already ends in /v3/openai/beta/litellm_basic_guardrail_api, and the
+  helper's apply writes that path onto the mock base by hand (b3767.rs line 147). LiteLLM keeps such a
+  base as it is
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/deepkeep/deepkeep.py#L148-L153).
+  Add deepkeep_config_keeps_api_base_that_ends_with_endpoint (with and without a trailing slash) and the
+  construct case endpoint-already-normalized.yaml, and have apply build its URL with
+  normalize_endpoint(&base). Fourth, deepkeep_config_rejects_extra_headers_as_list asserts only that the
+  list is dropped, while LiteLLM also logs a warning (deepkeep.py lines 156 to 162). Rename it to
+  deepkeep_config_warns_and_ignores_extra_headers_as_list and have it capture the "DeepKeep
+  extra_headers list ignored" warning.
+
+
+  Both construct operations of the b3767 helper add "unreachable_fallback" ("fail_closed" or
+  "fail_open") next to api_base and timeout_ms: the Rust side from Configured, the Python side from
+  deepkeep.unreachable_fallback. On main neither reports it, so no construct case can see the fallback.
+  Add the construct case top-level-fallback.yaml with `unreachable_fallback: Fail_Open`; both sides
+  answer fail_open. Apart from dropping the InvalidHeaderName arm, leave deepkeep_failure and the
+  statuses B5103 gave it as they are. A Rust helper gets no env except through its call input, and the
+  oracle drops error messages and log lines, so env references, the extra_headers rejection, the
+  blocked reason and the log lines are proved by the Rust tests above.
+scope:
+  paths:
+    - crates/betterlite-config/src/sections/deepkeep_firewall.rs
+    - crates/betterlite-config/src/sections/deepkeep_firewall/**
+    - crates/betterlite-guardrails/src/deepkeep.rs
+    - crates/betterlite-guardrails/src/deepkeep/**
+    - tools/oracle/src/helpers/guardrails/b3767.rs
+    - tools/oracle/src/helpers/guardrails/b3767/**
+    - tools/oracle/helpers/b3767.py
+    - tools/oracle/cases/guardrails/deepkeep/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5748-L5788
+    why: The proxy replaces every os.environ/ string in the config, an unset variable becoming None, before any guardrail is built.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1240-L1250
+    why: coerce_timeout turns timeout text into a float and treats None and "" as unset.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1160-L1176
+    why: normalize_lowercase lowercases unreachable_fallback for every guardrail.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1066-L1072
+    why: unreachable_fallback is a Literal on the shared LitellmParams, defaulting to fail_closed for every guardrail.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1088-L1095
+    why: extra_headers is a list of header names or None on the shared LitellmParams, so a mapping can't load.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1103-L1109
+    why: timeout is a float or None on the shared LitellmParams, and each handler picks its own default when it is unset.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1184
+    why: LitellmParams allows extra keys, so optional_params loads without a declared field.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/deepkeep.py#L6-L17
+    why: The DeepKeep config model declares optional_params.unreachable_fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/deepkeep/__init__.py#L11-L27
+    why: initialize_guardrail reads only the top-level unreachable_fallback and passes the raw timeout through.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_registry.py#L515-L521
+    why: A config entry's litellm_params go through LitellmParams, where a mapping extra_headers raises a validation error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/init_guardrails.py#L28-L42
+    why: init_guardrails_v2 logs that error and starts the proxy without the guardrail.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/deepkeep/deepkeep.py#L148-L162
+    why: api_base normalization keeps a base that already ends in the endpoint, and a list extra_headers is ignored with a warning.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/deepkeep/deepkeep.py#L234-L279
+    why: The critical fail-open log with its five fields, and the error log before DeepKeepGuardrailAPIError.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/deepkeep/deepkeep.py#L404-L438
+    why: The BLOCKED warning with its default reason, and which failures reach the error handler as unreachable.
+dod:
+  - text: >-
+      An entry with `timeout: os.environ/FIREWALL_TIMEOUT` or `unreachable_fallback:
+      os.environ/FIREWALL_FALLBACK` loads the variable's value; an empty variable counts as unset, and an
+      unset one fails with ConfigError::MissingEnvironment naming it. The tests
+      deepkeep_config_reads_timeout_from_environment, deepkeep_config_reads_fallback_from_environment and
+      deepkeep_config_rejects_unset_environment_reference prove it.
+    proof:
+      - config-env-references
+  - text: >-
+      A guardrails entry of another kind with `timeout: -1`, `timeout: os.environ/OTHER_TIMEOUT` or
+      `unreachable_fallback: os.environ/OTHER_FALLBACK` no longer fails the load, because only deepkeep
+      entries validate those keys. deepkeep_config_leaves_other_guardrails_values_alone proves it.
+    proof:
+      - config-other-guardrails
+  - text: >-
+      An entry with `optional_params: {unreachable_fallback: fail_open}` loads, stays fail_closed and logs
+      a warning that the nested key is ignored, as deepkeep_config_ignores_nested_optional_params_fallback
+      asserts. The nested_fallback rejection case is gone, and the construct case
+      nested-optional-fallback.yaml matches LiteLLM.
+    proof:
+      - config-nested-fallback
+      - construct-fallback
+      - helper-python
+      - oracle
+  - text: >-
+      A deepkeep entry whose extra_headers is a mapping or a plain string fails the load with an error
+      naming extra_headers, as deepkeep_config_rejects_extra_headers_mapping asserts. Configured has no
+      extra_headers field, DeepKeepGuardrail sends no configured extra header, DeepKeepError has no
+      InvalidHeaderName variant, and the b3767 helper tests still pass.
+    proof:
+      - extra-headers-mapping
+  - text: >-
+      deepkeep_guardrail_config_default_timeout_matches_http_handler is deleted, and
+      deepkeep_config_defaults_timeout_and_fallback still asserts the 600 second default through the
+      loader.
+    proof:
+      - default-timeout-test
+  - text: >-
+      deepkeep_guardrail_blocked_action_keeps_the_reason replaces
+      deepkeep_guardrail_blocked_action_has_default_reason and matches DeepKeepError::Blocked { reason }
+      for "banned content", a missing reason and an empty one.
+    proof:
+      - blocked-reason
+  - text: >-
+      A BLOCKED answer logs a warning carrying the reason, as
+      deepkeep_guardrail_blocked_action_logs_a_warning asserts.
+    proof:
+      - blocked-log
+  - text: >-
+      A failure that isn't let through (a 502 under fail_closed, a 400 under fail_open) logs an error line
+      with the guardrail name and status and never the response body, as
+      deepkeep_guardrail_fail_closed_logs_the_api_error asserts.
+    proof:
+      - fail-closed-log
+  - text: >-
+      The fail-open line logs at error level with guardrail_name, api_base, input_type, litellm_call_id
+      and litellm_trace_id, as deepkeep_guardrail_fail_open_logs_an_error_with_call_identity asserts, and
+      the old warning-level test is gone.
+    proof:
+      - fail-open-log
+  - text: >-
+      An api_base that already ends in the DeepKeep endpoint keeps it once, as
+      deepkeep_config_keeps_api_base_that_ends_with_endpoint and the construct case
+      endpoint-already-normalized.yaml assert, and the helper's apply builds its URL with
+      normalize_endpoint.
+    proof:
+      - endpoint-suffix
+      - oracle
+  - text: >-
+      deepkeep_config_warns_and_ignores_extra_headers_as_list replaces
+      deepkeep_config_rejects_extra_headers_as_list and asserts the "DeepKeep extra_headers list ignored"
+      warning.
+    proof:
+      - list-headers-warning
+  - text: >-
+      Both b3767 construct operations report unreachable_fallback, and the construct case
+      top-level-fallback.yaml answers fail_open on both sides.
+    proof:
+      - construct-fallback
+      - helper-python
+      - oracle
+  - text: >-
+      Every test in the deepkeep_firewall config section and every deepkeep behavior test in
+      betterlite-guardrails passes.
+    proof:
+      - config-tests
+      - deepkeep-tests
+checks:
+  optional: [mutants]
+  commands:
+    - id: config-env-references
+      why: os.environ/ references in timeout or unreachable_fallback fail to load, or an unset one does not name its variable
+      run: >-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::deepkeep_firewall::tests::deepkeep_config_reads_timeout_from_environment/)' && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::deepkeep_firewall::tests::deepkeep_config_reads_fallback_from_environment/)' && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::deepkeep_firewall::tests::deepkeep_config_rejects_unset_environment_reference/)'
+    - id: config-other-guardrails
+      why: the DeepKeep view still validates timeout and unreachable_fallback on entries of other guardrails
+      run: >-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::deepkeep_firewall::tests::deepkeep_config_leaves_other_guardrails_values_alone/)'
+    - id: config-nested-fallback
+      why: optional_params.unreachable_fallback is still rejected, changes the fallback or loads without a warning
+      run: >-
+        ! grep -q 'case::nested_fallback' crates/betterlite-config/src/sections/deepkeep_firewall/tests.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/guardrails/deepkeep/nested-optional-fallback.yaml)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::deepkeep_firewall::tests::deepkeep_config_ignores_nested_optional_params_fallback/)'
+    - id: extra-headers-mapping
+      why: a deepkeep extra_headers mapping still loads and is sent as headers, or removing the mapping path broke the b3767 helper tests
+      run: >-
+        ! grep -q 'InvalidHeaderName' crates/betterlite-guardrails/src/deepkeep/error.rs && ! grep -q 'extra_headers' crates/betterlite-guardrails/src/deepkeep.rs crates/betterlite-guardrails/src/deepkeep/transport.rs && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::deepkeep_firewall::tests::deepkeep_config_rejects_extra_headers_mapping/)' && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::guardrails::b3767::tests::/)'
+    - id: default-timeout-test
+      why: the fixture-only default timeout test is still there, or the loader test of the 600 second default fails
+      run: >-
+        ! grep -q 'fn deepkeep_guardrail_config_default_timeout_matches_http_handler' crates/betterlite-guardrails/src/deepkeep/tests.rs && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::deepkeep_firewall::tests::deepkeep_config_defaults_timeout_and_fallback$/)'
+    - id: blocked-reason
+      why: no test fails when the BLOCKED reason or its default changes
+      run: >-
+        ! grep -q 'fn deepkeep_guardrail_blocked_action_has_default_reason' crates/betterlite-guardrails/src/deepkeep/tests.rs && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^deepkeep::tests::deepkeep_guardrail_blocked_action_keeps_the_reason/)'
+    - id: blocked-log
+      why: a BLOCKED answer logs no warning
+      run: >-
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^deepkeep::tests::deepkeep_guardrail_blocked_action_logs_a_warning/)'
+    - id: fail-closed-log
+      why: a failure that is not let through logs nothing, or logs the response body
+      run: >-
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^deepkeep::tests::deepkeep_guardrail_fail_closed_logs_the_api_error/)'
+    - id: fail-open-log
+      why: the fail-open line stays at warning level or misses input_type, litellm_call_id or litellm_trace_id
+      run: >-
+        ! grep -q 'fn deepkeep_guardrail_fail_open_logs_a_warning_with_guardrail_identity' crates/betterlite-guardrails/src/deepkeep/tests.rs && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^deepkeep::tests::deepkeep_guardrail_fail_open_logs_an_error_with_call_identity/)'
+    - id: endpoint-suffix
+      why: an api_base that already ends in the endpoint has no test, or the helper still writes the endpoint by hand
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/guardrails/deepkeep/endpoint-already-normalized.yaml)" && grep -q 'normalize_endpoint' tools/oracle/src/helpers/guardrails/b3767.rs && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::deepkeep_firewall::tests::deepkeep_config_keeps_api_base_that_ends_with_endpoint/)'
+    - id: list-headers-warning
+      why: deleting the list extra_headers warning leaves every test green
+      run: >-
+        ! grep -q 'fn deepkeep_config_rejects_extra_headers_as_list' crates/betterlite-config/src/sections/deepkeep_firewall/tests.rs && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::deepkeep_firewall::tests::deepkeep_config_warns_and_ignores_extra_headers_as_list/)'
+    - id: construct-fallback
+      why: a construct case can't see the resolved unreachable_fallback
+      run: >-
+        grep -q '"unreachable_fallback"' tools/oracle/src/helpers/guardrails/b3767.rs && grep -q '"unreachable_fallback"' tools/oracle/helpers/b3767.py && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/guardrails/deepkeep/top-level-fallback.yaml)"
+    - id: config-tests
+      why: a DeepKeep config section test fails
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-config/src/sections/deepkeep_firewall/tests.rs)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::deepkeep_firewall::/)'
+    - id: deepkeep-tests
+      why: a deepkeep behavior test in betterlite-guardrails fails
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-guardrails/src/deepkeep/tests.rs)" && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^deepkeep::/) - test(deepkeep_guardrail_replays_the_deepkeep_response_corpus)'
+    - id: helper-python
+      why: the DeepKeep Python adapter fails lint or strict typing
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3767.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/guardrails/deepkeep/blocked-action.yaml
+  - tools/oracle/cases/guardrails/deepkeep/configured-timeout.yaml
+  - tools/oracle/cases/guardrails/deepkeep/empty-replacement.yaml
+  - tools/oracle/cases/guardrails/deepkeep/endpoint-normalization.yaml
+  - tools/oracle/cases/guardrails/deepkeep/firewall-id-fixed.yaml
+  - tools/oracle/cases/guardrails/deepkeep/image-only-input.yaml
+  - tools/oracle/cases/guardrails/deepkeep/malformed-response.yaml
+  - tools/oracle/cases/guardrails/deepkeep/metadata-extraction.yaml
+  - tools/oracle/cases/guardrails/deepkeep/missing-api-base.yaml
+  - tools/oracle/cases/guardrails/deepkeep/missing-api-key.yaml
+  - tools/oracle/cases/guardrails/deepkeep/missing-firewall-id.yaml
+  - tools/oracle/cases/guardrails/deepkeep/non-blocked-action-replacement.yaml
+  - tools/oracle/cases/guardrails/deepkeep/pre-call-pass-through.yaml
+  - tools/oracle/cases/guardrails/deepkeep/request-payload-litellm-ids.yaml
+  - tools/oracle/cases/guardrails/deepkeep/unreachable-502.yaml
+  - tools/oracle/cases/guardrails/deepkeep/unreachable-fail-closed.yaml
+  - tools/oracle/cases/guardrails/deepkeep/unreachable-fail-open.yaml
+  - tools/oracle/cases/guardrails/deepkeep/unreachable-timeout.yaml
+  - tools/oracle/cases/guardrails/deepkeep/nested-optional-fallback.yaml
+  - tools/oracle/cases/guardrails/deepkeep/endpoint-already-normalized.yaml
+  - tools/oracle/cases/guardrails/deepkeep/top-level-fallback.yaml
+deviations:
+  - what: An entry that sets optional_params.unreachable_fallback logs a warning that the nested key is ignored. LiteLLM ignores it without a word.
+    why: The UI config model offers the nested key, so an operator can believe the guardrail fails open while it fails closed; the warning says so and the fallback stays LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/deepkeep/__init__.py#L11-L27
+  - what: An os.environ/ reference in timeout or unreachable_fallback that names an unset variable fails the load with MissingEnvironment. LiteLLM turns it into None, so the timeout takes its default and the fallback fails validation and the proxy starts without the guardrail.
+    why: Every betterlite field resolves references through the same resolve_string rule, so a mistyped variable can't quietly switch off or weaken a security guardrail.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5782-L5787
+out_of_scope:
+  - "When a guardrail leaves timeout unset, LiteLLM's cached client uses litellm_settings.request_timeout, then REQUEST_TIMEOUT, then 600 seconds, with a 5 second connect timeout (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L164-L175). That default is a shared gap for every guardrail client, and the loader already parses litellm_settings.request_timeout into LiteLlmSettings.request_timeout, so DeepKeep keeps its fixed 600 second default here."
+  - Padded one-line functions in these files belong to B5094, and this task does not touch .ast-grep/rules/.
+  - The fixed status per error class (B5102) and the helper statuses in deepkeep_failure (B5103) are merged and stay as they are.
+  - DeepKeepGuardrailConfigModel in sections/guardrail_identity/config_models.rs (B3660) has no optional_params.unreachable_fallback; that UI vocabulary is not this task's file.
+  - An invalid deepkeep entry still fails the whole load, where init_guardrails_v2 skips the guardrail with an error log. That holds for every guardrail section and is not changed here.
+  - No route reaches DeepKeep yet, so there are no HTTP cases and no server wiring.
+pitfalls:
+  - The DeepKeep Raw view deserializes every guardrails entry, so Parameters must hold timeout, unreachable_fallback and extra_headers as raw values and validate them only in Entry::resolve for guardrail deepkeep.
+  - Hold the raw extra_headers as an untagged list of strings or anything else (serde::de::IgnoredAny), so Raw keeps no header values; for a deepkeep entry an absent or null value is fine, a list warns, and anything else is the load error naming extra_headers.
+  - timeout still takes a YAML bool (true is one second, the boolean case of deepkeep_config_accepts_timeout_seconds), and RawNumber::Boolean is an InvalidScalar error in crate::resolve, so keep the untagged Seconds shape instead of switching to RawNumber.
+  - ConfigError has no variant for an out-of-range value or a wrong shape and loader.rs is out of scope, so turn a TimeoutError, a FallbackError or the extra_headers error into ConfigError::Yaml through <serde_saphyr::Error as serde::de::Error>::custom; the message must keep naming the field, since deepkeep_config_rejects_invalid_parameters checks error.to_string().contains(field).
+  - Only optional_params.unreachable_fallback is declared; any other key under optional_params stays an unsupported-key error, and the nested value never changes the fallback.
+  - With the header loop gone, DeepKeepError::InvalidHeader is built only for X-API-Key; deepkeep_failure in tools/oracle/src/helpers/guardrails/b3767.rs and the recover_from_failure match in deepkeep.rs both name InvalidHeaderName and lose that arm.
+  - apply moves the RequestContext into build_request, so copy input_type, litellm_call_id and litellm_trace_id out first for the fail-open line.
+  - Never log a DeepKeepError's Display, because Api carries the response body; deepkeep_guardrail_fail_open_never_logs_upstream_response_body must stay green.
+  - deepkeep.rs is at 270 of the 300 lines a source file may have, so the new log lines go in a child module under deepkeep/.
+  - The BLOCKED warning logs the reason transport.rs has already redacted, not the raw response.
+  - Config log tests capture output the way grayswan/tests.rs does, with tracing::subscriber::with_default and a NamedTempFile writer.
+  - The Python construct reads deepkeep.unreachable_fallback after initialize_guardrail, not the parameters, so the getattr default in __init__.py applies.
+  - The Rust apply keeps the mock's base_url as host and only swaps the hand-written path for normalize_endpoint(&base).
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

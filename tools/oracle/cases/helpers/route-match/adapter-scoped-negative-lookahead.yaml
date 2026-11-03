@@ -1,0 +1,17 @@
+{
+  "kind": "helper",
+  "name": "adapter-scoped-negative-lookahead",
+  "call": {
+    "route_match": {
+      "function": "check_route_access",
+      "route": "/K",
+      "allowed_routes": [
+        "/(?!(?ai:k))(?i:k)"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

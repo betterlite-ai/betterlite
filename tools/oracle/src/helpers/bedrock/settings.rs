@@ -131,7 +131,9 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         let output = match input {
             Input::Settings(call) => settings(call),
-            Input::Error(call) => error(call),
+            Input::Error(call) => BedrockError::try_from(error_input(call))
+                .map_err(Failure::from)
+                .and_then(|built| serialize_error(&built)),
         };
         Ok(output?)
     }
@@ -209,11 +211,6 @@ fn error_input(call: &ErrorCall) -> ErrorInput {
         headers: call.headers.clone(),
         response,
     }
-}
-
-fn error(call: &ErrorCall) -> Result<Value, Failure> {
-    let built = BedrockError::try_from(error_input(call))?;
-    serialize_error(&built)
 }
 
 fn serialize_error(built: &BedrockError) -> Result<Value, Failure> {
