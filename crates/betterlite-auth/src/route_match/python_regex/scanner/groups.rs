@@ -2,8 +2,12 @@ use super::super::{Alphabet, Flags, RegexError};
 use super::Scanner;
 
 pub(super) fn group(scanner: &mut Scanner<'_>) -> Result<(), RegexError> {
+    if scanner.rest.starts_with("?#") {
+        return skip_comment(scanner);
+    }
     scanner.output.push('(');
-    if scanner.rest.starts_with("?#") || scanner.rest.starts_with("?P=") {
+    if scanner.rest.starts_with("?P=") {
+        scanner.folded_refs |= scanner.flags.caseless;
         copy_through(scanner, ')')?;
         return Ok(());
     }
@@ -71,6 +75,13 @@ fn flag_group(scanner: &mut Scanner<'_>) -> Result<(), RegexError> {
             _ => return Err(RegexError::Syntax),
         }
     }
+    if scanner.classes.is_some() {
+        if scanner.flags.alphabet == Alphabet::Ascii {
+            enabled.push('r');
+        } else {
+            disabled.push('r');
+        }
+    }
     scanner.output.push_str(&enabled);
     if !disabled.is_empty() {
         scanner.output.push('-');
@@ -85,6 +96,20 @@ impl Flags {
         match flag {
             'i' => self.caseless = enabled,
             'x' => self.verbose = enabled,
+            's' => self.newlines.dot = enabled,
+            'm' => self.newlines.anchors = enabled,
+            _ => {}
+        }
+    }
+}
+
+fn skip_comment(scanner: &mut Scanner<'_>) -> Result<(), RegexError> {
+    loop {
+        match scanner.take().ok_or(RegexError::Syntax)? {
+            ')' => return Ok(()),
+            '\\' => {
+                scanner.take().ok_or(RegexError::Syntax)?;
+            }
             _ => {}
         }
     }

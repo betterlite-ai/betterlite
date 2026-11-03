@@ -460,3 +460,52 @@ fn invalid_route_regex_denies() {
         "/(?a:["
     ));
 }
+
+#[rstest::rstest]
+#[case::ascii_kelvin("/k\u{212a}", r"/(?ai:(k)\1)", false)]
+#[case::ascii_accent("/\u{e9}\u{c9}", r"/(?ai:(.)\1)", false)]
+#[case::ascii_mixed("/K\u{e9}k\u{e9}", r"/(?ai:(..)\1)", true)]
+#[case::unicode_dotted_i("/i\u{130}", r"/(?i:(i)\1)", true)]
+#[case::unicode_dotless_i("/i\u{131}", r"/(?i:(i)\1)", false)]
+#[case::unicode_sigma("/\u{3c3}\u{3c2}", r"/(?i:(.)\1)", false)]
+#[case::unicode_kelvin("/k\u{212a}", r"/(?i:(k)\1)", true)]
+#[case::unicode_word("/\u{e9}\u{c9}", r"/(?i:(\w)\1)", true)]
+#[case::named_ascii("/k\u{212a}", "/(?ai:(?P<letter>k)(?P=letter))", false)]
+#[case::backtracking("/abAB", r"/(?i:(a|ab)\1)", true)]
+#[case::newline_lookahead("/kK\n", r"/(?i:(k)\1)(?=\n)", true)]
+#[case::boundary("/\u{e9}\u{c9}", r"/(?i:(\w)\1)\b", true)]
+#[case::later_sensitive("/KkK", r"/(?i:(k)\1)\1", true)]
+#[case::later_sensitive_denied("/Kkk", r"/(?i:(k)\1)\1", false)]
+#[case::ascii_inside_unicode("/\u{e9}\u{c9}", r"/(?u:(.)(?ai:\1))", false)]
+#[case::unicode_inside_ascii("/\u{e9}\u{c9}", r"/(?ai:(.)(?u:\1))", true)]
+#[case::alternation("/z", r"/(?i:(x)\1)|/z", true)]
+#[case::negative_lookahead("/k\u{212a}", r"/(?i:(k))(?!(?ai:\1))(?i:\1)", true)]
+#[case::dot_newline("/\n\n", r"/(?is:(.)\1)", true)]
+#[case::dot_excludes_newline("/\n\n", r"/(?i:(.)\1)", false)]
+#[case::multiline("/a\na", r"/(?im:(a)$\n^\1)", true)]
+#[case::lookbehind("/aA", r"/(?i:(a)\1)(?<=A)", true)]
+#[case::empty_capture("/", r"/(?i:(a*)\1)", true)]
+#[case::unset_capture("/", r"/(?i:(a)?\1)", false)]
+#[case::astral("/\u{1f600}\u{1f600}", r"/(?i:(.)\1)", true)]
+#[case::nul("/\u{0}\u{0}", r"/(?i:(\x00)\1)", true)]
+#[case::escaped_comment("/kK", r"/(?i:(k)\1)(?# ignored \) comment)", true)]
+fn python_backreference_folding(
+    #[case] route: &str,
+    #[case] pattern: &str,
+    #[case] expected: bool,
+) {
+    assert_eq!(
+        route_matches_pattern(&RouteValue::Text(route), pattern),
+        expected
+    );
+}
+
+#[test]
+fn encoded_regex_input_limit() {
+    let pattern = super::python_regex::compile(r"^/(?i:(a+)\1)$").unwrap();
+    let text = format!("/{}", "a".repeat(0x8000));
+    assert!(matches!(
+        pattern.is_match(&text),
+        Err(super::python_regex::RegexError::Limit)
+    ));
+}

@@ -27,15 +27,23 @@ pub(super) fn perl_class(character: char, flags: Flags) -> Option<String> {
     Some(format!("[{negate}{content}]"))
 }
 
-pub(super) fn literal(character: char, flags: Flags) -> String {
+pub(super) fn literal(
+    character: char,
+    flags: Flags,
+    registry: &mut Option<Vec<ClassUnicode>>,
+) -> String {
     let mut class = ClassUnicode::new([ClassUnicodeRange::new(character, character)]);
     if flags.caseless {
         fold(&mut class, flags);
     }
-    render(&class)
+    render(&class, registry)
 }
 
-pub(super) fn character_set(source: &str, flags: Flags) -> Result<String, RegexError> {
+pub(super) fn character_set(
+    source: &str,
+    flags: Flags,
+    registry: &mut Option<Vec<ClassUnicode>>,
+) -> Result<String, RegexError> {
     let (negated, content) = source
         .strip_prefix('^')
         .map_or((false, source), |tail| (true, tail));
@@ -67,7 +75,7 @@ pub(super) fn character_set(source: &str, flags: Flags) -> Result<String, RegexE
     if negated {
         class.negate();
     }
-    Ok(render(&class))
+    Ok(render(&class, registry))
 }
 
 fn fold(class: &mut ClassUnicode, flags: Flags) {
@@ -93,7 +101,18 @@ fn fold(class: &mut ClassUnicode, flags: Flags) {
     }
 }
 
-fn render(class: &ClassUnicode) -> String {
+fn render(class: &ClassUnicode, registry: &mut Option<Vec<ClassUnicode>>) -> String {
+    if let Some(classes) = registry {
+        let index = classes
+            .iter()
+            .position(|known| known == class)
+            .unwrap_or_else(|| {
+                let next = classes.len();
+                classes.push(class.clone());
+                next
+            });
+        return format!("(?-i:\0{index}\0)");
+    }
     if class.ranges().is_empty() {
         return "(?!)".to_owned();
     }

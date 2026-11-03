@@ -15,7 +15,7 @@ pub fn route_matches_pattern(route: &RouteValue<'_>, pattern: &str) -> bool {
     }
     let substituted = substitute_placeholders(pattern);
     python_regex::compile(&format!("^{substituted}$"))
-        .is_ok_and(|compiled| compiled.is_match(text.as_bytes()).unwrap_or(false))
+        .is_ok_and(|compiled| compiled.is_match(text).unwrap_or(false))
 }
 
 // A :path placeholder stops before a following literal colon, but otherwise accepts router path input.

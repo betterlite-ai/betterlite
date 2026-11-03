@@ -1,4 +1,6 @@
-use super::{Flags, RegexError, characters};
+use regex_syntax::hir::ClassUnicode;
+
+use super::{Flags, RegexError, Translation, characters, encoded};
 
 mod escapes;
 mod groups;
@@ -8,14 +10,18 @@ struct Scanner<'pattern> {
     flags: Flags,
     scopes: Vec<Flags>,
     output: String,
+    classes: Option<Vec<ClassUnicode>>,
+    folded_refs: bool,
 }
 
-pub(super) fn translate(pattern: &str) -> Result<String, RegexError> {
+pub(super) fn translate(pattern: &str, encode: bool) -> Result<Translation, RegexError> {
     let mut scanner = Scanner {
         rest: pattern,
         flags: Flags::default(),
         scopes: Vec::new(),
         output: String::new(),
+        classes: encode.then(Vec::new),
+        folded_refs: false,
     };
     while let Some(character) = scanner.take() {
         scanner.token(character)?;
@@ -26,7 +32,11 @@ pub(super) fn translate(pattern: &str) -> Result<String, RegexError> {
     if !scanner.scopes.is_empty() {
         return Err(RegexError::Syntax);
     }
-    Ok(scanner.output)
+    Ok(Translation {
+        source: scanner.output,
+        classes: scanner.classes,
+        folded_refs: scanner.folded_refs,
+    })
 }
 
 impl Scanner<'_> {
@@ -50,17 +60,29 @@ impl Scanner<'_> {
             }
             '[' => {
                 let content = self.class_content()?;
-                self.output
-                    .push_str(&characters::character_set(&content, self.flags)?);
+                self.output.push_str(&characters::character_set(
+                    &content,
+                    self.flags,
+                    &mut self.classes,
+                )?);
             }
             '\\' => {
                 let escaped = escapes::escape(self)?;
                 self.output.push_str(&escaped);
             }
+            '.' | '^' | '$' if self.classes.is_some() => {
+                self.output.push_str(&encoded::operator(
+                    character,
+                    self.flags.newlines,
+                    &mut self.classes,
+                )?);
+            }
             '.' | '*' | '+' | '?' | '|' | '^' | '$' => self.output.push(character),
-            _ => self
-                .output
-                .push_str(&characters::literal(character, self.flags)),
+            _ => self.output.push_str(&characters::literal(
+                character,
+                self.flags,
+                &mut self.classes,
+            )),
         }
         Ok(())
     }
