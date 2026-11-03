@@ -1,0 +1,13 @@
+id: B5118
+milestone: M3 providers
+title: Close the B646 Bedrock file content audit gaps
+status: todo
+depends_on: [B646]
+file: tasks/B5118-bedrock-file-content-gaps.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

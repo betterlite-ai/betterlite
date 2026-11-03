@@ -1,0 +1,307 @@
+id: B5124
+title: Close the B1693 savings evidence audit gaps
+description: >-
+  Fix the gaps an Opus review found in B1693's savings evidence readers after it merged. Three readers
+  give a different answer from LiteLLM, four oracle cases can't fail on the branch their name promises,
+  and three cases B1693 added have never run.
+
+  LiteLLM's _numeric_savings returns any finite float as the recorded savings
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/savings.py#L473-L477).
+  BaselineCostSnapshot takes any finite float at or above zero for actual_spend, actual_token_cost and
+  classifier_cost
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/savings.py#L125-L134),
+  and _recorded_token_cost adds input_cost and output_cost as floats
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/savings.py#L210-L229).
+  Tiny float residues are normal in these fields. The spend log's autorouter_savings is a float8
+  subtraction in Postgres
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/baseline_accounting.py#L240-L252),
+  so values such as -2.7755575615628914e-17 come back, in exponent form or as a plain decimal with 33
+  places. betterlite reads all three through B204's parse_decimal_lexeme, and it fails past
+  rust_decimal's 28 decimal places. So numeric_savings returns None and the estimate reads as unknown,
+  StrictDecimal rejects the whole snapshot with AmountOutOfRange, and numeric_cost_component drops the
+  component so recorded_token_cost is None. The fix adds one amount reader in savings_evidence/numeric.rs.
+  It rounds a finite lexeme with more than 28 places half away from zero to 28 places, in plain or
+  exponent form, and reads a value below that resolution as 0. Overflow keeps today's None or
+  AmountOutOfRange. numeric_savings, StrictDecimal and numeric_cost_component all use it. LiteLLM prints
+  such a value with up to 33 places and a Decimal holds 28, so no oracle case can match. Rust tests prove
+  it, and the rounding is a deviation.
+
+  LiteLLM keeps cache_write_tokens and cache_creation_tokens equal. PromptTokensDetailsWrapper.__setattr__
+  copies an assignment to either field into the other, and its __init__ sets cache_write_tokens from
+  cache_write_tokens, else cache_creation_tokens, else an integer cache_creation_input_tokens extra key
+  inside prompt_tokens_details
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1784-L1820).
+  Usage.__init__ applies a top-level cache_creation_input_tokens by assigning cache_write_tokens, so the
+  override reaches both fields
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1939-L1952).
+  betterlite's coerce_prompt_tokens_details reads the two fields apart with a missing one as 0, ignores
+  the nested cache_creation_input_tokens, and apply_cache_overrides sets only cache_write_tokens.
+  _cache_token_split then reads cache_creation_tokens first
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/savings.py#L267-L321),
+  so the baseline gets the wrong write count. For usage {prompt_tokens: 100, cache_read_input_tokens: 20,
+  cache_creation_input_tokens: 10, prompt_tokens_details: {cached_tokens: 20, cache_creation_tokens: 3}}
+  priced against a baseline with a zero cache read rate, LiteLLM's baseline has 10 cache writes and 90
+  text tokens, and betterlite's has 3 and 97. The fix picks the write count in LiteLLM's order with
+  optional reads, sets both fields to it, and makes the top-level override set both. cache_token_split
+  stays as it is. Both adapters' baseline_usage output gains cache_creation_tokens, since no case can see
+  that field today.
+
+  LiteLLM's _coerce_billed_at returns datetime.fromisoformat(value.replace("Z", "+00:00")), or None on
+  ValueError
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/savings.py#L44-L50),
+  and the result picks the pricing window for prompt caching savings
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/savings.py#L595-L615).
+  Python 3.13's fromisoformat
+  (https://github.com/python/cpython/blob/v3.13.16/Lib/_pydatetime.py#L278-L478 and
+  https://github.com/python/cpython/blob/v3.13.16/Lib/_pydatetime.py#L1862-L1885) finds the separator by
+  position and takes any one character there. It reads the date as YYYY-MM-DD, YYYYMMDD, YYYY-Www[-D] or
+  YYYYWww[D] with exact widths, the time as HH[:MM[:SS[.f or ,f]]] with colons used all or nowhere, and
+  the offset as HH, HHMM, HH:MM, HHMMSS or HH:MM:SS with an optional fraction. It then rejects second 60
+  (https://github.com/python/cpython/blob/v3.13.16/Lib/_pydatetime.py#L548-L562), year 0, and an offset
+  of 24 hours or more. decode_billed_at tries a fixed list of chrono formats instead. It returns None for
+  "2024-03-01T10:00:00,5Z" (comma fraction), "2024-W09-5T10:00:00Z" (week date),
+  "2024-03-01T10:00:00+02" (hour-only offset), "2024-03-01T10:00:00+02:00:30" (offset seconds), and
+  "2024-03-01T100000Z" and "20240301T10:00:00Z" (basic form on one side only). It returns a time for
+  "2024-03-01T23:59:60Z" because chrono takes a leap second, and for "2024-3-1" because chrono reads
+  one-digit fields. The fix ports the grammar as a small parser over chars, keeps reading a naive result
+  as UTC, and uses chrono only to build the date and time from fields the parser has checked.
+
+  Four B1693 cases can't fail on the branch their name promises. version-bool-and-unknown-status sets
+  version true and status unknown together, so removing either check in
+  recorded_estimated_autorouter_savings
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/savings.py#L480-L489)
+  still gives null. snapshot-strictness-and-tuple-basis sends actual_spend true, so both sides reject the
+  snapshot and the [flex, null, null] basis is never compared. injection-all-deployments-and-sibling-leg
+  only sends the empty marker, while marks_gateway_injection also matches the marker against the row's
+  model_id
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/savings.py#L395-L413).
+  iso-time-z-offset-and-invalid decodes one Z string and never an explicit offset or garbage. Each is
+  replaced by cases that test one branch each, under names that say which.
+
+  B1693 also added date-only-reads-as-utc-midnight, naive-datetime-reads-as-utc and
+  top-level-cache-counts-without-nested-details without listing them in oracle_cases. Main's CI runs no
+  oracle case a task doesn't list, so they have never run, and as they stand they fail on the
+  projections rather than on the code under test. The Python helper process gets no TZ, so the naive
+  datetime _coerce_billed_at returns goes through .timestamp() in the machine's local zone, while
+  LiteLLM's off-peak pricing reads a naive time as UTC
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L495-L503).
+  The Python baseline_usage projection prints a missing detail count as null and the Rust side prints 0.
+  LiteLLM's readers treat a missing count as 0
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L961-L967),
+  and docs/compatibility.md has absent or null take the default. The fix lists the whole case folder and
+  corrects both projections.
+
+  No finding is left out. Each one checked out against LiteLLM 1.105.1 and CPython 3.13.16. The reviewer
+  asked for an oracle case for the rounding, and that one becomes Rust tests and a deviation because the
+  two sides can't print the same digits.
+scope:
+  paths:
+  - crates/betterlite-models/src/savings_evidence/**
+  - crates/betterlite-models/fuzz/corpus/billed_at/**
+  - tools/oracle/src/helpers/models/savings_evidence.rs
+  - tools/oracle/helpers/savings_evidence.py
+  - tools/oracle/cases/helpers/savings-evidence/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/savings.py#L473-L489
+  why: _numeric_savings and recorded_estimated_autorouter_savings return any finite float once version and status match
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/savings.py#L125-L134
+  why: BaselineCostSnapshot accepts any finite float at or above zero, with a tuple basis
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/savings.py#L210-L229
+  why: _recorded_token_cost adds input_cost and output_cost as floats
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/baseline_accounting.py#L240-L252
+  why: Writes autorouter_savings as a float8 subtraction, the source of sub-28-place residues
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1784-L1820
+  why: PromptTokensDetailsWrapper mirrors the two cache write fields and falls back to a nested cache_creation_input_tokens
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1939-L1952
+  why: Usage.__init__ applies the top-level cache counts through those mirrored fields
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/savings.py#L267-L321
+  why: _cache_token_split and _baseline_usage read the mirrored write count and rebuild the text tokens
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/savings.py#L44-L50
+  why: _coerce_billed_at is fromisoformat after the Z replacement, None on ValueError
+- url: https://github.com/python/cpython/blob/v3.13.16/Lib/_pydatetime.py#L278-L478
+  why: The separator, date, time and offset grammar fromisoformat follows
+- url: https://github.com/python/cpython/blob/v3.13.16/Lib/_pydatetime.py#L548-L562
+  why: The field checks that reject second 60
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L495-L503
+  why: Off-peak pricing reads a naive billed_at as UTC, the reading the Python projection must copy
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/savings.py#L395-L413
+  why: marks_gateway_injection matches the marker against the empty every-deployment value or the row's model_id
+dod:
+- text: >-
+    numeric_savings, StrictDecimal and numeric_cost_component round a finite lexeme with more than 28
+    decimal places half away from zero to 28 places and read a value below that resolution as 0, while
+    overflow keeps today's None or AmountOutOfRange. The new rstest
+    numeric_savings_rounds_a_lexeme_past_28_places has cases float_residue ("-2.7755575615628914e-17"
+    gives -0.0000000000000000277555756156), plain_residue ("0.000000000000000055511151231257830" gives
+    0.0000000000000000555111512313), below_resolution ("1e-30" gives 0), huge_negative_exponent
+    ("1e-99999999999" gives 0), overflow ("1e30" gives None) and huge_positive_exponent ("1e99999999999"
+    gives None). The new rstest rounds_amounts_past_28_places in snapshot/tests.rs decodes a snapshot
+    with actual_spend 5.551115123125783e-17, and one with classifier_cost 0.000000000000000055511151231257830,
+    to 0.0000000000000000555111512313. The new rstest recorded_token_cost_rounds_a_component_past_28_places
+    gives 0.0000000000000000277555756156 for input_cost 2.7755575615628914e-17 with output_cost 0. All
+    three fail on today's main, where these inputs give None or AmountOutOfRange. No test on main sends a
+    lexeme past 28 places. rejects_boolean_nonnumeric_and_negative_amounts gains a case for actual_spend
+    -1e-30. It must stay an error after the rounding, since LiteLLM's ge=0 rejects it.
+  proof: [amount-rounding-tests, savings-evidence-tests]
+- text: >-
+    usage_from_spend_log sets cache_write_tokens and cache_creation_tokens to one count: cache_write_tokens
+    when present, else cache_creation_tokens when present, else an integer-like nested
+    prompt_tokens_details.cache_creation_input_tokens. A top-level cache_creation_input_tokens sets both.
+    Both adapters' baseline_usage output adds cache_creation_tokens. Four new baseline_usage cases fail
+    on today's main and pass once fixed: cache-write-top-level-count-reaches-both-fields (10 writes and
+    90 text tokens against main's 3 and 97), cache-write-tokens-win-over-creation-tokens (details
+    {cached_tokens 5, cache_write_tokens 4, cache_creation_tokens 9} with prompt_tokens 50: 4 and 46
+    against 9 and 41), cache-write-falls-back-to-nested-creation-input (details {cached_tokens 4,
+    cache_creation_input_tokens 6} with prompt_tokens 40: 6 and 34 against 0 and 40) and
+    cache-creation-tokens-mirror-the-top-level-count (the first input with baseline_info null:
+    cache_creation_tokens 10 against 3). The new rstest usage_from_spend_log_mirrors_the_cache_write_count
+    covers each source, an explicit cache_write_tokens of 0 over a cache_creation_tokens of 9, and a
+    nested 6.0 that is not an integer and gives 0. usage_from_spend_log_applies_top_level_cache_overrides_without_nested_details
+    asserts only cache_write_tokens today, so it can't see the missing mirror; it also asserts
+    cache_creation_tokens is 3.
+  proof: [cache-mirror-cases, savings-evidence-tests, oracle]
+- text: >-
+    decode_billed_at follows fromisoformat's grammar after the Z replacement and reads a naive result as
+    UTC. Eight new billed_at cases fail on today's main and pass once fixed: billed-at-comma-fraction
+    ("2024-03-01T10:00:00,5Z"), billed-at-week-date ("2024-W09-5T10:00:00Z", 2024-03-01T10:00:00Z),
+    billed-at-hour-only-offset ("2024-03-01T10:00:00+02"), billed-at-offset-with-seconds
+    ("2024-03-01T10:00:00+02:00:30", 07:59:30 UTC), billed-at-basic-time ("2024-03-01T100000Z"),
+    billed-at-basic-date ("20240301T10:00:00Z"), billed-at-leap-second-reads-null
+    ("2024-03-01T23:59:60Z", null) and billed-at-one-digit-fields-read-null ("2024-3-1", null). The new
+    rstest decode_billed_at_follows_the_fromisoformat_grammar holds those inputs plus "2024W095T10:00:00Z",
+    "2024-W09" (2024-02-26 midnight), "2024-03-01T" (midnight), "0000-01-01" (None),
+    "2024-03-01T10:00:00+24:00" (None), "2024-03-01T10:0000" (None), "2024-03-01T10:00:00.1234567Z"
+    (truncated to 123456 microseconds) and "2024-03-01é10:00:00Z" (10:00 UTC). On main
+    decode_billed_at_matches_coerced_iso_offsets only lists forms chrono already reads; it stays and
+    still passes. The billed_at fuzz corpus gains seeds for a comma fraction, a week date, offset seconds,
+    a leap second, a multi-byte separator, full-width digits and a long fraction.
+  proof: [billed-at-cases, billed-at-corpus, savings-evidence-tests, oracle]
+- text: >-
+    version-bool-and-unknown-status.yaml is gone. version-bool-with-estimated-status (version true,
+    status estimated, autorouter_savings 2.5) gives null and fails if the bool version check goes;
+    version-one-with-unknown-status (version 1, status unknown) gives null and fails if the status check
+    goes; version-three-estimated-reads-savings (version 3, status estimated) gives "2.5" and fails if
+    either check rejects a valid estimate. Today every autorouter case expects null, so none can catch
+    a reader that always says None.
+  proof: [weak-case-rewrites, oracle]
+- text: >-
+    snapshot-strictness-and-tuple-basis.yaml is gone. snapshot-rejects-bool-actual-spend sends
+    actual_spend true and expects a ValidationError on both sides. snapshot-decodes-tuple-basis sends
+    model gpt-4, provider openai, prices null, basis [flex, null, null], actual_spend 0.5 and
+    classifier_cost 0.01, and compares the decoded basis, amounts and has_prices, so it fails if the tuple
+    basis stops decoding.
+  proof: [weak-case-rewrites, oracle]
+- text: >-
+    injection-all-deployments-and-sibling-leg.yaml becomes injection-empty-marker-covers-every-deployment
+    (marker "", model_id model-B, true). New injection-sibling-leg-is-not-marked (marker model-A,
+    model_id model-B) expects false, and injection-matching-deployment-is-marked (model-A and model-A)
+    expects true, so a marker check that ignores model_id fails one of them.
+  proof: [weak-case-rewrites, oracle]
+- text: >-
+    iso-time-z-offset-and-invalid.yaml becomes iso-time-z-offset ("2024-03-01T10:00:00Z"). New
+    iso-time-explicit-offset ("2024-03-01T10:00:00+02:00", 08:00 UTC) and iso-time-invalid-reads-null
+    ("not-a-date", null) run the two branches the old name promised.
+  proof: [weak-case-rewrites, oracle]
+- text: >-
+    oracle_cases lists the whole savings-evidence folder, so date-only-reads-as-utc-midnight,
+    naive-datetime-reads-as-utc and top-level-cache-counts-without-nested-details run for the first time.
+    _run_billed_at attaches UTC to a naive result before it computes microseconds, and computes them
+    with integer timedelta arithmetic. _run_baseline_usage prints a missing count inside a present
+    details object as 0 and keeps null only when there is no details object. On today's main the two
+    billed_at cases fail wherever the local zone isn't UTC, as on the worker machines, and
+    top-level-cache-counts-without-nested-details fails on text_tokens (null against 0).
+  proof: [savings-evidence-python, oracle]
+checks:
+  optional: []
+  commands:
+  - id: savings-evidence-tests
+    why: every savings evidence unit test must pass after the three fixes
+    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^savings_evidence::/) - test(replays_the_billed_at_corpus)'
+  - id: amount-rounding-tests
+    why: an amount past 28 decimal places must round instead of reading as unknown or rejecting the snapshot
+    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::numeric_savings_rounds_a_lexeme_past_28_places::/)' && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::rounds_amounts_past_28_places::/)' && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::recorded_token_cost_rounds_a_component_past_28_places::/)'
+  - id: cache-mirror-cases
+    why: the cache write mirror needs cases that compare cache_creation_tokens and the text split, and a unit test per source
+    run: test "$(git diff --no-renames --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/savings-evidence/cache-write-top-level-count-reaches-both-fields.yaml tools/oracle/cases/helpers/savings-evidence/cache-write-tokens-win-over-creation-tokens.yaml tools/oracle/cases/helpers/savings-evidence/cache-write-falls-back-to-nested-creation-input.yaml tools/oracle/cases/helpers/savings-evidence/cache-creation-tokens-mirror-the-top-level-count.yaml | wc -l)" -eq 4 && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::usage_from_spend_log_mirrors_the_cache_write_count::/)'
+  - id: billed-at-cases
+    why: each fromisoformat form main gets wrong needs its own oracle case and a unit test
+    run: test "$(git diff --no-renames --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/savings-evidence/billed-at-comma-fraction.yaml tools/oracle/cases/helpers/savings-evidence/billed-at-week-date.yaml tools/oracle/cases/helpers/savings-evidence/billed-at-hour-only-offset.yaml tools/oracle/cases/helpers/savings-evidence/billed-at-offset-with-seconds.yaml tools/oracle/cases/helpers/savings-evidence/billed-at-basic-time.yaml tools/oracle/cases/helpers/savings-evidence/billed-at-basic-date.yaml tools/oracle/cases/helpers/savings-evidence/billed-at-leap-second-reads-null.yaml tools/oracle/cases/helpers/savings-evidence/billed-at-one-digit-fields-read-null.yaml | wc -l)" -eq 8 && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::decode_billed_at_follows_the_fromisoformat_grammar::/)'
+  - id: billed-at-corpus
+    why: the grammar port is a new parser over untrusted text, so it needs new malformed seeds the replay test decodes
+    run: test -n "$(git diff --no-renames --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-models/fuzz/corpus/billed_at)" && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(replays_the_billed_at_corpus)'
+  - id: weak-case-rewrites
+    why: the four weak cases must be gone and each branch they named must have its own case
+    run: test ! -e tools/oracle/cases/helpers/savings-evidence/version-bool-and-unknown-status.yaml && test ! -e tools/oracle/cases/helpers/savings-evidence/snapshot-strictness-and-tuple-basis.yaml && test ! -e tools/oracle/cases/helpers/savings-evidence/injection-all-deployments-and-sibling-leg.yaml && test ! -e tools/oracle/cases/helpers/savings-evidence/iso-time-z-offset-and-invalid.yaml && test "$(git diff --no-renames --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/savings-evidence/version-bool-with-estimated-status.yaml tools/oracle/cases/helpers/savings-evidence/version-one-with-unknown-status.yaml tools/oracle/cases/helpers/savings-evidence/version-three-estimated-reads-savings.yaml tools/oracle/cases/helpers/savings-evidence/snapshot-rejects-bool-actual-spend.yaml tools/oracle/cases/helpers/savings-evidence/snapshot-decodes-tuple-basis.yaml tools/oracle/cases/helpers/savings-evidence/injection-empty-marker-covers-every-deployment.yaml tools/oracle/cases/helpers/savings-evidence/injection-sibling-leg-is-not-marked.yaml tools/oracle/cases/helpers/savings-evidence/injection-matching-deployment-is-marked.yaml tools/oracle/cases/helpers/savings-evidence/iso-time-z-offset.yaml tools/oracle/cases/helpers/savings-evidence/iso-time-explicit-offset.yaml tools/oracle/cases/helpers/savings-evidence/iso-time-invalid-reads-null.yaml | wc -l)" -eq 11
+  - id: savings-evidence-python
+    why: the savings evidence Python adapter must stay lint and type clean after the projection fixes
+    run: test -f tools/oracle/helpers/savings_evidence.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/savings-evidence
+deviations:
+- what: >-
+    A recorded savings figure, a snapshot amount or a recorded cost component with more than 28 decimal
+    places is rounded half away from zero to 28 places, and one below that resolution reads as 0. LiteLLM
+    keeps the float, so -2.7755575615628914e-17 reads as -0.000000000000000027755575615628914 there and
+    -0.0000000000000000277555756156 here.
+  why: >-
+    rust_decimal holds at most 28 decimal places. Rounding keeps the estimate and the snapshot that a
+    strict parse drops as unknown.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/savings.py#L473-L477
+out_of_scope:
+- >-
+    parse_decimal_lexeme in crates/betterlite-models/src/price_fields/decimal_lexeme.rs is B204's and
+    stays strict for prices; only the savings evidence amount readers round.
+- Pricing at a decoded billed_at, and every caller of these readers, belongs to B1694.
+- >-
+    The cache_extraction readers already follow LiteLLM's write-first order and stay as they are, and
+    top-level-zero-and-write-alias-precedence keeps passing unchanged.
+- Padded one-line functions belong to B5094; this task adds nothing to the lists under .ast-grep/rules/.
+pitfalls:
+- >-
+    The oracle helper is registered as savings_evidence in the models group. The registry files
+    (helpers/mod.rs, the group files, dispatch.py) are not this task's to edit.
+- >-
+    Token count readers keep the strict parse. LiteLLM's int fields reject a fraction too, so only the
+    three amount readers round.
+- >-
+    Read the exponent as a bounded integer and settle "below resolution" or "overflow" from it before
+    building any digits, so a lexeme like 1e-99999999999 can't allocate or loop for long.
+- >-
+    non_negative judges the unrounded sign, so -1e-30 still fails ge=0 as in LiteLLM. A value that
+    rounds to 0 carries no sign, so it never prints as -0.
+- >-
+    LiteLLM picks the write count with "is not None", so an explicit 0 in cache_write_tokens wins over a
+    nonzero cache_creation_tokens. Read the three sources with optional reads, not numeric_field: it
+    turns a missing field into 0. Only an integer-like nested value counts (isinstance int, so a bool
+    counts and a float doesn't); integer_like_cache_count already does this.
+- >-
+    With baseline_info null, _baseline_usage returns the usage unchanged. The cases that compare the text
+    split pass baseline_info {cache_read_input_token_cost: 0, cache_creation_input_token_cost: 1}, the
+    same shape zero-baseline-cache-rate-becomes-ordinary-input uses, to force the rebuild.
+- >-
+    cache_token_split keeps preferring cache_creation_tokens, as _cache_token_split does. After the
+    mirror both fields hold the same count from a spend log.
+- >-
+    fromisoformat counts code points, and only the separator may be non-ASCII. Find positions by char,
+    not by byte, and reject any other non-ASCII character, so a multi-byte separator or digit can't land
+    a slice inside a character.
+- >-
+    Python doesn't range-check offset fields one by one ("+02:99" is 3 hours 39 minutes); it only rejects
+    a total of 24 hours or more. An all-zero offset is UTC. A fraction keeps its first six digits and
+    drops the rest, and an empty fraction fails.
+- >-
+    Source files stay under 300 lines and test files under 1000. Put the grammar in a child module such
+    as billed_at/iso.rs if billed_at.rs would grow past the limit.
+- >-
+    LiteLLM reads a stored snapshot from JSON with model_validate_json
+    (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/baseline_accounting.py#L341).
+    If strict model_validate on a dict rejects the list basis in snapshot-decodes-tuple-basis,
+    _run_snapshot switches to model_validate_json on the case's JSON text.
+- >-
+    oracle_cases names the folder, so every case in it runs. Keep each case's name equal to its file stem,
+    and keep the env: {} and compare: {ignore: []} shape the folder already uses.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

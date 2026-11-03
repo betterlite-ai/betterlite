@@ -1,0 +1,13 @@
+id: B5123
+milestone: M4 keys, spend and management
+title: Close the B2363 member removal identity test gaps
+status: todo
+depends_on: [B2363]
+file: tasks/B5123-member-removal-identity-gaps.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

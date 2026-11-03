@@ -1,0 +1,13 @@
+id: B5116
+milestone: M3 providers
+title: Verbose hooks env bool and logger method tests
+status: todo
+depends_on: [B2239, B5090]
+file: tasks/B5116-verbose-hooks-gaps.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

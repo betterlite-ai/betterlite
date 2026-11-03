@@ -1,0 +1,515 @@
+id: B5134
+title: Close the B3450 RAG records audit gaps
+description: >-
+  B3450 built the RAG ingest records in crates/betterlite-config/src/rag/document.rs, and provider lookup,
+  the recursive splitter and PDF extraction in crates/betterlite-core/src/rag/document/. An Opus review
+  after merge made 13 findings on it. This task closes them in the same modules, the same b3450 oracle
+  helper and the same tools/oracle/cases/document_parsing folder. It wires nothing into a route; B3451,
+  B3460 and B3465 do that later.
+
+
+  Gap one, a vector store record without a provider. LiteLLM reads custom_llm_provider with a default
+  of "openai" when it picks the ingestion class
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/main.py#L115-L119),
+  in the ingestion base class
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L96-L99)
+  and in the endpoint's provider check
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L158-L166).
+  So {"vector_store": {"vector_store_id": "vs_1"}} ingests into OpenAI there. RAGIngestVectorStoreOptions
+  is internally tagged on a required custom_llm_provider, so that body fails to parse today. A record
+  without the tag must parse as the Openai variant. An unknown key in it must still fail with an error
+  that names the key, the way the api_kye test already checks for a tagged record. serde can't express a
+  default tag, so the enum gets a hand-written Deserialize. RAGIngestOptions only ever comes from a JSON
+  body or a JSON form field, so the Deserialize may lean on serde_json, for example by reading the record
+  as a Box<serde_json::value::RawValue> (the raw_value feature on betterlite-config's serde_json), probing
+  custom_llm_provider, then parsing the matching variant struct. A hand-written decoder of request bytes
+  gets a cargo-fuzz target, rag_ingest_options, that feeds bytes to serde_json::from_slice::<RAGIngestOptions>,
+  with a seeded corpus and a replay test.
+
+
+  Gap two, the gemini provider. INGESTION_REGISTRY maps gemini
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/main.py#L46-L52)
+  and the endpoint's provider check accepts it, even though LiteLLM's own union type leaves it out
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/rag.py#L178-L180).
+  GeminiRAGIngestion reads vector_store_id, api_key and api_base
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/gemini_ingestion.py#L85-L91)
+  and custom_metadata
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/gemini_ingestion.py#L246-L252),
+  and the base class reads litellm_credential_name for every provider
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L69-L94).
+  Add GeminiVectorStoreOptions with those five optional fields and a Gemini variant tagged gemini. api_key
+  is a SecretString kept out of Debug. custom_metadata is a list of Gemini metadata objects that LiteLLM
+  forwards without reading, so it is a serde_json::Value passthrough under #[expect(clippy::disallowed_types)].
+
+
+  Gap three, Vertex without a corpus id. VertexAIRAGIngestion creates a RAG corpus when vector_store_id is
+  missing
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L139-L145),
+  and every key of its TypedDict is optional
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/rag.py#L106-L130).
+  VertexAIVectorStoreOptions.vector_store_id becomes Option<String>. The test
+  vertex_ai_vector_store_options_requires_a_vector_store_id pins the wrong rule and goes;
+  vertex_ai_vector_store_options_parse_without_a_vector_store_id replaces it.
+
+
+  Gap four, S3 Vectors by store id. s3_vectors_ingest_target takes vector_bucket_name or vector_store_id
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/s3_vectors/vector_stores/transformation.py#L49-L58).
+  vector_bucket_name becomes Option<String> and the record gains vector_store_id: Option<String>. The
+  either-one rule and the id split stay with B3458, the owner of that function. The test
+  s3_vectors_options_requires_a_bucket_and_holds_its_aws_credentials is renamed
+  s3_vectors_options_hold_a_bucket_and_their_aws_credentials and asserts Some("bucket").
+
+
+  Gap five, keys LiteLLM reads that deny_unknown_fields rejects. Bedrock reads knowledge_base_id when
+  vector_store_id is absent
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/bedrock_ingestion.py#L96-L99).
+  Vertex reads description (same link as gap three), vector_db_config and embedding_model
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L189-L192),
+  file_description
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L344-L349),
+  max_embedding_requests_per_min
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L441-L462),
+  litellm_credential_name through the base class, and the vertex_ai_project, vertex_ai_location and
+  vertex_ai_credentials aliases
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L88-L94
+  through https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L1165-L1215).
+  S3 Vectors reads ssl_verify
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/s3_vectors_ingestion.py#L96-L117),
+  typed bool | str | None
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L258-L258),
+  plus embedding_model and litellm_embedding_model
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/s3_vectors/vector_stores/transformation.py#L61-L73).
+  The endpoint passes file_description, max_embedding_requests_per_min and custom_metadata through for
+  managed stores
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L169-L179).
+  Each key becomes an optional field on its record. vertex_ai_credentials is a SecretString like
+  vertex_credentials. ssl_verify is a small untagged enum of a bool or a CA bundle path. vector_db_config
+  is a Value passthrough under #[expect] for the same reason as custom_metadata. deny_unknown_fields stays,
+  so a misspelled key still fails.
+
+
+  Gap six, chunking keys for providers. LiteLLM's default chunking_strategy is {"type": "auto"}
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L58-L61).
+  OpenAI ingestion forwards the whole record to the vector store file call
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/openai_ingestion.py#L104-L141),
+  whose shape is type (auto or static) plus static {max_chunk_size_tokens, chunk_overlap_tokens}
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_store_files.py#L14-L26).
+  Gemini reads white_space_config {max_tokens_per_chunk, max_overlap_tokens}
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/gemini_ingestion.py#L235-L244).
+  RAGChunkingStrategyWire denies all of them, so {"type": "auto"} fails today. Add them as typed optional
+  fields: type as an auto or static enum under serde rename "type", static under rename "static", and
+  white_space_config, each inner size an Option<i64>. deny_unknown_fields stays, and the splitter ignores
+  these fields.
+
+
+  Gap seven, sizes the client never sent. chunk_size and chunk_overlap get 1000 and 200 at parse time.
+  LiteLLM keeps the record as sent and fills the defaults only inside chunk()
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L227-L242).
+  Vertex sends a chunking config only when the client set chunk_size or chunk_overlap, and fills a missing
+  chunkSize with 1024
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L351-L364
+  and the L441-L462 link above). So chunk_size and chunk_overlap become Option<i64>. The defaults move to
+  pub const DEFAULT_CHUNK_SIZE: i64 = 1000 and pub const DEFAULT_CHUNK_OVERLAP: i64 = 200 in the same
+  module, for B3451's chunk() to apply. separators keep their parse-time default. The test
+  chunking_strategy_defaults_to_hardcoded_values asserts the old rule and goes;
+  chunking_strategy_leaves_unsent_sizes_empty replaces it, and chunking_strategy_fields asserts Some(500)
+  and Some(50).
+
+
+  Gap eight, line breaks on position moves. pdf.rs calls lopdf's extract_text_with_limit. lopdf starts a
+  new line on T*, ', " and ET and ignores Td, TD and Tm. LiteLLM calls pypdf first
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/file_parsers/pdf_parser.py#L10-L68).
+  pypdf starts a new line when the text position moves down by more than 0.8 times the scaled font size
+  (https://github.com/py-pdf/pypdf/blob/6.21.4/pypdf/_text_extraction/__init__.py#L100-L185). It checks
+  after Td, Tm, T* and Tj, and runs ', " and TD through those
+  (https://github.com/py-pdf/pypdf/blob/6.21.4/pypdf/_page.py#L1940-L1966). So
+  "BT /F1 12 Tf 100 700 Td (Hello) Tj 0 -14 Td (World) Tj ET" gives "Hello\nWorld" in LiteLLM and
+  "HelloWorld" here. pdf.rs walks each page's operators itself with lopdf's public parts
+  (Document::get_page_content_with_limit, Content::decode, Document::get_page_fonts,
+  Dictionary::get_font_encoding_with_limit, Document::decode_text), keeps both 64 MiB limits, and emits
+  "\n" by pypdf's vertical rule. BT resets the text matrix but not the previous position, ET adds nothing
+  (https://github.com/py-pdf/pypdf/blob/6.21.4/pypdf/_text_extraction/_text_extractor.py#L225-L232), and
+  the strip of one trailing "\n" per page goes away with lopdf's ET newline. A horizontal move adds no
+  space and TJ keeps lopdf's spacing; that part stays a deviation. No test or case on main can catch the
+  gap, since every PDF test shows one line and the cases compared a regex stub (gap twelve).
+
+
+  Gap nine, total PDF text. The 64 MiB limit holds per stream and per page, with no total. A 200 KB
+  request PDF whose 1000 pages share one deflated 64 MiB content stream of Tj text yields about 64 GB of
+  text. pypdf has no total either. It bounds each FlateDecode stream at 75,000,000 bytes
+  (https://github.com/py-pdf/pypdf/blob/6.21.4/pypdf/_configuration.py#L60-L64), so LiteLLM runs out of
+  memory, and its broad except returns None or the process dies. pdf.rs adds
+  MAX_EXTRACTED_PDF_TEXT_BYTES = 67108864 (64 MiB) over the joined output, "\n\n" separators included,
+  checked as each page is added, and returns None once the text would pass it. A client then sees what an
+  unreadable PDF gives, since chunk() gets no text
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L184-L226).
+  For s3_vectors that ends in HTTP 200 with a RAGIngestResponse of status "failed", vector_store_id "",
+  file_id null and an error starting "No text content could be extracted from the file for embedding."
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/s3_vectors_ingestion.py#L462-L472,
+  https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L363-L371
+  and https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L654-L687).
+  OpenAI, Bedrock, Gemini and Vertex upload the raw file and don't use the chunks, so they see no change.
+  This is a deviation.
+
+
+  Gap ten, chunk output. RecursiveCharacterTextSplitter::new allows chunk_overlap = chunk_size - 1. Then
+  merge_splits and force_split advance one split or one character per chunk, and the output grows to about
+  the text length times chunk_size. evict_overlap also calls Vec::remove(0), a full shift per eviction.
+  LiteLLM's splitter has no bound
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/text_splitters/recursive_character_text_splitter.py#L20-L134).
+  TextSplitter::split_text returns Result<Vec<String>, SplitError>. SplitError::OutputTooLarge { limit }
+  has the Display text "text splitter output exceeds 268435456 bytes". It fires when the next chunk would
+  bring the summed String::len of the output past MAX_SPLIT_OUTPUT_BYTES = 268435456 (256 MiB). The check
+  runs before every push on every path: merge_splits, force_split and the depth-bound character fallback.
+  The current chunk becomes a VecDeque. chunk() runs for every provider
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L296-L362),
+  so once B3460 wires it, every provider answers HTTP 200 with status "failed", vector_store_id "",
+  file_id null and error "text splitter output exceeds 268435456 bytes" (the L363-L371 link above), where
+  LiteLLM returns "completed" after building the whole list. This is a deviation. The oracle adapter maps
+  SplitError to ValueError like ChunkConfigError, and the existing splitter tests unwrap the Result.
+
+
+  Gap eleven, the per-page limit has no test. pdf_extracts_a_page_within_the_decompressed_size_limit only
+  checks a 5 MB page under the limit, so removing the 64 MiB bound leaves every test green. Add
+  pdf_returns_none_past_the_decompressed_page_limit: a FlateDecode content stream that inflates to about
+  65 MiB of spaces followed by (Hello) Tj, built with lopdf's Stream::compress, must return None.
+
+
+  Gap twelve, the helper stubs pypdf. tools/oracle/helpers/b3450.py replaces pypdf and PyPDF2 with a
+  regex stub even when they aren't blocked, so pdf-extract-pypdf.yaml compares betterlite with the stub.
+  Since PR 563 (https://github.com/betterlite-ai/betterlite/pull/563) the oracle env pins pypdf>=6.16.1,<7.0, LiteLLM's own pin
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/pyproject.toml#L184-L184),
+  locked at 6.21.4. The helper drops _TEXT_SHOW_OPERATOR, _StubPage, _StubReader and _install_stub_reader
+  and runs extract_text_from_pdf on the real pypdf. block_pypdf true hides pypdf for the call. With
+  block_pypdf2 false, PyPDF2 (pypdf's old name, not installed) resolves to the already imported pypdf
+  module. Five new cases compare pypdf's text with betterlite's: pdf-extract-line-move-td.yaml (Td),
+  pdf-extract-line-move-td-leading.yaml (TD), pdf-extract-line-move-tm.yaml (Tm),
+  pdf-extract-bare-t-star.yaml (T* with no TL set, "HelloWorld" in pypdf, "Hello\nWorld" on main) and
+  pdf-extract-scaled-tm-small-move.yaml ("/F1 1 Tf 12 0 0 12 100 700 Tm (Hello) Tj 12 0 0 12 100 695 Tm
+  (World) Tj", "HelloWorld"). Each declares /F1 as the Type1 font Helvetica.
+
+
+  Gap thirteen, the force-split case never force-splits. splitter-force-split.yaml uses separators [""],
+  so every split is one character, they all go to _merge_splits, and _force_split never runs
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/text_splitters/recursive_character_text_splitter.py#L44-L86).
+  It switches to separators ["Q"] with the same text "abcdefgh", chunk_size 4 and chunk_overlap 1, and
+  LiteLLM returns ["abcd", "defg", "gh"] through the end - overlap stride
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/text_splitters/recursive_character_text_splitter.py#L121-L134).
+
+
+  Gap fourteen, provider lookup is checked by expect only. get_ingestion_class_resolves_every_supported_provider
+  stays green if gemini resolves to Openai. get_ingestion_class_maps_each_name_to_its_variant replaces it:
+  an rstest with one case per name that assert_eq!s the IngestionProvider variant.
+
+
+  Gaps one and two come from one finding, so the 13 findings make 14 gaps. docs/deviations/B3450.yaml
+  gains the two caps from gaps nine and ten. Its lopdf entry says "lopdf reads the same page content and
+  text operators natively". Gap eight shows that is false, so it now says what the walk matches and what
+  still differs. Its 64 MiB entry says a page past the limit returns None for that page and that pypdf
+  has no bound; the whole PDF returns None, and pypdf bounds each stream at 75,000,000 bytes.
+scope:
+  paths:
+    - tools/oracle/cases/document_parsing/**
+    - crates/betterlite-core/src/rag/document.rs
+    - crates/betterlite-core/src/rag/document/**
+    - crates/betterlite-config/src/rag/document.rs
+    - crates/betterlite-config/src/rag/document/**
+    - crates/betterlite-config/src/sections/rag_records_and_chunking.rs
+    - crates/betterlite-config/src/sections/rag_records_and_chunking/**
+    - tools/oracle/helpers/b3450.py
+    - tools/oracle/helpers/b3450/**
+    - tools/oracle/src/helpers/core_ops/b3450.rs
+    - tools/oracle/src/helpers/core_ops/b3450/**
+    - crates/betterlite-core/fuzz/corpus/pdf_extraction/**
+    - crates/betterlite-config/fuzz/fuzz_targets/rag_ingest_options.rs
+    - crates/betterlite-config/fuzz/corpus/rag_ingest_options/**
+    - docs/deviations/B3450.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/main.py#L115-L119
+    why: The provider defaults to openai when the vector store record has no custom_llm_provider.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L158-L179
+    why: The endpoint's provider check with the same default, and the keys it passes through for managed stores.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/gemini_ingestion.py#L85-L91
+    why: The Gemini record keys vector_store_id, api_key and api_base.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/gemini_ingestion.py#L235-L252
+    why: white_space_config in chunking_strategy and custom_metadata in the Gemini record.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L139-L145
+    why: Vertex creates a corpus when vector_store_id is absent, and reads description.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L351-L364
+    why: Vertex sends fixed_length_chunking only with the sizes the client set.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L441-L462
+    why: Vertex sends ragFileChunkingConfig only when a size was sent, plus max_embedding_requests_per_min.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L1165-L1215
+    why: The vertex_ai_location, vertex_ai_project and vertex_ai_credentials aliases.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/s3_vectors/vector_stores/transformation.py#L49-L73
+    why: S3 Vectors takes vector_bucket_name or vector_store_id, and embedding_model or litellm_embedding_model.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/s3_vectors_ingestion.py#L96-L117
+    why: S3 Vectors reads ssl_verify from the record.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_store_files.py#L14-L26
+    why: The OpenAI chunking_strategy shape with type and static.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L184-L242
+    why: chunk() gets None for an unreadable PDF and applies the size defaults only at split time.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L296-L371
+    why: ingest() runs chunk() for every provider and turns any exception into a failed RAGIngestResponse.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/text_splitters/recursive_character_text_splitter.py#L20-L134
+    why: The splitter with no output bound, and the separator choice that reaches _force_split.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/file_parsers/pdf_parser.py#L10-L68
+    why: pypdf first, then PyPDF2, pages joined with "\n\n", None on any failure.
+  - url: https://github.com/py-pdf/pypdf/blob/6.21.4/pypdf/_text_extraction/__init__.py#L100-L185
+    why: crlf_space_check, the vertical rule for a new line on the combined text and graphics matrix.
+  - url: https://github.com/py-pdf/pypdf/blob/6.21.4/pypdf/_page.py#L1940-L1966
+    why: How pypdf runs the quote operators, TJ and TD through T*, Tj, TL and Td.
+  - url: https://github.com/py-pdf/pypdf/blob/6.21.4/pypdf/_text_extraction/_text_extractor.py#L225-L358
+    why: BT, ET, Td, Tm and T* handling of the text matrix.
+  - url: https://docs.rs/crate/lopdf/0.46.0/source/src/document.rs
+    why: get_page_content_with_limit, get_page_fonts and decode_text, the parts the operator walk uses.
+dod:
+  - text: >-
+      A vector store record without custom_llm_provider parses as RAGIngestVectorStoreOptions::Openai, and
+      an unknown key in such a record still fails with an error that names the key. A tagged record parses
+      as before, and the api_kye test still passes. A cargo-fuzz target rag_ingest_options decodes
+      RAGIngestOptions from bytes, and replays_the_rag_ingest_options_corpus replays its seeds.
+    proof:
+      - config-provider-default
+      - config-ingest-fuzz-corpus
+  - text: >-
+      custom_llm_provider gemini parses as a Gemini variant holding vector_store_id, api_key as a
+      SecretString, api_base, custom_metadata and litellm_credential_name, and its Debug output hides the
+      key.
+    proof:
+      - config-gemini
+  - text: >-
+      A vertex_ai record without vector_store_id parses, and the test that required it is gone.
+    proof:
+      - config-vertex-optional-id
+  - text: >-
+      An s3_vectors record with only vector_store_id parses, vector_bucket_name is optional, and the test
+      that required the bucket is renamed and asserts Some("bucket").
+    proof:
+      - config-s3-store-id
+  - text: >-
+      Each key from gap five parses on its record: knowledge_base_id on bedrock; description,
+      vector_db_config, embedding_model, file_description, max_embedding_requests_per_min,
+      litellm_credential_name, vertex_ai_project, vertex_ai_location and vertex_ai_credentials on vertex_ai;
+      ssl_verify as a bool and as a path, embedding_model and litellm_embedding_model on s3_vectors. The
+      rstest vector_store_options_accept_a_key_litellm_reads has one case per key.
+    proof:
+      - config-litellm-keys
+  - text: >-
+      chunking_strategy accepts {"type": "auto"}, {"type": "static", "static": {"max_chunk_size_tokens":
+      800, "chunk_overlap_tokens": 400}} and {"white_space_config": {"max_tokens_per_chunk": 800,
+      "max_overlap_tokens": 400}}, each in a case of chunking_strategy_accepts_a_provider_chunking_key
+      named auto, static_tokens and white_space. An unknown chunking key still fails.
+    proof:
+      - config-chunking-keys
+  - text: >-
+      chunk_size and chunk_overlap are Option<i64> and stay None when not sent. DEFAULT_CHUNK_SIZE is 1000
+      and DEFAULT_CHUNK_OVERLAP is 200. chunking_strategy_leaves_unsent_sizes_empty replaces
+      chunking_strategy_defaults_to_hardcoded_values.
+    proof:
+      - config-unsent-sizes
+  - text: >-
+      extract_text_from_pdf starts a new line after Td, TD and Tm moves by pypdf's vertical rule, adds none
+      for a bare T* with no leading set, for a move below 0.8 times the scaled font size, or for a second BT
+      block at the same position. Seven tests named pdf_line_move_* cover these, the five new oracle cases
+      match pypdf, every existing pdf_ test still passes, and a new pdf_extraction seed with Td moves
+      replays.
+    proof:
+      - pdf-line-moves
+      - pdf-fuzz-corpus
+      - oracle
+  - text: >-
+      extract_text_from_pdf returns None once the joined text would pass MAX_EXTRACTED_PDF_TEXT_BYTES
+      (67108864). pdf_returns_none_past_the_total_text_cap shows two pages of 33 MiB of "A" each return
+      None while one such page returns its text.
+    proof:
+      - pdf-text-cap
+  - text: >-
+      pdf_returns_none_past_the_decompressed_page_limit shows a FlateDecode page that inflates past 64 MiB
+      returns None.
+    proof:
+      - pdf-decompressed-limit
+  - text: >-
+      split_text returns SplitError::OutputTooLarge with the text "text splitter output exceeds 268435456
+      bytes" before the output passes 268435456 bytes, on the force-split path and the merge path, and
+      evict_overlap no longer calls Vec::remove(0). chunk_output_cap_stops_the_force_split_path uses
+      chunk_size 1000000, chunk_overlap 999999, separators ["Q"] and 1000500 "a" characters;
+      chunk_output_cap_stops_the_merge_path uses chunk_size 1000000, chunk_overlap 999998, separators [" "]
+      and "a " repeated 600000 times. Every other rag::document test still passes.
+    proof:
+      - chunk-output-cap
+      - oracle
+  - text: >-
+      tools/oracle/helpers/b3450.py runs extract_text_from_pdf on the real pypdf with no stub reader, and
+      passes ruff and basedpyright. pdf-extract-pypdf.yaml, pdf-extract-pypdf2-fallback.yaml and
+      pdf-extract-missing-library.yaml still match.
+    proof:
+      - helper-python
+      - oracle
+  - text: >-
+      splitter-force-split.yaml sends separators ["Q"] with text "abcdefgh", chunk_size 4 and
+      chunk_overlap 1, and matches LiteLLM's ["abcd", "defg", "gh"].
+    proof:
+      - force-split-case
+      - oracle
+  - text: >-
+      get_ingestion_class_maps_each_name_to_its_variant asserts the IngestionProvider variant for openai,
+      bedrock, gemini, s3_vectors and vertex_ai, and get_ingestion_class_resolves_every_supported_provider
+      is gone.
+    proof:
+      - provider-mapping
+  - text: >-
+      docs/deviations/B3450.yaml lists the text cap and the split cap with what a client sees, and its
+      lopdf and 64 MiB entries no longer claim that lopdf reads text operators as pypdf does, that a page
+      past the limit drops only that page, or that pypdf has no bound.
+    proof:
+      - deviation-log
+checks:
+  optional: [mutants]
+  commands:
+    - id: config-provider-default
+      why: a record without custom_llm_provider fails to parse, or a changed record breaks an existing types test
+      run: |-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::rag_records_and_chunking::rag::document::tests::types::vector_store_options_without_a_provider_parse_as_openai$/)' && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::rag_records_and_chunking::rag::document::tests::types::/) - test(replays_the_rag_ingest_options_corpus)'
+    - id: config-ingest-fuzz-corpus
+      why: the rag_ingest_options fuzz target or its seeds are missing, or replaying them panics
+      run: |-
+        test -f crates/betterlite-config/fuzz/fuzz_targets/rag_ingest_options.rs && grep -q 'name = "rag_ingest_options"' crates/betterlite-config/fuzz/Cargo.toml && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/rag_ingest_options)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_rag_ingest_options_corpus)'
+    - id: config-gemini
+      why: custom_llm_provider gemini is rejected, or its record leaks the api key in Debug
+      run: |-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::rag_records_and_chunking::rag::document::tests::types::vector_store_options_accept_the_gemini_provider$/)'
+    - id: config-vertex-optional-id
+      why: a vertex_ai record still needs vector_store_id
+      run: |-
+        ! grep -q 'fn vertex_ai_vector_store_options_requires_a_vector_store_id' crates/betterlite-config/src/sections/rag_records_and_chunking/rag/document/tests.rs && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::rag_records_and_chunking::rag::document::tests::types::vertex_ai_vector_store_options_parse_without_a_vector_store_id$/)'
+    - id: config-s3-store-id
+      why: an s3_vectors record still needs vector_bucket_name and has no vector_store_id
+      run: |-
+        ! grep -q 'fn s3_vectors_options_requires_a_bucket' crates/betterlite-config/src/sections/rag_records_and_chunking/rag/document/tests.rs && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::rag_records_and_chunking::rag::document::tests::types::s3_vectors_options_parse_with_only_a_vector_store_id$/)'
+    - id: config-litellm-keys
+      why: a key LiteLLM reads from a vector store record is still rejected as unknown
+      run: |-
+        test "$(grep -rhoE 'pub (knowledge_base_id|description|vector_db_config|file_description|max_embedding_requests_per_min|vertex_ai_project|vertex_ai_location|vertex_ai_credentials|ssl_verify|litellm_embedding_model|custom_metadata):' crates/betterlite-config/src/rag | sort -u | wc -l)" -eq 11 && test "$(grep -rho 'pub embedding_model:' crates/betterlite-config/src/rag | wc -l)" -ge 3 && test "$(grep -rho 'pub litellm_credential_name:' crates/betterlite-config/src/rag | wc -l)" -ge 5 && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::rag_records_and_chunking::rag::document::tests::types::vector_store_options_accept_a_key_litellm_reads::/)'
+    - id: config-chunking-keys
+      why: chunking_strategy rejects type, static or white_space_config
+      run: |-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::types::chunking_strategy_accepts_a_provider_chunking_key::case_[0-9]+_auto$/)' && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::types::chunking_strategy_accepts_a_provider_chunking_key::case_[0-9]+_static_tokens$/)' && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::types::chunking_strategy_accepts_a_provider_chunking_key::case_[0-9]+_white_space$/)'
+    - id: config-unsent-sizes
+      why: chunk_size and chunk_overlap still get 1000 and 200 at parse time
+      run: |-
+        ! grep -q 'fn chunking_strategy_defaults_to_hardcoded_values' crates/betterlite-config/src/sections/rag_records_and_chunking/rag/document/tests.rs && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::rag_records_and_chunking::rag::document::tests::types::chunking_strategy_leaves_unsent_sizes_empty$/)'
+    - id: pdf-line-moves
+      why: PDF text ignores Td, TD and Tm moves, breaks lines where pypdf doesn't, or an existing PDF test breaks
+      run: |-
+        test "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/document_parsing/pdf-extract-line-move-td.yaml tools/oracle/cases/document_parsing/pdf-extract-line-move-td-leading.yaml tools/oracle/cases/document_parsing/pdf-extract-line-move-tm.yaml tools/oracle/cases/document_parsing/pdf-extract-bare-t-star.yaml tools/oracle/cases/document_parsing/pdf-extract-scaled-tm-small-move.yaml | wc -l)" -eq 5 && test "$(grep -c '^fn pdf_line_move_' crates/betterlite-core/src/rag/document/tests.rs)" -ge 7 && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rag::document::tests::pdf_line_move_/)' && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rag::document::tests::pdf_/)'
+    - id: pdf-fuzz-corpus
+      why: no seed covers the operator walk, or replaying the PDF corpus panics
+      run: |-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/pdf_extraction)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_pdf_extraction_corpus)'
+    - id: pdf-text-cap
+      why: the joined PDF text has no total bound
+      run: |-
+        grep -rq 'MAX_EXTRACTED_PDF_TEXT_BYTES' crates/betterlite-core/src/rag/document && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rag::document::tests::pdf_returns_none_past_the_total_text_cap$/)'
+    - id: pdf-decompressed-limit
+      why: no test fails when the 64 MiB per-page bound is removed
+      run: |-
+        cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rag::document::tests::pdf_returns_none_past_the_decompressed_page_limit$/)'
+    - id: chunk-output-cap
+      why: the splitter output has no bound when chunk_overlap is close to chunk_size, or a splitter test breaks
+      run: |-
+        grep -rq 'MAX_SPLIT_OUTPUT_BYTES' crates/betterlite-core/src/rag/document && ! grep -q 'remove(0)' crates/betterlite-core/src/rag/document/splitter.rs && test "$(grep -c '^fn chunk_output_cap_' crates/betterlite-core/src/rag/document/tests.rs)" -ge 2 && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rag::document::tests::chunk_output_cap_/)' && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rag::document::/) - test(replays_the_pdf_extraction_corpus)'
+    - id: provider-mapping
+      why: provider lookup is still checked by expect alone
+      run: |-
+        ! grep -q 'fn get_ingestion_class_resolves_every_supported_provider' crates/betterlite-core/src/rag/document/tests.rs && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rag::document::tests::get_ingestion_class_maps_each_name_to_its_variant::case_[0-9]+_/)'
+    - id: force-split-case
+      why: the force-split case still never reaches _force_split
+      run: |-
+        grep -Eq '^ *separators: \[ *"Q" *\]' tools/oracle/cases/document_parsing/splitter-force-split.yaml
+    - id: helper-python
+      why: the PDF helper still stubs pypdf, or the helper fails ruff or basedpyright
+      run: |-
+        ! grep -qE '_StubReader|_StubPage|_install_stub_reader|_TEXT_SHOW_OPERATOR' tools/oracle/helpers/b3450.py && test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3450.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: deviation-log
+      why: the deviation log misses a cap or keeps a wrong claim about lopdf or the 64 MiB bound
+      run: |-
+        test "$(grep -c '^  - what:' docs/deviations/B3450.yaml)" -ge 7 && grep -q '268435456' docs/deviations/B3450.yaml && grep -q '67108864' docs/deviations/B3450.yaml && ! grep -qE 'reads the same page content and text operators natively|returning None for a page that would exceed it|carries no such bound' docs/deviations/B3450.yaml
+oracle_cases:
+  - tools/oracle/cases/document_parsing/splitter-basic.yaml
+  - tools/oracle/cases/document_parsing/splitter-overlap.yaml
+  - tools/oracle/cases/document_parsing/splitter-separators.yaml
+  - tools/oracle/cases/document_parsing/splitter-recursion.yaml
+  - tools/oracle/cases/document_parsing/splitter-force-split.yaml
+  - tools/oracle/cases/document_parsing/pdf-extract-pypdf.yaml
+  - tools/oracle/cases/document_parsing/pdf-extract-pypdf2-fallback.yaml
+  - tools/oracle/cases/document_parsing/pdf-extract-missing-library.yaml
+  - tools/oracle/cases/document_parsing/pdf-extract-line-move-td.yaml
+  - tools/oracle/cases/document_parsing/pdf-extract-line-move-td-leading.yaml
+  - tools/oracle/cases/document_parsing/pdf-extract-line-move-tm.yaml
+  - tools/oracle/cases/document_parsing/pdf-extract-bare-t-star.yaml
+  - tools/oracle/cases/document_parsing/pdf-extract-scaled-tm-small-move.yaml
+deviations:
+  - what: >-
+      extract_text_from_pdf returns None once the joined text of all pages, "\n\n" included, would pass
+      67108864 bytes (64 MiB). For s3_vectors the ingest then answers HTTP 200 with a RAGIngestResponse of
+      status "failed", vector_store_id "", file_id null and the "No text content could be extracted from
+      the file for embedding." error, as for an unreadable PDF. Other providers ignore the chunks and see
+      no change. LiteLLM and pypdf have no total and build the whole text.
+    why: >-
+      A 200 KB request PDF whose pages share one deflated 64 MiB content stream expands to about 64 GB of
+      text. LiteLLM then runs out of memory, and its broad except returns None or the process dies.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/file_parsers/pdf_parser.py#L10-L68
+  - what: >-
+      split_text fails with SplitError::OutputTooLarge once its output would pass 268435456 bytes (256 MiB).
+      Once the pipeline is wired, POST /v1/rag/ingest then answers HTTP 200 with a RAGIngestResponse of
+      status "failed", vector_store_id "", file_id null and error "text splitter output exceeds 268435456
+      bytes", for every provider. LiteLLM builds the whole list and goes on.
+    why: >-
+      With chunk_overlap = chunk_size - 1 the splitter moves one character per chunk, so a 64 MiB text
+      with chunk_size 1000 yields about 64 GB of chunks.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/text_splitters/recursive_character_text_splitter.py#L20-L134
+  - what: >-
+      extract_text_from_pdf walks page operators with lopdf and starts a new line by pypdf's vertical
+      rule, but adds no space for a horizontal move and keeps lopdf's TJ spacing (a space after each TJ
+      array and for an integer offset below -100). pypdf adds a space when a move or TJ offset passes the
+      space width.
+    why: >-
+      betterlite ships no Python. pypdf's space rule needs each glyph's width, from the font's /Widths or
+      from pypdf's metrics tables for the 14 standard fonts, and lopdf has no such tables.
+    link: https://github.com/py-pdf/pypdf/blob/6.21.4/pypdf/_text_extraction/__init__.py#L100-L185
+  - what: >-
+      extract_text_from_pdf bounds each decompressed stream and each page's content to 64 MiB, and the
+      whole PDF returns None when one page passes it. pypdf bounds each FlateDecode stream at 75,000,000
+      bytes and fails the same way, so LiteLLM's pdf_parser also returns None.
+    why: >-
+      lopdf exposes the bound through LoadOptions::with_max_decompressed_size and
+      get_page_content_with_limit, and 64 MiB keeps one page below pypdf's own bound.
+    link: https://github.com/py-pdf/pypdf/blob/6.21.4/pypdf/_configuration.py#L60-L64
+out_of_scope:
+  - Padded one-line functions in these files belong to B5094. It clears the no-one-line-functions and no-padded-one-line-functions legacy lists. This task does not touch .ast-grep/rules/.
+  - The fixed HTTP status per error class is B5102's and already merged.
+  - Applying {"type":"auto"} when chunking_strategy is absent, applying DEFAULT_CHUNK_SIZE and DEFAULT_CHUNK_OVERLAP in chunk(), and reading the provider default inside the pipeline belong to B3451 and B3460. This task only makes the records carry what the client sent.
+  - The S3 Vectors either-one rule and the vector_store_id split belong to B3458. Vertex's chunk config and its 1024 fill belong to B3455, Gemini's whiteSpaceConfig defaults of 800 and 400 to B3454, and OpenAI's forwarding of the chunking record to B3453.
+  - The endpoint's provider check, its view-only rule and the managed-store merge belong to B3462 and B3463.
+  - A cap on page count or on total decompressed bytes across pages. The text cap bounds memory, not the time spent inflating one shared stream per page.
+pitfalls:
+  - serde's internally tagged enum needs the tag, and serde(untagged) turns "unknown field `api_kye`" into "data did not match any variant", so the default needs a hand-written Deserialize, not an attribute.
+  - When the hand-written path hands the whole record to a variant struct with deny_unknown_fields, custom_llm_provider is still in it, while serde's tagged path removes it, so strip it or declare it.
+  - serde_json::Value is a disallowed type outside a passthrough, so only custom_metadata and vector_db_config hold one, each under an expect attribute for clippy::disallowed_types with a reason.
+  - pypdf's test is distance > 0.8 * min(str_height * scale_prev_y, font_size * scale_y) on tm times cm, so a threshold in points breaks on the common "/F1 1 Tf 12 0 0 12 x y Tm" layout.
+  - pypdf keeps a line span, the baseline range of the current line, and measures the distance to it, so a row label between two wrapped baselines doesn't start a line.
+  - BT resets tm to identity but leaves tm_prev, and ET only flushes, so a second BT block at the same position continues the line where lopdf added "\n".
+  - TL starts at 0, so a bare T* or ' moves nowhere and adds no newline in pypdf, while TD sets TL to -ty before it acts as Td.
+  - pdf_returns_none_when_any_page_fails_to_extract must keep passing, so a Tf without operands ("BT Tf ET") still fails the whole PDF, as lopdf's extract_text did with Error::Syntax.
+  - The text cap counts the bytes of the joined output with the "\n\n" between pages and gives up at the first page that crosses it, not after reading the rest.
+  - The split cap adds the next chunk's String::len to the running total before the push, so the cap tests stop near 268 chunks of about 1 MB instead of building 500 MB.
+  - pypdf imports submodules lazily during extract_text, so blocking the name pypdf for the PyPDF2 fallback case breaks those imports unless one extraction runs with pypdf first.
+  - The helper answer cache keys on the helper source, so the stubbed answers are never reused once b3450.py changes. Leave BETTERLITE_ORACLE_CACHE unset in the worktree.
+  - separators [] stays as given per docs/compatibility.md, even though LiteLLM's "if separators:" treats it as unset.
+  - The new deviations go into docs/deviations/B3450.yaml, the log for the code this task fixes; do not start docs/deviations/B5134.yaml.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2
+review_level: security
