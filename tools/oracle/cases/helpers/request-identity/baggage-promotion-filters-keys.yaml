@@ -1,0 +1,24 @@
+kind: helper
+name: baggage-promotion-filters-keys
+call:
+  b3841:
+    function: baggage
+    request_model: public-model
+    promoted_keys:
+      - litellm.team.id
+      - gen_ai.request.model
+      - litellm.team.metadata
+    metadata_keys:
+      - requester_metadata.user_id
+    team_metadata_keys:
+      - region
+    identity:
+      team_id: team
+      team_metadata:
+        region: west
+        secret: hidden
+      metadata:
+        requester_metadata.user_id: user
+        private: hidden
+env: {}
+compare: {ignore: []}
