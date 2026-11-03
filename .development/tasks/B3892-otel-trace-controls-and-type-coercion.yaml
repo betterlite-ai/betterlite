@@ -17,11 +17,13 @@ description: >-
   metadata objects. Ignore non-string and empty tags and do not carry mutation
   controls such as trace_id, existing_trace_id or update_trace_keys.
 
-  Implement as_str, as_int, as_float, as_bool, as_str_mapping, as_str_tuple,
-  to_ns and to_seconds for their declared input types. Represent decimal input
-  and results with rust_decimal::Decimal, never f32/f64. Use checked arithmetic
-  and checked conversion to the timestamp integer type; return None for invalid
-  values, non-finite values and values outside the supported range. Preserve
+  Implement the nontrivial numeric, tuple and time conversions along with
+  TraceControls. Use serde_json's scalar and object accessors directly where
+  their behavior matches the policy; Python helper names do not require one-to-one
+  Rust wrappers. Represent decimal input and results with
+  rust_decimal::Decimal, never f32/f64. Use checked arithmetic and checked
+  conversion to the timestamp integer type; return None for invalid values,
+  non-finite values and values outside the supported range. Preserve
   numeric-string parsing and truncation toward zero. as_bool accepts only a JSON
   boolean or null, while mappings and tuples accept only their declared JSON
   shapes; do not copy Python repr, duck typing or arbitrary truthiness beyond
@@ -149,6 +151,9 @@ pitfalls:
     Formatted naive datetimes call the injected local-time resolver. Do not read
     the machine timezone inside utils; tests must cover UTC, non-UTC and
     ambiguous/nonexistent DST local times with explicit resolver behavior.
+  - >-
+    Use serde_json accessors directly for simple string, boolean and object reads
+    when policy agrees; do not add one-line forwarding wrappers for them.
 budget:
   max_changed_lines: 1500
   max_new_expects: 0
