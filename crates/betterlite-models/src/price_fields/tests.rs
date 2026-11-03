@@ -267,7 +267,14 @@ fn assert_nested_sample_amounts(parsed: &PriceFields) {
     );
 }
 
-fn assert_nested_sample_metadata(parsed: &PriceFields) {
+#[test]
+fn price_case_nested_and_sample_prices_keep_every_field() {
+    let raw: Box<RawValue> = serde_json::from_str(
+        r#"{"computer_use_input_cost_per_1k_tokens":0.00001,"computer_use_output_cost_per_1k_tokens":0.00002,"file_search_cost_per_1k_calls":0.003,"file_search_cost_per_gb_per_day":0.0001,"vector_store_cost_per_gb_per_day":0.0001,"metadata":{"original_pricing_per_hour":1.25,"original_pricing_per_minute":0.020833333333333333},"provider_specific_entry":{"us":1.1,"fast":2.0},"guardrail_cost_per_unit":{"custom":0.000000000000000001}}"#,
+    )
+    .unwrap();
+    let parsed = PriceFields::parse(raw.as_ref()).unwrap();
+    assert_nested_sample_amounts(&parsed);
     assert_eq!(parsed.metadata.per_hour.unwrap().to_string(), "1.25");
     assert_eq!(
         parsed.metadata.per_minute.unwrap().to_string(),
@@ -280,17 +287,6 @@ fn assert_nested_sample_metadata(parsed: &PriceFields) {
         parsed.guardrail_units.as_ref().unwrap()["custom"].to_string(),
         "0.000000000000000001"
     );
-}
-
-#[test]
-fn price_case_nested_and_sample_prices_keep_every_field() {
-    let raw: Box<RawValue> = serde_json::from_str(
-        r#"{"computer_use_input_cost_per_1k_tokens":0.00001,"computer_use_output_cost_per_1k_tokens":0.00002,"file_search_cost_per_1k_calls":0.003,"file_search_cost_per_gb_per_day":0.0001,"vector_store_cost_per_gb_per_day":0.0001,"metadata":{"original_pricing_per_hour":1.25,"original_pricing_per_minute":0.020833333333333333},"provider_specific_entry":{"us":1.1,"fast":2.0},"guardrail_cost_per_unit":{"custom":0.000000000000000001}}"#,
-    )
-    .unwrap();
-    let parsed = PriceFields::parse(raw.as_ref()).unwrap();
-    assert_nested_sample_amounts(&parsed);
-    assert_nested_sample_metadata(&parsed);
 }
 
 #[test]
