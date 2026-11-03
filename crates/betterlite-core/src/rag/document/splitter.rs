@@ -108,10 +108,7 @@ impl RecursiveCharacterTextSplitter {
         total_bytes: &mut usize,
     ) -> Result<(), SplitError> {
         if depth > DEFAULT_MAX_RECURSE_DEPTH {
-            for chunk in chunk_by_chars(text, self.chunk_size) {
-                push_chunk(output, total_bytes, chunk)?;
-            }
-            return Ok(());
+            return chunk_by_chars(text, self.chunk_size, output, total_bytes);
         }
 
         let (separator, new_separators) = select_separator(text, separators);
@@ -151,9 +148,7 @@ impl RecursiveCharacterTextSplitter {
                 good_splits.clear();
             }
             if new_separators.is_empty() {
-                for chunk in self.force_split(split) {
-                    push_chunk(output, total_bytes, chunk)?;
-                }
+                self.force_split(split, output, total_bytes)?;
             } else {
                 let next_depth = depth.saturating_add(1);
                 self.split_recursive(split, new_separators, next_depth, output, total_bytes)?;
@@ -218,10 +213,14 @@ impl RecursiveCharacterTextSplitter {
         remaining
     }
 
-    fn force_split(&self, text: &str) -> Vec<String> {
+    fn force_split(
+        &self,
+        text: &str,
+        output: &mut Vec<String>,
+        total_bytes: &mut usize,
+    ) -> Result<(), SplitError> {
         let chars: Vec<char> = text.chars().collect();
         let total = chars.len();
-        let mut chunks = Vec::new();
         let mut start = 0_usize;
         let mut done = total == 0;
         while !done {
@@ -234,7 +233,7 @@ impl RecursiveCharacterTextSplitter {
                 .collect::<String>();
             let trimmed = chunk.trim_matches(is_strip_whitespace);
             if !trimmed.is_empty() {
-                chunks.push(trimmed.to_owned());
+                push_chunk(output, total_bytes, trimmed.to_owned())?;
             }
             if end < total {
                 start = end.saturating_sub(self.chunk_overlap);
@@ -242,6 +241,6 @@ impl RecursiveCharacterTextSplitter {
                 done = true;
             }
         }
-        chunks
+        Ok(())
     }
 }

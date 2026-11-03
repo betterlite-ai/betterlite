@@ -67,16 +67,27 @@ pub(super) fn char_slices(text: &str) -> Vec<&str> {
     result
 }
 
-pub(super) fn chunk_by_chars(text: &str, chunk_size: usize) -> Vec<String> {
-    let chars: Vec<char> = text.chars().collect();
-    let mut result = Vec::new();
-    let mut index = 0_usize;
-    while index < chars.len() {
-        let end = index.saturating_add(chunk_size).min(chars.len());
-        result.push(chars.get(index..end).unwrap_or_default().iter().collect());
-        index = index.saturating_add(chunk_size);
+pub(super) fn chunk_by_chars(
+    text: &str,
+    chunk_size: usize,
+    output: &mut Vec<String>,
+    total_bytes: &mut usize,
+) -> Result<(), SplitError> {
+    let mut chunk = String::new();
+    let mut chunk_chars = 0_usize;
+    for character in text.chars() {
+        chunk.push(character);
+        chunk_chars = chunk_chars.saturating_add(1);
+        if chunk_chars == chunk_size {
+            push_chunk(output, total_bytes, chunk)?;
+            chunk = String::new();
+            chunk_chars = 0;
+        }
     }
-    result
+    if !chunk.is_empty() {
+        push_chunk(output, total_bytes, chunk)?;
+    }
+    Ok(())
 }
 
 // str.strip()'s whitespace set also covers U+001C-U+001F; Rust's is_whitespace() does not.
