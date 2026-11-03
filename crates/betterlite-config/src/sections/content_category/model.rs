@@ -1,3 +1,5 @@
+use super::pattern::Pattern;
+use pcre2::bytes;
 use std::collections::BTreeMap;
 
 use crate::sections::content_filter_records::{
@@ -7,7 +9,7 @@ use crate::sections::content_filter_records::{
 #[derive(Debug)]
 pub struct CompiledPhrasePattern {
     pub source: String,
-    pub regex: fancy_regex::Regex,
+    pub regex: Pattern,
 }
 
 #[derive(Debug)]
@@ -77,11 +79,16 @@ fn parse_action(
 }
 
 fn compile_patterns(patterns: Vec<String>, category: &str) -> Vec<CompiledPhrasePattern> {
-    patterns.into_iter().filter_map(|source| match fancy_regex::RegexBuilder::new(&source).case_insensitive(true).build() {
-        Ok(regex) => Some(CompiledPhrasePattern { source, regex }),
-        Err(error) => {
-            tracing::warn!(category, pattern = source, %error, "invalid category phrase pattern");
-            None
+    patterns.into_iter().filter_map(|source| {
+        let compiled = fancy_regex::RegexBuilder::new(&source).case_insensitive(true).build()
+            .map(Pattern::Fancy)
+            .or_else(|_| bytes::RegexBuilder::new().caseless(true).ucp(true).build(&source).map(Pattern::Pcre));
+        match compiled {
+            Ok(regex) => Some(CompiledPhrasePattern { source, regex }),
+            Err(error) => {
+                tracing::warn!(category, pattern = source, %error, "invalid category phrase pattern");
+                None
+            }
         }
     }).collect()
 }

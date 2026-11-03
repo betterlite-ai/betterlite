@@ -2,6 +2,7 @@ pub mod files;
 pub mod loading;
 pub mod model;
 pub mod paths;
+pub mod pattern;
 
 #[path = "content_category/tests.rs"]
 mod tests;

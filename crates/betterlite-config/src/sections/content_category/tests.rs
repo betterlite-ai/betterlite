@@ -8,9 +8,7 @@ use std::{
 };
 
 use crate::loader::{ConfigError, ConfigLoader};
-use crate::sections::content_filter_records::{
-    ContentFilterAction, ContentFilterSeverity, category_types::CategoryFileData,
-};
+use crate::sections::content_filter_records::{ContentFilterAction, ContentFilterSeverity};
 
 use super::{
     files::load_category_file,
@@ -49,23 +47,13 @@ fn loader_reports_missing_environment() {
 
 #[test]
 pub(crate) fn category_config_lowercases_words_and_skips_invalid_regex() {
-    let data = CategoryFileData {
-        category_name: Some("x".to_owned()),
-        description: None,
-        default_action: None,
-        keywords: Vec::new(),
-        exceptions: vec!["BAD".to_owned()],
-        identifier_words: vec!["Child".to_owned()],
-        always_block_keywords: Vec::new(),
-        inherit_from: None,
-        additional_block_words: vec!["Word".to_owned()],
-        phrase_patterns: vec!["[".to_owned(), "DANGER".to_owned()],
-    };
+    let data = serde_saphyr::from_str("category_name: x\nexceptions: [BAD]\nidentifier_words: [Child]\nadditional_block_words: [Word]\nphrase_patterns: ['[', DANGER]\n").unwrap();
     let category = CategoryConfig::from_data(data).unwrap();
     assert_eq!(category.exceptions, ["bad"]);
     assert_eq!(category.identifier_words, ["child"]);
     assert_eq!(category.additional_block_words, ["word"]);
     assert_eq!(category.phrase_patterns.len(), 1);
+    assert!(!category.phrase_patterns[0].regex.is_match("safe").unwrap());
     assert!(
         category.phrase_patterns[0]
             .regex
@@ -76,36 +64,16 @@ pub(crate) fn category_config_lowercases_words_and_skips_invalid_regex() {
 
 #[test]
 pub(crate) fn category_config_default_action_is_block() {
-    let category = CategoryConfig::from_data(CategoryFileData {
-        category_name: None,
-        description: None,
-        default_action: None,
-        keywords: Vec::new(),
-        exceptions: Vec::new(),
-        identifier_words: Vec::new(),
-        always_block_keywords: Vec::new(),
-        inherit_from: None,
-        additional_block_words: Vec::new(),
-        phrase_patterns: Vec::new(),
-    })
-    .unwrap();
+    let category =
+        CategoryConfig::from_data(serde_saphyr::from_str("keywords: []").unwrap()).unwrap();
     assert_eq!(category.default_action, ContentFilterAction::Block);
 }
 
 #[test]
 pub(crate) fn category_config_rejects_invalid_action() {
-    let error = CategoryConfig::from_data(CategoryFileData {
-        category_name: Some("sample".to_owned()),
-        description: None,
-        default_action: Some("INVALID".to_owned()),
-        keywords: Vec::new(),
-        exceptions: Vec::new(),
-        identifier_words: Vec::new(),
-        always_block_keywords: Vec::new(),
-        inherit_from: None,
-        additional_block_words: Vec::new(),
-        phrase_patterns: Vec::new(),
-    })
+    let error = CategoryConfig::from_data(
+        serde_saphyr::from_str("category_name: sample\ndefault_action: INVALID").unwrap(),
+    )
     .unwrap_err();
     assert!(matches!(
         error,
@@ -148,18 +116,7 @@ pub(crate) fn conditional_inheritance_is_severity_filtered() {
     fs::create_dir_all(temp.path().join("categories")).unwrap();
     let inherited = temp.path().join("categories/base.yaml");
     fs::write(&inherited, "keywords:\n  - keyword: low-word\n    severity: low\n  - keyword: high-word\n    severity: high\n").unwrap();
-    let child_data = CategoryFileData {
-        category_name: Some("child".to_owned()),
-        description: None,
-        default_action: None,
-        keywords: Vec::new(),
-        exceptions: Vec::new(),
-        identifier_words: vec!["kid".to_owned()],
-        always_block_keywords: Vec::new(),
-        inherit_from: Some("base".to_owned()),
-        additional_block_words: vec!["extra".to_owned()],
-        phrase_patterns: Vec::new(),
-    };
+    let child_data = serde_saphyr::from_str("category_name: child\nidentifier_words: [kid]\ninherit_from: base\nadditional_block_words: [extra]").unwrap();
     let conditional = super::loading::load_conditional_category(
         &CategoryConfig::from_data(child_data).unwrap(),
         ContentFilterAction::Block,
@@ -183,11 +140,15 @@ pub(crate) fn file_yaml_defaults_action_and_json_deduplicates_and_maps_severity(
     let json = temp.path().join("harm.json");
     fs::write(
         &json,
-        r#"[{"match":" Foo |foo|bar","severity":3},{"match":"baz","severity":"bad"},{"match":"qux","severity":2.7}]"#,
+        r#"[{"match":" Foo |foo|bar","severity":3},{"match":"baz|FOO","severity":"bad"},{"match":"qux","severity":2.7}]"#,
     )
     .unwrap();
     let category = load_category_file(&json).unwrap();
     assert_eq!(category.keywords.len(), 4);
+    assert_eq!(
+        category.keywords[0].get("keyword").map(String::as_str),
+        Some("foo")
+    );
     assert_eq!(
         category.keywords[0].get("severity").map(String::as_str),
         Some("high")

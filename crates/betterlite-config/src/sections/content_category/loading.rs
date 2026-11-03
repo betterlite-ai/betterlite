@@ -208,8 +208,8 @@ pub fn load_conditional_category(
 ) -> Result<ConditionalCategoryConfig, CategoryLoadError> {
     let mut block_words = Vec::new();
     if let Some(inherit) = &category.inherit_from {
-        let base = inherit.trim_end_matches(".yaml").trim_end_matches(".json");
-        append_inherited_words(base, threshold, roots, &mut block_words)?;
+        let base = inherit.replace(".json", "").replace(".yaml", "");
+        append_inherited_words(&base, threshold, roots, &mut block_words)?;
     }
     block_words.extend(category.additional_block_words.iter().cloned());
     Ok(ConditionalCategoryConfig {

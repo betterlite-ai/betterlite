@@ -15,19 +15,20 @@ fn conditional_inheritance_obeys_severity_threshold() {
 }
 
 #[rstest]
-#[case::none("keywords: []\n", false)]
-#[case::identifiers("identifier_words: [Child]\n", false)]
-#[case::inheritance("inherit_from: base.yaml\n", false)]
-#[case::additional("additional_block_words: [Extra]\n", false)]
-#[case::inherited("identifier_words: [Child]\ninherit_from: base.yaml\n", true)]
-#[case::extra("identifier_words: [Child]\nadditional_block_words: [Extra]\n", true)]
+#[case::none("keywords: []\n", false, &[])]
+#[case::identifiers("identifier_words: [Child]\n", false, &[])]
+#[case::inheritance("inherit_from: base.yaml\n", false, &[])]
+#[case::additional("additional_block_words: [Extra]\n", false, &[])]
+#[case::inherited("identifier_words: [Child]\ninherit_from: base.yaml\n", true, &["danger"])]
+#[case::extra("identifier_words: [Child]\nadditional_block_words: [Extra]\n", true, &["extra"])]
 #[case::both(
     "identifier_words: [Child]\ninherit_from: base.yaml\nadditional_block_words: [Extra]\n",
-    true
+    true, &["danger", "extra"]
 )]
 fn conditional_loading_requires_identifiers_and_block_words(
     #[case] source: &str,
     #[case] expected: bool,
+    #[case] words: &[&str],
 ) {
     let temp = tempfile::tempdir().unwrap();
     fs::create_dir_all(temp.path().join("categories")).unwrap();
@@ -57,6 +58,7 @@ fn conditional_loading_requires_identifiers_and_block_words(
         expected
     );
     if let Some(conditional) = loaded.conditional_categories.get("child") {
+        assert_eq!(conditional.block_words, words);
         assert_eq!(conditional.identifier_words, ["child"]);
         assert_eq!(conditional.action, ContentFilterAction::Mask);
         assert_eq!(conditional.severity, "high");
@@ -107,4 +109,33 @@ fn inheritance_failure_preserves_parent(#[case] source: Option<&str>, #[case] ke
             ["extra"]
         );
     }
+}
+
+#[rstest]
+#[case::low(ContentFilterSeverity::Low, &["low", "medium", "high", "extra"])]
+#[case::medium(ContentFilterSeverity::Medium, &["medium", "high", "extra"])]
+#[case::high(ContentFilterSeverity::High, &["high", "extra"])]
+fn combined_extensions_forward_threshold(
+    #[case] threshold: ContentFilterSeverity,
+    #[case] words: &[&str],
+) {
+    let temp = tempfile::tempdir().unwrap();
+    fs::create_dir_all(temp.path().join("categories")).unwrap();
+    fs::write(temp.path().join("categories/harm_toxic_abuse.yaml"), "keywords: [{keyword: low, severity: low}, {keyword: medium, severity: medium}, {keyword: high, severity: high}]").unwrap();
+    let path = temp.path().join("child.yaml");
+    fs::write(&path, "identifier_words: [Child]\ninherit_from: harm_toxic_abuse.yaml.json\nadditional_block_words: [Extra]\n").unwrap();
+    let config = ContentFilterCategoryConfig {
+        category: "child".to_owned(),
+        enabled: true,
+        action: ContentFilterAction::Block,
+        severity_threshold: threshold,
+        category_file: Some(path.display().to_string()),
+    };
+    let loaded = super::loading::load_categories(
+        &[config],
+        &[temp.path().to_path_buf()],
+        temp.path(),
+        &super::Settings::default(),
+    );
+    assert_eq!(loaded.conditional_categories["child"].block_words, words);
 }
