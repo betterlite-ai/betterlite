@@ -142,13 +142,13 @@ fn summary(parameters: &S3Parameters<Value>) -> Value {
 
 fn credentials_summary(credentials: &betterlite_logging::s3_v2::connection::Credentials) -> Value {
     json!({
-        "aws_access_key_id": credentials.aws_access_key_id.as_ref().map(|value| value.expose_secret()),
-        "aws_secret_access_key": credentials.aws_secret_access_key.as_ref().map(|value| value.expose_secret()),
-        "aws_session_token": credentials.aws_session_token.as_ref().map(|value| value.expose_secret()),
+        "aws_access_key_id": credentials.aws_access_key_id.as_ref().map(secrecy::ExposeSecret::expose_secret),
+        "aws_secret_access_key": credentials.aws_secret_access_key.as_ref().map(secrecy::ExposeSecret::expose_secret),
+        "aws_session_token": credentials.aws_session_token.as_ref().map(secrecy::ExposeSecret::expose_secret),
         "aws_session_name": credentials.aws_session_name,
         "aws_profile_name": credentials.aws_profile_name,
         "aws_role_name": credentials.aws_role_name,
-        "aws_web_identity_token": credentials.aws_web_identity_token.as_ref().map(|value| value.expose_secret()),
+        "aws_web_identity_token": credentials.aws_web_identity_token.as_ref().map(secrecy::ExposeSecret::expose_secret),
         "aws_sts_endpoint": credentials.aws_sts_endpoint,
     })
 }
