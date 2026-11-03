@@ -12,12 +12,26 @@ fn header_precedence_and_body_fallback() {
         r#"{"litellm_params":{
         "metadata":{"trace_name":"body","trace_user_id":"user"},
         "litellm_metadata":{"trace_name":"later","session_id":"session"},
-        "proxy_server_request":{"headers":{"langfuse_trace_name":"header","langfuse_trace_user_id":""}}
+        "proxy_server_request":{"headers":{"langfuse_trace_name":"header","langfuse_trace_user_id":"header-user","langfuse_session_id":"header-session"}}
     }}"#,
     ));
     assert_eq!(controls.name.as_deref(), Some("header"));
-    assert_eq!(controls.user_id.as_deref(), Some("user"));
-    assert_eq!(controls.session_id.as_deref(), Some("session"));
+    assert_eq!(controls.user_id.as_deref(), Some("header-user"));
+    assert_eq!(controls.session_id.as_deref(), Some("header-session"));
+}
+
+#[test]
+fn primary_body_scalars_win_without_nonempty_headers() {
+    let controls = caller_trace_controls(&input(
+        r#"{"litellm_params":{
+        "metadata":{"trace_name":"primary-name","trace_user_id":"primary-user","session_id":"primary-session"},
+        "litellm_metadata":{"trace_name":"secondary-name","trace_user_id":"secondary-user","session_id":"secondary-session"},
+        "proxy_server_request":{"headers":{"langfuse_trace_name":"","langfuse_trace_user_id":"","langfuse_session_id":""}}
+    }}"#,
+    ));
+    assert_eq!(controls.name.as_deref(), Some("primary-name"));
+    assert_eq!(controls.user_id.as_deref(), Some("primary-user"));
+    assert_eq!(controls.session_id.as_deref(), Some("primary-session"));
 }
 
 #[test]
@@ -40,6 +54,17 @@ fn tags_filter_and_mutation_fields_are_excluded() {
     ));
     assert_eq!(controls.tags, vec!["one"]);
     assert_eq!(controls.name, None);
+}
+
+#[test]
+fn empty_filtered_primary_tags_fall_back_to_secondary_metadata() {
+    let controls = caller_trace_controls(&input(
+        r#"{"litellm_params":{
+        "metadata":{"tags":["",1,false]},
+        "litellm_metadata":{"tags":["secondary-tag"]}
+    }}"#,
+    ));
+    assert_eq!(controls.tags, vec!["secondary-tag"]);
 }
 
 #[test]

@@ -22,3 +22,16 @@ fn coercion_helper_preserves_decimal_text_and_tuple_shape() {
     let output = Op::run(&input).expect("coercion helper succeeds");
     assert_eq!(output, json!(["1.25", ["one", "two"]]));
 }
+
+#[test]
+fn coercion_helper_uses_production_boolean_and_mapping_accessors() {
+    let input = json!({"function":"coercion","values":[
+        {"kind":"boolean","value":true},
+        {"kind":"boolean","value":false},
+        {"kind":"boolean","value":"false"},
+        {"kind":"mapping","value":{"key":3_i64}},
+        {"kind":"mapping","value":[3_i64]}
+    ]});
+    let output = Op::run(&input).expect("coercion helper succeeds");
+    assert_eq!(output, json!([true, false, null, {"key": 3_i64}, null]));
+}

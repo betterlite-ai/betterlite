@@ -56,6 +56,9 @@ impl OtelModelValue {
 
     #[must_use]
     pub fn as_decimal(&self) -> Option<Decimal> {
+        if let Self::Bool(value) = self {
+            return Some(if *value { Decimal::ONE } else { Decimal::ZERO });
+        }
         if let Self::Number(number) = self {
             return Decimal::from_str(&number.to_string()).ok();
         }
@@ -68,6 +71,9 @@ impl OtelModelValue {
 
 #[must_use]
 pub fn as_int(value: &OtelModelValue) -> Option<i64> {
+    if let OtelModelValue::Bool(boolean) = value {
+        return Some(i64::from(*boolean));
+    }
     if let OtelModelValue::String(text) = value {
         return numeric_text(text)?.parse::<i64>().ok();
     }

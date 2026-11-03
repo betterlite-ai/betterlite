@@ -107,22 +107,8 @@ fn coerce(item: &Value) -> Value {
                 .as_decimal()
                 .map(|number| number.normalize().to_string())
         ),
-        "boolean" => match parsed {
-            OtelModelValue::Bool(boolean) => json!(boolean),
-            OtelModelValue::Null(())
-            | OtelModelValue::Number(_)
-            | OtelModelValue::String(_)
-            | OtelModelValue::Array(_)
-            | OtelModelValue::Object(_) => Value::Null,
-        },
-        "mapping" => match parsed {
-            OtelModelValue::Object(map) => json!(map),
-            OtelModelValue::Null(())
-            | OtelModelValue::Bool(_)
-            | OtelModelValue::Number(_)
-            | OtelModelValue::String(_)
-            | OtelModelValue::Array(_) => Value::Null,
-        },
+        "boolean" => json!(parsed.as_bool()),
+        "mapping" => json!(parsed.as_object()),
         "tuple" => json!(as_str_tuple(&parsed)),
         _ => Value::Null,
     }

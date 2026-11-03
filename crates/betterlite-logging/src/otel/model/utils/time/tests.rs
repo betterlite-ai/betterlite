@@ -18,6 +18,16 @@ fn epoch_conversion_preserves_units_and_truncates() {
         to_seconds(Some(&value), None, None, &resolver()),
         Some(value)
     );
+    let positive_fractional_nanosecond = Decimal::new(19, 10);
+    let negative_fractional_nanosecond = Decimal::new(-19, 10);
+    assert_eq!(
+        to_ns(Some(&positive_fractional_nanosecond), None, &resolver()),
+        Some(1)
+    );
+    assert_eq!(
+        to_ns(Some(&negative_fractional_nanosecond), None, &resolver()),
+        Some(-1)
+    );
 }
 
 #[test]
@@ -29,6 +39,17 @@ fn formatted_time_uses_injected_local_resolution() {
     assert_eq!(
         to_seconds(None, None, Some("1970-01-01 00:00:00.123456"), &resolver()),
         Some(Decimal::new(123_456, 6))
+    );
+    let non_utc = FixedLocalTimeResolver {
+        offset: FixedOffset::east_opt(3_600).expect("valid offset"),
+    };
+    assert_eq!(
+        to_seconds(None, None, Some("1970-01-01 01:00:00.5"), &non_utc),
+        Some(Decimal::new(5, 1))
+    );
+    assert_eq!(
+        to_seconds(None, None, Some("1970-01-01 01:00:00.5"), &RejectLocalTimes),
+        None
     );
     let naive = NaiveDate::from_ymd_opt(1970, 1, 1)
         .expect("valid date")
@@ -60,6 +81,11 @@ fn formatted_time_rejects_excess_precision_and_leap_seconds() {
     );
     assert_eq!(
         to_seconds(None, None, Some("1970-01- 01 00:00:00"), &resolver()),
+        None
+    );
+    let oversized_malformed = format!("1970-01-{}", " ".repeat(1_024));
+    assert_eq!(
+        to_seconds(None, None, Some(&oversized_malformed), &resolver()),
         None
     );
 }
@@ -119,6 +145,24 @@ fn non_utc_offsets_and_dst_gap_or_fold_policy_come_from_resolver() {
     assert_eq!(
         to_seconds(None, Some(DateTimeInput::Naive(fold)), None, &fold_resolver),
         Some(Decimal::from(1_729_989_000_i64))
+    );
+}
+
+#[test]
+fn zoned_datetime_uses_its_offset_without_local_resolution() {
+    let offset = FixedOffset::east_opt(7_200).expect("valid offset");
+    let zoned = offset
+        .with_ymd_and_hms(1970, 1, 1, 1, 0, 0)
+        .single()
+        .expect("valid datetime");
+    assert_eq!(
+        to_seconds(
+            None,
+            Some(DateTimeInput::Zoned(zoned)),
+            None,
+            &RejectLocalTimes
+        ),
+        Some(Decimal::from(-3_600_i64))
     );
 }
 

@@ -68,23 +68,21 @@ fn parse_formatted_datetime(input: &str) -> Option<NaiveDateTime> {
 }
 
 fn normalize_formatted_datetime(input: &str) -> Option<String> {
-    let separator = input
-        .char_indices()
-        .filter(|(_, character)| character.is_whitespace())
-        .find_map(|(index, _)| {
-            input
-                .get(..index)
-                .and_then(parse_date_fields)
-                .map(|_| index)
-        })?;
-    let date_text = input.get(..separator)?;
-    let time_text = input
-        .get(separator..)?
-        .trim_start_matches(char::is_whitespace);
+    if input.len() > 64 {
+        return None;
+    }
+    let (year, month, day, date_time_separator) = parse_date_prefix(input)?;
+    if !date_time_separator
+        .chars()
+        .next()
+        .is_some_and(char::is_whitespace)
+    {
+        return None;
+    }
+    let time_text = date_time_separator.trim_start_matches(char::is_whitespace);
     if time_text.is_empty() {
         return None;
     }
-    let (year, month, day) = parse_date_fields(date_text)?;
     let (clock, fraction) = time_text
         .split_once('.')
         .map_or((time_text, None), |(clock, fraction)| {
@@ -105,36 +103,43 @@ fn normalize_formatted_datetime(input: &str) -> Option<String> {
     Some(normalized)
 }
 
-fn parse_date_fields(input: &str) -> Option<(u32, u32, u32)> {
-    let mut fields = input.split('-');
-    let year_text = fields.next()?;
-    let month_text = fields.next()?;
-    let day_text = fields.next()?;
-    if fields.next().is_some() || year_text.len() != 4 {
-        return None;
-    }
-    if !year_text.bytes().all(|byte| byte.is_ascii_digit()) {
+fn parse_date_prefix(input: &str) -> Option<(u32, u32, u32, &str)> {
+    let (year_text, remainder) = input.split_once('-')?;
+    let (month_text, day_and_time) = remainder.split_once('-')?;
+    if year_text.len() != 4 || !year_text.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
     }
     let year = year_text.parse::<u32>().ok()?;
     if year == 0 {
         return None;
     }
-    if !day_text.starts_with(' ') {
-        return Some((
-            year,
-            parse_clock_component(month_text)?,
-            parse_clock_component(day_text)?,
-        ));
+    let month = parse_clock_component(month_text)?;
+    let (day, date_time_separator) = parse_day_prefix(day_and_time)?;
+    Some((year, month, day, date_time_separator))
+}
+
+fn parse_day_prefix(input: &str) -> Option<(u32, &str)> {
+    let mut characters = input.chars();
+    let first = characters.next()?;
+    if first == ' ' {
+        let day = characters.next()?;
+        if !day.is_ascii_digit() {
+            return None;
+        }
+        return Some((day.to_digit(10)?, characters.as_str()));
     }
-    let [b' ', day_digit] = day_text.as_bytes() else {
-        return None;
-    };
-    if !day_digit.is_ascii_digit() {
+    if !first.is_ascii_digit() {
         return None;
     }
-    let day_value = day_text.chars().nth(1)?.to_digit(10)?;
-    Some((year, parse_clock_component(month_text)?, day_value))
+    let mut day_text = String::from(first);
+    if characters
+        .clone()
+        .next()
+        .is_some_and(|character| character.is_ascii_digit())
+    {
+        day_text.push(characters.next()?);
+    }
+    Some((parse_clock_component(&day_text)?, characters.as_str()))
 }
 
 fn parse_clock_fields(input: &str) -> Option<(u32, u32, u32)> {

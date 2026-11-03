@@ -13,7 +13,8 @@ call:
       proxy_server_request:
         headers:
           langfuse_trace_name: header-name
-          langfuse_trace_user_id: ""
+          langfuse_trace_user_id: header-user
+          langfuse_session_id: header-session
 env: {}
 compare:
   ignore: []
