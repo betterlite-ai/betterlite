@@ -1,8 +1,17 @@
 #![cfg(test)]
 
+use crate::routes::router;
+use serde::Deserialize;
 use std::collections::BTreeMap;
+use std::fs::read_to_string;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::time::Duration;
+use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::oneshot;
+use tokio::task::JoinSet;
+use tokio::time::{sleep, timeout};
+use tracing::subscriber::with_default;
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
@@ -30,7 +39,7 @@ fn configured_router(calls: Arc<AtomicUsize>, public_routes: &str) -> Router {
         .route("/v1/chat/completions", get(downstream))
         .route("/v1/completions", get(downstream))
         .with_state(calls);
-    crate::routes::router(
+    router(
         super::AuthSettings {
             master_key: config.general_settings.master_key,
             routes: config.sections.auth_route_patterns,
@@ -108,7 +117,7 @@ fn path_exception_debug_fallback() {
         .with_max_level(tracing::Level::DEBUG)
         .with_writer(Arc::new(log.reopen().unwrap()))
         .finish();
-    tracing::subscriber::with_default(subscriber, || {
+    with_default(subscriber, || {
         assert_eq!(
             get_request_route(&RequestRouteSource {
                 scope: Err(ScopeError::Access),
@@ -117,7 +126,7 @@ fn path_exception_debug_fallback() {
             "/fallback"
         );
     });
-    let output = std::fs::read_to_string(log.path()).unwrap();
+    let output = read_to_string(log.path()).unwrap();
     assert!(output.contains("DEBUG"));
     assert!(output.contains("using URL path"));
 }
@@ -132,10 +141,10 @@ fn template_exception_debug_none() {
         .with_max_level(tracing::Level::DEBUG)
         .with_writer(Arc::new(log.reopen().unwrap()))
         .finish();
-    tracing::subscriber::with_default(subscriber, || {
+    with_default(subscriber, || {
         assert_eq!(get_request_route_template(Err(ScopeError::Access)), None);
     });
-    let output = std::fs::read_to_string(log.path()).unwrap();
+    let output = read_to_string(log.path()).unwrap();
     assert!(output.contains("DEBUG"));
     assert!(output.contains("template access failed"));
 }
@@ -151,13 +160,13 @@ fn malformed_public_list_logs_false() {
         .with_ansi(false)
         .with_writer(Arc::new(log.reopen().unwrap()))
         .finish();
-    tracing::subscriber::with_default(subscriber, || {
+    with_default(subscriber, || {
         assert!(!check_configured_public_routes(
             "/v1/models",
             Err(RoutePatternError::MalformedSettings)
         ));
     });
-    let output = std::fs::read_to_string(log.path()).unwrap();
+    let output = read_to_string(log.path()).unwrap();
     assert!(output.contains("ERROR"));
     assert!(output.contains("configured public routes"));
 }
@@ -181,10 +190,10 @@ async fn booted_server(#[case] path: &str, #[case] routes: &str, #[case] status:
     use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
     let calls = Arc::new(AtomicUsize::new(0));
     let application = Router::new().nest("/proxy", configured_router(Arc::clone(&calls), routes));
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
-    let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
-    let mut tasks = tokio::task::JoinSet::new();
+    let (stop, stopped) = oneshot::channel::<()>();
+    let mut tasks = JoinSet::new();
     tasks.spawn(async move {
         axum::serve(listener, application)
             .with_graceful_shutdown(async {
@@ -193,8 +202,8 @@ async fn booted_server(#[case] path: &str, #[case] routes: &str, #[case] status:
             .await
             .unwrap();
     });
-    let wire = tokio::time::timeout(std::time::Duration::from_secs(5), async {
-        let mut stream = tokio::net::TcpStream::connect(address).await.unwrap();
+    let wire = timeout(Duration::from_secs(5), async {
+        let mut stream = TcpStream::connect(address).await.unwrap();
         stream
             .write_all(
                 format!("GET {path} HTTP/1.1\r\nHost: localhost/?x=1\r\nConnection: close\r\n\r\n")
@@ -219,7 +228,7 @@ async fn stage_is_registered() {
     use crate::server::{chat_setup::chat_executor, run};
     use rand::SeedableRng as _;
     use rand::rngs::StdRng;
-    let port = tokio::net::TcpListener::bind("127.0.0.1:0")
+    let port = TcpListener::bind("127.0.0.1:0")
         .await
         .unwrap()
         .local_addr()
@@ -231,12 +240,12 @@ async fn stage_is_registered() {
     .load("general_settings: {master_key: secret, public_routes: ['/v1/models']}")
     .unwrap();
     let chat = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(7)).unwrap();
-    let deadline = std::time::Duration::from_secs(2);
+    let deadline = Duration::from_secs(2);
     let (server, client) = tokio::join!(
-        tokio::time::timeout(deadline, run(config, chat, "127.0.0.1", port)),
-        tokio::time::timeout(deadline, request_once_ready(port)),
+        timeout(deadline, run(config, chat, "127.0.0.1", port)),
+        timeout(deadline, request_once_ready(port)),
     );
-    assert!(server.is_err());
+    server.unwrap_err();
     let response = client.unwrap();
     assert!(response.starts_with("HTTP/1.1 200 "), "{response}");
     assert!(response.contains(r#""object":"list""#));
@@ -245,9 +254,9 @@ async fn stage_is_registered() {
 async fn request_once_ready(port: u16) -> String {
     use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
     let mut stream = loop {
-        match tokio::net::TcpStream::connect(("127.0.0.1", port)).await {
+        match TcpStream::connect(("127.0.0.1", port)).await {
             Ok(connection) => break connection,
-            Err(_) => tokio::time::sleep(std::time::Duration::from_millis(10)).await,
+            Err(_) => sleep(Duration::from_millis(10)).await,
         }
     };
     stream
@@ -277,9 +286,22 @@ async fn invalid_credentials_keep_public_error() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     let bytes = to_bytes(response.into_body(), 8192).await.unwrap();
-    let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-    assert_eq!(body["error"]["type"], "no_db_connection");
-    assert_eq!(body["error"]["param"], serde_json::Value::Null);
-    assert_eq!(body["error"]["code"], "400");
+    let body: ErrorResponse = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(body.error.error_type, "no_db_connection");
+    assert_eq!(body.error.param, None);
+    assert_eq!(body.error.code, "400");
     assert_eq!(calls.load(Ordering::Relaxed), 0);
+}
+
+#[derive(Deserialize)]
+struct ErrorResponse {
+    error: ErrorFields,
+}
+
+#[derive(Deserialize)]
+struct ErrorFields {
+    #[serde(rename = "type")]
+    error_type: String,
+    param: Option<String>,
+    code: String,
 }
