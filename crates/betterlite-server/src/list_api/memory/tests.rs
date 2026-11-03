@@ -34,28 +34,33 @@ fn fixture_executor(fixture: Fixture) -> InMemoryListExecutor<&'static str> {
 }
 
 fn fixture_row(fixture: Fixture, index: usize) -> Option<(&'static str, Cells)> {
-    let row = match (fixture, index) {
-        (Fixture::Sorted, 0) => rank_row("first", Cell::Int(1), vec!["b", "a"]),
-        (Fixture::Sorted, 1) => rank_row("second", Cell::Int(1), vec!["a", "b"]),
-        (Fixture::Sorted, 2) => rank_row("null", Cell::Null, vec![""]),
-        (Fixture::MixedNumeric, 0) => value_row("two", Cell::Int(2)),
-        (Fixture::MixedNumeric, 1) => {
-            value_row("one_point_five", Cell::Money("1.5".parse().unwrap()))
-        }
-        (Fixture::MixedNumeric, 2) => value_row("one", Cell::Int(1)),
-        (Fixture::CrossField, 0) => search_row("title", "hit", "miss"),
-        (Fixture::CrossField, 1) => search_row("description", "miss", "hit"),
-        (Fixture::CrossField, 2) => search_row("neither", "miss", "miss"),
-        (_, _) => return None,
-    };
-    Some(row)
+    match (fixture, index) {
+        (Fixture::Sorted, 0) => Some(rank_row("first", Cell::Int(1), "b", "a")),
+        (Fixture::Sorted, 1) => Some(rank_row("second", Cell::Int(1), "a", "b")),
+        (Fixture::Sorted, 2) => Some(rank_row("null", Cell::Null, "", "")),
+        (Fixture::MixedNumeric, 0) => Some(value_row("two", Cell::Int(2))),
+        (Fixture::MixedNumeric, 1) => Some(value_row(
+            "one_point_five",
+            Cell::Money("1.5".parse().unwrap()),
+        )),
+        (Fixture::MixedNumeric, 2) => Some(value_row("one", Cell::Int(1))),
+        (Fixture::CrossField, 0) => Some(search_row("title", "hit", "miss")),
+        (Fixture::CrossField, 1) => Some(search_row("description", "miss", "hit")),
+        (Fixture::CrossField, 2) => Some(search_row("neither", "miss", "miss")),
+        (_, _) => None,
+    }
 }
 
-fn rank_row(name: &'static str, rank: Cell, tags: Vec<&str>) -> (&'static str, Cells) {
-    let tag_cells = tags
-        .into_iter()
-        .map(|tag| Cell::Text(tag.to_owned()))
-        .collect();
+fn rank_row(
+    name: &'static str,
+    rank: Cell,
+    first_tag: &str,
+    second_tag: &str,
+) -> (&'static str, Cells) {
+    let tag_cells = vec![
+        Cell::Text(first_tag.to_owned()),
+        Cell::Text(second_tag.to_owned()),
+    ];
     row(name, ("rank", rank), ("tags", Cell::Repeated(tag_cells)))
 }
 
