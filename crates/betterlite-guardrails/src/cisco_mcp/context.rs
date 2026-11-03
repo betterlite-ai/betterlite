@@ -52,7 +52,7 @@ fn nested_tool_call_metadata(data: &Fields) -> Option<Fields> {
     let raw = nested
         .get("mcp_tool_call_metadata")
         .map_or("null", |value| value.get());
-    object_metadata(raw)
+    object_metadata(Json::parse(raw))
 }
 
 fn object_metadata(value: Json) -> Option<Fields> {

@@ -125,7 +125,8 @@ fn rewrite_value(mut value: Value, text: &str) -> (Value, bool) {
             }
             return (value, content_replaced);
         }
-        return (value, rewrite_items(items, text));
+        let replaced = rewrite_items(items, text);
+        return (value, replaced);
     }
     (value, false)
 }
