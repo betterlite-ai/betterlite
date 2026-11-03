@@ -67,7 +67,7 @@ pub struct PatternCatalog {
 
 const PATTERNS_JSON: &str = include_str!("../../../assets/content_filter/patterns.json");
 const PYTHON_WORD_BOUNDARY: &str =
-    r"(?:(?<=[\p{L}\p{N}_])(?![\p{L}\p{N}_])|(?<![\p{L}\p{N}_])(?=[\p{L}\p{N}_]))";
+    r"(?-i:(?:(?<=[\p{L}\p{N}_])(?![\p{L}\p{N}_])|(?<![\p{L}\p{N}_])(?=[\p{L}\p{N}_])))";
 
 fn load_patterns() -> Result<Vec<PatternEntry>, PatternCatalogError> {
     let parsed: PatternsFile = serde_json::from_str(PATTERNS_JSON)

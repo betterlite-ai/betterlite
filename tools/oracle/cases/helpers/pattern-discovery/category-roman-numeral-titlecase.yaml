@@ -1,0 +1,12 @@
+kind: helper
+name: category-roman-numeral-titlecase
+call:
+  b3691:
+    function: categories
+    roots:
+      -
+        - filename: aⅠb.json
+          content: "{}"
+env: {}
+compare:
+  ignore: []

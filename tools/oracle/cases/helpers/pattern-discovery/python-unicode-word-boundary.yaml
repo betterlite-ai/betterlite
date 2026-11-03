@@ -6,6 +6,7 @@ call:
     name: us_ssn
     texts:
       - "123-45-6789́"
+      - "123-45-6789ͅ"
 env: {}
 compare:
   ignore: []

@@ -9,6 +9,10 @@ call:
           content: "{}"
         - filename: ßFOO.json
           content: "{}"
+        - filename: aⅠb.json
+          content: "{}"
+        - filename: foo中bar.json
+          content: "{}"
 env: {}
 compare:
   ignore: []

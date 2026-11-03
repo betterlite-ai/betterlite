@@ -131,13 +131,14 @@ fn title_case(value: &str) -> String {
     let mut titled = String::with_capacity(value.len());
     let mut capitalize = true;
     for character in value.chars() {
+        let lowercase_mapping: String = character.to_lowercase().collect();
+        let is_cased = character.is_lowercase()
+            || character.is_uppercase()
+            || lowercase_mapping != character.to_string();
         if character == '_' {
             titled.push(' ');
             capitalize = true;
-        } else if character.is_numeric() {
-            titled.push(character);
-            capitalize = true;
-        } else if character.is_alphabetic() {
+        } else if is_cased {
             if capitalize {
                 titled.extend(
                     unicode_titlecase::to_titlecase(character)
@@ -146,7 +147,7 @@ fn title_case(value: &str) -> String {
                 );
                 capitalize = false;
             } else {
-                titled.extend(character.to_lowercase());
+                titled.push_str(&lowercase_mapping);
             }
         } else {
             titled.push(character);

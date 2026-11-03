@@ -24,6 +24,7 @@ fn get_compiled_pattern_matches_case_insensitively() {
 fn get_compiled_pattern_matches_python_unicode_casefold_and_word_boundaries() {
     let ssn = get_compiled_pattern("us_ssn").unwrap();
     assert!(ssn.is_match("123-45-6789\u{0301}").unwrap());
+    assert!(ssn.is_match("123-45-6789\u{0345}").unwrap());
     let aws_key = get_compiled_pattern("aws_access_key").unwrap();
     assert!(aws_key.is_match("AK\u{130}A1234567890ABCDEF").unwrap());
 }

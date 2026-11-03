@@ -145,4 +145,10 @@ fn json_titles_words_after_digits_and_uses_unicode_titlecase() {
     let unicode_title = category_entry(dir, "\u{df}FOO.json").unwrap();
     assert_eq!(unicode_title.display_name, "Ssfoo");
     assert_eq!(unicode_title.description, "Content category: Ssfoo");
+    let roman_title = category_entry(dir, "a\u{2160}b.json").unwrap();
+    assert_eq!(roman_title.display_name, "A\u{2170}b");
+    assert_eq!(roman_title.description, "Content category: A\u{2170}b");
+    let han_title = category_entry(dir, "foo\u{4e2d}bar.json").unwrap();
+    assert_eq!(han_title.display_name, "Foo\u{4e2d}Bar");
+    assert_eq!(han_title.description, "Content category: Foo\u{4e2d}Bar");
 }
