@@ -1,0 +1,5 @@
+task: B4682
+deviations:
+  - what: Guardrail calls are exposed as a discovery-time GuardrailHook seam rather than invoking the complete proxy logging stack.
+    why: betterlite keeps catalog validation independent from manager startup and runtime invocation while preserving the LiteLLM call type and guardrails-only flag.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_catalog_guard.py#L196-L229

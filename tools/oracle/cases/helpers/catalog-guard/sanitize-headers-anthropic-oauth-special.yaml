@@ -1,0 +1,5 @@
+kind: helper
+name: catalog_sanitize_headers_anthropic_oauth_special
+call: {b4682: {operation: sanitize_headers, headers: {Authorization: "Bearer sk-ant-oat-test", X-MCP-Servers: "sk-ant-oat-test", X-MCP-Access-Groups: "sk-ant-oat-test"}}}
+env: {}
+compare: {ignore: []}
