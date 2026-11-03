@@ -132,6 +132,87 @@ fn bedrock_guardrail_cost_by_unit_lets_a_valid_empty_regional_map_block_global_f
     assert_eq!(costs["contentPolicyUnits"], None);
 }
 
+#[test]
+fn bedrock_guardrail_cost_by_unit_returns_none_when_no_entry_is_usable_anywhere() {
+    let catalog = catalog(&[("bedrock/guardrails", "__missing")]);
+    let costs =
+        bedrock_guardrail_cost_by_unit(&catalog, None, &usage(&[("contentPolicyUnits", 1)]))
+            .expect("pricing resolves");
+    assert!(costs.is_none());
+}
+
+#[test]
+fn bedrock_guardrail_cost_by_unit_distinguishes_an_explicit_zero_rate_from_an_unpriced_counter() {
+    let catalog = catalog(&[(
+        "bedrock/guardrails",
+        r#"{"sensitiveInformationPolicyFreeUnits":0}"#,
+    )]);
+    let costs = bedrock_guardrail_cost_by_unit(
+        &catalog,
+        None,
+        &usage(&[
+            ("sensitiveInformationPolicyFreeUnits", 5),
+            ("wordPolicyUnits", 5),
+        ]),
+    )
+    .expect("pricing resolves")
+    .expect("global map found");
+    assert_eq!(
+        costs["sensitiveInformationPolicyFreeUnits"],
+        Some(Decimal::ZERO)
+    );
+    assert_eq!(costs["wordPolicyUnits"], None);
+}
+
+#[test]
+fn bedrock_guardrail_cost_by_unit_propagates_a_multiplication_overflow() {
+    let catalog = catalog(&[(
+        "bedrock/guardrails",
+        r#"{"contentPolicyUnits":79228162514264337593543950335}"#,
+    )]);
+    let error =
+        bedrock_guardrail_cost_by_unit(&catalog, None, &usage(&[("contentPolicyUnits", 2)]))
+            .expect_err("the product overflows Decimal");
+    assert!(matches!(error, GuardrailPricingError::CostOverflow));
+}
+
+#[test]
+fn bedrock_guardrail_cost_by_unit_resolves_a_regional_catalog_alias() {
+    let source = br#"{
+        "bedrock/custom-guardrails": {
+            "litellm_provider": "bedrock", "mode": "guardrail",
+            "aliases": ["bedrock/us-east-1/guardrails"],
+            "guardrail_cost_per_unit": {"contentPolicyUnits": 2}
+        },
+        "bedrock/guardrails": {
+            "litellm_provider": "bedrock", "mode": "guardrail",
+            "guardrail_cost_per_unit": {"contentPolicyUnits": 9}
+        }
+    }"#;
+    let catalog = ModelCatalog::parse(source, UnknownFields::Warn).expect("fixture catalog parses");
+    let costs = bedrock_guardrail_cost_by_unit(
+        &catalog,
+        Some("us-east-1"),
+        &usage(&[("contentPolicyUnits", 3)]),
+    )
+    .expect("pricing resolves")
+    .expect("regional alias found");
+    assert_eq!(costs["contentPolicyUnits"], Some(decimal("6")));
+}
+
+#[test]
+fn bedrock_guardrail_cost_by_unit_skips_a_missing_regional_entry() {
+    let catalog = catalog(&[("bedrock/guardrails", r#"{"contentPolicyUnits":5}"#)]);
+    let costs = bedrock_guardrail_cost_by_unit(
+        &catalog,
+        Some("us-east-1"),
+        &usage(&[("contentPolicyUnits", 2)]),
+    )
+    .expect("pricing resolves")
+    .expect("global map found");
+    assert_eq!(costs["contentPolicyUnits"], Some(decimal("10")));
+}
+
 #[rstest]
 #[case::absent_map(None, "0")]
 #[case::known_and_unknown_counters(Some(vec![("a", Some("1.5")), ("b", None)]), "1.5")]
