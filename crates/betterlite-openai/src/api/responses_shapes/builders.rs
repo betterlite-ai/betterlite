@@ -77,6 +77,7 @@ pub struct WebSearchCall {
     pub action: WebSearchAction,
 }
 
+#[must_use]
 pub fn build_web_search_call(
     tool_id: &str,
     tool_input: &Field<SearchInput>,
@@ -142,6 +143,7 @@ pub struct InterpreterContent {
     pub stderr: Option<String>,
 }
 
+#[must_use]
 pub fn build_interpreter_logs(
     content: &Field<InterpreterContent>,
 ) -> Option<Vec<OutputCodeInterpreterCallLog>> {

@@ -146,6 +146,10 @@ pub struct OutputCodeInterpreterCall {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[expect(
+    clippy::partial_pub_fields,
+    reason = "deletion metadata is private while response fields are public"
+)]
 pub struct DeleteResponseResult {
     #[serde(deserialize_with = "Option::deserialize")]
     pub id: Option<String>,
@@ -159,10 +163,6 @@ pub struct DeleteResponseResult {
 
 #[serde_with::serde_as]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[expect(
-    clippy::option_option,
-    reason = "TypedDict fields distinguish absent, null and a string"
-)]
 pub struct DecodedResponseId {
     #[serde(
         default,

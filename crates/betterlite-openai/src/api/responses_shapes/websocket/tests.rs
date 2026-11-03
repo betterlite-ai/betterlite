@@ -1,6 +1,8 @@
 #![cfg(test)]
 
+use serde_json::value::RawValue;
 use std::collections::BTreeMap;
+use std::io::Error;
 use std::sync::Mutex;
 
 use super::{
@@ -13,7 +15,7 @@ struct Socket {
 }
 
 impl ResponsesClientWebSocket for Socket {
-    type Error = std::io::Error;
+    type Error = Error;
 
     async fn send_text(&self, data: &str) -> Result<(), Self::Error> {
         self.sent.lock().unwrap().push(data.to_owned());
@@ -26,7 +28,7 @@ impl ResponsesClientWebSocket for Socket {
 }
 
 impl ResponsesBackendWebSocket for Socket {
-    type Error = std::io::Error;
+    type Error = Error;
 
     async fn recv(&self, decode: bool) -> Result<ResponsesWebSocketMessage, Self::Error> {
         Ok(if decode {
@@ -42,18 +44,15 @@ impl ResponsesBackendWebSocket for Socket {
     }
 
     async fn close(&self) -> Result<(), Self::Error> {
-        Err(std::io::Error::other("closed"))
+        Err(Error::other("closed"))
     }
 }
 
 impl PresidioGuardrailCallback for Socket {
-    type Error = std::io::Error;
+    type Error = Error;
     type Settings = String;
 
-    fn presidio_settings(
-        &self,
-        data: &BTreeMap<String, Box<serde_json::value::RawValue>>,
-    ) -> Option<Self::Settings> {
+    fn presidio_settings(&self, data: &BTreeMap<String, Box<RawValue>>) -> Option<Self::Settings> {
         data.get("language").map(|raw| raw.get().to_owned())
     }
 
@@ -62,7 +61,7 @@ impl PresidioGuardrailCallback for Socket {
         text: &str,
         output_parse_pii: bool,
         presidio_config: Option<&Self::Settings>,
-        request_data: &BTreeMap<String, Box<serde_json::value::RawValue>>,
+        request_data: &BTreeMap<String, Box<RawValue>>,
     ) -> Result<String, Self::Error> {
         assert!(output_parse_pii);
         assert_eq!(

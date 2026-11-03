@@ -2,9 +2,11 @@
 
 use rstest::rstest;
 use serde_json::json;
+use serde_json::value::RawValue;
+use std::fs;
 
 use super::DeleteResponseResult;
-use super::builders::{build_interpreter_logs, build_web_search_call};
+use super::builders::{WebSearchStatus, build_interpreter_logs, build_web_search_call};
 use super::wire::{WireDecodeLimits, decode_responses_shapes};
 
 #[test]
@@ -24,9 +26,9 @@ fn web_search_sources() {
         &serde_json::from_str("null").unwrap(),
         &serde_json::from_value(json!({"content":{"type":"web_search_tool_result_error"}}))
             .unwrap(),
-        Some(super::builders::WebSearchStatus::Searching),
+        Some(WebSearchStatus::Searching),
     );
-    assert_eq!(failed.status, super::builders::WebSearchStatus::Searching);
+    assert_eq!(failed.status, WebSearchStatus::Searching);
     assert_eq!(
         build_web_search_call(
             "t",
@@ -36,7 +38,7 @@ fn web_search_sources() {
             None
         )
         .status,
-        super::builders::WebSearchStatus::Failed
+        WebSearchStatus::Failed
     );
     let missing_query = build_web_search_call(
         "t",
@@ -192,14 +194,14 @@ fn replays_corpus() {
         max_event_bytes: 1_000_000,
         max_items: 10_000,
     };
-    std::fs::read_dir(concat!(
+    fs::read_dir(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/fuzz/corpus/responses_shapes"
     ))
     .unwrap()
     .map(|entry| entry.unwrap().path())
     .for_each(|path| {
-        let bytes = std::fs::read(path).unwrap();
+        let bytes = fs::read(path).unwrap();
         let _deletion = decode_responses_shapes::<DeleteResponseResult>(&bytes, limits);
         let _decoded = decode_responses_shapes::<super::OutputText>(&bytes, limits);
     });
@@ -349,13 +351,10 @@ fn decoder_allows_exact_byte_limits_and_bounded_depth() {
         max_items: 1000,
     };
     let boundary = format!("{}null{}", "[".repeat(128), "]".repeat(128));
-    assert!(
-        decode_responses_shapes::<Box<serde_json::value::RawValue>>(boundary.as_bytes(), limits)
-            .is_ok()
-    );
+    assert!(decode_responses_shapes::<Box<RawValue>>(boundary.as_bytes(), limits).is_ok());
     let too_deep = format!("[{boundary}]");
     assert!(matches!(
-        decode_responses_shapes::<Box<serde_json::value::RawValue>>(too_deep.as_bytes(), limits),
+        decode_responses_shapes::<Box<RawValue>>(too_deep.as_bytes(), limits),
         Err(super::wire::ShapeDecodeError::TooDeep)
     ));
 }

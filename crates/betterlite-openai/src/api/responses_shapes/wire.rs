@@ -22,10 +22,13 @@ pub enum ShapeDecodeError {
     Json(#[from] serde_json::Error),
 }
 
-pub fn decode_responses_shapes<T: DeserializeOwned>(
+pub fn decode_responses_shapes<T>(
     bytes: &[u8],
     limits: WireDecodeLimits,
-) -> Result<T, ShapeDecodeError> {
+) -> Result<T, ShapeDecodeError>
+where
+    T: DeserializeOwned,
+{
     if bytes.len() > limits.max_json_bytes || bytes.len() > limits.max_event_bytes {
         return Err(ShapeDecodeError::JsonTooLarge);
     }
