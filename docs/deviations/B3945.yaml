@@ -4,9 +4,15 @@ deviations:
     why: Exporters register themselves into the cache; the cache must not depend on exporter code.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/specialty_caches/dynamic_logging_cache.py#L30-L50
   - what: >-
-      set_cache stops a live value it replaces, after releasing the cache lock. LiteLLM overwrites
-      cache_dict[key] without removing or stopping the previous value.
+      When two requests with the same credentials and service both miss the logger cache and build a
+      logger, the second set_cache stops the first logger through the cache removal effect after the
+      lock drops. Its New Relic flush loop ends after a final drain, and its Langfuse export channel is
+      handed back. LiteLLM overwrites cache_dict[key] without stopping the old logger, so both resources
+      stay live until process exit. Because this removal effect also returns a Langfuse client slot,
+      concurrent misses use fewer slots and the "Max langfuse clients reached" error occurs later than
+      in LiteLLM.
     why: >-
-      A concurrent pair of cache misses can overwrite a logger with a running background task or
-      export channel; leaking that resource is not behavior a working setup can rely on.
+      LiteLLM's InMemoryCache.set_cache replaces cache_dict[key] without calling _remove_key, so
+      LangfuseInMemoryCache never stops the replaced logger. The leaked background task and export
+      channel are not behavior a working setup can rely on.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L170
