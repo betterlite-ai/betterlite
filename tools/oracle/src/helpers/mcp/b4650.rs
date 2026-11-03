@@ -5,7 +5,8 @@ use betterlite_mcp::credential_contracts::auth_config::aws::{
     AwsCredentialSource, AwsSigV4Config, DEFAULT_AWS_SIGV4_SERVICE,
 };
 use betterlite_mcp::credential_contracts::auth_config::id_jag::{
-    ClientAuth, ClientSecretAuth, ID_JAG_SUBJECT_TOKEN_TYPE, IdJagConfig,
+    ClientAuth, ID_JAG_SUBJECT_TOKEN_TYPE, IdJagConfig, PRIVATE_KEY_JWT_SIGNING_ALG,
+    PrivateKeyJwtAuth,
 };
 use betterlite_mcp::credential_contracts::auth_config::key_source::{
     ApiKeyConfig, ApiKeySource, SharedKey,
@@ -15,7 +16,10 @@ use betterlite_mcp::credential_contracts::auth_config::oauth::{
 };
 use betterlite_mcp::credential_contracts::auth_config::simple::{NoneConfig, PassthroughConfig};
 use betterlite_mcp::credential_contracts::auth_spec::parse_auth_spec_kind;
-use betterlite_mcp::credential_contracts::byok_cache::CACHE_KEY_PREFIX;
+use betterlite_mcp::credential_contracts::byok_cache::{
+    BYOK_CREDENTIAL_CACHE_MAX_SIZE, BYOK_CREDENTIAL_CACHE_TTL_SECS, ByokCredentialCache,
+    SystemClock,
+};
 use betterlite_mcp::credential_contracts::errors::{CredError, CredResult};
 use betterlite_mcp::credential_contracts::header_carrier::HeaderCarrier;
 use betterlite_mcp::credential_contracts::token_endpoint_auth::{
@@ -25,6 +29,9 @@ use betterlite_mcp::credential_contracts::token_endpoint_auth::{
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::json;
+use std::collections::HashMap;
+use std::sync::Mutex;
+use std::time::Duration;
 use thiserror::Error;
 
 use crate::helpers::{Helper, HelperError, HelperResult};
@@ -43,6 +50,12 @@ pub(crate) enum Input {
     },
     AuthConfigVariants {
         kind: String,
+    },
+    ByokCacheEvict {
+        user_id: String,
+        server_id: String,
+        #[serde(default)]
+        credential: Option<String>,
     },
     TokenAuthNormalize {
         value: String,
@@ -100,8 +113,10 @@ fn build_auth_config(kind: &str) -> Result<AuthConfig, Failure> {
             org_token_endpoint: "https://org.example.test/token".to_owned(),
             resource_token_endpoint: "https://resource.example.test/token".to_owned(),
             client_id: "gateway-client".to_owned(),
-            client_auth: ClientAuth::ClientSecret(ClientSecretAuth {
-                client_secret: SecretString::from("secret".to_owned()),
+            client_auth: ClientAuth::PrivateKeyJwt(PrivateKeyJwtAuth {
+                private_key: SecretString::from("private-key".to_owned()),
+                key_id: None,
+                signing_alg: PRIVATE_KEY_JWT_SIGNING_ALG.to_owned(),
             }),
             subject_token_type: ID_JAG_SUBJECT_TOKEN_TYPE.to_owned(),
             audience: None,
@@ -146,6 +161,57 @@ fn auth_spec_kind(raw: &str) -> serde_json::Value {
     }
 }
 
+fn auth_config_defaults(auth_config: &AuthConfig) -> serde_json::Value {
+    match auth_config {
+        AuthConfig::TokenExchange(config) => json!({
+            "profile": match config.profile {
+                betterlite_mcp::credential_contracts::auth_config::oauth::TokenExchangeProfile::Rfc8693 => "rfc8693",
+                betterlite_mcp::credential_contracts::auth_config::oauth::TokenExchangeProfile::EntraObo => "entra_obo",
+            },
+            "subject_token_type": config.subject_token_type,
+        }),
+        AuthConfig::IdJag(config) => {
+            let signing_alg = match &config.client_auth {
+                ClientAuth::PrivateKeyJwt(auth) => auth.signing_alg.as_str(),
+                ClientAuth::ClientSecret(_) => "",
+            };
+            json!({ "subject_token_type": config.subject_token_type, "signing_alg": signing_alg })
+        }
+        AuthConfig::AwsSigv4(config) => {
+            let source = match &config.credentials {
+                AwsCredentialSource::Ambient => "ambient",
+                AwsCredentialSource::StaticKeys(_) => "static_keys",
+                AwsCredentialSource::AssumeRole(_) => "assume_role",
+            };
+            json!({ "service": config.service, "credentials": source })
+        }
+        AuthConfig::AuthorizationCode(_)
+        | AuthConfig::ClientCredentials(_)
+        | AuthConfig::ApiKey(_)
+        | AuthConfig::Passthrough(_)
+        | AuthConfig::None(_) => json!({}),
+    }
+}
+
+fn byok_cache_evict(user_id: &str, server_id: &str, credential: Option<&str>) -> serde_json::Value {
+    let cache = ByokCredentialCache {
+        max_size: BYOK_CREDENTIAL_CACHE_MAX_SIZE,
+        ttl: Duration::from_secs(BYOK_CREDENTIAL_CACHE_TTL_SECS),
+        clock: Box::new(SystemClock),
+        entries: Mutex::new(HashMap::new()),
+    };
+    let secret = credential.map(|value| SecretString::from(value.to_owned()));
+    cache.cache_byok_credential(user_id, server_id, secret);
+    let cached_before = cache
+        .get_cached_byok_credential(user_id, server_id)
+        .is_some();
+    cache.invalidate_byok_credential(user_id, server_id);
+    let cached_after = cache
+        .get_cached_byok_credential(user_id, server_id)
+        .is_some();
+    json!({ "cached_before": cached_before, "cached_after": cached_after })
+}
+
 fn token_auth_build(
     auth_method: Option<&str>,
     client_id: Option<&str>,
@@ -170,8 +236,15 @@ impl Helper for Op {
             Input::AuthSpecKind { raw } => Ok(auth_spec_kind(raw)),
             Input::AuthConfigVariants { kind } => {
                 let config = build_auth_config(kind)?;
-                Ok(json!({ "kind": config.kind().to_string() }))
+                Ok(
+                    json!({ "kind": config.kind().to_string(), "defaults": auth_config_defaults(&config) }),
+                )
             }
+            Input::ByokCacheEvict {
+                user_id,
+                server_id,
+                credential,
+            } => Ok(byok_cache_evict(user_id, server_id, credential.as_deref())),
             Input::TokenAuthNormalize { value } => Ok(json!({
                 "value": normalize_token_auth_method(value).map(TokenEndpointAuthMethod::as_str),
             })),
@@ -187,9 +260,15 @@ impl Helper for Op {
                     client_secret_value.as_ref(),
                 )?)
             }
-            Input::ByokCacheKey { user_id, server_id } => Ok(json!({
-                "key": format!("{CACHE_KEY_PREFIX}:{user_id}:{server_id}"),
-            })),
+            Input::ByokCacheKey { user_id, server_id } => {
+                let cache = ByokCredentialCache {
+                    max_size: BYOK_CREDENTIAL_CACHE_MAX_SIZE,
+                    ttl: Duration::from_secs(BYOK_CREDENTIAL_CACHE_TTL_SECS),
+                    clock: Box::new(SystemClock),
+                    entries: Mutex::new(HashMap::new()),
+                };
+                Ok(json!({ "key": cache.invalidate_byok_credential(user_id, server_id) }))
+            }
         }
     }
 }

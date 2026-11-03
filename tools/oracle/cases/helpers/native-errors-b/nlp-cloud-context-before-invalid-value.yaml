@@ -1,0 +1,14 @@
+kind: helper
+name: native-errors-b-nlp-cloud-context-before-invalid-value
+call:
+  native_errors_b:
+    provider: nlp_cloud
+    model: nlp_cloud/some-model
+    error_str: "detail: Input text length should not exceed 512; value is not a valid integer"
+    status_code: null
+    message: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message
