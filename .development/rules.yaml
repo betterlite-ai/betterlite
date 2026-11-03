@@ -452,9 +452,9 @@ rules:
   - id: fuzz-parsers
     title: Parsers of untrusted bytes are fuzzed
     statement: >-
-      Every parser of bytes from outside (config files, request bodies, SSE streams from providers) has a cargo-fuzz target under its crate's fuzz/ folder. The corpus is committed, and a normal test replays every corpus file through the same parser, so each input the fuzzer found runs on every gate.
+      Every parser of bytes from outside (config files, request bodies, SSE streams from providers) has a cargo-fuzz target under its crate's fuzz/ folder. The corpus is committed, and a normal test replays every corpus file through the same parser, so each input the fuzzer found runs in the task gate that adds it and on every push to main.
     why: Those parsers see the input nobody wrote a test for, and a fuzzer finds the inputs that panic or hang before a provider sends one.
-    enforced_by: [tests]
+    enforced_by: []
     reviewed: true
     example:
       instead_of: |

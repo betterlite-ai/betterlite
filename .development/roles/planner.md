@@ -44,6 +44,7 @@ Checks:
 - Every DoD item names checks that fail when that item alone is missing, and every check it relies on (helper-python too) is in its proof list. Behavior LiteLLM has goes into oracle cases, not prose.
 - A test check uses `--no-tests=fail` and filters on the module path, like `-E 'test(/^controls::/)'`, or on the exact test functions the description names. Module and test names come from the domain; a task id never appears in code. Subtract the corpus replay test, `-E 'test(/^redaction::/) - test(replays_the_redaction_corpus)'`, so the check fails while behavior tests are missing.
 - A behavior-tests check runs every crate the description puts code and tests in.
+- The gate runs no tests beyond the task's own commands, so a task that changes code other tests cover (a shared type, a renamed field) names those test modules in a check too.
 - Every check fails on the base branch. A corpus check first requires files this branch added, `test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- <dir>)"`, or greps for the new operation or key. A grep looks for what the parser reads: a helper seed names its operation as the variant tag under call.
 - A config key is supported only when a named betterlite-config test loads it. A grep for its name in a seed doesn't count.
 - Cases use provider names, model names, config keys and env vars that LiteLLM accepts at the pinned commit, and rstest case names are Rust identifiers that start with a letter.
