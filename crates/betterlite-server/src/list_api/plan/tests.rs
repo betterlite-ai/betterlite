@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::build::{build_query_plan, facet_where};
-use super::coerce::{coerce, parse_filters, parse_positive_int, parse_sort};
+use super::coerce::{coerce, parse_filters, parse_page_size, parse_positive_int, parse_sort};
 use super::params::facet_allowed_params;
 use super::query::decode_list_query;
 use super::types::{
@@ -143,6 +143,42 @@ fn monetary_filters_use_decimal_and_reject_nonfinite_values() {
 }
 
 #[test]
+fn monetary_filters_follow_float_syntax_before_decimal_conversion() {
+    let spaced = coerce(
+        "amount",
+        FilterOp::Compare(ComparisonOp::Eq),
+        " 0.1 ",
+        FilterType::Money,
+    )
+    .expect("float-compatible whitespace parses");
+    assert_eq!(spaced, FilterValue::Money(rust_decimal::Decimal::new(1, 1)));
+
+    let grouped = coerce(
+        "amount",
+        FilterOp::Compare(ComparisonOp::Eq),
+        "1_0",
+        FilterType::Money,
+    )
+    .expect("well-placed underscores parse");
+    assert_eq!(
+        grouped,
+        FilterValue::Money(rust_decimal::Decimal::from(10_i32))
+    );
+
+    let malformed = coerce(
+        "amount",
+        FilterOp::Compare(ComparisonOp::Eq),
+        "1__0",
+        FilterType::Money,
+    )
+    .expect_err("consecutive underscores are invalid float syntax");
+    assert_eq!(
+        malformed.r#type,
+        "urn:litellm:error:invalid-query-parameter"
+    );
+}
+
+#[test]
 fn list_spec_rejects_invalid_default_and_tiebreaker() {
     let mut invalid_default = spec();
     invalid_default.default_page_size = 0;
@@ -176,6 +212,41 @@ fn positive_page_values_accept_python_sign_and_underscores() {
     );
     let _bad_separator = parse_positive_int("page", "1__0").unwrap_err();
     let _zero = parse_positive_int("page", "0").unwrap_err();
+    assert_eq!(
+        parse_positive_int("page", "\u{661}\u{662}").expect("Arabic digits parse"),
+        12
+    );
+}
+
+#[test]
+fn oversized_page_size_is_clamped_before_native_conversion() {
+    let params = BTreeMap::from([(
+        String::from("page_size"),
+        String::from("18446744073709551616"),
+    )]);
+    assert_eq!(
+        parse_page_size(&spec(), &params).expect("size is clamped"),
+        100
+    );
+}
+
+#[test]
+fn compact_iso_timestamp_is_not_interpreted_as_epoch_seconds() {
+    let parsed = coerce(
+        "created_at",
+        FilterOp::Compare(ComparisonOp::Gte),
+        "20240101",
+        FilterType::Timestamp,
+    )
+    .expect("compact ISO date parses");
+    assert_eq!(
+        parsed,
+        FilterValue::Timestamp(
+            chrono::DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
+                .expect("expected date")
+                .with_timezone(&chrono::Utc)
+        )
+    );
 }
 
 #[test]

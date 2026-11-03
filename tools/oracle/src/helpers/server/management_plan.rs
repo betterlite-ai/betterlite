@@ -78,8 +78,15 @@ pub(crate) enum PredicateInput {
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct ErrorInput {
     error_type: String,
-    loc: Vec<Value>,
+    loc: Vec<LocInput>,
     msg: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub(crate) enum LocInput {
+    Field(String),
+    Index(i64),
 }
 
 pub(crate) struct Op;
@@ -136,16 +143,13 @@ fn comparison_from_wire(op: &str) -> Result<ComparisonOp, Box<crate::helpers::He
     }
 }
 
-fn loc_part(location: &Value) -> Result<LocPart, Box<crate::helpers::HelperError>> {
-    if let Some(field) = location.as_str() {
-        return Ok(LocPart::Field(field.to_owned()));
+fn loc_part(location: LocInput) -> Result<LocPart, Box<crate::helpers::HelperError>> {
+    match location {
+        LocInput::Field(field) => Ok(LocPart::Field(field)),
+        LocInput::Index(raw_index) => usize::try_from(raw_index)
+            .map(LocPart::Index)
+            .map_err(|_overflow| helper_error("invalid error index".to_owned())),
     }
-    let Some(raw_index) = location.as_u64() else {
-        return Err(helper_error("invalid error location".to_owned()));
-    };
-    let index = usize::try_from(raw_index)
-        .map_err(|_overflow| helper_error("invalid error index".to_owned()))?;
-    Ok(LocPart::Index(index))
 }
 
 const fn comparison_name(op: ComparisonOp) -> &'static str {
@@ -259,6 +263,7 @@ fn validation_result(raw_errors: &[ErrorInput]) -> crate::helpers::HelperResult 
             let loc = error
                 .loc
                 .iter()
+                .cloned()
                 .map(loc_part)
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(ValidationErrorDetail {

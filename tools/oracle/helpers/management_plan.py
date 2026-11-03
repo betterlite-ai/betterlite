@@ -1,127 +1,246 @@
 """Oracle adapter for the shared management list planner."""
 
-# pyright: reportAny=false, reportUnknownMemberType=false, reportUnknownVariableType=false, reportArgumentType=false, reportTypedDictNotRequiredAccess=false, reportAttributeAccessIssue=false
-
-from collections.abc import Mapping
-from dataclasses import asdict
 from datetime import UTC, datetime
-from typing import Any, TypedDict
+from typing import Literal, NotRequired, TypedDict, cast
 from urllib.parse import parse_qsl
 
+from litellm.proxy._types import UserAPIKeyAuth
+from litellm.proxy.common_utils.validation_error_body import ValidationErrorDetail
 from litellm.proxy.list_api.common import request_validation_problem
 from litellm.proxy.list_api.list_framework import (
     Compare,
+    FilterOp,
     FilterSpec,
+    FilterType,
+    IsNull,
     ListSpec,
+    Predicate,
+    QueryPlan,
     ScopeAll,
     ScopeDenied,
     ScopeWhere,
     SortKey,
+    Within,
     build_query_plan,
 )
+from litellm.types.proxy.management_endpoints.management_v1 import ProblemDetail
+
+Json = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
+ComparisonInput = Literal["eq", "contains", "gte", "lte", "gt", "lt", "not"]
+FilterTypeName = Literal["text", "int", "money", "timestamp"]
 
 
-class Input(TypedDict, total=False):
-    function: str
+class CompareInput(TypedDict):
+    field: str
+    op: ComparisonInput
+    value: str
+
+
+class IsNullInput(TypedDict):
+    field: str
+    negated: bool
+
+
+class ScopeAllInput(TypedDict):
+    kind: Literal["all"]
+
+
+class ScopeDeniedInput(TypedDict):
+    kind: Literal["denied"]
+    reason: str
+
+
+class ScopeWhereInput(TypedDict):
+    kind: Literal["where"]
+    predicates: list[CompareInput | IsNullInput]
+
+
+ScopeInput = ScopeAllInput | ScopeDeniedInput | ScopeWhereInput
+
+
+class FilterInput(TypedDict):
+    value_type: FilterTypeName
+    ops: list[FilterOp]
+
+
+class SortInput(TypedDict):
+    field: str
+    descending: bool
+
+
+class SpecInput(TypedDict):
+    resource: str
+    sortable: list[str]
+    searchable: list[str]
+    filters: dict[str, FilterInput]
+    default_sort: list[SortInput]
+    default_page_size: int
+    max_page_size: int
+    tiebreaker: str
+
+
+class DecodeInput(TypedDict):
+    function: Literal["decode"]
     raw: str
-    spec: dict[str, Any]
+
+
+class PlanInput(TypedDict):
+    function: Literal["plan"]
+    spec: SpecInput
     params: dict[str, str]
-    scope: dict[str, Any]
-    errors: list[dict[str, Any]]
+    scope: NotRequired[ScopeInput]
 
 
-def _scope(value: Mapping[str, Any]) -> Any:  # noqa: ANN401
-    match value.get("kind"):
+class ErrorInput(TypedDict):
+    error_type: str
+    loc: list[str | int]
+    msg: str
+
+
+class ProblemInput(TypedDict):
+    function: Literal["problem"]
+    errors: list[ErrorInput]
+
+
+Input = DecodeInput | PlanInput | ProblemInput
+
+
+def _scope(value: ScopeInput) -> ScopeAll | ScopeDenied | ScopeWhere:
+    match value["kind"]:
         case "all":
             return ScopeAll()
         case "denied":
-            return ScopeDenied(reason=str(value["reason"]))
+            return ScopeDenied(reason=value["reason"])
         case "where":
             predicates = tuple(
-                Compare(field=str(item["field"]), op=str(item["op"]), value=str(item["value"]))
+                Compare(field=item["field"], op=item["op"], value=item["value"])
+                if "op" in item
+                else IsNull(field=item["field"], negated=item["negated"])
                 for item in value["predicates"]
             )
             return ScopeWhere(where=predicates)
-        case other:
-            raise ValueError(f"unknown scope {other!r}")
 
 
-def _spec(value: Mapping[str, Any]) -> ListSpec[Any, Any]:
-    filter_types: dict[str, type[Any]] = {
-        "text": str,
-        "int": int,
-        "money": float,
-        "timestamp": datetime,
-    }
+def _filter_type(value: FilterTypeName) -> FilterType:
+    match value:
+        case "text":
+            return str
+        case "int":
+            return int
+        case "money":
+            return float
+        case "timestamp":
+            return datetime
+
+
+def _spec(value: SpecInput, scope_input: ScopeInput) -> ListSpec[Json, Json]:
     filters = {
         field: FilterSpec(
-            type=filter_types[str(item["value_type"])],
-            ops=frozenset(str(op) for op in item["ops"]),
+            type=_filter_type(item["value_type"]),
+            ops=frozenset(item["ops"]),
         )
-        for field, item in dict(value["filters"]).items()
+        for field, item in value["filters"].items()
     }
     return ListSpec(
-        resource=str(value["resource"]),
-        sortable=frozenset(str(field) for field in value["sortable"]),
-        searchable=frozenset(str(field) for field in value["searchable"]),
+        resource=value["resource"],
+        sortable=frozenset(value["sortable"]),
+        searchable=frozenset(value["searchable"]),
         filters=filters,
         default_sort=tuple(
-            SortKey(field=str(item["field"]), descending=bool(item["descending"]))
+            SortKey(field=item["field"], descending=item["descending"])
             for item in value["default_sort"]
         ),
-        default_page_size=int(value["default_page_size"]),
-        max_page_size=int(value["max_page_size"]),
-        scope=lambda _caller: _scope(value.get("scope", {"kind": "all"})),
+        default_page_size=value["default_page_size"],
+        max_page_size=value["max_page_size"],
+        scope=lambda _caller: _scope(scope_input),
         serialize=lambda row: row,
-        tiebreaker=str(value["tiebreaker"]),
+        tiebreaker=value["tiebreaker"],
     )
 
 
-def _json_value(value: Any) -> Any:  # noqa: ANN401
+def _json_value(value: str | float | datetime) -> Json:
     if isinstance(value, datetime):
         normalized = value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
         return normalized.isoformat().replace("+00:00", "Z")
     return value
 
 
-def _predicate(value: Any) -> dict[str, Any]:  # noqa: ANN401
-    result = asdict(value)
-    if "value" in result:
-        result["value"] = _json_value(result["value"])
-    if "clauses" in result:
-        result["clauses"] = [_predicate(clause) for clause in value.clauses]
-    result["kind"] = type(value).__name__.lower()
-    return result
+def _predicate(value: Predicate) -> dict[str, Json]:
+    if isinstance(value, Compare):
+        return {
+            "kind": "compare",
+            "field": value.field,
+            "op": value.op,
+            "value": _json_value(value.value),
+        }
+    if isinstance(value, Within):
+        return {
+            "kind": "within",
+            "field": value.field,
+            "values": [_json_value(item) for item in value.values],
+        }
+    if isinstance(value, IsNull):
+        return {"kind": "isnull", "field": value.field, "negated": value.negated}
+    return {"kind": "anyof", "clauses": [_predicate(item) for item in value.clauses]}
 
 
-def _plan(value: Any) -> dict[str, Any]:  # noqa: ANN401
+def _plan(value: QueryPlan) -> dict[str, Json]:
     return {
         "where": [_predicate(predicate) for predicate in value.where],
-        "order": [asdict(item) for item in value.order],
+        "order": [
+            {"field": item.field, "descending": item.descending} for item in value.order
+        ],
         "skip": value.skip,
         "take": value.take,
     }
 
 
-def run(input_value: Input) -> object:
-    function = input_value["function"]
-    if function == "decode":
-        pairs = parse_qsl(input_value["raw"], keep_blank_values=True)
-        last_value = dict(pairs)
-        return {"pairs": pairs, "last_value": last_value}
-    if function == "plan":
-        spec_value = dict(input_value["spec"])
-        spec_value["scope"] = input_value.get("scope", {"kind": "all"})
-        plan = build_query_plan(_spec(spec_value), input_value["params"], object())
-        if hasattr(plan, "model_dump"):
-            return plan.model_dump(mode="json", exclude_none=True)
-        return _plan(plan)
-    if function == "problem":
-        errors = [
-            {"type": error["error_type"], "loc": error["loc"], "msg": error["msg"]}
-            for error in input_value["errors"]
-        ]
-        return request_validation_problem(errors).model_dump(
-            mode="json", exclude_none=True
+def _problem(problem: ProblemDetail) -> dict[str, Json]:
+    result: dict[str, Json] = {
+        "type": problem.type,
+        "title": problem.title,
+        "status": problem.status,
+        "detail": problem.detail,
+    }
+    if problem.allowed is not None:
+        result["allowed"] = list(problem.allowed)
+    return result
+
+
+def _decode(value: DecodeInput) -> dict[str, Json]:
+    pairs = parse_qsl(value["raw"], keep_blank_values=True)
+    return {
+        "pairs": [[key, item] for key, item in pairs],
+        "last_value": dict(pairs),
+    }
+
+
+def _plan_result(value: PlanInput) -> dict[str, Json]:
+    caller_scope = value.get("scope", ScopeAllInput(kind="all"))
+    spec = _spec(value["spec"], caller_scope)
+    plan = build_query_plan(
+        spec,
+        value["params"],
+        cast(UserAPIKeyAuth, object()),
+    )
+    return _problem(plan) if isinstance(plan, ProblemDetail) else _plan(plan)
+
+
+def _validation_result(value: ProblemInput) -> dict[str, Json]:
+    errors: list[ValidationErrorDetail] = [
+        ValidationErrorDetail(
+            type=error["error_type"],
+            loc=tuple(error["loc"]),
+            msg=error["msg"],
         )
-    raise ValueError(f"unknown management plan function {function!r}")
+        for error in value["errors"]
+    ]
+    return _problem(request_validation_problem(errors))
+
+
+def run(input_value: Input) -> Json:
+    if input_value["function"] == "decode":
+        return _decode(input_value)
+    if input_value["function"] == "plan":
+        return _plan_result(input_value)
+    return _validation_result(input_value)

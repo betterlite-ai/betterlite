@@ -1,9 +1,12 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
+use std::path::PathBuf;
 
 use super::{build_list_links, build_page_links};
+use crate::list_api::plan::query::decode_list_query;
+use rstest::rstest;
 
 #[test]
 fn links_preserve_ordered_repeated_parameters_and_replace_page() {
@@ -57,8 +60,10 @@ fn pagination_links_cover_empty_and_page_boundaries() {
     );
 }
 
-#[test]
-fn replays_the_list_query_corpus() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/list_query");
-    assert!(fs::read_dir(corpus).expect("corpus").next().is_some());
+#[rstest]
+fn replays_the_list_query_corpus(#[files("fuzz/corpus/list_query/*")] path: PathBuf) {
+    let bytes = fs::read(path).expect("corpus seed is readable");
+    let decoded = decode_list_query(&bytes);
+    let expected: BTreeMap<String, String> = decoded.pairs.iter().cloned().collect();
+    assert_eq!(decoded.last_value, expected);
 }

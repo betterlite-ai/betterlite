@@ -5,8 +5,12 @@ use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|bytes: &[u8]| {
     let decoded = decode_list_query(bytes);
-    assert_eq!(
-        decoded.pairs.len(),
-        decoded.last_value.len().max(1).min(decoded.pairs.len())
-    );
+    for (key, value) in &decoded.last_value {
+        let last_pair = decoded
+            .pairs
+            .iter()
+            .rev()
+            .find(|(pair_key, _)| pair_key == key);
+        assert_eq!(last_pair.map(|(_, pair_value)| pair_value), Some(value));
+    }
 });
