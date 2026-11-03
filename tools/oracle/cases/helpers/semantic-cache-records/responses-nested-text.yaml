@@ -4,10 +4,13 @@ call:
   b4380:
     operation: extract_semantic_prompt
     input:
-      - content:
+      - role: user
+        content:
           - {type: input_text, text: " First piece "}
           - {type: input_text, text: "Second piece"}
-      - " Third piece "
+      - type: function_call_output
+        call_id: call_weather
+        output: " Third piece "
 env: {}
 compare:
   ignore: []

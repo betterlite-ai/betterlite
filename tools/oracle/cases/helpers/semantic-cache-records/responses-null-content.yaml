@@ -1,13 +1,14 @@
 kind: helper
-name: semantic-cache-records-responses-null-content
+name: semantic-cache-records-responses-message-tool-output
 call:
   b4380:
     operation: extract_semantic_prompt
     input:
-      content: null
-      output: second key
-      input_text: " first fallback "
-      output_text: third key
+      - role: user
+        content: "Declared user content"
+      - type: function_call_output
+        call_id: call_search
+        output: "Declared tool output"
 env: {}
 compare:
   ignore: []

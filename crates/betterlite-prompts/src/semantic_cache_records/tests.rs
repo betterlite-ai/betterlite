@@ -78,6 +78,31 @@ fn prompt_text_keys_use_declared_order() {
 }
 
 #[test]
+fn prompt_text_fallback_prefers_input_text_to_output_text() {
+    let input = json(r#"{"input_text":" input text ","output_text":"output text"}"#);
+    assert_eq!(
+        extract_semantic_prompt(None, Some(&input)).unwrap(),
+        Some("input text".to_owned())
+    );
+}
+
+#[test]
+fn prompt_text_fallback_skips_blank_earlier_fields() {
+    let input =
+        json(r#"{"text":"  ","output":"\n","input_text":" selected ","output_text":"later"}"#);
+    assert_eq!(
+        extract_semantic_prompt(None, Some(&input)).unwrap(),
+        Some("selected".to_owned())
+    );
+}
+
+#[test]
+fn prompt_text_fallback_returns_absent_when_all_candidates_are_blank() {
+    let input = json(r#"{"text":" ","output":"\n","input_text":"  ","output_text":"\t"}"#);
+    assert_eq!(extract_semantic_prompt(None, Some(&input)).unwrap(), None);
+}
+
+#[test]
 fn prompt_nested_text_is_trimmed_and_joined_with_newlines() {
     let input = json(r#"[" first ",["second",4,{"output_text":" third "}]]"#);
     assert_eq!(
@@ -174,7 +199,7 @@ fn cached_response_json_null_stays_present() {
 #[test]
 fn cached_response_malformed_utf8_is_typed_error() {
     assert!(matches!(
-        decode_cached_response(Some(&[0xff])),
+        decode_cached_response(Some(&[b'"', 0xff, b'"'])),
         Err(SemanticCacheRecordsError::Json(_))
     ));
 }
