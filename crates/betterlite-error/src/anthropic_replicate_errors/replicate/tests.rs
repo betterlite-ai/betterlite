@@ -43,6 +43,7 @@ fn input(
 #[case::hasattr_status_unmatched("generic failure", "APIError", Some(599), "api", Some(500))]
 #[case::status_401("generic failure", "APIError", Some(401), "authentication", Some(401))]
 #[case::status_413("generic failure", "APIError", Some(413), "bad_request", Some(413))]
+#[case::status_400("generic failure", "APIError", Some(400), "bad_request", Some(400))]
 #[case::status_422(
     "generic failure",
     "APIError",
@@ -73,6 +74,32 @@ fn anthropic_replicate_errors_behavior_tests_behavior(
     if let Some(status) = expected_wire_status {
         assert_eq!(class.metadata().status_code, status);
     }
+}
+
+#[rstest]
+#[case::auth_token_before_input_too_long(
+    "Incorrect authentication token; input is too long",
+    "APIError",
+    "authentication"
+)]
+#[case::input_too_long_before_model_error(
+    "input is too long for this model",
+    "ModelError",
+    "context_window_exceeded"
+)]
+#[case::model_error_before_throttled(
+    "Request was throttled by replicate",
+    "ModelError",
+    "bad_request"
+)]
+fn earlier_predicate_wins(
+    #[case] error_str: &str,
+    #[case] exception_type: &str,
+    #[case] expected_family: &str,
+) {
+    let class = map_replicate_exception(&input(error_str, exception_type, None));
+    let value = serde_json::to_value(&class).expect("ErrorClass always serializes");
+    assert_eq!(value["family"], serde_json::json!(expected_family));
 }
 
 #[rstest]
