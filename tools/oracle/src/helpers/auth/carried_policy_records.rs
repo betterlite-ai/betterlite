@@ -4,7 +4,9 @@ use betterlite_auth::agent_policy::{
     AgentIdentityBinding, AgentKillSwitchAuth, AgentKillSwitchConfig, AgentResponse,
     ManagedAgentContext,
 };
-use betterlite_auth::budget_snapshots;
+use betterlite_auth::budget_snapshots::{
+    self, KeyBudgetSnapshot, OrgBudgetSnapshot, TeamBudgetSnapshot, UserBudgetSnapshot,
+};
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -69,28 +71,22 @@ impl crate::helpers::Helper for Op {
                     .and_then(serde_json::to_value)
                     .map_err(CarriedPolicyRecordsError::from)
             }
-            Function::KeySnapshot => snapshot::<budget_snapshots::KeyBudgetSnapshot>(&input.value),
-            Function::TeamSnapshot => {
-                snapshot::<budget_snapshots::TeamBudgetSnapshot>(&input.value)
-            }
-            Function::UserSnapshot => {
-                snapshot::<budget_snapshots::UserBudgetSnapshot>(&input.value)
-            }
-            Function::OrgSnapshot => snapshot::<budget_snapshots::OrgBudgetSnapshot>(&input.value),
+            Function::KeySnapshot => snapshot::<KeyBudgetSnapshot>(&input.value),
+            Function::TeamSnapshot => snapshot::<TeamBudgetSnapshot>(&input.value),
+            Function::UserSnapshot => snapshot::<UserBudgetSnapshot>(&input.value),
+            Function::OrgSnapshot => snapshot::<OrgBudgetSnapshot>(&input.value),
         }
-        .map_err(|error| to_helper_error(&error))
+        .map_err(|error| {
+            Box::new(crate::helpers::HelperError {
+                class: "ValidationError".to_owned(),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+                message: error.to_string(),
+            })
+        })
     }
-}
-
-fn to_helper_error(error: &CarriedPolicyRecordsError) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
-        class: "ValidationError".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: error.to_string(),
-    })
 }
 
 fn snapshot<T>(value: &Value) -> Result<Value, CarriedPolicyRecordsError>

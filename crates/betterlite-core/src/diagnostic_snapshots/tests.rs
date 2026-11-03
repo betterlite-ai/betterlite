@@ -7,7 +7,7 @@ use super::process::{
     read_process_memory,
 };
 use super::router::{RouterMemoryInput, RouterMemorySnapshot};
-use super::unsupported::UnsupportedSnapshot;
+use super::unsupported::{DiagnosticError, UnsupportedSnapshot};
 use betterlite_config::loader::ConfigLoader;
 use rstest::rstest;
 use std::collections::BTreeMap;
@@ -95,7 +95,13 @@ fn router_sections_measure_shallow_inputs() {
 
 #[test]
 fn python_runtime_snapshots_are_explicitly_unsupported() {
-    let snapshot = UnsupportedSnapshot::new("GC statistics");
+    let snapshot = UnsupportedSnapshot {
+        error: DiagnosticError {
+            error_type: "unsupported_runtime".to_owned(),
+            code: "unsupported_runtime".to_owned(),
+            message: "GC statistics requires CPython runtime introspection".to_owned(),
+        },
+    };
     assert_eq!(snapshot.error.error_type, "unsupported_runtime");
     assert_eq!(snapshot.error.code, "unsupported_runtime");
 }

@@ -19,7 +19,7 @@ macro_rules! price_struct {
             $(
                 #[serde(
                     rename = $wire,
-                    deserialize_with = "serde_with::As::<serde_with::FromInto<crate::price_fields::deserialize::ExactDecimal>>::deserialize",
+                    deserialize_with = "crate::price_fields::deserialize::optional_price",
                     skip_serializing_if = "Option::is_none"
                 )]
                 pub $field: Option<rust_decimal::Decimal>,

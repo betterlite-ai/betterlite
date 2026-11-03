@@ -1,14 +1,13 @@
-use crate::price_fields::deserialize::ExactDecimal;
+use crate::price_fields::deserialize::optional_price;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use serde_with::{As, FromInto};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ProviderSpecificPricing {
-    #[serde(deserialize_with = "As::<FromInto<ExactDecimal>>::deserialize")]
+    #[serde(deserialize_with = "optional_price")]
     pub us: Option<Decimal>,
-    #[serde(deserialize_with = "As::<FromInto<ExactDecimal>>::deserialize")]
+    #[serde(deserialize_with = "optional_price")]
     pub fast: Option<Decimal>,
     pub bedrock_invocation_schema: Option<String>,
 }
@@ -18,12 +17,12 @@ pub struct ProviderSpecificPricing {
 pub struct MetadataPricing {
     #[serde(
         rename = "original_pricing_per_hour",
-        deserialize_with = "As::<FromInto<ExactDecimal>>::deserialize"
+        deserialize_with = "optional_price"
     )]
     pub per_hour: Option<Decimal>,
     #[serde(
         rename = "original_pricing_per_minute",
-        deserialize_with = "As::<FromInto<ExactDecimal>>::deserialize"
+        deserialize_with = "optional_price"
     )]
     pub per_minute: Option<Decimal>,
 }
@@ -31,22 +30,22 @@ pub struct MetadataPricing {
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct OffPeakPricing {
-    #[serde(deserialize_with = "As::<FromInto<ExactDecimal>>::deserialize")]
+    #[serde(deserialize_with = "optional_price")]
     pub input_cost_per_token: Option<Decimal>,
-    #[serde(deserialize_with = "As::<FromInto<ExactDecimal>>::deserialize")]
+    #[serde(deserialize_with = "optional_price")]
     pub output_cost_per_token: Option<Decimal>,
-    #[serde(deserialize_with = "As::<FromInto<ExactDecimal>>::deserialize")]
+    #[serde(deserialize_with = "optional_price")]
     pub cache_read_input_token_cost: Option<Decimal>,
     #[serde(
         rename = "cache_creation_input_token_cost",
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "As::<FromInto<ExactDecimal>>::deserialize"
+        deserialize_with = "optional_price"
     )]
     pub cache_create_token: Option<Decimal>,
     #[serde(
         rename = "output_cost_per_reasoning_token",
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "As::<FromInto<ExactDecimal>>::deserialize"
+        deserialize_with = "optional_price"
     )]
     pub output_reasoning_token: Option<Decimal>,
     #[serde(default)]
@@ -139,46 +138,40 @@ impl TryFrom<WeekdayWire> for Weekday {
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct SearchContextPricing {
-    #[serde(deserialize_with = "As::<FromInto<ExactDecimal>>::deserialize")]
+    #[serde(deserialize_with = "optional_price")]
     pub search_context_size_low: Option<Decimal>,
-    #[serde(deserialize_with = "As::<FromInto<ExactDecimal>>::deserialize")]
+    #[serde(deserialize_with = "optional_price")]
     pub search_context_size_medium: Option<Decimal>,
-    #[serde(deserialize_with = "As::<FromInto<ExactDecimal>>::deserialize")]
+    #[serde(deserialize_with = "optional_price")]
     pub search_context_size_high: Option<Decimal>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct TierPricing {
-    #[serde(
-        rename = "input_cost_per_token",
-        deserialize_with = "As::<FromInto<ExactDecimal>>::deserialize"
-    )]
+    #[serde(rename = "input_cost_per_token", deserialize_with = "optional_price")]
     pub input_token: Option<Decimal>,
-    #[serde(
-        rename = "output_cost_per_token",
-        deserialize_with = "As::<FromInto<ExactDecimal>>::deserialize"
-    )]
+    #[serde(rename = "output_cost_per_token", deserialize_with = "optional_price")]
     pub output_token: Option<Decimal>,
     #[serde(
         rename = "output_cost_per_reasoning_token",
-        deserialize_with = "As::<FromInto<ExactDecimal>>::deserialize"
+        deserialize_with = "optional_price"
     )]
     pub output_reasoning_token: Option<Decimal>,
     #[serde(
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "As::<FromInto<ExactDecimal>>::deserialize"
+        deserialize_with = "optional_price"
     )]
     pub cache_read_input_token_cost: Option<Decimal>,
     #[serde(
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "As::<FromInto<ExactDecimal>>::deserialize"
+        deserialize_with = "optional_price"
     )]
     pub input_cost_per_query: Option<Decimal>,
     #[serde(
         rename = "cache_creation_input_token_cost",
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "As::<FromInto<ExactDecimal>>::deserialize"
+        deserialize_with = "optional_price"
     )]
     pub cache_create_token: Option<Decimal>,
     #[serde(
