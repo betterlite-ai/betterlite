@@ -1,0 +1,258 @@
+id: B5110
+title: Close the B3759 Cisco configuration audit gaps
+description: >-
+  B3759 built the Cisco AI Defense configuration helpers in crates/betterlite-guardrails/src/cisco_configuration/.
+  An Opus review after merge found one gap in what Cisco receives and seven tests that can't fail on the
+  behavior they name. This task closes them in the same modules. Two more findings are left out, and the
+  last paragraph says why.
+
+
+  Rule names. LiteLLM's _normalize_rule wraps a bare string as {"rule_name": rule} and writes rule_name
+  for a dict only when the dict has one
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L905-L944,
+  lines 911 to 912 and 930 to 932). So a rule configured as {rule_id: r1} reaches Cisco as
+  {"rule_id": "r1"}. In betterlite, B3758's RuleEntry in crates/betterlite-config/src/sections/cisco_verdict_contracts.rs
+  defaults a missing rule_name to "", Rule keeps it as a plain String, and payload.rs's normalize_rule
+  always sets rule_name: Some(...). The same rule goes out as {"rule_name": "", "rule_id": "r1"}. The fix
+  makes rule_name an Option<String> in both RuleEntry and Rule. A bare string becomes Some(name), an entry
+  without the key stays None, and normalize_rule passes the Option through unchanged. An explicit "" in an
+  entry stays Some("") and is sent as given, as docs/compatibility.md says for explicit values. LiteLLM drops
+  it only through truthiness. payload/tests.rs's normalize_rule_passes_through_a_fully_populated_rule pins
+  the empty name today (String::new() in, Some(String::new()) out) and changes to a real name such as "PII".
+
+
+  Metadata keys. LiteLLM's _build_metadata sends user, litellm_call_id as client_transaction_id, and seven
+  keys of the request's metadata object: src_app, dst_app, src_ip, dst_ip, dst_host, sni and user_agent
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L859-L889).
+  build_chat_payload maps every key, but full_inputs() in payload/tests.rs sets only src_app, and
+  build_chat_payload_assembles_messages_and_metadata checks struct fields one at a time. Mapping user_agent
+  to None, or filling dst_ip from src_ip, passes every test today. That test becomes
+  build_chat_payload_serializes_every_metadata_key. full_inputs() gives each of the seven keys its own
+  value, and the test compares the serialized metadata object with a JSON literal.
+
+
+  Config on the wire. LiteLLM's _build_config adds enabled_rules and the four integration keys only when
+  they are set
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L891-L903),
+  and _build_chat_payload always sends messages, metadata and config
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L786-L796).
+  build_chat_payload_assembles_config never serializes ScanConfig or WireRule, and no test sets
+  integration_profile_version, integration_tenant_id or integration_type. Removing a skip_serializing_if, so
+  Cisco gets "enabled_rules": [] or "integration_type": null, passes every test. Two tests replace it, and
+  both serialize the whole ChatPayload and compare it with a JSON literal.
+  build_chat_payload_serializes_the_full_config sets all four integration fields and a rule with only
+  rule_name and rule_id. build_chat_payload_serializes_empty_inputs starts from ChatPayloadInputs::default()
+  and expects {"messages":[],"metadata":{},"config":{}}.
+
+
+  Choice order. LiteLLM's _resolve_choice reads the env var only when the config value is None
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L246-L266,
+  line 254). An invalid config value goes to the default, not to the env var. No test in choice/tests.rs
+  sets both, so reading the env var first passes today. Two new tests set both through temp_env:
+  resolve_choice_prefers_the_value_over_the_environment_variable (value "mcp", env var "chat", expects
+  InspectionType::Mcp) and resolve_choice_ignores_the_environment_variable_for_an_invalid_value (value
+  "bogus", env var "mcp", expects the default InspectionType::Chat).
+
+
+  Timeout text. LiteLLM's _coerce_timeout calls float(), and float(" 45 ") is 45.0
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L268-L283).
+  choice.rs's coerce_timeout trims before it parses, but no case has spaces, so dropping .trim() passes
+  every test. A new case text_with_spaces in coerce_timeout_clamps_or_rejects passes
+  TimeoutValue::Text(" 45 ") and expects Some(45.0).
+
+
+  Mode inference. LiteLLM's _infer_inspection_type_from_mode keeps the current surface when the hooks name
+  both surfaces or neither
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L643-L664).
+  In event_hooks/tests.rs, the mixed case of infer_inspection_from_mode_flips_only_for_exclusive_surfaces
+  starts from Chat and expects Chat, and no case has only logging_only. An arm at event_hooks.rs line 88
+  that always returns InspectionType::Chat passes today. Two new cases start from Mcp and expect Mcp:
+  mixed_keeps_current_mcp with [PreCall, PreMcpCall], and logging_only_keeps_current with [LoggingOnly].
+
+
+  Mixed-mode warning. LiteLLM's _warn_if_mode_surface_mismatch names the MCP hooks as unused when
+  inspection_type is chat and the chat hooks otherwise
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L720-L746,
+  line 735). The only warning test runs with InspectionType::Chat, so a warning that always names the MCP
+  hooks passes. warn_if_mode_surface_mismatch_names_the_chat_hooks_for_mcp_inspection runs the same mixed
+  set with InspectionType::Mcp and asserts the log has "{PreCall}" and no "{PreMcpCall}".
+
+
+  Config model. LiteLLM's get_config_model returns the CiscoAIDefenseGuardrailConfigModel class
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L2114-L2120).
+  cisco_configuration.rs declares CiscoConfigModel as an empty struct with no link to B3758's section,
+  and its one test, cisco_config_model_type_id_is_distinct_from_other_types, asserts that its TypeId
+  differs from u8's. Any type passes that. CiscoConfigModel becomes pub type CiscoConfigModel = Configured,
+  with Configured from betterlite_config::sections::cisco_verdict_contracts, and the comment above it says
+  that Configured is betterlite's typed form of LiteLLM's config model. The test becomes
+  cisco_config_model_is_the_cisco_section_type and asserts TypeId equality with Configured.
+
+
+  Left out. The finding that _build_metadata has no port is wrong on today's main: B3762 built it in
+  crates/betterlite-guardrails/src/cisco_inspection/chat.rs (request_metadata and text_field). It reads
+  user, litellm_call_id and the seven keys from the request body. The NaN timeout finding has no live
+  path. coerce_timeout has no caller on main, B3758's resolve.rs resolves the timeout the guardrail uses,
+  and B3762's transport.rs turns a NaN into the 10 second default through Duration::try_from_secs_f64,
+  so no Cisco call waits without a bound. LiteLLM's own _coerce_timeout lets NaN through as well.
+scope:
+  paths:
+    - crates/betterlite-config/src/sections/cisco_verdict_contracts.rs
+    - crates/betterlite-config/src/sections/cisco_verdict_contracts/tests.rs
+    - crates/betterlite-guardrails/src/cisco_configuration.rs
+    - crates/betterlite-guardrails/src/cisco_configuration/tests.rs
+    - crates/betterlite-guardrails/src/cisco_configuration/choice/tests.rs
+    - crates/betterlite-guardrails/src/cisco_configuration/event_hooks/tests.rs
+    - crates/betterlite-guardrails/src/cisco_configuration/payload.rs
+    - crates/betterlite-guardrails/src/cisco_configuration/payload/tests.rs
+    - crates/betterlite-guardrails/src/cisco_inspection/chat/tests.rs
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L905-L944
+    why: _normalize_rule always sends rule_name for a string rule and sends it for a dict only when the dict has one
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L859-L889
+    why: _build_metadata builds the user, client_transaction_id and seven request metadata keys Cisco receives
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L891-L903
+    why: _build_config adds enabled_rules and each integration key only when set
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L786-L796
+    why: _build_chat_payload always sends messages, metadata and config
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L246-L266
+    why: In _resolve_choice the config value wins over the env var, and an invalid one goes to the default
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L268-L283
+    why: _coerce_timeout reads text with spaces around a number through float()
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L643-L664
+    why: _infer_inspection_type_from_mode keeps the current surface for mixed hooks or for hooks of neither surface
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L720-L746
+    why: _warn_if_mode_surface_mismatch picks the unused hooks by inspection_type on line 735
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L2114-L2120
+    why: get_config_model returns the CiscoAIDefenseGuardrailConfigModel class
+dod:
+  - text: >-
+      RuleEntry and Rule carry rule_name as Option<String>. A bare string rule gives Some(name), and an
+      entry with no rule_name gives None. normalize_rule copies the Option, so a Rule with rule_name None
+      and rule_id Some("r1") serializes as {"rule_id":"r1"}. The new tests normalize_rule_omits_an_absent_rule_name
+      (payload/tests.rs) and cisco_config_leaves_a_missing_rule_name_unset (cisco_verdict_contracts/tests.rs,
+      loading enabled_rules [{rule_id: r1}]) fail on today's main, where an absent name becomes "" and is
+      sent. normalize_rule_passes_through_a_fully_populated_rule uses a real name instead of String::new().
+    proof: [rule-name, cisco-regression]
+  - text: >-
+      full_inputs() in payload/tests.rs gives each of src_app, dst_app, src_ip, dst_ip, dst_host, sni and
+      user_agent its own value. build_chat_payload_serializes_every_metadata_key replaces
+      build_chat_payload_assembles_messages_and_metadata and compares the serialized metadata, user and
+      client_transaction_id included, with one JSON literal. It fails if any key is mapped to None or
+      filled from another key.
+    proof: [metadata-keys]
+  - text: >-
+      build_chat_payload_serializes_the_full_config and build_chat_payload_serializes_empty_inputs replace
+      build_chat_payload_assembles_config. Each serializes the whole ChatPayload and compares it with a JSON
+      literal. The first sets all four integration fields and a rule with only rule_name and rule_id. The
+      second expects {"messages":[],"metadata":{},"config":{}}. Either fails if a skip_serializing_if on
+      ScanConfig or WireRule is removed or a field is mapped to the wrong key.
+    proof: [config-wire]
+  - text: >-
+      resolve_choice_prefers_the_value_over_the_environment_variable expects InspectionType::Mcp for value
+      "mcp" with the env var set to "chat", and resolve_choice_ignores_the_environment_variable_for_an_invalid_value
+      expects InspectionType::Chat for value "bogus" with the env var set to "mcp". Both fail if resolve_choice
+      reads the env var before the value.
+    proof: [choice-precedence]
+  - text: >-
+      coerce_timeout_clamps_or_rejects has a text_with_spaces case, TimeoutValue::Text(" 45 ") giving
+      Some(45.0). It fails if coerce_timeout stops trimming.
+    proof: [timeout-trim]
+  - text: >-
+      infer_inspection_from_mode_flips_only_for_exclusive_surfaces has the cases mixed_keeps_current_mcp
+      ([PreCall, PreMcpCall] from Mcp) and logging_only_keeps_current ([LoggingOnly] from Mcp), both expecting
+      InspectionType::Mcp. They fail if the (true, true) or (false, false) arm returns a fixed surface.
+    proof: [mode-arms]
+  - text: >-
+      warn_if_mode_surface_mismatch_names_the_chat_hooks_for_mcp_inspection calls
+      warn_if_mode_surface_mismatch with [PreCall, PreMcpCall] and InspectionType::Mcp, and asserts the log
+      has "{PreCall}" and no "{PreMcpCall}". It fails if the warning names the MCP hooks for every surface.
+    proof: [warning-surface]
+  - text: >-
+      CiscoConfigModel is a type alias of betterlite_config::sections::cisco_verdict_contracts::Configured,
+      and cisco_config_model_is_the_cisco_section_type asserts TypeId equality between the two. It fails on
+      today's main, where CiscoConfigModel is its own empty struct. cisco_config_model_type_id_is_distinct_from_other_types
+      is gone.
+    proof: [config-model]
+checks:
+  optional: [mutants]
+  commands:
+    - id: rule-name
+      why: an absent rule_name must stay absent from the config section to the wire
+      run: cargo nextest run --locked -p betterlite-guardrails -p betterlite-config --no-tests=fail -E 'test(/::normalize_rule_omits_an_absent_rule_name$/) | test(/::cisco_config_leaves_a_missing_rule_name_unset$/)'
+    - id: metadata-keys
+      why: every metadata key must reach the serialized payload under its own name
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::build_chat_payload_serializes_every_metadata_key$/)'
+    - id: config-wire
+      why: the config object must omit unset keys on the wire, not only in the struct
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::build_chat_payload_serializes_the_full_config$/) | test(/::build_chat_payload_serializes_empty_inputs$/)'
+    - id: choice-precedence
+      why: the config value must win over the env var, and an invalid value must not fall to the env var
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::resolve_choice_prefers_the_value_over_the_environment_variable$/) | test(/::resolve_choice_ignores_the_environment_variable_for_an_invalid_value$/)'
+    - id: timeout-trim
+      why: timeout text with spaces around the number must parse
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::coerce_timeout_clamps_or_rejects::case_\d+_text_with_spaces$/)'
+    - id: mode-arms
+      why: mixed hooks and logging_only hooks must keep the current surface whatever it is
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::case_\d+_mixed_keeps_current_mcp$/) | test(/::case_\d+_logging_only_keeps_current$/)'
+    - id: warning-surface
+      why: the mixed-mode warning must name the hooks of the surface the guardrail does not inspect
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::warn_if_mode_surface_mismatch_names_the_chat_hooks_for_mcp_inspection$/)'
+    - id: config-model
+      why: CiscoConfigModel must be the Cisco config section type, not an unrelated marker
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::cisco_config_model_is_the_cisco_section_type$/)'
+    - id: cisco-regression
+      why: Rule's new field type reaches the config section, the payload helpers and B3762's chat inspection, so all their tests must still pass
+      run: >-
+        grep -q 'pub rule_name: Option<String>' crates/betterlite-config/src/sections/cisco_verdict_contracts.rs
+        && cargo nextest run --locked -p betterlite-guardrails -p betterlite-config --no-tests=fail
+        -E 'test(/^cisco_configuration::/) | test(/^cisco_inspection::/) | test(/^sections::cisco_verdict_contracts::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - >-
+    The _build_metadata finding: B3762 already ports it on main in cisco_inspection/chat.rs
+    (request_metadata and text_field), so no new metadata builder is added here.
+  - >-
+    The NaN timeout finding: coerce_timeout has no caller on main, and the live timeout goes through
+    B3758's resolve_timeout and B3762's Duration::try_from_secs_f64 fallback to 10 seconds. LiteLLM's own
+    _coerce_timeout returns NaN too, so docs/deviations/B3759.yaml stays as it is.
+  - >-
+    Wiring mode into inspection_type at construction. LiteLLM's constructor calls
+    _infer_inspection_type_from_mode and _warn_if_mode_surface_mismatch with litellm_params.mode
+    (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L175-L182
+    and line 227). On main, B3758's section reads no mode key and B3762's construct.rs calls neither
+    helper. That constructor is B3762's, so this task only tightens the helpers' tests.
+  - >-
+    A rule_name of "" written in an entry. LiteLLM drops it through truthiness; betterlite sends it as
+    given, as docs/compatibility.md says, so it is neither a deviation nor a test here.
+pitfalls:
+  - >-
+    RawRule is #[serde(untagged)] and tries Entry before Name, so {rule_id: r1} only lands in Entry with
+    rule_name None while RuleEntry keeps #[serde(default)] and deny_unknown_fields;
+    cisco_config_rejects_unsupported_rule_fields must keep passing.
+  - >-
+    Don't filter an empty rule_name inside normalize_rule: an explicit "" in an entry and a bare "" string
+    both stay Some("") and go out as "rule_name": "", and only a missing key gives None.
+  - >-
+    The warning's configured field prints "{PreCall, PreMcpCall}", so the new test must assert on
+    "{PreCall}" with both braces; a bare "PreCall" matches the configured field on today's code too.
+  - >-
+    infer_inspection_from_mode returns early for an empty set, so empty_preserves_current never reaches the
+    (true, true) | (false, false) arm; only logging_only_keeps_current tests the (false, false) side of it.
+  - >-
+    rstest names each case case_N_<name>, so adding text_with_spaces, mixed_keeps_current_mcp or
+    logging_only_keeps_current renumbers the cases after it; the checks match on the name suffix.
+  - >-
+    The new warning test writes its subscriber output to its own file under env::temp_dir(), with a prefix
+    such as betterlite-cisco-mismatch-mcp, so it never shares a log file with the Chat warning test.
+  - >-
+    The new resolve_choice tests use their own BETTERLITE_CISCO_CHOICE_TEST_* variable names through
+    temp_env, never CISCO_AI_DEFENSE_INSPECTION_TYPE, so they can't race a test that reads the real one.
+  - >-
+    guardrail_with_config in cisco_inspection/chat/tests.rs builds a Rule with rule_name "Prompt Injection";
+    it becomes Some("Prompt Injection".to_owned()), and the payload assertion on "rule_name" stays as it is.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

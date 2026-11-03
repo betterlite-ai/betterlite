@@ -1,0 +1,188 @@
+id: B5120
+title: Close the B3945 logger cache audit gaps
+description: >-
+  B3945 built DynamicLoggerCache in crates/betterlite-logging/src/dynamic_logger_cache.rs. An Opus
+  review after merge found two gaps in it. This task closes both in the same module and its tests.rs,
+  and adds one deliberate difference to docs/deviations/B3945.yaml. No route and no exporter reaches
+  the cache yet, so the proof is Rust tests, the same as in B3945, and there are no oracle cases.
+
+
+  Gap one: the cache has no constructor. LiteLLM's DynamicLoggingCache.__init__ always builds
+  LangfuseInMemoryCache(default_ttl=_DEFAULT_TTL_FOR_HTTPX_CLIENTS), so every cache keeps an entry for
+  3600 seconds
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/specialty_caches/dynamic_logging_cache.py#L59-L60,
+  https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L298).
+  It passes no max_size_in_memory, so InMemoryCache's DEFAULT_MAX_SIZE_IN_MEMORY of 200 bounds it
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L28-L46),
+  and evict_cache drops the entry with the earliest expiry while 200 or more are held
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L106-L141).
+  Today DynamicLoggerCache has only pub fields, so every builder picks its own default_ttl and
+  capacity, and nothing keeps the cache bounded. The fix adds DynamicLoggerCache::new(on_remove, clock).
+  It sets default_ttl to DEFAULT_TTL_FOR_HTTPX_CLIENTS, capacity to DEFAULT_MAX_SIZE_IN_MEMORY and
+  entries to an empty map. Every field of DynamicLoggerCache loses its pub, and Entry and its fields do
+  too, so new is the only way to build a cache outside the module.
+
+
+  Two tests on main can't fail on these values. default_ttl_for_httpx_clients_matches_litellms_one_hour_default
+  hands the TTL to its own fixture, so a builder with another TTL leaves it green.
+  set_cache_evicts_the_earliest_expiry_entry_once_capacity_is_full uses a capacity of 2, so setting
+  DEFAULT_MAX_SIZE_IN_MEMORY to 2 or 10000 leaves every test green. Both are replaced.
+  new_cache_keeps_an_entry_for_exactly_one_hour builds through new, sets an entry at time 0, reads it
+  back at 3600.0 and gets None at 3600.5. new_cache_evicts_the_earliest_entry_on_the_201st_credential_set
+  builds through new and sets 200 credential sets at times 0 through 199. It checks that nothing was
+  stopped, then sets a 201st set and checks that only the time 0 entry is stopped and gone, while the
+  time 1 entry and the 201st stay. Every other test builds through new as well. cache_with and
+  cache_with_capacity fold into one fixture with no TTL or capacity argument, the panicking-stop test
+  passes its effect to new, and the tests that used a 10 or 100 second TTL move their clock past 3600
+  instead.
+
+
+  Gap two, a deviation Max decided: set_cache over a live key drops the old logger without stopping it.
+  LiteLLM's InMemoryCache.set_cache writes self.cache_dict[key] = value and never calls _remove_key for
+  the value it replaces
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L170),
+  so LangfuseInMemoryCache's stop() call and its counter decrement never run for it
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/specialty_caches/dynamic_logging_cache.py#L30-L49).
+  Two first requests with the same team credentials both miss, both build a logger, and the second
+  set_cache overwrites the first. The first logger's New Relic flush loop
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic_metrics.py#L213,
+  ended only by stop() at
+  https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic_metrics.py#L221-L232)
+  or its Langfuse export channel
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L393-L397)
+  then lives until the process exits. betterlite copies this today: entries.insert in set_cache throws
+  away the entry it returns. That is a leak no working setup relies on, so betterlite fixes it. The
+  value entries.insert returns joins the evicted values and goes through the same stop() path once the
+  lock drops. on_remove runs on it once, a panic inside it is caught and logged at debug level like any
+  other eviction, and the new value keeps the live entry's expiry as it does today.
+
+
+  Two tests on main pin the leak. set_cache_replaces_the_cached_value_without_stopping_the_overwritten_one
+  asserts that nothing was stopped. It becomes set_cache_stops_the_live_value_it_replaces and expects
+  stopped to be [first] and get_cache to return second. set_cache_keeps_the_original_expiry_when_overwriting_a_live_entry
+  expects only [second] once the entry expires; it now expects [first, second]. Both fail on today's
+  main once changed and pass with the fix. The fix goes into docs/deviations/B3945.yaml as a second
+  entry, with the text under deviations below and the link to in_memory_cache.py#L170.
+scope:
+  paths:
+    - crates/betterlite-logging/src/dynamic_logger_cache.rs
+    - crates/betterlite-logging/src/dynamic_logger_cache/**
+    - docs/deviations/B3945.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/specialty_caches/dynamic_logging_cache.py#L59-L60
+    why: DynamicLoggingCache.__init__ builds LangfuseInMemoryCache with the httpx client TTL and no max_size_in_memory, so the 200 default applies.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L298
+    why: _DEFAULT_TTL_FOR_HTTPX_CLIENTS is 3600.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L28-L46
+    why: DEFAULT_MAX_SIZE_IN_MEMORY is 200 and InMemoryCache uses it when no size is passed.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L106-L141
+    why: evict_cache prunes expired entries, then evicts the earliest expiry while the cache holds max_size_in_memory or more.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L158-L177
+    why: set_cache overwrites cache_dict[key] on line 170 without _remove_key, and keeps a live entry's ttl through allow_ttl_override.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/specialty_caches/dynamic_logging_cache.py#L20-L49
+    why: LangfuseInMemoryCache._remove_key is the only place a removed logger gets stop() and the Langfuse counter decrement; its docstring calls the counter a soft budget.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic_metrics.py#L213-L232
+    why: NewRelicMetricsLogger starts its periodic flush task in __init__ and ends it only in stop(), so a replaced logger that is never stopped keeps flushing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L393-L397
+    why: LangFuseLogger.stop() hands its export channel back, and only the cache calls it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_handler.py#L54-L120
+    why: LiteLLM's callers set a logger only after get_cache missed, so two concurrent misses are how a live key gets overwritten.
+dod:
+  - text: >-
+      DynamicLoggerCache::new(on_remove, clock) builds every cache with default_ttl
+      DEFAULT_TTL_FOR_HTTPX_CLIENTS (3600.0), capacity DEFAULT_MAX_SIZE_IN_MEMORY (200) and an empty
+      entries map. No field of DynamicLoggerCache or Entry is pub, Entry itself is not pub, and tests.rs
+      builds no cache with a struct literal, so every test runs on LiteLLM's TTL and bound. On today's
+      main there is no new and every field is pub.
+    proof: [cache-constructor, dynamic-logger-cache-tests]
+  - text: >-
+      new_cache_keeps_an_entry_for_exactly_one_hour gets the entry back at 3600.0 and None at 3600.5.
+      new_cache_evicts_the_earliest_entry_on_the_201st_credential_set stops nothing through 200
+      credential sets and stops exactly the earliest one on the 201st. Both build through new and use
+      the literals, so a TTL other than 3600 or a bound other than 200 fails one of them. Neither exists
+      on today's main. default_ttl_for_httpx_clients_matches_litellms_one_hour_default and
+      set_cache_evicts_the_earliest_expiry_entry_once_capacity_is_full are gone, since they pass their
+      own TTL or a capacity of 2 and can't fail on these values.
+    proof: [cache-defaults, dynamic-logger-cache-tests]
+  - text: >-
+      set_cache over a live key passes the value it replaces to on_remove once, after the lock drops,
+      through the same panic-catching stop() path eviction uses. set_cache_stops_the_live_value_it_replaces
+      expects stopped to be [first] and get_cache to return second, and
+      set_cache_keeps_the_original_expiry_when_overwriting_a_live_entry expects [first, second] after
+      expiry. Both fail on today's main, where the replaced value is dropped without a stop.
+      set_cache_replaces_the_cached_value_without_stopping_the_overwritten_one is gone.
+    proof: [overwrite-stops-replaced, dynamic-logger-cache-tests]
+  - text: >-
+      docs/deviations/B3945.yaml keeps its task: B3945 line and its first entry, and lists the
+      overwrite stop as a second entry with what a user sees and the link to in_memory_cache.py#L170.
+    proof: [deviation-recorded]
+checks:
+  optional: []
+  commands:
+    - id: dynamic-logger-cache-tests
+      why: a dynamic logger cache test fails, or the test that pins the overwrite leak is still there
+      run: >-
+        ! grep -q 'without_stopping_the_overwritten_one' crates/betterlite-logging/src/dynamic_logger_cache/tests.rs &&
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail -E
+        'test(/^dynamic_logger_cache::/) - test(/replays_the_/)'
+    - id: cache-constructor
+      why: DynamicLoggerCache has no constructor, keeps a pub field, or a test builds it with a struct literal
+      run: >-
+        grep -q 'pub fn new(' crates/betterlite-logging/src/dynamic_logger_cache.rs &&
+        ! grep -qE '^    pub (default_ttl|capacity|clock|on_remove|entries|value|expiry):' crates/betterlite-logging/src/dynamic_logger_cache.rs &&
+        ! grep -q '^pub struct Entry' crates/betterlite-logging/src/dynamic_logger_cache.rs &&
+        ! grep -q 'DynamicLoggerCache {' crates/betterlite-logging/src/dynamic_logger_cache/tests.rs
+    - id: cache-defaults
+      why: no test pins the 3600 second TTL or the 200 entry bound through the constructor, or a test that can't fail on them is still there
+      run: >-
+        grep -q 'fn new_cache_keeps_an_entry_for_exactly_one_hour' crates/betterlite-logging/src/dynamic_logger_cache/tests.rs &&
+        grep -q 'fn new_cache_evicts_the_earliest_entry_on_the_201st_credential_set' crates/betterlite-logging/src/dynamic_logger_cache/tests.rs &&
+        ! grep -q 'fn default_ttl_for_httpx_clients_matches_litellms_one_hour_default' crates/betterlite-logging/src/dynamic_logger_cache/tests.rs &&
+        ! grep -q 'fn set_cache_evicts_the_earliest_expiry_entry_once_capacity_is_full' crates/betterlite-logging/src/dynamic_logger_cache/tests.rs &&
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail -E
+        'test(/^dynamic_logger_cache::tests::new_cache_keeps_an_entry_for_exactly_one_hour$/) + test(/^dynamic_logger_cache::tests::new_cache_evicts_the_earliest_entry_on_the_201st_credential_set$/)'
+    - id: overwrite-stops-replaced
+      why: set_cache drops a replaced live value without stopping it
+      run: >-
+        grep -q 'fn set_cache_stops_the_live_value_it_replaces' crates/betterlite-logging/src/dynamic_logger_cache/tests.rs &&
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail -E
+        'test(/^dynamic_logger_cache::tests::set_cache_/)'
+    - id: deviation-recorded
+      why: docs/deviations/B3945.yaml does not list the overwrite stop next to its first entry
+      run: >-
+        grep -q '^task: B3945$' docs/deviations/B3945.yaml &&
+        test "$(grep -c '^  - what:' docs/deviations/B3945.yaml)" = "2" &&
+        grep -q 'litellm/caching/in_memory_cache.py#L170' docs/deviations/B3945.yaml
+oracle_cases: []
+deviations:
+  - what: >-
+      When two requests with the same credentials and service both miss the logger cache and both
+      build a logger, the second set_cache stops the first logger through the cache's removal effect,
+      the same way eviction does. Its New Relic flush loop ends after a final drain and its Langfuse
+      export channel is handed back, where LiteLLM keeps both running until the process exits. A
+      removal effect that gives back a Langfuse client slot gives it back here too, so concurrent first
+      requests no longer use up MAX_LANGFUSE_INITIALIZED_CLIENTS (default 50) the way LiteLLM's do,
+      and the "Max langfuse clients reached" error comes later than in LiteLLM.
+    why: >-
+      LiteLLM's InMemoryCache.set_cache replaces cache_dict[key] without calling _remove_key, so
+      LangfuseInMemoryCache never stops the logger it replaces. That is a leak no working setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L170
+out_of_scope:
+  - Padded one-line functions in this module belong to B5094, and B5094 is running now. This task does not touch the legacy lists in .ast-grep/rules/.
+  - The removal effects themselves (a logger's stop() and the Langfuse client counter) and the code that gets and sets loggers belong to B3944, B3908 and B113. This task only changes when the cache calls on_remove.
+  - get_cache_key, get_cache, evict, read_clock and stop() stay as they are. No finding touches them.
+  - InMemoryCache's own behavior for other caches is B2226's and does not change.
+pitfalls:
+  - Stop the value entries.insert returns after prune_expired and evict_over_capacity have run, never a copy read before them, so a key that was just pruned or evicted for capacity is stopped once, not twice.
+  - Call on_remove for the replaced value after drop(entries), together with the evicted values, never while the Mutex is held, since an effect that calls back into the cache would deadlock.
+  - set_cache now stops whatever it replaces, so a caller that sets the handle it just got from get_cache stops its own live logger; LiteLLM's callers only set after a miss, and new callers must do the same.
+  - The new tests use the literals 3600.0, 3600.5 and 200, not DEFAULT_TTL_FOR_HTTPX_CLIENTS or DEFAULT_MAX_SIZE_IN_MEMORY, or a changed constant would move the test with it.
+  - get_cache keeps an entry at exactly its expiry (LiteLLM's _is_key_expired uses clock > ttl), while set_cache's prune removes it (expiration_time <= current_time), so the one hour test reads Some at 3600.0 and None at 3600.5 through get_cache only.
+  - FixtureLogger's name is a &'static str, so the 200 entry test names its time 0 logger "earliest" and every other one "filler", and tells the sets apart by credentials built with format!("team-{index}").
+  - Turn the loop index into a clock time with f64::from on a u32 index, since no-casts forbids an as cast.
+  - "The new entry goes into docs/deviations/B3945.yaml after its existing entry, not into a new docs/deviations/B5120.yaml, and the task line stays task: B3945."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

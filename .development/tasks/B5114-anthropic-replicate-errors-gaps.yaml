@@ -1,0 +1,244 @@
+id: B5114
+title: Pin the Anthropic and Replicate status pairs and predicate order
+description: >-
+  B238 built the Anthropic and Replicate error classifiers in
+  crates/betterlite-error/src/anthropic_replicate_errors/anthropic.rs and replicate.rs. An Opus review
+  after merge found five places where the classifier matches LiteLLM today but no test or oracle case
+  fails once it stops matching. The code stays as it is. This task adds rstest rows in the two
+  existing tests.rs files and helper oracle cases in tools/oracle/cases/helpers/anthropic-replicate-errors/,
+  called through the existing anthropic_replicate_errors helper operation, so each behavior has a test
+  that breaks when the behavior does.
+
+
+  Gap one. LiteLLM's _map_anthropic_exception raises BadRequestError for status_code 400 or 413 once
+  no text predicate matched, and passes no response, so the status is 400
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L586-L591).
+  classify_by_status in anthropic.rs has the `400 | 413` arm. But the status_413 row in
+  anthropic/tests.rs and the branch-586.yaml case both send 413, so neither fails when 400 leaves the
+  arm, and a plain Anthropic 400 would then map to no class at all. Both stay as they are and pin the
+  413 half. A new status_400 row ("generic failure", Some(400), Some("bad_request"), Some(400)) in
+  anthropic_replicate_errors_behavior_tests_behavior and a new anthropic-status-400.yaml case pin the
+  400 half.
+
+
+  Gap two. The same status chain raises InternalServerError for 500 or 529
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L610-L616).
+  The status_529 row and branch-610.yaml send only 529, so dropping 500 from the `500 | 529` arm stays
+  green while an Anthropic 500 would map to no class instead of internal_server with status 500. They
+  stay as the 529 half. A new status_500 row ("generic failure", Some(500), Some("internal_server"),
+  Some(500)) and a new anthropic-status-500.yaml case pin the 500 half.
+
+
+  Gap three. _map_replicate_exception raises BadRequestError for status_code 400 or 413 and passes the
+  response
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L686-L692).
+  The status_413 row in replicate/tests.rs and branch-686.yaml send only 413, so dropping 400 from the
+  `400 | 413` arm in replicate.rs stays green while a Replicate 400 would fall through to the APIError
+  at the end with status 500. They stay as the 413 half. A new status_400 row ("generic failure",
+  "APIError", Some(400), "bad_request", Some(400)) in that file's
+  anthropic_replicate_errors_behavior_tests_behavior and a new replicate-status-400.yaml case pin the
+  400 half.
+
+
+  Gap four. LiteLLM checks the Anthropic error text in a fixed order and raises on the first match:
+  the context window texts ("prompt is too long", "prompt: length" or the context window checker),
+  then "overloaded_error" or "Overloaded", then "Invalid API Key", then "content filtering policy",
+  then "Client error '400 Bad Request'"
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L537-L570).
+  Every text row and case on main (branch-537 to branch-565) sends one predicate's text alone, and
+  text_predicate_wins_over_a_competing_status_code and competing-message-status.yaml only set a text
+  against a status. So any reorder of classify_by_predicate in anthropic.rs stays green, and a real
+  "prompt is too long ... Overloaded" error would then answer internal_server 500 instead of
+  context_window_exceeded 400, and the router's context window fallbacks would stop firing. A new
+  rstest function earlier_text_predicate_wins in anthropic/tests.rs sends a text that matches two
+  neighboring predicates, with status_code None, and asserts the family of the earlier one. It has four
+  rows: prompt_too_long_before_overloaded ("prompt is too long: 205000 tokens > 200000 maximum;
+  Overloaded", context_window_exceeded), overloaded_before_invalid_api_key ("Overloaded: Invalid API
+  Key provided", internal_server), invalid_api_key_before_content_filtering ("Invalid API Key
+  provided; blocked by the content filtering policy", authentication) and
+  content_filtering_before_client_error_400 ("blocked by the content filtering policy: Client error
+  '400 Bad Request'", content_policy_violation). The review asked for three of these pairs. The
+  overloaded and Invalid API Key pair is added because with three pairs, swapping those two checks
+  still stays green; four neighboring pairs pin the whole order of five. Each row gets a case of the
+  same name in the case folder, prefixed anthropic-.
+
+
+  Gap five. LiteLLM checks the Replicate predicates in this order and raises on the first match:
+  "Incorrect authentication token", then "input is too long", then exception_type == "ModelError",
+  then "Request was throttled"
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L650-L677).
+  branch-650 to branch-671 each send one predicate alone, and the Replicate
+  text_predicate_wins_over_a_competing_status_code only sets the throttled text against status 401. So
+  any reorder of classify_by_predicate in replicate.rs stays green. A ModelError whose text says "input
+  is too long" would then answer bad_request instead of context_window_exceeded, and a ModelError
+  saying "Request was throttled" would answer rate_limit 429 instead of bad_request 400. A new rstest
+  function earlier_predicate_wins in replicate/tests.rs sends status_code None and asserts the earlier
+  family, with three rows: auth_token_before_input_too_long ("Incorrect authentication token; input is
+  too long", "APIError", authentication), input_too_long_before_model_error ("input is too long for
+  this model", "ModelError", context_window_exceeded) and model_error_before_throttled ("Request was
+  throttled by replicate", "ModelError", bad_request). Each row gets a case of the same name, prefixed
+  replicate-.
+
+
+  The new rows pass against today's anthropic.rs and replicate.rs, since that code already matches
+  LiteLLM. Each check below fails on today's main because its rows don't exist yet, and the oracle
+  check fails because its case files don't. Before keeping a row, prove it can fail: change
+  anthropic.rs or replicate.rs locally (drop the 400 or 500 alternative, or swap the two checks the row
+  sets against each other), watch the row fail for that reason, then restore the file with git
+  checkout. Neither source file is part of the commit.
+scope:
+  paths:
+  - crates/betterlite-error/src/anthropic_replicate_errors/anthropic/tests.rs
+  - crates/betterlite-error/src/anthropic_replicate_errors/replicate/tests.rs
+  - tools/oracle/cases/helpers/anthropic-replicate-errors/anthropic-status-400.yaml
+  - tools/oracle/cases/helpers/anthropic-replicate-errors/anthropic-status-500.yaml
+  - tools/oracle/cases/helpers/anthropic-replicate-errors/replicate-status-400.yaml
+  - tools/oracle/cases/helpers/anthropic-replicate-errors/anthropic-prompt-too-long-before-overloaded.yaml
+  - tools/oracle/cases/helpers/anthropic-replicate-errors/anthropic-overloaded-before-invalid-api-key.yaml
+  - tools/oracle/cases/helpers/anthropic-replicate-errors/anthropic-invalid-api-key-before-content-filtering.yaml
+  - tools/oracle/cases/helpers/anthropic-replicate-errors/anthropic-content-filtering-before-client-error-400.yaml
+  - tools/oracle/cases/helpers/anthropic-replicate-errors/replicate-auth-token-before-input-too-long.yaml
+  - tools/oracle/cases/helpers/anthropic-replicate-errors/replicate-input-too-long-before-model-error.yaml
+  - tools/oracle/cases/helpers/anthropic-replicate-errors/replicate-model-error-before-throttled.yaml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L586-L591
+  why: Anthropic status 400 or 413 raises BadRequestError with no response, so the status is 400.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L610-L616
+  why: Anthropic status 500 or 529 raises InternalServerError, a fixed 500.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L686-L692
+  why: Replicate status 400 or 413 raises BadRequestError with the response.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L537-L570
+  why: The five Anthropic text predicates in the order they run; the first match raises.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L650-L677
+  why: The four Replicate predicates in the order they run; the first match raises.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L82-L114
+  why: The context window checker's substrings. A combination text avoids them unless it means to hit that predicate.
+dod:
+- text: >-
+    anthropic_replicate_errors_behavior_tests_behavior in anthropic/tests.rs has a status_400 row that
+    expects bad_request with wire status 400, and anthropic-status-400.yaml (provider anthropic,
+    error_str "generic failure", status_code 400) matches LiteLLM. The row fails when 400 is dropped
+    from the `400 | 413` arm in anthropic.rs.
+  proof:
+  - anthropic-status-400
+  - oracle
+- text: >-
+    The same table has a status_500 row that expects internal_server with wire status 500, and
+    anthropic-status-500.yaml (status_code 500) matches LiteLLM. The row fails when 500 is dropped from
+    the `500 | 529` arm.
+  proof:
+  - anthropic-status-500
+  - oracle
+- text: >-
+    anthropic_replicate_errors_behavior_tests_behavior in replicate/tests.rs has a status_400 row
+    ("APIError", status 400) that expects bad_request with wire status 400, and replicate-status-400.yaml
+    matches LiteLLM. The row fails when 400 is dropped from the `400 | 413` arm in replicate.rs, where
+    the input would fall through to api 500.
+  proof:
+  - replicate-status-400
+  - oracle
+- text: >-
+    earlier_text_predicate_wins in anthropic/tests.rs has the four rows prompt_too_long_before_overloaded,
+    overloaded_before_invalid_api_key, invalid_api_key_before_content_filtering and
+    content_filtering_before_client_error_400, each asserting the earlier predicate's family, and the four
+    anthropic- cases of the same names match LiteLLM. Swapping any two neighboring checks in
+    classify_by_predicate in anthropic.rs fails at least one row.
+  proof:
+  - anthropic-predicate-order
+  - oracle
+- text: >-
+    earlier_predicate_wins in replicate/tests.rs has the three rows auth_token_before_input_too_long,
+    input_too_long_before_model_error and model_error_before_throttled, each asserting the earlier
+    predicate's family, and the three replicate- cases of the same names match LiteLLM. Swapping any two
+    neighboring checks in classify_by_predicate in replicate.rs fails at least one row.
+  proof:
+  - replicate-predicate-order
+  - oracle
+checks:
+  optional: []
+  commands:
+  - id: anthropic-status-400
+    why: no Anthropic row sends status 400, so dropping 400 from the 400 | 413 arm stays green
+    run: >-
+      cargo nextest run --locked -p betterlite-error --no-tests=fail -E
+      'test(/^anthropic_replicate_errors::anthropic::tests::anthropic_replicate_errors_behavior_tests_behavior::case_[0-9]+_status_400$/)'
+  - id: anthropic-status-500
+    why: no Anthropic row sends status 500, so dropping 500 from the 500 | 529 arm stays green
+    run: >-
+      cargo nextest run --locked -p betterlite-error --no-tests=fail -E
+      'test(/^anthropic_replicate_errors::anthropic::tests::anthropic_replicate_errors_behavior_tests_behavior::case_[0-9]+_status_500$/)'
+  - id: replicate-status-400
+    why: no Replicate row sends status 400, so dropping 400 from the 400 | 413 arm stays green
+    run: >-
+      cargo nextest run --locked -p betterlite-error --no-tests=fail -E
+      'test(/^anthropic_replicate_errors::replicate::tests::anthropic_replicate_errors_behavior_tests_behavior::case_[0-9]+_status_400$/)'
+  - id: anthropic-predicate-order
+    why: no Anthropic row sends two competing texts, so reordering the text predicates stays green
+    run: >-
+      for row in prompt_too_long_before_overloaded overloaded_before_invalid_api_key
+      invalid_api_key_before_content_filtering content_filtering_before_client_error_400; do grep -qF
+      "case::$row(" crates/betterlite-error/src/anthropic_replicate_errors/anthropic/tests.rs || { echo
+      "missing row $row"; exit 1; }; done && cargo nextest run --locked -p betterlite-error
+      --no-tests=fail -E 'test(/^anthropic_replicate_errors::anthropic::tests::earlier_text_predicate_wins::/)'
+  - id: replicate-predicate-order
+    why: no Replicate row sends two competing predicates, so reordering them stays green
+    run: >-
+      for row in auth_token_before_input_too_long input_too_long_before_model_error
+      model_error_before_throttled; do grep -qF "case::$row("
+      crates/betterlite-error/src/anthropic_replicate_errors/replicate/tests.rs || { echo "missing row
+      $row"; exit 1; }; done && cargo nextest run --locked -p betterlite-error --no-tests=fail -E
+      'test(/^anthropic_replicate_errors::replicate::tests::earlier_predicate_wins::/)'
+oracle_cases:
+- tools/oracle/cases/helpers/anthropic-replicate-errors/anthropic-status-400.yaml
+- tools/oracle/cases/helpers/anthropic-replicate-errors/anthropic-status-500.yaml
+- tools/oracle/cases/helpers/anthropic-replicate-errors/replicate-status-400.yaml
+- tools/oracle/cases/helpers/anthropic-replicate-errors/anthropic-prompt-too-long-before-overloaded.yaml
+- tools/oracle/cases/helpers/anthropic-replicate-errors/anthropic-overloaded-before-invalid-api-key.yaml
+- tools/oracle/cases/helpers/anthropic-replicate-errors/anthropic-invalid-api-key-before-content-filtering.yaml
+- tools/oracle/cases/helpers/anthropic-replicate-errors/anthropic-content-filtering-before-client-error-400.yaml
+- tools/oracle/cases/helpers/anthropic-replicate-errors/replicate-auth-token-before-input-too-long.yaml
+- tools/oracle/cases/helpers/anthropic-replicate-errors/replicate-input-too-long-before-model-error.yaml
+- tools/oracle/cases/helpers/anthropic-replicate-errors/replicate-model-error-before-throttled.yaml
+deviations: []
+out_of_scope:
+- >-
+  anthropic.rs and replicate.rs. Both already answer LiteLLM's family for every input these rows send,
+  so this task adds tests and cases only.
+- >-
+  The status each error class answers. B5102 owns it and has merged; the rows here expect the statuses
+  main already returns.
+- Padded one-line functions in these files. They belong to B5094, and this task does not touch .ast-grep/rules/.
+- >-
+  The Rust and Python helper adapters for anthropic_replicate_errors. The new cases use the input shape
+  they already accept, so neither changes.
+- >-
+  Fuzz corpus seeds under tools/oracle/fuzz/corpus/helper_case/. The shared helper_case parser does not
+  change, and that folder is outside this task's scope.
+pitfalls:
+- >-
+  The Anthropic text checks are case sensitive: "Overloaded" and "overloaded_error" match, but "the
+  service is overloaded" alone does not, so each combination text carries the exact literal.
+- >-
+  Only the context window predicate lowercases its input, through ExceptionCheckers::context_window, so
+  every combination text other than prompt_too_long_before_overloaded must avoid its substrings, such as
+  "this model's maximum context length is".
+- >-
+  Every new case's result flattens its context (bad_request, internal_server, context_window_exceeded,
+  authentication, content_policy_violation), so it ignores /value/result/message; the
+  /value/result/context/message pointer in generic-fallback.yaml is only for rate_limit, timeout and api
+  results.
+- >-
+  The order rows and cases send status_code None (null in YAML), so only the two competing predicates
+  decide them and the status chain is never reached.
+- >-
+  The Replicate ModelError check reads exception_type, not error_str, so input_too_long_before_model_error
+  and model_error_before_throttled set exception_type "ModelError" and auth_token_before_input_too_long
+  sets "APIError".
+- >-
+  Each case's name field is anthropic-replicate-errors- followed by its file stem, like the existing
+  cases in the folder.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
