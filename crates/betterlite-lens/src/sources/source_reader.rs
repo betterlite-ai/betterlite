@@ -40,11 +40,8 @@ where
     S: Storage + Sync,
 {
     pub async fn agents(&self, scope: &Scope) -> Result<Vec<String>, SourceError<S::Error>> {
-        let bytes = self
-            .storage
-            .lens_agents(parameters(scope, &[]))
-            .await
-            .map_err(SourceError::Query)?;
+        let query = self.storage.lens_agents(parameters(scope, &[]));
+        let bytes = query.await.map_err(SourceError::Query)?;
         let rows: Vec<AgentRow> = serde_json::from_slice(&bytes).map_err(RowsError)?;
         Ok(rows.into_iter().map(|row| row.agent_name).collect())
     }
@@ -53,13 +50,14 @@ where
         &self,
         scope: &Scope,
     ) -> Result<ActivityAvailability, SourceError<S::Error>> {
-        let bytes = self
-            .storage
-            .lens_availability(parameters(scope, &[]))
-            .await
-            .map_err(SourceError::Query)?;
-        let rows: Vec<ActivityAvailability> = serde_json::from_slice(&bytes).map_err(RowsError)?;
-        Ok(rows.into_iter().next().unwrap_or_default())
+        let query = self.storage.lens_availability(parameters(scope, &[]));
+        let bytes = query.await.map_err(SourceError::Query)?;
+        let [first, ..]: &[ActivityAvailability] =
+            &serde_json::from_slice::<Vec<_>>(&bytes).map_err(RowsError)?
+        else {
+            return Ok(ActivityAvailability::default());
+        };
+        Ok(*first)
     }
 
     pub async fn sample(

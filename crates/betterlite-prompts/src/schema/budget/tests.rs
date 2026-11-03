@@ -1,8 +1,10 @@
 #![cfg(test)]
 
+use crate::schema::{drop_non_python_regex_patterns, flatten::flatten_top_level};
+
 use super::FlattenBudget;
 use crate::arguments::json::{Json, Object};
-use crate::schema::flatten::flatten_and_drop;
+
 use rstest::rstest;
 use std::iter::repeat_with;
 
@@ -31,7 +33,10 @@ fn tool_schemas_tool_schema_tests_behavior(#[case] grow_output: bool) {
         .join(",");
     let input = format!(r#"{{"anyOf":[{branches}]}}"#);
     let schema = object(&input);
-    assert_eq!(flatten_and_drop(&schema), schema);
+    assert_eq!(
+        flatten_top_level(&flatten_top_level(&drop_non_python_regex_patterns(&schema))),
+        schema
+    );
 }
 
 #[test]

@@ -1,7 +1,5 @@
 use chrono::{DateTime, Utc};
 use deadpool_postgres::GenericClient;
-use std::mem;
-use std::sync::PoisonError;
 use tokio_postgres::error::SqlState;
 use tokio_postgres::types::ToSql;
 
@@ -9,7 +7,6 @@ use super::queue::{
     BudgetIdFilter, CascadeEntry, KeyLinkedResetFilter, LinkedResetFilter, LinkedWrite,
     SpendResetEntry,
 };
-use super::{BudgetCascadeUnitOfWork, SpendResetUnitOfWork};
 use crate::postgres_store::errors::{DbError, backend};
 use crate::postgres_store::session::PostgresStore;
 
@@ -56,39 +53,7 @@ pub struct BudgetCascadeBatch {
     pub store: PostgresStore,
 }
 
-impl SpendResetBatch {
-    pub async fn commit(&self, unit: SpendResetUnitOfWork) -> Result<(), CommitError> {
-        commit_entries(&self.store, {
-            mem::take(
-                &mut *unit
-                    .keys
-                    .queue
-                    .entries
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner),
-            )
-        })
-        .await
-    }
-}
-
-impl BudgetCascadeBatch {
-    pub async fn commit(&self, unit: BudgetCascadeUnitOfWork) -> Result<(), CommitError> {
-        commit_entries(&self.store, {
-            mem::take(
-                &mut *unit
-                    .budgets
-                    .queue
-                    .entries
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner),
-            )
-        })
-        .await
-    }
-}
-
-trait QueuedWrite {
+pub(super) trait QueuedWrite {
     async fn apply<C>(&self, client: &C) -> Result<(), CommitError>
     where
         C: GenericClient + Sync;
@@ -118,7 +83,10 @@ impl QueuedWrite for CascadeEntry {
     }
 }
 
-async fn commit_entries<E>(store: &PostgresStore, entries: Vec<E>) -> Result<(), CommitError>
+pub(super) async fn commit_entries<E>(
+    store: &PostgresStore,
+    entries: Vec<E>,
+) -> Result<(), CommitError>
 where
     E: QueuedWrite + Send + Sync,
 {

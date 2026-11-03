@@ -103,7 +103,7 @@ async fn serve_capturing(
 macro_rules! typed_field {
     ($name:ident, $variant:ident, $ty:ty, $noun:literal, $other:pat) => {
         fn $name(fields: &Fields, key: &str) -> $ty {
-            match Json::field(fields, key) {
+            match Json::parse(fields.get(key).map_or("null", |raw| raw.get())) {
                 Json::$variant(value) => value,
                 other @ $other => panic!("expected {key} to be {}, got {other:?}", $noun),
             }

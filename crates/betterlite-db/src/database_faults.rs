@@ -238,9 +238,7 @@ pub fn is_read_only_transaction_error(error: &DbError) -> bool {
         return false;
     }
     let lower = error.message.to_ascii_lowercase();
-    ["\"25006\"", "read-only transaction"]
-        .iter()
-        .any(|phrase| lower.contains(phrase))
+    lower.contains("\"25006\"") || lower.contains("read-only transaction")
 }
 
 #[must_use]

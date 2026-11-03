@@ -1,6 +1,6 @@
 use super::decimal_lexeme::{DecimalLexemeError, parse_decimal_lexeme};
 use rust_decimal::Decimal;
-use serde::{Deserialize, Deserializer};
+use serde::Deserialize;
 use serde_json::Number;
 
 #[derive(Deserialize)]
@@ -22,14 +22,8 @@ impl From<ExactDecimal> for Decimal {
     }
 }
 
-pub(crate) fn optional_price<'de, Input>(
-    deserializer: Input,
-) -> Result<Option<Decimal>, Input::Error>
-where
-    Input: Deserializer<'de>,
-{
-    match ExactDecimal::deserialize(deserializer) {
-        Ok(value) => Ok(Some(Decimal::from(value))),
-        Err(error) => Err(error),
+impl From<ExactDecimal> for Option<Decimal> {
+    fn from(value: ExactDecimal) -> Self {
+        Some(value.0)
     }
 }

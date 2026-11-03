@@ -49,16 +49,17 @@ macro_rules! single_reset_writes {
                 spend_decrement: Decimal,
             ) {
                 let data = super::spend_reset_data(budget_reset_at, spend_decrement);
-                self.queue
+                let mut entries = self
+                    .queue
                     .entries
                     .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .push(SpendResetEntry {
-                        table: $table,
-                        column: $column,
-                        identifier: identifier.to_owned(),
-                        data,
-                    });
+                    .unwrap_or_else(PoisonError::into_inner);
+                entries.push(SpendResetEntry {
+                    table: $table,
+                    column: $column,
+                    identifier: identifier.to_owned(),
+                    data,
+                });
             }
         }
     };
@@ -119,63 +120,47 @@ pub struct LinkedSpendResetWrites {
     pub(super) queue: Queue<CascadeEntry>,
 }
 
-impl LinkedSpendResetWrites {
-    pub fn queue_spend_zero(&self, filter: LinkedResetFilter) {
-        let write = LinkedWrite::Zero(filter);
-        self.queue
-            .entries
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(CascadeEntry::Linked {
-                table: self.table,
-                write,
-            });
-    }
-
-    pub fn queue_spend_decrement(&self, filter: LinkedResetFilter, amount: Decimal) {
-        let write = LinkedWrite::Decrement(filter, amount);
-        self.queue
-            .entries
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(CascadeEntry::Linked {
-                table: self.table,
-                write,
-            });
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct KeyLinkedSpendResetWrites {
     pub(super) table: &'static str,
     pub(super) queue: Queue<CascadeEntry>,
 }
 
-impl KeyLinkedSpendResetWrites {
-    pub fn queue_spend_zero(&self, filter: KeyLinkedResetFilter) {
-        let write = LinkedWrite::KeyZero(filter);
-        self.queue
-            .entries
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(CascadeEntry::Linked {
-                table: self.table,
-                write,
-            });
-    }
-
-    pub fn queue_spend_decrement(&self, filter: KeyLinkedResetFilter, amount: Decimal) {
-        let write = LinkedWrite::KeyDecrement(filter, amount);
-        self.queue
-            .entries
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(CascadeEntry::Linked {
-                table: self.table,
-                write,
-            });
-    }
+macro_rules! linked_reset_writes {
+    ($writes:ty, $filter:ty, $zero:ident, $decrement:ident) => {
+        impl $writes {
+            pub fn queue_spend_zero(&self, filter: $filter) {
+                let entry = CascadeEntry::Linked {
+                    table: self.table,
+                    write: LinkedWrite::$zero(filter),
+                };
+                self.queue
+                    .entries
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .push(entry);
+            }
+            pub fn queue_spend_decrement(&self, filter: $filter, amount: Decimal) {
+                let entry = CascadeEntry::Linked {
+                    table: self.table,
+                    write: LinkedWrite::$decrement(filter, amount),
+                };
+                self.queue
+                    .entries
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .push(entry);
+            }
+        }
+    };
 }
+linked_reset_writes!(LinkedSpendResetWrites, LinkedResetFilter, Zero, Decrement);
+linked_reset_writes!(
+    KeyLinkedSpendResetWrites,
+    KeyLinkedResetFilter,
+    KeyZero,
+    KeyDecrement
+);
 
 #[derive(Debug, Clone)]
 pub struct BudgetWindowWrites {
@@ -185,13 +170,14 @@ pub struct BudgetWindowWrites {
 impl BudgetWindowWrites {
     pub fn queue_window_advance(&self, budget_id: &str, budget_reset_at: DateTime<Utc>) {
         let owned_budget_id = budget_id.to_owned();
-        self.queue
+        let mut entries = self
+            .queue
             .entries
             .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(CascadeEntry::Window {
-                budget_id: owned_budget_id,
-                budget_reset_at,
-            });
+            .unwrap_or_else(PoisonError::into_inner);
+        entries.push(CascadeEntry::Window {
+            budget_id: owned_budget_id,
+            budget_reset_at,
+        });
     }
 }

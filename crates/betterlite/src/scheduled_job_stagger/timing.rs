@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 
 use super::JobSubmission;
 
-fn log_job_submitted(event: &dyn JobSubmission, clock: &dyn Fn() -> DateTime<Utc>) {
+pub fn log_job_submitted(event: &dyn JobSubmission, clock: &dyn Fn() -> DateTime<Utc>) {
     let Some(scheduled) = event.scheduled_run_times().first() else {
         return;
     };

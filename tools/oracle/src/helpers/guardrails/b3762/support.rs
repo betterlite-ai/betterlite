@@ -159,10 +159,16 @@ pub(super) fn applied_guardrails(request_data: &Fields) -> Vec<String> {
     } else {
         "metadata"
     };
-    let Json::Object(bucket) = Json::field(request_data, bucket_key) else {
+    let Json::Object(bucket) =
+        Json::parse(request_data.get(bucket_key).map_or("null", |raw| raw.get()))
+    else {
         return Vec::new();
     };
-    match Json::field(&bucket, "applied_guardrails") {
+    match Json::parse(
+        bucket
+            .get("applied_guardrails")
+            .map_or("null", |raw| raw.get()),
+    ) {
         Json::List(items) => items
             .iter()
             .filter_map(|item| match Json::parse(item.get()) {

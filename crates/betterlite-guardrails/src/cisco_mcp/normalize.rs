@@ -47,7 +47,8 @@ pub fn normalize_response(response: &Json) -> Option<NormalizedResponse> {
 }
 
 fn normalize_object(fields: &Fields) -> Option<NormalizedResponse> {
-    if matches!(Json::field(fields, "jsonrpc"), Json::Text(version) if version == "2.0") {
+    if matches!(Json::parse(fields.get("jsonrpc").map_or("null", |raw| raw.get())), Json::Text(version) if version == "2.0")
+    {
         return Some(NormalizedResponse {
             id_override: id_for_override(fields.get("id").map(AsRef::as_ref)),
             result: fields.get("result").cloned().map(ResultValue::Raw),
@@ -63,7 +64,8 @@ fn normalize_object(fields: &Fields) -> Option<NormalizedResponse> {
             error: None,
         });
     }
-    if let Json::List(content) = Json::field(fields, "content") {
+    if let Json::List(content) = Json::parse(fields.get("content").map_or("null", |raw| raw.get()))
+    {
         return Some(NormalizedResponse {
             id_override: id_for_override_with_fallback(fields.get("id").map(AsRef::as_ref)),
             result: Some(ResultValue::Built(build_result(&content, Some(fields)))),
@@ -76,7 +78,9 @@ fn normalize_object(fields: &Fields) -> Option<NormalizedResponse> {
 fn normalize_list(items: &[Box<RawValue>]) -> Option<NormalizedResponse> {
     if is_pair_list(items) {
         let fields = pairs_to_fields(items);
-        let Json::List(content) = Json::field(&fields, "content") else {
+        let Json::List(content) =
+            Json::parse(fields.get("content").map_or("null", |raw| raw.get()))
+        else {
             return None;
         };
         return Some(NormalizedResponse {

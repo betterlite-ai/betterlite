@@ -37,7 +37,7 @@ fn value_action(value: &Json) -> String {
     let Json::Object(fields) = value else {
         return String::new();
     };
-    match Json::field(fields, "action") {
+    match Json::parse(fields.get("action").map_or("null", |raw| raw.get())) {
         Json::Text(action) => action,
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
             String::new()

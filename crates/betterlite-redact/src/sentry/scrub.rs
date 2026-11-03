@@ -24,6 +24,7 @@ pub enum EventValue {
     Object(BTreeMap<String, Self>),
 }
 
+#[must_use]
 pub fn walk(value: &EventValue, patterns: &Patterns, path: &[String]) -> EventValue {
     if path.len() > MAX_SCRUB_DEPTH {
         return EventValue::String(pattern::FILTERED.to_owned());

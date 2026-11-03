@@ -44,6 +44,7 @@ fn check_depth(bytes: &[u8]) -> Result<(), McpStoredDecodeError> {
             escaped = false;
             continue;
         }
+
         match byte {
             b'\\' if quoted => escaped = true,
             b'"' => quoted = !quoted,
@@ -68,25 +69,24 @@ struct Parser<'input> {
 impl Parser<'_> {
     fn parse_value(&mut self) -> Result<JsonValue, serde_json::Error> {
         let byte = self.next_byte()?;
-        match byte {
-            b'n' => self.parse_fixed(b"null", JsonValue::Null),
-            b't' => self.parse_fixed(b"true", JsonValue::Bool(true)),
-            b'f' => self.parse_fixed(b"false", JsonValue::Bool(false)),
-            b'"' => self.parse_string().map(JsonValue::String),
-            b'[' => self.parse_array(),
-            b'{' => self.parse_object(),
-            b'-' | b'0'..=b'9' => {
-                serde_json::from_slice(self.scan_number()?).map(JsonValue::Number)
-            }
-            _ => Err(invalid_json()),
+        if byte == b'"' {
+            return self.parse_string().map(JsonValue::String);
         }
-    }
-
-    fn parse_fixed(
-        &mut self,
-        literal: &[u8],
-        value: JsonValue,
-    ) -> Result<JsonValue, serde_json::Error> {
+        if byte == b'[' {
+            return self.parse_array();
+        }
+        if byte == b'{' {
+            return self.parse_object();
+        }
+        let (literal, value): (&[u8], _) = match byte {
+            b'n' => (b"null", JsonValue::Null),
+            b't' => (b"true", JsonValue::Bool(true)),
+            b'f' => (b"false", JsonValue::Bool(false)),
+            b'-' | b'0'..=b'9' => {
+                return serde_json::from_slice(self.scan_number()?).map(JsonValue::Number);
+            }
+            _ => return Err(invalid_json()),
+        };
         let end = self.position.saturating_add(literal.len());
         if self.bytes.get(self.position..end) != Some(literal) {
             return Err(invalid_json());

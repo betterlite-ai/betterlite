@@ -88,6 +88,7 @@ pub enum FileTypeError {
     #[error("Unknown extension for mime type: {0}")]
     UnknownMime(String),
 }
+#[must_use]
 pub fn find_type(extension: &str) -> Option<FileType> {
     let lower = extension.to_lowercase();
     EXTENSIONS.iter().find_map(|(file_type, values)| {

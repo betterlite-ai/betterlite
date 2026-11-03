@@ -33,7 +33,8 @@ const VALID_CONTENT_TYPES: [&str; 12] = [
     "redacted_thinking",
 ];
 
-fn is_truthy(value: Option<&Value>) -> bool {
+#[must_use]
+pub fn is_truthy(value: Option<&Value>) -> bool {
     match value {
         None | Some(Value::Null) => false,
         Some(Value::Bool(flag)) => *flag,
@@ -45,22 +46,14 @@ fn is_truthy(value: Option<&Value>) -> bool {
 }
 
 #[must_use]
-pub fn resolve_file_id(item: &Map<String, Value>) -> Option<Value> {
-    let file_id = item
-        .get("file_id")
-        .filter(|value| is_truthy(Some(value)))
-        .cloned();
-    file_id.or_else(|| {
-        item.get("file_url")
-            .filter(|value| is_truthy(Some(value)))
-            .cloned()
-    })
-}
-
-#[must_use]
 pub fn input_file_block(item: &Map<String, Value>) -> Value {
     let mut file_dict = Map::new();
-    if let Some(file_id) = resolve_file_id(item) {
+    if let Some(file_id) = item
+        .get("file_id")
+        .filter(|value| is_truthy(Some(value)))
+        .or_else(|| item.get("file_url").filter(|value| is_truthy(Some(value))))
+        .cloned()
+    {
         file_dict.insert("file_id".to_owned(), file_id);
     }
     if let Some(file_data) = item
@@ -100,14 +93,16 @@ pub fn input_image_block(item: &Map<String, Value>) -> Value {
         .cloned()
         .unwrap_or_else(|| Value::String("auto".to_owned()));
 
-    let mut image_url = Map::new();
-    image_url.insert("url".to_owned(), url);
-    image_url.insert("detail".to_owned(), detail);
-
-    let mut image = Map::new();
-    image.insert("type".to_owned(), Value::String("image_url".to_owned()));
-    image.insert("image_url".to_owned(), Value::Object(image_url));
-    Value::Object(image)
+    Value::Object(Map::from_iter([
+        ("type".to_owned(), Value::String("image_url".to_owned())),
+        (
+            "image_url".to_owned(),
+            Value::Object(Map::from_iter([
+                ("url".to_owned(), url),
+                ("detail".to_owned(), detail),
+            ])),
+        ),
+    ]))
 }
 
 #[must_use]

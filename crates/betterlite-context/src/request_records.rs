@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
+use std::mem;
 
 pub mod record;
 use record::{HandleKind, RequestRecord};
@@ -166,15 +167,15 @@ impl RequestRecordProjection {
         RequestRecord::Object(filtered)
     }
 
-    fn filter_array(values: Vec<RequestRecord>, depth: i32) -> RequestRecord {
-        let filtered = values
-            .into_iter()
-            .filter_map(|value| {
-                let filtered = Self::filter_value(value, depth.saturating_sub(1));
-                (!matches!(filtered, RequestRecord::Null)).then_some(filtered)
-            })
-            .collect();
-        RequestRecord::Array(filtered)
+    fn filter_array(mut values: Vec<RequestRecord>, depth: i32) -> RequestRecord {
+        values.retain_mut(|value| {
+            *value = Self::filter_value(
+                mem::replace(value, RequestRecord::Null),
+                depth.saturating_sub(1),
+            );
+            !matches!(value, RequestRecord::Null)
+        });
+        RequestRecord::Array(values)
     }
 
     #[must_use]

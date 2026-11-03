@@ -59,7 +59,8 @@ pub enum ArgumentsValue {
 
 #[must_use]
 pub fn build_request_payload(data: &Fields) -> Option<RequestPayload> {
-    if matches!(Json::field(data, "jsonrpc"), Json::Text(version) if version == "2.0") {
+    if matches!(Json::parse(data.get("jsonrpc").map_or("null", |raw| raw.get())), Json::Text(version) if version == "2.0")
+    {
         let id = first_nonfalsy_raw(data, &["id", "litellm_call_id"])
             .map_or(IdValue::Default("litellm-mcp"), IdValue::Given);
         let method = first_nonfalsy_raw(data, &["method"])

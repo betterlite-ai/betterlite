@@ -117,12 +117,6 @@ fn billable_entry_cost(entry: &GuardrailCostEntry) -> Decimal {
 }
 
 // A malformed entry or an uncoercible in_spend flag prices to zero, validated apart from the by-unit path below so a forged guardrail_cost_by_unit map cannot change this entry's scalar cost.
-fn validated_entry_cost(raw: &GuardrailInformationEntry) -> Result<Decimal, GuardrailPricingError> {
-    let parsed = parse_validated_field(raw, "guardrail cost", parse_scalar_cost_field)?;
-    let entry = parsed.map(|(cost, in_spend)| GuardrailCostEntry { cost, in_spend });
-    Ok(entry.map_or(Decimal::ZERO, |cost_entry| billable_entry_cost(&cost_entry)))
-}
-
 pub fn guardrail_information_cost(
     guardrail_information: &GuardrailInformation,
 ) -> Result<Decimal, GuardrailPricingError> {
@@ -131,11 +125,23 @@ pub fn guardrail_information_cost(
         GuardrailInformation::Array(entries) => {
             entries.iter().try_fold(Decimal::ZERO, |total, entry| {
                 total
-                    .checked_add(validated_entry_cost(entry)?)
+                    .checked_add(
+                        parse_validated_field(entry, "guardrail cost", parse_scalar_cost_field)?
+                            .map_or(Decimal::ZERO, |(cost, in_spend)| {
+                                billable_entry_cost(&GuardrailCostEntry { cost, in_spend })
+                            }),
+                    )
                     .ok_or(GuardrailPricingError::CostOverflow)
             })
         }
-        GuardrailInformation::Entry(entry) => validated_entry_cost(entry),
+        GuardrailInformation::Entry(entry) => {
+            Ok(
+                parse_validated_field(entry, "guardrail cost", parse_scalar_cost_field)?
+                    .map_or(Decimal::ZERO, |(cost, in_spend)| {
+                        billable_entry_cost(&GuardrailCostEntry { cost, in_spend })
+                    }),
+            )
+        }
     }
 }
 

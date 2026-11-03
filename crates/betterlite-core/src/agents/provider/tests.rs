@@ -585,12 +585,8 @@ fn arbitrary_integer_ids_keep_precision() {
 #[case::quotes(json(r#"["say 'hi' and \"bye\""]"#), "['say \\'hi\\' and \"bye\"']")]
 #[case::controls(json(r#"["\n\r\t\u0000\\"]"#), "['\\n\\r\\t\\x00\\\\']")]
 fn compound_request_ids_use_python_spelling(#[case] request: AgentJson, #[case] expected: &str) {
-    let response = normalize_a2a_jsonrpc_response(&json("{}"), Some(&request))
-        .and_then(|normalized| {
-            serde_json::from_value::<LiteLLMSendMessageResponse>(normalized)
-                .map_err(|source| AgentProviderError::Decode { source })
-        })
-        .unwrap();
+    let normalized = normalize_a2a_jsonrpc_response(&json("{}"), Some(&request)).unwrap();
+    let response: LiteLLMSendMessageResponse = serde_json::from_value(normalized).unwrap();
     assert_eq!(serde_json::to_value(response).unwrap()["id"], expected);
 }
 

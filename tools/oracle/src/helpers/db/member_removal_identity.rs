@@ -1,3 +1,4 @@
+use serde_json::to_value;
 use std::collections::BTreeMap;
 
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
@@ -87,48 +88,43 @@ impl crate::helpers::Helper for Op {
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         match input {
             Input::Validate(args) => {
-                let identity = build_identity(args.user_id.as_deref(), args.user_email.as_deref())?;
-                to_output(&identity)
+                let identity =
+                    MemberIdentity::new(args.user_id.clone(), args.user_email.clone())
+                        .map_err(|error| helper_error("ValidationError", &error.to_string()))?;
+                to_value(&identity)
             }
             Input::SameEmail(args) => {
-                let request = build_identity(args.user_id.as_deref(), args.user_email.as_deref())?;
-                to_output(same_email(args.candidate_email.as_deref(), &request))
+                let request = MemberIdentity::new(args.user_id.clone(), args.user_email.clone())
+                    .map_err(|error| helper_error("ValidationError", &error.to_string()))?;
+                to_value(same_email(args.candidate_email.as_deref(), &request))
             }
-            Input::AddressesMember(args) => run_addresses(
+            Input::AddressesMember(args) => Ok(run_addresses(
                 AddressTarget::Member(&args.member),
                 args.user_id.as_deref(),
                 args.user_email.as_deref(),
-            ),
-            Input::AddressesUser(args) => run_addresses(
+            )?),
+            Input::AddressesUser(args) => Ok(run_addresses(
                 AddressTarget::User(&args.user),
                 args.user_id.as_deref(),
                 args.user_email.as_deref(),
-            ),
+            )?),
             Input::WithRowEmail(args) => {
-                let request = build_identity(args.user_id.as_deref(), args.user_email.as_deref())?;
-                to_output(with_row_email(request, &args.email_of))
+                let request = MemberIdentity::new(args.user_id.clone(), args.user_email.clone())
+                    .map_err(|error| helper_error("ValidationError", &error.to_string()))?;
+                to_value(with_row_email(request, &args.email_of))
             }
-            Input::DuplicateIndexes { requests } => run_duplicate_indexes(requests),
-            Input::EqFilter { field, value } => to_output(eq_filter(field, value.clone())),
-            Input::InFilter { field, values } => to_output(in_filter(field, values.clone())),
+            Input::DuplicateIndexes { requests } => return run_duplicate_indexes(requests),
+            Input::EqFilter { field, value } => to_value(eq_filter(field, value.clone())),
+            Input::InFilter { field, values } => to_value(in_filter(field, values.clone())),
             Input::TeamUsersFilter { team_id, user_ids } => {
-                to_output(team_users_filter(team_id.clone(), user_ids.clone()))
+                to_value(team_users_filter(team_id.clone(), user_ids.clone()))
             }
-            Input::AnyFilter { clauses } => to_output(AnyFilter {
+            Input::AnyFilter { clauses } => to_value(AnyFilter {
                 or: clauses.clone(),
             }),
         }
+        .map_err(|error| helper_error("InvalidOutput", &error.to_string()))
     }
-}
-
-fn to_output<T>(value: T) -> crate::helpers::HelperResult
-where
-    T: serde::Serialize,
-{
-    serde_json::to_value(value).map_or_else(
-        |error| Err(helper_error("InvalidOutput", &error.to_string())),
-        Ok,
-    )
 }
 
 #[derive(Clone, Copy)]
@@ -137,33 +133,31 @@ enum AddressTarget<'row> {
     User(&'row LiteLLMUserTable),
 }
 
-fn build_identity(
-    user_id: Option<&str>,
-    user_email: Option<&str>,
-) -> Result<MemberIdentity, Box<crate::helpers::HelperError>> {
-    MemberIdentity::new(user_id.map(str::to_owned), user_email.map(str::to_owned))
-        .map_err(|error| helper_error("ValidationError", &error.to_string()))
-}
-
 fn run_addresses(
     target: AddressTarget<'_>,
     user_id: Option<&str>,
     user_email: Option<&str>,
 ) -> crate::helpers::HelperResult {
-    let request = build_identity(user_id, user_email)?;
-    to_output(match target {
+    let request = MemberIdentity::new(user_id.map(str::to_owned), user_email.map(str::to_owned))
+        .map_err(|error| helper_error("ValidationError", &error.to_string()))?;
+    to_value(match target {
         AddressTarget::Member(member) => addresses_member(member, &request),
         AddressTarget::User(user) => addresses_user(user, &request),
     })
+    .map_err(|error| helper_error("InvalidOutput", &error.to_string()))
 }
 
 fn run_duplicate_indexes(requests: &[RawIdentity]) -> crate::helpers::HelperResult {
     let identities = requests
         .iter()
-        .map(|raw| build_identity(raw.user_id.as_deref(), raw.user_email.as_deref()))
+        .map(|raw| {
+            MemberIdentity::new(raw.user_id.clone(), raw.user_email.clone())
+                .map_err(|error| helper_error("ValidationError", &error.to_string()))
+        })
         .collect::<Result<Vec<MemberIdentity>, _>>()?;
     let indexes = duplicate_member_indexes(&identities);
-    to_output(indexes.into_iter().collect::<Vec<usize>>())
+    to_value(indexes.into_iter().collect::<Vec<usize>>())
+        .map_err(|error| helper_error("InvalidOutput", &error.to_string()))
 }
 
 fn helper_error(class: &str, message: &str) -> Box<crate::helpers::HelperError> {

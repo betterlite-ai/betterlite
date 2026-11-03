@@ -13,7 +13,7 @@ use serde_json::json;
 
 use super::answers::{Answers, Layer, key};
 use crate::OracleError;
-use crate::case::{HelperCase, parse_helper_case};
+use crate::case::{HelperCase, helper::validate_helper};
 
 #[rstest::rstest]
 #[case::hung_child("exec sleep 5", "helper timed out and was reaped")]
@@ -43,13 +43,25 @@ fn helper_runner_tests_behavior(#[case] script: &str, #[case] expected: &str) {
 #[case::missing_dot_paths_path("call: {dot_paths: {delete: {data: {}}}}", "missing field")]
 fn helper_cases_reject_unknown_and_duplicate_fields(#[case] fields: &str, #[case] reason: &str) {
     let source = format!("kind: helper\nname: a\nenv: {{}}\ncompare: {{ignore: []}}\n{fields}\n");
-    assert!(parse_helper_case(&source).unwrap_err().contains(reason));
+    assert!(
+        serde_saphyr::from_str(&source)
+            .map_err(|error| error.to_string())
+            .and_then(|parsed| validate_helper(Path::new("<helper>"), &parsed)
+                .map_err(|error| error.to_string()))
+            .unwrap_err()
+            .contains(reason)
+    );
 }
 
 #[test]
 fn management_helper_case_rejects_unknown_fields() {
     let source = "kind: helper\nname: invalid\ncall: {management_oracle: {domain: models, operation: {path_encoding: {function: segment, value: a, field_name: id, extra: true}}}}\nenv: {}\ncompare: {ignore: []}\n";
-    let error = parse_helper_case(source).unwrap_err();
+    let error = serde_saphyr::from_str(source)
+        .map_err(|error| error.to_string())
+        .and_then(|parsed| {
+            validate_helper(Path::new("<helper>"), &parsed).map_err(|error| error.to_string())
+        })
+        .unwrap_err();
     assert!(error.contains("unknown field"));
 }
 
@@ -60,7 +72,14 @@ fn helper_cases_are_validated(#[case] name: &str, #[case] pointer: &str, #[case]
     let source = format!(
         "kind: helper\nname: {name}\ncall: {{url_path: {{function: segment, value: a, field_name: id}}}}\nenv: {{}}\ncompare: {{ignore: [{{pointer: '{pointer}', why: w}}]}}\n"
     );
-    assert!(parse_helper_case(&source).unwrap_err().contains(reason));
+    assert!(
+        serde_saphyr::from_str(&source)
+            .map_err(|error| error.to_string())
+            .and_then(|parsed| validate_helper(Path::new("<helper>"), &parsed)
+                .map_err(|error| error.to_string()))
+            .unwrap_err()
+            .contains(reason)
+    );
 }
 
 #[test]

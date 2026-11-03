@@ -43,7 +43,20 @@ pub(super) fn unknown_paths(input: &RawValue, include_price_fields: bool) -> Vec
     let mut paths = Vec::new();
     for (key, value) in &top_level {
         match key.as_str() {
-            "metadata" => paths.extend(unknown_note_keys(value, include_price_fields)),
+            "metadata" => {
+                let notes: BTreeMap<String, Box<RawValue>> =
+                    serde_json::from_str(value.get()).unwrap_or_default();
+                paths.extend(
+                    notes
+                        .into_keys()
+                        .filter(|note| {
+                            !(CatalogNotes::WIRE_NAMES.contains(&note.as_str())
+                                || (include_price_fields
+                                    && PRICE_METADATA_NAMES.contains(&note.as_str())))
+                        })
+                        .map(|note| format!("metadata.{note}")),
+                );
+            }
             other if !is_known_top_level(other, include_price_fields) => paths.push(key.clone()),
             _ => {}
         }
@@ -61,18 +74,4 @@ fn is_known_top_level(key: &str, include_price_fields: bool) -> bool {
                 || PRICE_FLAT_WIRE_NAME_GROUPS
                     .iter()
                     .any(|group| group.contains(&key))))
-}
-
-fn unknown_note_keys(value: &RawValue, include_price_fields: bool) -> Vec<String> {
-    let notes: BTreeMap<String, Box<RawValue>> =
-        serde_json::from_str(value.get()).unwrap_or_default();
-    notes
-        .into_keys()
-        .filter(|key| {
-            let in_catalog_notes = CatalogNotes::WIRE_NAMES.contains(&key.as_str());
-            !(in_catalog_notes
-                || (include_price_fields && PRICE_METADATA_NAMES.contains(&key.as_str())))
-        })
-        .map(|key| format!("metadata.{key}"))
-        .collect()
 }

@@ -186,9 +186,7 @@ fn invoke(input: &BaseCall) -> Result<Value, Box<HelperError>> {
             )))
         }
         BaseCall::BaseParameterAllowlist(value) => Ok(mapped(value)),
-        BaseCall::BaseAuthOverride(value) => {
-            Ok(json!(config(&value.config).validate_environment()))
-        }
+        BaseCall::BaseAuthOverride(value) => Ok(json!(config(&value.config).validate_environment())),
         BaseCall::BaseProjectionForwarding(value) => Ok(forwarding(value)),
         BaseCall::BaseRequestOverlay(value) => Ok(json!(config(&value.config).request_body(
             &value.model,

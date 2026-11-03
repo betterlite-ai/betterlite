@@ -51,7 +51,7 @@ percent-encoding.workspace = true
 quick-xml.workspace = true
 reqwest = { version = "0.13.5", default-features = false, features = ["blocking"] }
 rust_decimal.workspace = true
-secrecy = "0.10.3"
+secrecy = { version = "0.10.3", features = ["serde"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde-saphyr = "2.0.0"
 serde_json = { version = "1.0.145", features = ["arbitrary_precision", "raw_value"] }

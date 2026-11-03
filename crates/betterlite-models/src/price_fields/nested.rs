@@ -1,12 +1,14 @@
+use crate::price_fields::deserialize::ExactDecimal;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use serde_with::{As, FromInto};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ProviderSpecificPricing {
-    #[serde(deserialize_with = "crate::price_fields::deserialize::optional_price")]
+    #[serde(deserialize_with = "As::<FromInto<ExactDecimal>>::deserialize")]
     pub us: Option<Decimal>,
-    #[serde(deserialize_with = "crate::price_fields::deserialize::optional_price")]
+    #[serde(deserialize_with = "As::<FromInto<ExactDecimal>>::deserialize")]
     pub fast: Option<Decimal>,
     pub bedrock_invocation_schema: Option<String>,
 }
@@ -16,12 +18,12 @@ pub struct ProviderSpecificPricing {
 pub struct MetadataPricing {
     #[serde(
         rename = "original_pricing_per_hour",
-        deserialize_with = "crate::price_fields::deserialize::optional_price"
+        deserialize_with = "As::<FromInto<ExactDecimal>>::deserialize"
     )]
     pub per_hour: Option<Decimal>,
     #[serde(
         rename = "original_pricing_per_minute",
-        deserialize_with = "crate::price_fields::deserialize::optional_price"
+        deserialize_with = "As::<FromInto<ExactDecimal>>::deserialize"
     )]
     pub per_minute: Option<Decimal>,
 }
@@ -29,22 +31,22 @@ pub struct MetadataPricing {
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct OffPeakPricing {
-    #[serde(deserialize_with = "crate::price_fields::deserialize::optional_price")]
+    #[serde(deserialize_with = "As::<FromInto<ExactDecimal>>::deserialize")]
     pub input_cost_per_token: Option<Decimal>,
-    #[serde(deserialize_with = "crate::price_fields::deserialize::optional_price")]
+    #[serde(deserialize_with = "As::<FromInto<ExactDecimal>>::deserialize")]
     pub output_cost_per_token: Option<Decimal>,
-    #[serde(deserialize_with = "crate::price_fields::deserialize::optional_price")]
+    #[serde(deserialize_with = "As::<FromInto<ExactDecimal>>::deserialize")]
     pub cache_read_input_token_cost: Option<Decimal>,
     #[serde(
         rename = "cache_creation_input_token_cost",
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::deserialize::optional_price"
+        deserialize_with = "As::<FromInto<ExactDecimal>>::deserialize"
     )]
     pub cache_create_token: Option<Decimal>,
     #[serde(
         rename = "output_cost_per_reasoning_token",
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::deserialize::optional_price"
+        deserialize_with = "As::<FromInto<ExactDecimal>>::deserialize"
     )]
     pub output_reasoning_token: Option<Decimal>,
     #[serde(default)]
@@ -137,11 +139,11 @@ impl TryFrom<WeekdayWire> for Weekday {
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct SearchContextPricing {
-    #[serde(deserialize_with = "crate::price_fields::deserialize::optional_price")]
+    #[serde(deserialize_with = "As::<FromInto<ExactDecimal>>::deserialize")]
     pub search_context_size_low: Option<Decimal>,
-    #[serde(deserialize_with = "crate::price_fields::deserialize::optional_price")]
+    #[serde(deserialize_with = "As::<FromInto<ExactDecimal>>::deserialize")]
     pub search_context_size_medium: Option<Decimal>,
-    #[serde(deserialize_with = "crate::price_fields::deserialize::optional_price")]
+    #[serde(deserialize_with = "As::<FromInto<ExactDecimal>>::deserialize")]
     pub search_context_size_high: Option<Decimal>,
 }
 
@@ -150,33 +152,33 @@ pub struct SearchContextPricing {
 pub struct TierPricing {
     #[serde(
         rename = "input_cost_per_token",
-        deserialize_with = "crate::price_fields::deserialize::optional_price"
+        deserialize_with = "As::<FromInto<ExactDecimal>>::deserialize"
     )]
     pub input_token: Option<Decimal>,
     #[serde(
         rename = "output_cost_per_token",
-        deserialize_with = "crate::price_fields::deserialize::optional_price"
+        deserialize_with = "As::<FromInto<ExactDecimal>>::deserialize"
     )]
     pub output_token: Option<Decimal>,
     #[serde(
         rename = "output_cost_per_reasoning_token",
-        deserialize_with = "crate::price_fields::deserialize::optional_price"
+        deserialize_with = "As::<FromInto<ExactDecimal>>::deserialize"
     )]
     pub output_reasoning_token: Option<Decimal>,
     #[serde(
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::deserialize::optional_price"
+        deserialize_with = "As::<FromInto<ExactDecimal>>::deserialize"
     )]
     pub cache_read_input_token_cost: Option<Decimal>,
     #[serde(
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::deserialize::optional_price"
+        deserialize_with = "As::<FromInto<ExactDecimal>>::deserialize"
     )]
     pub input_cost_per_query: Option<Decimal>,
     #[serde(
         rename = "cache_creation_input_token_cost",
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::price_fields::deserialize::optional_price"
+        deserialize_with = "As::<FromInto<ExactDecimal>>::deserialize"
     )]
     pub cache_create_token: Option<Decimal>,
     #[serde(

@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use crate::content_filter::competitor_intent_base::{Meaning, normalize};
+
 use super::BaseCompetitorIntentChecker;
 use super::tests::{competitor, config};
 use std::collections::BTreeMap;
@@ -7,7 +9,7 @@ use std::collections::BTreeMap;
 #[test]
 fn run_comparison() {
     let checker = BaseCompetitorIntentChecker::new(&config()).unwrap();
-    let result = checker.run_with("Is AC better than our brand?", competitor);
+    let result = checker.evaluate(&normalize("Is AC better than our brand?"), competitor);
     assert_eq!(result.intent.as_deref(), Some("competitor_comparison"));
     assert_eq!(result.confidence, Some(0.75_f64));
 }
@@ -15,7 +17,9 @@ fn run_comparison() {
 #[test]
 fn run_category_ranking() {
     let checker = BaseCompetitorIntentChecker::new(&config()).unwrap();
-    let result = checker.run("What is the best airline?");
+    let result = checker.evaluate(&normalize("What is the best airline?"), |_, _| {
+        (Meaning::OtherMeaning, 0.5_f64)
+    });
     assert_eq!(result.intent.as_deref(), Some("category_ranking"));
     assert_eq!(result.confidence, Some(0.65_f64));
 }
@@ -24,7 +28,13 @@ fn run_category_ranking() {
 fn run_literal_boundaries() {
     let checker = BaseCompetitorIntentChecker::new(&config()).unwrap();
     assert_eq!(
-        checker.run("best airlineish").intent.as_deref(),
+        checker
+            .evaluate(&normalize("best airlineish"), |_, _| (
+                Meaning::OtherMeaning,
+                0.5_f64
+            ))
+            .intent
+            .as_deref(),
         Some("other")
     );
 }
@@ -36,7 +46,10 @@ fn run_multiple_brands() {
     let checker = BaseCompetitorIntentChecker::new(&configured).unwrap();
     assert_eq!(
         checker
-            .run("our brand and second brand")
+            .evaluate(&normalize("our brand and second brand"), |_, _| (
+                Meaning::OtherMeaning,
+                0.5_f64
+            ))
             .entities
             .get("brand_self"),
         Some(&vec!["our brand".to_owned(), "second brand".to_owned()])
@@ -46,7 +59,9 @@ fn run_multiple_brands() {
 #[test]
 fn run_safe_default() {
     let checker = BaseCompetitorIntentChecker::new(&config()).unwrap();
-    let result = checker.run("acme and ac are better");
+    let result = checker.evaluate(&normalize("acme and ac are better"), |_, _| {
+        (Meaning::OtherMeaning, 0.5_f64)
+    });
     assert_eq!(result.intent.as_deref(), Some("other"));
     assert_eq!(result.confidence, Some(0.0_f64));
     assert_eq!(result.action_hint.as_deref(), Some("allow"));
@@ -94,7 +109,7 @@ fn run_thresholds(
         ("other".to_owned(), "refuse".to_owned()),
     ]);
     let checker = BaseCompetitorIntentChecker::new(&settings).unwrap();
-    let result = checker.run_with("ac is better", competitor);
+    let result = checker.evaluate(&normalize("ac is better"), competitor);
     assert_eq!(result.intent.as_deref(), Some(intent));
     assert_eq!(result.action_hint.as_deref(), Some(action));
     assert_eq!(result.confidence, Some(0.75_f64));
@@ -106,7 +121,7 @@ fn run_thresholds(
 #[case::substring("ac is bestest")]
 fn run_without_comparison(#[case] text: &str) {
     let checker = BaseCompetitorIntentChecker::new(&config()).unwrap();
-    let result = checker.run_with(text, competitor);
+    let result = checker.evaluate(&normalize(text), competitor);
     assert_eq!(
         result.intent.as_deref(),
         Some("possible_competitor_comparison")
@@ -125,10 +140,10 @@ fn run_disambiguation(
     #[case] evidence_count: usize,
 ) {
     let checker = BaseCompetitorIntentChecker::new(&config()).unwrap();
-    let result = checker.run_with("ACME", |text, token| {
+    let result = checker.evaluate(&normalize("ACME"), |text, token| {
         assert_eq!(text, "acme");
         assert_eq!(token, "acme");
-        (super::Meaning::Competitor, confidence)
+        (Meaning::Competitor, confidence)
     });
     assert_eq!(result.intent.as_deref(), Some(intent));
     assert_eq!(result.evidence.len(), evidence_count);
@@ -142,8 +157,8 @@ fn run_disambiguation(
 #[test]
 fn run_low_confidence_evidence() {
     let checker = BaseCompetitorIntentChecker::new(&config()).unwrap();
-    let result = checker.run_with("acme", |_text, _token| {
-        (super::Meaning::Competitor, 0.45_f64)
+    let result = checker.evaluate(&normalize("acme"), |_text, _token| {
+        (Meaning::Competitor, 0.45_f64)
     });
     let evidence = result.evidence.last().unwrap();
     assert_eq!(evidence.key.as_deref(), Some("other_meaning_default"));
@@ -161,19 +176,30 @@ fn run_custom_words_and_policy() {
         .policy
         .insert("category_ranking".to_owned(), "refuse".to_owned());
     let checker = BaseCompetitorIntentChecker::new(&settings).unwrap();
-    let result = checker.run("prefer an airline");
+    let result = checker.evaluate(&normalize("prefer an airline"), |_, _| {
+        (Meaning::OtherMeaning, 0.5_f64)
+    });
     assert_eq!(result.action_hint.as_deref(), Some("refuse"));
     assert_eq!(
         result.evidence.first().unwrap().r#match.as_deref(),
         Some("comparison + domain")
     );
-    assert_eq!(checker.run("best airline").intent.as_deref(), Some("other"));
+    assert_eq!(
+        checker
+            .evaluate(&normalize("best airline"), |_, _| (
+                Meaning::OtherMeaning,
+                0.5_f64
+            ))
+            .intent
+            .as_deref(),
+        Some("other")
+    );
 }
 
 #[test]
 fn run_deduplicated_entities() {
     let checker = BaseCompetitorIntentChecker::new(&config()).unwrap();
-    let result = checker.run_with("our brand vs ac and acme", competitor);
+    let result = checker.evaluate(&normalize("our brand vs ac and acme"), competitor);
     assert_eq!(
         result.entities.get("competitors"),
         Some(&vec!["acme".to_owned()])

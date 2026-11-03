@@ -66,8 +66,9 @@ impl io::Write for Captured {
 fn submit_with_capture(event: &FakeSubmission, now: DateTime<Utc>) -> String {
     let mut scheduler = FakeScheduler { listener: None };
     let clock = move || now;
-    let listener: SubmissionListener = Box::new(move |event| log_job_submitted(event, &clock));
-    scheduler.add_submission_listener(listener);
+    let callback: SubmissionListener =
+        Box::new(move |submitted| log_job_submitted(submitted, &clock));
+    scheduler.add_submission_listener(callback);
     let listener = scheduler
         .listener
         .expect("a listener should have been attached");

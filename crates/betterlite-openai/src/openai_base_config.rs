@@ -162,18 +162,19 @@ pub fn model_family(model: &str, catalog: &CatalogCapabilities) -> ModelFamily {
 }
 #[must_use]
 pub fn azure_model_family(model: &str) -> ModelFamily {
-    let is_reasoning = (model.contains("gpt-5") || model.contains("gpt-6"))
-        && !model
-            .rsplit('/')
-            .next()
-            .unwrap_or(model)
-            .contains("gpt-5-chat");
-    if is_reasoning || model.contains("gpt5_series") {
-        ModelFamily::GptReasoning
-    } else {
-        ModelFamily::Gpt
+    if model.contains("gpt5_series") {
+        return ModelFamily::GptReasoning;
+    }
+    let name = model.rsplit('/').next().unwrap_or(model);
+    match (
+        model.contains("gpt-5") || model.contains("gpt-6"),
+        name.contains("gpt-5-chat"),
+    ) {
+        (true, false) => ModelFamily::GptReasoning,
+        _ => ModelFamily::Gpt,
     }
 }
+
 pub fn is_o_series_model(model: &str, catalog: &CatalogCapabilities) -> bool {
     let name = model.rsplit('/').next().unwrap_or(model);
     name.starts_with('o')

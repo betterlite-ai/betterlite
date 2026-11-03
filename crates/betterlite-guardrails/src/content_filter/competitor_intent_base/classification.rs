@@ -1,8 +1,7 @@
 use super::configuration::Settings;
 use super::matching::{build_competitor_maps, find_matches, normalized_set, resolve_matches};
 use super::{
-    BaseCompetitorIntentChecker, CompetitorIntentError, Meaning, has_words, normalize,
-    word_boundary_match,
+    BaseCompetitorIntentChecker, CompetitorIntentError, Meaning, has_words, word_boundary_match,
 };
 use betterlite_config::sections::content_filter_records::overrides::{
     CompetitorIntentEvidenceEntry, CompetitorIntentResult,
@@ -48,27 +47,11 @@ impl BaseCompetitorIntentChecker {
         })
     }
 
-    pub(super) const fn classify_ambiguous(_text: &str, _token: &str) -> (Meaning, f64) {
-        let confidence = 0.5_f64;
-        (Meaning::OtherMeaning, confidence)
-    }
-
-    #[must_use]
-    pub fn run(&self, text: &str) -> CompetitorIntentResult {
-        let normalized = normalize(text);
-        self.evaluate(&normalized, Self::classify_ambiguous)
-    }
-
-    #[must_use]
-    pub fn run_with<F>(&self, text: &str, classify: F) -> CompetitorIntentResult
-    where
-        F: Fn(&str, &str) -> (Meaning, f64),
-    {
-        let normalized = normalize(text);
-        self.evaluate(&normalized, classify)
-    }
-
-    fn evaluate<F>(&self, normalized: &str, classify: F) -> CompetitorIntentResult
+    pub(in crate::content_filter) fn evaluate<F>(
+        &self,
+        normalized: &str,
+        classify: F,
+    ) -> CompetitorIntentResult
     where
         F: Fn(&str, &str) -> (Meaning, f64),
     {
