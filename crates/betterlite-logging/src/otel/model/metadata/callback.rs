@@ -1,4 +1,4 @@
-use super::common::{field, object, seconds, string, string_including_empty};
+use super::common::{field, object, seconds, string};
 use crate::otel::model::trace_controls::{TraceControls, caller_trace_controls};
 use crate::otel::model::utils::coercion::OtelModelValue;
 use crate::otel::vocabulary::resolvers::resolve_operation;
@@ -23,7 +23,7 @@ impl LLMCallEvent {
     #[must_use]
     pub fn from_dict(kwargs: &OtelModelValue) -> Self {
         let payload = field(kwargs, "standard_logging_object")
-            .filter(|value| object(Some(value)).is_some())
+            .filter(|value| value.as_object().is_some())
             .cloned();
         let auth_metadata = auth_metadata(payload.as_ref(), kwargs);
         let call_id = payload
@@ -136,9 +136,7 @@ pub fn auth_metadata(
         let values = object(Some(auth_config))?;
         let typed: BTreeMap<String, String> = values
             .iter()
-            .filter_map(|(key, item)| {
-                string_including_empty(Some(item)).map(|text| (key.clone(), text))
-            })
+            .filter_map(|(key, item)| item.as_str().map(|text| (key.clone(), text.to_owned())))
             .collect();
         (!typed.is_empty()).then_some(typed)
     })

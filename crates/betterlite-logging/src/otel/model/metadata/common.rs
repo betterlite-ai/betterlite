@@ -4,19 +4,14 @@ use rust_decimal::Decimal;
 use std::collections::BTreeMap;
 use std::str::FromStr as _;
 
-pub(super) const fn object(
-    value: Option<&OtelModelValue>,
-) -> Option<&BTreeMap<String, OtelModelValue>> {
-    match value {
-        Some(OtelModelValue::Object(fields)) => Some(fields),
-        Some(
-            OtelModelValue::Null(())
-            | OtelModelValue::Bool(_)
-            | OtelModelValue::Number(_)
-            | OtelModelValue::String(_)
-            | OtelModelValue::Array(_),
-        )
-        | None => None,
+pub(super) fn object(value: Option<&OtelModelValue>) -> Option<&BTreeMap<String, OtelModelValue>> {
+    match value? {
+        OtelModelValue::Object(fields) => Some(fields),
+        OtelModelValue::Null(())
+        | OtelModelValue::Bool(_)
+        | OtelModelValue::Number(_)
+        | OtelModelValue::String(_)
+        | OtelModelValue::Array(_) => None,
     }
 }
 
@@ -43,32 +38,11 @@ pub(super) fn team_metadata(
 }
 
 pub(super) fn string(value: Option<&OtelModelValue>) -> Option<String> {
-    match value {
-        Some(OtelModelValue::String(text)) if !text.is_empty() => Some(text.to_owned()),
-        Some(
-            OtelModelValue::Null(())
-            | OtelModelValue::Bool(_)
-            | OtelModelValue::Number(_)
-            | OtelModelValue::String(_)
-            | OtelModelValue::Array(_)
-            | OtelModelValue::Object(_),
-        )
-        | None => None,
+    let text = value?.as_str()?;
+    if text.is_empty() {
+        return None;
     }
-}
-
-pub(super) fn string_including_empty(value: Option<&OtelModelValue>) -> Option<String> {
-    match value {
-        Some(OtelModelValue::String(text)) => Some(text.to_owned()),
-        Some(
-            OtelModelValue::Null(())
-            | OtelModelValue::Bool(_)
-            | OtelModelValue::Number(_)
-            | OtelModelValue::Array(_)
-            | OtelModelValue::Object(_),
-        )
-        | None => None,
-    }
+    Some(text.to_owned())
 }
 
 pub(super) fn seconds(value: Option<&OtelModelValue>) -> Option<Decimal> {
@@ -89,11 +63,16 @@ pub(super) fn seconds(value: Option<&OtelModelValue>) -> Option<Decimal> {
 }
 
 pub(super) fn scalar_text(value: &OtelModelValue) -> Option<String> {
+    if let Some(text) = value.as_str() {
+        return Some(text.to_owned());
+    }
     match value {
-        OtelModelValue::String(text) => Some(text.clone()),
         OtelModelValue::Bool(true) => Some("True".to_owned()),
         OtelModelValue::Bool(false) => Some("False".to_owned()),
         OtelModelValue::Number(number) => Some(number.to_string()),
-        OtelModelValue::Null(()) | OtelModelValue::Array(_) | OtelModelValue::Object(_) => None,
+        OtelModelValue::Null(())
+        | OtelModelValue::String(_)
+        | OtelModelValue::Array(_)
+        | OtelModelValue::Object(_) => None,
     }
 }

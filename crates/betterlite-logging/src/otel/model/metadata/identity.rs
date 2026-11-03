@@ -1,4 +1,4 @@
-use super::common::{field, object, scalar_text, string, string_including_empty, team_metadata};
+use super::common::{field, object, scalar_text, string, team_metadata};
 use crate::otel::model::utils::coercion::OtelModelValue;
 use std::collections::BTreeMap;
 
@@ -34,9 +34,10 @@ impl RequestIdentity {
                 string(metadata.and_then(|values| values.get("user_api_key_end_user_id")))
             }),
             provider_model: resolve_provider_model(payload),
-            request_route: string_including_empty(
-                metadata.and_then(|values| values.get("user_api_key_request_route")),
-            ),
+            request_route: metadata
+                .and_then(|values| values.get("user_api_key_request_route"))
+                .and_then(OtelModelValue::as_str)
+                .map(str::to_owned),
             metadata: flatten_metadata(metadata),
         }
     }
