@@ -5,7 +5,8 @@ use std::path::PathBuf;
 
 use rstest::rstest;
 
-use crate::loader::{ConfigLoader, EnvironmentLookup};
+use super::home::HomeEnvironment;
+use crate::loader::ConfigLoader;
 
 fn lookup(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
     pairs
@@ -102,21 +103,6 @@ fn chatgpt_token_paths_load(
     assert_eq!(settings.api_base, api_base);
 }
 
-struct HomeEnvironment {
-    variables: BTreeMap<String, String>,
-    home: Option<PathBuf>,
-}
-
-impl EnvironmentLookup for HomeEnvironment {
-    fn lookup(&self, name: &str) -> Option<String> {
-        self.variables.get(name).cloned()
-    }
-
-    fn system_home(&self) -> Option<PathBuf> {
-        self.home.clone()
-    }
-}
-
 #[rstest]
 #[case::absent_home(&[], Some("/system/user"), "/system/user/.config/litellm/chatgpt")]
 #[case::no_system_home(&[], None, "~/.config/litellm/chatgpt")]
@@ -146,18 +132,31 @@ fn chatgpt_token_paths_load_home(
 #[test]
 fn chatgpt_token_paths_load_non_utf8_home() {
     use std::ffi::OsString;
+    use std::fs;
     use std::os::unix::ffi::OsStringExt as _;
+    use tracing::subscriber::with_default;
 
-    let config = ConfigLoader {
+    let log = tempfile::NamedTempFile::new().unwrap();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .without_time()
+        .with_target(false)
+        .with_writer(log.reopen().unwrap())
+        .finish();
+    let loader = ConfigLoader {
         lookup: HomeEnvironment {
             variables: BTreeMap::new(),
             home: Some(PathBuf::from(OsString::from_vec(vec![b'/', 0xff]))),
         },
-    }
-    .load("")
-    .expect("an unrepresentable home keeps the literal default");
+    };
+    let config = with_default(subscriber, || loader.load(""))
+        .expect("an unrepresentable home keeps the literal default");
     assert_eq!(
         config.sections.chatgpt_token_store.token_dir,
         "~/.config/litellm/chatgpt"
+    );
+    assert_eq!(
+        fs::read_to_string(log.path()).unwrap(),
+        " WARN system home is not UTF-8; leaving the default token path unchanged\n"
     );
 }

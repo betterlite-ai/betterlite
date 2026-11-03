@@ -4,6 +4,8 @@ use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::providers::chatgpt::token_store as environment;
 use crate::sections::Section;
 
+pub mod home;
+
 #[derive(Debug, Default, Deserialize)]
 pub struct Raw {
     // A skipped marker keeps this environment-only section a YAML mapping.
