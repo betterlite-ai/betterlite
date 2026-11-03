@@ -1,0 +1,15 @@
+{
+  "kind": "helper",
+  "name": "backref-astral",
+  "call": {
+    "route_match": {
+      "function": "route_matches_pattern",
+      "route": "/😀😀",
+      "pattern": "/(?i:(.)\\1)"
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

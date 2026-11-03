@@ -5,6 +5,7 @@ edition = "2024"
 [package.metadata]
 cargo-fuzz = true
 [dependencies]
+betterlite-auth = { path = "../../betterlite-auth" }
 betterlite-server = { path = ".." }
 libfuzzer-sys = "0.4.9"
 serde_json = "1.0.154"
@@ -52,9 +53,24 @@ doc = false
 bench = false
 
 [[bin]]
+name = "route_path"
+path = "fuzz_targets/route_path.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "list_query"
 path = "fuzz_targets/list_query.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "route_pattern"
+path = "fuzz_targets/route_pattern.rs"
+test = false
+doc = false
+bench = false
+
 [workspace]

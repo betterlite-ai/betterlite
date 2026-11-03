@@ -1,0 +1,11 @@
+kind: helper
+name: unicode-flag
+call:
+  route_match:
+    function: check_route_access
+    route: "/models/gpt-4"
+    allowed_routes:
+      - "/models/(?u:gpt-\\w+)"
+env: {}
+compare:
+  ignore: []

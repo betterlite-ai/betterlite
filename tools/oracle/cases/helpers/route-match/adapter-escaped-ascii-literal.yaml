@@ -1,0 +1,17 @@
+{
+  "kind": "helper",
+  "name": "adapter-escaped-ascii-literal",
+  "call": {
+    "route_match": {
+      "function": "check_route_access",
+      "route": "/K",
+      "allowed_routes": [
+        "/(?ai:\\x6b)"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

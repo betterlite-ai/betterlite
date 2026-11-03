@@ -1,0 +1,11 @@
+kind: helper
+name: allowed-route-enum-expansion
+call:
+  route_match:
+    function: get_actual_routes
+    routes:
+      - anthropic_routes
+      - unknown_route
+env: {}
+compare:
+  ignore: []

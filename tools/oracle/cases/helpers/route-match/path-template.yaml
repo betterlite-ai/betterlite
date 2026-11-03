@@ -1,0 +1,10 @@
+kind: helper
+name: path-template
+call:
+  route_match:
+    function: route_matches_pattern
+    route: /v1/batches/example/cancel
+    pattern: /v1/batches/{batch_id}/cancel
+env: {}
+compare:
+  ignore: []

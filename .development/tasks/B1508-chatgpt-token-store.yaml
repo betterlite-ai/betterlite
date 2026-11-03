@@ -14,6 +14,10 @@ description: >-
   and betterlite-openai reads config.sections.chatgpt_token_store.
   Directory/file env values use getenv semantics, including explicit empty strings; API base uses truthy
   fallthrough. Expand only the default home path and preserve absolute auth-file override behavior.
+  When HOME is absent, inject the system-home fallback at the binary boundary through
+  EnvironmentLookup; the resolver must not read process state itself. Preserve explicit empty HOME
+  and token-directory overrides. A missing system home leaves the literal default path unchanged.
+  Cover HOME present, empty, absent with injected home, and absent without a home in loader tests.
 
   An absent/unreadable file returns None; malformed/non-object JSON warns then returns None. Writes
   truncate the file and log OSError without throwing, preserving source effect order rather than adding
@@ -47,6 +51,8 @@ scope:
     - crates/betterlite-config/src/providers/chatgpt/**
     - crates/betterlite-config/src/providers/chatgpt/token_store.rs
     - crates/betterlite-config/src/providers/chatgpt/token_store/**
+    - crates/betterlite-config/src/loader.rs
+    - crates/betterlite/src/main.rs
     - crates/betterlite-config/src/sections/chatgpt_token_store.rs
     - crates/betterlite-config/src/sections/chatgpt_token_store/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/chatgpt_token_store*
@@ -98,7 +104,7 @@ deviations:
 out_of_scope:
   - B1509 implements get_access_token, _login_device_code, _request_device_code, _poll_for_authorization_code, _exchange_code_for_tokens and _refresh_tokens in this same covered file.
 pitfalls:
-  - "betterlite-config keeps providers private (lib.rs has mod providers;), so other crates never reach providers::chatgpt directly. The resolved paths and API base leave the crate only through the chatgpt_token_store section: replace its stub_section!() with a Raw struct (no YAML keys), a Settings type and a Section impl whose convert calls the resolver, the way sections/chatgpt_headers.rs does. sections.rs already declares and lists the section, and lib.rs, loader.rs and types.rs stay untouched."
+  - "betterlite-config keeps providers private (lib.rs has mod providers;), so other crates never reach providers::chatgpt directly. The resolved paths and API base leave the crate only through the chatgpt_token_store section: replace its stub_section!() with a Raw struct (no YAML keys), a Settings type and a Section impl whose convert calls the resolver, the way sections/chatgpt_headers.rs does. sections.rs already declares and lists the section, and lib.rs and types.rs stay untouched. loader.rs and the binary main.rs are in scope only for the injected system-home fallback; the resolver itself must not read process state."
   - 'The oracle helper for this task is pre-registered as chatgpt_token_store in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/chatgpt_token_store.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/chatgpt_token_store.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Token payload claims are decoded without signature verification only to determine refresh timing and the outbound account hint.
   - A failed auth-file write is logged and swallowed rather than invalidating a successfully refreshed token.

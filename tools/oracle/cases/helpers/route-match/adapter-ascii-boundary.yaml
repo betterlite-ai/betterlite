@@ -1,0 +1,17 @@
+{
+  "kind": "helper",
+  "name": "adapter-ascii-boundary",
+  "call": {
+    "route_match": {
+      "function": "check_route_access",
+      "route": "/é",
+      "allowed_routes": [
+        "/(?a:\\b)é"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

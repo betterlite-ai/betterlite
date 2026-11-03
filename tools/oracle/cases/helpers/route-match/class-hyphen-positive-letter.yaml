@@ -1,0 +1,17 @@
+{
+  "kind": "helper",
+  "name": "class-hyphen-positive-letter",
+  "call": {
+    "route_match": {
+      "function": "check_route_access",
+      "route": "/models/a",
+      "allowed_routes": [
+        "/models/[a-z--aeiou]"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

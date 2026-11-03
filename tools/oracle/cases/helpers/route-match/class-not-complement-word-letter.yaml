@@ -1,0 +1,17 @@
+{
+  "kind": "helper",
+  "name": "class-not-complement-word-letter",
+  "call": {
+    "route_match": {
+      "function": "check_route_access",
+      "route": "/models/ι",
+      "allowed_routes": [
+        "/models/(?i:[^\\W-]+)"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

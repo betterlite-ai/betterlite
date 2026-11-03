@@ -1,0 +1,17 @@
+{
+  "kind": "helper",
+  "name": "class-encoded-naked-nonword-letter",
+  "call": {
+    "route_match": {
+      "function": "check_route_access",
+      "route": "/models/ιAA",
+      "allowed_routes": [
+        "/models/(?i:\\W(a)\\1)"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

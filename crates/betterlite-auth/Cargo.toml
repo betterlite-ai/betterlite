@@ -9,6 +9,8 @@ publish.workspace = true
 betterlite-db = { path = "../betterlite-db" }
 chrono = { version = "0.4.45", default-features = false, features = ["serde"] }
 hex.workspace = true
+pcre2 = "0.2.11"
+regex-syntax = "0.8.11"
 rust_decimal.workspace = true
 secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true

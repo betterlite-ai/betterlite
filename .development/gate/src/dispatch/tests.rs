@@ -382,9 +382,9 @@ fn a_dispatch_stopped_by_a_usage_limit_keeps_its_place() {
     saved.save(folder.path()).unwrap();
     let mut loaded = Progress::load(folder.path(), Vec::new()).unwrap();
     let error = run_ladder(&agents, &brief, &places, &mut loaded, 0).unwrap_err();
-    assert!(matches!(error, GateError::UsageLimit { .. }));
+    assert!(matches!(error, GateError::Unavailable { .. }));
     assert!(error.to_string().contains(
-        "every runner left on the worker ladder is at its usage limit; last feedback: the saved findings"
+        "every runner left on the worker ladder is unavailable (openai is at its usage limit: ERROR: You've hit your usage limit.; anthropic is at its usage limit: You've hit your limit); last feedback: the saved findings"
     ));
     saved.limited = true;
     assert_eq!(loaded, saved);
