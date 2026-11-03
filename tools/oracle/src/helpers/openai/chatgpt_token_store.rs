@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use betterlite_openai::chatgpt::token_store::member::Member;
 use betterlite_openai::chatgpt::token_store::{ChatGptTokenStore, codec};
-use rust_decimal::prelude::ToPrimitive as _;
+use rust_decimal::{Decimal, prelude::ToPrimitive as _};
 use secrecy::ExposeSecret as _;
 use serde::Deserialize;
 use serde_json::json;
@@ -20,14 +20,15 @@ enum Action {
     Build,
     Cooldown,
     Record,
-    Wait(f64),
+    Wait(#[serde(with = "rust_decimal::serde::arbitrary_precision")] Decimal),
 }
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct Input {
     record: Option<String>,
     replacement: Option<String>,
-    now: f64,
+    #[serde(with = "rust_decimal::serde::arbitrary_precision")]
+    now: Decimal,
     #[serde(default)]
     fail_write: bool,
     actions: Vec<Action>,
@@ -81,7 +82,8 @@ fn run_action(
         Action::Account => json!(store.get_account_id()),
         Action::Cooldown => {
             let record = store.read();
-            json!(store.cooldown_remaining(record.as_ref()).to_f64())
+            let remaining = store.cooldown_remaining(record.as_ref());
+            json!(remaining.to_string().parse::<serde_json::Number>()?)
         }
         Action::Record => {
             store.record_device_request();
@@ -102,7 +104,11 @@ fn run_action(
             json!(expired)
         }
         Action::Wait(seconds) => {
-            let timeout = Duration::try_from_secs_f64(*seconds)?;
+            let nanos = seconds
+                .checked_mul(Decimal::from(1_000_000_000_u64))
+                .and_then(|value| value.to_u64())
+                .ok_or(effects::FixtureError::Time)?;
+            let timeout = Duration::from_nanos(nanos);
             json!(
                 store
                     .wait_for_access_token(timeout)

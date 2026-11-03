@@ -3,6 +3,7 @@ use std::fmt;
 
 use super::member::{ExposedSecret, ExtraValue, Member, PresentMember};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize, de::IgnoredAny};
 use serde_json::Number;
@@ -105,11 +106,18 @@ pub fn expires_at(token: &SecretString) -> Option<Number> {
     if !value.as_str().contains(['.', 'e', 'E']) {
         return Some(value.clone());
     }
-    let seconds = value.as_f64()?.trunc();
-    if seconds == 0.0_f64 {
-        Some(Number::from(0_i32))
+    let seconds = decimal_seconds(value)?.trunc();
+    seconds.to_string().parse().ok()
+}
+
+pub(super) fn decimal_seconds(value: &Number) -> Option<Decimal> {
+    let text = value.as_str();
+    if let Some((mantissa, _)) = text.split_once(['e', 'E']) {
+        // from_scientific rounds its mantissa, so validate it exactly before applying the exponent.
+        Decimal::from_str_exact(mantissa).ok()?;
+        Decimal::from_scientific(text).ok()
     } else {
-        seconds.to_string().parse().ok()
+        Decimal::from_str_exact(text).ok()
     }
 }
 

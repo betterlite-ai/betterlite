@@ -17,9 +17,9 @@ pub(super) enum FixtureError {
     #[error("fixture store failed")]
     Store(#[from] betterlite_openai::chatgpt::token_store::StoreError),
     #[error("fixture time failed")]
-    Time(#[from] std::time::TryFromFloatSecsError),
-    #[error("fixture clock failed")]
-    Clock(#[from] rust_decimal::Error),
+    Time,
+    #[error("fixture number failed")]
+    Number(#[from] serde_json::Error),
 }
 
 pub(super) fn content(text: Option<&str>) -> Value {
@@ -74,12 +74,13 @@ impl Clock for ScriptClock {
         self.now
     }
     fn sleep(&mut self, duration: Duration) {
-        if let Ok(seconds) = duration.as_secs_f64().to_string().parse() {
-            self.sleeps.push(seconds);
+        let seconds = Decimal::from(duration.as_secs())
+            .saturating_add(Decimal::new(i64::from(duration.subsec_nanos()), 9));
+        match seconds.to_string().parse() {
+            Ok(value) => self.sleeps.push(value),
+            Err(error) => self.failure = Some(io::Error::other(error)),
         }
-        self.now = self.now.saturating_add(
-            Decimal::from_f64_retain(duration.as_secs_f64()).unwrap_or(Decimal::MAX),
-        );
+        self.now = self.now.saturating_add(seconds);
         if let Some(replacement) = self.replacement.take() {
             self.failure = std::fs::write(&self.path, replacement).err();
         }
@@ -107,7 +108,7 @@ pub(super) fn store(
         fail_write: input.fail_write,
     };
     let clock = ScriptClock {
-        now: Decimal::try_from(input.now)?,
+        now: input.now,
         sleeps: Vec::new(),
         path: directory.join("auth.json"),
         failure: None,

@@ -68,19 +68,19 @@ impl FileAccess for Files {
 }
 #[derive(Default)]
 struct Time {
-    now: i64,
+    now: Decimal,
     sleeps: Vec<Duration>,
 }
 impl Clock for Time {
     fn now(&self) -> Decimal {
-        Decimal::from(self.now)
+        self.now
     }
     fn sleep(&mut self, duration: Duration) {
         self.sleeps.push(duration);
-        self.now = self
-            .now
-            .checked_add(i64::try_from(duration.as_secs()).unwrap())
+        let seconds = Decimal::from(duration.as_secs())
+            .checked_add(Decimal::new(i64::from(duration.subsec_nanos()), 9))
             .unwrap();
+        self.now = self.now.checked_add(seconds).unwrap();
     }
 }
 fn store(now: i64) -> ChatGptTokenStore<Files, Time> {
@@ -92,7 +92,7 @@ fn store(now: i64) -> ChatGptTokenStore<Files, Time> {
         },
         Files::default(),
         Time {
-            now,
+            now: Decimal::from(now),
             sleeps: Vec::new(),
         },
     )
@@ -105,9 +105,12 @@ fn store(now: i64) -> ChatGptTokenStore<Files, Time> {
 #[case(941, "1000", true)]
 #[case::underflow(1000, "1e-29", true)]
 #[case::negative_underflow(1000, "-1e-29", true)]
-#[case::positive_overflow(1000, "1e100", false)]
+#[case::positive_overflow(1000, "1e100", true)]
 #[case::negative_overflow(1000, "-1e100", true)]
 #[case::uncomparable(1000, "1e999", true)]
+#[case::underflow_before_epoch(-100, "1e-29", true)]
+#[case::plain_underflow(-100, "0.00000000000000000000000000001", true)]
+#[case::skew_underflow(0, "-79228162514264337593543950335", true)]
 fn expiry_boundary(#[case] now: i64, #[case] expiry: &str, #[case] expired: bool) {
     let mut subject = store(now);
     let mut record =
@@ -228,6 +231,22 @@ fn failures_and_polling() {
             Duration::from_secs(2)
         ]
     );
+}
+
+#[rstest]
+#[case::zero(Duration::ZERO, &[], "10")]
+#[case::nanosecond(Duration::from_nanos(1), &[Duration::from_nanos(1)], "10.000000001")]
+#[case::fraction(Duration::from_millis(1250), &[Duration::from_millis(1250)], "11.25")]
+#[case::tail(Duration::new(5, 1), &[Duration::from_secs(5), Duration::from_nanos(1)], "15.000000001")]
+fn polling_preserves_nanoseconds(
+    #[case] timeout: Duration,
+    #[case] sleeps: &[Duration],
+    #[case] now: &str,
+) {
+    let mut subject = store(10);
+    assert!(subject.wait_for_access_token(timeout).is_none());
+    assert_eq!(subject.clock.sleeps, sleeps);
+    assert_eq!(subject.clock.now, now.parse::<Decimal>().unwrap());
 }
 
 #[test]
@@ -356,6 +375,24 @@ fn integer_expiry_preserves_precision() {
         super::codec::expires_at(&token).unwrap().as_str(),
         "9007199254740993"
     );
+}
+
+#[rstest]
+#[case::large_fraction("9007199254740993.9", Some("9007199254740993"))]
+#[case::negative_fraction("-9007199254740993.9", Some("-9007199254740993"))]
+#[case::nearly_one("0.9999999999999999999999999999", Some("0"))]
+#[case::scientific("1.009e3", Some("1009"))]
+#[case::underflow("1e-29", None)]
+#[case::overflow("1e100", None)]
+#[case::excess_precision("0.99999999999999999999999999999", None)]
+#[case::scientific_precision("0.99999999999999999999999999999e0", None)]
+fn fractional_expiry_is_exact(#[case] expiry: &str, #[case] expected: Option<&str>) {
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+
+    let payload = URL_SAFE_NO_PAD.encode(format!(r#"{{"exp":{expiry}}}"#));
+    let token = SecretString::from(format!("h.{payload}.s"));
+    let actual = super::codec::expires_at(&token);
+    assert_eq!(actual.as_ref().map(serde_json::Number::as_str), expected);
 }
 
 #[test]

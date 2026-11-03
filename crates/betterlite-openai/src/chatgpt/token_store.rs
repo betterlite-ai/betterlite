@@ -68,35 +68,17 @@ impl<F: FileAccess, C: Clock> ChatGptTokenStore<F, C> {
             Some(value.clone())
         } else {
             let derived = codec::expires_at(token);
-            if let Some(value) = derived
-                .as_ref()
-                .filter(|value| value.as_f64().is_some_and(|seconds| seconds != 0.0_f64))
-            {
+            if let Some(value) = derived.as_ref().filter(|value| value.as_i64() != Some(0)) {
                 record.expires_at = Some(Member::Known(value.clone()));
                 self.write(record);
             }
             derived
         };
-        expiry.is_none_or(|value| {
-            value.as_str().parse::<Decimal>().map_or_else(
-                |_| {
-                    value
-                        .as_f64()
-                        .zip(
-                            self.clock
-                                .now()
-                                .checked_add(Decimal::from(60_i32))
-                                .and_then(|boundary| boundary.to_f64()),
-                        )
-                        .is_none_or(|(seconds, boundary)| boundary >= seconds)
-                },
-                |seconds| {
-                    seconds
-                        .checked_sub(Decimal::from(60_i32))
-                        .is_none_or(|boundary| self.clock.now() >= boundary)
-                },
-            )
-        })
+        expiry
+            .as_ref()
+            .and_then(codec::decimal_seconds)
+            .and_then(|seconds| seconds.checked_sub(Decimal::from(60_i32)))
+            .is_none_or(|boundary| self.clock.now() >= boundary)
     }
 
     pub fn get_account_id(&mut self) -> Option<String> {
@@ -141,7 +123,8 @@ impl<F: FileAccess, C: Clock> ChatGptTokenStore<F, C> {
     }
 
     pub fn wait_for_access_token(&mut self, timeout: Duration) -> Option<SecretString> {
-        let seconds = Decimal::from_f64_retain(timeout.as_secs_f64())?;
+        let seconds = Decimal::from(timeout.as_secs())
+            .checked_add(Decimal::new(i64::from(timeout.subsec_nanos()), 9))?;
         let deadline = self.clock.now().checked_add(seconds)?;
         while self.clock.now() < deadline {
             if let Some(mut record) = self.read()
@@ -158,7 +141,10 @@ impl<F: FileAccess, C: Clock> ChatGptTokenStore<F, C> {
             let remaining = deadline
                 .checked_sub(self.clock.now())?
                 .clamp(Decimal::ZERO, Decimal::from(5_i32));
-            let sleep = Duration::try_from_secs_f64(remaining.to_f64()?).ok()?;
+            let nanos = remaining
+                .checked_mul(Decimal::from(1_000_000_000_u64))?
+                .to_u64()?;
+            let sleep = Duration::from_nanos(nanos);
             if sleep.is_zero() {
                 break;
             }
