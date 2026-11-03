@@ -1,10 +1,11 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 use rstest::rstest;
 
-use crate::loader::ConfigLoader;
+use crate::loader::{ConfigLoader, EnvironmentLookup};
 
 fn lookup(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
     pairs
@@ -99,4 +100,64 @@ fn chatgpt_token_paths_load(
     assert_eq!(settings.token_dir, token_dir);
     assert_eq!(settings.auth_file, auth_file);
     assert_eq!(settings.api_base, api_base);
+}
+
+struct HomeEnvironment {
+    variables: BTreeMap<String, String>,
+    home: Option<PathBuf>,
+}
+
+impl EnvironmentLookup for HomeEnvironment {
+    fn lookup(&self, name: &str) -> Option<String> {
+        self.variables.get(name).cloned()
+    }
+
+    fn system_home(&self) -> Option<PathBuf> {
+        self.home.clone()
+    }
+}
+
+#[rstest]
+#[case::absent_home(&[], Some("/system/user"), "/system/user/.config/litellm/chatgpt")]
+#[case::no_system_home(&[], None, "~/.config/litellm/chatgpt")]
+#[case::present_home(&[("HOME", "/env/user")], Some("/system/user"), "/env/user/.config/litellm/chatgpt")]
+#[case::empty_home(&[("HOME", "")], Some("/system/user"), "/.config/litellm/chatgpt")]
+#[case::empty_system_home(&[], Some(""), "/.config/litellm/chatgpt")]
+#[case::trailing_system_home(&[], Some("/system/user///"), "/system/user/.config/litellm/chatgpt")]
+#[case::empty_override(&[("CHATGPT_TOKEN_DIR", "")], Some("/system/user"), "")]
+#[case::literal_override(&[("CHATGPT_TOKEN_DIR", "~/literal")], Some("/system/user"), "~/literal")]
+fn chatgpt_token_paths_load_home(
+    #[case] env: &[(&str, &str)],
+    #[case] home: Option<&str>,
+    #[case] expected: &str,
+) {
+    let config = ConfigLoader {
+        lookup: HomeEnvironment {
+            variables: lookup(env),
+            home: home.map(PathBuf::from),
+        },
+    }
+    .load("")
+    .expect("injected home settings load");
+    assert_eq!(config.sections.chatgpt_token_store.token_dir, expected);
+}
+
+#[cfg(unix)]
+#[test]
+fn chatgpt_token_paths_load_non_utf8_home() {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt as _;
+
+    let config = ConfigLoader {
+        lookup: HomeEnvironment {
+            variables: BTreeMap::new(),
+            home: Some(PathBuf::from(OsString::from_vec(vec![b'/', 0xff]))),
+        },
+    }
+    .load("")
+    .expect("an unrepresentable home keeps the literal default");
+    assert_eq!(
+        config.sections.chatgpt_token_store.token_dir,
+        "~/.config/litellm/chatgpt"
+    );
 }

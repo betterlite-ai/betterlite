@@ -1,4 +1,4 @@
-use betterlite_config::loader::{ConfigError, ConfigLoader};
+use betterlite_config::loader::{ConfigError, ConfigLoader, EnvironmentLookup};
 use betterlite_config::types::Config;
 use betterlite_server::server::chat_setup::chat_executor;
 use betterlite_server::server::run;
@@ -86,11 +86,26 @@ fn process_environment() -> BTreeMap<String, String> {
     }
     environment
 }
+struct EnvironmentSnapshot {
+    variables: BTreeMap<String, String>,
+    home: Option<PathBuf>,
+}
+impl EnvironmentLookup for EnvironmentSnapshot {
+    fn lookup(&self, name: &str) -> Option<String> {
+        self.variables.get(name).cloned()
+    }
+    fn system_home(&self) -> Option<PathBuf> {
+        self.home.clone()
+    }
+}
 fn load_config(location: &Path, environment: BTreeMap<String, String>) -> Option<Config> {
     use betterlite_config::sections::includes::{IncludeError, LoadError, load_file};
 
     let loader = ConfigLoader {
-        lookup: environment,
+        lookup: EnvironmentSnapshot {
+            variables: environment,
+            home: env::home_dir(),
+        },
     };
     match load_file(&loader, location) {
         Ok(config) => Some(config),

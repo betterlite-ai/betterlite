@@ -1,5 +1,8 @@
 task: B1508
 deviations:
+  - what: An injected system home that is not UTF-8 warns and leaves the literal default token path unchanged.
+    why: Configuration paths are UTF-8 strings; replacing invalid bytes would target a different credential directory.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/chatgpt/authenticator.py#L44-L47
   - what: Auth files above 1 MiB warn and behave as unreadable; JWT hints above 16 KiB yield no claims.
     why: Local credentials are outside bytes and decoding must have finite allocation limits.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/chatgpt/authenticator.py#L96-L140
