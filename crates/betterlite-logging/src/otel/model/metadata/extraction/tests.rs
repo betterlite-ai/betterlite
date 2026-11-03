@@ -1,6 +1,6 @@
 #![cfg(test)]
-use crate::otel::model::metadata::callback::auth_metadata;
-use crate::otel::model::metadata::request_data::{
+use crate::otel::model::metadata::extraction::auth_metadata;
+use crate::otel::model::metadata::extraction::{
     metadata_from_request_data, model_from_request_data,
 };
 use crate::otel::model::utils::coercion::OtelModelValue;
@@ -30,4 +30,44 @@ fn auth_metadata_keeps_only_string_values() {
             .as_deref(),
         Some("t")
     );
+}
+
+#[rstest::rstest]
+#[case(
+    r#"{"metadata":{"user_api_key_auth_metadata":{"tenant":"closed"}}}"#,
+    "closed"
+)]
+#[case(
+    r#"{"metadata":{"user_api_key_auth_metadata":{"number":1}}}"#,
+    "primary"
+)]
+fn auth_config_falls_back_in_payload_then_metadata_order(
+    #[case] source: &str,
+    #[case] expected: &str,
+) {
+    let kwargs = input(
+        r#"{"litellm_params":{"metadata":{"user_api_key_auth_metadata":{"tenant":"primary"}},"litellm_metadata":{"user_api_key_auth_metadata":{"tenant":"secondary"}}}}"#,
+    );
+    let payload = input(source);
+    let config = auth_metadata(Some(&payload), &kwargs).unwrap();
+    assert_eq!(config.get("tenant").map(String::as_str), Some(expected));
+    assert_eq!(config.len(), 1);
+}
+
+#[test]
+fn anthropic_metadata_is_read_without_primary_metadata() {
+    let secondary = input(
+        r#"{"litellm_params":{"litellm_metadata":{"user_api_key_auth_metadata":{"tenant":"secondary"}}}}"#,
+    );
+    assert_eq!(
+        auth_metadata(None, &secondary)
+            .unwrap()
+            .get("tenant")
+            .map(String::as_str),
+        Some("secondary")
+    );
+    let snapshot = input(
+        r#"{"litellm_metadata":{"requester_metadata":{"project":"caller"},"user_api_key_user_id":"server"}}"#,
+    );
+    assert_eq!(metadata_from_request_data(&snapshot).unwrap().len(), 1);
 }

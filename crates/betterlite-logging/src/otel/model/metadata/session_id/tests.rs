@@ -1,6 +1,6 @@
 #![cfg(test)]
-use crate::otel::model::metadata::callback::caller_session_id;
-use crate::otel::model::trace_controls::TraceControls;
+use crate::otel::model::metadata::session_id::caller_session_id;
+use crate::otel::model::trace_controls::{TraceControls, caller_trace_controls};
 use crate::otel::model::utils::coercion::OtelModelValue;
 
 fn input(source: &str) -> OtelModelValue {
@@ -39,4 +39,21 @@ fn explicit_header_parameter_wins_over_body() {
         caller_session_id(&kwargs, &trace).as_deref(),
         Some("header")
     );
+}
+
+#[rstest::rstest]
+#[case(r#"{"litellm_params":{"litellm_session_id":"minted","metadata":{"session_id":"minted","litellm_session_id_generated":true}}}"#, None)]
+#[case(
+    r#"{"litellm_params":{"litellm_session_id":"trace","metadata":{"trace_id":"trace"}}}"#,
+    None
+)]
+#[case(r#"{"litellm_params":{"metadata":{"session_id":"minted","litellm_session_id_generated":true},"litellm_metadata":{"session_id":"caller"}}}"#, Some("caller"))]
+#[case(r#"{"litellm_params":{"metadata":{"session_id":"minted","litellm_session_id_generated":true},"proxy_server_request":{"headers":{"langfuse_session_id":"header"}}}}"#, Some("header"))]
+fn minted_ids_and_trace_echoes_never_become_caller_sessions(
+    #[case] source: &str,
+    #[case] expected: Option<&str>,
+) {
+    let kwargs = input(source);
+    let trace = caller_trace_controls(&kwargs);
+    assert_eq!(caller_session_id(&kwargs, &trace).as_deref(), expected);
 }

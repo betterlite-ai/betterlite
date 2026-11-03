@@ -3,7 +3,7 @@ use crate::otel::model::baggage::{
     BAGGAGE_PROMOTED_KEYS, TEAM_METADATA, filtered_team_metadata_json, promoted_baggage,
     promoted_metadata,
 };
-use crate::otel::model::metadata::identity::RequestIdentity;
+use crate::otel::model::metadata::request_identity::RequestIdentity;
 use crate::otel::model::utils::coercion::OtelModelValue;
 use std::collections::BTreeMap;
 
@@ -67,4 +67,23 @@ fn empty_team_metadata_is_dropped() {
         0
     );
     assert_eq!(TEAM_METADATA, "litellm.team.metadata");
+}
+
+#[test]
+fn end_user_is_opt_in_and_team_metadata_needs_its_own_allowlist() {
+    let mut caller = identity();
+    caller.end_user = Some("person".to_owned());
+    let defaults: Vec<String> = BAGGAGE_PROMOTED_KEYS
+        .iter()
+        .map(|key| (*key).to_owned())
+        .collect();
+    let promoted = promoted_baggage(&caller, None, &defaults, &[], &[]);
+    assert!(!promoted.contains_key("litellm.end_user.id"));
+    assert!(!promoted.contains_key(TEAM_METADATA));
+    let opted_in = promoted_baggage(&caller, None, &["litellm.end_user.id".to_owned()], &[], &[]);
+    assert_eq!(opted_in.len(), 1);
+    assert_eq!(
+        opted_in.get("litellm.end_user.id").map(String::as_str),
+        Some("person")
+    );
 }

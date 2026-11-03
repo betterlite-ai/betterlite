@@ -1,5 +1,7 @@
 use betterlite_logging::otel::model::baggage::promoted_baggage;
-use betterlite_logging::otel::model::metadata::identity::{RequestContext, RequestIdentity};
+use betterlite_logging::otel::model::metadata::request_context::RequestContext;
+use betterlite_logging::otel::model::metadata::request_identity::RequestIdentity;
+use betterlite_logging::otel::model::metadata::request_identity::parse::from_payload;
 use betterlite_logging::otel::model::utils::coercion::OtelModelValue;
 use serde_json::{Value, json};
 
@@ -16,7 +18,7 @@ impl crate::helpers::Helper for Op {
                     .ok_or_else(|| invalid("payload is required"))?;
                 let payload = serde_json::from_value::<OtelModelValue>(payload_value.clone())
                     .map_err(|error| invalid(&error.to_string()))?;
-                serde_json::to_value(RequestIdentity::from_payload(&payload))
+                serde_json::to_value(from_payload(&payload))
                     .map_err(|error| invalid(&error.to_string()))
             }
             Some("context") => {
@@ -53,7 +55,7 @@ fn session_or_flatten(input: &Value, action: &str) -> crate::helpers::HelperResu
             .map_err(|error| invalid(&error.to_string()))?;
         let trace = betterlite_logging::otel::model::trace_controls::caller_trace_controls(&kwargs);
         return Ok(
-            json!({"session_id": betterlite_logging::otel::model::metadata::callback::caller_session_id(&kwargs, &trace)}),
+            json!({"session_id": betterlite_logging::otel::model::metadata::session_id::caller_session_id(&kwargs, &trace)}),
         );
     }
     let metadata_value = input.get("metadata").cloned().unwrap_or_else(|| json!({}));
@@ -68,7 +70,7 @@ fn session_or_flatten(input: &Value, action: &str) -> crate::helpers::HelperResu
         | OtelModelValue::Array(_) => None,
     };
     Ok(json!(
-        betterlite_logging::otel::model::metadata::identity::flatten_metadata(flattened)
+        betterlite_logging::otel::model::metadata::helpers::flatten_metadata(flattened)
     ))
 }
 

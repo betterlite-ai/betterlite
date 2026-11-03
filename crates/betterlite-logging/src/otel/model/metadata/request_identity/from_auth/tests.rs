@@ -1,6 +1,7 @@
 #![cfg(test)]
-use crate::otel::model::metadata::identity::RequestIdentity;
+use crate::otel::model::metadata::request_identity::from_auth::from_user_api_key_auth;
 use crate::otel::model::utils::coercion::OtelModelValue;
+use std::collections::BTreeMap;
 
 #[test]
 fn auth_identity_flattens_requester_metadata_and_key_fields() {
@@ -8,24 +9,25 @@ fn auth_identity_flattens_requester_metadata_and_key_fields() {
     let requester: OtelModelValue =
         serde_json::from_str(r#"{"requester_metadata":{"project":{"name":"demo"}}}"#)
             .expect("test JSON is valid");
-    let identity = RequestIdentity::from_user_api_key_auth(&auth, Some(&requester));
+    let identity = from_user_api_key_auth(&auth, Some(&requester));
     assert_eq!(identity.team_id.as_deref(), Some("team"));
     assert_eq!(identity.team_alias.as_deref(), Some("alias"));
     assert_eq!(identity.key_hash.as_deref(), Some("hash"));
     assert_eq!(identity.end_user.as_deref(), Some("end-user"));
     assert_eq!(identity.provider_model, None);
     assert_eq!(
-        identity
-            .metadata
-            .get("requester_metadata.project.name")
-            .map(String::as_str),
-        Some("demo")
+        identity.metadata,
+        BTreeMap::from([
+            (
+                "requester_metadata.project.name".to_owned(),
+                "demo".to_owned()
+            ),
+            ("user_api_key_user_id".to_owned(), "user".to_owned()),
+            ("user_api_key_org_id".to_owned(), "org".to_owned()),
+            ("user_api_key_alias".to_owned(), "key".to_owned()),
+            ("user_api_key_end_user_id".to_owned(), "end-user".to_owned()),
+        ])
     );
-    assert_eq!(
-        identity
-            .metadata
-            .get("user_api_key_user_id")
-            .map(String::as_str),
-        Some("user")
-    );
+    assert_eq!(identity.call_id, None);
+    assert_eq!(identity.request_route, None);
 }

@@ -1,5 +1,5 @@
 use crate::otel::model::metadata::REQUESTER_METADATA_PATH;
-use crate::otel::model::metadata::identity::RequestIdentity;
+use crate::otel::model::metadata::request_identity::RequestIdentity;
 use crate::otel::model::utils::coercion::OtelModelValue;
 use serde_json::to_string;
 use std::collections::BTreeMap;
