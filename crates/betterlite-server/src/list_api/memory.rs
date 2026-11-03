@@ -16,20 +16,22 @@ pub enum Cell {
 }
 pub type Cells = BTreeMap<String, Cell>;
 
-fn sign(cell: &Cell, value: &FilterValue) -> Option<Ordering> {
-    match (cell, value) {
-        (Cell::Text(left), FilterValue::Text(right)) => Some(left.cmp(right)),
-        (Cell::Int(left), FilterValue::Int(right)) => Some(left.cmp(right)),
-        (Cell::Money(left), FilterValue::Money(right)) => Some(left.cmp(right)),
-        (Cell::Timestamp(left), FilterValue::Timestamp(right)) => Some(left.cmp(right)),
-        _ => None,
+impl Cell {
+    fn compare(&self, other: &Self) -> Option<Ordering> {
+        match (self, other) {
+            (Self::Text(left), Self::Text(right)) => Some(left.cmp(right)),
+            (Self::Int(left), Self::Int(right)) => Some(left.cmp(right)),
+            (Self::Money(left), Self::Money(right)) => Some(left.cmp(right)),
+            (Self::Timestamp(left), Self::Timestamp(right)) => Some(left.cmp(right)),
+            _ => None,
+        }
     }
 }
 
 fn holds_one(cell: &Cell, predicate: &Predicate) -> bool {
     match predicate {
         Predicate::Compare(compare) => {
-            let ordering = sign(cell, &compare.value);
+            let ordering = cell.compare(&filter_cell(&compare.value));
             match compare.op {
                 ComparisonOp::Eq => ordering == Some(Ordering::Equal),
                 ComparisonOp::Not => ordering.is_some_and(|value| value != Ordering::Equal),
@@ -49,12 +51,21 @@ fn holds_one(cell: &Cell, predicate: &Predicate) -> bool {
         Predicate::Within(within) => within
             .values
             .iter()
-            .any(|value| sign(cell, value) == Some(Ordering::Equal)),
+            .any(|value| cell.compare(&filter_cell(value)) == Some(Ordering::Equal)),
         Predicate::IsNull(is_null) => (matches!(cell, Cell::Null)) != is_null.negated,
         Predicate::AnyOf(any) => any
             .clauses
             .iter()
             .any(|clause| holds_one(cell, &Predicate::Compare(clause.clone()))),
+    }
+}
+
+fn filter_cell(value: &FilterValue) -> Cell {
+    match value {
+        FilterValue::Text(text) => Cell::Text(text.clone()),
+        FilterValue::Int(number) => Cell::Int(*number),
+        FilterValue::Money(amount) => Cell::Money(*amount),
+        FilterValue::Timestamp(timestamp) => Cell::Timestamp(*timestamp),
     }
 }
 
@@ -75,7 +86,7 @@ fn compare_cells(left_cell: Option<&Cell>, right_cell: Option<&Cell>, key: &Sort
             compare_repeated(left_values, right_values)
         }
         (Some(left_value), Some(right_value)) => {
-            sign(left_value, &cell_value(right_value)).unwrap_or(Ordering::Equal)
+            left_value.compare(right_value).unwrap_or(Ordering::Equal)
         }
     };
     if key.descending
@@ -90,22 +101,12 @@ fn compare_cells(left_cell: Option<&Cell>, right_cell: Option<&Cell>, key: &Sort
 
 fn compare_repeated(left: &[Cell], right: &[Cell]) -> Ordering {
     for (left_value, right_value) in left.iter().zip(right) {
-        let ordering = sign(left_value, &cell_value(right_value)).unwrap_or(Ordering::Equal);
+        let ordering = left_value.compare(right_value).unwrap_or(Ordering::Equal);
         if ordering != Ordering::Equal {
             return ordering;
         }
     }
     left.len().cmp(&right.len())
-}
-
-fn cell_value(cell: &Cell) -> FilterValue {
-    match cell {
-        Cell::Text(value) => FilterValue::Text(value.clone()),
-        Cell::Int(value) => FilterValue::Int(*value),
-        Cell::Money(value) => FilterValue::Money(*value),
-        Cell::Timestamp(value) => FilterValue::Timestamp(*value),
-        Cell::Null | Cell::Repeated(_) => FilterValue::Text(String::new()),
-    }
 }
 
 #[derive(Debug, Clone)]
