@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from datetime import UTC
 from decimal import Decimal
 from typing import TYPE_CHECKING, TypeAlias, cast
 
@@ -61,6 +62,7 @@ def _run_baseline_usage(input_value: dict[str, Json]) -> Json:
     normalized = _baseline_usage(usage, baseline_info)
     dump = normalized.model_dump()
     details = normalized.prompt_tokens_details
+    cache_creation_tokens = None if details is None else details.cache_creation_tokens
     return {
         "available": True,
         "prompt_tokens": normalized.prompt_tokens,
@@ -70,6 +72,7 @@ def _run_baseline_usage(input_value: dict[str, Json]) -> Json:
         "cache_creation_input_tokens": dump.get("cache_creation_input_tokens", 0),
         "cached_tokens": None if details is None else details.cached_tokens,
         "cache_write_tokens": None if details is None else details.cache_write_tokens,
+        "cache_creation_tokens": cache_creation_tokens,
         "text_tokens": None if details is None else details.text_tokens,
         "has_cache_creation_token_details": details is not None
         and details.cache_creation_token_details is not None,
@@ -106,6 +109,8 @@ def _run_snapshot(input_value: dict[str, Json]) -> Json:
 def _run_billed_at(input_value: dict[str, Json]) -> Json:
     text = cast(str, input_value["text"])
     decoded = _coerce_billed_at(text)
+    if decoded is not None and decoded.tzinfo is None:
+        decoded = decoded.replace(tzinfo=UTC)
     return {
         "decoded_unix_micros": None if decoded is None else round(decoded.timestamp() * 1_000_000),
     }
