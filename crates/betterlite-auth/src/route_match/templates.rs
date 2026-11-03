@@ -1,4 +1,4 @@
-use onig::{MatchParam, Regex, RegexOptions, SearchOptions, Syntax};
+use super::python_regex;
 
 pub enum RouteValue<'text> {
     Text(&'text str),
@@ -10,19 +10,12 @@ pub fn route_matches_pattern(route: &RouteValue<'_>, pattern: &str) -> bool {
     let RouteValue::Text(text) = route else {
         return false;
     };
-    let substituted = substitute_placeholders(pattern);
-    let Ok(compiled) = Regex::with_options(
-        &format!("^{substituted}$"),
-        RegexOptions::REGEX_OPTION_NONE,
-        Syntax::python(),
-    ) else {
+    if pattern.len() > 0x4000 {
         return false;
-    };
-    let mut limits = MatchParam::default();
-    limits.set_retry_limit_in_match(1_000_000);
-    compiled
-        .match_with_param(*text, 0, SearchOptions::SEARCH_OPTION_NONE, None, limits)
-        .is_ok_and(|matched| matched.is_some())
+    }
+    let substituted = substitute_placeholders(pattern);
+    python_regex::compile(&format!("^{substituted}$"))
+        .is_ok_and(|compiled| compiled.is_match(text.as_bytes()).unwrap_or(false))
 }
 
 // A :path placeholder stops before a following literal colon, but otherwise accepts router path input.

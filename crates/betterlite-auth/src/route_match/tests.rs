@@ -1,5 +1,8 @@
 #![cfg(test)]
 
+use std::fs;
+use std::path::Path;
+
 use super::canonical::{
     RequestRouteSource, ScopeFields, get_request_route, is_assistants_api_request,
     is_generate_content_route,
@@ -381,4 +384,79 @@ fn python_regex_boundaries(#[case] route: &str, #[case] pattern: &str, #[case] e
 #[case::ascii_after_unicode("/models/\u{e9}\u{e9}", r"/models/(?a:(?u:\w)\w)", false)]
 fn python_flag_scopes(#[case] route: &str, #[case] pattern: &str, #[case] expected: bool) {
     assert_eq!(check_route_access(route, &[pattern]), expected);
+}
+
+#[rstest::rstest]
+#[case::dotted_i("/\u{130}", "/(?i:i)", true)]
+#[case::dotless_i("/\u{131}", "/(?i:i)", true)]
+#[case::long_s("/\u{17f}", "/(?i:s)", true)]
+#[case::range_dotted_i("/\u{130}", "/(?i:[a-z])", true)]
+#[case::range_dotless_i("/\u{131}", "/(?i:[A-Z])", true)]
+#[case::negated_range("/\u{130}", "/(?i:[^a-z])", false)]
+#[case::ascii_range_kelvin("/\u{212a}", "/(?ai:[a-z])", false)]
+#[case::ascii_range_accent("/\u{c9}", "/(?ai:[\u{e9}])", false)]
+#[case::unicode_range_accent("/\u{c9}", "/(?i:[\u{e9}])", true)]
+#[case::ascii_complement("/\u{e9}", r"/(?a:[\W])", true)]
+#[case::unicode_number("/\u{b2}", r"/\w", true)]
+#[case::unicode_mark("/\u{301}", r"/\w", false)]
+#[case::unicode_space("/\u{1c}", r"/\s", true)]
+#[case::ascii_space("/\u{1c}", r"/(?a:\s)", false)]
+#[case::nested_ignorecase("/aK\u{e9}", "/(?i:a(?a:k)(?-i:\u{e9}))", true)]
+#[case::restored_ignorecase("/aK\u{c9}", "/(?i:a(?a:k)(?-i:\u{e9}))", false)]
+#[case::escaped_literal("/\u{212a}", r"/(?i:\x6b)", true)]
+#[case::escaped_ascii_literal("/\u{212a}", r"/(?ai:\x6b)", false)]
+#[case::lookbehind("/K\u{e9}", "/(?ai:k)(?<=K)(?u:\u{e9})", true)]
+#[case::scoped_negative_lookahead("/\u{212a}", "/(?!(?ai:k))(?i:k)", true)]
+#[case::dot_newline("/a\nb", "/(?s:a.b)", true)]
+#[case::verbose_comment("/K", "/(?ix: # ) ignored\n k)", true)]
+#[case::class_brackets("/]", "/(?i:[]a])", true)]
+#[case::class_literal_open("/[", "/(?i:[[])", true)]
+#[case::unicode_boundary("/\u{b2}", r"/\b\w+\b", true)]
+#[case::ascii_boundary("/\u{e9}", r"/(?a:\b)\u00e9", false)]
+#[case::strict_end("/foo\n", r"/foo\Z", false)]
+#[case::named_capture("/aa", "/(?P<letter>a)(?P=letter)", true)]
+#[case::capture_conditional("/ab", "/(a)?(?(1)b|c)", true)]
+fn python_regex_adapter(#[case] route: &str, #[case] pattern: &str, #[case] expected: bool) {
+    assert_eq!(check_route_access(route, &[pattern]), expected);
+}
+
+#[test]
+fn replays_the_route_pattern_corpus() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../betterlite-server/fuzz/corpus/route_pattern");
+    let results = fs::read_dir(corpus)
+        .unwrap()
+        .map(|entry| {
+            let source = fs::read_to_string(entry.unwrap().path()).unwrap();
+            let (pattern, route) = source.split_once('\0').unwrap();
+            route_matches_pattern(&RouteValue::Text(route), pattern)
+        })
+        .collect::<Vec<_>>();
+    assert!(!results.is_empty());
+}
+
+#[test]
+fn python_regex_resource_limits() {
+    assert!(matches!(
+        super::python_regex::compile(&"a".repeat(0x4001)),
+        Err(super::python_regex::RegexError::Limit)
+    ));
+    let deeply_nested = format!("{}a{}", "(?:".repeat(129), ")".repeat(129));
+    assert!(matches!(
+        super::python_regex::compile(&deeply_nested),
+        Err(super::python_regex::RegexError::Limit)
+    ));
+    let expensive = format!("{}!", "a".repeat(100));
+    assert!(!route_matches_pattern(
+        &RouteValue::Text(&expensive),
+        "(a+)+"
+    ));
+}
+
+#[test]
+fn invalid_route_regex_denies() {
+    assert!(!route_matches_pattern(
+        &RouteValue::Text("/value"),
+        "/(?a:["
+    ));
 }
