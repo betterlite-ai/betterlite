@@ -1,0 +1,15 @@
+kind: helper
+name: category-greek-final-sigma
+call:
+  b3691:
+    function: categories
+    roots:
+      -
+        - filename: ΟΣ.json
+          content: "{}"
+        - filename: greek.yaml
+          content: |
+            category_name: ΟΣ
+env: {}
+compare:
+  ignore: []

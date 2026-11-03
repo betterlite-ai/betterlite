@@ -13,7 +13,6 @@ use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::PathBuf;
 
-use rstest::rstest;
 use tempfile::TempDir;
 
 use betterlite_config::sections::content_filter_catalog::categories::{
@@ -59,12 +58,25 @@ fn find_category_file_checks_the_bundled_root_before_the_legacy_root() {
     assert_eq!(found, bundled.join("categories/foo.json"));
 }
 
-#[rstest]
-#[case::parent_traversal("../x")]
-#[case::absolute_path("/abs/path")]
-fn find_category_file_rejects_escaping_names(#[case] category_name: &str) {
-    let (_tmp, root) = root_with_categories(&[("x.yaml", "category_name: x\n")]);
+#[test]
+fn find_category_file_rejects_parent_traversal_when_target_exists_outside_categories() {
+    let (_tmp, root) = root_with_categories(&[]);
+    let outside = root.join("outside.yaml");
+    fs::write(&outside, "category_name: outside\n").unwrap();
     let roots = [root.as_path()];
+    assert!(outside.is_file());
+    assert_eq!(find_category_file("../outside", &roots), None);
+}
+
+#[test]
+fn find_category_file_rejects_absolute_target_when_file_exists_outside_categories() {
+    let (_tmp, root) = root_with_categories(&[]);
+    let outside = root.join("outside.yaml");
+    fs::write(&outside, "category_name: outside\n").unwrap();
+    let category_path = outside.with_extension("");
+    let category_name = category_path.to_str().unwrap();
+    let roots = [root.as_path()];
+    assert!(outside.is_file());
     assert_eq!(find_category_file(category_name, &roots), None);
 }
 

@@ -102,6 +102,10 @@ fn compatible_regex_pattern(pattern: &str) -> String {
         match character {
             '\\' => match characters.next() {
                 Some('b') if !in_character_class => compatible.push_str(PYTHON_WORD_BOUNDARY),
+                Some('s') if in_character_class => {
+                    compatible.push_str(r"\s\x{1c}-\x{1f}");
+                }
+                Some('s') => compatible.push_str(r"[\s\x{1c}-\x{1f}]"),
                 Some(escaped) => {
                     compatible.push('\\');
                     compatible.push(escaped);

@@ -2,6 +2,8 @@
 
 use std::error::Error as _;
 
+use rstest::rstest;
+
 use super::{
     PatternCatalogError, get_all_pattern_names, get_compiled_pattern, get_pattern_metadata,
     pattern_categories, pattern_extra_config,
@@ -27,6 +29,35 @@ fn get_compiled_pattern_matches_python_unicode_casefold_and_word_boundaries() {
     assert!(ssn.is_match("123-45-6789\u{0345}").unwrap());
     let aws_key = get_compiled_pattern("aws_access_key").unwrap();
     assert!(aws_key.is_match("AK\u{130}A1234567890ABCDEF").unwrap());
+}
+
+#[rstest]
+#[case::file_separator('\u{1c}')]
+#[case::group_separator('\u{1d}')]
+#[case::record_separator('\u{1e}')]
+#[case::unit_separator('\u{1f}')]
+fn get_compiled_visa_pattern_matches_python_control_whitespace(#[case] separator: char) {
+    let visa = get_compiled_pattern("visa").unwrap();
+    let number = format!("4111{separator}1111{separator}1111{separator}1111");
+    assert!(visa.is_match(&number).unwrap(), "separator {separator:?}");
+}
+
+#[rstest]
+#[case::outside_file_separator(r"\s", '\u{1c}')]
+#[case::outside_group_separator(r"\s", '\u{1d}')]
+#[case::outside_record_separator(r"\s", '\u{1e}')]
+#[case::outside_unit_separator(r"\s", '\u{1f}')]
+#[case::inside_file_separator(r"[\s]", '\u{1c}')]
+#[case::inside_group_separator(r"[\s]", '\u{1d}')]
+#[case::inside_record_separator(r"[\s]", '\u{1e}')]
+#[case::inside_unit_separator(r"[\s]", '\u{1f}')]
+fn compatible_whitespace_escape_matches_python_controls_inside_and_outside_classes(
+    #[case] source: &str,
+    #[case] whitespace: char,
+) {
+    let pattern = super::compatible_regex_pattern(source);
+    let regex = fancy_regex::Regex::new(&format!("(?i){pattern}")).unwrap();
+    assert!(regex.is_match(&whitespace.to_string()).unwrap());
 }
 
 #[test]

@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{self, Component, Path, PathBuf};
 
+use unicode_general_category::{GeneralCategory, get_general_category};
+
 use crate::sections::content_filter_records::ContentFilterAction;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -130,15 +132,13 @@ fn json_category_entry(stem: &str) -> CategoryCatalogEntry {
 fn title_case(value: &str) -> String {
     let mut titled = String::with_capacity(value.len());
     let mut capitalize = true;
-    for character in value.chars() {
+    let characters: Vec<char> = value.chars().collect();
+    for (position, character) in characters.iter().copied().enumerate() {
         let lowercase_mapping: String = character.to_lowercase().collect();
-        let is_cased = character.is_lowercase()
-            || character.is_uppercase()
-            || lowercase_mapping != character.to_string();
         if character == '_' {
             titled.push(' ');
             capitalize = true;
-        } else if is_cased {
+        } else if is_cased(character) {
             if capitalize {
                 titled.extend(
                     unicode_titlecase::to_titlecase(character)
@@ -146,6 +146,8 @@ fn title_case(value: &str) -> String {
                         .take_while(|titlecase| *titlecase != '\0'),
                 );
                 capitalize = false;
+            } else if character == '\u{03a3}' && is_final_sigma(&characters, position) {
+                titled.push('\u{03c2}');
             } else {
                 titled.push_str(&lowercase_mapping);
             }
@@ -155,6 +157,95 @@ fn title_case(value: &str) -> String {
         }
     }
     titled
+}
+
+fn is_cased(character: char) -> bool {
+    let lowercase_mapping: String = character.to_lowercase().collect();
+    character.is_lowercase()
+        || character.is_uppercase()
+        || lowercase_mapping != character.to_string()
+}
+
+fn is_case_ignorable(character: char) -> bool {
+    is_ignorable_category(character)
+        || is_ignorable_punct_common(character)
+        || is_ignorable_punct_extended(character)
+}
+
+fn is_ignorable_category(character: char) -> bool {
+    matches!(
+        get_general_category(character),
+        GeneralCategory::NonspacingMark
+            | GeneralCategory::EnclosingMark
+            | GeneralCategory::Format
+            | GeneralCategory::ModifierLetter
+            | GeneralCategory::ModifierSymbol
+    )
+}
+
+const fn is_ignorable_punct_common(character: char) -> bool {
+    matches!(
+        character,
+        '\u{0027}'
+            | '\u{002e}'
+            | '\u{003a}'
+            | '\u{005e}'
+            | '\u{0060}'
+            | '\u{00b7}'
+            | '\u{0387}'
+            | '\u{055f}'
+            | '\u{05f4}'
+            | '\u{0897}'
+            | '\u{2018}'
+            | '\u{2019}'
+            | '\u{2024}'
+            | '\u{2027}'
+            | '\u{fe13}'
+            | '\u{fe52}'
+            | '\u{fe55}'
+            | '\u{ff07}'
+            | '\u{ff0e}'
+            | '\u{ff1a}'
+    )
+}
+
+const fn is_ignorable_punct_extended(character: char) -> bool {
+    matches!(
+        character,
+        '\u{10d4e}'
+            | '\u{10d69}'..='\u{10d6d}'
+            | '\u{10d6f}'
+            | '\u{10efc}'
+            | '\u{113bb}'..='\u{113c0}'
+            | '\u{113ce}'
+            | '\u{113d0}'
+            | '\u{113d2}'
+            | '\u{113e1}'..='\u{113e2}'
+            | '\u{11f5a}'
+            | '\u{1611e}'..='\u{16129}'
+            | '\u{1612d}'..='\u{1612f}'
+            | '\u{16d40}'..='\u{16d42}'
+            | '\u{16d6b}'..='\u{16d6c}'
+            | '\u{1e5ee}'..='\u{1e5ef}'
+    )
+}
+
+fn is_final_sigma(characters: &[char], position: usize) -> bool {
+    let preceding_cased = characters
+        .iter()
+        .take(position)
+        .rev()
+        .find(|character| !is_case_ignorable(**character))
+        .is_some_and(|character| is_cased(*character));
+    let following_cased = characters
+        .iter()
+        .enumerate()
+        .skip(position)
+        .skip(1)
+        .map(|(_, character)| character)
+        .find(|character| !is_case_ignorable(**character))
+        .is_some_and(|character| is_cased(*character));
+    preceding_cased && !following_cased
 }
 
 // Mirrors the lexical half of betterlite_server::assets::paths::join_within, without symlink resolution.

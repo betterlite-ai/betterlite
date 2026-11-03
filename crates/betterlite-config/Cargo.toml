@@ -28,6 +28,7 @@ strum = { version = "0.28.0", features = ["derive"] }
 tempfile = "3.27.0"
 thiserror.workspace = true
 tracing.workspace = true
+unicode-general-category = "1.1.0"
 unicode_titlecase = "2.5.0"
 url = "2.5.8"
 
