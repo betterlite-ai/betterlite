@@ -170,6 +170,16 @@ fn cached_response_rejects_payload_over_one_mebibyte() {
     ));
 }
 
+#[test]
+fn cached_response_accepts_payload_at_one_mebibyte_limit() {
+    let mut payload = Vec::with_capacity(0x0010_0000);
+    payload.extend_from_slice(b"{\"x\":\"");
+    payload.resize(0x000F_FFFE, b'a');
+    payload.extend_from_slice(b"\"}");
+    assert_eq!(payload.len(), 0x0010_0000);
+    assert!(decode_cached_response(Some(&payload)).unwrap().is_some());
+}
+
 #[rstest::rstest]
 fn replays_the_semantic_cache_response_corpus(
     #[files("fuzz/corpus/semantic_cache_response/*")] path: PathBuf,
