@@ -161,8 +161,8 @@ fn auth_spec_kind(raw: &str) -> serde_json::Value {
     }
 }
 
-fn auth_config_defaults(config: &AuthConfig) -> serde_json::Value {
-    match config {
+fn auth_config_defaults(auth_config: &AuthConfig) -> serde_json::Value {
+    match auth_config {
         AuthConfig::TokenExchange(config) => json!({
             "profile": match config.profile {
                 betterlite_mcp::credential_contracts::auth_config::oauth::TokenExchangeProfile::Rfc8693 => "rfc8693",
