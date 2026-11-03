@@ -98,6 +98,7 @@ Max's product decisions so far. A task that contradicts one of them is wrong, no
 - 2026-11-03: routine coding and operations stay on Luna. A first blocked report returns to the architect for clarification before the worker ladder advances; Astra remains available for genuine escalation after cheaper attempts fail. Required review models and gates stay unchanged (Max).
 - 2026-11-03: a final Astra worker rung gives a bounded rescue after the cheaper Luna and Sonnet attempts, including when Claude's vendor is unavailable at its rung. It is one fresh start, uses the existing attempt history and max_worker_attempts cap, and further work requires an explicit grant on the last rung. Review models and gates stay unchanged (Max).
 - 2026-11-03: a task's gate runs only the tests its own commands name, locally and in the merge queue. The tests check that ran every test of the affected packages is gone, since B5094's gate ran 12,190 tests for it. A task that changes code other tests cover names those test modules in a check. A PR without a task still tests the affected packages, and a push to main still runs the whole suite (Max).
+- 2026-11-03: the mutants check runs test binaries under `prlimit --as=4294967296` through cargo's target runner, so a mutant that loops and allocates gets an allocation failure in its own test. Mutants like that OOM-killed three flows (B3300 twice, B5096) at a 16 GB scope peak. rustc and build scripts aren't capped (Max).
 
 ## Writing a task
 
