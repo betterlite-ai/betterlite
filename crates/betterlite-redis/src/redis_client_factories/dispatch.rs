@@ -1,6 +1,7 @@
 mod tests;
 
 use secrecy::ExposeSecret;
+use std::borrow::Cow;
 
 use super::error::FactoryError;
 use super::fields::ConnectionFields;
@@ -24,15 +25,17 @@ pub fn build_client(
     let use_provider_auth = settings.credential_provider_settings.is_some()
         && (kind == ClientKind::Async || target == Target::Cluster);
     let auth_settings = if use_provider_auth {
-        credential_provider_auth(settings)
+        Cow::Owned(credential_provider_auth(settings))
     } else {
-        settings.clone()
+        Cow::Borrowed(settings)
     };
     match target {
-        Target::Cluster => cluster::build(&auth_settings, kind).map(RedisClient::Cluster),
-        Target::Url => url::build(&auth_settings).map(RedisClient::Url),
-        Target::Sentinel => sentinel::build(&auth_settings).map(RedisClient::Sentinel),
-        Target::Direct => Ok(RedisClient::Direct(ConnectionFields::from(&auth_settings))),
+        Target::Cluster => cluster::build(auth_settings.as_ref(), kind).map(RedisClient::Cluster),
+        Target::Url => url::build(auth_settings.as_ref()).map(RedisClient::Url),
+        Target::Sentinel => sentinel::build(auth_settings.as_ref()).map(RedisClient::Sentinel),
+        Target::Direct => Ok(RedisClient::Direct(ConnectionFields::from(
+            auth_settings.as_ref(),
+        ))),
     }
 }
 

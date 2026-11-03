@@ -241,10 +241,13 @@ fn iam_provider_dispatch_replaces_static_credentials(
 }
 
 #[rstest]
-#[case::sync_url_gcp(Target::Url)]
-#[case::sync_sentinel_azure(Target::Sentinel)]
-#[case::sync_direct_gcp(Target::Direct)]
-fn iam_provider_dispatch_keeps_static_credentials_on_sync_paths(#[case] target: Target) {
+#[case::sync_url_gcp(Target::Url, false)]
+#[case::sync_sentinel_azure(Target::Sentinel, true)]
+#[case::sync_direct_gcp(Target::Direct, false)]
+fn iam_provider_dispatch_keeps_static_credentials_on_sync_paths(
+    #[case] target: Target,
+    #[case] azure: bool,
+) {
     let target_settings = match target {
         Target::Url => RedisConnectionSettings {
             url: Some(secrecy::SecretString::from("redis://cache:6379".to_owned())),
@@ -261,14 +264,22 @@ fn iam_provider_dispatch_keeps_static_credentials_on_sync_paths(#[case] target: 
         },
         Target::Cluster => blank_settings(),
     };
-    let settings = RedisConnectionSettings {
-        username: Some("user".to_owned()),
-        password: Some(secrecy::SecretString::from("pass".to_owned())),
-        credential_provider_settings: Some(CredentialProviderSettings::Azure {
+    let provider_settings = if azure {
+        CredentialProviderSettings::Azure {
             client_id: None,
             tenant_id: None,
             client_secret: None,
-        }),
+        }
+    } else {
+        CredentialProviderSettings::Gcp {
+            service_account: "svc".to_owned(),
+            ssl_ca_certs: None,
+        }
+    };
+    let settings = RedisConnectionSettings {
+        username: Some("user".to_owned()),
+        password: Some(secrecy::SecretString::from("pass".to_owned())),
+        credential_provider_settings: Some(provider_settings),
         passthrough: BTreeMap::from([(
             "redis_connect_func".to_owned(),
             PassthroughValue::Text("callback".to_owned()),
@@ -279,15 +290,27 @@ fn iam_provider_dispatch_keeps_static_credentials_on_sync_paths(#[case] target: 
     assert!(match built_client {
         RedisClient::Url(url_client) =>
             url_client.username.is_some()
+                && !url_client.credential_provider
                 && url_client.passthrough.contains_key("redis_connect_func"),
         RedisClient::Sentinel(sentinel_client) =>
             sentinel_client.connection_kwargs.username.is_some()
+                && sentinel_client
+                    .connection_kwargs
+                    .password
+                    .as_ref()
+                    .is_some_and(|password| password.expose_secret() == "pass")
+                && !sentinel_client.connection_kwargs.credential_provider
                 && sentinel_client
                     .connection_kwargs
                     .passthrough
                     .contains_key("redis_connect_func"),
         RedisClient::Direct(direct_client) =>
             direct_client.username.is_some()
+                && direct_client
+                    .password
+                    .as_ref()
+                    .is_some_and(|password| password.expose_secret() == "pass")
+                && !direct_client.credential_provider
                 && direct_client.passthrough.contains_key("redis_connect_func"),
         RedisClient::Cluster(_) => false,
     });
