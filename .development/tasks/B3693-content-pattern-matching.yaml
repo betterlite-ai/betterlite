@@ -12,6 +12,10 @@ description: >-
   or more than one word between keyword and value spans. Write behavior rstest functions
   pattern_matching_behavior in adjacent tests.rs files, with a named case for each behavior
   and failure in the DoD; corpus replay tests have separate names.
+
+  Use the B3691 catalog API at betterlite_config::sections::content_filter_catalog::patterns::get_compiled_pattern
+  for prebuilt patterns. Add a direct fancy-regex dependency to betterlite for custom pattern compilation
+  so both paths use the same engine.
 scope:
   paths:
     - crates/betterlite/src/guardrails/pattern_matching.rs
