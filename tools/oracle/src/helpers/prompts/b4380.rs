@@ -39,7 +39,7 @@ impl Helper for Op {
                 Ok(prompt) => {
                     to_value(prompt).map_err(|error| serialization_error(error.to_string()))
                 }
-                Err(error) => Err(semantic_cache_error(error)),
+                Err(error) => Err(semantic_cache_error(&error)),
             },
             Input::DecodeCachedResponse { payload } => {
                 let bytes = payload.as_deref().map(str::as_bytes);
@@ -47,14 +47,14 @@ impl Helper for Op {
                     Ok(response) => {
                         to_value(response).map_err(|error| serialization_error(error.to_string()))
                     }
-                    Err(error) => Err(semantic_cache_error(error)),
+                    Err(error) => Err(semantic_cache_error(&error)),
                 }
             }
         }
     }
 }
 
-fn semantic_cache_error(error: SemanticCacheRecordsError) -> Box<HelperError> {
+fn semantic_cache_error(error: &SemanticCacheRecordsError) -> Box<HelperError> {
     Box::new(HelperError {
         class: "ValueError".to_owned(),
         status: None,

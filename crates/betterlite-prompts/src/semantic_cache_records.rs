@@ -54,13 +54,18 @@ fn collect_responses_text(
             }
         }
         Json::Object(fields) => {
-            if let Some(content) = fields
+            match fields
                 .get("content")
                 .filter(|content| !matches!(content, Json::Null))
             {
-                collect_responses_text(content, depth.saturating_add(1), parts)?;
-            } else if let Some(text) = first_text_field(fields) {
-                parts.push(text.to_owned());
+                Some(content) => {
+                    collect_responses_text(content, depth.saturating_add(1), parts)?;
+                }
+                None => {
+                    if let Some(text) = first_text_field(fields) {
+                        parts.push(text.to_owned());
+                    }
+                }
             }
         }
         Json::Null | Json::Bool(_) | Json::Number(_) => {}
