@@ -35,6 +35,17 @@ fn blank_settings() -> RedisConnectionSettings {
     }
 }
 
+fn build_test_pool(target: Target, max_connections: Option<i64>) -> super::PoolConfig {
+    let settings = RedisConnectionSettings {
+        url: (target == Target::Url).then(|| SecretString::from("redis://cache:6379".to_owned())),
+        max_connections,
+        ..blank_settings()
+    };
+    build_connection_pool(&settings, target, &BTreeMap::<String, String>::new())
+        .expect("pool builds")
+        .expect("pool exists")
+}
+
 #[test]
 fn pool_timeout_defaults_to_five_seconds() {
     let env = BTreeMap::<String, String>::new();
@@ -132,13 +143,7 @@ fn a_sentinel_target_never_gets_a_pool() {
 #[case::direct(Target::Direct)]
 #[case::url(Target::Url)]
 fn pool_size_defaults_to_50_connections(#[case] target: Target) {
-    let settings = RedisConnectionSettings {
-        url: (target == Target::Url).then(|| SecretString::from("redis://cache:6379".to_owned())),
-        ..blank_settings()
-    };
-    let pool = build_connection_pool(&settings, target, &BTreeMap::<String, String>::new())
-        .expect("pool builds")
-        .expect("pool exists");
+    let pool = build_test_pool(target, None);
     assert_eq!(pool.max_connections, 50);
 }
 
@@ -146,15 +151,12 @@ fn pool_size_defaults_to_50_connections(#[case] target: Target) {
 #[case::direct(Target::Direct)]
 #[case::url(Target::Url)]
 fn pool_size_follows_the_configured_max_connections(#[case] target: Target) {
-    let settings = RedisConnectionSettings {
-        url: (target == Target::Url).then(|| SecretString::from("redis://cache:6379".to_owned())),
-        max_connections: Some(12),
-        ..blank_settings()
-    };
-    let pool = build_connection_pool(&settings, target, &BTreeMap::<String, String>::new())
-        .expect("pool builds")
-        .expect("pool exists");
+    let pool = build_test_pool(target, Some(12));
     assert_eq!(pool.max_connections, 12);
+    match pool.connection {
+        PoolConnection::Direct(fields) => assert_eq!(fields.max_connections, Some(12)),
+        PoolConnection::Url(client) => assert_eq!(client.max_connections, Some(12)),
+    }
 }
 
 #[rstest]
