@@ -121,31 +121,33 @@ pub(super) fn parse_timestamp(raw: &str) -> Option<DateTime<Utc>> {
     to_utc(&parsed.ok()?)
 }
 
-fn normalized_float(raw: &str) -> Option<String> {
+fn normalized_decimal(raw: &str) -> Option<String> {
     let trimmed = raw.trim();
     let mut normalized = String::with_capacity(trimmed.len());
     let mut characters = trimmed.chars().peekable();
     while let Some(character) = characters.next() {
         if character == '_' {
-            let previous_is_digit = normalized
-                .chars()
-                .last()
-                .is_some_and(|prior| prior.is_ascii_digit());
+            let previous_is_digit = normalized.as_bytes().last().is_some_and(u8::is_ascii_digit);
             let next_is_digit = characters.peek().is_some_and(char::is_ascii_digit);
             if !previous_is_digit || !next_is_digit {
                 return None;
             }
-        } else {
+        } else if character.is_ascii_digit() || matches!(character, '+' | '-' | '.' | 'e' | 'E') {
             normalized.push(character);
+        } else {
+            return None;
         }
     }
-    let finite = normalized.parse::<f64>().ok()?.is_finite();
-    finite.then_some(normalized)
+    Some(normalized)
 }
 
 pub(super) fn parse_decimal(raw: &str) -> Option<Decimal> {
-    let normalized = normalized_float(raw)?;
-    if normalized.contains(['e', 'E']) {
+    let normalized = normalized_decimal(raw)?;
+    if let Some((_, exponent)) = normalized.split_once(['e', 'E']) {
+        let digits = exponent.strip_prefix(['+', '-']).unwrap_or(exponent);
+        if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+            return None;
+        }
         Decimal::from_scientific(&normalized).ok()
     } else {
         Decimal::from_str(&normalized).ok()

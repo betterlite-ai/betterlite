@@ -408,3 +408,57 @@ fn default_page_and_sort_are_used_before_tiebreaker() {
     assert_eq!(plan.order.first(), defaults.default_sort.first());
     assert_eq!(plan.order.len(), 2);
 }
+
+#[rstest::rstest]
+#[case::nan("NaN")]
+#[case::signed_nan("-nAn")]
+#[case::infinity("Infinity")]
+#[case::signed_infinity(" +iNF ")]
+#[case::overflow("1e999")]
+#[case::empty("")]
+#[case::point_only(".")]
+#[case::leading_separator("_1")]
+#[case::trailing_separator("1_")]
+#[case::point_separator("1_.0")]
+#[case::exponent_separator("1e_2")]
+#[case::repeated_separator("1__0")]
+#[case::missing_exponent("1e")]
+#[case::repeated_exponent("1e2e3")]
+#[case::double_exponent_sign("1e-+2")]
+#[case::interior_space("1 0")]
+fn monetary_text_rejects_invalid_numeric_syntax(#[case] raw: &str) {
+    let problem = coerce(
+        "amount",
+        FilterOp::Compare(ComparisonOp::Eq),
+        raw,
+        FilterType::Money,
+    )
+    .unwrap_err();
+    assert_eq!(problem.status, 400);
+    assert_eq!(problem.r#type, "urn:litellm:error:invalid-query-parameter");
+}
+
+#[rstest::rstest]
+#[case::fraction(" +.5 ", 5, 1)]
+#[case::trailing_point("1.", 1, 0)]
+#[case::negative_scientific("-1.25e-2", -125, 4)]
+#[case::positive_scientific("1.25E+2", 125, 0)]
+#[case::grouped_scientific("1_2.5_0e-0_1", 125, 2)]
+#[case::exact_large_integer("9007199254740993", 0x0020_0000_0000_0001, 0)]
+fn monetary_text_preserves_decimal_values(
+    #[case] raw: &str,
+    #[case] mantissa: i64,
+    #[case] scale: u32,
+) {
+    let value = coerce(
+        "amount",
+        FilterOp::Compare(ComparisonOp::Eq),
+        raw,
+        FilterType::Money,
+    )
+    .unwrap();
+    assert_eq!(
+        value,
+        FilterValue::Money(rust_decimal::Decimal::new(mantissa, scale))
+    );
+}
