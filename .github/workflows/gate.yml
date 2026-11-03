@@ -10,6 +10,10 @@ on:
 
 permissions: {}
 
+env:
+  # the whole suite's test runs fill one runner's disk, so its tests split over this many runners
+  TEST_SHARDS: 3
+
 concurrency:
   group: gate-${{ github.event.pull_request.number || github.event.merge_group.head_ref || github.ref }}
   cancel-in-progress: ${{ github.event_name != 'push' }}
@@ -59,7 +63,7 @@ jobs:
           if [[ $branch =~ ^task/(B[0-9]+)(-|$) ]]; then
             task=${BASH_REMATCH[1]}
           fi
-          parts='["lint","tests"]'
+          parts=$(jq -cn --argjson shards "$TEST_SHARDS" '["lint"] + [range(1; $shards + 1) | "tests-\(.)"]')
           if [[ $EVENT == pull_request ]]; then
             parts='["lint"]'
           elif [[ $EVENT == merge_group && -n $task ]]; then
@@ -125,12 +129,12 @@ jobs:
       - name: Add Rust components
         run: rustup component add clippy rustfmt llvm-tools-preview
 
-      # clippy keeps check builds and the tests keep full builds, so each kind has its own cache
+      # clippy keeps check builds and the tests keep full builds, so each kind has its own cache, and only the first test shard saves it
       - name: Restore the cargo cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           shared-key: gate-${{ matrix.part == 'lint' && 'lint' || 'tests' }}
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.ref == 'refs/heads/main' && (matrix.part == 'lint' || matrix.part == 'tests-1') }}
           workspaces: |
             .development/gate -> target
             . -> target
@@ -213,10 +217,10 @@ jobs:
           selection=()
           case $PART in
             lint) for id in "${lint[@]}"; do selection+=(--only "$id"); done ;;
-            tests)
+            tests-*)
               packages=$(cargo gate affected) || exit 1
               if [[ -z $packages ]]; then echo "the change affects no package"; exit 0; fi
-              exec cargo nextest run --locked --no-tests=warn $packages ;;
+              exec cargo nextest run --locked --no-tests=warn --partition "hash:${PART#tests-}/$TEST_SHARDS" $packages ;;
             task) for id in "${lint[@]}" mutants coverage; do selection+=(--skip "$id"); done ;;
           esac
           if [[ $PART == task ]]; then
@@ -229,11 +233,11 @@ jobs:
           cargo gate run "${TASK:-B000}" "${selection[@]}"
 
       - name: Save LiteLLM's helper answers
-        if: github.ref == 'refs/heads/main' && matrix.part == 'tests'
+        if: github.ref == 'refs/heads/main' && startsWith(matrix.part, 'tests-')
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/betterlite-oracle
-          key: oracle-answers-${{ github.sha }}
+          key: oracle-answers-${{ github.sha }}-${{ matrix.part }}
 
       - name: Keep the gate logs
         if: always()
