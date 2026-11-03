@@ -14,6 +14,7 @@ use super::coercion::{
 #[serde(untagged)]
 pub enum CounterMapField {
     Null(()),
+    Number(serde_json::Number),
     Map(BTreeMap<String, Scalar>),
     Other(IgnoredAny),
 }
@@ -28,11 +29,14 @@ pub struct GuardrailEntryFields {
     in_spend: Option<Scalar>,
     #[serde(rename = "guardrail_cost_by_unit")]
     by_unit: Option<CounterMapField>,
+    #[serde(flatten)]
+    _ignored: BTreeMap<String, IgnoredAny>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum GuardrailInformationEntry {
+    Number(serde_json::Number),
     Object(GuardrailEntryFields),
     Other(IgnoredAny),
 }
@@ -187,7 +191,7 @@ fn parse_cost_by_unit_field(
         Some(CounterMapField::Map(counters)) => Ok(
             coerce_counter_map(counters)?.map_or(FieldOutcome::Malformed, FieldOutcome::Present)
         ),
-        Some(CounterMapField::Other(_)) => Ok(FieldOutcome::Malformed),
+        Some(CounterMapField::Number(_) | CounterMapField::Other(_)) => Ok(FieldOutcome::Malformed),
     }
 }
 

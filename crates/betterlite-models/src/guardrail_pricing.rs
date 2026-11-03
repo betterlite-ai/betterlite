@@ -2,6 +2,7 @@ use rust_decimal::Decimal;
 use std::collections::BTreeMap;
 use std::iter::once;
 
+use crate::catalog::ModelCatalog;
 use crate::price_fields::decimal_lexeme::DecimalLexemeError;
 
 mod coercion;
@@ -18,23 +19,13 @@ pub enum GuardrailPricingError {
     },
 }
 
-// A present, even empty, Usable map still blocks the regional-then-global fallback; only Malformed or a miss falls through.
-#[derive(Debug, Clone)]
-pub enum GuardrailPriceLookup {
-    Usable(BTreeMap<String, Decimal>),
-    Malformed,
-}
-
 const BEDROCK_GUARDRAIL_PRICING_KEY: &str = "bedrock/guardrails";
 
 // A malformed entry warns and falls through to the next candidate key, same as LiteLLM's lookup loop.
-fn bedrock_guardrail_pricing<F>(
-    lookup: F,
+fn bedrock_guardrail_pricing(
+    catalog: &ModelCatalog,
     aws_region_name: Option<&str>,
-) -> Option<BTreeMap<String, Decimal>>
-where
-    F: Fn(&str) -> Option<GuardrailPriceLookup>,
-{
+) -> Option<BTreeMap<String, Decimal>> {
     let regional_key = aws_region_name
         .filter(|region| !region.is_empty())
         .map(|region| format!("bedrock/{region}/guardrails"));
@@ -43,27 +34,27 @@ where
         .map(String::as_str)
         .chain(once(BEDROCK_GUARDRAIL_PRICING_KEY));
     for key in candidate_keys {
-        match lookup(key) {
-            Some(GuardrailPriceLookup::Usable(prices)) => return Some(prices),
-            Some(GuardrailPriceLookup::Malformed) => {
-                tracing::warn!(key, "ignoring malformed guardrail pricing entry");
-            }
-            None => {}
+        let Some(canonical) = catalog.lookup.get(key) else {
+            continue;
+        };
+        let Some(entry) = catalog.entries.get(canonical.as_ref()) else {
+            continue;
+        };
+        match entry.prices.guardrail_units.as_ref() {
+            Some(prices) => return Some(prices.clone()),
+            None => tracing::warn!(key, "ignoring malformed guardrail pricing entry"),
         }
     }
     None
 }
 
 // None distinguishes a counter with no rate from one priced at an explicit zero, which is free.
-pub fn bedrock_guardrail_cost_by_unit<F>(
-    lookup: F,
+pub fn bedrock_guardrail_cost_by_unit(
+    catalog: &ModelCatalog,
     aws_region_name: Option<&str>,
     usage_units: &BTreeMap<String, i64>,
-) -> Result<Option<BTreeMap<String, Option<Decimal>>>, GuardrailPricingError>
-where
-    F: Fn(&str) -> Option<GuardrailPriceLookup>,
-{
-    let Some(pricing) = bedrock_guardrail_pricing(lookup, aws_region_name) else {
+) -> Result<Option<BTreeMap<String, Option<Decimal>>>, GuardrailPricingError> {
+    let Some(pricing) = bedrock_guardrail_pricing(catalog, aws_region_name) else {
         return Ok(None);
     };
     let mut costs = BTreeMap::new();
