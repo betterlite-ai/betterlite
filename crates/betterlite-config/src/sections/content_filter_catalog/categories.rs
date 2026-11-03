@@ -6,6 +6,43 @@ use unicode_general_category::{GeneralCategory, get_general_category};
 
 use crate::sections::content_filter_records::ContentFilterAction;
 
+const CASE_IGNORABLE_PUNCTUATION: &[(char, char)] = &[
+    ('\u{0027}', '\u{0027}'),
+    ('\u{002e}', '\u{002e}'),
+    ('\u{003a}', '\u{003a}'),
+    ('\u{005e}', '\u{005e}'),
+    ('\u{0060}', '\u{0060}'),
+    ('\u{00b7}', '\u{00b7}'),
+    ('\u{0387}', '\u{0387}'),
+    ('\u{055f}', '\u{055f}'),
+    ('\u{05f4}', '\u{05f4}'),
+    ('\u{0897}', '\u{0897}'),
+    ('\u{2018}', '\u{2019}'),
+    ('\u{2024}', '\u{2024}'),
+    ('\u{2027}', '\u{2027}'),
+    ('\u{fe13}', '\u{fe13}'),
+    ('\u{fe52}', '\u{fe52}'),
+    ('\u{fe55}', '\u{fe55}'),
+    ('\u{ff07}', '\u{ff07}'),
+    ('\u{ff0e}', '\u{ff0e}'),
+    ('\u{ff1a}', '\u{ff1a}'),
+    ('\u{10d4e}', '\u{10d4e}'),
+    ('\u{10d69}', '\u{10d6d}'),
+    ('\u{10d6f}', '\u{10d6f}'),
+    ('\u{10efc}', '\u{10efc}'),
+    ('\u{113bb}', '\u{113c0}'),
+    ('\u{113ce}', '\u{113ce}'),
+    ('\u{113d0}', '\u{113d0}'),
+    ('\u{113d2}', '\u{113d2}'),
+    ('\u{113e1}', '\u{113e2}'),
+    ('\u{11f5a}', '\u{11f5a}'),
+    ('\u{1611e}', '\u{16129}'),
+    ('\u{1612d}', '\u{1612f}'),
+    ('\u{16d40}', '\u{16d42}'),
+    ('\u{16d6b}', '\u{16d6c}'),
+    ('\u{1e5ee}', '\u{1e5ef}'),
+];
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct CategoryCatalogEntry {
     pub name: String,
@@ -166,12 +203,6 @@ fn is_cased(character: char) -> bool {
         || lowercase_mapping != character.to_string()
 }
 
-fn is_case_ignorable(character: char) -> bool {
-    is_ignorable_category(character)
-        || is_ignorable_punct_common(character)
-        || is_ignorable_punct_extended(character)
-}
-
 fn is_ignorable_category(character: char) -> bool {
     matches!(
         get_general_category(character),
@@ -183,51 +214,10 @@ fn is_ignorable_category(character: char) -> bool {
     )
 }
 
-const fn is_ignorable_punct_common(character: char) -> bool {
-    matches!(
-        character,
-        '\u{0027}'
-            | '\u{002e}'
-            | '\u{003a}'
-            | '\u{005e}'
-            | '\u{0060}'
-            | '\u{00b7}'
-            | '\u{0387}'
-            | '\u{055f}'
-            | '\u{05f4}'
-            | '\u{0897}'
-            | '\u{2018}'
-            | '\u{2019}'
-            | '\u{2024}'
-            | '\u{2027}'
-            | '\u{fe13}'
-            | '\u{fe52}'
-            | '\u{fe55}'
-            | '\u{ff07}'
-            | '\u{ff0e}'
-            | '\u{ff1a}'
-    )
-}
-
-const fn is_ignorable_punct_extended(character: char) -> bool {
-    matches!(
-        character,
-        '\u{10d4e}'
-            | '\u{10d69}'..='\u{10d6d}'
-            | '\u{10d6f}'
-            | '\u{10efc}'
-            | '\u{113bb}'..='\u{113c0}'
-            | '\u{113ce}'
-            | '\u{113d0}'
-            | '\u{113d2}'
-            | '\u{113e1}'..='\u{113e2}'
-            | '\u{11f5a}'
-            | '\u{1611e}'..='\u{16129}'
-            | '\u{1612d}'..='\u{1612f}'
-            | '\u{16d40}'..='\u{16d42}'
-            | '\u{16d6b}'..='\u{16d6c}'
-            | '\u{1e5ee}'..='\u{1e5ef}'
-    )
+fn is_case_ignorable_punctuation(character: char) -> bool {
+    CASE_IGNORABLE_PUNCTUATION
+        .iter()
+        .any(|(start, end)| *start <= character && character <= *end)
 }
 
 fn is_final_sigma(characters: &[char], position: usize) -> bool {
@@ -235,7 +225,9 @@ fn is_final_sigma(characters: &[char], position: usize) -> bool {
         .iter()
         .take(position)
         .rev()
-        .find(|character| !is_case_ignorable(**character))
+        .find(|character| {
+            !is_ignorable_category(**character) && !is_case_ignorable_punctuation(**character)
+        })
         .is_some_and(|character| is_cased(*character));
     let following_cased = characters
         .iter()
@@ -243,7 +235,9 @@ fn is_final_sigma(characters: &[char], position: usize) -> bool {
         .skip(position)
         .skip(1)
         .map(|(_, character)| character)
-        .find(|character| !is_case_ignorable(**character))
+        .find(|character| {
+            !is_ignorable_category(**character) && !is_case_ignorable_punctuation(**character)
+        })
         .is_some_and(|character| is_cased(*character));
     preceding_cased && !following_cased
 }
