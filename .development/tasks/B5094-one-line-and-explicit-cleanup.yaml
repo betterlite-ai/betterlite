@@ -28,6 +28,8 @@ description: >-
   function, and no test is deleted.
 scope:
   paths:
+  - tools/oracle/src/helpers/openai/credentials/tests.rs
+  - tools/oracle/src/helpers/openai/text_completion_policy/tests.rs
   - crates/betterlite-db/src/migration_deploy/tests.rs
   - crates/betterlite-guardrails/src/cisco_inspection/chat.rs
   - crates/betterlite-guardrails/src/cisco_inspection/chat/tests.rs
