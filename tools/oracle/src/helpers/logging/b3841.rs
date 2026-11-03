@@ -11,38 +11,25 @@ impl crate::helpers::Helper for Op {
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         match input.get("function").and_then(Value::as_str) {
             Some("identity") => {
-                let payload = input
+                let payload_value = input
                     .get("payload")
                     .ok_or_else(|| invalid("payload is required"))?;
-                let payload = serde_json::from_value::<OtelModelValue>(payload.clone())
+                let payload = serde_json::from_value::<OtelModelValue>(payload_value.clone())
                     .map_err(|error| invalid(&error.to_string()))?;
                 serde_json::to_value(RequestIdentity::from_payload(&payload))
                     .map_err(|error| invalid(&error.to_string()))
             }
             Some("context") => {
-                let payload = input
+                let payload_value = input
                     .get("payload")
                     .ok_or_else(|| invalid("payload is required"))?;
-                let payload = serde_json::from_value::<OtelModelValue>(payload.clone())
+                let payload = serde_json::from_value::<OtelModelValue>(payload_value.clone())
                     .map_err(|error| invalid(&error.to_string()))?;
                 serde_json::to_value(RequestContext::from_standard_logging_payload(&payload))
                     .map_err(|error| invalid(&error.to_string()))
             }
             Some("session") => session(input),
-            Some("flatten") => {
-                let metadata = input.get("metadata").cloned().unwrap_or_else(|| json!({}));
-                let metadata = serde_json::from_value::<OtelModelValue>(metadata)
-                    .map_err(|error| invalid(&error.to_string()))?;
-                let flattened = match &metadata {
-                    OtelModelValue::Object(values) => Some(values),
-                    _ => None,
-                };
-                Ok(json!(
-                    betterlite_logging::otel::model::metadata::identity::flatten_metadata(
-                        flattened
-                    )
-                ))
-            }
+            Some("flatten") => flatten(input),
             Some("baggage") => baggage(input),
             _ => Err(invalid("unknown b3841 function")),
         }
@@ -53,10 +40,10 @@ impl crate::helpers::Helper for Op {
 mod tests;
 
 fn session(input: &Value) -> crate::helpers::HelperResult {
-    let kwargs = input
+    let kwargs_value = input
         .get("kwargs")
         .ok_or_else(|| invalid("kwargs is required"))?;
-    let kwargs = serde_json::from_value::<OtelModelValue>(kwargs.clone())
+    let kwargs = serde_json::from_value::<OtelModelValue>(kwargs_value.clone())
         .map_err(|error| invalid(&error.to_string()))?;
     let trace = betterlite_logging::otel::model::trace_controls::caller_trace_controls(&kwargs);
     Ok(
@@ -64,12 +51,29 @@ fn session(input: &Value) -> crate::helpers::HelperResult {
     )
 }
 
+fn flatten(input: &Value) -> crate::helpers::HelperResult {
+    let metadata_value = input.get("metadata").cloned().unwrap_or_else(|| json!({}));
+    let metadata = serde_json::from_value::<OtelModelValue>(metadata_value)
+        .map_err(|error| invalid(&error.to_string()))?;
+    let flattened = match &metadata {
+        OtelModelValue::Object(values) => Some(values),
+        OtelModelValue::Null(())
+        | OtelModelValue::Bool(_)
+        | OtelModelValue::Number(_)
+        | OtelModelValue::String(_)
+        | OtelModelValue::Array(_) => None,
+    };
+    Ok(json!(
+        betterlite_logging::otel::model::metadata::identity::flatten_metadata(flattened)
+    ))
+}
+
 fn baggage(input: &Value) -> crate::helpers::HelperResult {
-    let identity = input
+    let identity_value = input
         .get("identity")
         .ok_or_else(|| invalid("identity is required"))?;
-    let identity: RequestIdentity =
-        serde_json::from_value(identity.clone()).map_err(|error| invalid(&error.to_string()))?;
+    let identity: RequestIdentity = serde_json::from_value(identity_value.clone())
+        .map_err(|error| invalid(&error.to_string()))?;
     let promoted: Vec<String> = input
         .get("promoted_keys")
         .and_then(Value::as_array)
