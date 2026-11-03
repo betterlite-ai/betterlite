@@ -4,7 +4,7 @@ call:
   aws_errors:
     provider: bedrock
     model: claude-3
-    custom_llm_provider: bedrock
+    custom_llm_provider: bedrock_mantle
     error_str: "Connect timeout on endpoint URL"
     status_code: null
 env: {}
