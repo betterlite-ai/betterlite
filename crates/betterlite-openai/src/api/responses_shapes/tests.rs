@@ -2,7 +2,10 @@
 
 use betterlite_models::decisions::Json;
 use rstest::rstest;
+use serde::de::DeserializeOwned;
 use serde_json::value::RawValue;
+use std::collections::BTreeMap;
+use std::fmt::Debug;
 use std::fs;
 
 use super::DeleteResponseResult;
@@ -299,12 +302,7 @@ fn interpreter_stdout_only() {
 #[case::content("text")]
 #[case::annotations("annotations")]
 fn text_fields_are_required(#[case] field: &str) {
-    let mut record = serde_json::to_value(
-        serde_json::from_str::<Json>(r#"{"type":null,"text":null,"annotations":null}"#).unwrap(),
-    )
-    .unwrap();
-    record.as_object_mut().unwrap().remove(field);
-    serde_json::from_value::<super::OutputText>(record).unwrap_err();
+    reject_missing::<super::OutputText>(r#"{"type":null,"text":null,"annotations":null}"#, field);
 }
 
 #[rstest]
@@ -314,17 +312,13 @@ fn text_fields_are_required(#[case] field: &str) {
 #[case::url("url")]
 #[case::title("title")]
 fn annotations_are_required_nullable(#[case] field: &str) {
-    let mut record = serde_json::to_value(
-        serde_json::from_str::<Json>(
-            r#"{"type":null,"start_index":null,"end_index":null,"url":null,"title":null}"#,
-        )
-        .unwrap(),
-    )
-    .unwrap();
-    let parsed: super::OutputAnnotation = serde_json::from_value(record.clone()).unwrap();
-    assert_eq!(serde_json::to_value(parsed).unwrap(), record);
-    record.as_object_mut().unwrap().remove(field);
-    serde_json::from_value::<super::OutputAnnotation>(record).unwrap_err();
+    let source = r#"{"type":null,"start_index":null,"end_index":null,"url":null,"title":null}"#;
+    let parsed: super::OutputAnnotation = serde_json::from_str(source).unwrap();
+    assert_eq!(
+        serde_json::to_value(parsed).unwrap(),
+        serde_json::to_value(serde_json::from_str::<Json>(source).unwrap()).unwrap()
+    );
+    reject_missing::<super::OutputAnnotation>(source, field);
 }
 
 #[test]
@@ -394,9 +388,10 @@ fn decoder_allows_exact_byte_limits_and_bounded_depth() {
 #[case::id("id")]
 #[case::status("status")]
 fn function_fields_are_required(#[case] field: &str) {
-    let mut record = serde_json::to_value(serde_json::from_str::<Json>(r#"{"arguments":null,"call_id":null,"name":null,"type":null,"id":null,"status":"completed"}"#).unwrap()).unwrap();
-    record.as_object_mut().unwrap().remove(field);
-    serde_json::from_value::<super::OutputFunctionToolCall>(record).unwrap_err();
+    reject_missing::<super::OutputFunctionToolCall>(
+        r#"{"arguments":null,"call_id":null,"name":null,"type":null,"id":null,"status":"completed"}"#,
+        field,
+    );
 }
 
 #[test]
@@ -438,15 +433,10 @@ fn populated_text_and_interpreter_outputs_round_trip() {
 #[case::role("role")]
 #[case::content("content")]
 fn generic_fields_are_required(#[case] field: &str) {
-    let mut record = serde_json::to_value(
-        serde_json::from_str::<Json>(
-            r#"{"type":"message","id":"m","status":"completed","role":"assistant","content":[]}"#,
-        )
-        .unwrap(),
-    )
-    .unwrap();
-    record.as_object_mut().unwrap().remove(field);
-    serde_json::from_value::<super::GenericResponseOutputItem>(record).unwrap_err();
+    reject_missing::<super::GenericResponseOutputItem>(
+        r#"{"type":"message","id":"m","status":"completed","role":"assistant","content":[]}"#,
+        field,
+    );
 }
 
 #[rstest]
@@ -454,9 +444,10 @@ fn generic_fields_are_required(#[case] field: &str) {
 #[case::container("container_id")]
 #[case::outputs("outputs")]
 fn interpreter_fields_are_required_nullable(#[case] field: &str) {
-    let mut record = serde_json::to_value(serde_json::from_str::<Json>(r#"{"type":"code_interpreter_call","id":"i","status":"completed","code":null,"container_id":null,"outputs":null}"#).unwrap()).unwrap();
-    record.as_object_mut().unwrap().remove(field);
-    serde_json::from_value::<super::OutputCodeInterpreterCall>(record).unwrap_err();
+    reject_missing::<super::OutputCodeInterpreterCall>(
+        r#"{"type":"code_interpreter_call","id":"i","status":"completed","code":null,"container_id":null,"outputs":null}"#,
+        field,
+    );
 }
 
 #[test]
@@ -480,4 +471,13 @@ fn rejects_invalid_literals_and_missing_image_result() {
 #[case::stderr(r#"{"stderr":false}"#)]
 fn log_fields_reject_wrong_types(#[case] input: &str) {
     serde_json::from_str::<InterpreterInput>(input).unwrap_err();
+}
+
+fn reject_missing<T>(source: &str, field: &str)
+where
+    T: DeserializeOwned + Debug,
+{
+    let mut fields: BTreeMap<String, Json> = serde_json::from_str(source).unwrap();
+    fields.remove(field).unwrap();
+    serde_json::from_str::<T>(&serde_json::to_string(&fields).unwrap()).unwrap_err();
 }
