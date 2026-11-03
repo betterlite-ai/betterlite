@@ -5,33 +5,56 @@ description: >-
   semantic prompt extraction and cached-response decoding shared by Redis,
   Valkey and Qdrant semantic caches. For chat messages, use B218's existing
   `Message` type and `get_str_from_messages` projection, preserving message
-  order and its direct text concatenation. When a messages input is present,
-  it takes precedence over Responses input even when the message list is empty;
-  an empty extracted prompt is returned as an empty string. This avoids using
-  Python truthiness to choose between two declared inputs.
+  order and its direct text concatenation. Implement the public function
+  `extract_semantic_prompt(messages: Option<&[Message]>, responses_input:
+  Option<&Json>) -> Result<Option<String>, SemanticCacheRecordsError>`. When a
+  messages input is present, it takes precedence over Responses input even when
+  the message list is empty; an empty extracted chat prompt remains an empty
+  string.
 
   For Responses input, accept the declared string or structured JSON shape,
-  extract non-empty trimmed strings from nested arrays and object `content`,
-  and otherwise inspect `text`, `output`, `input_text`, then `output_text` in
-  that order. Join extracted pieces with one newline. Ignore non-text content
-  items and return no prompt when there is no extracted text. Limit traversal
-  depth to 64 and return a typed error if exceeded. Do not accept arbitrary
-  Python objects, call model_dump/dict, or emulate truthiness, repr or str.
+  extract non-empty trimmed strings from nested arrays and non-null object
+  `content`, and otherwise inspect `text`, `output`, `input_text`, then
+  `output_text` in that order. A null `content` falls through to those ordered
+  keys. Join extracted pieces with one newline. Ignore non-text content items
+  and return no prompt when there is no extracted text. Limit traversal depth
+  to 64 and return a typed error if exceeded. Do not accept arbitrary Python
+  objects or call model_dump/dict.
 
-  Decode cache payloads as UTF-8 JSON into betterlite-prompts' typed `Json`.
-  Missing payload remains absent; JSON null remains `Json::Null`. Malformed
-  UTF-8 or JSON is a typed decode error. Redis callers preserve their
-  cache-miss-on-decode-error behavior; Qdrant callers propagate the typed
-  error. Do not evaluate Python literals or reconstruct Python repr strings.
+  Implement `decode_cached_response(payload: Option<&[u8]>) ->
+  Result<Option<Json>, SemanticCacheRecordsError>` for cache payloads. Reject
+  payloads larger than 1 MiB before parsing. Decode UTF-8 JSON into the
+  betterlite-prompts `Json` type; missing payload remains absent and JSON null
+  remains `Json::Null`. Malformed UTF-8/JSON and oversized input are typed
+  errors. Rely on serde_json's default recursion limit of 128 rather than
+  adding another JSON parser or an unbounded-depth feature. Redis callers
+  preserve cache-miss-on-decode-error behavior; Qdrant callers propagate the
+  typed error. Do not evaluate Python literals or reconstruct Python repr
+  strings.
   The Redis, Valkey and Qdrant cache writers must store JSON for the decoder to
   round-trip supported response values; those writes remain in their backend
-  tasks. Add helper cases for declared message/Responses inputs and valid JSON
-  cached values only.
+  tasks. B4382 owns Redis `_get_ttl` and its sync/async callers at
+  redis_semantic_cache.py:244, 435 and 581. Qdrant has no TTL behavior. Valkey
+  overrides its four read/write methods and is not covered by B4382's current
+  `redis_semantic_cache.py` backlog glob; its writer migration requires the
+  architect to extend an existing backend task's scope. Add helper cases for
+  declared message/Responses inputs and valid JSON cached values only.
+
+  Name independent native tests for each branch: prompt presence precedence,
+  empty-message presence, Responses string input, content-null fallback,
+  content-before-text precedence, ordered text-key fallback, depth 64 accepted
+  and depth 65 rejected; decoder absent input, JSON null, malformed UTF-8,
+  malformed JSON, Python-literal rejection, and over-1-MiB rejection. These
+  tests live under `semantic_cache_records::tests` and match the two named
+  native check filters below.
 
 scope:
   paths:
     - crates/betterlite-prompts/src/semantic_cache_records.rs
     - crates/betterlite-prompts/src/semantic_cache_records/**
+    - crates/betterlite-prompts/fuzz/Cargo.toml
+    - crates/betterlite-prompts/fuzz/fuzz_targets/semantic_cache_response.rs
+    - crates/betterlite-prompts/fuzz/corpus/semantic_cache_response/**
     - tools/oracle/cases/helpers/semantic-cache-records/**
     - "tools/oracle/fuzz/corpus/helper_case/semantic_cache_records-*"
   lint_tables: false
@@ -49,10 +72,10 @@ references:
     why: Valkey reuses Redis semantic prompt extraction and cached-response parsing.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/valkey_semantic_cache.py#L246-L256
     why: Valkey cache hits call the inherited Redis cache decoder.
-  - url: https://github.com/BerriAI/betterlite/blob/main/crates/betterlite-prompts/src/message_content.rs#L152-L162
-    why: B218's typed message text projection used for chat prompt extraction.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1311-L1315
     why: LiteLLM declares Responses input as a string or ResponseInputParam.
+  - url: https://github.com/betterlite-ai/betterlite/blob/43abbff7/crates/betterlite-prompts/src/message_content.rs#L152-L162
+    why: B218's typed message text projection used for chat prompt extraction.
 
 dod:
   - text: Non-empty chat message input uses B218's Message projection and preserves message order and direct text concatenation.
@@ -61,10 +84,18 @@ dod:
     proof: [semantic-prompt-tests]
   - text: Responses prompt extraction trims and joins nested declared text inputs, follows content-first and text/output/input_text/output_text precedence, and returns no prompt for textless inputs.
     proof: [semantic-prompt-tests, oracle, helper-python]
+  - text: Responses input with null content falls through to the ordered text keys.
+    proof: [semantic-prompt-tests, oracle, helper-python]
+  - text: Responses input deeper than 64 nested containers returns a typed error.
+    proof: [semantic-prompt-tests]
   - text: Valid UTF-8 JSON cached values decode into typed Json, and missing payload remains distinct from JSON null.
     proof: [cached-response-tests, oracle, helper-python]
   - text: Malformed UTF-8 or JSON produces a typed decode error without evaluating Python literal syntax.
     proof: [cached-response-tests]
+  - text: The raw-byte decoder rejects inputs over 1 MiB.
+    proof: [cached-response-tests]
+  - text: Newly added valid, truncated and malformed raw-byte corpus entries replay without panic.
+    proof: [decoder-corpus]
   - text: Newly added helper corpus cases replay through the shared helper-case parser independently of the native behavior tests.
     proof: [helper-case-corpus]
   - text: The decoder contains no Python literal evaluation, arbitrary object coercion, or repr-based cache decoding.
@@ -77,12 +108,12 @@ checks:
       why: prompt precedence, projection, traversal, trimming or joining behavior is missing
       run: >-
         cargo nextest run --locked -p betterlite-prompts --no-tests=fail
-        -E 'test(/^semantic_cache_records::tests::prompt_/)'
+        -E 'test(/^semantic_cache_records::tests::prompt_/) - test(replays_the_semantic_cache_response_corpus)'
     - id: cached-response-tests
       why: JSON decoding, absent/null distinction, typed failures or forbidden literal parsing behavior is missing
       run: >-
         cargo nextest run --locked -p betterlite-prompts --no-tests=fail
-        -E 'test(/^semantic_cache_records::tests::cached_response_/)'
+        -E 'test(/^semantic_cache_records::tests::cached_response_/) - test(replays_the_semantic_cache_response_corpus)'
     - id: helper-python
       why: strict oracle adapter lint or type checks fail
       run: >-
@@ -93,39 +124,37 @@ checks:
       why: newly added semantic-cache cases are absent or do not replay
       run: >-
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/semantic_cache_records-*")" &&
-        grep -lq 'semantic_cache_records' tools/oracle/fuzz/corpus/helper_case/semantic_cache_records-* &&
+        grep -lE '^[[:space:]]+b4380:' tools/oracle/fuzz/corpus/helper_case/semantic_cache_records-* &&
         test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
         cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: decoder-corpus
+      why: the raw-byte decoder fuzz target or fresh replay corpus is missing or fails
+      run: >-
+        test -f crates/betterlite-prompts/fuzz/fuzz_targets/semantic_cache_response.rs &&
+        grep -q 'name = "semantic_cache_response"' crates/betterlite-prompts/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-prompts/fuzz/corpus/semantic_cache_response)" &&
+        cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(replays_the_semantic_cache_response_corpus)'
 
 oracle_cases:
   - tools/oracle/cases/helpers/semantic-cache-records/chat-messages.yaml
   - tools/oracle/cases/helpers/semantic-cache-records/responses-nested-text.yaml
   - tools/oracle/cases/helpers/semantic-cache-records/responses-text-precedence.yaml
+  - tools/oracle/cases/helpers/semantic-cache-records/responses-null-content.yaml
   - tools/oracle/cases/helpers/semantic-cache-records/cached-json-values.yaml
 
-deviations:
-  - what: >-
-      Empty message lists take precedence over a simultaneous Responses input, and
-      empty extracted chat text remains an empty string rather than falling through
-      by Python truthiness.
-    why: >-
-      docs/compatibility.md excludes Python truthiness; explicit typed input presence
-      is deterministic for the Rust API.
-  - what: >-
-      Cached-response decoding accepts UTF-8 JSON only; Python literal/repr cache
-      payloads are rejected.
-    why: >-
-      docs/compatibility.md excludes Python repr behavior and literal evaluation.
-      Backend writers must serialize declared response values as JSON for round trips.
+deviations: []
 
 out_of_scope:
-  - Redis, Valkey and Qdrant cache writes, storage, vector search, similarity, and backend-specific error-to-miss handling; B4382 and B4383 own those operations and call this module.
+  - Redis cache writes, storage, vector search, similarity and error-to-miss handling; B4382 owns those operations and calls this module.
+  - Qdrant cache writes, storage, vector search, similarity and error propagation; B4383 owns those operations and calls this module.
+  - Valkey-specific read/write methods at valkey_semantic_cache.py:258-331; B128 covers that source file, but no current child task covers its backend operations, so the architect must assign them before those operations are implemented. Valkey inherits the shared prompt/decode methods from RedisSemanticCache.
+  - Redis TTL extraction from kwargs and Redis TTL storage; B4382 owns `_get_ttl` and its two callers. Qdrant has no per-call TTL.
   - Embedding dispatch, truncation and timeouts; B4381 owns those operations.
   - Chat message projection; B218 owns Message and get_str_from_messages.
   - Python model_dump/dict duck typing and Python literal/repr compatibility; docs/compatibility.md excludes these runtime behaviors.
 
 pitfalls:
-  - Redis and Qdrant currently write str(value), while their decoder accepts Python literal syntax. Dependent writer tasks must switch to typed JSON serialization or the new decoder cannot round-trip their writes.
+  - Redis, Qdrant and Valkey currently write str(value), while their decoders accept Python literal syntax. B4382 and B4383 must switch their covered writers to typed JSON serialization; Valkey-specific writer ownership is not assigned in the current B128 split.
   - Qdrant currently calls get_str_from_messages directly at qdrant_semantic_cache.py:327-328 and 402-403; B4383 must use this module's shared prompt API.
   - ValkeySemanticCache inherits RedisSemanticCache, so its four cache operations consume Redis prompt extraction and decode behavior without a separate implementation.
   - Redis turns malformed cached responses into a miss inside get_cache/async_get_cache; Qdrant lets decoding failures propagate. Keep those caller policies in B4382 and B4383.
