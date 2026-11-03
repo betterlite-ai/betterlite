@@ -2,6 +2,7 @@
 
 use serde_json::value::RawValue;
 use std::collections::BTreeMap;
+use std::future::{Future, ready};
 use std::io::Error;
 use std::sync::Mutex;
 
@@ -17,34 +18,37 @@ struct Socket {
 impl ResponsesClientWebSocket for Socket {
     type Error = Error;
 
-    async fn send_text(&self, data: &str) -> Result<(), Self::Error> {
+    fn send_text(&self, data: &str) -> impl Future<Output = Result<(), Self::Error>> {
         self.sent.lock().unwrap().push(data.to_owned());
-        Ok(())
+        ready(Ok(()))
     }
 
-    async fn receive_text(&self) -> Result<String, Self::Error> {
-        Ok("client".to_owned())
+    fn receive_text(&self) -> impl Future<Output = Result<String, Self::Error>> {
+        ready(Ok("client".to_owned()))
     }
 }
 
 impl ResponsesBackendWebSocket for Socket {
     type Error = Error;
 
-    async fn recv(&self, decode: bool) -> Result<ResponsesWebSocketMessage, Self::Error> {
-        Ok(if decode {
+    fn recv(
+        &self,
+        decode: bool,
+    ) -> impl Future<Output = Result<ResponsesWebSocketMessage, Self::Error>> {
+        ready(Ok(if decode {
             ResponsesWebSocketMessage::Text("upstream".to_owned())
         } else {
             ResponsesWebSocketMessage::Bytes(vec![0, 255])
-        })
+        }))
     }
 
-    async fn send(&self, message: &str) -> Result<(), Self::Error> {
+    fn send(&self, message: &str) -> impl Future<Output = Result<(), Self::Error>> {
         self.sent.lock().unwrap().push(message.to_owned());
-        Ok(())
+        ready(Ok(()))
     }
 
-    async fn close(&self) -> Result<(), Self::Error> {
-        Err(Error::other("closed"))
+    fn close(&self) -> impl Future<Output = Result<(), Self::Error>> {
+        ready(Err(Error::other("closed")))
     }
 }
 
@@ -56,19 +60,19 @@ impl PresidioGuardrailCallback for Socket {
         data.get("language").map(|raw| raw.get().to_owned())
     }
 
-    async fn check_pii(
+    fn check_pii(
         &self,
         text: &str,
         output_parse_pii: bool,
         presidio_config: Option<&Self::Settings>,
         request_data: &BTreeMap<String, Box<RawValue>>,
-    ) -> Result<String, Self::Error> {
+    ) -> impl Future<Output = Result<String, Self::Error>> {
         assert!(output_parse_pii);
         assert_eq!(
             presidio_config,
             self.presidio_settings(request_data).as_ref()
         );
-        Ok(text.replace("private", "masked"))
+        ready(Ok(text.replace("private", "masked")))
     }
 }
 
