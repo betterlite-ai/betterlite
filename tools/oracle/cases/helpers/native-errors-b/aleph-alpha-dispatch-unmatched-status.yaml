@@ -1,0 +1,11 @@
+kind: helper
+name: native-errors-b-aleph-alpha-dispatch-unmatched-status
+call:
+  native_error:
+    kind: raw
+    model: aleph_alpha/luminous-base
+    custom_llm_provider: aleph_alpha
+    error_str: "boom"
+    status_code: 404
+env: {}
+compare: {ignore: []}
