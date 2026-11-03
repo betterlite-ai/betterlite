@@ -1,6 +1,6 @@
 #![cfg(test)]
 use super::Op;
-use crate::helpers::Helper;
+use crate::helpers::Helper as _;
 use serde_json::json;
 
 #[test]
