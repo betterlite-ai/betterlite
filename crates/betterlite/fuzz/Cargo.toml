@@ -1,0 +1,21 @@
+[package]
+name = "betterlite-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+betterlite = { path = ".." }
+libfuzzer-sys = "0.4.9"
+
+[[bin]]
+name = "blocked_words_yaml"
+path = "fuzz_targets/blocked_words_yaml.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
