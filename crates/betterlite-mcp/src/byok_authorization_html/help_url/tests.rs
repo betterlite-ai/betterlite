@@ -29,6 +29,8 @@ fn rejects_active_schemes(#[case] input: &str) {
 #[rstest::rstest]
 #[case::https("https://help.test/key")]
 #[case::relative("/help/key")]
+#[case::vertical_tab_relative("java\u{000b}script:help")]
+#[case::delete_relative("java\u{007f}script:help")]
 fn keeps_safe_links(#[case] input: &str) {
     let html = build_authorize_html(&page(input));
     assert!(html.contains("help-link"));

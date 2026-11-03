@@ -41,16 +41,10 @@ fn safe_help_link(help_url: &str) -> String {
     if help_url.is_empty() {
         return String::new();
     }
-    let trimmed =
-        help_url.trim_matches(|ch: char| ch.is_ascii_whitespace() || ch.is_ascii_control());
-    let normalized = trimmed
-        .chars()
-        .filter(|ch| !ch.is_ascii_control())
-        .collect::<String>();
-    let active = url::Url::parse(&normalized).map_or_else(
+    let active = url::Url::parse(help_url).map_or_else(
         |_| {
             url::Url::parse("https://betterlite.invalid/")
-                .and_then(|base| base.join(&normalized))
+                .and_then(|base| base.join(help_url))
                 .is_ok_and(|url| matches!(url.scheme(), "javascript" | "data" | "vbscript"))
         },
         |url| matches!(url.scheme(), "javascript" | "data" | "vbscript"),
