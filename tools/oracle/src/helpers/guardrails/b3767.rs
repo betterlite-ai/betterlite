@@ -2,7 +2,9 @@ use std::collections::BTreeMap;
 use std::net::TcpListener;
 
 use betterlite_config::loader::{ConfigError, ConfigLoader};
-use betterlite_config::sections::deepkeep_firewall::Configured;
+use betterlite_config::sections::deepkeep_firewall::{
+    Configured, UnreachableFallback, normalize_endpoint,
+};
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::deepkeep::error::DeepKeepError;
 use betterlite_guardrails::deepkeep::{
@@ -86,9 +88,14 @@ impl crate::helpers::Helper for Op {
 
 fn construct(settings: &Value) -> HelperResult {
     let configured = configure(settings, BTreeMap::new())?;
+    let unreachable_fallback = match configured.unreachable_fallback {
+        UnreachableFallback::FailClosed => "fail_closed",
+        UnreachableFallback::FailOpen => "fail_open",
+    };
     Ok(json!({
         "api_base": configured.api_base,
         "timeout_ms": configured.timeout.as_millis(),
+        "unreachable_fallback": unreachable_fallback,
         "supported_event_hooks": SUPPORTED_EVENT_HOOKS,
     }))
 }
@@ -144,7 +151,7 @@ fn apply(args: ApplyArgs<'_>) -> HelperResult {
     } = args;
     let (mock, silent, base, runtime) = prepare(answer)?;
     let mut deepkeep = guardrail(settings)?;
-    deepkeep.settings.api_base = format!("{base}/v3/openai/beta/litellm_basic_guardrail_api");
+    deepkeep.settings.api_base = normalize_endpoint(&base);
     let context = RequestContext {
         request_data: request_data.clone(),
         input_type,
@@ -253,8 +260,7 @@ fn deepkeep_failure(error: &DeepKeepError) -> Box<HelperError> {
         | DeepKeepError::Request { .. }
         | DeepKeepError::RequestBuild { .. }
         | DeepKeepError::Timeout { .. }
-        | DeepKeepError::InvalidHeader { .. }
-        | DeepKeepError::InvalidHeaderName { .. } => "DeepKeepGuardrailAPIError",
+        | DeepKeepError::InvalidHeader { .. } => "DeepKeepGuardrailAPIError",
     };
     let status = matches!(error, DeepKeepError::Blocked { .. }).then_some(400);
     Box::new(HelperError {
