@@ -1,15 +1,15 @@
-use std::collections::BTreeMap;
 use std::time::Duration;
 
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 use serde::Deserialize;
+use serde::de::IgnoredAny;
 use thiserror::Error;
 
+mod resolve;
 mod timeout;
 
 use super::Section;
 use crate::loader::{ConfigError, EnvironmentLookup};
-use crate::resolve::resolve_string;
 
 pub const UI_FRIENDLY_NAME: &str = "DeepKeep AI Firewall";
 pub const ENDPOINT: &str = "/v3/openai/beta/litellm_basic_guardrail_api";
@@ -33,20 +33,26 @@ struct Parameters {
     api_key: Option<SecretString>,
     api_base: Option<String>,
     deepkeep_firewall_id: Option<String>,
-    unreachable_fallback: UnreachableFallback,
-    timeout: timeout::Timeout,
-    extra_headers: Option<ExtraHeaders>,
+    unreachable_fallback: Option<String>,
+    timeout: Option<timeout::Seconds>,
+    extra_headers: Option<RawExtraHeaders>,
+    optional_params: Option<OptionalParams>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct OptionalParams {
+    unreachable_fallback: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
-enum ExtraHeaders {
-    Mapping(BTreeMap<String, SecretString>),
+enum RawExtraHeaders {
     List(Vec<String>),
+    Other(IgnoredAny),
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
-#[serde(try_from = "String")]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum UnreachableFallback {
     #[default]
     FailClosed,
@@ -84,7 +90,6 @@ pub struct Configured {
     pub deepkeep_firewall_id: String,
     pub unreachable_fallback: UnreachableFallback,
     pub timeout: Duration,
-    pub extra_headers: BTreeMap<String, SecretString>,
 }
 
 impl Section for Raw {
@@ -104,85 +109,13 @@ impl Section for Raw {
     }
 }
 
-impl Entry {
-    fn resolve<L>(self, index: usize, lookup: &L) -> Result<Configured, ConfigError>
-    where
-        L: EnvironmentLookup,
-    {
-        let prefix = format!("guardrails.{index}.litellm_params");
-        let parameters = self.litellm_params;
-        let api_key = SecretString::from(required_value(
-            parameters
-                .api_key
-                .map(|secret| secret.expose_secret().to_owned()),
-            "DEEPKEEP_API_KEY",
-            &prefix,
-            "api_key",
-            lookup,
-        )?);
-        let api_base = required_value(
-            parameters.api_base,
-            "DEEPKEEP_API_BASE",
-            &prefix,
-            "api_base",
-            lookup,
-        )?;
-        let firewall_id = required_value(
-            parameters.deepkeep_firewall_id,
-            "DEEPKEEP_FIREWALL_ID",
-            &prefix,
-            "deepkeep_firewall_id",
-            lookup,
-        )?;
-        let extra_headers = resolve_extra_headers(parameters.extra_headers);
-        Ok(Configured {
-            guardrail_name: self.guardrail_name,
-            api_base: normalize_endpoint(&api_base),
-            api_key,
-            deepkeep_firewall_id: firewall_id,
-            unreachable_fallback: parameters.unreachable_fallback,
-            timeout: parameters.timeout.0,
-            extra_headers,
-        })
-    }
-}
-
-fn resolve_extra_headers(extra_headers: Option<ExtraHeaders>) -> BTreeMap<String, SecretString> {
-    match extra_headers {
-        Some(ExtraHeaders::Mapping(values)) => values,
-        Some(ExtraHeaders::List(values)) => {
-            drop(values);
-            tracing::warn!("DeepKeep extra_headers list ignored; a mapping is required");
-            BTreeMap::new()
-        }
-        None => BTreeMap::new(),
-    }
-}
-
-fn required_value<L>(
-    configured: Option<String>,
-    variable: &str,
-    prefix: &str,
-    path_name: &str,
-    lookup: &L,
-) -> Result<String, ConfigError>
+fn yaml_error<M>(path: &str, message: M) -> ConfigError
 where
-    L: EnvironmentLookup,
+    M: std::fmt::Display,
 {
-    let path = format!("{prefix}.{path_name}");
-    let missing = || ConfigError::MissingEnvironment {
-        variable: variable.to_owned(),
-        path: path.clone(),
-    };
-    let candidate = configured
-        .filter(|value| !value.is_empty())
-        .or_else(|| lookup.lookup(variable))
-        .ok_or_else(missing)?;
-    let resolved = resolve_string(candidate, &path, lookup)?;
-    if resolved.is_empty() {
-        return Err(missing());
+    ConfigError::Yaml {
+        source: <serde_saphyr::Error as serde::de::Error>::custom(format!("{path}: {message}")),
     }
-    Ok(resolved)
 }
 
 #[must_use]
