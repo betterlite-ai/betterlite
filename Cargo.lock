@@ -1656,6 +1656,7 @@ dependencies = [
  "betterlite-postgres-fixture",
  "betterlite-redact",
  "betterlite-roi",
+ "caseless",
  "chrono",
  "clap",
  "deadpool-postgres",

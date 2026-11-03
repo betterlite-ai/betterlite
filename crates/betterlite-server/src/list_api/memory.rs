@@ -2,7 +2,8 @@ use super::plan::types::{ComparisonOp, FilterValue, Predicate, QueryPlan, SortKe
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use std::cmp::Ordering;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+use std::future::{Future, ready};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Cell {
@@ -11,9 +12,9 @@ pub enum Cell {
     Money(Decimal),
     Timestamp(DateTime<Utc>),
     Null,
-    Repeated(Vec<Cell>),
+    Repeated(Vec<Self>),
 }
-pub type Cells = std::collections::BTreeMap<String, Cell>;
+pub type Cells = BTreeMap<String, Cell>;
 
 fn sign(cell: &Cell, value: &FilterValue) -> Option<Ordering> {
     match (cell, value) {
@@ -38,7 +39,8 @@ fn holds_one(cell: &Cell, predicate: &Predicate) -> bool {
                 ComparisonOp::Lte => matches!(ordering, Some(Ordering::Less | Ordering::Equal)),
                 ComparisonOp::Contains => match (cell, &compare.value) {
                     (Cell::Text(left), FilterValue::Text(right)) => {
-                        left.to_lowercase().contains(&right.to_lowercase())
+                        caseless::default_case_fold_str(left)
+                            .contains(&caseless::default_case_fold_str(right))
                     }
                     _ => false,
                 },
@@ -64,22 +66,36 @@ fn holds(cell: Option<&Cell>, predicate: &Predicate) -> bool {
     }
 }
 
-fn compare_cells(left: Option<&Cell>, right: Option<&Cell>, key: &SortKey) -> Ordering {
-    let ordering = match (left, right) {
+fn compare_cells(left_cell: Option<&Cell>, right_cell: Option<&Cell>, key: &SortKey) -> Ordering {
+    let ordering = match (left_cell, right_cell) {
         (None | Some(Cell::Null), None | Some(Cell::Null)) => Ordering::Equal,
         (None | Some(Cell::Null), _) => Ordering::Greater,
         (_, None | Some(Cell::Null)) => Ordering::Less,
-        (Some(Cell::Repeated(left)), Some(Cell::Repeated(right))) => left.len().cmp(&right.len()),
-        (Some(left), Some(right)) => sign(left, &cell_value(right)).unwrap_or(Ordering::Equal),
+        (Some(Cell::Repeated(left_values)), Some(Cell::Repeated(right_values))) => {
+            compare_repeated(left_values, right_values)
+        }
+        (Some(left_value), Some(right_value)) => {
+            sign(left_value, &cell_value(right_value)).unwrap_or(Ordering::Equal)
+        }
     };
     if key.descending
-        && left.is_some_and(|cell| !matches!(cell, Cell::Null))
-        && right.is_some_and(|cell| !matches!(cell, Cell::Null))
+        && left_cell.is_some_and(|cell| !matches!(cell, Cell::Null))
+        && right_cell.is_some_and(|cell| !matches!(cell, Cell::Null))
     {
         ordering.reverse()
     } else {
         ordering
     }
+}
+
+fn compare_repeated(left: &[Cell], right: &[Cell]) -> Ordering {
+    for (left_value, right_value) in left.iter().zip(right) {
+        let ordering = sign(left_value, &cell_value(right_value)).unwrap_or(Ordering::Equal);
+        if ordering != Ordering::Equal {
+            return ordering;
+        }
+    }
+    left.len().cmp(&right.len())
 }
 
 fn cell_value(cell: &Cell) -> FilterValue {
@@ -98,7 +114,8 @@ pub struct InMemoryListExecutor<Row> {
 }
 
 impl<Row: Clone> InMemoryListExecutor<Row> {
-    pub fn count(&self, where_: &[Predicate]) -> u64 {
+    #[must_use]
+    pub fn count_rows(&self, where_: &[Predicate]) -> u64 {
         u64::try_from(
             self.rows
                 .iter()
@@ -112,7 +129,18 @@ impl<Row: Clone> InMemoryListExecutor<Row> {
         .unwrap_or(u64::MAX)
     }
 
-    pub fn find_many(&self, plan: &QueryPlan) -> Vec<Row> {
+    #[must_use]
+    pub async fn find_page<Output, Enrich, EnrichFuture>(
+        &self,
+        plan: &QueryPlan,
+        enrich_page: Enrich,
+    ) -> Output
+    where
+        Enrich: FnOnce(Vec<Row>) -> EnrichFuture + Send,
+        EnrichFuture: Future<Output = Output> + Send,
+        Output: Send,
+        Row: Sync,
+    {
         let mut rows: Vec<&(Row, Cells)> = self
             .rows
             .iter()
@@ -126,20 +154,20 @@ impl<Row: Clone> InMemoryListExecutor<Row> {
             rows.sort_by(|left, right| {
                 compare_cells(left.1.get(&key.field), right.1.get(&key.field), key)
             });
-            if key.descending {
-                rows.reverse();
-            }
         }
         let skip = usize::try_from(plan.skip).unwrap_or(usize::MAX);
         let take = usize::try_from(plan.take).unwrap_or(usize::MAX);
-        rows.into_iter()
+        let page = rows
+            .into_iter()
             .skip(skip)
             .take(take)
             .map(|(row, _)| row.clone())
-            .collect()
+            .collect();
+        enrich_page(page).await
     }
 
-    pub fn distinct(&self, field: &str, where_: &[Predicate]) -> Vec<String> {
+    #[must_use]
+    pub fn distinct_values(&self, field: &str, where_: &[Predicate]) -> Vec<String> {
         let mut values = BTreeSet::new();
         for (_, cells) in self.rows.iter().filter(|(_, cells)| {
             where_
@@ -150,19 +178,47 @@ impl<Row: Clone> InMemoryListExecutor<Row> {
                 Some(Cell::Text(value)) if !value.is_empty() => {
                     values.insert(value.clone());
                 }
-                Some(Cell::Repeated(items)) => {
-                    for item in items {
-                        if let Cell::Text(value) = item {
-                            if !value.is_empty() {
-                                values.insert(value.clone());
-                            }
-                        }
-                    }
-                }
+                Some(Cell::Repeated(items)) => add_repeated_facet_values(&mut values, items),
                 _ => {}
             }
         }
         values.into_iter().collect()
+    }
+}
+
+impl<Row: Clone + Send + Sync> super::plan::types::ListExecutor<Row> for InMemoryListExecutor<Row> {
+    fn count(&self, where_: &[Predicate]) -> impl Future<Output = u64> + Send {
+        ready(self.count_rows(where_))
+    }
+
+    fn find_many(&self, plan: &QueryPlan) -> impl Future<Output = Vec<Row>> + Send {
+        self.find_page(plan, ready)
+    }
+}
+
+impl<Row: Clone + Send + Sync> super::plan::types::FacetExecutor for InMemoryListExecutor<Row> {
+    fn distinct(
+        &self,
+        field: &str,
+        where_: &[Predicate],
+    ) -> impl Future<Output = Vec<String>> + Send {
+        ready(self.distinct_values(field, where_))
+    }
+}
+
+mod tests;
+
+fn add_facet_value(values: &mut BTreeSet<String>, item: &Cell) {
+    if let Cell::Text(value) = item
+        && !value.is_empty()
+    {
+        values.insert(value.clone());
+    }
+}
+
+fn add_repeated_facet_values(values: &mut BTreeSet<String>, items: &[Cell]) {
+    for item in items {
+        add_facet_value(values, item);
     }
 }
 
