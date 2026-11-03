@@ -44,13 +44,11 @@ fn group_prefix(scanner: &mut Scanner<'_>) -> Result<(), RegexError> {
 }
 
 fn copy_through(scanner: &mut Scanner<'_>, end: char) -> Result<(), RegexError> {
-    loop {
-        let character = scanner.take().ok_or(RegexError::Syntax)?;
-        scanner.output.push(character);
-        if character == end {
-            return Ok(());
-        }
-    }
+    let (header, rest) = scanner.rest.split_once(end).ok_or(RegexError::Syntax)?;
+    scanner.output.push_str(header);
+    scanner.output.push(end);
+    scanner.rest = rest;
+    Ok(())
 }
 
 fn flag_group(scanner: &mut Scanner<'_>) -> Result<(), RegexError> {
