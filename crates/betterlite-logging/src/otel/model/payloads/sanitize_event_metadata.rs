@@ -1,4 +1,4 @@
-use serde_json::Value;
+use super::super::utils::coercion::OtelModelValue;
 use std::collections::BTreeMap;
 
 const SENSITIVE: &[&str] = &[
@@ -12,7 +12,10 @@ const SENSITIVE: &[&str] = &[
     "hidden_params",
 ];
 
-pub fn sanitize_event_metadata(values: &BTreeMap<String, Value>) -> BTreeMap<String, String> {
+#[must_use]
+pub fn sanitize_event_metadata(
+    values: &BTreeMap<String, OtelModelValue>,
+) -> BTreeMap<String, String> {
     let mut clean = BTreeMap::new();
     for (key, value) in values {
         let lowered = key.to_lowercase();
@@ -20,12 +23,15 @@ pub fn sanitize_event_metadata(values: &BTreeMap<String, Value>) -> BTreeMap<Str
             continue;
         }
         let text = match value {
-            Value::String(text) => Some(text.clone()),
-            Value::Number(number) => Some(number.to_string()),
-            _ => None,
+            OtelModelValue::String(text) => Some(text.clone()),
+            OtelModelValue::Number(number) => Some(number.to_string()),
+            OtelModelValue::Null(())
+            | OtelModelValue::Bool(_)
+            | OtelModelValue::Array(_)
+            | OtelModelValue::Object(_) => None,
         };
-        if let Some(text) = text {
-            clean.insert(key.clone(), text.chars().take(1024).collect());
+        if let Some(text_value) = text {
+            clean.insert(key.clone(), text_value.chars().take(1024).collect());
         }
         if clean.len() == 32 {
             break;

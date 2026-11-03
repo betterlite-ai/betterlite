@@ -3,8 +3,8 @@
 use super::*;
 #[test]
 fn sanitize_filters_secrets_and_bounds_values() {
-    let source = serde_json::from_value::<BTreeMap<String, Value>>(
-        serde_json::json!({"authorization":"x","safe":"ok"}),
+    let source = serde_json::from_str::<BTreeMap<String, OtelModelValue>>(
+        r#"{"authorization":"x","safe":"ok"}"#,
     )
     .unwrap();
     assert_eq!(

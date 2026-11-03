@@ -1,9 +1,8 @@
+use super::super::utils::coercion::OtelModelValue;
 use rust_decimal::Decimal;
-use serde_json::Value;
 use std::collections::BTreeMap;
-use std::str::FromStr as _;
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct LLMCost {
     pub input: Option<Decimal>,
     pub output: Option<Decimal>,
@@ -19,12 +18,9 @@ pub struct LLMCost {
 }
 
 impl LLMCost {
-    pub fn from_breakdown(values: &BTreeMap<String, Value>) -> Self {
-        let number = |name: &str| {
-            values
-                .get(name)
-                .and_then(|value| Decimal::from_str(&value.to_string()).ok())
-        };
+    #[must_use]
+    pub fn from_breakdown(values: &BTreeMap<String, OtelModelValue>) -> Self {
+        let number = |name: &str| values.get(name).and_then(OtelModelValue::as_decimal);
         Self {
             input: number("input_cost"),
             output: number("output_cost"),

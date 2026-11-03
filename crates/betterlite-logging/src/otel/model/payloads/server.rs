@@ -5,38 +5,23 @@ pub struct ServerInfo {
 }
 
 impl ServerInfo {
-    pub fn from_api_base(value: Option<&str>) -> Option<Self> {
-        let value = value?.trim();
-        if value.is_empty() {
+    #[must_use]
+    pub fn from_api_base(api_base: Option<&str>) -> Option<Self> {
+        let trimmed = api_base?.trim();
+        if trimmed.is_empty() {
             return None;
         }
-        let authority = value
-            .split_once("://")
-            .map(|(_, tail)| tail)
-            .unwrap_or(value)
-            .split('/')
-            .next()?;
-        let authority = authority.rsplit('@').next()?;
-        let (host, port) = if let Some(rest) = authority.strip_prefix('[') {
-            let (host, suffix) = rest.split_once(']')?;
-            (
-                host,
-                suffix
-                    .strip_prefix(':')
-                    .and_then(|port| port.parse::<u16>().ok()),
-            )
-        } else if let Some((host, port)) = authority.rsplit_once(':') {
-            (host, port.parse::<u16>().ok())
+        let explicit_scheme = trimmed.split_once("://").map(|(scheme, _)| scheme);
+        let parseable = if explicit_scheme.is_some() {
+            trimmed.to_owned()
         } else {
-            (authority, None)
+            format!("http://{trimmed}")
         };
-        if host.is_empty() {
-            return None;
-        }
-        let scheme = value.split_once("://").map(|(scheme, _)| scheme);
+        let parsed = url::Url::parse(&parseable).ok()?;
+        let host = parsed.host_str()?;
         Some(Self {
             address: Some(host.to_owned()),
-            port: port.or_else(|| match scheme {
+            port: parsed.port().or(match explicit_scheme {
                 Some("https") => Some(443),
                 Some("http") => Some(80),
                 _ => None,

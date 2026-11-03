@@ -1,5 +1,5 @@
-pub use super::metadata::request_context::RequestContext;
-pub use super::metadata::request_identity::RequestIdentity;
+pub type RequestContext = super::metadata::request_context::RequestContext;
+pub type RequestIdentity = super::metadata::request_identity::RequestIdentity;
 pub mod cost;
 pub mod error;
 pub mod guardrail;

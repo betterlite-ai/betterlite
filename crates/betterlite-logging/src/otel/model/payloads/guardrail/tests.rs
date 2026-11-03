@@ -3,8 +3,8 @@
 use super::*;
 #[test]
 fn guardrail_marks_intervention_as_error() {
-    let entry = serde_json::from_value::<BTreeMap<String, Value>>(
-        serde_json::json!({"guardrail_status":"guardrail_intervened"}),
+    let entry = serde_json::from_str::<BTreeMap<String, OtelModelValue>>(
+        r#"{"guardrail_status":"guardrail_intervened"}"#,
     )
     .unwrap();
     assert!(
