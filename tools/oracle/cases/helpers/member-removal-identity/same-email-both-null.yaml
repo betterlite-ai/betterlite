@@ -1,0 +1,11 @@
+kind: helper
+name: same_email_rejects_two_missing_emails
+call:
+  member_removal_identity:
+    operation: same_email
+    candidate_email: null
+    user_id: "u1"
+    user_email: null
+env: {}
+compare:
+  ignore: []
