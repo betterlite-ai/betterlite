@@ -38,7 +38,10 @@ fn collect_responses_text(
     depth: usize,
     parts: &mut Vec<String>,
 ) -> Result<(), SemanticCacheRecordsError> {
-    if depth > MAX_RESPONSES_DEPTH {
+    let container_depth = depth
+        .checked_add(1)
+        .ok_or(SemanticCacheRecordsError::ResponsesDepthExceeded)?;
+    if matches!(value, Json::List(_) | Json::Object(_)) && container_depth > MAX_RESPONSES_DEPTH {
         return Err(SemanticCacheRecordsError::ResponsesDepthExceeded);
     }
     match value {
@@ -50,7 +53,7 @@ fn collect_responses_text(
         }
         Json::List(items) => {
             for item in items {
-                collect_responses_text(item, depth.saturating_add(1), parts)?;
+                collect_responses_text(item, container_depth, parts)?;
             }
         }
         Json::Object(fields) => {
@@ -59,7 +62,7 @@ fn collect_responses_text(
                 .filter(|content| !matches!(content, Json::Null))
             {
                 Some(content) => {
-                    collect_responses_text(content, depth.saturating_add(1), parts)?;
+                    collect_responses_text(content, container_depth, parts)?;
                 }
                 None => {
                     if let Some(text) = first_text_field(fields) {

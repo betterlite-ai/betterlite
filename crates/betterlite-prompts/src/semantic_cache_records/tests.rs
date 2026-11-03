@@ -122,6 +122,43 @@ fn prompt_depth_65_is_rejected() {
 }
 
 #[test]
+fn prompt_depth_64_empty_containers_are_accepted() {
+    let nested = format!("{}[]{}", "[".repeat(63), "]".repeat(63));
+    let value = json(&nested);
+    assert_eq!(extract_semantic_prompt(None, Some(&value)).unwrap(), None);
+}
+
+#[test]
+fn prompt_depth_65_empty_containers_are_rejected() {
+    let nested = format!("{}[]{}", "[".repeat(64), "]".repeat(64));
+    let value = json(&nested);
+    assert!(matches!(
+        extract_semantic_prompt(None, Some(&value)),
+        Err(SemanticCacheRecordsError::ResponsesDepthExceeded)
+    ));
+}
+
+#[test]
+fn prompt_text_object_at_depth_64_is_accepted() {
+    let nested = format!("{}{{\"text\":\"deep\"}}{}", "[".repeat(63), "]".repeat(63));
+    let value = json(&nested);
+    assert_eq!(
+        extract_semantic_prompt(None, Some(&value)).unwrap(),
+        Some("deep".to_owned())
+    );
+}
+
+#[test]
+fn prompt_text_object_at_depth_65_is_rejected() {
+    let nested = format!("{}{{\"text\":\"deep\"}}{}", "[".repeat(64), "]".repeat(64));
+    let value = json(&nested);
+    assert!(matches!(
+        extract_semantic_prompt(None, Some(&value)),
+        Err(SemanticCacheRecordsError::ResponsesDepthExceeded)
+    ));
+}
+
+#[test]
 fn cached_response_absent_input_stays_absent() {
     assert_eq!(decode_cached_response(None).unwrap(), None);
 }

@@ -31,26 +31,32 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        match input {
+        let serialized = match input {
             Input::ExtractSemanticPrompt {
                 messages,
                 responses_input,
             } => match extract_semantic_prompt(messages.as_deref(), responses_input.as_ref()) {
-                Ok(prompt) => {
-                    to_value(prompt).map_err(|error| serialization_error(error.to_string()))
-                }
-                Err(error) => Err(semantic_cache_error(&error)),
+                Ok(prompt) => to_value(prompt),
+                Err(error) => return Err(semantic_cache_error(&error)),
             },
             Input::DecodeCachedResponse { payload } => {
                 let bytes = payload.as_deref().map(str::as_bytes);
                 match decode_cached_response(bytes) {
-                    Ok(response) => {
-                        to_value(response).map_err(|error| serialization_error(error.to_string()))
-                    }
-                    Err(error) => Err(semantic_cache_error(&error)),
+                    Ok(response) => to_value(response),
+                    Err(error) => return Err(semantic_cache_error(&error)),
                 }
             }
-        }
+        };
+        serialized.map_err(|error| {
+            Box::new(HelperError {
+                class: "SerializationError".to_owned(),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+                message: error.to_string(),
+            })
+        })
     }
 }
 
@@ -62,16 +68,5 @@ fn semantic_cache_error(error: &SemanticCacheRecordsError) -> Box<HelperError> {
         param: None,
         code: None,
         message: error.to_string(),
-    })
-}
-
-fn serialization_error(message: String) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: "SerializationError".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
     })
 }
