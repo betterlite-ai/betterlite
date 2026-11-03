@@ -1,22 +1,15 @@
-use super::common::{field, seconds};
-use crate::otel::model::utils::coercion::OtelModelValue;
-use rust_decimal::prelude::ToPrimitive as _;
+use super::wire::callback::Callback;
+use rust_decimal::Decimal;
 
 #[must_use]
-pub fn time_to_first_chunk_seconds(kwargs: &OtelModelValue) -> Option<f64> {
-    let streaming = field(kwargs, "optional_params")
-        .and_then(|value| field(value, "stream"))
-        .and_then(OtelModelValue::as_bool)
-        .unwrap_or(false);
-    if !streaming {
+pub fn time_to_first_chunk_seconds(kwargs: &Callback) -> Option<Decimal> {
+    if !kwargs.optional_params.stream {
         return None;
     }
-    let elapsed = seconds(field(kwargs, "completion_start_time"))
-        .zip(seconds(field(kwargs, "api_call_start_time")))
-        .and_then(|(completion_start, api_call_start)| {
-            completion_start.checked_sub(api_call_start)
-        })?;
-    elapsed.to_f64()
+    kwargs
+        .completion_start_time?
+        .0
+        .checked_sub(kwargs.api_call_start_time?.0)
 }
 
 mod tests;

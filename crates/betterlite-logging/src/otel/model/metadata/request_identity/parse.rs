@@ -1,30 +1,38 @@
-use super::super::common::{field, object, string, team_metadata};
 use super::super::helpers::{flatten_metadata, resolve_provider_model};
+use super::super::wire::MetadataError;
+use super::super::wire::payload::Payload;
 use super::RequestIdentity;
 use crate::otel::model::utils::coercion::OtelModelValue;
 
-#[must_use]
-pub fn from_payload(payload: &OtelModelValue) -> RequestIdentity {
-    let metadata = object(field(payload, "metadata"));
-    RequestIdentity {
-        call_id: string(field(payload, "litellm_call_id")).or_else(|| string(field(payload, "id"))),
-        team_id: string(metadata.and_then(|values| values.get("user_api_key_team_id")))
-            .or_else(|| string(metadata.and_then(|values| values.get("team_id")))),
-        team_alias: string(metadata.and_then(|values| values.get("user_api_key_team_alias")))
-            .or_else(|| string(metadata.and_then(|values| values.get("team_alias")))),
-        team_metadata: team_metadata(
-            metadata.and_then(|values| values.get("user_api_key_team_metadata")),
-        ),
-        key_hash: string(metadata.and_then(|values| values.get("user_api_key_hash"))),
-        end_user: string(field(payload, "end_user"))
-            .or_else(|| string(metadata.and_then(|values| values.get("user_api_key_end_user_id")))),
+pub fn from_payload(payload: &Payload) -> Result<RequestIdentity, MetadataError> {
+    let metadata = &payload.metadata;
+    let raw: OtelModelValue = serde_json::from_value(serde_json::to_value(metadata)?)?;
+    Ok(RequestIdentity {
+        call_id: payload
+            .litellm_call_id
+            .clone()
+            .or_else(|| payload.id.clone()),
+        team_id: metadata
+            .user_api_key_team_id
+            .clone()
+            .or_else(|| metadata.team_id.clone()),
+        team_alias: metadata
+            .user_api_key_team_alias
+            .clone()
+            .or_else(|| metadata.team_alias.clone()),
+        team_metadata: metadata
+            .user_api_key_team_metadata
+            .clone()
+            .filter(|fields| !fields.is_empty()),
+        key_hash: metadata.user_api_key_hash.clone(),
+        end_user: payload
+            .end_user
+            .clone()
+            .or_else(|| metadata.user_api_key_end_user_id.clone()),
         provider_model: resolve_provider_model(payload),
-        request_route: metadata
-            .and_then(|values| values.get("user_api_key_request_route"))
-            .and_then(OtelModelValue::as_str)
-            .map(str::to_owned),
-        metadata: flatten_metadata(metadata),
-    }
+        request_route: metadata.user_api_key_request_route.clone(),
+        metadata: flatten_metadata(raw.as_object()),
+    })
 }
 
 mod tests;

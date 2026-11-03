@@ -1,3 +1,4 @@
+import json
 from collections.abc import Mapping
 from dataclasses import fields, is_dataclass
 from typing import TYPE_CHECKING, TypeAlias, cast
@@ -46,13 +47,17 @@ def run(input_value: dict[str, Json]) -> Json:
             request_route=cast("str | None", identity_values.get("request_route")),
             metadata=cast("Mapping[str, str]", identity_values.get("metadata", {})),
         )
-        return plain(promoted_baggage(
+        promoted = promoted_baggage(
             identity,
             cast("str | None", input_value.get("request_model")),
             cast("tuple[str, ...]", input_value.get("promoted_keys", ())),
             cast("tuple[str, ...]", input_value.get("metadata_keys", ())),
             cast("tuple[str, ...]", input_value.get("team_metadata_keys", ())),
-        ))
+        )
+        return {
+            key: cast("Json", json.loads(value)) if key == "litellm.team.metadata" else value
+            for key, value in promoted.items()
+        }
     raise ValueError(f"unknown {litellm.__name__} helper function {function}")
 
 

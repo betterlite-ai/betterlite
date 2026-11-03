@@ -1,7 +1,6 @@
-use super::common::{field, object, string};
 use super::request_identity::RequestIdentity;
-use crate::otel::model::metadata::request_identity::parse::from_payload;
-use crate::otel::model::utils::coercion::OtelModelValue;
+use super::request_identity::parse::from_payload;
+use super::wire::{MetadataError, payload::Payload};
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 pub struct RequestContext {
@@ -14,33 +13,28 @@ pub struct RequestContext {
 }
 
 impl RequestContext {
-    #[must_use]
-    pub fn from_standard_logging_payload(payload: &OtelModelValue) -> Self {
-        let metadata = object(field(payload, "metadata"));
-        let hidden = object(field(payload, "hidden_params"));
-        let response = object(field(payload, "response"));
-        let model_group = string(field(payload, "model_group"))
-            .or_else(|| string(metadata.and_then(|values| values.get("model_group"))));
-        let model_id = string(field(payload, "model_id")).or_else(|| {
-            string(
-                metadata
-                    .and_then(|values| values.get("model_info"))
-                    .and_then(|value| field(value, "id")),
-            )
-        });
-        let request_model = model_group
+    pub fn from_standard_logging_payload(payload: &Payload) -> Result<Self, MetadataError> {
+        let model_group = payload
+            .model_group
             .clone()
-            .or_else(|| string(field(payload, "model")))
-            .unwrap_or_default();
-        Self {
-            request_model,
-            response_model: string(response.and_then(|values| values.get("model"))),
+            .or_else(|| payload.metadata.model_group.clone());
+        Ok(Self {
+            request_model: model_group
+                .clone()
+                .or_else(|| payload.model.clone())
+                .unwrap_or_default(),
+            response_model: payload.response.model.clone(),
             model_group,
-            model_id,
-            api_base: string(field(payload, "api_base"))
-                .or_else(|| string(hidden.and_then(|values| values.get("api_base")))),
-            identity: from_payload(payload),
-        }
+            model_id: payload
+                .model_id
+                .clone()
+                .or_else(|| payload.metadata.model_info.as_ref()?.id.clone()),
+            api_base: payload
+                .api_base
+                .clone()
+                .or_else(|| payload.hidden_params.api_base.clone()),
+            identity: from_payload(payload)?,
+        })
     }
 }
 

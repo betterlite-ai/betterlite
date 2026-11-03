@@ -1,11 +1,12 @@
 #![cfg(test)]
 use crate::otel::model::metadata::helpers::{flatten_metadata, resolve_provider_model};
 use crate::otel::model::metadata::request_identity::parse::from_payload;
+use crate::otel::model::metadata::wire::payload::Payload;
 use crate::otel::model::utils::coercion::OtelModelValue;
 
 #[test]
 fn provider_model_uses_hidden_model_before_call_model() {
-    let payload: OtelModelValue =
+    let payload: Payload =
         serde_json::from_str(r#"{"model":"call","hidden_params":{"litellm_model_name":"hidden"}}"#)
             .expect("test JSON is valid");
     assert_eq!(resolve_provider_model(&payload).as_deref(), Some("hidden"));
@@ -34,19 +35,19 @@ fn flatten_metadata_uses_dotted_scalar_paths() {
 #[case("{}")]
 #[case(r#"{"metadata":{"user_api_key_team_metadata":{}}}"#)]
 fn empty_team_metadata_is_absent(#[case] source: &str) {
-    let payload: OtelModelValue = serde_json::from_str(source).unwrap();
-    let identity = from_payload(&payload);
+    let payload: Payload = serde_json::from_str(source).unwrap();
+    let identity = from_payload(&payload).unwrap();
     assert!(identity.team_metadata.is_none());
     assert_eq!(resolve_provider_model(&payload), None);
 }
 
 #[test]
 fn team_metadata_stays_raw_until_promotion() {
-    let payload: OtelModelValue = serde_json::from_str(
+    let payload: Payload = serde_json::from_str(
         r#"{"metadata":{"user_api_key_team_metadata":{"private":"retained","nested":{"key":1}}}}"#,
     )
     .unwrap();
-    let identity = from_payload(&payload);
+    let identity = from_payload(&payload).unwrap();
     let metadata = identity.team_metadata.unwrap();
     assert_eq!(
         metadata.get("private").and_then(OtelModelValue::as_str),

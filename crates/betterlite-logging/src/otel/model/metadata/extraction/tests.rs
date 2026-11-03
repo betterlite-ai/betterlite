@@ -1,20 +1,22 @@
 #![cfg(test)]
 use crate::otel::model::metadata::extraction::auth_metadata;
-use crate::otel::model::metadata::extraction::{
-    metadata_from_request_data, model_from_request_data,
-};
-use crate::otel::model::utils::coercion::OtelModelValue;
+use crate::otel::model::metadata::extraction::metadata_from_request_data;
+use crate::otel::model::metadata::wire::{callback::RequestData, decode};
+use serde::de::DeserializeOwned;
 
-fn input(source: &str) -> OtelModelValue {
-    serde_json::from_str(source).expect("test JSON is valid")
+fn input<T>(source: &str) -> T
+where
+    T: DeserializeOwned,
+{
+    decode(source).expect("test JSON is valid")
 }
 
 #[test]
 fn request_data_reads_model_and_requester_snapshot() {
-    let data = input(
+    let data: RequestData = input(
         r#"{"model":"group","metadata":{"requester_metadata":{"user_id":"u"},"ignored":"x"}}"#,
     );
-    assert_eq!(model_from_request_data(&data).as_deref(), Some("group"));
+    assert_eq!(data.model.as_deref(), Some("group"));
     let snapshot = metadata_from_request_data(&data).expect("requester metadata exists");
     assert!(snapshot.contains_key("requester_metadata"));
     assert!(!snapshot.contains_key("ignored"));

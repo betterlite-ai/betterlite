@@ -1,116 +1,92 @@
-use betterlite_logging::otel::model::baggage::promoted_baggage;
+use betterlite_logging::otel::model::baggage::{TEAM_METADATA, promoted_baggage};
+use betterlite_logging::otel::model::metadata::helpers::flatten_metadata;
+use betterlite_logging::otel::model::metadata::llm_call_event::LLMCallEvent;
 use betterlite_logging::otel::model::metadata::request_context::RequestContext;
 use betterlite_logging::otel::model::metadata::request_identity::RequestIdentity;
 use betterlite_logging::otel::model::metadata::request_identity::parse::from_payload;
-use betterlite_logging::otel::model::utils::coercion::OtelModelValue;
+use betterlite_logging::otel::model::metadata::wire::{
+    MetadataMap, callback::Callback, payload::Payload,
+};
 use serde_json::{Value, json};
+use std::collections::BTreeMap;
 
 pub(crate) struct Op;
 
+#[derive(serde::Deserialize)]
+#[serde(tag = "function", rename_all = "snake_case")]
+pub(crate) enum Input {
+    Identity {
+        payload: Box<Payload>,
+    },
+    Context {
+        payload: Box<Payload>,
+    },
+    Session {
+        kwargs: Box<Callback>,
+    },
+    Flatten {
+        metadata: MetadataMap,
+    },
+    Baggage {
+        identity: Box<RequestIdentity>,
+        request_model: Option<String>,
+        #[serde(default)]
+        promoted_keys: Vec<String>,
+        #[serde(default)]
+        metadata_keys: Vec<String>,
+        #[serde(default)]
+        team_metadata_keys: Vec<String>,
+    },
+}
+
 impl crate::helpers::Helper for Op {
-    type Input = Value;
+    type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        match input.get("function").and_then(Value::as_str) {
-            Some("identity") => {
-                let payload_value = input
-                    .get("payload")
-                    .ok_or_else(|| invalid("payload is required"))?;
-                let payload = serde_json::from_value::<OtelModelValue>(payload_value.clone())
-                    .map_err(|error| invalid(&error.to_string()))?;
-                serde_json::to_value(from_payload(&payload))
-                    .map_err(|error| invalid(&error.to_string()))
-            }
-            Some("context") => {
-                let payload_value = input
-                    .get("payload")
-                    .ok_or_else(|| invalid("payload is required"))?;
-                let payload = serde_json::from_value::<OtelModelValue>(payload_value.clone())
-                    .map_err(|error| invalid(&error.to_string()))?;
-                serde_json::to_value(RequestContext::from_standard_logging_payload(&payload))
-                    .map_err(|error| invalid(&error.to_string()))
-            }
-            Some("session" | "flatten") => session_or_flatten(
-                input,
-                input
-                    .get("function")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default(),
+        match input {
+            Input::Identity { payload } => Ok(json!(
+                from_payload(payload).map_err(|error| invalid(&error.to_string()))?
+            )),
+            Input::Context { payload } => Ok(json!(
+                RequestContext::from_standard_logging_payload(payload)
+                    .map_err(|error| invalid(&error.to_string()))?
+            )),
+            Input::Session { kwargs } => Ok(
+                json!({"session_id": LLMCallEvent::from_dict(kwargs).map_err(|error| invalid(&error.to_string()))?.session_id}),
             ),
-            Some("baggage") => baggage(input),
-            _ => Err(invalid("unknown b3841 function")),
+            Input::Flatten { metadata } => Ok(json!(flatten_metadata(Some(metadata)))),
+            Input::Baggage {
+                identity,
+                request_model,
+                promoted_keys,
+                metadata_keys,
+                team_metadata_keys,
+            } => normalize_baggage(promoted_baggage(
+                identity,
+                request_model.as_deref(),
+                promoted_keys,
+                metadata_keys,
+                team_metadata_keys,
+            )),
         }
     }
 }
 
-#[path = "b3841/tests.rs"]
-mod tests;
-
-fn session_or_flatten(input: &Value, action: &str) -> crate::helpers::HelperResult {
-    if action == "session" {
-        let kwargs_value = input
-            .get("kwargs")
-            .ok_or_else(|| invalid("kwargs is required"))?;
-        let kwargs = serde_json::from_value::<OtelModelValue>(kwargs_value.clone())
-            .map_err(|error| invalid(&error.to_string()))?;
-        let trace = betterlite_logging::otel::model::trace_controls::caller_trace_controls(&kwargs);
-        return Ok(
-            json!({"session_id": betterlite_logging::otel::model::metadata::session_id::caller_session_id(&kwargs, &trace)}),
-        );
-    }
-    let metadata_value = input.get("metadata").cloned().unwrap_or_else(|| json!({}));
-    let metadata = serde_json::from_value::<OtelModelValue>(metadata_value)
-        .map_err(|error| invalid(&error.to_string()))?;
-    let flattened = match &metadata {
-        OtelModelValue::Object(values) => Some(values),
-        OtelModelValue::Null(())
-        | OtelModelValue::Bool(_)
-        | OtelModelValue::Number(_)
-        | OtelModelValue::String(_)
-        | OtelModelValue::Array(_) => None,
-    };
-    Ok(json!(
-        betterlite_logging::otel::model::metadata::helpers::flatten_metadata(flattened)
-    ))
-}
-
-fn baggage(input: &Value) -> crate::helpers::HelperResult {
-    let identity_value = input
-        .get("identity")
-        .ok_or_else(|| invalid("identity is required"))?;
-    let identity: RequestIdentity = serde_json::from_value(identity_value.clone())
-        .map_err(|error| invalid(&error.to_string()))?;
-    let promoted: Vec<String> = input
-        .get("promoted_keys")
-        .and_then(Value::as_array)
+fn normalize_baggage(fields: BTreeMap<String, String>) -> crate::helpers::HelperResult {
+    let normalized: Result<serde_json::Map<String, Value>, _> = fields
         .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-        .map(str::to_owned)
+        .map(|(key, value)| {
+            let item = if key == TEAM_METADATA {
+                serde_json::from_str(&value)?
+            } else {
+                Value::String(value)
+            };
+            Ok((key, item))
+        })
         .collect();
-    let metadata: Vec<String> = input
-        .get("metadata_keys")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-        .map(str::to_owned)
-        .collect();
-    let team_metadata: Vec<String> = input
-        .get("team_metadata_keys")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-        .map(str::to_owned)
-        .collect();
-    Ok(json!(promoted_baggage(
-        &identity,
-        input.get("request_model").and_then(Value::as_str),
-        &promoted,
-        &metadata,
-        &team_metadata
-    )))
+    normalized
+        .map(Value::Object)
+        .map_err(|error: serde_json::Error| invalid(&error.to_string()))
 }
 
 fn invalid(message: &str) -> Box<crate::helpers::HelperError> {
@@ -123,3 +99,5 @@ fn invalid(message: &str) -> Box<crate::helpers::HelperError> {
         message: message.to_owned(),
     })
 }
+
+mod tests;

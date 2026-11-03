@@ -1,9 +1,9 @@
 #![cfg(test)]
 use crate::otel::model::metadata::session_id::caller_session_id;
+use crate::otel::model::metadata::wire::callback::Callback;
 use crate::otel::model::trace_controls::{TraceControls, caller_trace_controls};
-use crate::otel::model::utils::coercion::OtelModelValue;
 
-fn input(source: &str) -> OtelModelValue {
+fn input(source: &str) -> Callback {
     serde_json::from_str(source).expect("test JSON is valid")
 }
 
@@ -54,6 +54,7 @@ fn minted_ids_and_trace_echoes_never_become_caller_sessions(
     #[case] expected: Option<&str>,
 ) {
     let kwargs = input(source);
-    let trace = caller_trace_controls(&kwargs);
+    let raw = serde_json::from_value(serde_json::to_value(&kwargs).unwrap()).unwrap();
+    let trace = caller_trace_controls(&raw);
     assert_eq!(caller_session_id(&kwargs, &trace).as_deref(), expected);
 }

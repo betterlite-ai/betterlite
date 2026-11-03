@@ -46,8 +46,13 @@ fn baggage_filters_identity_metadata_and_team_metadata() {
         Some("team")
     );
     assert_eq!(
-        promoted.get("litellm.team.metadata").map(String::as_str),
-        Some(r#"{"region": "west"}"#)
+        serde_json::from_str::<BTreeMap<String, String>>(
+            promoted
+                .get(TEAM_METADATA)
+                .expect("allowlisted team metadata")
+        )
+        .unwrap(),
+        BTreeMap::from([("region".to_owned(), "west".to_owned())])
     );
     assert_eq!(
         promoted.get("litellm.metadata.user_id").map(String::as_str),
@@ -85,5 +90,27 @@ fn end_user_is_opt_in_and_team_metadata_needs_its_own_allowlist() {
     assert_eq!(
         opted_in.get("litellm.end_user.id").map(String::as_str),
         Some("person")
+    );
+}
+
+#[derive(Debug, serde::Deserialize, PartialEq, Eq)]
+struct NestedMetadata {
+    text: String,
+    items: (Option<bool>, bool, u64),
+}
+
+#[test]
+fn team_metadata_round_trips_nested_values() {
+    let source = r#"{"public":{"text":"quote\"\n\\","items":[null,true,9007199254740993]},"private":"hidden"}"#;
+    let metadata: BTreeMap<String, OtelModelValue> = serde_json::from_str(source).unwrap();
+    let encoded = filtered_team_metadata_json(Some(&metadata), &["public".to_owned()]).unwrap();
+    let decoded: BTreeMap<String, NestedMetadata> = serde_json::from_str(&encoded).unwrap();
+    assert_eq!(decoded.len(), 1);
+    assert_eq!(
+        decoded.into_values().next(),
+        Some(NestedMetadata {
+            text: "quote\"\n\\".to_owned(),
+            items: (None, true, 0x0020_0000_0000_0001),
+        })
     );
 }

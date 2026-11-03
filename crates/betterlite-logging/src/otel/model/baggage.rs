@@ -91,39 +91,7 @@ pub fn filtered_team_metadata_json(
     if filtered.is_empty() {
         return None;
     }
-    let entries: Option<Vec<String>> = filtered
-        .iter()
-        .map(|(key, value)| {
-            let quoted_key = to_string(key).ok()?;
-            let encoded_value = encode_json_value(value)?;
-            Some(format!("{quoted_key}: {encoded_value}"))
-        })
-        .collect();
-    Some(format!("{{{}}}", entries?.join(", ")))
-}
-
-fn encode_json_value(value: &OtelModelValue) -> Option<String> {
-    match value {
-        OtelModelValue::Object(fields) => {
-            let entries: Option<Vec<String>> = fields
-                .iter()
-                .map(|(key, item)| {
-                    let quoted_key = to_string(key).ok()?;
-                    let encoded_value = encode_json_value(item)?;
-                    Some(format!("{quoted_key}: {encoded_value}"))
-                })
-                .collect();
-            Some(format!("{{{}}}", entries?.join(", ")))
-        }
-        OtelModelValue::Array(items) => {
-            let values: Option<Vec<String>> = items.iter().map(encode_json_value).collect();
-            Some(format!("[{}]", values?.join(", ")))
-        }
-        OtelModelValue::Null(()) => Some("null".to_owned()),
-        OtelModelValue::Bool(boolean) => to_string(boolean).ok(),
-        OtelModelValue::Number(number) => to_string(number).ok(),
-        OtelModelValue::String(text) => to_string(text).ok(),
-    }
+    to_string(&filtered).ok()
 }
 
 #[path = "baggage/tests.rs"]

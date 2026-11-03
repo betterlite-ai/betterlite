@@ -1,24 +1,18 @@
-use super::common::{field, object, string};
+use super::wire::callback::Callback;
 use crate::otel::model::trace_controls::TraceControls;
-use crate::otel::model::utils::coercion::OtelModelValue;
-use std::collections::BTreeMap;
 
 #[must_use]
-pub fn caller_session_id(kwargs: &OtelModelValue, trace: &TraceControls) -> Option<String> {
-    let params = object(field(kwargs, "litellm_params"));
-    let bodies: Vec<&BTreeMap<String, OtelModelValue>> = ["metadata", "litellm_metadata"]
-        .into_iter()
-        .filter_map(|key| {
-            let values = params?;
-            object(values.get(key))
-        })
-        .collect();
+pub fn caller_session_id(kwargs: &Callback, trace: &TraceControls) -> Option<String> {
+    let bodies = [
+        &kwargs.litellm_params.metadata,
+        &kwargs.litellm_params.litellm_metadata,
+    ];
     let minted: Vec<String> = bodies
         .iter()
         .filter_map(|body| {
-            let generated = body.get("litellm_session_id_generated");
-            generated.filter(|marker| marker.as_bool() == Some(true))?;
-            string(body.get("session_id"))
+            body.litellm_session_id_generated
+                .filter(|generated| *generated)?;
+            body.session_id.clone()
         })
         .collect();
     if !minted.is_empty() {
@@ -29,15 +23,15 @@ pub fn caller_session_id(kwargs: &OtelModelValue, trace: &TraceControls) -> Opti
             .or_else(|| {
                 bodies
                     .iter()
-                    .filter_map(|body| string(body.get("session_id")))
+                    .filter_map(|body| body.session_id.clone())
                     .find(|session| !minted.contains(session))
             });
     }
-    let explicit = params.and_then(|values| string(values.get("litellm_session_id")));
+    let explicit = kwargs.litellm_params.litellm_session_id.clone();
     let echoes_trace = explicit.as_ref().is_some_and(|session| {
         bodies
             .iter()
-            .any(|body| string(body.get("trace_id")).as_ref() == Some(session))
+            .any(|body| body.trace_id.as_ref() == Some(session))
     });
     explicit
         .filter(|_| !echoes_trace)

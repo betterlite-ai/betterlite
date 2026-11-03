@@ -1,12 +1,12 @@
 #![cfg(test)]
 use crate::otel::model::metadata::request_identity::from_auth::from_user_api_key_auth;
-use crate::otel::model::utils::coercion::OtelModelValue;
+use crate::otel::model::metadata::wire::{MetadataMap, decode, payload::Auth};
 use std::collections::BTreeMap;
 
 #[test]
 fn auth_identity_flattens_requester_metadata_and_key_fields() {
-    let auth: OtelModelValue = serde_json::from_str(r#"{"team_id":"team","team_alias":"alias","api_key":"hash","user_id":"user","org_id":"org","key_alias":"key","end_user_id":"end-user","team_metadata":{"region":"west"}}"#).expect("test JSON is valid");
-    let requester: OtelModelValue =
+    let auth: Auth = serde_json::from_str(r#"{"team_id":"team","team_alias":"alias","api_key":"hash","user_id":"user","org_id":"org","key_alias":"key","end_user_id":"end-user","team_metadata":{"region":"west"}}"#).expect("test JSON is valid");
+    let requester: MetadataMap =
         serde_json::from_str(r#"{"requester_metadata":{"project":{"name":"demo"}}}"#)
             .expect("test JSON is valid");
     let identity = from_user_api_key_auth(&auth, Some(&requester));
@@ -30,4 +30,17 @@ fn auth_identity_flattens_requester_metadata_and_key_fields() {
     );
     assert_eq!(identity.call_id, None);
     assert_eq!(identity.request_route, None);
+}
+
+#[rstest::rstest]
+#[case::team(r#"{"team_id":false}"#, "team_id")]
+#[case::alias(r#"{"key_alias":17}"#, "key_alias")]
+#[case::metadata(r#"{"team_metadata":[]}"#, "team_metadata")]
+fn rejects_malformed_team_id(#[case] source: &str, #[case] field: &str) {
+    assert!(
+        decode::<Auth>(source)
+            .unwrap_err()
+            .to_string()
+            .contains(field)
+    );
 }

@@ -1,4 +1,5 @@
-use super::common::{field, object, scalar_text, string};
+use super::common::scalar_text;
+use super::wire::payload::Payload;
 use crate::otel::model::utils::coercion::OtelModelValue;
 use std::collections::BTreeMap;
 
@@ -17,7 +18,7 @@ pub fn flatten_metadata(
             } else {
                 format!("{prefix}.{key}")
             };
-            match object(Some(value)) {
+            match value.as_object() {
                 Some(nested) => collect(&path, nested, output),
                 None => output.extend(scalar_text(value).map(|text| (path, text))),
             }
@@ -31,15 +32,13 @@ pub fn flatten_metadata(
 }
 
 #[must_use]
-pub fn resolve_provider_model(payload: &OtelModelValue) -> Option<String> {
-    string(field(payload, "metadata").and_then(|metadata| field(metadata, "deployment")))
-        .or_else(|| {
-            string(
-                field(payload, "hidden_params")
-                    .and_then(|hidden| field(hidden, "litellm_model_name")),
-            )
-        })
-        .or_else(|| string(field(payload, "model")))
+pub fn resolve_provider_model(payload: &Payload) -> Option<String> {
+    payload
+        .metadata
+        .deployment
+        .clone()
+        .or_else(|| payload.hidden_params.litellm_model_name.clone())
+        .or_else(|| payload.model.clone())
 }
 
 mod tests;

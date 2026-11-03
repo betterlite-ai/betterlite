@@ -6,6 +6,7 @@ pub mod request_context;
 pub mod request_identity;
 pub mod session_id;
 pub mod time_to_chunk;
+pub mod wire;
 
 pub const REQUESTER_METADATA_PATH: &str = "requester_metadata.";
 pub const DEFAULT_BAGGAGE_METADATA_KEYS: &[&str] = &[
