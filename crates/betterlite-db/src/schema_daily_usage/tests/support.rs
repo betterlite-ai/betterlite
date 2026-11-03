@@ -1,10 +1,11 @@
-use crate::schema_baseline::{BASELINE_MIGRATION, MigrationFile};
+use crate::schema_baseline::BASELINE_MIGRATION;
 use crate::schema_daily_usage::MIGRATION_CATALOG;
 use betterlite_postgres_fixture::connection::{PostgresFixture, RandomDatabaseName};
 use betterlite_postgres_fixture::error::FixtureError;
 use betterlite_postgres_fixture::seed::FixtureSeed;
 use clap::Parser;
 use futures_util::future::join_all;
+use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use std::future::Future;
 use std::str;

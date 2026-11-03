@@ -16,6 +16,27 @@ const SEVEN_COUNTERS: [&str; 7] = [
     "cache_read_input_tokens",
 ];
 
+fn assert_counter_values(row: &Row, table: &str) {
+    assert_eq!(row.get::<_, i64>(0), 11, "{table} prompt_tokens");
+    assert_eq!(row.get::<_, i64>(1), 22, "{table} completion_tokens");
+    assert_eq!(row.get::<_, i64>(2), 33, "{table} api_requests");
+    assert_eq!(row.get::<_, i64>(3), 44, "{table} successful_requests");
+    assert_eq!(row.get::<_, i64>(4), 55, "{table} failed_requests");
+    assert_eq!(
+        row.get::<_, i64>(5),
+        66,
+        "{table} cache_creation_input_tokens"
+    );
+    assert_eq!(row.get::<_, i64>(6), 77, "{table} cache_read_input_tokens");
+}
+
+async fn insert_null_entity_row(client: &Client, table: &str, entity_column: &str, id: &str) {
+    let insert = format!(
+        "INSERT INTO \"{table}\" (id, \"{entity_column}\", date, api_key, model, updated_at) VALUES ($1, NULL, 'd1', 'k1', 'm1', NOW())"
+    );
+    exec_params(client, &insert, &[&id]).await;
+}
+
 async fn assert_counters_are_integer_default_zero(client: &Client, table: &str) {
     for name in SEVEN_COUNTERS {
         let info = column(client, table, name).await;
@@ -37,7 +58,7 @@ async fn insert_user_row(client: &Client, id: &str, custom_llm_provider: Option<
 
 #[tokio::test]
 async fn user_counter_additions() {
-    harness(|[client]| async move {
+    harness(move |[client]| async move {
         client
             .batch_execute(&migration_sql_through(CACHE_TOKENS_FOR_USER))
             .await
@@ -49,7 +70,7 @@ async fn user_counter_additions() {
 
 #[tokio::test]
 async fn team_counter_additions() {
-    harness(|[client]| async move {
+    harness(move |[client]| async move {
         client
             .batch_execute(&migration_sql_through(ADD_TAG_TABLE))
             .await
@@ -61,7 +82,7 @@ async fn team_counter_additions() {
 
 #[tokio::test]
 async fn tag_counter_defaults() {
-    harness(|[client]| async move {
+    harness(move |[client]| async move {
         client
             .batch_execute(&migration_sql_through(ADD_TAG_TABLE))
             .await
@@ -77,11 +98,11 @@ async fn tag_counter_defaults() {
 #[case::tag_counters("LiteLLM_DailyTagSpend", "tag", "tag1")]
 #[tokio::test]
 async fn seven_counters_widen_preserving_values(
-    #[case] table: &str,
-    #[case] entity_column: &str,
-    #[case] entity_id: &str,
+    #[case] table: &'static str,
+    #[case] entity_column: &'static str,
+    #[case] entity_id: &'static str,
 ) {
-    harness(|[client]| async move {
+    harness(move |[client]| async move {
         client.batch_execute(&migration_sql_through(ADD_STATUS_TO_SPENDLOGS)).await.unwrap();
         let insert = format!(
             "INSERT INTO \"{table}\" (id, \"{entity_column}\", date, api_key, model, updated_at) VALUES ('row-widen', $1, 'd1', 'k1', 'm1', NOW())"
@@ -105,7 +126,7 @@ async fn seven_counters_widen_preserving_values(
 
 #[tokio::test]
 async fn values_above_i32_after_widen() {
-    harness(|[client]| async move {
+    harness(move |[client]| async move {
         client
             .batch_execute(&migration_sql_through(USE_BIG_INT))
             .await
@@ -131,7 +152,7 @@ async fn values_above_i32_after_widen() {
 
 #[tokio::test]
 async fn entity_date_key_model_provider_uniqueness() {
-    harness(|[client]| async move {
+    harness(move |[client]| async move {
         client
             .batch_execute(&migration_sql_through(ADD_DAILY_USER_TABLE))
             .await
@@ -152,7 +173,7 @@ async fn entity_date_key_model_provider_uniqueness() {
 
 #[tokio::test]
 async fn tag_global_unique_then_dropped() {
-    harness(|[client]| async move {
+    harness(move |[client]| async move {
         client
             .batch_execute(&migration_sql_through(ADD_TAG_TABLE))
             .await
@@ -195,10 +216,10 @@ async fn tag_global_unique_then_dropped() {
 #[case::null_tag("LiteLLM_DailyTagSpend", "tag")]
 #[tokio::test]
 async fn nullable_entities_and_distinct_null_uniqueness(
-    #[case] table: &str,
-    #[case] entity_column: &str,
+    #[case] table: &'static str,
+    #[case] entity_column: &'static str,
 ) {
-    harness(|[client]| async move {
+    harness(move |[client]| async move {
         client
             .batch_execute(&migration_sql_through(ALLOW_NULL_ENTITY_ID))
             .await
@@ -221,7 +242,7 @@ async fn assert_required_updated_at(client: &Client, tables: &[&str]) {
 
 #[tokio::test]
 async fn required_updated_at_without_default() {
-    harness(|[client]| async move {
+    harness(move |[client]| async move {
         client
             .batch_execute(&migration_sql_through(ADD_TAG_TABLE))
             .await

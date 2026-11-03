@@ -11,8 +11,11 @@
 #[case::managed_object_table("LiteLLM_ManagedObjectTable", &["id", "unified_object_id", "model_object_id", "file_object", "file_purpose", "created_at", "created_by", "updated_at", "updated_by", "status"])]
 #[case::health_check_table("LiteLLM_HealthCheckTable", &["health_check_id", "model_name", "model_id", "status", "healthy_count", "unhealthy_count", "error_message", "response_time_ms", "details", "checked_by", "checked_at", "created_at", "updated_at"])]
 #[tokio::test]
-async fn postgres_catalog_columns(#[case] table: &str, #[case] expected: &[&str]) {
-    harness(|[client]| async move {
+async fn postgres_catalog_columns(
+    #[case] table: &'static str,
+    #[case] expected: &'static [&'static str],
+) {
+    harness(move |[client]| async move {
         client.batch_execute(&migration_sql_all()).await.unwrap();
         let actual: Vec<String> = columns_in(&client, table)
             .await
@@ -31,8 +34,11 @@ async fn postgres_catalog_columns(#[case] table: &str, #[case] expected: &[&str]
 #[case::organization_table("LiteLLM_OrganizationTable", &["object_permission_id"])]
 #[case::spend_logs("LiteLLM_SpendLogs", &["proxy_server_request", "session_id", "status"])]
 #[tokio::test]
-async fn postgres_catalog_added_columns(#[case] table: &str, #[case] expected: &[&str]) {
-    harness(|[client]| async move {
+async fn postgres_catalog_added_columns(
+    #[case] table: &'static str,
+    #[case] expected: &'static [&'static str],
+) {
+    harness(move |[client]| async move {
         client.batch_execute(&migration_sql_all()).await.unwrap();
         let actual: Vec<String> = columns_in(&client, table)
             .await
