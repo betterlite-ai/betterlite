@@ -9,13 +9,13 @@ use crate::sections::Section;
 #[derive(Debug, Default, Deserialize)]
 pub struct Raw {
     #[serde(default)]
-    general_settings: RawGeneral,
+    general_settings: Option<RawGeneral>,
 }
 
 #[derive(Debug, Default, Deserialize)]
 struct RawGeneral {
     #[serde(default)]
-    public_routes: Vec<String>,
+    public_routes: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -31,7 +31,10 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         Ok(Settings {
-            public_routes: self.general_settings.public_routes,
+            public_routes: self
+                .general_settings
+                .and_then(|settings| settings.public_routes)
+                .unwrap_or_default(),
         })
     }
 }

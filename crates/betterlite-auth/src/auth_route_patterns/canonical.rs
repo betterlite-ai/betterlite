@@ -1,3 +1,9 @@
+#[derive(Debug, thiserror::Error)]
+pub enum ScopeError {
+    #[error("request scope access failed")]
+    Access,
+}
+
 pub struct ScopeFields<'source> {
     pub path: Option<&'source str>,
     pub app_root_path: Option<&'source str>,
@@ -5,14 +11,19 @@ pub struct ScopeFields<'source> {
 }
 
 pub struct RequestRouteSource<'source> {
-    pub scope: Option<ScopeFields<'source>>,
+    pub scope: Result<Option<ScopeFields<'source>>, ScopeError>,
     pub url_path: &'source str,
 }
 
 #[must_use]
 pub fn get_request_route(source: &RequestRouteSource<'_>) -> String {
-    let Some(scope) = &source.scope else {
-        return source.url_path.to_owned();
+    let scope = match &source.scope {
+        Ok(Some(fields)) => fields,
+        Ok(None) => return source.url_path.to_owned(),
+        Err(error) => {
+            tracing::debug!(?error, "request route scope failed; using URL path");
+            return source.url_path.to_owned();
+        }
     };
     let raw_path = scope.path.unwrap_or(source.url_path);
     let root = scope
@@ -33,9 +44,13 @@ pub fn get_request_route(source: &RequestRouteSource<'_>) -> String {
 }
 
 #[must_use]
-pub const fn get_request_route_template(template: Option<&str>) -> Option<&str> {
+pub fn get_request_route_template(template: Result<Option<&str>, ScopeError>) -> Option<&str> {
     match template {
-        Some(value) if !value.is_empty() => Some(value),
-        Some(_) | None => None,
+        Ok(Some(value)) if !value.is_empty() => Some(value),
+        Ok(Some(_) | None) => None,
+        Err(error) => {
+            tracing::debug!(?error, "request route template access failed");
+            None
+        }
     }
 }

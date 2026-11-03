@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 
 use regex::Regex;
 
@@ -98,11 +98,20 @@ const MODELS: &[(&str, &str)] = &[("^(__ROOT__/models)/([^/]+)$", "$1/{model}")]
 
 pub struct RouteNormalizer {
     patterns: Vec<(Regex, String)>,
-    cache: Mutex<VecDeque<(String, String)>>,
+    pub(super) cache: Mutex<VecDeque<(String, String)>>,
 }
 
-impl Default for RouteNormalizer {
-    fn default() -> Self {
+#[derive(Debug, thiserror::Error)]
+pub enum NormalizeError {
+    #[error("invalid route normalization pattern: {source}")]
+    Pattern {
+        #[from]
+        source: regex::Error,
+    },
+}
+
+impl RouteNormalizer {
+    pub fn new() -> Result<Self, NormalizeError> {
         let mut patterns = Vec::new();
         for root in ["/v1", "/openai/v1"] {
             for group in [
@@ -115,7 +124,7 @@ impl Default for RouteNormalizer {
                 FINE_TUNING,
                 MODELS,
             ] {
-                append_patterns(&mut patterns, root, group);
+                append_patterns(&mut patterns, root, group)?;
             }
         }
         append_patterns(
@@ -126,34 +135,41 @@ impl Default for RouteNormalizer {
                 ("^(/responses)/([^/]+)(/cancel)$", "$1/{response_id}$3"),
                 ("^(/responses)/([^/]+)$", "$1/{response_id}"),
             ],
-        );
-        Self {
+        )?;
+        Ok(Self {
             patterns,
             cache: Mutex::new(VecDeque::new()),
-        }
+        })
     }
 }
 
-fn append_patterns(compiled: &mut Vec<(Regex, String)>, root: &str, group: &[(&str, &str)]) {
+fn append_patterns(
+    compiled: &mut Vec<(Regex, String)>,
+    root: &str,
+    group: &[(&str, &str)],
+) -> Result<(), NormalizeError> {
     for (template, replacement) in group {
-        let pattern = template.replace(ROOT_TOKEN, root);
-        if let Ok(regex) = Regex::new(&pattern) {
-            compiled.push((regex, (*replacement).to_owned()));
-        }
+        let pattern = template
+            .replace(ROOT_TOKEN, root)
+            .replace('$', r"(?P<final_newline>\n?)\z");
+        let regex = Regex::new(&pattern)?;
+        compiled.push((regex, format!("{replacement}${{final_newline}}")));
     }
+    Ok(())
 }
 
 impl RouteNormalizer {
     #[must_use]
     pub fn normalize_request_route(&self, route: &str) -> String {
-        if let Ok(mut entries) = self.cache.lock()
-            && let Some(position) = entries.iter().position(|(key, _)| key == route)
-            && let Some(entry) = entries.remove(position)
+        let mut cached = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(position) = cached.iter().position(|(key, _)| key == route)
+            && let Some(entry) = cached.remove(position)
         {
             let value = entry.1.clone();
-            entries.push_front(entry);
+            cached.push_front(entry);
             return value;
         }
+        drop(cached);
         let normalized = self
             .patterns
             .iter()
@@ -162,10 +178,10 @@ impl RouteNormalizer {
                 (value != route).then_some(value)
             })
             .unwrap_or_else(|| route.to_owned());
-        if let Ok(mut entries) = self.cache.lock() {
-            entries.push_front((route.to_owned(), normalized.clone()));
-            entries.truncate(CACHE_CAPACITY);
-        }
+        let mut entries = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
+        entries.retain(|(key, _)| key != route);
+        entries.push_front((route.to_owned(), normalized.clone()));
+        entries.truncate(CACHE_CAPACITY);
         normalized
     }
 }

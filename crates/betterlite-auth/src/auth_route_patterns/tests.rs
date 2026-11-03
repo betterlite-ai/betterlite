@@ -25,11 +25,11 @@ fn request_path(
     #[case] expected: &str,
 ) {
     let source = RequestRouteSource {
-        scope: Some(ScopeFields {
+        scope: Ok(Some(ScopeFields {
             path,
             app_root_path: app_root,
             root_path: root,
-        }),
+        })),
         url_path,
     };
     assert_eq!(get_request_route(&source), expected);
@@ -38,7 +38,7 @@ fn request_path(
 #[test]
 fn malformed_scope_fallback() {
     let source = RequestRouteSource {
-        scope: None,
+        scope: Ok(None),
         url_path: "/url-path",
     };
     assert_eq!(get_request_route(&source), "/url-path");
@@ -47,13 +47,16 @@ fn malformed_scope_fallback() {
 #[rstest]
 #[case::nonempty_route_template(Some("/v1/models/{model}"), Some("/v1/models/{model}"))]
 #[case::absent_empty_nonstring_template(None, None)]
+#[case::empty_template(Some(""), None)]
 fn route_template(#[case] template: Option<&str>, #[case] expected: Option<&str>) {
-    assert_eq!(get_request_route_template(template), expected);
+    assert_eq!(get_request_route_template(Ok(template)), expected);
 }
 
 #[rstest]
 #[case::wildcard_empty_prefix("/anything", "*", true)]
-#[case::wildcard_one_terminal_star("/api/thing", "/api/*", true)]
+#[case::wildcard_one_terminal_star("/api/*thing", "/api/**", true)]
+#[case::double_star_not_glob("/api/thing", "/api/**", false)]
+#[case::embedded_star_no_expansion("/api/abc", "/api/a*c", false)]
 #[case::embedded_star_literal("/api/a*b", "/api/a*b", true)]
 #[case::wildcard_case_sensitive("/API/x", "/api/*", false)]
 fn wildcard_cases(#[case] path: &str, #[case] pattern: &str, #[case] expected: bool) {
@@ -94,8 +97,8 @@ fn native_general_settings_public_routes_works_without_premium_user() {
     "/v1/responses/{response_id}/input_items"
 )]
 #[case::normalize_responses_cancel(
-    "/openai/v1/responses/abc/cancel",
-    "/openai/v1/responses/{response_id}/cancel"
+    "/v1/responses/abc/cancel",
+    "/v1/responses/{response_id}/cancel"
 )]
 #[case::normalize_threads_item("/v1/threads/t1", "/v1/threads/{thread_id}")]
 #[case::normalize_threads_runs("/v1/threads/t1/runs", "/v1/threads/{thread_id}/runs")]
@@ -139,7 +142,7 @@ fn native_general_settings_public_routes_works_without_premium_user() {
     "/v1/vector_stores/{vector_store_id}/file_batches/{batch_id}"
 )]
 #[case::normalize_assistants_item("/v1/assistants/a1", "/v1/assistants/{assistant_id}")]
-#[case::normalize_files_item("/openai/v1/files/f1", "/openai/v1/files/{file_id}")]
+#[case::normalize_files_item("/v1/files/f1", "/v1/files/{file_id}")]
 #[case::normalize_files_content("/v1/files/f1/content", "/v1/files/{file_id}/content")]
 #[case::normalize_batches_item("/v1/batches/b1", "/v1/batches/{batch_id}")]
 #[case::normalize_batches_cancel("/v1/batches/b1/cancel", "/v1/batches/{batch_id}/cancel")]
@@ -160,28 +163,56 @@ fn native_general_settings_public_routes_works_without_premium_user() {
     "/v1/fine_tuning/jobs/{fine_tuning_job_id}/checkpoints"
 )]
 #[case::normalize_models_item("/v1/models/gpt-x", "/v1/models/{model}")]
-#[case::openai_v1_threads_item("/openai/v1/threads/t1", "/openai/v1/threads/{thread_id}")]
 #[case::unversioned_responses("/responses/r1", "/responses/{response_id}")]
 #[case::unversioned_others_unchanged("/files/f1", "/files/f1")]
 #[case::trailing_slash_unchanged("/v1/responses/r1/", "/v1/responses/r1/")]
 #[case::unknown_suffix_unchanged("/v1/responses/r1/other", "/v1/responses/r1/other")]
 #[case::empty_id_unchanged("/v1/responses/", "/v1/responses/")]
+#[case::terminal_newline_suffix("/v1/responses/r/cancel\n", "/v1/responses/{response_id}/cancel\n")]
+#[case::terminal_newline_id("/v1/responses/r\n", "/v1/responses/{response_id}")]
 #[case::already_templated_path("/v1/responses/{response_id}", "/v1/responses/{response_id}")]
-fn normalization(#[case] path: &str, #[case] expected: &str) {
-    let normalizer = RouteNormalizer::default();
-    assert_eq!(normalizer.normalize_request_route(path), expected);
+fn normalization(
+    #[case] path: &str,
+    #[case] expected: &str,
+    #[values("v1", "openai/v1")] root: &str,
+) {
+    let versioned_path = path.replacen("/v1/", &format!("/{root}/"), 1);
+    let versioned_expected = expected.replacen("/v1/", &format!("/{root}/"), 1);
+    let normalizer = RouteNormalizer::new().unwrap();
+    assert_eq!(
+        normalizer.normalize_request_route(&versioned_path),
+        versioned_expected
+    );
 }
 
 #[test]
 fn normalization_cache_bound() {
-    let normalizer = RouteNormalizer::default();
+    let normalizer = RouteNormalizer::new().unwrap();
     (0_u32..300_u32)
         .map(|index| format!("/unmatched/{index}"))
         .for_each(|path| {
             assert_eq!(normalizer.normalize_request_route(&path), path);
         });
+    let entries = normalizer.cache.lock().unwrap();
+    assert_eq!(entries.len(), 256);
+    assert!(!entries.iter().any(|(path, _)| path == "/unmatched/0"));
+    drop(entries);
     assert_eq!(
         normalizer.normalize_request_route("/v1/models/m"),
         "/v1/models/{model}"
     );
+}
+
+#[test]
+fn normalization_cache_hit_refreshes_lru() {
+    let normalizer = RouteNormalizer::new().unwrap();
+    (0_u32..256_u32).for_each(|index| {
+        let _normalized = normalizer.normalize_request_route(&format!("/item/{index}"));
+    });
+    assert_eq!(normalizer.normalize_request_route("/item/0"), "/item/0");
+    assert_eq!(normalizer.normalize_request_route("/new"), "/new");
+    let entries = normalizer.cache.lock().unwrap();
+    assert_eq!(entries.len(), 256);
+    assert!(entries.iter().any(|(path, _)| path == "/item/0"));
+    assert!(!entries.iter().any(|(path, _)| path == "/item/1"));
 }
