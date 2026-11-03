@@ -218,4 +218,5 @@ fn normalization_cache_hit_refreshes_lru() {
     assert_eq!(entries.len(), 256);
     assert!(entries.iter().any(|(path, _)| path == "/item/0"));
     assert!(!entries.iter().any(|(path, _)| path == "/item/1"));
+    drop(entries);
 }
