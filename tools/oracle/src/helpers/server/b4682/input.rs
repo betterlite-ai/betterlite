@@ -58,9 +58,9 @@ pub(crate) struct ToolInput {
     pub(super) description: Option<String>,
     #[serde(default)]
     pub(super) title: Option<String>,
-    #[serde(default, alias = "input_schema")]
+    #[serde(default, alias = "inputSchema")]
     pub(super) input_schema: BTreeMap<String, Value>,
-    #[serde(default, alias = "output_schema")]
+    #[serde(default, alias = "outputSchema")]
     pub(super) output_schema: Option<BTreeMap<String, Value>>,
     #[serde(default)]
     pub(super) execution: Option<BTreeMap<String, Value>>,
@@ -76,7 +76,7 @@ pub(crate) struct ToolInput {
 pub(crate) struct PinnedInput {
     #[serde(default)]
     pub(super) description: String,
-    #[serde(default, alias = "input_schema")]
+    #[serde(default, alias = "inputSchema")]
     pub(super) input_schema: BTreeMap<String, Value>,
 }
 

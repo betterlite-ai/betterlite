@@ -319,6 +319,34 @@ fn header_sanitize_excludes_other_server_credentials_and_keeps_identity() {
     );
 }
 
+#[test]
+fn header_sanitize_only_preserves_oauth_authorization() {
+    let raw = BTreeMap::from([
+        (
+            "Authorization".to_owned(),
+            "Bearer sk-ant-oat-test".to_owned(),
+        ),
+        ("X-MCP-Servers".to_owned(), "sk-ant-oat-test".to_owned()),
+        (
+            "X-MCP-Access-Groups".to_owned(),
+            "sk-ant-oat-test".to_owned(),
+        ),
+    ]);
+    let context = HeaderSanitizeContext {
+        upstream_credential_names: &[],
+        identity_header_names: &[],
+        custom_key_header_name: None,
+        client_side_auth_header_name: "x-mcp-auth",
+    };
+    let safe = logging_safe_mcp_headers(&raw, &context);
+    assert_eq!(
+        safe.get("authorization").map(String::as_str),
+        Some("***REDACTED***")
+    );
+    assert!(!safe.contains_key("x-mcp-servers"));
+    assert!(!safe.contains_key("x-mcp-access-groups"));
+}
+
 struct ControlledHook {
     outcomes: BTreeMap<String, Result<Option<BTreeMap<String, JsonValue>>, GuardrailFailure>>,
     active: Arc<AtomicUsize>,

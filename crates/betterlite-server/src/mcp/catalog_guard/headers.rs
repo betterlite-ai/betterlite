@@ -95,7 +95,8 @@ fn clean_headers(
     let mut cleaned = BTreeMap::new();
     for (name, value) in raw_headers {
         let lower = name.to_lowercase();
-        if (SPECIAL_HEADER_NAMES.contains(&lower.as_str()) && !is_anthropic_oauth(value))
+        if (SPECIAL_HEADER_NAMES.contains(&lower.as_str())
+            && !(lower == "authorization" && is_anthropic_oauth(value)))
             || custom_key_lower.as_deref() == Some(lower.as_str())
         {
             continue;
