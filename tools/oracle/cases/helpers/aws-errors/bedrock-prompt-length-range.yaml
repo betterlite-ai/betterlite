@@ -1,0 +1,14 @@
+kind: helper
+name: aws-errors-bedrock-prompt-length-range
+call:
+  aws_errors:
+    provider: bedrock
+    model: claude-3
+    custom_llm_provider: bedrock_mantle
+    error_str: "prompt: length: 1..200000"
+    status_code: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

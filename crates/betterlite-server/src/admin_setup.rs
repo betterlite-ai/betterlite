@@ -3,9 +3,8 @@ use axum::response::{Html, IntoResponse as _, Response};
 
 mod tests;
 
-const PAGE_SHELL: &str = include_str!("admin_setup/page_shell.html");
-const MISSING_KEYS_BODY: &str = include_str!("admin_setup/missing_keys_body.html");
-const ADMIN_UI_DISABLED_BODY: &str = include_str!("admin_setup/admin_ui_disabled_body.html");
+const MISSING_KEYS_TEMPLATE: &str = include_str!("admin_setup/missing_keys_page.html");
+const ADMIN_UI_DISABLED_TEMPLATE: &str = include_str!("admin_setup/admin_ui_disabled_page.html");
 
 #[derive(Clone, Copy)]
 pub struct ProxyAvailability {
@@ -26,26 +25,23 @@ pub fn show_missing_vars_in_env(availability: ProxyAvailability) -> Option<Respo
 
 #[must_use]
 pub fn missing_keys_form(missing_key_names: &str) -> String {
-    let body = MISSING_KEYS_BODY.replacen("@@MISSING_KEYS@@", missing_key_names, 1);
-    render_page(
-        "Environment Setup Instructions",
-        "Environment Setup Instructions",
-        &body,
+    // LiteLLM's format call unescapes CSS braces and adds the closing quote indentation.
+    format!(
+        "\n{}    ",
+        MISSING_KEYS_TEMPLATE
+            .replace("{{", "{")
+            .replace("}}", "}")
+            .replace("@@MISSING_KEYS@@", missing_key_names)
     )
 }
 
 #[must_use]
 pub fn admin_ui_disabled() -> Response {
-    let page = render_page(
-        "Admin UI Disabled",
-        "Admin UI is Disabled",
-        ADMIN_UI_DISABLED_BODY,
+    let page = format!(
+        "\n{}    ",
+        ADMIN_UI_DISABLED_TEMPLATE
+            .replace("{{", "{")
+            .replace("}}", "}")
     );
     (StatusCode::OK, Html(page)).into_response()
-}
-
-fn render_page(title: &str, heading: &str, body: &str) -> String {
-    let with_title = PAGE_SHELL.replacen("@@TITLE@@", title, 1);
-    let with_heading = with_title.replacen("@@HEADING@@", heading, 1);
-    with_heading.replacen("@@BODY@@", body, 1)
 }

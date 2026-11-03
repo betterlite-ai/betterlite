@@ -57,7 +57,7 @@ fn guardrail(api_base: String) -> CiscoInspectionGuardrail {
 fn guardrail_with_config(api_base: String) -> CiscoInspectionGuardrail {
     let mut settings = configured(api_base);
     settings.enabled_rules = vec![Rule {
-        rule_name: "Prompt Injection".to_owned(),
+        rule_name: Some("Prompt Injection".to_owned()),
         entity_types: Vec::new(),
         rule_id: None,
         classification: None,
