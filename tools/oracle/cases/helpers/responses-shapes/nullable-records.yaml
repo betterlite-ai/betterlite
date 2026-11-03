@@ -8,6 +8,9 @@ call:
     function_call: {arguments: null, call_id: null, name: null, type: null, id: null, status: completed}
     image_call: {type: image_generation_call, id: img_1, status: failed, result: null}
     interpreter_call: {type: code_interpreter_call, id: ci_1, code: null, container_id: null, status: incomplete, outputs: null}
+    custom_call: {type: custom_tool_call, call_id: c, name: patch, input: diff}
+    generic_item: {type: message, id: m, status: completed, role: assistant, content: [], phase: final_answer}
+    decoded_id: {custom_llm_provider: null, response_id: r}
 env: {}
 compare:
   ignore: []

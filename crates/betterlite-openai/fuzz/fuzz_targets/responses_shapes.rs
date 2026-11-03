@@ -9,5 +9,10 @@ fuzz_target!(|bytes: &[u8]| {
         max_event_bytes: 262_144,
         max_items: 10_000,
     };
-    let _decoded = decode_responses_shapes(bytes, limits);
+    let _deletion = decode_responses_shapes::<
+        betterlite_openai::api::responses_shapes::DeleteResponseResult,
+    >(bytes, limits);
+    let _decoded = decode_responses_shapes::<betterlite_openai::api::responses_shapes::OutputText>(
+        bytes, limits,
+    );
 });

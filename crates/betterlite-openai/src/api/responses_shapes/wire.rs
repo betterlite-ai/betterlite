@@ -1,4 +1,6 @@
-use serde_json::Value;
+use serde::Deserialize;
+use serde::de::{DeserializeOwned, IgnoredAny};
+use serde_json::value::RawValue;
 use thiserror::Error;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -8,43 +10,58 @@ pub struct WireDecodeLimits {
     pub max_items: usize,
 }
 
-#[derive(Debug, Error, PartialEq, Eq)]
+#[derive(Debug, Error)]
 pub enum ShapeDecodeError {
     #[error("JSON exceeds byte limit")]
     JsonTooLarge,
     #[error("JSON item limit exceeded")]
     TooManyItems,
-    #[error("invalid JSON: {0}")]
-    Json(String),
+    #[error("JSON nesting limit exceeded")]
+    TooDeep,
+    #[error("invalid Responses record: {0}")]
+    Json(#[from] serde_json::Error),
 }
 
-pub fn decode_responses_shapes(
+pub fn decode_responses_shapes<T: DeserializeOwned>(
     bytes: &[u8],
     limits: WireDecodeLimits,
-) -> Result<Value, ShapeDecodeError> {
+) -> Result<T, ShapeDecodeError> {
     if bytes.len() > limits.max_json_bytes || bytes.len() > limits.max_event_bytes {
         return Err(ShapeDecodeError::JsonTooLarge);
     }
-    let value: Value =
-        serde_json::from_slice(bytes).map_err(|error| ShapeDecodeError::Json(error.to_string()))?;
-    if count_items(&value, limits.max_items) > limits.max_items {
-        return Err(ShapeDecodeError::TooManyItems);
+    let root: &RawValue = serde_json::from_slice(bytes)?;
+    let mut pending = vec![(root, 0_usize)];
+    let mut remaining = limits.max_items;
+    while let Some((value, depth)) = pending.pop() {
+        if depth > 128 {
+            return Err(ShapeDecodeError::TooDeep);
+        }
+        let children = match value.get().as_bytes().first() {
+            Some(b'[') => serde_json::from_str::<Vec<&RawValue>>(value.get())?,
+            Some(b'{') => serde_json::from_str::<Members<'_>>(value.get())?
+                .0
+                .into_iter()
+                .map(|(_, child)| child)
+                .collect(),
+            _ => Vec::new(),
+        };
+        remaining = remaining
+            .checked_sub(children.len())
+            .ok_or(ShapeDecodeError::TooManyItems)?;
+        pending.extend(
+            children
+                .into_iter()
+                .map(|child| (child, depth.saturating_add(1))),
+        );
     }
-    Ok(value)
+    Ok(serde_json::from_slice(bytes)?)
 }
 
-fn count_items(value: &Value, cap: usize) -> usize {
-    match value {
-        Value::Array(items) => items.iter().fold(items.len(), |count, item| {
-            count
-                .saturating_add(count_items(item, cap))
-                .min(cap.saturating_add(1))
-        }),
-        Value::Object(items) => items.values().fold(items.len(), |count, item| {
-            count
-                .saturating_add(count_items(item, cap))
-                .min(cap.saturating_add(1))
-        }),
-        _ => 0,
-    }
-}
+#[serde_with::serde_as]
+#[derive(Deserialize)]
+#[serde(transparent)]
+struct Members<'input>(
+    #[serde_as(as = "serde_with::Map<_, _>")]
+    #[serde(borrow)]
+    Vec<(IgnoredAny, &'input RawValue)>,
+);

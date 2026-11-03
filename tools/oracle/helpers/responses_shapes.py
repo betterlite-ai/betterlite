@@ -1,7 +1,10 @@
 from typing import Literal, TypeAlias, cast
 
 from litellm.types.responses.main import (
+    CustomToolCallOutputItem,
+    DecodedResponseId,
     DeleteResponseResult,
+    GenericResponseOutputItem,
     OutputCodeInterpreterCall,
     OutputFunctionToolCall,
     OutputImageGenerationCall,
@@ -10,6 +13,7 @@ from litellm.types.responses.main import (
     build_web_search_call,
 )
 from litellm.types.responses.streaming_websocket import ResponsesWebSocketRequestDefaults
+from pydantic import TypeAdapter
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
@@ -37,13 +41,23 @@ def run(fields: dict[str, Json]) -> Json:
         function_call = OutputFunctionToolCall.model_validate(fields["function_call"])
         image_call = OutputImageGenerationCall.model_validate(fields["image_call"])
         interpreter_call = OutputCodeInterpreterCall.model_validate(fields["interpreter_call"])
-        return cast(Json, {
-            "deleted": record.model_dump(exclude_none=False),
-            "output_text": output_text.model_dump(exclude_none=False),
-            "function_call": function_call.model_dump(exclude_none=False),
-            "image_call": image_call.model_dump(exclude_none=False),
-            "interpreter_call": interpreter_call.model_dump(exclude_none=False),
-        })
+        return cast(
+            Json,
+            {
+                "record": record.model_dump(exclude_none=False),
+                "output_text": output_text.model_dump(exclude_none=False),
+                "function_call": function_call.model_dump(exclude_none=False),
+                "image_call": image_call.model_dump(exclude_none=False),
+                "interpreter_call": interpreter_call.model_dump(exclude_none=False),
+                "custom_call": CustomToolCallOutputItem.model_validate(
+                    fields["custom_call"]
+                ).model_dump(),
+                "generic_item": GenericResponseOutputItem.model_validate(
+                    fields["generic_item"]
+                ).model_dump(),
+                "decoded_id": TypeAdapter(DecodedResponseId).validate_python(fields["decoded_id"]),
+            },
+        )
     if operation == "websocket_defaults":
         defaults = ResponsesWebSocketRequestDefaults(
             fill_missing=cast(dict[str, object], fields["fill_missing"]),
