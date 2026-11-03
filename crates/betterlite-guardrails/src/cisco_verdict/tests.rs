@@ -76,6 +76,20 @@ fn cisco_verdict_ignores_direct_arguments_outside_payload() {
     assert!(super::extract_mcp_args(&value).is_none());
 }
 
+#[rstest]
+#[case::params(r#"{"params":{"arguments":{"q":"clean"}}}"#)]
+#[case::sanitized_payload(r#"{"sanitized_payload":{"params":{"arguments":{"q":"clean"}}}}"#)]
+#[case::modified_payload(r#"{"modifiedPayload":{"arguments":{"q":"clean"}}}"#)]
+#[case::skip_empty(r#"{"sanitized_payload":{},"modified_payload":{"arguments":{"q":"clean"}}}"#)]
+#[case::result(r#"{"result":{"sanitizedPayload":{"arguments":{"q":"clean"}}}}"#)]
+fn cisco_verdict_extracts_mcp_arguments(#[case] input: &str) {
+    let arguments = super::extract_mcp_args(&Json::parse(input)).expect("sanitized arguments");
+    assert_eq!(
+        serde_json::to_string(&arguments).unwrap(),
+        r#"{"q":"clean"}"#
+    );
+}
+
 #[test]
 fn cisco_verdict_counts_only_string_entities() {
     let rules = Json::parse(r#"[{"entity_types": ["PII", 3, null]}, {"entity_types": ["PII"]}]"#);

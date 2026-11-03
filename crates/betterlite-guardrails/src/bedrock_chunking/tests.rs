@@ -46,3 +46,22 @@ fn merge_refuses_a_usage_total_past_i64() {
     let overflow = merge(&[chunk(&huge, "a", 1), chunk(&huge, "b", 1)]);
     assert!(matches!(overflow, Err(ChunkingError::UsageOverflow { counter }) if counter == "u"));
 }
+
+#[test]
+fn bin_pack_preserves_content_and_splits_at_the_character_budget() {
+    let content: Vec<_> = ["ab", "cd", "\u{e9}x"]
+        .into_iter()
+        .flat_map(|text| chunk("{}", text, 1).content)
+        .collect();
+    let batches = bin_pack(&content, 4);
+    let texts: Vec<Vec<_>> = batches
+        .iter()
+        .map(|batch| {
+            batch
+                .iter()
+                .map(|item| item.text.as_ref().unwrap().text.as_deref().unwrap())
+                .collect()
+        })
+        .collect();
+    assert_eq!(texts, vec![vec!["ab", "cd"], vec!["\u{e9}x"]]);
+}

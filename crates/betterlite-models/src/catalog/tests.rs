@@ -6,6 +6,8 @@ use super::{
     UnknownFields,
 };
 use crate::metadata::identity::Mode;
+use crate::token_rates::Usage;
+use crate::token_rates::batch::get_batch_cost_rates;
 use rstest::rstest;
 use std::sync::Arc;
 use std::{
@@ -14,6 +16,26 @@ use std::{
 };
 
 const WARNING_BOUNDARY_ENTRIES: usize = MAX_CATALOG_WARNINGS.div_euclid(2);
+
+#[rstest]
+#[case::below(199_999, Some("xai"), 1)]
+#[case::exclusive_boundary(200_000, Some("openai"), 1)]
+#[case::inclusive_boundary(200_000, Some("xai"), 2)]
+#[case::above(200_001, Some("openai"), 2)]
+fn catalog_batch_prices_retain_provider_specific_threshold_boundaries(
+    #[case] prompt_tokens: i64,
+    #[case] provider: Option<&str>,
+    #[case] expected: i64,
+) {
+    let catalog = ModelCatalog::parse(
+        br#"{"model":{"input_cost_per_token_batches":1,"input_cost_per_token_above_200k_tokens_batches":2}}"#,
+        UnknownFields::Reject,
+    ).unwrap();
+    let prices = &catalog.entries["model"].prices;
+    let record = serde_json::from_str(&serde_json::to_string(prices).unwrap()).unwrap();
+    let rates = get_batch_cost_rates(&record, Usage { prompt_tokens }, provider).unwrap();
+    assert_eq!(rates.input, Some(rust_decimal::Decimal::from(expected)));
+}
 
 #[derive(Clone, Copy, Debug)]
 enum Outcome {

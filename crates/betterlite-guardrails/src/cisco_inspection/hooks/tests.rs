@@ -29,6 +29,27 @@ fn obj(json: &str) -> Fields {
     fields
 }
 
+#[rstest::rstest]
+#[case::completion(r#"{"choices":[{"text":"hello"}]}"#)]
+#[case::responses(
+    r#"{"output":[{"type":"message","content":[{"type":"output_text","text":"hello"}]}]}"#
+)]
+fn extracts_non_chat_response_messages(#[case] response: &str) {
+    let messages = super::extract_response_messages(&obj(response));
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0].content, "hello");
+}
+
+#[test]
+fn recording_applied_guardrails_preserves_names_without_duplicates() {
+    let mut data = obj(r#"{"metadata":{"applied_guardrails":["other","cisco-ai-defense"]}}"#);
+    super::record_applied_guardrail(&mut data, "cisco-ai-defense");
+    assert_eq!(
+        serde_json::to_string(&data).unwrap(),
+        r#"{"metadata":{"applied_guardrails":["other","cisco-ai-defense"]}}"#
+    );
+}
+
 fn guardrail(inspection_type: InspectionType, api_base: String) -> CiscoInspectionGuardrail {
     let settings = Configured {
         guardrail_name: "cisco-ai-defense".to_owned(),

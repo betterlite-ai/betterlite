@@ -9,6 +9,73 @@ use crate::tiered_pricing::Scalar;
 use rstest::rstest;
 use rust_decimal::Decimal;
 use std::cell::Cell;
+use std::io::{self, Write};
+use std::sync::{Arc, Mutex};
+use tracing::subscriber::with_default;
+
+#[derive(Clone)]
+struct LogCapture(Arc<Mutex<Vec<u8>>>);
+
+impl Write for LogCapture {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .map_err(|error| io::Error::other(error.to_string()))?
+            .write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.0
+            .lock()
+            .map_err(|error| io::Error::other(error.to_string()))?
+            .flush()
+    }
+}
+
+#[rstest]
+#[case::zero_pages(0, None, None, (0, false, false), 0)]
+#[case::negative_pages(-1, None, None, (0, false, false), 0)]
+#[case::missing_pricing(1, None, None, (1, true, true), 0)]
+#[case::published_without_page_rate(1, None, Some(PriceRecord::new()), (1, false, true), 0)]
+#[case::deployment_priced(1, Some(2), None, (0, false, false), 2)]
+fn batch_warnings_only_report_missing_prices_for_positive_usage(
+    #[case] pages: i64,
+    #[case] page_rate: Option<i64>,
+    #[case] published: Option<PriceRecord>,
+    #[case] expected: (u32, bool, bool),
+    #[case] expected_cost: i64,
+) {
+    let lookup = CountingLookup::new(published);
+    let deployment = deployment(page_rate, None, None);
+    let usage = OcrBatchUsage {
+        pages_processed: pages,
+        pages_processed_annotation: 0,
+    };
+    let bytes = Arc::new(Mutex::new(Vec::new()));
+    let writer = LogCapture(Arc::clone(&bytes));
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_target(false)
+        .with_writer(move || writer.clone())
+        .finish();
+    let cost = with_default(subscriber, || {
+        ocr_batch_cost("model", None, &usage, Some(&deployment), &lookup).unwrap()
+    });
+    assert_eq!(cost, Decimal::from(expected_cost));
+    assert_eq!(lookup.calls.get(), expected.0);
+    let log = String::from_utf8(bytes.lock().unwrap().clone()).unwrap();
+    assert_eq!(
+        log.contains("WARN OCR batch cost: no pricing entry"),
+        expected.1,
+        "{log}"
+    );
+    assert_eq!(
+        log.contains("WARN OCR batch cost: no ocr_cost_per_page"),
+        expected.2,
+        "{log}"
+    );
+}
 
 fn number(value: i64) -> Scalar {
     Scalar::Number(serde_json::Number::from(value))

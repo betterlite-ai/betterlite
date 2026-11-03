@@ -21,6 +21,21 @@ fn catalog() -> CatalogCapabilities {
         text_models: BTreeSet::new(),
     }
 }
+
+#[rstest]
+#[case::gpt5("gpt-5", ModelFamily::GptReasoning)]
+#[case::gpt6("proxy/gpt-6", ModelFamily::GptReasoning)]
+#[case::chat("gpt-5-chat", ModelFamily::Gpt)]
+#[case::uncataloged_prefixed_chat("proxy/gpt-5-chat", ModelFamily::Unknown)]
+#[case::unknown("custom-model", ModelFamily::Unknown)]
+fn model_family_routes_reasoning_models_but_excludes_chat(
+    #[case] model: &str,
+    #[case] expected: ModelFamily,
+) {
+    let mut models = catalog();
+    models.chat_models.insert("gpt-5-chat".to_owned());
+    assert_eq!(model_family(model, &models), expected);
+}
 fn config(family: ConfigFamily) -> OpenAiConfig {
     OpenAiConfig {
         family,

@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::fs;
+use std::io::{self, Write};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -18,9 +19,72 @@ use futures_util::future::join_all;
 use tokio::runtime::Handle;
 use tokio::task::JoinSet;
 use tokio::time::timeout;
+use tracing::instrument::WithSubscriber as _;
 
 use super::body::decode_body;
 use super::{AzureBlobCache, Disconnect as _};
+
+#[derive(Clone)]
+struct LogCapture(Arc<Mutex<Vec<u8>>>);
+
+impl Write for LogCapture {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .map_err(|error| io::Error::other(error.to_string()))?
+            .write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.0
+            .lock()
+            .map_err(|error| io::Error::other(error.to_string()))?
+            .flush()
+    }
+}
+
+#[rstest::rstest]
+#[case::missing_blob(StatusCode::NotFound, "BlobNotFound", true)]
+#[case::forbidden(StatusCode::Forbidden, "AuthorizationFailure", false)]
+#[case::wrong_code(StatusCode::NotFound, "ContainerNotFound", false)]
+#[case::wrong_status(StatusCode::Forbidden, "BlobNotFound", false)]
+#[tokio::test]
+async fn cache_reads_log_only_missing_blobs_as_debug(
+    #[case] status: StatusCode,
+    #[case] code: &'static str,
+    #[case] is_miss: bool,
+) {
+    let transport = FakeTransport::new(ContainerOutcome::Created);
+    transport.seed("key", BlobState::Error(status, code));
+    let cache = cache_with(transport, Duration::from_secs(5)).await;
+    let bytes = Arc::new(Mutex::new(Vec::new()));
+    let writer = LogCapture(Arc::clone(&bytes));
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG)
+        .without_time()
+        .with_ansi(false)
+        .with_target(false)
+        .with_writer(move || writer.clone())
+        .finish();
+    assert!(
+        cache
+            .async_get_cache("key")
+            .with_subscriber(subscriber)
+            .await
+            .is_none()
+    );
+    let log = String::from_utf8(bytes.lock().unwrap().clone()).unwrap();
+    assert_eq!(
+        log.contains("DEBUG Azure Blob cache miss"),
+        is_miss,
+        "{log}"
+    );
+    assert_eq!(
+        log.contains("ERROR Azure Blob cache read failed"),
+        !is_miss,
+        "{log}"
+    );
+}
 
 #[test]
 fn replays_the_azure_blob_cache_body_corpus() {

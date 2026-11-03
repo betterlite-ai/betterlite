@@ -24,6 +24,49 @@ fn objects(json: &str) -> Vec<Fields> {
     items.iter().map(|item| obj(item.get())).collect()
 }
 
+#[rstest]
+#[case::null("null")]
+#[case::empty_text(r#""""#)]
+#[case::empty_parts("[]")]
+fn model_redaction_preserves_empty_content_after_sanitized_messages_end(#[case] empty: &str) {
+    let mut response = obj(&format!(
+        r#"{{"choices":[{{"message":{{"content":"secret"}}}},{{"message":{{"content":{empty}}}}}]}}"#
+    ));
+    let sanitized = objects(r#"[{"content":"clean"}]"#);
+    assert!(redact_model_response(
+        Some(&mut response),
+        None,
+        Some(&sanitized)
+    ));
+    let expected = obj(&format!(
+        r#"{{"choices":[{{"message":{{"content":"clean"}}}},{{"message":{{"content":{empty}}}}}]}}"#
+    ));
+    assert_eq!(
+        serde_json::to_string(&response).unwrap(),
+        serde_json::to_string(&expected).unwrap()
+    );
+}
+
+#[test]
+fn response_redaction_preserves_non_text_content_parts() {
+    let mut response = obj(
+        r#"{"output":[{"type":"message","content":[{"type":"image","text":"metadata"},{"type":"output_text","text":"secret"},{"text":"untyped"}]}]}"#,
+    );
+    assert!(redact_list_field(
+        Some(&mut response),
+        Some("clean"),
+        None,
+        ListField::ResponsesOutput
+    ));
+    let expected = obj(
+        r#"{"output":[{"type":"message","content":[{"type":"image","text":"metadata"},{"type":"output_text","text":"clean"},{"text":"untyped"}]}]}"#,
+    );
+    assert_eq!(
+        serde_json::to_string(&response).unwrap(),
+        serde_json::to_string(&expected).unwrap()
+    );
+}
+
 fn text_field(fields: &Fields, key: &str) -> String {
     match Json::parse(fields.get(key).map_or("null", |raw| raw.get())) {
         Json::Text(text) => text,
