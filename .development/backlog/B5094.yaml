@@ -1,7 +1,7 @@
 id: B5094
 milestone: M0 foundation
 title: Clear the legacy lists of the one-line, impl Trait and into rules
-status: todo
+status: in-progress
 depends_on: []
 file: tasks/B5094-one-line-and-explicit-cleanup.yaml
 covers: []

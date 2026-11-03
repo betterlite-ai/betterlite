@@ -1,0 +1,5 @@
+kind: helper
+name: catalog_sanitize_headers_proxy_keys
+call: {b4682: {operation: sanitize_headers, headers: {Authorization: secret, Host: example, X-Request-Id: request}}}
+env: {}
+compare: {ignore: []}

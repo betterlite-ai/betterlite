@@ -93,6 +93,9 @@ Max's product decisions so far. A task that contradicts one of them is wrong, no
 - 2026-11-01: Claude runs up to 16 agents, and at most 12 of them are workers, so its reviewers always have 4 seats. With 12 shared seats, the reviews of 4 finished tasks waited 22 to 37 minutes behind 12 workers. Reviewers only read the diff and used 6% of Claude's tokens in the last day (Max).
 - 2026-11-01: a release that fixes a RustSec advisory may enter the lock before it is 7 days old when the releases before it carry the advisory. libz-sys stays at 1.1.31 for RUSTSEC-2026-0418 (Max).
 - 2026-11-01: deny.toml allows the bzip2-1.0.6 license, so zip's bzip2 feature can use the pure Rust libbz2-rs-sys, pinned to 0.2.5 in B5096 (Max).
+- 2026-11-02: after the two-task trial, Max authorized resuming the pipeline with cheaper suitable workers. Luna at medium effort gets two 45-minute starts before the existing Astra and Sonnet escalation rungs. Codex runners use the standard service tier; review models, attempt history, required checks and the merge queue remain in force. Begin with six disjoint flows and four build slots, prioritizing B5094 before work that needs its auth-model files.
+- 2026-11-02: Max approved excluding only the frozen upstream data under crates/betterlite-config/assets/content_filter/ from the no-file-start-comments and typos hooks. The original comments, multilingual terms and regex spellings are part of B3691's imported data; all other hooks and behavioral checks still apply.
+- 2026-11-03: routine coding and operations stay on Luna. A first blocked report returns to the architect for clarification before the worker ladder advances; Astra remains available for genuine escalation after cheaper attempts fail. Required review models and gates stay unchanged (Max).
 
 ## Writing a task
 
