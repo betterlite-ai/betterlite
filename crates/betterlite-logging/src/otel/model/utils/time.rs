@@ -58,45 +58,87 @@ where
 }
 
 fn parse_formatted_datetime(input: &str) -> Option<NaiveDateTime> {
-    if !valid_formatted_datetime(input) {
-        return None;
-    }
-    let format = if input.contains('.') {
+    let normalized = normalize_formatted_datetime(input)?;
+    let format = if normalized.contains('.') {
         "%Y-%m-%d %H:%M:%S%.f"
     } else {
         "%Y-%m-%d %H:%M:%S"
     };
-    NaiveDateTime::parse_from_str(input, format).ok()
+    NaiveDateTime::parse_from_str(&normalized, format).ok()
 }
 
-fn valid_formatted_datetime(input: &str) -> bool {
-    let (base, fraction) = input
+fn normalize_formatted_datetime(input: &str) -> Option<String> {
+    let (date_text, time_text) = input.split_once(' ')?;
+    let (year, month, day) = parse_date_fields(date_text)?;
+    let (clock, fraction) = time_text
         .split_once('.')
-        .map_or((input, None), |(base, fraction)| (base, Some(fraction)));
-    if base.len() != 19 {
+        .map_or((time_text, None), |(clock, fraction)| {
+            (clock, Some(fraction))
+        });
+    let (hour, minute, second) = parse_clock_fields(clock)?;
+    if second == 60 {
+        return None;
+    }
+    let mut normalized = format!("{year:04}-{month:02}-{day:02} {hour:02}:{minute:02}:{second:02}");
+    if let Some(fraction_text) = fraction {
+        if !valid_fraction(fraction_text) {
+            return None;
+        }
+        normalized.push('.');
+        normalized.push_str(fraction_text);
+    }
+    Some(normalized)
+}
+
+fn parse_date_fields(input: &str) -> Option<(u32, u32, u32)> {
+    let mut fields = input.split('-');
+    let year_text = fields.next()?;
+    let month_text = fields.next()?;
+    let day_text = fields.next()?;
+    if fields.next().is_some() || year_text.len() != 4 {
+        return None;
+    }
+    if !year_text.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let year = year_text.parse::<u32>().ok()?;
+    if year == 0 {
+        return None;
+    }
+    Some((
+        year,
+        parse_clock_component(month_text)?,
+        parse_clock_component(day_text)?,
+    ))
+}
+
+fn parse_clock_fields(input: &str) -> Option<(u32, u32, u32)> {
+    let mut fields = input.split(':');
+    let hour = fields.next()?;
+    let minute = fields.next()?;
+    let second = fields.next()?;
+    if fields.next().is_some() {
+        return None;
+    }
+    Some((
+        parse_clock_component(hour)?,
+        parse_clock_component(minute)?,
+        parse_clock_component(second)?,
+    ))
+}
+
+fn parse_clock_component(input: &str) -> Option<u32> {
+    if !(1..=2).contains(&input.len()) || !input.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    input.parse::<u32>().ok()
+}
+
+fn valid_fraction(input: &str) -> bool {
+    if !(1..=6).contains(&input.len()) {
         return false;
     }
-    let bytes = base.as_bytes();
-    let separators = [(4, b'-'), (7, b'-'), (10, b' '), (13, b':'), (16, b':')];
-    if separators
-        .iter()
-        .any(|(position, expected)| bytes.get(*position) != Some(expected))
-    {
-        return false;
-    }
-    if bytes
-        .iter()
-        .enumerate()
-        .any(|(position, byte)| !matches!(position, 4 | 7 | 10 | 13 | 16) && !byte.is_ascii_digit())
-    {
-        return false;
-    }
-    if bytes.get(17..19) == Some(b"60") {
-        return false;
-    }
-    fraction.is_none_or(|digits| {
-        (1..=6).contains(&digits.len()) && digits.bytes().all(|byte| byte.is_ascii_digit())
-    })
+    input.bytes().all(|byte| byte.is_ascii_digit())
 }
 
 fn timestamp_seconds<R>(value: DateTimeInput, resolver: &R) -> Option<Decimal>

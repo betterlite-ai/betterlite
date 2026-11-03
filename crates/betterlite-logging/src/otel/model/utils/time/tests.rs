@@ -56,6 +56,18 @@ fn formatted_time_rejects_excess_precision_and_leap_seconds() {
 }
 
 #[test]
+fn formatted_time_accepts_unpadded_date_and_clock_fields() {
+    assert_eq!(
+        to_seconds(None, None, Some("1970-1-1 0:0:0"), &resolver()),
+        Some(Decimal::ZERO)
+    );
+    assert_eq!(
+        to_seconds(None, None, Some("1970-1-1 0:0:0.1"), &resolver()),
+        Some(Decimal::new(1, 1))
+    );
+}
+
+#[test]
 fn non_utc_offsets_and_dst_gap_or_fold_policy_come_from_resolver() {
     let local = NaiveDate::from_ymd_opt(2024, 3, 31)
         .expect("valid date")
