@@ -27,14 +27,18 @@ pub(super) fn multiproc_directory(
     configured.map_or_else(
         || {
             let root = resolve(environment);
-            if root.as_os_str() == "." {
-                PathBuf::from("litellm_prometheus_multiproc")
-            } else {
-                root.join("litellm_prometheus_multiproc")
-            }
+            multiproc_path(&root)
         },
         PathBuf::from,
     )
+}
+
+fn multiproc_path(root: &Path) -> PathBuf {
+    if root.as_os_str() == "." {
+        PathBuf::from("litellm_prometheus_multiproc")
+    } else {
+        root.join("litellm_prometheus_multiproc")
+    }
 }
 
 fn default_roots() -> Vec<PathBuf> {
