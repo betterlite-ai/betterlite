@@ -49,21 +49,49 @@ pub struct FunctionCall {
     pub arguments: Option<String>,
 }
 
-#[must_use]
-pub fn extract_text_from_messages(messages: &[Message]) -> String {
-    for message in messages.iter().rev() {
-        if !matches!(message.role.as_deref(), Some("user" | "developer")) {
-            continue;
-        }
-        match message.content.as_ref() {
-            Some(MessageContent::Text(text)) if !text.is_empty() => return text.clone(),
-            Some(MessageContent::Parts(parts)) if !parts.is_empty() => {
-                return flatten_text_parts(parts);
-            }
-            _ => {}
+// Shared by extraction and masking so both pick the same message, instead of drifting apart.
+pub trait SelectableMessage {
+    fn role(&self) -> Option<&str>;
+    fn has_content(&self) -> bool;
+}
+
+impl SelectableMessage for Message {
+    fn role(&self) -> Option<&str> {
+        self.role.as_deref()
+    }
+
+    fn has_content(&self) -> bool {
+        match self.content.as_ref() {
+            Some(MessageContent::Text(text)) => !text.is_empty(),
+            Some(MessageContent::Parts(parts)) => !parts.is_empty(),
+            None => false,
         }
     }
-    String::new()
+}
+
+#[must_use]
+pub fn select_last_eligible_index<T>(messages: &[T]) -> Option<usize>
+where
+    T: SelectableMessage,
+{
+    messages.iter().rposition(|message| {
+        matches!(message.role(), Some("user" | "developer")) && message.has_content()
+    })
+}
+
+#[must_use]
+pub fn extract_text_from_messages(messages: &[Message]) -> String {
+    let Some(index) = select_last_eligible_index(messages) else {
+        return String::new();
+    };
+    let Some(message) = messages.get(index) else {
+        return String::new();
+    };
+    match message.content.as_ref() {
+        Some(MessageContent::Text(text)) => text.clone(),
+        Some(MessageContent::Parts(parts)) => flatten_text_parts(parts),
+        None => String::new(),
+    }
 }
 
 fn flatten_text_parts(parts: &[ContentPart]) -> String {

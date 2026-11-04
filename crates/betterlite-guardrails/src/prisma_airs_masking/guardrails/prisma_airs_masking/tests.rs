@@ -322,25 +322,35 @@ fn server_names_follow_precedence(
 }
 
 #[rstest::rstest]
-#[case::empty("[]", false)]
-#[case::developer(r#"[{"role":"developer","content":"secret"}]"#, false)]
-#[case::missing(r#"[{"role":"user","content":"older"},{"role":"user"}]"#, false)]
-#[case::user(
-    r#"[{"role":"user","content":"secret"},{"role":"developer","content":"instruction"}]"#,
-    true
+#[case::developer_only(r#"[{"role":"developer","content":"secret"}]"#, 0)]
+#[case::skips_a_role_eligible_message_with_no_content(
+    r#"[{"role":"user","content":"older"},{"role":"user"}]"#,
+    0
 )]
-fn masks_only_the_latest_user(#[case] input: &str, #[case] changed: bool) {
+fn masks_the_last_eligible_role_message_with_content(#[case] input: &str, #[case] index: usize) {
     let mut messages: Vec<RequestMessage> = serde_json::from_str(input).expect("messages");
-    assert_eq!(
-        mask_messages(&mut messages, "masked").expect("mask"),
-        changed
-    );
-    if changed {
-        assert!(matches!(&messages[0].content, Some(MaskContent::Text(text)) if text == "masked"));
-        assert!(
-            matches!(&messages[1].content, Some(MaskContent::Text(text)) if text == "instruction")
-        );
-    }
+    assert!(mask_messages(&mut messages, "masked").expect("mask"));
+    assert!(matches!(&messages[index].content, Some(MaskContent::Text(text)) if text == "masked"));
+}
+
+#[test]
+fn mask_messages_fails_closed_when_no_message_is_eligible() {
+    let mut messages: Vec<RequestMessage> = serde_json::from_str("[]").expect("messages");
+    assert!(matches!(
+        mask_messages(&mut messages, "masked"),
+        Err(MaskingError::NoMaskableMessage)
+    ));
+}
+
+#[test]
+fn masks_a_trailing_developer_message_holding_a_credential_not_an_earlier_user_message() {
+    let mut messages: Vec<RequestMessage> = serde_json::from_str(
+        r#"[{"role":"user","content":"hello"},{"role":"developer","content":"api_key=sk-secret"}]"#,
+    )
+    .expect("messages");
+    assert!(mask_messages(&mut messages, "masked").expect("mask"));
+    assert!(matches!(&messages[0].content, Some(MaskContent::Text(text)) if text == "hello"));
+    assert!(matches!(&messages[1].content, Some(MaskContent::Text(text)) if text == "masked"));
 }
 
 #[rstest::rstest]

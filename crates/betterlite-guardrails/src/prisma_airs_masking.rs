@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::value::{RawValue, to_raw_value};
 use thiserror::Error;
 
+use crate::prisma_airs_extraction::{SelectableMessage, select_last_eligible_index};
+
 #[derive(Debug, Error)]
 pub enum MaskingError {
     #[error("structured MCP arguments require masked JSON: {0}")]
@@ -15,6 +17,8 @@ pub enum MaskingError {
     Encoding(#[source] serde_json::Error),
     #[error("masked output would exceed {limit} bytes")]
     ReplacementTooLarge { limit: usize },
+    #[error("no user or developer message has content to mask")]
+    NoMaskableMessage,
 }
 
 const MAX_MASKED_OUTPUT_BYTES: usize = 1024 * 1024;
@@ -105,6 +109,20 @@ pub enum MaskContent {
     Parts(Vec<Box<RawValue>>),
 }
 
+impl SelectableMessage for RequestMessage {
+    fn role(&self) -> Option<&str> {
+        self.role.as_deref()
+    }
+
+    fn has_content(&self) -> bool {
+        match self.content.as_ref() {
+            Some(MaskContent::Text(text)) => !text.is_empty(),
+            Some(MaskContent::Parts(parts)) => !parts.is_empty(),
+            None => false,
+        }
+    }
+}
+
 fn parse_mask_content(
     content: Option<Box<RawValue>>,
 ) -> Result<Option<MaskContent>, serde_json::Error> {
@@ -190,12 +208,14 @@ pub fn mask_messages(
     messages: &mut [RequestMessage],
     masked_text: &str,
 ) -> Result<bool, MaskingError> {
-    let Some(content) = messages
-        .iter_mut()
-        .rfind(|message| message.role.as_deref() == Some("user"))
-        .and_then(|message| message.content.as_mut())
-    else {
-        return Ok(false);
+    let Some(index) = select_last_eligible_index(messages) else {
+        return Err(MaskingError::NoMaskableMessage);
+    };
+    let Some(message) = messages.get_mut(index) else {
+        return Err(MaskingError::NoMaskableMessage);
+    };
+    let Some(content) = message.content.as_mut() else {
+        return Err(MaskingError::NoMaskableMessage);
     };
     enforce_replacement_budget(content_replacement_count(content), masked_text)?;
     mask_content(content, masked_text)?;
