@@ -25,7 +25,7 @@ pub trait FixtureRepository {
 }
 
 pub struct FilesystemFixtures {
-    pub(crate) root: PathBuf,
+    pub root: PathBuf,
 }
 
 impl FixtureRepository for FilesystemFixtures {
