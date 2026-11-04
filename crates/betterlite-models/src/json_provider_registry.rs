@@ -1,57 +1,66 @@
-use std::{collections::BTreeMap, sync::OnceLock};
+use std::{collections::BTreeMap, io};
 
 use indexmap::IndexMap;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
+use serde_with::{DefaultOnNull, serde_as};
 
 use crate::identity::provider_id::ProviderId;
 
 const ASSET: &[u8] = include_bytes!("json_providers.json");
-const MAX_BYTES: usize = 256 * 1024;
-const MAX_ENTRIES: usize = 128;
-const MAX_DEPTH: usize = 32;
 
-#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct ProviderDescriptor {
+    #[serde(rename = "slug")]
     pub provider: ProviderId,
+    #[serde(flatten)]
+    pub config: ProviderConfig,
+}
+
+#[serde_as]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub struct ProviderConfig {
     pub base_url: String,
     pub api_key_env: String,
     #[serde(default)]
     pub api_base_env: Option<String>,
-    #[serde(default = "default_base_class")]
-    pub base_class: String,
     #[serde(default)]
+    #[serde_as(deserialize_as = "DefaultOnNull<_>")]
+    pub base_class: BaseClass,
+    #[serde(default)]
+    #[serde_as(deserialize_as = "DefaultOnNull<_>")]
     pub param_mappings: BTreeMap<String, String>,
     #[serde(default)]
-    pub constraints: BTreeMap<String, serde_json::Value>,
+    #[serde_as(deserialize_as = "DefaultOnNull<_>")]
+    pub constraints: Constraints,
     #[serde(default)]
-    pub special_handling: BTreeMap<String, serde_json::Value>,
+    #[serde_as(deserialize_as = "DefaultOnNull<_>")]
+    pub special_handling: BTreeMap<String, bool>,
     #[serde(default)]
+    #[serde_as(deserialize_as = "DefaultOnNull<_>")]
     pub supported_endpoints: Vec<String>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct JSONProviderProjection<'provider> {
-    pub provider: ProviderId,
-    pub base_url: &'provider str,
-    pub api_key_env: &'provider str,
-    pub api_base_env: Option<&'provider str>,
+#[serde_with::skip_serializing_none]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+pub struct Constraints {
+    #[serde(default, with = "rust_decimal::serde::arbitrary_precision_option")]
+    pub temperature_max: Option<rust_decimal::Decimal>,
+    #[serde(default, with = "rust_decimal::serde::arbitrary_precision_option")]
+    pub temperature_min: Option<rust_decimal::Decimal>,
+    #[serde(default, with = "rust_decimal::serde::arbitrary_precision_option")]
+    pub temperature_min_with_n_gt_1: Option<rust_decimal::Decimal>,
+    pub cache_control_ttl: Option<bool>,
 }
 
-impl ProviderDescriptor {
-    #[must_use]
-    pub fn projection(&self) -> JSONProviderProjection<'_> {
-        JSONProviderProjection {
-            provider: self.provider,
-            base_url: &self.base_url,
-            api_key_env: &self.api_key_env,
-            api_base_env: self.api_base_env.as_deref(),
-        }
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(transparent)]
+pub struct BaseClass(pub String);
+
+impl Default for BaseClass {
+    fn default() -> Self {
+        Self("openai_gpt".to_owned())
     }
-}
-
-fn default_base_class() -> String {
-    "openai_gpt".to_owned()
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -64,9 +73,9 @@ pub struct DecodeLimits {
 impl Default for DecodeLimits {
     fn default() -> Self {
         Self {
-            bytes: MAX_BYTES,
-            entries: MAX_ENTRIES,
-            depth: MAX_DEPTH,
+            bytes: 256 * 1024,
+            entries: 128,
+            depth: 32,
         }
     }
 }
@@ -82,31 +91,30 @@ pub enum RegistryError {
     #[error("JSON provider registry JSON: {0}")]
     Json(#[from] serde_json::Error),
     #[error("provider slug {slug} is not registered")]
-    UnknownProvider { slug: String },
+    UnknownProvider {
+        slug: String,
+        #[source]
+        source: strum::ParseError,
+    },
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct JSONProviderRegistry {
     pub providers: IndexMap<ProviderId, ProviderDescriptor>,
-    loaded: bool,
+    pub loaded: bool,
 }
 
 impl JSONProviderRegistry {
     #[must_use]
     pub fn load() -> Self {
-        static REGISTRY: OnceLock<JSONProviderRegistry> = OnceLock::new();
-        REGISTRY
-            .get_or_init(|| {
-                let mut registry = Self::default();
-                registry.load_from(|| Ok(ASSET.to_vec()));
-                registry
-            })
-            .clone()
+        let mut registry = Self::default();
+        registry.load_from(|| Ok(ASSET.to_vec()));
+        registry
     }
 
     pub fn load_from<Reader>(&mut self, read_asset: Reader)
     where
-        Reader: FnOnce() -> std::io::Result<Vec<u8>>,
+        Reader: FnOnce() -> io::Result<Vec<u8>>,
     {
         if self.loaded {
             return;
@@ -115,73 +123,44 @@ impl JSONProviderRegistry {
         let bytes = match read_asset() {
             Ok(bytes) => bytes,
             Err(error) => {
-                tracing::warn!(%error, "failed to read JSON provider registry asset");
-                return;
-            }
-        };
-        let providers = match decode_json_provider_registry(&bytes, DecodeLimits::default()) {
-            Ok(providers) => providers,
-            Err(error) => {
-                tracing::warn!(%error, "failed to decode JSON provider registry asset");
-                return;
-            }
-        };
-        for (slug, raw) in providers {
-            let Ok(provider) = slug.parse::<ProviderId>() else {
-                tracing::warn!(slug, "unknown provider slug in JSON provider registry");
-                break;
-            };
-            let fields = match serde_json::from_str::<DescriptorFields>(raw.get()) {
-                Ok(fields) => fields,
-                Err(error) => {
-                    tracing::warn!(slug, %error, "malformed JSON provider descriptor");
-                    break;
+                if error.kind() != io::ErrorKind::NotFound {
+                    tracing::warn!(%error, "failed to read JSON provider registry asset");
                 }
-            };
-            self.providers.insert(
-                provider,
-                ProviderDescriptor {
-                    provider,
-                    base_url: fields.base_url,
-                    api_key_env: fields.api_key_env,
-                    api_base_env: fields.api_base_env,
-                    base_class: fields.base_class,
-                    param_mappings: fields.param_mappings,
-                    constraints: fields.constraints,
-                    special_handling: fields.special_handling,
-                    supported_endpoints: fields.supported_endpoints,
-                },
-            );
+                return;
+            }
+        };
+        match decode_json_provider_registry(&bytes, DecodeLimits::default()) {
+            Ok(registry) => self.providers = registry.providers,
+            Err(error) => tracing::warn!(%error, "failed to decode JSON provider registry asset"),
         }
     }
 
     #[must_use]
-    pub fn get(&self, provider: ProviderId) -> Option<&ProviderDescriptor> {
-        if !self.loaded {
-            return None;
-        }
-        self.providers.get(&provider)
+    pub fn get(&self, slug: &str) -> Option<&ProviderDescriptor> {
+        slug.parse::<ProviderId>()
+            .map_or(None, |provider| self.providers.get(&provider))
     }
 
     #[must_use]
-    pub fn exists(&self, provider: ProviderId) -> bool {
-        match self.get(provider) {
-            Some(_) => true,
-            None => false,
-        }
+    pub fn exists(&self, slug: &str) -> bool {
+        let Ok(provider) = slug.parse::<ProviderId>() else {
+            return false;
+        };
+        self.providers.contains_key(&provider)
     }
 
     #[must_use]
     pub fn get_by_base_url(&self, base_url: &str) -> Option<&ProviderDescriptor> {
         self.providers
             .values()
-            .find(|provider| provider.base_url == base_url)
+            .find(|entry| entry.config.base_url == base_url)
     }
 
     #[must_use]
-    pub fn supports_responses_api(&self, provider: ProviderId) -> bool {
-        self.get(provider).is_some_and(|value| {
-            value
+    pub fn supports_responses_api(&self, slug: &str) -> bool {
+        self.get(slug).is_some_and(|entry| {
+            entry
+                .config
                 .supported_endpoints
                 .iter()
                 .any(|endpoint| endpoint == "/v1/responses")
@@ -189,28 +168,10 @@ impl JSONProviderRegistry {
     }
 }
 
-#[derive(Deserialize)]
-struct DescriptorFields {
-    base_url: String,
-    api_key_env: String,
-    #[serde(default)]
-    api_base_env: Option<String>,
-    #[serde(default = "default_base_class")]
-    base_class: String,
-    #[serde(default)]
-    param_mappings: BTreeMap<String, String>,
-    #[serde(default)]
-    constraints: BTreeMap<String, serde_json::Value>,
-    #[serde(default)]
-    special_handling: BTreeMap<String, serde_json::Value>,
-    #[serde(default)]
-    supported_endpoints: Vec<String>,
-}
-
 pub fn decode_json_provider_registry(
     bytes: &[u8],
     limits: DecodeLimits,
-) -> Result<IndexMap<String, Box<RawValue>>, RegistryError> {
+) -> Result<JSONProviderRegistry, RegistryError> {
     if bytes.len() > limits.bytes {
         return Err(RegistryError::TooLarge {
             limit: limits.bytes,
@@ -223,9 +184,35 @@ pub fn decode_json_provider_registry(
         });
     }
     for value in providers.values() {
-        check_depth(value.get(), 1, limits.depth)?;
+        check_depth(value.get(), 1, limits.depth.min(128))?;
     }
-    Ok(providers)
+    let mut registry = JSONProviderRegistry {
+        providers: IndexMap::new(),
+        loaded: true,
+    };
+    for (slug, raw) in providers {
+        match descriptor(&slug, raw.get()) {
+            Ok(entry) => {
+                registry.providers.insert(entry.provider, entry);
+            }
+            Err(error) => {
+                tracing::warn!(%error, "malformed JSON provider descriptor");
+                break;
+            }
+        }
+    }
+    Ok(registry)
+}
+
+fn descriptor(slug: &str, raw: &str) -> Result<ProviderDescriptor, RegistryError> {
+    let provider = slug
+        .parse()
+        .map_err(|source| RegistryError::UnknownProvider {
+            slug: slug.to_owned(),
+            source,
+        })?;
+    let config = serde_json::from_str(raw)?;
+    Ok(ProviderDescriptor { provider, config })
 }
 
 fn check_depth(value: &str, depth: usize, limit: usize) -> Result<(), RegistryError> {
@@ -238,7 +225,8 @@ fn check_depth(value: &str, depth: usize, limit: usize) -> Result<(), RegistryEr
         for child in fields.values() {
             check_depth(child.get(), depth.saturating_add(1), limit)?;
         }
-    } else if first == Some(b'[') {
+    }
+    if first == Some(b'[') {
         let elements: Vec<Box<RawValue>> = serde_json::from_str(value)?;
         for child in elements {
             check_depth(child.get(), depth.saturating_add(1), limit)?;

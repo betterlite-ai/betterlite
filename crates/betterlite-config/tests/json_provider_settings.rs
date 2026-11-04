@@ -1,4 +1,6 @@
-use std::collections::BTreeMap;
+#![cfg(test)]
+
+use std::{collections::BTreeMap, fmt::Write as _};
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_models::identity::provider_id::ProviderId;
@@ -44,20 +46,21 @@ fn json_provider_settings_resolve_environment_key(
 ) {
     let registry = JSONProviderRegistry::load();
     let descriptor = registry.providers.get(&provider).expect("pinned provider");
-    assert_eq!(descriptor.api_key_env, expected_key);
+    assert_eq!(descriptor.config.api_key_env, expected_key);
+    assert!(!format!("{descriptor:?}").contains(&format!("{expected_key}-value")));
     let mut config =
         format!("environment_variables:\n  {expected_key}: os.environ/{expected_key}\n");
     let mut environment =
         BTreeMap::from([(expected_key.to_owned(), format!("{expected_key}-value"))]);
-    if let Some(base_key) = descriptor.api_base_env.as_deref() {
-        config.push_str(&format!("  {base_key}: os.environ/{base_key}\n"));
+    if let Some(base_key) = descriptor.config.api_base_env.as_deref() {
+        writeln!(config, "  {base_key}: os.environ/{base_key}").unwrap();
         environment.insert(base_key.to_owned(), format!("{base_key}-override"));
     }
-    let loaded = ConfigLoader {
+    let loader = ConfigLoader {
         lookup: environment,
-    }
-    .load(&config)
-    .expect("environment config");
+    };
+    let loaded = loader.load(&config).expect("environment config");
+    check_deployment_defaults(&loader, &provider.to_string());
     assert_eq!(
         loaded
             .environment_variables
@@ -66,9 +69,48 @@ fn json_provider_settings_resolve_environment_key(
             .map(ExposeSecret::expose_secret),
         Some(format!("{expected_key}-value").as_str())
     );
-    assert!(
-        !loaded
-            .environment_variables
-            .contains_key("UNSUPPORTED_JSON_PROVIDER_KEY")
+    if let Some(base_key) = descriptor.config.api_base_env.as_deref() {
+        assert_eq!(
+            loaded
+                .environment_variables
+                .get(base_key)
+                .and_then(Option::as_ref)
+                .map(ExposeSecret::expose_secret),
+            Some(format!("{base_key}-override").as_str())
+        );
+    }
+    assert_eq!(loaded.environment_variables.len(), loader.lookup.len());
+}
+
+fn check_deployment_defaults(loader: &ConfigLoader<BTreeMap<String, String>>, slug: &str) {
+    let empty = ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
+    }
+    .load("{}")
+    .unwrap();
+    assert!(empty.environment_variables.is_empty());
+    let config = format!(
+        "model_list:\n  - model_name: example\n    litellm_params:\n      model: {slug}/model\n"
     );
+    let defaults = loader.load(&config).unwrap();
+    let params = &defaults.model_list.first().unwrap().litellm_params;
+    assert!(params.api_key.is_none());
+    assert!(params.api_base.is_none());
+    let explicit = format!(
+        "{config}      api_key: explicit-secret\n      api_base: https://override.invalid\n"
+    );
+    let overridden = loader.load(&explicit).unwrap();
+    let explicit_params = &overridden.model_list.first().unwrap().litellm_params;
+    assert_eq!(
+        explicit_params
+            .api_key
+            .as_ref()
+            .map(ExposeSecret::expose_secret),
+        Some("explicit-secret")
+    );
+    assert_eq!(
+        explicit_params.api_base.as_deref(),
+        Some("https://override.invalid")
+    );
+    assert!(!format!("{overridden:?}").contains("explicit-secret"));
 }

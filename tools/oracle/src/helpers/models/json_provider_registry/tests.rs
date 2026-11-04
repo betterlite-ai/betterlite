@@ -1,6 +1,8 @@
 #![cfg(test)]
 
+use super::Op;
 use crate::case::{HelperCase, helper::validate_helper};
+use crate::helpers::Helper as _;
 use std::fs;
 use std::path::Path;
 
@@ -20,13 +22,8 @@ fn helper_seeds_select_json_provider_registry() {
     assert!(seeds.iter().all(|path| {
         let source = fs::read_to_string(path).unwrap();
         let case: HelperCase = serde_saphyr::from_str(&source).unwrap();
-        case.call.operation == "json_provider_registry"
-            && serde_saphyr::from_str(&source)
-                .map_err(|error| error.to_string())
-                .and_then(|parsed| {
-                    validate_helper(Path::new("<helper>"), &parsed)
-                        .map_err(|error| error.to_string())
-                })
-                .is_ok()
+        assert_eq!(case.call.operation, "json_provider_registry");
+        validate_helper(Path::new("<helper>"), &case).unwrap();
+        Op::decode_and_run(&case.call.input).is_ok()
     }));
 }

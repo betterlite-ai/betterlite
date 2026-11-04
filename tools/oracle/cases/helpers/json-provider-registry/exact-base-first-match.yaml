@@ -3,5 +3,7 @@ name: json-provider-registry-exact-base-first-match
 call:
   json_provider_registry:
     source: '{"publicai":{"base_url":"same","api_key_env":"A"},"helicone":{"base_url":"same","api_key_env":"B"}}'
+    base_urls: [same, "same/"]
+    slugs: [publicai, helicone, unknown]
 env: {}
 compare: {ignore: []}

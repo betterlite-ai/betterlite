@@ -1,6 +1,7 @@
 kind: helper
 name: json-provider-registry-all-pinned-descriptors
 call:
-  json_provider_registry: {}
+  json_provider_registry:
+    slugs: [neosantara, scx-ai, meta, unknown]
 env: {}
 compare: {ignore: []}
