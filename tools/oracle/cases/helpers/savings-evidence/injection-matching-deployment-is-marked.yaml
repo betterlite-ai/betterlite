@@ -1,0 +1,10 @@
+kind: helper
+name: injection-matching-deployment-is-marked
+call:
+  savings_evidence:
+    operation: injection
+    metadata:
+      litellm_gateway_injected_cache: model-A
+    model_id: model-A
+compare: {ignore: []}
+env: {}

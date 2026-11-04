@@ -5,7 +5,9 @@ call:
     guardrail_information:
       - guardrail_cost: 5.0
         guardrail_cost_in_spend: false
-      - guardrail_cost: null
+        guardrail_cost_by_unit: {contentPolicyUnits: 1.5}
+      - guardrail_cost: 2.0
         guardrail_cost_in_spend: null
+        guardrail_cost_by_unit: {contentPolicyUnits: 1.5}
 compare: {ignore: []}
 env: {}

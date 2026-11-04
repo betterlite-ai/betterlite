@@ -1,8 +1,8 @@
 kind: helper
-name: iso-time-z-offset-and-invalid
+name: billed-at-comma-fraction
 call:
   savings_evidence:
     operation: billed_at
-    text: "2024-03-01T10:00:00Z"
+    text: "2024-03-01T10:00:00,5Z"
 compare: {ignore: []}
 env: {}

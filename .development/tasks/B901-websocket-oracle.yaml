@@ -33,10 +33,11 @@ description: >-
   leaves negotiated_subprotocol empty. A gateway case selecting a service driver is rejected before a socket starts.
 
   The externally tagged service driver accepts only native_responses_relay, managed_responses_turns and realtime_probe.
-  It sends one JSON object on stdin, {operation: <service tag>, input: <typed arguments and scripted frames>}, to
-  tools/oracle/helpers/websocket_dispatch.py as a fresh bounded child. The child returns one JSON object on stdout,
-  either {ok: <transcript result>} or {error: {class, status, type, param, code, message}}, and writes diagnostics on
-  stderr. register_service(tag, adapter) is the only registration point; an unknown tag fails before a service or
+  It runs through the existing helper seam as operation websocket_oracle: the Python side is the fresh bounded
+  dispatch.py child that helpers/python.rs already starts, with input {service: <service tag>, input: <typed arguments
+  and scripted frames>}, and run in tools/oracle/helpers/websocket_oracle.py picks the service from that tag. The child
+  returns the existing helper output, {ok: true, value: <transcript result>} or {ok: false, error: {class, status,
+  type, param, code, message}}, and writes diagnostics on stderr. register_service(tag, adapter) is the only registration point; an unknown tag fails before a service or
   upstream connection starts. B943, B945 and B1011 register their own tags once and service execution uses the native
   service entry point, not a FastAPI handler. A service connects independently to its scripted upstream WebSocket.
 
@@ -293,7 +294,7 @@ out_of_scope:
   service adapters remain with B1004, B1125, B528, B756, B943, B945 and B1011 as applicable; B901 has no database or
   warning-and-drop behavior of its own.
 pitfalls:
-- 'The oracle helper for this task is pre-registered as websocket_oracle in the oracle group. Replace the stub Op in tools/oracle/src/helpers/oracle/websocket_oracle.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/websocket_oracle.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+- 'The oracle helper for this task is pre-registered as websocket_oracle in the oracle group. Replace the stub Op in tools/oracle/src/helpers/oracle/websocket_oracle.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/websocket_oracle.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit. There is no websocket_dispatch.py: the service child is that dispatch.py run, so add no second dispatcher.'
 - >-
   A preaccept refusal is reported by the HTTP handshake, so storing the route's attempted 1008 as an accepted client
   close makes a valid 403 transcript fail.
