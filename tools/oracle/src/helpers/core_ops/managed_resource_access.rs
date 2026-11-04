@@ -20,22 +20,24 @@ impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let owner_filter = match build_owner_filter(&input.principal) {
-            None => serde_json::Value::Null,
-            Some(filter) => match filter {
-                betterlite_core::api::managed_resource_access::OwnerFilter::CreatedBy {
-                    created_by,
-                } => json!({"created_by": created_by}),
-                betterlite_core::api::managed_resource_access::OwnerFilter::TeamId { team_id } => {
-                    json!({"team_id": team_id})
+        let owner_filter =
+            build_owner_filter(&input.principal).map_or(serde_json::Value::Null, |filter| {
+                match filter {
+                    betterlite_core::api::managed_resource_access::OwnerFilter::CreatedBy {
+                        created_by,
+                    } => json!({"created_by": created_by}),
+                    betterlite_core::api::managed_resource_access::OwnerFilter::TeamId {
+                        team_id,
+                    } => {
+                        json!({"team_id": team_id})
+                    }
+                    betterlite_core::api::managed_resource_access::OwnerFilter::UserOrTeam {
+                        user_id,
+                        team_id,
+                    } => json!({"OR": [{"created_by": user_id}, {"team_id": team_id}]}),
+                    betterlite_core::api::managed_resource_access::OwnerFilter::Admin => json!({}),
                 }
-                betterlite_core::api::managed_resource_access::OwnerFilter::UserOrTeam {
-                    user_id,
-                    team_id,
-                } => json!({"OR": [{"created_by": user_id}, {"team_id": team_id}]}),
-                betterlite_core::api::managed_resource_access::OwnerFilter::Admin => json!({}),
-            },
-        };
+            });
         let access = input
             .records
             .iter()
