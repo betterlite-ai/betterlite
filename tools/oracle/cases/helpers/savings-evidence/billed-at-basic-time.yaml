@@ -1,0 +1,8 @@
+kind: helper
+name: billed-at-basic-time
+call:
+  savings_evidence:
+    operation: billed_at
+    text: "2024-03-01T100000Z"
+compare: {ignore: []}
+env: {}

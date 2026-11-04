@@ -1,0 +1,14 @@
+kind: helper
+name: snapshot-rejects-bool-actual-spend
+call:
+  savings_evidence:
+    operation: snapshot
+    snapshot:
+      model: gpt-4
+      provider: openai
+      prices: null
+      basis: [flex, null, null]
+      actual_spend: true
+      classifier_cost: 0.01
+compare: {ignore: []}
+env: {}
