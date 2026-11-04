@@ -40,7 +40,7 @@ fn user_and_team_visibility() {
 #[test]
 fn service_account_scope() {
     let mut caller = principal(None, Some("t"));
-    caller.token = Some(secrecy::SecretString::new("k".to_owned()));
+    caller.token = Some(secrecy::SecretString::new(Box::<str>::from("k")));
     assert_eq!(resolve_resource_owner_id(&caller), None);
     assert_eq!(
         build_owner_filter(&caller),
@@ -76,8 +76,8 @@ fn empty_identity_fields() {
 #[test]
 fn token_owner_precedence() {
     let mut caller = principal(None, None);
-    caller.token = Some(secrecy::SecretString::new("hash_a".to_owned()));
-    caller.api_key = Some(secrecy::SecretString::new("hash_b".to_owned()));
+    caller.token = Some(secrecy::SecretString::new(Box::<str>::from("hash_a")));
+    caller.api_key = Some(secrecy::SecretString::new(Box::<str>::from("hash_b")));
     assert_eq!(
         resolve_resource_owner_id(&caller).as_deref(),
         Some("key:hash_a")
@@ -90,12 +90,12 @@ fn token_owner_precedence() {
     );
     assert!(can_access_resource(&caller, Some("key:hash_a"), None));
     assert!(!can_access_resource(&caller, Some("key:hash_b"), None));
-    caller.token = Some(secrecy::SecretString::new(String::new()));
+    caller.token = Some(secrecy::SecretString::new(Box::<str>::from("")));
     assert_eq!(
         resolve_resource_owner_id(&caller).as_deref(),
         Some("key:hash_b")
     );
-    caller.api_key = Some(secrecy::SecretString::new(String::new()));
+    caller.api_key = Some(secrecy::SecretString::new(Box::<str>::from("")));
     assert_eq!(resolve_resource_owner_id(&caller), None);
     assert_eq!(build_owner_filter(&caller), None);
     assert!(!can_access_resource(&caller, None, None));

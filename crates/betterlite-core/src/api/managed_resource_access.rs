@@ -1,7 +1,7 @@
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Default, Deserialize)]
 pub struct AuthenticatedPrincipal {
     pub user_id: Option<String>,
     pub team_id: Option<String>,
