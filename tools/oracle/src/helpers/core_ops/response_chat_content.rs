@@ -1,3 +1,4 @@
+use betterlite_core::api::response_chat_content::ContentError;
 use betterlite_core::api::response_chat_content::annotations::{
     AnnotationValue, annotation_fallback,
 };
@@ -47,25 +48,32 @@ impl crate::helpers::Helper for Op {
         match input {
             Input::TextByRole { content, role } => Ok(text_by_role(content, role)),
             Input::ContentPassthrough { items, role } => {
-                let projection = content_passthrough(items, role);
-                Ok(json!({"value": projection.value, "diagnostics": projection.diagnostics}))
+                content_passthrough(items, role)
+                    .map(|projection| {
+                        json!({"value": projection.value, "diagnostics": projection.diagnostics})
+                    })
+                    .map_err(|error| image_projection_error(&error))
             }
-            Input::ImageAndFileFields { item } => image_and_file_fields(item).map_err(|error| {
-                Box::new(crate::helpers::HelperError {
-                    class: "ValueError".to_owned(),
-                    status: None,
-                    error_type: None,
-                    param: None,
-                    code: None,
-                    message: error.to_string(),
-                })
-            }),
+            Input::ImageAndFileFields { item } => {
+                image_and_file_fields(item).map_err(|error| image_projection_error(&error))
+            }
             Input::FlatToolChoice { choice } => Ok(flat_tool_choice(choice)),
             Input::AnnotationFallback { annotations } => {
                 Ok(annotation_projection(annotations.as_deref()))
             }
         }
     }
+}
+
+fn image_projection_error(error: &ContentError) -> Box<crate::helpers::HelperError> {
+    Box::new(crate::helpers::HelperError {
+        class: "ValueError".to_owned(),
+        status: None,
+        error_type: None,
+        param: None,
+        code: None,
+        message: error.to_string(),
+    })
 }
 
 fn annotation_projection(annotations: Option<&[AnnotationInput]>) -> Value {

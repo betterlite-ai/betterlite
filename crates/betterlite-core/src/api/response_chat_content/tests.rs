@@ -54,7 +54,8 @@ fn content_passthrough_keeps_spread_order_and_skips_tool_reference() {
             json!({"other":1}),
         ],
         "user",
-    );
+    )
+    .expect("content is projectable");
     assert_eq!(
         projection.value,
         json!([{"type":"image","url":"u"},{"other":1}])
@@ -77,10 +78,31 @@ fn content_passthrough_emits_fixture_final_diagnostic() {
             json!({"type":"mystery","text":"hey"}),
         ],
         "user",
-    );
+    )
+    .expect("content is projectable");
     assert_eq!(
         projection.diagnostics.last().expect("final log"),
         "Chat provider: Final converted content: [{'type': 'image', 'url': 'u'}, {'text': 'hi', 'type': 'input_text'}, {'type': 'input_text', 'text': 'hey'}]"
+    );
+}
+
+#[test]
+fn content_passthrough_projects_standard_chat_image_url_blocks() {
+    let projection = content_passthrough(
+        &[json!({
+            "type":"image_url",
+            "image_url":{"url":"https://example.test/a","detail":"high"}
+        })],
+        "user",
+    )
+    .expect("image URL is valid");
+    assert_eq!(
+        projection.value,
+        json!([{
+            "image_url":"https://example.test/a",
+            "detail":"high",
+            "type":"input_image"
+        }])
     );
 }
 

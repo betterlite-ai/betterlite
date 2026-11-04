@@ -1,8 +1,11 @@
 use serde_json::{Map, Value};
 
 use super::debug::{display_text_value, format_diagnostic_value, text_block};
-use super::image_file::input_file;
-use super::{ChatContent, Projection};
+use super::image_file::{image_and_file_fields, input_file};
+use super::{ContentError, Projection};
+
+type ItemProjection = (Value, String, Option<String>);
+type ItemResult = Option<Result<ItemProjection, ContentError>>;
 
 #[must_use]
 pub fn text_by_role(content: &Value, role: &str) -> Value {
@@ -39,8 +42,7 @@ pub fn text_by_role(content: &Value, role: &str) -> Value {
     }
 }
 
-#[must_use]
-pub fn content_passthrough(items: &[Value], role: &str) -> Projection {
+pub fn content_passthrough(items: &[Value], role: &str) -> Result<Projection, ContentError> {
     let mut result = Vec::new();
     let mut result_reprs = Vec::new();
     let mut diagnostics = Vec::new();
@@ -52,56 +54,61 @@ pub fn content_passthrough(items: &[Value], role: &str) -> Projection {
             );
             continue;
         }
-        let converted = item.as_str().map_or_else(
-            || {
-                item.as_object()
-                    .map(|fields| project_object(item, fields, role))
-            },
-            |text| {
-                let (value, repr) = text_block(text, role);
-                Some((
-                    value,
-                    repr.clone(),
-                    Some(format!("Chat provider:   -> {repr}")),
-                ))
-            },
-        );
-        if let Some((value, repr, diagnostic)) = converted {
-            diagnostics.extend(diagnostic);
-            result.push(value);
-            result_reprs.push(repr);
-        }
+        let Some((value, repr, diagnostic)) = project_item(item, role).transpose()? else {
+            continue;
+        };
+        diagnostics.extend(diagnostic);
+        result.push(value);
+        result_reprs.push(repr);
     }
     diagnostics.push(format!(
         "Chat provider: Final converted content: [{}]",
         result_reprs.join(", ")
     ));
-    Projection {
+    Ok(Projection {
         value: Value::Array(result),
         diagnostics,
-    }
+    })
+}
+
+fn project_item(item: &Value, role: &str) -> ItemResult {
+    item.as_str().map_or_else(
+        || {
+            item.as_object()
+                .map(|fields| project_object(item, fields, role))
+        },
+        |text| {
+            let (value, repr) = text_block(text, role);
+            Some(Ok((
+                value,
+                repr.clone(),
+                Some(format!("Chat provider:   -> {repr}")),
+            )))
+        },
+    )
 }
 
 fn project_object(
     item: &Value,
     fields: &Map<String, Value>,
     role: &str,
-) -> (Value, String, Option<String>) {
+) -> Result<ItemProjection, ContentError> {
     let Some(kind) = fields.get("type").and_then(Value::as_str) else {
-        return diagnostic_result(item.clone(), "passthrough");
+        return Ok(diagnostic_result(item.clone(), "passthrough"));
     };
     match kind {
         "text" => {
             let text = fields.get("text").and_then(Value::as_str).unwrap_or("");
             let (value, repr) = text_block(text, role);
-            (
+            Ok((
                 value,
                 repr.clone(),
                 Some(format!("Chat provider:   text -> {repr}")),
-            )
+            ))
         }
-        "image" => image_item(fields),
-        "file" => diagnostic_result(input_file(fields.get("file")), "file"),
+        "image" => Ok(image_item(fields)),
+        "image_url" => image_and_file_fields(fields).map(image_url_result),
+        "file" => Ok(diagnostic_result(input_file(fields.get("file")), "file")),
         "input_text"
         | "input_image"
         | "output_text"
@@ -109,12 +116,30 @@ fn project_object(
         | "input_file"
         | "computer_screenshot"
         | "summary_text"
-        | "tool_reference" => diagnostic_result(item.clone(), "passthrough"),
-        _ => unknown_item(item, fields, kind, role),
+        | "tool_reference" => Ok(diagnostic_result(item.clone(), "passthrough")),
+        _ => Ok(unknown_item(item, fields, kind, role)),
     }
 }
 
-fn diagnostic_result(value: Value, label: &str) -> (Value, String, Option<String>) {
+fn image_url_result(value: Value) -> ItemProjection {
+    let image_url = value
+        .get("image_url")
+        .map_or_else(|| "None".to_owned(), format_diagnostic_value);
+    let detail = value
+        .get("detail")
+        .map_or_else(|| "None".to_owned(), format_diagnostic_value);
+    let kind = value
+        .get("type")
+        .map_or_else(|| "None".to_owned(), format_diagnostic_value);
+    let repr = format!("{{'image_url': {image_url}, 'detail': {detail}, 'type': {kind}}}");
+    (
+        value,
+        repr.clone(),
+        Some(format!("Chat provider:   image_url -> {repr}")),
+    )
+}
+
+fn diagnostic_result(value: Value, label: &str) -> ItemProjection {
     let repr = format_diagnostic_value(&value);
     (
         value,
@@ -123,7 +148,7 @@ fn diagnostic_result(value: Value, label: &str) -> (Value, String, Option<String
     )
 }
 
-fn image_item(fields: &Map<String, Value>) -> (Value, String, Option<String>) {
+fn image_item(fields: &Map<String, Value>) -> ItemProjection {
     let mut image = Map::new();
     image.insert("type".to_owned(), Value::String("input_image".to_owned()));
     image.extend(fields.clone());
@@ -141,11 +166,8 @@ fn unknown_item(
     fields: &Map<String, Value>,
     kind: &str,
     role: &str,
-) -> (Value, String, Option<String>) {
-    let unknown = ChatContent::Unknown(item.clone());
-    let ChatContent::Unknown(value) = unknown else {
-        return diagnostic_result(item.clone(), "passthrough");
-    };
+) -> ItemProjection {
+    let value = item.clone();
     let text = fields
         .get("text")
         .map_or_else(|| display_text_value(&value), display_text_value);

@@ -3,7 +3,7 @@ name: content-passthrough
 call:
   response_chat_content:
     operation: content_passthrough
-    items: [{type: image, url: u}, {type: tool_reference}, {type: input_text, text: hi}, {type: mystery, text: hey}]
+    items: [{type: image, url: u}, {type: image_url, image_url: {url: "https://example.test/a", detail: high}}, {type: tool_reference}, {type: input_text, text: hi}, {type: mystery, text: hey}]
     role: user
 env: {}
 compare: {ignore: []}
