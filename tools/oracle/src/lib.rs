@@ -25,6 +25,7 @@ pub mod routing_mock_scripts;
 pub mod routing_probe_ipc;
 pub mod routing_scenarios;
 pub mod runner;
+pub mod websocket_driver;
 pub mod websocket_oracle;
 
 mod tests;

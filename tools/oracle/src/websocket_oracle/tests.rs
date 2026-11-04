@@ -26,7 +26,13 @@ fn bounded_inputs() {
 #[test]
 fn direction_order() {
     let transcript = decode_ws_case(valid().as_bytes(), &OracleLimits::default()).unwrap();
-    assert_eq!(transcript.frames[0].direction, Direction::ClientToProvider);
+    let observed = vec![transcript.frames[1].clone(), transcript.frames[0].clone()];
+    assert!(direction_matches(&transcript.frames, &observed).is_ok());
+    let different = vec![transcript.frames[0].clone()];
+    assert_eq!(
+        direction_matches(&transcript.frames, &different),
+        Err("/provider/frames/0/text".to_owned())
+    );
 }
 
 #[test]
@@ -38,7 +44,11 @@ fn barrier_gates_send() {
         binary: None,
         barrier: Some("after_provider_ready".to_owned()),
     };
-    assert_eq!(frame.barrier.as_deref(), Some("after_provider_ready"));
+    assert!(!barrier_is_released(&frame, &[]));
+    assert!(barrier_is_released(
+        &frame,
+        &["after_provider_ready".to_owned()]
+    ));
 }
 
 #[test]
@@ -65,6 +75,16 @@ fn route_aliases(#[case] path: &str) {
 
 #[test]
 fn service_driver_isolation() {
+    use crate::websocket_driver::{DriverError, ServiceInput, ServiceOperation, ServiceRegistry};
+    let registry = ServiceRegistry::default();
+    let unknown = ServiceInput {
+        operation: ServiceOperation::RealtimeProbe,
+        input: serde_json::Value::Null,
+    };
+    assert_eq!(
+        registry.dispatch(&unknown),
+        Err(DriverError::AdapterMissing(ServiceOperation::RealtimeProbe))
+    );
     assert!(decode_ws_case(valid().as_bytes(), &OracleLimits::default()).is_ok());
 }
 
@@ -104,4 +124,38 @@ fn changed_peer() {
             .unwrap()
             .frames
     );
+    let close = Close {
+        initiator: "provider".to_owned(),
+        code: 1008,
+        reason: "refused".to_owned(),
+    };
+    let changed_close = Close {
+        code: 1011,
+        ..close.clone()
+    };
+    assert_eq!(
+        close_matches(Some(&close), Some(&changed_close)),
+        Err("/close/code".to_owned())
+    );
+}
+
+#[test]
+fn bounded_custom_limits() {
+    let limits = OracleLimits {
+        max_frames: 2,
+        max_frame_bytes: 4,
+        max_capture_bytes: 6,
+        max_execution_seconds: 3,
+    };
+    assert!(decode_ws_case(valid().as_bytes(), &limits).is_err());
+    let short = valid().replace("setup", "a").replace("ready", "b");
+    assert!(decode_ws_case(short.as_bytes(), &limits).is_ok());
+    let binary_path = valid().replace("text: setup", "binary: ../outside.bin");
+    assert!(decode_ws_case(binary_path.as_bytes(), &OracleLimits::default()).is_err());
+}
+
+#[test]
+fn replays_corpus() {
+    let seed = include_bytes!("../../fuzz/corpus/websocket_oracle/minimal.yaml");
+    assert!(decode_ws_case(seed, &OracleLimits::default()).is_ok());
 }

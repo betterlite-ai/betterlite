@@ -1,5 +1,7 @@
 use serde::Deserialize;
-use std::path::{Component, Path};
+use std::fs;
+use std::io::{self, Read as _};
+use std::path::{Component, Path, PathBuf};
 
 pub const MAX_FRAMES: usize = 1024;
 pub const MAX_FRAME_BYTES: usize = 1_048_576;
@@ -78,15 +80,108 @@ pub struct Close {
     pub reason: String,
 }
 
+pub fn direction_matches(expected: &[Frame], observed: &[Frame]) -> Result<(), String> {
+    for direction in [Direction::ClientToProvider, Direction::ProviderToClient] {
+        let expected_direction = expected
+            .iter()
+            .filter(|frame| frame.direction == direction)
+            .collect::<Vec<_>>();
+        let observed_direction = observed
+            .iter()
+            .filter(|frame| frame.direction == direction)
+            .collect::<Vec<_>>();
+        for (index, (left, right)) in expected_direction
+            .iter()
+            .zip(&observed_direction)
+            .enumerate()
+        {
+            if left.action != right.action {
+                return Err(format!("/{}/{index}/action", peer_name(direction)));
+            }
+            if left.text != right.text || left.binary != right.binary {
+                return Err(changed_peer_path(direction, index, left));
+            }
+        }
+        if expected_direction.len() != observed_direction.len() {
+            let index = expected_direction.len().min(observed_direction.len());
+            let frame = expected_direction
+                .get(index)
+                .or_else(|| observed_direction.get(index));
+            if let Some(frame) = frame {
+                return Err(changed_peer_path(direction, index, frame));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn changed_peer_path(direction: Direction, index: usize, frame: &Frame) -> String {
+    let payload = if frame.text.is_some() {
+        "text"
+    } else {
+        "binary"
+    };
+    format!("/{}/frames/{index}/{payload}", peer_name(direction))
+}
+
+fn peer_name(direction: Direction) -> &'static str {
+    match direction {
+        Direction::ClientToProvider => "client",
+        Direction::ProviderToClient => "provider",
+    }
+}
+
+pub fn close_matches(expected: Option<&Close>, observed: Option<&Close>) -> Result<(), String> {
+    let Some(expected_close) = expected else {
+        return if observed.is_none() {
+            Ok(())
+        } else {
+            Err("/close".to_owned())
+        };
+    };
+    let Some(observed_close) = observed else {
+        return Err("/close".to_owned());
+    };
+    if expected_close.initiator != observed_close.initiator {
+        return Err("/close/initiator".to_owned());
+    }
+    if expected_close.code != observed_close.code {
+        return Err("/close/code".to_owned());
+    }
+    if expected_close.reason != observed_close.reason {
+        return Err("/close/reason".to_owned());
+    }
+    Ok(())
+}
+
+pub fn barrier_is_released(frame: &Frame, provider_observations: &[String]) -> bool {
+    frame.barrier.as_ref().is_none_or(|barrier| {
+        provider_observations
+            .iter()
+            .any(|observation| observation == barrier)
+    })
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum DecodeError {
     #[error("invalid WebSocket transcript: {0}")]
     Parse(String),
     #[error("invalid WebSocket transcript: {0}")]
     Invalid(String),
+    #[error("cannot read binary fixture: {0}")]
+    Fixture(String),
 }
 
 pub fn decode_ws_case(bytes: &[u8], limits: &OracleLimits) -> Result<WebSocketCase, DecodeError> {
+    let input_limit = limits
+        .max_capture_bytes
+        .checked_add(2_097_152)
+        .ok_or_else(|| DecodeError::Invalid("transcript input limit overflow".to_owned()))?;
+    if bytes.len() > input_limit {
+        return Err(DecodeError::Invalid(
+            "transcript input exceeds safety limit".to_owned(),
+        ));
+    }
     let text = std::str::from_utf8(bytes).map_err(|error| DecodeError::Parse(error.to_string()))?;
     let case: WebSocketCase =
         serde_saphyr::from_str(text).map_err(|error| DecodeError::Parse(error.to_string()))?;
@@ -108,10 +203,16 @@ pub fn decode_ws_case(bytes: &[u8], limits: &OracleLimits) -> Result<WebSocketCa
                 "frame {index} needs exactly one payload"
             )));
         }
-        let size = frame
-            .text
-            .as_ref()
-            .map_or_else(|| frame.binary.as_ref().map_or(0, String::len), String::len);
+        if let Some(binary) = &frame.binary {
+            validate_binary_fixture(Path::new(binary))?;
+        }
+        let size = match &frame.text {
+            Some(text) => text.len(),
+            None => match &frame.binary {
+                Some(path) => binary_fixture(path)?.len(),
+                None => 0,
+            },
+        };
         if size > limits.max_frame_bytes {
             return Err(DecodeError::Invalid(format!(
                 "frame {index} exceeds size limit"
@@ -154,6 +255,33 @@ pub fn validate_binary_fixture(path: &Path) -> Result<(), DecodeError> {
         ));
     }
     Ok(())
+}
+
+fn binary_fixture(path: &str) -> Result<Vec<u8>, DecodeError> {
+    let relative = Path::new(path);
+    validate_binary_fixture(relative)?;
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/websocket-oracle");
+    let canonical_root =
+        fs::canonicalize(&root).map_err(|source| DecodeError::Fixture(source.to_string()))?;
+    let candidate = canonical_root.join(relative);
+    let canonical_path =
+        fs::canonicalize(&candidate).map_err(|source| DecodeError::Fixture(source.to_string()))?;
+    if !canonical_path.starts_with(&canonical_root) {
+        return Err(DecodeError::Invalid(
+            "binary fixture resolves outside its root".to_owned(),
+        ));
+    }
+    let file = fs::File::open(canonical_path)
+        .map_err(|source| DecodeError::Fixture(source.to_string()))?;
+    let limit = u64::try_from(MAX_FRAME_BYTES)
+        .map_err(|source| DecodeError::Invalid(source.to_string()))?
+        .checked_add(1)
+        .ok_or_else(|| DecodeError::Invalid("frame limit overflow".to_owned()))?;
+    let mut bytes = Vec::new();
+    file.take(limit)
+        .read_to_end(&mut bytes)
+        .map_err(|source: io::Error| DecodeError::Fixture(source.to_string()))?;
+    Ok(bytes)
 }
 
 mod tests;
