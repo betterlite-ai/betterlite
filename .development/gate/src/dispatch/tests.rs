@@ -340,7 +340,7 @@ fn a_limited_rung_lends_its_try_to_a_later_rung_and_keeps_its_attempts() {
             borrowed.rung.model.as_str(),
             borrowed.counted
         ),
-        ("claude-worker", "sonnet", false)
+        ("claude-worker", "haiku", false)
     );
     let last = ladder.len() - 1;
     mark(folder.path(), "anthropic", "You've hit your limit").unwrap();
@@ -537,7 +537,7 @@ fn a_try_whose_vendor_has_no_free_seat_goes_to_a_free_rung_of_another_vendor() {
     let (runner, rung) = overflow_rung(&agents, &places, 0, codex).unwrap().unwrap();
     assert_eq!(
         (runner.id.as_str(), rung.model.as_str()),
-        ("claude-worker", "sonnet")
+        ("claude-worker", "haiku")
     );
     drop(openai);
 }
