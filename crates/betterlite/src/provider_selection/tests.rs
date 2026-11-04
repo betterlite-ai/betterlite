@@ -1,8 +1,8 @@
 #![cfg(test)]
 
-use std::cell::Cell;
 use std::io::{self, BufRead, Cursor, Read};
-use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use super::interactive::ByteSource;
 use super::raw_mode::{RawModeError, RawModeGuard, TermiosBackend};
@@ -22,18 +22,18 @@ impl ByteSource for ScriptedBytes {
 }
 
 struct FakeTerminal {
-    state: Rc<Cell<u32>>,
+    state: Arc<AtomicU32>,
 }
 
 impl TermiosBackend for FakeTerminal {
     type Attrs = u32;
 
     fn get_attrs(&mut self) -> Result<Self::Attrs, RawModeError> {
-        Ok(self.state.get())
+        Ok(self.state.load(Ordering::SeqCst))
     }
 
     fn set_attrs(&mut self, attrs: &Self::Attrs) -> Result<(), RawModeError> {
-        self.state.set(*attrs);
+        self.state.store(*attrs, Ordering::SeqCst);
         Ok(())
     }
 
@@ -48,22 +48,22 @@ impl TermiosBackend for FakeTerminal {
 
 struct RestoredTerminalReader {
     input: Cursor<Vec<u8>>,
-    state: Rc<Cell<u32>>,
+    state: Arc<AtomicU32>,
 }
 
 impl Read for RestoredTerminalReader {
-    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
-        self.input.read(buffer)
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.input.read(buf)
     }
 }
 
 impl BufRead for RestoredTerminalReader {
     fn fill_buf(&mut self) -> io::Result<&[u8]> {
-        assert_eq!(
-            self.state.get(),
-            0,
-            "fallback must see restored terminal attributes"
-        );
+        if self.state.load(Ordering::SeqCst) != 0 {
+            return Err(io::Error::other(
+                "fallback started before terminal attributes were restored",
+            ));
+        }
         self.input.fill_buf()
     }
 
@@ -140,19 +140,19 @@ fn dispatch_falls_back_when_the_interactive_loop_hits_an_io_error() {
 
 #[test]
 fn dispatch_restores_raw_terminal_attributes_before_fallback_reads() {
-    let state = Rc::new(Cell::new(0));
+    let state = Arc::new(AtomicU32::new(0));
     let mut reader = RestoredTerminalReader {
         input: Cursor::new(b"2\n".to_vec()),
-        state: Rc::clone(&state),
+        state: Arc::clone(&state),
     };
     let mut writer = Vec::new();
-    let open_state = Rc::clone(&state);
+    let open_state = Arc::clone(&state);
     let open = || RawModeGuard::enable(FakeTerminal { state: open_state });
 
     let providers = dispatch_selection(open, &mut reader, &mut writer, false)
         .expect("fallback succeeds after terminal restoration");
 
-    assert_eq!(state.get(), 0);
+    assert_eq!(state.load(Ordering::SeqCst), 0);
     assert_eq!(
         providers
             .first()
