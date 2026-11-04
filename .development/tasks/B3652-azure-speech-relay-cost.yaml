@@ -65,7 +65,7 @@ checks:
   commands:
     - id: azure-speech-tests
       why: route classification, duration extraction or cost calculation tests fail
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^passthrough_logging::azure_speech::/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::passthrough_logging::azure_speech::(.*::)?passthrough_logging::azure_speech::/)'
 oracle_cases: []
 deviations:
   - what: >-

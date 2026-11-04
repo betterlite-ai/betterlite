@@ -51,8 +51,6 @@ description: >-
   fixture, native failure-order tests and HTTP/helper adapters in 800 changed lines.
 scope:
   paths:
-    - crates/betterlite-core/src/cost.rs
-    - crates/betterlite-core/src/cost/**
     - crates/betterlite-core/src/cost/batch_status.rs
     - crates/betterlite-core/src/cost/batch_status/**
     - crates/betterlite-server/src/spend.rs

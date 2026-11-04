@@ -18,8 +18,6 @@ description: >-
   wiring, 650 total; tests use api::summary_model_limits.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/summary_model_limits.rs
   - crates/betterlite-core/src/api/summary_model_limits/**
   - tools/oracle/src/helpers/core_ops/summary_model_limits.rs

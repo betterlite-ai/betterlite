@@ -53,22 +53,22 @@ checks:
   commands:
     - id: template-loading
       why: the built-in templates fail to load or return wrong data
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^semantic_guard_route_loading::tests::template_loading(::|$)/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^semantic_guard::(.*::)?semantic_guard_route_loading::tests::template_loading(::|$)/)'
     - id: route-building
       why: routes lack correct fields or score_threshold
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^semantic_guard_route_loading::tests::route_building(::|$)/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^semantic_guard::(.*::)?semantic_guard_route_loading::tests::route_building(::|$)/)'
     - id: route-concatenation
       why: routes from multiple sources are not concatenated correctly or deduplication is incorrectly applied
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^semantic_guard_route_loading::tests::route_concatenation(::|$)/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^semantic_guard::(.*::)?semantic_guard_route_loading::tests::route_concatenation(::|$)/)'
     - id: template-listing
       why: template listing is missing, unsorted or includes non-YAML files
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^semantic_guard_route_loading::tests::template_listing(::|$)/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^semantic_guard::(.*::)?semantic_guard_route_loading::tests::template_listing(::|$)/)'
     - id: semantic-router-composition
       why: SemanticRouter is not created or lacks the LiteLLMRouterEncoder
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^semantic_guard_route_loading::tests::semantic_router_composition(::|$)/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^semantic_guard::(.*::)?semantic_guard_route_loading::tests::semantic_router_composition(::|$)/)'
     - id: error-cases
       why: file-not-found, invalid YAML or missing fields are not typed errors
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^semantic_guard_route_loading::tests::error_cases(::|$)/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^semantic_guard::(.*::)?semantic_guard_route_loading::tests::error_cases(::|$)/)'
 oracle_cases:
   - tools/oracle/cases/guardrails/semantic-guard/prompt-injection-template.yaml
   - tools/oracle/cases/guardrails/semantic-guard/sql-injection-template.yaml

@@ -56,31 +56,31 @@ checks:
   commands:
     - id: focus-selects
       why: FOCUS column selects do not match LiteLLM or are missing organization fields
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^finops_usage_queries::focus_selects/)'
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^(finops::cloudzero|finops::focus)::(.*::)?finops_usage_queries::focus_selects/)'
     - id: cloudzero-selects
       why: CloudZero column selects do not match LiteLLM or incorrectly include organization fields
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^finops_usage_queries::cloudzero_selects/)'
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^(finops::cloudzero|finops::focus)::(.*::)?finops_usage_queries::cloudzero_selects/)'
     - id: join-coverage
       why: Join tables (VerificationToken, TeamTable, UserTable, OrganizationTable for FOCUS only) do not match LiteLLM
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^finops_usage_queries::join_coverage/)'
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^(finops::cloudzero|finops::focus)::(.*::)?finops_usage_queries::join_coverage/)'
     - id: bounds-cases
       why: Inclusive updated_at bound tests fail or are missing
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^finops_usage_queries::bounds/)'
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^(finops::cloudzero|finops::focus)::(.*::)?finops_usage_queries::bounds/)'
     - id: order-cases
       why: Descending date/created_at ordering tests fail or are missing
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^finops_usage_queries::ordering/)'
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^(finops::cloudzero|finops::focus)::(.*::)?finops_usage_queries::ordering/)'
     - id: focus-limit-validation
       why: FOCUS limit validation (non-integer and non-negative checks) fails or is missing
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^finops_usage_queries::focus_limit/)'
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^(finops::cloudzero|finops::focus)::(.*::)?finops_usage_queries::focus_limit/)'
     - id: cloudzero-limit-validation
       why: CloudZero limit validation (integer-only check, no negative check) fails or is missing
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^finops_usage_queries::cloudzero_limit/)'
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^(finops::cloudzero|finops::focus)::(.*::)?finops_usage_queries::cloudzero_limit/)'
     - id: alias-recovery
       why: Alias recovery via B1710's fill_missing_api_key_aliases is not called or not integrated
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^finops_usage_queries::alias_recovery/)'
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^(finops::cloudzero|finops::focus)::(.*::)?finops_usage_queries::alias_recovery/)'
     - id: dataframe-conversion
       why: DataFrame conversion from raw query result (to_dicts, list, or empty) and schema inference fails
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^finops_usage_queries::dataframe/)'
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^(finops::cloudzero|finops::focus)::(.*::)?finops_usage_queries::dataframe/)'
 oracle_cases: []
 deviations:
   - what: "FOCUS and CloudZero modules are split into separate modules under the same crate to preserve their different join/validation behavior. LiteLLM implements them as separate classes in separate files; Rust scoping preserves this separation."

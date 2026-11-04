@@ -30,8 +30,6 @@ description: >-
   plan 240 profile/decoder-extension, 240 tests, 110 adapters and 45 corpus/wiring lines, maximum 700.
 scope:
   paths:
-    - crates/betterlite-core/src/api/fal.rs
-    - crates/betterlite-core/src/api/fal/**
     - crates/betterlite-core/src/api/fal/{bria,recraft,images}.rs
     - crates/betterlite-core/src/api/fal/bria.rs
     - crates/betterlite-core/src/api/fal/bria/**
