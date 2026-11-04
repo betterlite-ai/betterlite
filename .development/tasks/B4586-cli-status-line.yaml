@@ -1,0 +1,228 @@
+id: B4586
+title: Rust status line subcommand and removal of the Python CLI folder
+description: >-
+  Port LiteLLM's statusline_script.py to Rust as the `statusline` subcommand of betterlite-cli: a
+  StatuslineArgs clap type with no flags and a run function in crates/betterlite-cli/src/statusline.rs,
+  for B4587's clap root to mount. Delete tools/management-cli/** (the Python-era crate stub nothing ever
+  built) and drop the `tools/management-cli` entry that B5140 leaves in the root Cargo.toml exclude list,
+  so the workspace loses that path for good.
+
+  Both agents read credentials only from the environment map the caller passes in. Claude Code's base URL
+  and key come from ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN then ANTHROPIC_API_KEY (first non-empty
+  wins); Codex's come from OPENAI_BASE_URL and OPENAI_API_KEY; each base URL is trimmed of a trailing slash
+  and a trailing /v1. No keyring, token file or apiKeyHelper is ever consulted here: a status line reruns on
+  every keystroke, and spawning a credential helper that often is how a keychain prompt ends up on screen.
+  Claude Code additionally scans the last 4 MiB of the transcript file backward for the latest foreground
+  assistant message's model, skipping a sidechain line, a line carrying an agentId and the synthetic
+  "<synthetic>" marker, and falls back to the payload's own model.display_name when nothing qualifies. A
+  model id is labelled by reading ~/.claude/cache/gateway-models.json (or CLAUDE_CONFIG_DIR's copy) for a
+  matching entry's display_name, falling back to the id's basename when the file is missing, unreadable or
+  has no match; this task only reads that file, never writes it.
+
+  GET /auto_router/session (Bearer auth, 3-second timeout) answers with the routed session. A 4xx status is
+  a definitive miss worth caching; a 5xx or transport failure is not. A definitive hit still has to pass
+  field validation before it counts as a session: non-empty router_name and last_model, a required
+  rust_decimal::Decimal spend (rules.yaml's money-is-decimal; never f64, and a non-numeric or missing value
+  fails the same way a missing field does), an optional Decimal baseline_spend that prefers the key
+  savings_estimated_baseline_spend over baseline_spend whenever the former key is present at all (even with
+  a null value), and an optional non-negative Decimal savings_estimated_actual_spend. turns and
+  savings_estimated_turns are read more loosely: an invalid or negative value falls back to None when the
+  field is absent, or to 0 (savings_estimated_turns only) when the field was present but invalid. A hit
+  younger than 5 seconds, keyed by the sha256 hex digest of base_url, api_key and session_id joined by
+  newlines, is served from a private on-disk cache instead of refetching. Reuse B192's ensure_private_dir,
+  stage_private_json, write_private_bytes and commit_staged_json (crates/betterlite-logging/src/private_json.rs)
+  for the owner-only directory, the staged-then-renamed write and the symlink-rejecting read, rather than
+  reimplementing Unix file modes here. Codex's Stop-hook path never touches that cache: it fetches fresh
+  every turn and, on a usable session, JSON-encodes {"systemMessage": "\n" + rendered text}; on a missing
+  session id, unusable credentials or no session it returns an empty string outright.
+
+  Rendering prints a bold "Routed to: <model>" line, then a savings comparison when the session has a usable
+  baseline: a percentage (a leading minus sign for a saving, a plus sign for an increase) against a baseline
+  label, followed by two proportional bar rows for the compared and baseline spend, 24 cells wide, counting a
+  combining mark as zero width and an East Asian wide or fullwidth character as two cells. Every string drawn
+  from the transcript, the proxy or the model cache is stripped of non-printable characters before it reaches
+  a terminal. The top-level run function picks the Codex path over the Claude Code path purely from the
+  stdin payload's hook_event_name equalling "Stop", resolves config_dir from CLAUDE_CONFIG_DIR or else an
+  injected home directory joined with ".claude", and cache_dir from TMPDIR/TEMP/TMP or else an injected
+  system temp directory joined with a per-uid cache folder name; on any internal error it falls back to the
+  display name Claude Code already had (or "claude") while Codex falls back to nothing. HTTP, the wall
+  clock and stdin are all injected so no test opens a socket or reads the real clock.
+
+  Add clap (derive feature, for StatuslineArgs), reqwest (already in Cargo.lock through betterlite-http;
+  default-features off, the blocking client, rustls) and betterlite-logging as crates/betterlite-cli
+  dependencies. Budget allocation: about 520 implementation lines across seven submodules (credentials,
+  transcript, session, fetch, cache, render, dispatch), 650 behavior-test lines, 80 Cargo.toml/removal
+  lines, 1500 total ceiling.
+scope:
+  paths:
+    - crates/betterlite-cli/src/statusline.rs
+    - crates/betterlite-cli/src/statusline/**
+    - crates/betterlite-cli/src/statusline/tests.rs
+    - crates/betterlite-cli/Cargo.toml
+    - Cargo.toml
+    - Cargo.lock
+    - tools/management-cli/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/statusline_script.py#L1-L21
+    why: Module docstring; why the cache exists, where credentials come from, and the Codex Stop-hook contract.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/statusline_script.py#L41-L90
+    why: Constants (TTL, timeout, bar width, scan limit, env key tuples, colors) and the Session/Credentials/Fetched records and Fetch port.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/statusline_script.py#L93-L134
+    why: printable/load_json/resolve_base_url/resolve_api_key helpers and claude_credentials/codex_credentials resolution order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/statusline_script.py#L137-L157
+    why: Transcript tail scan, synthetic/sidechain/agentId skip rules.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/statusline_script.py#L160-L184
+    why: model_label/baseline_label lookup against gateway-models.json with a basename fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/statusline_script.py#L187-L245
+    why: fetch_session's definitive/non-definitive outcome and the full payload-to-Session field validation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/statusline_script.py#L248-L320
+    why: Cache key derivation, the TTL check, and the private-directory, staged-write and symlink-rejecting read.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/statusline_script.py#L323-L381
+    why: Bar rendering, display-width accounting and the four-branch savings render.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/statusline_script.py#L384-L439
+    why: color_enabled, the Claude Code and Codex composition paths, and run's mode detection and per-mode quiet fallback.
+dod:
+  - text: >-
+      claude_credentials resolves ANTHROPIC_AUTH_TOKEN then ANTHROPIC_API_KEY (first non-empty wins) and
+      trims a trailing slash and a trailing /v1 from the base URL; codex_credentials does the same for
+      OPENAI_BASE_URL/OPENAI_API_KEY. usable is false whenever either half is empty, and every string pulled
+      from the environment, transcript, proxy or model cache is stripped of non-printable characters first.
+    proof: [statusline-credentials]
+  - text: >-
+      The transcript scan reads only the last 4 MiB of the file, walks lines in reverse, skips a line whose
+      type is not assistant, whose isSidechain is true, or that carries an agentId, treats a model literally
+      "<synthetic>" as absent, and returns empty when the file is missing, unreadable or no qualifying line
+      exists.
+    proof: [statusline-transcript]
+  - text: >-
+      Session validation rejects the payload outright on an empty router_name/last_model or a missing or
+      non-numeric spend; baseline_spend and savings_estimated_actual_spend use the same finite-Decimal rule
+      when present, with baseline_spend preferring savings_estimated_baseline_spend whenever that key is
+      present at all, even with a null value. turns falls back to None on a bad value; savings_estimated_turns
+      falls back to None when the field is absent and to 0 when it is present but not a valid non-negative
+      integer.
+    proof: [statusline-session]
+  - text: >-
+      fetch_session sends the session id as a query parameter with a Bearer header and a 3-second timeout.
+      Any HTTP 4xx is a definitive miss; any 5xx or a transport failure is not definitive, and a definitive
+      hit is only reported when the body also passes session validation.
+    proof: [statusline-fetch]
+  - text: >-
+      A cache entry younger than 5 seconds by the injected wall clock serves without calling fetch. The
+      cache path is the sha256 hex digest of base_url, api_key and session_id joined by newlines, so changing
+      any one of the three changes the path.
+    proof: [statusline-cache]
+  - text: >-
+      Every cache read and write goes through B192's ensure_private_dir, stage_private_json,
+      write_private_bytes and commit_staged_json. A cache directory owned by a different uid or wider than
+      0700 makes a read return nothing and a write do nothing, and a symlinked cache entry is rejected on
+      read rather than followed.
+    proof: [statusline-cache]
+  - text: >-
+      The bar is 24 cells wide, counts a combining mark (Unicode category Mn or Me) as zero width and an East
+      Asian wide or fullwidth character as two cells. With no session only the bold routed line prints; a
+      zero savings_estimated_turns or an absent baseline_spend adds "Savings unavailable"; an absent
+      baseline_model or a non-positive baseline_spend instead prints only the routed line with no savings
+      text; a present savings_estimated_turns with an absent savings_estimated_actual_spend or turns, or one
+      exceeding turns, again adds "Savings unavailable"; otherwise the percentage (minus for a saving, plus
+      for an increase) and the two bar rows print.
+    proof: [statusline-render]
+  - text: >-
+      The Claude Code path falls back to payload.model.display_name when the transcript yields no model,
+      labels whichever model it ends up with, and only attempts a session fetch when a session id and usable
+      Claude credentials are both present.
+    proof: [statusline-dispatch]
+  - text: >-
+      The Codex Stop path never reads or writes the cache, returns an empty string whenever the session id,
+      credentials or the fetched session is missing, and otherwise JSON-encodes {"systemMessage": "\n" plus
+      the rendered text} with color disabled.
+    proof: [statusline-dispatch]
+  - text: >-
+      run picks Codex over Claude Code purely from the stdin payload's hook_event_name equalling "Stop",
+      resolves config_dir and cache_dir from the environment with injected defaults, and on an internal error
+      falls back to the display name Claude Code already had (or "claude") while Codex falls back to nothing.
+    proof: [statusline-dispatch]
+  - text: tools/management-cli no longer exists, and the root Cargo.toml exclude list no longer names it.
+    proof: [no-management-cli-folder]
+checks:
+  optional: []
+  commands:
+    - id: statusline-credentials
+      why: credential resolution order, base URL trimming, usability or printable stripping differs from the source
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^statusline::credentials::/)'
+    - id: statusline-transcript
+      why: the transcript scan limit, skip rules or synthetic-model handling differ from the source
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^statusline::transcript::/)'
+    - id: statusline-session
+      why: payload field validation, the Decimal money fields or the turns/savings_estimated_turns fallbacks differ from the source
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^statusline::session::/)'
+    - id: statusline-fetch
+      why: the definitive/non-definitive HTTP outcome split is missing or wrong
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^statusline::fetch::/)'
+    - id: statusline-cache
+      why: the TTL check, cache key, private-directory enforcement or atomic write/read is missing or wrong
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^statusline::cache::/)'
+    - id: statusline-render
+      why: the bar width accounting or the four-branch savings render differs from the source
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^statusline::render::/)'
+    - id: statusline-dispatch
+      why: the Claude Code fallback, the Codex no-cache rule, or run's mode detection and per-mode quiet fallback differ from the source
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^statusline::dispatch::/)'
+    - id: no-management-cli-folder
+      why: the Python CLI folder or its Cargo.toml exclude entry is still present
+      run: test ! -e tools/management-cli && ! grep -q 'tools/management-cli' Cargo.toml
+oracle_cases: []
+deviations:
+  - what: >-
+      The status line and Stop-hook logic ships as the `statusline` subcommand of the `lite` binary, not a
+      standalone script copied into ~/.litellm/statusline.py.
+    why: >-
+      The Rust CLI is one compiled binary; copying a versioned script file has no equivalent, and B4562's
+      install step writes a command line that invokes this subcommand instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/statusline_script.py#L1-L21
+out_of_scope:
+  - Installing or registering the command into Claude Code's statusLine setting or Codex's Stop hook is B4562's install_statusline_script, which writes the command line for this subcommand.
+  - Wiring this subcommand into the clap root and crates/betterlite-cli/src/main.rs is B4587's concern; this task exposes only StatuslineArgs and run.
+  - Writing or refreshing ~/.claude/cache/gateway-models.json belongs to the model-sync tasks; this task only reads it and falls back to the bare model id when it is missing, unreadable or has no match.
+  - The concrete HTTP transport is injected and out of scope, as in B4573; tests run against a fake implementation, never a live socket.
+  - Credential storage, refresh and keyring lookups (B4574, B4590, B4591, B4592) are not used here; both agents' credentials come only from the environment map the caller passes in.
+  - tools/management-cli's content is deleted wholesale and never read; nothing is ported from it.
+pitfalls:
+  - >-
+    A zero savings_estimated_turns or an absent baseline_spend both add "Savings unavailable" to the routed
+    line, but an absent baseline_model or a non-positive baseline_spend instead falls all the way back to
+    the plain routed line with no savings text at all. Swapping these two branches changes what a model
+    with no configured baseline shows.
+  - >-
+    The percentage sign is inverted from the naive reading. a lower compared spend than baseline (a saving)
+    prints a leading minus sign, a higher spend a leading plus sign.
+  - >-
+    compared_spend uses savings_estimated_actual_spend only when it and savings_estimated_turns are both
+    present; otherwise it falls back to the session's own observed spend, never to zero.
+  - >-
+    baseline_spend prefers the key savings_estimated_baseline_spend over baseline_spend whenever the former
+    key is present in the payload at all, even with a null value, not merely whenever its value is non-null.
+  - >-
+    _display_width must drop combining marks (Unicode categories Mn, Me) and double-count East Asian wide or
+    fullwidth characters; a plain character or byte count misaligns the two bar rows for a CJK router or
+    model name.
+  - >-
+    The cache key hashes the credential's api_key together with base_url and session_id; tests must exercise
+    that changing any one of the three changes the resulting path without ever writing or logging the raw
+    key.
+  - >-
+    Codex's Stop path never consults or populates the cache; reusing the Claude Code cache lookup for both
+    would hide a session the very next Codex turn expects to see.
+  - >-
+    The two failure fallbacks are opposite on purpose. Claude Code falls back to the display name it already
+    had so the line never goes blank; Codex falls back to an empty string so a broken session never becomes
+    invalid hook JSON.
+  - >-
+    A 4xx response is a definitive answer worth caching (no such session, expired login); a 5xx or a
+    connection failure is not, and caching it would freeze a transient outage for the next 5 seconds of
+    refreshes.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
