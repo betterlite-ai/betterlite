@@ -7,6 +7,14 @@ use super::{ContentFilterAction, ContentFilterPattern, compile};
 use rstest::rstest;
 
 #[rstest]
+#[case::nested_sensitive_unicode("regex", "(?-i:(?u:a))", "A", false)]
+#[case::nested_sensitive_reference("regex", r"(?a-i:(a)(?a:\1))", "aA", false)]
+#[case::ascii_word_class_stays_narrow("regex", "(?a:(\u{e9})\\1[\\w])", "\u{e9}\u{c9}a", false)]
+#[case::ascii_digit_class_stays_narrow("regex", "(?a:(\u{e9})\\1[\\d])", "\u{e9}\u{c9}1", false)]
+#[case::ascii_space_class_stays_narrow("regex", "(?a:(\u{e9})\\1[\\s])", "\u{e9}\u{c9} ", false)]
+#[case::sensitive_word_class_is_wide("regex", r"(?a:(a)\1)(?-i:[\w])", "aa\u{e9}", true)]
+#[case::sensitive_digit_class_is_wide("regex", r"(?a:(a)\1)(?-i:[\d])", "aa\u{661}", true)]
+#[case::sensitive_space_class_is_wide("regex", r"(?a:(a)\1)(?-i:[\s])", "aa\u{1c}", true)]
 #[case::mixed_ascii_class("regex", r"(?a:(a)\1)[k]", "aa\u{212a}", true)]
 #[case::sensitive_narrow_class("regex", "(?a:(\u{e9})\\1)(?-i:[a])", "\u{e9}\u{c9}a", false)]
 #[case::ascii_narrow_class("regex", "(?a:(\u{e9})\\1[a])", "\u{e9}\u{c9}a", false)]
