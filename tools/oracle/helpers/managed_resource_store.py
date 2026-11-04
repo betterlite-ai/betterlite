@@ -16,7 +16,8 @@ class Input(TypedDict):
 
 def run(input_value: Input) -> dict[str, object]:
     raw = input_value["principal"]
-    principal = UserAPIKeyAuth.model_validate(raw) if raw is not None else None
+    # These predicates receive resolved fields; validation would replace token with api_key.
+    principal = UserAPIKeyAuth.model_construct(_fields_set=None, **raw) if raw is not None else None
     return {
         "is_proxy_admin": is_proxy_admin(principal),
         "scopes": get_resource_owner_scopes(principal),
