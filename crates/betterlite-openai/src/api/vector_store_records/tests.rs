@@ -272,6 +272,30 @@ fn decoder_enforces_each_byte_and_item_limit() {
 }
 
 #[test]
+fn decoder_enforces_nesting_depth_boundary() {
+    let at_limit = format!("{}0{}", "[".repeat(128), "]".repeat(128));
+    let over_limit = format!("{}0{}", "[".repeat(129), "]".repeat(129));
+    let boundary = decode_vector_store_records(
+        VectorStoreRecordKind::ToolParams,
+        at_limit.as_bytes(),
+        limits(),
+    )
+    .unwrap_err();
+    assert!(!matches!(
+        boundary,
+        super::wire::VectorStoreRecordError::TooDeep
+    ));
+    assert!(matches!(
+        decode_vector_store_records(
+            VectorStoreRecordKind::ToolParams,
+            over_limit.as_bytes(),
+            limits()
+        ),
+        Err(super::wire::VectorStoreRecordError::TooDeep)
+    ));
+}
+
+#[test]
 fn managed_index_timestamp_calendar_and_clock_boundaries() {
     [
         ("2024-02-29T23:59:59Z", true),
@@ -279,6 +303,11 @@ fn managed_index_timestamp_calendar_and_clock_boundaries() {
         ("2100-02-29T00:00:00Z", false),
         ("2023-02-29T00:00:00Z", false),
         ("2024-04-31T00:00:00Z", false),
+        ("2024-04-30T00:00:00Z", true),
+        ("2024-06-30T00:00:00Z", true),
+        ("2024-09-30T00:00:00Z", true),
+        ("2024-11-30T00:00:00Z", true),
+        ("2024-02-28T00:00:00Z", true),
         ("2024-01-00T00:00:00Z", false),
         ("2024-01-01T24:00:00Z", false),
         ("2024-01-01T00:60:00Z", false),
