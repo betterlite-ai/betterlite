@@ -178,6 +178,43 @@ fn managed_auth_create_search_and_failure_fields_round_trip() {
     assert_wire_record(VectorStoreRecordKind::SearchFailure, failure_input);
 }
 
+#[rstest]
+#[case::failure_id(
+    VectorStoreRecordKind::SearchFailure,
+    br#"{"custom_llm_provider":null,"error":"e"}"#
+)]
+#[case::failure_provider(
+    VectorStoreRecordKind::SearchFailure,
+    br#"{"vector_store_id":"v","error":"e"}"#
+)]
+#[case::failure_error(
+    VectorStoreRecordKind::SearchFailure,
+    br#"{"vector_store_id":"v","custom_llm_provider":null}"#
+)]
+#[case::bedrock_user_id(VectorStoreRecordKind::BedrockRequest, br#"{"userContext":{}}"#)]
+#[case::row_column_name(
+    VectorStoreRecordKind::BedrockRow,
+    br#"{"columnValue":"v","type":"STRING"}"#
+)]
+#[case::row_column_value(
+    VectorStoreRecordKind::BedrockRow,
+    br#"{"columnName":"c","type":"STRING"}"#
+)]
+#[case::row_type(
+    VectorStoreRecordKind::BedrockRow,
+    br#"{"columnName":"c","columnValue":"v"}"#
+)]
+#[case::nested_row(
+    VectorStoreRecordKind::BedrockResponse,
+    br#"{"retrievalResults":[{"content":{"row":[{"columnValue":"v","type":"STRING"}]}}]}"#
+)]
+fn required_typed_dict_fields_reject_missing_keys(
+    #[case] kind: VectorStoreRecordKind,
+    #[case] input: &[u8],
+) {
+    decode_vector_store_records(kind, input, limits()).unwrap_err();
+}
+
 #[test]
 fn discovery_and_knowledge_base_records_keep_nested_fields() {
     let fixture: Value =
@@ -250,8 +287,8 @@ fn bedrock_parent_records_decode_typed_nested_fields() {
     assert_eq!(
         result.content.as_ref().unwrap().row.as_ref().unwrap()[0]
             .column_name
-            .as_deref(),
-        Some("c")
+            .as_str(),
+        "c"
     );
 }
 

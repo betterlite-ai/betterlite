@@ -50,11 +50,15 @@ record!(VectorStoreSearchResponse {
     search_query: String => "search_query",
     data: Vec<VectorStoreSearchResult> => "data",
 });
-record!(VectorStoreSearchFailure {
-    vector_store_id: String => "vector_store_id",
-    custom_llm_provider: String => "custom_llm_provider",
-    error: String => "error",
-});
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VectorStoreSearchFailure {
+    pub vector_store_id: String,
+    #[serde(deserialize_with = "Option::<String>::deserialize")]
+    pub custom_llm_provider: Option<String>,
+    pub error: String,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
+}
 record!(VertexSearchDataStoreExtraBody {
     query: String => "query", page_size: i64 => "pageSize", page_token: String => "pageToken",
     offset: i64 => "offset", one_box_page_size: i64 => "oneBoxPageSize",

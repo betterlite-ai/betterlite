@@ -9,15 +9,23 @@ record!(BedrockKbLocation {
     share_point_location: Value => "sharePointLocation", confluence_location: Value => "confluenceLocation",
     custom_document_location: Value => "customDocumentLocation", sql_location: Value => "sqlLocation",
 });
-record!(BedrockKbRowValue {
-    column_name: String => "columnName", column_value: String => "columnValue", type_name: String => "type",
-});
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct BedrockKbRowValue {
+    #[serde(rename = "columnName")]
+    pub column_name: String,
+    #[serde(rename = "columnValue")]
+    pub column_value: String,
+    #[serde(rename = "type")]
+    pub type_name: String,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
+}
 record!(BedrockKbContent {
     type_name: String => "type", text: String => "text", byte_content: String => "byteContent",
-    row: Vec<BedrockKbRowValue> => "row",
+    row: Vec<BedrockKbRowValue> => "row" [strict],
 });
 record!(BedrockKbRetrievalResult {
-    content: BedrockKbContent => "content", location: BedrockKbLocation => "location",
+    content: BedrockKbContent => "content" [strict], location: BedrockKbLocation => "location",
     score: serde_json::Number => "score", metadata: BTreeMap<String, Value> => "metadata",
 });
 record!(BedrockKbMetadataAttribute {
@@ -53,13 +61,20 @@ record!(BedrockKbRetrievalQuery { text: String => "text" });
 record!(KbGuardrailConfig {
     guardrail_id: String => "guardrailId", guardrail_version: String => "guardrailVersion",
 });
-record!(BedrockKbUserContext { user_id: String => "userId" });
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct BedrockKbUserContext {
+    #[serde(rename = "userId")]
+    pub user_id: String,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
+}
 record!(BedrockKbRequest {
     guardrail_configuration: KbGuardrailConfig => "guardrailConfiguration", next_token: String => "nextToken",
     retrieval_configuration: KbRetrievalConfig => "retrievalConfiguration",
-    retrieval_query: BedrockKbRetrievalQuery => "retrievalQuery", user_context: BedrockKbUserContext => "userContext",
+    retrieval_query: BedrockKbRetrievalQuery => "retrievalQuery",
+    user_context: BedrockKbUserContext => "userContext" [strict],
 });
 record!(BedrockKbResponse {
     guardrail_action: String => "guardrailAction", next_token: String => "nextToken",
-    retrieval_results: Vec<BedrockKbRetrievalResult> => "retrievalResults",
+    retrieval_results: Vec<BedrockKbRetrievalResult> => "retrievalResults" [strict],
 });
