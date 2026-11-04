@@ -56,26 +56,22 @@ pub fn is_bedrock_arn(value: &str) -> bool {
     }
 }
 pub fn contains_aws_arn(value: &str) -> bool {
-    value
-        .as_bytes()
-        .windows(7)
-        .enumerate()
-        .any(|(index, token)| {
-            if token != b"arn:aws" {
-                return false;
-            }
-            match value.as_bytes().get(index + 7) {
-                Some(b':') => true,
-                Some(b'-') => {
-                    let start = index + 8;
-                    value.as_bytes()[start..]
-                        .iter()
-                        .position(|byte| *byte == b':')
-                        .is_some_and(|end| end > 0 && valid_partition(&value[start..start + end]))
-                }
-                _ => false,
-            }
-        })
+    let mut remaining = value;
+    while let Some(index) = remaining.find("arn:aws") {
+        let after_prefix = index + "arn:aws".len();
+        let suffix = remaining.get(after_prefix..).unwrap_or_default();
+        if suffix.starts_with(':') {
+            return true;
+        }
+        if let Some(partition) = suffix.strip_prefix('-')
+            && let Some((name, _)) = partition.split_once(':')
+            && valid_partition(name)
+        {
+            return true;
+        }
+        remaining = remaining.get(after_prefix..).unwrap_or_default();
+    }
+    false
 }
 
 fn valid_partition(value: &str) -> bool {
