@@ -43,6 +43,26 @@ use rstest::rstest;
 #[case::prime192v1("SSL_ECDH_CURVE", "prime192v1", "SSL_ECDH_CURVE prime192v1")]
 #[case::secp224k1("SSL_ECDH_CURVE", "secp224k1", "SSL_ECDH_CURVE secp224k1")]
 #[case::secp224r1("SSL_ECDH_CURVE", "secp224r1", "SSL_ECDH_CURVE secp224r1")]
+#[case::ffdhe2048("SSL_ECDH_CURVE", "ffdhe2048", "SSL_ECDH_CURVE ffdhe2048")]
+#[case::ffdhe3072("SSL_ECDH_CURVE", "ffdhe3072", "SSL_ECDH_CURVE ffdhe3072")]
+#[case::ffdhe4096("SSL_ECDH_CURVE", "ffdhe4096", "SSL_ECDH_CURVE ffdhe4096")]
+#[case::ffdhe6144("SSL_ECDH_CURVE", "ffdhe6144", "SSL_ECDH_CURVE ffdhe6144")]
+#[case::ffdhe8192("SSL_ECDH_CURVE", "ffdhe8192", "SSL_ECDH_CURVE ffdhe8192")]
+#[case::brainpoolp256r1tls13(
+    "SSL_ECDH_CURVE",
+    "brainpoolP256r1tls13",
+    "SSL_ECDH_CURVE brainpoolP256r1tls13"
+)]
+#[case::brainpoolp384r1tls13(
+    "SSL_ECDH_CURVE",
+    "brainpoolP384r1tls13",
+    "SSL_ECDH_CURVE brainpoolP384r1tls13"
+)]
+#[case::brainpoolp512r1tls13(
+    "SSL_ECDH_CURVE",
+    "brainpoolP512r1tls13",
+    "SSL_ECDH_CURVE brainpoolP512r1tls13"
+)]
 fn http_policy_tests_behavior(#[case] key: &str, #[case] value: &str, #[case] named: &str) {
     let config = ConfigLoader {
         lookup: BTreeMap::new(),

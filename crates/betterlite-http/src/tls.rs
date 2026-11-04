@@ -21,6 +21,42 @@ use crate::error::HttpError;
 
 const MAX_CA_PEM_BYTES: u64 = 4 * 1024 * 1024;
 
+const UNSUPPORTED_CURVES: &[&str] = &[
+    "sect163k1",
+    "sect163r1",
+    "sect163r2",
+    "sect193r1",
+    "sect193r2",
+    "sect233k1",
+    "sect233r1",
+    "sect239k1",
+    "sect283k1",
+    "sect283r1",
+    "sect409k1",
+    "sect409r1",
+    "sect571k1",
+    "sect571r1",
+    "secp160k1",
+    "secp160r1",
+    "secp160r2",
+    "secp192k1",
+    "prime192v1",
+    "secp224k1",
+    "secp224r1",
+    "secp256k1",
+    "brainpoolP256r1",
+    "brainpoolP384r1",
+    "brainpoolP512r1",
+    "ffdhe2048",
+    "ffdhe3072",
+    "ffdhe4096",
+    "ffdhe6144",
+    "ffdhe8192",
+    "brainpoolP256r1tls13",
+    "brainpoolP384r1tls13",
+    "brainpoolP512r1tls13",
+];
+
 #[derive(Debug, thiserror::Error)]
 pub enum TlsError {
     #[error(transparent)]
@@ -107,11 +143,7 @@ fn named_group(name: &str) -> Result<Option<NamedGroup>, TlsError> {
         "secp384r1" => Ok(Some(NamedGroup::secp384r1)),
         "secp521r1" => Ok(Some(NamedGroup::secp521r1)),
         "X448" => Ok(Some(NamedGroup::X448)),
-        "sect163k1" | "sect163r1" | "sect163r2" | "sect193r1" | "sect193r2" | "sect233k1"
-        | "sect233r1" | "sect239k1" | "sect283k1" | "sect283r1" | "sect409k1" | "sect409r1"
-        | "sect571k1" | "sect571r1" | "secp160k1" | "secp160r1" | "secp160r2" | "secp192k1"
-        | "prime192v1" | "secp224k1" | "secp224r1" | "secp256k1" | "brainpoolP256r1"
-        | "brainpoolP384r1" | "brainpoolP512r1" => Err(TlsError::UnsupportedCurve(name.to_owned())),
+        _ if UNSUPPORTED_CURVES.contains(&name) => Err(TlsError::UnsupportedCurve(name.to_owned())),
         _ => Ok(None),
     }
 }
