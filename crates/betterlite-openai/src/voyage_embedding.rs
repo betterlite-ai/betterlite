@@ -169,6 +169,7 @@ pub fn project_response(parsed: &Value) -> Value {
     let usage = parsed
         .get("usage")
         .and_then(|value| value.get("total_tokens"))
+        .filter(|value| !value.is_null())
         .cloned()
         .unwrap_or_else(|| Value::from(0_u32));
     Value::Object(Map::from_iter([

@@ -149,6 +149,18 @@ fn reply_projection_defaults_missing_usage_to_zero() {
 #[rstest::rstest]
 #[case::text(VoyageEmbeddingVariant::Text)]
 #[case::contextual(VoyageEmbeddingVariant::Contextual)]
+fn null_token_counts_default_to_zero(#[case] variant: VoyageEmbeddingVariant) {
+    let decoded =
+        decode_voyage_embedding_reply(br#"{"usage":{"total_tokens":null}}"#, 200, variant).unwrap();
+    assert_eq!(
+        decoded["usage"],
+        json!({"prompt_tokens": 0, "total_tokens": 0})
+    );
+}
+
+#[rstest::rstest]
+#[case::text(VoyageEmbeddingVariant::Text)]
+#[case::contextual(VoyageEmbeddingVariant::Contextual)]
 fn dimensions_mapping_wins_over_provider_option(#[case] variant: VoyageEmbeddingVariant) {
     let options = serde_json::from_str(r#"{"dimensions":8,"output_dimension":16}"#).unwrap();
     let result = super::request("m", json!(["a"]), &options, variant);

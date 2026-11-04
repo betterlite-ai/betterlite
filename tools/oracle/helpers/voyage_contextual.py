@@ -1,4 +1,6 @@
+import os
 from typing import Protocol, TypeAlias, cast
+from unittest.mock import patch
 
 import httpx
 from litellm.llms.voyage.embedding.transformation import VoyageEmbeddingConfig
@@ -12,6 +14,12 @@ Input = str | list[str] | list[list[str]] | list[int] | list[list[int]]
 
 
 class EmbeddingConfig(Protocol):
+    def validate_environment(
+        self, headers: dict[str, Json], model: str, messages: list[Json],
+        optional_params: dict[str, Json], litellm_params: dict[str, Json],
+        **credentials: str | None
+    ) -> dict[str, Json]: ...
+
     def map_openai_params(
         self, non_default_params: dict[str, Json], optional_params: dict[str, Json],
         model: str, *, drop_params: bool
@@ -54,7 +62,13 @@ def transform(config: EmbeddingConfig, value: dict[str, Json]) -> dict[str, Json
         key: item for key, item in options.items() if key not in {"dimensions", "encoding_format"}
     }
     mapped = config.map_openai_params(options, params, model, drop_params=False)
+    with patch.dict(os.environ, cast(dict[str, str], value.get("env", {})), clear=True):
+        headers = config.validate_environment(
+            dict(cast(dict[str, Json], value.get("headers", {}))), model, [], {}, {},
+            api_key=cast(str | None, value.get("api_key")),
+        )
     return {
+        "headers": headers,
         "url": config.get_complete_url(cast(str | None, value["base"]), None, model, options, {}),
         "request": config.transform_embedding_request(
             model, cast(Input, value["input"]), mapped, {}
