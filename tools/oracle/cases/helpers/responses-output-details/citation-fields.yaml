@@ -4,7 +4,9 @@ call:
   responses_output_details:
     images: []
     finish_reason: null
-    annotations: [{type: url_citation, url_citation: {start_index: 1, end_index: 4, url: 'https://a.test', title: A}}]
+    annotations:
+      - {type: url_citation, url_citation: {start_index: 1, end_index: 4, url: 'https://a.test', title: A}}
+      - {type: file_citation, url_citation: {start_index: 5, end_index: 8, url: 'https://a.test/file', title: File}}
     usage: null
 env: {}
 compare: {ignore: []}

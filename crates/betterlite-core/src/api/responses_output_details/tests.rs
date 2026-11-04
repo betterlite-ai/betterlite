@@ -93,20 +93,36 @@ fn image_finish_status() {
 
 #[test]
 fn citation_fields() {
-    let annotations = [ChatAnnotation {
-        r#type: Some("url_citation".to_owned()),
-        url_citation: Some(UrlCitation {
-            start_index: Some(1),
-            end_index: Some(4),
-            url: Some("https://a.test".to_owned()),
-            title: Some("A".to_owned()),
-        }),
-    }];
+    let annotations = [
+        ChatAnnotation {
+            r#type: Some("url_citation".to_owned()),
+            url_citation: Some(UrlCitation {
+                start_index: Some(1),
+                end_index: Some(4),
+                url: Some("https://a.test".to_owned()),
+                title: Some("A".to_owned()),
+            }),
+        },
+        ChatAnnotation {
+            r#type: Some("file_citation".to_owned()),
+            url_citation: Some(UrlCitation {
+                start_index: Some(5),
+                end_index: Some(8),
+                url: Some("https://a.test/file".to_owned()),
+                title: Some("File".to_owned()),
+            }),
+        },
+    ];
     let projected = project_citations(Some(&annotations));
     assert_eq!(projected.len(), 1);
     let citation = projected.first().expect("citation item");
     assert_eq!(citation.start_index, Some(1));
     assert_eq!(citation.title.as_deref(), Some("A"));
+    assert_eq!(projected.len(), 1);
+}
+
+#[test]
+fn citation_fields_handles_empty_and_missing_nested_records() {
     let empty = [ChatAnnotation {
         r#type: Some("url_citation".to_owned()),
         url_citation: Some(UrlCitation {
@@ -143,7 +159,12 @@ fn usage_details() {
     assert_eq!(projected.input_tokens, 2);
     assert_eq!(projected.total_tokens, 99);
     let empty = project_usage(None);
+    assert_eq!(empty.input_tokens, 0);
+    assert_eq!(empty.output_tokens, 0);
     assert_eq!(empty.total_tokens, 0);
+    assert_eq!(empty.input_tokens_details, None);
+    assert_eq!(empty.output_tokens_details, None);
+    assert_eq!(empty.cost, None);
 }
 
 #[test]
@@ -153,6 +174,10 @@ fn usage_details_projects_typed_counters() {
     assert_eq!(projected.cost, Some(rust_decimal::Decimal::new(125, 3)));
     let input = projected.input_tokens_details.expect("input details");
     assert_eq!(input.cached_tokens, 0);
+    assert_eq!(input.text_tokens, Some(5));
+    assert_eq!(input.audio_tokens, Some(0));
+    assert_eq!(input.image_tokens, Some(2));
+    assert_eq!(input.video_tokens, Some(1));
     assert_eq!(
         input.extra.get("cache_write_tokens"),
         Some(&ModelJson::Number(serde_json::Number::from(7_i64)))
@@ -160,6 +185,10 @@ fn usage_details_projects_typed_counters() {
     assert_eq!(
         input.extra.get("web_search_requests"),
         Some(&ModelJson::Number(serde_json::Number::from(0_i64)))
+    );
+    assert_eq!(
+        input.extra.get("google_maps_grounding_requests"),
+        Some(&ModelJson::Number(serde_json::Number::from(2_i64)))
     );
     assert_eq!(
         input
@@ -171,10 +200,62 @@ fn usage_details_projects_typed_counters() {
     let output = projected.output_tokens_details.expect("output details");
     assert_eq!(output.reasoning_tokens, Some(0));
     assert_eq!(output.audio_tokens, Some(0));
+    assert_eq!(output.text_tokens, Some(5));
     assert_eq!(
         output.extra.get("image_tokens"),
         Some(&ModelJson::Number(serde_json::Number::from(2_i64)))
     );
+}
+
+#[test]
+fn usage_details_prefers_nonzero_cache_write_tokens() {
+    let mut usage = detailed_usage();
+    let prompt = usage
+        .prompt_tokens_details
+        .as_mut()
+        .expect("prompt details");
+    prompt.cache_write_tokens = Some(4);
+    let projected = project_usage(Some(&usage));
+    let input = projected.input_tokens_details.expect("input details");
+    assert_eq!(
+        input.extra.get("cache_write_tokens"),
+        Some(&ModelJson::Number(serde_json::Number::from(4_i64)))
+    );
+}
+
+#[test]
+fn usage_details_keeps_absent_output_modality_counts_null() {
+    let mut usage = detailed_usage();
+    let completion = usage
+        .completion_tokens_details
+        .as_mut()
+        .expect("completion details");
+    completion.reasoning_tokens = Some(8);
+    completion.audio_tokens = None;
+    completion.text_tokens = None;
+    completion.image_tokens = None;
+    let projected = project_usage(Some(&usage));
+    let output = projected.output_tokens_details.expect("output details");
+    assert_eq!(output.reasoning_tokens, Some(8));
+    assert_eq!(output.audio_tokens, None);
+    assert_eq!(output.text_tokens, None);
+    assert!(!output.extra.contains_key("image_tokens"));
+}
+
+#[test]
+fn usage_details_drops_unrelated_numeric_extras() {
+    let usage = Usage {
+        prompt_tokens: 2,
+        completion_tokens: 3,
+        total_tokens: 99,
+        prompt_tokens_details: None,
+        completion_tokens_details: None,
+        numeric_extras: BTreeMap::from([("provider_counter".to_owned(), UsageNumber::Integer(7))]),
+    };
+    let projected = project_usage(Some(&usage));
+    assert!(projected.extra.is_empty());
+    assert_eq!(projected.input_tokens_details, None);
+    assert_eq!(projected.output_tokens_details, None);
 }
 
 fn detailed_usage() -> Usage {
