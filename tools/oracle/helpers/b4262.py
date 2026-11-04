@@ -28,10 +28,14 @@ def route(value: dict[str, Json]) -> SimpleNamespace:
             else endpoint_name
         )
     if "app" in value:
-        if isinstance(children, list):
-            app_routes = [route(cast(dict[str, Json], child)) for child in children]
+        if isinstance(children, dict):
+            app_record = cast(dict[str, Json], children)
+            app_routes = [
+                route(cast(dict[str, Json], child))
+                for child in cast(list[Json], app_record.get("routes", []))
+            ]
             app_type = type(
-                cast(str, value.get("app_name", "Router")),
+                cast(str, app_record["name"]),
                 (),
                 {"routes": app_routes},
             )

@@ -1,6 +1,6 @@
 use betterlite_server::route_inspection::{
-    NamedEndpoint, Route, RouteInspectionError, get_app_routes, get_routes_for_mounted_app,
-    safe_get_endpoint_name,
+    NamedEndpoint, NestedApp, Route, RouteInspectionError, get_app_routes,
+    get_routes_for_mounted_app, safe_get_endpoint_name,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -86,8 +86,10 @@ fn mounted_sub_route_output(mount_path: &str, route: &Route) -> Value {
         methods: None,
         name: None,
         endpoint: None,
-        app_name: None,
-        app: Some(vec![route.clone()]),
+        app: Some(NestedApp {
+            name: "Router".to_owned(),
+            routes: vec![route.clone()],
+        }),
     };
     let result = get_routes_for_mounted_app(&mount)
         .into_iter()

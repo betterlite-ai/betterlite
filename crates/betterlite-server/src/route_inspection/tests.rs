@@ -39,7 +39,6 @@ fn regular_route_keeps_nulls_and_endpoint_name() {
         methods: Some(Some(vec!["POST".to_owned()])),
         name: Some("chat".to_owned()),
         endpoint: Some("present".to_owned()),
-        app_name: None,
         app: None,
     };
     let info = get_app_routes(
@@ -80,15 +79,16 @@ fn regular_route_without_endpoint_keeps_null_fields() {
 fn mounted_routes_join_prefix_and_default_methods() {
     let route = Route {
         path: Some("/v1/".to_owned()),
-        app_name: None,
-        app: Some(vec![Route {
-            path: Some("/models".to_owned()),
-            endpoint: Some("list_models".to_owned()),
-            methods: None,
-            name: None,
-            app_name: None,
-            app: None,
-        }]),
+        app: Some(super::NestedApp {
+            name: "Router".to_owned(),
+            routes: vec![Route {
+                path: Some("/models".to_owned()),
+                endpoint: Some("list_models".to_owned()),
+                methods: None,
+                name: None,
+                app: None,
+            }],
+        }),
         methods: None,
         name: None,
         endpoint: None,
@@ -114,15 +114,16 @@ fn mounted_routes_skip_routes_without_endpoint_or_nested_app() {
         methods: None,
         name: None,
         endpoint: None,
-        app_name: None,
-        app: Some(vec![Route {
-            path: None,
-            methods: None,
-            name: None,
-            endpoint: None,
-            app_name: None,
-            app: None,
-        }]),
+        app: Some(super::NestedApp {
+            name: "Router".to_owned(),
+            routes: vec![Route {
+                path: None,
+                methods: None,
+                name: None,
+                endpoint: None,
+                app: None,
+            }],
+        }),
     };
     assert!(get_routes_for_mounted_app(&route).is_empty());
 }
@@ -198,15 +199,16 @@ fn mounted_route_with_explicit_null_methods_keeps_null() {
         methods: None,
         name: None,
         endpoint: None,
-        app_name: None,
-        app: Some(vec![Route {
-            path: Some("/null-methods".to_owned()),
-            methods: Some(None),
-            name: None,
-            endpoint: Some("handler".to_owned()),
-            app_name: None,
-            app: None,
-        }]),
+        app: Some(super::NestedApp {
+            name: "Router".to_owned(),
+            routes: vec![Route {
+                path: Some("/null-methods".to_owned()),
+                methods: Some(None),
+                name: None,
+                endpoint: Some("handler".to_owned()),
+                app: None,
+            }],
+        }),
     };
     assert_eq!(get_routes_for_mounted_app(&route)[0].methods, None);
 }
@@ -218,18 +220,28 @@ fn mounted_nested_app_uses_its_class_name() {
         methods: None,
         name: None,
         endpoint: None,
-        app_name: None,
-        app: Some(vec![Route {
-            path: Some("/files".to_owned()),
-            methods: None,
-            name: None,
-            endpoint: None,
-            app_name: Some("StaticFiles".to_owned()),
-            app: Some(Vec::new()),
-        }]),
+        app: Some(super::NestedApp {
+            name: "Router".to_owned(),
+            routes: vec![Route {
+                path: Some("/files".to_owned()),
+                methods: None,
+                name: None,
+                endpoint: None,
+                app: Some(super::NestedApp {
+                    name: "StaticFiles".to_owned(),
+                    routes: Vec::new(),
+                }),
+            }],
+        }),
     };
     assert_eq!(
         get_routes_for_mounted_app(&route)[0].endpoint.as_deref(),
         Some("StaticFiles")
     );
+}
+
+#[test]
+fn nested_app_requires_a_name() {
+    let invalid = serde_json::json!({"app": {"routes": []}});
+    assert!(serde_json::from_value::<Route>(invalid).is_err());
 }

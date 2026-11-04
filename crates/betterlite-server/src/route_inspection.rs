@@ -34,8 +34,14 @@ pub struct Route {
     pub methods: Option<Option<Vec<String>>>,
     pub name: Option<String>,
     pub endpoint: Option<String>,
-    pub app_name: Option<String>,
-    pub app: Option<Vec<Self>>,
+    pub app: Option<NestedApp>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct NestedApp {
+    pub name: String,
+    #[serde(default)]
+    pub routes: Vec<Route>,
 }
 
 #[must_use]
@@ -58,7 +64,7 @@ where
 
 #[must_use]
 pub fn get_routes_for_mounted_app(route: &Route) -> Vec<RouteInfo> {
-    let Some(sub_routes) = route.app.as_ref() else {
+    let Some(sub_app) = route.app.as_ref() else {
         return Vec::new();
     };
     let mount_path = route
@@ -66,7 +72,8 @@ pub fn get_routes_for_mounted_app(route: &Route) -> Vec<RouteInfo> {
         .as_deref()
         .unwrap_or_default()
         .trim_end_matches('/');
-    sub_routes
+    sub_app
+        .routes
         .iter()
         .filter_map(|sub_route| mounted_sub_route_info(mount_path, sub_route))
         .collect()
@@ -74,8 +81,8 @@ pub fn get_routes_for_mounted_app(route: &Route) -> Vec<RouteInfo> {
 
 fn mounted_sub_route_info(mount_path: &str, sub_route: &Route) -> Option<RouteInfo> {
     let endpoint_name = sub_route.endpoint.as_deref();
-    let class_name = sub_route.app.as_ref().and(sub_route.app_name.as_deref());
-    if endpoint_name.is_none() && class_name.is_none() {
+    let class_name = sub_route.app.as_ref().map(|app| app.name.as_str());
+    if endpoint_name.is_none() && sub_route.app.is_none() {
         return None;
     }
     let mut path = mount_path.to_owned();
