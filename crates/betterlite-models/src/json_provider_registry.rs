@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::OnceLock};
 
 use indexmap::IndexMap;
 use serde::Deserialize;
@@ -94,9 +94,14 @@ pub struct JSONProviderRegistry {
 impl JSONProviderRegistry {
     #[must_use]
     pub fn load() -> Self {
-        let mut registry = Self::default();
-        registry.load_from(|| Ok(ASSET.to_vec()));
-        registry
+        static REGISTRY: OnceLock<JSONProviderRegistry> = OnceLock::new();
+        REGISTRY
+            .get_or_init(|| {
+                let mut registry = Self::default();
+                registry.load_from(|| Ok(ASSET.to_vec()));
+                registry
+            })
+            .clone()
     }
 
     pub fn load_from<Reader>(&mut self, read_asset: Reader)
