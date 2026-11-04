@@ -8,10 +8,10 @@ pub struct OwnerScope(pub String);
 
 #[must_use]
 pub fn is_proxy_admin(principal: Option<&Principal>) -> bool {
-    match principal {
-        Some(identity) => identity.roles.contains(&Role::PlatformAdmin),
-        None => false,
-    }
+    let Some(identity) = principal else {
+        return false;
+    };
+    identity.roles.contains(&Role::PlatformAdmin)
 }
 
 #[must_use]
