@@ -1,0 +1,8 @@
+kind: helper
+name: top-level-fallback
+call:
+  b3767:
+    construct:
+      settings: {api_key: key, api_base: "https://deepkeep.test", deepkeep_firewall_id: fixed, unreachable_fallback: Fail_Open}
+env: {}
+compare: {ignore: []}

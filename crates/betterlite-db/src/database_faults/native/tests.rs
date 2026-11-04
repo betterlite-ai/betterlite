@@ -95,6 +95,7 @@ fn create_null_is_not_transport_and_has_no_sqlstate() {
 
 #[rstest::rstest]
 #[case::deadlock("40P01", NativeFault::Deadlock)]
+#[case::serialization_failure("40001", NativeFault::Deadlock)]
 #[case::read_only("25006", NativeFault::ReadOnlyTransaction)]
 #[case::connection_exception("08000", NativeFault::ConnectionUnavailable)]
 #[case::connection_failure("08006", NativeFault::ConnectionUnavailable)]
