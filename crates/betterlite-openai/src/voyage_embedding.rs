@@ -9,6 +9,17 @@ pub enum VoyageEmbeddingVariant {
     Contextual,
 }
 
+impl VoyageEmbeddingVariant {
+    #[must_use]
+    pub fn for_model(model: &str) -> Self {
+        if model.to_lowercase().contains("context") {
+            Self::Contextual
+        } else {
+            Self::Text
+        }
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum VoyageEmbeddingError {
     #[error("Voyage embedding response was not valid JSON: {message}")]
@@ -103,18 +114,6 @@ fn is_flat(input: &Value) -> bool {
         Value::Array(items) => items.iter().all(Value::is_string),
         Value::Null | Value::Bool(_) | Value::Number(_) | Value::Object(_) => false,
     }
-}
-
-#[must_use]
-pub fn is_contextual_model(model: &str) -> bool {
-    let lowered = model.to_lowercase();
-    let chars = lowered.chars().collect::<Vec<char>>();
-    for window in chars.windows("context".len()) {
-        if window.iter().collect::<String>() == "context" {
-            return true;
-        }
-    }
-    false
 }
 
 #[must_use]

@@ -1,6 +1,5 @@
 use betterlite_openai::voyage_embedding::{
-    VoyageEmbeddingError, VoyageEmbeddingVariant, decode_voyage_embedding_reply, endpoint,
-    is_contextual_model, request,
+    VoyageEmbeddingError, VoyageEmbeddingVariant, decode_voyage_embedding_reply, endpoint, request,
 };
 use serde::Deserialize;
 use serde_json::{Map, Value};
@@ -39,7 +38,7 @@ impl crate::helpers::Helper for Op {
             "url": contextual_reply.get("url"),
             "request": contextual_reply.get("request"),
             "response": contextual_reply.get("response"),
-            "is_contextual": is_contextual_model(&input.contextual.model),
+            "is_contextual": VoyageEmbeddingVariant::for_model(&input.contextual.model) == VoyageEmbeddingVariant::Contextual,
         });
         Ok(serde_json::json!({"text": text_result, "contextual": contextual_result}))
     }

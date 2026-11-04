@@ -6,7 +6,7 @@ use serde_json::{Map, Value, json};
 
 use super::{
     VoyageEmbeddingConfig, VoyageEmbeddingVariant, decode_voyage_embedding_reply,
-    is_contextual_model, voyage_credentials, voyage_headers,
+    voyage_credentials, voyage_headers,
 };
 
 #[test]
@@ -103,11 +103,14 @@ fn explicit_empty_credential_is_not_resolved_again() {
 }
 
 #[rstest::rstest]
-#[case::contains_context("Voyage-Contextual", true)]
-#[case::embedded_context("voyage_context_3", true)]
-#[case::no_context("voyage-3", false)]
-fn detects_context_anywhere_after_lowercasing(#[case] model: &str, #[case] expected: bool) {
-    assert_eq!(is_contextual_model(model), expected);
+#[case::contains_context("Voyage-Contextual", VoyageEmbeddingVariant::Contextual)]
+#[case::embedded_context("voyage_context_3", VoyageEmbeddingVariant::Contextual)]
+#[case::no_context("voyage-3", VoyageEmbeddingVariant::Text)]
+fn detects_context_anywhere_after_lowercasing(
+    #[case] model: &str,
+    #[case] expected: VoyageEmbeddingVariant,
+) {
+    assert_eq!(VoyageEmbeddingVariant::for_model(model), expected);
 }
 
 #[rstest::rstest]
