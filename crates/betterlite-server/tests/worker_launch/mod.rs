@@ -29,6 +29,23 @@ fn hypercorn_launch_plan_has_bind_and_plain_asyncio_defaults() {
     assert!(!plan.process.preload);
 }
 
+#[rstest]
+#[case::hypercorn(Backend::Hypercorn)]
+#[case::granian(Backend::Granian)]
+#[case::gunicorn(Backend::Gunicorn)]
+fn launch_plans_enable_tls_with_both_files(#[case] backend: Backend) {
+    let mut launch = options(backend);
+    launch.certfile = Some(PathBuf::from("cert.pem"));
+    launch.keyfile = Some(PathBuf::from("key.pem"));
+    launch.ciphers = Some("DEFAULT".to_owned());
+    let plan = launch_plan(&launch).expect("launch plan");
+    assert!(plan.tls.enabled);
+    assert_eq!(
+        plan.tls.ciphers.as_deref(),
+        (backend == Backend::Hypercorn).then_some("DEFAULT")
+    );
+}
+
 #[test]
 fn granian_zero_workers_uses_one_worker() {
     let mut launch = options(Backend::Granian);
@@ -57,8 +74,8 @@ fn granian_threads_and_unsupported_option_warnings_are_in_plan() {
     assert_eq!(
         plan.warnings,
         [
-            "--max_requests_before_restart is not supported by Granian",
-            "--ciphers is not applied when using --run_granian",
+            "--max_requests_before_restart is not supported by Granian (Granian uses workers_lifetime in seconds, not a per-request limit).",
+            "--ciphers is not applied when using --run_granian.",
         ]
     );
 }
@@ -109,28 +126,53 @@ fn gunicorn_request_limits_and_jitter_are_conditional() {
 }
 
 #[test]
-fn start_message_includes_backend_address_and_separate_metrics_port() {
+fn start_message_and_metrics_message_are_separate() {
     let mut launch = options(Backend::Hypercorn);
     launch.metrics_port = Some(9000);
     let plan = launch_plan(&launch).expect("launch plan");
     assert_eq!(
         plan.start_message,
-        "Starting server on 127.0.0.1:4000 using Hypercorn; metrics port 9000"
+        "Starting server on 127.0.0.1:4000 using Hypercorn"
+    );
+    assert_eq!(
+        plan.metrics_message.as_deref(),
+        Some("Serving Prometheus metrics on 127.0.0.1:9000/metrics")
+    );
+    let mut granian = options(Backend::Granian);
+    assert_eq!(
+        launch_plan(&granian).expect("launch plan").start_message,
+        "Starting server on 127.0.0.1:4000 using Granian"
+    );
+    granian.backend = Backend::Gunicorn;
+    assert_eq!(
+        launch_plan(&granian).expect("launch plan").start_message,
+        "Starting server on 127.0.0.1:4000 with 1 workers"
     );
 }
 
 #[rstest]
-#[case::string("callbacks", CallbackSetting::Single("prometheus".to_owned()), true)]
-#[case::list("success_callback", CallbackSetting::Multiple(vec!["other".to_owned(), "prometheus".to_owned()]), true)]
-#[case::failure_callback("failure_callback", CallbackSetting::Single("prometheus".to_owned()), true)]
-#[case::misspelled("callbacks", CallbackSetting::Multiple(vec!["prometheu".to_owned()]), false)]
+#[case::string("callbacks", serde_json::json!("prometheus"), true)]
+#[case::list("success_callback", serde_json::json!(["other", 3, "prometheus"]), true)]
+#[case::failure_callback("failure_callback", serde_json::json!("prometheus"), true)]
+#[case::misspelled("callbacks", serde_json::json!(["prometheu"]), false)]
+#[case::null("callbacks", serde_json::Value::Null, false)]
 fn callback_detection_checks_all_settings(
     #[case] key: &str,
-    #[case] value: CallbackSetting,
+    #[case] value: serde_json::Value,
     #[case] expected: bool,
 ) {
     let settings = BTreeMap::from([(key.to_owned(), value)]);
     assert_eq!(prometheus_callback_configured(Some(&settings)), expected);
+}
+
+#[test]
+fn callback_detection_ignores_unrelated_settings() {
+    let settings = BTreeMap::from([
+        ("drop_params".to_owned(), serde_json::json!(true)),
+        ("callbacks".to_owned(), serde_json::json!(["prometheus"])),
+        ("num_retries".to_owned(), serde_json::json!(3)),
+    ]);
+    assert!(prometheus_callback_configured(Some(&settings)));
 }
 
 #[test]
@@ -140,7 +182,9 @@ fn metrics_listener_requests_shared_samples_without_callback_configuration() {
     assert_eq!(
         result,
         Some(DirectoryPreparation {
-            path: PathBuf::from("/tmp/litellm_prometheus_multiproc"),
+            path: std::env::current_dir()
+                .expect("current directory")
+                .join("litellm_prometheus_multiproc"),
             action: "Auto-created".to_owned(),
             should_prepare: true,
         })
@@ -162,32 +206,101 @@ fn multiproc_directory_uses_lowercase_environment_variant() {
 }
 
 #[rstest]
-#[case::tmpdir("TMPDIR", "/tmp/root-tmpdir")]
-#[case::temp("TEMP", "/tmp/root-temp")]
-#[case::tmp("TMP", "/tmp/root-tmp")]
-fn multiproc_directory_checks_temp_root_environment(#[case] key: &str, #[case] path: &str) {
-    let environment = BTreeMap::from([(key.to_owned(), path.to_owned())]);
+#[case::tmpdir("TMPDIR")]
+#[case::temp("TEMP")]
+#[case::tmp("TMP")]
+fn multiproc_directory_checks_temp_root_environment(#[case] key: &str) {
+    let temporary = tempfile::tempdir().expect("temporary directory");
+    let path = temporary.path().to_path_buf();
+    let environment = BTreeMap::from([(key.to_owned(), path.to_string_lossy().into_owned())]);
     let result = prometheus_directory(1, None, Some(9000), &environment, DirectoryMode::Plan)
         .expect("directory plan");
     assert_eq!(
         result.map(|value| value.path),
-        Some(PathBuf::from(path).join("litellm_prometheus_multiproc"))
+        Some(path.join("litellm_prometheus_multiproc"))
     );
 }
 
 #[test]
 fn multiproc_directory_prefers_tmpdir_then_temp_then_tmp() {
+    let tmpdir = tempfile::tempdir().expect("TMPDIR");
+    let temp = tempfile::tempdir().expect("TEMP");
+    let tmp = tempfile::tempdir().expect("TMP");
     let environment = BTreeMap::from([
-        ("TMPDIR".to_owned(), "/tmp/root-tmpdir".to_owned()),
-        ("TEMP".to_owned(), "/tmp/root-temp".to_owned()),
-        ("TMP".to_owned(), "/tmp/root-tmp".to_owned()),
+        (
+            "TMPDIR".to_owned(),
+            tmpdir.path().to_string_lossy().into_owned(),
+        ),
+        (
+            "TEMP".to_owned(),
+            temp.path().to_string_lossy().into_owned(),
+        ),
+        ("TMP".to_owned(), tmp.path().to_string_lossy().into_owned()),
     ]);
     let result = prometheus_directory(1, None, Some(9000), &environment, DirectoryMode::Plan)
         .expect("directory plan");
     assert_eq!(
         result.map(|value| value.path),
-        Some(PathBuf::from("/tmp/root-tmpdir").join("litellm_prometheus_multiproc"))
+        Some(tmpdir.path().join("litellm_prometheus_multiproc"))
     );
+}
+
+#[test]
+fn multiproc_directory_skips_missing_tmpdir_candidate() {
+    let temp = tempfile::tempdir().expect("TEMP");
+    let environment = BTreeMap::from([
+        (
+            "TMPDIR".to_owned(),
+            temp.path().join("missing").to_string_lossy().into_owned(),
+        ),
+        (
+            "TEMP".to_owned(),
+            temp.path().to_string_lossy().into_owned(),
+        ),
+    ]);
+    let result = prometheus_directory(1, None, Some(9000), &environment, DirectoryMode::Plan)
+        .expect("directory plan");
+    assert_eq!(
+        result.map(|value| value.path),
+        Some(temp.path().join("litellm_prometheus_multiproc"))
+    );
+}
+
+#[test]
+fn empty_uppercase_multiproc_directory_uses_temp_root() {
+    let temp = tempfile::tempdir().expect("temporary root");
+    let environment = BTreeMap::from([
+        ("PROMETHEUS_MULTIPROC_DIR".to_owned(), String::new()),
+        (
+            "TMPDIR".to_owned(),
+            temp.path().to_string_lossy().into_owned(),
+        ),
+    ]);
+    let result = prometheus_directory(2, None, Some(9000), &environment, DirectoryMode::Plan)
+        .expect("directory plan")
+        .expect("directory decision");
+    assert_eq!(
+        result.path,
+        temp.path().join("litellm_prometheus_multiproc")
+    );
+    assert_eq!(result.action, "Auto-created");
+}
+
+#[test]
+fn empty_uppercase_multiproc_directory_falls_through_to_lowercase_value() {
+    let temporary = tempfile::tempdir().expect("temporary root");
+    let environment = BTreeMap::from([
+        ("PROMETHEUS_MULTIPROC_DIR".to_owned(), String::new()),
+        (
+            "prometheus_multiproc_dir".to_owned(),
+            temporary.path().to_string_lossy().into_owned(),
+        ),
+    ]);
+    let result = prometheus_directory(2, None, Some(9000), &environment, DirectoryMode::Plan)
+        .expect("directory plan")
+        .expect("directory decision");
+    assert_eq!(result.path, temporary.path());
+    assert_eq!(result.action, "Using existing");
 }
 
 #[test]

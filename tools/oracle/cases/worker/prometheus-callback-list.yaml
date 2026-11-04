@@ -6,6 +6,7 @@ call:
     settings:
       success_callback:
       - other
+      - 3
       - prometheus
 env: {}
 compare:

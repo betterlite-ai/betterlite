@@ -11,7 +11,7 @@ call:
       runtime_threads: null
       certfile: null
       keyfile: null
-      ciphers: null
+      ciphers: HIGH
       max_requests: null
       max_requests_jitter: null
       metrics_port: null

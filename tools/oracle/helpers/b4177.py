@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import tempfile
 from collections.abc import Callable
@@ -155,6 +156,8 @@ def _capture_gunicorn(
     gunicorn = _module("gunicorn")
     app_module = _module("gunicorn.app")
     app_module.__path__ = []  # type: ignore[reportAttributeAccessIssue]
+    app_module.base = base_module  # type: ignore[reportAttributeAccessIssue]
+    gunicorn.app = app_module  # type: ignore[reportAttributeAccessIssue]
     gunicorn.__path__ = []  # type: ignore[reportAttributeAccessIssue]
     fork_guard = _module("litellm.rust_bridge.fork_guard")
     fork_guard.reserve_process_for_forking = lambda _owner: None  # type: ignore[reportAttributeAccessIssue]
@@ -191,11 +194,11 @@ def _launch_plan(options: LaunchOptions, environment: dict[str, str]) -> Json:
     backend = options["backend"]
     try:
         if backend == "hypercorn":
-            capture, _stdout = _capture_hypercorn(options)
+            capture, stdout = _capture_hypercorn(options)
         elif backend == "granian":
-            capture, _stdout = _capture_granian(options)
+            capture, stdout = _capture_granian(options)
         else:
-            capture, _stdout = _capture_gunicorn(options, environment)
+            capture, stdout = _capture_gunicorn(options, environment)
     except (ClickException, ModuleNotFoundError) as error:
         return {"error": str(error)}
     if backend == "hypercorn":
@@ -228,14 +231,14 @@ def _launch_plan(options: LaunchOptions, environment: dict[str, str]) -> Json:
         runtime_threads = None
         max_requests = capture.get("max_requests")
         jitter = capture.get("max_requests_jitter")
-    warnings = _launch_warnings(options, backend)
+    start_message, warnings = _captured_launch_text(stdout)
     host = options["host"]
     port = options["port"]
     metrics_port = options.get("metrics_port")
-    worker_suffix = "" if backend == "hypercorn" else f" with {workers} workers"
-    metrics_suffix = f"; metrics port {metrics_port}" if metrics_port is not None else ""
-    message = (
-        f"Starting server on {host}:{port}{worker_suffix} using {backend.title()}{metrics_suffix}"
+    metrics_message = (
+        f"Serving Prometheus metrics on {options['host']}:{metrics_port}/metrics"
+        if metrics_port is not None
+        else None
     )
     return cast(
         Json,
@@ -249,28 +252,28 @@ def _launch_plan(options: LaunchOptions, environment: dict[str, str]) -> Json:
             "runtime_threads": runtime_threads,
             "max_requests": max_requests,
             "max_requests_jitter": jitter,
-            "start_message": message,
+            "start_message": start_message,
+            "metrics_message": metrics_message,
             "warnings": warnings,
         },
     )
 
 
-def _launch_warnings(options: LaunchOptions, backend: str) -> list[str]:
+def _captured_launch_text(stdout: str) -> tuple[str, list[str]]:
+    start_message = ""
     warnings: list[str] = []
-    if backend == "granian" and options.get("max_requests") is not None:
-        warnings.append("--max_requests_before_restart is not supported by Granian")
-    if backend == "granian" and options.get("ciphers") is not None:
-        warnings.append("--ciphers is not applied when using --run_granian")
-    if (
-        backend == "gunicorn"
-        and options.get("max_requests_jitter") is not None
-        and options.get("max_requests") is None
-    ):
-        warnings.append(
-            "--max_requests_before_restart_jitter has no effect without "
-            "--max_requests_before_restart"
-        )
-    return warnings
+    for raw_line in stdout.splitlines():
+        line = re.sub(r"\x1b\[[0-9;]*m", "", raw_line).strip()
+        litellm_line = line.startswith(("LiteLLM Proxy: ", "LiteLLM: "))
+        for prefix in ("LiteLLM Proxy: ", "LiteLLM: "):
+            if line.startswith(prefix):
+                line = line.removeprefix(prefix)
+                break
+        if line.startswith("Starting server on "):
+            start_message = line
+        elif litellm_line and line.startswith("--"):
+            warnings.append(line)
+    return start_message, warnings
 
 
 def _callback_configured(settings: dict[str, object] | None) -> bool:

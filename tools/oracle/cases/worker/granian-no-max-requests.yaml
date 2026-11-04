@@ -12,7 +12,7 @@ call:
       certfile: null
       keyfile: null
       ciphers: null
-      max_requests: null
+      max_requests: 100
       max_requests_jitter: null
       metrics_port: null
       prometheus_dir: null
