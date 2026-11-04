@@ -35,7 +35,7 @@ def run(input_value: dict[str, Json]) -> Json:
         raise ValueError("config_ssl_verify must be a bool or null")
     if config_http2 is not None and not isinstance(config_http2, bool):
         raise ValueError("config_http2 must be a bool or null")
-    litellm.ssl_verify = config_verify
+    litellm.ssl_verify = config_verify if config_verify is not None else True
     litellm.http2 = config_http2
     resolved = get_ssl_verify(deployment_verify)
     curve = os.environ.get("SSL_ECDH_CURVE")
