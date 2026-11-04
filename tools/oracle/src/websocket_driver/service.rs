@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, btree_map::Entry};
 
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
+use serde_with::{As, PickFirst, Same};
 
 use super::{DriverError, TranscriptObservation};
 use crate::websocket_oracle::Frame;
@@ -30,7 +31,7 @@ pub struct Arguments {
     pub api_base: String,
     #[serde(default)]
     pub api_key: Option<String>,
-    #[serde(default)]
+    #[serde(default, with = "As::<Option<PickFirst<(Vec<(Same, Same)>, Same)>>>")]
     pub query_params: Option<IndexMap<String, String>>,
     #[serde(default)]
     pub openai_beta_realtime: bool,

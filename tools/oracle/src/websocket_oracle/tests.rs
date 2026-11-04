@@ -252,12 +252,24 @@ async fn realtime_route_inputs(#[case] path: &str, #[case] protocol: Option<&str
     matching_peer(case).await;
 }
 
-#[test]
-fn provider_preparation() {
-    let input: ServiceInput = serde_json::from_str(
-        r#"{"service":"realtime_probe","input":{"model":"realtime-a","query_params":null}}"#,
-    )
-    .unwrap();
+#[rstest::rstest]
+#[case::absent("null", "null")]
+#[case::empty("{}", "[]")]
+#[case::ordered(
+    r#"{"model":"realtime-a","intent":"transcription"}"#,
+    r#"[["model","realtime-a"],["intent","transcription"]]"#
+)]
+fn provider_preparation(#[case] query: &str, #[case] wire: &str) {
+    let raw = format!(
+        r#"{{"service":"realtime_probe","input":{{"model":"realtime-a","query_params":{query}}}}}"#
+    );
+    let input: ServiceInput = serde_json::from_str(&raw).unwrap();
+    let encoded = serde_json::to_value(&input).unwrap();
+    let query_json =
+        serde_json::to_string(encoded.pointer("/input/query_params").unwrap()).unwrap();
+    assert_eq!(query_json, wire);
+    let restored: ServiceInput = serde_json::from_value(encoded).unwrap();
+    assert_eq!(restored.input.query_params, input.input.query_params);
     assert!(matches!(
         Services::default().run_service(input.service, &input.input),
         Err(DriverError::AdapterMissing(ServiceTag::RealtimeProbe))

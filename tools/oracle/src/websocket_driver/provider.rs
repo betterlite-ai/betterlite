@@ -1,4 +1,8 @@
 use std::net::SocketAddr;
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+};
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
@@ -19,6 +23,7 @@ use crate::websocket_oracle::{Close, Direction, Frame, WebSocketCase};
 pub(crate) struct ProviderHandle {
     pub(crate) address: SocketAddr,
     tasks: JoinSet<Result<ProviderObservation, DriverError>>,
+    connections: Arc<AtomicUsize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,14 +38,20 @@ pub(crate) async fn start(case: WebSocketCase) -> Result<ProviderHandle, DriverE
     let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
     let address = listener.local_addr()?;
     let mut tasks = JoinSet::new();
+    let connections = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&connections);
     tasks.spawn(async move {
         timeout(
             Duration::from_secs(case.execution_seconds),
-            serve(listener, &case),
+            serve(listener, &case, &counter),
         )
         .await?
     });
-    Ok(ProviderHandle { address, tasks })
+    Ok(ProviderHandle {
+        address,
+        tasks,
+        connections,
+    })
 }
 
 impl ProviderHandle {
@@ -54,7 +65,7 @@ impl ProviderHandle {
             .ok_or_else(|| DriverError::Transport("provider task is missing".to_owned()))?
             .map_err(DriverError::from)?
     }
-    pub(crate) async fn cancel(mut self) -> Result<(), DriverError> {
+    pub(crate) async fn cancel(mut self) -> Result<usize, DriverError> {
         self.tasks.abort_all();
         while let Some(result) = self.tasks.join_next().await {
             match result {
@@ -65,7 +76,7 @@ impl ProviderHandle {
                 Err(source) => return Err(DriverError::from(source)),
             }
         }
-        Ok(())
+        Ok(self.connections.load(Ordering::Relaxed))
     }
 }
 
@@ -110,8 +121,10 @@ impl Callback for Handshake<'_> {
 async fn serve(
     listener: TcpListener,
     case: &WebSocketCase,
+    connections: &AtomicUsize,
 ) -> Result<ProviderObservation, DriverError> {
     let (tcp, _) = listener.accept().await?;
+    connections.fetch_add(1, Ordering::Relaxed);
     let mut observation = ProviderObservation {
         connection_count: 1,
         request_uri: String::new(),

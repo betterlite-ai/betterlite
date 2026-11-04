@@ -11,7 +11,7 @@ class Input(TypedDict, total=False):
     model: str
     api_base: str
     api_key: str | None
-    query_params: dict[str, str] | None
+    query_params: dict[str, str] | list[tuple[str, str]] | None
     openai_beta_realtime: bool
 
 
@@ -35,7 +35,7 @@ def run(input_value: Input) -> object:
         asyncio.run(handler.async_realtime(model, None, None, api_base=base, api_key=None))
         raise ValueError("missing-key call unexpectedly succeeded")
     supplied = input_value.get("query_params")
-    query = {"model": model} if supplied is None else supplied
+    query = {"model": model} if supplied is None else dict(supplied)
     url_method = "_construct_url"
     headers_method = "_get_additional_headers"
     construct_url = cast(Callable[[str, dict[str, str]], str], getattr(handler, url_method))

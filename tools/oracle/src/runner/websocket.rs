@@ -145,7 +145,12 @@ async fn capture(
                 .await?,
         )
     } else {
-        provider.cancel().await?;
+        let connections = provider.cancel().await?;
+        if connections != 0 {
+            return Err(DriverError::Transport(
+                "preaccept refusal opened an upstream connection".to_owned(),
+            ));
+        }
         None
     };
     Ok((observed, upstream))
