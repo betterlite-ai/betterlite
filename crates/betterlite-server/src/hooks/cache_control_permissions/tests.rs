@@ -29,9 +29,16 @@ async fn run(
 }
 
 #[rstest]
-#[case::no_cache_key("{}", "{}")]
-#[case::cache_present_but_not_a_dict("{}", r#"{"cache": "no-cache"}"#)]
-#[case::empty_cache_dict("{}", r#"{"cache": {}}"#)]
+#[case::no_cache_key(r#"{"allowed_cache_controls": ["ttl"]}"#, "{}")]
+#[case::cache_present_but_not_a_dict(
+    r#"{"allowed_cache_controls": ["ttl"]}"#,
+    r#"{"cache": "no-cache"}"#
+)]
+#[case::cache_present_as_array(
+    r#"{"allowed_cache_controls": ["ttl"]}"#,
+    r#"{"cache": ["no-cache"]}"#
+)]
+#[case::empty_cache_dict(r#"{"allowed_cache_controls": ["ttl"]}"#, r#"{"cache": {}}"#)]
 #[case::no_allowlist_permits_any_key("{}", r#"{"cache": {"no-cache": true}}"#)]
 #[case::empty_allowlist_permits_any_key(
     r#"{"allowed_cache_controls": []}"#,
