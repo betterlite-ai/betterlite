@@ -141,9 +141,27 @@ pub fn select_providers(
     writer: &mut dyn Write,
 ) -> Result<Vec<&'static Provider>, SelectError> {
     let supports = supports_color(no_color);
-    match raw_mode::TtyRawMode::open() {
-        Ok(raw_mode) => {
-            let mut key_source = interactive::TtyKeySource { bytes: raw_mode };
+    dispatch_selection(
+        raw_mode::TtyRawMode::open,
+        fallback_reader,
+        writer,
+        supports,
+    )
+}
+
+fn dispatch_selection<S, F>(
+    open_raw: F,
+    fallback_reader: &mut dyn BufRead,
+    writer: &mut dyn Write,
+    supports: bool,
+) -> Result<Vec<&'static Provider>, SelectError>
+where
+    S: interactive::ByteSource,
+    F: FnOnce() -> Result<S, raw_mode::RawModeError>,
+{
+    match open_raw() {
+        Ok(bytes) => {
+            let mut key_source = interactive::TtyKeySource { bytes };
             match interactive::select_interactive(&mut key_source, writer, supports) {
                 Ok(indices) => Ok(indices
                     .into_iter()

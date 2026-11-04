@@ -1,6 +1,89 @@
 #![cfg(test)]
 
-use super::PROVIDERS;
+use std::io::{self, Cursor};
+
+use super::interactive::ByteSource;
+use super::raw_mode::RawModeError;
+use super::{PROVIDERS, dispatch_selection};
+
+struct ScriptedBytes {
+    bytes: Vec<u8>,
+    next: usize,
+}
+
+impl ByteSource for ScriptedBytes {
+    fn next_byte(&mut self) -> io::Result<u8> {
+        let byte = self.bytes.get(self.next).copied();
+        self.next = self.next.saturating_add(1);
+        byte.ok_or_else(|| io::Error::from(io::ErrorKind::UnexpectedEof))
+    }
+}
+
+#[test]
+fn dispatch_uses_the_fallback_reader_when_raw_mode_cannot_open() {
+    let mut writer = Vec::new();
+    let mut reader = Cursor::new(b"1\n".to_vec());
+    let open = || -> Result<ScriptedBytes, RawModeError> {
+        Err(RawModeError::Open(io::Error::from(io::ErrorKind::Other)))
+    };
+
+    let providers =
+        dispatch_selection(open, &mut reader, &mut writer, false).expect("fallback succeeds");
+
+    assert_eq!(
+        providers
+            .iter()
+            .map(|provider| provider.id)
+            .collect::<Vec<_>>(),
+        vec!["openai"]
+    );
+}
+
+#[test]
+fn dispatch_uses_raw_mode_when_it_opens_successfully() {
+    let mut writer = Vec::new();
+    let mut reader = Cursor::new(Vec::new());
+    let open = || -> Result<ScriptedBytes, RawModeError> {
+        Ok(ScriptedBytes {
+            bytes: vec![b'\r'],
+            next: 0,
+        })
+    };
+
+    let providers =
+        dispatch_selection(open, &mut reader, &mut writer, false).expect("interactive succeeds");
+
+    assert_eq!(
+        providers
+            .iter()
+            .map(|provider| provider.id)
+            .collect::<Vec<_>>(),
+        vec!["openai"]
+    );
+}
+
+#[test]
+fn dispatch_falls_back_when_the_interactive_loop_hits_an_io_error() {
+    let mut writer = Vec::new();
+    let mut reader = Cursor::new(b"2\n".to_vec());
+    let open = || -> Result<ScriptedBytes, RawModeError> {
+        Ok(ScriptedBytes {
+            bytes: Vec::new(),
+            next: 0,
+        })
+    };
+
+    let providers =
+        dispatch_selection(open, &mut reader, &mut writer, false).expect("fallback succeeds");
+
+    assert_eq!(
+        providers
+            .iter()
+            .map(|provider| provider.id)
+            .collect::<Vec<_>>(),
+        vec!["anthropic"]
+    );
+}
 
 #[test]
 fn catalog_has_the_six_preserved_providers_in_order() {
