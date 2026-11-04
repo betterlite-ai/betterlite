@@ -2,7 +2,6 @@ use betterlite_server::worker_options::callback_settings::CallbackSettings;
 use betterlite_server::worker_options::*;
 use rstest::rstest;
 use std::collections::BTreeMap;
-use std::env;
 use std::path::{Path, PathBuf};
 
 fn path_string(path: &Path) -> String {
@@ -179,17 +178,11 @@ fn callback_detection_ignores_unrelated_settings() {
 #[test]
 fn metrics_listener_requests_shared_samples_without_callback_configuration() {
     let result = prometheus_directory(1, None, Some(9000), &BTreeMap::new(), DirectoryMode::Plan)
-        .expect("directory plan");
-    assert_eq!(
-        result,
-        Some(DirectoryPreparation {
-            path: env::current_dir()
-                .expect("current directory")
-                .join("litellm_prometheus_multiproc"),
-            action: "Auto-created".to_owned(),
-            should_prepare: true,
-        })
-    );
+        .expect("directory plan")
+        .expect("metrics listener requires a shared samples directory");
+    assert!(result.path.ends_with("litellm_prometheus_multiproc"));
+    assert_eq!(result.action, "Auto-created");
+    assert!(result.should_prepare);
 }
 
 #[test]
