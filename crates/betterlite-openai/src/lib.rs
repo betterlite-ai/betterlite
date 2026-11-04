@@ -62,6 +62,7 @@ pub mod mistral_options;
 pub mod openai_base_config;
 pub mod openai_video_identifiers;
 pub mod output_limits;
+pub mod passthrough;
 pub mod providers;
 pub mod proxy;
 pub mod realtime;
