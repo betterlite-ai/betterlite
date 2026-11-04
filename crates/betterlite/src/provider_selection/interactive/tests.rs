@@ -187,7 +187,7 @@ fn first_selector_render_has_no_cursor_move_up() {
 }
 
 #[test]
-fn colored_redraw_moves_up_thirteen_lines() {
+fn colored_redraw_moves_up_eleven_lines() {
     let output = render_selector(
         1,
         &BTreeSet::new(),
@@ -197,7 +197,7 @@ fn colored_redraw_moves_up_thirteen_lines() {
         },
     );
 
-    assert!(output.starts_with("\x1b[13A"));
+    assert!(output.starts_with("\x1b[11A"));
 }
 
 #[test]
@@ -211,6 +211,7 @@ fn uncolored_selector_renders_exact_cursor_and_selection_lines() {
         },
     );
 
+    assert!(output.starts_with("\n  Add your first model\n  \u{2191}\u{2193} to navigate"));
     assert!(output.contains("  \u{276f} \u{25c9} OpenAI  GPT-4o, GPT-4o-mini, o3-mini\n"));
     assert!(output.contains("    \u{25cb} Anthropic  Claude Fable"));
 }

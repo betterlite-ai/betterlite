@@ -164,7 +164,7 @@ struct RenderState {
 
 fn render_selector(cursor: usize, selected: &BTreeSet<usize>, state: &RenderState) -> String {
     let supports_color = state.supports_color;
-    let header = format!("\n\n  {}\n\n", bold("Add your first model", supports_color));
+    let header = format!("\n  {}\n", bold("Add your first model", supports_color));
     let mut content = header;
     content.push_str(&grey(
         "  \u{2191}\u{2193} to navigate \u{b7} Space to select \u{b7} Enter to confirm",
