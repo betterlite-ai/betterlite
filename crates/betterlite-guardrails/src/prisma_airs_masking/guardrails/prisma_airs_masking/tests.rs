@@ -333,6 +333,31 @@ fn masks_the_last_eligible_role_message_with_content(#[case] input: &str, #[case
     assert!(matches!(&messages[index].content, Some(MaskContent::Text(text)) if text == "masked"));
 }
 
+#[rstest::rstest]
+#[case::empty_string(
+    r#"[{"role":"developer","content":"api_key=sk-secret"},{"role":"user","content":""}]"#,
+    true
+)]
+#[case::empty_list(
+    r#"[{"role":"developer","content":"api_key=sk-secret"},{"role":"user","content":[]}]"#,
+    false
+)]
+fn masks_an_earlier_credential_bearing_message_over_a_trailing_empty_one(
+    #[case] input: &str,
+    #[case] trailing_is_text: bool,
+) {
+    let mut messages: Vec<RequestMessage> = serde_json::from_str(input).expect("messages");
+    assert!(mask_messages(&mut messages, "masked").expect("mask"));
+    assert!(matches!(&messages[0].content, Some(MaskContent::Text(text)) if text == "masked"));
+    if trailing_is_text {
+        assert!(matches!(&messages[1].content, Some(MaskContent::Text(text)) if text.is_empty()));
+    } else {
+        assert!(
+            matches!(&messages[1].content, Some(MaskContent::Parts(parts)) if parts.is_empty())
+        );
+    }
+}
+
 #[test]
 fn mask_messages_fails_closed_when_no_message_is_eligible() {
     let mut messages: Vec<RequestMessage> = serde_json::from_str("[]").expect("messages");
