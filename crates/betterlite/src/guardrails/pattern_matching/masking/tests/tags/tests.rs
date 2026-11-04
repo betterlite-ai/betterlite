@@ -15,6 +15,7 @@ use super::{redaction_tag, rstest};
     "EMAIL{pattern_name:08}"
 )]
 #[case::explicit_alignment_after_zero_untouched("{pattern_name:0<5}", "email", "EMAIL")]
+#[case::colon_fill_zero_width("{pattern_name::>08}", "email", ":::EMAIL")]
 #[case::multidigit_unicode("{pattern_name[\u{ff11}\u{ff12}]}", "abcdefghijklmn", "M")]
 #[case::fullwidth_index("[{pattern_name[\u{ff10}]}]", "email", "[E]")]
 #[case::arabic_index("{pattern_name[\u{661}]}", "email", "M")]
