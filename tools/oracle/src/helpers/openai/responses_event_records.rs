@@ -17,7 +17,7 @@ impl crate::helpers::Helper for Op {
         let record =
             betterlite_openai::api::responses_event_records::wire::decode_responses_event_record(
                 &bytes,
-                betterlite_openai::api::responses_event_records::wire::WireDecodeLimits {
+                betterlite_openai::api::responses_shapes::wire::WireDecodeLimits {
                     max_json_bytes: 1_000_000,
                     max_event_bytes: 1_000_000,
                     max_items: 10_000,

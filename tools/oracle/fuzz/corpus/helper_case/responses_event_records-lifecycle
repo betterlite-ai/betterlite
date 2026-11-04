@@ -1,1 +1,1 @@
-responses_event_records: {type: response.completed, response: {id: resp_a, created_at: 1, output: []}}
+  responses_event_records: {type: response.completed, response: {id: resp_a, created_at: 1, output: []}}

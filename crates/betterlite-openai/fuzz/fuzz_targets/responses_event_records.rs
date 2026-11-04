@@ -1,8 +1,7 @@
 #![no_main]
 
-use betterlite_openai::api::responses_event_records::wire::{
-    WireDecodeLimits, decode_responses_event_record,
-};
+use betterlite_openai::api::responses_event_records::wire::decode_responses_event_record;
+use betterlite_openai::api::responses_shapes::wire::WireDecodeLimits;
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|bytes: &[u8]| {

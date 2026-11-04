@@ -1,7 +1,7 @@
-pub use super::super::responses_shapes::wire::WireDecodeLimits;
-use super::super::responses_shapes::wire::decode_responses_shapes;
+use super::super::responses_shapes::wire::{WireDecodeLimits, decode_responses_shapes};
 use betterlite_models::decisions::Json;
 use serde_json::Value;
+use std::collections::BTreeMap;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -106,15 +106,17 @@ pub enum ResponsesAPIStreamEvents {
     Error,
 }
 
+use ResponsesAPIStreamEvents as Event;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResponsesAPIStreamingResponse {
     Known {
         event: ResponsesAPIStreamEvents,
-        fields: std::collections::BTreeMap<String, Json>,
+        fields: BTreeMap<String, Json>,
     },
     Generic {
         event_type: String,
-        fields: std::collections::BTreeMap<String, Json>,
+        fields: BTreeMap<String, Json>,
     },
 }
 
@@ -132,126 +134,204 @@ pub fn decode_responses_event_record(
     if bytes.len() > limits.max_json_bytes || bytes.len() > limits.max_event_bytes {
         return Err(ResponsesEventDecodeError::JsonTooLarge);
     }
-    let mut value: Value = decode_responses_shapes(
-        bytes,
-        WireDecodeLimits {
-            max_json_bytes: limits.max_json_bytes,
-            max_event_bytes: limits.max_event_bytes,
-            max_items: limits.max_items,
-        },
-    )?;
-    let object = value
-        .as_object()
-        .ok_or(ResponsesEventDecodeError::MissingType)?;
-    let event_type = object
-        .get("type")
-        .ok_or(ResponsesEventDecodeError::MissingType)?
-        .as_str()
-        .ok_or(ResponsesEventDecodeError::InvalidType)?
-        .to_owned();
-    let event =
+    let value: Value = decode_responses_shapes(bytes, limits)?;
+    decode_event(value)
+}
+
+fn decode_event(value: Value) -> Result<ResponsesAPIStreamingResponse, ResponsesEventDecodeError> {
+    let event_type = event_type(&value)?;
+    let parsed_event =
         serde_json::from_value::<ResponsesAPIStreamEvents>(Value::String(event_type.clone()));
-    if let Ok(event) = event {
-        let Some(fields) = value.as_object_mut() else {
-            return Err(ResponsesEventDecodeError::MissingType);
-        };
-        if matches!(
-            event,
-            ResponsesAPIStreamEvents::ReasoningSummaryTextDelta
-                | ResponsesAPIStreamEvents::ReasoningSummaryTextDone
-                | ResponsesAPIStreamEvents::ReasoningSummaryPartDone
-        ) {
-            fields
-                .entry(String::from("summary_index"))
-                .or_insert(Value::from(0));
-        }
-        if event == ResponsesAPIStreamEvents::OutputItemDone {
-            fields
-                .entry(String::from("sequence_number"))
-                .or_insert(Value::from(1));
-        }
-        if event == ResponsesAPIStreamEvents::Error {
-            if let Some(error) = fields.get_mut("error").and_then(Value::as_object_mut) {
-                error.entry(String::from("param")).or_insert(Value::Null);
-            }
-        }
-        for &field in required_fields(event) {
-            if !fields.contains_key(field) {
-                return Err(ResponsesEventDecodeError::MissingField(field.to_owned()));
-            }
-        }
-        let fields = serde_json::from_value::<std::collections::BTreeMap<String, Json>>(value)?;
-        if matches!(
-            event,
-            ResponsesAPIStreamEvents::CustomToolCallInputDelta
-                | ResponsesAPIStreamEvents::CustomToolCallInputDone
-                | ResponsesAPIStreamEvents::ShellCallInProgress
-                | ResponsesAPIStreamEvents::ShellCallCompleted
-                | ResponsesAPIStreamEvents::ShellCallOutput
-        ) {
-            Ok(ResponsesAPIStreamingResponse::Generic {
-                event_type: event_type.clone(),
-                fields,
-            })
-        } else {
-            Ok(ResponsesAPIStreamingResponse::Known { event, fields })
-        }
-    } else {
-        let fields = serde_json::from_value::<std::collections::BTreeMap<String, Json>>(value)?;
-        Ok(ResponsesAPIStreamingResponse::Generic { event_type, fields })
+    match parsed_event {
+        Ok(known_event) => decode_known_event(known_event, event_type, value),
+        Err(_) => Ok(ResponsesAPIStreamingResponse::Generic {
+            event_type,
+            fields: serde_json::from_value::<BTreeMap<String, Json>>(value)?,
+        }),
     }
 }
 
-fn required_fields(event: ResponsesAPIStreamEvents) -> &'static [&'static str] {
-    use ResponsesAPIStreamEvents as E;
+fn event_type(value: &Value) -> Result<String, ResponsesEventDecodeError> {
+    value
+        .as_object()
+        .ok_or(ResponsesEventDecodeError::MissingType)?
+        .get("type")
+        .ok_or(ResponsesEventDecodeError::MissingType)?
+        .as_str()
+        .map(str::to_owned)
+        .ok_or(ResponsesEventDecodeError::InvalidType)
+}
+
+fn decode_known_event(
+    event: ResponsesAPIStreamEvents,
+    event_type: String,
+    mut value: Value,
+) -> Result<ResponsesAPIStreamingResponse, ResponsesEventDecodeError> {
+    let fields = value
+        .as_object_mut()
+        .ok_or(ResponsesEventDecodeError::MissingType)?;
+    add_event_defaults(event, fields);
+    validate_required_fields(event, fields)?;
+    let decoded_fields = serde_json::from_value::<BTreeMap<String, Json>>(value)?;
+    if is_generic_event(event) {
+        Ok(ResponsesAPIStreamingResponse::Generic {
+            event_type,
+            fields: decoded_fields,
+        })
+    } else {
+        Ok(ResponsesAPIStreamingResponse::Known {
+            event,
+            fields: decoded_fields,
+        })
+    }
+}
+
+fn add_event_defaults(
+    event: ResponsesAPIStreamEvents,
+    fields: &mut serde_json::Map<String, Value>,
+) {
+    if matches!(
+        event,
+        ResponsesAPIStreamEvents::ReasoningSummaryTextDelta
+            | ResponsesAPIStreamEvents::ReasoningSummaryTextDone
+            | ResponsesAPIStreamEvents::ReasoningSummaryPartDone
+    ) {
+        fields
+            .entry(String::from("summary_index"))
+            .or_insert(Value::from(0_i64));
+    }
+    if event == ResponsesAPIStreamEvents::OutputItemDone {
+        fields
+            .entry(String::from("sequence_number"))
+            .or_insert(Value::from(1_i64));
+    }
+    if event == ResponsesAPIStreamEvents::Error
+        && let Some(error) = fields.get_mut("error").and_then(Value::as_object_mut)
+    {
+        error.entry(String::from("param")).or_insert(Value::Null);
+    }
+}
+
+fn validate_required_fields(
+    event: ResponsesAPIStreamEvents,
+    fields: &serde_json::Map<String, Value>,
+) -> Result<(), ResponsesEventDecodeError> {
+    for &field in event_fields(event_field_set(event)) {
+        if !fields.contains_key(field) {
+            return Err(ResponsesEventDecodeError::MissingField(field.to_owned()));
+        }
+    }
+    Ok(())
+}
+
+const fn is_generic_event(event: ResponsesAPIStreamEvents) -> bool {
+    matches!(
+        event,
+        ResponsesAPIStreamEvents::CustomToolCallInputDelta
+            | ResponsesAPIStreamEvents::CustomToolCallInputDone
+            | ResponsesAPIStreamEvents::ShellCallInProgress
+            | ResponsesAPIStreamEvents::ShellCallCompleted
+            | ResponsesAPIStreamEvents::ShellCallOutput
+    )
+}
+
+#[derive(Clone, Copy)]
+enum EventFieldSet {
+    Response,
+    Part,
+    Delta,
+    SequenceText,
+    SequencePart,
+    Item,
+    ContentPart,
+    IndexedDelta,
+    Annotation,
+    Text,
+    Refusal,
+    Arguments,
+    Search,
+    Mcp,
+    McpDelta,
+    McpArguments,
+    McpTerminal,
+    Image,
+    Error,
+    Type,
+}
+
+const fn event_field_set(event: ResponsesAPIStreamEvents) -> EventFieldSet {
     match event {
-        E::ResponseCreated
-        | E::ResponseInProgress
-        | E::ResponseCompleted
-        | E::ResponseFailed
-        | E::ResponseIncomplete => &["response"],
-        E::ResponsePartAdded => &["item_id", "output_index", "part"],
-        E::ReasoningSummaryTextDelta => &["item_id", "output_index", "delta"],
-        E::ReasoningSummaryTextDone => &["item_id", "output_index", "sequence_number", "text"],
-        E::ReasoningSummaryPartDone => &["item_id", "output_index", "sequence_number", "part"],
-        E::OutputItemAdded => &["output_index", "item"],
-        E::OutputItemDone => &["output_index", "item"],
-        E::ContentPartAdded | E::ContentPartDone => {
-            &["item_id", "output_index", "content_index", "part"]
+        Event::ResponseCreated
+        | Event::ResponseInProgress
+        | Event::ResponseCompleted
+        | Event::ResponseFailed
+        | Event::ResponseIncomplete => EventFieldSet::Response,
+        Event::ResponsePartAdded => EventFieldSet::Part,
+        Event::ReasoningSummaryTextDelta | Event::FunctionCallArgumentsDelta => {
+            EventFieldSet::Delta
         }
-        E::OutputTextDelta | E::RefusalDelta => {
-            &["item_id", "output_index", "content_index", "delta"]
-        }
-        E::OutputTextAnnotationAdded => &[
+        Event::ReasoningSummaryTextDone => EventFieldSet::SequenceText,
+        Event::ReasoningSummaryPartDone => EventFieldSet::SequencePart,
+        Event::OutputItemAdded | Event::OutputItemDone => EventFieldSet::Item,
+        Event::ContentPartAdded | Event::ContentPartDone => EventFieldSet::ContentPart,
+        Event::OutputTextDelta | Event::RefusalDelta => EventFieldSet::IndexedDelta,
+        Event::OutputTextAnnotationAdded => EventFieldSet::Annotation,
+        Event::OutputTextDone => EventFieldSet::Text,
+        Event::RefusalDone => EventFieldSet::Refusal,
+        Event::FunctionCallArgumentsDone => EventFieldSet::Arguments,
+        Event::FileSearchCallInProgress
+        | Event::FileSearchCallSearching
+        | Event::FileSearchCallCompleted
+        | Event::WebSearchCallInProgress
+        | Event::WebSearchCallSearching
+        | Event::WebSearchCallCompleted => EventFieldSet::Search,
+        Event::McpListToolsInProgress
+        | Event::McpListToolsCompleted
+        | Event::McpListToolsFailed
+        | Event::McpCallInProgress => EventFieldSet::Mcp,
+        Event::McpCallArgumentsDelta => EventFieldSet::McpDelta,
+        Event::McpCallArgumentsDone => EventFieldSet::McpArguments,
+        Event::McpCallCompleted | Event::McpCallFailed => EventFieldSet::McpTerminal,
+        Event::ImageGenerationPartialImage => EventFieldSet::Image,
+        Event::Error => EventFieldSet::Error,
+        Event::CustomToolCallInputDelta
+        | Event::CustomToolCallInputDone
+        | Event::ShellCallInProgress
+        | Event::ShellCallCompleted
+        | Event::ShellCallOutput => EventFieldSet::Type,
+    }
+}
+
+const fn event_fields(fields: EventFieldSet) -> &'static [&'static str] {
+    match fields {
+        EventFieldSet::Response => &["response"],
+        EventFieldSet::Part => &["item_id", "output_index", "part"],
+        EventFieldSet::Delta => &["item_id", "output_index", "delta"],
+        EventFieldSet::SequenceText => &["item_id", "output_index", "sequence_number", "text"],
+        EventFieldSet::SequencePart => &["item_id", "output_index", "sequence_number", "part"],
+        EventFieldSet::Item => &["output_index", "item"],
+        EventFieldSet::ContentPart => &["item_id", "output_index", "content_index", "part"],
+        EventFieldSet::IndexedDelta => &["item_id", "output_index", "content_index", "delta"],
+        EventFieldSet::Annotation => &[
             "item_id",
             "output_index",
             "content_index",
             "annotation_index",
             "annotation",
         ],
-        E::OutputTextDone => &["item_id", "output_index", "content_index", "text"],
-        E::RefusalDone => &["item_id", "output_index", "content_index", "refusal"],
-        E::FunctionCallArgumentsDelta => &["item_id", "output_index", "delta"],
-        E::FunctionCallArgumentsDone => &["item_id", "output_index", "arguments"],
-        E::FileSearchCallInProgress
-        | E::FileSearchCallSearching
-        | E::FileSearchCallCompleted
-        | E::WebSearchCallInProgress
-        | E::WebSearchCallSearching
-        | E::WebSearchCallCompleted => &["output_index", "item_id"],
-        E::McpListToolsInProgress
-        | E::McpListToolsCompleted
-        | E::McpListToolsFailed
-        | E::McpCallInProgress => &["sequence_number", "output_index", "item_id"],
-        E::McpCallArgumentsDelta => &["output_index", "item_id", "delta", "sequence_number"],
-        E::McpCallArgumentsDone => &["output_index", "item_id", "arguments", "sequence_number"],
-        E::McpCallCompleted | E::McpCallFailed => &["sequence_number", "item_id", "output_index"],
-        E::ImageGenerationPartialImage => &["partial_image_index", "b64_json"],
-        E::Error => &["sequence_number", "error"],
-        E::CustomToolCallInputDelta
-        | E::CustomToolCallInputDone
-        | E::ShellCallInProgress
-        | E::ShellCallCompleted
-        | E::ShellCallOutput => &["type"],
+        EventFieldSet::Text => &["item_id", "output_index", "content_index", "text"],
+        EventFieldSet::Refusal => &["item_id", "output_index", "content_index", "refusal"],
+        EventFieldSet::Arguments => &["item_id", "output_index", "arguments"],
+        EventFieldSet::Search => SEARCH_FIELDS,
+        EventFieldSet::Mcp => MCP_FIELDS,
+        EventFieldSet::McpDelta => &["output_index", "item_id", "delta", "sequence_number"],
+        EventFieldSet::McpArguments => &["output_index", "item_id", "arguments", "sequence_number"],
+        EventFieldSet::McpTerminal => &["sequence_number", "item_id", "output_index"],
+        EventFieldSet::Image => &["partial_image_index", "b64_json"],
+        EventFieldSet::Error => &["sequence_number", "error"],
+        EventFieldSet::Type => &["type"],
     }
 }
+
+const SEARCH_FIELDS: &[&str] = &["output_index", "item_id"];
+const MCP_FIELDS: &[&str] = &["sequence_number", "output_index", "item_id"];

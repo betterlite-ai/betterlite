@@ -1,9 +1,10 @@
 #![cfg(test)]
 
 use super::wire::{
-    ResponsesAPIStreamEvents, ResponsesAPIStreamingResponse, WireDecodeLimits,
-    decode_responses_event_record,
+    ResponsesAPIStreamEvents, ResponsesAPIStreamingResponse, decode_responses_event_record,
 };
+use crate::api::responses_shapes::wire::WireDecodeLimits;
+use betterlite_models::decisions::Json;
 use rstest::rstest;
 use serde_json::Value;
 use std::fs;
@@ -11,8 +12,8 @@ use std::path::Path;
 
 fn limits() -> WireDecodeLimits {
     WireDecodeLimits {
-        max_json_bytes: 65536,
-        max_event_bytes: 65536,
+        max_json_bytes: 0x0001_0000,
+        max_event_bytes: 0x0001_0000,
         max_items: 4096,
     }
 }
@@ -74,7 +75,7 @@ fn generic_event_keeps_unknown_and_protected_fields() {
         decode_responses_event_record(br#"{"type":"vendor.future","model_debug":7}"#, limits())
             .unwrap();
     assert!(
-        matches!(record, ResponsesAPIStreamingResponse::Generic { fields, .. } if fields.get("model_debug").is_some())
+        matches!(record, ResponsesAPIStreamingResponse::Generic { fields, .. } if fields.contains_key("model_debug"))
     );
 }
 
@@ -86,7 +87,7 @@ fn event_defaults_and_required_nullable_fields_are_preserved() {
     )
     .unwrap();
     assert!(
-        matches!(added, ResponsesAPIStreamingResponse::Known { fields, .. } if fields.get("item") == Some(&betterlite_models::decisions::Json::Null))
+        matches!(added, ResponsesAPIStreamingResponse::Known { fields, .. } if fields.get("item") == Some(&Json::Null))
     );
     let done = decode_responses_event_record(
         br#"{"type":"response.output_item.done","output_index":2,"item":{"type":"message"}}"#,
@@ -94,7 +95,7 @@ fn event_defaults_and_required_nullable_fields_are_preserved() {
     )
     .unwrap();
     assert!(
-        matches!(done, ResponsesAPIStreamingResponse::Known { fields, .. } if fields.get("sequence_number") == Some(&betterlite_models::decisions::Json::Number(1.into())))
+        matches!(done, ResponsesAPIStreamingResponse::Known { fields, .. } if fields.get("sequence_number") == Some(&Json::Number(serde_json::Number::from(1_i32))))
     );
 }
 
@@ -105,18 +106,18 @@ fn event_byte_limit_is_enforced() {
         max_event_bytes: 10,
         max_items: 100,
     };
-    assert!(decode_responses_event_record(br#"{"type":"error"}"#, small).is_err());
+    decode_responses_event_record(br#"{"type":"error"}"#, small).unwrap_err();
 }
 
 #[test]
 fn completed_event_hidden_params_are_not_serialized() {
     let input = br#"{"type":"response.completed","response":{"id":"resp_a","created_at":1,"output":[],"usage":{"input_tokens":2,"output_tokens":1,"total_tokens":3}}}"#;
     let decoded = decode_responses_event_record(input, limits()).unwrap();
-    let encoded = serde_json::to_value(match decoded {
-        ResponsesAPIStreamingResponse::Known { fields, .. } => fields,
-        ResponsesAPIStreamingResponse::Generic { fields, .. } => fields,
-    })
-    .unwrap();
+    let fields = match decoded {
+        ResponsesAPIStreamingResponse::Known { fields, .. }
+        | ResponsesAPIStreamingResponse::Generic { fields, .. } => fields,
+    };
+    let encoded = serde_json::to_value(fields).unwrap();
     assert!(encoded.get("_hidden_params").is_none());
 }
 
@@ -124,9 +125,13 @@ fn completed_event_hidden_params_are_not_serialized() {
 fn replays_corpus() {
     let directory =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/responses_event_records");
-    fs::read_dir(directory).unwrap().for_each(|entry| {
-        let path = entry.unwrap().path();
-        let bytes = fs::read(path).unwrap();
-        let _decoded = decode_responses_event_record(&bytes, limits());
-    });
+    let replayed: Vec<_> = fs::read_dir(directory)
+        .unwrap()
+        .map(|entry| {
+            let path = entry.unwrap().path();
+            let bytes = fs::read(path).unwrap();
+            decode_responses_event_record(&bytes, limits())
+        })
+        .collect();
+    assert_eq!(replayed.len(), 2);
 }
