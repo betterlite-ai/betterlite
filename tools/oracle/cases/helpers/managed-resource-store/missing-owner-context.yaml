@@ -4,6 +4,11 @@ call:
   managed_resource_store:
     principal: null
     owner: null
+    probes:
+      - {principal: null, owner: foreign}
+      - {principal: {user_role: internal_user}, owner: null}
+      - {principal: {user_role: internal_user}, owner: ''}
+      - {principal: {user_role: internal_user}, owner: foreign}
+      - {principal: {user_id: u, user_role: internal_user}, owner: null}
 env: {}
-compare:
-  ignore: []
+compare: {ignore: []}

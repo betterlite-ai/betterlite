@@ -2,12 +2,13 @@ kind: helper
 name: managed-resource-store-primary-scope-fallback
 call:
   managed_resource_store:
-    principal:
-      team_id: t
-      org_id: o
-      api_key: a
-      token: b
+    principal: {team_id: t, org_id: o, api_key: a, token: b}
     owner: team:t
+    probes:
+      - {principal: {org_id: o, api_key: a, token: b}, owner: 'org:o'}
+      - {principal: {api_key: a, token: b}, owner: 'key:a'}
+      - {principal: {token: b}, owner: 'key:b'}
+      - {principal: {}, owner: null}
+      - {principal: {user_id: '', team_id: '', org_id: '', api_key: '', token: b}, owner: 'key:b'}
 env: {}
-compare:
-  ignore: []
+compare: {ignore: []}

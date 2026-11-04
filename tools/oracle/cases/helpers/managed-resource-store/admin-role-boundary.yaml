@@ -2,9 +2,15 @@ kind: helper
 name: managed-resource-store-admin-role-boundary
 call:
   managed_resource_store:
-    principal:
-      user_role: proxy_admin
+    principal: {user_role: proxy_admin}
     owner: unrelated
+    probes:
+      - {principal: {user_role: proxy_admin}, owner: null}
+      - {principal: {user_role: proxy_admin, role_as_enum: true}, owner: unrelated}
+      - {principal: {user_role: proxy_admin, role_as_enum: true}, owner: null}
+      - {principal: {user_role: proxy_admin_viewer, user_id: u}, owner: unrelated}
+      - {principal: {user_role: internal_user, user_id: u}, owner: unrelated}
+      - {principal: {user_role: proxy_admin_viewer, user_id: u}, owner: u}
+      - {principal: {user_role: proxy_admin_viewer, user_id: u}, owner: 'user:u'}
 env: {}
-compare:
-  ignore: []
+compare: {ignore: []}

@@ -1,123 +1,79 @@
-use serde::Deserialize;
+use betterlite_auth::auth_identity::records::Principal;
+use betterlite_auth::auth_identity::roles::Role;
+use serde::Serialize;
 
-#[derive(Clone, Debug, Default, Deserialize)]
-pub struct OwnerPrincipal {
-    pub user_id: Option<String>,
-    pub team_id: Option<String>,
-    pub org_id: Option<String>,
-    #[serde(rename = "api_key")]
-    pub hashed_api_key: Option<String>,
-    pub token: Option<String>,
-    pub user_role: Option<String>,
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct OwnerScope(pub String);
+
+#[must_use]
+pub fn is_proxy_admin(principal: Option<&Principal>) -> bool {
+    match principal {
+        Some(identity) => identity.roles.contains(&Role::PlatformAdmin),
+        None => false,
+    }
 }
 
 #[must_use]
-pub fn is_proxy_admin(principal: Option<&OwnerPrincipal>) -> bool {
-    let Some(identity) = principal else {
-        return false;
-    };
-    let role = identity.user_role.as_deref();
-    role == Some("proxy_admin")
-}
-
-#[must_use]
-pub fn get_resource_owner_scopes(principal: Option<&OwnerPrincipal>) -> Vec<String> {
+pub fn get_resource_owner_scopes(principal: Option<&Principal>) -> Vec<OwnerScope> {
     let Some(identity) = principal else {
         return Vec::new();
     };
     let mut scopes = Vec::new();
-    if let Some(user_id) = identity
-        .user_id
-        .as_deref()
-        .filter(|value| !value.is_empty())
-    {
-        add_scope(&mut scopes, user_id.to_owned());
-        add_scope(&mut scopes, format!("user:{user_id}"));
-    }
-    if let Some(team_id) = identity
-        .team_id
-        .as_deref()
-        .filter(|value| !value.is_empty())
-    {
-        add_scope(&mut scopes, format!("team:{team_id}"));
-    }
-    if let Some(org_id) = identity.org_id.as_deref().filter(|value| !value.is_empty()) {
-        add_scope(&mut scopes, format!("org:{org_id}"));
-    }
-    if let Some(hashed_api_key) = identity
-        .hashed_api_key
-        .as_deref()
-        .filter(|value| !value.is_empty())
-    {
-        add_scope(&mut scopes, format!("key:{hashed_api_key}"));
-    }
-    if let Some(token) = identity.token.as_deref().filter(|value| !value.is_empty()) {
-        add_scope(&mut scopes, format!("key:{token}"));
+    let user = identity.user.as_ref().map(|user| user.id.as_str());
+    // Legacy auth carries one active team; additional memberships do not widen ownership.
+    let team = identity.teams.first().map(|team| team.id.as_str());
+    let org = identity.organization.as_ref().map(|org| org.id.as_str());
+    let candidates = [
+        ("", user),
+        ("user:", user),
+        ("team:", team),
+        ("org:", org),
+        ("key:", identity.credential_ref.key_id.as_deref()),
+        ("key:", identity.credential_ref.token_id.as_deref()),
+    ];
+    for (prefix, value) in candidates {
+        if let Some(nonempty) = value.filter(|value| !value.is_empty()) {
+            let scope = OwnerScope(format!("{prefix}{nonempty}"));
+            if !scopes.contains(&scope) {
+                scopes.push(scope);
+            }
+        }
     }
     scopes
 }
 
-fn add_scope(scopes: &mut Vec<String>, scope: String) {
-    if !scopes.contains(&scope) {
-        scopes.push(scope);
-    }
-}
-
 #[must_use]
-pub fn get_primary_owner_scope(principal: Option<&OwnerPrincipal>) -> Option<String> {
+pub fn get_primary_owner_scope(principal: Option<&Principal>) -> Option<OwnerScope> {
     let identity = principal?;
-    identity
-        .user_id
-        .as_deref()
-        .filter(|value| !value.is_empty())
-        .map(str::to_owned)
-        .or_else(|| {
-            identity
-                .team_id
-                .as_deref()
-                .filter(|value| !value.is_empty())
-                .map(|value| format!("team:{value}"))
-        })
-        .or_else(|| {
-            identity
-                .org_id
-                .as_deref()
-                .filter(|value| !value.is_empty())
-                .map(|value| format!("org:{value}"))
-        })
-        .or_else(|| {
-            identity
-                .hashed_api_key
-                .as_deref()
-                .filter(|value| !value.is_empty())
-                .map(|value| format!("key:{value}"))
-        })
-        .or_else(|| {
-            identity
-                .token
-                .as_deref()
-                .filter(|value| !value.is_empty())
-                .map(|value| format!("key:{value}"))
-        })
+    let candidates = [
+        ("", identity.user.as_ref().map(|user| user.id.as_str())),
+        ("team:", identity.teams.first().map(|team| team.id.as_str())),
+        (
+            "org:",
+            identity.organization.as_ref().map(|org| org.id.as_str()),
+        ),
+        ("key:", identity.credential_ref.key_id.as_deref()),
+        ("key:", identity.credential_ref.token_id.as_deref()),
+    ];
+    candidates.into_iter().find_map(|(prefix, value)| {
+        value
+            .filter(|value| !value.is_empty())
+            .map(|nonempty| OwnerScope(format!("{prefix}{nonempty}")))
+    })
 }
 
 #[must_use]
-pub fn user_can_access_resource_owner(
-    owner: Option<&str>,
-    principal: Option<&OwnerPrincipal>,
-) -> bool {
-    let Some(identity) = principal else {
-        return true;
-    };
-    if is_proxy_admin(Some(identity)) {
+pub fn user_can_access_resource_owner(owner: Option<&str>, principal: Option<&Principal>) -> bool {
+    if principal.is_none() || is_proxy_admin(principal) {
         return true;
     }
     let Some(owner_scope) = owner else {
         return false;
     };
-    get_resource_owner_scopes(Some(identity))
+    get_resource_owner_scopes(principal)
         .iter()
-        .any(|scope| scope == owner_scope)
+        .any(|scope| scope.0 == owner_scope)
 }
 
 mod tests;

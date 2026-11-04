@@ -2,13 +2,15 @@ kind: helper
 name: managed-resource-store-ordered-owner-scopes
 call:
   managed_resource_store:
-    principal:
-      user_id: u
-      team_id: t
-      org_id: o
-      api_key: a
-      token: b
-    owner: user:v
+    principal: {user_id: u, team_id: t, org_id: o, api_key: a, token: b}
+    owner: key:b
+    probes:
+      - {principal: {user_id: u, team_id: t, org_id: o, api_key: a, token: b}, owner: u}
+      - {principal: {user_id: u, team_id: t, org_id: o, api_key: a, token: b}, owner: 'user:u'}
+      - {principal: {user_id: u, team_id: t, org_id: o, api_key: a, token: b}, owner: 'team:t'}
+      - {principal: {user_id: u, team_id: t, org_id: o, api_key: a, token: b}, owner: 'org:o'}
+      - {principal: {user_id: u, team_id: t, org_id: o, api_key: a, token: b}, owner: 'key:a'}
+      - {principal: {user_id: u, team_id: t, org_id: o, api_key: a, token: b}, owner: 'user:v'}
+      - {principal: {user_id: '', team_id: '', org_id: '', api_key: '', token: ''}, owner: ''}
 env: {}
-compare:
-  ignore: []
+compare: {ignore: []}
