@@ -1,0 +1,5 @@
+task: B3787
+deviations:
+  - what: Masking refuses a replacement once a message's content parts, a response's choices, and its tool/function call arguments would together copy more than 1 MiB of masked text, returning a ReplacementTooLarge error instead of allocating.
+    why: Rule bounded-inputs requires a cap on every allocation sized by untrusted input; LiteLLM's _mask_content_list and _apply_masking_to_response build these replacement lists with no such cap.
+    link: ""
