@@ -106,8 +106,6 @@ pub enum ResponsesAPIStreamEvents {
     Error,
 }
 
-use ResponsesAPIStreamEvents as Event;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResponsesAPIStreamingResponse {
     Known {
@@ -216,7 +214,7 @@ fn validate_required_fields(
     event: ResponsesAPIStreamEvents,
     fields: &serde_json::Map<String, Value>,
 ) -> Result<(), ResponsesEventDecodeError> {
-    for &field in event_fields(event_field_set(event)) {
+    for &field in super::event_fields::required_fields(event) {
         if !fields.contains_key(field) {
             return Err(ResponsesEventDecodeError::MissingField(field.to_owned()));
         }
@@ -234,104 +232,3 @@ const fn is_generic_event(event: ResponsesAPIStreamEvents) -> bool {
             | ResponsesAPIStreamEvents::ShellCallOutput
     )
 }
-
-#[derive(Clone, Copy)]
-enum EventFieldSet {
-    Response,
-    Part,
-    Delta,
-    SequenceText,
-    SequencePart,
-    Item,
-    ContentPart,
-    IndexedDelta,
-    Annotation,
-    Text,
-    Refusal,
-    Arguments,
-    Search,
-    Mcp,
-    McpDelta,
-    McpArguments,
-    McpTerminal,
-    Image,
-    Error,
-    Type,
-}
-
-const fn event_field_set(event: ResponsesAPIStreamEvents) -> EventFieldSet {
-    match event {
-        Event::ResponseCreated
-        | Event::ResponseInProgress
-        | Event::ResponseCompleted
-        | Event::ResponseFailed
-        | Event::ResponseIncomplete => EventFieldSet::Response,
-        Event::ResponsePartAdded => EventFieldSet::Part,
-        Event::ReasoningSummaryTextDelta | Event::FunctionCallArgumentsDelta => {
-            EventFieldSet::Delta
-        }
-        Event::ReasoningSummaryTextDone => EventFieldSet::SequenceText,
-        Event::ReasoningSummaryPartDone => EventFieldSet::SequencePart,
-        Event::OutputItemAdded | Event::OutputItemDone => EventFieldSet::Item,
-        Event::ContentPartAdded | Event::ContentPartDone => EventFieldSet::ContentPart,
-        Event::OutputTextDelta | Event::RefusalDelta => EventFieldSet::IndexedDelta,
-        Event::OutputTextAnnotationAdded => EventFieldSet::Annotation,
-        Event::OutputTextDone => EventFieldSet::Text,
-        Event::RefusalDone => EventFieldSet::Refusal,
-        Event::FunctionCallArgumentsDone => EventFieldSet::Arguments,
-        Event::FileSearchCallInProgress
-        | Event::FileSearchCallSearching
-        | Event::FileSearchCallCompleted
-        | Event::WebSearchCallInProgress
-        | Event::WebSearchCallSearching
-        | Event::WebSearchCallCompleted => EventFieldSet::Search,
-        Event::McpListToolsInProgress
-        | Event::McpListToolsCompleted
-        | Event::McpListToolsFailed
-        | Event::McpCallInProgress => EventFieldSet::Mcp,
-        Event::McpCallArgumentsDelta => EventFieldSet::McpDelta,
-        Event::McpCallArgumentsDone => EventFieldSet::McpArguments,
-        Event::McpCallCompleted | Event::McpCallFailed => EventFieldSet::McpTerminal,
-        Event::ImageGenerationPartialImage => EventFieldSet::Image,
-        Event::Error => EventFieldSet::Error,
-        Event::CustomToolCallInputDelta
-        | Event::CustomToolCallInputDone
-        | Event::ShellCallInProgress
-        | Event::ShellCallCompleted
-        | Event::ShellCallOutput => EventFieldSet::Type,
-    }
-}
-
-const fn event_fields(fields: EventFieldSet) -> &'static [&'static str] {
-    match fields {
-        EventFieldSet::Response => &["response"],
-        EventFieldSet::Part => &["item_id", "output_index", "part"],
-        EventFieldSet::Delta => &["item_id", "output_index", "delta"],
-        EventFieldSet::SequenceText => &["item_id", "output_index", "sequence_number", "text"],
-        EventFieldSet::SequencePart => &["item_id", "output_index", "sequence_number", "part"],
-        EventFieldSet::Item => &["output_index", "item"],
-        EventFieldSet::ContentPart => &["item_id", "output_index", "content_index", "part"],
-        EventFieldSet::IndexedDelta => &["item_id", "output_index", "content_index", "delta"],
-        EventFieldSet::Annotation => &[
-            "item_id",
-            "output_index",
-            "content_index",
-            "annotation_index",
-            "annotation",
-        ],
-        EventFieldSet::Text => &["item_id", "output_index", "content_index", "text"],
-        EventFieldSet::Refusal => &["item_id", "output_index", "content_index", "refusal"],
-        EventFieldSet::Arguments => &["item_id", "output_index", "arguments"],
-        EventFieldSet::Search => SEARCH_FIELDS,
-        EventFieldSet::Mcp => MCP_FIELDS,
-        EventFieldSet::McpDelta => &["output_index", "item_id", "delta", "sequence_number"],
-        EventFieldSet::McpArguments => &["output_index", "item_id", "arguments", "sequence_number"],
-        EventFieldSet::McpTerminal => &["sequence_number", "item_id", "output_index"],
-        EventFieldSet::Image => &["partial_image_index", "b64_json"],
-        EventFieldSet::Error => &["sequence_number", "error"],
-        EventFieldSet::Type => &["type"],
-    }
-}
-
-const SEARCH_FIELDS: &[&str] = &["output_index", "item_id"];
-const MCP_FIELDS: &[&str] = &["sequence_number", "output_index", "item_id"];
