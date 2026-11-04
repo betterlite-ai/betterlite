@@ -9,6 +9,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+betterlite-env = { path = "../betterlite-env" }
 betterlite-roi = { path = "../betterlite-roi" }
 betterlite-secrets = { path = "../betterlite-secrets" }
 chrono.workspace = true
@@ -28,7 +29,6 @@ thiserror.workspace = true
 tokio = { workspace = true, features = ["time"] }
 tokio-postgres = { workspace = true, features = ["with-chrono-0_4", "with-serde_json-1"] }
 tracing.workspace = true
-unicode-general-category = "1.1.0"
 unicode-normalization = "0.1.26"
 uuid.workspace = true
 

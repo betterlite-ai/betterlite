@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::proxy::ProxyPolicy;
-use betterlite_config::types::LiteLlmSettings;
+use betterlite_config::types::ProxyTrust;
 use libfuzzer_sys::fuzz_target;
 use url::Url;
 
@@ -15,7 +15,9 @@ fuzz_target!(|bytes: &[u8]| {
     let mut environment = BTreeMap::new();
     environment.insert("HTTPS_PROXY".to_owned(), proxy.to_owned());
     environment.insert("NO_PROXY".to_owned(), no_proxy.to_owned());
-    let policy = ProxyPolicy::resolve(&LiteLlmSettings::default(), &environment);
+    let Ok(policy) = ProxyPolicy::resolve(&ProxyTrust::default(), &environment) else {
+        return;
+    };
     if let Ok(url) = Url::parse("https://api.example.com/v1") {
         let _route = policy.route(&url);
     }
