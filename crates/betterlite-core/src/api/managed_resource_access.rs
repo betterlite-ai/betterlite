@@ -60,7 +60,10 @@ pub fn resolve_resource_owner_id(principal: &AuthenticatedPrincipal) -> Option<S
 
 #[must_use]
 pub fn build_owner_filter(principal: &AuthenticatedPrincipal) -> Option<OwnerFilter> {
-    if has_admin_view(principal) {
+    if matches!(
+        principal.role.as_str(),
+        "proxy_admin" | "proxy_admin_viewer"
+    ) {
         return Some(OwnerFilter::Admin);
     }
     match (&principal.user_id, &principal.team_id) {
@@ -82,7 +85,10 @@ pub fn can_access_resource(
     created_by: Option<&str>,
     resource_team_id: Option<&str>,
 ) -> bool {
-    if has_admin_view(principal) {
+    if matches!(
+        principal.role.as_str(),
+        "proxy_admin" | "proxy_admin_viewer"
+    ) {
         return true;
     }
     resolve_resource_owner_id(principal)
@@ -104,13 +110,6 @@ pub fn build_list_page(items: Vec<ResourceRecord>, has_more: bool) -> ListPage {
         first_id,
         last_id,
         has_more,
-    }
-}
-
-fn has_admin_view(principal: &AuthenticatedPrincipal) -> bool {
-    match principal.role.as_str() {
-        "proxy_admin" | "proxy_admin_viewer" => true,
-        _ => false,
     }
 }
 
