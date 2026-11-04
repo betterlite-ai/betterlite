@@ -108,7 +108,7 @@ union! { CodeInterpreterContainerValue {
     AutoCodeContainer(Box<super::tools::AutoCodeContainer>),
 } }
 
-union! { AutoCodeContainerNetworkPValue {
+union! { ContainerNetworkPolicy {
     ContainerNetworkPolicyDisabled(Box<super::tools::ContainerNetworkPolicyDisabled>),
     NetworkAllowlist(Box<super::tools::NetworkAllowlist>),
 } }

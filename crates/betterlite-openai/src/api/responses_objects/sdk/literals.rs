@@ -12,13 +12,13 @@ strings! { AllowedCaller { Direct = "direct", Programmatic = "programmatic" } }
 strings! { ComparisonFilterTypeChoice { Eq = "eq", Ne = "ne", Gt = "gt", Gte = "gte", Lt = "lt", Lte = "lte", In = "in", NotIn = "nin" } }
 strings! { CompoundFilterTypeChoice { And = "and", Or = "or" } }
 strings! { RankingOptionsRankerChoice { Auto = "auto", Default20241115 = "default-2024-11-15" } }
-strings! { ComputerUsePreviewEnviroChoice { Windows = "windows", Mac = "mac", Linux = "linux", Ubuntu = "ubuntu", Browser = "browser" } }
+strings! { PreviewEnvironmentChoice { Windows = "windows", Mac = "mac", Linux = "linux", Ubuntu = "ubuntu", Browser = "browser" } }
 strings! { OutputWebSearchTypeChoice { WebSearch = "web_search", WebSearch20250826 = "web_search_2025_08_26" } }
-strings! { OutputWebSearchSearchConChoice { Low = "low", Medium = "medium", High = "high" } }
+strings! { WebSearchContextChoice { Low = "low", Medium = "medium", High = "high" } }
 strings! { ApproximateKind { Approximate = "approximate" } }
 strings! { McpConnectorIdChoice { ConnectorDropbox = "connector_dropbox", ConnectorGmail = "connector_gmail", ConnectorGooglecalendar = "connector_googlecalendar", ConnectorGoogledrive = "connector_googledrive", ConnectorMicrosoftteams = "connector_microsoftteams", ConnectorOutlookcalendar = "connector_outlookcalendar", ConnectorOutlookemail = "connector_outlookemail", ConnectorSharepoint = "connector_sharepoint" } }
 strings! { McpRequireApprovalChoice { Always = "always", Never = "never" } }
-strings! { AutoCodeContainerMemoryLChoice { Value1g = "1g", Value4g = "4g", Value16g = "16g", Value64g = "64g" } }
+strings! { CodeContainerMemoryChoice { Value1g = "1g", Value4g = "4g", Value16g = "16g", Value64g = "64g" } }
 strings! { ImageActionChoice { Generate = "generate", Edit = "edit", Auto = "auto" } }
 strings! { ImageBackgroundChoice { Transparent = "transparent", Opaque = "opaque", Auto = "auto" } }
 strings! { ImageInputFidelityChoice { High = "high", Low = "low" } }
@@ -28,7 +28,7 @@ strings! { ImageQualityChoice { Low = "low", Medium = "medium", High = "high", A
 strings! { ApplicationZipKind { ApplicationZip = "application/zip" } }
 strings! { GrammarSyntaxChoice { Lark = "lark", Regex = "regex" } }
 strings! { WebSearchPreviewTypeChoice { WebSearchPreview = "web_search_preview", WebSearchPreview20250311 = "web_search_preview_2025_03_11" } }
-strings! { WebSearchPreviewSearchCoChoice { Text = "text", Image = "image" } }
+strings! { PreviewContentChoice { Text = "text", Image = "image" } }
 strings! { AdditionalToolsRoleChoice { Unknown = "unknown", User = "user", Assistant = "assistant", System = "system", Critic = "critic", Discriminator = "discriminator", Developer = "developer", Tool = "tool" } }
 strings! { ImageCallStatusChoice { InProgress = "in_progress", Completed = "completed", Generating = "generating", Failed = "failed" } }
 strings! { InterpreterStatus { InProgress = "in_progress", Completed = "completed", Incomplete = "incomplete", Interpreting = "interpreting", Failed = "failed" } }

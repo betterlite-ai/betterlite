@@ -51,7 +51,7 @@ record! { RankingOptionsHybridSearch {
 record! { OutputWebSearch {
     r#type: super::literals::OutputWebSearchTypeChoice,
     filters: Option<Filters>,
-    search_context_size: Option<super::literals::OutputWebSearchSearchConChoice>,
+    search_context_size: Option<super::literals::WebSearchContextChoice>,
     user_location: Option<UserLocation>,
 } }
 record! { Filters {
@@ -66,8 +66,8 @@ record! { UserLocation {
 } }
 record! { WebSearchPreview {
     r#type: super::literals::WebSearchPreviewTypeChoice,
-    search_content_types: Option<Vec<super::literals::WebSearchPreviewSearchCoChoice>>,
-    search_context_size: Option<super::literals::OutputWebSearchSearchConChoice>,
+    search_content_types: Option<Vec<super::literals::PreviewContentChoice>>,
+    search_context_size: Option<super::literals::WebSearchContextChoice>,
     user_location: Option<OutputUserLocation>,
 } }
 record! { OutputUserLocation: OutputUserLocationTag = "approximate" {

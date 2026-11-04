@@ -78,5 +78,5 @@ record! { OutputComputer: OutputComputerTag = "computer" {} }
 record! { ComputerUsePreview: ComputerUsePreviewTag = "computer_use_preview" {
     display_height: i64,
     display_width: i64,
-    environment: super::literals::ComputerUsePreviewEnviroChoice,
+    environment: super::literals::PreviewEnvironmentChoice,
 } }

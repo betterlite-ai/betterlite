@@ -55,8 +55,8 @@ record! { CodeInterpreter: CodeInterpreterTag = "code_interpreter" {
 } }
 record! { AutoCodeContainer: AutoCodeContainerTag = "auto" {
     file_ids: Option<Vec<String>>,
-    memory_limit: Option<super::literals::AutoCodeContainerMemoryLChoice>,
-    network_policy: Option<super::unions::AutoCodeContainerNetworkPValue>,
+    memory_limit: Option<super::literals::CodeContainerMemoryChoice>,
+    network_policy: Option<super::unions::ContainerNetworkPolicy>,
 } }
 record! { ContainerNetworkPolicyDisabled: NetworkDisabledTag = "disabled" {} }
 record! { NetworkAllowlist: NetworkAllowlistTag = "allowlist" {
@@ -89,8 +89,8 @@ record! { ImageInputImageMask {
 record! { LocalShell: LocalShellTag = "local_shell" {} }
 record! { ContainerAuto: ContainerAutoTag = "container_auto" {
     file_ids: Option<Vec<String>>,
-    memory_limit: Option<super::literals::AutoCodeContainerMemoryLChoice>,
-    network_policy: Option<super::unions::AutoCodeContainerNetworkPValue>,
+    memory_limit: Option<super::literals::CodeContainerMemoryChoice>,
+    network_policy: Option<super::unions::ContainerNetworkPolicy>,
     skills: Option<Vec<super::unions::ContainerAutoSkillsValue>>,
 } }
 record! { SkillReference: SkillReferenceTag = "skill_reference" {
