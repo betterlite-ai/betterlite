@@ -54,3 +54,4 @@ fn replays_the_http_policy_corpus(#[files("fuzz/corpus/http_policy/*")] path: Pa
 
 mod ca_policy;
 mod curve_policy;
+mod deployment_policy;

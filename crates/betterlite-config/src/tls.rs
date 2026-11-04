@@ -44,17 +44,10 @@ impl TlsPolicy {
         if security_level.is_some() {
             return Err(TlsPolicyError::SecurityLevel);
         }
-        let verification = match (
-            verification,
-            environment
-                .get("SSL_CERT_FILE")
-                .filter(|path| Path::new(path).exists()),
-        ) {
-            (Verification::Enabled, Some(path)) => Verification::CaFile(path.clone()),
-            (selected, _) => selected,
-        };
+        let effective_verification =
+            resolve_ca_file(verification, environment.get("SSL_CERT_FILE"));
         Ok(Self {
-            verification,
+            verification: effective_verification,
             ca_file: environment.get("SSL_CERT_FILE").cloned(),
             certificate: config
                 .litellm_settings
@@ -78,6 +71,15 @@ impl TlsPolicy {
                 .cloned()
                 .unwrap_or_else(|| format!("betterlite/{}", env!("CARGO_PKG_VERSION"))),
         })
+    }
+}
+
+fn resolve_ca_file(verification: Verification, configured_path: Option<&String>) -> Verification {
+    match configured_path.filter(|path_text| Path::new(path_text).exists()) {
+        Some(path_text) if verification == Verification::Enabled => {
+            Verification::CaFile(path_text.clone())
+        }
+        Some(_) | None => verification,
     }
 }
 
