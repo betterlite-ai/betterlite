@@ -39,26 +39,14 @@ enum CoercibleField<'field> {
 }
 
 impl CoercibleField<'_> {
-    fn resolve<E>(self, env: &E) -> Option<String>
+    fn resolve<E>(self, canonical: &str, env: &E, names: &mut ReferenceNames)
     where
         E: EnvironmentLookup,
     {
         match self {
-            Self::Int(field) => {
-                let (resolved, blamed) = resolve_textual(field.take(), env);
-                *field = resolved;
-                blamed
-            }
-            Self::Bool(field) => {
-                let (resolved, blamed) = resolve_textual(field.take(), env);
-                *field = resolved;
-                blamed
-            }
-            Self::Float(field) => {
-                let (resolved, blamed) = resolve_textual(field.take(), env);
-                *field = resolved;
-                blamed
-            }
+            Self::Int(field) => *field = resolve_blamed(canonical, field.take(), env, names),
+            Self::Bool(field) => *field = resolve_blamed(canonical, field.take(), env, names),
+            Self::Float(field) => *field = resolve_blamed(canonical, field.take(), env, names),
         }
     }
 }
@@ -102,9 +90,7 @@ where
         ),
     ];
     for (field, canonical) in fields {
-        if let Some(name) = field.resolve(env) {
-            names.insert(canonical.to_owned(), name);
-        }
+        field.resolve(canonical, env, names);
     }
 }
 
@@ -118,13 +104,28 @@ fn resolve_passthrough_references<E>(
     overrides.passthrough = mem::take(&mut overrides.passthrough)
         .into_iter()
         .filter_map(|(key, value)| {
-            let (resolved_value, blamed) = resolve_textual(Some(value), env);
-            if let Some(name) = blamed {
-                names.insert(format!("REDIS_{}", key.to_uppercase()), name);
-            }
-            resolved_value.map(|resolved| (key, resolved))
+            let canonical = format!("REDIS_{}", key.to_uppercase());
+            resolve_blamed(&canonical, Some(value), env, names).map(|resolved| (key, resolved))
         })
         .collect();
+}
+
+// Resolves value through the same "os.environ/<name>" rule as resolve_textual, but also records the referenced name under canonical, so a coercion error later blames CACHE_PORT instead of REDIS_PORT.
+fn resolve_blamed<T, E>(
+    canonical: &str,
+    value: Option<T>,
+    env: &E,
+    names: &mut ReferenceNames,
+) -> Option<T>
+where
+    T: TextVariant,
+    E: EnvironmentLookup,
+{
+    let (resolved, blamed) = resolve_textual(value, env);
+    if let Some(name) = blamed {
+        names.insert(canonical.to_owned(), name);
+    }
+    resolved
 }
 
 // None of these fields feed betterlite_env::number or betterlite_env::flag later, so their resolution never needs the referenced name, only the resolved text.
