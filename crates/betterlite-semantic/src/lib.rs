@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::ops::{Div, Mul};
 
 use async_trait::async_trait;
+use indexmap::IndexMap;
 use thiserror::Error;
 
 pub type Vector = Vec<f64>;
@@ -14,8 +15,8 @@ pub trait Embedder: Send + Sync {
 
 #[derive(Debug, Error)]
 pub enum EmbedError {
-    #[error("{0}")]
-    Http(String),
+    #[error("HTTP {status_code}: {detail}")]
+    Http { status_code: u16, detail: String },
     #[error("{0}")]
     Other(String),
 }
@@ -28,8 +29,8 @@ pub struct EmbeddingFailed {
 
 #[derive(Debug, Error)]
 pub enum SemanticError {
-    #[error("HTTP embedding failure: {0}")]
-    Http(String),
+    #[error("HTTP embedding failure: {status_code}: {detail}")]
+    Http { status_code: u16, detail: String },
     #[error(transparent)]
     Failed(#[from] EmbeddingFailed),
 }
@@ -42,8 +43,7 @@ struct CacheKey {
 
 pub struct SemanticTextIndex {
     max_entries: usize,
-    vectors: HashMap<CacheKey, Vector>,
-    usage: Vec<CacheKey>,
+    vectors: IndexMap<CacheKey, Vector>,
 }
 
 impl SemanticTextIndex {
@@ -51,8 +51,7 @@ impl SemanticTextIndex {
     pub fn new(max_entries: usize) -> Self {
         Self {
             max_entries,
-            vectors: HashMap::new(),
-            usage: Vec::new(),
+            vectors: IndexMap::new(),
         }
     }
 
@@ -145,16 +144,11 @@ impl SemanticTextIndex {
             let vector = vectors.get(text).ok_or_else(|| EmbeddingFailed {
                 reason: format!("embedding model {model} omitted a vector for a requested text"),
             })?;
-            self.vectors.insert(key.clone(), vector.clone());
-            self.usage.retain(|entry| entry != &key);
-            self.usage.push(key);
+            self.vectors.shift_remove(&key);
+            self.vectors.insert(key, vector.clone());
         }
         while self.vectors.len() > self.max_entries {
-            let Some(oldest) = self.usage.first().cloned() else {
-                break;
-            };
-            self.usage.remove(0);
-            self.vectors.remove(&oldest);
+            self.vectors.shift_remove_index(0);
         }
         Ok(())
     }
@@ -224,7 +218,13 @@ async fn embed_all(
                 texts.len()
             ),
         })),
-        Err(EmbedError::Http(message)) => Err(SemanticError::Http(message)),
+        Err(EmbedError::Http {
+            status_code,
+            detail,
+        }) => Err(SemanticError::Http {
+            status_code,
+            detail,
+        }),
         Err(EmbedError::Other(message)) => Err(SemanticError::Failed(EmbeddingFailed {
             reason: format!("embedding the search query failed: {message}"),
         })),
