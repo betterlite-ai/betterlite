@@ -6,6 +6,8 @@ use serde::Deserialize;
 
 use super::Section;
 use crate::loader::{ConfigError, EnvironmentLookup};
+use crate::raw::RawNumber;
+use crate::resolve::{parse_float, resolve_number};
 
 const DEFAULT_API_BASE: &str = "https://service.api.aisecurity.paloaltonetworks.com";
 
@@ -35,7 +37,7 @@ struct Parameters {
     mask_request_content: Option<bool>,
     mask_response_content: Option<bool>,
     fallback_on_error: Option<FallbackAction>,
-    timeout: Option<f64>,
+    timeout: Option<RawNumber>,
     violation_message_template: Option<String>,
     default_on: Option<bool>,
     #[serde(rename = "experimental_use_latest_role_message_only")]
@@ -116,6 +118,13 @@ where
     let mask_request_content = params.mask_request_content.unwrap_or(false) || mask_on_block;
     let mask_response_content = params.mask_response_content.unwrap_or(false) || mask_on_block;
     let fallback_on_error = params.fallback_on_error.unwrap_or(FallbackAction::Block);
+    let timeout = resolve_number(
+        params.timeout,
+        &format!("{prefix}.timeout"),
+        lookup,
+        parse_float,
+    )?
+    .unwrap_or(10.0);
     Ok(Configured {
         guardrail_name: entry
             .guardrail_name
@@ -134,7 +143,7 @@ where
             },
         },
         fallback_on_error,
-        timeout: params.timeout.unwrap_or(10.0),
+        timeout,
         violation_message_template: params.violation_message_template,
         default_on: params.default_on.unwrap_or(true),
         latest_role_message_only: params.latest_role_message_only,

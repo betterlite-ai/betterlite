@@ -126,6 +126,25 @@ fn panw_prisma_airs_explicit_values_override_defaults() {
     assert_eq!(configured.latest_role_message_only, Some(true));
 }
 
+#[test]
+fn panw_prisma_airs_timeout_resolves_from_environment() {
+    let loader = ConfigLoader {
+        lookup: BTreeMap::from([("PRISMA_TIMEOUT".to_owned(), "7.5".to_owned())]),
+    };
+    let config = loader.load("guardrails:\n  - guardrail_name: prisma\n    litellm_params:\n      guardrail: panw_prisma_airs\n      api_key: key\n      timeout: os.environ/PRISMA_TIMEOUT\n").expect("config");
+    let configured = &config.sections.panw_prisma_airs.guardrails[0];
+    assert_eq!(configured.timeout.to_bits(), 7.5_f64.to_bits());
+}
+
+#[test]
+fn panw_prisma_airs_tolerates_other_guardrails_environment_timeout() {
+    let loader = ConfigLoader {
+        lookup: BTreeMap::from([("FIREWALL_TIMEOUT".to_owned(), "5".to_owned())]),
+    };
+    let config = loader.load("guardrails:\n  - guardrail_name: firewall\n    litellm_params:\n      guardrail: deepkeep\n      api_key: key\n      api_base: https://deepkeep.test\n      deepkeep_firewall_id: fixed\n      timeout: os.environ/FIREWALL_TIMEOUT\n").expect("config");
+    assert!(config.sections.panw_prisma_airs.guardrails.is_empty());
+}
+
 #[rstest::rstest]
 #[case::key("api_key", "[]")]
 #[case::mask("mask_request_content", "bad")]
