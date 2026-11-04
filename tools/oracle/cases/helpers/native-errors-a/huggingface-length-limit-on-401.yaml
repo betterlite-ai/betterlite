@@ -1,0 +1,13 @@
+kind: helper
+name: native-errors-a-huggingface-length-limit-on-401
+call:
+  native_errors_a:
+    provider: huggingface
+    model: hf/model-a
+    error_str: "length limit exceeded for this model"
+    status_code: 401
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

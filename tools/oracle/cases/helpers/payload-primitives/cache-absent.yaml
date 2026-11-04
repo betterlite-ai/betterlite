@@ -1,0 +1,16 @@
+{
+  "kind": "helper",
+  "name": "payload-primitives-cache-absent",
+  "call": {
+    "b3843": {
+      "function": "cache_token_value",
+      "values": [
+        null
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
