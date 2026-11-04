@@ -1,0 +1,6 @@
+kind: helper
+name: vector-store-records-round-trip
+call:
+  vector_store_records: {operation: vector_records_round_trip, record: {vector_store_id: vs_a, vector_store_metadata: raw}}
+env: {}
+compare: {ignore: []}

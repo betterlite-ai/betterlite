@@ -1,0 +1,6 @@
+kind: helper
+name: vector-store-discovery-extra-body
+call:
+  vector_store_records: {operation: discovery_extra_body_fields, extra_body: {query: q, servingConfig: value}}
+env: {}
+compare: {ignore: []}

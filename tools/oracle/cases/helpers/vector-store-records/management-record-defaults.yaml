@@ -1,0 +1,6 @@
+kind: helper
+name: vector-store-management-record-defaults
+call:
+  vector_store_records: {operation: management_record_defaults, record: {vector_store_id: vs_a, unknown: 1}}
+env: {}
+compare: {ignore: []}

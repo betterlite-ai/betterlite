@@ -1,0 +1,6 @@
+kind: helper
+name: vector-store-tool-params-null-omission
+call:
+  vector_store_records: {operation: tool_params_omit_only_null}
+env: {}
+compare: {ignore: []}

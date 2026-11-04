@@ -1,0 +1,6 @@
+kind: helper
+name: vector-store-knowledge-base-records
+call:
+  vector_store_records: {operation: knowledge_base_records, record: {retrievalQuery: {text: q}}}
+env: {}
+compare: {ignore: []}

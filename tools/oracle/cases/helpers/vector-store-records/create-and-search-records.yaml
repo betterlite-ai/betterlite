@@ -1,0 +1,6 @@
+kind: helper
+name: vector-store-create-and-search
+call:
+  vector_store_records: {operation: create_and_search_records, record: {query: q}}
+env: {}
+compare: {ignore: []}
