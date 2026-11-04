@@ -106,6 +106,6 @@ debug = "line-tables-only" # backtraces keep file and line; full debug info adde
 [profile.dev.package."*"]
 debug = false # a dependency frame still shows its function name
 
-[profile.dev.package.regex-automata]
-# Redactor pattern compilation otherwise dominates debug server startup.
-opt-level = 2
+[profile.dev.package]
+regex-automata = { opt-level = 2 } # Redactor compilation otherwise dominates debug startup.
+regex-syntax = { opt-level = 2 }
