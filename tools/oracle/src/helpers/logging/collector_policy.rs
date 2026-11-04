@@ -26,9 +26,9 @@ impl crate::helpers::Helper for Op {
             }
             Err(error) => json!({"error":error.to_string()}),
         };
-        let suppress = betterlite_logging::spend_error::loads_spend_traceback_policy(
-            input.suppress.as_deref(),
-        ) && !input.debug;
+        let suppress =
+            betterlite_logging::spend_error::load_spend_traceback_policy(input.suppress.as_deref())
+                && !input.debug;
         Ok(
             json!({"address":address,"produces":input.enabled && input.job_role.as_deref() != Some("collector"),"suppress":suppress}),
         )

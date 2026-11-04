@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 const SUPPRESS_ENV: &str = "LITELLM_SUPPRESS_SPEND_LOG_TRACEBACKS";
 pub static SUPPRESS_TRACEBACKS: AtomicBool = AtomicBool::new(false);
 
-pub fn loads_spend_traceback_policy(value: Option<&str>) -> bool {
+pub fn load_spend_traceback_policy(value: Option<&str>) -> bool {
     betterlite_env::flag(SUPPRESS_ENV, value.unwrap_or_default())
         .ok()
         .flatten()

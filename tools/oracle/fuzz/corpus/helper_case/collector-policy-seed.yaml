@@ -1,6 +1,12 @@
-collector_policy:
-  address: tcp://localhost:4312
-  enabled: true
-  job_role: worker
-  suppress: 'true'
-  debug: false
+kind: helper
+name: collector-policy-seed
+call:
+  collector_policy:
+    address: tcp://localhost:4312
+    enabled: true
+    job_role: worker
+    suppress: 'true'
+    debug: false
+env: {}
+compare:
+  ignore: []
