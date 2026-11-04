@@ -1,0 +1,1 @@
+{"kind":"helper","name":"pattern-add-regex-valid","call":{"b3693":{"function":"add","patterns":[{"pattern_type":"regex","action":"MASK","pattern":"(?<=key:)\\w+","name":"secret"}],"text":"key:VALUE"}},"env":{},"compare":{"ignore":[]}}

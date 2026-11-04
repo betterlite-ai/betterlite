@@ -1,0 +1,1 @@
+{"kind":"helper","name":"iteration-lookbehind","call":{"b3693":{"function":"add","patterns":[{"pattern_type":"regex","pattern":"(?<=a).*?","action":"MASK"}],"text":"abc"}},"env":{},"compare":{"ignore":[]}}

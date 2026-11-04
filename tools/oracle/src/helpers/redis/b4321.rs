@@ -96,7 +96,9 @@ impl From<Failure> for Box<HelperError> {
         // Maps each RedisSettingsError variant to the litellm exception class it mirrors (see docs/deviations/B4321.yaml for InvalidUrl).
         let class = match &failure {
             Failure::Settings(error) => match error {
-                betterlite_redis::redis_connection_settings::error::RedisSettingsError::MissingTarget
+                // litellm's _coerce_redis_kwargs_types catches a bad int() or bool() cast and drops it without a word; betterlite names the setting instead, so no case sends it a value that would exercise this arm.
+                betterlite_redis::redis_connection_settings::error::RedisSettingsError::Environment { .. }
+                | betterlite_redis::redis_connection_settings::error::RedisSettingsError::MissingTarget
                 | betterlite_redis::redis_connection_settings::error::RedisSettingsError::AwsIamRequiresTls
                 | betterlite_redis::redis_connection_settings::error::RedisSettingsError::AwsIamMissingSettings { .. } => {
                     "ValueError"

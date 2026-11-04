@@ -1,0 +1,1 @@
+{"kind":"helper","name":"word-number-sequence-valid","call":{"b3693":{"function":"spans","pattern":"\\d{11}","keyword":null,"allow_word_numbers":true,"text":"ZERO-oh one TWO three four five six seven eight nine"}},"env":{},"compare":{"ignore":[]}}

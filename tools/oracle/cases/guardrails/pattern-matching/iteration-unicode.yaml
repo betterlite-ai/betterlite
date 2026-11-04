@@ -1,0 +1,1 @@
+{"kind":"helper","name":"iteration-unicode","call":{"b3693":{"function":"add","patterns":[{"pattern_type":"regex","pattern":".*?","action":"MASK"}],"text":"\u00e9\u4e2d"}},"env":{},"compare":{"ignore":[]}}

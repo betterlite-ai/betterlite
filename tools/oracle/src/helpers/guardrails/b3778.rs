@@ -214,7 +214,8 @@ fn configure(
             | ConfigError::Unsupported { .. }
             | ConfigError::InvalidFloat { .. }
             | ConfigError::InvalidInteger { .. }
-            | ConfigError::InvalidScalar { .. } => "ConfigError",
+            | ConfigError::InvalidScalar { .. }
+            | ConfigError::Environment { .. } => "ConfigError",
         };
         failure(class, None, error.to_string())
     })?;

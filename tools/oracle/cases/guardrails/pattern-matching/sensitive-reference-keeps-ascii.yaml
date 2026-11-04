@@ -1,0 +1,1 @@
+{"kind":"helper","name":"sensitive-reference-keeps-ascii","call":{"b3693":{"function":"add","patterns":[{"pattern_type":"regex","pattern":"(?a:(\u00e9)\\1)(?-i:\\1)","action":"MASK"}],"text":"\u00e9\u00c9\u00e9"}},"env":{},"compare":{"ignore":[]}}

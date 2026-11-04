@@ -834,14 +834,20 @@ dependencies = [
  "betterlite-server",
  "chrono",
  "clap",
+ "fancy-regex",
  "rand 0.10.3",
  "rstest",
  "serde",
+ "serde-saphyr",
  "serde_json",
  "sha2 0.11.1",
+ "strfmt",
+ "tempfile",
+ "thiserror",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "unicode-general-category",
  "uuid",
  "whoami",
 ]
@@ -978,6 +984,7 @@ dependencies = [
  "apple-native-keyring-store",
  "base64 0.23.1",
  "betterlite-config",
+ "betterlite-env",
  "dbus-secret-service-keyring-store",
  "httparse",
  "keyring-core",
@@ -1010,10 +1017,10 @@ dependencies = [
  "aws-sigv4",
  "aws-smithy-runtime-api",
  "betterlite-auth",
+ "betterlite-env",
  "betterlite-models",
  "betterlite-rate-limit",
  "betterlite-secrets",
- "dec_from_char",
  "fancy-regex",
  "indexmap 2.14.2",
  "insta",
@@ -1091,6 +1098,7 @@ dependencies = [
 name = "betterlite-db"
 version = "0.1.0"
 dependencies = [
+ "betterlite-env",
  "betterlite-postgres-fixture",
  "betterlite-roi",
  "betterlite-secrets",
@@ -1114,7 +1122,6 @@ dependencies = [
  "tokio-postgres",
  "tracing",
  "tracing-subscriber",
- "unicode-general-category",
  "unicode-normalization",
  "uuid",
 ]
@@ -1135,6 +1142,14 @@ dependencies = [
  "tokio",
  "typed-path",
  "uuid",
+]
+
+[[package]]
+name = "betterlite-env"
+version = "0.1.0"
+dependencies = [
+ "rstest",
+ "thiserror",
 ]
 
 [[package]]
@@ -1268,6 +1283,7 @@ name = "betterlite-logging"
 version = "0.1.0"
 dependencies = [
  "betterlite-config",
+ "betterlite-env",
  "betterlite-models",
  "betterlite-prometheus",
  "betterlite-redact",
@@ -1410,6 +1426,7 @@ dependencies = [
  "aws-credential-types",
  "axum",
  "base64 0.23.1",
+ "betterlite",
  "betterlite-anthropic",
  "betterlite-auth",
  "betterlite-azure",
@@ -1419,6 +1436,7 @@ dependencies = [
  "betterlite-core",
  "betterlite-cost",
  "betterlite-db",
+ "betterlite-env",
  "betterlite-error",
  "betterlite-guardrails",
  "betterlite-harness",
@@ -1562,6 +1580,7 @@ dependencies = [
 name = "betterlite-redact"
 version = "0.1.0"
 dependencies = [
+ "betterlite-env",
  "regex",
  "rstest",
  "serde",
@@ -1573,6 +1592,7 @@ dependencies = [
 name = "betterlite-redis"
 version = "0.1.0"
 dependencies = [
+ "betterlite-env",
  "betterlite-redact",
  "prometheus-client",
  "py_literal",
@@ -1668,6 +1688,7 @@ dependencies = [
  "betterlite-billing",
  "betterlite-config",
  "betterlite-db",
+ "betterlite-env",
  "betterlite-error",
  "betterlite-http",
  "betterlite-models",
@@ -2363,27 +2384,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "csv"
-version = "1.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52cd9d68cf7efc6ddfaaee42e7288d3a99d613d4b50f76ce9827ae0c6e14f938"
-dependencies = [
- "csv-core",
- "itoa",
- "ryu",
- "serde_core",
-]
-
-[[package]]
-name = "csv-core"
-version = "0.1.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "704a3c26996a80471189265814dbc2c257598b96b8a7feae2d31ace646bb9782"
-dependencies = [
- "memchr",
-]
-
-[[package]]
 name = "ctr"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2512,26 +2512,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2657f61fb1dd8bf37a8d51093cc7cee4e77125b22f7753f49b289f831bec2bae"
 dependencies = [
  "tokio",
-]
-
-[[package]]
-name = "dec_from_char"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "729c53dce1cd783626d143649ad07cf92a34b5f1a0a166d9414c14c7e9a7a382"
-dependencies = [
- "dec_from_char_gen",
-]
-
-[[package]]
-name = "dec_from_char_gen"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3463fe2669207f76579e034bab3be0a26b7e21e3a92b59f0939bdc8c101d277"
-dependencies = [
- "csv",
- "quote",
- "serde",
 ]
 
 [[package]]
@@ -5827,6 +5807,12 @@ checksum = "bf6cc3b19bfb128a8ad11026086e31d3ce9ad23f8ea37354b31383a187c44cf3"
 dependencies = [
  "fallible-streaming-iterator",
 ]
+
+[[package]]
+name = "strfmt"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "046d549b88a663d317cd04d39696fca5f77db4db44e1db65bfb9dee7f9e680bd"
 
 [[package]]
 name = "stringprep"

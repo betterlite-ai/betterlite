@@ -1,0 +1,1 @@
+{"kind":"helper","name":"flags-unicode","call":{"b3693":{"function":"add","patterns":[{"pattern_type":"regex","pattern":"(?ui)secret","action":"MASK"}],"text":"SECRET"}},"env":{},"compare":{"ignore":[]}}

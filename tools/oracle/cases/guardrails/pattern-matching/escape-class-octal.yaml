@@ -1,0 +1,1 @@
+{"kind":"helper","name":"escape-class-octal","call":{"b3693":{"function":"add","patterns":[{"pattern_type":"regex","pattern":"[\\141]","action":"MASK"}],"text":"A"}},"env":{},"compare":{"ignore":[]}}

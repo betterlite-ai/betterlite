@@ -1,0 +1,1 @@
+{"kind":"helper","name":"mixed-unicode-class","call":{"b3693":{"function":"add","patterns":[{"pattern_type":"regex","pattern":"(?a:(a)\\1)[\u00e9]","action":"MASK"}],"text":"aa\u00c9"}},"env":{},"compare":{"ignore":[]}}

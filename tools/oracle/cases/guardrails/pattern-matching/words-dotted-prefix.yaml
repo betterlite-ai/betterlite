@@ -1,0 +1,1 @@
+{"kind":"helper","name":"words-dotted-prefix","call":{"b3693":{"function":"add","patterns":[{"pattern_type":"prebuilt","pattern_name":"nl_bsn_contextual","action":"MASK"}],"text":"BSN \u0130one two three four five six seven eight nine"}},"env":{},"compare":{"ignore":[]}}

@@ -1,4 +1,5 @@
 use betterlite_config::loader::EnvironmentLookup;
+use betterlite_env::EnvError;
 use serde::Deserialize;
 use unicode_properties::{GeneralCategoryGroup, UnicodeGeneralCategory as _};
 
@@ -16,12 +17,14 @@ pub struct Environment {
 }
 
 impl Environment {
-    pub fn from_lookup(lookup: &dyn EnvironmentLookup) -> Self {
+    pub fn from_lookup(lookup: &dyn EnvironmentLookup) -> Result<Self, EnvError> {
         let text =
             |name: &str, default: &str| lookup.lookup(name).unwrap_or_else(|| default.to_owned());
-        // LiteLLM's str_to_bool takes only "true", so "1" or "yes" leave the flag off
-        let flag = |name: &str| text(name, "").trim().eq_ignore_ascii_case("true");
-        Self {
+        let use_tracer =
+            betterlite_env::flag("USE_DDTRACE", &text("USE_DDTRACE", ""))?.unwrap_or(false);
+        let use_profiler =
+            betterlite_env::flag("USE_DDPROFILER", &text("USE_DDPROFILER", ""))?.unwrap_or(false);
+        Ok(Self {
             source: text("DD_SOURCE", "litellm"),
             service: text("DD_SERVICE", "litellm-server"),
             hostname: text("HOSTNAME", ""),
@@ -29,9 +32,9 @@ impl Environment {
             pod_name: text("POD_NAME", "unknown"),
             version: text("DD_VERSION", "unknown"),
             base_url: lookup.lookup("DD_BASE_URL"),
-            use_tracer: flag("USE_DDTRACE"),
-            use_profiler: flag("USE_DDPROFILER"),
-        }
+            use_tracer,
+            use_profiler,
+        })
     }
 }
 
