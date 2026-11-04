@@ -42,6 +42,11 @@ Ok(
             fallbacks: [],
         },
         litellm_settings: LiteLlmSettings {
+            ssl_verify: None,
+            ssl_certificate: None,
+            http2: None,
+            ssl_ecdh_curve: None,
+            ssl_security_level: None,
             num_retries: None,
             request_timeout: None,
             drop_params: None,
