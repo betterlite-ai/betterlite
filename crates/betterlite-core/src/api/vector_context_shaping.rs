@@ -59,7 +59,6 @@ fn proxy_client_body(
 pub fn extract_query_from_messages(messages: &[ChatMessage]) -> Option<String> {
     match messages.last()?.content.as_ref()? {
         MessageContent::Text(text) => Some(text.clone()),
-        MessageContent::Parts(parts) if parts.is_empty() => None,
         MessageContent::Parts(parts) => parts.iter().find_map(first_text_part),
     }
 }
