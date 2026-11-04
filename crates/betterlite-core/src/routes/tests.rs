@@ -54,6 +54,22 @@ fn call_route_metadata_route_metadata_tests_behavior(#[case] behavior: &str) {
                 CallType::VideoCreateCharacter
             ]),
         ),
+        "chat_tools_exact" => assert_eq!(
+            get_call_types_for_route("/chat/completions").unwrap(),
+            Some(vec![CallType::Acompletion, CallType::Completion]),
+        ),
+        "chat_tools_versioned" => assert_eq!(
+            get_call_types_for_route("/v1/chat/completions").unwrap(),
+            Some(vec![CallType::Acompletion, CallType::Completion]),
+        ),
+        "chat_tools_engine" => assert_eq!(
+            get_call_types_for_route("/engines/gpt/chat/completions").unwrap(),
+            Some(vec![CallType::Acompletion, CallType::Completion]),
+        ),
+        "chat_tools_deployment" => assert_eq!(
+            get_call_types_for_route("/openai/deployments/deploy/chat/completions").unwrap(),
+            Some(vec![CallType::Acompletion, CallType::Completion]),
+        ),
         "placeholder" => assert!(
             get_call_types_for_route("/v1/threads/thread-1")
                 .unwrap()
