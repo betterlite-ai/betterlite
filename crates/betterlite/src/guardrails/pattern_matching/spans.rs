@@ -122,7 +122,9 @@ fn word_spans(regex: &Regex, text: &str) -> Result<Vec<Range<usize>>, PatternErr
     let sequences = python_regex::compile(&format!(
         "(?i)(?<![A-Za-z])(?:{NUMBER_WORDS})(?:[\\s\\-]+(?:{NUMBER_WORDS}))+(?![A-Za-z])"
     ))?;
-    let full = Regex::new(&format!("(?:{})\\z", regex.as_str()))?;
+    let full = python_regex::builder(regex)
+        .pattern(format!("(?:{})\\z", regex.as_str()))
+        .build()?;
     for matched in sequences.find_iter(text) {
         let found = matched?;
         let Some(digits) = convert_word_numbers(found.as_str())? else {

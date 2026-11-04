@@ -12,11 +12,12 @@ pub(super) fn translate(
     let negated = characters.next_if_eq(&'^').is_some();
     let mut literals = String::new();
     let mut alternatives = Vec::new();
-    let mut wide = negated;
+    let mut wide = negated || (flags.alphabet == Alphabet::Unicode && flags.case_insensitive);
     if characters.next_if_eq(&']').is_some() {
         literals.push_str(r"\]");
     }
     while let Some(character) = characters.next() {
+        wide |= !character.is_ascii();
         if character == ']' {
             return finish(literals, alternatives, flags, negated).map(|value| (value, wide));
         }
@@ -62,7 +63,7 @@ fn escaped(
     match character {
         'w' | 'W' | 's' | 'S' | 'd' | 'D' => {
             alternatives.push(flags.category(character));
-            return Ok(flags.alphabet == Alphabet::Unicode);
+            return Ok(flags.alphabet == Alphabet::Unicode || character.is_uppercase());
         }
         'b' => literals.push_str(r"\x08"),
         'A' | 'B' | 'Z' => return Err(Error::ParseError(0, ParseError::InvalidClass)),
@@ -70,10 +71,10 @@ fn escaped(
             if let Some(value) = escapes::literal(other, characters, true)? {
                 let encoded = format!(r"\x{{{:x}}}", u32::from(value));
                 literals.push_str(&encoded);
-            } else {
-                literals.push('\\');
-                literals.push(other);
+                return Ok(!value.is_ascii());
             }
+            literals.push('\\');
+            literals.push(other);
         }
     }
     Ok(false)

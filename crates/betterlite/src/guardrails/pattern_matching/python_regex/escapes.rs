@@ -49,11 +49,16 @@ pub(super) fn translate(
         .next()
         .ok_or(Error::ParseError(0, ParseError::TrailingBackslash))?;
     if let Some(value) = literal(character, characters, false)? {
-        return Ok((flags.literal(value), false, false));
+        let wide = flags.alphabet == Alphabet::Unicode && flags.case_insensitive;
+        return Ok((flags.literal(value), wide, false));
     }
     let wide = flags.alphabet == Alphabet::Unicode;
     Ok(match character {
-        'w' | 'W' | 's' | 'S' | 'd' | 'D' => (flags.category(character), wide, false),
+        'w' | 'W' | 's' | 'S' | 'd' | 'D' => (
+            flags.category(character),
+            wide || character.is_uppercase(),
+            false,
+        ),
         'b' | 'B' => {
             let word = flags.category('w');
             let boundary = format!("(?:(?<={word})(?!{word})|(?<!{word})(?={word}))");
@@ -70,7 +75,7 @@ pub(super) fn translate(
             if let Some(digit) = characters.next_if(char::is_ascii_digit) {
                 reference.push(digit);
             }
-            (reference, false, flags.alphabet == Alphabet::Ascii)
+            (reference, wide && flags.case_insensitive, !wide)
         }
         other => (format!(r"\{other}"), false, false),
     })

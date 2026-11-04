@@ -7,6 +7,69 @@ use super::{ContentFilterAction, ContentFilterPattern, compile};
 use rstest::rstest;
 
 #[rstest]
+#[case::mixed_ascii_class("regex", r"(?a:(a)\1)[k]", "aa\u{212a}", true)]
+#[case::sensitive_narrow_class("regex", "(?a:(\u{e9})\\1)(?-i:[a])", "\u{e9}\u{c9}a", false)]
+#[case::ascii_narrow_class("regex", "(?a:(\u{e9})\\1[a])", "\u{e9}\u{c9}a", false)]
+#[case::ascii_wide_literal_class("regex", "(?a:[\u{e9}](a)\\1)", "\u{e9}aa", true)]
+#[case::ascii_wide_escaped_class("regex", r"(?a:[\u00e9](a)\1)", "\u{e9}aa", true)]
+#[case::sensitive_class_matches("regex", "(?a:(a)\\1)(?-i:[\u{e9}])", "aa\u{e9}", true)]
+#[case::sensitive_literal_keeps_ascii(
+    "regex",
+    "(?a:(\u{e9})\\1)(?-i:\u{e9})",
+    "\u{e9}\u{c9}\u{e9}",
+    false
+)]
+#[case::sensitive_escape_keeps_ascii(
+    "regex",
+    "(?a:(\u{e9})\\1)(?-i:\\u00e9)",
+    "\u{e9}\u{c9}\u{e9}",
+    false
+)]
+#[case::sensitive_wide_class("regex", "(?a:(a)\\1)(?-i:[\u{e9}])", "aa\u{c9}", false)]
+#[case::sensitive_reference_keeps_ascii(
+    "regex",
+    "(?a:(\u{e9})\\1)(?-i:\\1)",
+    "\u{e9}\u{c9}\u{e9}",
+    false
+)]
+#[case::sensitive_named_keeps_ascii(
+    "regex",
+    "(?a:(?P<x>\u{e9})(?P=x))(?-i:(?P=x))",
+    "\u{e9}\u{c9}\u{e9}",
+    false
+)]
+#[case::alphabet_keeps_case_off("regex", "(?-i:(?a:a))", "A", false)]
+#[case::mixed_literal_after("regex", "(?a:(a)\\1)\u{e9}", "aa\u{c9}", true)]
+#[case::mixed_literal_before("regex", "\u{e9}(?a:(a)\\1)", "\u{c9}aa", true)]
+#[case::mixed_ascii_literal("regex", r"(?a:(a)\1)k", "aa\u{212a}", true)]
+#[case::mixed_escaped_literal("regex", r"(?a:(a)\1)\u00e9", "aa\u{c9}", true)]
+#[case::mixed_unicode_class("regex", "(?a:(a)\\1)[\u{e9}]", "aa\u{c9}", true)]
+#[case::mixed_escaped_class("regex", r"(?a:(a)\1)[\u00e9]", "aa\u{c9}", true)]
+#[case::mixed_unicode_reference("regex", "(?a:(a)\\1)(?u:(\u{e9})\\2)", "aa\u{e9}\u{c9}", true)]
+#[case::mixed_inherited_reference("regex", "(?a:(a)\\1)(\u{e9})\\2", "aa\u{e9}\u{c9}", true)]
+#[case::mixed_reference_to_ascii("regex", "(?a:(\u{e9})\\1)\\1", "\u{e9}\u{e9}\u{c9}", true)]
+#[case::mixed_named_reference(
+    "regex",
+    "(?a:(?P<x>\u{e9})(?P=x))(?u:(?P=x))",
+    "\u{e9}\u{e9}\u{c9}",
+    true
+)]
+#[case::mixed_sensitive_literal("regex", "(?a:(a)\\1)(?-i:\u{e9})", "aa\u{c9}", false)]
+#[case::mixed_sensitive_reference(
+    "regex",
+    "(?a:(\u{e9})\\1)(?-i:\\1)",
+    "\u{e9}\u{e9}\u{c9}",
+    false
+)]
+#[case::ascii_reference_nonword("regex", r"(?a:(a)\1\W)", "aa\u{e9}", true)]
+#[case::ascii_reference_nondigit("regex", r"(?a:(a)\1\D)", "aa\u{e9}", true)]
+#[case::ascii_reference_nonspace("regex", r"(?a:(a)\1\S)", "aa\u{e9}", true)]
+#[case::ascii_reference_class_nonword("regex", r"(?a:(a)\1[\W])", "aa\u{e9}", true)]
+#[case::ascii_reference_class_nondigit("regex", r"(?a:(a)\1[\D])", "aa\u{e9}", true)]
+#[case::ascii_reference_class_nonspace("regex", r"(?a:(a)\1[\S])", "aa\u{e9}", true)]
+#[case::ascii_nonword_excludes_word("regex", r"(?a:(a)\1\W)", "aa_", false)]
+#[case::ascii_nondigit_excludes_digit("regex", r"(?a:(a)\1[\D])", "aa1", false)]
+#[case::ascii_nonspace_excludes_space("regex", r"(?a:(a)\1\S)", "aa ", false)]
 #[case::ascii_global("regex", r"(?a)\w", "\u{e9}", false)]
 #[case::ascii_boundary("regex", r"(?a:a\b)", "a\u{e9}", true)]
 #[case::ascii_nonboundary("regex", r"(?a:a\B)", "a\u{e9}", false)]

@@ -6,6 +6,9 @@ use super::{ContentFilterAction, ContentFilterPattern, compile, rstest};
 use crate::guardrails::pattern_matching::masking::mask_spans;
 
 #[rstest]
+#[case::ascii_empty_reference(r"(?a:(a*)\1)", "", vec![0..0], "[X]")]
+#[case::ascii_lazy_reference(r"(?a:(a*?)\1)", "aa", vec![0..2], "[X]")]
+#[case::ascii_unicode_advance(r"(?a:(a*)\1)", "\u{e9}", vec![0..0, 2..2], "[X]\u{e9}[X]")]
 #[case::lazy_dot(".*?", "ab", vec![0..2], "[X]")]
 #[case::lazy_unicode(".*?", "\u{e9}\u{4e2d}", vec![0..5], "[X]")]
 #[case::empty_only("(?=a)", "ab", vec![0..0], "[X]ab")]
@@ -52,3 +55,6 @@ fn retry_propagates_unsupported_compile_errors(#[case] source: &str, #[case] tex
          Variable length lookbehinds with fancy features"
     );
 }
+
+#[path = "word_mode/tests.rs"]
+mod word_mode;

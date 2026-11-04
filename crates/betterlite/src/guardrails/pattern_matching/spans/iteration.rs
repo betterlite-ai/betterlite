@@ -1,8 +1,8 @@
 use std::ops::Range;
 
-use fancy_regex::{CompileError, Error, Regex, RegexBuilder, RegexInput};
+use fancy_regex::{CompileError, Error, Regex, RegexInput};
 
-use super::PatternError;
+use super::{PatternError, python_regex};
 
 pub(super) fn matches(regex: &Regex, text: &str) -> Result<Vec<Range<usize>>, PatternError> {
     let mut spans = Vec::new();
@@ -19,11 +19,8 @@ pub(super) fn matches(regex: &Regex, text: &str) -> Result<Vec<Range<usize>>, Pa
             continue;
         }
         // Python retries at the same position with empty matches forbidden before advancing.
-        let retry = consuming.get_or_insert_with(|| {
-            RegexBuilder::new(regex.as_str())
-                .find_not_empty(true)
-                .build()
-        });
+        let retry = consuming
+            .get_or_insert_with(|| python_regex::builder(regex).find_not_empty(true).build());
         let nonempty = match retry {
             Ok(compiled) => {
                 compiled.find_input(RegexInput::new(text).from_pos(position).anchored(true))?
