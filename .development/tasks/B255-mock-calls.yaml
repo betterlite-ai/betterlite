@@ -26,9 +26,22 @@ scope:
   - tools/oracle/helpers/mock_calls/**
   - tools/oracle/cases/helpers/mock-calls/**
   - "tools/oracle/fuzz/corpus/helper_case/mock_calls-*"
-  - crates/betterlite-config/**
-  - crates/betterlite-openai/**
-  - crates/betterlite-server/**
+  - crates/betterlite-config/src/sections/mock_response.rs
+  - crates/betterlite-config/src/sections/mock_response/**
+  - "crates/betterlite-config/fuzz/corpus/config_yaml/mock-response-*"
+  - crates/betterlite-openai/src/chat.rs
+  - crates/betterlite-openai/src/chat/tests.rs
+  - crates/betterlite-openai/src/chat/execution.rs
+  - crates/betterlite-openai/src/chat/execution/tests.rs
+  - crates/betterlite-openai/src/embedding.rs
+  - crates/betterlite-openai/src/embedding/tests.rs
+  - crates/betterlite-server/src/routes/chat.rs
+  - crates/betterlite-server/src/routes/chat/tests.rs
+  - crates/betterlite-server/src/routes/chat/streaming.rs
+  - crates/betterlite-server/src/routes/chat/streaming/tests.rs
+  - crates/betterlite-server/src/routes/embeddings.rs
+  - crates/betterlite-server/src/routes/embeddings/tests.rs
+  - crates/betterlite-server/src/server/chat_setup.rs
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L774-L1057
@@ -113,6 +126,15 @@ pitfalls:
 - >-
   Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
   wording reason.
+- >-
+  The operator setting is a new Section at crates/betterlite-config/src/sections/mock_response.rs, read as
+  config.sections.mock_response and wired into ChatExecutor inside crates/betterlite-server/src/server/chat_setup.rs,
+  the way chat_executor already reads config.sections.resource_sdk_settings. The client-facing fields are new typed
+  fields on ChatRequest in crates/betterlite-openai/src/chat.rs and on EmbeddingRequest in crates/betterlite-openai/src/embedding.rs,
+  removed from each request's unsupported/passthrough handling. The permission input and the no-upstream-HTTP rule
+  belong in ChatExecutor::send in crates/betterlite-openai/src/chat/execution.rs, stream_chat in crates/betterlite-server/src/routes/chat/streaming.rs
+  and embedding::send in crates/betterlite-openai/src/embedding.rs, not in betterlite-core/src/mock.rs. That module only
+  builds the mocked content.
 review_level: standard
 budget:
   max_changed_lines: 1500

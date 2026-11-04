@@ -87,13 +87,13 @@ checks:
   commands:
     - id: policy-normalization-tests
       why: Policy normalization from raw litellm_params values must handle empty, None, and sentinel values correctly
-      run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^auto_router_compression_policy::test_normalization/)'
+      run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^auto_router_compression::(.*::)?auto_router_compression_policy::test_normalization/)'
     - id: is-same-tests
       why: is_same property must return true when routing and model match (including both None)
-      run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^auto_router_compression_policy::test_is_same/)'
+      run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^auto_router_compression::(.*::)?auto_router_compression_policy::test_is_same/)'
     - id: policy-resolution-tests
       why: Policy resolution must prioritize tag-matched deployments over untagged and stop at the first policy found
-      run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^auto_router_compression_policy::test_policy_for_model/)'
+      run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^auto_router_compression::(.*::)?auto_router_compression_policy::test_policy_for_model/)'
     - id: guardrail-detection-tests
       why: Guardrail type detection must identify compression guardrail instances by provider name from the registry
       run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^auto_router_compression::test_guardrail_detection/)'

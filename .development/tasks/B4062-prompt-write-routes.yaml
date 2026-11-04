@@ -153,7 +153,7 @@ checks:
       run: grep -q "message.*deleted\|successfully" crates/betterlite-server/src/routes/prompts/write.rs
     - id: oracle-cases-prompts-write
       why: "the oracle cases for these routes fail, are missing, or booted-proxy tests fail"
-      run: test -d tools/oracle/cases/prompts/write && test "$(find tools/oracle/cases/prompts/write -name '*.yaml' | wc -l)" -ge 8 && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^oracle::prompts::write::/)'
+      run: test -d tools/oracle/cases/prompts/write && test "$(find tools/oracle/cases/prompts/write -name '*.yaml' | wc -l)" -ge 8 && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::server::b4062::(.*::)?oracle::prompts::write::/)'
 pitfalls:
   - "POST and PUT both allocate next version but only PUT strips the version suffix from the incoming prompt_id; POST accepts it without stripping."
   - "PATCH defaults environment to development via prompt_environment_or_default, but PUT uses the request's environment or defaults the same way; the same function should be used."

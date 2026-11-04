@@ -132,25 +132,25 @@ checks:
       run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^gateway_requests::/)'
     - id: counts-tests
       why: GatewayRequestCounts.plus() does not correctly increment based on success status.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^gateway_request_counts::/)'
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^(gateway_request_tracking|gateway_requests)::(.*::)?gateway_request_counts::/)'
     - id: accumulator-tests
       why: GatewayRequestAccumulator record, drain or restore methods do not work correctly.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^gateway_request_accumulator::/)'
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^(gateway_request_tracking|gateway_requests)::(.*::)?gateway_request_accumulator::/)'
     - id: fold-tests
       why: fold_counts does not correctly sum counts key-wise.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^fold_gateway_counts::/)'
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^(gateway_request_tracking|gateway_requests)::(.*::)?fold_gateway_counts::/)'
     - id: upsert-tests
       why: build_gateway_requests_upsert generates incorrect SQL, wrong row order, or bad placeholders.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^gateway_requests_upsert::/)'
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^(gateway_request_tracking|gateway_requests)::(.*::)?gateway_requests_upsert::/)'
     - id: db-tests
       why: commit_gateway_requests_to_db does not execute the upsert or fails on empty snapshot.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^commit_gateway_requests::/)'
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^(gateway_request_tracking|gateway_requests)::(.*::)?commit_gateway_requests::/)'
     - id: redis-tests
       why: GatewayRequestRedisBuffer push, pop, or commit_if_leader do not work or handle failures correctly.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^gateway_request_redis::/)'
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^(gateway_request_tracking|gateway_requests)::(.*::)?gateway_request_redis::/)'
     - id: flush-tests
       why: flush_gateway_requests does not drain, restore on failure, or handle None buffer correctly.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^flush_gateway_requests::/)'
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^(gateway_request_tracking|gateway_requests)::(.*::)?flush_gateway_requests::/)'
     - id: endpoint-auth
       why: GET /gateway/daily/activity does not enforce admin roles or returns wrong status code.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^management::gateway_request_activity::.*auth/)'

@@ -89,55 +89,55 @@ checks:
   commands:
     - id: error-types
       why: PolicyValidationErrorType enum does not exist or is missing variants
-      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^policy_validation::(error_types|validation_error_type)/)'
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^validation::(.*::)?policy_validation::(error_types|validation_error_type)/)'
     - id: error-records
       why: PolicyValidationError record tests fail or are missing
-      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^policy_validation::(error_record|validation_error_response)/)'
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^validation::(.*::)?policy_validation::(error_record|validation_error_response)/)'
     - id: response-records
       why: PolicyValidationResponse record tests fail or are missing
-      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^policy_validation::response_records/)'
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^validation::(.*::)?policy_validation::response_records/)'
     - id: validator-init
       why: PolicyValidator initialization tests fail or are missing
-      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^policy_validation::validator_init/)'
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^validation::(.*::)?policy_validation::validator_init/)'
     - id: guardrail-lookup
       why: get_available_guardrails tests fail or are missing
-      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^policy_validation::(guardrail_lookup|guardrail_registry|empty_registry)/)'
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^validation::(.*::)?policy_validation::(guardrail_lookup|guardrail_registry|empty_registry)/)'
     - id: team-alias-checks
       why: check_team_alias_exists tests fail or are missing
-      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^policy_validation::team_alias/)'
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^validation::(.*::)?policy_validation::team_alias/)'
     - id: key-alias-checks
       why: check_key_alias_exists tests fail or are missing
-      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^policy_validation::key_alias/)'
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^validation::(.*::)?policy_validation::key_alias/)'
     - id: model-checks
       why: check_model_exists tests fail or are missing
-      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^policy_validation::model_exists/)'
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^validation::(.*::)?policy_validation::model_exists/)'
     - id: scope-validation
       why: find_invalid_scope_entries tests fail or are missing
-      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^policy_validation::scope_validation/)'
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^validation::(.*::)?policy_validation::scope_validation/)'
     - id: scope-pattern-detection
       why: wildcard pattern detection tests fail or are missing
-      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^policy_validation::(pattern|wildcard)/)'
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^validation::(.*::)?policy_validation::(pattern|wildcard)/)'
     - id: inheritance-validation
       why: inheritance chain validation tests fail or are missing
-      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^policy_validation::inheritance/)'
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^validation::(.*::)?policy_validation::inheritance/)'
     - id: policy-guardrail-validation
       why: policy guardrail validation tests fail or are missing
-      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^policy_validation::policy_guardrails/)'
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^validation::(.*::)?policy_validation::policy_guardrails/)'
     - id: policy-guardrail-warning
       why: guardrail remove-list warning tests fail or are missing
-      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^policy_validation::(guardrail_remove|guardrail_warning)/)'
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^validation::(.*::)?policy_validation::(guardrail_remove|guardrail_warning)/)'
     - id: policy-validation-structure
       why: validate_policies does not follow expected structure or tests are missing
-      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^policy_validation::validate_policies/)'
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^validation::(.*::)?policy_validation::validate_policies/)'
     - id: pipeline-validation
       why: pipeline step validation tests fail or are missing
-      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^policy_validation::pipeline/)'
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^validation::(.*::)?policy_validation::pipeline/)'
     - id: config-parsing
       why: config parsing tests fail or are missing
-      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^policy_validation::config_parse/)'
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^validation::(.*::)?policy_validation::config_parse/)'
     - id: config-parse-error-handling
       why: config parse error handling tests fail or are missing
-      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^policy_validation::parse_error/)'
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^validation::(.*::)?policy_validation::parse_error/)'
 oracle_cases: []
 deviations:
   - what: "Registry lookup failures (missing guardrail handler, unexpected exception) return an empty set and log a warning instead of surfacing an error."

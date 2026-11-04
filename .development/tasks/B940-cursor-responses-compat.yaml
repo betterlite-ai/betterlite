@@ -85,8 +85,6 @@ scope:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/cursor_responses_compat.rs
   - crates/betterlite-core/src/api/cursor_responses_compat/**
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - tools/oracle/cases/api/cursor-responses-compat/**

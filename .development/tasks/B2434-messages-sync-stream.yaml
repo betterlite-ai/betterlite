@@ -15,8 +15,6 @@ description: >-
   api::messages_sync_stream. B977 remains the original entry and depends on this split.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/messages_sync_stream.rs
   - crates/betterlite-core/src/api/messages_sync_stream/**
   - tools/oracle/src/sdk_http.rs

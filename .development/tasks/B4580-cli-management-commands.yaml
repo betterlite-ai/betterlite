@@ -14,11 +14,24 @@ description: >-
   "Unlimited" only when it is null or absent; an explicit number, 0 included, shows as given. Optional
   user-field omission: create_user omits user_alias and teams from the request when not supplied; delete_user
   takes multiple user_ids as arguments. Every command takes its own flags and arguments and loads base_url/api_key
-  from B4560's cli_context_values. tools/management-cli/src/commands.rs, the parent module, builds the one
-  shared client every command in this crate sends requests through: reqwest 0.13.5 (already in Cargo.lock
-  through betterlite-http), default features off, rustls, async on a current-thread tokio runtime, connect_timeout
-  and read_timeout of 30 seconds each, the base URL with its trailing slashes stripped, and Authorization:
-  Bearer {api_key} added when a key is given. commands.rs also holds the shared HTTP error printing, "Error:
+  from B4560's cli_context_values. crates/betterlite-cli/src/commands.rs, the parent module, builds the one
+  shared client every command in this crate sends requests through: betterlite-http's ProxiedClient, built
+  with ProxiedClient::outbound from ProxyPolicy::resolve(&ProxyTrust::default(), environment) so the *_PROXY
+  and NO_PROXY variables route it the way they route requests in LiteLLM, run on a current-thread tokio
+  runtime. Each request is built with client.client.request(http::Method, url), given a 30-second timeout and
+  Authorization: Bearer {api_key} only when a key is given, sent with ProxiedClient::execute, and read with
+  StreamResponse::buffered under a 64 MiB body cap. The base URL loses its trailing slashes first.
+  The shared client also implements B4573's pkce_login::Http, the blocking transport that the PKCE login,
+  logout's revocation and SSO polling take, so B134 hands this one client to every command: get and post
+  block on the runtime, timeout_seconds becomes the request's timeout, HttpBody::Json goes out as its bytes
+  with Content-Type: application/json, HttpBody::Form as url::form_urlencoded pairs with Content-Type:
+  application/x-www-form-urlencoded, and follow_redirects false sends through a second ProxiedClient built
+  without redirects, so a 3xx comes back as the HttpResponse instead of being followed. betterlite-http has
+  no such constructor yet: add ProxiedClient::outbound_without_redirects to
+  crates/betterlite-http/src/proxy.rs, the outbound builder plus reqwest's redirect::Policy::none(). A
+  transport failure becomes a new PkceFailure::Transport variant in pkce_login/models.rs that carries
+  betterlite-http's HttpError as its source.
+  commands.rs also holds the shared HTTP error printing, "Error:
   HTTP {status}" to stderr then the body as JSON when it parses or the raw text when it doesn't, that
   credentials create/delete and teams list/available/assign_key call. Each command module builds its own
   request (path, query, JSON body) on top of that client; B4579 and B4578 reuse this same client instead of
@@ -27,13 +40,15 @@ description: >-
 
 scope:
   paths:
-    - tools/management-cli/Cargo.toml
+    - crates/betterlite-cli/Cargo.toml
     - Cargo.lock
-    - tools/management-cli/src/commands.rs
-    - tools/management-cli/src/commands/credentials.rs
-    - tools/management-cli/src/commands/users.rs
-    - tools/management-cli/src/commands/teams.rs
-    - tools/management-cli/src/commands/model_groups.rs
+    - crates/betterlite-cli/src/commands.rs
+    - crates/betterlite-cli/src/commands/credentials.rs
+    - crates/betterlite-cli/src/commands/users.rs
+    - crates/betterlite-cli/src/commands/teams.rs
+    - crates/betterlite-cli/src/commands/model_groups.rs
+    - crates/betterlite-cli/src/pkce_login/models.rs
+    - crates/betterlite-http/src/proxy.rs
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/credentials.py#L36-L144
@@ -50,8 +65,10 @@ references:
   why: Teams table formatting with alias, team_id, models, max_budget and role columns.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/http_client.py#L9-L97
   why: HTTPClient's base URL strip, Bearer rule and 30-second timeout, the pattern the shared client in commands.rs follows.
-- url: https://docs.rs/reqwest/0.13.5/reqwest/struct.ClientBuilder.html#method.read_timeout
-  why: The per-read timeout that matches requests' read timeout.
+- url: https://github.com/betterlite-ai/betterlite/blob/a1684ff3e/crates/betterlite-http/src/proxy.rs#L19-L86
+  why: ProxiedClient, its outbound constructor (rustls, 10-second connect timeout, policy-based proxy routing) and execute, the client the shared client in commands.rs wraps.
+- url: https://github.com/betterlite-ai/betterlite/blob/a1684ff3e/crates/betterlite-config/src/proxy.rs#L49-L84
+  why: ProxyPolicy::resolve, which reads the *_PROXY, NO_PROXY and AIOHTTP trust variables from the environment map.
 dod:
 - text: >-
     Credentials list and get call client methods with no error handler; any error there prints one line to
@@ -89,9 +106,14 @@ dod:
   - model-groups-error-handling
 - text: >-
     The shared client in commands.rs builds from cli_context_values (base_url, api_key), strips the base
-    URL's trailing slashes, sends every request over reqwest 0.13.5 (rustls, default features off) on a
-    current-thread tokio runtime with 30-second connect and read timeouts, and adds Authorization: Bearer
-    {api_key} only when a key is given. The shared HTTP error printing prints "Error: HTTP {status}" to
+    URL's trailing slashes, sends every request through betterlite-http's ProxiedClient (built from
+    ProxyPolicy::resolve over the environment) on a current-thread tokio runtime with a 30-second timeout per
+    request and a 64 MiB body cap, and adds Authorization: Bearer {api_key} only when a key is given.
+    crates/betterlite-cli/Cargo.toml gains betterlite-http as a path dependency and never lists reqwest.
+    The shared client implements pkce_login::Http: a JSON body and a form body each go out with their own
+    Content-Type, timeout_seconds bounds the request, and with follow_redirects false a 3xx answer comes
+    back as the HttpResponse while the redirect target sees no request; a transport failure is
+    PkceFailure::Transport with betterlite-http's HttpError as its source. The shared HTTP error printing prints "Error: HTTP {status}" to
     stderr, then the body as JSON when it parses or the raw text when it doesn't.
   proof:
   - shared-client
@@ -101,33 +123,33 @@ checks:
   - id: credentials-error-handling
     why: Credentials commands do not match LiteLLM error behavior (create/delete with error handler, list/get without).
     run: >-
-      cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E
+      cargo nextest run --locked -p betterlite-cli --no-tests=fail -E
       'test(/^commands::credentials::.*tests::(create|delete|list|get)_/)'
   - id: users-error-handling
     why: Users commands do not match LiteLLM behavior (no error handlers in any command).
     run: >-
-      cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E
+      cargo nextest run --locked -p betterlite-cli --no-tests=fail -E
       'test(/^commands::users::.*tests::(list_users|get_user|create_user|delete_user)_/)'
   - id: teams-error-handling
     why: Teams commands do not match LiteLLM error behavior (list and assign_key raise on any error; available
       does not raise on an HTTP error but does raise on any other exception).
     run: >-
-      cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E
+      cargo nextest run --locked -p betterlite-cli --no-tests=fail -E
       'test(/^commands::teams::.*tests::(list|available|assign_key)_error/)'
   - id: teams-behavior
     why: Teams commands do not format table correctly, handle team selection or show model access messages.
     run: >-
-      cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E
+      cargo nextest run --locked -p betterlite-cli --no-tests=fail -E
       'test(/^commands::teams::.*tests::(list|available|assign_key)_behavior/)'
   - id: model-groups-error-handling
     why: Model-groups list command does not match LiteLLM behavior (no error handler) or format table correctly.
     run: >-
-      cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E
+      cargo nextest run --locked -p betterlite-cli --no-tests=fail -E
       'test(/^commands::model_groups::.*tests::list_/)'
   - id: shared-client
-    why: The shared client tests are missing or the base URL, timeouts, Bearer header or HTTP error printing differ from the description.
+    why: The shared client tests are missing or the base URL, proxy routing, timeout, body cap, Bearer header or HTTP error printing differ from the description.
     run: >-
-      cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E
+      cargo nextest run --locked -p betterlite-cli --no-tests=fail -E
       'test(/^commands::.*tests::client_/)'
 oracle_cases: []
 deviations:
@@ -152,6 +174,19 @@ deviations:
     the same crate, so every table in the CLI looks alike. Scripts read --format json where a command has it.
   link: >-
     https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/teams.py#L37-L83
+- what: >-
+    requests applies LiteLLM's timeout=30 to the connect and to each socket read and has no body cap. The
+    shared client connects within ProxiedClient::outbound's 10 seconds, bounds each whole request at 30
+    seconds and stops reading a body past 64 MiB. Proxies come from ProxyPolicy, so only http:// proxy URLs
+    work; an https:// or socks proxy variable fails the request with betterlite-http's unsupported-scheme
+    error instead of being used.
+  why: >-
+    deny.toml lets only betterlite-http, betterlite-oracle and betterlite-guardrails depend on reqwest, so the
+    CLI goes through ProxiedClient and its fixed connect timeout, and the request builder's timeout is the one
+    it can set. Management responses are small JSON bodies a person waits for, so a bound on the whole request
+    and a body cap change nothing for a working proxy.
+  link: >-
+    https://github.com/betterlite-ai/betterlite/blob/a1684ff3e/deny.toml#L74
 out_of_scope:
 - >-
   CredentialsManagementClient, UsersManagementClient, TeamsManagementClient, ModelGroupsManagementClient,
@@ -162,7 +197,10 @@ out_of_scope:
 - >-
   CLI configuration and context loading; owned by B4560.
 - >-
-  The main CLI entry point and command registration; owned by B4585.
+  The rest of betterlite-http (TLS, pool, the gateway's own clients) and the rest of pkce_login; this task
+  adds only the no-redirect constructor and the Transport variant.
+- >-
+  The main CLI entry point and command registration; owned by B134.
 pitfalls:
 - >-
   Credentials list and get have no error handler around client calls, so any error there prints one line to
@@ -188,7 +226,20 @@ pitfalls:
 - >-
   comfy-table pulls unicode-width, and Cargo.lock already holds 0.2.2; pick a comfy-table release that uses
   it so cargo deny sees one version.
+- >-
+  deny.toml bans reqwest as a direct dependency of every crate but betterlite-http, betterlite-oracle and
+  betterlite-guardrails, so crates/betterlite-cli/Cargo.toml never lists it. Build requests through
+  ProxiedClient's pub client field and send them with execute; http::Method and url::Url are the types
+  reqwest re-exports, so the CLI names no reqwest type. Add http 1.x, not 0.2: Cargo.lock holds both and
+  reqwest uses 1.x. betterlite-http builds reqwest without its json, query and form features, so the
+  request builder has no json or query method: write the body with serde_json::to_vec plus a Content-Type
+  header, and add query pairs with url::Url::query_pairs_mut before the URL goes to the builder.
+- >-
+  reqwest sets redirects per client, not per request, so follow_redirects false needs the second client;
+  following a 307 or 308 would re-send the token request's form, authorization code included, to the
+  redirect target. The shared-client tests run against a std TcpListener on 127.0.0.1 inside the test, never
+  an outside host.
 review_level: security
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 1900
   max_new_expects: 0

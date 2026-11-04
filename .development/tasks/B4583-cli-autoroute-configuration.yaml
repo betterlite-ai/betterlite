@@ -1,27 +1,38 @@
 id: B4583
 title: Local autoroute configuration and interactive tier selection
 description: >-
-  Build the autoroute configuration and wizard modules for betterlite-management-cli,
-  enabling users to discover accessible models, assign them to complexity tiers, and
-  configure the ephemeral proxy's model_list. The config module defines data structures
-  (AutorouteConfig, ClassifierChoice, SemanticMatchingChoice), validates that a config
-  references only discovered models, and generates the proxy's model_list with one
-  litellm_proxy/* deployment per model and one auto_router/complexity_router root. The
-  wizard walks an interactive user through model discovery via GET /v1/models, prompts
-  for tier assignments using fuzzy searching, guides optional classifier and semantic-matching
-  setup, and writes the generated config to ~/.litellm/autorouter/config.yaml. Preserve
-  literal "autorouter" routing model name, sorted deployment deduplication, persisted
-  master-key reuse across reconfigures, fuzzy selection UI defaults, and per-tier keyword
-  defaults for semantic rules. Interactive checks enforce terminal attachment and call
-  secure_create to write the YAML file (B4575 dependency).
+  Build the autoroute configuration and wizard modules for betterlite-cli, letting a user
+  discover the chat and embedding models their key can reach, assign models to complexity
+  tiers, and generate the ephemeral proxy's model_list. autoroute::config defines the
+  DiscoveredModel, AutorouteConfig, ClassifierChoice and SemanticMatchingChoice types plus
+  the closed Tier enum (Simple, Medium, Complex, Reasoning), validates that a config
+  references only discovered models through a ConfigError, and builds the generated
+  model_list: one litellm_proxy/* deployment per referenced model, deduplicated and sorted
+  by name, plus one deployment named by the literal string "autorouter". autoroute::wizard
+  defines the ModelDiscoveryClient and Prompter traits the interactive flow runs against,
+  and run_configure_wizard, which discovers models through the injected client, prompts for
+  each tier's models through the injected Prompter (backed by the inquire crate's fuzzy
+  Select and MultiSelect in production, a scripted fake in tests), optionally configures an
+  LLM classifier and semantic keyword matching, and writes the generated document to the
+  path autoroute::paths resolves under a caller-supplied home directory. autoroute::paths
+  exports the four functions (autoroute_dir, config_path, log_path, pid_record_path) that
+  this module and B4584's process lifecycle code both resolve paths through. Preserve the
+  literal "autorouter" model name, the deduplicated and sorted deployment list, reusing a
+  persisted master_key across reconfigures, the per-tier keyword defaults for semantic
+  matching, and match_threshold's 0.5 default, which the wizard never prompts for. The
+  is_interactive flag is an injected parameter, not a direct terminal check; the wizard
+  calls B192's ensure_private_dir and B4575's secure_create to write the file.
 
 scope:
   paths:
-    - tools/management-cli/src/autoroute/config.rs
-    - tools/management-cli/src/autoroute/config/**
-    - tools/management-cli/src/autoroute/wizard.rs
-    - tools/management-cli/src/autoroute/wizard/**
-    - tools/management-cli/src/autoroute/paths.rs
+    - crates/betterlite-cli/src/autoroute/config.rs
+    - crates/betterlite-cli/src/autoroute/config/**
+    - crates/betterlite-cli/src/autoroute/wizard.rs
+    - crates/betterlite-cli/src/autoroute/wizard/**
+    - crates/betterlite-cli/src/autoroute/paths.rs
+    - crates/betterlite-cli/src/autoroute/paths/**
+    - crates/betterlite-cli/Cargo.toml
+    - Cargo.lock
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/config.py#L1-L46
@@ -29,152 +40,219 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/config.py#L48-L93
     why: Classifier and semantic matching types (HeuristicClassifier, LLMClassifier, SemanticMatching, etc.) and DEFAULT_KEYWORD_TIER_RULES.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/config.py#L95-L132
-    why: AutorouteConfig type definition and validate_config validation logic with ConfigGenerationError.
+    why: AutorouteConfig's field set and validate_config's checks, one per field that can name an unknown model.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/config.py#L134-L198
     why: Model list generation with _litellm_proxy_deployment, build_generated_model_list with deduplication and sorted names.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/config.py#L215-L230
-    why: master_key_from_config extracts persisted key from general_settings.master_key.
+    why: master_key_from_config extracts a persisted key from general_settings.master_key.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/wizard.py#L1-L88
-    why: Wizard interactivity check, fuzzy picker with multiselect, model/models prompts, and keyword parsing.
+    why: The interactivity check, the fuzzy picker's single- and multi-select behavior, and keyword parsing.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/wizard.py#L75-L87
-    why: Keyword tier rules prompt with per-tier defaults and _parse_keywords implementation.
+    why: The keyword-tier prompt's per-tier defaults and its comma-splitting parse.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/wizard.py#L93-L175
-    why: Master key persistence across reconfigures and run_configure_wizard orchestration.
+    why: Master-key persistence across reconfigures and run_configure_wizard's full orchestration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/wizard.py#L115-L118
+    why: The raw /v1/models response's list-shape check; see the deviation below for its Rust equivalent.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/wizard.py#L160-L170
+    why: Directory creation before the write, and the YAML dump whose key order this task's struct-field order replaces.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/process.py#L21-L24
-    why: AUTOROUTE_DIR, CONFIG_PATH, LOG_PATH, PID_RECORD_PATH path constants shared with process lifecycle.
+    why: AUTOROUTE_DIR, CONFIG_PATH, LOG_PATH and PID_RECORD_PATH, the four paths autoroute::paths exports.
 
 dod:
   - text: >-
-      DiscoveredModel and AutorouteConfig types preserve all fields: name/mode for models,
-      base_url/api_key/tiers/default_model/classifier/semantic_matching/adaptive for config.
+      DiscoveredModel and AutorouteConfig preserve every source field in typed form:
+      DiscoveredModel holds name and mode (both String); AutorouteConfig holds base_url
+      (String), api_key (SecretString), tiers (a map from Tier to its assigned model names,
+      iterating in Tier's declared order: Simple, Medium, Complex, Reasoning), default_model
+      (String), classifier (ClassifierChoice), semantic_matching (SemanticMatchingChoice) and
+      adaptive (bool).
     proof: [model-types]
   - text: >-
-      parse_discovered_models validates a /v1/models response against a schema
-      and returns a tuple of DiscoveredModel with name=id, mode from source or "chat" default.
+      parse_discovered_models maps a slice of RawModelListing (id required, mode defaulting
+      to "chat" through serde's field default when the source /v1/models entry omits it)
+      into DiscoveredModel values with name set from id.
     proof: [parse-models]
   - text: >-
-      chat_models and embedding_models filter by mode="chat" and mode="embedding" respectively.
+      chat_models and embedding_models filter a DiscoveredModel slice to mode == "chat" and
+      mode == "embedding" respectively, each returning an owned Vec<DiscoveredModel>.
     proof: [filter-models]
   - text: >-
-      validate_config raises ConfigGenerationError when tiers or default_model reference unknown
-      chat models, classifier model is unknown, or embedding_model is unknown.
+      validate_config returns a ConfigError variant when any tier or default_model names a
+      model outside the chat pool, the LLM classifier's model is outside the chat pool, or
+      semantic matching's embedding_model is outside the embedding pool, and returns Ok(())
+      otherwise.
     proof: [validate-config]
   - text: >-
-      build_generated_model_list deduplicates referenced models, sorts them alphabetically,
-      and builds one litellm_proxy/* deployment per model plus one autorouter root deployment.
+      build_generated_model_list collects every model name referenced by tiers,
+      default_model, the classifier and semantic matching into a deduplicated, alphabetically
+      sorted list, then builds one litellm_proxy/* deployment per name plus exactly one
+      further deployment whose model_name is the literal string "autorouter".
     proof: [generated-list]
   - text: >-
-      master_key_from_config extracts config["general_settings"]["master_key"] when present
-      and non-empty, returning None otherwise; the key is returned verbatim without normalization.
+      master_key_from_config reads a typed GeneratedConfigDocument's optional
+      general_settings.master_key field and returns it as a SecretString, returning None
+      when general_settings is absent, master_key is absent, or master_key is an empty
+      string; it returns the key unchanged otherwise, with no trimming or normalization.
     proof: [master-key]
   - text: >-
-      run_configure_wizard discovers models via Client.models.list(), filters to chat pool,
-      prompts for tier assignments with fuzzy selection, and optionally configures classifier
-      and semantic matching.
+      run_configure_wizard calls the injected ModelDiscoveryClient's list_models, filters the
+      result to the chat pool, and calls the injected Prompter's select_many once per Tier to
+      build the tiers map, in Tier declaration order; when semantic matching is enabled,
+      SemanticMatchingChoice::Enabled's match_threshold always takes its 0.5 default, since
+      neither run_configure_wizard nor Prompter ever asks for one.
     proof: [wizard-discovery]
   - text: >-
-      Wizard prompts reuse DEFAULT_KEYWORD_TIER_RULES as defaults when user presses enter;
-      _parse_keywords splits on commas and strips whitespace, discarding empty strings.
+      The keyword-tier prompt pre-fills each Tier's text prompt with its
+      DEFAULT_KEYWORD_TIER_RULES entry joined by commas; parse_keywords splits the returned
+      text on commas, trims each part, and discards empty parts.
     proof: [wizard-keywords]
   - text: >-
-      run_configure_wizard writes the generated config to CONFIG_PATH using secure_create
-      (B4575 dependency) with YAML formatting and sort_keys=False to preserve structure.
+      run_configure_wizard calls B192's ensure_private_dir on the autorouter directory, then
+      B4575's secure_create on CONFIG_PATH, and serializes a typed generated-document
+      (model_list, and general_settings.master_key when a persisted key was found) through
+      serde-saphyr, whose struct-field order controls the emitted key order.
     proof: [wizard-write]
   - text: >-
-      Interactive mode check raises ClickException when sys.stdin.isatty() is False.
+      run_configure_wizard returns WizardError::NoChatModels when the discovered chat pool
+      is empty, checked before is_interactive, and returns WizardError::NotInteractive when
+      the injected is_interactive parameter is false, checked before any prompt runs.
     proof: [interactive-check]
   - text: >-
-      CONFIG_PATH, LOG_PATH, PID_RECORD_PATH and AUTOROUTE_DIR are exported from paths.rs
-      so wizard.rs and process lifecycle code share the same directory constants.
+      autoroute::paths exports autoroute_dir, config_path, log_path and pid_record_path,
+      each taking a home directory and returning the same path B4584's process lifecycle
+      code and this task's wizard.rs both resolve it to.
     proof: [shared-paths]
 
 checks:
   optional: []
   commands:
     - id: model-types
-      why: DiscoveredModel or AutorouteConfig types do not preserve all source fields or are not defined correctly
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^autoroute_config::tests::.*_types/)'
+      why: DiscoveredModel or AutorouteConfig do not preserve all source fields in typed form, or Tier's declared order is not what tiers iterates in
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^autoroute::config::.*tests::.*_types/)'
     - id: parse-models
-      why: parse_discovered_models does not validate against schema, default mode to "chat", or handle the raw response correctly
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^autoroute_config::tests::parse_discovered_models/)'
+      why: parse_discovered_models does not default a missing mode to "chat" or does not set name from id
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^autoroute::config::.*tests::parse_discovered_models/)'
     - id: filter-models
-      why: chat_models or embedding_models do not filter by mode correctly or return wrong types
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^autoroute_config::tests::(chat_models|embedding_models)/)'
+      why: chat_models or embedding_models do not filter by mode correctly or return the wrong type
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^autoroute::config::.*tests::(chat_models|embedding_models)/)'
     - id: validate-config
-      why: validate_config does not check for unknown models in tiers, default_model or embedding_model or does not raise the correct error
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^autoroute_config::tests::validate_config/)'
+      why: validate_config does not check tiers, default_model, the classifier model or embedding_model against the right pool, or returns Ok on a bad config
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^autoroute::config::.*tests::validate_config/)'
     - id: generated-list
-      why: build_generated_model_list does not deduplicate, sort alphabetically or use literal "autorouter" model name
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^autoroute_config::tests::build_generated_model_list/)'
+      why: build_generated_model_list does not deduplicate, does not sort alphabetically, or does not use the literal "autorouter" model name
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^autoroute::config::.*tests::build_generated_model_list/)'
     - id: master-key
-      why: master_key_from_config does not extract verbatim key from general_settings or does not return None correctly
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^autoroute_config::tests::master_key_from_config/)'
+      why: master_key_from_config does not extract the key verbatim, or does not return None for an absent or empty value
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^autoroute::config::.*tests::master_key_from_config/)'
     - id: wizard-discovery
-      why: run_configure_wizard does not call models discovery correctly or prompt for tiers
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^autoroute_wizard::tests::run_configure_wizard/)'
+      why: run_configure_wizard does not discover models through the injected client, does not build the tiers map in Tier order, or does not leave match_threshold at its default
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^autoroute::wizard::.*tests::run_configure_wizard/)'
     - id: wizard-keywords
-      why: Wizard keyword prompts do not reuse DEFAULT_KEYWORD_TIER_RULES or parse commas correctly
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^autoroute_wizard::tests::.*keywords/)'
+      why: the keyword-tier prompt does not reuse DEFAULT_KEYWORD_TIER_RULES as its default, or parse_keywords does not split and trim correctly
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^autoroute::wizard::.*tests::.*keywords/)'
     - id: wizard-write
-      why: run_configure_wizard does not write YAML correctly to CONFIG_PATH or does not use secure_create
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^autoroute_wizard::tests::.*write/)'
+      why: run_configure_wizard does not call ensure_private_dir and secure_create in order, or does not serialize the document the generated model_list and persisted master_key describe
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^autoroute::wizard::.*tests::.*write/)'
     - id: interactive-check
-      why: Wizard does not check isatty() correctly or does not raise the expected error for non-interactive mode
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^autoroute_wizard::tests::.*interactive/)'
+      why: run_configure_wizard does not check the chat pool before is_interactive, or does not return the right error for either failure
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^autoroute::wizard::.*tests::.*interactive/)'
     - id: shared-paths
-      why: CONFIG_PATH, LOG_PATH, PID_RECORD_PATH or AUTOROUTE_DIR are not defined or exported from paths.rs
-      run: grep -qE 'pub.*CONFIG_PATH|pub.*LOG_PATH|pub.*PID_RECORD_PATH|pub.*AUTOROUTE_DIR' tools/management-cli/src/autoroute/paths.rs
+      why: autoroute_dir, config_path, log_path or pid_record_path are missing, not exported, or do not join the given home directory the same way
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^autoroute::paths::.*tests::/)'
 
 oracle_cases: []
 
-deviations: []
+deviations:
+  - what: >-
+      A /v1/models response that isn't a JSON list of model objects fails inside the
+      injected ModelDiscoveryClient's own deserialization, as a typed ModelDiscoveryError,
+      instead of a separate shape check inside run_configure_wizard.
+    why: >-
+      Rust's static types resolve whether the response is list-shaped at the deserialization
+      boundary; by the time run_configure_wizard receives Vec<RawModelListing>, there is no
+      dynamic type left to re-check the way Python's isinstance(raw_models, list) does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/wizard.py#L115-L118
+  - what: >-
+      The generated document's key order comes from the Rust struct's declared field order,
+      with no equivalent of yaml.safe_dump's sort_keys argument.
+    why: >-
+      serde-saphyr serializes a struct's fields in the order they're declared, the same
+      deterministic order sort_keys=False asks safe_dump to preserve for a Python dict; a
+      named struct needs no flag to get it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/wizard.py#L168-L170
 
 out_of_scope:
-  - The management client HTTP Client and ModelsManagementClient. The wizard injects
-    a client; tests provide a mock with canned model lists.
-  - Process lifecycle, proxy launching and PID management beyond the shared path constants. B4584 owns process.rs functions
-    that use the paths exported from paths.rs.
+  - The real HTTP-backed ModelDiscoveryClient implementation and any shared management-client
+    types. This task defines only the trait wizard.rs calls; tests provide a fake that
+    returns a canned model list.
+  - Computing the is_interactive flag from std::io::IsTerminal on stdin. Whichever module
+    wires `lite autoroute configure` to call run_configure_wizard computes it at the call
+    site and passes the bool in.
+  - Process lifecycle, proxy launching and PID management. B4584's autoroute::process module
+    calls the functions this task exports from paths.rs; this task only defines those
+    functions.
   - Banner display and top-level command registration. B134 owns the integration.
-  - Click/interactive-prompt framework equivalents. The Rust port uses a library with similar behavior.
-  - build_generated_proxy_config (config.py:201-212), which is excluded from the outline
-    as dead code at the pin; the wizard constructs its outer mapping itself.
+  - Reimplementing Click's own prompt/confirm/echo call signatures. The Prompter trait and
+    its inquire-backed implementation only need to reproduce each prompt's observable
+    behavior (what it asks, what default it offers, what it returns), not Click's API shape.
+  - build_generated_proxy_config (config.py:201-212), excluded from the outline as dead code
+    at the pin; the wizard builds its own generated-document shape directly.
 
 pitfalls:
   - >-
-    parse_discovered_models defaults mode to "chat" for models without an explicit mode field,
-    keeping them selectable as routing targets even when the proxy cannot resolve their cost.
+    Use inquire 0.9.4 with default features off and crossterm and fuzzy on, the same crate and
+    features B4571 uses, so the CLI carries one prompt crate. It pulls crossterm and fuzzy-matcher,
+    and neither is in Cargo.lock yet; cargo deny must accept what they pull.
   - >-
-    validate_config checks default_model against chat_names, not embedding_names, so semantic
-    matching's embedding_model is validated separately.
+    parse_discovered_models relies on RawModelListing's own serde default for mode, so a
+    model the /v1/models response reports with no mode field still becomes a DiscoveredModel
+    with mode "chat" and stays selectable as a routing target, even when the proxy cannot
+    resolve its cost.
   - >-
-    build_generated_model_list builds litellm_proxy/* deployments sorted by model name, deduplicating
-    any model referenced in tiers, default_model, classifier, or embedding_model; the order
-    determines the config order and must be stable.
+    validate_config checks default_model against the chat pool, not the embedding pool;
+    semantic matching's embedding_model is validated against the embedding pool separately,
+    so a config can fail on one without the other.
   - >-
-    master_key_from_config checks the type of general_settings to defend against it
-    being a non-dict value; a key that is present but falsy (empty string, zero, False, [])
-    is treated as absent.
+    build_generated_model_list sorts its litellm_proxy/* deployments alphabetically by model
+    name after deduplicating every model referenced by tiers, default_model, the classifier
+    and embedding_model; this order is the emitted config's order and must stay stable across
+    runs for the same input.
   - >-
-    run_configure_wizard exits early if chat_pool is empty, rejecting cases where the key
-    has no chat models. It also exits if not in an interactive terminal, even when the caller wanted
-    to proceed with defaults.
+    master_key_from_config treats an empty master_key string the same as an absent one,
+    returning None for both; because the field's Rust type is String rather than an untyped
+    value, there is no separate zero/false/empty-list case to defend against the way Python's
+    falsy check does.
   - >-
-    The wizard reuses a persisted master_key across reconfigures by loading it before writing;
-    if the config file is missing or corrupt, loading it returns None silently
-    and the outer orchestration (B4584's start command) mints a fresh key.
+    run_configure_wizard checks the chat pool before is_interactive: an empty chat pool
+    returns WizardError::NoChatModels even in a non-interactive run, and a non-empty chat
+    pool with is_interactive false returns WizardError::NotInteractive before any prompt
+    call; neither check lets a caller fall back to defaults.
   - >-
-    DEFAULT_KEYWORD_TIER_RULES is a tuple of KeywordTierRule; the wizard looks up
-    defaults by tier name and uses the tuple form when prompting.
+    The wizard reads any master_key already persisted at CONFIG_PATH before it writes, since
+    secure_create truncates the file on open rather than failing when it exists; a missing or
+    unparseable existing file makes the read return None silently, and B4584's start command
+    mints a fresh key in that case.
   - >-
-    _parse_keywords splits on commas, discarding empty strings from the split; a blank input
-    falls back to the default keywords, so the user never sees no keywords per tier.
+    DEFAULT_KEYWORD_TIER_RULES is one fixed KeywordTierRule per Tier; the keyword-tier prompt
+    looks its default up by the Tier value being prompted for, not by string-matching a tier
+    name.
   - >-
-    The fuzzy picker multiselect behavior differs based on the flag: single selection returns
-    a single string, while multiselect returns a list; unwrapping and tuple conversion happens at the call site.
+    parse_keywords splits raw input on commas and discards empty parts after trimming; when
+    parsing yields nothing from a blank input, the wizard falls back to that tier's default
+    keywords, so a user never ends up with zero keywords for a tier.
   - >-
-    secure_create (B4575 dependency) opens the file for exclusive creation; if the file exists,
-    it raises. The wizard must use load_persisted_master_key before writing to avoid a silent
-    overwrite.
+    Prompter::select_one and Prompter::select_many differ in what they can return, not in a
+    shared type the caller unwraps: select_one always yields exactly one model, while
+    select_many can yield none; the wizard's own retry loop, not the Prompter's inquire-backed
+    implementation, re-prompts until select_many returns at least one model.
+  - >-
+    AutorouteConfig's api_key and every deployment's api_key stay SecretString end to end; the
+    only place either is exposed is the point where the generated document is serialized to
+    CONFIG_PATH, never through a Debug format or a log line.
+  - >-
+    SemanticMatchingChoice::Enabled's match_threshold always takes its 0.5 default; neither
+    run_configure_wizard nor Prompter has a method that prompts for one, so a caller that
+    builds the variant directly must supply 0.5 itself to match the wizard's own output.
 
 review_level: security
 budget:
