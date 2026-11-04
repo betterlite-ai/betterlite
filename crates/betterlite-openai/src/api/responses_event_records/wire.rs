@@ -1,7 +1,8 @@
 use super::super::responses_shapes::wire::{WireDecodeLimits, decode_responses_shapes};
-use betterlite_models::decisions::Json;
+pub type GenericEvent = super::records::GenericEvent;
+pub type ResponsesAPIStreamingResponse = super::records::ResponsesAPIStreamingResponse;
+pub type ResponsesTerminalEvent = super::records::ResponsesTerminalEvent;
 use serde_json::Value;
-use std::collections::BTreeMap;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -16,8 +17,6 @@ pub enum ResponsesEventDecodeError {
     MissingType,
     #[error("event type must be a string")]
     InvalidType,
-    #[error("required event field is missing: {0}")]
-    MissingField(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -106,25 +105,6 @@ pub enum ResponsesAPIStreamEvents {
     Error,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ResponsesAPIStreamingResponse {
-    Known {
-        event: ResponsesAPIStreamEvents,
-        fields: BTreeMap<String, Json>,
-    },
-    Generic {
-        event_type: String,
-        fields: BTreeMap<String, Json>,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ResponsesTerminalEvent {
-    Completed(ResponsesAPIStreamingResponse),
-    Incomplete(ResponsesAPIStreamingResponse),
-    Failed(ResponsesAPIStreamingResponse),
-}
-
 pub fn decode_responses_event_record(
     bytes: &[u8],
     limits: WireDecodeLimits,
@@ -139,13 +119,17 @@ pub fn decode_responses_event_record(
 fn decode_event(value: Value) -> Result<ResponsesAPIStreamingResponse, ResponsesEventDecodeError> {
     let event_type = event_type(&value)?;
     let parsed_event =
-        serde_json::from_value::<ResponsesAPIStreamEvents>(Value::String(event_type.clone()));
+        serde_json::from_value::<ResponsesAPIStreamEvents>(Value::String(event_type));
     match parsed_event {
-        Ok(known_event) => decode_known_event(known_event, event_type, value),
-        Err(_) => Ok(ResponsesAPIStreamingResponse::Generic {
-            event_type,
-            fields: serde_json::from_value::<BTreeMap<String, Json>>(value)?,
-        }),
+        Ok(known_event) if is_generic_event(known_event) => Ok(
+            ResponsesAPIStreamingResponse::Generic(serde_json::from_value(value)?),
+        ),
+        Ok(_) => Ok(ResponsesAPIStreamingResponse::Known(Box::new(
+            serde_json::from_value(value)?,
+        ))),
+        Err(_) => Ok(ResponsesAPIStreamingResponse::Generic(
+            serde_json::from_value(value)?,
+        )),
     }
 }
 
@@ -158,68 +142,6 @@ fn event_type(value: &Value) -> Result<String, ResponsesEventDecodeError> {
         .as_str()
         .map(str::to_owned)
         .ok_or(ResponsesEventDecodeError::InvalidType)
-}
-
-fn decode_known_event(
-    event: ResponsesAPIStreamEvents,
-    event_type: String,
-    mut value: Value,
-) -> Result<ResponsesAPIStreamingResponse, ResponsesEventDecodeError> {
-    let fields = value
-        .as_object_mut()
-        .ok_or(ResponsesEventDecodeError::MissingType)?;
-    add_event_defaults(event, fields);
-    validate_required_fields(event, fields)?;
-    let decoded_fields = serde_json::from_value::<BTreeMap<String, Json>>(value)?;
-    if is_generic_event(event) {
-        Ok(ResponsesAPIStreamingResponse::Generic {
-            event_type,
-            fields: decoded_fields,
-        })
-    } else {
-        Ok(ResponsesAPIStreamingResponse::Known {
-            event,
-            fields: decoded_fields,
-        })
-    }
-}
-
-fn add_event_defaults(
-    event: ResponsesAPIStreamEvents,
-    fields: &mut serde_json::Map<String, Value>,
-) {
-    if matches!(
-        event,
-        ResponsesAPIStreamEvents::ReasoningSummaryTextDelta
-            | ResponsesAPIStreamEvents::ReasoningSummaryTextDone
-            | ResponsesAPIStreamEvents::ReasoningSummaryPartDone
-    ) {
-        fields
-            .entry(String::from("summary_index"))
-            .or_insert(Value::from(0_i64));
-    }
-    if event == ResponsesAPIStreamEvents::OutputItemDone {
-        fields
-            .entry(String::from("sequence_number"))
-            .or_insert(Value::from(1_i64));
-    }
-    if event == ResponsesAPIStreamEvents::Error
-        && let Some(error) = fields.get_mut("error").and_then(Value::as_object_mut)
-    {
-        error.entry(String::from("param")).or_insert(Value::Null);
-    }
-}
-
-fn validate_required_fields(
-    event: ResponsesAPIStreamEvents,
-    fields: &serde_json::Map<String, Value>,
-) -> Result<(), ResponsesEventDecodeError> {
-    for &field in super::event_fields::required_fields(event) {
-        if !fields.contains_key(field) {
-            return Err(ResponsesEventDecodeError::MissingField(field.to_owned()));
-        }
-    }
-    Ok(())
 }
 
 const fn is_generic_event(event: ResponsesAPIStreamEvents) -> bool {

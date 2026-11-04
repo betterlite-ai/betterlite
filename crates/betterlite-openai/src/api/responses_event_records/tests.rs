@@ -4,7 +4,6 @@ use super::wire::{
     ResponsesAPIStreamEvents, ResponsesAPIStreamingResponse, decode_responses_event_record,
 };
 use crate::api::responses_shapes::wire::WireDecodeLimits;
-use betterlite_models::decisions::Json;
 use rstest::rstest;
 use serde_json::Value;
 use std::fs;
@@ -75,7 +74,7 @@ fn generic_event_keeps_unknown_and_protected_fields() {
         decode_responses_event_record(br#"{"type":"vendor.future","model_debug":7}"#, limits())
             .unwrap();
     assert!(
-        matches!(record, ResponsesAPIStreamingResponse::Generic { fields, .. } if fields.contains_key("model_debug"))
+        matches!(record, ResponsesAPIStreamingResponse::Generic(event) if event.extra.contains_key("model_debug"))
     );
 }
 
@@ -86,17 +85,21 @@ fn event_defaults_and_required_nullable_fields_are_preserved() {
         limits(),
     )
     .unwrap();
-    assert!(
-        matches!(added, ResponsesAPIStreamingResponse::Known { fields, .. } if fields.get("item") == Some(&Json::Null))
-    );
+    assert!(matches!(
+        added,
+        ResponsesAPIStreamingResponse::Known(event)
+            if matches!(event.as_ref(), super::records::KnownResponseEvent::OutputItemAdded(record) if matches!(record.item, super::event_types::RequiredNullable::Null))
+    ));
     let done = decode_responses_event_record(
         br#"{"type":"response.output_item.done","output_index":2,"item":{"type":"message"}}"#,
         limits(),
     )
     .unwrap();
-    assert!(
-        matches!(done, ResponsesAPIStreamingResponse::Known { fields, .. } if fields.get("sequence_number") == Some(&Json::Number(serde_json::Number::from(1_i32))))
-    );
+    assert!(matches!(
+        done,
+        ResponsesAPIStreamingResponse::Known(event)
+            if matches!(event.as_ref(), super::records::KnownResponseEvent::OutputItemDone(record) if record.sequence_number == 1)
+    ));
 }
 
 #[test]
@@ -155,27 +158,30 @@ fn missing_required_field_is_rejected() {
     let error = decode_responses_event_record(input, limits()).unwrap_err();
     assert!(matches!(
         error,
-        super::wire::ResponsesEventDecodeError::MissingField(field) if field == "output_index"
+        super::wire::ResponsesEventDecodeError::Json(_)
     ));
+}
+
+#[test]
+fn output_text_content_part_requires_nullable_logprobs_field() {
+    let missing = br#"{"type":"response.content_part.done","item_id":"i","output_index":0,"content_index":1,"part":{"type":"output_text","text":"hi","annotations":[]}}"#;
+    assert!(matches!(
+        decode_responses_event_record(missing, limits()).unwrap_err(),
+        super::wire::ResponsesEventDecodeError::Json(_)
+    ));
+    let explicit_null = br#"{"type":"response.content_part.done","item_id":"i","output_index":0,"content_index":1,"part":{"type":"output_text","text":"hi","annotations":[],"logprobs":null}}"#;
+    decode_responses_event_record(explicit_null, limits()).unwrap();
 }
 
 #[test]
 fn error_event_param_defaults_to_null_and_keeps_explicit_value() {
     let input = br#"{"type":"error","sequence_number":9,"error":{"type":"invalid_request_error","code":"context_length_exceeded","message":"too long"}}"#;
     let decoded = decode_responses_event_record(input, limits()).unwrap();
-    let default_fields = match decoded {
-        ResponsesAPIStreamingResponse::Known { fields, .. }
-        | ResponsesAPIStreamingResponse::Generic { fields, .. } => fields,
-    };
-    let value = serde_json::to_value(default_fields).unwrap();
+    let value = serde_json::to_value(decoded).unwrap();
     assert_eq!(value.pointer("/error/param"), Some(&Value::Null));
     let explicit = br#"{"type":"error","sequence_number":9,"error":{"type":"invalid_request_error","code":"context_length_exceeded","message":"too long","param":"input"}}"#;
     let explicit_decoded = decode_responses_event_record(explicit, limits()).unwrap();
-    let explicit_fields = match explicit_decoded {
-        ResponsesAPIStreamingResponse::Known { fields, .. }
-        | ResponsesAPIStreamingResponse::Generic { fields, .. } => fields,
-    };
-    let explicit_value = serde_json::to_value(explicit_fields).unwrap();
+    let explicit_value = serde_json::to_value(explicit_decoded).unwrap();
     assert_eq!(
         explicit_value.pointer("/error/param"),
         Some(&Value::String(String::from("input")))
@@ -189,8 +195,8 @@ fn custom_tool_event_uses_generic_record_path() {
     let decoded = decode_responses_event_record(input, limits()).unwrap();
     assert!(matches!(
         decoded,
-        ResponsesAPIStreamingResponse::Generic { event_type, .. }
-            if event_type == "response.custom_tool_call_input.delta"
+        ResponsesAPIStreamingResponse::Generic(event)
+            if event.r#type == "response.custom_tool_call_input.delta"
     ));
 }
 
@@ -198,11 +204,7 @@ fn custom_tool_event_uses_generic_record_path() {
 fn completed_event_hidden_params_are_not_serialized() {
     let input = br#"{"type":"response.completed","response":{"id":"resp_a","created_at":1,"output":[],"usage":{"input_tokens":2,"output_tokens":1,"total_tokens":3}}}"#;
     let decoded = decode_responses_event_record(input, limits()).unwrap();
-    let fields = match decoded {
-        ResponsesAPIStreamingResponse::Known { fields, .. }
-        | ResponsesAPIStreamingResponse::Generic { fields, .. } => fields,
-    };
-    let encoded = serde_json::to_value(fields).unwrap();
+    let encoded = serde_json::to_value(decoded).unwrap();
     assert!(encoded.get("_hidden_params").is_none());
 }
 
