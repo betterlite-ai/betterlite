@@ -67,7 +67,7 @@ scope:
     - crates/betterlite-core/src/{lib,dispatch,operation,error,xai_mistral,mistral_ocr_guardrail}.rs
     - crates/betterlite-core/src/{xai_mistral,mistral_ocr_guardrail}/**
     - crates/betterlite-core/Cargo.toml
-    - crates/betterlite-openai/src/{lib,mistral_embedding}.rs
+    - crates/betterlite-openai/src/mistral_embedding.rs
     - crates/betterlite-config/src/{lib,settings,providers}.rs
     - crates/betterlite-config/src/providers/{mod,xai_mistral}.rs
     - crates/betterlite-config/tests/xai_mistral_settings.rs

@@ -20,7 +20,6 @@ scope:
   paths:
   - crates/betterlite-server/src/benchmark_aggregates.rs
   - crates/betterlite-server/src/benchmark_aggregates/**
-  - crates/betterlite-server/src/error.rs
   - crates/betterlite-server/src/routes.rs
   - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs

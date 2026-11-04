@@ -48,7 +48,6 @@ description: >-
   275 implementation, 225 tests, 145 adapters and 95 settings/export lines within 775.
 scope:
   paths:
-    - crates/betterlite-openai/src/{lib,agent_and_diffusion_hosts}.rs
     - crates/betterlite-openai/src/agent_and_diffusion_hosts.rs
     - crates/betterlite-openai/src/agent_and_diffusion_hosts/**
     - crates/betterlite-config/src/{lib,settings,providers}.rs

@@ -33,7 +33,7 @@ description: >-
   implementation, 210 tests/config, 140 adapters and 100 fuzz/export lines, cap 800.
 scope:
   paths:
-    - crates/betterlite-openai/src/{lib,error,mistral_audio,mistral_identity}.rs
+    - crates/betterlite-openai/src/{mistral_audio,mistral_identity}.rs
     - crates/betterlite-openai/src/{mistral_audio,mistral_identity}/**
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/voxtral_reply.rs

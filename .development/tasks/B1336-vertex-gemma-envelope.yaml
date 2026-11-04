@@ -21,7 +21,6 @@ description: >-
   Budget 200 code, 170 tests and 120 adapters, capped at 550.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,error,gemma_envelope}.rs
     - crates/betterlite-vertex/src/gemma_envelope.rs
     - crates/betterlite-vertex/src/gemma_envelope/**
     - tools/oracle/src/helpers/vertex/gemma_envelope.rs

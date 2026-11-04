@@ -32,7 +32,6 @@ description: >-
   implementation, 200 tests, 115 adapters and 80 fuzz/export lines, maximum 575.
 scope:
   paths:
-    - crates/betterlite-openai/src/{lib,error,compatible_line_stream}.rs
     - crates/betterlite-openai/src/compatible_line_stream.rs
     - crates/betterlite-openai/src/compatible_line_stream/**
     - crates/betterlite-openai/fuzz/Cargo.toml

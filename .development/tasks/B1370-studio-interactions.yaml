@@ -30,7 +30,6 @@ description: >-
   lines, cap 800.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,error,studio_interactions}.rs
     - crates/betterlite-vertex/src/studio_interactions.rs
     - crates/betterlite-vertex/src/studio_interactions/**
     - crates/betterlite-vertex/fuzz/Cargo.toml

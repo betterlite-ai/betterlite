@@ -32,7 +32,7 @@ description: >-
   implementation, 220 behavior/config tests, 150 adapters and 100 fuzz/wiring, maximum 800.
 scope:
   paths:
-    - crates/betterlite-openai/src/{lib,error,xai_identity,xai_usage}.rs
+    - crates/betterlite-openai/src/{xai_identity,xai_usage}.rs
     - crates/betterlite-openai/src/{xai_identity,xai_usage}/**
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/xai_models.rs

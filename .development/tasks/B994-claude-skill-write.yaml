@@ -92,7 +92,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-server/Cargo.toml
-  - crates/betterlite-server/src/error.rs
   - crates/betterlite-server/src/api/claude_skill_write.rs
   - crates/betterlite-server/src/api/claude_skill_write/**
   - crates/betterlite-server/src/api.rs

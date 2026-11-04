@@ -38,7 +38,6 @@ description: >-
 scope:
   paths:
     - crates/betterlite-openai/Cargo.toml
-    - crates/betterlite-openai/src/{lib,error,xai_tokens}.rs
     - crates/betterlite-openai/src/xai_tokens.rs
     - crates/betterlite-openai/src/xai_tokens/**
     - crates/betterlite-openai/fuzz/Cargo.toml

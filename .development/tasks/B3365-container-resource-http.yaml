@@ -31,6 +31,7 @@ scope:
     - tools/oracle/cases/containers/retrieve-and-delete-http/retrieve-provider-error.yaml
     - tools/oracle/cases/containers/retrieve-and-delete-http/retrieve-successful.yaml
     - tools/oracle/cases/containers/retrieve-and-delete-http/retrieve-transport-error.yaml
+    - tools/oracle/cases/containers/retrieve-and-delete-http/**
   lint_tables: false
 
 references:

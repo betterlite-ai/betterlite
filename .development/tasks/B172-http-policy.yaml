@@ -20,7 +20,13 @@ description: >-
 scope:
   paths:
   - Cargo.toml
-  - crates/betterlite-config/**
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/loader.rs
+  - crates/betterlite-config/src/raw.rs
+  - crates/betterlite-config/src/types.rs
+  - crates/betterlite-config/src/tls.rs
+  - crates/betterlite-config/src/tls/**
+  - crates/betterlite-config/tests/config_tests/snapshots/config_tests__test_cases__simple_config_yaml.snap
   - crates/betterlite-http/**
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/http/tls_policy.rs

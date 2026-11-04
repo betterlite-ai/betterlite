@@ -27,7 +27,6 @@ description: >-
   and 125 oracle lines; maximum 600.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,error,vertex_live}.rs
     - crates/betterlite-vertex/src/vertex_live.rs
     - crates/betterlite-vertex/src/vertex_live/**
     - crates/betterlite-core/src/api.rs

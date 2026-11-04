@@ -20,7 +20,6 @@ description: >-
   oracle plumbing lines; no new byte parser is needed.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,gemini_response_parts}.rs
     - crates/betterlite-vertex/src/gemini_response_parts.rs
     - crates/betterlite-vertex/src/gemini_response_parts/**
     - tools/oracle/src/helpers/vertex/gemini_response_parts.rs
