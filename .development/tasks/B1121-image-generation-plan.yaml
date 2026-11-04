@@ -19,8 +19,6 @@ description: >-
   fit a 400-line integration task. Generation overloads and all Azure settings now belong to B998.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/image_generation_plan.rs
   - crates/betterlite-core/src/api/image_generation_plan/**
   - tools/oracle/src/sdk_http.rs

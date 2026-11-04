@@ -2,8 +2,8 @@ id: B4581
 milestone: M8 platform
 title: Interactive CLI chat and arbitrary HTTP requests
 status: todo
-depends_on: [B4560]
-file: null
+depends_on: [B4560, B4580]
+file: tasks/B4581-cli-chat-and-http.yaml
 covers:
   - "litellm/proxy/client/cli/commands/{chat,http}.py"
 parent: B134

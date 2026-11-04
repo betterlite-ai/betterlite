@@ -1,126 +1,254 @@
 id: B4570
 title: Saved agent setup profiles and scoped locks
 description: >-
-  Build saved setup records bound to the resolved agent settings path, with gateway/key/model validation
-  and sorted per-target locks. Preserve saved keys across disconnects and explicit forgetting without merging
-  these profiles into undo receipts.
+  Build saved agent setup profiles and the per-target locks that keep concurrent configure commands from
+  racing, ported from configure_profiles.py. Target is a closed enum (Claude, Codex) with Claude ordered
+  before Codex, matching the order LiteLLM's sorted(frozenset) already gave from the strings "claude" and
+  "codex"; its Display prints those same two words, for messages and for the digest setup_locks hashes.
 
-  SavedSetup is a frozen Pydantic model holding version, target (Claude or Codex), settings_path, base_url,
-  api_key (a raw virtual key written to disk), and optional model. The model field is required for Codex
-  (validated to not be None on load) but optional for Claude. Validators check gateway normalization,
-  and key/model control characters: valid_key rejects characters with ord(char) <= 32 or ord(char) == 127
-  (spaces and tabs invalid), while valid_model rejects ord(char) < 32 or ord(char) == 127 (spaces valid).
+  SavedSetup is a struct built only through SavedSetup::new, which runs every validator once at
+  construction and returns AgentSetupProfilesError on the first one that fails: base_url must already
+  equal B4560's normalize_base_url(value) with a trailing "/v1" removed; api_key must be non-empty with no
+  character whose code point is at or below 32 or equal to 127 (secrecy::SecretString from the moment it's
+  read, so this is the only place in the module that calls expose_secret() outside the JSON write in
+  save_setup); model, when given, rejects a code point below 32 or equal to 127, a lower threshold than
+  api_key's so a model name may hold a space an api_key can't. The five fields (target, settings_path,
+  base_url, api_key, model, plus a version constant) are the whole struct; there's nothing else to reject
+  the way Pydantic's extra="forbid" does.
 
-  settings_path_for returns the resolved settings file for a target (claude_settings_path or codex_config_path
-  from their respective tasks). receipt_path_for returns the receipt file (configure_state_path or
-  codex_configure_state_path). setup_profile_path derives the profile filename from the receipt path,
-  naming it <receipt_stem>_profile.json in the same directory.
+  settings_path_for(target, environment: &dyn betterlite_config::loader::EnvironmentLookup) resolves
+  B4562's claude_settings_path for Claude and B4564's codex_config_path for Codex. receipt_path_for(target,
+  settings_path) resolves B4562's configure_state_path for Claude and B4569's codex_configure_state_path
+  for Codex. setup_profile_path(target, settings_path) keeps the receipt's directory and renames its file
+  stem to "<stem>_profile.json".
 
-  read_saved_setup loads a SavedSetup from disk and validates it matches the current target and settings_path,
-  rejecting models that changed or Codex that lost its model. save_setup stages the profile as
-  private JSON, validates the directory, and commits it with B192's staging/commit helpers. forget_saved_setup
-  removes the profile without error if missing.
+  read_saved_setup(target, environment) returns Ok(None) for a missing file. A read failure that isn't
+  "not found" becomes AgentSetupProfilesError::Read, carrying the source error and "Could not read saved
+  {target} setup at {path}; no settings were changed". A file that parses but whose target, resolved
+  settings_path, or (for Codex) present model doesn't match the live settings becomes
+  AgentSetupProfilesError::Invalid, carrying "Saved {target} setup at {path} is invalid or unsupported. Run
+  `lite unconfigure {target} --forget` to discard it; no settings were changed". The settings_path
+  comparison resolves both sides with the soft-canonicalize crate's soft_canonicalize function, already a
+  direct dependency of betterlite-server, betterlite-harness and tools/oracle at 0.5.6, so this task only
+  adds it to betterlite-cli at that same version. std::fs::canonicalize errors when the settings file
+  hasn't been written yet, and a machine's first `lite configure` run hits exactly that case; soft_canonicalize
+  resolves symlinks on the path components that exist and leaves the rest lexically normalized, matching
+  Python's Path.resolve() without strict=True.
 
-  setup_locks acquires per-target file locks in sorted order (claude before codex, by hashed settings path)
-  in ~/.litellm/setup-locks/<digest>.lock with 10-second timeout and 0o600 permissions, so concurrent
-  configure commands wait for each other rather than race.
+  setup_locks(targets, environment, clock: &dyn Clock) collects targets into a BTreeSet<Target> (Target's
+  derived Ord already sorts Claude before Codex, replacing frozenset-then-sort with one ordered
+  collection), then for each one in order resolves lock_path_for(target, environment) under
+  ~/.litellm/setup-locks/ as the SHA256 hex digest of "{target}:{resolved settings_path}", creates the lock
+  file with owner-only permissions the same create-then-tighten idiom B4575 uses for its own backup file
+  (OpenOptionsExt::mode(0o600) on create, then File::set_permissions to tighten an existing file before the
+  first lock attempt), and locks it with std::fs::File::try_lock. A non-blocking try_lock() that returns
+  std::fs::TryLockError::WouldBlock retries after a short sleep until clock.now() has advanced 10 seconds past the
+  attempt's start, at which point setup_locks returns AgentSetupProfilesError::Locked ("Could not lock
+  agent setup; retry when other configure commands finish") and every lock already acquired is released by
+  dropping its File. Clock is this module's own trait (fn now(&self) -> std::time::Instant), the same
+  local-trait shape agent_launch, codex_settings and pkce_login.rs each already define for their own
+  injected time source; SystemClock wraps Instant::now(), and tests use a fake that advances on every call
+  so the 10-second boundary is crossed in a few fast iterations, never a real wait. On success, setup_locks
+  returns a SetupLocksGuard holding every acquired File; it needs no Drop impl of its own, since dropping
+  the Vec already closes each descriptor and releases its OS-level lock.
+
+  save_setup(saved, environment) resolves setup_profile_path for saved.target, calls B192's
+  ensure_private_dir on its parent directory and writes the stored fields (version, target, settings_path,
+  base_url, api_key exposed only here, model) through B192's private JSON write; a failure from either call
+  becomes AgentSetupProfilesError::Save with "Could not save {target} setup; no {target} settings were
+  changed".
+
+  forget_saved_setup(target, environment) removes the profile path, treats a not-found error as success,
+  and wraps any other removal failure as AgentSetupProfilesError::Forget with "Could not remove saved
+  {target} setup at {path}".
 scope:
   paths:
-    - tools/management-cli/src/agent_setup_profiles.rs
-    - tools/management-cli/src/agent_setup_profiles/tests.rs
+    - crates/betterlite-cli/src/agent_setup_profiles.rs
+    - crates/betterlite-cli/src/agent_setup_profiles/tests.rs
+    - crates/betterlite-cli/Cargo.toml
+    - Cargo.lock
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_profiles.py#L30-63
-    why: SavedSetup model and validators for base_url, api_key and model thresholds.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_profiles.py#L65-76
-    why: settings_path_for, receipt_path_for and setup_profile_path functions.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_profiles.py#L78-103
-    why: read_saved_setup with validation of target, settings_path and Codex model presence.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_profiles.py#L105-122
-    why: _lock_path and setup_locks with per-target locking and FileLock mode 0o600.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_profiles.py#L124-151
-    why: save_setup with B192 staging/commit helpers, directory creation and error handling.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_profiles.py#L153-159
-    why: forget_saved_setup with missing-file tolerance.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_profiles.py#L26-L27
+    why: Target and TARGETS, the closed set of agents a setup profile can target.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_profiles.py#L30-L62
+    why: SavedSetup and its base_url, api_key and model validators.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_profiles.py#L65-L75
+    why: settings_path_for, receipt_path_for and setup_profile_path.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_profiles.py#L78-L102
+    why: read_saved_setup's target, settings_path and Codex-model checks, and its two error messages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_profiles.py#L105-L121
+    why: _lock_path's digest and setup_locks's sorted per-target FileLock acquisition.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_profiles.py#L124-L150
+    why: save_setup's staged write and its two error messages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_profiles.py#L153-L159
+    why: forget_saved_setup's missing-file tolerance.
 dod:
   - text: >-
-      SavedSetup model is frozen, rejects extra fields, validates base_url through normalize_base_url,
-      validates api_key (non-empty, no chars with ord <= 32 or == 127), and validates model (when set,
-      no chars with ord < 32 or == 127).
+      Case base_url_rejects_unnormalized_value and base_url_rejects_invalid_url verify that SavedSetup::new
+      rejects a base_url that doesn't already equal B4560's normalize_base_url(value) with a trailing
+      "/v1" removed, including a value normalize_base_url itself rejects. Case api_key_rejects_empty and
+      api_key_rejects_control_character verify that an empty api_key or one holding a character whose code
+      point is at or below 32 or equal to 127 is rejected. Case model_rejects_control_character verifies
+      the same rejection for a model holding a character below code point 32 or equal to 127. Case
+      model_none_accepted verifies that SavedSetup::new accepts a None model.
     proof: [savedsetup-validators]
   - text: >-
-      A literal test case in tests.rs validates the ord threshold difference: a model value containing
-      space ' ' (ord 32) parses as valid SavedSetup, while an api_key value containing space ' ' (ord 32)
-      is rejected with ValidationError, demonstrating that valid_key rejects ord <= 32 while valid_model
-      allows ord >= 32.
+      Case api_key_rejects_space and model_allows_space verify the threshold difference directly: an
+      api_key holding a literal space (code point 32) is rejected, while the same character in model is
+      accepted, because api_key's check is "at or below 32" and model's is "below 32".
     proof: [space-character-threshold]
   - text: >-
-      read_saved_setup loads a SavedSetup from disk, validates that target and resolved settings_path
-      match, rejects Codex profiles where model is None, and reports clear errors naming the path and
-      suggesting `lite unconfigure --forget` on validation failure.
-    proof: [savedsetup-read]
-  - text: >-
-      settings_path_for resolves paths from claude_settings_path and codex_config_path based on target.
-      receipt_path_for routes to configure_state_path or codex_configure_state_path. setup_profile_path
-      derives the profile filename from the receipt path with stem _profile.json.
+      Case settings_path_for_claude_uses_claude_settings_path and settings_path_for_codex_uses_codex_config_path
+      verify that settings_path_for dispatches to B4562's claude_settings_path and B4564's
+      codex_config_path by target. Case receipt_path_for_claude_uses_configure_state_path and
+      receipt_path_for_codex_uses_codex_configure_state_path verify the matching dispatch to B4562's
+      configure_state_path and B4569's codex_configure_state_path. Case setup_profile_path_renames_stem
+      verifies that setup_profile_path keeps the receipt's directory and renames its file stem to
+      "<stem>_profile.json".
     proof: [path-derivation]
   - text: >-
-      setup_locks acquires per-target locks in ~/.litellm/setup-locks/<sha256_digest>.lock in sorted order
-      (claude before codex by hashed path), with 10-second timeout, mode 0o600, and ensures parent directory exists.
+      Case read_saved_setup_returns_none_when_missing verifies a missing file returns Ok(None), and
+      read_saved_setup_wraps_read_failure verifies any other read failure becomes
+      AgentSetupProfilesError::Read carrying "Could not read saved {target} setup at {path}; no settings
+      were changed". Case read_saved_setup_rejects_target_mismatch, read_saved_setup_rejects_settings_path_mismatch
+      and read_saved_setup_rejects_codex_without_model verify that a stored target, a resolved
+      settings_path or a missing Codex model that doesn't match the live settings is rejected, while
+      read_saved_setup_accepts_claude_without_model verifies the same absent model is fine for Claude. Case
+      read_saved_setup_error_names_unconfigure_forget verifies the rejection's message is "Saved {target}
+      setup at {path} is invalid or unsupported. Run `lite unconfigure {target} --forget` to discard it;
+      no settings were changed".
+    proof: [savedsetup-read]
+  - text: >-
+      Case setup_locks_acquires_claude_before_codex verifies that locking both targets acquires Claude's
+      lock file before Codex's regardless of the order given, and setup_locks_dedupes_repeated_target
+      verifies that naming a target twice acquires its lock only once. Case
+      setup_locks_digest_keyed_by_resolved_settings_path verifies that the lock file's name is the SHA256
+      hex digest of "{target}:{resolved settings_path}", and setup_locks_lock_file_mode_owner_only verifies
+      the created lock file carries owner-only permissions. Case setup_locks_times_out_after_ten_seconds
+      verifies that a lock already held by another handle makes setup_locks return
+      AgentSetupProfilesError::Locked once the injected clock reports 10 seconds elapsed, without a real
+      wait, and setup_locks_releases_acquired_locks_on_timeout verifies that an earlier target's lock is
+      free again immediately after that failure.
     proof: [lock-ordering]
   - text: >-
-      save_setup uses B192's ensure_private_dir, stage_private_json, commit_staged_json and discard_staged_json,
-      always discarding staged JSON even on error, and reports clear errors naming the target and settings path.
+      Case save_setup_creates_parent_directory verifies save_setup calls B192's ensure_private_dir on the
+      profile's parent directory, and save_setup_writes_private_json verifies the stored fields round-trip
+      through B192's private JSON write. Case save_setup_wraps_directory_failure and
+      save_setup_wraps_write_failure verify that a failure from either call becomes
+      AgentSetupProfilesError::Save carrying "Could not save {target} setup; no {target} settings were
+      changed".
     proof: [save-staging]
   - text: >-
-      forget_saved_setup removes the profile path with missing-file tolerance and reports errors on actual I/O failures.
+      Case forget_saved_setup_tolerates_missing_file verifies a missing profile path returns Ok(()), and
+      forget_saved_setup_wraps_removal_failure verifies any other removal failure becomes
+      AgentSetupProfilesError::Forget carrying "Could not remove saved {target} setup at {path}".
     proof: [forget-behavior]
-  - text: >-
-      SavedSetup, Target enum/constants and all path functions can be imported and used by B4571 and B4572.
-    proof: [export-contracts]
 checks:
   optional: []
   commands:
     - id: savedsetup-validators
-      why: SavedSetup model, frozen config or validators for base_url, api_key or model are missing or incorrect
-      run: grep -q "SavedSetup" tools/management-cli/src/agent_setup_profiles.rs && grep -q "normalized_gateway\|normalize_base_url" tools/management-cli/src/agent_setup_profiles.rs && grep -q "valid_key" tools/management-cli/src/agent_setup_profiles.rs && grep -q "valid_model" tools/management-cli/src/agent_setup_profiles.rs && grep -qE "ord.*<=.*32|ord.*==.*127" tools/management-cli/src/agent_setup_profiles.rs
+      why: SavedSetup::new does not validate base_url against normalize_base_url, does not reject an
+        invalid api_key or model, or does not accept a None model.
+      run: >-
+        cargo nextest run --locked -p betterlite-cli --no-tests=fail -E
+        'test(/^agent_setup_profiles::tests::(?:base_url_rejects_unnormalized_value|base_url_rejects_invalid_url|api_key_rejects_empty|api_key_rejects_control_character|model_rejects_control_character|model_none_accepted)/)'
     - id: space-character-threshold
-      why: no test validates that api_key rejects space (ord 32) while model accepts it, showing the ord threshold difference
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^agent_setup_profiles.*space_character/)' 2>&1 | grep -q "space\|ord.*32"
-    - id: savedsetup-read
-      why: read_saved_setup does not load, validate target/settings_path match, reject Codex without model, or report clear errors
-      run: grep -q "read_saved_setup" tools/management-cli/src/agent_setup_profiles.rs && grep -q "model_validate_json\|ValidationError" tools/management-cli/src/agent_setup_profiles.rs && grep -qE "target.*!=|settings_path.*!=|codex.*model.*None" tools/management-cli/src/agent_setup_profiles.rs && grep -q "lite unconfigure.*--forget" tools/management-cli/src/agent_setup_profiles.rs
+      why: api_key and model don't use different code-point thresholds, so a space either passes both or
+        fails both instead of only failing in api_key.
+      run: >-
+        cargo nextest run --locked -p betterlite-cli --no-tests=fail -E
+        'test(/^agent_setup_profiles::tests::(?:api_key_rejects_space|model_allows_space)/)'
     - id: path-derivation
-      why: settings_path_for, receipt_path_for or setup_profile_path are missing or do not call the correct underlying functions
-      run: grep -q "settings_path_for" tools/management-cli/src/agent_setup_profiles.rs && grep -q "claude_settings_path\|codex_config_path" tools/management-cli/src/agent_setup_profiles.rs && grep -q "receipt_path_for" tools/management-cli/src/agent_setup_profiles.rs && grep -q "configure_state_path\|codex_configure_state_path" tools/management-cli/src/agent_setup_profiles.rs && grep -q "setup_profile_path" tools/management-cli/src/agent_setup_profiles.rs && grep -q "_profile.json" tools/management-cli/src/agent_setup_profiles.rs
+      why: settings_path_for, receipt_path_for or setup_profile_path don't dispatch to the right owning
+        function or don't derive the profile filename correctly.
+      run: >-
+        cargo nextest run --locked -p betterlite-cli --no-tests=fail -E
+        'test(/^agent_setup_profiles::tests::(?:settings_path_for_claude_uses_claude_settings_path|settings_path_for_codex_uses_codex_config_path|receipt_path_for_claude_uses_configure_state_path|receipt_path_for_codex_uses_codex_configure_state_path|setup_profile_path_renames_stem)/)'
+    - id: savedsetup-read
+      why: read_saved_setup doesn't return None for a missing file, doesn't reject a target, settings_path
+        or Codex-model mismatch, or drops either error message.
+      run: >-
+        cargo nextest run --locked -p betterlite-cli --no-tests=fail -E
+        'test(/^agent_setup_profiles::tests::(?:read_saved_setup_returns_none_when_missing|read_saved_setup_wraps_read_failure|read_saved_setup_rejects_target_mismatch|read_saved_setup_rejects_settings_path_mismatch|read_saved_setup_rejects_codex_without_model|read_saved_setup_accepts_claude_without_model|read_saved_setup_error_names_unconfigure_forget)/)'
     - id: lock-ordering
-      why: setup_locks does not acquire per-target locks in sorted order, with 10-second timeout, or 0o600 permissions
-      run: grep -q "setup_locks\|FileLock" tools/management-cli/src/agent_setup_profiles.rs && grep -q "_lock_path\|sha256\|digest" tools/management-cli/src/agent_setup_profiles.rs && grep -qE "\.litellm.*setup-locks|setup-locks.*lock" tools/management-cli/src/agent_setup_profiles.rs && grep -q "timeout.*10\|10.*timeout" tools/management-cli/src/agent_setup_profiles.rs && grep -q "0o600" tools/management-cli/src/agent_setup_profiles.rs && grep -q "sorted\|sort" tools/management-cli/src/agent_setup_profiles.rs
+      why: setup_locks doesn't acquire locks in sorted target order, dedupe a repeated target, key the
+        lock file by the resolved settings path, set owner-only permissions, enforce the 10-second
+        timeout, or release locks it already acquired.
+      run: >-
+        cargo nextest run --locked -p betterlite-cli --no-tests=fail -E
+        'test(/^agent_setup_profiles::tests::(?:setup_locks_acquires_claude_before_codex|setup_locks_dedupes_repeated_target|setup_locks_digest_keyed_by_resolved_settings_path|setup_locks_lock_file_mode_owner_only|setup_locks_times_out_after_ten_seconds|setup_locks_releases_acquired_locks_on_timeout)/)'
     - id: save-staging
-      why: save_setup does not use B192 staging helpers or does not discard staged JSON
-      run: grep -q "save_setup" tools/management-cli/src/agent_setup_profiles.rs && grep -q "stage_private_json\|commit_staged_json\|discard_staged_json\|ensure_private_dir" tools/management-cli/src/agent_setup_profiles.rs && grep -q "finally\|defer\|Drop" tools/management-cli/src/agent_setup_profiles.rs
+      why: save_setup doesn't call B192's ensure_private_dir and private JSON write, or doesn't wrap
+        either failure as AgentSetupProfilesError::Save.
+      run: >-
+        cargo nextest run --locked -p betterlite-cli --no-tests=fail -E
+        'test(/^agent_setup_profiles::tests::(?:save_setup_creates_parent_directory|save_setup_writes_private_json|save_setup_wraps_directory_failure|save_setup_wraps_write_failure)/)'
     - id: forget-behavior
-      why: forget_saved_setup does not handle missing files or does not report I/O errors
-      run: grep -q "forget_saved_setup" tools/management-cli/src/agent_setup_profiles.rs && grep -q "unlink\|remove\|delete" tools/management-cli/src/agent_setup_profiles.rs && grep -q "missing_ok\|FileNotFoundError\|ENOENT" tools/management-cli/src/agent_setup_profiles.rs
-    - id: export-contracts
-      why: SavedSetup, Target, or path functions are not exported for later tasks
-      run: grep -qE "^pub|export" tools/management-cli/src/agent_setup_profiles.rs && grep -q "SavedSetup\|Target" tools/management-cli/src/agent_setup_profiles.rs
+      why: forget_saved_setup doesn't tolerate a missing file or doesn't wrap a real removal failure.
+      run: >-
+        cargo nextest run --locked -p betterlite-cli --no-tests=fail -E
+        'test(/^agent_setup_profiles::tests::(?:forget_saved_setup_tolerates_missing_file|forget_saved_setup_wraps_removal_failure)/)'
 oracle_cases: []
 deviations:
-  - what: betterlite uses FileLock with mode=0o600 for setup locks, same as LiteLLM's explicit mode at configure_profiles.py line 116.
-    why: Both implementations need to protect concurrent access to setup operations with private-mode file locks.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_profiles.py#L116
+  - what: setup_locks measures its 10-second budget through an injected Clock instead of a timeout
+      parameter on the locking call itself.
+    why: File::try_lock is immediate and non-blocking only; there's no timeout argument to hand it the way
+      Python's FileLock(timeout=10) takes one. Measuring the budget through this module's own injected
+      Clock, the same local trait agent_launch, codex_settings and pkce_login.rs already define, keeps the
+      10-second boundary testable without a real wait and follows inject-dependencies instead of reading
+      a wall clock directly.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_profiles.py#L105-L121
+  - what: read_saved_setup and lock_path_for resolve settings_path with the soft-canonicalize crate instead
+      of std::fs::canonicalize.
+    why: canonicalize errors on a path whose settings file doesn't exist yet, the common case on a
+      machine's first `lite configure` run; Python's Path.resolve() has no such restriction.
+      soft-canonicalize, already a direct dependency of betterlite-server, betterlite-harness and
+      tools/oracle at 0.5.6, resolves symlinks on the path components that exist and leaves the rest
+      lexically normalized, matching Path.resolve() exactly; pinning the new direct dependency to that
+      same already-resolved version keeps cargo deny from seeing two versions of the crate.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_profiles.py#L78-L102
 out_of_scope:
-  - claude_settings_path, codex_config_path, configure_state_path, codex_configure_state_path. B4562, B4564, B4569 own those primitives; B4570 calls them to derive setup profile paths.
-  - normalize_base_url. B4560 owns this; B4570 calls it in the base_url validator.
-  - ensure_private_dir, stage_private_json, commit_staged_json, discard_staged_json. B192 owns these; B4570 calls them.
+  - claude_settings_path, codex_config_path, configure_state_path and codex_configure_state_path. B4562,
+    B4564 and B4569 own those; this task only calls them to derive settings and receipt paths.
+  - normalize_base_url. B4560 owns it; SavedSetup::new calls it to validate base_url and never
+    re-implements the check.
+  - ensure_private_dir and the private JSON write. B192 owns both; save_setup calls them and wraps their
+    failure as its own error.
+  - The clap commands that call these functions (configure, reconfigure, unconfigure). B4571 and B4572 own
+    that wiring; this task exposes only plain functions and types.
+  - Owner-only permissions on the lock file follow the same create-then-tighten idiom B4575 uses for its
+    own backup file, but this task doesn't call into B4575; the two are independent uses of the same small
+    pattern, not a shared dependency.
 pitfalls:
-  - SavedSetup.api_key holds a raw virtual key that will be written to disk; validate and mark it as secret with proper file modes (handled by B192 staging).
-  - The model field is optional for Claude but required for Codex. read_saved_setup validates this; a saved Codex profile without model is rejected as invalid.
-  - valid_key threshold is ord(char) <= 32 (spaces invalid), but valid_model threshold is ord(char) < 32 (spaces valid). A model name can contain spaces; an api_key cannot.
-  - setup_locks acquires locks in sorted order to prevent deadlock across multiple targets. Always use frozenset to deduplicate targets and then sort the lock paths.
-  - The settings_path is resolved to its absolute path before hashing for the lock file; two symlinked or relative paths pointing to the same file get the same lock.
-  - setup_locks returns a context manager that holds all locks until exit; early return or exception releases them all at once.
+  - api_key's control-character threshold is "code point at or below 32 or equal to 127"; model's is
+    "below 32 or equal to 127". A space (32) is invalid in api_key and valid in model, the one-character
+    difference the space-character-threshold check exists to pin down.
+  - Target's derived Ord must declare Claude before Codex so setup_locks's BTreeSet keeps the same
+    acquisition order Python's sorted(frozenset) gave from "claude" < "codex"; reordering the enum's
+    variants silently flips lock order and reintroduces the deadlock the sort exists to prevent.
+  - Dropping a Vec<File> that holds acquired locks releases every one of them, by closing each descriptor;
+    SetupLocksGuard needs no Drop impl of its own, and adding one risks double-unlocking.
+  - save_setup is the only place in this module that calls api_key.expose_secret(); every other function
+    that touches a SavedSetup's api_key keeps it behind SecretString, including error messages and any
+    Debug output.
+  - soft_canonicalize must run on both the live settings_path and the one stored in a saved profile before
+    comparing them; comparing the raw strings instead would treat a symlinked or relative path as a
+    different setup from the file it actually points at.
+  - >-
+    Lock with std::fs::File::try_lock (stable since Rust 1.89, and rust-toolchain.toml pins 1.98.0). Its
+    TryLockError already separates WouldBlock from a real I/O error, so don't add fs4, fd-lock or a
+    hand-written flock wrapper (https://doc.rust-lang.org/std/fs/struct.File.html#method.try_lock).
+  - The 10-second budget in setup_locks is a fixed constant, not a parameter; only the Clock measuring it
+    is injected, so production still polls with a real short sleep between non-blocking try_lock()
+    attempts.
+  - >-
+    secrecy's "serde" feature isn't enabled on betterlite-cli's current secrecy dependency; SavedSetup's
+    JSON round trip through save_setup and read_saved_setup needs it turned on in Cargo.toml, the same way
+    betterlite-core, betterlite-auth and several other crates already do. The feature gives SecretString
+    Deserialize only, since secrecy 0.10 implements Serialize just for sized SerializableSecret types and str
+    isn't one. So save_setup writes api_key through expose_secret (its one call) and a serialize_with
+    function, not a derived Serialize.
 review_level: security
 budget:
   max_changed_lines: 1500

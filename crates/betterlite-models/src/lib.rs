@@ -24,6 +24,8 @@ pub mod fetch_policy;
 pub(crate) mod finops_datetime;
 pub mod fireworks_catalog_metadata;
 pub mod full_model_metadata;
+pub mod generic_prompt_api;
+pub mod generic_prompt_api_cache;
 pub mod guardrail_pricing;
 pub mod headers;
 pub mod identity;

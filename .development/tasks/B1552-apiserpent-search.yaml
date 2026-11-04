@@ -34,14 +34,8 @@ description: >-
   170 oracle/fuzz lines, capped at 700. B048 will bind the provider to the search executor.
 scope:
   paths:
-    - crates/betterlite-core/src/api.rs
-    - crates/betterlite-core/src/api/**
-    - crates/betterlite-core/src/api/search_providers.rs
-    - crates/betterlite-core/src/api/search_providers/**
     - crates/betterlite-core/src/api/search_providers/apiserpent.rs
     - crates/betterlite-core/src/api/search_providers/apiserpent/**
-    - crates/betterlite-config/src/providers.rs
-    - crates/betterlite-config/src/providers/**
     - crates/betterlite-config/src/providers/apiserpent.rs
     - crates/betterlite-config/src/providers/apiserpent/**
     - crates/betterlite-core/fuzz/Cargo.toml

@@ -1,0 +1,15 @@
+kind: helper
+name: prometheus-multiproc-dot-slash-tmpdir
+call:
+  b4177:
+    function: prometheus_directory
+    workers: 2
+    settings:
+      callbacks: prometheus
+    metrics_port: null
+    environment:
+      TMPDIR: ./
+env:
+  TMPDIR: ./
+compare:
+  ignore: []

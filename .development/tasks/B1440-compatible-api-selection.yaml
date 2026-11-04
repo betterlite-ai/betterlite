@@ -51,8 +51,8 @@ scope:
     - crates/betterlite-models/src/compatible_api_selection/**
     - crates/betterlite-provider/src/compatible_embedding_call.rs
     - crates/betterlite-provider/src/compatible_embedding_call/**
-    - crates/betterlite-config/src/{lib,settings,providers}.rs
-    - crates/betterlite-config/src/providers/{mod,compatible_embeddings}.rs
+    - crates/betterlite-config/src/sections/compatible_embedding_settings.rs
+    - crates/betterlite-config/src/sections/compatible_embedding_settings/**
     - crates/betterlite-config/tests/compatible_embedding_dispatch_settings.rs
     - tools/oracle/src/helpers/models/compatible_api_selection.rs
     - tools/oracle/src/helpers/models/compatible_api_selection/**

@@ -97,37 +97,37 @@ checks:
   commands:
     - id: message-parsing-tests
       why: _as_str_object_dict, _as_object_list and _safe_response_text tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe_message_parsing::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe::(.*::)?typesafe_message_parsing::/)'
     - id: protection-tests
       why: _protected_indices tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe_protected_indices::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe::(.*::)?typesafe_protected_indices::/)'
     - id: truncation-tests
       why: _truncate_for_state tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe_truncation::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe::(.*::)?typesafe_truncation::/)'
     - id: instruction-tests
       why: _question_instructions tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe_instructions::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe::(.*::)?typesafe_instructions::/)'
     - id: tool-extraction-tests
       why: _tool_call_entry and _tool_call_entries tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe_tool_extraction::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe::(.*::)?typesafe_tool_extraction::/)'
     - id: candidate-selection-tests
       why: _candidate_exchanges tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe_candidate_exchanges::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe::(.*::)?typesafe_candidate_exchanges::/)'
     - id: text-extraction-tests
       why: _exchange_tool_text tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe_text_extraction::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe::(.*::)?typesafe_text_extraction::/)'
     - id: state-building-tests
       why: _build_state tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe_state_building::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe::(.*::)?typesafe_state_building::/)'
     - id: api-call-tests
       why: _call_systemone tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe_api_call::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe::(.*::)?typesafe_api_call::/)'
     - id: failure-handling-tests
       why: _handle_failure tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe_failure_handling::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe::(.*::)?typesafe_failure_handling::/)'
     - id: config-tests
       why: TypeSafeGuardrailConfigModel and ui_friendly_name tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe_config::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe::(.*::)?typesafe_config::/)'
 
 oracle_cases: []
 

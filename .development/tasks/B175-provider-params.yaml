@@ -30,8 +30,10 @@ scope:
   - crates/betterlite-models/Cargo.toml
   - crates/betterlite-models/src/params.rs
   - crates/betterlite-models/src/params/**
-  - crates/betterlite-openai/**
-  - crates/betterlite-config/**
+  - crates/betterlite-openai/fuzz/corpus/chat_request/provider_params-*
+  - crates/betterlite-config/src/sections/drop_params.rs
+  - crates/betterlite-config/src/sections/drop_params/**
+  - crates/betterlite-config/fuzz/corpus/config_yaml/provider_params-*
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/models/provider_params.rs
   - tools/oracle/src/helpers/models/provider_params/**
