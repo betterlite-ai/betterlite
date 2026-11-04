@@ -7,36 +7,44 @@ use crate::loader::{ConfigError, EnvironmentLookup};
 pub(super) fn resolve(
     lookup: &dyn EnvironmentLookup,
 ) -> Result<(PathBuf, PathBuf, PathBuf, PathBuf), ConfigError> {
-    let hf_home = resolve_hf_home(lookup);
-    let hub_cache = resolve_hub_cache(lookup, &hf_home);
+    let hf_home = resolve_hf_home(lookup)?;
+    let hub_cache = resolve_hub_cache(lookup, &hf_home)?;
     let (token_path, stored_tokens_path) = resolve_token_paths(lookup, &hf_home)?;
     Ok((hf_home, hub_cache, token_path, stored_tokens_path))
 }
 
-fn resolve_hf_home(lookup: &dyn EnvironmentLookup) -> PathBuf {
+fn resolve_hf_home(lookup: &dyn EnvironmentLookup) -> Result<PathBuf, ConfigError> {
     let hf_home_setting = lookup.lookup("HF_HOME").unwrap_or_default();
     let xdg_cache_setting = lookup.lookup("XDG_CACHE_HOME").unwrap_or_default();
-    if !hf_home_setting.is_empty() {
-        expand_path(&hf_home_setting, lookup)
+    Ok(if !hf_home_setting.is_empty() {
+        expand_path(&hf_home_setting, "HF_HOME", lookup)?
     } else if !xdg_cache_setting.is_empty() {
-        expand_path(&xdg_cache_setting, lookup).join("huggingface")
+        expand_path(&xdg_cache_setting, "XDG_CACHE_HOME", lookup)?.join("huggingface")
     } else {
-        expand_path("~/.cache/huggingface", lookup)
-    }
+        expand_path("~/.cache/huggingface", "HF_HOME", lookup)?
+    })
 }
 
-fn resolve_hub_cache(lookup: &dyn EnvironmentLookup, hf_home: &Path) -> PathBuf {
+fn resolve_hub_cache(
+    lookup: &dyn EnvironmentLookup,
+    hf_home: &Path,
+) -> Result<PathBuf, ConfigError> {
     let primary_cache = lookup.lookup("HF_HUB_CACHE").unwrap_or_default();
     let hub_cache_setting = if primary_cache.is_empty() {
         lookup.lookup("HUGGINGFACE_HUB_CACHE").unwrap_or_default()
     } else {
         primary_cache
     };
-    if hub_cache_setting.is_empty() {
+    Ok(if hub_cache_setting.is_empty() {
         hf_home.join("hub")
     } else {
-        expand_path(&hub_cache_setting, lookup)
-    }
+        let name = if lookup.lookup("HF_HUB_CACHE").unwrap_or_default().is_empty() {
+            "HUGGINGFACE_HUB_CACHE"
+        } else {
+            "HF_HUB_CACHE"
+        };
+        expand_path(&hub_cache_setting, name, lookup)?
+    })
 }
 
 fn resolve_token_paths(
@@ -54,40 +62,52 @@ fn resolve_token_paths(
         hf_home.join("token")
     } else {
         let token_setting = lookup.lookup("HF_TOKEN_PATH").unwrap_or_default();
-        expand_path(&token_setting, lookup)
+        expand_path(&token_setting, "HF_TOKEN_PATH", lookup)?
     };
     let stored_tokens_path = configured_token_path
         .parent()
         .unwrap_or(&configured_token_path)
         .join("stored_tokens");
     let token_path = if staging {
-        expand_path("~/.cache/huggingface_staging/token", lookup)
+        expand_path(
+            "~/.cache/huggingface_staging/token",
+            "HF_TOKEN_PATH",
+            lookup,
+        )?
     } else {
         configured_token_path
     };
     Ok((token_path, stored_tokens_path))
 }
 
-pub(super) fn expand_path(value: &str, lookup: &dyn EnvironmentLookup) -> PathBuf {
+pub(super) fn expand_path(
+    value: &str,
+    variable: &str,
+    lookup: &dyn EnvironmentLookup,
+) -> Result<PathBuf, ConfigError> {
     let system_home = lookup
         .system_home()
         .and_then(|path| path.to_str().map(str::to_owned));
     let home = lookup.lookup("HOME").or(system_home);
-    let user_expanded = expand_user(value, home.as_deref());
-    PathBuf::from(expand_variables(&user_expanded, lookup))
+    let user_expanded = expand_user(value, home.as_deref(), variable)?;
+    Ok(PathBuf::from(expand_variables(&user_expanded, lookup)))
 }
 
-fn expand_user(value: &str, home: Option<&str>) -> String {
-    let Some(home_directory) = home else {
-        return value.to_owned();
-    };
+fn expand_user(value: &str, home: Option<&str>, variable: &str) -> Result<String, ConfigError> {
     let Some(suffix) = value.strip_prefix('~') else {
-        return value.to_owned();
+        return Ok(value.to_owned());
     };
     if !suffix.is_empty() && !suffix.starts_with('/') {
-        return value.to_owned();
+        return Err(ConfigError::Unsupported {
+            paths: vec![format!(
+                "{variable}: named-user tilde paths are unsupported"
+            )],
+        });
     }
-    format!("{}{suffix}", home_directory.trim_end_matches('/'))
+    let Some(home_directory) = home else {
+        return Ok(value.to_owned());
+    };
+    Ok(format!("{}{suffix}", home_directory.trim_end_matches('/')))
 }
 
 fn expand_variables(value: &str, lookup: &dyn EnvironmentLookup) -> String {

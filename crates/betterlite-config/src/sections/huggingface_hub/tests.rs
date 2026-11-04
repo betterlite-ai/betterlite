@@ -37,7 +37,8 @@ fn settings(entries: &[(&str, &str)]) -> Result<Settings, ConfigError> {
 #[test]
 fn settings_follow_huggingface_hub() {
     defaults_follow_hub();
-    tilde_and_empty_braces_stay_literal();
+    named_user_tilde_path_names_its_variable();
+    empty_braces_stay_literal();
     configured_paths_follow_hub();
     staging_follows_hub();
     fallback_values_follow_hub();
@@ -59,13 +60,14 @@ fn defaults_follow_hub() {
     assert_eq!(defaults.token_path, defaults.hf_home.join("token"));
 }
 
-fn tilde_and_empty_braces_stay_literal() {
-    assert_eq!(
-        settings(&[("HF_HOME", "~other/cache"), ("HOME", "/home/test")])
-            .unwrap()
-            .hf_home,
-        PathBuf::from("~other/cache")
-    );
+fn named_user_tilde_path_names_its_variable() {
+    let error = settings(&[("HF_HOME", "~root/cache"), ("HOME", "/home/test")])
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("HF_HOME"));
+}
+
+fn empty_braces_stay_literal() {
     assert_eq!(
         settings(&[("HF_HOME", "${}"), ("", "/unexpected")])
             .unwrap()

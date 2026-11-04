@@ -1,5 +1,7 @@
+use std::path::Path;
 use std::path::PathBuf;
-use std::{io, string};
+use std::str::{self, Utf8Error};
+use std::{io, sync::Arc};
 
 use secrecy::SecretString;
 use thiserror::Error;
@@ -25,17 +27,41 @@ pub enum HubTokenError {
     Utf8 {
         path: PathBuf,
         #[source]
-        source: string::FromUtf8Error,
+        source: Utf8Error,
     },
 }
 
 pub struct HubTokenResolver {
-    pub settings: Settings,
+    settings: Settings,
+    file_reader: Arc<dyn HubTokenFileReader>,
+}
+
+#[async_trait::async_trait]
+pub trait HubTokenFileReader: Send + Sync {
+    async fn read(&self, path: &Path) -> io::Result<Vec<u8>>;
+}
+
+#[derive(Debug, Default)]
+pub struct TokioHubTokenFileReader;
+
+#[async_trait::async_trait]
+impl HubTokenFileReader for TokioHubTokenFileReader {
+    async fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
+        fs::read(path).await
+    }
 }
 
 mod tests;
 
 impl HubTokenResolver {
+    #[must_use]
+    pub fn new(settings: Settings, file_reader: Arc<dyn HubTokenFileReader>) -> Self {
+        Self {
+            settings,
+            file_reader,
+        }
+    }
+
     pub async fn resolve(&self, token: &HubToken) -> Result<Option<SecretString>, HubTokenError> {
         match token {
             HubToken::Explicit(value) => {
@@ -48,10 +74,10 @@ impl HubTokenResolver {
                         environment_token.expose_secret().to_owned(),
                     )));
                 }
-                match fs::read(&self.settings.token_path).await {
+                match self.file_reader.read(&self.settings.token_path).await {
                     Ok(bytes) => {
                         let text =
-                            String::from_utf8(bytes).map_err(|source| HubTokenError::Utf8 {
+                            str::from_utf8(&bytes).map_err(|source| HubTokenError::Utf8 {
                                 path: self.settings.token_path.clone(),
                                 source,
                             })?;
