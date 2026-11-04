@@ -25,12 +25,24 @@ class BrokenEndpoint:
 
 def route(value: dict[str, Json]) -> SimpleNamespace:
     children = value.get("app")
-    return SimpleNamespace(
-        path=value.get("path"), methods=value.get("methods"), name=value.get("name"),
-        endpoint=value.get("endpoint"),
-        app=NestedApp([route(cast(dict[str, Json], child)) for child in cast(list[Json], children)])
-        if isinstance(children, list) else None,
-    )
+    attributes: dict[str, object] = {}
+    for field in ("path", "methods", "name"):
+        if field in value:
+            attributes[field] = value[field]
+    if "endpoint" in value:
+        endpoint_name = value["endpoint"]
+        attributes["endpoint"] = (
+            SimpleNamespace(__name__=endpoint_name)
+            if isinstance(endpoint_name, str)
+            else endpoint_name
+        )
+    if "app" in value:
+        attributes["app"] = (
+            NestedApp([route(cast(dict[str, Json], child)) for child in cast(list[Json], children)])
+            if isinstance(children, list)
+            else children
+        )
+    return SimpleNamespace(**attributes)
 
 
 def run(value: dict[str, Json]) -> Json:
@@ -55,7 +67,9 @@ def run(value: dict[str, Json]) -> Json:
     if function == "safe_get_endpoint_name":
         name = value.get("endpoint_name")
         endpoint: object = BrokenEndpoint() if cast(bool, value.get("fail", False)) else (
-            SimpleNamespace(__name__=name) if name is not None else NestedApp()
+            SimpleNamespace(__name__=name)
+            if name is not None
+            else type(cast(str, value.get("class_name", "NestedApp")), (), {})()
         )
         return cast(Json, GetRoutes._safe_get_endpoint_name(endpoint))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
     raise ValueError("unknown function")
