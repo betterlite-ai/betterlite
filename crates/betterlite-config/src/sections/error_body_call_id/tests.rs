@@ -10,18 +10,14 @@ use std::collections::BTreeMap;
 #[case::disabled("general_settings: {include_call_id_in_error_body: false}", false)]
 #[case::null("general_settings: {include_call_id_in_error_body: null}", false)]
 fn error_normalization_tests_behavior(#[case] source: &str, #[case] expected: bool) {
-    let config = ConfigLoader {
+    let settings = ConfigLoader {
         lookup: BTreeMap::<String, String>::new(),
     }
     .load(source)
-    .unwrap();
-    assert_eq!(
-        config
-            .sections
-            .error_body_call_id
-            .include_call_id_in_error_body,
-        expected
-    );
+    .unwrap()
+    .sections
+    .error_body_call_id;
+    assert_eq!(settings.include_call_id_in_error_body, expected);
 }
 
 #[test]
