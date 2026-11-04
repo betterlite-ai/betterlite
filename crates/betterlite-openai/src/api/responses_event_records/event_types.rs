@@ -28,7 +28,7 @@ event_record!(ResponseEvent {
 event_record!(ResponsePartAddedEvent {
     item_id: String,
     output_index: i64,
-    part: super::super::responses_objects::sdk::text::Summary,
+    part: Extra,
 });
 event_record!(ReasoningSummaryTextDeltaEvent {
     item_id: String,
@@ -51,7 +51,7 @@ event_record!(ReasoningSummaryPartDoneEvent {
     sequence_number: i64,
     #[serde(default)]
     summary_index: i64,
-    part: super::super::responses_objects::sdk::text::Summary,
+    part: Extra,
 });
 event_record!(OutputItemAddedEvent {
     output_index: i64,

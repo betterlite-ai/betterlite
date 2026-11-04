@@ -102,6 +102,18 @@ fn event_defaults_and_required_nullable_fields_are_preserved() {
     ));
 }
 
+#[rstest]
+#[case::added_empty("response.reasoning_summary_part.added", "{}")]
+#[case::added_other_type("response.reasoning_summary_part.added", "{\"type\":\"other\"}")]
+#[case::done_empty("response.reasoning_summary_part.done", "{}")]
+#[case::done_other_type("response.reasoning_summary_part.done", "{\"type\":\"other\"}")]
+fn reasoning_summary_part_accepts_any_object(#[case] event: &str, #[case] part: &str) {
+    let input = format!(
+        "{{\"type\":\"{event}\",\"item_id\":\"rs_a\",\"output_index\":1,\"sequence_number\":8,\"part\":{part}}}"
+    );
+    decode_responses_event_record(input.as_bytes(), limits()).unwrap();
+}
+
 #[test]
 fn event_byte_limit_is_enforced() {
     let small = WireDecodeLimits {
