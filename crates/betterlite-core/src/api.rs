@@ -238,6 +238,10 @@ pub mod responses_tool_namespaces;
 pub mod responses_tool_repair;
 pub mod responses_tool_results;
 pub mod responses_transform;
+#[expect(
+    clippy::disallowed_types,
+    reason = "Responses usage must retain arbitrary provider extension fields and typed input mappings"
+)]
 pub mod responses_usage;
 pub mod responses_write_http;
 pub mod responses_ws_auth;

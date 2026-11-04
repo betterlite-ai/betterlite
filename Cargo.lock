@@ -1070,6 +1070,7 @@ dependencies = [
  "betterlite-config",
  "betterlite-logging",
  "betterlite-models",
+ "betterlite-openai",
  "chrono",
  "indexmap 2.14.2",
  "lopdf",
