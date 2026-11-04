@@ -1,16 +1,25 @@
 kind: websocket
 name: barrier-gates-send
-path: /v1/realtime
-headers: {}
+path: /v1/realtime?model=realtime-a
+headers:
+  Authorization: Bearer sk-test
 requested_subprotocols: []
 expected_http_status: 101
 negotiated_subprotocol: null
 frames:
-  - direction: provider_to_client
-    action: expect
-    text: ready
-    barrier: after_provider_ready
-  - direction: client_to_provider
-    action: send
-    text: followup
-    barrier: after_provider_ready
+- direction: provider_to_client
+  action: expect
+  text: '{"type": "test.ready"}'
+  barrier: after_provider_ready
+- direction: client_to_provider
+  action: send
+  text: '{"type": "test.followup"}'
+  barrier: after_provider_ready
+execution_seconds: 10
+env:
+  LITELLM_MASTER_KEY: sk-test
+expected_upstream_query: model=realtime-a
+close:
+  initiator: provider
+  code: 1000
+  reason: finished

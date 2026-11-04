@@ -2,17 +2,17 @@ use super::DriverError;
 use crate::websocket_oracle::Frame;
 use tokio_tungstenite::tungstenite::Message;
 
-impl TryFrom<(Message, &Frame)> for Frame {
+impl TryFrom<(Message, &Self)> for Frame {
     type Error = DriverError;
-    fn try_from((message, expected): (Message, &Frame)) -> Result<Self, Self::Error> {
+    fn try_from((message, expected): (Message, &Self)) -> Result<Self, Self::Error> {
         let (text, binary, binary_data) = match message {
-            Message::Text(text) => (Some(text), None, None),
-            Message::Binary(bytes) => (None, expected.binary.clone(), Some(bytes)),
+            Message::Text(text) => (Some(text.to_string()), None, None),
+            Message::Binary(bytes) => (None, expected.binary.clone(), Some(bytes.to_vec())),
             Message::Close(_) | Message::Ping(_) | Message::Pong(_) | Message::Frame(_) => {
                 return Err(DriverError::Transport("expected a data frame".to_owned()));
             }
         };
-        Ok(Frame {
+        Ok(Self {
             direction: expected.direction,
             action: expected.action,
             text,

@@ -1,0 +1,16 @@
+kind: websocket
+name: probe-empty
+path: /v1/realtime
+headers: {}
+requested_subprotocols: []
+expected_http_status: 101
+negotiated_subprotocol: null
+service: realtime_probe
+input:
+  model: realtime-a
+  api_key: sk-test
+  api_base: https://api.openai.com/
+  query_params: {}
+frames: []
+execution_seconds: 10
+driver: service

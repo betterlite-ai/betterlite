@@ -25,7 +25,6 @@ mod fixtures;
 pub(crate) mod native_feature_eligibility;
 mod scenario;
 mod websocket;
-use websocket::run_websocket_gateway_case;
 
 #[derive(Debug, clap::Parser)]
 pub(crate) struct DatabaseEnvironment {
@@ -72,26 +71,7 @@ pub(crate) fn run_cases(
     for scenario_case in &scenarios {
         outcomes.push(scenario::run_scenario_case(options, &root, scenario_case)?);
     }
-    for websocket_case in &websocket_cases {
-        if let Some(service) = &websocket_case.service {
-            let helper_case = crate::case::HelperCase {
-                kind: crate::case::helper::HelperKind::Helper,
-                name: websocket_case.name.clone(),
-                call: helpers::HelperCall {
-                    operation: "websocket_oracle".to_owned(),
-                    input: serde_json::json!({"service": service, "input": websocket_case.input}),
-                },
-                env: websocket_case.env.clone(),
-                compare: crate::case::helper::HelperCompare::default(),
-            };
-            let result = helpers::run_case(&helper_case, options.self_check)?;
-            if matches!(result, helpers::HelperRun::Difference) {
-                helper_outcome = helpers::HelperRun::Difference;
-            }
-        } else {
-            outcomes.extend(run_websocket_gateway_case(options, &root, websocket_case)?);
-        }
-    }
+    outcomes.extend(websocket::run_cases(options, &root, &websocket_cases)?);
     if matches!(helper_outcome, helpers::HelperRun::Difference) {
         return Ok(exit_status(true));
     }

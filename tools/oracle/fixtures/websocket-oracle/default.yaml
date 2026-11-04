@@ -1,0 +1,13 @@
+general_settings:
+  disable_model_info_refresh: true
+model_list:
+  - model_name: realtime-a
+    litellm_params:
+      model: openai/realtime-a
+      api_base: __WEBSOCKET_PROVIDER__
+      api_key: sk-provider
+  - model_name: gpt-realtime-whisper
+    litellm_params:
+      model: openai/gpt-realtime-whisper
+      api_base: __WEBSOCKET_PROVIDER__
+      api_key: sk-provider

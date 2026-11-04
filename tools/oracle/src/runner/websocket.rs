@@ -1,150 +1,164 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
+use tokio::runtime::{Builder, Runtime};
 
-use crate::OracleError;
-use crate::cli::Options;
 use crate::gateway::{GatewayInput, start as start_gateway};
-use crate::websocket_driver::{compare_transcript, exchange_gateway, start_provider};
-use crate::websocket_oracle::{MAX_EXECUTION_SECONDS, WebSocketCase};
+use crate::websocket_driver::{
+    DriverError, TranscriptObservation, compare_transcript,
+    gateway::exchange,
+    provider::{ProviderHandle, ProviderObservation, start},
+    service::ServiceInput,
+};
+use crate::websocket_oracle::{WebSocketCase, close_matches, direction_matches};
+use crate::{
+    OracleError,
+    case::{
+        HelperCase,
+        helper::{HelperCompare, HelperKind},
+    },
+    cli::Options,
+    helpers::{self, HelperCall, HelperRun},
+    paths::safe_name,
+};
 
-struct WebSocketGatewayAttempt<'input> {
-    options: &'input Options,
-    root: &'input Path,
-    case: &'input WebSocketCase,
-    runtime: &'input tokio::runtime::Runtime,
-    first: bool,
-}
-
-pub(super) fn run_websocket_gateway_case(
+pub(super) fn run_cases(
     options: &Options,
     root: &Path,
-    case: &WebSocketCase,
+    cases: &[WebSocketCase],
 ) -> Result<Vec<bool>, OracleError> {
-    let group_dir = root
-        .join("websocket")
-        .join(crate::paths::safe_name(&case.name));
-    fs::create_dir_all(&group_dir).map_err(|source| OracleError::Filesystem {
-        path: group_dir.clone(),
-        source,
-    })?;
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|source| OracleError::ScenarioInvalid {
-            message: source.to_string(),
-        })?;
-    let first = run_websocket_gateway_attempt(WebSocketGatewayAttempt {
-        options,
-        root,
-        case,
-        runtime: &runtime,
-        first: true,
-    })?;
-    let second = run_websocket_gateway_attempt(WebSocketGatewayAttempt {
-        options,
-        root,
-        case,
-        runtime: &runtime,
-        first: false,
-    })?;
-    Ok(vec![first, second])
+    let mut outcomes = Vec::new();
+    for case in cases {
+        if let Some(service) = case.service {
+            let helper = HelperCase {
+                kind: HelperKind::Helper,
+                name: case.name.clone(),
+                env: case.env.clone(),
+                compare: HelperCompare::default(),
+                call: HelperCall {
+                    operation: "websocket_oracle".to_owned(),
+                    input: serde_json::to_value(ServiceInput {
+                        service,
+                        input: case.input.clone(),
+                    })
+                    .map_err(OracleError::Json)?,
+                },
+            };
+            outcomes.push(matches!(
+                helpers::run_case(&helper, options.self_check)?,
+                HelperRun::Difference
+            ));
+        } else {
+            let group = root.join("websocket").join(safe_name(&case.name));
+            fs::create_dir_all(&group).map_err(|source| OracleError::Filesystem {
+                path: group.clone(),
+                source,
+            })?;
+            let runtime = Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|source| OracleError::Filesystem {
+                    path: group.clone(),
+                    source,
+                })?;
+            outcomes.push(attempt(options, &group, case, &runtime, true)?);
+            outcomes.push(attempt(options, &group, case, &runtime, false)?);
+        }
+    }
+    Ok(outcomes)
 }
 
-fn run_websocket_gateway_attempt(
-    attempt: WebSocketGatewayAttempt<'_>,
-) -> Result<bool, OracleError> {
-    let WebSocketGatewayAttempt {
-        options,
-        root,
-        case,
-        runtime,
-        first,
-    } = attempt;
-    let provider = runtime
-        .block_on(start_provider(case.clone()))
-        .map_err(|error| OracleError::ScenarioInvalid {
-            message: error.to_string(),
-        })?;
-    let provider_url = format!("ws://{}", provider.address);
-    let default_config = "model_list:\n  - model_name: realtime-a\n    litellm_params:\n      model: openai/realtime-a\n      api_base: __WEBSOCKET_PROVIDER__\n      api_key: sk-provider\n  - model_name: gpt-realtime-whisper\n    litellm_params:\n      model: openai/gpt-realtime-whisper\n      api_base: __WEBSOCKET_PROVIDER__\n      api_key: sk-provider\n";
+fn config_path(
+    root: &Path,
+    case: &WebSocketCase,
+    provider: &ProviderHandle,
+) -> Result<PathBuf, OracleError> {
     let template = if case.config.is_empty() {
-        default_config
+        include_str!("../../fixtures/websocket-oracle/default.yaml")
     } else {
         &case.config
     };
-    let config = template.replace("__WEBSOCKET_PROVIDER__", &provider_url);
-    let config_path = root.join("websocket").join(format!(
-        "{}-{}.yaml",
-        crate::paths::safe_name(&case.name),
-        first
-    ));
-    if let Err(source) = fs::write(&config_path, config) {
-        let _cancelled = runtime.block_on(provider.cancel());
-        return Err(OracleError::Filesystem {
-            path: config_path,
-            source,
-        });
-    }
+    let config = template.replace(
+        "__WEBSOCKET_PROVIDER__",
+        &format!("ws://{}", provider.address),
+    );
+    let path = root.join("config.yaml");
+    fs::write(&path, config).map_err(|source| OracleError::Filesystem {
+        path: path.clone(),
+        source,
+    })?;
+    Ok(path)
+}
+
+fn attempt(
+    options: &Options,
+    root: &Path,
+    case: &WebSocketCase,
+    runtime: &Runtime,
+    first: bool,
+) -> Result<bool, OracleError> {
+    let provider =
+        runtime
+            .block_on(start(case.clone()))
+            .map_err(|source| OracleError::ScenarioInvalid {
+                message: source.to_string(),
+            })?;
+    let path = config_path(root, case, &provider)?;
     let input = GatewayInput {
         options,
         group_dir: root,
-        config_path: &config_path,
+        config_path: &path,
         case_env: &case.env,
     };
-    let mut gateway = match start_gateway(&input, first) {
-        Ok(gateway) => gateway,
+    let mut gateway = start_gateway(&input, first)?;
+    let result = runtime.block_on(capture(case, provider, &gateway.base_url));
+    let stopped = gateway.stop();
+    let (observed, upstream) = result.map_err(|source| OracleError::ScenarioInvalid {
+        message: source.to_string(),
+    })?;
+    stopped?;
+    let mismatch = compare_transcript(case, &observed).err();
+    if let Some(pointer) = mismatch {
+        return Err(OracleError::ScenarioInvalid {
+            message: format!("{}: {pointer}", case.name),
+        });
+    }
+    Ok(upstream.is_some_and(|record| upstream_differs(case, &record)))
+}
+
+async fn capture(
+    case: &WebSocketCase,
+    provider: ProviderHandle,
+    base: &str,
+) -> Result<(TranscriptObservation, Option<ProviderObservation>), DriverError> {
+    let observed = match exchange(base, case).await {
+        Ok(observation) => observation,
         Err(error) => {
-            let _cancelled = runtime.block_on(provider.cancel());
+            provider.cancel().await?;
             return Err(error);
         }
     };
-    let captured = runtime.block_on(exchange_gateway(&gateway.base_url, case));
-    let stop_result = gateway.stop();
-    let observed = match captured {
-        Ok(observed) => observed,
-        Err(error) => {
-            let _cancelled = runtime.block_on(provider.cancel());
-            stop_result?;
-            return Err(OracleError::ScenarioInvalid {
-                message: error.to_string(),
-            });
-        }
-    };
-    stop_result?;
-    let provider_observation = if observed.handshake.status == 101 {
+    let upstream = if observed.handshake.status == 101 {
         Some(
-            runtime
-                .block_on(provider.finish(Duration::from_secs(MAX_EXECUTION_SECONDS)))
-                .map_err(|error| OracleError::ScenarioInvalid {
-                    message: error.to_string(),
-                })?,
+            provider
+                .finish(Duration::from_secs(case.execution_seconds))
+                .await?,
         )
     } else {
-        runtime
-            .block_on(provider.cancel())
-            .map_err(|error| OracleError::ScenarioInvalid {
-                message: error.to_string(),
-            })?;
+        provider.cancel().await?;
         None
     };
-    let mut difference = compare_transcript(case, &observed).is_err();
-    if let Some(provider_observation) = provider_observation {
-        difference |= provider_observation.connection_count != 1;
-        difference |= crate::websocket_oracle::close_matches(
-            case.close.as_ref(),
-            provider_observation.close.as_ref(),
-        )
-        .is_err();
-        difference |= provider_observation
-            .request_uri
-            .split_once('?')
-            .map(|(_, query)| query)
-            .unwrap_or("")
-            != case.expected_upstream_query.as_deref().unwrap_or("");
-        difference |=
-            crate::websocket_oracle::direction_matches(&case.frames, &provider_observation.frames)
-                .is_err();
-    }
-    Ok(difference)
+    Ok((observed, upstream))
+}
+
+fn upstream_differs(case: &WebSocketCase, record: &ProviderObservation) -> bool {
+    let query = record
+        .request_uri
+        .split_once('?')
+        .map_or("", |(_, query)| query);
+    record.connection_count != 1
+        || query != case.expected_upstream_query.as_deref().unwrap_or("")
+        || (case.upstream_status.is_none()
+            && (direction_matches(&case.frames, &record.frames).is_err()
+                || close_matches(case.close.as_ref(), record.close.as_ref()).is_err()))
 }

@@ -1,10 +1,10 @@
-use serde::Deserialize;
-use serde_json::Value;
+use crate::websocket_driver::service::{Arguments, ServiceTag};
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub const MAX_FRAMES: usize = 1024;
-pub const MAX_FRAME_BYTES: usize = 1_048_576;
-pub const MAX_CAPTURE_BYTES: usize = 16_777_216;
+pub const MAX_FRAME_BYTES: usize = 0x0010_0000;
+pub const MAX_CAPTURE_BYTES: usize = 0x0100_0000;
 pub const MAX_EXECUTION_SECONDS: u64 = 120;
 
 #[derive(Debug, Clone, Copy)]
@@ -26,7 +26,7 @@ impl Default for OracleLimits {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct WebSocketCase {
     pub kind: String,
@@ -39,9 +39,11 @@ pub struct WebSocketCase {
     #[serde(default)]
     pub expected_upstream_query: Option<String>,
     #[serde(default)]
-    pub service: Option<String>,
+    pub service: Option<ServiceTag>,
     #[serde(default)]
-    pub input: Value,
+    pub driver: Driver,
+    #[serde(default)]
+    pub input: Arguments,
     pub path: String,
     #[serde(default)]
     pub headers: BTreeMap<String, String>,
@@ -52,13 +54,13 @@ pub struct WebSocketCase {
     pub frames: Vec<Frame>,
     #[serde(default)]
     pub close: Option<Close>,
-    #[serde(default)]
+    #[serde(default = "default_execution_seconds")]
     pub execution_seconds: u64,
     #[serde(default)]
     pub upstream_status: Option<u16>,
 }
 
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct Frame {
     pub direction: Direction,
@@ -73,21 +75,21 @@ pub struct Frame {
     pub barrier: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Direction {
     ClientToProvider,
     ProviderToClient,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Action {
     Send,
     Expect,
 }
 
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct Close {
     pub initiator: String,
@@ -111,7 +113,7 @@ pub fn direction_matches(expected: &[Frame], observed: &[Frame]) -> Result<(), S
             .enumerate()
         {
             if left.action != right.action {
-                return Err(format!("/{}/{index}/action", peer_name(direction)));
+                return Err(format!("/{}/frames/{index}/action", peer_name(direction)));
             }
             if left.text != right.text || left.binary_data != right.binary_data {
                 return Err(changed_peer_path(direction, index, left));
@@ -122,8 +124,8 @@ pub fn direction_matches(expected: &[Frame], observed: &[Frame]) -> Result<(), S
             let frame = expected_direction
                 .get(index)
                 .or_else(|| observed_direction.get(index));
-            if let Some(frame) = frame {
-                return Err(changed_peer_path(direction, index, frame));
+            if let Some(missing) = frame {
+                return Err(changed_peer_path(direction, index, missing));
             }
         }
     }
@@ -139,7 +141,7 @@ fn changed_peer_path(direction: Direction, index: usize, frame: &Frame) -> Strin
     format!("/{}/frames/{index}/{payload}", peer_name(direction))
 }
 
-fn peer_name(direction: Direction) -> &'static str {
+const fn peer_name(direction: Direction) -> &'static str {
     match direction {
         Direction::ClientToProvider => "client",
         Direction::ProviderToClient => "provider",
@@ -169,14 +171,17 @@ pub fn close_matches(expected: Option<&Close>, observed: Option<&Close>) -> Resu
     Ok(())
 }
 
-pub fn barrier_is_released(frame: &Frame, provider_observations: &[String]) -> bool {
-    frame.barrier.as_ref().is_none_or(|barrier| {
-        provider_observations
-            .iter()
-            .any(|observation| observation == barrier)
-    })
+pub mod decode;
+mod tests;
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Driver {
+    #[default]
+    Gateway,
+    Service,
 }
 
-mod decode;
-pub use decode::{DecodeError, decode_ws_case, validate_binary_fixture};
-mod tests;
+const fn default_execution_seconds() -> u64 {
+    MAX_EXECUTION_SECONDS
+}

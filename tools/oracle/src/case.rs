@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::str;
 
 use crate::OracleError;
+use crate::websocket_oracle::{OracleLimits, decode::decode_ws_case};
 use betterlite_postgres_fixture::seed::DatabaseFixture;
 use serde::Deserialize;
 use serde_json::Value;
@@ -148,13 +149,11 @@ pub(crate) fn parse_case(path: &Path, text: &str) -> Result<LoadedCase, OracleEr
     // the case says what it is, so its folder never decides
     let probe: CaseKind = serde_saphyr::from_str(text).map_err(parse_error)?;
     if probe.kind.as_deref() == Some("websocket") {
-        let case = crate::websocket_oracle::decode_ws_case(
-            text.as_bytes(),
-            &crate::websocket_oracle::OracleLimits::default(),
-        )
-        .map_err(|source| OracleError::CaseInvalid {
-            path: path.to_owned(),
-            message: source.to_string(),
+        let case = decode_ws_case(text.as_bytes(), &OracleLimits::default()).map_err(|source| {
+            OracleError::CaseInvalid {
+                path: path.to_owned(),
+                message: source.to_string(),
+            }
         })?;
         return Ok(LoadedCase::WebSocket(case));
     }

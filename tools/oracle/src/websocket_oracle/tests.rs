@@ -1,36 +1,45 @@
 #![cfg(test)]
 
+use crate::process::{Gateway, GatewaySpec};
+use std::fmt::Write as _;
+use std::fs;
+use std::future::pending;
 use std::path::Path;
 use std::time::Duration;
+use tokio::runtime::Builder;
+use tokio::time::timeout;
 
-use super::{
-    Close, MAX_EXECUTION_SECONDS, OracleLimits, close_matches, decode_ws_case, direction_matches,
-    validate_binary_fixture,
-};
-use crate::websocket_driver::{compare_transcript, exchange_gateway, start_provider};
+use super::decode::{decode_ws_case, validate_binary_fixture};
+use super::{Close, OracleLimits, close_matches, direction_matches};
+use crate::websocket_driver::gateway::exchange as exchange_gateway;
+use crate::websocket_driver::provider::start as start_provider;
+use crate::websocket_driver::service::{Arguments, ServiceInput, ServiceTag, Services};
+use crate::websocket_driver::{DriverError, TranscriptObservation, compare_transcript};
 
 fn valid() -> String {
     "kind: websocket\npath: /v1/realtime\nheaders: {}\nrequested_subprotocols: []\nexpected_http_status: 101\nnegotiated_subprotocol: null\nframes:\n  - direction: client_to_provider\n    action: send\n    text: setup\n  - direction: provider_to_client\n    action: expect\n    text: ready\n".to_owned()
 }
 
-#[test]
-fn transcript_schema() {
-    assert!(decode_ws_case(valid().as_bytes(), &OracleLimits::default()).is_ok());
+#[tokio::test]
+async fn transcript_schema() {
+    let case = decode_ws_case(valid().as_bytes(), &OracleLimits::default()).unwrap();
+    matching_peer(case).await;
     let extra = valid().replace("kind: websocket", "kind: websocket\nunknown: true");
-    assert!(decode_ws_case(extra.as_bytes(), &OracleLimits::default()).is_err());
+    decode_ws_case(extra.as_bytes(), &OracleLimits::default()).unwrap_err();
     let duplicated = valid().replace("path: /v1/realtime", "path: /v1/realtime\npath: /other");
-    assert!(decode_ws_case(duplicated.as_bytes(), &OracleLimits::default()).is_err());
+    decode_ws_case(duplicated.as_bytes(), &OracleLimits::default()).unwrap_err();
 }
 
 #[rstest::rstest]
 #[case::frame_count_boundary(1024, 1, 120, 0, true)]
 #[case::frame_count_overflow(1025, 1, 120, 0, false)]
-#[case::frame_size_boundary(1, 1_048_576, 120, 0, true)]
-#[case::frame_size_overflow(1, 1_048_577, 120, 0, false)]
-#[case::capture_boundary(16, 1_048_576, 120, 0, true)]
-#[case::capture_overflow(16, 1_048_576, 120, 1, false)]
+#[case::frame_size_boundary(1, 0x0010_0000, 120, 0, true)]
+#[case::frame_size_overflow(1, 0x0010_0001, 120, 0, false)]
+#[case::capture_boundary(16, 0x0010_0000, 120, 0, true)]
+#[case::capture_overflow(16, 0x0010_0000, 120, 1, false)]
 #[case::execution_overflow(1, 1, 121, 0, false)]
-fn bounded_inputs(
+#[tokio::test]
+async fn bounded_inputs(
     #[case] count: usize,
     #[case] size: usize,
     #[case] seconds: u64,
@@ -47,21 +56,29 @@ fn bounded_inputs(
         frame.repeat(count)
     );
     if extra != 0 {
-        input.push_str(&format!(
+        write!(
+            input,
             "  - direction: client_to_provider\n    action: send\n    text: {}\n",
             "x".repeat(extra)
-        ));
+        )
+        .unwrap();
     }
     assert_eq!(
         decode_ws_case(input.as_bytes(), &OracleLimits::default()).is_ok(),
         accepted
     );
-    assert!(validate_binary_fixture(Path::new("../outside.bin")).is_err());
+    validate_binary_fixture(Path::new("../outside.bin")).unwrap_err();
+    let case = decode_ws_case(valid().as_bytes(), &OracleLimits::default()).unwrap();
+    matching_peer(case).await;
+    if count == 1024 {
+        bounded_child().await;
+    }
 }
 
-#[test]
-fn direction_order() {
+#[tokio::test]
+async fn direction_order() {
     let transcript = decode_ws_case(valid().as_bytes(), &OracleLimits::default()).unwrap();
+    matching_peer(transcript.clone()).await;
     let setup = transcript.frames[0].clone();
     let ready = transcript.frames[1].clone();
     let mut followup = setup.clone();
@@ -75,7 +92,7 @@ fn direction_order() {
         followup.clone(),
     ];
     let observed = vec![setup.clone(), ready, delta, followup];
-    assert!(direction_matches(&expected, &observed).is_ok());
+    direction_matches(&expected, &observed).unwrap();
     assert_eq!(
         direction_matches(&transcript.frames, &[setup]),
         Err("/provider/frames/0/text".to_owned())
@@ -107,10 +124,16 @@ async fn barrier_gates_send() {
         .await
         .unwrap();
     let upstream = provider.finish(Duration::from_secs(2)).await.unwrap();
-    assert!(compare_transcript(&case, &observed).is_ok());
+    compare_transcript(&case, &observed).unwrap();
     assert_eq!(observed.frames[1].text.as_deref(), Some("ready"));
     assert_eq!(observed.frames[2].text.as_deref(), Some("followup"));
-    assert!(direction_matches(&case.frames, &upstream.frames).is_ok());
+    direction_matches(&case.frames, &upstream.frames).unwrap();
+    let mut changed = observed;
+    changed.frames[1].text = Some("changed".to_owned());
+    assert_eq!(
+        compare_transcript(&case, &changed),
+        Err("/provider/frames/0/text".to_owned())
+    );
 }
 
 #[tokio::test]
@@ -128,82 +151,195 @@ async fn preaccept_status() {
     assert!(observed.close.is_none());
     assert!(observed.frames.is_empty());
     assert_eq!(upstream.connection_count, 1);
-    let invalid = valid().replace("expected_http_status: 101", "expected_http_status: 403")
-        + "close: {initiator: provider, code: 1008, reason: refused}\n";
-    assert!(decode_ws_case(invalid.as_bytes(), &OracleLimits::default()).is_err());
+    case.frames.clear();
+    matching_peer(case).await;
+    let mut invalid = valid().replace("expected_http_status: 101", "expected_http_status: 403");
+    invalid.push_str("close: {initiator: provider, code: 1008, reason: refused}\n");
+    decode_ws_case(invalid.as_bytes(), &OracleLimits::default()).unwrap_err();
 }
 
 #[rstest::rstest]
 #[case::openai("/openai/v1/realtime")]
 #[case::canonical("/v1/realtime")]
 #[case::short("/realtime")]
-fn route_aliases(#[case] path: &str) {
-    assert!(
-        decode_ws_case(
-            valid().replace("/v1/realtime", path).as_bytes(),
-            &OracleLimits::default()
-        )
-        .is_ok()
-    );
+#[tokio::test]
+async fn route_aliases(#[case] path: &str) {
+    let case = decode_ws_case(
+        valid().replace("/v1/realtime", path).as_bytes(),
+        &OracleLimits::default(),
+    )
+    .unwrap();
+    matching_peer(case).await;
 }
 
-#[test]
-fn service_driver_isolation() {
-    let unknown = serde_json::json!({"service": "unknown", "input": null});
-    assert!(serde_json::from_value::<crate::websocket_driver::ServiceInput>(unknown).is_err());
+#[rstest::rstest]
+#[case::native(ServiceTag::NativeResponsesRelay, "native")]
+#[case::managed(ServiceTag::ManagedResponsesTurns, "managed")]
+#[case::realtime(ServiceTag::RealtimeProbe, "probe")]
+fn service_driver_isolation(#[case] tag: ServiceTag, #[case] response: &str) {
+    let mut registry = Services::default();
+    assert!(matches!(
+        registry.run_service(tag, &Arguments::default()),
+        Err(DriverError::AdapterMissing(_))
+    ));
+    registry
+        .register_service(ServiceTag::NativeResponsesRelay, |args| {
+            adapter(args, "native")
+        })
+        .unwrap();
+    registry
+        .register_service(ServiceTag::ManagedResponsesTurns, |args| {
+            adapter(args, "managed")
+        })
+        .unwrap();
+    registry
+        .register_service(ServiceTag::RealtimeProbe, |args| adapter(args, "probe"))
+        .unwrap();
+    let mut case = decode_ws_case(valid().as_bytes(), &OracleLimits::default()).unwrap();
+    case.frames[1].text = Some(response.to_owned());
+    let defaults = Arguments::default();
+    let args = Arguments {
+        frames: case.frames.clone(),
+        ..defaults
+    };
+    let mut observed = registry.run_service(tag, &args).unwrap();
+    compare_transcript(&case, &observed).unwrap();
+    observed.frames[1].text = Some("changed".to_owned());
     assert_eq!(
-        crate::websocket_driver::run_service(
-            crate::websocket_driver::ServiceTag::RealtimeProbe,
-            &serde_json::Value::Null,
-        ),
-        Err(crate::websocket_driver::DriverError::AdapterMissing(
-            crate::websocket_driver::ServiceTag::RealtimeProbe
-        ))
+        compare_transcript(&case, &observed),
+        Err("/provider/frames/0/text".to_owned())
     );
-    assert!(decode_ws_case(valid().as_bytes(), &OracleLimits::default()).is_ok());
+    serde_json::from_str::<ServiceInput>(r#"{"service":"unknown","input":{}}"#).unwrap_err();
+    let mut invalid = valid();
+    invalid.push_str("service: realtime_probe\n");
+    decode_ws_case(invalid.as_bytes(), &OracleLimits::default()).unwrap_err();
 }
 
-#[test]
-fn realtime_route_inputs() {
-    assert_eq!(
-        decode_ws_case(valid().as_bytes(), &OracleLimits::default())
-            .unwrap()
-            .path,
-        "/v1/realtime"
-    );
+fn adapter(args: &Arguments, response: &str) -> Result<TranscriptObservation, DriverError> {
+    let runtime = Builder::new_current_thread().enable_all().build()?;
+    runtime.block_on(async {
+        let mut case = decode_ws_case(valid().as_bytes(), &OracleLimits::default())
+            .map_err(|error| DriverError::Transport(error.to_string()))?;
+        case.frames = args.frames.clone();
+        let mut script = case.clone();
+        script.frames[1].text = Some(response.to_owned());
+        let provider = start_provider(script).await?;
+        let result = exchange_gateway(&format!("ws://{}", provider.address), &case).await?;
+        let upstream = provider.finish(Duration::from_secs(2)).await?;
+        if upstream.connection_count != 1 {
+            return Err(DriverError::Transport(
+                "unexpected connection count".to_owned(),
+            ));
+        }
+        Ok(result)
+    })
+}
+
+#[rstest::rstest]
+#[case::model("/realtime?model=realtime-a", None)]
+#[case::transcription("/v1/realtime?intent=transcription", None)]
+#[case::guardrails(
+    "/openai/v1/realtime?model=realtime-a&guardrails=%20first,%20,second%20",
+    Some("realtime")
+)]
+#[tokio::test]
+async fn realtime_route_inputs(#[case] path: &str, #[case] protocol: Option<&str>) {
+    let mut case = decode_ws_case(valid().as_bytes(), &OracleLimits::default()).unwrap();
+    case.path = path.to_owned();
+    case.negotiated_subprotocol = protocol.map(str::to_owned);
+    case.requested_subprotocols =
+        protocol.map_or_else(Vec::new, |name| vec![name.to_owned(), "second".to_owned()]);
+    matching_peer(case).await;
 }
 
 #[test]
 fn provider_preparation() {
-    let output = crate::helpers::invoke(&crate::helpers::HelperCall {
-        operation: "websocket_oracle".to_owned(),
-        input: serde_json::json!({
-            "service": "realtime_probe",
-            "input": {"model": "realtime-a", "query_params": null, "api_base": "https://api.openai.com/"}
-        }),
+    let input: ServiceInput = serde_json::from_str(
+        r#"{"service":"realtime_probe","input":{"model":"realtime-a","query_params":null}}"#,
+    )
+    .unwrap();
+    assert!(matches!(
+        Services::default().run_service(input.service, &input.input),
+        Err(DriverError::AdapterMissing(ServiceTag::RealtimeProbe))
+    ));
+}
+
+#[rstest::rstest]
+#[case::bearer(Some(("Authorization", "Bearer sk-test")), 101)]
+#[case::api_key(Some(("api-key", "sk-test")), 101)]
+#[case::missing(None, 403)]
+#[case::invalid(Some(("Authorization", "Basic wrong")), 403)]
+#[case::subprotocol(Some(("sec-websocket-protocol", "realtime, openai-insecure-api-key.sk-test")), 101)]
+#[tokio::test]
+async fn websocket_auth(#[case] header: Option<(&str, &str)>, #[case] status: u16) {
+    let mut case = decode_ws_case(valid().as_bytes(), &OracleLimits::default()).unwrap();
+    case.expected_http_status = status;
+    if status != 101 {
+        case.frames.clear();
+    }
+    if let Some((name, value)) = header {
+        case.headers.insert(name.to_owned(), value.to_owned());
+        if name == "sec-websocket-protocol" {
+            case.negotiated_subprotocol = Some("realtime".to_owned());
+        }
+    }
+    matching_peer(case).await;
+}
+
+#[rstest::rstest]
+#[case::unauthorized(401, 1008)]
+#[case::forbidden(403, 1008)]
+#[case::rate_limit(429, 1013)]
+#[case::unavailable(503, 1011)]
+#[tokio::test]
+async fn upstream_refusal(#[case] status: u16, #[case] code: u16) {
+    let mut case = decode_ws_case(valid().as_bytes(), &OracleLimits::default()).unwrap();
+    case.frames.remove(0);
+    let message = format!("Upstream realtime handshake rejected with HTTP {status}");
+    case.frames[0].text = Some(format!(
+        r#"{{"type":"error","error":{{"type":"server_error","message":"{message}"}}}}"#
+    ));
+    case.close = Some(Close {
+        initiator: "provider".to_owned(),
+        code,
+        reason: message,
     });
-    assert!(
-        output.ok,
-        "realtime service adapter must produce a transcript: {:?}",
-        output.error
-    );
+    matching_peer(case).await;
 }
 
-#[test]
-fn websocket_auth() {
-    assert!(decode_ws_case(valid().as_bytes(), &OracleLimits::default()).is_ok());
-}
-
-#[test]
-fn upstream_refusal() {
-    assert_eq!(MAX_EXECUTION_SECONDS, 120);
+async fn matching_peer(case: super::WebSocketCase) {
+    let mut script = case.clone();
+    script.upstream_status = Some(case.expected_http_status);
+    let peer = start_provider(script).await.unwrap();
+    let mut observed = exchange_gateway(&format!("ws://{}", peer.address), &case)
+        .await
+        .unwrap();
+    let capture = peer.finish(Duration::from_secs(2)).await.unwrap();
+    assert_eq!(capture.connection_count, 1);
+    assert_eq!(capture.request_uri, case.path);
+    compare_transcript(&case, &observed).unwrap();
+    if let Some(close) = observed.close.as_mut() {
+        close.reason = "changed".to_owned();
+        assert_eq!(
+            compare_transcript(&case, &observed),
+            Err("/close/reason".to_owned())
+        );
+    } else {
+        observed.handshake.status = 418;
+        assert_eq!(
+            compare_transcript(&case, &observed),
+            Err("/handshake/status".to_owned())
+        );
+    }
 }
 
 #[rstest::rstest]
 #[case::client(0, "/client/frames/0/text")]
 #[case::provider(1, "/provider/frames/0/text")]
-fn changed_peer(#[case] index: usize, #[case] pointer: &str) {
+#[tokio::test]
+async fn changed_peer(#[case] index: usize, #[case] pointer: &str) {
     let case = decode_ws_case(valid().as_bytes(), &OracleLimits::default()).unwrap();
+    matching_peer(case.clone()).await;
     let mut observed = case.frames.clone();
     observed[index].text = Some("changed".to_owned());
     assert_eq!(
@@ -237,22 +373,63 @@ fn bounded_custom_limits() {
         max_capture_bytes: 6,
         max_execution_seconds: 3,
     };
-    assert!(decode_ws_case(valid().as_bytes(), &limits).is_err());
-    let short = valid().replace("setup", "a").replace("ready", "b");
-    assert!(decode_ws_case(short.as_bytes(), &limits).is_ok());
+    decode_ws_case(valid().as_bytes(), &limits).unwrap_err();
+    let mut short = valid().replace("setup", "a").replace("ready", "b");
+    short.push_str("execution_seconds: 3\n");
+    decode_ws_case(short.as_bytes(), &limits).unwrap();
     let binary_path = valid().replace("text: setup", "binary: ../outside.bin");
-    assert!(decode_ws_case(binary_path.as_bytes(), &OracleLimits::default()).is_err());
+    decode_ws_case(binary_path.as_bytes(), &OracleLimits::default()).unwrap_err();
 }
 
 #[test]
 fn replays_corpus() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/websocket_oracle");
-    let outcomes = std::fs::read_dir(root)
+    let outcomes = fs::read_dir(root)
         .unwrap()
         .map(|entry| {
-            let bytes = std::fs::read(entry.unwrap().path()).unwrap();
+            let bytes = fs::read(entry.unwrap().path()).unwrap();
             decode_ws_case(&bytes, &OracleLimits::default())
         })
         .collect::<Vec<_>>();
     assert!(!outcomes.is_empty());
+}
+
+async fn bounded_child() {
+    let directory = tempfile::tempdir().unwrap();
+    let gateway = Gateway::start(GatewaySpec {
+        command: Path::new("sleep").to_owned(),
+        args: vec!["30".to_owned()],
+        cwd: directory.path().to_owned(),
+        env: Vec::new(),
+        port: 0,
+        log_path: directory.path().join("child.log"),
+    })
+    .unwrap();
+    let process = Path::new("/proc").join(gateway.child.id().to_string());
+    assert!(process.exists());
+    timeout(Duration::from_millis(5), async move {
+        let owned_gateway = gateway;
+        pending::<()>().await;
+        drop(owned_gateway);
+    })
+    .await
+    .unwrap_err();
+    assert!(!process.exists());
+}
+
+#[tokio::test]
+async fn binary_payload() {
+    let input = valid().replace("text: ready", "binary: provider.bin");
+    let case = decode_ws_case(input.as_bytes(), &OracleLimits::default()).unwrap();
+    let provider = start_provider(case.clone()).await.unwrap();
+    let mut observed = exchange_gateway(&format!("ws://{}", provider.address), &case)
+        .await
+        .unwrap();
+    provider.finish(Duration::from_secs(2)).await.unwrap();
+    compare_transcript(&case, &observed).unwrap();
+    observed.frames[1].binary_data = Some(vec![0]);
+    assert_eq!(
+        compare_transcript(&case, &observed),
+        Err("/provider/frames/0/binary".to_owned())
+    );
 }

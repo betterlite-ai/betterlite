@@ -1,15 +1,18 @@
 import sys
 from importlib import import_module
+from pathlib import Path
 from typing import Protocol, TypeAlias, cast
 
 import litellm
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
+__path__ = [str(Path(__file__).with_suffix(""))]
+
 SERVICE_MODULES = {
-    "native_responses_relay": "responses_ws_native",
-    "managed_responses_turns": "responses_ws_managed",
-    "realtime_probe": "realtime_connect_websocket",
+    "native_responses_relay": "websocket_oracle.native_responses_relay",
+    "managed_responses_turns": "websocket_oracle.managed_responses_turns",
+    "realtime_probe": "websocket_oracle.realtime_probe",
 }
 
 

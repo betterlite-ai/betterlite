@@ -8,10 +8,10 @@ impl TryFrom<(Message, &str)> for Close {
         let Message::Close(Some(frame)) = message else {
             return Err(DriverError::Transport("expected a close frame".to_owned()));
         };
-        Ok(Close {
+        Ok(Self {
             initiator: initiator.to_owned(),
             code: u16::from(frame.code),
-            reason: frame.reason.into_owned(),
+            reason: frame.reason.to_string(),
         })
     }
 }

@@ -1,8 +1,12 @@
 kind: websocket
 name: preaccept-status
 path: /realtime
-headers: {}
+headers:
+  Authorization: Bearer sk-test
 requested_subprotocols: []
 expected_http_status: 403
 negotiated_subprotocol: null
 frames: []
+execution_seconds: 10
+env:
+  LITELLM_MASTER_KEY: sk-test

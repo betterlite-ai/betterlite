@@ -1,0 +1,22 @@
+kind: websocket
+name: refusal-403
+path: /v1/realtime?model=realtime-a
+headers:
+  Authorization: Bearer sk-test
+requested_subprotocols: []
+expected_http_status: 101
+negotiated_subprotocol: null
+upstream_status: 403
+frames:
+- direction: provider_to_client
+  action: expect
+  text: '{"type": "error", "error": {"type": "server_error", "message": "Upstream
+    realtime handshake rejected with HTTP 403"}}'
+execution_seconds: 10
+env:
+  LITELLM_MASTER_KEY: sk-test
+expected_upstream_query: model=realtime-a
+close:
+  initiator: provider
+  code: 1008
+  reason: Upstream realtime handshake rejected with HTTP 403

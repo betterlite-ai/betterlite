@@ -6,5 +6,11 @@ requested_subprotocols: []
 expected_http_status: 101
 negotiated_subprotocol: null
 service: realtime_probe
-input: {query_params: null, api_base: https://api.openai.com/}
+input:
+  model: realtime-a
+  api_key: sk-test
+  api_base: https://api.openai.com/
+  query_params: null
 frames: []
+execution_seconds: 10
+driver: service
