@@ -1,7 +1,13 @@
 [package]
 name = "betterlite-server-fuzz"
 version = "0.0.0"
+publish = false
 edition = "2024"
+license.workspace = true
+
+[lints]
+workspace = true
+
 [package.metadata]
 cargo-fuzz = true
 [dependencies]
@@ -72,5 +78,3 @@ path = "fuzz_targets/route_pattern.rs"
 test = false
 doc = false
 bench = false
-
-[workspace]

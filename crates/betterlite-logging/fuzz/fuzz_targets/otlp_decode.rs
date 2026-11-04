@@ -17,6 +17,6 @@ impl SpanCodec for JsonCodec {
 }
 
 fuzz_target!(|body: &[u8]| {
-    let _ = decode_otlp(&JsonCodec, body, Some("application/json"), None);
-    let _ = decode_otlp(&JsonCodec, body, Some("application/json"), Some("gzip"));
+    let _plain = decode_otlp(&JsonCodec, body, Some("application/json"), None);
+    let _gzipped = decode_otlp(&JsonCodec, body, Some("application/json"), Some("gzip"));
 });
