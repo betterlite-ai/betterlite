@@ -217,7 +217,14 @@ pub(crate) fn crate_root_problems(root: &Path, entry: &BacklogEntry, task: &Task
         .collect();
     crates
         .into_iter()
-        .flat_map(|name| ["lib.rs", "main.rs"].map(|file| format!("crates/{name}/src/{file}")))
+        .map(|name| {
+            let library = format!("crates/{name}/src/lib.rs");
+            if root.join(&library).is_file() {
+                library
+            } else {
+                format!("crates/{name}/src/main.rs")
+            }
+        })
         .filter(|file| scope.is_match(file) && root.join(file).is_file())
         .map(|file| {
             format!(

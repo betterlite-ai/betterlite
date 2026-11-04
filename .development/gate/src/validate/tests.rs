@@ -173,7 +173,7 @@ fn todo_scopes_never_cover_an_existing_crate_root() {
         "crates/betterlite-config/src/**",
         "crates/betterlite-config/src/lib.rs",
         "crates/betterlite-core/src/{lib,dispatch}.rs",
-        "crates/betterlite/src/main.rs",
+        "crates/betterlite/src/**",
     ] {
         task.scope.paths = vec![path.to_owned()];
         let problems = crate_root_problems(&root, &entry, &task);
@@ -184,6 +184,7 @@ fn todo_scopes_never_cover_an_existing_crate_root() {
         "crates/betterlite-config/src/sections/tls/**",
         "crates/betterlite-new/**",
         "crates/betterlite-config/Cargo.toml",
+        "crates/betterlite/src/main.rs",
         "tools/oracle/src/lib.rs",
     ]
     .map(str::to_owned)
