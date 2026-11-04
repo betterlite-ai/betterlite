@@ -12,6 +12,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use tokio::runtime::Builder;
+mod tests;
 #[derive(Parser)]
 #[command(version)]
 struct Cli {
