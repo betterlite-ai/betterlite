@@ -69,3 +69,10 @@ doc = false
 bench = false
 
 [workspace]
+
+[[bin]]
+name = "cohere_line"
+path = "fuzz_targets/cohere_line.rs"
+test = false
+doc = false
+bench = false

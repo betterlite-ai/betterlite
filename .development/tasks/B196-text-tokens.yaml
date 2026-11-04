@@ -42,7 +42,9 @@ scope:
   - crates/betterlite-tokenizer/src/count.rs
   - crates/betterlite-tokenizer/src/count/**
   - crates/betterlite-tokenizer/fuzz/**
-  - crates/betterlite-config/**
+  - crates/betterlite-config/src/sections/token_counting.rs
+  - crates/betterlite-config/src/sections/token_counting/**
+  - "crates/betterlite-config/fuzz/corpus/config_yaml/token-counting-*"
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/tokenizer/token_count.rs
   - tools/oracle/src/helpers/tokenizer/token_count/**

@@ -17,12 +17,8 @@ description: >-
   180 tests, 110 cases, 80 adapters, 55 settings/seeds and 25 wiring lines: 730 total.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/response_chat_request.rs
   - crates/betterlite-core/src/api/response_chat_request/**
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/**
   - crates/betterlite-config/src/api/response_chat_request.rs
   - crates/betterlite-config/src/api/response_chat_request/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/response-chat-request-*

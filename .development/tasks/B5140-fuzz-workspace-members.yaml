@@ -42,7 +42,12 @@ description: >-
   disallowed_methods, decimal_literal_representation and unused_trait_names. Fix each in the code. A
   discarded result becomes a named underscore binding, let _outcome = f(bytes);, the form
   crates/betterlite-cli/fuzz/fuzz_targets/callback_request.rs already uses. No #[expect] and no
-  #[allow].
+  #[allow]. The one exception is tools/oracle/fuzz/fuzz_targets/blog_feed_xml.rs. It includes the
+  oracle's private date_parse.rs and parser.rs by #[path], and inside the oracle those files rely on
+  the #[expect] that tools/oracle/src/lib.rs puts on mod helpers. Each of the two #[path] mod lines
+  gets an #[expect] for the lints its file raises (clippy::absolute_paths for date_parse,
+  clippy::disallowed_methods and clippy::absolute_paths for parser), and the oracle files stay as
+  they are.
 scope:
   paths:
     - crates/*/fuzz/**
@@ -62,8 +67,8 @@ dod:
       metadata lists no fuzz package, so the check fails there.
     proof: [fuzz-members]
   - text: >-
-      Every fuzz target compiles and passes clippy under the workspace lint table, with no new
-      #[expect] or #[allow].
+      Every fuzz target compiles and passes clippy under the workspace lint table, with no #[allow] and no
+      #[expect] beyond the two on blog_feed_xml.rs's #[path] modules.
     proof: [fmt, clippy, expect-budget]
   - text: Every fuzz crate is MIT through license.workspace and inherits the workspace lints.
     proof: [crates]
@@ -124,4 +129,4 @@ pitfalls:
 review_level: standard
 budget:
   max_changed_lines: 1500
-  max_new_expects: 0
+  max_new_expects: 2

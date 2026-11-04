@@ -17,7 +17,8 @@ description: >-
 scope:
   paths:
     - Cargo.toml
-    - crates/betterlite-auth/**
+    - crates/betterlite-auth/src/model_budget_values.rs
+    - crates/betterlite-auth/src/model_budget_values/**
     - tools/oracle/cases/model-budget/**
   lint_tables: false
 references:

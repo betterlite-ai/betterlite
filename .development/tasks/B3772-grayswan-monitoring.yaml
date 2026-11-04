@@ -132,34 +132,34 @@ checks:
       run: grep -q "should_run_guardrail" crates/betterlite-guardrails/src/grayswan/*.rs
     - id: plain-dict-tests
       why: _as_plain_dict conversion tests must pass
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan_monitoring::as_plain_dict/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan::(.*::)?grayswan_monitoring::as_plain_dict/)'
     - id: threshold-resolve-tests
       why: Threshold resolution tests must pass
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan_monitoring::resolve_threshold/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan::(.*::)?grayswan_monitoring::resolve_threshold/)'
     - id: reasoning-mode-tests
       why: Reasoning mode resolution tests must pass
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan_monitoring::resolve_reasoning_mode/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan::(.*::)?grayswan_monitoring::resolve_reasoning_mode/)'
     - id: is-grayswan-exc-tests
       why: GraySwan exception check tests must pass
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan_monitoring::is_grayswan_exception/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan::(.*::)?grayswan_monitoring::is_grayswan_exception/)'
     - id: extract-headers-tests
       why: Inbound header extraction tests must pass
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan_monitoring::extract_inbound_headers/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan::(.*::)?grayswan_monitoring::extract_inbound_headers/)'
     - id: post-call-context-tests
       why: Post-call context extraction tests must pass
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan_monitoring::post_call_context/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan::(.*::)?grayswan_monitoring::post_call_context/)'
     - id: prepare-payload-tests
       why: Payload preparation tests must pass
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan_monitoring::prepare_payload/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan::(.*::)?grayswan_monitoring::prepare_payload/)'
     - id: prepare-headers-tests
       why: Header preparation tests must pass
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan_monitoring::prepare_headers/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan::(.*::)?grayswan_monitoring::prepare_headers/)'
     - id: api-call-tests
       why: API call integration tests must pass
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan_monitoring::call_grayswan_api/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan::(.*::)?grayswan_monitoring::call_grayswan_api/)'
     - id: log-failure-tests
       why: Failure logging tests must pass
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan_monitoring::log_guardrail_failure/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan::(.*::)?grayswan_monitoring::log_guardrail_failure/)'
     - id: config-ui-name-exists
       why: GraySwanGuardrailConfigModel.ui_friendly_name is missing or returns wrong string
       run: grep -q '"Gray Swan Guardrail"' crates/betterlite-guardrails/src/grayswan/*.rs

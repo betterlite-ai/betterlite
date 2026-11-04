@@ -30,7 +30,9 @@ scope:
   - crates/betterlite-models/src/catalog.rs
   - crates/betterlite-models/src/catalog/**
   - crates/betterlite-models/fuzz/**
-  - crates/betterlite-config/**
+  - crates/betterlite-config/src/sections/catalog_source.rs
+  - crates/betterlite-config/src/sections/catalog_source/**
+  - "crates/betterlite-config/fuzz/corpus/config_yaml/catalog_refresh-*"
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/models/catalog_refresh.rs
   - tools/oracle/src/helpers/models/catalog_refresh/**

@@ -33,8 +33,6 @@ description: >-
   230 integration tests and 200 HTTP fixtures, capped at 700 changed lines.
 scope:
   paths:
-    - crates/betterlite-server/src/management.rs
-    - crates/betterlite-server/src/management/**
     - crates/betterlite-server/src/management/v1.rs
     - crates/betterlite-server/src/management/v1/**
     - crates/betterlite-server/src/management/member_actions.rs

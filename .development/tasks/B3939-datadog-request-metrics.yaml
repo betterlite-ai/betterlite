@@ -65,25 +65,25 @@ checks:
   commands:
     - id: latency-metrics
       why: latency calculations are missing or incorrect
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog_metrics::tests::latency(::|$)/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog::metrics::(.*::)?datadog_metrics::tests::latency(::|$)/)'
     - id: count-metric
       why: request count or status code is missing or wrong
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog_metrics::tests::status(::|$)/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog::metrics::(.*::)?datadog_metrics::tests::status(::|$)/)'
     - id: tag-extraction
       why: tags are incomplete or missing fields
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog_metrics::tests::tags(::|$)/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog::metrics::(.*::)?datadog_metrics::tests::tags(::|$)/)'
     - id: overhead-no-status-tag
       why: overhead latency incorrectly includes status_code or other metrics lack it
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog_metrics::tests::overhead_tag_exclusion(::|$)/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog::metrics::(.*::)?datadog_metrics::tests::overhead_tag_exclusion(::|$)/)'
     - id: gzip-upload
       why: gzip compression or headers are missing
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog_metrics::tests::upload(::|$)/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog::metrics::(.*::)?datadog_metrics::tests::upload(::|$)/)'
     - id: health-absent-credentials
       why: health check fails when credentials are missing
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog_metrics::tests::health(::|$)/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog::metrics::(.*::)?datadog_metrics::tests::health(::|$)/)'
     - id: batch-and-flush
       why: batching or 5-second flush interval is missing
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog_metrics::tests::flush(::|$)/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog::metrics::(.*::)?datadog_metrics::tests::flush(::|$)/)'
 
 oracle_cases:
   - tools/oracle/cases/logging/datadog-metrics/success-event-creates-all-metrics.yaml

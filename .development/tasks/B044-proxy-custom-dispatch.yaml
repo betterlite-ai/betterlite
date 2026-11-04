@@ -56,8 +56,6 @@ scope:
     - crates/betterlite-core/src/operation/**
     - crates/betterlite-core/src/dispatch.rs
     - crates/betterlite-core/src/dispatch/**
-    - crates/betterlite-core/src/skills.rs
-    - crates/betterlite-core/src/skills/**
     - crates/betterlite-core/src/skills/composition.rs
     - crates/betterlite-core/src/skills/composition/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/legacy_provider*

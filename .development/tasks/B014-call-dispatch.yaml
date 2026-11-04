@@ -17,9 +17,21 @@ description: >-
 scope:
   paths:
   - Cargo.toml
-  - crates/betterlite-core/**
-  - crates/betterlite-server/**
-  - crates/betterlite/**
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/dispatch.rs
+  - crates/betterlite-core/src/dispatch/**
+  - crates/betterlite-core/src/operation.rs
+  - crates/betterlite-core/src/operation/**
+  - crates/betterlite-server/Cargo.toml
+  - crates/betterlite-server/src/server.rs
+  - crates/betterlite-server/src/tests.rs
+  - crates/betterlite-server/src/routes/chat.rs
+  - crates/betterlite-server/src/routes/chat/streaming.rs
+  - crates/betterlite-server/src/routes/chat/streaming/tests.rs
+  - crates/betterlite-server/src/routes/chat/tests.rs
+  - crates/betterlite-server/src/routes/chat/tests/stream/tests.rs
+  - crates/betterlite-server/src/routes/embeddings.rs
+  - crates/betterlite-server/src/routes/embeddings/tests.rs
   - tools/oracle/helpers/b014.py
   - tools/oracle/helpers/b014/**
   - tools/oracle/src/helpers/oracle/b014.rs

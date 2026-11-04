@@ -1,0 +1,2 @@
+litellm_settings:
+  request_timeout: os.environ/REQUEST_TIMEOUT

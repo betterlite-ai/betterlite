@@ -82,7 +82,7 @@ checks:
   commands:
     - id: trace-routes-oracle
       why: Route auth, status codes, response format and scope dispatch are not exercised or do not match LiteLLM.
-      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^trace_routes::/)' && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/cases/traces/**")"
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::server::b3867::(.*::)?trace_routes::/)' && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/cases/traces/**")"
 
 oracle_cases:
   - tools/oracle/cases/traces/post-ingest-otlp-success.yaml

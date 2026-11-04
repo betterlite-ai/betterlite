@@ -1,14 +1,14 @@
 id: B4177
 milestone: M8 platform
 title: Alternate worker launch and metrics process preparation
-status: todo
+status: done
 depends_on: [B003]
 file: tasks/B4177-worker-launch.yaml
 covers:
   - "litellm/proxy/proxy_cli.py"
 parent: B121
 split_from: B121
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 654

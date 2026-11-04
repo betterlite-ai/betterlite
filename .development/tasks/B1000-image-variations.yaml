@@ -21,8 +21,6 @@ description: >-
   40 config/corpus/wiring lines, 450 total. Existing transport and SDK decoders handle bytes.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/image_variations.rs
   - crates/betterlite-core/src/api/image_variations/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/image-variations-*
