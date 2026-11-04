@@ -1,0 +1,5 @@
+task: B011
+deviations:
+- what: Credentials and private infrastructure details in error type and param fields are redacted with B187's redactor.
+  why: Provider-controlled error fields must not leak secrets through the client envelope.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3698-L3700

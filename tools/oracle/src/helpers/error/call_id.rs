@@ -11,11 +11,8 @@ impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let call_id = if input.enabled {
-            input.call_id.as_deref().filter(|id| !id.is_empty())
-        } else {
-            None
-        };
+        let call_id =
+            betterlite_error::envelope::error_body_call_id(input.enabled, input.call_id.as_deref());
         Ok(serde_json::json!({"result": call_id}))
     }
 }

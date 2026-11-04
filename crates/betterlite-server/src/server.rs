@@ -7,6 +7,7 @@ use crate::routes::router;
 use crate::shutdown::build_shutdown_signal;
 use axum::Router;
 use betterlite_config::types::Config;
+use betterlite_error::envelope::EnvelopeError;
 use betterlite_openai::chat::execution::ChatExecutor;
 use hyper_util::rt::{TokioExecutor, TokioIo, TokioTimer};
 use hyper_util::server::conn::auto::Builder;
@@ -27,6 +28,11 @@ const CONNECTION_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Error)]
 pub enum ServerError {
+    #[error(transparent)]
+    ErrorLayer {
+        #[from]
+        source: EnvelopeError,
+    },
     #[error("failed to register {signal} handler: {source}")]
     SignalRegistration {
         signal: &'static str,
@@ -53,7 +59,7 @@ pub async fn run(
         .map_err(|source| ServerError::Bind { address, source })?;
     tracing::info!(host, port, "betterlite server listening");
     let shutting_down = Arc::new(AtomicBool::new(false));
-    let application = application(&config, chat, Arc::clone(&shutting_down));
+    let application = application(&config, chat, Arc::clone(&shutting_down))?;
     let mut connections = JoinSet::new();
     let connection_builder = configure_connection_builder();
     connections.spawn(shutdown_signal.wait(Arc::clone(&shutting_down)));
@@ -82,9 +88,13 @@ pub async fn run(
     Ok(())
 }
 
-fn application(config: &Config, chat: ChatExecutor, shutting_down: Arc<AtomicBool>) -> Router {
+pub(crate) fn application(
+    config: &Config,
+    chat: ChatExecutor,
+    shutting_down: Arc<AtomicBool>,
+) -> Result<Router, ServerError> {
     let executor = Arc::new(chat);
-    router(
+    Ok(router(
         AuthSettings {
             master_key: config.general_settings.master_key.clone(),
             routes: config.sections.auth_route_patterns.clone(),
@@ -97,9 +107,9 @@ fn application(config: &Config, chat: ChatExecutor, shutting_down: Arc<AtomicBoo
                 .sections
                 .error_body_call_id
                 .include_call_id_in_error_body,
-        ),
+        )?,
         embedding_routes(executor),
-    )
+    ))
 }
 async fn accept_connection(listener: &TcpListener) -> Option<(TcpStream, SocketAddr)> {
     match timeout(ACCEPT_POLL_INTERVAL, listener.accept()).await {

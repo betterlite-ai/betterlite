@@ -43,7 +43,7 @@ async fn gateway(upstream: &TcpListener, tasks: &mut JoinSet<()>) -> (ProxiedCli
     tasks.spawn(async move {
         axum::serve(
             listener,
-            chat_routes_with_call_id(Arc::new(executor), false),
+            chat_routes_with_call_id(Arc::new(executor), false).unwrap(),
         )
         .await
         .unwrap();

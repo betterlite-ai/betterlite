@@ -1,0 +1,5 @@
+kind: helper
+name: error-normalization-router-missing
+call: {"error_normalization": {"message": "no fallback model group found", "status_code": 418}}
+env: {}
+compare: {ignore: []}

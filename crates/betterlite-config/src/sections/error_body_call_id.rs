@@ -12,7 +12,7 @@ pub struct Raw {
 #[derive(Debug, Default, Deserialize)]
 struct RawGeneral {
     #[serde(default)]
-    include_call_id_in_error_body: bool,
+    include_call_id_in_error_body: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -28,7 +28,12 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         Ok(Settings {
-            include_call_id_in_error_body: self.general_settings.include_call_id_in_error_body,
+            include_call_id_in_error_body: self
+                .general_settings
+                .include_call_id_in_error_body
+                .unwrap_or_default(),
         })
     }
 }
+
+mod tests;

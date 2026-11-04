@@ -1,14 +1,36 @@
 from collections.abc import Mapping
 
-from litellm.exceptions import AuthenticationError, RateLimitError
+from litellm import exceptions
+from litellm.exceptions import RateLimitError
 from litellm.litellm_core_utils.error_normalization import normalize_error
 
-
-class ProxyError(Exception):
-    def __init__(self, message: str, proxy_type: str | None) -> None:
-        super().__init__(message)
-        if proxy_type is not None:
-            self.type = proxy_type
+CLASSES: dict[str, type[Exception]] = {
+    "AuthenticationError": exceptions.AuthenticationError,
+    "PermissionDeniedError": exceptions.PermissionDeniedError,
+    "ContextWindowExceededError": exceptions.ContextWindowExceededError,
+    "ContentPolicyViolationError": exceptions.ContentPolicyViolationError,
+    "GuardrailRaisedException": exceptions.GuardrailRaisedException,
+    "BlockedPiiEntityError": exceptions.BlockedPiiEntityError,
+    "UnsupportedParamsError": exceptions.UnsupportedParamsError,
+    "NotFoundError": exceptions.NotFoundError,
+    "Timeout": exceptions.Timeout,
+    "MidStreamFallbackError": exceptions.MidStreamFallbackError,
+    "APIConnectionError": exceptions.APIConnectionError,
+    "ServiceUnavailableError": exceptions.ServiceUnavailableError,
+    "InternalServerError": exceptions.InternalServerError,
+    "BadGatewayError": exceptions.BadGatewayError,
+    "BadRequestError": exceptions.BadRequestError,
+    "UnprocessableEntityError": exceptions.UnprocessableEntityError,
+    "BudgetExceededError": exceptions.BudgetExceededError,
+    "NotImplementedError": NotImplementedError,
+    "TypeError": TypeError,
+    "KeyError": KeyError,
+    "AttributeError": AttributeError,
+    "IndexError": IndexError,
+    "RuntimeError": RuntimeError,
+    "AssertionError": AssertionError,
+    "ZeroDivisionError": ZeroDivisionError,
+}
 
 
 def run(call: Mapping[str, object]) -> dict[str, str | None]:
@@ -23,8 +45,6 @@ def run(call: Mapping[str, object]) -> dict[str, str | None]:
     error: Exception | None
     if not error_present:
         error = None
-    elif class_value == "AuthenticationError":
-        error = AuthenticationError(message, llm_provider="openai", model="model")
     elif class_value == "RateLimitError":
         type_value = call.get("rate_limit_type")
         error = RateLimitError(
@@ -32,5 +52,10 @@ def run(call: Mapping[str, object]) -> dict[str, str | None]:
             rate_limit_type=type_value if isinstance(type_value, str) else None,
         )
     else:
-        error = ProxyError(message, proxy_type)
+        error_type = (
+            CLASSES.get(class_value, Exception) if isinstance(class_value, str) else Exception
+        )
+        error = Exception.__new__(error_type)
+    if error is not None and proxy_type is not None:
+        error.__dict__["type"] = proxy_type
     return {"result": normalize_error(error, status_code, message)}

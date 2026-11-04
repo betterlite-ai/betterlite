@@ -1,5 +1,13 @@
 #![cfg(test)]
 
+use crate::server::application;
+use axum::http::StatusCode;
+use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::types::ProxyTrust;
+use betterlite_http::proxy::ProxiedClient;
+use std::sync::atomic::AtomicBool;
+use tokio::task::JoinSet;
+
 use crate::routes::chat::chat_routes_with_call_id;
 use crate::server::chat_setup::chat_executor;
 use axum::body::{Body, to_bytes};
@@ -100,6 +108,7 @@ async fn exchange(
         builder = builder.header("x-litellm-call-id", call_id);
     }
     let call = chat_routes_with_call_id(Arc::new(executor), false)
+        .unwrap()
         .oneshot(builder.body(Body::from(request.to_owned())).unwrap());
     let (sent, answered) = tokio::join!(provider(listener, reply, delay), call);
     let response = answered.unwrap();
@@ -425,4 +434,126 @@ async fn a_streaming_success_survives_a_one_second_provider_delay() {
     );
     assert!(header(&answered.headers, "x-litellm-response-duration-ms").is_some());
     assert!(header(&answered.headers, "x-litellm-overhead-duration-ms").is_some());
+}
+
+async fn normalization_provider(upstream: TcpListener) {
+    let mock = axum::Router::new().fallback(|| async {
+            (StatusCode::TOO_MANY_REQUESTS,
+             [("retry-after", "5"), ("x-ratelimit-limit-requests", "100"), ("x-ratelimit-remaining-requests", "9"), ("x-ratelimit-limit-tokens", "1000"), ("x-ratelimit-remaining-tokens", "99"), ("x-ratelimit-reset-requests", "1s"), ("set-cookie", "secret-cookie"), ("access-control-allow-origin", "https://evil.example"), ("llm_provider-custom", "kept")],
+             r#"{"error":{"message":"Bearer sk-secretsecretsecretsecret at 10.0.0.1 /home/private/file","litellm_call_id":"forged","type":"rate_limit_error","param":"Bearer sk-secretsecretsecretsecret"}}"#)
+        });
+    axum::serve(upstream, mock).await.unwrap();
+}
+
+async fn normalization_gateway(enabled: bool) -> (ProxiedClient, String, JoinSet<()>) {
+    let mut tasks = JoinSet::new();
+    let upstream = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let source = format!(
+        "general_settings: {{include_call_id_in_error_body: {enabled}}}\nmodel_list:\n  - {{model_name: g, litellm_params: {{model: openai/up, api_key: test-key, api_base: 'http://{}'}}}}",
+        upstream.local_addr().unwrap()
+    );
+    tasks.spawn(normalization_provider(upstream));
+    let environment = BTreeMap::new();
+    let config = ConfigLoader {
+        lookup: environment.clone(),
+    }
+    .load(&source)
+    .unwrap();
+    let executor = chat_executor(&config, &environment, StdRng::seed_from_u64(3)).unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!(
+        "http://{}/v1/chat/completions",
+        listener.local_addr().unwrap()
+    );
+    let application = application(&config, executor, Arc::new(AtomicBool::new(false))).unwrap();
+    tasks.spawn(async move {
+        axum::serve(listener, application).await.unwrap();
+    });
+    let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &environment).unwrap());
+    (ProxiedClient::outbound(&policy).unwrap(), url, tasks)
+}
+
+#[rstest]
+#[case::disabled(false, "client-id", r#"{"model":"g","messages":[]}"#, 429)]
+#[case::client_id(true, "exact-client-id", r#"{"model":"g","messages":[]}"#, 429)]
+#[case::generated(true, "", r#"{"model":"g","messages":[]}"#, 429)]
+#[case::too_long(true, &"x".repeat(257), r#"{"model":"g","messages":[]}"#, 429)]
+#[case::maximum_length(true, &"x".repeat(256), r#"{"model":"g","messages":[]}"#, 429)]
+#[case::stream_error(true, "stream-id", r#"{"model":"g","messages":[],"stream":true}"#, 429)]
+#[case::parse_error(true, "parse-id", "{", 400)]
+#[case::unknown_model(
+    true,
+    "router-id",
+    r#"{"model":"Bearer sk-secretsecretsecretsecret","messages":[]}"#,
+    400
+)]
+#[tokio::test]
+async fn error_normalization_tests_behavior(
+    #[case] enabled: bool,
+    #[case] id: &str,
+    #[case] request: &str,
+    #[case] status: u16,
+) {
+    let (client, url, mut tasks) = normalization_gateway(enabled).await;
+    let response = client
+        .client
+        .post(url)
+        .header("content-type", "application/json")
+        .header("x-litellm-call-id", id)
+        .body(request.to_owned())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status().as_u16(), status);
+    let headers = response.headers().clone();
+    let actual_id = header(&headers, "x-litellm-call-id").unwrap();
+    if id.is_empty() || id.len() > 256 {
+        uuid::Uuid::parse_str(actual_id).unwrap();
+    } else {
+        assert_eq!(actual_id, id);
+    }
+    let bytes = response.bytes().await.unwrap();
+    let body = serde_json::from_slice::<CallIdReply>(&bytes).unwrap();
+    assert_eq!(
+        body.error.litellm_call_id.as_deref(),
+        enabled.then_some(actual_id)
+    );
+    assert!(body.error.normalized_error.is_none());
+    let text = String::from_utf8(bytes.to_vec()).unwrap();
+    assert!(!text.contains("sk-secretsecretsecretsecret"));
+    assert!(!text.contains("10.0.0.1"));
+    assert!(!text.contains("/home/private"));
+    assert!(!text.contains("forged"));
+    if status == 429 {
+        assert_failure_headers(&headers);
+    }
+    tasks.shutdown().await;
+}
+
+#[derive(Deserialize)]
+struct CallIdReply {
+    error: CallIdFields,
+}
+#[derive(Deserialize)]
+struct CallIdFields {
+    litellm_call_id: Option<String>,
+    normalized_error: Option<String>,
+}
+
+fn assert_failure_headers(headers: &HeaderMap) {
+    assert_eq!(header(headers, "llm_provider-retry-after"), Some("5"));
+    assert_eq!(header(headers, "llm_provider-custom"), Some("kept"));
+    assert_eq!(header(headers, "x-ratelimit-limit-requests"), Some("100"));
+    assert_eq!(header(headers, "x-ratelimit-remaining-requests"), Some("9"));
+    assert_eq!(header(headers, "x-ratelimit-limit-tokens"), Some("1000"));
+    assert_eq!(header(headers, "x-ratelimit-remaining-tokens"), Some("99"));
+    assert_eq!(
+        header(headers, "llm_provider-x-ratelimit-reset-requests"),
+        Some("1s")
+    );
+    assert!(header(headers, "x-ratelimit-reset-requests").is_none());
+    assert!(header(headers, "set-cookie").is_none());
+    assert!(header(headers, "llm_provider-set-cookie").is_none());
+    assert!(header(headers, "access-control-allow-origin").is_none());
+    assert!(header(headers, "llm_provider-access-control-allow-origin").is_none());
 }

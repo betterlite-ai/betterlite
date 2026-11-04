@@ -123,3 +123,23 @@ fn text_wire_field_serializes_as_the_string_it_holds() {
         "throttling_error"
     );
 }
+
+#[rstest]
+#[case::explicit_precedence("retry-after", "5", true)]
+#[case::unsafe_cookie("set-cookie", "secret", false)]
+#[case::unsafe_cors("access-control-allow-origin", "https://evil.example", false)]
+#[case::prefixed_cookie("llm_provider-set-cookie", "secret", false)]
+fn error_normalization_tests_behavior(
+    #[case] name: &str,
+    #[case] value: &str,
+    #[case] allowed: bool,
+) {
+    let explicit = BTreeMap::from([(name.to_owned(), value.to_owned())]);
+    let vendor = BTreeMap::from([("retry-after".to_owned(), "99".to_owned())]);
+    let headers = allowed_response_headers(&explicit, &vendor);
+    assert_eq!(
+        headers.get(name).map(String::as_str),
+        allowed.then_some(value)
+    );
+    assert!(!headers.contains_key("llm_provider-retry-after"));
+}
