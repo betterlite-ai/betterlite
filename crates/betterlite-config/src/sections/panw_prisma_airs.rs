@@ -52,13 +52,23 @@ pub struct Configured {
     pub api_base: String,
     pub profile_name: Option<String>,
     pub app_name: String,
-    pub mask_on_block: bool,
-    pub mask_request_content: bool,
-    pub mask_response_content: bool,
+    pub masking: MaskingSettings,
     pub fallback_on_error: FallbackAction,
     pub timeout: f64,
     pub violation_message_template: Option<String>,
     pub default_on: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct MaskingSettings {
+    pub mask_on_block: bool,
+    pub content: ContentMaskSettings,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ContentMaskSettings {
+    pub request_content: bool,
+    pub response_content: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -113,9 +123,13 @@ where
         app_name: params
             .app_name
             .map_or_else(|| "LiteLLM".to_owned(), |name| format!("LiteLLM-{name}")),
-        mask_on_block,
-        mask_request_content,
-        mask_response_content,
+        masking: MaskingSettings {
+            mask_on_block,
+            content: ContentMaskSettings {
+                request_content: mask_request_content,
+                response_content: mask_response_content,
+            },
+        },
         fallback_on_error,
         timeout: params.timeout.unwrap_or(10.0),
         violation_message_template: params.violation_message_template,
@@ -131,9 +145,10 @@ fn resolve_api_key<L>(
 where
     L: EnvironmentLookup,
 {
-    let configured_text = configured.map(|secret| secret.expose_secret().to_owned());
-    let configured_text = resolve_optional_env(configured_text, "api_key", lookup, prefix)?;
-    configured_text
+    let raw_configured_text = configured.map(|secret| secret.expose_secret().to_owned());
+    let resolved_configured_text =
+        resolve_optional_env(raw_configured_text, "api_key", lookup, prefix)?;
+    resolved_configured_text
         .or_else(|| {
             lookup
                 .lookup("PANW_PRISMA_AIRS_API_KEY")

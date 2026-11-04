@@ -1,72 +1,105 @@
 mod guardrails;
 
-use serde_json::Value;
+use serde::Deserialize;
 
-pub fn extract_text_from_messages(messages: &[Value]) -> String {
+#[derive(Debug, Deserialize)]
+pub struct Message {
+    pub role: Option<String>,
+    pub content: Option<MessageContent>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum MessageContent {
+    Text(String),
+    Parts(Vec<ContentPart>),
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ContentPart {
+    #[serde(rename = "type")]
+    pub kind: Option<String>,
+    pub text: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Response {
+    pub choices: Option<Vec<ResponseChoice>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ResponseChoice {
+    pub message: Option<ResponseMessage>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ResponseMessage {
+    pub content: Option<MessageContent>,
+    pub tool_calls: Option<Vec<ToolCall>>,
+    pub function_call: Option<FunctionCall>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ToolCall {
+    pub function: Option<FunctionCall>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct FunctionCall {
+    pub arguments: Option<String>,
+}
+
+pub fn extract_text_from_messages(messages: &[Message]) -> String {
     for message in messages.iter().rev() {
-        let Some(role) = message.get("role").and_then(Value::as_str) else {
-            continue;
-        };
-        if role != "user" && role != "developer" {
+        if !matches!(message.role.as_deref(), Some("user" | "developer")) {
             continue;
         }
-        if let Some(content) = message.get("content") {
-            if let Some(text) = content_text(content) {
-                return text;
-            }
+        if let Some(content) = message.content.as_ref().and_then(content_text) {
+            return content;
         }
     }
     String::new()
 }
 
-fn flatten_content_list(parts: &[Value]) -> String {
-    parts
-        .iter()
-        .filter(|part| part.get("type").and_then(Value::as_str) == Some("text"))
-        .filter_map(|part| part.get("text").and_then(Value::as_str))
-        .filter(|text| !text.is_empty())
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-fn content_text(content: &Value) -> Option<String> {
-    let text = content
-        .as_str()
-        .map(ToOwned::to_owned)
-        .or_else(|| content.as_array().map(|parts| flatten_content_list(parts)))?;
+fn content_text(content: &MessageContent) -> Option<String> {
+    let text = match content {
+        MessageContent::Text(text) => text.clone(),
+        MessageContent::Parts(parts) => parts
+            .iter()
+            .filter(|part| part.kind.as_deref() == Some("text"))
+            .filter_map(|part| part.text.as_deref())
+            .filter(|text| !text.is_empty())
+            .collect::<Vec<_>>()
+            .join(" "),
+    };
     if text.is_empty() {
         return None;
     }
     Some(text)
 }
 
-pub fn extract_response_text(response: &Value) -> String {
-    let Some(choices) = response.get("choices").and_then(Value::as_array) else {
-        return String::new();
-    };
+pub fn extract_response_text(response: &Response) -> String {
     let mut text = Vec::new();
-    for message in choices.iter().filter_map(|choice| choice.get("message")) {
-        if let Some(content) = message.get("content").and_then(content_text) {
+    for message in response
+        .choices
+        .iter()
+        .flatten()
+        .filter_map(|choice| choice.message.as_ref())
+    {
+        if let Some(content) = message.content.as_ref().and_then(content_text) {
             text.push(content);
         }
-        if let Some(calls) = message.get("tool_calls").and_then(Value::as_array) {
-            for arguments in calls
-                .iter()
-                .filter_map(|call| call.pointer("/function/arguments"))
-            {
-                text.push(value_as_text(arguments));
+        for function in message
+            .tool_calls
+            .iter()
+            .flatten()
+            .filter_map(|call| call.function.as_ref())
+            .chain(message.function_call.iter())
+        {
+            if let Some(arguments) = function.arguments.as_ref() {
+                text.push(arguments.clone());
             }
-        }
-        if let Some(arguments) = message.pointer("/function_call/arguments") {
-            text.push(value_as_text(arguments));
         }
     }
     text.join(" ")
-}
-
-fn value_as_text(value: &Value) -> String {
-    value
-        .as_str()
-        .map(ToOwned::to_owned)
-        .unwrap_or_else(|| value.to_string())
 }

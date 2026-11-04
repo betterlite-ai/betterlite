@@ -24,8 +24,8 @@ fn panw_prisma_airs_configuration_loads_defaults_and_secret() {
         "https://service.api.aisecurity.paloaltonetworks.com"
     );
     assert_eq!(configured.app_name, "LiteLLM");
-    assert!(!configured.mask_request_content);
-    assert!(!configured.mask_response_content);
+    assert!(!configured.masking.content.request_content);
+    assert!(!configured.masking.content.response_content);
     assert_eq!(configured.timeout.to_bits(), 10.0_f64.to_bits());
     assert!(configured.default_on);
 }
@@ -68,8 +68,9 @@ fn panw_prisma_airs_supports_environment_defaults_and_legacy_masking() {
     assert_eq!(configured.api_key.expose_secret(), "env-secret");
     assert_eq!(configured.api_base, "https://env.example.test");
     assert_eq!(configured.app_name, "LiteLLM-gateway");
-    assert!(configured.mask_request_content);
-    assert!(configured.mask_response_content);
+    assert!(configured.masking.mask_on_block);
+    assert!(configured.masking.content.request_content);
+    assert!(configured.masking.content.response_content);
     assert_eq!(configured.fallback_on_error, super::FallbackAction::Allow);
     assert!(!configured.default_on);
 }
