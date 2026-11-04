@@ -870,6 +870,7 @@ dependencies = [
  "betterlite-error",
  "betterlite-logging",
  "betterlite-models",
+ "betterlite-openai",
  "betterlite-prompts",
  "hex",
  "indexmap 2.14.2",
