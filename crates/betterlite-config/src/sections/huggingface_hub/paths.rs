@@ -7,35 +7,28 @@ use crate::loader::{ConfigError, EnvironmentLookup};
 pub(super) fn resolve(
     lookup: &dyn EnvironmentLookup,
 ) -> Result<(PathBuf, PathBuf, PathBuf, PathBuf), ConfigError> {
-    let hf_home = resolve_hf_home(lookup)?;
-    let hub_cache = resolve_hub_cache(lookup, &hf_home)?;
+    let (hf_home, hub_cache) = resolve_cache_paths(lookup)?;
     let (token_path, stored_tokens_path) = resolve_token_paths(lookup, &hf_home)?;
     Ok((hf_home, hub_cache, token_path, stored_tokens_path))
 }
 
-fn resolve_hf_home(lookup: &dyn EnvironmentLookup) -> Result<PathBuf, ConfigError> {
+fn resolve_cache_paths(lookup: &dyn EnvironmentLookup) -> Result<(PathBuf, PathBuf), ConfigError> {
     let hf_home_setting = lookup.lookup("HF_HOME").unwrap_or_default();
     let xdg_cache_setting = lookup.lookup("XDG_CACHE_HOME").unwrap_or_default();
-    Ok(if !hf_home_setting.is_empty() {
+    let hf_home = if !hf_home_setting.is_empty() {
         expand_path(&hf_home_setting, "HF_HOME", lookup)?
     } else if !xdg_cache_setting.is_empty() {
         expand_path(&xdg_cache_setting, "XDG_CACHE_HOME", lookup)?.join("huggingface")
     } else {
         expand_path("~/.cache/huggingface", "HF_HOME", lookup)?
-    })
-}
-
-fn resolve_hub_cache(
-    lookup: &dyn EnvironmentLookup,
-    hf_home: &Path,
-) -> Result<PathBuf, ConfigError> {
+    };
     let primary_cache = lookup.lookup("HF_HUB_CACHE").unwrap_or_default();
     let hub_cache_setting = if primary_cache.is_empty() {
         lookup.lookup("HUGGINGFACE_HUB_CACHE").unwrap_or_default()
     } else {
         primary_cache
     };
-    Ok(if hub_cache_setting.is_empty() {
+    let hub_cache = if hub_cache_setting.is_empty() {
         hf_home.join("hub")
     } else {
         let name = if lookup.lookup("HF_HUB_CACHE").unwrap_or_default().is_empty() {
@@ -44,7 +37,8 @@ fn resolve_hub_cache(
             "HF_HUB_CACHE"
         };
         expand_path(&hub_cache_setting, name, lookup)?
-    })
+    };
+    Ok((hf_home, hub_cache))
 }
 
 fn resolve_token_paths(
