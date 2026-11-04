@@ -49,3 +49,5 @@ fn replays_the_http_policy_corpus(#[files("fuzz/corpus/http_policy/*")] path: Pa
         let _policy = TlsPolicy::resolve(&config, &BTreeMap::new(), None);
     }
 }
+
+mod ca_policy;
