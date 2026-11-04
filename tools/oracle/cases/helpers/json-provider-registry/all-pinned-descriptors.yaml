@@ -1,0 +1,6 @@
+kind: helper
+name: json-provider-registry-all-pinned-descriptors
+call:
+  json_provider_registry: {}
+env: {}
+compare: {ignore: []}
