@@ -3,29 +3,27 @@ use serde::Deserialize;
 use super::{Action, Direction, Frame};
 use crate::websocket_driver::service::Arguments;
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct FixtureFrame {
+#[derive(Deserialize)]
+#[serde(remote = "Frame", deny_unknown_fields)]
+struct FixtureRecord {
     direction: Direction,
     action: Action,
     #[serde(default)]
     text: Option<String>,
     #[serde(default)]
     binary: Option<String>,
+    #[serde(skip)]
+    binary_data: Option<Vec<u8>>,
     #[serde(default)]
     barrier: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub(super) struct FixtureFrame(#[serde(with = "FixtureRecord")] Frame);
+
 impl From<FixtureFrame> for Frame {
     fn from(fixture: FixtureFrame) -> Self {
-        Self {
-            direction: fixture.direction,
-            action: fixture.action,
-            text: fixture.text,
-            binary: fixture.binary,
-            binary_data: None,
-            barrier: fixture.barrier,
-        }
+        fixture.0
     }
 }
 
