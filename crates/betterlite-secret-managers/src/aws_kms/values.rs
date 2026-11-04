@@ -47,4 +47,7 @@ fn parse_plaintext(plaintext: &str) -> DecryptedValue {
     }
 }
 
-mod tests;
+#[path = "values/boolean_parsing/tests.rs"]
+mod boolean_parsing;
+#[path = "values/prefix_stripping/tests.rs"]
+mod prefix_stripping;

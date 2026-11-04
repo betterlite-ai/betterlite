@@ -48,4 +48,9 @@ fn store_client(client: Arc<Client>) -> Result<(), AwsKmsError> {
     Ok(())
 }
 
-mod tests;
+#[path = "initialization/client_storage/tests.rs"]
+mod client_storage;
+#[path = "initialization/load_aws_kms/tests.rs"]
+mod load_aws_kms;
+#[path = "initialization/validate_environment/tests.rs"]
+mod validate_environment;

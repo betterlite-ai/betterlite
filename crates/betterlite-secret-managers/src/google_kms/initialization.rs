@@ -62,4 +62,9 @@ fn store_client(client: KeyManagementService, resource_name: String) -> Result<(
     Ok(())
 }
 
-mod tests;
+#[path = "initialization/client_storage/tests.rs"]
+mod client_storage;
+#[path = "initialization/load_google_kms/tests.rs"]
+mod load_google_kms;
+#[path = "initialization/validate_environment/tests.rs"]
+mod validate_environment;

@@ -33,4 +33,5 @@ fn remove_secret_prefix(key: &str) -> String {
     }
 }
 
-mod tests;
+#[path = "environment/decrypt_env_var/tests.rs"]
+mod decrypt_env_var;
