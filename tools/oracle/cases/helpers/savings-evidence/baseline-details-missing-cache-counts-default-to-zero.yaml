@@ -1,0 +1,12 @@
+kind: helper
+name: baseline-details-missing-cache-counts-default-to-zero
+call:
+  savings_evidence:
+    operation: baseline_usage
+    usage_object:
+      prompt_tokens: 20
+      prompt_tokens_details:
+        cached_tokens: 4
+    baseline_info: null
+compare: {ignore: []}
+env: {}

@@ -1,0 +1,11 @@
+kind: helper
+name: managed-resource-access-admin-view-permissions
+call:
+  managed_resource_access:
+    principal: {user_id: null, team_id: null, token: null, api_key: null, user_role: proxy_admin_viewer}
+    records:
+      - {id: foreign, created_by: foreign, team_id: null}
+      - {id: unowned, created_by: null, team_id: null}
+env: {}
+compare:
+  ignore: []

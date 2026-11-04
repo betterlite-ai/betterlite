@@ -115,7 +115,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/shadow_eval.*admission|shadow_eval.*scope/)'
     - id: spend-write-ordering-tests
       why: Spend counter increment before attempt insert does not happen or is not verified.
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(shadow_eval.*spend.*write.*order)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/shadow_eval.*spend.*write.*order/)'
 oracle_cases:
   - tools/oracle/cases/helpers/server/shadow-job-loading/active-jobs-forward.yaml
   - tools/oracle/cases/helpers/server/shadow-job-loading/active-jobs-reverse.yaml
