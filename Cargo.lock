@@ -1745,9 +1745,11 @@ version = "0.1.0"
 dependencies = [
  "betterlite-auth",
  "betterlite-core",
+ "rstest",
  "rust_decimal",
  "serde",
  "serde_json",
+ "serde_with",
  "thiserror",
  "tokio",
 ]

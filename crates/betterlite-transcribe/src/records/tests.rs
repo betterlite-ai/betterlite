@@ -1,12 +1,11 @@
 #![cfg(test)]
-use serde_json::json;
 
-use betterlite_transcribe::records::{TranscriptionJobResponse, TranscriptionJobTag};
+use crate::records::{TranscriptionJobResponse, TranscriptionJobTag};
 
 #[test]
 fn transcription_records_deserialize_aws_casing_and_optional_fields() {
     let response: TranscriptionJobResponse =
-        serde_json::from_value(json!({"TranscriptionJob":{"Tags":[{"Key":"x"}]}})).unwrap();
+        serde_json::from_str(r#"{"TranscriptionJob":{"Tags":[{"Key":"x"}]}}"#).unwrap();
     let job = response.transcription_job.unwrap();
     assert_eq!(
         job.tags,

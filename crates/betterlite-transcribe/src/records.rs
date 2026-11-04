@@ -45,14 +45,15 @@ pub struct GetTranscriptionJobRequest {
     pub transcription_job_name: String,
 }
 
-pub type JobLookupFuture<'a> =
-    Pin<Box<dyn Future<Output = Result<TranscriptionJobResponse, JobLookupError>> + Send + 'a>>;
+pub type JobLookupFuture<'lookup> = Pin<
+    Box<dyn Future<Output = Result<TranscriptionJobResponse, JobLookupError>> + Send + 'lookup>,
+>;
 
 pub trait JobLookup: Send + Sync {
-    fn get_transcription_job<'a>(
-        &'a self,
-        request: &'a GetTranscriptionJobRequest,
-    ) -> JobLookupFuture<'a>;
+    fn get_transcription_job<'lookup>(
+        &'lookup self,
+        request: &'lookup GetTranscriptionJobRequest,
+    ) -> JobLookupFuture<'lookup>;
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -60,3 +61,5 @@ pub enum JobLookupError {
     #[error("Transcribe job lookup failed")]
     Unavailable,
 }
+
+mod tests;

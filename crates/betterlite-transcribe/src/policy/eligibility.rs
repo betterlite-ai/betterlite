@@ -1,14 +1,14 @@
 use betterlite_auth::auth_identity::records::Principal;
 use betterlite_core::api::managed_resource_store::is_proxy_admin;
 use rust_decimal::Decimal;
-use serde_json::Value;
 
+use super::inputs::EligibilityInput;
+use crate::field::Field;
 use crate::records::TranscribeRefusal;
 
 const PRICED_OPERATION: &str = "StartTranscriptionJob";
 const PRICED_MODEL: &str = "transcribe/StartTranscriptionJob";
 const MEASURABLE_FORMATS: [&str; 4] = ["flac", "mp3", "ogg", "wav"];
-const SURCHARGES: [&str; 2] = ["ContentRedaction", "ToxicityDetection"];
 const UNPRICED_OPERATIONS: [&str; 3] = [
     "StartCallAnalyticsJob",
     "StartMedicalScribeJob",
@@ -19,31 +19,30 @@ const OWNED_JOB_OPERATIONS: [&str; 2] = ["GetTranscriptionJob", "DeleteTranscrip
 #[must_use]
 pub fn unpriceable_request_reason(
     operation: &str,
-    request_body: &Value,
+    request_body: &str,
     cost_per_second: Option<Decimal>,
 ) -> Option<String> {
     if UNPRICED_OPERATIONS.contains(&operation) {
         return Some(format!(
-            "{operation} is billed per second of audio at a rate LiteLLM does not price yet; only {PRICED_OPERATION} is supported"
+            "{operation} has no supported audio rate; only {PRICED_OPERATION} is priced"
         ));
     }
     if operation != PRICED_OPERATION {
         return None;
     }
-    let Some(rate) = cost_per_second else {
+    if cost_per_second.is_none() {
         return Some(format!(
             "{PRICED_MODEL} has no input_cost_per_second, so this job cannot be budgeted"
         ));
-    };
-    if rate.is_sign_negative() {
-        return Some(format!(
-            "{PRICED_MODEL} has an invalid input_cost_per_second"
-        ));
     }
-    let unsupported = unsupported_members(request_body);
+    let body: EligibilityInput = match serde_json::from_str(request_body) {
+        Ok(parsed) => parsed,
+        Err(error) => return Some(format!("Invalid Transcribe request: {error}")),
+    };
+    let unsupported = unsupported_members(&body);
     if !unsupported.is_empty() {
         return Some(format!(
-            "{PRICED_OPERATION} with {} adds a surcharge that LiteLLM does not price",
+            "{PRICED_OPERATION} with {} adds an unpriced surcharge",
             unsupported.join(", ")
         ));
     }
@@ -59,29 +58,24 @@ pub fn unpriceable_request_reason(
     None
 }
 
-fn unsupported_members(request_body: &Value) -> Vec<String> {
-    let body = request_body.as_object();
-    let mut unsupported = SURCHARGES
-        .iter()
-        .filter(|member| body.is_some_and(|body| body.contains_key(**member)))
-        .map(|member| (*member).to_owned())
-        .collect::<Vec<_>>();
+fn unsupported_members(body: &EligibilityInput) -> Vec<String> {
+    let mut unsupported = Vec::new();
+    if !body.content_redaction.is_absent() {
+        unsupported.push("ContentRedaction".to_owned());
+    }
+    if !body.toxicity_detection.is_absent() {
+        unsupported.push("ToxicityDetection".to_owned());
+    }
     if body
-        .and_then(|body| body.get("ModelSettings"))
-        .and_then(Value::as_object)
-        .is_some_and(|settings| settings.contains_key("LanguageModelName"))
+        .model_settings
+        .as_ref()
+        .is_some_and(|settings| !settings.language_model_name.is_absent())
     {
         unsupported.push("ModelSettings.LanguageModelName".to_owned());
     }
-    if let Some(languages) = body
-        .and_then(|body| body.get("LanguageIdSettings"))
-        .and_then(Value::as_object)
-    {
+    if let Some(languages) = &body.language_id_settings {
         for (language, settings) in languages {
-            if settings
-                .as_object()
-                .is_some_and(|settings| settings.contains_key("LanguageModelName"))
-            {
+            if !settings.language_model_name.is_absent() {
                 unsupported.push(format!("LanguageIdSettings.{language}.LanguageModelName"));
             }
         }
@@ -90,21 +84,30 @@ fn unsupported_members(request_body: &Value) -> Vec<String> {
 }
 
 #[must_use]
-pub fn requested_media_format(request_body: &Value) -> Option<String> {
-    if let Some(format) = request_body.get("MediaFormat").and_then(Value::as_str) {
+pub fn requested_media_format(request_body: &str) -> Option<String> {
+    let body: EligibilityInput = serde_json::from_str(request_body).ok()?;
+
+    if let Some(format) = &body.media_format {
         return Some(format.to_lowercase());
     }
-    media_uri_extension(request_body.get("Media")?.get("MediaFileUri")?.as_str()?)
-}
-
-fn media_uri_extension(uri: &str) -> Option<String> {
+    let media = body.media.as_ref()?;
+    let Field::Present(Some(uri)) = &media.media_file_uri else {
+        return None;
+    };
     let path = if let Some((_, resource)) = uri.rsplit_once("://") {
         resource.split_once('/')?.1
     } else {
         uri
     };
-    let path = path.split(['?', '#']).next()?;
-    Some(path.rsplit('/').next()?.rsplit_once('.')?.1.to_lowercase())
+    let clean_path = path.split(['?', '#']).next()?;
+    Some(
+        clean_path
+            .rsplit('/')
+            .next()?
+            .rsplit_once('.')?
+            .1
+            .to_lowercase(),
+    )
 }
 
 #[must_use]
