@@ -123,8 +123,7 @@ fn ordinary_usage(fields: &Map<String, Value>) -> Result<Usage, ResponsesUsageEr
         .get("total_tokens")
         .and_then(Value::as_i64)
         .unwrap_or(0);
-    let prompt_tokens_details = conversion::ordinary_prompt_details(fields)?;
-    let completion_tokens_details = conversion::ordinary_completion_details(fields)?;
+    let (prompt_tokens_details, completion_tokens_details) = conversion::ordinary_details(fields)?;
     let mut extensions = fields.clone();
     for field in CHAT_FIELDS {
         extensions.remove(field);

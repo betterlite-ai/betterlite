@@ -8,6 +8,7 @@ use betterlite_models::usage_sum::{
 use betterlite_openai::api::responses_objects::{
     InputTokensDetails, OutputTokensDetails, ResponseApiUsage,
 };
+use serde::Serialize;
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 
@@ -34,7 +35,8 @@ pub(super) fn from_response_usage(typed: &ResponseApiUsage) -> Result<Usage, Res
         .input_tokens_details
         .as_ref()
         .map(prompt_details)
-        .transpose()?;
+        .transpose()?
+        .flatten();
     let completion_details = typed
         .output_tokens_details
         .as_ref()
@@ -52,127 +54,89 @@ pub(super) fn from_response_usage(typed: &ResponseApiUsage) -> Result<Usage, Res
     })
 }
 
-fn prompt_details(details: &InputTokensDetails) -> Result<PromptTokensDetails, serde_json::Error> {
-    let resolved_cache_tokens = detail_lax_integer(&details.extra, "cache_write_tokens")?
-        .or(detail_lax_integer(&details.extra, "cache_creation_tokens")?);
+fn prompt_details(
+    details: &InputTokensDetails,
+) -> Result<Option<PromptTokensDetails>, serde_json::Error> {
+    let value = serde_json::to_value(details)?;
+    let fields = Map::from_iter([("prompt_tokens_details".to_owned(), value)]);
+    ordinary_details(&fields).map(|(prompt, _)| prompt)
+}
+
+pub(super) fn ordinary_details(
+    fields: &Map<String, Value>,
+) -> Result<(Option<PromptTokensDetails>, Option<CompletionTokensDetails>), serde_json::Error> {
+    let prompt = ordinary_detail_map(fields, "prompt_tokens_details")?
+        .filter(|details| !details.is_empty())
+        .map(|details| prompt_details_from_map(&details))
+        .transpose()?;
+    let completion = ordinary_detail_map(fields, "completion_tokens_details")?
+        .filter(|details| !details.is_empty())
+        .map(|details| completion_details_from_map(&details))
+        .transpose()?;
+    Ok((prompt, completion))
+}
+
+fn prompt_details_from_map(
+    details: &Map<String, Value>,
+) -> Result<PromptTokensDetails, serde_json::Error> {
+    let resolved_cache_tokens = lax_integer_field(details.get("cache_write_tokens"))?
+        .or(lax_integer_field(details.get("cache_creation_tokens"))?);
+    let cached_tokens_details = match details.get("cached_tokens_details") {
+        None | Some(Value::Null) => None,
+        Some(value) => {
+            let nested = serde_json::from_value::<Map<String, Value>>(value.clone())?;
+            Some(CachedTokensDetails {
+                text_tokens: lax_integer_field(nested.get("text_tokens"))?,
+                audio_tokens: lax_integer_field(nested.get("audio_tokens"))?,
+                image_tokens: lax_integer_field(nested.get("image_tokens"))?,
+            })
+        }
+    };
     Ok(PromptTokensDetails {
-        audio_tokens: details.audio_tokens,
-        cached_tokens: Some(details.cached_tokens),
-        cached_tokens_details: details.cached_tokens_details.as_ref().map(|cached| {
-            CachedTokensDetails {
-                text_tokens: cached.text_tokens,
-                audio_tokens: cached.audio_tokens,
-                image_tokens: cached.image_tokens,
-            }
-        }),
-        text_tokens: details.text_tokens,
-        image_tokens: details.image_tokens,
-        video_tokens: details.video_tokens,
-        web_search_requests: detail_lax_integer(&details.extra, "web_search_requests")?,
-        google_maps_grounding_requests: detail_lax_integer(
-            &details.extra,
-            "google_maps_grounding_requests",
+        audio_tokens: lax_integer_field(details.get("audio_tokens"))?,
+        cached_tokens: lax_integer_field(details.get("cached_tokens"))?,
+        cached_tokens_details,
+        text_tokens: lax_integer_field(details.get("text_tokens"))?,
+        image_tokens: lax_integer_field(details.get("image_tokens"))?,
+        video_tokens: lax_integer_field(details.get("video_tokens"))?,
+        web_search_requests: lax_integer_field(details.get("web_search_requests"))?,
+        google_maps_grounding_requests: lax_integer_field(
+            details.get("google_maps_grounding_requests"),
         )?,
-        tool_use_tokens: None,
-        character_count: None,
-        image_count: None,
-        video_length_seconds: None,
-        audio_length_seconds: None,
-        query_count: None,
+        tool_use_tokens: lax_integer_field(details.get("tool_use_tokens"))?,
+        character_count: lax_integer_field(details.get("character_count"))?,
+        image_count: lax_integer_field(details.get("image_count"))?,
+        video_length_seconds: optional_decimal(details, "video_length_seconds")?,
+        audio_length_seconds: optional_decimal(details, "audio_length_seconds")?,
+        query_count: lax_integer_field(details.get("query_count"))?,
         cache_write_tokens: resolved_cache_tokens,
         cache_creation_tokens: resolved_cache_tokens,
     })
 }
 
-pub(super) fn ordinary_prompt_details(
-    fields: &Map<String, Value>,
-) -> Result<Option<PromptTokensDetails>, serde_json::Error> {
-    let Some(value) = fields
-        .get("prompt_tokens_details")
-        .filter(|value| !value.is_null())
-    else {
-        return Ok(None);
-    };
-    let details = serde_json::from_value::<Map<String, Value>>(value.clone())?;
-    if details.is_empty() {
-        return Ok(None);
-    }
-    let cached_tokens_details = ordinary_cached_tokens_details(&details)?;
-    let cache_tokens = optional_integer(&details, "cache_write_tokens")?
-        .or(optional_integer(&details, "cache_creation_tokens")?);
-    Ok(Some(PromptTokensDetails {
-        audio_tokens: optional_integer(&details, "audio_tokens")?,
-        cached_tokens: optional_integer(&details, "cached_tokens")?,
-        cached_tokens_details,
-        text_tokens: optional_integer(&details, "text_tokens")?,
-        image_tokens: optional_integer(&details, "image_tokens")?,
-        video_tokens: optional_integer(&details, "video_tokens")?,
-        web_search_requests: optional_integer(&details, "web_search_requests")?,
-        google_maps_grounding_requests: optional_integer(
-            &details,
-            "google_maps_grounding_requests",
-        )?,
-        tool_use_tokens: optional_integer(&details, "tool_use_tokens")?,
-        character_count: optional_integer(&details, "character_count")?,
-        image_count: optional_integer(&details, "image_count")?,
-        video_length_seconds: optional_decimal(&details, "video_length_seconds")?,
-        audio_length_seconds: optional_decimal(&details, "audio_length_seconds")?,
-        query_count: optional_integer(&details, "query_count")?,
-        cache_write_tokens: cache_tokens,
-        cache_creation_tokens: cache_tokens,
-    }))
-}
-
-fn ordinary_cached_tokens_details(
+fn completion_details_from_map(
     details: &Map<String, Value>,
-) -> Result<Option<CachedTokensDetails>, serde_json::Error> {
-    let Some(value) = details
-        .get("cached_tokens_details")
-        .filter(|value| !value.is_null())
-    else {
-        return Ok(None);
-    };
-    let nested_fields = serde_json::from_value::<Map<String, Value>>(value.clone())?;
-    Ok(Some(CachedTokensDetails {
-        text_tokens: optional_integer(&nested_fields, "text_tokens")?,
-        audio_tokens: optional_integer(&nested_fields, "audio_tokens")?,
-        image_tokens: optional_integer(&nested_fields, "image_tokens")?,
-    }))
+) -> Result<CompletionTokensDetails, serde_json::Error> {
+    Ok(CompletionTokensDetails {
+        text_tokens: lax_integer_field(details.get("text_tokens"))?,
+        audio_tokens: lax_integer_field(details.get("audio_tokens"))?,
+        image_tokens: lax_integer_field(details.get("image_tokens"))?,
+        video_tokens: lax_integer_field(details.get("video_tokens"))?,
+        reasoning_tokens: lax_integer_field(details.get("reasoning_tokens"))?,
+        accepted_prediction_tokens: lax_integer_field(details.get("accepted_prediction_tokens"))?,
+        rejected_prediction_tokens: lax_integer_field(details.get("rejected_prediction_tokens"))?,
+    })
 }
 
-pub(super) fn ordinary_completion_details(
-    fields: &Map<String, Value>,
-) -> Result<Option<CompletionTokensDetails>, serde_json::Error> {
-    let Some(value) = fields
-        .get("completion_tokens_details")
-        .filter(|value| !value.is_null())
-    else {
-        return Ok(None);
-    };
-    let details = serde_json::from_value::<Map<String, Value>>(value.clone())?;
-    if details.is_empty() {
-        return Ok(None);
-    }
-    Ok(Some(CompletionTokensDetails {
-        text_tokens: optional_integer(&details, "text_tokens")?,
-        audio_tokens: optional_integer(&details, "audio_tokens")?,
-        image_tokens: optional_integer(&details, "image_tokens")?,
-        video_tokens: optional_integer(&details, "video_tokens")?,
-        reasoning_tokens: optional_integer(&details, "reasoning_tokens")?,
-        accepted_prediction_tokens: optional_integer(&details, "accepted_prediction_tokens")?,
-        rejected_prediction_tokens: optional_integer(&details, "rejected_prediction_tokens")?,
-    }))
-}
-
-fn optional_integer(
+fn ordinary_detail_map(
     fields: &Map<String, Value>,
     name: &str,
-) -> Result<Option<i64>, serde_json::Error> {
-    fields
-        .get(name)
-        .map(typed::lax_integer)
-        .transpose()
-        .map(Option::flatten)
+) -> Result<Option<Map<String, Value>>, serde_json::Error> {
+    let Some(value) = fields.get(name).filter(|value| !value.is_null()) else {
+        return Ok(None);
+    };
+    let details = serde_json::from_value::<Map<String, Value>>(value.clone())?;
+    Ok(Some(details))
 }
 
 fn optional_decimal(
@@ -223,12 +187,11 @@ fn detail_integer(details: &BTreeMap<String, WireJson>, field: &str) -> Option<i
     }
 }
 
-fn detail_lax_integer(
-    details: &BTreeMap<String, WireJson>,
-    field: &str,
-) -> Result<Option<i64>, serde_json::Error> {
-    details
-        .get(field)
+fn lax_integer_field<T>(field: Option<&T>) -> Result<Option<i64>, serde_json::Error>
+where
+    T: Serialize,
+{
+    field
         .map(serde_json::to_value)
         .transpose()?
         .as_ref()
@@ -240,9 +203,11 @@ fn detail_lax_integer(
 fn extension_fields(
     extra: &BTreeMap<String, WireJson>,
 ) -> Result<Map<String, Value>, serde_json::Error> {
-    extra
-        .iter()
-        .filter(|(key, _)| !EXCLUDED.contains(&key.as_str()))
-        .map(|(name, field)| serde_json::to_value(field).map(|json| (name.clone(), json)))
-        .collect()
+    let mut fields = Map::new();
+    for (name, field) in extra {
+        if !EXCLUDED.contains(&name.as_str()) {
+            fields.insert(name.clone(), serde_json::to_value(field)?);
+        }
+    }
+    Ok(fields)
 }
