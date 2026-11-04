@@ -14,6 +14,7 @@ use super::coercion::{
 #[serde(untagged)]
 pub enum CounterMapField {
     Null(()),
+    Number(serde_json::Number),
     Map(BTreeMap<String, Scalar>),
     Other(IgnoredAny),
 }
@@ -33,7 +34,11 @@ pub struct GuardrailEntryFields {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum GuardrailInformationEntry {
-    Object(GuardrailEntryFields),
+    Number(serde_json::Number),
+    Object {
+        #[serde(flatten)]
+        fields: GuardrailEntryFields,
+    },
     Other(IgnoredAny),
 }
 
@@ -69,7 +74,7 @@ fn parse_validated_field<F, T>(
 where
     F: FnOnce(&GuardrailEntryFields) -> Result<FieldOutcome<T>, GuardrailPricingError>,
 {
-    let GuardrailInformationEntry::Object(fields) = raw else {
+    let GuardrailInformationEntry::Object { fields } = raw else {
         tracing::warn!(field_kind, "ignoring malformed guardrail_information entry");
         return Ok(None);
     };
@@ -187,7 +192,7 @@ fn parse_cost_by_unit_field(
         Some(CounterMapField::Map(counters)) => Ok(
             coerce_counter_map(counters)?.map_or(FieldOutcome::Malformed, FieldOutcome::Present)
         ),
-        Some(CounterMapField::Other(_)) => Ok(FieldOutcome::Malformed),
+        Some(CounterMapField::Number(_) | CounterMapField::Other(_)) => Ok(FieldOutcome::Malformed),
     }
 }
 

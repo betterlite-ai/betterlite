@@ -1,0 +1,8 @@
+kind: helper
+name: billed-at-leap-second-reads-null
+call:
+  savings_evidence:
+    operation: billed_at
+    text: "2024-03-01T23:59:60Z"
+compare: {ignore: []}
+env: {}

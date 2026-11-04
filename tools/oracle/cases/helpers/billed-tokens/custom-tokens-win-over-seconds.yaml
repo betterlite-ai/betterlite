@@ -1,0 +1,16 @@
+kind: helper
+name: custom-tokens-win-over-seconds
+call:
+  billed_tokens:
+    prompt_tokens: 10
+    completion_tokens: 5
+    cached_tokens: 2
+    cache_creation_tokens: 3
+    custom_cost_per_token:
+      input_cost_per_token: 0.1
+      output_cost_per_token: 0.2
+      cache_read_input_token_cost: 0.05
+    custom_cost_per_second: 100
+    response_time_ms: 1000
+compare: {ignore: []}
+env: {}

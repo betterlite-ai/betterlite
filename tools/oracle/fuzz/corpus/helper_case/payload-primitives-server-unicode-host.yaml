@@ -1,0 +1,14 @@
+{
+  "kind": "helper",
+  "name": "payload-primitives-server-unicode-host",
+  "call": {
+    "b3843": {
+      "function": "server_info",
+      "value": "https://b\u00fccher.example/api"
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
