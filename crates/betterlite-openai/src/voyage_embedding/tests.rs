@@ -91,7 +91,7 @@ fn replays_the_voyage_embedding_reply_corpus(
 #[test]
 fn headers_are_replaced_and_missing_credentials_keep_none_text() {
     let supplied = serde_json::from_str(r#"{"X-Caller": "discard"}"#).unwrap();
-    let headers = voyage_headers(supplied, None, |_| None);
+    let headers = voyage_headers(supplied, voyage_credentials(None, |_| None));
     assert_eq!(headers.len(), 1);
     assert_eq!(headers["Authorization"], "Bearer None");
 }

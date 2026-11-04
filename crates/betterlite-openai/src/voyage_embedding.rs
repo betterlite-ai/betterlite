@@ -117,40 +117,31 @@ pub fn is_contextual_model(model: &str) -> bool {
     false
 }
 
-pub fn voyage_headers<F>(
-    headers: Map<String, Value>,
-    api_key: Option<&str>,
-    lookup: F,
-) -> Map<String, Value>
-where
-    F: Fn(&str) -> Option<String>,
-{
-    let mut replacement = Map::new();
-    replacement.insert(
-        "Authorization".to_owned(),
-        Value::String(voyage_credentials(api_key, lookup)),
-    );
-    drop(headers);
-    replacement
+#[must_use]
+pub fn voyage_headers(
+    mut headers: Map<String, Value>,
+    authorization: String,
+) -> Map<String, Value> {
+    headers.clear();
+    headers.insert("Authorization".to_owned(), Value::String(authorization));
+    headers
 }
 
 pub fn voyage_credentials<F>(api_key: Option<&str>, lookup: F) -> String
 where
     F: Fn(&str) -> Option<String>,
 {
-    api_key.map_or_else(
+    let key = api_key.map_or_else(
         || {
-            format!(
-                "Bearer {}",
-                lookup("VOYAGE_API_KEY")
-                    .filter(|value| !value.is_empty())
-                    .or_else(|| lookup("VOYAGE_AI_API_KEY").filter(|value| !value.is_empty()))
-                    .or_else(|| lookup("VOYAGE_AI_TOKEN").filter(|value| !value.is_empty()))
-                    .unwrap_or_else(|| "None".to_owned())
-            )
+            lookup("VOYAGE_API_KEY")
+                .filter(|value| !value.is_empty())
+                .or_else(|| lookup("VOYAGE_AI_API_KEY").filter(|value| !value.is_empty()))
+                .or_else(|| lookup("VOYAGE_AI_TOKEN").filter(|value| !value.is_empty()))
+                .unwrap_or_else(|| "None".to_owned())
         },
-        |key| format!("Bearer {key}"),
-    )
+        str::to_owned,
+    );
+    format!("Bearer {key}")
 }
 
 pub fn decode_voyage_embedding_reply(
