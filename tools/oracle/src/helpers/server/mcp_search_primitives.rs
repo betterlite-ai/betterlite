@@ -1,77 +1,106 @@
+use betterlite_server::mcp::catalog_guard::types::MCPTool;
+use betterlite_server::mcp::tool_search::identity::{
+    MCPProxySchemaResult, MCPProxySearchResult, proxy_schema_result, proxy_search_result,
+    with_mcp_proxy_identity,
+};
+use betterlite_server::mcp::tool_search::settings::MCPToolSearchSettings;
+use betterlite_server::mcp::tool_search::virtual_tools::{
+    MCP_PROXY_TOOL_DEFINITIONS, VIRTUAL_TOOL_DEFINITIONS,
+};
+use betterlite_server::mcp::tool_search::{
+    MCPToolSearchHit, search_tools, split_core_tools, top_hits,
+};
+use serde::{Deserialize, Serialize};
+
 pub(crate) struct Op;
 
-use betterlite_server::mcp::catalog_guard::types::MCPTool;
+#[derive(Deserialize)]
+#[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
+pub(crate) enum Input {
+    Keyword {
+        query: String,
+        tools: Vec<MCPTool>,
+        top_k: i64,
+    },
+    Identity {
+        tool: Box<MCPTool>,
+        server_id: String,
+    },
+    Core {
+        tools: Vec<MCPTool>,
+        core_tools: Vec<String>,
+    },
+    Empty {
+        tools: Vec<MCPTool>,
+    },
+    Settings {
+        config: MCPToolSearchSettings,
+    },
+    Definitions,
+    Semantic {
+        tools: Vec<MCPTool>,
+        scores: Vec<f64>,
+        threshold: f64,
+        top_k: i64,
+    },
+}
+
+#[derive(Serialize)]
+struct CoreNames<'tools> {
+    core: Vec<&'tools str>,
+    rest: Vec<&'tools str>,
+}
+
+#[derive(Serialize)]
+struct IdentityOutput {
+    search: MCPProxySearchResult,
+    schema: MCPProxySchemaResult,
+}
+
+#[derive(Serialize)]
+struct ScoredName {
+    name: String,
+    score: f64,
+}
 
 impl crate::helpers::Helper for Op {
-    type Input = serde_json::Value;
+    type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        use betterlite_server::mcp::tool_search::{
-            MCPToolSearchHit, MCPToolSearchSettings, mcp_proxy_tool_id, search_tools,
-            split_core_tools, top_hits, with_mcp_proxy_identity,
+        let output = match input {
+            Input::Keyword {
+                query,
+                tools,
+                top_k,
+            } => serde_json::to_value(search_tools(query, tools, *top_k).map_err(helper_error)?),
+            Input::Identity { tool, server_id } => return identity(tool, server_id),
+            Input::Core { tools, core_tools } => return core_names(tools, core_tools),
+            Input::Empty { tools } => {
+                serde_json::to_value(search_tools("", tools, 5).map_err(helper_error)?)
+            }
+            Input::Settings { config } => serde_json::to_value(config),
+            Input::Definitions => serde_json::to_value(
+                [
+                    VIRTUAL_TOOL_DEFINITIONS.to_vec(),
+                    MCP_PROXY_TOOL_DEFINITIONS.to_vec(),
+                ]
+                .concat(),
+            ),
+            Input::Semantic {
+                tools,
+                scores,
+                threshold,
+                top_k,
+            } => return ranked(tools, scores, *threshold, *top_k),
         };
-
-        let operation = input
-            .get("mode")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or_default();
-        let output = match operation {
-            "keyword" => {
-                let tools: Vec<MCPTool> = serde_json::from_value(
-                    input.get("tools").cloned().unwrap_or_default(),
-                )
-                .map_err(helper_error)?;
-                let query = input.get("query").and_then(serde_json::Value::as_str).unwrap_or_default();
-                let top_k = input.get("top_k").and_then(serde_json::Value::as_u64)
-                    .and_then(|value| usize::try_from(value).ok()).unwrap_or(5);
-                serde_json::to_value(search_tools(query, &tools, top_k))
-            }
-            "identity" => {
-                let tool: MCPTool = serde_json::from_value(
-                    input.get("tool").cloned().unwrap_or_default(),
-                )
-                .map_err(helper_error)?;
-                let server_id = input.get("server_id").and_then(serde_json::Value::as_str).unwrap_or_default();
-                let identified = with_mcp_proxy_identity(&tool, server_id);
-                serde_json::to_value(mcp_proxy_tool_id(&identified).map_err(helper_error)?)
-            }
-            "core" => {
-                let tools: Vec<MCPTool> = serde_json::from_value(
-                    input.get("tools").cloned().unwrap_or_default(),
-                )
-                .map_err(helper_error)?;
-                let core_names: Vec<String> = serde_json::from_value(input.get("core_tools").cloned().unwrap_or_default())
-                    .map_err(helper_error)?;
-                let (core, rest) = split_core_tools(&tools, &core_names);
-                Ok(serde_json::json!({"core": core.iter().map(|tool| &tool.name).collect::<Vec<_>>(), "rest": rest.iter().map(|tool| &tool.name).collect::<Vec<_>>() }))
-            }
-            "empty" => Ok(serde_json::json!([])),
-            "settings" => {
-                let config = input.get("config").cloned().unwrap_or_default();
-                let settings = MCPToolSearchSettings::from_value(&config).map_err(helper_error)?;
-                serde_json::to_value(settings)
-            }
-            "semantic" => {
-                let tools: Vec<MCPTool> = serde_json::from_value(
-                    input.get("tools").cloned().unwrap_or_default(),
-                )
-                .map_err(helper_error)?;
-                let scores: Vec<f64> = serde_json::from_value(input.get("scores").cloned().unwrap_or_default())
-                    .map_err(helper_error)?;
-                let threshold = input.get("threshold").and_then(serde_json::Value::as_f64).unwrap_or(0.0);
-                let limit = input.get("top_k").and_then(serde_json::Value::as_u64)
-                    .and_then(|value| usize::try_from(value).ok()).unwrap_or(5);
-                serde_json::to_value(top_hits(&tools, &scores, threshold, limit).iter()
-                    .map(|(score, tool)| MCPToolSearchHit { tool: tool.clone(), score: Some(*score) })
-                    .map(|hit| serde_json::json!({"name":hit.tool.name,"score":hit.score})).collect::<Vec<_>>())
-            }
-            _ => return Self::not_built("mcp_search_primitives"),
-        }.map_err(helper_error)?;
-        Ok(output)
+        output.map_err(helper_error)
     }
 }
 
-fn helper_error<E: std::fmt::Display>(error: E) -> Box<crate::helpers::HelperError> {
+fn helper_error<E>(error: E) -> Box<crate::helpers::HelperError>
+where
+    E: std::fmt::Display,
+{
     Box::new(crate::helpers::HelperError {
         class: "InvalidInput".to_owned(),
         status: None,
@@ -80,4 +109,43 @@ fn helper_error<E: std::fmt::Display>(error: E) -> Box<crate::helpers::HelperErr
         code: None,
         message: error.to_string(),
     })
+}
+
+fn identity(tool: &MCPTool, server_id: &str) -> crate::helpers::HelperResult {
+    let identified = with_mcp_proxy_identity(tool, server_id);
+    let output = IdentityOutput {
+        schema: proxy_schema_result(&identified).map_err(helper_error)?,
+        search: proxy_search_result(&MCPToolSearchHit {
+            tool: identified,
+            score: None,
+        })
+        .map_err(helper_error)?,
+    };
+    serde_json::to_value(output).map_err(helper_error)
+}
+
+fn core_names(tools: &[MCPTool], names: &[String]) -> crate::helpers::HelperResult {
+    let (core, rest) = split_core_tools(tools, names);
+    serde_json::to_value(CoreNames {
+        core: core.iter().map(|tool| tool.name.as_str()).collect(),
+        rest: rest.iter().map(|tool| tool.name.as_str()).collect(),
+    })
+    .map_err(helper_error)
+}
+
+fn ranked(
+    tools: &[MCPTool],
+    scores: &[f64],
+    threshold: f64,
+    top_k: i64,
+) -> crate::helpers::HelperResult {
+    let hits = top_hits(tools, scores, threshold, top_k).map_err(helper_error)?;
+    let names: Vec<ScoredName> = hits
+        .into_iter()
+        .map(|(score, tool)| ScoredName {
+            name: tool.name,
+            score,
+        })
+        .collect();
+    serde_json::to_value(names).map_err(helper_error)
 }

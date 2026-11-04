@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use crate::mcp::catalog_guard::types::MCPTool;
 use betterlite_db::mcp_stored_contracts::JsonValue;
 use serde::Serialize;
-use sha2::{Digest, Sha256};
+use sha2::{Digest as _, Sha256};
 use thiserror::Error;
 
 use super::MCPToolSearchHit;
@@ -32,6 +32,7 @@ pub struct MCPProxySearchResult {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MCPProxySchemaResult {
+    #[serde(rename = "tool_id")]
     pub tool_id: String,
     pub name: String,
     pub description: String,
@@ -40,9 +41,10 @@ pub struct MCPProxySchemaResult {
     pub output_schema: Option<BTreeMap<String, JsonValue>>,
 }
 
+#[must_use]
 pub fn with_mcp_proxy_identity(tool: &MCPTool, server_id: &str) -> MCPTool {
-    let mut tool = tool.clone();
-    let mut metadata = tool.meta.take().unwrap_or_default();
+    let mut identified = tool.clone();
+    let mut metadata = identified.meta.take().unwrap_or_default();
     metadata.insert(
         MCP_PROXY_IDENTITY_META_KEY.to_owned(),
         JsonValue::Object(BTreeMap::from([
@@ -53,8 +55,8 @@ pub fn with_mcp_proxy_identity(tool: &MCPTool, server_id: &str) -> MCPTool {
             ("tool_name".to_owned(), JsonValue::String(tool.name.clone())),
         ])),
     );
-    tool.meta = Some(metadata);
-    tool
+    identified.meta = Some(metadata);
+    identified
 }
 
 pub fn mcp_proxy_tool_id(tool: &MCPTool) -> Result<String, MCPProxyToolIdentityError> {
@@ -84,8 +86,12 @@ pub fn mcp_proxy_tool_id(tool: &MCPTool) -> Result<String, MCPProxyToolIdentityE
 
 fn as_json_string(value: &JsonValue) -> Option<&str> {
     match value {
-        JsonValue::String(value) => Some(value),
-        _ => None,
+        JsonValue::String(text) => Some(text),
+        JsonValue::Null
+        | JsonValue::Bool(_)
+        | JsonValue::Number(_)
+        | JsonValue::Array(_)
+        | JsonValue::Object(_) => None,
     }
 }
 
