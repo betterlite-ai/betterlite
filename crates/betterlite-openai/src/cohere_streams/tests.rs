@@ -415,6 +415,10 @@ fn v1_preserves_non_value_transformation_errors() {
     r#"{"type":"CUSTOM"}"#,
     r#"{"start":0,"end":0,"text":"","sources":[],"type":"CUSTOM"}"#
 )]
+#[case::unmodeled(
+    r#"{"document_ids":["doc1"]}"#,
+    r#"{"start":0,"end":0,"text":"","sources":[],"type":"TEXT_CONTENT"}"#
+)]
 fn citation_preserves_each_explicit_field(#[case] citation: &str, #[case] expected: &str) {
     let record = format!(
         r#"{{"event":"citation-start","data":{{"delta":{{"message":{{"citations":{citation}}}}}}}}}"#
@@ -554,4 +558,27 @@ fn v1_false_finish_and_unknown_record_remain_empty() {
     assert_eq!(chunk.finish_reason, "");
     assert!(chunk.usage.is_none());
     assert!(chunk.tool_use.is_none());
+}
+
+#[rstest]
+#[case::v1(
+    CohereStreamVersion::V1,
+    r#"{"text":"metadata: x","is_finished":false}"#,
+    "metadata: x"
+)]
+#[case::v2(
+    CohereStreamVersion::V2,
+    r#"{"type":"content-delta","delta":{"message":{"content":{"text":"contains data: text"}}}}"#,
+    "contains data: text"
+)]
+fn native_lines_preserve_data_text(
+    #[case] version: CohereStreamVersion,
+    #[case] record: &str,
+    #[case] expected: &str,
+) {
+    let chunk = decode_cohere_item(version, Ok(Some(record.as_bytes().to_vec())))
+        .unwrap()
+        .unwrap();
+    assert_eq!(chunk.text, expected);
+    assert!(!chunk.is_finished);
 }

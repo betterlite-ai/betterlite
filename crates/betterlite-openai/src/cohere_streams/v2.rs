@@ -92,10 +92,12 @@ fn citation_fields(citation: &Citation) -> Result<Option<ProviderFields>, Cohere
         && citation.text.is_none()
         && citation.sources.is_none()
         && citation.kind.is_none()
+        && citation.other.is_empty()
     {
         return Ok(None);
     }
     let normalized = Citation {
+        other: Vec::new(),
         start: Some(citation.start.unwrap_or(0)),
         end: Some(citation.end.unwrap_or(0)),
         text: Some(citation.text.clone().unwrap_or_default()),

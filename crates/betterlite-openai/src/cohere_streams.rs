@@ -215,7 +215,7 @@ pub fn decode_cohere_item(
     let Some(bytes) = item.map_err(|source| CohereIteratorError::Receiving { source })? else {
         return Ok(None);
     };
-    decode_cohere_line(version, &bytes, true)
+    decode_cohere_line(version, &bytes, false)
         .map(Some)
         .map_err(|source| {
             if matches!(&source, CohereStreamError::MissingFinishReason)

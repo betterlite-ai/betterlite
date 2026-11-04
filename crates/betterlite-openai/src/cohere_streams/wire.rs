@@ -79,6 +79,7 @@ pub(super) struct Tool {
     pub arguments: Option<String>,
 }
 
+#[serde_as]
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Citation {
     pub start: Option<i64>,
@@ -87,6 +88,9 @@ pub struct Citation {
     pub sources: Option<Vec<Box<RawValue>>>,
     #[serde(rename = "type")]
     pub kind: Option<String>,
+    #[serde(flatten, skip_serializing)]
+    #[serde_as(deserialize_as = "Map<_, _>")]
+    pub other: Vec<(String, IgnoredAny)>,
 }
 
 #[derive(Debug, Serialize)]
