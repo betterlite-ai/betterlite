@@ -31,10 +31,19 @@ pub async fn load_google_kms(use_google_kms: Option<bool>) -> Result<(), GoogleK
         return Ok(());
     }
     let (_credentials_path, resource_name) = validate_environment()?;
+    let client = build_client().await?;
+    store_client(client, resource_name)
+}
+
+async fn build_client() -> Result<KeyManagementService, GoogleKmsError> {
     let client = KeyManagementService::builder()
         .build()
         .await
         .map_err(|error| GoogleKmsError::Client(error.to_string()))?;
+    Ok(client)
+}
+
+fn store_client(client: KeyManagementService, resource_name: String) -> Result<(), GoogleKmsError> {
     let mut stored_client = GOOGLE_KMS_CLIENT
         .lock()
         .map_err(|_poisoned| GoogleKmsError::ClientState)?;

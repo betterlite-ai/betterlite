@@ -22,11 +22,19 @@ pub async fn load_aws_kms(use_aws_kms: Option<bool>) -> Result<(), AwsKmsError> 
         return Ok(());
     }
     let region = validate_environment()?;
+    let client = build_client(region).await;
+    store_client(client)
+}
+
+async fn build_client(region: String) -> Arc<Client> {
     let config = aws_config::defaults(BehaviorVersion::latest())
         .region(Region::new(region))
         .load()
         .await;
-    let client = Arc::new(Client::new(&config));
+    Arc::new(Client::new(&config))
+}
+
+fn store_client(client: Arc<Client>) -> Result<(), AwsKmsError> {
     let mut stored_client = AWS_KMS_CLIENT
         .lock()
         .map_err(|_poisoned| AwsKmsError::ClientState)?;

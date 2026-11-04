@@ -4,19 +4,23 @@ use super::{AwsKmsError, DecryptedValue, environment_snapshot, values::decrypt_v
 
 pub async fn decrypt_env_var() -> Result<BTreeMap<String, DecryptedValue>, AwsKmsError> {
     let mut decrypted_values = BTreeMap::new();
-    let encrypted_values: Vec<(String, String)> = environment_snapshot()
+    let encrypted_values = encrypted_environment(environment_snapshot());
+    for (key, _) in encrypted_values {
+        let decrypted = decrypt_value(&key).await?;
+        decrypted_values.insert(remove_secret_prefix(&key), decrypted);
+    }
+    Ok(decrypted_values)
+}
+
+fn encrypted_environment(environment: BTreeMap<String, String>) -> Vec<(String, String)> {
+    environment
         .into_iter()
         .filter(|(key, value)| {
             key.to_ascii_lowercase()
                 .starts_with("litellm_secret_aws_kms_")
                 || value.starts_with("aws_kms/")
         })
-        .collect();
-    for (key, _) in encrypted_values {
-        let decrypted = decrypt_value(&key).await?;
-        decrypted_values.insert(remove_secret_prefix(&key), decrypted);
-    }
-    Ok(decrypted_values)
+        .collect()
 }
 
 fn remove_secret_prefix(key: &str) -> String {
