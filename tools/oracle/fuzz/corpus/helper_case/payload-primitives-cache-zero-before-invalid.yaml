@@ -1,0 +1,17 @@
+{
+  "kind": "helper",
+  "name": "payload-primitives-cache-zero-before-invalid",
+  "call": {
+    "b3843": {
+      "function": "cache_token_value",
+      "values": [
+        0,
+        -1
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

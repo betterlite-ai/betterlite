@@ -1,0 +1,13 @@
+kind: helper
+name: xai-batch-threshold-is-inclusive
+call:
+  token_rates:
+    operation: batch
+    model_info:
+      input_cost_per_token_batches: "0.000001"
+      input_cost_per_token_above_1k_tokens_batches: "0.000002"
+    usage:
+      prompt_tokens: 1000
+    provider: xai
+compare: {ignore: []}
+env: {}

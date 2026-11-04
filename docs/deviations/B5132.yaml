@@ -1,0 +1,8 @@
+task: B5132
+deviations:
+  - what: An entry that sets optional_params.unreachable_fallback logs a warning that the nested key is ignored. LiteLLM ignores it without a word.
+    why: The UI config model offers the nested key, so an operator can believe the guardrail fails open while it fails closed; the warning says so and the fallback stays LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/deepkeep/__init__.py#L11-L27
+  - what: An os.environ/ reference in timeout or unreachable_fallback that names an unset variable fails the load with MissingEnvironment. LiteLLM turns it into None, so the timeout takes its default and the fallback fails validation and the proxy starts without the guardrail.
+    why: Every betterlite field resolves references through the same resolve_string rule, so a mistyped variable can't quietly switch off or weaken a security guardrail.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5782-L5787

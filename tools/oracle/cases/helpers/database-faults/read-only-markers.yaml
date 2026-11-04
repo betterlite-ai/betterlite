@@ -1,0 +1,13 @@
+kind: helper
+name: database-faults-read-only-markers
+call:
+  database_faults:
+    errors:
+      - { error_type: prisma, message: 'ERROR "25006"' }
+      - { error_type: prisma, message: "cannot execute INSERT in a READ-ONLY TRANSACTION" }
+      - { error_type: prisma, message: "SQLSTATE 25006" }
+      - { error_type: connect, message: '"25006"' }
+      - { error_type: other, message: "read-only transaction" }
+env: {}
+compare:
+  ignore: []

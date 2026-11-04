@@ -1,0 +1,5 @@
+kind: helper
+name: payload-primitives-guardrail-error-statuses-detection
+call: {b3843: {function: guardrail_error_status, entry: {guardrail_status: guardrail_intervened}}}
+env: {}
+compare: {ignore: []}

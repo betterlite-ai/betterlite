@@ -1,0 +1,9 @@
+kind: helper
+name: jwt-two-segments-false
+call:
+  resolved_key:
+    function: is_jwt
+    value: a.b
+env: {}
+compare:
+  ignore: []
