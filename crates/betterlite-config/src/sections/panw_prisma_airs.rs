@@ -38,6 +38,8 @@ struct Parameters {
     timeout: Option<f64>,
     violation_message_template: Option<String>,
     default_on: Option<bool>,
+    #[serde(rename = "experimental_use_latest_role_message_only")]
+    latest_role_message_only: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -57,6 +59,7 @@ pub struct Configured {
     pub timeout: f64,
     pub violation_message_template: Option<String>,
     pub default_on: bool,
+    pub latest_role_message_only: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -134,6 +137,7 @@ where
         timeout: params.timeout.unwrap_or(10.0),
         violation_message_template: params.violation_message_template,
         default_on: params.default_on.unwrap_or(true),
+        latest_role_message_only: params.latest_role_message_only,
     })
 }
 
