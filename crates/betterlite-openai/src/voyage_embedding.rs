@@ -102,6 +102,17 @@ fn is_flat(input: &Value) -> bool {
     }
 }
 
+pub fn is_contextual_model(model: &str) -> bool {
+    let lowered = model.to_lowercase();
+    let chars = lowered.chars().collect::<Vec<char>>();
+    for window in chars.windows("context".len()) {
+        if window.iter().collect::<String>() == "context" {
+            return true;
+        }
+    }
+    false
+}
+
 pub fn voyage_headers<F>(
     headers: Map<String, Value>,
     api_key: Option<&str>,
