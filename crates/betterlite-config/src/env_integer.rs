@@ -40,11 +40,10 @@ pub fn get_env_int_in_range(
 
 #[must_use]
 pub fn get_env_int_or_none(value: Option<&str>) -> Option<i64> {
-    let Some(raw) = value else {
+    let raw = value?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
         return None;
-    };
-    match raw.trim().parse::<i64>() {
-        Ok(parsed) => Some(parsed),
-        Err(_) => None,
     }
+    trimmed.parse().ok()
 }
