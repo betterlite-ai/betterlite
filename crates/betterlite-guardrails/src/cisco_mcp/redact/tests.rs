@@ -1,33 +1,38 @@
 #![cfg(test)]
 
+use rstest::rstest;
+use serde_json::value::RawValue;
+
 use crate::cisco_conversation::json::Json;
 use crate::cisco_mcp::redact;
-use rstest::rstest;
-use serde_json::json;
-use serde_json::value::RawValue;
+
+fn assert_response(response: &redact::RewrittenResponse, expected: &str) {
+    let expected_raw = RawValue::from_string(expected.to_owned()).unwrap();
+    assert_eq!(
+        serde_json::to_value(response).unwrap(),
+        serde_json::to_value(expected_raw).unwrap()
+    );
+}
 
 #[test]
 fn set_text_mirrors_model_without_structured_content() {
     let response = Json::parse(r#"{"content":[{"type":"text","text":"old"}]}"#);
     let update = redact::set_tool_response_text(&response, "new");
-    let rewritten = serde_json::to_value(&update.response).unwrap();
     assert!(update.replaced);
-    assert_eq!(rewritten["content"][0]["text"], "new");
-    assert_eq!(rewritten["structuredContent"], json!({"result":"new"}));
+    assert_response(
+        &update.response,
+        r#"{"content":[{"type":"text","text":"new"}],"structuredContent":{"result":"new"}}"#,
+    );
 }
 
 #[test]
 fn set_text_leaves_non_text_items_unchanged() {
     let response = Json::parse(r#"{"content":[{"type":"image","data":"abc"}]}"#);
     let update = redact::set_tool_response_text(&response, "new");
-    let rewritten = serde_json::to_value(&update.response).unwrap();
     assert!(update.replaced);
-    assert_eq!(
-        rewritten,
-        json!({
-            "content": [{"type": "image", "data": "abc"}],
-            "structuredContent": {"result": "new"}
-        })
+    assert_response(
+        &update.response,
+        r#"{"content":[{"type":"image","data":"abc"}],"structuredContent":{"result":"new"}}"#,
     );
 }
 
@@ -36,11 +41,10 @@ fn set_text_rewrites_mirror_under_result() {
     let response =
         Json::parse(r#"{"jsonrpc":"2.0","id":1,"result":{"structuredContent":{"result":"old"}}}"#);
     let update = redact::set_tool_response_text(&response, "new");
-    let rewritten = serde_json::to_value(&update.response).unwrap();
     assert!(update.replaced);
-    assert_eq!(
-        rewritten,
-        json!({"jsonrpc":"2.0","id":1,"result":{"structuredContent":{"result":"new"}}})
+    assert_response(
+        &update.response,
+        r#"{"jsonrpc":"2.0","id":1,"result":{"structuredContent":{"result":"new"}}}"#,
     );
 }
 
@@ -50,14 +54,10 @@ fn set_text_keeps_wrapper_shape() {
         r#"{"mcp_tool_call_response":{"content":[{"type":"text","text":"old"}],"structuredContent":{"result":"old"}}}"#,
     );
     let update = redact::set_tool_response_text(&response, "new");
-    let rewritten = serde_json::to_value(&update.response).unwrap();
     assert!(update.replaced);
-    assert_eq!(
-        rewritten,
-        json!({"mcp_tool_call_response": {
-            "content": [{"type": "text", "text": "new"}],
-            "structuredContent": {"result": "new"}
-        }})
+    assert_response(
+        &update.response,
+        r#"{"mcp_tool_call_response":{"content":[{"type":"text","text":"new"}],"structuredContent":{"result":"new"}}}"#,
     );
 }
 
@@ -67,14 +67,10 @@ fn set_text_keeps_pair_list_shape() {
         r#"[["content",[{"type":"text","text":"old"}]],["structuredContent",{"result":"old"}],["isError",false]]"#,
     );
     let update = redact::set_tool_response_text(&response, "new");
-    let rewritten = serde_json::to_value(&update.response).unwrap();
     assert!(update.replaced);
-    assert_eq!(
-        rewritten,
-        json!([
-            ["content", [{"type": "text", "text": "new"}]],
-            ["structuredContent", {"result": "new"}], ["isError", false]
-        ])
+    assert_response(
+        &update.response,
+        r#"[["content",[{"type":"text","text":"new"}]],["structuredContent",{"result":"new"}],["isError",false]]"#,
     );
 }
 
@@ -82,18 +78,16 @@ fn set_text_keeps_pair_list_shape() {
 fn set_text_rewrites_bare_content_list() {
     let response = Json::parse(r#"[{"type":"text","text":"old"}]"#);
     let update = redact::set_tool_response_text(&response, "new");
-    let rewritten = serde_json::to_value(&update.response).unwrap();
     assert!(update.replaced);
-    assert_eq!(rewritten[0]["text"], "new");
+    assert_response(&update.response, r#"[{"type":"text","text":"new"}]"#);
 }
 
 #[test]
 fn set_text_keeps_response_without_matching_target() {
     let response = Json::parse(r#"{"other":1}"#);
     let update = redact::set_tool_response_text(&response, "new");
-    let rewritten = serde_json::to_value(&update.response).unwrap();
     assert!(!update.replaced);
-    assert_eq!(rewritten, json!({"other":1}));
+    assert_response(&update.response, r#"{"other":1}"#);
 }
 
 #[rstest]
@@ -165,8 +159,5 @@ fn set_text_preserves_shapes_and_mirror_rules(
 ) {
     let update = redact::set_tool_response_text(&Json::parse(input), "new");
     assert_eq!(update.replaced, replaced);
-    assert_eq!(
-        serde_json::to_value(update.response).unwrap(),
-        serde_json::to_value(RawValue::from_string(expected.to_owned()).unwrap()).unwrap()
-    );
+    assert_response(&update.response, expected);
 }
