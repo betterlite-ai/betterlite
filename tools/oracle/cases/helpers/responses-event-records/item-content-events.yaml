@@ -1,6 +1,17 @@
 kind: helper
-name: responses-event-records-content
+name: responses-event-records-item-content-events
 call:
-  responses_event_records: {type: response.content_part.done, item_id: msg_a, output_index: 2, content_index: 3, part: {type: refusal, refusal: "no"}}
+  responses_event_records:
+    events:
+      - {"type":"response.output_item.added","output_index":2,"item":null}
+      - {"type":"response.output_item.added","output_index":2,"item":{"type":"message","id":"msg_1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"hi","annotations":[],"logprobs":[]}]}}
+      - {"type":"response.output_item.done","output_index":2,"item":{"type":"message"}}
+      - {"type":"response.output_item.done","output_index":2,"item":{"type":"message","id":"msg_1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"hi","annotations":[],"logprobs":[]}]}}
+      - {"type":"response.content_part.added","item_id":"msg_a","output_index":2,"content_index":3,"part":{}}
+      - {"type":"response.content_part.done","item_id":"msg_a","output_index":2,"content_index":3,"part":{"type":"output_text","text":"hi","annotations":[],"logprobs":null}}
+      - {"type":"response.content_part.done","item_id":"msg_a","output_index":2,"content_index":3,"part":{"type":"refusal","refusal":"no"}}
+      - {"type":"response.content_part.done","item_id":"msg_a","output_index":2,"content_index":3,"part":{"type":"reasoning_text","reasoning":"think"}}
+      - {"type":"response.content_part.done","item_id":"msg_a","output_index":2,"content_index":3,"part":{"type":"output_text","text":"hi","annotations":[],"logprobs":[{"token":"a","logprob":-1.0,"bytes":[97],"top_logprobs":[{"token":"b","logprob":-2.0}]}]}}
+      - {"type":"response.content_part.done","item_id":"msg_a","output_index":2,"content_index":3,"part":{"type":"output_text","text":"hi","annotations":[],"logprobs":[{"token":"a","logprob":-1.5,"bytes":["x",true],"top_logprobs":[{"token":"b","logprob":-2.0,"bytes":["y"]}]}]}}
 env: {}
 compare: {ignore: []}

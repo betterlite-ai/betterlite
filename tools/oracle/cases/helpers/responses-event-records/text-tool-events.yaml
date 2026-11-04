@@ -1,6 +1,19 @@
 kind: helper
-name: responses-event-records-text-tool
+name: responses-event-records-text-tool-events
 call:
-  responses_event_records: {type: response.function_call_arguments.done, item_id: i, output_index: 0, arguments: "{}"}
+  responses_event_records:
+    events:
+      - {"type":"response.output_text.delta","item_id":"i","output_index":0,"content_index":1,"delta":"hi"}
+      - {"type":"response.output_text.done","item_id":"i","output_index":0,"content_index":1,"text":"hi"}
+      - {"type":"response.output_text.annotation.added","item_id":"i","output_index":0,"content_index":1,"annotation_index":2,"annotation":{"type":"url_citation","url":"https://a.test"}}
+      - {"type":"response.refusal.delta","item_id":"i","output_index":0,"content_index":1,"delta":"no"}
+      - {"type":"response.refusal.done","item_id":"i","output_index":0,"content_index":1,"refusal":"no"}
+      - {"type":"response.function_call_arguments.delta","item_id":"i","output_index":0,"delta":"{"}
+      - {"type":"response.function_call_arguments.done","item_id":"i","output_index":0,"arguments":"{}"}
+      - {"type":"response.custom_tool_call_input.delta","delta":"patch","extra":7}
+      - {"type":"response.custom_tool_call_input.done","input":"patch","extra":7}
+      - {"type":"response.shell_call.in_progress","extra":7}
+      - {"type":"response.shell_call.completed","extra":7}
+      - {"type":"response.shell_call_output.done","extra":7}
 env: {}
 compare: {ignore: []}

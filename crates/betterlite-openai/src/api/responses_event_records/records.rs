@@ -99,9 +99,13 @@ pub struct GenericEvent {
     pub extra: Extra,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
 pub enum ResponsesTerminalEvent {
+    #[serde(rename = "response.completed")]
     Completed(ResponseEvent),
+    #[serde(rename = "response.incomplete")]
     Incomplete(ResponseEvent),
+    #[serde(rename = "response.failed")]
     Failed(ResponseEvent),
 }

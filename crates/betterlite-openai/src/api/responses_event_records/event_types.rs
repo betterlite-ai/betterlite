@@ -33,7 +33,10 @@ event_record!(ResponsePartAddedEvent {
 event_record!(ReasoningSummaryTextDeltaEvent {
     item_id: String,
     output_index: i64,
-    #[serde(default)]
+    #[serde(
+        default,
+        deserialize_with = "serde_with::As::<serde_with::DefaultOnNull<serde_with::Same>>::deserialize"
+    )]
     summary_index: i64,
     delta: String,
 });
@@ -41,7 +44,10 @@ event_record!(ReasoningSummaryTextDoneEvent {
     item_id: String,
     output_index: i64,
     sequence_number: i64,
-    #[serde(default)]
+    #[serde(
+        default,
+        deserialize_with = "serde_with::As::<serde_with::DefaultOnNull<serde_with::Same>>::deserialize"
+    )]
     summary_index: i64,
     text: String,
 });
@@ -49,23 +55,36 @@ event_record!(ReasoningSummaryPartDoneEvent {
     item_id: String,
     output_index: i64,
     sequence_number: i64,
-    #[serde(default)]
+    #[serde(
+        default,
+        deserialize_with = "serde_with::As::<serde_with::DefaultOnNull<serde_with::Same>>::deserialize"
+    )]
     summary_index: i64,
     part: Extra,
 });
 event_record!(OutputItemAddedEvent {
     output_index: i64,
-    item: RequiredNullable<super::super::responses_objects::ResponseOutputItem>,
+    item: RequiredNullable<Extra>,
 });
 event_record!(OutputItemDoneEvent {
     output_index: i64,
     #[serde(default = "default_sequence_number")]
-    sequence_number: i64,
-    item: super::super::responses_objects::ResponseOutputItem,
+    sequence_number: OutputItemSequence,
+    item: Extra,
 });
 
-const fn default_sequence_number() -> i64 {
-    1
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(from = "Option<i64>")]
+pub struct OutputItemSequence(pub i64);
+
+impl From<Option<i64>> for OutputItemSequence {
+    fn from(value: Option<i64>) -> Self {
+        value.map_or_else(default_sequence_number, Self)
+    }
+}
+
+const fn default_sequence_number() -> OutputItemSequence {
+    OutputItemSequence(1)
 }
 
 event_record!(ContentPartAddedEvent {
@@ -110,9 +129,17 @@ pub enum ContentPartDonePart {
 pub struct ResponseLogprob {
     pub token: String,
     pub logprob: serde_json::Number,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub bytes: Option<Vec<i64>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "serde_with::As::<serde_with::FromInto<Vec<Json>>>::deserialize"
+    )]
+    pub bytes: Option<Vec<Json>>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "serde_with::As::<serde_with::FromInto<Vec<ResponseTopLogprob>>>::deserialize"
+    )]
     pub top_logprobs: Option<Vec<ResponseTopLogprob>>,
     #[serde(flatten)]
     pub extra: Extra,
@@ -122,8 +149,12 @@ pub struct ResponseLogprob {
 pub struct ResponseTopLogprob {
     pub token: String,
     pub logprob: serde_json::Number,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub bytes: Option<Vec<i64>>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "serde_with::As::<serde_with::FromInto<Vec<Json>>>::deserialize"
+    )]
+    pub bytes: Option<Vec<Json>>,
     #[serde(flatten)]
     pub extra: Extra,
 }

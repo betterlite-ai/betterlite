@@ -84,7 +84,7 @@ EVENT_MODELS: dict[ResponsesAPIStreamEvents, type[BaseModel]] = {
 }
 
 
-def run(value: dict[str, Json]) -> Json:
+def decode_event(value: dict[str, Json]) -> Json:
     try:
         event_type = ResponsesAPIStreamEvents(cast(str, value["type"]))
     except ValueError:
@@ -93,3 +93,10 @@ def run(value: dict[str, Json]) -> Json:
         model = EVENT_MODELS.get(event_type, GenericEvent)
     event = model.model_validate(value)
     return cast(Json, event.model_dump(exclude_none=False))
+
+
+def run(value: dict[str, Json]) -> Json:
+    return [
+        decode_event(cast(dict[str, Json], event))
+        for event in cast(list[Json], value["events"])
+    ]

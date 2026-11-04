@@ -1,6 +1,11 @@
 kind: helper
-name: responses-event-records-error-generic
+name: responses-event-records-error-and-generic
 call:
-  responses_event_records: {type: vendor.future, extra: 7, model_debug: kept}
+  responses_event_records:
+    events:
+      - {"type":"error","sequence_number":9,"error":{"type":"invalid_request_error","code":"context_length_exceeded","message":"too long"}}
+      - {"type":"error","sequence_number":9,"error":{"type":"invalid_request_error","code":"context_length_exceeded","message":"too long","param":"input"}}
+      - {"type":"error","sequence_number":9,"error":{"type":"invalid_request_error","code":"context_length_exceeded","message":"too long","param":{"field":"input"}}}
+      - {"type":"vendor.future","extra":7,"model_debug":"kept"}
 env: {}
 compare: {ignore: []}

@@ -1,6 +1,12 @@
 kind: helper
-name: responses-event-records-lifecycle
+name: responses-event-records-lifecycle-events
 call:
-  responses_event_records: {type: response.completed, response: {id: resp_a, created_at: 1, output: [], usage: {input_tokens: 2, output_tokens: 1, total_tokens: 3}}}
+  responses_event_records:
+    events:
+      - {"type":"response.created","response":{"id":"resp_a","created_at":1,"output":[],"usage":{"input_tokens":2,"output_tokens":1,"total_tokens":3}}}
+      - {"type":"response.in_progress","response":{"id":"resp_a","created_at":1,"output":[],"usage":{"input_tokens":2,"output_tokens":1,"total_tokens":3}}}
+      - {"type":"response.completed","response":{"id":"resp_a","created_at":1,"output":[],"usage":{"input_tokens":2,"output_tokens":1,"total_tokens":3}}}
+      - {"type":"response.failed","response":{"id":"resp_a","created_at":1,"output":[],"usage":{"input_tokens":2,"output_tokens":1,"total_tokens":3}}}
+      - {"type":"response.incomplete","response":{"id":"resp_a","created_at":1,"output":[],"usage":{"input_tokens":2,"output_tokens":1,"total_tokens":3}}}
 env: {}
 compare: {ignore: []}
