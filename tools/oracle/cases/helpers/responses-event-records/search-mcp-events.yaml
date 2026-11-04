@@ -1,0 +1,6 @@
+kind: helper
+name: responses-event-records-search-mcp
+call:
+  responses_event_records: {type: response.mcp_call_arguments.delta, output_index: 2, item_id: tool_a, delta: "{", sequence_number: 4}
+env: {}
+compare: {ignore: []}

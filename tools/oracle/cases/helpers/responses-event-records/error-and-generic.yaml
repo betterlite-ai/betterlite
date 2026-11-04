@@ -1,0 +1,6 @@
+kind: helper
+name: responses-event-records-error-generic
+call:
+  responses_event_records: {type: vendor.future, extra: 7, model_debug: kept}
+env: {}
+compare: {ignore: []}

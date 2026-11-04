@@ -1,0 +1,6 @@
+kind: helper
+name: responses-event-records-reasoning
+call:
+  responses_event_records: {type: response.reasoning_summary_text.delta, item_id: rs_a, output_index: 1, delta: hi}
+env: {}
+compare: {ignore: []}

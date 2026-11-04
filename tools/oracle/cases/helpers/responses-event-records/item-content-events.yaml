@@ -1,0 +1,6 @@
+kind: helper
+name: responses-event-records-content
+call:
+  responses_event_records: {type: response.content_part.done, item_id: msg_a, output_index: 2, content_index: 3, part: {type: refusal, refusal: "no"}}
+env: {}
+compare: {ignore: []}

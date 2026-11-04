@@ -1,0 +1,6 @@
+kind: helper
+name: responses-event-records-text-tool
+call:
+  responses_event_records: {type: response.function_call_arguments.done, item_id: i, output_index: 0, arguments: "{}"}
+env: {}
+compare: {ignore: []}
