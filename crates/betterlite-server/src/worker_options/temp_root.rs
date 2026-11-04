@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::io::Write as _;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -77,9 +77,30 @@ fn usable_root(candidate: &Path) -> Option<PathBuf> {
     let removed = fs::remove_file(probe);
     result.ok()?;
     removed.ok()?;
-    if candidate == Path::new(".") {
+    if candidate.as_os_str() == "." {
         Some(candidate.to_path_buf())
     } else {
-        candidate.canonicalize().ok()
+        absolute_lexical_path(candidate)
     }
+}
+
+fn absolute_lexical_path(candidate: &Path) -> Option<PathBuf> {
+    let absolute = if candidate.is_absolute() {
+        candidate.to_path_buf()
+    } else {
+        env::current_dir().ok()?.join(candidate)
+    };
+    let mut normalized = PathBuf::new();
+    for component in absolute.components() {
+        match component {
+            Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
+            Component::RootDir => normalized.push(component.as_os_str()),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            Component::Normal(name) => normalized.push(name),
+        }
+    }
+    Some(normalized)
 }

@@ -2,6 +2,8 @@ use betterlite_server::worker_options::callback_settings::CallbackSettings;
 use betterlite_server::worker_options::*;
 use rstest::rstest;
 use std::collections::BTreeMap;
+use std::env;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 fn path_string(path: &Path) -> String {
@@ -248,6 +250,40 @@ fn multiproc_directory_skips_missing_tmpdir_candidate() {
     assert_eq!(
         result.map(|value| value.path),
         Some(temp.path().join("litellm_prometheus_multiproc"))
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn multiproc_directory_preserves_symlink_tmpdir_path() {
+    use std::os::unix::fs::symlink;
+
+    let temporary = tempfile::tempdir().expect("temporary root");
+    let real = temporary.path().join("real");
+    fs::create_dir_all(&real).expect("real temp root");
+    let link = temporary.path().join("link");
+    symlink(&real, &link).expect("temp root symlink");
+    let environment = BTreeMap::from([("TMPDIR".to_owned(), path_string(&link))]);
+    let result = prometheus_directory(1, None, Some(9000), &environment, DirectoryMode::Plan)
+        .expect("directory plan");
+    assert_eq!(
+        result.map(|value| value.path),
+        Some(link.join("litellm_prometheus_multiproc"))
+    );
+}
+
+#[test]
+fn multiproc_directory_resolves_dot_slash_against_current_directory() {
+    let environment = BTreeMap::from([("TMPDIR".to_owned(), "./".to_owned())]);
+    let result = prometheus_directory(1, None, Some(9000), &environment, DirectoryMode::Plan)
+        .expect("directory plan");
+    assert_eq!(
+        result.map(|value| value.path),
+        Some(
+            env::current_dir()
+                .expect("current directory")
+                .join("litellm_prometheus_multiproc")
+        )
     );
 }
 
