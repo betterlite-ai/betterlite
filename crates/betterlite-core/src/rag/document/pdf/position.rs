@@ -149,9 +149,8 @@ impl Position {
 }
 
 pub(super) fn number(object: &Object) -> Option<f64> {
-    if let Ok(integer) = object.as_i64() {
-        integer.to_string().parse::<f64>().ok()
-    } else {
-        object.as_f32().ok().map(f64::from)
-    }
+    object.as_i64().map_or_else(
+        |_| object.as_f32().ok().map(f64::from),
+        |integer| integer.to_string().parse::<f64>().ok(),
+    )
 }

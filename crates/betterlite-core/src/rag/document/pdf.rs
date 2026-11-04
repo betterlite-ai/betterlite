@@ -114,7 +114,7 @@ impl PageText<'_> {
             "BT" => self.position.text = IDENTITY,
             "cm" => {
                 self.position.graphics =
-                    Matrix::read(&operation.operands)?.combine(self.position.graphics)
+                    Matrix::read(&operation.operands)?.combine(self.position.graphics);
             }
             "q" => self.saved.push((
                 self.position.graphics,
