@@ -25,3 +25,18 @@ fn helper_seeds_select_voyage_contextual() {
             && case.call.operation == "voyage_contextual"
     }));
 }
+
+#[rstest::rstest]
+#[case::text("malformed-text-reply.yaml", 503)]
+#[case::contextual("malformed-contextual-reply.yaml", 429)]
+fn malformed_replies_keep_exception_status(#[case] file: &str, #[case] status: u16) {
+    use crate::helpers::Helper as _;
+
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("cases/helpers/voyage-contextual")
+        .join(file);
+    let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap();
+    let error = super::Op::decode_and_run(&case.call.input).unwrap_err();
+    assert_eq!(error.class, "VoyageError");
+    assert_eq!(error.status, Some(status));
+}

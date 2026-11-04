@@ -1,3 +1,5 @@
+use std::str;
+
 use serde_json::{Map, Value};
 use thiserror::Error;
 
@@ -14,6 +16,8 @@ pub enum VoyageEmbeddingError {
         status: u16,
         url: String,
         message: String,
+        #[source]
+        source: serde_json::Error,
     },
 }
 
@@ -28,17 +32,18 @@ pub struct VoyageContextConfig {
     pub api_base: Option<String>,
 }
 
+#[must_use]
 pub fn endpoint(base: Option<&str>, variant: VoyageEmbeddingVariant) -> String {
     let suffix = match variant {
         VoyageEmbeddingVariant::Text => "/embeddings",
         VoyageEmbeddingVariant::Contextual => "/contextualizedembeddings",
     };
     match base {
-        Some(base) if !base.is_empty() => {
-            if base.ends_with(suffix) {
-                base.to_owned()
+        Some(supplied) if !supplied.is_empty() => {
+            if supplied.ends_with(suffix) {
+                supplied.to_owned()
             } else {
-                format!("{base}{suffix}")
+                format!("{supplied}{suffix}")
             }
         }
         _ => match variant {
@@ -50,6 +55,7 @@ pub fn endpoint(base: Option<&str>, variant: VoyageEmbeddingVariant) -> String {
     }
 }
 
+#[must_use]
 pub fn request(
     model: &str,
     input: Value,
@@ -57,7 +63,7 @@ pub fn request(
     variant: VoyageEmbeddingVariant,
 ) -> Value {
     let mut result = Map::new();
-    let input = if variant == VoyageEmbeddingVariant::Contextual && input.is_string() {
+    let normalized = if variant == VoyageEmbeddingVariant::Contextual && input.is_string() {
         Value::Array(vec![input])
     } else {
         input
@@ -69,29 +75,25 @@ pub fn request(
             "inputs"
         }
         .to_owned(),
-        input.clone(),
+        normalized.clone(),
     );
     result.insert("model".to_owned(), Value::String(model.to_owned()));
     if variant == VoyageEmbeddingVariant::Contextual
-        && is_flat(&input)
+        && is_flat(&normalized)
         && options.get("input_type") != Some(&Value::String("query".to_owned()))
     {
         result.insert("enable_auto_chunking".to_owned(), Value::Bool(true));
-        result.insert("chunk_size".to_owned(), Value::from(32000));
+        result.insert("chunk_size".to_owned(), Value::from(32_000_u32));
         result.insert(
             "input_type".to_owned(),
             Value::String("document".to_owned()),
         );
     }
-    for (key, value) in options {
-        result.insert(
-            match key.as_str() {
-                "dimensions" => "output_dimension".to_owned(),
-                other => other.to_owned(),
-            },
-            value.clone(),
-        );
+    let mut mapped = options.clone();
+    if let Some(dimensions) = mapped.remove("dimensions") {
+        mapped.insert("output_dimension".to_owned(), dimensions);
     }
+    result.extend(mapped);
     Value::Object(result)
 }
 
@@ -99,10 +101,11 @@ fn is_flat(input: &Value) -> bool {
     match input {
         Value::String(_) => true,
         Value::Array(items) => items.iter().all(Value::is_string),
-        _ => false,
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::Object(_) => false,
     }
 }
 
+#[must_use]
 pub fn is_contextual_model(model: &str) -> bool {
     let lowered = model.to_lowercase();
     let chars = lowered.chars().collect::<Vec<char>>();
@@ -135,17 +138,19 @@ pub fn voyage_credentials<F>(api_key: Option<&str>, lookup: F) -> String
 where
     F: Fn(&str) -> Option<String>,
 {
-    match api_key {
-        Some(key) => format!("Bearer {key}"),
-        None => format!(
-            "Bearer {}",
-            lookup("VOYAGE_API_KEY")
-                .filter(|s| !s.is_empty())
-                .or_else(|| lookup("VOYAGE_AI_API_KEY").filter(|s| !s.is_empty()))
-                .or_else(|| lookup("VOYAGE_AI_TOKEN").filter(|s| !s.is_empty()))
-                .unwrap_or_else(|| "None".to_owned())
-        ),
-    }
+    api_key.map_or_else(
+        || {
+            format!(
+                "Bearer {}",
+                lookup("VOYAGE_API_KEY")
+                    .filter(|value| !value.is_empty())
+                    .or_else(|| lookup("VOYAGE_AI_API_KEY").filter(|value| !value.is_empty()))
+                    .or_else(|| lookup("VOYAGE_AI_TOKEN").filter(|value| !value.is_empty()))
+                    .unwrap_or_else(|| "None".to_owned())
+            )
+        },
+        |key| format!("Bearer {key}"),
+    )
 }
 
 pub fn decode_voyage_embedding_reply(
@@ -153,9 +158,8 @@ pub fn decode_voyage_embedding_reply(
     status: u16,
     variant: VoyageEmbeddingVariant,
 ) -> Result<Value, VoyageEmbeddingError> {
-    let text = String::from_utf8_lossy(bytes);
     let parsed: Value =
-        serde_json::from_slice(bytes).map_err(|error| VoyageEmbeddingError::Decode {
+        serde_json::from_slice(bytes).map_err(|source| VoyageEmbeddingError::Decode {
             status,
             url: match variant {
                 VoyageEmbeddingVariant::Text => "https://api.voyageai.com/v1/embeddings",
@@ -164,20 +168,40 @@ pub fn decode_voyage_embedding_reply(
                 }
             }
             .to_owned(),
-            message: if text.is_empty() {
-                error.to_string()
-            } else {
-                text.into_owned()
-            },
+            message: str::from_utf8(bytes).map_or_else(|_| source.to_string(), str::to_owned),
+            source,
         })?;
+    Ok(project_response(&parsed))
+}
+
+#[must_use]
+pub fn project_response(parsed: &Value) -> Value {
     let usage = parsed
         .get("usage")
         .and_then(|value| value.get("total_tokens"))
         .cloned()
-        .unwrap_or(Value::from(0));
-    Ok(
-        serde_json::json!({"model": parsed.get("model").cloned().unwrap_or(Value::Null), "data": parsed.get("data").cloned().unwrap_or(Value::Null), "object": parsed.get("object").cloned().unwrap_or(Value::Null), "usage": {"prompt_tokens": usage, "total_tokens": usage}}),
-    )
+        .unwrap_or_else(|| Value::from(0_u32));
+    Value::Object(Map::from_iter([
+        (
+            "model".to_owned(),
+            parsed.get("model").cloned().unwrap_or(Value::Null),
+        ),
+        (
+            "data".to_owned(),
+            parsed.get("data").cloned().unwrap_or(Value::Null),
+        ),
+        (
+            "object".to_owned(),
+            parsed.get("object").cloned().unwrap_or(Value::Null),
+        ),
+        (
+            "usage".to_owned(),
+            Value::Object(Map::from_iter([
+                ("prompt_tokens".to_owned(), usage.clone()),
+                ("total_tokens".to_owned(), usage),
+            ])),
+        ),
+    ]))
 }
 
 #[path = "voyage_embedding/tests.rs"]

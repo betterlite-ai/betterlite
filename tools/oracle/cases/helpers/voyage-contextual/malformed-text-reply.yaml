@@ -1,0 +1,8 @@
+kind: helper
+name: voyage-contextual-malformed-text-reply
+call:
+  voyage_contextual:
+    text: {model: voyage-3, input: hello, options: {}, base: null, reply: {status: 503, body: not-json}}
+    contextual: {model: voyage-context-3, input: hello, options: {}, base: null}
+env: {}
+compare: {ignore: []}

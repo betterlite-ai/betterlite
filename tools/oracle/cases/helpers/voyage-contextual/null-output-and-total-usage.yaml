@@ -2,7 +2,7 @@ kind: helper
 name: voyage-contextual-null-output-and-total-usage
 call:
   voyage_contextual:
-    text: {model: voyage-3, input: hello, options: {}, base: null}
-    contextual: {model: voyage-context-3, input: [[hello, world]], options: {}, base: null}
+    text: {model: voyage-3, input: hello, options: {}, base: null, reply: {status: 503, body: '{"usage":{"total_tokens":7}}'}}
+    contextual: {model: voyage-context-3, input: [[hello, world]], options: {}, base: null, reply: {status: 200, body: '{"model":null,"object":null,"data":null}'}}
 env: {}
 compare: {ignore: []}
