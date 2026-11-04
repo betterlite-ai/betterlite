@@ -2,6 +2,6 @@ kind: helper
 name: json-provider-registry-missing-file-no-retry
 call:
   json_provider_registry:
-    source: "{}"
+    missing: true
 env: {}
 compare: {ignore: []}

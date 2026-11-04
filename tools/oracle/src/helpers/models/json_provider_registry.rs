@@ -7,14 +7,20 @@ impl crate::helpers::Helper for Op {
     type Input = Value;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let registry = match input.get("source").and_then(Value::as_str) {
-            Some(source) => {
-                let mut registry = JSONProviderRegistry::default();
-                let bytes = source.as_bytes().to_vec();
-                registry.load_from(|| Ok(bytes));
-                registry
+        let registry = if input.get("missing").and_then(Value::as_bool) == Some(true) {
+            let mut registry = JSONProviderRegistry::default();
+            registry.load_from(|| Err(std::io::Error::from(std::io::ErrorKind::NotFound)));
+            registry
+        } else {
+            match input.get("source").and_then(Value::as_str) {
+                Some(source) => {
+                    let mut registry = JSONProviderRegistry::default();
+                    let bytes = source.as_bytes().to_vec();
+                    registry.load_from(|| Ok(bytes));
+                    registry
+                }
+                None => JSONProviderRegistry::load(),
             }
-            None => JSONProviderRegistry::load(),
         };
         let entries = registry
             .providers
