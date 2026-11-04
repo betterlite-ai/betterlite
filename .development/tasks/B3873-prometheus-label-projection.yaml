@@ -83,28 +83,28 @@ checks:
   commands:
     - id: label-factory-context-tests
       why: PrometheusLabelFactoryContext construction or caching is incomplete or tests are missing
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^label_factory_context::/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_label_projection::(.*::)?label_factory_context::/) - test(/replays_the_/)'
     - id: label-factory-tests
       why: prometheus_label_factory behavior or tests are missing
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_label_factory::/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_label_projection::(.*::)?prometheus_label_factory::/) - test(/replays_the_/)'
     - id: custom-metadata-extraction-tests
       why: Custom metadata extraction or tests are missing
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^custom_metadata_extraction::/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_label_projection::(.*::)?custom_metadata_extraction::/) - test(/replays_the_/)'
     - id: combined-metadata-tests
       why: Combined metadata construction or tests are missing
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^combined_custom_metadata::/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_label_projection::(.*::)?combined_custom_metadata::/) - test(/replays_the_/)'
     - id: tag-matching-tests
       why: Tag wildcard pattern matching or tests are missing
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^tag_wildcard_matching::/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_label_projection::(.*::)?tag_wildcard_matching::/) - test(/replays_the_/)'
     - id: tag-labels-tests
       why: Tag label extraction or tests are missing
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^tag_labels::/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_label_projection::(.*::)?tag_labels::/) - test(/replays_the_/)'
     - id: end-user-caching-tests
       why: End-user caching or tests are missing
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^end_user_caching::/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_label_projection::(.*::)?end_user_caching::/) - test(/replays_the_/)'
     - id: end-user-resolution-tests
       why: End-user resolution through cost-tracking or tests are missing
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^end_user_resolution::/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_label_projection::(.*::)?end_user_resolution::/) - test(/replays_the_/)'
 
 oracle_cases: []
 

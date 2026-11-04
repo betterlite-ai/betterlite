@@ -5,6 +5,7 @@ use serde::Deserialize;
 use serde::de::IgnoredAny;
 
 use crate::providers::bedrock::request_policy::RawMetadataField;
+use crate::tls::VerifySetting;
 use crate::types::{RouterFallback, RoutingStrategy};
 
 #[derive(Debug, Deserialize, Default)]
@@ -32,6 +33,7 @@ pub(super) struct RawDeployment {
 
 #[derive(Debug, Deserialize, Default)]
 pub(super) struct RawParams {
+    pub(super) ssl_verify: Option<bool>,
     pub(super) model: Option<String>,
     pub(super) api_base: Option<String>,
     pub(super) api_key: Option<SecretString>,
@@ -75,6 +77,11 @@ pub(super) struct RawRouter {
 
 #[derive(Debug, Deserialize, Default)]
 pub(super) struct RawLiteLlm {
+    pub(super) ssl_verify: Option<VerifySetting>,
+    pub(super) ssl_certificate: Option<String>,
+    pub(super) http2: Option<bool>,
+    pub(super) ssl_ecdh_curve: Option<String>,
+    pub(super) ssl_security_level: Option<String>,
     pub(super) num_retries: Option<RawNumber>,
     pub(super) request_timeout: Option<RawNumber>,
     pub(super) drop_params: Option<bool>,

@@ -16,8 +16,6 @@ description: >-
   130 adapters and 35 wiring, 790 total. Tests use api::messages_chat_call.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/messages_chat_call.rs
   - crates/betterlite-core/src/api/messages_chat_call/**
   - tools/oracle/src/helpers/core_ops/messages_completion_arguments.rs

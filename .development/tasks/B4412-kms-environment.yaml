@@ -33,7 +33,10 @@ description: >-
   the caller's expectation that environment values are strings; the returned map may contain booleans.
 scope:
   paths:
-    - crates/betterlite-secret-managers/**
+    - crates/betterlite-secret-managers/src/aws_kms.rs
+    - crates/betterlite-secret-managers/src/aws_kms/**
+    - crates/betterlite-secret-managers/src/google_kms.rs
+    - crates/betterlite-secret-managers/src/google_kms/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/aws_secret_manager.py#L21-L41
@@ -81,31 +84,31 @@ checks:
   commands:
     - id: aws-kms-validation
       why: AWS KMS validation does not reject missing AWS_REGION_NAME
-      run: cargo nextest run --locked -p betterlite-secret-managers --no-tests=fail -E 'test(/^aws_kms_initialization::validate_environment/)'
+      run: cargo nextest run --locked -p betterlite-secret-managers --no-tests=fail -E 'test(/^aws_kms::initialization::validate_environment/)'
     - id: aws-kms-loading
       why: AWS KMS client initialization is missing or fails
-      run: cargo nextest run --locked -p betterlite-secret-managers --no-tests=fail -E 'test(/^aws_kms_initialization::load_aws_kms/)'
+      run: cargo nextest run --locked -p betterlite-secret-managers --no-tests=fail -E 'test(/^aws_kms::initialization::load_aws_kms/)'
     - id: kms-env-decryption
       why: decrypt_env_var does not correctly decrypt and rewrite environment variables
-      run: cargo nextest run --locked -p betterlite-secret-managers --no-tests=fail -E 'test(/^aws_kms_environment::decrypt_env_var/)'
+      run: cargo nextest run --locked -p betterlite-secret-managers --no-tests=fail -E 'test(/^aws_kms::environment::decrypt_env_var/)'
     - id: kms-boolean-parsing
       why: Decrypted boolean values are not parsed correctly
-      run: cargo nextest run --locked -p betterlite-secret-managers --no-tests=fail -E 'test(/^aws_kms_values::boolean_parsing/)'
+      run: cargo nextest run --locked -p betterlite-secret-managers --no-tests=fail -E 'test(/^aws_kms::values::boolean_parsing/)'
     - id: kms-prefix-stripping
       why: The aws_kms/ prefix is not stripped from encrypted values before decryption
-      run: cargo nextest run --locked -p betterlite-secret-managers --no-tests=fail -E 'test(/^aws_kms_values::prefix_stripping/)'
+      run: cargo nextest run --locked -p betterlite-secret-managers --no-tests=fail -E 'test(/^aws_kms::values::prefix_stripping/)'
     - id: google-kms-validation
       why: Google KMS validation does not reject missing credentials or resource name
-      run: cargo nextest run --locked -p betterlite-secret-managers --no-tests=fail -E 'test(/^google_kms_initialization::validate_environment/)'
+      run: cargo nextest run --locked -p betterlite-secret-managers --no-tests=fail -E 'test(/^google_kms::initialization::validate_environment/)'
     - id: google-kms-loading
       why: Google KMS client initialization is missing or fails
-      run: cargo nextest run --locked -p betterlite-secret-managers --no-tests=fail -E 'test(/^google_kms_initialization::load_google_kms/)'
+      run: cargo nextest run --locked -p betterlite-secret-managers --no-tests=fail -E 'test(/^google_kms::initialization::load_google_kms/)'
     - id: aws-client-storage
       why: The AWS KMS client is not stored in the location where B4421 will retrieve it
-      run: cargo nextest run --locked -p betterlite-secret-managers --no-tests=fail -E 'test(/^aws_kms_initialization::client_storage/)'
+      run: cargo nextest run --locked -p betterlite-secret-managers --no-tests=fail -E 'test(/^aws_kms::initialization::client_storage/)'
     - id: google-client-storage
       why: The Google KMS client or resource name is not stored in the location where B4421 will retrieve it
-      run: cargo nextest run --locked -p betterlite-secret-managers --no-tests=fail -E 'test(/^google_kms_initialization::client_storage/)'
+      run: cargo nextest run --locked -p betterlite-secret-managers --no-tests=fail -E 'test(/^google_kms::initialization::client_storage/)'
 oracle_cases: []
 deviations:
   - what: Returned environment map from decrypt_env_var contains boolean values only for the exact Python boolean literals "True" and "False", not case variants like "true" or "TRUE".

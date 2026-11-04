@@ -137,70 +137,70 @@ checks:
       x-litellm-api-key and Authorization header cases
     run: >-
       cargo nextest run --locked -p betterlite-auth -p betterlite-server --no-tests=fail
-      -E 'test(/^passthrough_caller_headers::virtual_key($|::)/)'
+      -E 'test(/^passthrough::caller_headers::virtual_key($|::)/)'
   - id: normalize-cases
     why: >-
       _normalize_credential_value tests fail, do not exist, or do not strip
       Bearer/Basic/AWS4-HMAC-SHA256 prefixes correctly
     run: >-
       cargo nextest run --locked -p betterlite-auth -p betterlite-server --no-tests=fail
-      -E 'test(/^passthrough_caller_headers::normalize($|::)/)'
+      -E 'test(/^passthrough::caller_headers::normalize($|::)/)'
   - id: operator-config-cases
     why: >-
       _operator_configured_caller_key_header_names tests fail, do not exist,
       or do not read custom headers from config
     run: >-
       cargo nextest run --locked -p betterlite-auth -p betterlite-server --no-tests=fail
-      -E 'test(/^passthrough_caller_headers::operator_config($|::)/)'
+      -E 'test(/^passthrough::caller_headers::operator_config($|::)/)'
   - id: jwt-auth-cases
     why: >-
       _is_authenticated_caller_jwt tests fail, do not exist, or do not compare
       unverified claims correctly
     run: >-
       cargo nextest run --locked -p betterlite-auth -p betterlite-server --no-tests=fail
-      -E 'test(/^passthrough_caller_headers::jwt_auth($|::)/)'
+      -E 'test(/^passthrough::caller_headers::jwt_auth($|::)/)'
   - id: secret-auth-cases
     why: >-
       _is_authenticated_caller_secret tests fail, do not exist, or do not detect
       master key, JWT, and stored API key correctly
     run: >-
       cargo nextest run --locked -p betterlite-auth -p betterlite-server --no-tests=fail
-      -E 'test(/^passthrough_caller_headers::secret_auth($|::)/)'
+      -E 'test(/^passthrough::caller_headers::secret_auth($|::)/)'
   - id: filter-secrets-cases
     why: >-
       _caller_headers_without_litellm_secrets tests fail, do not exist, or do
       not filter by name and authenticated-secret detection correctly
     run: >-
       cargo nextest run --locked -p betterlite-auth -p betterlite-server --no-tests=fail
-      -E 'test(/^passthrough_caller_headers::filter_secrets($|::)/)'
+      -E 'test(/^passthrough::caller_headers::filter_secrets($|::)/)'
   - id: vertex-credentialless-cases
     why: >-
       _forwarded_headers_for_credentialless_vertex_passthrough tests fail, do
       not exist, or do not require authorization/x-goog-api-key and raise 401
     run: >-
       cargo nextest run --locked -p betterlite-auth -p betterlite-server --no-tests=fail
-      -E 'test(/^passthrough_caller_headers::vertex_credentialless($|::)/)'
+      -E 'test(/^passthrough::caller_headers::vertex_credentialless($|::)/)'
   - id: anthropic-credentialless-cases
     why: >-
       _upstream_headers_for_anthropic_route tests fail, do not exist, or do not
       require upstream credential when proxy credential missing
     run: >-
       cargo nextest run --locked -p betterlite-auth -p betterlite-server --no-tests=fail
-      -E 'test(/^passthrough_caller_headers::anthropic_credentialless($|::)/)'
+      -E 'test(/^passthrough::caller_headers::anthropic_credentialless($|::)/)'
   - id: bedrock-signed-cases
     why: >-
       _upstream_headers_for_bedrock_agent_runtime_route tests fail, do not exist,
       or do not drop headers matching signed-headers dict keys
     run: >-
       cargo nextest run --locked -p betterlite-auth -p betterlite-server --no-tests=fail
-      -E 'test(/^passthrough_caller_headers::bedrock_signed($|::)/)'
+      -E 'test(/^passthrough::caller_headers::bedrock_signed($|::)/)'
   - id: constants-cases
     why: >-
       module-level constants are missing, incomplete, or have wrong header names
       and error messages
     run: >-
       cargo nextest run --locked -p betterlite-auth -p betterlite-server --no-tests=fail
-      -E 'test(/^passthrough_caller_headers::constants($|::)/)'
+      -E 'test(/^passthrough::caller_headers::constants($|::)/)'
 oracle_cases:
 - tools/oracle/cases/passthrough/caller-headers-virtual-key.yaml
 - tools/oracle/cases/passthrough/caller-headers-normalize-bearer.yaml

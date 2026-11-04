@@ -31,8 +31,6 @@ description: >-
   the 800-line cap includes query decoding, security cases and corpus replay.
 scope:
   paths:
-    - crates/betterlite-server/src/spend.rs
-    - crates/betterlite-server/src/spend/**
     - crates/betterlite-server/src/spend/tag_reports.rs
     - crates/betterlite-server/src/spend/tag_reports/**
     - crates/betterlite-server/fuzz/Cargo.toml

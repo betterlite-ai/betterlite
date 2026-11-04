@@ -40,6 +40,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "json_provider_registry"
+path = "fuzz_targets/json_provider_registry.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "billed_at"
 path = "fuzz_targets/billed_at.rs"
 test = false

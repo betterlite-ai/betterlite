@@ -37,8 +37,6 @@ description: >-
   route cases validate the split handler through real HTTP rather than calling it as a helper.
 scope:
   paths:
-    - crates/betterlite-server/src/spend.rs
-    - crates/betterlite-server/src/spend/**
     - crates/betterlite-server/src/spend/log_query.rs
     - crates/betterlite-server/src/spend/log_query/**
     - crates/betterlite-server/fuzz/Cargo.toml

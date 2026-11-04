@@ -31,7 +31,7 @@ checks:
       why: the catalog resource is missing or does not match the pinned LiteLLM entry
       run: |
         cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(openapi_registry_)' && sha256sum --check --quiet <<'SUMS'
-        458d22bbb9015f598cdaa49c9d05798d1f0231bf662478dc9ff6d837b2de2d47  ../litellm/litellm/proxy/openapi_registry.json
+        458d22bbb9015f598cdaa49c9d05798d1f0231bf662478dc9ff6d837b2de2d47  crates/betterlite-server/data/openapi_registry.json
         SUMS
     - id: catalog-tests
       why: the catalog tests fail or do not exist

@@ -41,8 +41,8 @@ description: >-
 scope:
   lint_tables: false
   paths:
-    - crates/betterlite-logging/src/otel/mappers/__init__.rs
-    - crates/betterlite-logging/src/otel/mappers/__init__/**
+    - crates/betterlite-logging/src/otel/mappers/registry.rs
+    - crates/betterlite-logging/src/otel/mappers/registry/**
     - crates/betterlite-logging/src/otel/mappers/langfuse.rs
     - crates/betterlite-logging/src/otel/mappers/langfuse/**
     - crates/betterlite-logging/src/otel/mappers/langtrace.rs
@@ -136,35 +136,35 @@ checks:
   commands:
     - id: vendor-mappers
       why: Vendor mappers do not implement AttributeMapper or dispatch correctly
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_mappers::vendors::(::|$)/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::mappers::(langfuse|langtrace|openinference|weave)(::|$)/) - test(/replays_the_/)'
 
     - id: mapper-registry
       why: Mapper registry is missing, not frozen, or resolve_mappers does not validate/budget correctly
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_mappers::registry::(::|$)/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::mappers::registry(::|$)/)'
 
     - id: langfuse-mapper
       why: Langfuse mapper attributes, trace controls or cost/usage fields are incorrect
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_mappers::langfuse::(::|$)/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::mappers::langfuse(::|$)/)'
 
     - id: langtrace-mapper
       why: Langtrace mapper attributes, operation name or serialization format do not match
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_mappers::langtrace::(::|$)/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::mappers::langtrace(::|$)/)'
 
     - id: openinference-mapper
       why: OpenInference mapper span kind, model, message/tool indexing or invocation parameters are incorrect
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_mappers::openinference::(::|$)/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::mappers::openinference(::|$)/)'
 
     - id: message-shedding
       why: Message shedding does not preserve first/last prompts and first choice while removing least valuable
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_mappers::openinference::message_shedding(::|$)/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::mappers::openinference::message_shedding(::|$)/)'
 
     - id: weave-mapper
       why: Weave mapper display_name, call_id or output attributes are incorrect
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_mappers::weave::(::|$)/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::mappers::weave(::|$)/)'
 
     - id: langtrace-integration
       why: Langtrace integration does not set request/response/usage attributes correctly
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_integrations::langtrace::(::|$)/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::integrations::langtrace(::|$)/)'
 
     - id: span-kind-mapping
       why: _infer_open_inference_span_kind does not map call_type to correct OpenInference span kinds

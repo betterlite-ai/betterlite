@@ -82,7 +82,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::purview_dlp_hooks::purview_async_logging_hook(::|$)/) - test(/replays_the_.*_corpus/)'
   - id: purview-dlp-oracle
     why: oracle cases fail or are missing
-    run: test -n "$(ls -A tools/oracle/cases/guardrails/purview-dlp-hooks)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^guardrails::b3740(::|$)/)'
+    run: test -n "$(ls -A tools/oracle/cases/guardrails/purview-dlp-hooks)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::guardrails::b3740::(.*::)?guardrails::b3740(::|$)/)'
 oracle_cases:
 - tools/oracle/cases/guardrails/purview-dlp-hooks/chat-pre-call-block.yaml
 - tools/oracle/cases/guardrails/purview-dlp-hooks/chat-pre-call-pass.yaml

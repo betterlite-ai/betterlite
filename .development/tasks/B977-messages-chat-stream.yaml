@@ -16,8 +16,6 @@ description: >-
   155 fixtures, 100 adapters and 30 wiring, 655 total; tests use api::messages_chat_stream.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/messages_chat_stream.rs
   - crates/betterlite-core/src/api/messages_chat_stream/**
   - tools/oracle/src/sdk_http.rs

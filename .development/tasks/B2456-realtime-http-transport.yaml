@@ -21,8 +21,6 @@ description: >-
   budget 155 transport,120 tests,115 fixtures,90 adapters,55 fuzz/replay and 25 wiring =560 lines.
 scope:
   paths:
-  - crates/betterlite-provider/src/api.rs
-  - crates/betterlite-provider/src/api/**
   - crates/betterlite-provider/src/api/realtime_http_transport.rs
   - crates/betterlite-provider/src/api/realtime_http_transport/**
   - crates/betterlite-provider/fuzz/Cargo.toml

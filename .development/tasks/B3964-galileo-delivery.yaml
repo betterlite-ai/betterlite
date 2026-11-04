@@ -89,7 +89,7 @@ checks:
   commands:
     - id: galileo-delivery-tests
       why: authentication, health check, buffering or delivery logic fails or is absent
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^galileo_delivery::/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(galileo|galileo::delivery)::(.*::)?galileo_delivery::/) - test(/replays_the_/)'
     - id: helper-python
       why: the oracle adapter is missing or fails strict Python checks
       run: test -f tools/oracle/helpers/b3964.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
