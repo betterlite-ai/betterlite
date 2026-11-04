@@ -1,0 +1,370 @@
+{
+  "id": "resp_sdk",
+  "created_at": 1,
+  "error": null,
+  "incomplete_details": null,
+  "instructions": null,
+  "metadata": null,
+  "model": null,
+  "object": null,
+  "output": [
+    {
+      "id": "sample",
+      "content": [
+        {
+          "annotations": [],
+          "text": "hello",
+          "type": "output_text",
+          "logprobs": null,
+          "provider_text": 7
+        },
+        {
+          "refusal": "no",
+          "type": "refusal"
+        }
+      ],
+      "role": "assistant",
+      "status": "in_progress",
+      "type": "message",
+      "phase": null,
+      "provider_extra": {
+        "nested": 7
+      }
+    },
+    {
+      "id": "sample",
+      "queries": [],
+      "status": "in_progress",
+      "type": "file_search_call",
+      "results": null,
+      "provider_extra": {
+        "nested": 7
+      }
+    },
+    {
+      "arguments": "sample",
+      "call_id": "sample",
+      "name": "sample",
+      "type": "function_call",
+      "id": null,
+      "caller": null,
+      "namespace": null,
+      "status": null,
+      "provider_extra": {
+        "nested": 7
+      }
+    },
+    {
+      "id": "sample",
+      "call_id": "sample",
+      "output": "sample",
+      "status": "in_progress",
+      "type": "function_call_output",
+      "caller": null,
+      "created_by": null,
+      "name": null,
+      "namespace": null,
+      "provider_extra": {
+        "nested": 7
+      }
+    },
+    {
+      "id": "sample",
+      "action": {
+        "type": "search",
+        "queries": null,
+        "query": null,
+        "sources": null
+      },
+      "status": "in_progress",
+      "type": "web_search_call",
+      "provider_extra": {
+        "nested": 7
+      }
+    },
+    {
+      "id": "sample",
+      "call_id": "sample",
+      "pending_safety_checks": [],
+      "status": "in_progress",
+      "type": "computer_call",
+      "action": null,
+      "actions": null,
+      "provider_extra": {
+        "nested": 7
+      }
+    },
+    {
+      "id": "sample",
+      "call_id": "sample",
+      "output": {
+        "type": "computer_screenshot",
+        "file_id": null,
+        "image_url": null
+      },
+      "status": "completed",
+      "type": "computer_call_output",
+      "acknowledged_safety_checks": null,
+      "created_by": null,
+      "provider_extra": {
+        "nested": 7
+      }
+    },
+    {
+      "id": "sample",
+      "summary": [],
+      "type": "reasoning",
+      "provider_extra": {
+        "nested": 7
+      }
+    },
+    {
+      "id": "sample",
+      "call_id": "sample",
+      "code": "sample",
+      "fingerprint": "sample",
+      "type": "program",
+      "provider_extra": {
+        "nested": 7
+      }
+    },
+    {
+      "id": "sample",
+      "call_id": "sample",
+      "result": "sample",
+      "status": "completed",
+      "type": "program_output",
+      "provider_extra": {
+        "nested": 7
+      }
+    },
+    {
+      "id": "sample",
+      "arguments": {},
+      "call_id": null,
+      "execution": "server",
+      "status": "in_progress",
+      "type": "tool_search_call",
+      "created_by": null,
+      "provider_extra": {
+        "nested": 7
+      }
+    },
+    {
+      "id": "sample",
+      "call_id": null,
+      "execution": "server",
+      "status": "in_progress",
+      "tools": [],
+      "type": "tool_search_output",
+      "created_by": null,
+      "provider_extra": {
+        "nested": 7
+      }
+    },
+    {
+      "id": "sample",
+      "role": "unknown",
+      "tools": [],
+      "type": "additional_tools",
+      "provider_extra": {
+        "nested": 7
+      }
+    },
+    {
+      "id": "sample",
+      "encrypted_content": "sample",
+      "type": "compaction",
+      "created_by": null,
+      "provider_extra": {
+        "nested": 7
+      }
+    },
+    {
+      "id": "sample",
+      "result": null,
+      "status": "in_progress",
+      "type": "image_generation_call",
+      "provider_extra": {
+        "nested": 7
+      }
+    },
+    {
+      "id": "sample",
+      "code": null,
+      "container_id": "sample",
+      "outputs": null,
+      "status": "in_progress",
+      "type": "code_interpreter_call",
+      "provider_extra": {
+        "nested": 7
+      }
+    },
+    {
+      "id": "sample",
+      "action": {
+        "command": [],
+        "env": {},
+        "type": "exec",
+        "timeout_ms": null,
+        "user": null,
+        "working_directory": null
+      },
+      "call_id": "sample",
+      "status": "in_progress",
+      "type": "local_shell_call",
+      "provider_extra": {
+        "nested": 7
+      }
+    },
+    {
+      "id": "sample",
+      "output": "sample",
+      "type": "local_shell_call_output",
+      "status": null,
+      "provider_extra": {
+        "nested": 7
+      }
+    },
+    {
+      "id": "sample",
+      "action": {
+        "commands": [],
+        "max_output_length": null,
+        "timeout_ms": null
+      },
+      "call_id": "sample",
+      "environment": null,
+      "status": "in_progress",
+      "type": "shell_call",
+      "caller": null,
+      "created_by": null,
+      "provider_extra": {
+        "nested": 7
+      }
+    },
+    {
+      "id": "sample",
+      "call_id": "sample",
+      "max_output_length": null,
+      "output": [],
+      "status": "in_progress",
+      "type": "shell_call_output",
+      "caller": null,
+      "created_by": null,
+      "provider_extra": {
+        "nested": 7
+      }
+    },
+    {
+      "id": "sample",
+      "call_id": "sample",
+      "operation": {
+        "diff": "sample",
+        "path": "sample",
+        "type": "create_file"
+      },
+      "status": "in_progress",
+      "type": "apply_patch_call",
+      "caller": null,
+      "created_by": null,
+      "provider_extra": {
+        "nested": 7
+      }
+    },
+    {
+      "id": "sample",
+      "call_id": "sample",
+      "status": "completed",
+      "type": "apply_patch_call_output",
+      "caller": null,
+      "created_by": null,
+      "output": null,
+      "provider_extra": {
+        "nested": 7
+      }
+    },
+    {
+      "id": "sample",
+      "arguments": "sample",
+      "name": "sample",
+      "server_label": "sample",
+      "type": "mcp_call",
+      "approval_request_id": null,
+      "error": null,
+      "output": null,
+      "status": null,
+      "provider_extra": {
+        "nested": 7
+      }
+    },
+    {
+      "id": "sample",
+      "server_label": "sample",
+      "tools": [],
+      "type": "mcp_list_tools",
+      "error": null,
+      "provider_extra": {
+        "nested": 7
+      }
+    },
+    {
+      "id": "sample",
+      "arguments": "sample",
+      "name": "sample",
+      "server_label": "sample",
+      "type": "mcp_approval_request",
+      "provider_extra": {
+        "nested": 7
+      }
+    },
+    {
+      "id": "sample",
+      "approval_request_id": "sample",
+      "approve": true,
+      "type": "mcp_approval_response",
+      "reason": null,
+      "provider_extra": {
+        "nested": 7
+      }
+    },
+    {
+      "call_id": "sample",
+      "input": "sample",
+      "name": "sample",
+      "type": "custom_tool_call",
+      "id": null,
+      "caller": null,
+      "namespace": null,
+      "provider_extra": {
+        "nested": 7
+      }
+    },
+    {
+      "call_id": "sample",
+      "output": "sample",
+      "type": "custom_tool_call_output",
+      "id": "sample",
+      "caller": null,
+      "status": "in_progress",
+      "created_by": null,
+      "provider_extra": {
+        "nested": 7
+      }
+    }
+  ],
+  "parallel_tool_calls": null,
+  "temperature": null,
+  "tool_choice": null,
+  "tools": null,
+  "top_p": null,
+  "max_output_tokens": null,
+  "previous_response_id": null,
+  "reasoning": null,
+  "status": null,
+  "text": null,
+  "truncation": null,
+  "usage": null,
+  "user": null,
+  "store": null
+}

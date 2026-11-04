@@ -1,0 +1,22 @@
+kind: helper
+name: responses-objects-sdk-output-defaults
+call:
+  responses_objects:
+    operation: response_defaults
+    response:
+      id: resp_sdk
+      created_at: 1
+      output:
+        - type: message
+          id: msg_sdk
+          role: assistant
+          status: completed
+          content: [{type: output_text, text: hello, annotations: []}]
+        - type: mcp_call
+          id: mcp_sdk
+          arguments: '{}'
+          name: lookup
+          server_label: catalog
+env: {}
+compare:
+  ignore: []
