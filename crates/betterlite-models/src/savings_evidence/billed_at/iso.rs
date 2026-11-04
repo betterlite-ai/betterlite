@@ -119,16 +119,26 @@ fn parse_date(chars: &[char]) -> Option<NaiveDate> {
     parse_month_day_date(chars, after_year, year, has_sep)
 }
 
+// Reads a dash-gated numeric component: the dash at `position` must match `has_sep` exactly once, then `width` digits follow it.
+fn read_separated_component(
+    chars: &[char],
+    position: usize,
+    has_sep: bool,
+    width: usize,
+) -> Option<(u32, usize)> {
+    if (chars.get(position) == Some(&'-')) != has_sep {
+        return None;
+    }
+    let value_position = position.saturating_add(usize::from(has_sep));
+    take_digits(chars, value_position, width)
+}
+
 fn parse_week_date(chars: &[char], position: usize, year: i32, has_sep: bool) -> Option<NaiveDate> {
     let (week, after_week) = take_digits(chars, position, 2)?;
     let day = if chars.get(after_week).is_none() {
         1
     } else {
-        if (chars.get(after_week) == Some(&'-')) != has_sep {
-            return None;
-        }
-        let day_position = after_week.saturating_add(usize::from(has_sep));
-        take_digits(chars, day_position, 1)?.0
+        read_separated_component(chars, after_week, has_sep, 1)?.0
     };
     let weekday = Weekday::try_from(u8::try_from(day.checked_sub(1)?).ok()?).ok()?;
     NaiveDate::from_isoywd_opt(year, week, weekday)
@@ -141,11 +151,7 @@ fn parse_month_day_date(
     has_sep: bool,
 ) -> Option<NaiveDate> {
     let (month, after_month) = take_digits(chars, position, 2)?;
-    if (chars.get(after_month) == Some(&'-')) != has_sep {
-        return None;
-    }
-    let day_position = after_month.saturating_add(usize::from(has_sep));
-    let (day, _) = take_digits(chars, day_position, 2)?;
+    let (day, _) = read_separated_component(chars, after_month, has_sep, 2)?;
     NaiveDate::from_ymd_opt(year, month, day)
 }
 
