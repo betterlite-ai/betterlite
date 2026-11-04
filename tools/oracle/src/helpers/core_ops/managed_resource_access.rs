@@ -8,7 +8,7 @@ use serde_json::json;
 pub(crate) struct Op;
 
 #[derive(Deserialize)]
-struct Input {
+pub struct Input {
     principal: AuthenticatedPrincipal,
     #[serde(default)]
     records: Vec<ResourceRecord>,
