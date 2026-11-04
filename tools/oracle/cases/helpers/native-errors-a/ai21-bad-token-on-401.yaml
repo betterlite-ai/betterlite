@@ -1,0 +1,13 @@
+kind: helper
+name: native-errors-a-ai21-bad-token-on-401
+call:
+  native_errors_a:
+    provider: ai21
+    model: ai21/model-a
+    message: "Bad or missing API token."
+    status_code: 401
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

@@ -1,0 +1,14 @@
+kind: helper
+name: snapshot-decodes-tuple-basis
+call:
+  savings_evidence:
+    operation: snapshot
+    snapshot:
+      model: gpt-4
+      provider: openai
+      prices: null
+      basis: [flex, null, null]
+      actual_spend: 0.5
+      classifier_cost: 0.01
+compare: {ignore: []}
+env: {}

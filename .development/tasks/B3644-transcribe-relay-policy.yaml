@@ -92,7 +92,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-transcribe --no-tests=fail -E 'test(requested_media_format)'
     - id: transcribe-cost-calc
       why: "cost calculation is incorrect or does not round up"
-      run: cargo nextest run --locked -p betterlite-transcribe --no-tests=fail -E 'test(.*_job_cost)'
+      run: cargo nextest run --locked -p betterlite-transcribe --no-tests=fail -E 'test(_job_cost)'
     - id: transcribe-response-parse
       why: "response parsing fails or panics on invalid input"
       run: cargo nextest run --locked -p betterlite-transcribe --no-tests=fail -E 'test(started_transcription_job)'

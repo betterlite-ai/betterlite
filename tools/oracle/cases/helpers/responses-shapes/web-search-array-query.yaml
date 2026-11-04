@@ -1,0 +1,11 @@
+kind: helper
+name: responses-shapes-web-search-array-query
+call:
+  responses_shapes:
+    operation: web_search_sources
+    tool_id: t
+    tool_input: [cats]
+    result: {}
+env: {}
+compare:
+  ignore: []

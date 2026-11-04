@@ -887,7 +887,9 @@ dependencies = [
  "betterlite-db",
  "chrono",
  "hex",
+ "lru",
  "pcre2",
+ "regex",
  "regex-syntax",
  "rstest",
  "rust_decimal",
@@ -899,6 +901,7 @@ dependencies = [
  "speedate",
  "strum",
  "thiserror",
+ "tracing",
  "unicode-normalization",
  "uuid",
 ]
@@ -1011,6 +1014,7 @@ dependencies = [
  "aws-credential-types",
  "aws-sigv4",
  "aws-smithy-runtime-api",
+ "betterlite-auth",
  "betterlite-models",
  "betterlite-rate-limit",
  "betterlite-secrets",
@@ -1296,6 +1300,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "unicode-properties",
+ "url",
  "uuid",
 ]
 
@@ -1743,6 +1748,25 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "betterlite-transcribe"
+version = "0.1.0"
+dependencies = [
+ "betterlite-auth",
+ "betterlite-core",
+ "rstest",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "url",
 ]
 
 [[package]]

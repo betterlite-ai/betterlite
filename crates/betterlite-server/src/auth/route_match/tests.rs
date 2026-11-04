@@ -1,11 +1,13 @@
 #![cfg(test)]
 
+use crate::auth::auth_route_patterns::AuthSettings;
 use crate::routes;
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::extract::{Extension, State};
 use axum::http::{Request, StatusCode};
 use axum::routing::get;
+use betterlite_config::sections::auth_route_patterns::Settings;
 use rstest::rstest;
 use std::fs;
 use std::path::PathBuf;
@@ -30,7 +32,10 @@ fn production_router(calls: Arc<AtomicUsize>) -> Router {
         .route("/v1/a2a/{agent_id}/message/send", get(downstream))
         .with_state(calls);
     routes::router(
-        None,
+        AuthSettings {
+            master_key: None,
+            routes: Settings::default(),
+        },
         Arc::new(AtomicBool::new(false)),
         &[],
         chat,

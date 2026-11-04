@@ -33,12 +33,19 @@ description: >-
   leaves negotiated_subprotocol empty. A gateway case selecting a service driver is rejected before a socket starts.
 
   The externally tagged service driver accepts only native_responses_relay, managed_responses_turns and realtime_probe.
-  It sends one JSON object on stdin, {operation: <service tag>, input: <typed arguments and scripted frames>}, to
-  tools/oracle/helpers/websocket_dispatch.py as a fresh bounded child. The child returns one JSON object on stdout,
-  either {ok: <transcript result>} or {error: {class, status, type, param, code, message}}, and writes diagnostics on
-  stderr. register_service(tag, adapter) is the only registration point; an unknown tag fails before a service or
-  upstream connection starts. B943, B945 and B1011 register their own tags once and service execution uses the native
-  service entry point, not a FastAPI handler. A service connects independently to its scripted upstream WebSocket.
+  It runs through the existing helper seam as operation websocket_oracle: the Python side is the fresh bounded
+  dispatch.py child that helpers/python.rs already starts, with input {service: <service tag>, input: <typed arguments
+  and scripted frames>}, and run in tools/oracle/helpers/websocket_oracle.py picks the service from that tag. The child
+  returns the existing helper output, {ok: true, value: <transcript result>} or {ok: false, error: {class, status,
+  type, param, code, message}}, and writes diagnostics on stderr. register_service(tag, adapter) is the only registration point; an unknown tag fails before a service or
+  upstream connection starts. B943, B945 and B1011 register the native adapters for their tags once and service
+  execution uses the native service entry point, not a FastAPI handler. B901 registers no native adapter, so
+  run_service returns AdapterMissing for a tag nobody registered. A service connects independently to its scripted
+  upstream WebSocket. B901 writes one LiteLLM service half, realtime_probe in
+  tools/oracle/helpers/websocket_oracle/realtime_probe.py. It calls OpenAIRealtime()._construct_url and
+  _get_additional_headers for the provider_preparation inputs, calls async_realtime with api_key=None up to its
+  ValueError, and opens no socket. The LiteLLM halves of native_responses_relay and managed_responses_turns come with
+  B943 and B945.
 
   Provider fixtures preserve these pinned OpenAI realtime observations. query_params=None becomes {model: realtime-a}
   for the service call, query_params={} stays empty, and a nonempty mapping keeps its supplied key/value order. The
@@ -65,6 +72,16 @@ description: >-
   provider_preparation, websocket_auth, upstream_refusal and changed_peer under websocket_oracle::tests. Keep
   websocket_oracle::tests::replays_corpus as the sole corpus replay name. Self-check must continue to run existing
   health and chat HTTP cases through their old driver.
+
+  The named tests prove the harness, not betterlite's realtime code. betterlite's realtime route (B1125), OpenAI
+  realtime client (B528), WebSocket auth (B756), refusal mapping (B1004) and native services (B943, B945, B1011) do
+  not exist yet, and the ones that consume this harness depend on B901. So each named test drives the driver and
+  comparator against in-process scripted peers: a scripted gateway double on a local socket that plays the fixture's
+  gateway side (HTTP status, negotiated subprotocol, frames, close), the scripted provider, and scripted adapters the
+  test registers through register_service. Each test asserts that the fixture's pinned transcript matches and that one
+  changed observation fails at its peer label and JSON pointer; a test that only decodes a fixture or checks a
+  constant proves nothing. The pinned values are checked against LiteLLM by legacy-self-check. It runs every
+  websocket fixture with LiteLLM on both sides. No B901 check runs a fixture against betterlite without --self-check.
 
   LiteLLM ownership is protocol context only: B1125 owns proxy_server.py:12856-13045 and all three route aliases; B528
   owns every OpenAIRealtime callable in handler.py:35-190; B756 owns user_api_key_auth_websocket_for_model in
@@ -160,9 +177,10 @@ dod:
   - case-route-aliases
   - gateway-self-check
 - text: >-
-    service_driver_isolation dispatches native_responses_relay, managed_responses_turns and realtime_probe only to
-    their registered typed adapters, rejects an unknown tag before opening a socket, and rejects service-driver
-    selection from a gateway case; the adapter observes its independently scripted upstream.
+    service_driver_isolation registers scripted test adapters for native_responses_relay, managed_responses_turns and
+    realtime_probe through register_service and dispatches each tag only to its own adapter, returns AdapterMissing for
+    a tag with no registered adapter, rejects an unknown tag before opening a socket, and rejects service-driver
+    selection from a gateway case; each adapter observes its independently scripted upstream.
   proof:
   - case-service-driver-isolation
 - text: >-
@@ -173,6 +191,7 @@ dod:
     negotiated realtime.
   proof:
   - case-realtime-route-inputs
+  - legacy-self-check
 - text: >-
     provider_preparation compares query_params=None as {model: realtime-a}, query_params={} as an empty query,
     supplied pairs in order, https://api.openai.com/ as wss://api.openai.com/v1/realtime, http://provider.test/ as
@@ -180,6 +199,7 @@ dod:
     message "api_key is required for OpenAI realtime calls".
   proof:
   - case-provider-preparation
+  - legacy-self-check
 - text: >-
     websocket_auth compares Authorization: Bearer sk-test, api-key: sk-test and the first matching
     openai-insecure-api-key.sk-test subprotocol as credentials; absent credentials return HTTP 403 detail "No API key
@@ -187,12 +207,14 @@ dod:
     zero provider connections and attempted close code 1008, and Authorization takes precedence over api-key.
   proof:
   - case-websocket-auth
+  - legacy-self-check
 - text: >-
     upstream_refusal compares mock statuses 401, 403, 429 and 503 after client HTTP 101 as a server_error event
     with the exact substituted message "Upstream realtime handshake rejected with HTTP <status>" and close codes
     1008, 1008, 1013 and 1011; the event has no param or code field and the close reason is the same literal message.
   proof:
   - case-upstream-refusal
+  - legacy-self-check
 - text: >-
     changed_peer identifies the first changed client frame, provider frame or close field with its peer label and
     stable JSON pointer, while legacy-dispatch keeps existing health and chat HTTP cases on the old driver and corpus
@@ -247,7 +269,7 @@ checks:
     why: The committed fuzz target or replay does not invoke decode_ws_case, or no websocket seed was added.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/websocket_oracle)" && test -f tools/oracle/fuzz/fuzz_targets/websocket_oracle.rs && grep -qF "decode_ws_case" tools/oracle/fuzz/fuzz_targets/websocket_oracle.rs && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^websocket_oracle::tests::replays_corpus$/)'
   - id: legacy-self-check
-    why: Adding WebSocket dispatch changes the existing health or chat HTTP execution path.
+    why: Adding WebSocket dispatch changes the existing health or chat HTTP execution path, or a websocket fixture's pinned transcript does not match LiteLLM.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/harness/websocket-oracle)" && cargo run --locked --quiet -p betterlite-oracle -- --self-check tools/oracle/cases/harness/websocket-oracle tools/oracle/cases/chat tools/oracle/cases/health
   - id: gateway-self-check
     why: The new gateway fixtures do not boot both proxies or omit one of the three realtime aliases.
@@ -293,7 +315,7 @@ out_of_scope:
   service adapters remain with B1004, B1125, B528, B756, B943, B945 and B1011 as applicable; B901 has no database or
   warning-and-drop behavior of its own.
 pitfalls:
-- 'The oracle helper for this task is pre-registered as websocket_oracle in the oracle group. Replace the stub Op in tools/oracle/src/helpers/oracle/websocket_oracle.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/websocket_oracle.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+- 'The oracle helper for this task is pre-registered as websocket_oracle in the oracle group. Replace the stub Op in tools/oracle/src/helpers/oracle/websocket_oracle.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/websocket_oracle.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit. There is no websocket_dispatch.py: the service child is that dispatch.py run, so add no second dispatcher. websocket_oracle.py imports its service halves only from tools/oracle/helpers/websocket_oracle/; realtime_connect_websocket and the core_ops helpers belong to other tasks.'
 - >-
   A preaccept refusal is reported by the HTTP handshake, so storing the route's attempted 1008 as an accepted client
   close makes a valid 403 transcript fail.

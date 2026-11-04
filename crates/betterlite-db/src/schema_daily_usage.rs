@@ -3,7 +3,7 @@ use crate::schema_baseline::{MigrationCatalog, MigrationFile};
 pub const ADD_DAILY_USER_TABLE: MigrationFile = MigrationFile {
     directory: "20250326171002_add_daily_user_table",
     bytes: include_bytes!("../migrations/20250326171002_add_daily_user_table/migration.sql"),
-    sha256: "39f57248e7e0a3e27292b87c6f3e1977df431104fdb1d5ed07db21cc4c46f0d5",
+    sha256: "48b046b5dcfe063869b28fd4c47ed4aa553707ccb02a42be276c43ae0d7cd612",
 };
 
 pub const ADD_API_REQUESTS_DAILY_USER: MigrationFile = MigrationFile {
@@ -11,13 +11,13 @@ pub const ADD_API_REQUESTS_DAILY_USER: MigrationFile = MigrationFile {
     bytes: include_bytes!(
         "../migrations/20250327180120_add_api_requests_to_daily_user_table/migration.sql"
     ),
-    sha256: "d3a42413261b6b6757b6c21e6fbab902985459ddff11119fd5c5226ab6c0ee3f",
+    sha256: "47ffc522eec4af95fc48c18d4f92b86a6dd6c755b2afb40dc4585b69ebd109da",
 };
 
 pub const NEW_CRON_JOB_TABLE: MigrationFile = MigrationFile {
     directory: "20250329084805_new_cron_job_table",
     bytes: include_bytes!("../migrations/20250329084805_new_cron_job_table/migration.sql"),
-    sha256: "33aaea20e43d2fa5d4c977ba45394f3993d2bccd72261515538c30a01e87428a",
+    sha256: "050f9d2bf329e99b1c294a5c137d73859dded58324af55696d5c7f51f7e281d4",
 };
 
 pub const TRACK_SUCCESS_FAILED_REQUESTS: MigrationFile = MigrationFile {
@@ -25,19 +25,19 @@ pub const TRACK_SUCCESS_FAILED_REQUESTS: MigrationFile = MigrationFile {
     bytes: include_bytes!(
         "../migrations/20250331215456_track_success_and_failed_requests_daily_agg_table/migration.sql"
     ),
-    sha256: "c976a865e4122d55d7d62fa56a655c92fc77492cf1f63f2eef7395045a894011",
+    sha256: "049767abdd55f43520a1c2201a9a99f7356be451bec8c7e52895301fa0e2eb61",
 };
 
 pub const ADD_MANAGED_FILE_TABLE: MigrationFile = MigrationFile {
     directory: "20250411215431_add_managed_file_table",
     bytes: include_bytes!("../migrations/20250411215431_add_managed_file_table/migration.sql"),
-    sha256: "afd338ae9848a56717a20b9add048409df7eba2f99518c30ca9b4c1bd9425194",
+    sha256: "477ee9e678d0a6f4a3e97898b085a0dfb6ddd24730c28f46e68a700f37ee2d2f",
 };
 
 pub const TEAM_MEMBER_PERMISSIONS: MigrationFile = MigrationFile {
     directory: "20250412081753_team_member_permissions",
     bytes: include_bytes!("../migrations/20250412081753_team_member_permissions/migration.sql"),
-    sha256: "1a567eea551338642c071d10a3c7a3de50d9f1fa8abf0e35eca5d32b6efeb1f2",
+    sha256: "67b629914bbb8f6fa26c52fac9fd4940a96e5c1371d76dbadc620de66a554244",
 };
 
 pub const ADD_CACHE_TOKENS_DAILY_SPEND: MigrationFile = MigrationFile {
@@ -45,19 +45,19 @@ pub const ADD_CACHE_TOKENS_DAILY_SPEND: MigrationFile = MigrationFile {
     bytes: include_bytes!(
         "../migrations/20250415151647_add_cache_read_write_tokens_daily_spend_transactions/migration.sql"
     ),
-    sha256: "0dca3c8ca813ccbe688a85f4e6f8ce60e1b90170faede3b51a669d659a64e423",
+    sha256: "bc904bdd0befbb6e2fb96b6f4bb7699d1c85518b85cce7f1822524d64d67c3ff",
 };
 
 pub const ADD_DAILY_TEAM_TABLE: MigrationFile = MigrationFile {
     directory: "20250415191926_add_daily_team_table",
     bytes: include_bytes!("../migrations/20250415191926_add_daily_team_table/migration.sql"),
-    sha256: "16c625997675d045dce697a644f7785dd37965959d7bf11e0ccd7c62145cb7d7",
+    sha256: "f07d74cf601a93592bf6fb0cd732d21a261a23c461b4d64a5eb500b82f38e1c8",
 };
 
 pub const ADD_TAG_TABLE_TO_DB: MigrationFile = MigrationFile {
     directory: "20250416115320_add_tag_table_to_db",
     bytes: include_bytes!("../migrations/20250416115320_add_tag_table_to_db/migration.sql"),
-    sha256: "6b286dda31f0939cb31d28e211cc0ebe7dbd216dc8b5f0f3dac2b3230b0749da",
+    sha256: "7a4a9a98c40803f33f46ece325a233687df1d69402e7536b5e0ae3fb7cdb94d8",
 };
 
 pub const DROP_TAG_UNIQUE_CONSTRAINT: MigrationFile = MigrationFile {
@@ -65,7 +65,7 @@ pub const DROP_TAG_UNIQUE_CONSTRAINT: MigrationFile = MigrationFile {
     bytes: include_bytes!(
         "../migrations/20250416151339_drop_tag_uniqueness_requirement/migration.sql"
     ),
-    sha256: "f23c3fa67751922f2c3f94d884ea074818313795aee51ec9e126a2e65f0a1db5",
+    sha256: "e795d3fc96efff0b386425d5d1090319280317dd5954a01614f828a6e020302a",
 };
 
 pub const ADD_ALLOWED_ROUTES_TOKEN: MigrationFile = MigrationFile {
@@ -73,25 +73,25 @@ pub const ADD_ALLOWED_ROUTES_TOKEN: MigrationFile = MigrationFile {
     bytes: include_bytes!(
         "../migrations/20250416185146_add_allowed_routes_litellm_verification_token/migration.sql"
     ),
-    sha256: "b4adc8f7741f6105836918511c8431d4d78fcd1a0a0570dd3706e691855f7fd8",
+    sha256: "35377cad4aaf835bd319f56811c344d53654ea664216f39c15ddd20434c1b69c",
 };
 
 pub const ADD_SESSION_ID: MigrationFile = MigrationFile {
     directory: "20250425182129_add_session_id",
     bytes: include_bytes!("../migrations/20250425182129_add_session_id/migration.sql"),
-    sha256: "ea6a41049e3f1215cd80897323e6aa09665067bd7d356493f1858a11969e5ee2",
+    sha256: "1cb236b5c18b69b62b58e8c92cb762cb0be309cfdf2bfd935733ba198673d726",
 };
 
 pub const ADD_MANAGED_VECTOR_STORES: MigrationFile = MigrationFile {
     directory: "20250430193429_add_managed_vector_stores",
     bytes: include_bytes!("../migrations/20250430193429_add_managed_vector_stores/migration.sql"),
-    sha256: "1b6ef4077162e63bc735d174f5f9ff629c0382902ef899b0cf16ac337446d290",
+    sha256: "d89c388b45a1367f0ad93543e56bfeaa32a391ff8adf1c18ab74003635446261",
 };
 
 pub const ADD_MCP_TABLE_TO_DB: MigrationFile = MigrationFile {
     directory: "20250507161526_add_mcp_table_to_db",
     bytes: include_bytes!("../migrations/20250507161526_add_mcp_table_to_db/migration.sql"),
-    sha256: "ab157bc28700b74a55876a740b0ffd4f35e214e200bdd5b2000edc933adea15c",
+    sha256: "f03c48cd15a994d4e6727cf4749ad27d52277da0d76561e9d7f50de94e8379b0",
 };
 
 pub const ADD_HEALTH_CHECK_MCP_FIELDS: MigrationFile = MigrationFile {
@@ -99,7 +99,7 @@ pub const ADD_HEALTH_CHECK_MCP_FIELDS: MigrationFile = MigrationFile {
     bytes: include_bytes!(
         "../migrations/20250507161527_add_health_check_fields_to_mcp_servers/migration.sql"
     ),
-    sha256: "6a4618a2897815963c539d71c748f2f05c397df4be445f238dde9178f465e340",
+    sha256: "b0cb512a90b674c5531b2c722048c936efefe834b3050715483d1b9c3c195de2",
 };
 
 pub const ADD_MCP_KEY_TEAM_PERMISSION: MigrationFile = MigrationFile {
@@ -107,13 +107,13 @@ pub const ADD_MCP_KEY_TEAM_PERMISSION: MigrationFile = MigrationFile {
     bytes: include_bytes!(
         "../migrations/20250507184818_add_mcp_key_team_permission_mgmt/migration.sql"
     ),
-    sha256: "26bc2bc48529a1cf1ffeff236103d1c6e468ef7ca6981fbaaaf74bd1ff905d75",
+    sha256: "3fc693f5dbdbb9968a6d95f2c940a04646b258eb671c70ff01bf4772e27e5979",
 };
 
 pub const ADD_STATUS_TO_SPENDLOGS: MigrationFile = MigrationFile {
     directory: "20250508072103_add_status_to_spendlogs",
     bytes: include_bytes!("../migrations/20250508072103_add_status_to_spendlogs/migration.sql"),
-    sha256: "b2926aeb76a7aaf16d1febfaa5ee4c6e12305c06bdc444bbd7fe729ad23c4727",
+    sha256: "ad1052154ae85e7a3beac99764f23ee50feb0eb745a0970935a471d5e730f433",
 };
 
 pub const WIDEN_DAILY_SPEND_COUNTERS: MigrationFile = MigrationFile {
@@ -121,7 +121,7 @@ pub const WIDEN_DAILY_SPEND_COUNTERS: MigrationFile = MigrationFile {
     bytes: include_bytes!(
         "../migrations/20250509141545_use_big_int_for_daily_spend_tables/migration.sql"
     ),
-    sha256: "d1faf058b37ff20cc5cfca5bf7d99cf31fad573ab1cd2b620a5150fd338fd457",
+    sha256: "50f6805ecaf21af5594ff4a739ffb5c87bb96ca3d356bda03f7cd8eb814a47ba",
 };
 
 pub const ADD_SPEND_LOGS_SESSION_IDX: MigrationFile = MigrationFile {
@@ -129,25 +129,25 @@ pub const ADD_SPEND_LOGS_SESSION_IDX: MigrationFile = MigrationFile {
     bytes: include_bytes!(
         "../migrations/20250510142544_add_session_id_index_spend_logs/migration.sql"
     ),
-    sha256: "bd56e78f23855ff9b47615f6f291d872162e52959af34209f2b8f970d42024a9",
+    sha256: "f718b2a74f2a8529c079242e36330206a17b985d31d36e16fc31861090a74c93",
 };
 
 pub const ADD_GUARDRAILS_TABLE: MigrationFile = MigrationFile {
     directory: "20250514142245_add_guardrails_table",
     bytes: include_bytes!("../migrations/20250514142245_add_guardrails_table/migration.sql"),
-    sha256: "853f4a10da0b99eaed34e7f42c6f256e70994713f3f4434fa74d2e9fde443840",
+    sha256: "67fdce0f3f25d350bc661f8f32b747ee7cd3e18dab46a90f72ef7e46024098af",
 };
 
 pub const MANAGED_OBJECT_TABLE: MigrationFile = MigrationFile {
     directory: "20250522223020_managed_object_table",
     bytes: include_bytes!("../migrations/20250522223020_managed_object_table/migration.sql"),
-    sha256: "8acbbbc9ad0a8b70985f39eeec5c48fd5803c9a96dad48d0b753d33009d8b507",
+    sha256: "9f4099edfb29658b8330afec322d97f2f1233fae81946c51521bbdcde5bf67e0",
 };
 
 pub const ALLOW_NULL_ENTITY_ID: MigrationFile = MigrationFile {
     directory: "20250526154401_allow_null_entity_id",
     bytes: include_bytes!("../migrations/20250526154401_allow_null_entity_id/migration.sql"),
-    sha256: "93ff1760c1fea073b04fd6c73439e5431bf63d2c0f5fd31c3aa0fd9df29ac51a",
+    sha256: "3bd0b7fd731a1d2e43aaefc346dca6f3d6e1b29022792422429c4ad4c4d06604",
 };
 
 pub const ADD_VECTOR_STORES_PERMISSIONS: MigrationFile = MigrationFile {
@@ -155,19 +155,19 @@ pub const ADD_VECTOR_STORES_PERMISSIONS: MigrationFile = MigrationFile {
     bytes: include_bytes!(
         "../migrations/20250528185438_add_vector_stores_to_object_permissions/migration.sql"
     ),
-    sha256: "ead8eea3c222730f2623c06712b0af12ac76f977616f0a71efff9a9ddb95c4b0",
+    sha256: "55939a32735a821668ea76cf37ad550e0f567225eec6d7595221a9f7445e5854",
 };
 
 pub const CASCADE_BUDGET_CHANGES: MigrationFile = MigrationFile {
     directory: "20250603210143_cascade_budget_changes",
     bytes: include_bytes!("../migrations/20250603210143_cascade_budget_changes/migration.sql"),
-    sha256: "cfa6fefdbc789febd28ad7d95f52e27e619ded66c119f9f3bf0182ce01d8541c",
+    sha256: "c2eb9e521552dbb2f7f14652a7f0d66c892589745ef121c1799e06fa5bd53e2d",
 };
 
 pub const ADD_HEALTH_CHECK_TABLE: MigrationFile = MigrationFile {
     directory: "20250618225828_add_health_check_table",
     bytes: include_bytes!("../migrations/20250618225828_add_health_check_table/migration.sql"),
-    sha256: "8460d09314969ee7d3bb6ed486007258e25822d716e92fecb9c5c4e65e72d28f",
+    sha256: "9e8723ee10d9ce8c5dcad41da4bcb2f8db2d7cab415eff59eb3ecc38b698d2e9",
 };
 
 pub const CASCADE_BUDGET_LOOSEN_FILE: MigrationFile = MigrationFile {
@@ -175,7 +175,7 @@ pub const CASCADE_BUDGET_LOOSEN_FILE: MigrationFile = MigrationFile {
     bytes: include_bytes!(
         "../migrations/20250625145206_cascade_budget_and_loosen_managed_file_json/migration.sql"
     ),
-    sha256: "4f66aacb25e080d5fe0b314adf27a8950995078bbd349f1b35133530256a7e2f",
+    sha256: "4ae034e93702511a6641b53102836f239cfee44393703b4ac0be0a5849f69bde",
 };
 
 pub const ADD_STATUS_MANAGED_OBJECT: MigrationFile = MigrationFile {
@@ -183,7 +183,7 @@ pub const ADD_STATUS_MANAGED_OBJECT: MigrationFile = MigrationFile {
     bytes: include_bytes!(
         "../migrations/20250625213625_add_status_to_managed_object_table/migration.sql"
     ),
-    sha256: "bc01e93d1735db653dad19fa915151819e810aa85824f58b719e2d171708bf08",
+    sha256: "a397ffbfaba32f88d7d453b28f24e3dc8dc240974926e0456d9eaab06fb34b09",
 };
 
 pub const ADD_MCP_INFO_COLUMN: MigrationFile = MigrationFile {
@@ -191,7 +191,7 @@ pub const ADD_MCP_INFO_COLUMN: MigrationFile = MigrationFile {
     bytes: include_bytes!(
         "../migrations/20250707212517_add_mcp_info_column_mcp_servers/migration.sql"
     ),
-    sha256: "8ce85445c4d7db6a2ad3ea99dc46f7d76ba7a5d77de265286e91d89caae0d8da",
+    sha256: "820dbb9d88eba37648b5e65c2beedfaa022276fc5a704a8fddafb5e36dcc9038",
 };
 
 pub const MIGRATION_CATALOG: MigrationCatalog = MigrationCatalog {
