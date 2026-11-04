@@ -56,6 +56,7 @@ pub mod provider_defaults_b;
 pub mod provider_metadata_factory;
 pub mod ptu_pricing;
 pub mod reload;
+pub mod resolution;
 pub(crate) mod sandbox;
 pub(crate) mod sandbox_dispatch;
 pub mod savings_evidence;

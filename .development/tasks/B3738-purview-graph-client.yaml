@@ -29,7 +29,8 @@ description: >-
 
 scope:
   paths:
-    - crates/betterlite-guardrails/src/**
+    - crates/betterlite-guardrails/src/purview_graph_client.rs
+    - crates/betterlite-guardrails/src/purview_graph_client/**
     - crates/betterlite-guardrails/Cargo.toml
   lint_tables: false
 
