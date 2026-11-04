@@ -2,12 +2,12 @@ use std::collections::BTreeMap;
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::tls::{TlsPolicy, Verification};
-use betterlite_http::tls::apply_policy;
-use reqwest::ClientBuilder;
+use betterlite_http::tls::parse_ca_pem;
 
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
+    pub(crate) ca_pem: Option<String>,
     pub(crate) deployment_ssl_verify: Option<bool>,
     pub(crate) config_ssl_verify: Option<bool>,
     pub(crate) config_http2: Option<bool>,
@@ -42,7 +42,6 @@ impl crate::helpers::Helper for Op {
             code: None,
             message: error.to_string(),
         })?;
-        let _configured = apply_policy(ClientBuilder::new(), &policy);
         let ssl_verify = match policy.verification {
             Verification::Enabled => serde_json::Value::Bool(true),
             Verification::Disabled => serde_json::Value::Bool(false),
@@ -50,6 +49,7 @@ impl crate::helpers::Helper for Op {
         };
         Ok(serde_json::json!({
             "ssl_verify": ssl_verify,
+            "ca_valid": input.ca_pem.as_deref().map(|pem| parse_ca_pem(pem.as_bytes()).is_ok()),
             "http2": policy.http2,
             "user_agent": policy.user_agent,
             "certificate": policy.certificate,

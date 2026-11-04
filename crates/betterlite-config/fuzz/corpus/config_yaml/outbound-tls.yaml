@@ -3,6 +3,7 @@ litellm_settings:
   ssl_certificate: client.pem
   http2: true
   ssl_ecdh_curve: X25519
+  ssl_security_level: DEFAULT@SECLEVEL=2
 model_list:
   - model_name: test
     litellm_params:

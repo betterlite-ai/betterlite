@@ -2,6 +2,7 @@ kind: helper
 name: tls-argument-precedence
 call:
   tls_policy:
+    ca_pem: null
     deployment_ssl_verify: false
     config_ssl_verify: null
     config_http2: false

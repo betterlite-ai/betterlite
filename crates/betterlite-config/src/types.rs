@@ -5,6 +5,7 @@ use secrecy::SecretString;
 use serde::Deserialize;
 
 use crate::sections::Sections;
+use crate::tls::VerifySetting;
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -79,7 +80,7 @@ pub struct ProxyTrust {
 
 #[derive(Debug, Clone)]
 pub struct LiteLlmSettings {
-    pub ssl_verify: Option<bool>,
+    pub ssl_verify: Option<VerifySetting>,
     pub ssl_certificate: Option<String>,
     pub http2: Option<bool>,
     pub ssl_ecdh_curve: Option<String>,

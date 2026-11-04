@@ -1,0 +1,17 @@
+task: B172
+deviations:
+  - what: SSL_SECURITY_LEVEL fails startup by name.
+    why: OpenSSL cipher-list expressions cannot be enforced by rustls.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L296-L304
+  - what: A recognized curve missing from the crypto provider fails startup by name.
+    why: An explicit recognized policy must not silently fall back to other groups.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L306-L326
+  - what: The default User-Agent is betterlite/<package-version>.
+    why: The binary identifies itself; LITELLM_USER_AGENT remains an exact override.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L140-L155
+  - what: An unreadable explicit CA file fails startup instead of falling back to default roots.
+    why: The task requires unreadable CA files to fail; silently widening trust would hide a broken policy.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L411-L418
+  - what: Default trust uses the bundled Mozilla roots from webpki-roots; cipher selection uses rustls defaults.
+    why: The Rust bundle avoids implicit host environment reads and may update separately from Python’s bundle. OpenSSL cipher ordering is unavailable; explicit CA bundles replace default roots.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L292-L304

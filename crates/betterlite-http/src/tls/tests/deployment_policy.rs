@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use rstest::rstest;
 
-use super::*;
 use crate::proxy::ProxiedClient;
+use betterlite_config::loader::ConfigLoader;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
 

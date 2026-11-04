@@ -1,18 +1,14 @@
-use std::fs;
-use std::io::Error as IoError;
+use std::fs::File;
+use std::io::{Error as IoError, Read as _};
 use std::num::TryFromIntError;
 use std::sync::Arc;
 
-use crate::error::HttpError;
 use betterlite_config::tls::{TlsPolicy, TlsPolicyError, Verification};
+use reqwest::ClientBuilder;
 use reqwest::header::{HeaderValue, InvalidHeaderValue};
-use reqwest::{Certificate, ClientBuilder};
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
-use rustls::crypto::aws_lc_rs;
-use rustls::crypto::{
-    CryptoProvider, SupportedKxGroup, WebPkiSupportedAlgorithms, verify_tls12_signature,
-    verify_tls13_signature,
-};
+use rustls::client::{VerifierBuilderError, WebPkiServerVerifier};
+use rustls::crypto::{CryptoProvider, SupportedKxGroup, aws_lc_rs};
 use rustls::pki_types::{
     CertificateDer, ServerName, UnixTime, pem::Error as PemError, pem::PemObject as _,
 };
@@ -20,6 +16,8 @@ use rustls::{
     ClientConfig, DigitallySignedStruct, Error as RustlsError, NamedGroup, RootCertStore,
     SignatureScheme,
 };
+
+use crate::error::HttpError;
 
 const MAX_CA_PEM_BYTES: u64 = 4 * 1024 * 1024;
 
@@ -35,16 +33,18 @@ pub enum TlsError {
     CaLength(#[source] TryFromIntError),
     #[error("SSL_CERT_FILE is larger than the supported limit")]
     CaTooLarge,
-    #[error("SSL_CERT_FILE contains invalid PEM")]
-    InvalidCa(#[source] reqwest::Error),
     #[error("SSL_CERT_FILE contains no certificates")]
     EmptyCa,
     #[error("SSL_ECDH_CURVE {0} is not supported by the selected crypto provider")]
     UnsupportedCurve(String),
     #[error("SSL_CERT_FILE contains invalid PEM")]
     InvalidPem(#[source] PemError),
+    #[error("SSL_CERT_FILE contains an invalid certificate")]
+    InvalidDer(#[source] rustls::Error),
     #[error("could not build the rustls client configuration")]
     RustlsConfig(#[source] rustls::Error),
+    #[error("could not configure TLS handshake signature checks")]
+    Signatures(#[source] VerifierBuilderError),
     #[error("LITELLM_USER_AGENT is not a valid HTTP header value")]
     UserAgent(#[source] InvalidHeaderValue),
 }
@@ -53,55 +53,49 @@ pub fn apply_policy(
     initial_builder: ClientBuilder,
     policy: &TlsPolicy,
 ) -> Result<ClientBuilder, TlsError> {
-    let (mut builder, ca_pem) = apply_ca_file(initial_builder, policy.ca_file.as_deref())?;
-    if matches!(policy.verification, Verification::Disabled) {
-        builder = builder.tls_danger_accept_invalid_certs(true);
-    }
+    let config = client_config(policy)?;
     let user_agent = HeaderValue::from_str(&policy.user_agent).map_err(TlsError::UserAgent)?;
-    builder = builder
-        .user_agent(user_agent)
-        .http2_adaptive_window(policy.http2);
-    if let Some(curve) = &policy.ecdh_curve {
-        if let Some(group) = named_group(curve) {
-            builder = builder.use_preconfigured_tls(client_config(
-                group,
-                curve,
-                ca_pem.as_deref(),
-                matches!(policy.verification, Verification::Disabled),
-            )?);
-        } else {
-            tracing::warn!(
-                curve,
-                "unrecognized SSL_ECDH_CURVE; using provider defaults"
-            );
-        }
+    let mut builder = initial_builder
+        .tls_backend_preconfigured(config)
+        .user_agent(user_agent);
+    if !policy.http2 {
+        builder = builder.http1_only();
     }
     Ok(builder)
 }
 
-fn apply_ca_file(
-    mut builder: ClientBuilder,
-    ca_file: Option<&str>,
-) -> Result<(ClientBuilder, Option<Vec<u8>>), TlsError> {
+fn trust_roots(ca_file: Option<&str>) -> Result<RootCertStore, TlsError> {
     let Some(path) = ca_file else {
-        return Ok((builder, None));
+        return Ok(RootCertStore {
+            roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
+        });
     };
-    let metadata = fs::metadata(path).map_err(TlsError::ReadCa)?;
+    let file = File::open(path).map_err(TlsError::ReadCa)?;
+    let metadata = file.metadata().map_err(TlsError::ReadCa)?;
     if metadata.len() > MAX_CA_PEM_BYTES {
         return Err(TlsError::CaTooLarge);
     }
-    let pem = fs::read(path).map_err(TlsError::ReadCa)?;
+    let mut pem = Vec::new();
+    file.take(MAX_CA_PEM_BYTES.saturating_add(1))
+        .read_to_end(&mut pem)
+        .map_err(TlsError::ReadCa)?;
+    parse_ca_pem(&pem)
+}
+
+pub fn parse_ca_pem(pem: &[u8]) -> Result<RootCertStore, TlsError> {
     if u64::try_from(pem.len()).map_err(TlsError::CaLength)? > MAX_CA_PEM_BYTES {
         return Err(TlsError::CaTooLarge);
     }
-    let certificates = Certificate::from_pem_bundle(&pem).map_err(TlsError::InvalidCa)?;
-    if certificates.is_empty() {
+    let mut roots = RootCertStore::empty();
+    for certificate in CertificateDer::pem_slice_iter(pem) {
+        roots
+            .add(certificate.map_err(TlsError::InvalidPem)?)
+            .map_err(TlsError::InvalidDer)?;
+    }
+    if roots.is_empty() {
         return Err(TlsError::EmptyCa);
     }
-    for certificate in certificates {
-        builder = builder.add_root_certificate(certificate);
-    }
-    Ok((builder, Some(pem)))
+    Ok(roots)
 }
 
 fn named_group(name: &str) -> Option<NamedGroup> {
@@ -109,72 +103,58 @@ fn named_group(name: &str) -> Option<NamedGroup> {
         "X25519" => Some(NamedGroup::X25519),
         "prime256v1" => Some(NamedGroup::secp256r1),
         "secp384r1" => Some(NamedGroup::secp384r1),
+        "secp521r1" => Some(NamedGroup::secp521r1),
         _ => None,
     }
 }
 
-fn client_config(
-    group: NamedGroup,
-    curve_name: &str,
-    ca_pem: Option<&[u8]>,
-    verification_disabled: bool,
-) -> Result<ClientConfig, TlsError> {
+fn client_config(policy: &TlsPolicy) -> Result<ClientConfig, TlsError> {
     let mut provider = aws_lc_rs::default_provider();
-    let selected_groups = select_kx_groups(group, curve_name, &provider)?;
-    provider.kx_groups = selected_groups;
-    let CryptoProvider {
-        signature_verification_algorithms: sig_algs,
-        ..
-    } = provider;
-    let shared_algorithms = Arc::new(sig_algs);
-    let builder = ClientConfig::builder_with_provider(Arc::new(provider))
+    if let Some(curve) = &policy.ecdh_curve {
+        if let Some(group) = named_group(curve) {
+            provider.kx_groups = select_kx_groups(group, curve, &provider)?;
+        } else {
+            tracing::warn!(
+                curve,
+                "unrecognized SSL_ECDH_CURVE; using provider defaults"
+            );
+        }
+    }
+    let shared_provider = Arc::new(provider);
+    let builder = ClientConfig::builder_with_provider(Arc::clone(&shared_provider))
         .with_safe_default_protocol_versions()
         .map_err(TlsError::RustlsConfig)?;
-    if verification_disabled {
-        let verifier = InsecureCertificateVerifier {
-            algorithms: shared_algorithms,
-        };
+    if matches!(policy.verification, Verification::Disabled) {
+        let signatures = WebPkiServerVerifier::builder_with_provider(
+            Arc::new(trust_roots(None)?),
+            shared_provider,
+        )
+        .build()
+        .map_err(TlsError::Signatures)?;
+        let verifier = InsecureCertificateVerifier { signatures };
         return Ok(builder
             .dangerous()
             .with_custom_certificate_verifier(Arc::new(verifier))
             .with_no_client_auth());
     }
-    let roots = trust_roots(ca_pem)?;
+    let roots = trust_roots(policy.ca_file.as_deref())?;
     Ok(builder.with_root_certificates(roots).with_no_client_auth())
-}
-
-fn trust_roots(ca_pem: Option<&[u8]>) -> Result<RootCertStore, TlsError> {
-    let mut roots = RootCertStore::empty();
-    let native = rustls_native_certs::load_native_certs();
-    for error in native.errors {
-        tracing::warn!(%error, "could not load part of the system trust store");
-    }
-    roots.add_parsable_certificates(native.certs);
-    if let Some(pem) = ca_pem {
-        let certificates = CertificateDer::pem_slice_iter(pem)
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(TlsError::InvalidPem)?;
-        for certificate in certificates {
-            roots.add(certificate).map_err(TlsError::RustlsConfig)?;
-        }
-    }
-    Ok(roots)
 }
 
 #[derive(Debug)]
 struct InsecureCertificateVerifier {
-    algorithms: Arc<WebPkiSupportedAlgorithms>,
+    signatures: Arc<WebPkiServerVerifier>,
 }
 
 macro_rules! verify_signature {
-    ($method:ident, $verify:path) => {
+    ($method:ident) => {
         fn $method(
             &self,
             message: &[u8],
             cert: &CertificateDer<'_>,
             dss: &DigitallySignedStruct,
         ) -> Result<HandshakeSignatureValid, RustlsError> {
-            $verify(message, cert, dss, &self.algorithms)
+            self.signatures.$method(message, cert, dss)
         }
     };
 }
@@ -191,11 +171,11 @@ impl ServerCertVerifier for InsecureCertificateVerifier {
         Ok(ServerCertVerified::assertion())
     }
 
-    verify_signature!(verify_tls12_signature, verify_tls12_signature);
-    verify_signature!(verify_tls13_signature, verify_tls13_signature);
+    verify_signature!(verify_tls12_signature);
+    verify_signature!(verify_tls13_signature);
 
     fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
-        self.algorithms.supported_schemes()
+        self.signatures.supported_verify_schemes()
     }
 }
 

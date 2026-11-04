@@ -3,8 +3,11 @@ use std::fs;
 
 use rstest::rstest;
 
-use super::*;
 use crate::tls::TlsError;
+use crate::tls::apply_policy;
+use betterlite_config::loader::ConfigLoader;
+use betterlite_config::tls::TlsPolicy;
+use reqwest::ClientBuilder;
 
 #[rstest]
 #[case::small_invalid_pem(8, false)]
@@ -30,7 +33,13 @@ fn http_policy_tests_behavior(#[case] size: usize, #[case] oversized: bool) {
     } else {
         assert!(matches!(
             result,
-            Err(TlsError::InvalidCa(_) | TlsError::EmptyCa)
+            Err(TlsError::InvalidPem(_) | TlsError::EmptyCa)
         ));
     }
 }
+
+mod failures;
+
+mod pem;
+
+mod limits;
