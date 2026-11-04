@@ -60,12 +60,9 @@ pub fn apply_policy(
         vec![b"http/1.1".to_vec()]
     };
     let user_agent = HeaderValue::from_str(&policy.user_agent).map_err(TlsError::UserAgent)?;
-    let mut builder = initial_builder
+    let builder = initial_builder
         .tls_backend_preconfigured(config)
         .user_agent(user_agent);
-    if !policy.http2 {
-        builder = builder.http1_only();
-    }
     Ok(builder)
 }
 

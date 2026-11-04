@@ -32,10 +32,13 @@ zip = { version = "9.1.0", default-features = false, features = ["bzip2", "defla
 [dev-dependencies]
 base64 = "0.23.1"
 crc32fast = "1.5.3"
+h2 = "0.4.20"
+http = "1.5.0"
 rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem"] }
 rstest = "=0.27.0"
 tempfile = "3.27.0"
 tokio.workspace = true
+tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws_lc_rs", "tls12"] }
 tracing-subscriber.workspace = true
 
 [lints]
