@@ -135,11 +135,10 @@ fn read_separated_component(
 
 fn parse_week_date(chars: &[char], position: usize, year: i32, has_sep: bool) -> Option<NaiveDate> {
     let (week, after_week) = take_digits(chars, position, 2)?;
-    let day = if chars.get(after_week).is_none() {
-        1
-    } else {
-        read_separated_component(chars, after_week, has_sep, 1)?.0
-    };
+    if chars.get(after_week).is_none() {
+        return NaiveDate::from_isoywd_opt(year, week, Weekday::Mon);
+    }
+    let (day, _) = read_separated_component(chars, after_week, has_sep, 1)?;
     let weekday = Weekday::try_from(u8::try_from(day.checked_sub(1)?).ok()?).ok()?;
     NaiveDate::from_isoywd_opt(year, week, weekday)
 }

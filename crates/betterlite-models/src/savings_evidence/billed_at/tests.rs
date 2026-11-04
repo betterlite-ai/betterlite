@@ -8,6 +8,16 @@ use rstest::rstest;
 
 use super::{BilledAt, coerce_billed_at, decode_billed_at};
 
+fn assert_decodes_to(text: &str, expected: Option<&str>) {
+    let decoded = decode_billed_at(text);
+    let expected_instant = expected.map(|value| {
+        DateTime::parse_from_rfc3339(value)
+            .expect("the expected fixture is itself a valid offset timestamp")
+            .with_timezone(&Utc)
+    });
+    assert_eq!(decoded, expected_instant);
+}
+
 #[rstest]
 #[case::zulu_offset("2024-03-01T10:00:00Z", Some("2024-03-01T10:00:00+00:00"))]
 #[case::explicit_offset("2024-03-01T10:00:00+02:00", Some("2024-03-01T08:00:00+00:00"))]
@@ -27,13 +37,7 @@ fn decode_billed_at_matches_coerced_iso_offsets(
     #[case] text: &str,
     #[case] expected: Option<&str>,
 ) {
-    let decoded = decode_billed_at(text);
-    let expected_instant = expected.map(|value| {
-        DateTime::parse_from_rfc3339(value)
-            .expect("the expected fixture is itself a valid offset timestamp")
-            .with_timezone(&Utc)
-    });
-    assert_eq!(decoded, expected_instant);
+    assert_decodes_to(text, expected);
 }
 
 #[test]
@@ -81,13 +85,7 @@ fn decode_billed_at_follows_the_fromisoformat_grammar(
     #[case] text: &str,
     #[case] expected: Option<&str>,
 ) {
-    let decoded = decode_billed_at(text);
-    let expected_instant = expected.map(|value| {
-        DateTime::parse_from_rfc3339(value)
-            .expect("the expected fixture is itself a valid offset timestamp")
-            .with_timezone(&Utc)
-    });
-    assert_eq!(decoded, expected_instant);
+    assert_decodes_to(text, expected);
 }
 
 #[rstest]
