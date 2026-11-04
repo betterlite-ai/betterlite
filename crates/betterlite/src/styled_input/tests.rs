@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::io::Cursor;
+use std::io::{Cursor, ErrorKind};
 
 use rstest::rstest;
 
@@ -48,6 +48,6 @@ fn eof_is_reported_to_the_caller() {
     let error =
         styled_input("Key: ", false, &mut reader, &mut writer).expect_err("EOF is reported");
     assert!(
-        matches!(error, super::StyledInputError::Io(ref source) if source.kind() == std::io::ErrorKind::UnexpectedEof)
+        matches!(&error, super::StyledInputError::Io(source) if source.kind() == ErrorKind::UnexpectedEof)
     );
 }

@@ -33,6 +33,20 @@ pub enum ProviderId {
     Ollama,
 }
 
+impl ProviderId {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::OpenAi => "openai",
+            Self::Anthropic => "anthropic",
+            Self::Gemini => "gemini",
+            Self::Azure => "azure",
+            Self::Bedrock => "bedrock",
+            Self::Ollama => "ollama",
+        }
+    }
+}
+
 pub const PROVIDERS: [Provider; 6] = [
     Provider {
         id: ProviderId::OpenAi,

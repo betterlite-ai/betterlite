@@ -4,7 +4,7 @@ use std::io::{self, Cursor};
 
 use super::interactive::ByteSource;
 use super::raw_mode::RawModeError;
-use super::{PROVIDERS, ProviderId, dispatch_selection};
+use super::{PROVIDERS, dispatch_selection};
 
 struct ScriptedBytes {
     bytes: Vec<u8>,
@@ -33,9 +33,9 @@ fn dispatch_uses_the_fallback_reader_when_raw_mode_cannot_open() {
     assert_eq!(
         providers
             .iter()
-            .map(|provider| provider.id)
+            .map(|provider| provider.id.as_str())
             .collect::<Vec<_>>(),
-        vec![ProviderId::OpenAi]
+        vec!["openai"]
     );
 }
 
@@ -56,9 +56,9 @@ fn dispatch_uses_raw_mode_when_it_opens_successfully() {
     assert_eq!(
         providers
             .iter()
-            .map(|provider| provider.id)
+            .map(|provider| provider.id.as_str())
             .collect::<Vec<_>>(),
-        vec![ProviderId::OpenAi]
+        vec!["openai"]
     );
 }
 
@@ -79,24 +79,27 @@ fn dispatch_falls_back_when_the_interactive_loop_hits_an_io_error() {
     assert_eq!(
         providers
             .iter()
-            .map(|provider| provider.id)
+            .map(|provider| provider.id.as_str())
             .collect::<Vec<_>>(),
-        vec![ProviderId::Anthropic]
+        vec!["anthropic"]
     );
 }
 
 #[test]
 fn catalog_has_the_six_preserved_providers_in_order() {
-    let ids: Vec<ProviderId> = PROVIDERS.iter().map(|provider| provider.id).collect();
+    let ids: Vec<&str> = PROVIDERS
+        .iter()
+        .map(|provider| provider.id.as_str())
+        .collect();
     assert_eq!(
         ids,
         vec![
-            ProviderId::OpenAi,
-            ProviderId::Anthropic,
-            ProviderId::Gemini,
-            ProviderId::Azure,
-            ProviderId::Bedrock,
-            ProviderId::Ollama
+            "openai",
+            "anthropic",
+            "gemini",
+            "azure",
+            "bedrock",
+            "ollama"
         ]
     );
 }

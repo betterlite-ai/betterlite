@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeSet;
-use std::io::Cursor;
+use std::io::{Cursor, ErrorKind};
 
 use rstest::rstest;
 
@@ -63,6 +63,6 @@ fn eof_returns_instead_of_reprompting_forever() {
     let mut writer = Vec::new();
     let error = select_fallback(&mut reader, &mut writer, false).expect_err("EOF cancels input");
     assert!(
-        matches!(error, super::FallbackError::Io(ref source) if source.kind() == std::io::ErrorKind::UnexpectedEof)
+        matches!(&error, super::FallbackError::Io(source) if source.kind() == ErrorKind::UnexpectedEof)
     );
 }
