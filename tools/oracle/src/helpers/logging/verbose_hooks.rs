@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::sync::Arc;
 
 use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink, VerboseHooks};
@@ -46,23 +47,39 @@ const fn default_logger_only() -> Payload {
 struct FixtureLogger {
     fails: bool,
     debug_enabled: bool,
+    records: Arc<Cell<Vec<betterlite_logging::verbose_hooks::LogRecord>>>,
 }
 
 impl LoggerSink for FixtureLogger {
-    fn debug(&self, _payload: &Payload) -> bool {
-        !self.fails
+    fn debug(&self, payload: &Payload) -> bool {
+        self.record("DEBUG", payload)
     }
 
-    fn info(&self, _payload: &Payload) -> bool {
-        !self.fails
+    fn info(&self, payload: &Payload) -> bool {
+        self.record("INFO", payload)
     }
 
-    fn error(&self, _payload: &Payload) -> bool {
-        !self.fails
+    fn error(&self, payload: &Payload) -> bool {
+        self.record("ERROR", payload)
     }
 
     fn debug_enabled(&self) -> bool {
         self.debug_enabled
+    }
+}
+
+impl FixtureLogger {
+    fn record(&self, level: &str, payload: &Payload) -> bool {
+        if self.fails {
+            return false;
+        }
+        let mut records = self.records.take();
+        records.push(betterlite_logging::verbose_hooks::LogRecord {
+            level: level.to_owned(),
+            payload: payload.clone(),
+        });
+        self.records.set(records);
+        true
     }
 }
 
@@ -94,6 +111,7 @@ fn build_hooks(
     sink_fails: (bool, bool),
     logger_debug_enabled: bool,
     set_verbose: &Payload,
+    records: Arc<Cell<Vec<betterlite_logging::verbose_hooks::LogRecord>>>,
 ) -> Result<VerboseHooks<FixtureLogger, FixtureConsole>, Box<crate::helpers::HelperError>> {
     let (logger_fails, console_fails) = sink_fails;
     let redactor = redactor()?;
@@ -101,6 +119,7 @@ fn build_hooks(
         logger: FixtureLogger {
             fails: logger_fails,
             debug_enabled: logger_debug_enabled,
+            records,
         },
         console: FixtureConsole {
             fails: console_fails,
@@ -123,8 +142,16 @@ impl crate::helpers::Helper for Op {
                 logger_fails,
                 console_fails,
             } => {
-                let hooks = build_hooks((*logger_fails, *console_fails), false, set_verbose)?;
-                Ok(json!(hooks.main_print_verbose(payload.clone())))
+                let records = Arc::new(Cell::new(Vec::new()));
+                let hooks = build_hooks(
+                    (*logger_fails, *console_fails),
+                    false,
+                    set_verbose,
+                    Arc::clone(&records),
+                )?;
+                let mut result = hooks.main_print_verbose(payload.clone());
+                result.logs = records.take();
+                Ok(json!(result))
             }
             Input::Utils {
                 payload,
@@ -134,18 +161,27 @@ impl crate::helpers::Helper for Op {
                 logger_fails,
                 console_fails,
             } => {
-                let hooks = build_hooks((*logger_fails, *console_fails), false, set_verbose)?;
-                Ok(json!(hooks.utils_print_verbose(
-                    payload.clone(),
-                    log_level,
-                    logger_only
-                )))
+                let records = Arc::new(Cell::new(Vec::new()));
+                let hooks = build_hooks(
+                    (*logger_fails, *console_fails),
+                    false,
+                    set_verbose,
+                    Arc::clone(&records),
+                )?;
+                let mut result = hooks.utils_print_verbose(payload.clone(), log_level, logger_only);
+                result.logs = records.take();
+                Ok(json!(result))
             }
             Input::Active {
                 set_verbose,
                 logger_debug_enabled,
             } => {
-                let hooks = build_hooks((false, false), *logger_debug_enabled, set_verbose)?;
+                let hooks = build_hooks(
+                    (false, false),
+                    *logger_debug_enabled,
+                    set_verbose,
+                    Arc::new(Cell::new(Vec::new())),
+                )?;
                 Ok(json!({ "logs": [], "console": [], "active": hooks.is_active() }))
             }
         }
