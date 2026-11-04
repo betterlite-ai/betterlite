@@ -1,17 +1,45 @@
 #![cfg(test)]
 
 use super::{
-    AuthenticatedPrincipal, OwnerFilter, ResourceRecord, build_list_page, build_owner_filter,
-    can_access_resource, resolve_resource_owner_id,
+    OwnerFilter, ResourceRecord, build_list_page, build_owner_filter, can_access_resource,
+    resolve_resource_owner_id,
 };
+use betterlite_auth::auth_identity::records::{
+    CredentialRef, NetworkContext, Principal, SourceKey, TeamIdentity, UserIdentity,
+};
+use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType, Role, TeamRole};
 
-fn principal(user_id: Option<&str>, team_id: Option<&str>) -> AuthenticatedPrincipal {
-    AuthenticatedPrincipal {
-        user_id: user_id.map(str::to_owned),
-        team_id: team_id.map(str::to_owned),
-        token: None,
-        api_key: None,
-        role: "internal_user".to_owned(),
+fn principal(user_id: Option<&str>, team_id: Option<&str>) -> Principal {
+    Principal {
+        principal_type: PrincipalType::Human,
+        subject: String::new(),
+        issuer: None,
+        audience: Vec::new(),
+        user: user_id.map(|id| UserIdentity {
+            id: id.to_owned(),
+            external_id: None,
+            user_name: None,
+            email: None,
+            display_name: None,
+        }),
+        organization: None,
+        teams: team_id
+            .map(|id| {
+                vec![TeamIdentity {
+                    id: id.to_owned(),
+                    name: None,
+                    role: TeamRole::Member,
+                }]
+            })
+            .unwrap_or_default(),
+        project: None,
+        end_user: None,
+        roles: Vec::new(),
+        scopes: Vec::new(),
+        auth_method: AuthMethod::ApiKey,
+        credential_ref: CredentialRef::default(),
+        network: NetworkContext::default(),
+        source_key: SourceKey::default(),
     }
 }
 
@@ -23,7 +51,7 @@ fn user_and_team_visibility() {
         build_owner_filter(&caller),
         Some(OwnerFilter::UserOrTeam {
             user_id: "u".to_owned(),
-            team_id: "t".to_owned(),
+            team_id: "t".to_owned()
         })
     );
     assert!(can_access_resource(&caller, Some("u"), Some("x")));
@@ -40,7 +68,7 @@ fn user_and_team_visibility() {
 #[test]
 fn service_account_scope() {
     let mut caller = principal(None, Some("t"));
-    caller.token = Some(secrecy::SecretString::new(Box::<str>::from("k")));
+    caller.credential_ref.token_id = Some("k".to_owned());
     assert_eq!(resolve_resource_owner_id(&caller), None);
     assert_eq!(
         build_owner_filter(&caller),
@@ -76,8 +104,8 @@ fn empty_identity_fields() {
 #[test]
 fn token_owner_precedence() {
     let mut caller = principal(None, None);
-    caller.token = Some(secrecy::SecretString::new(Box::<str>::from("hash_a")));
-    caller.api_key = Some(secrecy::SecretString::new(Box::<str>::from("hash_b")));
+    caller.credential_ref.token_id = Some("hash_a".to_owned());
+    caller.credential_ref.key_id = Some("hash_b".to_owned());
     assert_eq!(
         resolve_resource_owner_id(&caller).as_deref(),
         Some("key:hash_a")
@@ -90,12 +118,12 @@ fn token_owner_precedence() {
     );
     assert!(can_access_resource(&caller, Some("key:hash_a"), None));
     assert!(!can_access_resource(&caller, Some("key:hash_b"), None));
-    caller.token = Some(secrecy::SecretString::new(Box::<str>::from("")));
+    caller.credential_ref.token_id = Some(String::new());
     assert_eq!(
         resolve_resource_owner_id(&caller).as_deref(),
         Some("key:hash_b")
     );
-    caller.api_key = Some(secrecy::SecretString::new(Box::<str>::from("")));
+    caller.credential_ref.key_id = Some(String::new());
     assert_eq!(resolve_resource_owner_id(&caller), None);
     assert_eq!(build_owner_filter(&caller), None);
     assert!(!can_access_resource(&caller, None, None));
@@ -109,11 +137,11 @@ fn identityless_denial() {
 }
 
 #[rstest::rstest]
-#[case::proxy_admin("proxy_admin")]
-#[case::proxy_admin_viewer("proxy_admin_viewer")]
-fn admin_view_permissions(#[case] role: &str) {
+#[case::proxy_admin(Role::PlatformAdmin)]
+#[case::proxy_admin_viewer(Role::PlatformViewer)]
+fn admin_view_permissions(#[case] role: Role) {
     let mut caller = principal(None, None);
-    caller.role = role.to_owned();
+    caller.roles.push(role);
     assert_eq!(build_owner_filter(&caller), Some(OwnerFilter::Admin));
     assert!(can_access_resource(&caller, None, None));
     assert!(can_access_resource(&caller, Some("foreign"), None));

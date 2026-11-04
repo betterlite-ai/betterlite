@@ -1,14 +1,6 @@
-use secrecy::{ExposeSecret as _, SecretString};
+use betterlite_auth::auth_identity::records::Principal;
+use betterlite_auth::auth_identity::roles::Role;
 use serde::{Deserialize, Serialize};
-
-#[derive(Clone, Default, Deserialize)]
-pub struct AuthenticatedPrincipal {
-    pub user_id: Option<String>,
-    pub team_id: Option<String>,
-    pub token: Option<SecretString>,
-    pub api_key: Option<SecretString>,
-    pub role: String,
-}
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -36,43 +28,42 @@ pub struct ListPage {
 }
 
 #[must_use]
-pub fn resolve_resource_owner_id(principal: &AuthenticatedPrincipal) -> Option<String> {
-    if let Some(user_id) = &principal.user_id {
-        return Some(user_id.clone());
+pub fn resolve_resource_owner_id(principal: &Principal) -> Option<String> {
+    if let Some(user) = &principal.user {
+        return Some(user.id.clone());
     }
-    if principal.team_id.is_some() {
+    if !principal.teams.is_empty() {
         return None;
     }
-    let token = principal
-        .token
-        .as_ref()
-        .map(SecretString::expose_secret)
+    principal
+        .credential_ref
+        .token_id
+        .as_deref()
         .filter(|value| !value.is_empty())
         .or_else(|| {
             principal
-                .api_key
-                .as_ref()
-                .map(SecretString::expose_secret)
+                .credential_ref
+                .key_id
+                .as_deref()
                 .filter(|value| !value.is_empty())
-        });
-    token.map(|value| format!("key:{value}"))
+        })
+        .map(|value| format!("key:{value}"))
 }
 
 #[must_use]
-pub fn build_owner_filter(principal: &AuthenticatedPrincipal) -> Option<OwnerFilter> {
-    if matches!(
-        principal.role.as_str(),
-        "proxy_admin" | "proxy_admin_viewer"
-    ) {
+pub fn build_owner_filter(principal: &Principal) -> Option<OwnerFilter> {
+    if has_admin_view(principal) {
         return Some(OwnerFilter::Admin);
     }
-    match (&principal.user_id, &principal.team_id) {
-        (Some(user_id), Some(team_id)) => Some(OwnerFilter::UserOrTeam {
-            user_id: user_id.clone(),
-            team_id: team_id.clone(),
+    let user_id = principal.user.as_ref().map(|user| &user.id);
+    let team_id = principal.teams.first().map(|team| &team.id);
+    match (user_id, team_id) {
+        (Some(owner_id), Some(owner_team_id)) => Some(OwnerFilter::UserOrTeam {
+            user_id: owner_id.clone(),
+            team_id: owner_team_id.clone(),
         }),
-        (_, Some(team_id)) => Some(OwnerFilter::TeamId {
-            team_id: team_id.clone(),
+        (_, Some(owner_team_id)) => Some(OwnerFilter::TeamId {
+            team_id: owner_team_id.clone(),
         }),
         _ => resolve_resource_owner_id(principal)
             .map(|created_by| OwnerFilter::CreatedBy { created_by }),
@@ -81,23 +72,20 @@ pub fn build_owner_filter(principal: &AuthenticatedPrincipal) -> Option<OwnerFil
 
 #[must_use]
 pub fn can_access_resource(
-    principal: &AuthenticatedPrincipal,
+    principal: &Principal,
     created_by: Option<&str>,
     resource_team_id: Option<&str>,
 ) -> bool {
-    if matches!(
-        principal.role.as_str(),
-        "proxy_admin" | "proxy_admin_viewer"
-    ) {
+    if has_admin_view(principal) {
         return true;
     }
     resolve_resource_owner_id(principal)
         .as_deref()
         .is_some_and(|owner| created_by == Some(owner))
         || principal
-            .team_id
-            .as_deref()
-            .is_some_and(|team| resource_team_id == Some(team))
+            .teams
+            .first()
+            .is_some_and(|team| resource_team_id == Some(team.id.as_str()))
 }
 
 #[must_use]
@@ -111,6 +99,13 @@ pub fn build_list_page(items: Vec<ResourceRecord>, has_more: bool) -> ListPage {
         last_id,
         has_more,
     }
+}
+
+fn has_admin_view(principal: &Principal) -> bool {
+    principal.roles.iter().any(|role| match role {
+        Role::PlatformAdmin | Role::PlatformViewer => true,
+        Role::OrgAdmin | Role::OrgViewer | Role::TeamAdmin | Role::TeamMember => false,
+    })
 }
 
 #[path = "managed_resource_access/tests.rs"]

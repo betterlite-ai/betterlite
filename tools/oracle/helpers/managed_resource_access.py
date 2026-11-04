@@ -10,7 +10,7 @@ class Principal(TypedDict):
     team_id: str | None
     token: str | None
     api_key: str | None
-    role: str
+    user_role: str
 
 
 class Record(TypedDict):
@@ -42,7 +42,7 @@ def run(input_value: Input) -> dict[str, object]:
         team_id=raw["team_id"],
         token=raw["token"],
         api_key=raw["api_key"],
-        user_role=roles.get(raw["role"], LitellmUserRoles.INTERNAL_USER),
+        user_role=roles.get(raw["user_role"], LitellmUserRoles.INTERNAL_USER),
     )
     records = [ResourceItem(**row) for row in input_value.get("records", [])]
     page = isolation.build_list_page(records, input_value.get("has_more", False))
