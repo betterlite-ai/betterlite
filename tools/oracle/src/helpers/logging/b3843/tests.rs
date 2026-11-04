@@ -48,6 +48,10 @@ fn helper_functions_dispatch() {
 #[case::server_expanded_ipv6("server-expanded-ipv6.yaml")]
 #[case::params_invalid("params-invalid.yaml")]
 #[case::params_small_float("params-small-float.yaml")]
+#[case::params_string_stop("params-string-stop.yaml")]
+#[case::usage_cache_write("usage-cache-write.yaml")]
+#[case::usage_cache_creation("usage-cache-creation.yaml")]
+#[case::usage_cache_hit("usage-cache-hit.yaml")]
 fn payload_case_matches_litellm(#[case] name: &str) {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("cases/helpers/payload-primitives")

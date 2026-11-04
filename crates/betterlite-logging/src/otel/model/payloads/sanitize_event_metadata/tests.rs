@@ -19,17 +19,18 @@ fn sanitize_preserves_boolean_primitives() {
 #[test]
 fn sanitize_filters_secrets_and_bounds_values() {
     let source = serde_json::from_str::<BTreeMap<String, OtelModelValue>>(
-        r#"{"authorization":"x","safe":"ok","function_duration":12,"function_name":"drop"}"#,
+        r#"{"authorization":"x","safe":"ok","function_duration":12,"function_name":"drop","function_kwargs":"drop","nested":{"safe":"no"},"array":["no"],"nothing":null}"#,
     )
     .unwrap();
-    assert_eq!(
-        sanitize_event_metadata(&source).get("safe"),
-        Some(&"ok".to_owned())
-    );
-    assert_eq!(
-        sanitize_event_metadata(&source).get("function_duration"),
-        Some(&"12".to_owned())
-    );
+    let result = sanitize_event_metadata(&source);
+    assert_eq!(result.get("safe"), Some(&"ok".to_owned()));
+    assert_eq!(result.get("function_duration"), Some(&"12".to_owned()));
+    assert!(!result.contains_key("authorization"));
+    assert!(!result.contains_key("function_name"));
+    assert!(!result.contains_key("function_kwargs"));
+    assert!(!result.contains_key("nested"));
+    assert!(!result.contains_key("array"));
+    assert!(!result.contains_key("nothing"));
 }
 
 #[test]
@@ -79,5 +80,14 @@ fn sanitize_bounds_large_integer_values() {
 #[case::hidden("_hidden_params")]
 fn sensitive_substrings_are_filtered(#[case] key: &str) {
     let values = BTreeMap::from([(key.to_owned(), OtelModelValue::String("hidden".to_owned()))]);
+    assert!(sanitize_event_metadata(&values).is_empty());
+}
+
+#[rstest::rstest]
+#[case::name("function_name")]
+#[case::kwargs("function_kwargs")]
+#[case::args("function_args")]
+fn exact_function_keys_are_dropped(#[case] key: &str) {
+    let values = BTreeMap::from([(key.to_owned(), OtelModelValue::String("drop".to_owned()))]);
     assert!(sanitize_event_metadata(&values).is_empty());
 }

@@ -35,3 +35,10 @@ fn max_tokens_fallback(#[case] raw: &str, #[case] expected: Option<i64>) {
     assert!(parsed.temperature.is_none());
     assert!(parsed.stop_sequences.is_none());
 }
+
+#[test]
+fn request_params_wraps_string_stop() {
+    let params = serde_json::from_str(r#"{"stop":"END"}"#).unwrap();
+    let parsed = LLMRequestParams::from_model_parameters(&params);
+    assert_eq!(parsed.stop_sequences, Some(vec!["END".to_owned()]));
+}
