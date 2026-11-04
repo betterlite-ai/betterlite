@@ -152,10 +152,8 @@ fn reply_projection_defaults_missing_usage_to_zero() {
 fn null_token_counts_default_to_zero(#[case] variant: VoyageEmbeddingVariant) {
     let decoded =
         decode_voyage_embedding_reply(br#"{"usage":{"total_tokens":null}}"#, 200, variant).unwrap();
-    assert_eq!(
-        decoded["usage"],
-        json!({"prompt_tokens": 0, "total_tokens": 0})
-    );
+    assert_eq!(decoded["usage"]["prompt_tokens"], 0_u32);
+    assert_eq!(decoded["usage"]["total_tokens"], 0_u32);
 }
 
 #[rstest::rstest]

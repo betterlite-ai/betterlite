@@ -72,7 +72,7 @@ fn oracle_null_usage_defaults_to_zero() {
         .join("cases/helpers/voyage-contextual/null-token-usage.yaml");
     let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap();
     let result = super::Op::decode_and_run(&case.call.input).unwrap();
-    let expected = serde_json::json!({"prompt_tokens": 0, "total_tokens": 0});
+    let expected = serde_json::json!({"prompt_tokens": 0_u32, "total_tokens": 0_u32});
     assert_eq!(result["text"]["response"]["usage"], expected);
     assert_eq!(result["contextual"]["response"]["usage"], expected);
 }
