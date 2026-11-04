@@ -45,15 +45,19 @@ pub fn contains_bedrock_arn(value: &str) -> bool {
     })
 }
 pub fn is_bedrock_arn(value: &str) -> bool {
-    match value.strip_prefix("arn:aws") {
-        Some(tail) if tail.starts_with(":bedrock:") => true,
-        Some(tail) if tail.starts_with('-') => {
-            tail.split_once(':').is_some_and(|(partition, service)| {
-                valid_partition(partition) && service.starts_with("bedrock:")
-            })
-        }
-        _ => false,
+    let Some(remainder) = value.strip_prefix("arn:aws") else {
+        return false;
+    };
+    if let Some(service) = remainder.strip_prefix(':') {
+        return service.starts_with("bedrock:");
     }
+    let Some((partition, service)) = remainder
+        .strip_prefix('-')
+        .and_then(|tail| tail.split_once(':'))
+    else {
+        return false;
+    };
+    valid_partition(partition) && service.starts_with("bedrock:")
 }
 pub fn contains_aws_arn(value: &str) -> bool {
     let mut remaining = value;
