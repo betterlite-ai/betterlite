@@ -33,7 +33,20 @@ struct Translator {
 }
 
 pub(super) fn compile(source: &str) -> Result<Regex, Error> {
-    let mut translated = translate(source)?;
+    let mut translated = Translator {
+        output: "(?i)".to_owned(),
+        flags: Flags {
+            case_insensitive: true,
+            verbose: false,
+            alphabet: Alphabet::Unicode,
+        },
+        scopes: Vec::new(),
+        detected: Detected::default(),
+    };
+    let mut characters = source.chars().peekable();
+    while let Some(character) = characters.next() {
+        translated.token(character, &mut characters)?;
+    }
     let unicode = !translated.detected.ascii_backref || translated.detected.unicode;
     if !unicode {
         translated.output.insert_str(0, "(?-u)");
@@ -48,24 +61,6 @@ pub(super) fn builder(regex: &Regex) -> RegexBuilder {
     // Translated sources record the engine mode so every rebuild retains it.
     builder.unicode_mode(!regex.as_str().starts_with("(?-u)"));
     builder
-}
-
-fn translate(source: &str) -> Result<Translator, Error> {
-    let mut translator = Translator {
-        output: "(?i)".to_owned(),
-        flags: Flags {
-            case_insensitive: true,
-            verbose: false,
-            alphabet: Alphabet::Unicode,
-        },
-        scopes: Vec::new(),
-        detected: Detected::default(),
-    };
-    let mut characters = source.chars().peekable();
-    while let Some(character) = characters.next() {
-        translator.token(character, &mut characters)?;
-    }
-    Ok(translator)
 }
 
 impl Translator {
@@ -116,32 +111,36 @@ impl Translator {
             return Ok(());
         }
         self.output.push('?');
-        match characters.peek().copied() {
-            Some('#') => {
-                copy_until(&mut self.output, characters, ')');
-                self.scopes.pop();
-            }
-            Some('a' | 'u' | 'i' | 'm' | 's' | 'x' | '-') => self.flag_group(characters)?,
-            Some('P') => {
-                self.output.push('P');
-                characters.next();
-                let end = if characters.peek() == Some(&'=') {
-                    ')'
-                } else {
-                    '>'
-                };
-                copy_until(&mut self.output, characters, end);
-                if end == ')' {
-                    self.scopes.pop();
-                    self.detected.ascii_backref |= self.flags.alphabet == Alphabet::Ascii;
-                    self.detected.unicode |=
-                        self.flags.alphabet == Alphabet::Unicode && self.flags.case_insensitive;
-                }
-            }
-            Some('(') => self.output.push_str(&condition_header(characters)),
-            _ => {}
+        let next = characters.peek().copied();
+        if matches!(next, Some('a' | 'u' | 'i' | 'm' | 's' | 'x' | '-')) {
+            return self.flag_group(characters);
+        }
+        if next == Some('#') {
+            copy_until(&mut self.output, characters, ')');
+            self.scopes.pop();
+        } else if next == Some('P') {
+            self.named_group(characters);
+        } else if next == Some('(') {
+            self.output.push_str(&condition_header(characters));
         }
         Ok(())
+    }
+
+    fn named_group(&mut self, characters: &mut Peekable<Chars<'_>>) {
+        self.output.push('P');
+        characters.next();
+        let end = if characters.peek() == Some(&'=') {
+            ')'
+        } else {
+            '>'
+        };
+        copy_until(&mut self.output, characters, end);
+        if end == ')' {
+            self.scopes.pop();
+            self.detected.ascii_backref |= self.flags.alphabet == Alphabet::Ascii;
+            self.detected.unicode |=
+                self.flags.alphabet == Alphabet::Unicode && self.flags.case_insensitive;
+        }
     }
 
     fn flag_group(&mut self, characters: &mut Peekable<Chars<'_>>) -> Result<(), Error> {
