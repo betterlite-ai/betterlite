@@ -10,6 +10,7 @@ call:
       prompt_tokens_details:
         cached_tokens: 20
         cache_creation_tokens: 3
+        cache_creation_token_details: {}
     baseline_info:
       cache_read_input_token_cost: 0
       cache_creation_input_token_cost: 1

@@ -10,6 +10,7 @@ call:
       prompt_tokens_details:
         cached_tokens: 20
         cache_creation_tokens: 3
+        cache_creation_token_details: {}
     baseline_info: null
 compare: {ignore: []}
 env: {}

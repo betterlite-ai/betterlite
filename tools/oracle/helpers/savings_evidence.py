@@ -73,9 +73,9 @@ def _run_baseline_usage(input_value: dict[str, Json]) -> Json:
         "cached_tokens": None if details is None else details.cached_tokens,
         "cache_write_tokens": None if details is None else details.cache_write_tokens,
         "cache_creation_tokens": cache_creation_tokens,
-        "text_tokens": None if details is None else details.text_tokens,
+        "text_tokens": None if details is None else (details.text_tokens or 0),
         "has_cache_creation_token_details": details is not None
-        and details.cache_creation_token_details is not None,
+        and getattr(details, "cache_creation_token_details", None) is not None,
     }
 
 
