@@ -5,6 +5,8 @@ call:
     mode: async
     events:
       - {kind: line, line: 'data: {"choices":[],"usage":{"prompt_tokens":0,"completion_tokens":2,"total_tokens":2},"id":"ignored"}'}
+      - {kind: line, line: 'data: {"choices":[],"usage":{"prompt_tokens":null,"completion_tokens":0}}'}
+      - {kind: line, line: 'data: {"choices":[{}],"usage":{"prompt_tokens":null,"completion_tokens":3}}'}
       - {kind: line, line: 'data: [DONE]'}
 env: {}
 compare:

@@ -1,9 +1,7 @@
 import asyncio
-from collections.abc import Callable
 from copy import deepcopy
 from typing import Literal, TypedDict, cast
 
-import litellm
 from litellm.llms.databricks.streaming_utils import ModelResponseIterator
 from litellm.types.utils import GenericStreamingChunk
 from pydantic import JsonValue
@@ -66,12 +64,7 @@ def receive(event: Event) -> str:
         raise ValueError(event["message"])
     if event["kind"] == "receive_error":
         raise OSError(event["message"])
-    method_name = "_strip_sse_data_from_chunk"
-    strip_sse = cast(
-        Callable[[str | None], str | None],
-        getattr(litellm.CustomStreamWrapper, method_name),
-    )
-    return strip_sse(event["line"]) or ""
+    return event["line"]
 
 
 def chunk_value(chunk: GenericStreamingChunk) -> dict[str, object]:
