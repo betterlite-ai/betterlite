@@ -249,6 +249,7 @@ fn convert_litellm(raw: RawLiteLlm, lookup: Lookup<'_>) -> Result<LiteLlmSetting
     let request_timeout = number(raw.request_timeout, timeout_path, lookup, parse_float)?;
     let (modify_params, default_max_tokens) = environment_defaults(raw.modify_params, lookup)?;
     Ok(LiteLlmSettings {
+        ssl_verify: raw.ssl_verify,
         num_retries,
         request_timeout,
         drop_params: raw.drop_params,

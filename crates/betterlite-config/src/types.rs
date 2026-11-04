@@ -78,6 +78,7 @@ pub struct ProxyTrust {
 
 #[derive(Debug, Clone)]
 pub struct LiteLlmSettings {
+    pub ssl_verify: Option<bool>,
     pub num_retries: Option<u32>,
     pub request_timeout: Option<f64>,
     pub drop_params: Option<bool>,

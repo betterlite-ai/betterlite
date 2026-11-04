@@ -44,6 +44,7 @@ pub mod sso_return_targets;
 pub mod sso_status_debug;
 pub mod sso_user_sync;
 mod tests;
+pub mod tls;
 pub mod tool_prices;
 pub mod types;
 pub mod ui_settings;
