@@ -41,8 +41,7 @@ pub fn get_app_routes<E>(route: &Route, endpoint_route: &E) -> Vec<RouteInfo>
 where
     E: NamedEndpoint,
 {
-    let mut route_infos = Vec::with_capacity(1);
-    route_infos.push(RouteInfo {
+    let route_info = RouteInfo {
         path: route.path.clone(),
         methods: route.methods.clone().flatten(),
         name: route.name.clone(),
@@ -51,8 +50,8 @@ where
             .as_ref()
             .and_then(|context| safe_get_endpoint_name(context, endpoint_route)),
         mounted_app: None,
-    });
-    route_infos
+    };
+    std::iter::once(route_info).collect()
 }
 
 #[must_use]
@@ -73,10 +72,7 @@ pub fn get_routes_for_mounted_app(route: &Route) -> Vec<RouteInfo> {
 
 fn mounted_sub_route_info(mount_path: &str, sub_route: &Route) -> Option<RouteInfo> {
     let endpoint_name = sub_route.endpoint.as_deref();
-    let class_name = sub_route
-        .app
-        .as_ref()
-        .and_then(|_| sub_route.app_name.as_deref());
+    let class_name = sub_route.app.as_ref().and(sub_route.app_name.as_deref());
     if endpoint_name.is_none() && class_name.is_none() {
         return None;
     }

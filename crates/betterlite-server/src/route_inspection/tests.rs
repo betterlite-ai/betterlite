@@ -1,12 +1,10 @@
 #![cfg(test)]
 
-use std::fmt::Debug;
-use std::fmt::Write as _;
+use std::io;
 use std::sync::{Arc, Mutex};
 
-use tracing::{Event, Subscriber, field::Field};
-use tracing_subscriber::layer::{Context, Layer};
-use tracing_subscriber::prelude::*;
+use tracing::subscriber::with_default;
+use tracing_subscriber::fmt::MakeWriter;
 
 use super::{
     NamedEndpoint, Route, RouteInfo, RouteInspectionError, get_app_routes,
@@ -130,9 +128,12 @@ fn mounted_routes_skip_routes_without_endpoint_or_nested_app() {
 
 #[test]
 fn endpoint_name_error_is_logged_and_dropped() {
-    let records = Arc::new(Mutex::new(Vec::new()));
-    let subscriber = tracing_subscriber::registry().with(CapturedEvents(Arc::clone(&records)));
-    let name = tracing::subscriber::with_default(subscriber, || {
+    let records = Arc::new(Mutex::new(String::new()));
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_writer(CaptureWriter(Arc::clone(&records)))
+        .finish();
+    let name = with_default(subscriber, || {
         super::safe_get_endpoint_name(
             "broken endpoint",
             &Endpoint {
@@ -144,27 +145,31 @@ fn endpoint_name_error_is_logged_and_dropped() {
     });
     assert_eq!(name, None);
     let captured = records.lock().unwrap();
-    assert_eq!(captured.len(), 1);
-    assert!(captured[0].contains("broken endpoint"));
+    assert!(captured.contains("ERROR"));
+    assert!(captured.contains("broken endpoint"));
+    drop(captured);
 }
 
-struct CapturedEvents(Arc<Mutex<Vec<String>>>);
+#[derive(Clone)]
+struct CaptureWriter(Arc<Mutex<String>>);
 
-impl<S: Subscriber> Layer<S> for CapturedEvents {
-    fn on_event(&self, event: &Event<'_>, _context: Context<'_, S>) {
-        if *event.metadata().level() == tracing::Level::ERROR {
-            let mut fields = EventFields(String::new());
-            event.record(&mut fields);
-            self.0.lock().unwrap().push(fields.0);
-        }
+impl io::Write for CaptureWriter {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        let text = String::from_utf8_lossy(buffer);
+        self.0.lock().map_err(io::Error::other)?.push_str(&text);
+        Ok(buffer.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
     }
 }
 
-struct EventFields(String);
+impl<'writer> MakeWriter<'writer> for CaptureWriter {
+    type Writer = Self;
 
-impl tracing::field::Visit for EventFields {
-    fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
-        let _ = write!(self.0, "{}={value:?} ", field.name());
+    fn make_writer(&'writer self) -> Self::Writer {
+        self.clone()
     }
 }
 
