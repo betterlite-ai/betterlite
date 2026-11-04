@@ -95,7 +95,7 @@ checks:
       why: >-
         the argument decoder unit tests fail or do not exist
       run: >-
-        cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog_llm_argument_decoder::test/)'
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(datadog_llm_obs|datadog_llm_obs::tests)::(.*::)?datadog_llm_argument_decoder::test/)'
     - id: tool-definitions-tests
       why: >-
         tool definition projection tests fail or do not exist

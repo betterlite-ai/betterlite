@@ -54,8 +54,6 @@ description: >-
   allocate 330 store/queue logic and 420 tests/wiring, capped at 800 changed lines.
 scope:
   paths:
-    - crates/betterlite-db/src/baseline.rs
-    - crates/betterlite-db/src/baseline/**
     - crates/betterlite-db/src/baseline/store.rs
     - crates/betterlite-db/src/baseline/store/**
     - crates/betterlite-db/src/baseline/flush.rs

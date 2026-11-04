@@ -86,7 +86,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(agentops_callback_)'
     - id: agentops-tests
       why: AgentOps callback tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^agentops::/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::callbacks::(.*::)?agentops::/)'
     - id: levo-health
       why: Levo health check tests fail or do not exist
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(levo_health_)'
@@ -95,16 +95,16 @@ checks:
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^levo.*partial/)'
     - id: levo-tests
       why: Levo callback tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^levo::/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::callbacks::(.*::)?levo::/)'
     - id: logfire-tests
       why: Logfire callback tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^logfire::/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::callbacks::(.*::)?logfire::/)'
     - id: traceloop-tests
       why: Traceloop callback tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^traceloop::/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::callbacks::(.*::)?traceloop::/)'
     - id: weave-tests
       why: Weave callback tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^weave::/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::callbacks::(.*::)?weave::/)'
 
 oracle_cases: []
 

@@ -21,8 +21,6 @@ description: >-
   consuming route concern and is not a method in this range.
 scope:
   paths:
-  - crates/betterlite-provider/src/api.rs
-  - crates/betterlite-provider/src/api/**
   - crates/betterlite-provider/src/api/speech_http.rs
   - crates/betterlite-provider/src/api/speech_http/**
   - crates/betterlite-provider/src/operation.rs

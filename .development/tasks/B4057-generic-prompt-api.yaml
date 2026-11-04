@@ -27,7 +27,11 @@ description: >-
   {key} and {{key}} variables, the API endpoint and param names.
 scope:
   paths:
-    - crates/betterlite-models/**
+    - crates/betterlite-models/Cargo.toml
+    - crates/betterlite-models/src/generic_prompt_api.rs
+    - crates/betterlite-models/src/generic_prompt_api/**
+    - crates/betterlite-models/src/generic_prompt_api_cache.rs
+    - crates/betterlite-models/src/generic_prompt_api_cache/**
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/integrations/generic-prompt-api/**
   lint_tables: false
@@ -119,6 +123,7 @@ pitfalls:
   - "_apply_variables supports both {key} and {{key}} syntax (double braces); it replaces the {variable_name} form first, then the {{variable_name}} form, so a template can use either or both."
   - "The _compile_prompt_helper and async_compile_prompt_helper methods raise ValueError wrapping any exception, including from API fetch, JSON parsing, and variable application."
   - "should_run_prompt_management returns true when prompt_id is not None or when provider_specific_query_params exist in the PromptSpec's litellm_params; an empty dict of params still counts as present."
+  - "Rust has no __init__.py: GenericPromptManager, prompt_initializer, and prompt_initializer_registry go in crates/betterlite-models/src/generic_prompt_api.rs or its submodules. Cache management (_get_cache_key, _common_caching_logic, clear_cache) lives in the sibling module crates/betterlite-models/src/generic_prompt_api_cache.rs, not nested under generic_prompt_api, so its tests match the generic_prompt_api_cache:: check filter."
 review_level: standard
 budget:
   max_changed_lines: 1500

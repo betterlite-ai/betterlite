@@ -1691,6 +1691,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-semantic"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "indexmap 2.14.2",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "betterlite-server"
 version = "0.1.0"
 dependencies = [

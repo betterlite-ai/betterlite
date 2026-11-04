@@ -16,8 +16,12 @@ description: >-
 
 scope:
   paths:
-    - crates/betterlite-guardrails/**
-    - crates/betterlite-config/**
+    - crates/betterlite-guardrails/src/prisma_airs_extraction.rs
+    - crates/betterlite-guardrails/src/prisma_airs_extraction/**
+    - crates/betterlite-guardrails/src/prisma_airs_masking.rs
+    - crates/betterlite-guardrails/src/prisma_airs_masking/**
+    - crates/betterlite-config/src/sections/panw_prisma_airs.rs
+    - crates/betterlite-config/src/sections/panw_prisma_airs/**
   lint_tables: false
 
 references:

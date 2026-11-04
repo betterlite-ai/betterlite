@@ -1,11 +1,11 @@
 id: B4579
 title: CLI key management and encryption migration commands
 description: >-
-  Build the keys and encryption command groups of betterlite-management-cli in Rust, ported from LiteLLM's litellm/proxy/client/cli/commands/keys.py and encryption.py. The keys group lives in tools/management-cli/src/commands/keys.rs and keys/**, the encryption group in tools/management-cli/src/commands/encryption.rs and encryption/**. Each group is a clap Subcommand enum with LiteLLM's command names (keys list, generate, delete and import; encryption migrate), option names, defaults and help texts, so the CLI root can mount it. Each command takes B4560's context values (base_url and the optional api_key), a betterlite_redact::secret::Redactor and two injected writers for stdout and stderr, and returns Ok or its module's own error enum. That enum has an Aborted variant for click.Abort (the root prints "Aborted!" to stderr and exits 1), a Usage variant for click.BadParameter (the root reports it on stderr and exits 2), and variants for everything else (the root prints the text on one line to stderr and exits 1, where Python printed a traceback and exited 1).
+  Build the keys and encryption command groups of betterlite-cli in Rust, ported from LiteLLM's litellm/proxy/client/cli/commands/keys.py and encryption.py. The keys group lives in crates/betterlite-cli/src/commands/keys.rs and keys/**, the encryption group in crates/betterlite-cli/src/commands/encryption.rs and encryption/**. Each group is a clap Subcommand enum with LiteLLM's command names (keys list, generate, delete and import; encryption migrate), option names, defaults and help texts, so the CLI root can mount it. Each command takes B4560's context values (base_url and the optional api_key), a betterlite_redact::secret::Redactor and two injected writers for stdout and stderr, and returns Ok or its module's own error enum. That enum has an Aborted variant for click.Abort (the root prints "Aborted!" to stderr and exits 1), a Usage variant for click.BadParameter (the root reports it on stderr and exits 2), and variants for everything else (the root prints the text on one line to stderr and exits 1, where Python printed a traceback and exited 1).
 
   docs/compatibility.md decides what is ported. Command and option names, the requests sent (paths, query, body fields, headers), pagination at 100, the two created_since formats, the lines the commands print, the exit codes and the streams stay LiteLLM's. Python's truthiness, str() and repr text and json.dumps formatting are not copied: a field that is absent or null takes its default, an explicit value is used as given, and a value outside LiteLLM's declared type is an error that names the field. Error texts are betterlite's own words, as rule errors-match-litellm says.
 
-  HTTP. LiteLLM's KeysManagementClient and HTTPClient sit in the Python client package (B169), so this task carries the requests these commands send, in keys/** and encryption/**, on the shared client B4580 builds in tools/management-cli/src/commands.rs: reqwest, rustls, a current-thread tokio runtime, 30-second connect and read timeouts, the base URL with its trailing slashes stripped, and Authorization: Bearer {api_key} added when a key is given. Key requests always send Content-Type: application/json, including the GET requests the shared client otherwise sends with no body header, so keys.rs sets that header itself on every call. The keys client sends GET {base}/key/list with a query parameter only for each option given (page, size, user_id, team_id, organization_id, key_hash, key_alias, return_full_object, include_team_keys, booleans as "true" or "false"), POST {base}/key/generate with a JSON object of only the fields given (models, aliases, spend, duration, key_alias, team_id, user_id, budget_id, config), and POST {base}/key/delete with {"keys": ..., "key_aliases": ...}, null for a list not given. A status from 400 to 599 is an HTTP error that keeps the status and the body, and its text is "HTTP {status} {reason} for {method} {url}" with the status's standard reason phrase and the full request URL. In the keys client a 401 is Unauthorized instead (UnauthorizedError), with that same text passed through Redactor::redact_string; HTTPClient has no 401 case and redacts nothing. Any other status parses the body as JSON, and a body that isn't JSON is an error that names the URL. Tests build the Redactor with betterlite_redact::secret::MINIMUM_CUSTOM_KEY_LENGTH (16), the default of LiteLLM's MINIMUM_CUSTOM_KEY_LENGTH env var.
+  HTTP. LiteLLM's KeysManagementClient and HTTPClient sit in the Python client package (B169), so this task carries the requests these commands send, in keys/** and encryption/**, on the shared client B4580 builds in crates/betterlite-cli/src/commands.rs: reqwest, rustls, a current-thread tokio runtime, 30-second connect and read timeouts, the base URL with its trailing slashes stripped, and Authorization: Bearer {api_key} added when a key is given. Key requests always send Content-Type: application/json, including the GET requests the shared client otherwise sends with no body header, so keys.rs sets that header itself on every call. The keys client sends GET {base}/key/list with a query parameter only for each option given (page, size, user_id, team_id, organization_id, key_hash, key_alias, return_full_object, include_team_keys, booleans as "true" or "false"), POST {base}/key/generate with a JSON object of only the fields given (models, aliases, spend, duration, key_alias, team_id, user_id, budget_id, config), and POST {base}/key/delete with {"keys": ..., "key_aliases": ...}, null for a list not given. A status from 400 to 599 is an HTTP error that keeps the status and the body, and its text is "HTTP {status} {reason} for {method} {url}" with the status's standard reason phrase and the full request URL. In the keys client a 401 is Unauthorized instead (UnauthorizedError), with that same text passed through Redactor::redact_string; HTTPClient has no 401 case and redacts nothing. Any other status parses the body as JSON, and a body that isn't JSON is an error that names the URL. Tests build the Redactor with betterlite_redact::secret::MINIMUM_CUSTOM_KEY_LENGTH (16), the default of LiteLLM's MINIMUM_CUSTOM_KEY_LENGTH env var.
 
   Output. Where LiteLLM calls rich.print_json, betterlite writes the parsed response as standard JSON, pretty-printed with a two-space indent (serde_json::to_writer_pretty on a serde_json::Value), and a newline. Object keys come out in serde_json's map order, sorted by key since no crate turns on preserve_order, and numbers as serde_json writes them. docs/compatibility.md puts key order and 300 against 300.0 outside the contract, so tests parse stdout back to a Value, compare it with the expected value and check the text equals serde_json::to_string_pretty of it plus "\n". "Generated key: {response}" prints the response as compact one-line JSON (serde_json::to_string). Table cells are plain text: a string as it is, a number as its JSON text, and "" when the field is absent or null. Tables are drawn with comfy-table, default features off, and have no color.
 
@@ -24,12 +24,12 @@ description: >-
   Tests. Test functions live in tests.rs files under keys/ and encryption/ with the name prefixes the checks select: list_, generate_, delete_, import_, dates_, client_ and output_ under commands::keys, and migrate_ under commands::encryption. They run each command against a local HTTP server on 127.0.0.1:0 (axum is in Cargo.lock) that records the method, path, decoded query pairs, headers and body of every request and answers canned statuses and bodies. They compare the exact stdout and stderr bytes for the lines LiteLLM prints, and assert the returned error variant and the field or option its message names for betterlite's own error texts.
 scope:
   paths:
-    - tools/management-cli/Cargo.toml
+    - crates/betterlite-cli/Cargo.toml
     - Cargo.lock
-    - tools/management-cli/src/commands/keys.rs
-    - tools/management-cli/src/commands/keys/**
-    - tools/management-cli/src/commands/encryption.rs
-    - tools/management-cli/src/commands/encryption/**
+    - crates/betterlite-cli/src/commands/keys.rs
+    - crates/betterlite-cli/src/commands/keys/**
+    - crates/betterlite-cli/src/commands/encryption.rs
+    - crates/betterlite-cli/src/commands/encryption/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/keys.py#L35-L112
@@ -110,28 +110,28 @@ checks:
   commands:
     - id: keys-list
       why: the keys list tests are missing or the query, table, JSON output or type errors differ from the description
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::keys::.*tests::list_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^commands::keys::.*tests::list_/)'
     - id: keys-generate
       why: the keys generate tests are missing or the option parsing, body, output or error path differs from the description
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::keys::.*tests::generate_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^commands::keys::.*tests::generate_/)'
     - id: keys-delete
       why: the keys delete tests are missing or the body, output or error path differs from the description
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::keys::.*tests::delete_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^commands::keys::.*tests::delete_/)'
     - id: keys-import
       why: the keys import tests are missing or a message, page request, filter, field copy or summary differs from the description
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::keys::.*tests::import_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^commands::keys::.*tests::import_/)'
     - id: keys-dates
       why: the date tests are missing or a created_since or created_at value is read differently from the description
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::keys::.*tests::dates_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^commands::keys::.*tests::dates_/)'
     - id: keys-client
       why: the request tests are missing or a URL, header, timeout, error text or redaction differs from the description
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::keys::.*tests::client_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^commands::keys::.*tests::client_/)'
     - id: keys-output
       why: the output tests are missing or the JSON text, the one-line JSON or a table cell differs from the description
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::keys::.*tests::output_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^commands::keys::.*tests::output_/)'
     - id: encryption-migrate
       why: the encryption tests are missing or a request, output line or error path differs from the description
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::encryption::.*tests::migrate_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^commands::encryption::.*tests::migrate_/)'
 oracle_cases: []
 deviations:
   - what: >-
@@ -141,7 +141,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/keys.py#L97-L112
 out_of_scope:
   - The CLI root mounts both groups and turns Aborted, Usage and every other error into "Aborted!", usage output, one-line errors and exit codes (main.py L153 and L160); B134 covers main.py.
-  - tools/management-cli/src/commands.rs declares the keys and encryption modules and holds the shared client this task's requests go through; B4580 owns that file.
+  - crates/betterlite-cli/src/commands.rs declares the keys and encryption modules and holds the shared client this task's requests go through; B4580 owns that file.
   - The context values base_url and api_key and the config file they come from are B4560's.
   - KeysManagementClient and HTTPClient as an importable Python API are B169's (the M12 Python package); this task ports only the requests these commands send, on the shared client B4580 builds.
   - >-
@@ -165,7 +165,7 @@ pitfalls:
   - >-
     The migrate POST carries Content-Type: application/json only because it has the body {}, and the check GET carries no Content-Type at all.
   - >-
-    reqwest's query encoder and requests' quote_plus differ on characters such as "*" and "~", so tests compare decoded query pairs, not raw query strings.
+    betterlite-http builds reqwest without its query feature, so query strings come from url::Url::query_pairs_mut. That encoder and requests' quote_plus differ on characters such as "*" and "~", so tests compare decoded query pairs, not raw query strings.
 review_level: security
 budget:
   max_changed_lines: 1500

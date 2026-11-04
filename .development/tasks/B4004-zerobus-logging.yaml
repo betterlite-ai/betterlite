@@ -160,37 +160,37 @@ checks:
   commands:
     - id: connection-resolution-tests
       why: Connection resolution, secret lookup, table validation or workspace ID extraction fails.
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus_connection::/)' -- --include-ignored
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(zerobus|zerobus::logger)::(.*::)?zerobus_connection::/)' -- --include-ignored
     - id: task-lifecycle-tests
       why: Periodic or batch task creation, liveness checks or event-loop handling is broken.
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus_logger_tasks::/)' -- --include-ignored
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(zerobus|zerobus::logger)::(.*::)?zerobus_logger_tasks::/)' -- --include-ignored
     - id: client-caching-tests
       why: Client caching, connection comparison or client recreation on change fails.
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus_client_cache::/)' -- --include-ignored
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(zerobus|zerobus::logger)::(.*::)?zerobus_client_cache::/)' -- --include-ignored
     - id: event-dispatch-tests
       why: Success or failure event dispatch does not reach _enqueue.
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus_event_dispatch::/)' -- --include-ignored
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(zerobus|zerobus::logger)::(.*::)?zerobus_event_dispatch::/)' -- --include-ignored
     - id: enqueuing-tests
       why: Row queuing, batch triggering, exception swallowing or task recreation fails.
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus_enqueue::/)' -- --include-ignored
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(zerobus|zerobus::logger)::(.*::)?zerobus_enqueue::/)' -- --include-ignored
     - id: privacy-redaction-tests
       why: Privacy redaction, payload extraction or condition checking is wrong.
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus_privacy::/)' -- --include-ignored
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(zerobus|zerobus::logger)::(.*::)?zerobus_privacy::/)' -- --include-ignored
     - id: overflow-handling-tests
       why: Queue overflow trimming, mid-flush protection or logging fails.
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus_overflow::/)' -- --include-ignored
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(zerobus|zerobus::logger)::(.*::)?zerobus_overflow::/)' -- --include-ignored
     - id: flush-state-tests
       why: _flushing flag is not set, cleared, or cleared on error.
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus_flush_state::/)' -- --include-ignored
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(zerobus|zerobus::logger)::(.*::)?zerobus_flush_state::/)' -- --include-ignored
     - id: batch-sending-tests
       why: Retryable vs permanent failure handling or ZerobusIngestError dispatch is broken.
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus_batch_send::/)' -- --include-ignored
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(zerobus|zerobus::logger)::(.*::)?zerobus_batch_send::/)' -- --include-ignored
     - id: defaults-tests
       why: Default values for batch size, interval or message logging are wrong or missing.
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus_defaults::/)' -- --include-ignored
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(zerobus|zerobus::logger)::(.*::)?zerobus_defaults::/)' -- --include-ignored
     - id: capacity-handling-tests
       why: At-capacity row dropping during flush is missing or breaks the queue.
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus_capacity::/)' -- --include-ignored
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(zerobus|zerobus::logger)::(.*::)?zerobus_capacity::/)' -- --include-ignored
 oracle_cases: []
 deviations:
   - what: >-

@@ -5,7 +5,8 @@ description: >-
 
 scope:
   paths:
-    - crates/betterlite-db/**
+    - crates/betterlite-db/src/identity_budget_reset.rs
+    - crates/betterlite-db/src/identity_budget_reset/**
     - Cargo.toml
   lint_tables: true
 

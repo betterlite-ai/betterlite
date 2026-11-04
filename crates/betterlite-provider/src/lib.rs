@@ -1,4 +1,5 @@
 pub mod adapters;
+pub mod aiohttp_openai_dispatch;
 pub mod anthropic_dispatch;
 pub mod api;
 pub mod azure_dispatch;

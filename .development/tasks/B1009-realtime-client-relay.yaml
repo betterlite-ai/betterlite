@@ -21,8 +21,6 @@ description: >-
   105 service adapters and 30 wiring, 620 changed lines.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/realtime_client_relay.rs
   - crates/betterlite-core/src/api/realtime_client_relay/**
   - tools/oracle/src/websocket_driver.rs
