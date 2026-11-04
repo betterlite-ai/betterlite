@@ -141,3 +141,138 @@ async fn fallback_finishes_after_publish_is_cancelled() {
     let _continued = continue_tx.send(());
     let _finished = finished_rx.await;
 }
+
+#[tokio::test]
+async fn applies_policy_to_full_queue_and_partially_written_line_on_close() {
+    let path = std::env::temp_dir().join(format!(
+        "betterlite-collector-full-{}.sock",
+        std::process::id()
+    ));
+    let _removed = std::fs::remove_file(&path);
+    let listener = tokio::net::UnixListener::bind(&path).unwrap();
+    let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+    let (accepted_tx, accepted_rx) = tokio::sync::oneshot::channel();
+    let accepted = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        let _sent = accepted_tx.send(());
+        let _release = release_rx.await;
+        drop(stream);
+    });
+    let counter = Arc::new(AtomicUsize::new(0));
+    let producer = SpendEventProducer::new(
+        CollectorAddress::Unix {
+            path: path.to_string_lossy().into_owned(),
+        },
+        1,
+        1.0,
+        UnavailablePolicy::Fallback,
+        fallback(Arc::clone(&counter)),
+    );
+    assert_eq!(
+        producer.publish(vec![b'x'; 32 * 1024 * 1024]).await,
+        PublishOutcome::Queued
+    );
+    tokio::time::timeout(Duration::from_secs(1), accepted_rx)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        producer.publish(b"queued\n".to_vec()).await,
+        PublishOutcome::Queued
+    );
+    assert_eq!(
+        producer.publish(b"full\n".to_vec()).await,
+        PublishOutcome::Fallback
+    );
+    producer.close(Duration::ZERO).await;
+    assert_eq!(counter.load(Ordering::SeqCst), 3);
+    let _released = release_tx.send(());
+    let _accepted = accepted.await;
+    let _removed = std::fs::remove_file(path);
+}
+
+#[tokio::test]
+async fn applies_policy_after_peer_half_close() {
+    let path = std::env::temp_dir().join(format!(
+        "betterlite-collector-eof-{}.sock",
+        std::process::id()
+    ));
+    let _removed = std::fs::remove_file(&path);
+    let listener = tokio::net::UnixListener::bind(&path).unwrap();
+    let (half_closed_tx, half_closed_rx) = tokio::sync::oneshot::channel();
+    let server = tokio::spawn(async move {
+        let mut stream = listener.accept().await.unwrap().0;
+        let mut received = [0; 6];
+        stream.read_exact(&mut received).await.unwrap();
+        tokio::io::AsyncWriteExt::shutdown(&mut stream)
+            .await
+            .unwrap();
+        let _sent = half_closed_tx.send(());
+    });
+    let counter = Arc::new(AtomicUsize::new(0));
+    let producer = SpendEventProducer::new(
+        CollectorAddress::Unix {
+            path: path.to_string_lossy().into_owned(),
+        },
+        1,
+        1.0,
+        UnavailablePolicy::Fallback,
+        fallback(Arc::clone(&counter)),
+    );
+    assert_eq!(
+        producer.publish(b"event\n".to_vec()).await,
+        PublishOutcome::Queued
+    );
+    let _half_closed = half_closed_rx.await;
+    assert_eq!(
+        producer.publish(b"next\n".to_vec()).await,
+        PublishOutcome::Queued
+    );
+    producer.close(Duration::from_secs(1)).await;
+    server.await.unwrap();
+    assert_eq!(counter.load(Ordering::SeqCst), 1);
+    let _removed = std::fs::remove_file(path);
+}
+
+#[tokio::test(start_paused = true)]
+async fn reconnect_backoff_uses_injected_tokio_time() {
+    let counter = Arc::new(AtomicUsize::new(0));
+    let notify = Arc::new(tokio::sync::Notify::new());
+    let callback_counter = Arc::clone(&counter);
+    let callback_notify = Arc::clone(&notify);
+    let fallback: Fallback = Arc::new(move |_| {
+        let counter = Arc::clone(&callback_counter);
+        let notify = Arc::clone(&callback_notify);
+        Box::pin(async move {
+            counter.fetch_add(1, Ordering::SeqCst);
+            notify.notify_one();
+            Ok(())
+        })
+    });
+    let producer = SpendEventProducer::new(
+        CollectorAddress::Unix {
+            path: "/missing-collector.sock".to_owned(),
+        },
+        4,
+        1.0,
+        UnavailablePolicy::Fallback,
+        fallback,
+    );
+    assert_eq!(
+        producer.publish(b"first\n".to_vec()).await,
+        PublishOutcome::Queued
+    );
+    notify.notified().await;
+    assert_eq!(
+        producer.publish(b"backoff\n".to_vec()).await,
+        PublishOutcome::Fallback
+    );
+    tokio::time::advance(Duration::from_secs(1)).await;
+    assert_eq!(
+        producer.publish(b"after\n".to_vec()).await,
+        PublishOutcome::Queued
+    );
+    notify.notified().await;
+    producer.close(Duration::ZERO).await;
+    assert_eq!(counter.load(Ordering::SeqCst), 3);
+}
