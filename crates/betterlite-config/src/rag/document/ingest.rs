@@ -35,7 +35,6 @@ pub struct RAGIngestEmbeddingOptions {
 #[serde(deny_unknown_fields)]
 pub struct OpenAIVectorStoreOptions {
     #[serde(default)]
-    #[serde(rename = "custom_llm_provider")]
     pub custom_llm_provider: Option<String>,
     #[serde(default)]
     pub vector_store_id: Option<String>,
@@ -53,7 +52,6 @@ pub struct OpenAIVectorStoreOptions {
 #[serde(deny_unknown_fields)]
 pub struct BedrockVectorStoreOptions {
     #[serde(default)]
-    #[serde(rename = "custom_llm_provider")]
     pub custom_llm_provider: Option<String>,
     #[serde(default)]
     pub vector_store_id: Option<String>,
@@ -99,7 +97,6 @@ pub struct BedrockVectorStoreOptions {
 #[serde(deny_unknown_fields)]
 pub struct VertexAIVectorStoreOptions {
     #[serde(default)]
-    #[serde(rename = "custom_llm_provider")]
     pub custom_llm_provider: Option<String>,
     #[serde(default)]
     pub vector_store_id: Option<String>,
@@ -153,7 +150,6 @@ pub enum S3VectorsDistanceMetric {
 #[serde(deny_unknown_fields)]
 pub struct S3VectorsVectorStoreOptions {
     #[serde(default)]
-    #[serde(rename = "custom_llm_provider")]
     pub custom_llm_provider: Option<String>,
     #[serde(default)]
     pub vector_bucket_name: Option<String>,
@@ -201,7 +197,6 @@ pub struct S3VectorsVectorStoreOptions {
 #[serde(deny_unknown_fields)]
 pub struct GeminiVectorStoreOptions {
     #[serde(default)]
-    #[serde(rename = "custom_llm_provider")]
     pub custom_llm_provider: Option<String>,
     #[serde(default)]
     pub vector_store_id: Option<String>,

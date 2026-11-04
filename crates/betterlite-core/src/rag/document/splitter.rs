@@ -1,21 +1,12 @@
-mod helpers;
-mod tests;
+pub mod output;
 
 use std::collections::VecDeque;
 use std::num::TryFromIntError;
 
-use helpers::{char_slices, chunk_by_chars, is_strip_whitespace, push_joined, select_separator};
+use output::{SplitError, SplitOutput, push_joined};
 use thiserror::Error;
 
 pub const DEFAULT_MAX_RECURSE_DEPTH: u32 = 100;
-pub const MAX_SPLIT_OUTPUT_BYTES: usize = 0x1000_0000;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
-pub enum SplitError {
-    #[error("text splitter output exceeds {limit} bytes")]
-    OutputTooLarge { limit: usize },
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub enum ChunkConfigError {
     #[error("chunk_size must be greater than zero, got {chunk_size}")]
@@ -40,31 +31,6 @@ pub enum ChunkConfigError {
 
 pub trait TextSplitter {
     fn split_text(&self, text: &str) -> Result<Vec<String>, SplitError>;
-}
-
-#[derive(Default)]
-pub(crate) struct SplitOutput {
-    pub(super) chunks: Vec<String>,
-    total_bytes: usize,
-}
-
-impl SplitOutput {
-    fn push(&mut self, chunk: String) -> Result<(), SplitError> {
-        let next = self
-            .total_bytes
-            .checked_add(chunk.len())
-            .ok_or(SplitError::OutputTooLarge {
-                limit: MAX_SPLIT_OUTPUT_BYTES,
-            })?;
-        if next > MAX_SPLIT_OUTPUT_BYTES {
-            return Err(SplitError::OutputTooLarge {
-                limit: MAX_SPLIT_OUTPUT_BYTES,
-            });
-        }
-        self.total_bytes = next;
-        self.chunks.push(chunk);
-        Ok(())
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -261,5 +227,60 @@ impl RecursiveCharacterTextSplitter {
             }
         }
         Ok(())
+    }
+}
+
+fn select_separator<'sep>(text: &str, separators: &'sep [String]) -> (&'sep str, &'sep [String]) {
+    for (index, candidate) in separators.iter().enumerate() {
+        if candidate.is_empty() {
+            return (candidate, &[]);
+        }
+        if text.contains(candidate.as_str()) {
+            let rest_start = index.saturating_add(1);
+            return (candidate, separators.get(rest_start..).unwrap_or(&[]));
+        }
+    }
+    (separators.last().map_or("", String::as_str), &[])
+}
+
+fn char_slices(text: &str) -> Vec<&str> {
+    let mut result = Vec::new();
+    for (start, ch) in text.char_indices() {
+        let end = start.saturating_add(ch.len_utf8());
+        if let Some(slice) = text.get(start..end) {
+            result.push(slice);
+        }
+    }
+    result
+}
+
+fn chunk_by_chars(
+    text: &str,
+    chunk_size: usize,
+    output: &mut SplitOutput,
+) -> Result<(), SplitError> {
+    let mut chunk = String::new();
+    let mut chunk_chars = 0_usize;
+    for character in text.chars() {
+        chunk.push(character);
+        chunk_chars = chunk_chars.saturating_add(1);
+        if chunk_chars == chunk_size {
+            output.push(chunk)?;
+            chunk = String::new();
+            chunk_chars = 0;
+        }
+    }
+    if !chunk.is_empty() {
+        output.push(chunk)?;
+    }
+    Ok(())
+}
+
+// str.strip()'s whitespace set also covers U+001C-U+001F; Rust's is_whitespace() does not.
+fn is_strip_whitespace(candidate: char) -> bool {
+    if candidate.is_whitespace() {
+        true
+    } else {
+        ('\u{1c}'..='\u{1f}').contains(&candidate)
     }
 }

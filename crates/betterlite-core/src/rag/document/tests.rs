@@ -200,8 +200,8 @@ fn chunk_output_cap_stops_the_force_split_path() {
     let error = splitter.split_text(&text).expect_err("output exceeds cap");
     assert_eq!(
         error,
-        super::splitter::SplitError::OutputTooLarge {
-            limit: super::splitter::MAX_SPLIT_OUTPUT_BYTES,
+        super::splitter::output::SplitError::OutputTooLarge {
+            limit: super::splitter::output::MAX_SPLIT_OUTPUT_BYTES,
         }
     );
     assert_eq!(
@@ -217,8 +217,8 @@ fn chunk_output_cap_stops_the_merge_path() {
     let text = "a ".repeat(600_000);
     assert_eq!(
         splitter.split_text(&text),
-        Err(super::splitter::SplitError::OutputTooLarge {
-            limit: super::splitter::MAX_SPLIT_OUTPUT_BYTES
+        Err(super::splitter::output::SplitError::OutputTooLarge {
+            limit: super::splitter::output::MAX_SPLIT_OUTPUT_BYTES
         })
     );
 }
@@ -268,7 +268,7 @@ fn splitter_recursion_depth_bound_separates_normal_splitting_from_character_fall
     let splitter = RecursiveCharacterTextSplitter::new(4, 2, vec![String::new()]).expect("valid");
     let separators = vec![String::new()];
 
-    let mut at_limit = super::splitter::SplitOutput::default();
+    let mut at_limit = super::splitter::output::SplitOutput::default();
     splitter
         .split_recursive(
             "abcdefgh",
@@ -282,7 +282,7 @@ fn splitter_recursion_depth_bound_separates_normal_splitting_from_character_fall
         vec!["abcd".to_owned(), "cdef".to_owned(), "efgh".to_owned()]
     );
 
-    let mut past_limit = super::splitter::SplitOutput::default();
+    let mut past_limit = super::splitter::output::SplitOutput::default();
     splitter
         .split_recursive(
             "abcdefgh",
@@ -470,6 +470,70 @@ fn pdf_line_move_t_star_uses_text_leading() {
     "BT /F1 12 Tf 100 700 Td (Hello) Tj 0 -5 Td (World) Tj 0 10 Td (Again) Tj ET",
     "HelloWorldAgain"
 )]
+#[case::td_missing("BT /F1 12 Tf 100 700 Td (Hello) Tj Td (World) Tj ET", "HelloWorld")]
+#[case::td_missing_y("BT /F1 12 Tf 100 700 Td (Hello) Tj 0 Td (World) Tj ET", "HelloWorld")]
+#[case::td_bad_x(
+    "BT /F1 12 Tf 100 700 Td (Hello) Tj /bad -14 Td (World) Tj ET",
+    "Hello\nWorld"
+)]
+#[case::td_bad_y(
+    "BT /F1 12 Tf 100 700 Td (Hello) Tj 0 /bad Td (World) Tj ET",
+    "HelloWorld"
+)]
+#[case::td_out_of_range(
+    "BT /F1 12 Tf 100 700 Td (Hello) Tj 0 2147483648 Td (World) Tj ET",
+    "HelloWorld"
+)]
+#[case::td_lower_out_of_range(
+    "BT /F1 12 Tf 100 700 Td (Hello) Tj 0 -2147483649 Td (World) Tj ET",
+    "HelloWorld"
+)]
+#[case::td_leading_missing(
+    "BT /F1 12 Tf 100 700 Td (Hello) Tj 14 TL TD T* (World) Tj ET",
+    "Hello\nWorld"
+)]
+#[case::td_leading_bad_x(
+    "BT /F1 12 Tf 100 700 Td (Hello) Tj /bad -14 TD T* (World) Tj ET",
+    "Hello\nWorld"
+)]
+#[case::td_leading_bad_y(
+    "BT /F1 12 Tf 100 700 Td (Hello) Tj 14 TL 0 /bad TD T* (World) Tj ET",
+    "Hello\nWorld"
+)]
+#[case::tl_missing(
+    "BT /F1 12 Tf 100 700 Td (Hello) Tj 14 TL TL T* (World) Tj ET",
+    "HelloWorld"
+)]
+#[case::tl_bad(
+    "BT /F1 12 Tf 100 700 Td (Hello) Tj 14 TL /bad TL T* (World) Tj ET",
+    "HelloWorld"
+)]
+#[case::tm_short(
+    "BT /F1 12 Tf 100 700 Td (Hello) Tj 1 0 Tm (World) Tj ET",
+    "Hello\nWorld"
+)]
+#[case::tm_bad(
+    "BT /F1 12 Tf 100 700 Td (Hello) Tj 1 0 /bad 1 100 700 Tm (World) Tj ET",
+    "Hello\nWorld"
+)]
+#[case::cm_short(
+    "BT /F1 12 Tf 100 700 Td (Hello) Tj 1 0 cm 0 0 Td (World) Tj ET",
+    "HelloWorld"
+)]
+#[case::cm_bad(
+    "BT /F1 12 Tf 100 700 Td (Hello) Tj 1 0 /bad 1 0 14 cm 0 0 Td (World) Tj ET",
+    "HelloWorld"
+)]
+#[case::tj_missing("BT /F1 12 Tf 100 700 Td (Hello) Tj Tj (World) Tj ET", "HelloWorld")]
+#[case::tj_non_string("BT /F1 12 Tf 100 700 Td (Hello) Tj 42 Tj (World) Tj ET", "HelloWorld")]
+#[case::quote_short(
+    "BT /F1 12 Tf 100 700 Td (Hello) Tj 14 TL 0 0 \" (World) Tj ET",
+    "HelloWorld"
+)]
+#[case::cm_resets_identity(
+    "1 0 0 1 0 100 cm BT /F1 12 Tf 100 700 Td (Hello) Tj cm 0 0 Td (World) Tj ET",
+    "Hello\nWorld"
+)]
 fn pdf_line_move_tracks_text_state(#[case] stream: &str, #[case] expected: &str) {
     assert_eq!(
         extract_text_from_pdf(&pdf_with_stream(stream)).as_deref(),
@@ -615,4 +679,10 @@ fn get_ingestion_class_rejects_an_unsupported_provider() {
 fn replays_the_pdf_extraction_corpus(#[files("fuzz/corpus/pdf_extraction/*")] path: PathBuf) {
     let bytes = fs::read(path).expect("corpus seed file reads");
     let _extracted = extract_text_from_pdf(&bytes);
+}
+
+#[test]
+fn pdf_skips_an_absent_font_and_keeps_known_text() {
+    let pdf = pdf_with_stream("BT /Missing 12 Tf (Unknown) Tj /F1 12 Tf (Known) Tj ET");
+    assert_eq!(extract_text_from_pdf(&pdf).as_deref(), Some("Known"));
 }

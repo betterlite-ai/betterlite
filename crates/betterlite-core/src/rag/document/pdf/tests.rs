@@ -46,3 +46,22 @@ fn extracted_page_cap_counts_decoded_bytes(#[case] extra: usize, #[case] expecte
         expected
     );
 }
+
+#[test]
+fn pdf_skips_a_font_with_rejected_encoding() {
+    let mut document = Document::new();
+    let font = document.add_object(dictionary! {
+        "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "Helvetica",
+    });
+    let rejected = document.add_object(dictionary! { "Type" => "NotFont" });
+    let contents = document.add_object(Stream::new(
+        dictionary! {},
+        b"BT /Rejected 12 Tf (Unknown) Tj /F1 12 Tf (Known) Tj ET".to_vec(),
+    ));
+    let page = document.add_object(dictionary! {
+        "Type" => "Page",
+        "Resources" => dictionary! { "Font" => dictionary! { "F1" => font, "Rejected" => rejected } },
+        "Contents" => contents,
+    });
+    assert_eq!(extract_page_text(&document, page).as_deref(), Some("Known"));
+}

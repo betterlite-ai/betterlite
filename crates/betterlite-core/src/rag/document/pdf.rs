@@ -1,13 +1,12 @@
 mod position;
 mod tests;
 
-use std::ops::Neg as _;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use lopdf::content::{Content, Operation};
 use lopdf::{Document, Encoding, LoadOptions, Object};
 
-use position::{IDENTITY, Matrix, Position, number};
+use position::{Matrix, Position, number};
 
 const MAX_DECOMPRESSED_PDF_BYTES: usize = 64 * 1024 * 1024;
 pub const MAX_EXTRACTED_PDF_TEXT_BYTES: usize = 64 * 1024 * 1024;
@@ -56,7 +55,6 @@ fn extract_page_text(document: &Document, page_id: lopdf::ObjectId) -> Option<St
         encodings: fonts,
         active_font: None,
         font_size: 0.0_f64,
-        leading: 0.0_f64,
         position: Position::default(),
         saved: Vec::new(),
     };
@@ -91,7 +89,6 @@ struct PageText<'doc> {
     encodings: Vec<(Vec<u8>, Encoding<'doc>)>,
     active_font: Option<usize>,
     font_size: f64,
-    leading: f64,
     position: Position,
     saved: Vec<(Matrix, Option<usize>, f64, f64)>,
 }
@@ -100,31 +97,22 @@ impl PageText<'_> {
     fn apply(&mut self, operation: &Operation) -> Option<()> {
         match operation.operator.as_str() {
             "Tf" => self.select_font(&operation.operands)?,
-            "TL" => self.set_leading(&operation.operands)?,
-            "Td" => self.move_by(&operation.operands, false)?,
-            "TD" => self.move_by(&operation.operands, true)?,
-            "Tm" => self.set_text_matrix(&operation.operands)?,
-            "T*" => {
-                self.position.text.translate(0.0, self.leading.neg());
-                self.position.check(&mut self.text, self.font_size);
-            }
-            "Tj" => self.show_text(operation.operands.first()?)?,
+            "Tj" => self.show_text(operation.operands.first())?,
             "TJ" => self.show_text_array(operation.operands.first()?)?,
-            "'" => self.show_next_line_text(operation.operands.first()?)?,
-            "\"" => self.show_next_line_text(operation.operands.get(2)?)?,
-            "BT" => self.position.text = IDENTITY,
-            "cm" => {
-                self.position.graphics =
-                    Matrix::read(&operation.operands)?.combine(self.position.graphics);
+            "'" => self.show_next_line_text(operation.operands.first())?,
+            "\"" if operation.operands.len() >= 3 => {
+                self.show_next_line_text(operation.operands.get(2))?;
             }
             "q" => self.saved.push((
                 self.position.graphics,
                 self.active_font,
                 self.font_size,
-                self.leading,
+                self.position.leading,
             )),
             "Q" => self.restore_graphics(),
-            _ => {}
+            _ => self
+                .position
+                .apply(operation, &mut self.text, self.font_size),
         }
         Some(())
     }
@@ -134,54 +122,33 @@ impl PageText<'_> {
             self.position.graphics = matrix;
             self.active_font = font;
             self.font_size = size;
-            self.leading = leading;
+            self.position.leading = leading;
         }
     }
 
     fn select_font(&mut self, operands: &[Object]) -> Option<()> {
-        let name = operands.first()?.as_name().ok()?;
-        self.active_font = self
-            .encodings
-            .iter()
-            .position(|(candidate, _)| candidate.as_slice() == name);
-        self.font_size = operands.get(1).and_then(number).unwrap_or(0.0_f64);
+        let name = operands.first()?;
+        self.active_font = self.encodings.iter().position(|(candidate, _)| {
+            name.as_name()
+                .is_ok_and(|value| candidate.as_slice() == value)
+        });
+        self.font_size = operands.get(1).and_then(number).unwrap_or(self.font_size);
         Some(())
     }
 
-    fn set_leading(&mut self, operands: &[Object]) -> Option<()> {
-        self.leading = number(operands.first()?)?;
-        Some(())
-    }
-
-    fn move_by(&mut self, operands: &[Object], set_leading: bool) -> Option<()> {
-        let horizontal_delta = number(operands.first()?)?;
-        let vertical_delta = number(operands.get(1)?)?;
-        if set_leading {
-            self.leading = vertical_delta.neg();
-        }
-        self.position
-            .text
-            .translate(horizontal_delta, vertical_delta);
-        self.position.check(&mut self.text, self.font_size);
-        Some(())
-    }
-
-    fn set_text_matrix(&mut self, operands: &[Object]) -> Option<()> {
-        self.position.text = Matrix::read(operands)?;
-        self.position.check(&mut self.text, self.font_size);
-        Some(())
-    }
-
-    fn show_next_line_text(&mut self, object: &Object) -> Option<()> {
-        self.position.text.translate(0.0, self.leading.neg());
-        self.position.check(&mut self.text, self.font_size);
+    fn show_next_line_text(&mut self, object: Option<&Object>) -> Option<()> {
+        self.position.next_line(&mut self.text, self.font_size);
         self.show_text(object)
     }
 
-    fn show_text(&mut self, object: &Object) -> Option<()> {
-        let bytes = object.as_str().ok()?;
-        let encoding_index = self.active_font?;
-        let encoding = &self.encodings.get(encoding_index)?.1;
+    fn show_text(&mut self, object: Option<&Object>) -> Option<()> {
+        let Some(bytes) = object.and_then(|value| value.as_str().ok()) else {
+            return Some(());
+        };
+        let Some((_, encoding)) = self.active_font.and_then(|index| self.encodings.get(index))
+        else {
+            return Some(());
+        };
         let decoded = Document::decode_text(encoding, bytes).ok()?;
         self.text.push_str(&decoded);
         self.position.height = self.font_size;
@@ -193,7 +160,7 @@ impl PageText<'_> {
         let values = object.as_array().ok()?;
         for value in values {
             match value {
-                Object::String(_, _) => self.show_text(value)?,
+                Object::String(_, _) => self.show_text(Some(value))?,
                 Object::Integer(offset) if *offset < -100 => self.text.push(' '),
                 Object::Integer(_) | Object::Real(_) => {}
                 Object::Boolean(_)
