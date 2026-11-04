@@ -1,0 +1,9 @@
+kind: helper
+name: auth-route-patterns-sibling-root-kept
+env: {}
+compare: {ignore: []}
+call:
+  auth_route_patterns:
+    function: scope
+    requests:
+      - {"name": "sibling_root_kept", "path": "/proxy-other/v1/models", "root_path": "/proxy", "url_path": "/wrong"}
