@@ -1,5 +1,5 @@
 use indexmap::IndexMap;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 
 use super::CallbackMetadataError;
@@ -65,14 +65,14 @@ impl TrustedCallbacks {
                 "newrelic_api_key",
                 self.newrelic_api_key
                     .as_ref()
-                    .map(|secret| secret.expose_secret()),
+                    .map(ExposeSecret::expose_secret),
             ),
             ("newrelic_region", self.newrelic_region.as_deref()),
             (
                 "signoz_ingestion_key",
                 self.signoz_ingestion_key
                     .as_ref()
-                    .map(|secret| secret.expose_secret()),
+                    .map(ExposeSecret::expose_secret),
             ),
             (
                 "signoz_ingestion_endpoint",

@@ -16,8 +16,16 @@ impl Flag {
     pub fn resolve(&self) -> Result<Option<bool>, CallbackMetadataError> {
         match self {
             Self::Boolean(value) => Ok(Some(*value)),
-            Self::Text(text) => betterlite_env::flag("turn_off_message_logging", text)
-                .map_err(|source| CallbackMetadataError::Flag { source }),
+            Self::Text(text) if text.contains("os.environ/") => {
+                Err(CallbackMetadataError::EnvironmentReference {
+                    field: "turn_off_message_logging".to_owned(),
+                })
+            }
+            Self::Text(text) => Ok(match text.trim().to_ascii_lowercase().as_str() {
+                "true" => Some(true),
+                "false" => Some(false),
+                _ => None,
+            }),
         }
     }
 }
@@ -74,16 +82,14 @@ impl PrivacyRequest {
         for slot in slots.iter().flatten() {
             let checked = callback_metadata(&Json::Object(slot.callback_params.clone()))?;
             for (name, value) in checked.fields {
-                if super::callbacks::SUPPORTED.contains(&name.as_str()) {
-                    output.entry(name).or_insert(value);
-                }
+                output.entry(name).or_insert(value);
             }
-            if let Some(flag) = &slot.turn_off_message_logging {
-                if let Some(disabled) = flag.resolve()? {
-                    output
-                        .entry("turn_off_message_logging".to_owned())
-                        .or_insert(Json::Bool(disabled));
-                }
+            if let Some(flag) = &slot.turn_off_message_logging
+                && let Some(disabled) = flag.resolve()?
+            {
+                output
+                    .entry("turn_off_message_logging".to_owned())
+                    .or_insert(Json::Bool(disabled));
             }
         }
         Ok(output)
@@ -118,11 +124,12 @@ impl PrivacyRequest {
             content: context.message_logging_disabled
                 || !callback_message_logging
                 || (!disabled && dynamic.unwrap_or(enabled || settings.turn_off_message_logging)),
-            key_info: slots
-                .iter()
-                .flatten()
-                .find_map(|slot| slot.redact_user_api_key_info)
-                .unwrap_or(settings.redact_user_api_key_info),
+            key_info: settings.redact_user_api_key_info
+                || slots
+                    .iter()
+                    .flatten()
+                    .find_map(|slot| slot.redact_user_api_key_info)
+                    .unwrap_or(false),
         })
     }
 }
@@ -137,12 +144,15 @@ fn header(metadata: &Metadata, name: &str) -> Result<bool, CallbackMetadataError
         .unwrap_or(false))
 }
 
-pub fn decide_request<Request: Serialize>(
+pub fn decide_request<Request>(
     request: &Request,
     settings: Settings,
     context: PrivacyContext,
     callback_message_logging: bool,
-) -> Result<Decision, CallbackMetadataError> {
+) -> Result<Decision, CallbackMetadataError>
+where
+    Request: Serialize,
+{
     let encoded = serde_json::to_vec(request)?;
     let privacy: PrivacyRequest = serde_json::from_slice(&encoded)?;
     privacy.decide(settings, context, callback_message_logging)

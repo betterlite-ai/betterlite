@@ -15,3 +15,6 @@ deviations:
   - what: Nested dynamic environment references are rejected recursively.
     why: The security boundary must hold for structured callback values as well as strings, without ever looking up request-supplied environment names.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/initialize_dynamic_callback_params.py#L39-L40
+  - what: Typed request privacy metadata can opt into user-key information redaction without disabling the global setting.
+    why: B188 requires request-level privacy metadata; the pinned helper reads only the global user-key redaction flag.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/redact_messages.py#L410-L437

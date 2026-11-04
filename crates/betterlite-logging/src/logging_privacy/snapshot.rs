@@ -5,12 +5,15 @@ use serde::Serialize;
 use super::request::Decision;
 use super::{CallbackMetadataError, callback_snapshot, credentials, redact_user_api_key_info};
 
-pub fn snapshot<Payload: Serialize>(
+pub fn snapshot<Payload>(
     source: &Payload,
     metadata: &Json,
     decision: Decision,
     redactor: &Redactor,
-) -> Result<(Json, Json), CallbackMetadataError> {
+) -> Result<(Json, Json), CallbackMetadataError>
+where
+    Payload: Serialize,
+{
     let encoded = serde_json::to_vec(source)?;
     let parsed: Json = serde_json::from_slice(&encoded)?;
     let payload = callback_snapshot(parsed, decision, redactor);

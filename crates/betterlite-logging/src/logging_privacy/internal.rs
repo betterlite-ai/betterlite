@@ -55,7 +55,9 @@ pub fn forward(
 
 #[derive(Default, Deserialize, Serialize)]
 pub struct Session {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub litellm_session_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub litellm_trace_id: Option<String>,
 }
 
@@ -105,7 +107,7 @@ pub fn call_category(call_type: Option<&str>) -> CallCategory {
 }
 
 #[must_use]
-pub fn is_unbilled(category: CallCategory, origin: Option<Origin>, background: bool) -> bool {
+pub const fn is_unbilled(category: CallCategory, origin: Option<Origin>, background: bool) -> bool {
     match category {
         CallCategory::Inference => false,
         CallCategory::Management => {

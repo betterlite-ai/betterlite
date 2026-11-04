@@ -1,6 +1,8 @@
+use betterlite_env::EnvError;
 use serde::Deserialize;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
+use crate::resolve::resolve_string;
 use crate::sections::Section;
 
 #[derive(Debug, Default, Deserialize)]
@@ -53,17 +55,21 @@ enum Flag {
     Environment(String),
 }
 
-fn resolve<L: EnvironmentLookup>(
-    value: Option<Flag>,
-    name: &str,
-    lookup: &L,
-) -> Result<bool, ConfigError> {
+fn resolve<L>(value: Option<Flag>, name: &str, lookup: &L) -> Result<bool, ConfigError>
+where
+    L: EnvironmentLookup,
+{
     match value {
         None => Ok(false),
         Some(Flag::Boolean(flag)) => Ok(flag),
         Some(Flag::Environment(reference)) => {
             let path = format!("litellm_settings.{name}");
-            let text = crate::resolve::resolve_string(reference, &path, lookup)?;
+            if !reference.starts_with("os.environ/") {
+                return Err(ConfigError::Environment {
+                    source: EnvError::Bool { name: path },
+                });
+            }
+            let text = resolve_string(reference, &path, lookup)?;
             Ok(betterlite_env::flag(&path, &text)?.unwrap_or(false))
         }
     }

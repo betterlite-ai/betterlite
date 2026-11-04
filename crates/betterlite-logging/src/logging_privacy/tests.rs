@@ -3,12 +3,18 @@
 use betterlite_config::sections::logging_privacy::Settings;
 use betterlite_models::decisions::Json;
 use betterlite_openai::chat::ChatRequest;
+use betterlite_openai::chat::response::ChatResponse;
 use betterlite_openai::embedding::EmbeddingResponse;
+use betterlite_openai::stream::chunk::Chunk;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use indexmap::IndexMap;
 use rstest::rstest;
+use secrecy::SecretString;
 use serde::Deserialize;
+use std::{fs, path::PathBuf};
 
-use super::internal::{Forwarding, Origin, forward};
+use super::callbacks::{SpanScope, TrustedCallbacks, validate_environment};
+use super::internal::{Forwarding, Origin, Session, call_category, forward, is_unbilled};
 use super::request::{Decision, PrivacyRequest, decide_request};
 use super::snapshot::snapshot;
 use super::{CallbackMetadataError, PrivacyContext, callback_metadata};
@@ -20,6 +26,16 @@ use super::{CallbackMetadataError, PrivacyContext, callback_metadata};
     test_policy,
     r#"{"global":true,"request":{"turn_off_message_logging":false}}"#,
     "false"
+)]
+#[case::unrecognized_string(
+    test_policy,
+    r#"{"request":{"turn_off_message_logging":"yes"}}"#,
+    "false"
+)]
+#[case::unrecognized_global(
+    test_policy,
+    r#"{"global":true,"request":{"turn_off_message_logging":"invalid"}}"#,
+    "true"
 )]
 #[case::dynamic_string(
     test_policy,
@@ -38,9 +54,23 @@ use super::{CallbackMetadataError, PrivacyContext, callback_metadata};
     "true"
 )]
 #[case::dynamic_over_enable(test_policy, r#"{"request":{"turn_off_message_logging":false,"metadata":{"headers":{"litellm-enable-message-redaction":true}}}}"#, "false")]
+#[case::direct_precedence(test_policy, r#"{"request":{"turn_off_message_logging":false,"litellm_params":{"metadata":{"turn_off_message_logging":true}}}}"#, "false")]
+#[case::preferred_metadata(test_policy, r#"{"request":{"litellm_metadata":{"turn_off_message_logging":false},"metadata":{"turn_off_message_logging":true}}}"#, "false")]
+#[case::preferred_headers(test_policy, r#"{"global":true,"request":{"litellm_metadata":{},"metadata":{"headers":{"litellm-disable-message-redaction":true}}}}"#, "true")]
+#[case::null_metadata_fallback(test_policy, r#"{"global":true,"request":{"litellm_metadata":null,"metadata":{"headers":{"litellm-disable-message-redaction":true}}}}"#, "false")]
 #[case::nested_over_metadata(test_policy, r#"{"request":{"litellm_params":{"metadata":{"turn_off_message_logging":true}},"litellm_metadata":{"turn_off_message_logging":false}}}"#, "true")]
 #[case::inherited_private(test_policy, r#"{"inherited":true,"request":{"turn_off_message_logging":false,"headers":{"litellm-disable-message-redaction":true}}}"#, "true")]
 #[case::callback_private(test_policy, r#"{"callback":false}"#, "true")]
+#[case::key_info_global(test_key_policy, r#"{"redact_user_api_key_info":false}"#, "global")]
+#[case::key_info_request(
+    test_key_policy,
+    r#"{"metadata":{"redact_user_api_key_info":true}}"#,
+    "request"
+)]
+#[case::metadata_debug(test_metadata_debug, "", "")]
+#[case::unknown_result(test_unknown_result, "", "")]
+#[case::deep_credentials(test_deep_credentials, "", "")]
+#[case::empty_forward(test_empty_forward, "", "")]
 #[case::child_stays_private(test_child, "", "")]
 #[case::credential_shapes(test_credentials, "", "")]
 #[case::per_callback_copies(test_copies, "", "")]
@@ -173,16 +203,10 @@ fn test_copies(_input: &str, _expected: &str) {
     assert!(!public_text.contains("sk-aaaa"));
     assert!(!serde_json::to_string(&private).unwrap().contains("hello"));
     assert!(serde_json::to_string(&request).unwrap().contains("sk-aaaa"));
-    assert!(
-        !serde_json::to_string(&public_metadata)
-            .unwrap()
-            .contains("secret")
-    );
-    assert!(
-        !serde_json::to_string(&private_metadata)
-            .unwrap()
-            .contains("user_api_key")
-    );
+    let public_meta = serde_json::to_string(&public_metadata).unwrap();
+    let private_meta = serde_json::to_string(&private_metadata).unwrap();
+    assert!(!public_meta.contains("secret"));
+    assert!(!private_meta.contains("user_api_key"));
 }
 
 fn test_embedding(_input: &str, _expected: &str) {
@@ -242,7 +266,11 @@ fn test_invalid_request(input: &str, _expected: &str) {
         PrivacyContext::default(),
         true,
     );
-    assert!(result.is_err());
+    let error = result.unwrap_err();
+    assert!(matches!(
+        error,
+        CallbackMetadataError::Json { .. } | CallbackMetadataError::EnvironmentReference { .. }
+    ));
 }
 
 fn test_forwarding(input: &str, expected: &str) {
@@ -261,7 +289,7 @@ fn test_forwarding(input: &str, expected: &str) {
 }
 
 fn test_stream(_input: &str, _expected: &str) {
-    let chunk: betterlite_openai::stream::chunk::Chunk = serde_json::from_str(r#"{"id":"c","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"private","tool_calls":[{"index":0,"function":{"name":"tool","arguments":"private"}}],"function_call":{"name":"old","arguments":"private"}}}]}"#).unwrap();
+    let chunk: Chunk = serde_json::from_str(r#"{"id":"c","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"private","tool_calls":[{"index":0,"function":{"name":"tool","arguments":"private"}}],"function_call":{"name":"old","arguments":"private"}}}]}"#).unwrap();
     let original = serde_json::to_string(&chunk).unwrap();
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
     let (private, _) = snapshot(
@@ -282,7 +310,7 @@ fn test_stream(_input: &str, _expected: &str) {
 }
 
 fn test_response(_input: &str, _expected: &str) {
-    let answer: betterlite_openai::chat::response::ChatResponse = serde_json::from_str(r#"{"id":"c","object":"chat.completion","created":1,"model":"m","choices":[{"index":0,"message":{"role":"assistant","content":null,"audio":{"data":"private"},"annotations":["private"],"tool_calls":[{"id":"t","type":"function","function":{"name":"tool","arguments":"private"}}]},"logprobs":{"content":[{"token":"private"}]}}]}"#).unwrap();
+    let answer: ChatResponse = serde_json::from_str(r#"{"id":"c","object":"chat.completion","created":1,"model":"m","choices":[{"index":0,"message":{"role":"assistant","content":null,"audio":{"data":"private"},"annotations":["private"],"tool_calls":[{"id":"t","type":"function","function":{"name":"tool","arguments":"private"}}]},"logprobs":{"content":[{"token":"private"}]}}]}"#).unwrap();
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
     let (private, _) = snapshot(
         &answer,
@@ -315,23 +343,23 @@ fn test_provider_metadata(_input: &str, _expected: &str) {
 }
 
 fn test_environment(input: &str, expected: &str) {
-    let result = super::callbacks::validate_environment(input);
+    let result = validate_environment(input);
     assert_eq!(result.is_ok().to_string(), expected);
 }
 
 fn test_span_scope(input: &str, expected: &str) {
-    let result = serde_json::from_str::<super::callbacks::SpanScope>(&format!("\"{input}\""));
+    let result = serde_json::from_str::<SpanScope>(&format!("\"{input}\""));
     assert_eq!(result.is_ok().to_string(), expected);
 }
 
 fn test_trusted_overlay(_input: &str, _expected: &str) {
-    let trusted = super::callbacks::TrustedCallbacks {
-        newrelic_api_key: Some(secrecy::SecretString::from("configured-secret")),
+    let trusted = TrustedCallbacks {
+        newrelic_api_key: Some(SecretString::from("configured-secret")),
         newrelic_region: Some("eu".to_owned()),
         signoz_ingestion_key: None,
         signoz_ingestion_endpoint: None,
     };
-    let mut fields = indexmap::IndexMap::new();
+    let mut fields = IndexMap::new();
     trusted.overlay(&mut fields);
     assert_eq!(
         fields.get("newrelic_region"),
@@ -341,31 +369,24 @@ fn test_trusted_overlay(_input: &str, _expected: &str) {
 }
 
 fn test_billing(input: &str, expected: &str) {
-    let origin = if input == "poll" {
-        Some(Origin::BackgroundResponseCostPoll)
-    } else {
-        None
-    };
+    let origin = (input == "poll").then_some(Origin::BackgroundResponseCostPoll);
     let call = if matches!(input, "poll" | "background") {
         "get_responses"
     } else {
         input
     };
-    let free = super::internal::is_unbilled(
-        super::internal::call_category(Some(call)),
-        origin,
-        input == "background",
-    );
+    let free = is_unbilled(call_category(Some(call)), origin, input == "background");
     assert_eq!(free.to_string(), expected);
 }
 
 fn test_session(_input: &str, _expected: &str) {
-    let ids: super::internal::Session = serde_json::from_str(
+    let ids: Session = serde_json::from_str(
         r#"{"litellm_session_id":"session","litellm_trace_id":"trace","unrelated":true}"#,
     )
     .unwrap();
     assert_eq!(ids.litellm_session_id.as_deref(), Some("session"));
     assert_eq!(ids.litellm_trace_id.as_deref(), Some("trace"));
+    assert_eq!(serde_json::to_string(&Session::default()).unwrap(), "{}");
 }
 
 fn test_child(_input: &str, _expected: &str) {
@@ -402,10 +423,9 @@ fn test_credentials(_input: &str, _expected: &str) {
 
 #[rstest]
 fn replays_the_privacy_corpus(
-    #[files("../betterlite-openai/fuzz/corpus/chat_request/logging-privacy-*")]
-    path: std::path::PathBuf,
+    #[files("../betterlite-openai/fuzz/corpus/chat_request/logging-privacy-*")] path: PathBuf,
 ) {
-    let bytes = std::fs::read(path).unwrap();
+    let bytes = fs::read(path).unwrap();
     if let Ok(request) = ChatRequest::parse(&bytes) {
         let _result = decide_request(
             &request,
@@ -414,4 +434,72 @@ fn replays_the_privacy_corpus(
             true,
         );
     }
+}
+
+fn test_unknown_result(_input: &str, _expected: &str) {
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
+    let payload = serde_json::from_str(r#"{"response":"private"}"#).unwrap();
+    let safe = super::callback_snapshot(
+        payload,
+        Decision {
+            content: true,
+            key_info: false,
+        },
+        &redactor,
+    );
+    assert_eq!(safe, serde_json::from_str::<Json>(r#"{"messages":[{"role":"user","content":"redacted-by-litellm"}],"prompt":"","input":"","response":{"text":"redacted-by-litellm"}}"#).unwrap());
+}
+
+fn test_deep_credentials(_input: &str, _expected: &str) {
+    let payload = (0_usize..105).fold(Json::Text("deep-private".to_owned()), |child, _depth| {
+        Json::List(vec![child])
+    });
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
+    let safe = super::callback_snapshot(
+        payload,
+        Decision {
+            content: false,
+            key_info: false,
+        },
+        &redactor,
+    );
+    assert!(
+        !serde_json::to_string(&safe)
+            .unwrap()
+            .contains("deep-private")
+    );
+}
+
+fn test_empty_forward(_input: &str, _expected: &str) {
+    let empty = IndexMap::new();
+    assert!(
+        forward(&empty, Origin::AutorouterClassifier, Forwarding::Attached)
+            .unwrap()
+            .is_empty()
+    );
+    let detached = forward(&empty, Origin::ShadowEvalJudge, Forwarding::Detached).unwrap();
+    assert_eq!(
+        detached.get("internal_call_origin"),
+        Some(&Json::Text("shadow_eval_judge".to_owned()))
+    );
+}
+
+fn test_metadata_debug(_input: &str, _expected: &str) {
+    let payload = serde_json::from_str(r#"{"langsmith_api_key":"private-value"}"#).unwrap();
+    let metadata = callback_metadata(&payload).unwrap();
+    let debug = format!("{metadata:?}");
+    assert!(debug.contains("langsmith_api_key"));
+    assert!(!debug.contains("private-value"));
+}
+
+fn test_key_policy(input: &str, expected: &str) {
+    let request: PrivacyRequest = serde_json::from_str(input).unwrap();
+    let settings = Settings {
+        turn_off_message_logging: false,
+        redact_user_api_key_info: expected == "global",
+    };
+    let decision = request
+        .decide(settings, PrivacyContext::default(), true)
+        .unwrap();
+    assert!(decision.key_info);
 }

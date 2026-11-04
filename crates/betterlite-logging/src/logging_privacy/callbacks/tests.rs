@@ -4,15 +4,19 @@ use crate::logging_privacy::callback_metadata;
 use betterlite_models::decisions::Json;
 use rstest::rstest;
 use std::io::{self, Write};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
+use tracing::subscriber::with_default;
 
 #[derive(Clone)]
 struct Captured(Arc<Mutex<Vec<u8>>>);
 
 impl Write for Captured {
-    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(bytes);
-        Ok(bytes.len())
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -33,7 +37,7 @@ fn logging_privacy_tests_behavior(#[case] field: &str) {
         .with_writer(move || captured.clone())
         .finish();
     let payload: Json = serde_json::from_str(&format!(r#"{{"{field}":"private-value"}}"#)).unwrap();
-    tracing::subscriber::with_default(subscriber, || {
+    with_default(subscriber, || {
         let safe = callback_metadata(&payload).unwrap();
         assert!(safe.fields.is_empty());
         assert!(!format!("{safe:?}").contains("private-value"));

@@ -5,6 +5,7 @@ pub mod request;
 pub mod snapshot;
 
 use indexmap::IndexMap;
+use std::fmt;
 
 use betterlite_models::decisions::Json;
 use betterlite_redact::error::RedactionError;
@@ -38,11 +39,6 @@ pub enum CallbackMetadataError {
     Json {
         #[from]
         source: serde_json::Error,
-    },
-    #[error(transparent)]
-    Flag {
-        #[from]
-        source: betterlite_env::EnvError,
     },
     #[error("callback param '{field}' contains an os.environ/ reference")]
     EnvironmentReference { field: String },
@@ -135,6 +131,7 @@ fn contains_environment_reference(value: &Json) -> bool {
     }
 }
 
+#[must_use]
 pub fn callback_snapshot(
     mut value: Json,
     decision: request::Decision,
@@ -151,19 +148,25 @@ fn redact_tree(value: &mut Json) {
     match value {
         Json::Object(fields) => {
             scrub_provider_metadata(fields);
+            if fields.contains_key("response") {
+                fields.entry("messages".to_owned()).or_insert(Json::Null);
+                fields.entry("prompt".to_owned()).or_insert(Json::Null);
+                fields.entry("input".to_owned()).or_insert(Json::Null);
+            }
             for (key, child) in fields.iter_mut() {
                 match key.as_str() {
+                    "response" => redact_result(child),
                     "messages" => {
                         *child = Json::List(vec![Json::Object(IndexMap::from([
                             ("role".to_owned(), Json::Text("user".to_owned())),
                             ("content".to_owned(), Json::Text(REDACTED.to_owned())),
-                        ]))])
+                        ]))]);
                     }
                     "prompt" | "input" => *child = Json::Text(String::new()),
                     "content" | "reasoning_content" | "text" | "refusal" | "arguments"
                         if !matches!(child, Json::Null) =>
                     {
-                        *child = Json::Text(REDACTED.to_owned())
+                        *child = Json::Text(REDACTED.to_owned());
                     }
                     "thinking_blocks" | "audio" | "logprobs" | "annotations" => *child = Json::Null,
                     _ => redact_tree(child),
@@ -172,6 +175,25 @@ fn redact_tree(value: &mut Json) {
         }
         Json::List(items) => items.iter_mut().for_each(redact_tree),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => {}
+    }
+}
+
+fn redact_result(value: &mut Json) {
+    match value {
+        Json::Null => {}
+        Json::Object(fields)
+            if fields.contains_key("choices")
+                || fields.contains_key("output")
+                || fields.get("object") == Some(&Json::Text("list".to_owned())) =>
+        {
+            redact_tree(value);
+        }
+        Json::Object(_) | Json::Text(_) | Json::Bool(_) | Json::Number(_) | Json::List(_) => {
+            *value = Json::Object(IndexMap::from([(
+                "text".to_owned(),
+                Json::Text(REDACTED.to_owned()),
+            )]));
+        }
     }
 }
 
@@ -226,10 +248,9 @@ pub fn redact_user_api_key_info(metadata: &Json, enabled: bool) -> Json {
 #[path = "logging_privacy/tests.rs"]
 mod tests;
 
-impl std::fmt::Debug for CallbackMetadata {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("CallbackMetadata")
+impl fmt::Debug for CallbackMetadata {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CallbackMetadata")
             .field("fields", &self.fields.keys().collect::<Vec<_>>())
             .field("skipped_fields", &self.skipped_fields)
             .finish()

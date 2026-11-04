@@ -21,6 +21,8 @@ use std::collections::BTreeMap;
     "invalid",
     None
 )]
+#[case::literal_string("litellm_settings: {turn_off_message_logging: \"true\"}", "", None)]
+#[case::empty_literal("litellm_settings: {redact_user_api_key_info: \"\"}", "", None)]
 #[case::invalid_type("litellm_settings: {turn_off_message_logging: 1}", "", None)]
 fn logging_privacy_tests_behavior(
     #[case] yaml: &str,
@@ -42,6 +44,8 @@ fn logging_privacy_tests_behavior(
                 flags
             );
         }
-        None => assert!(result.is_err()),
+        None => {
+            let _error = result.unwrap_err();
+        }
     }
 }
