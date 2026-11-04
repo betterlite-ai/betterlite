@@ -165,7 +165,7 @@ def _capture_gunicorn(
     stdout = StringIO()
     with (
         patch.dict(sys.modules, modules),
-        patch.dict(os.environ, environment),
+        patch.dict(os.environ, environment, clear=True),
         patch.object(proxy_cli, "start_query_engine_reaper", lambda: None),
         redirect_stdout(stdout),
     ):
@@ -307,7 +307,7 @@ def run(input_value: dict[str, Json]) -> Json:
 
         with (
             patch.dict(sys.modules, {"litellm.proxy.prometheus_cleanup": cleanup}),
-            patch.dict(os.environ, environment),
+            patch.dict(os.environ, environment, clear=True),
             patch("os.makedirs", skip_makedirs),
             redirect_stdout(StringIO()),
         ):
