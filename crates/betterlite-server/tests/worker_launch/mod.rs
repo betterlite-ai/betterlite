@@ -48,6 +48,23 @@ fn granian_multiple_workers_are_rejected_by_native_runtime() {
 }
 
 #[test]
+fn granian_threads_and_unsupported_option_warnings_are_in_plan() {
+    let mut launch = options(Backend::Granian);
+    launch.runtime_threads = Some(4);
+    launch.max_requests = Some(100);
+    launch.ciphers = Some("HIGH".to_owned());
+    let plan = launch_plan(&launch).expect("launch plan");
+    assert_eq!(plan.runtime_threads, Some(4));
+    assert_eq!(
+        plan.warnings,
+        [
+            "--max_requests_before_restart is not supported by Granian",
+            "--ciphers is not applied when using --run_granian",
+        ]
+    );
+}
+
+#[test]
 fn granian_rejects_incomplete_tls_pair() {
     let mut launch = options(Backend::Granian);
     launch.certfile = Some(PathBuf::from("cert.pem"));
@@ -70,6 +87,36 @@ fn gunicorn_plan_has_preload_timeout_and_cleanup_only_with_metrics_dir() {
             .expect("launch plan")
             .process
             .child_exit_cleanup
+    );
+}
+
+#[test]
+fn gunicorn_request_limits_and_jitter_are_conditional() {
+    let mut launch = options(Backend::Gunicorn);
+    launch.max_requests = Some(80);
+    launch.max_requests_jitter = Some(10);
+    let plan = launch_plan(&launch).expect("launch plan");
+    assert_eq!(plan.max_requests, Some(80));
+    assert_eq!(plan.max_requests_jitter, Some(10));
+    launch.max_requests = None;
+    let jitter_only = launch_plan(&launch).expect("launch plan");
+    assert_eq!(jitter_only.max_requests_jitter, None);
+    assert_eq!(
+        jitter_only.warnings,
+        [
+            "--max_requests_before_restart_jitter has no effect without --max_requests_before_restart"
+        ]
+    );
+}
+
+#[test]
+fn start_message_includes_backend_address_and_separate_metrics_port() {
+    let mut launch = options(Backend::Hypercorn);
+    launch.metrics_port = Some(9000);
+    let plan = launch_plan(&launch).expect("launch plan");
+    assert_eq!(
+        plan.start_message,
+        "Starting server on 127.0.0.1:4000 using Hypercorn; metrics port 9000"
     );
 }
 
