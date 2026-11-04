@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
-use aws_config::BehaviorVersion;
-use aws_sdk_kms::{Client, config::Region};
+use aws_sdk_kms::{
+    Client,
+    config::{BehaviorVersion, Builder, Region, SharedCredentialsProvider, SharedHttpClient},
+};
 
 use super::{AWS_KMS_CLIENT, AwsKmsError, environment_snapshot};
 
@@ -17,21 +19,30 @@ fn validate_region(region: Option<&str>) -> Result<String, AwsKmsError> {
     })
 }
 
-pub async fn load_aws_kms(use_aws_kms: Option<bool>) -> Result<(), AwsKmsError> {
+pub fn load_aws_kms(
+    use_aws_kms: Option<bool>,
+    transport: SharedHttpClient,
+    credentials: Option<SharedCredentialsProvider>,
+) -> Result<(), AwsKmsError> {
     if use_aws_kms != Some(true) {
         return Ok(());
     }
     let region = validate_environment()?;
-    let client = build_client(region).await;
+    let client = build_client(region, transport, credentials);
     store_client(client)
 }
 
-async fn build_client(region: String) -> Arc<Client> {
-    let config = aws_config::defaults(BehaviorVersion::latest())
-        .region(Region::new(region))
-        .load()
-        .await;
-    Arc::new(Client::new(&config))
+fn build_client(
+    region: String,
+    transport: SharedHttpClient,
+    credentials: Option<SharedCredentialsProvider>,
+) -> Arc<Client> {
+    let mut config = Builder::new()
+        .behavior_version(BehaviorVersion::latest())
+        .http_client(transport)
+        .region(Region::new(region));
+    config.set_credentials_provider(credentials);
+    Arc::new(Client::from_conf(config.build()))
 }
 
 fn store_client(client: Arc<Client>) -> Result<(), AwsKmsError> {

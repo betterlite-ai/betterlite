@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use google_cloud_kms_v1::client::KeyManagementService;
-
-use super::{GOOGLE_KMS_CLIENT, GOOGLE_KMS_RESOURCE_NAME, GoogleKmsError};
+use super::{
+    Client, DecryptTransport, GOOGLE_KMS_CLIENT, GOOGLE_KMS_RESOURCE_NAME, GoogleKmsError,
+};
 use crate::aws_kms::environment_snapshot;
 
 pub fn validate_environment() -> Result<(String, String), GoogleKmsError> {
@@ -26,24 +26,21 @@ fn validate_values(
     Ok((credentials.to_owned(), resource_name.to_owned()))
 }
 
-pub async fn load_google_kms(use_google_kms: Option<bool>) -> Result<(), GoogleKmsError> {
+pub fn load_google_kms(
+    use_google_kms: Option<bool>,
+    transport: Arc<dyn DecryptTransport>,
+) -> Result<(), GoogleKmsError> {
     if use_google_kms != Some(true) {
         return Ok(());
     }
     let (_credentials_path, resource_name) = validate_environment()?;
-    let client = build_client().await?;
-    store_client(client, resource_name)
+    store_client(Client {
+        resource_name,
+        transport,
+    })
 }
 
-async fn build_client() -> Result<KeyManagementService, GoogleKmsError> {
-    let client = KeyManagementService::builder()
-        .build()
-        .await
-        .map_err(|error| GoogleKmsError::Client(error.to_string()))?;
-    Ok(client)
-}
-
-fn store_client(client: KeyManagementService, resource_name: String) -> Result<(), GoogleKmsError> {
+fn store_client(client: Client) -> Result<(), GoogleKmsError> {
     let mut stored_client = GOOGLE_KMS_CLIENT
         .lock()
         .map_err(|_poisoned| GoogleKmsError::ClientState)?;
@@ -55,8 +52,8 @@ fn store_client(client: KeyManagementService, resource_name: String) -> Result<(
             "Google KMS client is already initialized".to_owned(),
         ));
     }
+    *stored_resource_name = Some(client.resource_name.clone());
     *stored_client = Some(Arc::new(client));
-    *stored_resource_name = Some(resource_name);
     drop(stored_resource_name);
     drop(stored_client);
     Ok(())
@@ -68,3 +65,5 @@ mod client_storage;
 mod load_google_kms;
 #[path = "initialization/validate_environment/tests.rs"]
 mod validate_environment;
+
+mod tests;

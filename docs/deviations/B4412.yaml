@@ -1,0 +1,8 @@
+task: B4412
+deviations:
+  - what: AWS KMS bootstrap does not require a paid LiteLLM license.
+    why: betterlite has no paid tier; the task explicitly removes this gate.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/aws_secret_manager.py#L59-L70
+  - what: KMS transports and AWS credentials are supplied by the caller.
+    why: The requested bootstrap boundary avoids SDK default HTTP stacks; Google request-time decryption belongs to B4421.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/google_kms.py#L34
