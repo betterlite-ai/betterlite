@@ -1,0 +1,5 @@
+kind: helper
+name: arn-prefix
+call: {aws_partition: {region: eu-isoe-1, value: 'x arn:aws-iso-e:bedrock:eu-isoe-1:1:model/x'}}
+env: {}
+compare: {ignore: []}
