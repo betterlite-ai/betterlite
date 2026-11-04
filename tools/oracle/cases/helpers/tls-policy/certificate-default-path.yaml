@@ -1,0 +1,11 @@
+kind: helper
+name: tls-certificate-default
+call:
+  tls_policy:
+    ssl_verify: null
+    http2: false
+    environment:
+      SSL_CERTIFICATE: client.pem
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,11 @@
+kind: helper
+name: tls-ca-file-env
+call:
+  tls_policy:
+    ssl_verify: true
+    http2: false
+    environment:
+      SSL_CERT_FILE: /tmp/not-present.pem
+env: {}
+compare:
+  ignore: []

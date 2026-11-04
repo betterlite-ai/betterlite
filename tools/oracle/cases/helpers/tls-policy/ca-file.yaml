@@ -1,0 +1,10 @@
+kind: helper
+name: tls-ca-file
+call:
+  tls_policy:
+    ssl_verify: "ca.pem"
+    http2: false
+    environment: {}
+env: {}
+compare:
+  ignore: []

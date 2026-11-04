@@ -1,0 +1,10 @@
+kind: helper
+name: tls-policy-corpus
+call:
+  tls_policy:
+    ssl_verify: null
+    http2: false
+    environment: {}
+env: {}
+compare:
+  ignore: []

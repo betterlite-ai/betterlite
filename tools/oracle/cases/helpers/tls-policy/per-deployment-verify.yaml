@@ -1,0 +1,10 @@
+kind: helper
+name: tls-deployment-verify
+call:
+  tls_policy:
+    ssl_verify: true
+    http2: false
+    environment: {}
+env: {}
+compare:
+  ignore: []

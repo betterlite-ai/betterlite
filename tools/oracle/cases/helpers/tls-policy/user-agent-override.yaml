@@ -1,0 +1,11 @@
+kind: helper
+name: tls-user-agent
+call:
+  tls_policy:
+    ssl_verify: null
+    http2: false
+    environment:
+      LITELLM_USER_AGENT: betterlite/test
+env: {}
+compare:
+  ignore: []

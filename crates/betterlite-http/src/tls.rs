@@ -7,6 +7,8 @@ const MAX_CA_PEM_BYTES: u64 = 4 * 1024 * 1024;
 
 #[derive(Debug, thiserror::Error)]
 pub enum TlsError {
+    #[error(transparent)]
+    Http(#[from] crate::error::HttpError),
     #[error("cannot read SSL_CERT_FILE")]
     ReadCa(#[source] std::io::Error),
     #[error("SSL_CERT_FILE is larger than the supported limit")]

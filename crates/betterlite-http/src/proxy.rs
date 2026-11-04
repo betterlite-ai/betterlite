@@ -35,14 +35,14 @@ impl ProxiedClient {
     pub fn outbound_with_tls(
         policy: &Arc<ProxyPolicy>,
         tls: &TlsPolicy,
-    ) -> Result<Self, HttpError> {
+    ) -> Result<Self, crate::tls::TlsError> {
         let builder = ClientBuilder::new()
             .tls_backend_rustls()
             .connect_timeout(CONNECT_TIMEOUT)
             .pool_idle_timeout(POOL_IDLE_TIMEOUT)
             .pool_max_idle_per_host(POOL_MAX_IDLE_PER_HOST);
         let builder = crate::tls::apply_policy(builder, tls)?;
-        Self::build(builder, policy)
+        Self::build(builder, policy).map_err(crate::tls::TlsError::Http)
     }
 
     pub fn build(builder: ClientBuilder, policy: &Arc<ProxyPolicy>) -> Result<Self, HttpError> {

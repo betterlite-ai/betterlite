@@ -12,8 +12,6 @@ pub enum HttpError {
     InvalidProxyUrl { name: String },
     #[error("cannot build the HTTP client")]
     Client(#[source] reqwest::Error),
-    #[error("TLS policy could not be applied")]
-    Tls(#[from] crate::tls::TlsError),
     #[error("the request failed")]
     Request(#[source] reqwest::Error),
     #[error("the request timed out")]
