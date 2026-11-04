@@ -1,0 +1,9 @@
+kind: helper
+name: responses-shapes-interpreter-array
+call:
+  responses_shapes:
+    operation: interpreter_logs
+    content: [out, err]
+env: {}
+compare:
+  ignore: []
