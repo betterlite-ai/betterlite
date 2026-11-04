@@ -1,13 +1,13 @@
 id: B5125
 milestone: M4 keys, spend and management
 title: OCR pricing tests and cases that fail when a billing rule breaks
-status: todo
+status: done
 depends_on: [B1678, B5094]
 file: tasks/B5125-ocr-pricing-test-gaps.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 615
