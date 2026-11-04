@@ -2,9 +2,6 @@ use std::io::{Error as IoError, ErrorKind, Read as _, Write as _};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::time::Duration;
 
-// Matches LoopbackServer.connection_timeout_seconds in LiteLLM: a connection that opens and sends nothing is dropped after this long so it cannot hold the wait past its deadline.
-const CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
-
 pub trait LoopbackListener {
     type Connection: LoopbackConnection;
 
@@ -15,6 +12,8 @@ pub trait LoopbackListener {
 }
 
 pub trait LoopbackConnection {
+    fn set_read_timeout(&mut self, timeout: Duration) -> Result<(), IoError>;
+
     fn read(&mut self, buffer: &mut [u8]) -> Result<usize, IoError>;
 
     fn write_all(&mut self, bytes: &[u8]) -> Result<(), IoError>;
@@ -43,7 +42,6 @@ impl LoopbackListener for TcpLoopbackListener {
         match self.listener.accept() {
             Ok((stream, _peer)) => {
                 stream.set_nonblocking(false)?;
-                stream.set_read_timeout(Some(CONNECTION_TIMEOUT))?;
                 Ok(Some(TcpLoopbackConnection { stream }))
             }
             Err(error) if error.kind() == ErrorKind::WouldBlock => Ok(None),
@@ -57,6 +55,10 @@ pub struct TcpLoopbackConnection {
 }
 
 impl LoopbackConnection for TcpLoopbackConnection {
+    fn set_read_timeout(&mut self, timeout: Duration) -> Result<(), IoError> {
+        self.stream.set_read_timeout(Some(timeout))
+    }
+
     fn read(&mut self, buffer: &mut [u8]) -> Result<usize, IoError> {
         self.stream.read(buffer)
     }

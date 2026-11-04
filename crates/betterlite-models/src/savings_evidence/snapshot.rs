@@ -3,8 +3,8 @@ use serde::Deserialize;
 use serde_json::Number;
 
 use super::error::SavingsEvidenceError;
+use super::numeric::round_decimal_lexeme;
 use super::pricing_basis::PricingBasis;
-use crate::price_fields::decimal_lexeme::parse_decimal_lexeme;
 use crate::tiered_pricing::Scalar;
 use crate::token_rates::ModelInfo;
 
@@ -56,7 +56,7 @@ impl TryFrom<Number> for StrictDecimal {
     type Error = SavingsEvidenceError;
 
     fn try_from(number: Number) -> Result<Self, Self::Error> {
-        parse_decimal_lexeme(&number.to_string())
+        round_decimal_lexeme(&number.to_string())
             .map(Self)
             .map_err(|source| SavingsEvidenceError::AmountOutOfRange { source })
     }
@@ -122,7 +122,7 @@ pub fn recorded_token_cost(cost_breakdown: Option<&CostBreakdown>) -> Option<Dec
 fn numeric_cost_component(value: Option<&Scalar>) -> Option<Decimal> {
     match value {
         Some(Scalar::Bool(flag)) => Some(Decimal::from(i64::from(*flag))),
-        Some(Scalar::Number(number)) => parse_decimal_lexeme(&number.to_string()).ok(),
+        Some(Scalar::Number(number)) => round_decimal_lexeme(&number.to_string()).ok(),
         _ => None,
     }
 }

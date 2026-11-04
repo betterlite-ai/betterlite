@@ -1,5 +1,5 @@
 kind: helper
-name: injection-all-deployments-and-sibling-leg
+name: injection-empty-marker-covers-every-deployment
 call:
   savings_evidence:
     operation: injection

@@ -115,6 +115,7 @@ fn baseline_usage_value(
         "cache_creation_input_tokens": normalized.cache_creation_input_tokens,
         "cached_tokens": details.as_ref().map(|value| value.cached_tokens),
         "cache_write_tokens": details.as_ref().map(|value| value.cache_write_tokens),
+        "cache_creation_tokens": details.as_ref().map(|value| value.cache_creation_tokens),
         "text_tokens": details.as_ref().map(|value| value.text_tokens),
         "has_cache_creation_token_details": details
             .as_ref()

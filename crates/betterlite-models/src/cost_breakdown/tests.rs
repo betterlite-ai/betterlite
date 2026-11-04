@@ -56,36 +56,35 @@ fn cost_breakdown_with_guardrail_starts_empty_when_no_breakdown_exists() {
 }
 
 #[test]
-fn cost_breakdown_with_guardrail_preserves_every_prior_field_and_adds_to_the_total() {
+fn cost_breakdown_with_guardrail_changes_only_guardrail_and_total_cost() {
     let existing = CostBreakdown {
         service_tier: Some("default".to_owned()),
-        data_residency: None,
-        vertex_location: None,
+        data_residency: Some("eu".to_owned()),
+        vertex_location: Some("us-central1".to_owned()),
         input_cost: Some(decimal("1")),
-        cache_read_cost: None,
-        cache_creation_cost: None,
+        cache_read_cost: Some(decimal("0.5")),
+        cache_creation_cost: Some(decimal("0.25")),
         output_cost: Some(decimal("2")),
-        reasoning_cost: None,
+        reasoning_cost: Some(decimal("0.25")),
         total_cost: Some(decimal("3")),
-        tool_usage_cost: None,
-        guardrail_cost: None,
-        additional_costs: None,
-        original_cost: None,
-        discount_percent: None,
-        discount_amount: None,
-        margin_percent: None,
-        margin_fixed_amount: None,
-        margin_total_amount: None,
-        extra: BTreeMap::new(),
+        tool_usage_cost: Some(decimal("0.25")),
+        guardrail_cost: Some(decimal("0.25")),
+        additional_costs: Some(BTreeMap::from([("other".to_owned(), decimal("0.25"))])),
+        original_cost: Some(decimal("3")),
+        discount_percent: Some(decimal("0.25")),
+        discount_amount: Some(decimal("0.25")),
+        margin_percent: Some(decimal("0.25")),
+        margin_fixed_amount: Some(decimal("0.25")),
+        margin_total_amount: Some(decimal("0.25")),
+        extra: BTreeMap::from([("vendor_extra".to_owned(), decimal("0.25"))]),
     };
     let merged = cost_breakdown_with_guardrail(Some(&existing), decimal("0.5"))
         .expect("the addition succeeds")
         .expect("a positive cost always produces a breakdown");
-    assert_eq!(merged.input_cost, existing.input_cost);
-    assert_eq!(merged.output_cost, existing.output_cost);
-    assert_eq!(merged.service_tier, existing.service_tier);
-    assert_eq!(merged.guardrail_cost, Some(decimal("0.5")));
-    assert_eq!(merged.total_cost, Some(decimal("3.5")));
+    let mut expected = existing;
+    expected.guardrail_cost = Some(decimal("0.5"));
+    expected.total_cost = Some(decimal("3.5"));
+    assert_eq!(merged, expected);
 }
 
 #[test]
@@ -191,7 +190,14 @@ fn cost_breakdown_with_guardrail_keeps_an_unknown_extension_field() {
 }
 
 #[test]
-fn cost_breakdown_serializes_only_the_fields_that_were_present() {
+fn cost_breakdown_serializes_money_as_json_numbers() {
+    #[derive(serde::Deserialize)]
+    struct NumericBreakdown {
+        input_cost: serde_json::Number,
+        additional_costs: BTreeMap<String, serde_json::Number>,
+        vendor_extra: serde_json::Number,
+    }
+
     let breakdown = CostBreakdown {
         service_tier: None,
         data_residency: None,
@@ -204,17 +210,21 @@ fn cost_breakdown_serializes_only_the_fields_that_were_present() {
         total_cost: None,
         tool_usage_cost: None,
         guardrail_cost: None,
-        additional_costs: None,
+        additional_costs: Some(BTreeMap::from([("other".to_owned(), decimal("0.5"))])),
         original_cost: None,
         discount_percent: None,
         discount_amount: None,
         margin_percent: None,
         margin_fixed_amount: None,
         margin_total_amount: None,
-        extra: BTreeMap::new(),
+        extra: BTreeMap::from([("vendor_extra".to_owned(), decimal("0.25"))]),
     };
     let text = serde_json::to_string(&breakdown).expect("the breakdown serializes");
-    assert_eq!(text, r#"{"input_cost":"1"}"#);
+    let value: NumericBreakdown =
+        serde_json::from_str(&text).expect("the breakdown contains JSON numbers");
+    assert_eq!(value.input_cost.to_string(), "1");
+    assert_eq!(value.additional_costs["other"].to_string(), "0.5");
+    assert_eq!(value.vendor_extra.to_string(), "0.25");
 }
 
 #[test]
