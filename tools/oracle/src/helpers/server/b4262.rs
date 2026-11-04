@@ -74,7 +74,7 @@ impl Helper for Op {
                 endpoint_name,
                 class_name,
                 fail,
-            } => safe_endpoint_output(endpoint_name, class_name, *fail),
+            } => safe_endpoint_output(endpoint_name.as_ref(), class_name.as_ref(), *fail),
         };
         Ok(output)
     }
@@ -97,13 +97,13 @@ fn mounted_sub_route_output(mount_path: &str, route: &Route) -> Value {
 }
 
 fn safe_endpoint_output(
-    endpoint_name: &Option<String>,
-    class_name: &Option<String>,
+    endpoint_name: Option<&String>,
+    class_name: Option<&String>,
     fail: bool,
 ) -> Value {
     let endpoint = Endpoint {
-        name: endpoint_name.clone(),
-        class_name: class_name.clone(),
+        name: endpoint_name.cloned(),
+        class_name: class_name.cloned(),
         fail,
     };
     json!({"result": safe_get_endpoint_name("oracle endpoint", &endpoint)})
