@@ -85,37 +85,37 @@ impl Normalizer {
             .iter()
             .next()
             .and_then(|index| MESSAGE_PATTERNS.get(index).map(|(_, code)| *code));
-        proxy_code(error.proxy_type.as_deref())
+        let by_proxy_type = match error.proxy_type.as_deref() {
+            Some("budget_exceeded") => Some("429_BUDGET_EXCEEDED"),
+            Some(
+                "auth_error"
+                | "expired_key"
+                | "token_not_found_in_db"
+                | "auth_provider_unavailable",
+            ) => Some("401_AUTHENTICATION_FAILED"),
+            Some(
+                "key_model_access_denied"
+                | "team_model_access_denied"
+                | "user_model_access_denied"
+                | "org_model_access_denied"
+                | "project_model_access_denied"
+                | "agent_model_access_denied",
+            ) => Some("403_MODEL_ACCESS_DENIED"),
+            Some(
+                "key_vector_store_access_denied"
+                | "team_vector_store_access_denied"
+                | "org_vector_store_access_denied"
+                | "tool_access_denied"
+                | "team_member_permission_error",
+            ) => Some("403_PERMISSION_DENIED"),
+            Some("not_found_error") => Some("404_RESOURCE_NOT_FOUND"),
+            _ => None,
+        };
+        by_proxy_type
             .or(by_message)
             .or_else(|| error.class.code(error.rate_limit_type))
             .or_else(|| router_code(&error.message))
             .or_else(|| Some(status_code(error.status_code)))
-    }
-}
-
-fn proxy_code(proxy_type: Option<&str>) -> Option<&'static str> {
-    match proxy_type {
-        Some("budget_exceeded") => Some("429_BUDGET_EXCEEDED"),
-        Some(
-            "auth_error" | "expired_key" | "token_not_found_in_db" | "auth_provider_unavailable",
-        ) => Some("401_AUTHENTICATION_FAILED"),
-        Some(
-            "key_model_access_denied"
-            | "team_model_access_denied"
-            | "user_model_access_denied"
-            | "org_model_access_denied"
-            | "project_model_access_denied"
-            | "agent_model_access_denied",
-        ) => Some("403_MODEL_ACCESS_DENIED"),
-        Some(
-            "key_vector_store_access_denied"
-            | "team_vector_store_access_denied"
-            | "org_vector_store_access_denied"
-            | "tool_access_denied"
-            | "team_member_permission_error",
-        ) => Some("403_PERMISSION_DENIED"),
-        Some("not_found_error") => Some("404_RESOURCE_NOT_FOUND"),
-        _ => None,
     }
 }
 
