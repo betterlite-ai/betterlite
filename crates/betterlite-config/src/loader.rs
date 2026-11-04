@@ -64,10 +64,7 @@ pub struct ConfigLoader<L> {
     pub lookup: L,
 }
 
-impl<L> ConfigLoader<L>
-where
-    L: EnvironmentLookup,
-{
+impl<L: EnvironmentLookup> ConfigLoader<L> {
     pub fn load(&self, source: &str) -> Result<Config, ConfigError> {
         let (raw, core_ignored) = parse_view::<RawConfig>(source)?;
         let mut ignored = vec![core_ignored];
