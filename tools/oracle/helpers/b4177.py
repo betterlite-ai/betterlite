@@ -1,5 +1,6 @@
 import os
 import sys
+import tempfile
 from collections.abc import Callable
 from contextlib import redirect_stdout
 from io import StringIO
@@ -312,6 +313,7 @@ def run(input_value: dict[str, Json]) -> Json:
         with (
             patch.dict(sys.modules, {"litellm.proxy.prometheus_cleanup": cleanup}),
             patch.dict(os.environ, _worker_environment(environment), clear=True),
+            patch.object(tempfile, "tempdir", None),
             patch("os.makedirs", skip_makedirs),
             redirect_stdout(StringIO()),
         ):

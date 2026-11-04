@@ -8,11 +8,11 @@ call:
       callbacks: prometheus
     metrics_port: null
     environment:
-      TMPDIR: /tmp
+      TMPDIR: .
       TEMP: /tmp/secondary-temp-root
       TMP: /tmp/tertiary-temp-root
 env:
-  TMPDIR: /tmp
+  TMPDIR: .
   TEMP: /tmp/secondary-temp-root
   TMP: /tmp/tertiary-temp-root
 compare:

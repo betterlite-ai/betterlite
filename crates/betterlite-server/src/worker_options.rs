@@ -253,7 +253,14 @@ pub fn prometheus_directory(
         .get("PROMETHEUS_MULTIPROC_DIR")
         .or_else(|| environment.get("prometheus_multiproc_dir"));
     let path = configured.map_or_else(
-        || temp_root(environment).join("litellm_prometheus_multiproc"),
+        || {
+            let root = temp_root(environment);
+            if root == PathBuf::from(".") {
+                PathBuf::from("litellm_prometheus_multiproc")
+            } else {
+                root.join("litellm_prometheus_multiproc")
+            }
+        },
         PathBuf::from,
     );
     let preparation = DirectoryPreparation {
