@@ -1,7 +1,13 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 pub trait NamedEndpoint {
-    fn endpoint_name(&self) -> Option<&str>;
+    fn endpoint_name(&self) -> Result<Option<&str>, RouteInspectionError>;
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum RouteInspectionError {
+    #[error("endpoint name lookup failed")]
+    EndpointName,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -14,7 +20,8 @@ pub struct RouteInfo {
     pub mounted_app: Option<bool>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default)]
 pub struct Route {
     pub path: Option<String>,
     pub methods: Option<Vec<String>>,
@@ -28,10 +35,9 @@ pub fn get_app_routes<E: NamedEndpoint>(route: &Route, endpoint_route: &E) -> Ve
         path: route.path.clone(),
         methods: route.methods.clone(),
         name: route.name.clone(),
-        endpoint: route
-            .endpoint
-            .as_ref()
-            .and_then(|_| endpoint_route.endpoint_name().map(str::to_owned)),
+        endpoint: route.endpoint.as_ref().and_then(|_| {
+            safe_get_endpoint_name("regular route endpoint", || endpoint_route.endpoint_name())
+        }),
         mounted_app: None,
     }]
 }
@@ -55,7 +61,7 @@ fn mounted_sub_route_info(mount_path: &str, sub_route: &Route) -> Option<RouteIn
     let endpoint = sub_route
         .endpoint
         .clone()
-        .or_else(|| sub_route.app.as_ref().map(|_| "Route".to_owned()))?;
+        .or_else(|| sub_route.app.as_ref().map(|_| "ASGIApp".to_owned()))?;
     let mut path = mount_path.to_owned();
     path.push_str(sub_route.path.as_deref().unwrap_or_default());
     Some(RouteInfo {
@@ -67,7 +73,23 @@ fn mounted_sub_route_info(mount_path: &str, sub_route: &Route) -> Option<RouteIn
                 .unwrap_or_else(|| vec!["GET".to_owned(), "POST".to_owned()]),
         ),
         name: sub_route.name.clone(),
-        endpoint: Some(endpoint),
+        endpoint: safe_get_endpoint_name(&endpoint, || Ok(Some(endpoint.as_str()))),
         mounted_app: Some(true),
     })
 }
+
+fn safe_get_endpoint_name<'a, F>(endpoint: &str, lookup: F) -> Option<String>
+where
+    F: FnOnce() -> Result<Option<&'a str>, RouteInspectionError>,
+{
+    match lookup() {
+        Ok(name) => name.map(str::to_owned),
+        Err(error) => {
+            tracing::error!(endpoint, %error, "Error getting endpoint name for route");
+            None
+        }
+    }
+}
+
+#[path = "route_inspection/tests.rs"]
+mod tests;

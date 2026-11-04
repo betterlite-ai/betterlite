@@ -1,0 +1,7 @@
+kind: helper
+name: safe-get-endpoint-name-class
+call:
+  b4262: {"function":"safe_get_endpoint_name","class_name":"Handler"}
+env: {}
+compare:
+  ignore: []

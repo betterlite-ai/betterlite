@@ -1,0 +1,8 @@
+kind: helper
+# route_inspection: task operation
+name: route-inspection-seed
+call:
+  b4262: {"function":"mounted_sub_route_info","mount_path":"/v1/","route":{"path":"/models","endpoint":"list_models"}}
+env: {}
+compare:
+  ignore: []
