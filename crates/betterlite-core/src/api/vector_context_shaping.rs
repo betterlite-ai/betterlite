@@ -172,11 +172,9 @@ fn value_text(value: &Json) -> String {
 }
 
 fn value_repr(value: &Json) -> String {
-    match value {
-        Json::Text(text) => format!("'{text}'"),
-        other
-        @ (Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            value_text(other)
-        }
+    if let Json::Text(text) = value {
+        format!("'{text}'")
+    } else {
+        value_text(value)
     }
 }
