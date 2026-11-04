@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::io::{BufRead, Write};
 
 use crate::terminal_styling::supports_color;
@@ -163,30 +164,26 @@ where
         Ok(bytes) => {
             let mut key_source = interactive::TtyKeySource { bytes };
             match interactive::select_interactive(&mut key_source, writer, supports) {
-                Ok(indices) => Ok(indices
-                    .into_iter()
-                    .filter_map(|index| PROVIDERS.get(index))
-                    .collect()),
+                Ok(indices) => Ok(providers_at(&indices)),
                 Err(interactive::InteractiveError::Cancelled) => Err(SelectError::Cancelled),
-                Err(interactive::InteractiveError::Io(_)) => {
-                    select_fallback(fallback_reader, writer, supports)
-                }
+                Err(interactive::InteractiveError::Io(_)) => Ok(providers_at(
+                    &fallback::select_fallback(fallback_reader, writer, supports)?,
+                )),
             }
         }
-        Err(_) => select_fallback(fallback_reader, writer, supports),
+        Err(_) => Ok(providers_at(&fallback::select_fallback(
+            fallback_reader,
+            writer,
+            supports,
+        )?)),
     }
 }
 
-fn select_fallback(
-    reader: &mut dyn BufRead,
-    writer: &mut dyn Write,
-    supports: bool,
-) -> Result<Vec<&'static Provider>, SelectError> {
-    let indices = fallback::select_fallback(reader, writer, supports)?;
-    Ok(indices
-        .into_iter()
-        .filter_map(|index| PROVIDERS.get(index))
-        .collect())
+fn providers_at(indices: &BTreeSet<usize>) -> Vec<&'static Provider> {
+    indices
+        .iter()
+        .filter_map(|&index| PROVIDERS.get(index))
+        .collect()
 }
 
 mod tests;
