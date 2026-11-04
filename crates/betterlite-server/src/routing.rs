@@ -91,6 +91,7 @@ pub mod shadow_eval_models;
 pub mod shadow_eval_results;
 pub mod shadow_eval_validation;
 pub mod shadow_result_aggregation;
+pub mod simple_shuffle;
 pub mod static_eligibility;
 pub mod strategy_dispatch;
 pub mod strategy_registration;

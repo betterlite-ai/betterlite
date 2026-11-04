@@ -1,0 +1,6 @@
+kind: helper
+name: vector-store-missing-id-rejects
+call:
+  vector_store_records: {operation: invalid_missing_id, record: {}}
+env: {}
+compare: {ignore: []}

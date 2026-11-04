@@ -100,6 +100,7 @@ pub mod semantic_math;
 pub mod semantic_router;
 pub mod sensitive_data_routing;
 pub mod signal_math;
+pub mod simple_shuffle;
 pub mod soft_floor_math;
 pub mod solver_math;
 pub mod static_eligibility;

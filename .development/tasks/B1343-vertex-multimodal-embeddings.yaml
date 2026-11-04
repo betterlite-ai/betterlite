@@ -25,7 +25,6 @@ description: >-
   110 adapters and 90 fuzz lines, maximum 750.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,error,multimodal_embedding_records}.rs
     - crates/betterlite-vertex/src/multimodal_embedding_records.rs
     - crates/betterlite-vertex/src/multimodal_embedding_records/**
     - crates/betterlite-vertex/fuzz/Cargo.toml

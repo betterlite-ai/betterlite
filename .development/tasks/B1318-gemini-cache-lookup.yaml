@@ -21,7 +21,6 @@ description: >-
   170 tests, 105 adapters, 75 fuzz and 50 wiring lines under a 675-line budget.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,error,cache_lookup}.rs
     - crates/betterlite-vertex/src/cache_lookup.rs
     - crates/betterlite-vertex/src/cache_lookup/**
     - crates/betterlite-vertex/fuzz/Cargo.toml

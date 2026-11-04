@@ -42,7 +42,6 @@ description: >-
   remain the byte boundary, so no new fuzz target belongs here.
 scope:
   paths:
-    - crates/betterlite-core/src/{lib,native_messages_hosts}.rs
     - crates/betterlite-core/src/native_messages_hosts.rs
     - crates/betterlite-core/src/native_messages_hosts/**
     - crates/betterlite-config/src/{lib,settings,providers}.rs

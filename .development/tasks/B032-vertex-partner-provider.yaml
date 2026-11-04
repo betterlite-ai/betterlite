@@ -37,7 +37,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-provider/Cargo.toml
-    - crates/betterlite-provider/src/{lib,provider,operation,prepared,vertex_partner_dispatch}.rs
+    - crates/betterlite-provider/src/{provider,operation,prepared,vertex_partner_dispatch}.rs
     - crates/betterlite-provider/src/vertex_partner_dispatch.rs
     - crates/betterlite-provider/src/vertex_partner_dispatch/**
     - crates/betterlite-core/src/{dispatch,operation}.rs

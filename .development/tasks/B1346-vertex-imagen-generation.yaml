@@ -20,7 +20,6 @@ description: >-
   170 tests, 100 oracle and 85 fuzz lines; cap 600.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,error,vertex_imagen_generation}.rs
     - crates/betterlite-vertex/src/vertex_imagen_generation.rs
     - crates/betterlite-vertex/src/vertex_imagen_generation/**
     - crates/betterlite-vertex/fuzz/Cargo.toml

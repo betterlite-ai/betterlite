@@ -33,7 +33,7 @@ description: >-
   under 800; native file registration and multipart HTTP scenarios remain B036.
 scope:
   paths:
-    - crates/betterlite-openai/src/{lib,error,xai_files,xai_stt}.rs
+    - crates/betterlite-openai/src/{xai_files,xai_stt}.rs
     - crates/betterlite-openai/src/{xai_files,xai_stt}/**
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/xai_uploads.rs

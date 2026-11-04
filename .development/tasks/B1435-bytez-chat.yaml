@@ -51,10 +51,8 @@ description: >-
   135 adapters, 75 fuzz/replay and 55 exports/dependency lines, maximum 800.
 scope:
   paths:
-    - crates/betterlite-openai/src/{lib,bytez_wire}.rs
     - crates/betterlite-openai/src/bytez_wire.rs
     - crates/betterlite-openai/src/bytez_wire/**
-    - crates/betterlite-provider/src/{lib,bytez_stream_call}.rs
     - crates/betterlite-provider/src/bytez_stream_call.rs
     - crates/betterlite-provider/src/bytez_stream_call/**
     - crates/betterlite-provider/Cargo.toml

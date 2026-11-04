@@ -43,7 +43,6 @@ description: >-
   65 fuzz/replay and 70 settings/wiring lines, capped at 725.
 scope:
   paths:
-    - crates/betterlite-openai/src/{lib,host_model_identity}.rs
     - crates/betterlite-openai/src/host_model_identity.rs
     - crates/betterlite-openai/src/host_model_identity/**
     - crates/betterlite-openai/fuzz/Cargo.toml

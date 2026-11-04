@@ -23,7 +23,6 @@ description: >-
   180 tests and 140 reference adapters, capped at 700.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,google_pricing}.rs
     - crates/betterlite-vertex/src/google_pricing.rs
     - crates/betterlite-vertex/src/google_pricing/**
     - tools/oracle/src/helpers/vertex/google_pricing.rs

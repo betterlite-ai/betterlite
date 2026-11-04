@@ -32,7 +32,6 @@ description: >-
   95 adapters and 95 fuzz/seed lines within 700.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,google_genai_guardrail}.rs
     - crates/betterlite-vertex/src/google_genai_guardrail.rs
     - crates/betterlite-vertex/src/google_genai_guardrail/**
     - crates/betterlite-vertex/fuzz/Cargo.toml

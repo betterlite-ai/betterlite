@@ -24,7 +24,6 @@ scope:
   paths:
   - crates/betterlite-server/src/router_preview_validation.rs
   - crates/betterlite-server/src/router_preview_validation/**
-  - crates/betterlite-server/src/error.rs
   - crates/betterlite-server/src/routes.rs
   - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs

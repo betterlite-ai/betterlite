@@ -28,7 +28,6 @@ scope:
   paths:
   - crates/betterlite-server/src/auto_router_rollups.rs
   - crates/betterlite-server/src/auto_router_rollups/**
-  - crates/betterlite-server/src/error.rs
   - crates/betterlite-server/src/routes.rs
   - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs

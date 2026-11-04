@@ -611,6 +611,7 @@ OPERATIONS: frozenset[str] = frozenset(
         "b4174",
         "b4177",
         "b4200",
+        "b4261",
         "b4262",
         "b4290",
         "b4291",

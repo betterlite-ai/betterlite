@@ -49,7 +49,7 @@ description: >-
   220 tests, 140 adapters and 120 settings/fuzz/wiring lines, maximum 800.
 scope:
   paths:
-    - crates/betterlite-openai/src/{lib,error,compatible_wire,compatible_embedding,compatible_models}.rs
+    - crates/betterlite-openai/src/{compatible_wire,compatible_embedding,compatible_models}.rs
     - crates/betterlite-openai/src/{compatible_wire,compatible_embedding,compatible_models}/**
     - crates/betterlite-openai/Cargo.toml
     - crates/betterlite-openai/fuzz/Cargo.toml

@@ -22,7 +22,6 @@ description: >-
   policy/decoder, 160 tests, 110 adapters and 100 config/fuzz lines.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,error,studio_identity}.rs
     - crates/betterlite-vertex/src/studio_identity.rs
     - crates/betterlite-vertex/src/studio_identity/**
     - crates/betterlite-config/src/{lib,config,model,settings,env,providers}.rs
