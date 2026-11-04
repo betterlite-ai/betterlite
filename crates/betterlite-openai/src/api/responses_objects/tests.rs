@@ -343,6 +343,23 @@ fn reasoning_nulls() {
     assert_eq!(value["output"][0]["content"][0]["text"], "why");
 }
 
+#[rstest]
+#[case::message(true, r#"{"type":"message","id":"m","role":"assistant","status":"completed","content":[],"phase":null,"encrypted_content":null,"summary":null}"#)]
+#[case::function(false, r#"{"type":"function_call","id":"f","arguments":"","call_id":"c","name":"f","status":"completed","phase":null,"content":null,"encrypted_content":null,"summary":null}"#)]
+#[case::null_function_type(false, r#"{"type":null,"id":"f","arguments":"","call_id":"c","name":"f","status":"completed","phase":null,"content":null,"encrypted_content":null,"summary":null}"#)]
+fn typed_non_reasoning_preserves_nulls(#[case] message: bool, #[case] encoded: &str) {
+    let mut response: ResponsesApiResponse =
+        serde_json::from_str(r#"{"id":"r","created_at":1,"output":[]}"#).unwrap();
+    let item = if message {
+        super::ResponseOutputItem::Message(serde_json::from_str(encoded).unwrap())
+    } else {
+        super::ResponseOutputItem::FunctionCall(serde_json::from_str(encoded).unwrap())
+    };
+    response.output.push(item);
+    let value = serde_json::to_value(response).unwrap();
+    assert_eq!(value["output"][0], parse_json(encoded));
+}
+
 #[test]
 fn output_text_join() {
     let mut response: ResponsesApiResponse = serde_json::from_str(r#"{"id":"r","created_at":1,"output":[{"type":"message","content":[{"type":"output_text","text":"a"},{"type":"output_text","text":null},{"type":"output_text"},{"type":"refusal","text":"ignore"}]},{"type":"other","content":[{"type":"output_text","text":"ignore"}]},{"type":"message"}]}"#).unwrap();
