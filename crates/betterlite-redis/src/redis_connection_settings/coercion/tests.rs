@@ -20,13 +20,11 @@ fn coerce_int_parses_a_digit_string() {
 
 #[test]
 fn coerce_int_rejects_an_unparsable_string() {
-    assert!(
-        coerce_number(
-            "REDIS_PORT",
-            Some(IntOrText::Text("not-a-number".to_owned()))
-        )
-        .is_err()
-    );
+    coerce_number(
+        "REDIS_PORT",
+        Some(IntOrText::Text("not-a-number".to_owned())),
+    )
+    .unwrap_err();
 }
 
 #[test]
@@ -47,7 +45,7 @@ fn coerce_float_parses_a_decimal_string() {
 
 #[test]
 fn coerce_float_rejects_an_unparsable_string() {
-    assert!(coerce_number("REDIS_TIMEOUT", Some(FloatOrText::Text("nope".to_owned()))).is_err());
+    coerce_number("REDIS_TIMEOUT", Some(FloatOrText::Text("nope".to_owned()))).unwrap_err();
 }
 
 #[test]
@@ -56,15 +54,13 @@ fn coerce_bool_accepts_known_words_and_rejects_unknown_words() {
         coerce_bool("REDIS_SSL", Some(BoolOrText::Text("true".to_owned()))).unwrap(),
         Some(true)
     );
-    assert!(coerce_bool("REDIS_SSL", Some(BoolOrText::Text("garbage".to_owned()))).is_err());
+    coerce_bool("REDIS_SSL", Some(BoolOrText::Text("garbage".to_owned()))).unwrap_err();
 }
 
 #[test]
 fn coerce_passthrough_rejects_a_failed_int_conversion() {
     let mut value = PassthroughValue::Text("three".to_owned());
-    assert!(
-        coerce_passthrough("cluster_error_retry_attempts", &mut value, Target::Cluster).is_err()
-    );
+    coerce_passthrough("cluster_error_retry_attempts", &mut value, Target::Cluster).unwrap_err();
 }
 
 #[test]
@@ -101,8 +97,8 @@ fn coerce_passthrough_leaves_an_unrecognized_name_untouched() {
 #[case::trailing("123_")]
 #[case::doubled("6__380")]
 fn coerce_numbers_reject_underscores(#[case] text: &str) {
-    assert!(coerce_number("REDIS_PORT", Some(IntOrText::Text(text.to_owned()))).is_err());
-    assert!(coerce_number("REDIS_TIMEOUT", Some(FloatOrText::Text(text.to_owned()))).is_err());
+    coerce_number("REDIS_PORT", Some(IntOrText::Text(text.to_owned()))).unwrap_err();
+    coerce_number("REDIS_TIMEOUT", Some(FloatOrText::Text(text.to_owned()))).unwrap_err();
 }
 
 #[test]
@@ -223,7 +219,7 @@ fn shared_env_redis_coercion_numbers() {
     assert!(!number_error.contains("1_000"));
     assert_eq!(
         coerce_number("REDIS_TIMEOUT", Some(FloatOrText::Text("1e3".to_owned()))).unwrap(),
-        Some(1000.0)
+        Some(1_000.0_f64)
     );
     let mut kwarg = PassthroughValue::Text("1_000".to_owned());
     let kwarg_error = coerce_passthrough("health_check_interval", &mut kwarg, Target::Direct)

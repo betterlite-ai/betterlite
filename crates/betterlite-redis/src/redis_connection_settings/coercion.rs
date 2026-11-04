@@ -41,13 +41,10 @@ pub fn coerce_passthrough(
         return Ok(true);
     };
     let variable = format!("REDIS_{}", name.to_uppercase());
-    match coerce_passthrough_value(kind, &variable, text)? {
-        Some(coerced) => {
-            *value = coerced;
-            Ok(true)
-        }
-        None => Ok(false),
-    }
+    coerce_passthrough_value(kind, &variable, text)?.map_or(Ok(false), |coerced| {
+        *value = coerced;
+        Ok(true)
+    })
 }
 
 fn coerce_passthrough_value(

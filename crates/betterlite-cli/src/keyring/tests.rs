@@ -337,7 +337,7 @@ fn shared_env_keyring_disable() {
     let Err(error) = KeyringVault::new(&invalid) else {
         panic!("invalid keyring flag was accepted");
     };
-    let error = error.to_string();
-    assert!(error.contains(DISABLE_KEYRING_ENV_VAR));
-    assert!(!error.contains("maybe-secret"));
+    let message = error.to_string();
+    assert!(message.contains(DISABLE_KEYRING_ENV_VAR));
+    assert!(!message.contains("maybe-secret"));
 }

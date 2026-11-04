@@ -12,6 +12,7 @@ use url::Url;
 
 use crate::loader::ConfigLoader;
 use crate::proxy::{ProxyPolicy, ProxyRoute, ProxyWarning};
+use crate::types::ProxyTrust;
 
 const PROXY: &str = "http://proxy.local:3128";
 const DISABLED: &str = "litellm_settings: {disable_aiohttp_trust_env: true}";
@@ -118,18 +119,18 @@ fn shared_env_proxy_trust(#[case] name: &str) {
             "http://proxy.local:3128".to_owned(),
         ),
     ]);
-    let policy = ProxyPolicy::resolve(&Default::default(), &environment).unwrap();
+    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &environment).unwrap();
     assert_eq!(
         policy.primary.is_empty(),
         name == "DISABLE_AIOHTTP_TRUST_ENV"
     );
     assert_eq!(policy.fallback.is_empty(), name != "AIOHTTP_TRUST_ENV");
     environment.insert(name.to_owned(), String::new());
-    let defaults = ProxyPolicy::resolve(&Default::default(), &environment).unwrap();
+    let defaults = ProxyPolicy::resolve(&ProxyTrust::default(), &environment).unwrap();
     assert!(!defaults.primary.is_empty());
     assert!(defaults.fallback.is_empty());
     environment.insert(name.to_owned(), "maybe".to_owned());
-    let error = ProxyPolicy::resolve(&Default::default(), &environment)
+    let error = ProxyPolicy::resolve(&ProxyTrust::default(), &environment)
         .unwrap_err()
         .to_string();
     assert!(error.contains(name));

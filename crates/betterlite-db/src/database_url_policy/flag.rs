@@ -22,7 +22,7 @@ pub fn token_auth_flag_enabled(
         None => Ok(false),
         Some(FlagValue::Bool(flag)) => Ok(*flag),
         Some(FlagValue::Text(text)) => betterlite_env::flag(env_var, text)
-            .map(|value| value.unwrap_or(false))
+            .map(|flag| flag.unwrap_or(false))
             .map_err(|source| TokenFlagError::NotRecognized { source }),
     }
 }

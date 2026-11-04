@@ -44,8 +44,8 @@ fn provider_base_config_cases(
                 settings
             );
         }
-        (Err(ConfigError::Environment { source }), Err(expected_path)) => {
-            assert!(source.to_string().contains(expected_path))
+        (Err(ConfigError::Environment { source: env_error }), Err(expected_path)) => {
+            assert!(env_error.to_string().contains(expected_path));
         }
         (Err(ConfigError::Unsupported { paths }), Err(expected_path)) => {
             assert_eq!(paths, [expected_path]);
@@ -123,7 +123,7 @@ fn shared_env_os_environ_number() {
     .unwrap();
     assert_eq!(
         parsed.model_list.first().unwrap().litellm_params.timeout,
-        Some(1000.0)
+        Some(1_000.0_f64)
     );
     let empty = super::map_loader(BTreeMap::from([(
         "REQUEST_TIMEOUT".to_owned(),

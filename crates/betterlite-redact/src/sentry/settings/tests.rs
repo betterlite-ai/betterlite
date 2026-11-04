@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use super::{SEND_DEFAULT_PII_ENV, SettingsError, build_sentry_init_options};
+use super::{SettingsError, build_sentry_init_options};
 use std::collections::BTreeMap;
 
 fn env(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
