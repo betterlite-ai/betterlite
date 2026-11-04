@@ -1,0 +1,13 @@
+kind: helper
+name: prometheus-multiproc-case-variants
+call:
+  b4177:
+    function: prometheus_directory
+    workers: 2
+    settings: null
+    metrics_port: null
+    environment:
+      prometheus_multiproc_dir: /tmp/metrics-lower
+env: {}
+compare:
+  ignore: []

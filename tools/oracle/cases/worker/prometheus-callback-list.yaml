@@ -1,0 +1,12 @@
+kind: helper
+name: prometheus-callback-list
+call:
+  b4177:
+    function: callback_configured
+    settings:
+      success_callback:
+      - other
+      - prometheus
+env: {}
+compare:
+  ignore: []

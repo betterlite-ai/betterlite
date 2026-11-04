@@ -1,0 +1,13 @@
+kind: helper
+name: prometheus-multiproc-auto-create
+call:
+  b4177:
+    function: prometheus_directory
+    workers: 2
+    settings:
+      callbacks: prometheus
+    metrics_port: null
+    environment: {}
+env: {}
+compare:
+  ignore: []

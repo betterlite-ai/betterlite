@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::env;
+use std::fs;
+use std::io;
 use std::path::PathBuf;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -66,6 +68,16 @@ pub struct DirectoryPreparation {
     pub path: PathBuf,
     pub action: String,
     pub should_prepare: bool,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum DirectoryPreparationError {
+    #[error("failed to prepare Prometheus multiprocess directory {path}: {source}")]
+    Create {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
@@ -180,7 +192,7 @@ pub fn prometheus_callback_configured(
 }
 
 #[must_use]
-pub fn prometheus_directory(
+pub fn prometheus_directory_plan(
     workers: u32,
     settings: Option<&BTreeMap<String, CallbackSetting>>,
     metrics_port: Option<u16>,
@@ -205,4 +217,21 @@ pub fn prometheus_directory(
         },
         should_prepare: true,
     })
+}
+
+pub fn prometheus_directory(
+    workers: u32,
+    settings: Option<&BTreeMap<String, CallbackSetting>>,
+    metrics_port: Option<u16>,
+    environment: &BTreeMap<String, String>,
+) -> Result<Option<DirectoryPreparation>, DirectoryPreparationError> {
+    let Some(preparation) = prometheus_directory_plan(workers, settings, metrics_port, environment)
+    else {
+        return Ok(None);
+    };
+    fs::create_dir_all(&preparation.path).map_err(|source| DirectoryPreparationError::Create {
+        path: preparation.path.clone(),
+        source,
+    })?;
+    Ok(Some(preparation))
 }
