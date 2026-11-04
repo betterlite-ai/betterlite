@@ -65,11 +65,13 @@ where
     let Some(variable) = text.strip_prefix("os.environ/") else {
         return Ok(JsonValue::String(text));
     };
-    let value = lookup
-        .lookup(variable)
-        .ok_or_else(|| ConfigError::MissingEnvironment {
-            variable: variable.to_owned(),
-            path: "litellm_settings.set_verbose".to_owned(),
-        })?;
-    Ok(betterlite_env::flag(variable, &value)?.map_or(JsonValue::Bool(false), JsonValue::Bool))
+    let environment_text =
+        lookup
+            .lookup(variable)
+            .ok_or_else(|| ConfigError::MissingEnvironment {
+                variable: variable.to_owned(),
+                path: "litellm_settings.set_verbose".to_owned(),
+            })?;
+    Ok(betterlite_env::flag(variable, &environment_text)?
+        .map_or(JsonValue::Bool(false), JsonValue::Bool))
 }
