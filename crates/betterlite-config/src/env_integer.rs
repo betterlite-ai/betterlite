@@ -38,9 +38,13 @@ pub fn get_env_int_in_range(
     }
 }
 
+#[must_use]
 pub fn get_env_int_or_none(value: Option<&str>) -> Option<i64> {
-    let Some(value) = value else {
+    let Some(raw) = value else {
         return None;
     };
-    value.trim().parse().ok()
+    match raw.trim().parse::<i64>() {
+        Ok(parsed) => Some(parsed),
+        Err(_) => None,
+    }
 }
