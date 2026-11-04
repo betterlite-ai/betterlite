@@ -55,6 +55,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "voyage_embedding_reply"
+path = "fuzz_targets/voyage_embedding_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "vector_store_records"
 path = "fuzz_targets/vector_store_records.rs"
 test = false

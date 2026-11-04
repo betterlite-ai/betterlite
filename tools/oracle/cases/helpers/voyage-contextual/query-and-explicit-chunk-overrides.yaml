@@ -1,0 +1,8 @@
+kind: helper
+name: voyage-contextual-query-and-explicit-chunk-overrides
+call:
+  voyage_contextual:
+    text: {model: voyage-3, input: [hello], options: {dimensions: 8, encoding_format: null}, base: null}
+    contextual: {model: voyage-context-3, input: [hello], options: {input_type: query, chunk_size: 0, enable_auto_chunking: false}, base: null}
+env: {}
+compare: {ignore: []}
