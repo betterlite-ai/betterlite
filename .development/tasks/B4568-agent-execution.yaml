@@ -33,8 +33,8 @@ description: >-
   A failed read-back (the second `codex debug models` call) skips Codex sync; OpenCode listing never reads back (it is pure env).
 scope:
   paths:
-    - tools/management-cli/src/agent_run.rs
-    - tools/management-cli/src/agent_run/**
+    - crates/betterlite-cli/src/agent_run.rs
+    - crates/betterlite-cli/src/agent_run/**
     - tools/oracle/cases/agents/pi-launch.yaml
     - tools/oracle/cases/agents/codex-launch.yaml
     - tools/oracle/cases/agents/opencode-launch.yaml
@@ -86,7 +86,7 @@ checks:
   commands:
     - id: agent-execution-tests
       why: tests for agent execution, preparation and catalog sync fail or do not exist
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^agent_run::tests::/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^agent_run::tests::/)'
 oracle_cases:
   - tools/oracle/cases/agents/pi-launch.yaml
   - tools/oracle/cases/agents/codex-launch.yaml
