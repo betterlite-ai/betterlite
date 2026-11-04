@@ -6,7 +6,7 @@ use super::canonical::{
     RequestRouteSource, ScopeFields, get_request_route, get_request_route_template,
 };
 use super::normalize::RouteNormalizer;
-use super::public_routes::{RoutePatternError, check_configured_public_routes, is_public_route};
+use super::public_routes::{RoutePatternError, check_configured_public_routes};
 
 #[rstest]
 #[case::scope_path_beats_host_url(Some("/api/chat"), None, None, "/wrong", "/api/chat")]
@@ -63,21 +63,29 @@ fn route_template(#[case] template: Option<&str>, #[case] expected: Option<&str>
 #[case::embedded_star_exact("/api/a*b", "/api/a*b", true)]
 #[case::wildcard_case_sensitive("/API/x", "/api/*", false)]
 fn wildcard_cases(#[case] path: &str, #[case] pattern: &str, #[case] expected: bool) {
-    assert_eq!(is_public_route(path, &[pattern.to_owned()]), expected);
+    assert_eq!(
+        check_configured_public_routes(path, Ok(&[pattern.to_owned()])),
+        expected
+    );
 }
 
 #[test]
 fn exact_before_wildcard() {
     let routes = vec!["/api/exact".to_owned(), "/api/*".to_owned()];
-    assert!(is_public_route("/api/exact", &routes));
+    assert!(check_configured_public_routes("/api/exact", Ok(&routes)));
 }
 
 #[test]
 fn group_name_not_expanded() {
-    assert!(!is_public_route(
+    assert!(!check_configured_public_routes(
         "/health",
-        &["LiteLLMRoutes.public_routes".to_owned()]
+        Ok(&["LiteLLMRoutes.public_routes".to_owned()])
     ));
+}
+
+#[test]
+fn configured_empty_routes_not_public() {
+    assert!(!check_configured_public_routes("/api/users", Ok(&[])));
 }
 
 #[test]
@@ -90,7 +98,10 @@ fn malformed_public_list_logs_false() {
 
 #[test]
 fn native_general_settings_public_routes_works_without_premium_user() {
-    assert!(is_public_route("/api/users", &["/api/*".to_owned()]));
+    assert!(check_configured_public_routes(
+        "/api/users",
+        Ok(&["/api/*".to_owned()])
+    ));
 }
 
 #[rstest]
