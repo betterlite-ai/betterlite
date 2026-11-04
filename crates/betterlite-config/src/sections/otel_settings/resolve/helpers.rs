@@ -103,26 +103,6 @@ pub(super) fn default_baggage_keys(keys: &[&str]) -> Vec<String> {
     output
 }
 
-pub(super) fn service_identity<L>(raw: &RawOtel, lookup: &L) -> (String, Option<String>)
-where
-    L: EnvironmentLookup,
-{
-    let service_name = environment_or(
-        lookup,
-        &["OTEL_SERVICE_NAME"],
-        raw.service_name.clone(),
-        |value| value,
-    )
-    .unwrap_or_else(|| "litellm".to_owned());
-    let deployment_environment = environment_or(
-        lookup,
-        &["OTEL_ENVIRONMENT_NAME"],
-        raw.deployment_environment.clone(),
-        |value| value,
-    );
-    (service_name, deployment_environment)
-}
-
 pub(super) fn resolve_exclusions<L>(raw: &RawOtel, lookup: &L) -> Vec<String>
 where
     L: EnvironmentLookup,
@@ -156,7 +136,7 @@ where
         .transpose()
 }
 
-pub(super) fn shorthand<L>(raw: &RawOtel, lookup: &L) -> [Option<String>; 4]
+pub(super) fn string_settings<L>(raw: &RawOtel, lookup: &L) -> [Option<String>; 6]
 where
     L: EnvironmentLookup,
 {
@@ -176,6 +156,14 @@ where
         (
             ["OTEL_HEADERS", "OTEL_EXPORTER_OTLP_HEADERS"],
             raw.headers.clone(),
+        ),
+        (
+            ["OTEL_SERVICE_NAME", "service_name"],
+            raw.service_name.clone(),
+        ),
+        (
+            ["OTEL_ENVIRONMENT_NAME", "deployment_environment"],
+            raw.deployment_environment.clone(),
         ),
     ]
     .map(|(names, configured)| environment_or(lookup, &names, configured, |value| value))

@@ -23,8 +23,11 @@ impl Section for Raw {
         let core = CoreSettings::resolve(&raw, lookup)?;
         let exporters = resolve_exporters(&raw, &core);
         let mapper_names = resolve_mapper_names(&raw, lookup, core.legacy_compat);
-        let (baggage_promoted_keys, baggage_metadata_keys, baggage_team_metadata_keys) =
-            resolve_baggage(&raw, lookup);
+        let [
+            baggage_promoted_keys,
+            baggage_metadata_keys,
+            baggage_team_metadata_keys,
+        ] = resolve_baggage(&raw, lookup);
         Ok(Settings {
             exporter: core.exporter,
             endpoint: core.endpoint,
@@ -69,8 +72,14 @@ impl CoreSettings {
     where
         L: EnvironmentLookup,
     {
-        let [configured_exporter, endpoint, traces_endpoint, headers] = shorthand(raw, lookup);
-        let (service_name, deployment_environment) = service_identity(raw, lookup);
+        let [
+            configured_exporter,
+            endpoint,
+            traces_endpoint,
+            headers,
+            service_name,
+            deployment_environment,
+        ] = string_settings(raw, lookup);
         let excluded_services = resolve_exclusions(raw, lookup);
         let features = FeatureSettings::resolve(raw, lookup)?;
         let shorthand_explicit =
@@ -82,7 +91,7 @@ impl CoreSettings {
             endpoint,
             traces_endpoint,
             headers,
-            service_name,
+            service_name: service_name.unwrap_or_else(|| "litellm".to_owned()),
             deployment_environment,
             enable_metrics: features.enable_metrics,
             enable_events: features.enable_events,
@@ -147,44 +156,36 @@ impl FeatureSettings {
     }
 }
 
-fn resolve_baggage<L>(raw: &RawOtel, lookup: &L) -> (Vec<String>, Vec<String>, Vec<String>)
+fn resolve_baggage<L>(raw: &RawOtel, lookup: &L) -> [Vec<String>; 3]
 where
     L: EnvironmentLookup,
 {
-    (
-        environment_or(
+    let configured = [
+        &raw.baggage_promoted_keys,
+        &raw.baggage_metadata_keys,
+        &raw.baggage_team_metadata_keys,
+    ];
+    let defaults = [
+        DEFAULT_BAGGAGE_PROMOTED_KEYS,
+        DEFAULT_BAGGAGE_METADATA_KEYS,
+        &[],
+    ];
+    let names = ["promoted_keys", "metadata_keys", "team_metadata_keys"];
+    let mut lists = [Vec::new(), Vec::new(), Vec::new()];
+    for (((output, value), fallback), suffix) in
+        lists.iter_mut().zip(configured).zip(defaults).zip(names)
+    {
+        let field = format!("baggage_{suffix}");
+        let variable = format!("LITELLM_OTEL_{}", field.to_ascii_uppercase());
+        *output = environment_or(
             lookup,
-            &[
-                "baggage_promoted_keys",
-                "LITELLM_OTEL_BAGGAGE_PROMOTED_KEYS",
-            ],
-            raw.baggage_promoted_keys.clone().map(ListSetting::values),
-            |value| csv_values(&value),
+            &[&field, &variable],
+            value.clone().map(ListSetting::values),
+            |text| csv_values(&text),
         )
-        .unwrap_or_else(|| default_baggage_keys(DEFAULT_BAGGAGE_PROMOTED_KEYS)),
-        environment_or(
-            lookup,
-            &[
-                "baggage_metadata_keys",
-                "LITELLM_OTEL_BAGGAGE_METADATA_KEYS",
-            ],
-            raw.baggage_metadata_keys.clone().map(ListSetting::values),
-            |value| csv_values(&value),
-        )
-        .unwrap_or_else(|| default_baggage_keys(DEFAULT_BAGGAGE_METADATA_KEYS)),
-        environment_or(
-            lookup,
-            &[
-                "baggage_team_metadata_keys",
-                "LITELLM_OTEL_BAGGAGE_TEAM_METADATA_KEYS",
-            ],
-            raw.baggage_team_metadata_keys
-                .clone()
-                .map(ListSetting::values),
-            |value| csv_values(&value),
-        )
-        .unwrap_or_default(),
-    )
+        .unwrap_or_else(|| default_baggage_keys(fallback));
+    }
+    lists
 }
 
 fn resolve_mapper_names<L>(raw: &RawOtel, lookup: &L, legacy_compat: bool) -> Vec<String>
@@ -244,8 +245,7 @@ mod helpers;
 pub(super) use helpers::csv_values;
 use helpers::{
     DEFAULT_BAGGAGE_METADATA_KEYS, DEFAULT_BAGGAGE_PROMOTED_KEYS, default_baggage_keys,
-    environment_or, resolve_exclusions, service_identity, setting_bool, shorthand,
-    structured_setting,
+    environment_or, resolve_exclusions, setting_bool, string_settings, structured_setting,
 };
 
 mod references;
