@@ -3,7 +3,7 @@ title: Rust status line subcommand and removal of the Python CLI folder
 description: >-
   Port LiteLLM's statusline_script.py to Rust as the `statusline` subcommand of betterlite-cli: a
   StatuslineArgs clap type with no flags and a run function in crates/betterlite-cli/src/statusline.rs,
-  for B4587's clap root to mount. Delete tools/management-cli/** (the Python-era crate stub nothing ever
+  for B134's clap root to mount. Delete tools/management-cli/** (the Python-era crate stub nothing ever
   built) and drop the `tools/management-cli` entry that B5140 leaves in the root Cargo.toml exclude list,
   so the workspace loses that path for good.
 
@@ -48,9 +48,10 @@ description: >-
   display name Claude Code already had (or "claude") while Codex falls back to nothing. HTTP, the wall
   clock and stdin are all injected so no test opens a socket or reads the real clock.
 
-  Add clap (derive feature, for StatuslineArgs), reqwest (already in Cargo.lock through betterlite-http;
-  default-features off, the blocking client, rustls) and betterlite-logging as crates/betterlite-cli
-  dependencies. Budget allocation: about 520 implementation lines across seven submodules (credentials,
+  The real fetch port is a thin adapter in statusline/fetch.rs over B4580's shared client in commands.rs
+  (betterlite-http's ProxiedClient on a current-thread runtime) with a 3-second request timeout; deny.toml
+  bans reqwest as a direct dependency of betterlite-cli, so this task never adds it. Add clap (derive
+  feature, for StatuslineArgs) and betterlite-logging as crates/betterlite-cli dependencies. Budget allocation: about 520 implementation lines across seven submodules (credentials,
   transcript, session, fetch, cache, render, dispatch), 650 behavior-test lines, 80 Cargo.toml/removal
   lines, 1500 total ceiling.
 scope:
@@ -183,9 +184,9 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/statusline_script.py#L1-L21
 out_of_scope:
   - Installing or registering the command into Claude Code's statusLine setting or Codex's Stop hook is B4562's install_statusline_script, which writes the command line for this subcommand.
-  - Wiring this subcommand into the clap root and crates/betterlite-cli/src/main.rs is B4587's concern; this task exposes only StatuslineArgs and run.
+  - Wiring this subcommand into the clap root and crates/betterlite-cli/src/main.rs is B134's concern; this task exposes only StatuslineArgs and run.
   - Writing or refreshing ~/.claude/cache/gateway-models.json belongs to the model-sync tasks; this task only reads it and falls back to the bare model id when it is missing, unreadable or has no match.
-  - The concrete HTTP transport is injected and out of scope, as in B4573; tests run against a fake implementation, never a live socket.
+  - The shared client itself is B4580's; this task writes only the fetch adapter over it, and tests run against a fake fetch port, never a live socket.
   - Credential storage, refresh and keyring lookups (B4574, B4590, B4591, B4592) are not used here; both agents' credentials come only from the environment map the caller passes in.
   - tools/management-cli's content is deleted wholesale and never read; nothing is ported from it.
 pitfalls:
