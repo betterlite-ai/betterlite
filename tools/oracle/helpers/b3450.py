@@ -50,14 +50,13 @@ def _extract_pdf(input_value: dict[str, Json]) -> Json:
     saved_meta_path = list(sys.meta_path)
     try:
         pypdf = importlib.import_module("pypdf")
-        # LiteLLM's fallback import name aliases the installed pypdf package in this case.
-        sys.modules["PyPDF2"] = pypdf
+        # Warm lazy imports before hiding pypdf for the fallback call.
+        if block_pypdf and not block_pypdf2:
+            extract_text_from_pdf(pdf_bytes)
         for name, blocked in (("pypdf", block_pypdf), ("PyPDF2", block_pypdf2)):
             sys.modules.pop(name, None)
             if blocked:
                 sys.meta_path.insert(0, _BlockedImportFinder(name))
-            elif name == "pypdf":
-                sys.modules[name] = pypdf
             else:
                 sys.modules[name] = pypdf
         extracted = extract_text_from_pdf(pdf_bytes)

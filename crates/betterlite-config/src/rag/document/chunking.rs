@@ -1,7 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-// secrecy::SecretString has no Serialize impl by design, so structs holding one derive Deserialize only.
-
 pub const DEFAULT_CHUNK_SIZE: i64 = 1000;
 pub const DEFAULT_CHUNK_OVERLAP: i64 = 200;
 

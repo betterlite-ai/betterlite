@@ -9,10 +9,10 @@ deviations:
   - what: extract_text_from_pdf returns None on a missing library or extraction failure without logging. LiteLLM logs at debug level on ImportError or extraction failure before returning None.
     why: The ingestion pipeline decides whether a missing PDF library is recoverable (OCR can fill in) or a pipeline failure. betterlite surfaces None and lets the caller's logging layer report it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/file_parsers/pdf_parser.py#L10-L68
-  - what: extract_text_from_pdf reads PDF operators through lopdf instead of trying pypdf and falling back to PyPDF2. It joins non-empty pages with "\n\n", returns None on any failure, and applies pypdf's vertical baseline rule for Td, TD, Tm and T* movement. Horizontal movement and font-width-aware TJ spacing still differ.
+  - what: extract_text_from_pdf reads PDF operators through lopdf instead of trying pypdf and falling back to PyPDF2. It joins non-empty pages with "\n\n", returns None on any failure, and applies pypdf's vertical baseline rule for Td, TD, Tm and T* movement. Horizontal movement adds no space. TJ adds a space after each array and after integer offsets below -100, retaining lopdf spacing instead of pypdf font-width-aware spacing.
     why: betterlite has no Python runtime, and lopdf exposes the operator stream and font encodings without a subprocess or embedded interpreter.
     link: https://github.com/py-pdf/pypdf/blob/6.21.4/pypdf/_text_extraction/__init__.py#L100-L185
-  - what: extract_text_from_pdf bounds each decompressed stream and page contents to 64 MiB. A page that exceeds the limit makes extraction return None. pypdf instead bounds each compressed stream at 75,000,000 bytes.
+  - what: extract_text_from_pdf bounds each decompressed stream and page contents to 64 MiB. A page that exceeds the limit makes extraction return None. pypdf instead bounds each deflate stream's decompressed output at 75,000,000 bytes.
     why: lopdf exposes both bounds through LoadOptions::with_max_decompressed_size and get_page_content_with_limit; 64 MiB stays below pypdf's stream limit.
     link: https://github.com/py-pdf/pypdf/blob/6.21.4/pypdf/_configuration.py#L60-L64
   - what: extract_text_from_pdf returns None once the joined text of all pages, including "\n\n" separators, would exceed 67108864 bytes. LiteLLM and pypdf build the complete joined string without a total text bound.

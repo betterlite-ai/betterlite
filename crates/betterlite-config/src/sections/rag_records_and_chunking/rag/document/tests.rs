@@ -6,7 +6,10 @@ mod types {
 
     use secrecy::ExposeSecret as _;
 
-    use crate::rag::document::chunking::RAGChunkingStrategy;
+    use crate::rag::document::chunking::{
+        ChunkingType, DEFAULT_CHUNK_OVERLAP, DEFAULT_CHUNK_SIZE, RAGChunkingStrategy,
+        StaticChunkingStrategy, WhiteSpaceChunkingConfig,
+    };
     use crate::rag::document::ingest::{
         BedrockVectorStoreOptions, OpenAIVectorStoreOptions, RAGIngestEmbeddingOptions,
         RAGIngestOCROptions, RAGIngestOptions, RAGIngestStatus, RAGIngestVectorStoreOptions,
@@ -32,6 +35,8 @@ mod types {
     fn chunking_strategy_leaves_unsent_sizes_empty() {
         let strategy: RAGChunkingStrategy =
             serde_json::from_str("{}").expect("every field has a default");
+        assert_eq!(DEFAULT_CHUNK_SIZE, 1000);
+        assert_eq!(DEFAULT_CHUNK_OVERLAP, 200);
         assert_eq!(strategy.chunk_size, None);
         assert_eq!(strategy.chunk_overlap, None);
         assert_eq!(
@@ -81,6 +86,17 @@ mod types {
         assert!(error.to_string().contains("api_kye"));
     }
 
+    #[rstest::rstest]
+    #[case::absent(r#"{"vector_store":{"vector_store_id":"vs_1"}}"#)]
+    #[case::null(r#"{"vector_store":{"custom_llm_provider":null,"vector_store_id":"vs_1"}}"#)]
+    fn vector_store_options_default_null_provider(#[case] input: &str) {
+        let options: RAGIngestOptions = serde_json::from_str(input).unwrap();
+        assert!(matches!(
+            options.vector_store,
+            Some(RAGIngestVectorStoreOptions::Openai(_))
+        ));
+    }
+
     #[test]
     fn vector_store_options_without_a_provider_parse_as_openai() {
         let options: RAGIngestOptions =
@@ -94,36 +110,148 @@ mod types {
 
     #[test]
     fn vector_store_options_accept_the_gemini_provider() {
-        let options: RAGIngestVectorStoreOptions = serde_json::from_str(r#"{"custom_llm_provider":"gemini","api_key":"secret","custom_metadata":[{"key":"x","string_value":"y"}]}"#).expect("Gemini is supported");
-        assert!(matches!(options, RAGIngestVectorStoreOptions::Gemini(_)));
+        let options: RAGIngestVectorStoreOptions = serde_json::from_str(r#"{"custom_llm_provider":"gemini","api_key":"gemini-secret","api_base":"https://gemini.test","vector_store_id":"store","litellm_credential_name":"credential","custom_metadata":[{"key":"x","string_value":"y"}]}"#).unwrap();
+        assert!(!format!("{options:?}").contains("gemini-secret"));
+        let RAGIngestVectorStoreOptions::Gemini(record) = options else {
+            panic!("Gemini record")
+        };
+        assert_eq!(record.api_key.unwrap().expose_secret(), "gemini-secret");
+        assert_eq!(record.api_base.as_deref(), Some("https://gemini.test"));
+        assert_eq!(record.vector_store_id.as_deref(), Some("store"));
+        assert_eq!(
+            record.litellm_credential_name.as_deref(),
+            Some("credential")
+        );
+        assert_eq!(
+            record.custom_metadata.unwrap().to_string(),
+            r#"[{"key":"x","string_value":"y"}]"#
+        );
     }
 
     #[rstest::rstest]
-    #[case::bedrock(r#"{"custom_llm_provider":"bedrock","knowledge_base_id":"kb"}"#)]
-    #[case::vertex_ai(r#"{"custom_llm_provider":"vertex_ai","description":"d","vector_db_config":{},"embedding_model":"e","vertex_ai_project":"p","vertex_ai_location":"l","vertex_ai_credentials":"secret","file_description":"f","max_embedding_requests_per_min":2,"litellm_credential_name":"c"}"#)]
-    #[case::s3_vectors(r#"{"custom_llm_provider":"s3_vectors","vector_store_id":"vs","ssl_verify":false,"embedding_model":"e","litellm_embedding_model":"le","litellm_credential_name":"c"}"#)]
-    fn vector_store_options_accept_a_key_litellm_reads(#[case] input: &str) {
-        let options: RAGIngestVectorStoreOptions =
-            serde_json::from_str(input).expect("known provider key");
-        assert!(matches!(
-            options,
-            RAGIngestVectorStoreOptions::Bedrock(_)
-                | RAGIngestVectorStoreOptions::VertexAi(_)
-                | RAGIngestVectorStoreOptions::S3Vectors(_)
-        ));
+    #[case::bedrock(
+        "bedrock",
+        "knowledge_base_id",
+        r#""kb""#,
+        r#"knowledge_base_id: Some("kb")"#
+    )]
+    #[case::description(
+        "vertex_ai",
+        "description",
+        r#""desc""#,
+        r#"description: Some("desc")"#
+    )]
+    #[case::vector_db_config(
+        "vertex_ai",
+        "vector_db_config",
+        "{}",
+        "vector_db_config: Some(Object {})"
+    )]
+    #[case::vertex_embedding(
+        "vertex_ai",
+        "embedding_model",
+        r#""embed""#,
+        r#"embedding_model: Some("embed")"#
+    )]
+    #[case::file_description(
+        "vertex_ai",
+        "file_description",
+        r#""file""#,
+        r#"file_description: Some("file")"#
+    )]
+    #[case::rate(
+        "vertex_ai",
+        "max_embedding_requests_per_min",
+        "2",
+        "max_embedding_requests_per_min: Some(2)"
+    )]
+    #[case::credential(
+        "vertex_ai",
+        "litellm_credential_name",
+        r#""cred""#,
+        r#"litellm_credential_name: Some("cred")"#
+    )]
+    #[case::project(
+        "vertex_ai",
+        "vertex_ai_project",
+        r#""project""#,
+        r#"vertex_ai_project: Some("project")"#
+    )]
+    #[case::location(
+        "vertex_ai",
+        "vertex_ai_location",
+        r#""location""#,
+        r#"vertex_ai_location: Some("location")"#
+    )]
+    #[case::credentials(
+        "vertex_ai",
+        "vertex_ai_credentials",
+        r#""secret""#,
+        "vertex_ai_credentials: Some("
+    )]
+    #[case::ssl_bool("s3_vectors", "ssl_verify", "false", "ssl_verify: Some(Bool(false))")]
+    #[case::ssl_path(
+        "s3_vectors",
+        "ssl_verify",
+        r#""ca.pem""#,
+        r#"ssl_verify: Some(CaBundle("ca.pem"))"#
+    )]
+    #[case::s3_embedding(
+        "s3_vectors",
+        "embedding_model",
+        r#""embed""#,
+        r#"embedding_model: Some("embed")"#
+    )]
+    #[case::litellm_embedding(
+        "s3_vectors",
+        "litellm_embedding_model",
+        r#""embed""#,
+        r#"litellm_embedding_model: Some("embed")"#
+    )]
+    fn vector_store_options_accept_a_key_litellm_reads(
+        #[case] provider: &str,
+        #[case] key: &str,
+        #[case] value: &str,
+        #[case] expected: &str,
+    ) {
+        let input = format!(r#"{{"custom_llm_provider":"{provider}","{key}":{value}}}"#);
+        let options: RAGIngestVectorStoreOptions = serde_json::from_str(&input).unwrap();
+        assert!(format!("{options:?}").contains(expected));
+        if key == "vertex_ai_credentials" {
+            assert!(!format!("{options:?}").contains("secret"));
+            let RAGIngestVectorStoreOptions::VertexAi(record) = options else {
+                panic!("Vertex record")
+            };
+            assert_eq!(
+                record.vertex_ai_credentials.unwrap().expose_secret(),
+                "secret"
+            );
+        }
     }
 
     #[rstest::rstest]
-    #[case::auto(r#"{"type":"auto"}"#)]
-    #[case::static_tokens(
-        r#"{"type":"static","static":{"max_chunk_size_tokens":500,"chunk_overlap_tokens":50}}"#
-    )]
-    #[case::white_space(
-        r#"{"white_space_config":{"max_tokens_per_chunk":800,"max_overlap_tokens":400}}"#
-    )]
-    fn chunking_strategy_accepts_a_provider_chunking_key(#[case] input: &str) {
-        let _strategy: RAGChunkingStrategy =
-            serde_json::from_str(input).expect("provider key is recognized");
+    #[case::auto(r#"{"type":"auto"}"#, Some(ChunkingType::Auto), None, None)]
+    #[case::static_tokens(r#"{"type":"static","static":{"max_chunk_size_tokens":800,"chunk_overlap_tokens":400}}"#, Some(ChunkingType::Static), Some(StaticChunkingStrategy { max_chunk_size_tokens: Some(800), chunk_overlap_tokens: Some(400) }), None)]
+    #[case::white_space(r#"{"white_space_config":{"max_tokens_per_chunk":800,"max_overlap_tokens":400}}"#, None, None, Some(WhiteSpaceChunkingConfig { max_tokens_per_chunk: Some(800), max_overlap_tokens: Some(400) }))]
+    fn chunking_strategy_accepts_a_provider_chunking_key(
+        #[case] input: &str,
+        #[case] kind: Option<ChunkingType>,
+        #[case] tokens: Option<StaticChunkingStrategy>,
+        #[case] whitespace: Option<WhiteSpaceChunkingConfig>,
+    ) {
+        let strategy: RAGChunkingStrategy = serde_json::from_str(input).unwrap();
+        assert_eq!(strategy.kind, kind);
+        assert_eq!(strategy.static_tokens, tokens);
+        assert_eq!(strategy.white_space_config, whitespace);
+    }
+
+    #[rstest::rstest]
+    #[case::untagged(r#"{"vector_store":{"api_kye":"secret"}}"#, "api_kye")]
+    #[case::unknown(r#"{"vector_store":{"custom_llm_provider":"bogus"}}"#, "bogus")]
+    #[case::wrong_type(r#"{"vector_store":{"custom_llm_provider":42}}"#, "string")]
+    fn vector_store_options_reject_invalid_records(#[case] input: &str, #[case] message: &str) {
+        let error = serde_json::from_str::<RAGIngestOptions>(input).unwrap_err();
+        assert!(error.to_string().contains(message));
     }
 
     #[test]
@@ -264,7 +392,7 @@ mod types {
                 "import_timeout": 30
             }"#,
         )
-        .expect("vector_store_id is required and present here");
+        .expect("provider fields parse");
         assert_eq!(options.vector_store_id, Some("vs_vertex".to_owned()));
         assert_eq!(options.vertex_project, Some("my-project".to_owned()));
         assert_eq!(
@@ -311,7 +439,7 @@ mod types {
                 "aws_external_id": "external"
             }"#,
         )
-        .expect("vector_bucket_name is required and present here");
+        .expect("provider fields parse");
         assert_eq!(options.vector_bucket_name, Some("bucket".to_owned()));
         assert_eq!(
             options.distance_metric,

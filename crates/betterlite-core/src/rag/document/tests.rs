@@ -193,23 +193,28 @@ fn splitter_force_split_stops_exactly_at_the_end_of_the_text() {
 }
 
 #[test]
-fn chunk_output_cap_force_split_returns_a_typed_error() {
-    let splitter = RecursiveCharacterTextSplitter::new(1000, 999, vec!["Q".to_owned()])
+fn chunk_output_cap_stops_the_force_split_path() {
+    let splitter = RecursiveCharacterTextSplitter::new(1_000_000, 999_999, vec!["Q".to_owned()])
         .expect("valid overlap");
-    let text = "a".repeat(270_000);
+    let text = "a".repeat(1_000_500);
+    let error = splitter.split_text(&text).expect_err("output exceeds cap");
     assert_eq!(
-        splitter.split_text(&text),
-        Err(super::splitter::SplitError::OutputTooLarge {
-            limit: super::splitter::MAX_SPLIT_OUTPUT_BYTES
-        })
+        error,
+        super::splitter::SplitError::OutputTooLarge {
+            limit: super::splitter::MAX_SPLIT_OUTPUT_BYTES,
+        }
+    );
+    assert_eq!(
+        error.to_string(),
+        "text splitter output exceeds 268435456 bytes"
     );
 }
 
 #[test]
-fn chunk_output_cap_force_split_handles_shorter_chunks() {
-    let splitter =
-        RecursiveCharacterTextSplitter::new(500, 499, vec!["Q".to_owned()]).expect("valid overlap");
-    let text = "a".repeat(540_000);
+fn chunk_output_cap_stops_the_merge_path() {
+    let splitter = RecursiveCharacterTextSplitter::new(1_000_000, 999_998, vec![" ".to_owned()])
+        .expect("valid overlap");
+    let text = "a ".repeat(600_000);
     assert_eq!(
         splitter.split_text(&text),
         Err(super::splitter::SplitError::OutputTooLarge {
@@ -391,10 +396,101 @@ fn pdf_line_move_t_star_uses_text_leading() {
     );
 }
 
+#[rstest]
+#[case::second_bt(
+    "BT /F1 12 Tf 100 700 Td (Hello) Tj ET BT 100 700 Td (World) Tj ET",
+    "HelloWorld"
+)]
+#[case::empty_moves("BT /F1 12 Tf 100 700 Td 0 -14 Td (Hello) Tj ET", "Hello")]
+#[case::repeated_moves(
+    "BT /F1 12 Tf 100 700 Td (Hello) Tj 0 -14 Td 0 -14 Td (World) Tj ET",
+    "Hello\nWorld"
+)]
+#[case::scaled_td(
+    "BT /F1 1 Tf 12 0 0 12 100 700 Tm (Hello) Tj 0 -1 Td (World) Tj ET",
+    "Hello\nWorld"
+)]
+#[case::scaled_t_star(
+    "BT /F1 1 Tf 1 TL 12 0 0 12 100 700 Tm (Hello) Tj T* (World) Tj ET",
+    "Hello\nWorld"
+)]
+#[case::changed_scale(
+    "BT /F1 1 Tf 12 0 0 12 100 700 Tm (Hello) Tj 24 0 0 24 100 685 Tm (World) Tj ET",
+    "Hello\nWorld"
+)]
+#[case::graphics_scale(
+    "2 0 0 2 0 0 cm BT /F1 12 Tf 100 700 Td (Hello) Tj 0 -5 Td (World) Tj ET",
+    "HelloWorld"
+)]
+#[case::graphics_translation(
+    "BT /F1 12 Tf 100 700 Td (Hello) Tj 1 0 0 1 0 -14 cm 0 0 Td (World) Tj ET",
+    "Hello\nWorld"
+)]
+#[case::graphics_restore(
+    "BT /F1 12 Tf 100 700 Td (Hello) Tj q 1 0 0 1 0 -14 cm Q 0 0 Td (World) Tj ET",
+    "HelloWorld"
+)]
+#[case::rotated_tm(
+    "BT /F1 12 Tf 0 1 -1 0 100 700 Tm (Hello) Tj 0 -14 Td (World) Tj ET",
+    "Hello\nWorld"
+)]
+#[case::quote_leading(
+    "BT /F1 12 Tf 14 TL 100 700 Td (Hello) Tj (World) ' ET",
+    "Hello\nWorld"
+)]
+#[case::double_quote(
+    "BT /F1 12 Tf 14 TL 100 700 Td (Hello) Tj 0 0 (World) \" ET",
+    "Hello\nWorld"
+)]
+#[case::skewed_tm(
+    "BT /F1 12 Tf 0 1 -1 1 100 700 Tm (Hello) Tj 20 0 Td (World) Tj ET",
+    "Hello\nWorld"
+)]
+#[case::threshold_boundary(
+    "BT /F1 5 Tf 100 700 Td (Hello) Tj 0 -4 Td (World) Tj ET",
+    "HelloWorld"
+)]
+#[case::line_span(
+    "BT /F1 12 Tf 100 700 Td (Hello) Tj 0 -5 Td (World) Tj 0 10 Td (Again) Tj ET",
+    "HelloWorldAgain"
+)]
+fn pdf_line_move_tracks_text_state(#[case] stream: &str, #[case] expected: &str) {
+    assert_eq!(
+        extract_text_from_pdf(&pdf_with_stream(stream)).as_deref(),
+        Some(expected)
+    );
+}
+
+#[test]
+fn pdf_retains_lopdf_tj_spacing() {
+    assert_eq!(
+        extract_text_from_pdf(&pdf_with_stream(
+            "BT /F1 12 Tf [(Hello) -101 (World)] TJ ET"
+        ))
+        .as_deref(),
+        Some("Hello World ")
+    );
+}
+
 #[test]
 fn pdf_returns_none_for_a_page_with_no_text_showing_operators() {
     let pdf = pdf_with_stream("BT ET");
     assert_eq!(extract_text_from_pdf(&pdf), None);
+}
+
+#[rstest]
+#[case::two_text_pages(
+    "BT /F1 12 Tf (First) Tj ET",
+    "BT /F1 12 Tf (Second) Tj ET",
+    "First\n\nSecond"
+)]
+#[case::blank_first("BT ET", "BT /F1 12 Tf (Second) Tj ET", "Second")]
+#[case::blank_last("BT /F1 12 Tf (First) Tj ET", "BT ET", "First")]
+fn pdf_joins_nonempty_pages(#[case] first: &str, #[case] second: &str, #[case] expected: &str) {
+    assert_eq!(
+        extract_text_from_pdf(&two_page_pdf(first, second)).as_deref(),
+        Some(expected)
+    );
 }
 
 #[test]
@@ -431,14 +527,28 @@ fn pdf_extracts_a_page_within_the_decompressed_size_limit() {
 
 #[test]
 fn pdf_returns_none_past_the_decompressed_page_limit() {
-    let text = " ".repeat(65 * 1024 * 1024);
-    let pdf = pdf_with_stream(&format!("BT /F1 12 Tf ({text}) Tj ET"));
-    assert_eq!(extract_text_from_pdf(&pdf), None);
+    let spaces = " ".repeat(65 * 1024 * 1024);
+    let pdf = pdf_with_stream(&format!("BT /F1 12 Tf {spaces}(Hello) Tj ET"));
+    let mut document = lopdf::Document::load_mem(&pdf).expect("valid PDF");
+    document
+        .get_object_mut((5, 0))
+        .expect("content object")
+        .as_stream_mut()
+        .expect("stream")
+        .compress()
+        .expect("compress");
+    let mut compressed = Vec::new();
+    document.save_to(&mut compressed).expect("save PDF");
+    assert_eq!(extract_text_from_pdf(&compressed), None);
 }
 
 #[test]
 fn pdf_returns_none_past_the_total_text_cap() {
-    let text = "a".repeat(33 * 1024 * 1024);
+    let text = "A".repeat(33 * 1024 * 1024);
+    assert_eq!(
+        extract_text_from_pdf(&minimal_pdf(&text)).as_deref(),
+        Some(text.as_str())
+    );
     let stream = format!("BT /F1 12 Tf ({text}) Tj ET");
     let bodies = [
         "<< /Type /Catalog /Pages 2 0 R >>".to_owned(),

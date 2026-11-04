@@ -1,8 +1,12 @@
-use std::ops::{Add as _, Neg as _, Sub as _};
+mod position;
+
+use std::ops::Neg as _;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use lopdf::content::{Content, Operation};
 use lopdf::{Document, Encoding, LoadOptions, Object};
+
+use position::{IDENTITY, Matrix, Position, number};
 
 const MAX_DECOMPRESSED_PDF_BYTES: usize = 64 * 1024 * 1024;
 pub const MAX_EXTRACTED_PDF_TEXT_BYTES: usize = 64 * 1024 * 1024;
@@ -46,7 +50,15 @@ fn extract_page_text(document: &Document, page_id: lopdf::ObjectId) -> Option<St
         .get_page_content_with_limit(page_id, MAX_DECOMPRESSED_PDF_BYTES)
         .ok()?;
     let content = Content::decode(&data).ok()?;
-    let mut extractor = PageText::new(fonts);
+    let mut extractor = PageText {
+        text: String::new(),
+        encodings: fonts,
+        active_font: None,
+        font_size: 0.0_f64,
+        leading: 0.0_f64,
+        position: Position::default(),
+        saved: Vec::new(),
+    };
     for operation in &content.operations {
         extractor.apply(operation)?;
         if extractor.text.len() > MAX_EXTRACTED_PDF_TEXT_BYTES {
@@ -78,30 +90,12 @@ struct PageText<'doc> {
     encodings: Vec<(Vec<u8>, Encoding<'doc>)>,
     active_font: Option<usize>,
     font_size: f64,
-    scale_y: f64,
     leading: f64,
-    text_y: f64,
-    previous_y: Option<f64>,
-    line_start_y: f64,
-    line_end_y: f64,
+    position: Position,
+    saved: Vec<(Matrix, Option<usize>, f64, f64)>,
 }
 
-impl<'doc> PageText<'doc> {
-    const fn new(encodings: Vec<(Vec<u8>, Encoding<'doc>)>) -> Self {
-        Self {
-            text: String::new(),
-            encodings,
-            active_font: None,
-            font_size: 0.0_f64,
-            scale_y: 1.0_f64,
-            leading: 0.0_f64,
-            text_y: 0.0_f64,
-            previous_y: None,
-            line_start_y: 0.0_f64,
-            line_end_y: 0.0_f64,
-        }
-    }
-
+impl PageText<'_> {
     fn apply(&mut self, operation: &Operation) -> Option<()> {
         match operation.operator.as_str() {
             "Tf" => self.select_font(&operation.operands),
@@ -110,13 +104,47 @@ impl<'doc> PageText<'doc> {
             "TD" => self.move_by(&operation.operands, true),
             "Tm" => self.set_text_matrix(&operation.operands),
             "T*" => {
-                self.move_to(self.text_y.sub(self.leading));
+                self.position.text.translate(0.0, self.leading.neg());
+                self.position.check(&mut self.text, self.font_size);
                 Some(())
             }
             "Tj" => self.show_text(operation.operands.first()?),
             "TJ" => self.show_text_array(operation.operands.first()?),
             "'" => self.show_next_line_text(operation.operands.first()?),
             "\"" => self.show_next_line_text(operation.operands.get(2)?),
+            _ => self.apply_graphics(operation),
+        }
+    }
+
+    fn apply_graphics(&mut self, operation: &Operation) -> Option<()> {
+        match operation.operator.as_str() {
+            "BT" => {
+                self.position.text = IDENTITY;
+                Some(())
+            }
+            "cm" => {
+                self.position.graphics =
+                    Matrix::read(&operation.operands)?.combine(self.position.graphics);
+                Some(())
+            }
+            "q" => {
+                self.saved.push((
+                    self.position.graphics,
+                    self.active_font,
+                    self.font_size,
+                    self.leading,
+                ));
+                Some(())
+            }
+            "Q" => {
+                if let Some((matrix, font, size, leading)) = self.saved.pop() {
+                    self.position.graphics = matrix;
+                    self.active_font = font;
+                    self.font_size = size;
+                    self.leading = leading;
+                }
+                Some(())
+            }
             _ => Some(()),
         }
     }
@@ -137,28 +165,27 @@ impl<'doc> PageText<'doc> {
     }
 
     fn move_by(&mut self, operands: &[Object], set_leading: bool) -> Option<()> {
-        number(operands.first()?)?;
+        let horizontal_delta = number(operands.first()?)?;
         let vertical_delta = number(operands.get(1)?)?;
         if set_leading {
             self.leading = vertical_delta.neg();
         }
-        self.move_to(self.text_y.add(vertical_delta));
+        self.position
+            .text
+            .translate(horizontal_delta, vertical_delta);
+        self.position.check(&mut self.text, self.font_size);
         Some(())
     }
 
     fn set_text_matrix(&mut self, operands: &[Object]) -> Option<()> {
-        number(operands.first()?)?;
-        number(operands.get(1)?)?;
-        number(operands.get(2)?)?;
-        self.scale_y = number(operands.get(3)?)?.abs();
-        number(operands.get(4)?)?;
-        let next_y = number(operands.get(5)?)?;
-        self.move_to(next_y);
+        self.position.text = Matrix::read(operands)?;
+        self.position.check(&mut self.text, self.font_size);
         Some(())
     }
 
     fn show_next_line_text(&mut self, object: &Object) -> Option<()> {
-        self.move_to(self.text_y.sub(self.leading));
+        self.position.text.translate(0.0, self.leading.neg());
+        self.position.check(&mut self.text, self.font_size);
         self.show_text(object)
     }
 
@@ -179,6 +206,8 @@ impl<'doc> PageText<'doc> {
         let encoding = &self.encodings.get(encoding_index)?.1;
         let decoded = Document::decode_text(encoding, bytes).ok()?;
         self.text.push_str(&decoded);
+        self.position.height = self.font_size;
+        self.position.check(&mut self.text, self.font_size);
         Some(())
     }
 
@@ -187,6 +216,7 @@ impl<'doc> PageText<'doc> {
         for value in values {
             self.show_text_array_value(value)?;
         }
+        self.text.push(' ');
         Some(())
     }
 
@@ -206,59 +236,5 @@ impl<'doc> PageText<'doc> {
             | Object::Null
             | Object::Reference(_) => None,
         }
-    }
-
-    fn move_to(&mut self, next_y: f64) {
-        let Some(previous_y) = self.previous_y else {
-            self.previous_y = Some(next_y);
-            self.line_start_y = next_y;
-            self.line_end_y = next_y;
-            self.text_y = next_y;
-            return;
-        };
-        self.update_line_span(next_y);
-        self.previous_y = Some(previous_y.add(next_y.sub(self.text_y)));
-        self.text_y = next_y;
-    }
-
-    fn update_line_span(&mut self, next_y: f64) {
-        let low = self.line_start_y.min(self.line_end_y);
-        let high = self.line_start_y.max(self.line_end_y);
-        let distance = vertical_distance(next_y, low, high);
-        let scaled_font_size = self.font_size.abs().mul_add(self.scale_y.abs(), 0.0_f64);
-        let threshold = 0.8_f64.mul_add(scaled_font_size, 0.0_f64);
-        if distance > threshold {
-            self.text.push('\n');
-            self.line_start_y = next_y;
-            self.line_end_y = next_y;
-        } else {
-            self.line_start_y = self.line_start_y.min(next_y);
-            self.line_end_y = self.line_end_y.max(next_y);
-        }
-    }
-}
-
-fn vertical_distance(position: f64, low: f64, high: f64) -> f64 {
-    if position > high {
-        position.sub(high)
-    } else if position < low {
-        low.sub(position)
-    } else {
-        0.0_f64
-    }
-}
-
-fn number(object: &Object) -> Option<f64> {
-    match object {
-        Object::Integer(value) => value.to_string().parse::<f64>().ok(),
-        Object::Real(value) => Some(f64::from(*value)),
-        Object::Boolean(_)
-        | Object::Name(_)
-        | Object::String(_, _)
-        | Object::Array(_)
-        | Object::Dictionary(_)
-        | Object::Stream(_)
-        | Object::Null
-        | Object::Reference(_) => None,
     }
 }
