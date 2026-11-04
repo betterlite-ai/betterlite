@@ -1,4 +1,3 @@
-use super::super::ListSetting;
 use crate::loader::{ConfigError, EnvironmentLookup};
 
 pub(in crate::sections::otel_settings) fn csv_values(value: &str) -> Vec<String> {
@@ -32,28 +31,21 @@ pub(super) fn normalized_exclusions(value: Option<serde_json::Value>) -> Vec<Str
     }).collect()
 }
 
-pub(super) fn setting_list<L: EnvironmentLookup>(
-    lookup: &L,
-    name: &str,
-    configured: Option<ListSetting>,
-) -> Option<Vec<String>> {
-    if let Some(value) = lookup.lookup(name) {
-        return Some(csv_values(&value));
-    }
-    configured.map(ListSetting::values)
-}
-
-pub(super) fn setting_string_opt<L: EnvironmentLookup>(
+pub(super) fn environment_or<L, T, F>(
     lookup: &L,
     names: &[&str],
-    configured: Option<String>,
-) -> Option<String> {
-    for name in names {
-        if let Some(value) = lookup.lookup(name) {
-            return Some(value);
-        }
+    configured: Option<T>,
+    parse: F,
+) -> Option<T>
+where
+    L: EnvironmentLookup,
+    F: FnOnce(String) -> T,
+{
+    let environment = names.iter().filter_map(|name| lookup.lookup(name)).next();
+    match environment {
+        Some(value) => Some(parse(value)),
+        None => configured,
     }
-    configured
 }
 
 pub(super) fn setting_bool<L: EnvironmentLookup>(

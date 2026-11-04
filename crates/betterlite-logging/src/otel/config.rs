@@ -196,17 +196,20 @@ pub fn resolve_otlp_http_tls(
 }
 
 fn exporter_owner(value: &str) -> Result<ExporterOwner, OTelConfigError> {
-    match value {
-        "arize" => Ok(ExporterOwner::ArizeAx),
-        "arize_phoenix" => Ok(ExporterOwner::ArizePhoenix),
-        "langfuse_otel" => Ok(ExporterOwner::LangfuseOtel),
-        "weave_otel" => Ok(ExporterOwner::WeaveOtel),
-        "levo" => Ok(ExporterOwner::Levo),
-        "agentops" => Ok(ExporterOwner::Agentops),
-        "newrelic" => Ok(ExporterOwner::Newrelic),
-        "signoz" => Ok(ExporterOwner::Signoz),
-        other => Err(OTelConfigError::ExporterOwner(other.to_owned())),
-    }
+    let owners = [
+        ("arize", ExporterOwner::ArizeAx),
+        ("arize_phoenix", ExporterOwner::ArizePhoenix),
+        ("langfuse_otel", ExporterOwner::LangfuseOtel),
+        ("weave_otel", ExporterOwner::WeaveOtel),
+        ("levo", ExporterOwner::Levo),
+        ("agentops", ExporterOwner::Agentops),
+        ("newrelic", ExporterOwner::Newrelic),
+        ("signoz", ExporterOwner::Signoz),
+    ];
+    owners
+        .iter()
+        .find_map(|(name, owner)| (*name == value).then_some(*owner))
+        .ok_or_else(|| OTelConfigError::ExporterOwner(value.to_owned()))
 }
 
 #[path = "config/tests.rs"]

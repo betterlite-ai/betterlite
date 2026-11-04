@@ -1,4 +1,4 @@
-use super::{ExporterSpec, Raw, Settings};
+use super::{ExporterSpec, ListSetting, Raw, Settings};
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
 
@@ -13,7 +13,8 @@ impl Section for Raw {
         let core = CoreSettings::resolve(&raw, lookup)?;
         let exporters = resolve_exporters(&raw, &core);
         let mapper_names = resolve_mapper_names(&raw, lookup, core.legacy_compat);
-        let baggage = resolve_baggage(&raw, lookup);
+        let (baggage_promoted_keys, baggage_metadata_keys, baggage_team_metadata_keys) =
+            resolve_baggage(&raw, lookup);
         Ok(Settings {
             exporter: core.exporter,
             endpoint: core.endpoint,
@@ -30,9 +31,9 @@ impl Section for Raw {
             exporters,
             mapper_names,
             resource_attributes: raw.resource_attributes.unwrap_or_default(),
-            baggage_promoted_keys: baggage.promoted,
-            baggage_metadata_keys: baggage.metadata,
-            baggage_team_metadata_keys: baggage.team_metadata,
+            baggage_promoted_keys,
+            baggage_metadata_keys,
+            baggage_team_metadata_keys,
         })
     }
 }
@@ -88,42 +89,50 @@ struct CoreSettings {
 
 impl CoreSettings {
     fn resolve<L: EnvironmentLookup>(raw: &Raw, lookup: &L) -> Result<Self, ConfigError> {
-        let exporter = setting_string_opt(
+        let exporter = environment_or(
             lookup,
             &["OTEL_EXPORTER", "OTEL_EXPORTER_OTLP_PROTOCOL"],
             raw.exporter.clone(),
+            |value| value,
         )
         .unwrap_or_else(|| "console".to_owned());
-        let endpoint = setting_string_opt(
+        let endpoint = environment_or(
             lookup,
             &["OTEL_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT"],
             raw.endpoint.clone(),
+            |value| value,
         );
-        let traces_endpoint = setting_string_opt(
+        let traces_endpoint = environment_or(
             lookup,
             &["OTEL_TRACES_ENDPOINT", "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"],
             raw.traces_endpoint.clone(),
+            |value| value,
         );
-        let headers = setting_string_opt(
+        let headers = environment_or(
             lookup,
             &["OTEL_HEADERS", "OTEL_EXPORTER_OTLP_HEADERS"],
             raw.headers.clone(),
+            |value| value,
         );
-        let service_name = lookup
-            .lookup("OTEL_SERVICE_NAME")
-            .or_else(|| raw.service_name.clone())
-            .unwrap_or_else(|| "litellm".to_owned());
-        let deployment_environment = setting_string_opt(
+        let service_name = environment_or(
+            lookup,
+            &["OTEL_SERVICE_NAME"],
+            raw.service_name.clone(),
+            |value| value,
+        )
+        .unwrap_or_else(|| "litellm".to_owned());
+        let deployment_environment = environment_or(
             lookup,
             &["OTEL_ENVIRONMENT_NAME"],
             raw.deployment_environment.clone(),
+            |value| value,
         );
-        let excluded_services = normalized_exclusions(
-            lookup
-                .lookup("LITELLM_OTEL_EXCLUDED_SERVICES")
-                .map(serde_json::Value::String)
-                .or_else(|| raw.excluded_services.clone()),
-        );
+        let excluded_services = normalized_exclusions(environment_or(
+            lookup,
+            &["LITELLM_OTEL_EXCLUDED_SERVICES"],
+            raw.excluded_services.clone(),
+            serde_json::Value::String,
+        ));
         let features = FeatureSettings::resolve(raw, lookup)?;
         Ok(Self {
             exporter,
@@ -186,33 +195,35 @@ impl FeatureSettings {
     }
 }
 
-struct BaggageSettings {
-    promoted: Vec<String>,
-    metadata: Vec<String>,
-    team_metadata: Vec<String>,
-}
-
-fn resolve_baggage<L: EnvironmentLookup>(raw: &Raw, lookup: &L) -> BaggageSettings {
-    BaggageSettings {
-        promoted: setting_list(
+fn resolve_baggage<L: EnvironmentLookup>(
+    raw: &Raw,
+    lookup: &L,
+) -> (Vec<String>, Vec<String>, Vec<String>) {
+    (
+        environment_or(
             lookup,
-            "LITELLM_OTEL_BAGGAGE_PROMOTED_KEYS",
-            raw.baggage_promoted_keys.clone(),
+            &["LITELLM_OTEL_BAGGAGE_PROMOTED_KEYS"],
+            raw.baggage_promoted_keys.clone().map(ListSetting::values),
+            |value| csv_values(&value),
         )
         .unwrap_or_else(|| default_baggage_keys(DEFAULT_BAGGAGE_PROMOTED_KEYS)),
-        metadata: setting_list(
+        environment_or(
             lookup,
-            "LITELLM_OTEL_BAGGAGE_METADATA_KEYS",
-            raw.baggage_metadata_keys.clone(),
+            &["LITELLM_OTEL_BAGGAGE_METADATA_KEYS"],
+            raw.baggage_metadata_keys.clone().map(ListSetting::values),
+            |value| csv_values(&value),
         )
         .unwrap_or_else(|| default_baggage_keys(DEFAULT_BAGGAGE_METADATA_KEYS)),
-        team_metadata: setting_list(
+        environment_or(
             lookup,
-            "LITELLM_OTEL_BAGGAGE_TEAM_METADATA_KEYS",
-            raw.baggage_team_metadata_keys.clone(),
+            &["LITELLM_OTEL_BAGGAGE_TEAM_METADATA_KEYS"],
+            raw.baggage_team_metadata_keys
+                .clone()
+                .map(ListSetting::values),
+            |value| csv_values(&value),
         )
         .unwrap_or_default(),
-    }
+    )
 }
 
 fn resolve_mapper_names<L: EnvironmentLookup>(
@@ -220,10 +231,11 @@ fn resolve_mapper_names<L: EnvironmentLookup>(
     lookup: &L,
     legacy_compat: bool,
 ) -> Vec<String> {
-    let mapper_names = setting_list(
+    let mapper_names = environment_or(
         lookup,
-        "LITELLM_OTEL_MAPPER_NAMES",
-        raw.mapper_names.clone(),
+        &["LITELLM_OTEL_MAPPER_NAMES"],
+        raw.mapper_names.clone().map(ListSetting::values),
+        |value| csv_values(&value),
     )
     .unwrap_or_else(|| vec!["genai".to_owned()]);
     let mut names = vec!["genai".to_owned()];
@@ -269,5 +281,5 @@ mod helpers;
 pub(super) use helpers::csv_values;
 use helpers::{
     DEFAULT_BAGGAGE_METADATA_KEYS, DEFAULT_BAGGAGE_PROMOTED_KEYS, default_baggage_keys,
-    normalized_exclusions, setting_bool, setting_list, setting_string_opt,
+    environment_or, normalized_exclusions, setting_bool,
 };
