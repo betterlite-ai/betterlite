@@ -16,8 +16,6 @@ description: >-
   adapters, 160 HTTP/SSE fixtures and 50 wiring/corpus, 685 total. B521/B543 own event decoding and its fuzzing.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/assistant_run_sdk.rs
   - crates/betterlite-core/src/api/assistant_run_sdk/**
   - tools/oracle/src/sdk_http.rs

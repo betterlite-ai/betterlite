@@ -25,7 +25,6 @@ description: >-
   80 fuzz lines, cap 725.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,error,chirp_backend}.rs
     - crates/betterlite-vertex/src/chirp_backend.rs
     - crates/betterlite-vertex/src/chirp_backend/**
     - crates/betterlite-vertex/fuzz/Cargo.toml

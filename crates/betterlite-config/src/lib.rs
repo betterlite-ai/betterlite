@@ -9,6 +9,7 @@ pub mod config_override;
 pub mod cost_adjustments;
 pub mod credentials;
 pub mod encryption;
+pub mod env_integer;
 pub mod generic_sso_callback;
 pub mod google_sso;
 pub mod loader;

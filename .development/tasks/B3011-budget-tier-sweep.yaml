@@ -8,7 +8,8 @@ description: >-
   After each successful commit, invalidate the spend counters and cache keys the cascade touched using B3010's cache-invalidation logic for non-enduser entities. Walk all customers linked to the tier in keyset-paged chunks without enumerating them into bind parameters, dropping cached spend after each page and recording a failed page as truncated rather than claiming complete invalidation. Report progress to service logging with the count of budgets found and endusers invalidated; the advanced count is tracked internally for draining detection only.
 scope:
   paths:
-    - crates/betterlite-db/**
+    - crates/betterlite-db/src/budget_tier_sweep.rs
+    - crates/betterlite-db/src/budget_tier_sweep/**
     - Cargo.toml
   lint_tables: true
 references:

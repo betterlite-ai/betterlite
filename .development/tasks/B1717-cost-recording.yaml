@@ -42,8 +42,6 @@ description: >-
   changed lines including compact membership data, tests and both oracle adapters.
 scope:
   paths:
-    - crates/betterlite-core/src/cost.rs
-    - crates/betterlite-core/src/cost/**
     - crates/betterlite-core/src/cost/recording.rs
     - crates/betterlite-core/src/cost/recording/**
     - crates/betterlite-core/src/cost/dispatch.rs

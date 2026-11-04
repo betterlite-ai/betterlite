@@ -46,7 +46,7 @@ checks:
   commands:
     - id: video-transport-tests
       why: generation and content handler tests fail, do not exist, or behavior tests do not cover all three generation paths and content POST/GET selection
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^video_http_transport::/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::videos_http_transport::(.*::)?video_http_transport::/)'
 oracle_cases: []
 deviations: []
 out_of_scope:

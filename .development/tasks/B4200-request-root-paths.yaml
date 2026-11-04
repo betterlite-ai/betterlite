@@ -15,8 +15,15 @@ description: >-
 scope:
   paths:
     - Cargo.toml
-    - crates/betterlite-config/**
-    - crates/betterlite-server/**
+    - crates/betterlite-config/src/sections/request_root_paths.rs
+    - crates/betterlite-config/src/sections/request_root_paths/**
+    - crates/betterlite-server/src/middleware/request_root_paths.rs
+    - crates/betterlite-server/src/middleware/request_root_paths/**
+    - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/server.rs
+    - crates/betterlite-server/src/model_list/tests.rs
+    - crates/betterlite-server/src/auth/auth_identity/tests.rs
+    - crates/betterlite-server/src/auth/route_match/tests.rs
     - tools/oracle/cases/root-path/**
     - tools/oracle/helpers/b4200.py
     - tools/oracle/helpers/b4200/**
@@ -102,6 +109,7 @@ pitfalls:
   - The scalar SERVER_ROOT_PATH defaults to an empty string in the code, not "/" as the old docstring claimed.
   - get_server_root_paths calls normalize_root_paths, so the constructor and the function both call it; avoid normalizing twice.
   - HTTP and WebSocket are ASGI scope types to handle; lifespan, disconnect, and other scopes pass through without modification.
+  - The config section lives at crates/betterlite-config/src/sections/request_root_paths.rs, read as config.sections.request_root_paths; the middleware lives at crates/betterlite-server/src/middleware/request_root_paths.rs. server.rs application() passes routes::router only the master key, auth routes and the model list; pass config.sections.request_root_paths in and install the middleware there, the way auth_route_patterns layers its stage. Change nothing else in routes.rs or server.rs; model_list/tests.rs, auth/auth_identity/tests.rs and auth/route_match/tests.rs also call routes::router and only gain the new argument.
 review_level: standard
 budget:
   max_changed_lines: 1500

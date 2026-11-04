@@ -55,6 +55,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "vector_store_records"
+path = "fuzz_targets/vector_store_records.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "sse_events"
 path = "fuzz_targets/sse_events.rs"
 test = false
@@ -62,3 +69,10 @@ doc = false
 bench = false
 
 [workspace]
+
+[[bin]]
+name = "cohere_line"
+path = "fuzz_targets/cohere_line.rs"
+test = false
+doc = false
+bench = false

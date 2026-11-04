@@ -118,10 +118,10 @@ checks:
       run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/^cache_aware_routing::minimum_/)'
     - id: transforms-cases
       why: has_request_transforms tests are missing or transform detection fails
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^prompt_cache_prediction::has_request_transforms/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^cost::prompt_cache_scenarios::(.*::)?prompt_cache_prediction::has_request_transforms/)'
     - id: total-tokens-cases
       why: CacheTokenBuckets.total_tokens tests are missing or sum is wrong
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^cache_token_buckets::total_tokens/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^cost::prompt_cache_scenarios::(.*::)?cache_token_buckets::total_tokens/)'
 
 oracle_cases: []
 

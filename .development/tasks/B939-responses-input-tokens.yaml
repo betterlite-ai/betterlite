@@ -37,7 +37,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-server/Cargo.toml
-  - crates/betterlite-server/src/error.rs
   - crates/betterlite-server/src/api/responses_input_tokens.rs
   - crates/betterlite-server/src/api/responses_input_tokens/**
   - crates/betterlite-server/src/api.rs
@@ -49,8 +48,6 @@ scope:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/responses_input_tokens.rs
   - crates/betterlite-core/src/api/responses_input_tokens/**
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - tools/oracle/cases/api/responses-input-tokens/**

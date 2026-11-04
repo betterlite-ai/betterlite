@@ -24,7 +24,7 @@ description: >-
   signature_image and search_without_usage. Budget 330 code, 190 tests, 110 adapters and 140 config/fuzz.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,error,vertex_gemini_images,vertex_image_identity}.rs
+    - crates/betterlite-vertex/src/{vertex_gemini_images,vertex_image_identity}.rs
     - crates/betterlite-vertex/src/{vertex_gemini_images,vertex_image_identity}/**
     - crates/betterlite-config/src/{env,settings}.rs
     - crates/betterlite-config/src/providers/vertex.rs

@@ -35,10 +35,6 @@ description: >-
   220 implementation, 220 tests and 120 oracle lines in a 650-line change.
 scope:
   paths:
-    - crates/betterlite-core/src/api.rs
-    - crates/betterlite-core/src/api/**
-    - crates/betterlite-core/src/api/riva.rs
-    - crates/betterlite-core/src/api/riva/**
     - crates/betterlite-core/src/api/riva/records.rs
     - crates/betterlite-core/src/api/riva/records/**
     - tools/oracle/src/helpers/core_ops/riva_records.rs

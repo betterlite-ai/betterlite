@@ -168,7 +168,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog_llm_privacy::.*spend($|::)/)'
     - id: budget-reset-decoder-tests
       why: budget reset datetime decoder unit tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog_budget_reset_decoder::test/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog_llm_privacy::(.*::)?datadog_budget_reset_decoder::test/)'
     - id: budget-reset-decoder-corpus
       why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
       run: >-

@@ -52,8 +52,6 @@ scope:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/api_boundaries.rs
   - crates/betterlite-core/src/api/api_boundaries/**
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - crates/betterlite-core/src/api/limits.rs

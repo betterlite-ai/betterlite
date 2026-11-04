@@ -50,7 +50,7 @@ checks:
   commands:
     - id: behavior-tests
       why: Type construction, field access, get_error_class pass-through or _hidden_params behavior are incomplete or fail
-      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^genai_contract(::|$)/) - test(/replays_the_.*_corpus/)'
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^genai::(.*::)?genai_contract(::|$)/) - test(/replays_the_.*_corpus/)'
 oracle_cases:
   - tools/oracle/cases/genai/generate-content-response-sdk-construction.yaml
   - tools/oracle/cases/genai/generate-content-response-dict-fallback.yaml
