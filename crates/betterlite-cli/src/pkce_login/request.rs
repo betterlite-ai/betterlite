@@ -4,7 +4,7 @@ use url::Url;
 
 pub const MAX_LINE_BYTES: usize = 0x0001_0000;
 pub const MAX_HEADER_LINES: usize = 99;
-pub const MAX_REQUEST_BYTES: usize = MAX_LINE_BYTES * (MAX_HEADER_LINES + 1);
+pub const MAX_REQUEST_BYTES: usize = MAX_LINE_BYTES * (MAX_HEADER_LINES + 1) + 2;
 
 // secrecy::SecretString already carries a redacting Debug impl ("SecretBox<str>([REDACTED])"), so deriving Debug here is safe: it never prints `code`.
 #[derive(Debug, Clone)]
@@ -41,20 +41,20 @@ pub fn parse_request(buffer: &[u8]) -> RequestRead {
     if buffer.len() > MAX_REQUEST_BYTES {
         return RequestRead::HeadersTooLarge;
     }
-    let mut lines = buffer.split(|byte| *byte == b'\n');
+    let mut lines = buffer.split_inclusive(|byte| *byte == b'\n');
     if let Some(line) = lines.next() {
-        let line_len = line.len().saturating_add(1);
+        let line_len = line.len();
         if line_len > MAX_LINE_BYTES {
             return RequestRead::UriTooLong;
         }
     }
     let mut header_lines = 0_usize;
     for line in lines {
-        if line.is_empty() || line == b"\r" {
+        if line == b"\n" || line == b"\r\n" || line == b"\r" {
             break;
         }
         header_lines = header_lines.saturating_add(1);
-        if line.len().saturating_add(1) > MAX_LINE_BYTES || header_lines > MAX_HEADER_LINES {
+        if line.len() > MAX_LINE_BYTES || header_lines > MAX_HEADER_LINES {
             return RequestRead::HeadersTooLarge;
         }
     }

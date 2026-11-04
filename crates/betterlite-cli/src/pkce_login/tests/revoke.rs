@@ -31,25 +31,28 @@ fn revoke_posts_an_rfc7009_request_for_the_refresh_token() {
     );
 }
 
-fn assert_revoke_failure(status: u16, body: Vec<u8>) {
+#[rstest::rstest]
+#[case::invalid_client(401, br#"{"error":"invalid_client"}"#, "invalid_client")]
+#[case::server_error(500, b"server error", "server error")]
+fn revoke_non_503_errors_are_failures(
+    #[case] status: u16,
+    #[case] body: &[u8],
+    #[case] detail: &str,
+) {
     let client = ScriptedHttp::new(HttpResponse {
         status,
         headers: Vec::new(),
-        body,
+        body: body.to_vec(),
     });
-    assert!(matches!(
-        revoke_credential(
-            &contract(),
-            "client",
-            &SecretString::from("refresh"),
-            &client
-        ),
-        Err(RevocationUnavailableOrFailure::Failure(_))
-    ));
-}
-
-#[test]
-fn revoke_non_503_errors_are_failures() {
-    assert_revoke_failure(401, br#"{"error":"invalid_client"}"#.to_vec());
-    assert_revoke_failure(500, Vec::new());
+    let error = revoke_credential(
+        &contract(),
+        "client",
+        &SecretString::from("refresh"),
+        &client,
+    )
+    .expect_err("revocation failed");
+    let RevocationUnavailableOrFailure::Failure(failure) = error else {
+        panic!("expected a revocation failure");
+    };
+    assert!(failure.to_string().contains(detail));
 }

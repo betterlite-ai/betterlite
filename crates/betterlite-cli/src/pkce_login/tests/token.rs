@@ -12,6 +12,7 @@ fn assert_credential(client: &ScriptedHttp, credential: &super::super::models::P
     assert_eq!(credential.access_token.expose_secret(), "sk-cli-new");
     assert_eq!(credential.refresh_token.expose_secret(), "llm_srefresh_new");
     assert_eq!(credential.client_id, "client");
+    assert_eq!(credential.expires_at, 3700);
     assert_eq!(
         credential.token_endpoint,
         "https://example.test/oauth/token"

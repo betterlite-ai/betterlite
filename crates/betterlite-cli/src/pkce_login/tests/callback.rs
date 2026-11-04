@@ -48,27 +48,29 @@ fn assert_callback_request_settles(request: Vec<u8>, status: &str, expected_code
     let mut server =
         LoopbackServer::with_listener(listener, "s", CONNECTION_TIMEOUT).expect("server");
     let address = server.address;
-    let (sender, receiver) = sync_channel(1);
     let outcome = thread::scope(|scope| {
         scope.spawn(move || {
             let mut stream = TcpStream::connect(address).expect("connect");
             stream.write_all(&request).expect("write request");
-            let mut response = Vec::new();
-            stream.read_to_end(&mut response).expect("read response");
-            sender
-                .send(String::from_utf8(response).expect("response text"))
-                .expect("response");
+            let mut response = [0_u8; 64];
+            let size = stream.read(&mut response).expect("read response");
+            assert!(
+                response
+                    .get(..size)
+                    .expect("response bytes")
+                    .starts_with(format!("HTTP/1.1 {status}").as_bytes())
+            );
+            if status != "200" {
+                let mut valid = TcpStream::connect(address).expect("connect valid");
+                valid
+                    .write_all(b"GET /callback?state=s&code=c HTTP/1.1\r\n\r\n")
+                    .expect("write valid");
+            }
         });
         server
             .wait(Duration::from_secs(2), &SystemClock)
             .expect("callback")
     });
-    assert!(
-        receiver
-            .recv()
-            .expect("response")
-            .starts_with(&format!("HTTP/1.1 {status}"))
-    );
     let CallbackOutcome::Code(code) = outcome else {
         panic!("expected code");
     };
@@ -79,14 +81,13 @@ fn assert_callback_request_settles(request: Vec<u8>, status: &str, expected_code
 fn callback_answers_414_past_a_64_kib_request_line() {
     let request = vec![b'A'; 0x0001_0001];
     assert!(matches!(parse_request(&request), RequestRead::UriTooLong));
-    assert_rejected_then_valid_callback(request, "414");
+    assert_callback_request_settles(request, "414", "c");
 }
 
 #[test]
 fn callback_answers_431_past_the_header_limits() {
     let mut long = b"GET /callback HTTP/1.1\r\nX: ".to_vec();
-    long.extend(iter::repeat_n(b'x', 0x0001_0000));
-    long.extend_from_slice(b"\r\n\r\n");
+    long.extend(iter::repeat_n(b'x', 65_534));
     let mut many = b"GET /callback HTTP/1.1\r\n".to_vec();
     many.extend(
         iter::repeat_n(b"X: y\r\n".as_slice(), 100)
@@ -96,57 +97,65 @@ fn callback_answers_431_past_the_header_limits() {
     many.extend_from_slice(b"\r\n");
     assert!(matches!(parse_request(&long), RequestRead::HeadersTooLarge));
     assert!(matches!(parse_request(&many), RequestRead::HeadersTooLarge));
-    assert_rejected_then_valid_callback(long, "431");
-    assert_rejected_then_valid_callback(many, "431");
+    assert_callback_request_settles(long, "431", "c");
+    assert_callback_request_settles(many, "431", "c");
 }
 
-fn assert_rejected_then_valid_callback(request: Vec<u8>, expected_status: &str) {
-    let listener = TcpLoopbackListener::bind().expect("listener");
-    let mut server =
-        LoopbackServer::with_listener(listener, "s", CONNECTION_TIMEOUT).expect("server");
-    let address = server.address;
-    let (sender, receiver) = sync_channel(2);
-    let outcome = thread::scope(|scope| {
-        scope.spawn(move || {
-            let mut oversized = TcpStream::connect(address).expect("connect oversized");
-            oversized.write_all(&request).expect("write oversized");
-            let mut response = [0_u8; 64];
-            let size = oversized
-                .read(&mut response)
-                .expect("read oversized response");
-            sender
-                .send(response.get(..size).expect("response bytes").to_vec())
-                .expect("oversized response");
-            let mut valid = TcpStream::connect(address).expect("connect valid");
-            valid
-                .write_all(b"GET /callback?state=s&code=c HTTP/1.1\r\n\r\n")
-                .expect("write valid");
-        });
-        server
-            .wait(Duration::from_secs(2), &SystemClock)
-            .expect("valid callback")
-    });
-    let response =
-        String::from_utf8(receiver.recv().expect("oversized response")).expect("response text");
-    assert!(response.starts_with(&format!("HTTP/1.1 {expected_status}")));
-    let CallbackOutcome::Code(code) = outcome else {
-        panic!("expected code");
-    };
-    assert_eq!(code.code.expose_secret(), "c");
+#[rstest::rstest]
+#[case::below_limit(65_535)]
+#[case::at_limit(65_536)]
+#[case::over_limit(65_537)]
+fn callback_request_limits_match_http_server(#[case] line_bytes: usize) {
+    let mut request = b"GET /callback?state=s&code=c&padding=".to_vec();
+    request.resize(
+        line_bytes.checked_sub(11).expect("request prefix fits"),
+        b'x',
+    );
+    request.extend_from_slice(b" HTTP/1.1\r\n");
+    assert_eq!(request.len(), line_bytes);
+    request.extend_from_slice(b"\r\n");
+    let mut header = b"X: ".to_vec();
+    header.resize(line_bytes.checked_sub(2).expect("header prefix fits"), b'x');
+    header.extend_from_slice(b"\r\n");
+    let mut with_header = b"GET /callback HTTP/1.1\r\n".to_vec();
+    with_header.extend_from_slice(&header);
+    with_header.extend_from_slice(b"\r\n");
+    if line_bytes > 65_536 {
+        assert!(matches!(parse_request(&request), RequestRead::UriTooLong));
+        assert!(matches!(
+            parse_request(&with_header),
+            RequestRead::HeadersTooLarge
+        ));
+    } else {
+        assert!(matches!(parse_request(&request), RequestRead::Complete(_)));
+        assert!(matches!(
+            parse_request(&with_header),
+            RequestRead::Complete(_)
+        ));
+    }
 }
 
 #[test]
-fn callback_request_limits_match_http_server() {
-    let mut request_line = vec![b'G'; 0xFFFF];
-    request_line.extend_from_slice(b"\n");
-    assert!(matches!(
-        parse_request(&request_line),
-        RequestRead::Malformed | RequestRead::UnsupportedMethod
-    ));
+fn callback_request_waits_for_newline_at_the_line_limit() {
+    let mut request = b"GET /callback?padding=".to_vec();
+    request.resize(65_536, b'x');
+    assert!(matches!(parse_request(&request), RequestRead::Incomplete));
     let mut header = b"GET /callback HTTP/1.1\r\nX: ".to_vec();
-    header.extend(iter::repeat_n(b'x', 0xFFFB));
-    header.extend_from_slice(b"\r\n\r\n");
-    assert!(matches!(parse_request(&header), RequestRead::Complete(_)));
+    header.extend(iter::repeat_n(b'x', 65_533));
+    assert!(matches!(parse_request(&header), RequestRead::Incomplete));
+}
+
+#[test]
+fn callback_request_accepts_all_lines_at_the_limit() {
+    let mut request = b"GET /callback?padding=".to_vec();
+    request.resize(65_525, b'x');
+    request.extend_from_slice(b" HTTP/1.1\r\n");
+    let mut header = b"X: ".to_vec();
+    header.resize(65_534, b'x');
+    header.extend_from_slice(b"\r\n");
+    request.extend(iter::repeat_n(header.as_slice(), 99).flatten().copied());
+    request.extend_from_slice(b"\r\n");
+    assert!(matches!(parse_request(&request), RequestRead::Complete(_)));
 }
 
 #[test]

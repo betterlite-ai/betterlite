@@ -8,7 +8,7 @@ use thiserror::Error as ThisError;
 
 use super::{
     CALLBACK_PATH, Clock,
-    loopback::{LoopbackConnection, LoopbackListener},
+    loopback::{LoopbackConnection, LoopbackListener, TcpLoopbackListener},
     models::{CallbackCode, CallbackDenied, CallbackOutcome, PkceFailure},
     request::{CallbackQuery, RequestRead, parse_request},
 };
@@ -26,6 +26,16 @@ pub struct LoopbackServer<L: LoopbackListener> {
     pub(super) address: SocketAddr,
     expected_state: String,
     connection_timeout: Duration,
+}
+
+impl LoopbackServer<TcpLoopbackListener> {
+    pub fn bind(expected_state: &str, connection_timeout: Duration) -> Result<Self, CallbackError> {
+        Self::with_listener(
+            TcpLoopbackListener::bind().map_err(CallbackError::Bind)?,
+            expected_state,
+            connection_timeout,
+        )
+    }
 }
 
 impl<L: LoopbackListener> LoopbackServer<L> {
