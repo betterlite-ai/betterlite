@@ -1,9 +1,8 @@
 use std::collections::BTreeMap;
 
-use betterlite_openai::cohere_streams::{CohereStreamError, CohereStreamVersion};
+use betterlite_openai::cohere_streams::{CohereChunk, CohereStreamError, CohereStreamVersion};
 use secrecy::SecretString;
-use serde::Deserialize;
-use serde_json::{Map, Value};
+use serde::{Deserialize, Serialize};
 
 mod tests;
 
@@ -19,6 +18,12 @@ pub(crate) struct Input {
     api_key: SecretString,
 }
 
+#[derive(Serialize)]
+struct Output {
+    headers: BTreeMap<String, String>,
+    chunk: CohereChunk,
+}
+
 pub(crate) struct Op;
 
 impl crate::helpers::Helper for Op {
@@ -32,17 +37,17 @@ impl crate::helpers::Helper for Op {
             input.record.as_bytes(),
             input.bytes,
         );
-        let decoded_chunk = decoded.map_err(|error| error_result(&error))?;
-        let chunk_value = serde_json::to_value(decoded_chunk)
-            .map_err(|source| helper_error("InternalError", source.to_string()))?;
-        Ok(Value::Object(Map::from_iter([
-            (
-                String::from("headers"),
-                serde_json::to_value(headers)
-                    .map_err(|source| helper_error("InternalError", source.to_string()))?,
-            ),
-            (String::from("chunk"), chunk_value),
-        ])))
+        let chunk = decoded.map_err(|error| error_result(&error))?;
+        serde_json::to_value(Output { headers, chunk }).map_err(|source| {
+            Box::new(crate::helpers::HelperError {
+                class: String::from("InternalError"),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+                message: source.to_string(),
+            })
+        })
     }
 }
 
@@ -64,16 +69,12 @@ fn error_result(error: &CohereStreamError) -> Box<crate::helpers::HelperError> {
         | CohereStreamError::UsageOverflow
         | CohereStreamError::TooLarge => "ValueError",
     };
-    helper_error(class, error.to_string())
-}
-
-fn helper_error(class: &str, message: String) -> Box<crate::helpers::HelperError> {
     Box::new(crate::helpers::HelperError {
         class: String::from(class),
         status: None,
         error_type: None,
         param: None,
         code: None,
-        message,
+        message: error.to_string(),
     })
 }

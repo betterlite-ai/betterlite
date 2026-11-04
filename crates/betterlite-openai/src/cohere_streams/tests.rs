@@ -226,9 +226,13 @@ fn v2_null_usage_defaults_and_non_object_usage_fails() {
     ));
 }
 
-#[test]
-fn v2_nonempty_usage_without_tokens_emits_zero_counts() {
-    let chunk = decode_cohere_line(CohereStreamVersion::V2, br#"{"event":"message-end","data":{"delta":{"usage":{"billed_units":{"input_tokens":99}}}}}"#, false).unwrap();
+#[rstest]
+#[case::billed(
+    r#"{"event":"message-end","data":{"delta":{"usage":{"billed_units":{"input_tokens":99}}}}}"#
+)]
+#[case::extension(r#"{"event":"message-end","data":{"delta":{"usage":{"extension":false}}}}"#)]
+fn v2_nonempty_usage_without_tokens_emits_zero_counts(#[case] record: &str) {
+    let chunk = decode_cohere_line(CohereStreamVersion::V2, record.as_bytes(), false).unwrap();
     assert_eq!(
         chunk.usage,
         Some(super::CohereUsage {

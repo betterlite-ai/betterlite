@@ -114,7 +114,7 @@ fn citation_fields(citation: &Citation) -> Result<Option<ProviderFields>, Cohere
 }
 
 fn usage(data: &UsageData) -> Result<Option<CohereUsage>, CohereStreamError> {
-    if data.tokens.is_none() && data.billed_units.is_none() {
+    if data.tokens.is_none() && data.other.is_empty() {
         return Ok(None);
     }
     let prompt = data

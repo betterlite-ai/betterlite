@@ -1,5 +1,6 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::IgnoredAny};
 use serde_json::value::RawValue;
+use serde_with::{Map, serde_as};
 
 #[derive(Deserialize)]
 #[serde(untagged)]
@@ -35,10 +36,14 @@ pub(super) struct EventDelta {
     pub usage: Option<UsageData>,
 }
 
+#[serde_as]
 #[derive(Deserialize)]
 pub(super) struct UsageData {
     pub tokens: Option<Tokens>,
-    pub billed_units: Option<Tokens>,
+    // Unmodeled keys still make the provider usage object nonempty.
+    #[serde(flatten)]
+    #[serde_as(as = "Map<_, _>")]
+    pub other: Vec<(String, IgnoredAny)>,
 }
 
 #[derive(Deserialize)]
