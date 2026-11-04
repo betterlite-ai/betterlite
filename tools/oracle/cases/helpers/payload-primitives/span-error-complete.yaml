@@ -1,0 +1,24 @@
+{
+  "kind": "helper",
+  "name": "payload-primitives-span-error-complete",
+  "call": {
+    "b3843": {
+      "function": "span_error",
+      "value": {
+        "status": "failure",
+        "error_str": "fallback",
+        "error_information": {
+          "error_class": "ProviderError",
+          "error_message": "primary",
+          "error_code": "E1",
+          "traceback": "trace",
+          "llm_provider": "provider"
+        }
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

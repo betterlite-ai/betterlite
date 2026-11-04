@@ -1,0 +1,14 @@
+{
+  "kind": "helper",
+  "name": "payload-primitives-server-explicit-default-port",
+  "call": {
+    "b3843": {
+      "function": "server_info",
+      "value": "https://example.com:443/path"
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
