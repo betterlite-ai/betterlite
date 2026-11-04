@@ -73,9 +73,6 @@ pub fn insert_user_continue_message(
 ) -> Result<Vec<Message>, MessageNormalizationError> {
     let limit = MAX_COMPLETION_MESSAGES;
     check_limit(messages, MessageNormalizationError::InputTooLong { limit })?;
-    if messages.is_empty() {
-        return Ok(Vec::new());
-    }
     let placeholder = continuation_placeholder(custom, "user");
     let mut result = Vec::with_capacity(messages.len().saturating_mul(2).saturating_add(1));
     let mut previous_counted_role = None;
@@ -97,11 +94,7 @@ pub fn insert_user_continue_message(
         }
         previous_role = Some(message.role.as_str());
     }
-    if ensure
-        && messages
-            .last()
-            .is_some_and(|message| message.role == "assistant")
-    {
+    if ensure && previous_role == Some("assistant") {
         result.push(placeholder);
     }
     check_limit(&result, MessageNormalizationError::OutputTooLong { limit })?;
@@ -126,22 +119,24 @@ pub fn insert_assistant_continuation(
 ) -> Result<Vec<Message>, MessageNormalizationError> {
     let limit = MAX_COMPLETION_MESSAGES;
     check_limit(messages, MessageNormalizationError::InputTooLong { limit })?;
-    if !ensure || messages.len() <= 1 {
-        return Ok(messages.to_vec());
-    }
-    let placeholder = continuation_placeholder(custom, "assistant");
-    let mut previous_counted_user = false;
-    let mut result = Vec::with_capacity(messages.len().saturating_mul(2));
-    for message in messages {
-        let counted_user = counts_for_alternation(message) && message.role == "user";
-        if counted_user && previous_counted_user {
-            result.push(placeholder.clone());
+    let result = if ensure && messages.len() > 1 {
+        let placeholder = continuation_placeholder(custom, "assistant");
+        let mut previous_counted_user = false;
+        let mut inserted = Vec::with_capacity(messages.len().saturating_mul(2));
+        for message in messages {
+            let counted_user = counts_for_alternation(message) && message.role == "user";
+            if counted_user && previous_counted_user {
+                inserted.push(placeholder.clone());
+            }
+            inserted.push(message.clone());
+            if counts_for_alternation(message) {
+                previous_counted_user = message.role == "user";
+            }
         }
-        result.push(message.clone());
-        if counts_for_alternation(message) {
-            previous_counted_user = message.role == "user";
-        }
-    }
+        inserted
+    } else {
+        messages.to_vec()
+    };
     check_limit(&result, MessageNormalizationError::OutputTooLong { limit })?;
     Ok(result)
 }
