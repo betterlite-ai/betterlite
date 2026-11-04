@@ -19,12 +19,8 @@ description: >-
   765 total. This task adds no decoder; extend the existing config and SDK case corpora.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/vector_store_search.rs
   - crates/betterlite-core/src/api/vector_store_search/**
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/**
   - crates/betterlite-config/src/api/vector_store_search.rs
   - crates/betterlite-config/src/api/vector_store_search/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/vector-store-search-*

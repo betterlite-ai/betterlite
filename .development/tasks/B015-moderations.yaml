@@ -22,12 +22,27 @@ description: >-
 scope:
   paths:
   - Cargo.toml
-  - crates/betterlite-openai/**
-  - crates/betterlite-provider/**
-  - crates/betterlite-server/**
-  - crates/betterlite-config/**
+  - crates/betterlite-openai/src/moderation_request.rs
+  - crates/betterlite-openai/src/moderation_request/**
+  - crates/betterlite-openai/src/moderation_response.rs
+  - crates/betterlite-openai/src/moderation_response/**
+  - crates/betterlite-openai/src/moderation_execution.rs
+  - crates/betterlite-openai/src/moderation_execution/**
+  - crates/betterlite-openai/fuzz/Cargo.toml
+  - crates/betterlite-openai/fuzz/fuzz_targets/moderation_request.rs
+  - crates/betterlite-openai/fuzz/fuzz_targets/moderation_response.rs
+  - crates/betterlite-openai/fuzz/corpus/moderation_request/**
+  - crates/betterlite-openai/fuzz/corpus/moderation_response/**
+  - crates/betterlite-server/src/server.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/routes/moderations.rs
+  - crates/betterlite-server/src/routes/moderations/**
+  - crates/betterlite-config/src/sections/moderation_model.rs
+  - crates/betterlite-config/src/sections/moderation_model/**
+  - "crates/betterlite-config/fuzz/corpus/config_yaml/moderation-model-*"
+  - crates/betterlite-core/src/dispatch.rs
+  - crates/betterlite-core/src/operation.rs
   - tools/oracle/cases/moderations/**
-  - crates/betterlite-core/**
   - tools/oracle/helpers/b015.py
   - tools/oracle/helpers/b015/**
   - tools/oracle/src/helpers/oracle/b015.rs

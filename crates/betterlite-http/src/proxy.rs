@@ -1,8 +1,11 @@
+use std::collections::BTreeMap;
 use std::mem;
 use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_config::proxy::{ProxyPolicy, ProxyRoute};
+use betterlite_config::tls::TlsPolicy;
+use betterlite_config::types::{Config, ModelDeployment};
 use futures_util::StreamExt as _;
 use futures_util::stream::BoxStream;
 use reqwest::header::{ACCEPT, CONTENT_TYPE, HeaderMap};
@@ -10,6 +13,7 @@ use reqwest::{Client, ClientBuilder, Proxy, Request, Response, Url};
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::error::HttpError;
+use crate::tls::{TlsError, apply_policy};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
@@ -22,13 +26,42 @@ pub struct ProxiedClient {
 }
 
 impl ProxiedClient {
-    pub fn outbound(policy: &Arc<ProxyPolicy>) -> Result<Self, HttpError> {
+    pub fn outbound_for_deployment(
+        proxy: &Arc<ProxyPolicy>,
+        config: &Config,
+        deployment: &ModelDeployment,
+        environment: &BTreeMap<String, String>,
+    ) -> Result<Self, TlsError> {
+        let tls = TlsPolicy::resolve(config, environment, deployment.litellm_params.ssl_verify)?;
         let builder = ClientBuilder::new()
             .tls_backend_rustls()
             .connect_timeout(CONNECT_TIMEOUT)
             .pool_idle_timeout(POOL_IDLE_TIMEOUT)
             .pool_max_idle_per_host(POOL_MAX_IDLE_PER_HOST);
+        let configured = apply_policy(builder, &tls)?;
+        Self::build(configured, proxy).map_err(TlsError::Http)
+    }
+
+    pub fn outbound(policy: &Arc<ProxyPolicy>) -> Result<Self, HttpError> {
+        let builder = ClientBuilder::new()
+            .http1_only()
+            .tls_backend_rustls()
+            .connect_timeout(CONNECT_TIMEOUT)
+            .pool_idle_timeout(POOL_IDLE_TIMEOUT)
+            .pool_max_idle_per_host(POOL_MAX_IDLE_PER_HOST);
         Self::build(builder, policy)
+    }
+
+    pub fn outbound_with_tls(policy: &Arc<ProxyPolicy>, tls: &TlsPolicy) -> Result<Self, TlsError> {
+        let configured = apply_policy(
+            ClientBuilder::new()
+                .tls_backend_rustls()
+                .connect_timeout(CONNECT_TIMEOUT)
+                .pool_idle_timeout(POOL_IDLE_TIMEOUT)
+                .pool_max_idle_per_host(POOL_MAX_IDLE_PER_HOST),
+            tls,
+        )?;
+        Self::build(configured, policy).map_err(TlsError::Http)
     }
 
     pub fn build(builder: ClientBuilder, policy: &Arc<ProxyPolicy>) -> Result<Self, HttpError> {

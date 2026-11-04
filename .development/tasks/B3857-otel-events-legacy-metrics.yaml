@@ -79,13 +79,13 @@ checks:
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::legacy_metrics::/)'
     - id: inference-details-events-tests
       why: Inference-details event tests fail, do not exist, or assertions were not accepted
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^inference_details::/)' && grep -q 'fn _emit_inference_details_event\|fn _build_inference_details_attrs' crates/betterlite-logging/src/otel/legacy_metrics.rs
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(otel::content_projections|otel::legacy_metrics)::(.*::)?inference_details::/)' && grep -q 'fn _emit_inference_details_event\|fn _build_inference_details_attrs' crates/betterlite-logging/src/otel/legacy_metrics.rs
     - id: legacy-events-tests
       why: Legacy per-message/per-choice content event tests fail, do not exist, or assertions were not accepted
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^legacy_content_events::/)' && grep -q 'gen_ai.content.prompt\|gen_ai.content.completion' crates/betterlite-logging/src/otel/legacy_metrics.rs
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(otel::content_projections|otel::legacy_metrics)::(.*::)?legacy_content_events::/)' && grep -q 'gen_ai.content.prompt\|gen_ai.content.completion' crates/betterlite-logging/src/otel/legacy_metrics.rs
     - id: request-io-tests
       why: Request/response/stream content projection tests fail, do not exist, or assertions were not accepted
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^request_io::/)' && grep -q 'fn request_input\|fn response_output\|fn stream_output' crates/betterlite-logging/src/otel/content_projections.rs
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(otel::content_projections|otel::legacy_metrics)::(.*::)?request_io::/)' && grep -q 'fn request_input\|fn response_output\|fn stream_output' crates/betterlite-logging/src/otel/content_projections.rs
     - id: helper-python
       why: The independently invoked MIT helper semantics must match the production functions
       run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::logging::b3857::/)'

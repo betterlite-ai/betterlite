@@ -11,7 +11,8 @@ description: >-
 
 scope:
   paths:
-    - crates/betterlite-auth/**
+    - crates/betterlite-auth/src/reservation_settlement.rs
+    - crates/betterlite-auth/src/reservation_settlement/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L100-L106

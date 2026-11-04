@@ -1022,6 +1022,7 @@ dependencies = [
  "betterlite-env",
  "betterlite-models",
  "betterlite-rate-limit",
+ "betterlite-secret-managers",
  "betterlite-secrets",
  "fancy-regex",
  "indexmap 2.14.2",
@@ -1234,7 +1235,9 @@ dependencies = [
  "bytes",
  "crc32fast",
  "futures-util",
+ "h2",
  "hex",
+ "http 1.5.0",
  "opentelemetry-http",
  "percent-encoding",
  "rcgen",
@@ -1251,9 +1254,11 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tokio-rustls",
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "webpki-roots",
  "zip",
 ]
 
@@ -1661,6 +1666,15 @@ version = "0.1.0"
 [[package]]
 name = "betterlite-secret-managers"
 version = "0.1.0"
+dependencies = [
+ "betterlite-env",
+ "rstest",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+]
 
 [[package]]
 name = "betterlite-secrets"
@@ -1680,6 +1694,16 @@ dependencies = [
  "thiserror",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "betterlite-semantic"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "indexmap 2.14.2",
+ "thiserror",
+ "tokio",
 ]
 
 [[package]]
@@ -5052,6 +5076,7 @@ dependencies = [
  "futures-channel",
  "futures-core",
  "futures-util",
+ "h2",
  "http 1.5.0",
  "http-body 1.1.0",
  "http-body-util",
@@ -6771,6 +6796,15 @@ name = "webpki-root-certs"
 version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e49d0e65abc00c142e8f9428da991da9f1a250c39be97459901eb12b9b49f62a"
+dependencies = [
+ "rustls-pki-types",
+]
+
+[[package]]
+name = "webpki-roots"
+version = "1.0.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f5f280bbb2b287bc8e7de7e3852945a0ff50d1bbcb5ed42b6c7a568c546df171"
 dependencies = [
  "rustls-pki-types",
 ]

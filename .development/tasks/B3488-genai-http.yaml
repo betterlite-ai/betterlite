@@ -45,7 +45,7 @@ checks:
   commands:
   - id: behavior-tests
     why: the GenAI HTTP tests fail or do not exist
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^genai_http(::|$)/) - test(/replays_the_.*_corpus/)'
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::genai_http(::|$)/) - test(/replays_the_.*_corpus/)'
   - id: stream-tests
     why: streaming metadata tests fail or do not exist
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/stream.*metadata|metadata.*stream/)'

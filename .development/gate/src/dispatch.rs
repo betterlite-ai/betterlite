@@ -1,7 +1,7 @@
 mod attempt;
 mod checkpoint;
 mod maintenance;
-mod overlap;
+pub(crate) mod overlap;
 mod preparation;
 mod progress;
 mod prompt;

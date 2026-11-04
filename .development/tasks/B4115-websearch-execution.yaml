@@ -156,7 +156,7 @@ checks:
   commands:
     - id: websearch-execution-tests
       why: the task-specific behavior test is absent or fails
-      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/^websearch_execution(::|$)/) - test(/replays_the_.*_corpus/)'
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/^execution::(.*::)?websearch_execution(::|$)/) - test(/replays_the_.*_corpus/)'
 
 oracle_cases:
   - tools/oracle/cases/chat/websearch-short-circuit-native.yaml

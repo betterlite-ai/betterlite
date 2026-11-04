@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod bridge_credentials;
 pub mod byok_authorization_html;
+pub mod byok_consent;
 pub mod client;
 pub mod credential_contracts;
 pub mod credentials;
@@ -8,6 +9,7 @@ pub mod credentials_tests;
 pub mod envelope;
 pub mod errors;
 pub mod mcp_preview;
+pub mod mcp_registry_resolve;
 pub mod outbound_credentials;
 pub mod redirect_trust;
 pub mod session_admission;

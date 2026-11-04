@@ -29,8 +29,6 @@ description: >-
   210 tests and 180 HTTP fixtures/wiring, within 650 changed lines.
 scope:
   paths:
-    - crates/betterlite-server/src/management.rs
-    - crates/betterlite-server/src/management/**
     - crates/betterlite-server/src/management/budget_list.rs
     - crates/betterlite-server/src/management/budget_list/**
     - tools/oracle/cases/http/management-budgets/**

@@ -1,0 +1,10 @@
+kind: helper
+name: cohere-stream-record-empty-key-keeps-auth
+call:
+  cohere_stream_record:
+    version: v1
+    record: '{"text":"ok"}'
+    headers: {Authorization: caller}
+    api_key: ''
+compare: {ignore: []}
+env: {}

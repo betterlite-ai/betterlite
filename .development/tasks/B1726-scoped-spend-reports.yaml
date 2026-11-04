@@ -34,8 +34,6 @@ description: >-
   adapter calling a FastAPI handler or replacing its database.
 scope:
   paths:
-    - crates/betterlite-server/src/spend.rs
-    - crates/betterlite-server/src/spend/**
     - crates/betterlite-server/src/spend/reports.rs
     - crates/betterlite-server/src/spend/reports/**
     - crates/betterlite-server/fuzz/Cargo.toml
