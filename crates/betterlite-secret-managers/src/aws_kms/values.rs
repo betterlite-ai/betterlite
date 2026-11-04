@@ -2,9 +2,13 @@ use std::sync::Arc;
 
 use aws_sdk_kms::primitives::Blob;
 
-use super::{AWS_KMS_CLIENT, AwsKmsError, DecryptedValue, decode_ciphertext};
+use super::{AWS_KMS_CLIENT, AwsKmsError, DecryptedValue, decode_ciphertext, environment_snapshot};
 
-pub async fn decrypt_value(encrypted_value: &str) -> Result<DecryptedValue, AwsKmsError> {
+pub async fn decrypt_value(secret_name: &str) -> Result<DecryptedValue, AwsKmsError> {
+    let environment = environment_snapshot();
+    let encrypted_value = environment
+        .get(secret_name)
+        .ok_or_else(|| AwsKmsError::MissingValue(secret_name.to_owned()))?;
     let client = AWS_KMS_CLIENT
         .lock()
         .map_err(|_poisoned| AwsKmsError::ClientState)?

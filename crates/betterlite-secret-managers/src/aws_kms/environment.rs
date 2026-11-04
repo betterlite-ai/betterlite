@@ -12,8 +12,8 @@ pub async fn decrypt_env_var() -> Result<BTreeMap<String, DecryptedValue>, AwsKm
                 || value.starts_with("aws_kms/")
         })
         .collect();
-    for (key, value) in encrypted_values {
-        let decrypted = decrypt_value(&value).await?;
+    for (key, _) in encrypted_values {
+        let decrypted = decrypt_value(&key).await?;
         decrypted_values.insert(remove_secret_prefix(&key), decrypted);
     }
     Ok(decrypted_values)
