@@ -1,9 +1,11 @@
 #![cfg(test)]
 
-use std::io::{self, Cursor};
+use std::cell::Cell;
+use std::io::{self, BufRead, Cursor, Read};
+use std::rc::Rc;
 
 use super::interactive::ByteSource;
-use super::raw_mode::RawModeError;
+use super::raw_mode::{RawModeError, RawModeGuard, TermiosBackend};
 use super::{PROVIDERS, dispatch_selection};
 
 struct ScriptedBytes {
@@ -16,6 +18,57 @@ impl ByteSource for ScriptedBytes {
         let byte = self.bytes.get(self.next).copied();
         self.next = self.next.saturating_add(1);
         byte.ok_or_else(|| io::Error::from(io::ErrorKind::UnexpectedEof))
+    }
+}
+
+struct FakeTerminal {
+    state: Rc<Cell<u32>>,
+}
+
+impl TermiosBackend for FakeTerminal {
+    type Attrs = u32;
+
+    fn get_attrs(&mut self) -> Result<Self::Attrs, RawModeError> {
+        Ok(self.state.get())
+    }
+
+    fn set_attrs(&mut self, attrs: &Self::Attrs) -> Result<(), RawModeError> {
+        self.state.set(*attrs);
+        Ok(())
+    }
+
+    fn make_raw(&self, attrs: &mut Self::Attrs) {
+        *attrs = 1;
+    }
+
+    fn read_byte(&mut self) -> io::Result<u8> {
+        Err(io::Error::from(io::ErrorKind::UnexpectedEof))
+    }
+}
+
+struct RestoredTerminalReader {
+    input: Cursor<Vec<u8>>,
+    state: Rc<Cell<u32>>,
+}
+
+impl Read for RestoredTerminalReader {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        self.input.read(buffer)
+    }
+}
+
+impl BufRead for RestoredTerminalReader {
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
+        assert_eq!(
+            self.state.get(),
+            0,
+            "fallback must see restored terminal attributes"
+        );
+        self.input.fill_buf()
+    }
+
+    fn consume(&mut self, amount: usize) {
+        self.input.consume(amount);
     }
 }
 
@@ -82,6 +135,31 @@ fn dispatch_falls_back_when_the_interactive_loop_hits_an_io_error() {
             .map(|provider| provider.id.as_str())
             .collect::<Vec<_>>(),
         vec!["anthropic"]
+    );
+}
+
+#[test]
+fn dispatch_restores_raw_terminal_attributes_before_fallback_reads() {
+    let state = Rc::new(Cell::new(0));
+    let mut reader = RestoredTerminalReader {
+        input: Cursor::new(b"2\n".to_vec()),
+        state: Rc::clone(&state),
+    };
+    let mut writer = Vec::new();
+    let open_state = Rc::clone(&state);
+    let open = || RawModeGuard::enable(FakeTerminal { state: open_state });
+
+    let providers = dispatch_selection(open, &mut reader, &mut writer, false)
+        .expect("fallback succeeds after terminal restoration");
+
+    assert_eq!(state.get(), 0);
+    assert_eq!(
+        providers
+            .first()
+            .expect("one provider selected")
+            .id
+            .as_str(),
+        "anthropic"
     );
 }
 
