@@ -24,7 +24,7 @@ fn call_context_tests_behavior() {
 fn dispatch_views_preserve_absence_and_identity() {
     let metadata = BTreeMap::new();
     let http: &dyn Debug = &"http-client";
-    let context = CallContext::new(UNIX_EPOCH)
+    let context = CallContext::with_id(Uuid::from_u128(3), UNIX_EPOCH)
         .with_metadata(&metadata)
         .with_http_client(http);
     let view = context.view();
@@ -38,7 +38,9 @@ fn dispatch_views_preserve_absence_and_identity() {
 fn provider_items_preserve_explicit_none() {
     let items: BTreeMap<String, Option<&dyn Debug>> =
         BTreeMap::from([("timeout".to_owned(), None)]);
-    let (key, value) = items.iter().next().unwrap();
-    assert_eq!(key, "timeout");
-    assert!(value.is_none());
+    let context = CallContext::with_id(Uuid::from_u128(4), UNIX_EPOCH).with_metadata(&items);
+    let view = context.view();
+    let stored = view.metadata.unwrap();
+    assert!(stored.contains_key("timeout"));
+    assert!(stored.get("timeout").is_some_and(Option::is_none));
 }

@@ -58,9 +58,9 @@ impl<'context> CallContext<'context> {
             BillingPolicy::Include
         }
     }
-    pub fn new(now: SystemTime) -> Self {
+    pub fn with_id(id: Uuid, now: SystemTime) -> Self {
         Self {
-            id: Uuid::new_v4(),
+            id,
             deadline: None,
             parent_id: None,
             internal: false,
@@ -71,12 +71,6 @@ impl<'context> CallContext<'context> {
             http_client: None,
             azure_client: None,
             openai_client: None,
-        }
-    }
-    pub fn with_id(id: Uuid, now: SystemTime) -> Self {
-        Self {
-            id,
-            ..Self::new(now)
         }
     }
     pub const fn with_deadline(mut self, deadline: SystemTime) -> Self {

@@ -40,10 +40,28 @@ pub fn get_aws_partition(region_name: Option<&str>) -> AwsPartition {
 
 #[must_use]
 pub fn contains_bedrock_arn(value: &str) -> bool {
-    value
-        .match_indices("arn:aws")
-        .any(|(index, _)| value.get(index..).is_some_and(is_bedrock_arn))
+    let mut remaining = value;
+    while let Some(index) = remaining.find("arn:aws") {
+        let suffix_index = index.saturating_add("arn:aws".len());
+        let suffix = remaining.get(suffix_index..).unwrap_or_default();
+        let service = suffix.strip_prefix(':').map_or_else(
+            || {
+                let partition_and_service = suffix.strip_prefix('-')?;
+                partition_and_service
+                    .split_once(':')
+                    .filter(|(partition, _)| valid_partition(partition))
+                    .map(|(_, service)| service)
+            },
+            Some,
+        );
+        if service.is_some_and(|candidate| candidate.starts_with("bedrock")) {
+            return true;
+        }
+        remaining = remaining.get(suffix_index..).unwrap_or_default();
+    }
+    false
 }
+
 #[must_use]
 pub fn is_bedrock_arn(value: &str) -> bool {
     let Some(remainder) = value.strip_prefix("arn:aws") else {
@@ -81,8 +99,8 @@ pub fn contains_aws_arn(value: &str) -> bool {
 }
 
 fn valid_partition(value: &str) -> bool {
-    value.is_empty()
-        || value
+    !value.is_empty()
+        && value
             .bytes()
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
 }
