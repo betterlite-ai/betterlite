@@ -46,3 +46,22 @@ fn pattern_matching_behavior(#[case] source: &str) {
     })
     .unwrap_err();
 }
+
+#[rstest]
+#[case::named_unicode_i(r"\N{LATIN SMALL LETTER I}")]
+#[case::named_unicode_alias(r"\N{LF}")]
+fn named_unicode_escapes_reject_with_invalid_codepoint(#[case] source: &str) {
+    let error = compile(&ContentFilterPattern {
+        pattern_type: "regex".to_owned(),
+        pattern_name: None,
+        pattern: Some(source.to_owned()),
+        name: None,
+        action: ContentFilterAction::Mask,
+    })
+    .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "invalid regex or matching failed: Parsing error at position 0: \
+         Invalid codepoint for hex or unicode escape"
+    );
+}

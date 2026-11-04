@@ -85,12 +85,6 @@ pub(super) fn literal(
         'U' => 8,
         '0'..='7' => return octal(character, characters, in_class),
         'N' => return Err(named(characters)),
-        'a' => return Ok(Some('\x07')),
-        'f' => return Ok(Some('\x0c')),
-        'n' => return Ok(Some('\n')),
-        'r' => return Ok(Some('\r')),
-        't' => return Ok(Some('\t')),
-        'v' => return Ok(Some('\x0b')),
         _ => return Ok(None),
     };
     let mut value = 0_u32;

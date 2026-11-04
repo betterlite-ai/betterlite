@@ -11,6 +11,7 @@ use rstest::rstest;
 #[case::ascii_boundary("regex", r"(?a:a\b)", "a\u{e9}", true)]
 #[case::ascii_nonboundary("regex", r"(?a:a\B)", "a\u{e9}", false)]
 #[case::ascii_space("regex", r"(?a:\s)", "\u{1c}", false)]
+#[case::ascii_space_matches_literal_space("regex", r"(?a:\s)", " ", true)]
 #[case::ascii_nonspace("regex", r"(?a:\S)", "\u{1c}", true)]
 #[case::ascii_digit("regex", r"(?a:\d)", "\u{661}", false)]
 #[case::ascii_nondigit("regex", r"(?a:\D)", "\u{661}", true)]
