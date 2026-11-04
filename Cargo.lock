@@ -1290,6 +1290,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "unicode-properties",
+ "url",
  "uuid",
 ]
 

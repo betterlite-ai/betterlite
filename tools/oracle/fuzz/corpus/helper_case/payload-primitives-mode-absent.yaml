@@ -1,0 +1,14 @@
+{
+  "kind": "helper",
+  "name": "payload-primitives-mode-absent",
+  "call": {
+    "b3843": {
+      "function": "guardrail_mode_str",
+      "value": null
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

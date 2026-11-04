@@ -1,0 +1,19 @@
+{
+  "kind": "helper",
+  "name": "payload-primitives-proxy-request",
+  "call": {
+    "b3843": {
+      "function": "proxy_request",
+      "value": {
+        "http_method": "GET",
+        "route": "/health",
+        "url_path": "/health",
+        "status_code": 200
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

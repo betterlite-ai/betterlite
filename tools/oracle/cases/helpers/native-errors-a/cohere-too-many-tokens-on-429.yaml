@@ -1,0 +1,14 @@
+kind: helper
+name: native-errors-a-cohere-too-many-tokens-on-429
+call:
+  native_errors_a:
+    provider: cohere
+    model: command-r
+    error_str: "too many tokens in prompt"
+    exception_type: ""
+    status_code: 429
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

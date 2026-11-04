@@ -1,0 +1,14 @@
+kind: helper
+name: database-faults-deadlock-markers
+call:
+  database_faults:
+    errors:
+      - { error_type: prisma, code: P2034, message: "" }
+      - { error_type: prisma, message: "Transaction failed due to a write conflict or a deadlock. Please retry your transaction" }
+      - { error_type: prisma, message: "Deadlock Detected" }
+      - { error_type: prisma, message: "ERROR: 40P01" }
+      - { error_type: connect, code: P2034, message: "" }
+      - { error_type: other, message: "deadlock detected" }
+env: {}
+compare:
+  ignore: []

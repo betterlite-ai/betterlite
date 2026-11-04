@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use rust_decimal::Decimal;
 
 mod aggregation_projection;
+pub mod billing_counters;
 pub mod error;
 mod field;
 pub mod interactions;
