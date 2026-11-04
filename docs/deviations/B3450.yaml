@@ -21,6 +21,6 @@ deviations:
   - what: split_text returns SplitError::OutputTooLarge when output chunks would exceed 268435456 bytes. LiteLLM's splitter builds the complete list without an output cap.
     why: Near-total overlap can replicate each input character into many chunks and exhaust gateway memory.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/text_splitters/recursive_character_text_splitter.py#L20-L134
-  - what: PDF integer operands outside the i32 range are treated as nonnumeric operands and use the corresponding operator fallback. pypdf can retain larger integers.
+  - what: PDF integer text-space coordinates and font sizes outside the i32 range are treated as nonnumeric operands and use the corresponding operator fallback. pypdf can retain larger integers.
     why: PDF integers use the i32 range; checked conversion through i32 keeps coordinate conversion explicit without casts or string round trips.
     link: https://github.com/py-pdf/pypdf/blob/6.21.4/pypdf/_text_extraction/_text_extractor.py#L38-L42
