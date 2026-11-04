@@ -151,7 +151,28 @@ async fn semantic_error_count() {
     let error = embed_all(&Bad, &["q".to_owned()])
         .await
         .expect_err("count mismatch");
-    assert!(error.reason.contains("0 vectors for 1 inputs"));
+    assert!(
+        matches!(error, SemanticError::Failed(EmbeddingFailed { reason }) if reason.contains("0 vectors for 1 inputs"))
+    );
+}
+
+#[tokio::test]
+async fn semantic_http_propagates() {
+    struct HttpFailure;
+    #[async_trait]
+    impl Embedder for HttpFailure {
+        async fn embed(&self, _: &[String]) -> Result<Vec<Vector>, EmbedError> {
+            Err(EmbedError::Http("provider returned HTTP 429".to_owned()))
+        }
+    }
+    let mut index = SemanticTextIndex::new(10);
+    let error = index
+        .scores("q", &texts(&["a"]), &HttpFailure, "m")
+        .await
+        .expect_err("HTTP failure propagates");
+    assert!(
+        matches!(error, SemanticError::Http(message) if message == "provider returned HTTP 429")
+    );
 }
 #[tokio::test]
 async fn semantic_batch_reuse() {

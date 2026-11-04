@@ -20,9 +20,18 @@ pub enum EmbedError {
     Other(String),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+#[error("{reason}")]
 pub struct EmbeddingFailed {
     pub reason: String,
+}
+
+#[derive(Debug, Error)]
+pub enum SemanticError {
+    #[error("HTTP embedding failure: {0}")]
+    Http(String),
+    #[error(transparent)]
+    Failed(#[from] EmbeddingFailed),
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -53,7 +62,7 @@ impl SemanticTextIndex {
         texts: &[String],
         embedder: &dyn Embedder,
         model: &str,
-    ) -> Result<Vec<f64>, EmbeddingFailed> {
+    ) -> Result<Vec<f64>, SemanticError> {
         if texts.is_empty() {
             return Ok(Vec::new());
         }
@@ -62,9 +71,9 @@ impl SemanticTextIndex {
             .resolve_vectors(query, &unique, embedder, model)
             .await?;
         if has_dimension_mismatch(&unique, &resolved, query_vector.len()) {
-            return Err(EmbeddingFailed {
+            return Err(SemanticError::Failed(EmbeddingFailed {
                 reason: format!("embedding model {model} returned vectors of mixed dimensions"),
-            });
+            }));
         }
         self.cache_vectors(&unique, &resolved, model, query_vector.len())?;
         texts
@@ -73,10 +82,12 @@ impl SemanticTextIndex {
                 resolved
                     .get(text)
                     .map(|vector| cosine_similarity(&query_vector, vector))
-                    .ok_or_else(|| EmbeddingFailed {
-                        reason: format!(
-                            "embedding model {model} omitted a vector for a requested text"
-                        ),
+                    .ok_or_else(|| {
+                        SemanticError::Failed(EmbeddingFailed {
+                            reason: format!(
+                                "embedding model {model} omitted a vector for a requested text"
+                            ),
+                        })
                     })
             })
             .collect()
@@ -88,7 +99,7 @@ impl SemanticTextIndex {
         unique: &[String],
         embedder: &dyn Embedder,
         model: &str,
-    ) -> Result<(Vector, HashMap<String, Vector>), EmbeddingFailed> {
+    ) -> Result<(Vector, HashMap<String, Vector>), SemanticError> {
         let cached = self.cached_vectors(model);
         let missing = missing_texts(unique, &cached);
         let mut first_batch = vec![query.to_owned()];
@@ -203,20 +214,20 @@ fn has_dimension_mismatch(
 async fn embed_all(
     embedder: &dyn Embedder,
     texts: &[String],
-) -> Result<Vec<Vector>, EmbeddingFailed> {
+) -> Result<Vec<Vector>, SemanticError> {
     match embedder.embed(texts).await {
         Ok(vectors) if vectors.len() == texts.len() => Ok(vectors),
-        Ok(vectors) => Err(EmbeddingFailed {
+        Ok(vectors) => Err(SemanticError::Failed(EmbeddingFailed {
             reason: format!(
                 "embedding model returned {} vectors for {} inputs",
                 vectors.len(),
                 texts.len()
             ),
-        }),
-        Err(EmbedError::Http(message)) => Err(EmbeddingFailed { reason: message }),
-        Err(EmbedError::Other(message)) => Err(EmbeddingFailed {
+        })),
+        Err(EmbedError::Http(message)) => Err(SemanticError::Http(message)),
+        Err(EmbedError::Other(message)) => Err(SemanticError::Failed(EmbeddingFailed {
             reason: format!("embedding the search query failed: {message}"),
-        }),
+        })),
     }
 }
 
