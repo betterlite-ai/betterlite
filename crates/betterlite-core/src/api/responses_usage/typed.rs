@@ -51,7 +51,14 @@ pub(super) fn lax_integer(value: &Value) -> Result<Option<i64>, serde_json::Erro
             }
         }
         Value::String(string) => {
-            if let Ok(integer) = string.trim().parse::<i64>() {
+            let trimmed = string.trim();
+            let integer_text = trimmed
+                .split_once('.')
+                .filter(|(_, fractional)| {
+                    !fractional.is_empty() && fractional.bytes().all(|byte| byte == b'0')
+                })
+                .map_or(trimmed, |(integer, _)| integer);
+            if let Ok(integer) = integer_text.parse::<i64>() {
                 return Ok(Some(integer));
             }
         }

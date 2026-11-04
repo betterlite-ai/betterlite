@@ -152,6 +152,31 @@ fn nested_reasoning_is_removed_only_when_text_includes_it() {
 }
 
 #[test]
+fn typed_prompt_details_ignore_unpassed_extra_fields() {
+    let input = value(
+        r#"{"input_tokens":2,"output_tokens":3,"input_tokens_details":{"cached_tokens":1,"cache_creation_tokens":7,"tool_use_tokens":"x","character_count":[1]}}"#,
+    );
+    let result = transform_value(Some(&input)).expect("typed wrapper ignores unpassed extras");
+    let details = &result["prompt_tokens_details"];
+    assert!(details.get("cache_write_tokens").is_none());
+    assert!(details.get("cache_creation_tokens").is_none());
+    assert!(details.get("tool_use_tokens").is_none());
+}
+
+#[test]
+fn ordinary_prompt_details_use_raw_integer_cache_creation_input_fallback() {
+    let input = value(
+        r#"{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5,"prompt_tokens_details":{"cache_creation_input_tokens":4}}"#,
+    );
+    let result = transform_value(Some(&input)).expect("ordinary usage detail fallback");
+    assert_eq!(result["prompt_tokens_details"]["cache_write_tokens"], 4_i64);
+    assert_eq!(
+        result["prompt_tokens_details"]["cache_creation_tokens"],
+        4_i64
+    );
+}
+
+#[test]
 fn prompt_detail_integer_strings_integral_numbers_and_bools_are_coerced() {
     let input = value(
         r#"{"input_tokens":2,"output_tokens":3,"input_tokens_details":{"cache_write_tokens":2.0,"web_search_requests":"3","google_maps_grounding_requests":true}}"#,
@@ -250,13 +275,19 @@ fn output_detail_declared_fields_reject_invalid_integer_values(#[case] malformed
     ));
 }
 
-#[test]
-fn output_detail_declared_fields_coerce_integer_strings() {
-    let input = value(
-        r#"{"input_tokens":2,"output_tokens":3,"output_tokens_details":{"text_tokens":"2"}}"#,
-    );
+#[rstest]
+#[case::integer(r#""2""#, 2_i64)]
+#[case::decimal(r#""2.0""#, 2_i64)]
+#[case::decimal_with_trailing_zeroes(r#""2.00""#, 2_i64)]
+fn output_detail_declared_fields_coerce_integer_strings(
+    #[case] reported: &str,
+    #[case] expected: i64,
+) {
+    let input = value(&format!(
+        r#"{{"input_tokens":2,"output_tokens":3,"output_tokens_details":{{"text_tokens":{reported}}}}}"#
+    ));
     let result = transform_value(Some(&input)).expect("numeric string is a lax integer");
-    assert_eq!(result["completion_tokens_details"]["text_tokens"], 2_i64);
+    assert_eq!(result["completion_tokens_details"]["text_tokens"], expected);
 }
 
 #[rstest]

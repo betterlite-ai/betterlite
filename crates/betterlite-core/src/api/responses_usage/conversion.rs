@@ -35,8 +35,7 @@ pub(super) fn from_response_usage(typed: &ResponseApiUsage) -> Result<Usage, Res
         .input_tokens_details
         .as_ref()
         .map(prompt_details)
-        .transpose()?
-        .flatten();
+        .transpose()?;
     let completion_details = typed
         .output_tokens_details
         .as_ref()
@@ -54,12 +53,37 @@ pub(super) fn from_response_usage(typed: &ResponseApiUsage) -> Result<Usage, Res
     })
 }
 
-fn prompt_details(
-    details: &InputTokensDetails,
-) -> Result<Option<PromptTokensDetails>, serde_json::Error> {
-    let value = serde_json::to_value(details)?;
-    let fields = Map::from_iter([("prompt_tokens_details".to_owned(), value)]);
-    ordinary_details(&fields).map(|(prompt, _)| prompt)
+fn prompt_details(details: &InputTokensDetails) -> Result<PromptTokensDetails, serde_json::Error> {
+    let cache_write_tokens = lax_integer_field(details.extra.get("cache_write_tokens"))?;
+    let cached_tokens_details =
+        details
+            .cached_tokens_details
+            .as_ref()
+            .map(|cached| CachedTokensDetails {
+                text_tokens: cached.text_tokens,
+                audio_tokens: cached.audio_tokens,
+                image_tokens: cached.image_tokens,
+            });
+    Ok(PromptTokensDetails {
+        audio_tokens: details.audio_tokens,
+        cached_tokens: Some(details.cached_tokens),
+        cached_tokens_details,
+        text_tokens: details.text_tokens,
+        image_tokens: details.image_tokens,
+        video_tokens: details.video_tokens,
+        web_search_requests: lax_integer_field(details.extra.get("web_search_requests"))?,
+        google_maps_grounding_requests: lax_integer_field(
+            details.extra.get("google_maps_grounding_requests"),
+        )?,
+        tool_use_tokens: None,
+        character_count: None,
+        image_count: None,
+        video_length_seconds: None,
+        audio_length_seconds: None,
+        query_count: None,
+        cache_write_tokens,
+        cache_creation_tokens: cache_write_tokens,
+    })
 }
 
 pub(super) fn ordinary_details(
@@ -80,7 +104,12 @@ fn prompt_details_from_map(
     details: &Map<String, Value>,
 ) -> Result<PromptTokensDetails, serde_json::Error> {
     let resolved_cache_tokens = lax_integer_field(details.get("cache_write_tokens"))?
-        .or(lax_integer_field(details.get("cache_creation_tokens"))?);
+        .or(lax_integer_field(details.get("cache_creation_tokens"))?)
+        .or_else(|| {
+            details
+                .get("cache_creation_input_tokens")
+                .and_then(Value::as_i64)
+        });
     let cached_tokens_details = match details.get("cached_tokens_details") {
         None | Some(Value::Null) => None,
         Some(value) => {
