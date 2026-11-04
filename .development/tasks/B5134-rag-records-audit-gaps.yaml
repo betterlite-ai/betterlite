@@ -509,7 +509,8 @@ pitfalls:
   - The helper answer cache keys on the helper source, so the stubbed answers are never reused once b3450.py changes. Leave BETTERLITE_ORACLE_CACHE unset in the worktree.
   - separators [] stays as given per docs/compatibility.md, even though LiteLLM's "if separators:" treats it as unset.
   - The new deviations go into docs/deviations/B3450.yaml, the log for the code this task fixes; do not start docs/deviations/B5134.yaml.
+  - pypdf compares float text-space coordinates, so pdf/position.rs writes that math as plain *, - and unary minus under one module-level expect for clippy::float_arithmetic with a reason; that is the third expect. An i64 operand becomes f64 through i32::try_from and f64::from (PDF integers stay in the i32 range), and one out of range reads like a non-numeric operand. No as, mul_add(y, 0.0), Sub::sub, Neg::neg or string round trip.
 budget:
   max_changed_lines: 1500
-  max_new_expects: 2
+  max_new_expects: 3
 review_level: security
