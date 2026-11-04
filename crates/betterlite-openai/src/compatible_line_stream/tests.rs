@@ -1,5 +1,5 @@
 #![cfg(test)]
-use super::{Mode, Outcome, decode_legacy_compatible_line};
+use super::{Mode, Outcome, ReceiveError, decode_legacy_compatible_line, receive_failure};
 use rstest::rstest;
 use std::fs;
 use std::path::PathBuf;
@@ -48,6 +48,19 @@ fn compatible_line_blank_and_invalid_are_empty_chunks() {
         decode_legacy_compatible_line("no json", Mode::Sync),
         Outcome::Chunk(_)
     ));
+}
+
+#[rstest]
+#[case::sync_other(Mode::Sync, "connection reset")]
+#[case::async_other(Mode::Async, "Error receiving chunk from stream: connection reset")]
+fn compatible_line_other_receive_errors_keep_mode_behavior(
+    #[case] mode: Mode,
+    #[case] expected: &str,
+) {
+    assert_eq!(
+        receive_failure(ReceiveError::Other("connection reset".to_owned()), mode),
+        Outcome::Error(expected.to_owned())
+    );
 }
 
 #[rstest]
