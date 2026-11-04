@@ -18,14 +18,18 @@ pub fn catalog_billed_token_rates(
     lookup: &dyn PriceLookup,
     database: &TimeZoneDatabase,
 ) -> Result<Option<BilledTokenRates>, BilledTokenError> {
+    let looked_up;
     let priced = match request.pricing {
-        Some(pricing) => pricing.clone(),
+        Some(pricing) => pricing,
         None => match lookup.effective_priced_model(request.model, request.provider) {
-            Some(pricing) => pricing,
+            Some(found) => {
+                looked_up = found;
+                &looked_up
+            }
             None => return Ok(None),
         },
     };
-    let Ok(defaulted) = default_pricing(&priced, request.provider) else {
+    let Ok(defaulted) = default_pricing(priced, request.provider) else {
         return Ok(None);
     };
     map_billed_rates(request, &defaulted, database).map(Some)

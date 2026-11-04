@@ -1,4 +1,5 @@
-use betterlite_models::billed_tokens::{BilledTokenUsage, CustomTokenUsage};
+use betterlite_models::billed_tokens::BilledTokenUsage;
+use betterlite_models::billed_tokens::custom::CustomTokenUsage;
 use betterlite_models::off_peak::schema::OffPeakBlock;
 use betterlite_models::price_lookup::PriceRecord;
 use betterlite_models::tiered_pricing::Tier;

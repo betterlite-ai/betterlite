@@ -6,10 +6,10 @@ use rust_decimal::Decimal;
 use std::collections::BTreeMap;
 
 use super::catalog::catalog_billed_token_rates;
+use super::custom::{CustomTokenUsage, custom_billed_token_rates, custom_breakdown, custom_cost};
 use super::savings::{caching_savings, model_caching_savings};
 use super::{
-    BilledTokenCounts, BilledTokenRequest, BilledTokenUsage, breakdown, custom_billed_token_rates,
-    custom_cost, project_billed_token_counts,
+    BilledTokenCounts, BilledTokenRequest, BilledTokenUsage, breakdown, project_billed_token_counts,
 };
 use crate::price_lookup::{PriceLookup, PriceRecord, PricedModel};
 use crate::tiered_pricing::Scalar;
@@ -143,7 +143,7 @@ fn custom_flat_rates_preserve_free_cache_and_use_output_for_reasoning() {
 #[test]
 fn custom_token_cost_wins_over_seconds_and_counts_cached_tokens_in_prompt() {
     let cost = custom_cost(
-        super::CustomTokenUsage {
+        CustomTokenUsage {
             prompt_tokens: 10,
             completion_tokens: 5,
             cached_tokens: 2,
@@ -191,7 +191,7 @@ fn seconds_only_or_absent_custom_pricing(
 ) {
     assert_eq!(
         custom_cost(
-            super::CustomTokenUsage::default(),
+            CustomTokenUsage::default(),
             None,
             price.map(decimal),
             duration.map(decimal)
@@ -216,9 +216,7 @@ fn custom_breakdown_ignores_ttl_buckets() {
     });
     let rates = custom_billed_token_rates(Decimal::ONE, decimal("2"), None, Some(decimal("3")));
     assert_eq!(
-        super::custom_breakdown(counts, rates)
-            .unwrap()
-            .cache_creation_cost,
+        custom_breakdown(counts, rates).unwrap().cache_creation_cost,
         decimal("27")
     );
 }
@@ -282,7 +280,7 @@ fn malformed_geo_multiplier_propagates_after_lookup() {
 
 #[test]
 fn custom_cache_counts_clamp_regular_prompt_to_zero() {
-    let usage = super::CustomTokenUsage {
+    let usage = CustomTokenUsage {
         prompt_tokens: 1,
         completion_tokens: 2,
         cached_tokens: 3,
