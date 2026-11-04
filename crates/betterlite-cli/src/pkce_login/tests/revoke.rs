@@ -9,15 +9,13 @@ fn revoke_posts_an_rfc7009_request_for_the_refresh_token() {
         body: Vec::new(),
     };
     let client = ScriptedHttp::new(response);
-    assert!(
-        revoke_credential(
-            &contract(),
-            "client",
-            &SecretString::from("refresh"),
-            &client
-        )
-        .is_ok()
-    );
+    revoke_credential(
+        &contract(),
+        "client",
+        &SecretString::from("refresh"),
+        &client,
+    )
+    .unwrap();
     let request = client.requests().pop().expect("request");
     assert_eq!(request.url, "https://example.test/oauth/revoke");
     assert_eq!(

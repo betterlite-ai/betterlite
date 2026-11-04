@@ -71,11 +71,14 @@ impl<L: LoopbackListener> LoopbackServer<L> {
         }
     }
 
-    fn accept_request<C: Clock>(
+    fn accept_request<C>(
         &self,
         clock: &C,
         deadline: Instant,
-    ) -> Result<Option<CallbackOutcome>, PkceFailure> {
+    ) -> Result<Option<CallbackOutcome>, PkceFailure>
+    where
+        C: Clock,
+    {
         let accepted = self
             .listener
             .accept()
@@ -91,12 +94,15 @@ impl<L: LoopbackListener> LoopbackServer<L> {
         Ok(self.handle(&mut connection, clock, connection_deadline))
     }
 
-    fn handle<C: Clock>(
+    fn handle<C>(
         &self,
         connection: &mut L::Connection,
         clock: &C,
         deadline: Instant,
-    ) -> Option<CallbackOutcome> {
+    ) -> Option<CallbackOutcome>
+    where
+        C: Clock,
+    {
         let query = read_callback_request(connection, clock, deadline)?;
         if query.path != CALLBACK_PATH {
             return respond_then(connection, 404, "Not found.", None);
@@ -162,7 +168,7 @@ where
     K: Clock,
 {
     let mut buffer = Vec::new();
-    let mut chunk = [0_u8; 65_536];
+    let mut chunk = vec![0_u8; 0x0001_0000].into_boxed_slice();
     loop {
         match parse_request(&buffer) {
             RequestRead::Complete(query) => return Some(query),

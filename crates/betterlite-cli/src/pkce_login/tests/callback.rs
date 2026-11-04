@@ -1,9 +1,21 @@
 use super::*;
+use std::iter;
+use std::net::SocketAddr;
+
+fn send_callback_request(address: SocketAddr, request: &str, expected_status: &str) -> bool {
+    let mut stream = TcpStream::connect(address).expect("connect");
+    stream.write_all(request.as_bytes()).expect("write");
+    let mut response = [0_u8; 512];
+    let size = stream.read(&mut response).expect("read response");
+    let text = String::from_utf8(response.get(..size).expect("response bytes").to_vec())
+        .expect("response text");
+    text.starts_with(&format!("HTTP/1.1 {expected_status}"))
+}
 
 #[test]
 fn callback_settles_with_a_16_kib_cookie_header() {
     let mut request = b"GET /callback?state=s&code=c HTTP/1.1\r\nCookie: ".to_vec();
-    request.extend(std::iter::repeat_n(b'x', 16 * 1024));
+    request.extend(iter::repeat_n(b'x', 16 * 1024));
     request.extend_from_slice(b"\r\n\r\n");
     assert!(matches!(parse_request(&request), RequestRead::Complete(_)));
 }
@@ -12,7 +24,7 @@ fn callback_settles_with_a_16_kib_cookie_header() {
 fn callback_settles_with_99_header_lines() {
     let mut request = b"GET /callback?state=s&code=c HTTP/1.1\r\n".to_vec();
     request.extend(
-        std::iter::repeat_n(b"X: y\r\n".as_slice(), 99)
+        iter::repeat_n(b"X: y\r\n".as_slice(), 99)
             .flatten()
             .copied(),
     );
@@ -22,18 +34,18 @@ fn callback_settles_with_99_header_lines() {
 
 #[test]
 fn callback_answers_414_past_a_64_kib_request_line() {
-    let request = vec![b'A'; 65_537];
+    let request = vec![b'A'; 0x0001_0001];
     assert!(matches!(parse_request(&request), RequestRead::UriTooLong));
 }
 
 #[test]
 fn callback_answers_431_past_the_header_limits() {
     let mut long = b"GET /callback HTTP/1.1\r\nX: ".to_vec();
-    long.extend(std::iter::repeat_n(b'x', 65_536));
+    long.extend(iter::repeat_n(b'x', 0x0001_0000));
     long.extend_from_slice(b"\r\n\r\n");
     let mut many = b"GET /callback HTTP/1.1\r\n".to_vec();
     many.extend(
-        std::iter::repeat_n(b"X: y\r\n".as_slice(), 100)
+        iter::repeat_n(b"X: y\r\n".as_slice(), 100)
             .flatten()
             .copied(),
     );
@@ -44,14 +56,14 @@ fn callback_answers_431_past_the_header_limits() {
 
 #[test]
 fn callback_request_limits_match_http_server() {
-    let mut request_line = vec![b'G'; 65_535];
+    let mut request_line = vec![b'G'; 0xFFFF];
     request_line.extend_from_slice(b"\n");
     assert!(matches!(
         parse_request(&request_line),
         RequestRead::Malformed | RequestRead::UnsupportedMethod
     ));
     let mut header = b"GET /callback HTTP/1.1\r\nX: ".to_vec();
-    header.extend(std::iter::repeat_n(b'x', 65_531));
+    header.extend(iter::repeat_n(b'x', 0xFFFB));
     header.extend_from_slice(b"\r\n\r\n");
     assert!(matches!(parse_request(&header), RequestRead::Complete(_)));
 }
@@ -65,16 +77,9 @@ fn callback_settles_only_on_a_code_for_the_expected_state() {
     let (sender, receiver) = sync_channel(4);
     let outcome = thread::scope(|scope| {
         scope.spawn(move || {
-            let send = |request: &str, expected_status: &str| {
-                let mut stream = TcpStream::connect(address).expect("connect");
-                stream.write_all(request.as_bytes()).expect("write");
-                let mut response = [0_u8; 512];
-                let size = stream.read(&mut response).expect("read response");
-                let response =
-                    String::from_utf8(response.get(..size).expect("response bytes").to_vec())
-                        .expect("response text");
+            let send = |request, expected_status| {
                 sender
-                    .send(response.starts_with(&format!("HTTP/1.1 {expected_status}")))
+                    .send(send_callback_request(address, request, expected_status))
                     .expect("send result");
             };
             send("GET /nope HTTP/1.1\r\n\r\n", "404");
@@ -111,14 +116,13 @@ fn callback_denied_settles_only_for_the_expected_state() {
     let (sender, receiver) = sync_channel(2);
     let outcome = thread::scope(|scope| {
         scope.spawn(move || {
-            let send = |state: &str, expected_status: &str| {
-                let mut stream = TcpStream::connect(address).expect("connect");
-                let request = format!("GET /callback?state={state}&error=access_denied&error_description=nope HTTP/1.1\r\n\r\n");
-                stream.write_all(request.as_bytes()).expect("write");
-                let mut response = [0_u8; 512];
-                let size = stream.read(&mut response).expect("read response");
-                let response = String::from_utf8(response.get(..size).expect("response bytes").to_vec()).expect("response text");
-                sender.send(response.starts_with(&format!("HTTP/1.1 {expected_status}"))).expect("send result");
+            let send = |state: &str, expected_status| {
+                let request = format!(
+                    "GET /callback?state={state}&error=access_denied&error_description=nope HTTP/1.1\r\n\r\n"
+                );
+                sender
+                    .send(send_callback_request(address, &request, expected_status))
+                    .expect("send result");
             };
             send("wrong", "400");
             send("state", "200");

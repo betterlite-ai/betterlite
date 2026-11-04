@@ -2,7 +2,7 @@ use secrecy::SecretString;
 use std::str;
 use url::Url;
 
-pub const MAX_LINE_BYTES: usize = 65_536;
+pub const MAX_LINE_BYTES: usize = 0x0001_0000;
 pub const MAX_HEADER_LINES: usize = 99;
 
 // secrecy::SecretString already carries a redacting Debug impl ("SecretBox<str>([REDACTED])"), so deriving Debug here is safe: it never prints `code`.
