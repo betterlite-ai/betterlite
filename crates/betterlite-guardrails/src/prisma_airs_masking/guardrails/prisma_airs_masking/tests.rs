@@ -1,13 +1,20 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::fs::{read, read_dir};
+use std::path::Path;
+use std::str::from_utf8;
 
 use serde_json::value::RawValue;
 
+use crate::prisma_airs_extraction::{Message as ExtractionMessage, Response as ExtractionResponse};
+use crate::prisma_airs_masking::mcp::{
+    McpRequest, McpServer, get_mcp_server_name, mask_mcp_arguments, parse_mcp_request,
+};
 use crate::prisma_airs_masking::{
     MaskContent, MaskedData, MaskedFunctionCall, MaskedResponseMessage, MaskedToolCall,
-    MaskingError, McpRequest, McpServer, RequestMessage, Response, ResponseChoice, ScanResult,
-    get_masked_text, get_mcp_server_name, mask_mcp_arguments, mask_messages, mask_response,
+    MaskingError, RequestMessage, Response, ResponseChoice, ScanResult, get_masked_text,
+    mask_messages, mask_response,
 };
 
 #[test]
@@ -39,7 +46,7 @@ fn masks_last_user_message_and_preserves_non_text_content_parts() {
             ])),
         },
     ];
-    mask_messages(&mut messages, "masked").expect("mask");
+    assert!(mask_messages(&mut messages, "masked").expect("mask"));
     assert!(matches!(&messages[0].content, Some(MaskContent::Text(text)) if text == "older"));
     let Some(MaskContent::Parts(parts)) = messages[1].content.as_ref() else {
         panic!("content remains a part list");
@@ -111,18 +118,13 @@ fn assert_masked_response(response: &Response) {
     let Some(MaskContent::Parts(parts)) = second.content.as_ref() else {
         panic!("content remains a part list");
     };
+    assert_eq!(parts[0].get(), r#"{"type":"text","text":"masked"}"#);
     assert_eq!(parts[1].get(), r#"{"type":"image"}"#);
 }
 
 #[test]
 fn mcp_masking_preserves_structured_type_and_updates_both_fields() {
-    let mut request = McpRequest {
-        mcp_server_name: None,
-        server_name: None,
-        server_id: None,
-        arguments: Some(raw(r#"{"secret":"value"}"#)),
-        mcp_arguments: Some(raw(r#"{"secret":"value"}"#)),
-    };
+    let mut request = mcp_request_with(&["arguments", "mcp_arguments"]);
     let original = raw(r#"{"secret":"value"}"#);
     mask_mcp_arguments(&mut request, &original, r#"{"secret":"masked"}"#).expect("valid JSON");
     assert_eq!(
@@ -141,18 +143,26 @@ fn mcp_masking_preserves_structured_type_and_updates_both_fields() {
 
 #[test]
 fn rejects_non_json_mask_for_structured_mcp_arguments() {
-    let mut request = McpRequest {
-        mcp_server_name: None,
-        server_name: None,
-        server_id: None,
-        arguments: Some(raw(r#"{"secret":"value"}"#)),
-        mcp_arguments: None,
-    };
+    let mut request = mcp_request_with(&["arguments"]);
     let original = raw(r#"{"secret":"value"}"#);
     assert!(matches!(
         mask_mcp_arguments(&mut request, &original, "masked"),
         Err(MaskingError::InvalidMcpJson(_))
     ));
+}
+
+fn mcp_request_with(fields: &[&str]) -> McpRequest {
+    McpRequest {
+        mcp_server_name: None,
+        server_name: None,
+        server_id: None,
+        arguments: fields
+            .contains(&"arguments")
+            .then(|| RawValue::NULL.to_owned()),
+        mcp_arguments: fields
+            .contains(&"mcp_arguments")
+            .then(|| RawValue::NULL.to_owned()),
+    }
 }
 
 #[test]
@@ -201,4 +211,144 @@ fn request(mcp_server_name: Option<&str>, server_id: Option<&str>) -> McpRequest
 
 fn raw(json: &str) -> Box<RawValue> {
     RawValue::from_string(json.to_owned()).expect("valid raw JSON")
+}
+
+#[rstest::rstest]
+#[case::object(r#"{"arguments":{}}"#, "{}", r#"{"masked":true}"#)]
+#[case::array(r#"{"mcp_arguments":[]}"#, "[]", "[1]")]
+#[case::parsed_scalar(r#"{"arguments":{}}"#, "{}", "42")]
+#[case::null_field(r#"{"arguments":null}"#, "null", "masked")]
+#[case::string(r#"{"arguments":"secret"}"#, r#""secret""#, "masked")]
+fn rewrites_each_mcp_argument_shape(
+    #[case] input: &str,
+    #[case] original: &str,
+    #[case] masked: &str,
+) {
+    let mut request = parse_mcp_request(input.as_bytes()).expect("request");
+    mask_mcp_arguments(&mut request, &raw(original), masked).expect("mask");
+    let updated = request
+        .arguments
+        .as_ref()
+        .or(request.mcp_arguments.as_ref())
+        .expect("field");
+    let expected = if original == "{}" || original == "[]" {
+        masked.to_owned()
+    } else {
+        serde_json::to_string(masked).expect("string")
+    };
+    assert_eq!(updated.get(), expected);
+}
+
+#[test]
+fn missing_mcp_fields_are_rejected_without_inventing_arguments() {
+    let mut request = parse_mcp_request(b"{}").expect("request");
+    assert!(matches!(
+        mask_mcp_arguments(&mut request, &raw("{}"), "{}"),
+        Err(MaskingError::MissingMcpArguments)
+    ));
+}
+
+#[rstest::rstest]
+#[case::explicit(r#"{"mcp_server_name":"first","server_name":"second"}"#, "{}", "first")]
+#[case::secondary(r#"{"server_name":"second"}"#, "{}", "second")]
+#[case::empty_explicit(r#"{"mcp_server_name":"","server_name":"second"}"#, "{}", "second")]
+#[case::alias(
+    r#"{"server_id":"id"}"#,
+    r#"{"alias":"alias","server_name":"server"}"#,
+    "alias"
+)]
+#[case::server(
+    r#"{"server_id":"id"}"#,
+    r#"{"server_name":"server","name":"name"}"#,
+    "server"
+)]
+#[case::name(
+    r#"{"server_id":"id"}"#,
+    r#"{"name":"name","server_id":"fallback"}"#,
+    "name"
+)]
+#[case::id(r#"{"server_id":"id"}"#, r#"{"server_id":"fallback"}"#, "fallback")]
+#[case::unnamed(r#"{"server_id":"id"}"#, "{}", "unknown")]
+#[case::tool(r#"{"server_id":"missing"}"#, "{}", "tool-server")]
+fn server_names_follow_precedence(
+    #[case] input: &str,
+    #[case] server: &str,
+    #[case] expected: &str,
+) {
+    let request = parse_mcp_request(input.as_bytes()).expect("request");
+    let servers = BTreeMap::from([(
+        "id".to_owned(),
+        serde_json::from_str(server).expect("server"),
+    )]);
+    let names = BTreeMap::from([("tool".to_owned(), "tool-server".to_owned())]);
+    assert_eq!(
+        get_mcp_server_name(&request, &servers, &names, "tool"),
+        expected
+    );
+}
+
+#[rstest::rstest]
+#[case::empty("[]", false)]
+#[case::developer(r#"[{"role":"developer","content":"secret"}]"#, false)]
+#[case::missing(r#"[{"role":"user","content":"older"},{"role":"user"}]"#, false)]
+#[case::user(
+    r#"[{"role":"user","content":"secret"},{"role":"developer","content":"instruction"}]"#,
+    true
+)]
+fn masks_only_the_latest_user(#[case] input: &str, #[case] changed: bool) {
+    let mut messages: Vec<RequestMessage> = serde_json::from_str(input).expect("messages");
+    assert_eq!(
+        mask_messages(&mut messages, "masked").expect("mask"),
+        changed
+    );
+    if changed {
+        assert!(matches!(&messages[0].content, Some(MaskContent::Text(text)) if text == "masked"));
+        assert!(
+            matches!(&messages[1].content, Some(MaskContent::Text(text)) if text == "instruction")
+        );
+    }
+}
+
+#[rstest::rstest]
+#[case::absent("{}", None)]
+#[case::missing_data(r#"{"prompt_masked_data":{}}"#, None)]
+#[case::empty_data(r#"{"prompt_masked_data":{"data":""}}"#, Some(""))]
+fn absent_masked_data_has_no_replacement(#[case] input: &str, #[case] expected: Option<&str>) {
+    let scan: ScanResult = serde_json::from_str(input).expect("scan");
+    assert_eq!(get_masked_text(&scan, false), expected);
+    assert_eq!(get_masked_text(&scan, true), None);
+}
+
+#[test]
+fn replays_prisma_content_corpus() {
+    let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/prisma_content");
+    let entries: Vec<_> = read_dir(folder).expect("corpus").collect();
+    assert!(!entries.is_empty());
+    assert!(entries.into_iter().all(|entry| {
+        let bytes = read(entry.expect("entry").path()).expect("fixture");
+        let messages = serde_json::from_slice::<Vec<ExtractionMessage>>(&bytes);
+        let response = serde_json::from_slice::<ExtractionResponse>(&bytes);
+        let scan = serde_json::from_slice::<ScanResult>(&bytes);
+        let response_mask = serde_json::from_slice::<Response>(&bytes);
+        let request = parse_mcp_request(&bytes);
+        if let Ok(mut parsed) = request {
+            let text = from_utf8(&bytes).expect("JSON");
+            let _result = mask_mcp_arguments(&mut parsed, RawValue::NULL, text);
+        }
+        messages.is_ok() || response.is_ok() || scan.is_ok() || response_mask.is_ok()
+    }));
+}
+
+#[test]
+fn deserializes_multimodal_content_before_masking() {
+    let mut messages: Vec<RequestMessage> = serde_json::from_str(r#"[{"role":"user","content":[{"type":"text","text":"secret"},{"type":"image_url","image_url":{"url":"image"}}]}]"#).expect("wire messages");
+    assert!(mask_messages(&mut messages, "safe").expect("mask"));
+    let Some(MaskContent::Parts(parts)) = &messages[0].content else {
+        panic!("parts")
+    };
+    assert_eq!(parts[0].get(), r#"{"type":"text","text":"safe"}"#);
+    assert_eq!(
+        parts[1].get(),
+        r#"{"type":"image_url","image_url":{"url":"image"}}"#
+    );
 }

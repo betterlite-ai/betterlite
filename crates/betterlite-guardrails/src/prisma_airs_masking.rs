@@ -1,6 +1,5 @@
 mod guardrails;
-
-use std::collections::BTreeMap;
+pub mod mcp;
 
 use serde::{Deserialize, Serialize};
 use serde_json::value::{RawValue, to_raw_value};
@@ -10,8 +9,6 @@ use thiserror::Error;
 pub enum MaskingError {
     #[error("structured MCP arguments require masked JSON: {0}")]
     InvalidMcpJson(#[source] serde_json::Error),
-    #[error("masked MCP JSON does not preserve the original top-level type")]
-    McpTypeMismatch,
     #[error("MCP request has no rewritable arguments field")]
     MissingMcpArguments,
     #[error("failed to encode masked content: {0}")]
@@ -30,16 +27,45 @@ pub struct MaskedData {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(try_from = "RequestMessageWire")]
 pub struct RequestMessage {
     pub role: Option<String>,
     pub content: Option<MaskContent>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize)]
+struct RequestMessageWire {
+    role: Option<String>,
+    content: Option<Box<RawValue>>,
+}
+
+impl TryFrom<RequestMessageWire> for RequestMessage {
+    type Error = serde_json::Error;
+
+    fn try_from(wire: RequestMessageWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            role: wire.role,
+            content: wire
+                .content
+                .map(|raw| parse_mask_content(&raw))
+                .transpose()?,
+        })
+    }
+}
+
+#[derive(Debug, Serialize)]
 #[serde(untagged)]
 pub enum MaskContent {
     Text(String),
     Parts(Vec<Box<RawValue>>),
+}
+
+fn parse_mask_content(raw: &RawValue) -> Result<MaskContent, serde_json::Error> {
+    if raw.get().trim_start().starts_with('[') {
+        Ok(MaskContent::Parts(serde_json::from_str(raw.get())?))
+    } else {
+        Ok(MaskContent::Text(serde_json::from_str(raw.get())?))
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -53,10 +79,33 @@ pub struct ResponseChoice {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(try_from = "MaskedResponseMessageWire")]
 pub struct MaskedResponseMessage {
     pub content: Option<MaskContent>,
     pub tool_calls: Option<Vec<MaskedToolCall>>,
     pub function_call: Option<MaskedFunctionCall>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MaskedResponseMessageWire {
+    content: Option<Box<RawValue>>,
+    tool_calls: Option<Vec<MaskedToolCall>>,
+    function_call: Option<MaskedFunctionCall>,
+}
+
+impl TryFrom<MaskedResponseMessageWire> for MaskedResponseMessage {
+    type Error = serde_json::Error;
+
+    fn try_from(wire: MaskedResponseMessageWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            content: wire
+                .content
+                .map(|raw| parse_mask_content(&raw))
+                .transpose()?,
+            tool_calls: wire.tool_calls,
+            function_call: wire.function_call,
+        })
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -67,23 +116,6 @@ pub struct MaskedToolCall {
 #[derive(Debug, Deserialize)]
 pub struct MaskedFunctionCall {
     pub arguments: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct McpRequest {
-    pub mcp_server_name: Option<String>,
-    pub server_name: Option<String>,
-    pub server_id: Option<String>,
-    pub arguments: Option<Box<RawValue>>,
-    pub mcp_arguments: Option<Box<RawValue>>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct McpServer {
-    pub alias: Option<String>,
-    pub server_name: Option<String>,
-    pub name: Option<String>,
-    pub server_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -112,40 +144,43 @@ pub fn get_masked_text(scan_result: &ScanResult, is_response: bool) -> Option<&s
 pub fn mask_messages(
     messages: &mut [RequestMessage],
     masked_text: &str,
-) -> Result<(), MaskingError> {
-    let Some(message) = messages
+) -> Result<bool, MaskingError> {
+    messages
         .iter_mut()
-        .rev()
-        .find(|message| message.role.as_deref() == Some("user"))
-    else {
-        return Ok(());
-    };
-    if let Some(content) = message.content.as_mut() {
-        mask_content(content, masked_text)?;
-    }
-    Ok(())
+        .rfind(|message| message.role.as_deref() == Some("user"))
+        .and_then(|message| message.content.as_mut())
+        .map_or(Ok(false), |content| {
+            mask_content(content, masked_text).map(|()| true)
+        })
 }
 
 pub fn mask_response(response: &mut Response, masked_text: &str) -> Result<(), MaskingError> {
-    for message in response
-        .choices
+    let Some(choices) = response.choices.as_mut() else {
+        return Ok(());
+    };
+    choices.iter_mut().try_fold((), |(), choice| {
+        choice.message.as_mut().map_or(Ok(()), |message| {
+            mask_response_message(message, masked_text)
+        })
+    })
+}
+
+fn mask_response_message(
+    message: &mut MaskedResponseMessage,
+    masked_text: &str,
+) -> Result<(), MaskingError> {
+    if let Some(content) = message.content.as_mut() {
+        mask_content(content, masked_text)?;
+    }
+    let replacements = message
+        .tool_calls
         .iter_mut()
         .flatten()
-        .filter_map(|choice| choice.message.as_mut())
-    {
-        if let Some(content) = message.content.as_mut() {
-            mask_content(content, masked_text)?;
-        }
-        for function in message
-            .tool_calls
-            .iter_mut()
-            .flatten()
-            .filter_map(|call| call.function.as_mut())
-            .chain(message.function_call.iter_mut())
-        {
-            if function.arguments.is_some() {
-                function.arguments = Some(masked_text.to_owned());
-            }
+        .filter_map(|call| call.function.as_mut())
+        .chain(message.function_call.iter_mut());
+    for function in replacements {
+        if function.arguments.is_some() {
+            function.arguments = Some(masked_text.to_owned());
         }
     }
     Ok(())
@@ -154,99 +189,28 @@ pub fn mask_response(response: &mut Response, masked_text: &str) -> Result<(), M
 fn mask_content(content: &mut MaskContent, masked_text: &str) -> Result<(), MaskingError> {
     match content {
         MaskContent::Text(text) => masked_text.clone_into(text),
-        MaskContent::Parts(parts) => {
-            let mut masked = Vec::with_capacity(parts.len());
-            for part in parts.drain(..) {
-                let is_text = serde_json::from_str::<TextPart>(part.get())
-                    .is_ok_and(|text_part| text_part.kind.as_deref() == Some("text"));
-                if is_text {
-                    masked.push(
-                        to_raw_value(&MaskedTextPart {
-                            kind: "text",
-                            text: masked_text,
-                        })
-                        .map_err(MaskingError::Encoding)?,
-                    );
-                } else {
-                    masked.push(part);
-                }
-            }
-            *parts = masked;
-        }
+        MaskContent::Parts(parts) => return mask_parts(parts, masked_text),
     }
     Ok(())
 }
 
-pub fn mask_mcp_arguments(
-    request: &mut McpRequest,
-    original_args: &RawValue,
-    masked_text: &str,
-) -> Result<(), MaskingError> {
-    if request.arguments.is_none() && request.mcp_arguments.is_none() {
-        return Err(MaskingError::MissingMcpArguments);
-    }
-    let replacement = mcp_replacement(original_args, masked_text)?;
-    if request.arguments.is_some() {
-        request.arguments =
-            Some(RawValue::from_string(replacement.clone()).map_err(MaskingError::InvalidMcpJson)?);
-    }
-    if request.mcp_arguments.is_some() {
-        request.mcp_arguments =
-            Some(RawValue::from_string(replacement).map_err(MaskingError::InvalidMcpJson)?);
-    }
-    Ok(())
-}
-
-fn mcp_replacement(original_args: &RawValue, masked_text: &str) -> Result<String, MaskingError> {
-    let original = original_args.get().trim_start();
-    if original.starts_with('{') || original.starts_with('[') {
-        let masked = serde_json::from_str::<Box<RawValue>>(masked_text)
-            .map_err(MaskingError::InvalidMcpJson)?;
-        let masked_kind = masked.get().trim_start();
-        let valid_kind = (original.starts_with('{') && masked_kind.starts_with('{'))
-            || (original.starts_with('[') && masked_kind.starts_with('['));
-        if !valid_kind {
-            return Err(MaskingError::McpTypeMismatch);
+fn mask_parts(parts: &mut Vec<Box<RawValue>>, masked_text: &str) -> Result<(), MaskingError> {
+    let mut masked = Vec::with_capacity(parts.len());
+    for part in parts.drain(..) {
+        if serde_json::from_str::<TextPart>(part.get())
+            .is_ok_and(|text_part| text_part.kind.as_deref() == Some("text"))
+        {
+            masked.push(
+                to_raw_value(&MaskedTextPart {
+                    kind: "text",
+                    text: masked_text,
+                })
+                .map_err(MaskingError::Encoding)?,
+            );
+        } else {
+            masked.push(part);
         }
-        Ok(masked.get().to_owned())
-    } else {
-        serde_json::to_string(masked_text).map_err(MaskingError::Encoding)
     }
-}
-
-#[must_use]
-pub fn get_mcp_server_name(
-    request: &McpRequest,
-    servers_by_id: &BTreeMap<String, McpServer>,
-    names_by_tool: &BTreeMap<String, String>,
-    tool_name: &str,
-) -> String {
-    if let Some(name) = request
-        .mcp_server_name
-        .as_deref()
-        .or(request.server_name.as_deref())
-        && !name.is_empty()
-    {
-        return name.to_owned();
-    }
-    if let Some(server) = request
-        .server_id
-        .as_ref()
-        .and_then(|server_id| servers_by_id.get(server_id))
-        && let Some(name) = [
-            server.alias.as_deref(),
-            server.server_name.as_deref(),
-            server.name.as_deref(),
-            server.server_id.as_deref(),
-        ]
-        .into_iter()
-        .flatten()
-        .find(|name| !name.is_empty())
-    {
-        return name.to_owned();
-    }
-    names_by_tool
-        .get(tool_name)
-        .cloned()
-        .unwrap_or_else(|| "unknown".to_owned())
+    *parts = masked;
+    Ok(())
 }
