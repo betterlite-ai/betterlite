@@ -1,5 +1,5 @@
 use indexmap::IndexMap;
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 
 use super::CallbackMetadataError;
@@ -52,35 +52,20 @@ pub const SUPPORTED: [&str; 25] = [
 // Configured credentials use a separate channel that request deserialization cannot construct.
 #[derive(Default)]
 pub struct TrustedCallbacks {
-    pub newrelic_api_key: Option<SecretString>,
-    pub newrelic_region: Option<String>,
-    pub signoz_ingestion_key: Option<SecretString>,
-    pub signoz_ingestion_endpoint: Option<String>,
+    pub values: IndexMap<String, SecretString>,
 }
 
 impl TrustedCallbacks {
     pub fn overlay(&self, dynamic: &mut IndexMap<String, Json>) {
-        for (name, value) in [
-            (
-                "newrelic_api_key",
-                self.newrelic_api_key
-                    .as_ref()
-                    .map(ExposeSecret::expose_secret),
-            ),
-            ("newrelic_region", self.newrelic_region.as_deref()),
-            (
-                "signoz_ingestion_key",
-                self.signoz_ingestion_key
-                    .as_ref()
-                    .map(ExposeSecret::expose_secret),
-            ),
-            (
-                "signoz_ingestion_endpoint",
-                self.signoz_ingestion_endpoint.as_deref(),
-            ),
-        ] {
-            if let Some(text) = value {
-                dynamic.insert(name.to_owned(), Json::Text(text.to_owned()));
+        for (name, value) in &self.values {
+            if matches!(
+                name.as_str(),
+                "newrelic_api_key"
+                    | "newrelic_region"
+                    | "signoz_ingestion_key"
+                    | "signoz_ingestion_endpoint"
+            ) {
+                dynamic.insert(name.clone(), Json::Text(value.expose_secret().to_owned()));
             }
         }
     }

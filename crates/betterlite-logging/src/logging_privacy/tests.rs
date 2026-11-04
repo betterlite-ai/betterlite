@@ -9,7 +9,7 @@ use betterlite_openai::stream::chunk::Chunk;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use indexmap::IndexMap;
 use rstest::rstest;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use std::{fs, path::PathBuf};
 
@@ -354,10 +354,14 @@ fn test_span_scope(input: &str, expected: &str) {
 
 fn test_trusted_overlay(_input: &str, _expected: &str) {
     let trusted = TrustedCallbacks {
-        newrelic_api_key: Some(SecretString::from("configured-secret")),
-        newrelic_region: Some("eu".to_owned()),
-        signoz_ingestion_key: None,
-        signoz_ingestion_endpoint: None,
+        values: IndexMap::from([
+            (
+                "newrelic_api_key".to_owned(),
+                SecretString::from("configured-secret"),
+            ),
+            ("newrelic_region".to_owned(), SecretString::from("eu")),
+            ("gcs_bucket_name".to_owned(), SecretString::from("bucket")),
+        ]),
     };
     let mut fields = IndexMap::new();
     trusted.overlay(&mut fields);
@@ -366,6 +370,14 @@ fn test_trusted_overlay(_input: &str, _expected: &str) {
         Some(&Json::Text("eu".to_owned()))
     );
     assert_eq!(fields.len(), 2);
+    assert_eq!(
+        trusted
+            .values
+            .get("gcs_bucket_name")
+            .unwrap()
+            .expose_secret(),
+        "bucket"
+    );
 }
 
 fn test_billing(input: &str, expected: &str) {
