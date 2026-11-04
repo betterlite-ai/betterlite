@@ -1,0 +1,4 @@
+response_chat_content:
+  operation: text_by_role
+  content: null
+  role: user
