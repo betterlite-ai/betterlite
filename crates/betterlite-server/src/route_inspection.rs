@@ -41,7 +41,8 @@ pub fn get_app_routes<E>(route: &Route, endpoint_route: &E) -> Vec<RouteInfo>
 where
     E: NamedEndpoint,
 {
-    vec![RouteInfo {
+    let mut route_infos = Vec::with_capacity(1);
+    route_infos.push(RouteInfo {
         path: route.path.clone(),
         methods: route.methods.clone().flatten(),
         name: route.name.clone(),
@@ -50,7 +51,8 @@ where
             .as_ref()
             .and_then(|context| safe_get_endpoint_name(context, endpoint_route)),
         mounted_app: None,
-    }]
+    });
+    route_infos
 }
 
 #[must_use]
