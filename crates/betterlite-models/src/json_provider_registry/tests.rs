@@ -15,6 +15,13 @@ fn loads_all_pinned_descriptors_with_defaults() {
     assert_eq!(helicone.base_class, "openai_gpt");
     assert!(helicone.param_mappings.is_empty());
     assert_eq!(helicone.api_key_env, "HELICONE_API_KEY");
+    assert!(registry.exists(ProviderId::Helicone));
+    assert!(!registry.exists(ProviderId::Cursor));
+    let projection = helicone.projection();
+    assert_eq!(projection.provider, ProviderId::Helicone);
+    assert_eq!(projection.base_url, "https://ai-gateway.helicone.ai/");
+    assert_eq!(projection.api_key_env, "HELICONE_API_KEY");
+    assert_eq!(projection.api_base_env, None);
     assert!(
         registry
             .get(ProviderId::Sarvam)
