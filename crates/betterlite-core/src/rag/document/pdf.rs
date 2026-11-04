@@ -95,21 +95,21 @@ struct PageText<'doc> {
 
 impl PageText<'_> {
     fn apply(&mut self, operation: &Operation) -> Option<()> {
-        match operation.operator.as_str() {
-            "Tf" => self.select_font(&operation.operands)?,
-            "Tj" => self.show_text(operation.operands.first())?,
-            "TJ" => self.show_text_array(operation.operands.first())?,
-            "'" => self.show_next_line_text(operation.operands.first())?,
-            "\"" if operation.operands.len() >= 3 => {
+        match (operation.operator.as_str(), operation.operands.first()) {
+            ("Tf", _) => self.select_font(&operation.operands)?,
+            ("Tj", Some(Object::String(bytes, _))) => self.show_text(bytes)?,
+            ("TJ", Some(Object::Array(values))) => self.show_text_array(values)?,
+            ("'", _) => self.show_next_line_text(operation.operands.first())?,
+            ("\"", _) if operation.operands.len() >= 3 => {
                 self.show_next_line_text(operation.operands.get(2))?;
             }
-            "q" => self.saved.push((
+            ("q", _) => self.saved.push((
                 self.position.graphics,
                 self.active_font,
                 self.font_size,
                 self.position.leading,
             )),
-            "Q" => self.restore_graphics(),
+            ("Q", _) => self.restore_graphics(),
             _ => self
                 .position
                 .apply(operation, &mut self.text, self.font_size),
@@ -138,13 +138,13 @@ impl PageText<'_> {
 
     fn show_next_line_text(&mut self, object: Option<&Object>) -> Option<()> {
         self.position.next_line(&mut self.text, self.font_size);
-        self.show_text(object)
+        if let Some(Object::String(bytes, _)) = object {
+            self.show_text(bytes)?;
+        }
+        Some(())
     }
 
-    fn show_text(&mut self, object: Option<&Object>) -> Option<()> {
-        let Some(bytes) = object.and_then(|value| value.as_str().ok()) else {
-            return Some(());
-        };
+    fn show_text(&mut self, bytes: &[u8]) -> Option<()> {
         let Some((_, encoding)) = self.active_font.and_then(|index| self.encodings.get(index))
         else {
             return Some(());
@@ -156,13 +156,10 @@ impl PageText<'_> {
         Some(())
     }
 
-    fn show_text_array(&mut self, object: Option<&Object>) -> Option<()> {
-        let Some(values) = object.and_then(|value| value.as_array().ok()) else {
-            return Some(());
-        };
+    fn show_text_array(&mut self, values: &[Object]) -> Option<()> {
         for value in values {
             match value {
-                Object::String(_, _) => self.show_text(Some(value))?,
+                Object::String(bytes, _) => self.show_text(bytes)?,
                 Object::Integer(offset) if *offset < -100 => self.text.push(' '),
                 Object::Integer(_)
                 | Object::Real(_)
