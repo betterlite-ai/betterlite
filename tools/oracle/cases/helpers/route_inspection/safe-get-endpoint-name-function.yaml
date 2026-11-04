@@ -1,7 +1,7 @@
 kind: helper
 name: safe-get-endpoint-name-function
 call:
-  b4262: {"function":"safe_get_endpoint_name","endpoint_name":"handler"}
+  b4262: {"function":"safe_get_endpoint_name","endpoint_name":"handler","fail":false}
 env: {}
 compare:
   ignore: []

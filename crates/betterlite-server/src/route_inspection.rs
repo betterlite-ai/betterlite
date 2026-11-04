@@ -10,7 +10,7 @@ pub enum RouteInspectionError {
     EndpointName,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct RouteInfo {
     pub path: Option<String>,
     pub methods: Option<Vec<String>>,
@@ -27,10 +27,14 @@ pub struct Route {
     pub methods: Option<Vec<String>>,
     pub name: Option<String>,
     pub endpoint: Option<String>,
-    pub app: Option<Vec<Route>>,
+    pub app: Option<Vec<Self>>,
 }
 
-pub fn get_app_routes<E: NamedEndpoint>(route: &Route, endpoint_route: &E) -> Vec<RouteInfo> {
+#[must_use]
+pub fn get_app_routes<E>(route: &Route, endpoint_route: &E) -> Vec<RouteInfo>
+where
+    E: NamedEndpoint,
+{
     vec![RouteInfo {
         path: route.path.clone(),
         methods: route.methods.clone(),
@@ -42,6 +46,7 @@ pub fn get_app_routes<E: NamedEndpoint>(route: &Route, endpoint_route: &E) -> Ve
     }]
 }
 
+#[must_use]
 pub fn get_routes_for_mounted_app(route: &Route) -> Vec<RouteInfo> {
     let Some(sub_routes) = route.app.as_ref() else {
         return Vec::new();
@@ -61,7 +66,7 @@ fn mounted_sub_route_info(mount_path: &str, sub_route: &Route) -> Option<RouteIn
     let endpoint = sub_route
         .endpoint
         .clone()
-        .or_else(|| sub_route.app.as_ref().map(|_| "ASGIApp".to_owned()))?;
+        .or_else(|| sub_route.app.as_ref().map(|_| "NestedApp".to_owned()))?;
     let mut path = mount_path.to_owned();
     path.push_str(sub_route.path.as_deref().unwrap_or_default());
     Some(RouteInfo {
@@ -78,9 +83,9 @@ fn mounted_sub_route_info(mount_path: &str, sub_route: &Route) -> Option<RouteIn
     })
 }
 
-fn safe_get_endpoint_name<'a, F>(endpoint: &str, lookup: F) -> Option<String>
+fn safe_get_endpoint_name<'endpoint, F>(endpoint: &str, lookup: F) -> Option<String>
 where
-    F: FnOnce() -> Result<Option<&'a str>, RouteInspectionError>,
+    F: FnOnce() -> Result<Option<&'endpoint str>, RouteInspectionError>,
 {
     match lookup() {
         Ok(name) => name.map(str::to_owned),
