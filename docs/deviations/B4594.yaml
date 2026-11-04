@@ -1,0 +1,14 @@
+task: B4594
+deviations:
+  - what: The six-provider catalog and ANSI styling are built as Rust code, not referenced from LiteLLM at runtime.
+    why: betterlite is Rust and does not import LiteLLM modules; the catalog and colors are part of the wizard support layer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/setup_wizard.py#L43-L138
+  - what: NO_COLOR support is read through the injected EnvironmentLookup from B002, not directly from os.environ.
+    why: All environment reads go through the config boundary for testability and injection.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/setup_wizard.py#L140-L141
+  - what: EOF while reading a key from /dev/tty returns an I/O error and dispatches to numeric fallback instead of leaving the interactive selector in its empty-key loop.
+    why: Returning control lets the wizard continue when terminal input closes; LiteLLM's loop can otherwise remain stuck after read returns an empty byte string.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/setup_wizard.py#L283-L348
+  - what: /dev/tty is opened before the interactive selector is rendered, so an open failure prints only the numeric fallback list.
+    why: The terminal input source is initialized by the dispatch step before rendering; LiteLLM opens it after first rendering and hiding the cursor.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/setup_wizard.py#L273-L281

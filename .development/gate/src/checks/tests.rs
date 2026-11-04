@@ -1,8 +1,9 @@
 #![cfg(test)]
 
+use std::fs;
 use std::path::Path;
 
-use crate::checks::{Outcome, Selection, render, run};
+use crate::checks::{Outcome, Selection, history, render, run};
 use crate::development::Development;
 use crate::git::git;
 use crate::spec::backlog::Backlog;
@@ -122,4 +123,21 @@ fn a_failed_prerequisite_keeps_the_gate_red_when_work_is_skipped() {
         ),
     ];
     assert!(!render(&task, "base", Path::new("logs"), outcomes).passed);
+}
+
+#[test]
+fn a_new_run_without_a_result_or_an_error_is_unfinished() {
+    let folder = tempfile::tempdir().unwrap();
+    assert!(history::runs(folder.path()).unwrap().is_empty());
+    let runs = folder.path().join("runs");
+    fs::create_dir_all(runs.join("run-old")).unwrap();
+    let earlier = history::runs(folder.path()).unwrap();
+    for marker in ["result.json", "error.txt"] {
+        let run = runs.join(format!("run-{marker}"));
+        fs::create_dir_all(&run).unwrap();
+        fs::write(run.join(marker), "{}").unwrap();
+    }
+    assert!(!history::unfinished(folder.path(), &earlier).unwrap());
+    fs::create_dir_all(runs.join("run-cut")).unwrap();
+    assert!(history::unfinished(folder.path(), &earlier).unwrap());
 }

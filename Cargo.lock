@@ -191,6 +191,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "arbitrary"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3bc62ac97cc33321f50863d514c3bc38a453947a8f9e781137e47c7401020aed"
+
+[[package]]
 name = "arc-swap"
 version = "1.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -934,7 +940,9 @@ dependencies = [
  "chrono",
  "clap",
  "fancy-regex",
+ "nix",
  "rand 0.10.3",
+ "regex",
  "rstest",
  "serde",
  "serde-saphyr",
@@ -963,6 +971,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-a2a-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-a2a",
+ "betterlite-core",
+ "libfuzzer-sys",
+ "serde_json",
+]
+
+[[package]]
 name = "betterlite-anthropic"
 version = "0.1.0"
 dependencies = [
@@ -978,6 +996,14 @@ dependencies = [
  "serde_json",
  "sha2 0.11.1",
  "thiserror",
+]
+
+[[package]]
+name = "betterlite-anthropic-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-anthropic",
+ "libfuzzer-sys",
 ]
 
 [[package]]
@@ -1036,6 +1062,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-bedrock-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-bedrock",
+ "libfuzzer-sys",
+]
+
+[[package]]
 name = "betterlite-billing"
 version = "0.1.0"
 dependencies = [
@@ -1077,6 +1111,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-cache-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-cache",
+ "libfuzzer-sys",
+]
+
+[[package]]
 name = "betterlite-cli"
 version = "0.1.0"
 dependencies = [
@@ -1096,6 +1138,14 @@ dependencies = [
  "thiserror",
  "url",
  "windows-native-keyring-store",
+]
+
+[[package]]
+name = "betterlite-cli-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-cli",
+ "libfuzzer-sys",
 ]
 
 [[package]]
@@ -1145,6 +1195,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-config-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-config",
+ "libfuzzer-sys",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "betterlite-context"
 version = "0.1.0"
 dependencies = [
@@ -1160,6 +1220,14 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+]
+
+[[package]]
+name = "betterlite-context-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-context",
+ "libfuzzer-sys",
 ]
 
 [[package]]
@@ -1182,6 +1250,15 @@ dependencies = [
  "serde_with",
  "thiserror",
  "url",
+]
+
+[[package]]
+name = "betterlite-core-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-core",
+ "libfuzzer-sys",
+ "serde_json",
 ]
 
 [[package]]
@@ -1227,6 +1304,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-db-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-db",
+ "libfuzzer-sys",
+]
+
+[[package]]
 name = "betterlite-deepagents-harness"
 version = "0.1.0"
 dependencies = [
@@ -1253,6 +1338,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-env-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-env",
+ "libfuzzer-sys",
+]
+
+[[package]]
 name = "betterlite-error"
 version = "0.1.0"
 dependencies = [
@@ -1266,8 +1359,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-error-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-error",
+ "libfuzzer-sys",
+]
+
+[[package]]
 name = "betterlite-foundry"
 version = "0.1.0"
+
+[[package]]
+name = "betterlite-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite",
+ "betterlite-config",
+ "libfuzzer-sys",
+]
 
 [[package]]
 name = "betterlite-guardrails"
@@ -1293,6 +1403,15 @@ dependencies = [
  "ulid",
  "unicode-normalization",
  "url",
+]
+
+[[package]]
+name = "betterlite-guardrails-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-guardrails",
+ "libfuzzer-sys",
+ "serde_json",
 ]
 
 [[package]]
@@ -1323,6 +1442,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-harness-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-harness",
+ "libfuzzer-sys",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "betterlite-http"
 version = "0.1.0"
 dependencies = [
@@ -1332,7 +1461,9 @@ dependencies = [
  "bytes",
  "crc32fast",
  "futures-util",
+ "h2",
  "hex",
+ "http 1.5.0",
  "opentelemetry-http",
  "percent-encoding",
  "rcgen",
@@ -1349,10 +1480,22 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tokio-rustls",
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "webpki-roots",
  "zip",
+]
+
+[[package]]
+name = "betterlite-http-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-config",
+ "betterlite-http",
+ "libfuzzer-sys",
+ "url",
 ]
 
 [[package]]
@@ -1376,6 +1519,15 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+]
+
+[[package]]
+name = "betterlite-lens-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-lens",
+ "libfuzzer-sys",
+ "serde_json",
 ]
 
 [[package]]
@@ -1417,6 +1569,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-logging-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-logging",
+ "chrono",
+ "libfuzzer-sys",
+ "serde_json",
+]
+
+[[package]]
 name = "betterlite-mcp"
 version = "0.1.0"
 dependencies = [
@@ -1444,6 +1606,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-mcp-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-mcp",
+ "chrono",
+ "libfuzzer-sys",
+ "secrecy",
+]
+
+[[package]]
 name = "betterlite-models"
 version = "0.1.0"
 dependencies = [
@@ -1466,6 +1638,15 @@ dependencies = [
  "tracing-subscriber",
  "unicode-general-category",
  "url",
+]
+
+[[package]]
+name = "betterlite-models-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-models",
+ "libfuzzer-sys",
+ "serde_json",
 ]
 
 [[package]]
@@ -1507,6 +1688,15 @@ dependencies = [
  "unicode-normalization",
  "url",
  "uuid",
+]
+
+[[package]]
+name = "betterlite-openai-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-openai",
+ "libfuzzer-sys",
+ "serde_json",
 ]
 
 [[package]]
@@ -1592,6 +1782,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-oracle-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-oracle",
+ "chrono",
+ "libfuzzer-sys",
+ "quick-xml",
+ "serde",
+ "serde-saphyr",
+ "thiserror",
+ "tl",
+]
+
+[[package]]
 name = "betterlite-paths"
 version = "0.1.0"
 dependencies = [
@@ -1599,6 +1803,15 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+]
+
+[[package]]
+name = "betterlite-paths-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-paths",
+ "libfuzzer-sys",
+ "serde_json",
 ]
 
 [[package]]
@@ -1659,6 +1872,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-prompts-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-prompts",
+ "chrono",
+ "indexmap 2.14.2",
+ "libfuzzer-sys",
+ "serde_json",
+]
+
+[[package]]
 name = "betterlite-provider"
 version = "0.1.0"
 
@@ -1690,6 +1914,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-redact-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-redact",
+ "libfuzzer-sys",
+]
+
+[[package]]
 name = "betterlite-redis"
 version = "0.1.0"
 dependencies = [
@@ -1705,6 +1937,15 @@ dependencies = [
  "thiserror",
  "tokio",
  "url",
+]
+
+[[package]]
+name = "betterlite-redis-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-redis",
+ "libfuzzer-sys",
+ "serde_json",
 ]
 
 [[package]]
@@ -1735,6 +1976,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-roi-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-roi",
+ "libfuzzer-sys",
+ "serde_json",
+]
+
+[[package]]
 name = "betterlite-router"
 version = "0.1.0"
 dependencies = [
@@ -1743,6 +1993,14 @@ dependencies = [
  "serde",
  "serde_json",
  "unicode-general-category",
+]
+
+[[package]]
+name = "betterlite-router-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-router",
+ "libfuzzer-sys",
 ]
 
 [[package]]
@@ -1791,6 +2049,16 @@ dependencies = [
  "thiserror",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "betterlite-secrets-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-secrets",
+ "libfuzzer-sys",
+ "secrecy",
+ "serde_json",
 ]
 
 [[package]]
@@ -1859,6 +2127,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-server-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-auth",
+ "betterlite-server",
+ "libfuzzer-sys",
+ "serde_json",
+]
+
+[[package]]
 name = "betterlite-streaming"
 version = "0.1.0"
 dependencies = [
@@ -1867,6 +2145,14 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+]
+
+[[package]]
+name = "betterlite-streaming-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-streaming",
+ "libfuzzer-sys",
 ]
 
 [[package]]
@@ -1888,6 +2174,14 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "betterlite-tracing-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-tracing",
+ "libfuzzer-sys",
 ]
 
 [[package]]
@@ -1925,6 +2219,15 @@ dependencies = [
  "thiserror",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "betterlite-websearch-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-websearch",
+ "libfuzzer-sys",
+ "serde_json",
 ]
 
 [[package]]
@@ -2249,8 +2552,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1aa79e62e7697b8e29b513a68abacf485adcd1fe8284a4316c5ae868e6633327"
 dependencies = [
  "iana-time-zone",
+ "js-sys",
  "num-traits",
  "serde",
+ "wasm-bindgen",
  "windows-link",
 ]
 
@@ -4171,6 +4476,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "libfuzzer-sys"
+version = "0.4.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a9fd2f41a1cba099f79a0b6b6c35656cf7c03351a7bae8ff0f28f25270f929d2"
+dependencies = [
+ "arbitrary",
+ "cc",
+]
+
+[[package]]
 name = "libredox"
 version = "0.1.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5472,6 +5787,7 @@ dependencies = [
  "futures-channel",
  "futures-core",
  "futures-util",
+ "h2",
  "http 1.5.0",
  "http-body 1.1.0",
  "http-body-util",
@@ -7268,6 +7584,15 @@ name = "webpki-root-certs"
 version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e49d0e65abc00c142e8f9428da991da9f1a250c39be97459901eb12b9b49f62a"
+dependencies = [
+ "rustls-pki-types",
+]
+
+[[package]]
+name = "webpki-roots"
+version = "1.0.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f5f280bbb2b287bc8e7de7e3852945a0ff50d1bbcb5ed42b6c7a568c546df171"
 dependencies = [
  "rustls-pki-types",
 ]

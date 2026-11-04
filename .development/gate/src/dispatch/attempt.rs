@@ -1,10 +1,11 @@
 use std::collections::BTreeSet;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::answer::parse_answer;
 use crate::checks;
 use crate::checks::Selection;
+use crate::checks::history;
 use crate::dependencies::added_dependencies;
 use crate::development::Development;
 use crate::deviations;
@@ -135,11 +136,14 @@ pub(crate) fn remove_extra_targets(worktree: &Path) -> Result<Vec<String>, GateE
     Ok(notes)
 }
 
+pub(crate) const UNFINISHED_NOTE: &str = "You answered blocked while a gate command you started had not finished, so the answer does not count. That command stopped when your run ended. Run it again and keep polling it until it prints 'gate passed' or 'gate failed', however long it takes: a 'gate: waiting for' line only means it is queued behind other builds. Then go on until the task's checks pass.";
+
 fn answered(
     attempt: &Attempt<'_>,
     runner: &Runner,
     text: &str,
     start: &str,
+    earlier: &BTreeSet<PathBuf>,
 ) -> Result<Option<Step>, GateError> {
     let report = match parse_answer::<Report>(text, "the report") {
         Ok(report) => report,
@@ -150,6 +154,9 @@ fn answered(
         }
     };
     if report.status == ReportStatus::Blocked {
+        if history::unfinished(&attempt.places.journal.join("gate"), earlier)? {
+            return Ok(Some(Step::Fix(vec![UNFINISHED_NOTE.to_owned()])));
+        }
         return Ok(Some(Step::Blocked(vec![format!(
             "The last run reported blocked: {}",
             report.blocker
@@ -179,9 +186,10 @@ pub(crate) fn attempt_once(
     feedback: &[String],
 ) -> Result<Turn, GateError> {
     let start = git(attempt.places.worktree, &["rev-parse", "HEAD"])?;
+    let earlier = history::runs(&attempt.places.journal.join("gate"))?;
     let note = match worker_run(attempt, runner, rung, feedback)? {
         Run::Answer { text, session } => {
-            let step = answered(attempt, runner, &text, start.trim())?;
+            let step = answered(attempt, runner, &text, start.trim(), &earlier)?;
             return Ok(Turn { step, session });
         }
         Run::Silent => "The previous run ended without a final answer.".to_owned(),

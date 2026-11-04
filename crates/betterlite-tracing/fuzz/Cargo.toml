@@ -3,8 +3,10 @@ name = "betterlite-tracing-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2024"
+license.workspace = true
 
-[workspace]
+[lints]
+workspace = true
 
 [dependencies]
 betterlite-tracing = { path = ".." }
@@ -15,3 +17,4 @@ name = "cursors"
 path = "fuzz_targets/cursors.rs"
 test = false
 doc = false
+bench = false
