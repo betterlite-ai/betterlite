@@ -33,8 +33,17 @@ pub fn round_decimal_lexeme(lexeme: &str) -> Result<Decimal, DecimalLexemeError>
         ),
         None => (lexeme, 0),
     };
+    let (is_negative, integer_part, fraction_part) = split_coefficient(coefficient);
+    let has_nonzero_digit = integer_part
+        .bytes()
+        .chain(fraction_part.bytes())
+        .any(|byte| byte != b'0');
     let expanded = expanded_decimal(coefficient, exponent)?;
-    Ok(Decimal::from_str(&expanded)?.normalize())
+    let mut decimal = Decimal::from_str(&expanded)?.normalize();
+    if decimal.is_zero() && is_negative && has_nonzero_digit {
+        decimal.set_sign_negative(true);
+    }
+    Ok(decimal)
 }
 
 fn expanded_decimal(coefficient: &str, exponent: i64) -> Result<String, DecimalLexemeError> {

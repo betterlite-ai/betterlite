@@ -50,6 +50,16 @@ fn numeric_savings_rounds_a_lexeme_past_28_places(
     assert_eq!(round_decimal_lexeme(lexeme).ok(), expected.map(decimal));
 }
 
+#[rstest]
+#[case::under_resolution("-1e-30")]
+#[case::half_resolution("-1e-29")]
+#[case::rounds_down("-4e-29")]
+fn numeric_savings_preserves_negative_sign_when_rounding_to_zero(#[case] lexeme: &str) {
+    let value = round_decimal_lexeme(lexeme).expect("a tiny finite amount rounds to zero");
+    assert!(value.is_zero());
+    assert!(value.is_sign_negative());
+}
+
 #[test]
 fn numeric_savings_treats_a_missing_value_as_none() {
     assert_eq!(numeric_savings(None), None);

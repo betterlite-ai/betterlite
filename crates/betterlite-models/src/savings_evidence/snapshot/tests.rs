@@ -44,14 +44,35 @@ fn rejects_an_unknown_field() {
 #[rstest]
 #[case::bool_actual_spend(r#""actual_spend": true"#)]
 #[case::string_actual_spend(r#""actual_spend": "0.5""#)]
-#[case::negative_actual_spend(r#""actual_spend": -1.0"#)]
 #[case::negative_actual_token_cost(r#""actual_token_cost": -1.0"#)]
 #[case::bool_actual_token_cost(r#""actual_token_cost": true"#)]
 #[case::negative_classifier_cost(r#""classifier_cost": -1.0"#)]
 #[case::bool_classifier_cost(r#""classifier_cost": false"#)]
-#[case::tiny_negative_actual_spend(r#""actual_spend": -1e-30"#)]
 fn rejects_boolean_nonnumeric_and_negative_amounts(#[case] extra: &str) {
     snapshot(extra).unwrap_err();
+}
+
+#[rstest]
+#[case::tiny_negative_actual_spend(
+    r#"{"model": "claude-3-haiku", "provider": "anthropic", "actual_spend": -1e-30}"#,
+    "actual_spend"
+)]
+#[case::tiny_negative_actual_token_cost(
+    r#"{"model": "claude-3-haiku", "provider": "anthropic", "actual_spend": 0.5, "actual_token_cost": -1e-30}"#,
+    "actual_token_cost"
+)]
+#[case::tiny_negative_classifier_cost(
+    r#"{"model": "claude-3-haiku", "provider": "anthropic", "actual_spend": 0.5, "classifier_cost": -1e-30}"#,
+    "classifier_cost"
+)]
+#[case::negative_actual_spend_at_rounding_boundary(
+    r#"{"model": "claude-3-haiku", "provider": "anthropic", "actual_spend": -1e-29}"#,
+    "actual_spend"
+)]
+fn rejects_tiny_negative_amounts(#[case] document: &str, #[case] field: &str) {
+    let error = serde_json::from_str::<BaselineCostSnapshot>(document)
+        .expect_err("the original negative sign must survive decimal rounding");
+    assert!(error.to_string().contains(field));
 }
 
 #[rstest]
