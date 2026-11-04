@@ -187,3 +187,22 @@ async fn semantic_ranking_uses_threshold_and_preserves_stable_hits() {
     );
     assert_eq!(hits.first().and_then(|hit| hit.score), Some(1.0));
 }
+
+#[tokio::test]
+async fn empty_query_returns_core_tools_without_ranking_rest() {
+    let tools = vec![tool("core", "always present"), tool("ordinary", "match")];
+    let settings = MCPToolSearchSettings {
+        embedding_model: None,
+        top_k: 1,
+        similarity_threshold: 0.0,
+        core_tools: vec!["core".to_owned()],
+    };
+
+    let hits = rank_mcp_tools("", &tools, 1, &settings, None)
+        .await
+        .unwrap();
+
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits.first().map(|hit| hit.tool.name.as_str()), Some("core"));
+    assert_eq!(hits.first().and_then(|hit| hit.score), None);
+}
