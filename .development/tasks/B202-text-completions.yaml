@@ -24,11 +24,25 @@ description: >-
 scope:
   paths:
   - Cargo.toml
-  - crates/betterlite-openai/**
-  - crates/betterlite-provider/**
-  - crates/betterlite-server/**
+  - crates/betterlite-openai/Cargo.toml
+  - crates/betterlite-openai/src/text_completion_request.rs
+  - crates/betterlite-openai/src/text_completion_request/**
+  - crates/betterlite-openai/src/text_completion_response.rs
+  - crates/betterlite-openai/src/text_completion_response/**
+  - crates/betterlite-openai/src/text_completion_execution.rs
+  - crates/betterlite-openai/src/text_completion_execution/**
+  - crates/betterlite-openai/fuzz/Cargo.toml
+  - crates/betterlite-openai/fuzz/fuzz_targets/text_request.rs
+  - crates/betterlite-openai/fuzz/fuzz_targets/text_response.rs
+  - crates/betterlite-openai/fuzz/corpus/text_request/**
+  - crates/betterlite-openai/fuzz/corpus/text_response/**
+  - crates/betterlite-server/src/server.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/routes/completions.rs
+  - crates/betterlite-server/src/routes/completions/**
+  - crates/betterlite-core/src/dispatch.rs
+  - crates/betterlite-core/src/operation.rs
   - tools/oracle/cases/completions/**
-  - crates/betterlite-core/**
   - tools/oracle/helpers/b202.py
   - tools/oracle/helpers/b202/**
   - tools/oracle/src/helpers/oracle/b202.rs

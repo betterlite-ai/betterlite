@@ -28,8 +28,6 @@ description: >-
   160 tests, 125 fixtures, 80 adapters, 45 config/corpus and 40 wiring lines, 720 total.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/image_edit_call.rs
   - crates/betterlite-core/src/api/image_edit_call/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/image-edit-call-*

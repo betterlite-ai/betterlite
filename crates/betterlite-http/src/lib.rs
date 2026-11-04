@@ -11,4 +11,5 @@ pub mod passthrough;
 pub mod proxy;
 pub mod skill_archive;
 pub mod url_path;
+pub mod url_policy;
 pub mod user_url;

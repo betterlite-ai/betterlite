@@ -16,14 +16,10 @@ description: >-
   105 tests, 75 cases, 85 adapters and 25 wiring, total 400. Inherited chat-base methods and errors stay B2202's.
 scope:
   paths:
-  - crates/betterlite-provider/src/api.rs
-  - crates/betterlite-provider/src/api/**
   - crates/betterlite-provider/src/api/transcription_contract.rs
   - crates/betterlite-provider/src/api/transcription_contract/**
   - crates/betterlite-provider/src/operation.rs
   - crates/betterlite-provider/src/operation/**
-  - crates/betterlite-openai/src/api.rs
-  - crates/betterlite-openai/src/api/**
   - crates/betterlite-openai/src/api/transcription_contract.rs
   - crates/betterlite-openai/src/api/transcription_contract/**
   - tools/oracle/src/helpers/provider/transcription_contract.rs

@@ -17,7 +17,6 @@ scope:
   - crates/betterlite-logging/Cargo.toml
   - crates/betterlite-logging/src/payload.rs
   - crates/betterlite-logging/src/payload/**
-  - crates/betterlite-openai/**
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/logging/payload.rs
   - tools/oracle/src/helpers/logging/payload/**

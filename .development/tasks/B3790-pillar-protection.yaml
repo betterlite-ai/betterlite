@@ -123,52 +123,52 @@ checks:
     why: JSON encoding or URL quoting does not match LiteLLM
     run: >-
       cargo nextest run --locked -p betterlite-guardrails --no-tests=fail
-      -E 'test(/^pillar_protection::encode_json_for_header_tests/)'
+      -E 'test(/^pillar::encode_json_for_header_tests/)'
   - id: truncate-behavior
     why: Evidence truncation algorithm, max_bytes limit or return shape is incorrect
     run: >-
       cargo nextest run --locked -p betterlite-guardrails --no-tests=fail
-      -E 'test(/^pillar_protection::truncate_evidence_payload_tests/)'
+      -E 'test(/^pillar::truncate_evidence_payload_tests/)'
   - id: bool-parsing
     why: Boolean parsing precedence, accepted values or error message is wrong
     run: >-
       cargo nextest run --locked -p betterlite-guardrails --no-tests=fail
-      -E 'test(/^pillar_protection::bool_parsing_tests/)'
+      -E 'test(/^pillar::bool_parsing_tests/)'
   - id: header-construction
     why: Headers are missing, incorrect or added when they should not be
     run: >-
       cargo nextest run --locked -p betterlite-guardrails --no-tests=fail
-      -E 'test(/^pillar_protection::header_construction_tests/)'
+      -E 'test(/^pillar::header_construction_tests/)'
   - id: model-extraction
     why: get_llm_provider call or fallback does not match LiteLLM
     run: >-
       cargo nextest run --locked -p betterlite-guardrails --no-tests=fail
-      -E 'test(/^pillar_protection::model_extraction_tests/)'
+      -E 'test(/^pillar::model_extraction_tests/)'
   - id: payload-construction
     why: Payload dict structure or /api/v1/protect contract is wrong
     run: >-
       cargo nextest run --locked -p betterlite-guardrails --no-tests=fail
-      -E 'test(/^pillar_protection::payload_construction_tests/)'
+      -E 'test(/^pillar::payload_construction_tests/)'
   - id: api-call
     why: HTTP POST, URL construction, raise_for_status call or response parsing is incorrect
     run: >-
       cargo nextest run --locked -p betterlite-guardrails --no-tests=fail
-      -E 'test(/^pillar_protection::api_call_tests/)'
+      -E 'test(/^pillar::api_call_tests/)'
   - id: response-processing
     why: Metadata storage, header construction or exception raising does not match
     run: >-
       cargo nextest run --locked -p betterlite-guardrails --no-tests=fail
-      -E 'test(/^pillar_protection::response_processing_tests/)'
+      -E 'test(/^pillar::response_processing_tests/)'
   - id: error-fallback
     why: Fallback action selection or error response structure is wrong
     run: >-
       cargo nextest run --locked -p betterlite-guardrails --no-tests=fail
-      -E 'test(/^pillar_protection::error_fallback_tests/)'
+      -E 'test(/^pillar::error_fallback_tests/)'
   - id: response-headers
     why: Header encoding, truncation, metadata keys or MAX_PILLAR_HEADER_VALUE_BYTES limit is incorrect
     run: >-
       cargo nextest run --locked -p betterlite-guardrails --no-tests=fail
-      -E 'test(/^pillar_protection::response_headers_tests/)'
+      -E 'test(/^pillar::response_headers_tests/)'
   - id: oracle-cases
     why: Any oracle case does not match LiteLLM's exact request, response or headers
     run: >-
