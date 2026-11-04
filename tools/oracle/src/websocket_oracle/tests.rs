@@ -268,12 +268,21 @@ fn service_driver_isolation(#[case] tag: ServiceTag, #[case] response: &str) {
 }
 
 fn adapter(args: &Arguments, response: &str) -> Result<TranscriptObservation, DriverError> {
+    run_adapter(args, |script| {
+        script.frames[1].text = Some(response.to_owned());
+    })
+}
+
+fn run_adapter<F>(args: &Arguments, fill_script: F) -> Result<TranscriptObservation, DriverError>
+where
+    F: FnOnce(&mut WebSocketCase),
+{
     let runtime = Builder::new_current_thread().enable_all().build()?;
     runtime.block_on(async {
         let mut case = decode_ws_case(valid().as_bytes(), &OracleLimits::default(), &fixtures())?;
         case.frames = args.frames.clone();
         let mut script = case.clone();
-        script.frames[1].text = Some(response.to_owned());
+        fill_script(&mut script);
         run_scripted_exchange(case, script).await
     })
 }
@@ -426,12 +435,7 @@ fn prepare_realtime(args: &Arguments) -> Result<[String; 3], DriverError> {
 
 fn realtime_preparation_adapter(args: &Arguments) -> Result<TranscriptObservation, DriverError> {
     let responses = prepare_realtime(args)?;
-    let runtime = Builder::new_current_thread().enable_all().build()?;
-    runtime.block_on(async {
-        let case = decode_ws_case(valid().as_bytes(), &OracleLimits::default(), &fixtures())?;
-        let mut expected = case;
-        expected.frames = args.frames.clone();
-        let mut script = expected.clone();
+    run_adapter(args, |script| {
         for (frame, response) in script
             .frames
             .iter_mut()
@@ -440,7 +444,6 @@ fn realtime_preparation_adapter(args: &Arguments) -> Result<TranscriptObservatio
         {
             frame.text = Some(response.clone());
         }
-        run_scripted_exchange(expected, script).await
     })
 }
 
