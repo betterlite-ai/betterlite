@@ -26,7 +26,7 @@ record!(BedrockKbContent {
 });
 record!(BedrockKbRetrievalResult {
     content: BedrockKbContent => "content" [strict], location: BedrockKbLocation => "location",
-    score: serde_json::Number => "score", metadata: BTreeMap<String, Value> => "metadata",
+    score: super::score::Score => "score" [strict], metadata: BTreeMap<String, Value> => "metadata",
 });
 record!(BedrockKbMetadataAttribute {
     description: String => "description", key: String => "key", type_name: String => "type",

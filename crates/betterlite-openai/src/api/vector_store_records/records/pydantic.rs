@@ -1,3 +1,5 @@
+use super::timestamp::Timestamp;
+
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
@@ -31,7 +33,7 @@ pub struct IndexCreateLiteLlmParams {
 pub struct IndexCreateRequest {
     pub index_name: String,
     pub litellm_params: IndexCreateLiteLlmParams,
-    pub index_info: Option<Value>,
+    pub index_info: Option<BTreeMap<String, Value>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -39,10 +41,10 @@ pub struct LiteLlmManagedVectorStoreIndex {
     pub id: String,
     pub index_name: String,
     pub litellm_params: IndexCreateLiteLlmParams,
-    pub index_info: Option<Value>,
-    pub created_at: Option<String>,
+    pub index_info: Option<BTreeMap<String, Value>>,
+    pub created_at: Option<Timestamp>,
     pub created_by: Option<String>,
-    pub updated_at: Option<String>,
+    pub updated_at: Option<Timestamp>,
     pub updated_by: Option<String>,
 }
 

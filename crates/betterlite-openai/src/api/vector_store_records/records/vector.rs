@@ -39,7 +39,7 @@ record!(SearchOptionalParams {
 });
 pub type VectorStoreSearchRequest = SearchOptionalParams;
 record!(VectorStoreSearchResult {
-    score: serde_json::Number => "score",
+    score: super::score::Score => "score" [strict],
     content: Vec<VectorStoreResultContent> => "content",
     file_id: String => "file_id",
     filename: String => "filename",

@@ -1,4 +1,4 @@
-use rust_decimal::Decimal;
+use betterlite_models::price_fields::decimal_lexeme::{DecimalLexemeError, parse_decimal_lexeme};
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 use serde_json::Value;
@@ -74,14 +74,56 @@ pub enum VectorStoreRecordError {
     TooManyItems,
     #[error("invalid vector store record: {0}")]
     Json(#[from] serde_json::Error),
-    #[error("Field required: {0}")]
+    #[error("Field required")]
     MissingField(String),
     #[error("invalid literal for field `{field}`: {value}")]
     InvalidLiteral { field: String, value: String },
     #[error("score cannot be represented as an exact decimal")]
-    ScoreOutOfRange,
-    #[error("invalid UTC timestamp in `{0}`")]
-    InvalidTimestamp(String),
+    ScoreOutOfRange(#[source] DecimalLexemeError),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct ErrorDetails<'error> {
+    pub status: Option<u16>,
+    pub error_type: Option<&'static str>,
+    pub param: Option<&'static str>,
+    pub code: Option<&'static str>,
+    pub location: Option<&'error str>,
+}
+
+impl VectorStoreRecordError {
+    #[must_use]
+    pub const fn details(&self) -> ErrorDetails<'_> {
+        let (status, error_type, param, code, location) = match self {
+            Self::ScoreOutOfRange(_) => (
+                Some(502),
+                Some("bad_gateway"),
+                Some("score"),
+                Some("decimal_out_of_range"),
+                None,
+            ),
+            Self::MissingField(field) => (None, Some("missing"), None, None, Some(field.as_str())),
+            Self::InvalidLiteral { field, .. } => (
+                None,
+                Some("literal_error"),
+                None,
+                None,
+                Some(field.as_str()),
+            ),
+            Self::UnknownKind(_)
+            | Self::JsonTooLarge
+            | Self::TooDeep
+            | Self::TooManyItems
+            | Self::Json(_) => (None, None, None, None, None),
+        };
+        ErrorDetails {
+            status,
+            error_type,
+            param,
+            code,
+            location,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -125,107 +167,45 @@ pub fn decode_vector_store_records(
         );
     }
     let parsed: Value = serde_json::from_slice(bytes)?;
-    if kind == VectorStoreRecordKind::ManagedIndex {
-        validate_managed_timestamps(&parsed)?;
+    validate_record_shape(kind, &parsed)?;
+    if kind == VectorStoreRecordKind::SearchResponse {
+        validate_result_scores(parsed.get("data"))?;
     }
-    if matches!(
-        kind,
-        VectorStoreRecordKind::SearchResponse | VectorStoreRecordKind::BedrockResponse
-    ) {
-        validate_result_scores(kind, &parsed)?;
+    if kind == VectorStoreRecordKind::BedrockResponse {
+        validate_result_scores(parsed.get("retrievalResults"))?;
     }
     VectorStoreRecord::from_value(kind, parsed)
 }
 
-fn validate_managed_timestamps(record: &Value) -> Result<(), VectorStoreRecordError> {
-    let Some(fields) = record.as_object() else {
-        return Ok(());
-    };
-    for field in ["created_at", "updated_at"] {
-        let Some(timestamp) = fields.get(field).and_then(Value::as_str) else {
-            continue;
-        };
-        if !valid_utc_timestamp(timestamp) {
-            return Err(VectorStoreRecordError::InvalidTimestamp(field.to_owned()));
-        }
+fn validate_record_shape(
+    kind: VectorStoreRecordKind,
+    parsed: &Value,
+) -> Result<(), VectorStoreRecordError> {
+    if matches!(
+        kind,
+        VectorStoreRecordKind::UpdateRequest
+            | VectorStoreRecordKind::DeleteRequest
+            | VectorStoreRecordKind::InfoRequest
+    ) && parsed.get("vector_store_id").is_none()
+    {
+        return Err(VectorStoreRecordError::MissingField(String::from(
+            "vector_store_id",
+        )));
+    }
+    if let Some(object) = parsed
+        .get("object")
+        .filter(|object| kind == VectorStoreRecordKind::IndexListResponse && *object != "list")
+    {
+        return Err(VectorStoreRecordError::InvalidLiteral {
+            field: String::from("object"),
+            value: object.to_string(),
+        });
     }
     Ok(())
 }
 
-fn valid_utc_timestamp(value: &str) -> bool {
-    let Some(timestamp) = value.strip_suffix('Z') else {
-        return false;
-    };
-    let Some((date, time)) = timestamp.split_once('T') else {
-        return false;
-    };
-    let mut date_parts = date.split('-');
-    let (Some(year), Some(month), Some(day), None) = (
-        date_parts.next().and_then(|part| part.parse::<u32>().ok()),
-        date_parts.next().and_then(|part| part.parse::<u32>().ok()),
-        date_parts.next().and_then(|part| part.parse::<u32>().ok()),
-        date_parts.next(),
-    ) else {
-        return false;
-    };
-    let mut time_parts = time.split(':');
-    let (Some(hour), Some(minute), Some(second), None) = (
-        time_parts.next().and_then(|part| part.parse::<u32>().ok()),
-        time_parts.next().and_then(|part| part.parse::<u32>().ok()),
-        time_parts.next().and_then(|part| part.parse::<u32>().ok()),
-        time_parts.next(),
-    ) else {
-        return false;
-    };
-    let days = days_in_month(year, month);
-    date.len() == 10
-        && time.len() == 8
-        && day > 0
-        && day <= days
-        && hour < 24
-        && minute < 60
-        && second < 60
-}
-
-const fn days_in_month(year: u32, month: u32) -> u32 {
-    match month {
-        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-        4 | 6 | 9 | 11 => 30,
-        2 if year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400)) => {
-            29
-        }
-        2 => 28,
-        _ => 0,
-    }
-}
-
-fn validate_result_scores(
-    kind: VectorStoreRecordKind,
-    record: &Value,
-) -> Result<(), VectorStoreRecordError> {
-    let field = match kind {
-        VectorStoreRecordKind::SearchResponse => "data",
-        VectorStoreRecordKind::BedrockResponse => "retrievalResults",
-        VectorStoreRecordKind::ToolParams
-        | VectorStoreRecordKind::ManagedStore
-        | VectorStoreRecordKind::ManagedStoreList
-        | VectorStoreRecordKind::UpdateRequest
-        | VectorStoreRecordKind::DeleteRequest
-        | VectorStoreRecordKind::InfoRequest
-        | VectorStoreRecordKind::SearchRequest
-        | VectorStoreRecordKind::SearchFailure
-        | VectorStoreRecordKind::DiscoveryDataStore
-        | VectorStoreRecordKind::DiscoveryEngine
-        | VectorStoreRecordKind::CreateRequest
-        | VectorStoreRecordKind::CreateResponse
-        | VectorStoreRecordKind::IndexCreateRequest
-        | VectorStoreRecordKind::ManagedIndex
-        | VectorStoreRecordKind::IndexListResponse
-        | VectorStoreRecordKind::IndexEndpoints
-        | VectorStoreRecordKind::BedrockRequest
-        | VectorStoreRecordKind::BedrockRow => return Ok(()),
-    };
-    let Some(results) = record.get(field).and_then(Value::as_array) else {
+fn validate_result_scores(value: Option<&Value>) -> Result<(), VectorStoreRecordError> {
+    let Some(results) = value.and_then(Value::as_array) else {
         return Ok(());
     };
     for result in results {
@@ -241,10 +221,7 @@ fn validate_score(value: &Value) -> Result<(), VectorStoreRecordError> {
         return Ok(());
     };
     let text = number.to_string();
-    let decimal = Decimal::from_str_exact(&text).or_else(|_| Decimal::from_scientific(&text));
-    if decimal.is_err() {
-        return Err(VectorStoreRecordError::ScoreOutOfRange);
-    }
+    parse_decimal_lexeme(&text).map_err(VectorStoreRecordError::ScoreOutOfRange)?;
     Ok(())
 }
 

@@ -10,7 +10,6 @@ from litellm.types.vector_stores import (
     VectorStoreToolParams,
     VectorStoreUpdateRequest,
 )
-from pydantic import ValidationError
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
@@ -40,14 +39,26 @@ def run(fields: dict[str, Json]) -> Json:
             "index_create": IndexCreateRequest,
         }
         for name, model in models.items():
-            try:
-                instance = model.model_validate(records[name])
-            except ValidationError as error:
-                return cast(Json, {"error": str(error), "class": "ValidationError"})
+            instance = model.model_validate(records[name])
             validated[name] = cast(Json, instance.model_dump(mode="json", exclude_none=False))
         return cast(Json, validated)
-    if operation == "invalid_index_list_literal":
-        index_list = IndexListResponse.model_validate(fields["record"])
-        return cast(Json, index_list.model_dump(mode="json"))
+    if operation == "managed_index_timestamp_forms":
+        records = cast(list[dict[str, Json]], fields["records"])
+        validated_records = [
+            LiteLLM_ManagedVectorStoreIndex.model_validate(record) for record in records
+        ]
+        return cast(
+            Json,
+            [record.model_dump(mode="json") for record in validated_records],
+        )
+    if operation in {"invalid_index_list_literal", "invalid_missing_id", "invalid_index_info"}:
+        models = {
+            "invalid_index_list_literal": IndexListResponse,
+            "invalid_missing_id": VectorStoreDeleteRequest,
+            "invalid_index_info": IndexCreateRequest,
+        }
+        model = models[operation]
+        instance = model.model_validate(fields["record"])
+        return cast(Json, instance.model_dump(mode="json"))
     record_name = "extra_body" if operation == "discovery_extra_body_fields" else "record"
     return fields[record_name]
