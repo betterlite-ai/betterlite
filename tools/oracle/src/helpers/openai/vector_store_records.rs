@@ -64,21 +64,23 @@ impl crate::helpers::Helper for Op {
                     "max_num_results": input.fields.get("max_num_results"),
                     "ranking_options": input.fields.get("ranking_options")
                 }))
-                .map_err(|error| helper_error(error.to_string()))?;
+                .map_err(|error| helper_error("InvalidInput", error.to_string()))?;
                 serde_json::to_value(params.to_dict())
-                    .map_err(|error| helper_error(error.to_string()))
+                    .map_err(|error| helper_error("InvalidInput", error.to_string()))
             }
-            "management_record_defaults" => management_records(input).map_err(helper_error),
+            "management_record_defaults" => {
+                management_records(input).map_err(|message| helper_error("InvalidInput", message))
+            }
             "invalid_index_list_literal" => {
-                let record = input
-                    .fields
-                    .get("record")
-                    .ok_or_else(|| helper_error(String::from("record is required")))?;
+                let record = input.fields.get("record").ok_or_else(|| {
+                    helper_error("InvalidInput", String::from("record is required"))
+                })?;
                 match decode_model(VectorStoreRecordKind::IndexListResponse, record) {
-                    Ok(_) => Err(validation_error(String::from(
-                        "expected a literal validation error",
-                    ))),
-                    Err(message) => Err(validation_error(message)),
+                    Ok(_) => Err(helper_error(
+                        "ValidationError",
+                        String::from("expected a literal validation error"),
+                    )),
+                    Err(message) => Err(helper_error("ValidationError", message)),
                 }
             }
             "discovery_extra_body_fields" => Ok(input
@@ -91,20 +93,9 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn helper_error(message: String) -> Box<crate::helpers::HelperError> {
+fn helper_error(class: &str, message: String) -> Box<crate::helpers::HelperError> {
     Box::new(crate::helpers::HelperError {
-        class: String::from("InvalidInput"),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
-    })
-}
-
-fn validation_error(message: String) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
-        class: String::from("ValidationError"),
+        class: class.to_owned(),
         status: None,
         error_type: None,
         param: None,
