@@ -59,6 +59,11 @@ fn default_roots() -> Vec<PathBuf> {
 }
 
 fn usable_root(candidate: &Path) -> Option<PathBuf> {
+    let candidate = if candidate.as_os_str() == "." {
+        candidate.to_path_buf()
+    } else {
+        absolute_lexical_path(candidate)?
+    };
     if !candidate.is_dir() {
         return None;
     }
@@ -77,11 +82,7 @@ fn usable_root(candidate: &Path) -> Option<PathBuf> {
     let removed = fs::remove_file(probe);
     result.ok()?;
     removed.ok()?;
-    if candidate.as_os_str() == "." {
-        Some(candidate.to_path_buf())
-    } else {
-        absolute_lexical_path(candidate)
-    }
+    Some(candidate)
 }
 
 fn absolute_lexical_path(candidate: &Path) -> Option<PathBuf> {

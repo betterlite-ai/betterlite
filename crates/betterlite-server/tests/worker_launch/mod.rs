@@ -253,6 +253,21 @@ fn multiproc_directory_skips_missing_tmpdir_candidate() {
     );
 }
 
+#[test]
+fn multiproc_directory_normalizes_missing_component_before_probe() {
+    let temporary = tempfile::tempdir().expect("temporary root");
+    let target = temporary.path().join("target");
+    fs::create_dir_all(&target).expect("target temp root");
+    let candidate = temporary.path().join("missing/../target");
+    let environment = BTreeMap::from([("TMPDIR".to_owned(), path_string(&candidate))]);
+    let result = prometheus_directory(1, None, Some(9000), &environment, DirectoryMode::Plan)
+        .expect("directory plan");
+    assert_eq!(
+        result.map(|value| value.path),
+        Some(target.join("litellm_prometheus_multiproc"))
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn multiproc_directory_preserves_symlink_tmpdir_path() {
