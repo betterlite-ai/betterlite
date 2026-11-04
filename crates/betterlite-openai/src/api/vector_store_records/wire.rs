@@ -5,7 +5,7 @@ use serde_json::Value;
 use serde_json::value::RawValue;
 use thiserror::Error;
 
-use super::records::VectorStoreRecord;
+use super::records::union::VectorStoreRecord;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]

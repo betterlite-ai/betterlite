@@ -1,4 +1,4 @@
-use betterlite_openai::api::vector_store_records::records::VectorStoreToolParams;
+use betterlite_openai::api::vector_store_records::records::basic::VectorStoreToolParams;
 use betterlite_openai::api::vector_store_records::wire::{
     VectorStoreRecordKind, WireDecodeLimits, decode_vector_store_records,
 };

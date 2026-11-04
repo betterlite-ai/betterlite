@@ -1,9 +1,12 @@
 #![cfg(test)]
 
-use super::records::{
-    BedrockKbRequest, BedrockKbResponse, LiteLlmManagedVectorStore, VectorStoreChunkingStrategy,
+use super::records::basic::{
     VectorStoreIndexType, VectorStoreIntegration, VectorStoreSearchFailureMode,
-    VectorStoreSearchRequest, VectorStoreToolParams, WireRecord,
+    VectorStoreToolParams, WireRecord,
+};
+use super::records::bedrock::{BedrockKbRequest, BedrockKbResponse};
+use super::records::vector::{
+    LiteLlmManagedVectorStore, VectorStoreChunkingStrategy, VectorStoreSearchRequest,
 };
 use super::wire::{VectorStoreRecordKind, WireDecodeLimits, decode_vector_store_records};
 use rstest::rstest;
