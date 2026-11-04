@@ -32,6 +32,7 @@ pub struct Route {
     pub methods: Option<Option<Vec<String>>>,
     pub name: Option<String>,
     pub endpoint: Option<String>,
+    pub app_name: Option<String>,
     pub app: Option<Vec<Self>>,
 }
 
@@ -47,7 +48,7 @@ where
         endpoint: route
             .endpoint
             .as_ref()
-            .and_then(|_| safe_get_endpoint_name("regular route endpoint", endpoint_route)),
+            .and_then(|context| safe_get_endpoint_name(context, endpoint_route)),
         mounted_app: None,
     }]
 }
@@ -69,14 +70,21 @@ pub fn get_routes_for_mounted_app(route: &Route) -> Vec<RouteInfo> {
 }
 
 fn mounted_sub_route_info(mount_path: &str, sub_route: &Route) -> Option<RouteInfo> {
-    let endpoint = sub_route
-        .endpoint
-        .clone()
-        .or_else(|| sub_route.app.as_ref().map(|_| "NestedApp".to_owned()))?;
+    let endpoint_name = sub_route.endpoint.as_deref();
+    let class_name = sub_route
+        .app
+        .as_ref()
+        .and_then(|_| sub_route.app_name.as_deref());
+    if endpoint_name.is_none() && class_name.is_none() {
+        return None;
+    }
     let mut path = mount_path.to_owned();
     path.push_str(sub_route.path.as_deref().unwrap_or_default());
-    let route_endpoint = RouteEndpoint(&endpoint);
-    let endpoint_name = safe_get_endpoint_name(&endpoint, &route_endpoint);
+    let route_endpoint = RouteEndpoint {
+        endpoint_name,
+        class_name,
+    };
+    let safe_endpoint_name = safe_get_endpoint_name("mounted sub-route endpoint", &route_endpoint);
     Some(RouteInfo {
         path: Some(path),
         methods: sub_route
@@ -84,12 +92,12 @@ fn mounted_sub_route_info(mount_path: &str, sub_route: &Route) -> Option<RouteIn
             .clone()
             .unwrap_or_else(|| Some(vec!["GET".to_owned(), "POST".to_owned()])),
         name: sub_route.name.clone(),
-        endpoint: endpoint_name,
+        endpoint: safe_endpoint_name,
         mounted_app: Some(true),
     })
 }
 
-fn safe_get_endpoint_name<E>(context: &str, endpoint: &E) -> Option<String>
+pub fn safe_get_endpoint_name<E>(context: &str, endpoint: &E) -> Option<String>
 where
     E: NamedEndpoint,
 {
@@ -109,11 +117,18 @@ where
     }
 }
 
-struct RouteEndpoint<'endpoint>(&'endpoint str);
+struct RouteEndpoint<'endpoint> {
+    endpoint_name: Option<&'endpoint str>,
+    class_name: Option<&'endpoint str>,
+}
 
 impl NamedEndpoint for RouteEndpoint<'_> {
     fn endpoint_name(&self) -> Result<Option<&str>, RouteInspectionError> {
-        Ok(Some(self.0))
+        Ok(self.endpoint_name)
+    }
+
+    fn class_name(&self) -> Result<Option<&str>, RouteInspectionError> {
+        Ok(self.class_name)
     }
 }
 

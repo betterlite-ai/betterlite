@@ -1,0 +1,7 @@
+kind: helper
+name: mounted-sub-route-info-nested-app-class-name
+call:
+  b4262: {"function":"mounted_sub_route_info","mount_path":"/mounted","route":{"path":"/files","app_name":"StaticFiles","app":[]}}
+env: {}
+compare:
+  ignore: []

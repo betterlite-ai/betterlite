@@ -1,5 +1,13 @@
 #![cfg(test)]
 
+use std::fmt::Debug;
+use std::fmt::Write as _;
+use std::sync::{Arc, Mutex};
+
+use tracing::{Event, Subscriber, field::Field};
+use tracing_subscriber::layer::{Context, Layer};
+use tracing_subscriber::prelude::*;
+
 use super::{
     NamedEndpoint, Route, RouteInfo, RouteInspectionError, get_app_routes,
     get_routes_for_mounted_app,
@@ -32,6 +40,7 @@ fn regular_route_keeps_nulls_and_endpoint_name() {
         methods: Some(Some(vec!["POST".to_owned()])),
         name: Some("chat".to_owned()),
         endpoint: Some("present".to_owned()),
+        app_name: None,
         app: None,
     };
     let info = get_app_routes(
@@ -72,11 +81,13 @@ fn regular_route_without_endpoint_keeps_null_fields() {
 fn mounted_routes_join_prefix_and_default_methods() {
     let route = Route {
         path: Some("/v1/".to_owned()),
+        app_name: None,
         app: Some(vec![Route {
             path: Some("/models".to_owned()),
             endpoint: Some("list_models".to_owned()),
             methods: None,
             name: None,
+            app_name: None,
             app: None,
         }]),
         methods: None,
@@ -104,11 +115,13 @@ fn mounted_routes_skip_routes_without_endpoint_or_nested_app() {
         methods: None,
         name: None,
         endpoint: None,
+        app_name: None,
         app: Some(vec![Route {
             path: None,
             methods: None,
             name: None,
             endpoint: None,
+            app_name: None,
             app: None,
         }]),
     };
@@ -117,15 +130,42 @@ fn mounted_routes_skip_routes_without_endpoint_or_nested_app() {
 
 #[test]
 fn endpoint_name_error_is_logged_and_dropped() {
-    let name = super::safe_get_endpoint_name(
-        "broken endpoint",
-        &Endpoint {
-            name: None,
-            class_name: None,
-            fail: true,
-        },
-    );
+    let records = Arc::new(Mutex::new(Vec::new()));
+    let subscriber = tracing_subscriber::registry().with(CapturedEvents(Arc::clone(&records)));
+    let name = tracing::subscriber::with_default(subscriber, || {
+        super::safe_get_endpoint_name(
+            "broken endpoint",
+            &Endpoint {
+                name: None,
+                class_name: None,
+                fail: true,
+            },
+        )
+    });
     assert_eq!(name, None);
+    let captured = records.lock().unwrap();
+    assert_eq!(captured.len(), 1);
+    assert!(captured[0].contains("broken endpoint"));
+}
+
+struct CapturedEvents(Arc<Mutex<Vec<String>>>);
+
+impl<S: Subscriber> Layer<S> for CapturedEvents {
+    fn on_event(&self, event: &Event<'_>, _context: Context<'_, S>) {
+        if *event.metadata().level() == tracing::Level::ERROR {
+            let mut fields = EventFields(String::new());
+            event.record(&mut fields);
+            self.0.lock().unwrap().push(fields.0);
+        }
+    }
+}
+
+struct EventFields(String);
+
+impl tracing::field::Visit for EventFields {
+    fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
+        let _ = write!(self.0, "{}={value:?} ", field.name());
+    }
 }
 
 #[test]
@@ -148,13 +188,38 @@ fn mounted_route_with_explicit_null_methods_keeps_null() {
         methods: None,
         name: None,
         endpoint: None,
+        app_name: None,
         app: Some(vec![Route {
             path: Some("/null-methods".to_owned()),
             methods: Some(None),
             name: None,
             endpoint: Some("handler".to_owned()),
+            app_name: None,
             app: None,
         }]),
     };
     assert_eq!(get_routes_for_mounted_app(&route)[0].methods, None);
+}
+
+#[test]
+fn mounted_nested_app_uses_its_class_name() {
+    let route = Route {
+        path: Some("/mounted".to_owned()),
+        methods: None,
+        name: None,
+        endpoint: None,
+        app_name: None,
+        app: Some(vec![Route {
+            path: Some("/files".to_owned()),
+            methods: None,
+            name: None,
+            endpoint: None,
+            app_name: Some("StaticFiles".to_owned()),
+            app: Some(Vec::new()),
+        }]),
+    };
+    assert_eq!(
+        get_routes_for_mounted_app(&route)[0].endpoint.as_deref(),
+        Some("StaticFiles")
+    );
 }
