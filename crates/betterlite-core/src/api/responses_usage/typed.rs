@@ -52,19 +52,37 @@ pub(super) fn lax_integer(value: &Value) -> Result<Option<i64>, serde_json::Erro
         }
         Value::String(string) => {
             let trimmed = string.trim();
-            let integer_text = trimmed
-                .split_once('.')
-                .filter(|(_, fractional)| {
-                    !fractional.is_empty() && fractional.bytes().all(|byte| byte == b'0')
-                })
-                .map_or(trimmed, |(integer, _)| integer);
-            if let Ok(integer) = integer_text.parse::<i64>() {
-                return Ok(Some(integer));
+            let (integer_part, fractional) = trimmed.split_once('.').unwrap_or((trimmed, ""));
+            let fractional_is_zero =
+                !fractional.is_empty() && fractional.bytes().all(|byte| byte == b'0');
+            if (!trimmed.contains('.') || fractional_is_zero)
+                && let Some(integer_text) = strip_digit_separators(integer_part)
+                && let Ok(parsed) = integer_text.parse::<i64>()
+            {
+                return Ok(Some(parsed));
             }
         }
         Value::Array(_) | Value::Object(_) => {}
     }
     serde_json::from_value::<i64>(value.clone()).map(Some)
+}
+
+fn strip_digit_separators(value: &str) -> Option<String> {
+    let mut normalized = String::with_capacity(value.len());
+    let mut previous_digit = false;
+    let mut characters = value.chars().peekable();
+    while let Some(character) = characters.next() {
+        if character == '_' && previous_digit && characters.peek().is_some_and(char::is_ascii_digit)
+        {
+            previous_digit = false;
+        } else if character == '_' {
+            return None;
+        } else {
+            normalized.push(character);
+            previous_digit = character.is_ascii_digit();
+        }
+    }
+    Some(normalized)
 }
 
 fn normalize_output_ints(fields: &mut Map<String, Value>) {

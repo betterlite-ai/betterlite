@@ -262,6 +262,10 @@ fn existing_usage_object_is_returned_without_conversion() {
 #[rstest]
 #[case::decimal("2.5")]
 #[case::decimal_string(r#""2.5""#)]
+#[case::double_digit_separator(r#""1__000""#)]
+#[case::leading_digit_separator(r#""_1""#)]
+#[case::trailing_digit_separator(r#""1_""#)]
+#[case::fractional_digit_separator(r#""2.0_0""#)]
 #[case::mapping(r#"{"tokens":2}"#)]
 fn output_detail_declared_fields_reject_invalid_integer_values(#[case] malformed: &str) {
     let mut details: Map<String, Value> = Map::new();
@@ -280,6 +284,8 @@ fn output_detail_declared_fields_reject_invalid_integer_values(#[case] malformed
 #[case::integer(r#""2""#, 2_i64)]
 #[case::decimal(r#""2.0""#, 2_i64)]
 #[case::decimal_with_trailing_zeroes(r#""2.00""#, 2_i64)]
+#[case::digit_separator(r#""1_000""#, 1000_i64)]
+#[case::digit_separator_with_decimal(r#""1_000.0""#, 1000_i64)]
 fn output_detail_declared_fields_coerce_integer_strings(
     #[case] reported: &str,
     #[case] expected: i64,
