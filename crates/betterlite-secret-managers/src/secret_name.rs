@@ -1,7 +1,7 @@
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("Invalid secret_name {name:?}")]
-pub struct UnsafeSecretNameError {
-    name: String,
+pub enum UnsafeSecretNameError {
+    #[error("invalid secret name {name:?}")]
+    Invalid { name: String },
 }
 
 pub fn raise_if_unsafe_secret_name(secret_name: &str) -> Result<(), UnsafeSecretNameError> {
@@ -10,7 +10,7 @@ pub fn raise_if_unsafe_secret_name(secret_name: &str) -> Result<(), UnsafeSecret
         matches!(character, '\u{0000}'..='\u{001f}' | '\u{007f}'..='\u{009f}' | ' ' | '\u{2028}' | '\u{2029}')
     });
     if has_parent_segment || has_unsafe_character {
-        return Err(UnsafeSecretNameError {
+        return Err(UnsafeSecretNameError::Invalid {
             name: secret_name.to_owned(),
         });
     }

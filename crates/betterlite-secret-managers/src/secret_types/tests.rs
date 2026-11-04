@@ -18,6 +18,10 @@ fn secret_manager_discriminants_match_litellm_values(
     #[case] expected: &str,
 ) {
     assert_eq!(
+        serde_json::from_str::<KeyManagementSystem>(&format!("\"{expected}\"")).unwrap(),
+        variant
+    );
+    assert_eq!(
         serde_json::to_string(&variant).ok().as_deref(),
         Some(format!("\"{expected}\"").as_str())
     );
@@ -43,4 +47,11 @@ fn access_modes_use_expected_strings() {
             .as_deref(),
         Some("\"read_and_write\"")
     );
+}
+
+#[test]
+fn unknown_manager_and_access_values_are_rejected() {
+    serde_json::from_str::<KeyManagementSystem>("\"unknown\"").unwrap_err();
+    serde_json::from_str::<SecretAccessMode>("\"read-write\"").unwrap_err();
+    serde_json::from_str::<SecretAccessMode>("true").unwrap_err();
 }

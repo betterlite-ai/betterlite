@@ -3,10 +3,14 @@
 use super::raise_if_unsafe_secret_name;
 use rstest::rstest;
 
-#[test]
-fn accepts_safe_names_and_double_dots_inside_segments() {
-    assert_eq!(raise_if_unsafe_secret_name("release-1.0..2"), Ok(()));
-    assert_eq!(raise_if_unsafe_secret_name("nested/name"), Ok(()));
+#[rstest]
+#[case::dots("release-1.0..2")]
+#[case::path("nested/name")]
+#[case::three_dots("a/.../b")]
+#[case::empty("")]
+#[case::control_boundaries("!~\u{a0}")]
+fn accepts_safe_names_and_double_dots_inside_segments(#[case] name: &str) {
+    assert_eq!(raise_if_unsafe_secret_name(name), Ok(()));
 }
 
 #[rstest]

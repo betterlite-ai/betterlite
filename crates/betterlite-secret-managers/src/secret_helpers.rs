@@ -1,20 +1,27 @@
+use secrecy::{ExposeSecret as _, SecretString};
+
 use crate::secret_types::SecretAccessMode;
 
-#[must_use]
-pub fn read_boolean_text(value: Option<&str>) -> Option<bool> {
-    match value?.trim().to_ascii_lowercase().as_str() {
-        "true" => Some(true),
-        "false" => Some(false),
-        _ => None,
+pub fn read_boolean_text(
+    name: &str,
+    value: Option<&str>,
+) -> Result<Option<bool>, betterlite_env::EnvError> {
+    match value {
+        None => Ok(None),
+        Some(text) => betterlite_env::flag(name, text),
     }
 }
 
 #[must_use]
-pub fn normalize_nonempty_secret_str(value: Option<&str>) -> Option<String> {
+pub fn normalize_nonempty_secret_str(value: Option<&SecretString>) -> Option<SecretString> {
     value
-        .map(str::trim)
+        .map(|secret| {
+            secret.expose_secret().trim_matches(|character: char| {
+                character.is_whitespace() || matches!(character, '\u{1c}'..='\u{1f}')
+            })
+        })
         .filter(|candidate| !candidate.is_empty())
-        .map(str::to_owned)
+        .map(SecretString::from)
 }
 
 #[derive(Debug, Clone, Copy)]

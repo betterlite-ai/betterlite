@@ -6,86 +6,96 @@ use super::{
 };
 
 use crate::secret_types::SecretAccessMode;
+use betterlite_env::EnvError;
+use rstest::rstest;
+use secrecy::{ExposeSecret, SecretString};
 
-#[test]
-fn parses_only_true_and_false_after_trim_and_case_fold() {
-    assert_eq!(read_boolean_text(Some(" TRUE ")), Some(true));
-    assert_eq!(read_boolean_text(Some("False")), Some(false));
-    assert_eq!(read_boolean_text(Some("yes")), None);
-    assert_eq!(read_boolean_text(None), None);
+#[rstest]
+#[case::true_text(Some(" TRUE "), Some(true))]
+#[case::false_text(Some("False"), Some(false))]
+#[case::yes_text(Some("yes"), Some(true))]
+#[case::absent(None, None)]
+#[case::empty(Some(""), None)]
+fn boolean_text_uses_the_shared_environment_policy(
+    #[case] value: Option<&str>,
+    #[case] expected: Option<bool>,
+) {
+    assert_eq!(read_boolean_text("SETTING", value).unwrap(), expected);
 }
 
 #[test]
-fn normalizes_empty_secret_values() {
+fn invalid_boolean_text_names_the_variable_without_the_value() {
+    let error = read_boolean_text("SETTING", Some("private-value")).unwrap_err();
     assert_eq!(
-        normalize_nonempty_secret_str(Some("  secret \n")),
-        Some(String::from("secret"))
+        error,
+        EnvError::Bool {
+            name: "SETTING".to_owned()
+        }
     );
-    assert_eq!(normalize_nonempty_secret_str(Some("  ")), None);
-    assert_eq!(normalize_nonempty_secret_str(None), None);
+    assert!(!error.to_string().contains("private-value"));
 }
 
-#[test]
-fn manager_read_requires_client_settings_and_allowlist_match() {
-    let hosted = vec![String::from("token")];
+#[rstest]
+#[case::value(Some("  secret \n"), Some("secret"))]
+#[case::empty(Some(""), None)]
+#[case::whitespace(Some(" \t\n"), None)]
+#[case::absent(None, None)]
+#[case::unicode(Some("\u{1c}\u{a0}secret\u{1f}"), Some("secret"))]
+fn normalizes_empty_secret_values(#[case] input: Option<&str>, #[case] expected: Option<&str>) {
+    let secret = input.map(SecretString::from);
+    let normalized = normalize_nonempty_secret_str(secret.as_ref());
+    assert_eq!(
+        normalized.as_ref().map(ExposeSecret::expose_secret),
+        expected
+    );
+    assert!(!format!("{normalized:?}").contains("secret"));
+}
+
+#[rstest]
+#[case::allowed(Some("token"), "token", true)]
+#[case::prefix(Some("token"), "os.environ/token", true)]
+#[case::single_prefix(Some("token"), "os.environ/os.environ/token", false)]
+#[case::denied(Some("token"), "other", false)]
+#[case::unrestricted(None, "other", true)]
+fn manager_read_requires_client_settings_and_allowlist_match(
+    #[case] hosted: Option<&str>,
+    #[case] name: &str,
+    #[case] expected: bool,
+) {
+    let hosted_keys = hosted.map(|key| vec![key.to_owned()]);
     let enabled = SecretManagerReadState {
         client_exists: true,
         settings_exist: true,
         access_mode: SecretAccessMode::ReadOnly,
-        hosted_keys: Some(&hosted),
+        hosted_keys: hosted_keys.as_deref(),
     };
-    assert!(manager_read_is_consulted(enabled, "token"));
-    assert!(manager_read_is_consulted(enabled, "os.environ/token"));
-    assert!(manager_read_is_consulted(
-        SecretManagerReadState {
-            access_mode: SecretAccessMode::ReadAndWrite,
-            hosted_keys: None,
-            ..enabled
-        },
-        "other"
-    ));
+    assert_eq!(manager_read_is_consulted(enabled, name), expected);
     assert!(!manager_read_is_consulted(
         SecretManagerReadState {
-            access_mode: SecretAccessMode::WriteOnly,
-            hosted_keys: None,
+            hosted_keys: Some(&[]),
             ..enabled
         },
-        "token"
+        name
     ));
-    assert!(!manager_read_is_consulted(
-        SecretManagerReadState {
-            client_exists: false,
-            hosted_keys: None,
-            ..enabled
-        },
-        "token"
-    ));
-    assert!(!manager_read_is_consulted(enabled, "other"));
 }
 
-#[test]
-fn read_gate_requires_client_settings_and_read_enabled_mode() {
-    let enabled = SecretManagerReadState {
-        client_exists: true,
-        settings_exist: true,
-        access_mode: SecretAccessMode::ReadOnly,
+#[rstest]
+#[case::read_only((true, true, SecretAccessMode::ReadOnly), true)]
+#[case::read_write((true, true, SecretAccessMode::ReadAndWrite), true)]
+#[case::write_only((true, true, SecretAccessMode::WriteOnly), false)]
+#[case::no_client((false, true, SecretAccessMode::ReadOnly), false)]
+#[case::no_settings((true, false, SecretAccessMode::ReadOnly), false)]
+fn read_gate_requires_client_settings_and_read_enabled_mode(
+    #[case] setup: (bool, bool, SecretAccessMode),
+    #[case] expected: bool,
+) {
+    let (client_exists, settings_exist, access_mode) = setup;
+    let state = SecretManagerReadState {
+        client_exists,
+        settings_exist,
+        access_mode,
         hosted_keys: None,
     };
-    assert!(manager_read_is_enabled(enabled));
-    assert!(manager_read_is_enabled(SecretManagerReadState {
-        access_mode: SecretAccessMode::ReadAndWrite,
-        ..enabled
-    }));
-    assert!(!manager_read_is_enabled(SecretManagerReadState {
-        access_mode: SecretAccessMode::WriteOnly,
-        ..enabled
-    }));
-    assert!(!manager_read_is_enabled(SecretManagerReadState {
-        client_exists: false,
-        ..enabled
-    }));
-    assert!(!manager_read_is_enabled(SecretManagerReadState {
-        settings_exist: false,
-        ..enabled
-    }));
+    assert_eq!(manager_read_is_enabled(state), expected);
+    assert_eq!(manager_read_is_consulted(state, "token"), expected);
 }

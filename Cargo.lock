@@ -1661,7 +1661,9 @@ version = "0.1.0"
 name = "betterlite-secret-managers"
 version = "0.1.0"
 dependencies = [
+ "betterlite-env",
  "rstest",
+ "secrecy",
  "serde",
  "serde_json",
  "thiserror",

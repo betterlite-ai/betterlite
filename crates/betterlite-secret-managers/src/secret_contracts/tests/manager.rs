@@ -1,110 +1,129 @@
 #![cfg(test)]
 
 use std::future;
-use std::sync::Mutex;
-use std::sync::PoisonError;
+use std::sync::{Mutex, PoisonError};
 
-use super::super::{
-    BaseSecretManager, SecretContractError, SecretFuture, SecretOperationOptions, SecretResponse,
-    SecretValue, SecretWrite,
-};
+use secrecy::SecretString;
 
-type OptionalSecretFuture<'borrowed> = SecretFuture<'borrowed, Option<String>>;
-type DeleteSecretFuture<'borrowed> = SecretFuture<'borrowed, SecretResponse>;
-type ReadOptions<'borrowed> = SecretOperationOptions<'borrowed>;
-type DeleteOptions<'borrowed> = SecretOperationOptions<'borrowed>;
+use super::super::options::{DeleteOptions, SecretOptions, SecretTags, SecretWrite};
+use super::super::{BaseSecretManager, SecretFuture};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct Params {
+    pub(super) version: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub(super) enum TestError {
+    #[error("request timed out")]
+    Timeout,
+    #[error("HTTP status failure")]
+    HttpStatus,
+}
+
+#[derive(Debug)]
+pub(super) enum Operation {
+    Read,
+    Write {
+        value: SecretString,
+        description: Option<String>,
+        tags: Option<SecretTags>,
+    },
+    Delete(u32),
+}
+
+#[derive(Debug)]
+pub(super) struct Call {
+    pub(super) name: String,
+    pub(super) operation: Operation,
+    pub(super) params: Option<Params>,
+    pub(super) timeout: Option<super::super::options::SecretTimeout>,
+}
 
 #[derive(Default)]
 pub(super) struct FakeManager {
-    pub(super) calls: Mutex<Vec<String>>,
-    pub(super) missing: Mutex<Vec<String>>,
+    pub(super) calls: Mutex<Vec<Call>>,
+    pub(super) missing: Option<&'static str>,
+    pub(super) fail_at: Option<(usize, TestError)>,
 }
 
 impl FakeManager {
-    fn read_async<'borrowed>(
-        &'borrowed self,
-        secret_name: &'borrowed str,
-    ) -> OptionalSecretFuture<'borrowed> {
-        Box::pin(async move {
-            self.read(secret_name)
-                .map(|secret| secret.map(|value| format!("read:{value}")))
-        })
-    }
-
-    fn read(&self, name: &str) -> Result<Option<String>, SecretContractError> {
-        self.record(format!("read:{name}"))?;
-        let missing = self.missing.lock().map_err(|error| lock_error(&error))?;
-        Ok((!missing.iter().any(|entry| entry == name)).then(|| String::from("value")))
-    }
-
-    fn write(&self, name: &str) -> Result<SecretResponse, SecretContractError> {
-        self.record(format!("write:{name}"))?;
-        let entry = (String::from("name"), SecretValue::String(name.to_owned()));
-        Ok(SecretResponse::from([entry]))
-    }
-
-    fn delete(
+    fn record(
         &self,
         name: &str,
-        recovery_days: u32,
-    ) -> Result<SecretResponse, SecretContractError> {
-        self.record(format!("delete:{name}:{recovery_days}"))?;
-        Ok(SecretResponse::new())
-    }
-
-    fn record(&self, call: String) -> Result<(), SecretContractError> {
-        self.calls
-            .lock()
-            .map_err(|error| lock_error(&error))?
-            .push(call);
+        operation: Operation,
+        options: SecretOptions<'_, Params>,
+    ) -> Result<(), TestError> {
+        let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
+        calls.push(Call {
+            name: name.to_owned(),
+            operation,
+            params: options.optional_params.copied(),
+            timeout: options.timeout,
+        });
+        let count = calls.len();
+        drop(calls);
+        if let Some((step, error)) = &self.fail_at
+            && count == *step
+        {
+            return Err(error.clone());
+        }
         Ok(())
     }
 }
 
 impl BaseSecretManager for FakeManager {
+    type Params = Params;
+    type Response = &'static str;
+    type Error = TestError;
+
     fn async_read_secret<'borrowed>(
         &'borrowed self,
         secret_name: &'borrowed str,
-        _options: ReadOptions<'borrowed>,
-    ) -> OptionalSecretFuture<'borrowed> {
-        self.read_async(secret_name)
+        options: SecretOptions<'borrowed, Params>,
+    ) -> SecretFuture<'borrowed, Option<SecretString>, TestError> {
+        Box::pin(async move { self.sync_read_secret(secret_name, options) })
     }
 
     fn sync_read_secret(
         &self,
         secret_name: &str,
-        _options: SecretOperationOptions<'_>,
-    ) -> Result<Option<String>, SecretContractError> {
-        self.record(format!("sync_read:{secret_name}"))?;
-        Ok(self
-            .read(secret_name)?
-            .or_else(|| Some(String::from("sync value"))))
+        options: SecretOptions<'_, Params>,
+    ) -> Result<Option<SecretString>, TestError> {
+        self.record(secret_name, Operation::Read, options)?;
+        Ok((self.missing != Some(secret_name)).then(|| SecretString::from("")))
     }
 
     fn async_write_secret<'borrowed>(
         &'borrowed self,
-        write: SecretWrite<'borrowed>,
-    ) -> SecretFuture<'borrowed, SecretResponse> {
-        let response = self.write(write.secret_name);
-        Box::pin(future::ready(response))
+        write: SecretWrite<'borrowed, Params>,
+    ) -> SecretFuture<'borrowed, &'static str, TestError> {
+        Box::pin(async move {
+            self.record(
+                write.secret_name,
+                Operation::Write {
+                    value: write.secret_value.clone(),
+                    description: write.description.map(str::to_owned),
+                    tags: write.tags.cloned(),
+                },
+                write.options,
+            )?;
+            Ok("created")
+        })
     }
 
     fn async_delete_secret<'borrowed>(
         &'borrowed self,
         secret_name: &'borrowed str,
-        recovery_window_in_days: Option<u32>,
-        _options: DeleteOptions<'borrowed>,
-    ) -> DeleteSecretFuture<'borrowed> {
-        let result = recovery_window_in_days.map_or_else(
-            || self.delete(secret_name, 7),
-            |days| self.delete(secret_name, days),
-        );
-        Box::pin(async move { result })
-    }
-}
-
-fn lock_error<T>(error: &PoisonError<T>) -> SecretContractError {
-    SecretContractError::Operation {
-        message: error.to_string(),
+        options: DeleteOptions<'borrowed, Params>,
+    ) -> SecretFuture<'borrowed, &'static str, TestError> {
+        let deleted = self
+            .record(
+                secret_name,
+                Operation::Delete(options.recovery_window_in_days),
+                options.operation,
+            )
+            .map(|()| "deleted");
+        Box::pin(future::ready(deleted))
     }
 }

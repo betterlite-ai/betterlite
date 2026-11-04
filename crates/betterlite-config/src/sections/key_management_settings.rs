@@ -1,15 +1,15 @@
-#[path = "key_management_settings/tests.rs"]
-mod tests;
+use std::collections::BTreeMap;
 
 use betterlite_secret_managers::secret_types::{KeyManagementSystem, SecretAccessMode};
 use secrecy::SecretString;
-use serde::Deserialize;
-use std::collections::BTreeMap;
-use std::mem;
+use serde::{Deserialize, de::IgnoredAny};
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::resolve::resolve_string;
 use crate::sections::Section;
+
+mod resolution;
+mod tests;
 
 #[derive(Debug, Default, Deserialize)]
 pub struct Raw {
@@ -19,16 +19,45 @@ pub struct Raw {
 
 #[derive(Debug, Default, Deserialize)]
 pub struct RawGeneral {
-    #[serde(default)]
-    pub key_management_settings: RawSettings,
+    pub key_management_settings: Option<RawSettings>,
     pub key_management_system: Option<KeyManagementSystem>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(default)]
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum Boolean {
+    Literal(bool),
+    Environment(String),
+}
+
+#[derive(Debug, Default, Deserialize)]
 pub struct RawSettings {
     pub hosted_keys: Option<Vec<String>>,
-    pub store_virtual_keys: Option<bool>,
+    pub store_virtual_keys: Option<Boolean>,
+    pub prefix_for_stored_virtual_keys: Option<String>,
+    pub access_mode: Option<String>,
+    pub primary_secret_name: Option<String>,
+    pub description: Option<String>,
+    pub tags: Option<BTreeMap<String, String>>,
+    pub kms_key_id: Option<String>,
+    pub custom_secret_manager: Option<String>,
+    pub aws_region_name: Option<String>,
+    pub aws_role_name: Option<String>,
+    pub aws_session_name: Option<String>,
+    pub aws_external_id: Option<String>,
+    pub aws_profile_name: Option<String>,
+    pub aws_web_identity_token: Option<SecretString>,
+    pub aws_sts_endpoint: Option<String>,
+    pub replica_regions: Option<Vec<String>>,
+    // This section deliberately follows Pydantic's ignore-extra contract.
+    #[serde(flatten)]
+    pub ignored: IgnoredAny,
+}
+
+#[derive(Debug, Clone)]
+pub struct Settings {
+    pub hosted_keys: Option<Vec<String>>,
+    pub store_virtual_keys: bool,
     pub prefix_for_stored_virtual_keys: String,
     pub access_mode: SecretAccessMode,
     pub primary_secret_name: Option<String>,
@@ -46,12 +75,12 @@ pub struct RawSettings {
     pub replica_regions: Option<Vec<String>>,
 }
 
-impl Default for RawSettings {
+impl Default for Settings {
     fn default() -> Self {
         Self {
             hosted_keys: None,
-            store_virtual_keys: Some(false),
-            prefix_for_stored_virtual_keys: String::from("litellm/"),
+            store_virtual_keys: false,
+            prefix_for_stored_virtual_keys: "litellm/".to_owned(),
             access_mode: SecretAccessMode::ReadOnly,
             primary_secret_name: None,
             description: None,
@@ -70,7 +99,15 @@ impl Default for RawSettings {
     }
 }
 
-pub type Settings = RawSettings;
+macro_rules! resolve_fields {
+    ($settings:ident, $raw:ident, $lookup:ident; $($field:ident),+ $(,)?) => {
+        $(
+            $settings.$field = resolution::text(
+                $raw.$field, concat!("general_settings.key_management_settings.", stringify!($field)), $lookup,
+            )?;
+        )+
+    };
+}
 
 impl Section for Raw {
     type Settings = Settings;
@@ -79,104 +116,41 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let key_management_system = self.general_settings.key_management_system;
-        let settings = resolve_settings(self.general_settings.key_management_settings, lookup)?;
-        require_custom_manager(key_management_system, &settings)?;
+        let raw = self
+            .general_settings
+            .key_management_settings
+            .unwrap_or_default();
+        let mut settings = Settings::default();
+        resolve_fields!(settings, raw, lookup;
+            primary_secret_name, description, kms_key_id, custom_secret_manager,
+            aws_region_name, aws_role_name, aws_session_name, aws_external_id,
+            aws_profile_name, aws_sts_endpoint,
+        );
+        settings.hosted_keys = resolution::names(raw.hosted_keys, "hosted_keys", lookup)?;
+        settings.replica_regions =
+            resolution::names(raw.replica_regions, "replica_regions", lookup)?;
+        settings.tags = resolution::tags(raw.tags, lookup)?;
+        settings.store_virtual_keys = resolution::boolean(raw.store_virtual_keys, lookup)?;
+        settings.access_mode = resolution::access(raw.access_mode, lookup)?;
+        if let Some(prefix) = resolution::text(
+            raw.prefix_for_stored_virtual_keys,
+            "general_settings.key_management_settings.prefix_for_stored_virtual_keys",
+            lookup,
+        )? {
+            settings.prefix_for_stored_virtual_keys = prefix;
+        }
+        settings.aws_web_identity_token = resolution::token(raw.aws_web_identity_token, lookup)?;
+        if self.general_settings.key_management_system == Some(KeyManagementSystem::Custom)
+            && settings
+                .custom_secret_manager
+                .as_ref()
+                .is_none_or(|path| path.trim().is_empty())
+        {
+            return Err(ConfigError::InvalidScalar {
+                path: "general_settings.key_management_settings.custom_secret_manager".to_owned(),
+                value: false,
+            });
+        }
         Ok(settings)
     }
-}
-
-macro_rules! resolve_setting_fields {
-    ($settings:ident, $lookup:ident; $($field:ident, $path:literal),+ $(,)?) => {
-        $(
-            $settings.$field = resolve_setting_text(
-                $settings.$field.take(),
-                $path,
-                $lookup,
-            )?;
-        )+
-    };
-}
-
-fn resolve_settings<L>(mut settings: RawSettings, lookup: &L) -> Result<Settings, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    settings.custom_secret_manager = resolve_setting_text(
-        settings.custom_secret_manager.take(),
-        "key_management_settings.custom_secret_manager",
-        lookup,
-    )?;
-    settings.prefix_for_stored_virtual_keys = resolve_string(
-        mem::take(&mut settings.prefix_for_stored_virtual_keys),
-        "key_management_settings.prefix_for_stored_virtual_keys",
-        lookup,
-    )?;
-    resolve_setting_fields!(settings, lookup;
-        primary_secret_name, "key_management_settings.primary_secret_name",
-        description, "key_management_settings.description",
-        kms_key_id, "key_management_settings.kms_key_id",
-        aws_region_name, "key_management_settings.aws_region_name",
-        aws_role_name, "key_management_settings.aws_role_name",
-        aws_session_name, "key_management_settings.aws_session_name",
-        aws_external_id, "key_management_settings.aws_external_id",
-        aws_profile_name, "key_management_settings.aws_profile_name",
-        aws_web_identity_token, "key_management_settings.aws_web_identity_token",
-        aws_sts_endpoint, "key_management_settings.aws_sts_endpoint",
-    );
-    Ok(settings)
-}
-
-fn require_custom_manager(
-    key_management_system: Option<KeyManagementSystem>,
-    settings: &Settings,
-) -> Result<(), ConfigError> {
-    if key_management_system == Some(KeyManagementSystem::Custom)
-        && settings.custom_secret_manager.is_none()
-    {
-        return Err(ConfigError::InvalidScalar {
-            path: "key_management_settings.custom_secret_manager".to_owned(),
-            value: false,
-        });
-    }
-    Ok(())
-}
-
-trait SettingText: Sized {
-    fn into_text(self) -> String;
-    fn from_text(text: String) -> Self;
-}
-
-impl SettingText for String {
-    fn into_text(self) -> String {
-        self
-    }
-
-    fn from_text(text: String) -> Self {
-        text
-    }
-}
-
-impl SettingText for SecretString {
-    fn into_text(self) -> String {
-        secrecy::ExposeSecret::expose_secret(&self).to_owned()
-    }
-
-    fn from_text(text: String) -> Self {
-        Self::from(text)
-    }
-}
-
-fn resolve_setting_text<L, T>(
-    value: Option<T>,
-    path: &str,
-    lookup: &L,
-) -> Result<Option<T>, ConfigError>
-where
-    L: EnvironmentLookup,
-    T: SettingText,
-{
-    value
-        .map(|text| resolve_string(text.into_text(), path, lookup).map(T::from_text))
-        .transpose()
 }
