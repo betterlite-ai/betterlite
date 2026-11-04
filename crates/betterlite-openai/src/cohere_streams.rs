@@ -23,6 +23,17 @@ pub enum CohereStreamError {
     V2Transform(String),
 }
 
+#[derive(Debug, Error)]
+pub enum CohereIteratorError {
+    #[error("Error receiving chunk from stream: {source}")]
+    Receiving {
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("Error parsing chunk: {message},\nReceived chunk: {received}")]
+    Parsing { message: String, received: String },
+}
+
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct CohereUsage {
     pub prompt_tokens: i64,
@@ -74,6 +85,22 @@ pub fn decode_cohere_line(
             parse_v2(&value).map_err(|error| CohereStreamError::V2Transform(error.to_string()))
         }
     }
+}
+
+pub fn decode_cohere_item(
+    version: CohereStreamVersion,
+    item: Result<Option<Vec<u8>>, std::io::Error>,
+) -> Result<Option<CohereChunk>, CohereIteratorError> {
+    let Some(bytes) = item.map_err(|source| CohereIteratorError::Receiving { source })? else {
+        return Ok(None);
+    };
+    let received = String::from_utf8_lossy(&bytes).into_owned();
+    decode_cohere_line(version, &bytes, true)
+        .map(Some)
+        .map_err(|error| CohereIteratorError::Parsing {
+            message: error.to_string(),
+            received,
+        })
 }
 
 fn int_value(value: Option<&Value>) -> Result<i64, CohereStreamError> {

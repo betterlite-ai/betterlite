@@ -5,7 +5,10 @@ use std::{collections::BTreeMap, fs, path::PathBuf};
 use rstest::rstest;
 use serde_json::json;
 
-use super::{CohereStreamVersion, decode_cohere_line, validate_environment};
+use super::{
+    CohereIteratorError, CohereStreamVersion, decode_cohere_item, decode_cohere_line,
+    validate_environment,
+};
 
 #[test]
 fn v1_prefers_text_to_finish_and_forwards_citations() {
@@ -132,4 +135,24 @@ fn v2_string_content_and_invalid_utf8_are_handled() {
     .unwrap();
     assert_eq!(content.text, "plain");
     assert!(decode_cohere_line(CohereStreamVersion::V2, &[0xff], true).is_err());
+}
+
+#[test]
+fn iterator_item_keeps_eof_and_distinguishes_receive_from_parse_errors() {
+    assert!(
+        decode_cohere_item(CohereStreamVersion::V1, Ok(None)).is_ok_and(|chunk| chunk.is_none())
+    );
+    let receive_error = decode_cohere_item(
+        CohereStreamVersion::V1,
+        Err(std::io::Error::other("transport")),
+    )
+    .unwrap_err();
+    assert!(matches!(
+        receive_error,
+        CohereIteratorError::Receiving { .. }
+    ));
+    let parse_error =
+        decode_cohere_item(CohereStreamVersion::V1, Ok(Some(b"not-json".to_vec()))).unwrap_err();
+    assert!(matches!(parse_error, CohereIteratorError::Parsing { .. }));
+    assert!(parse_error.to_string().starts_with("Error parsing chunk:"));
 }
