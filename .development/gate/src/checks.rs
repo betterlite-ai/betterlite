@@ -1,5 +1,5 @@
 mod execute;
-mod history;
+pub(crate) mod history;
 pub(crate) mod selection;
 mod tests;
 
@@ -108,7 +108,13 @@ pub(crate) fn run(
     // a dispatch reads the holder's process group from it to stop a check run whose worker died
     let _held = gate_lock::hold(&log_dir, &mut io::stderr())?;
     let run_dir = history::start(&log_dir)?;
-    run_checks(development, task, selection, &facts, &run_dir)
+    let verdict = run_checks(development, task, selection, &facts, &run_dir);
+    if let Err(error) = &verdict {
+        // a dispatch takes a run with neither result.json nor error.txt for one cut off mid-way
+        let path = run_dir.join("error.txt");
+        fs::write(&path, error.to_string()).map_err(|source| GateError::Write { path, source })?;
+    }
+    verdict
 }
 
 fn run_checks(
