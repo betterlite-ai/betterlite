@@ -88,3 +88,11 @@ fn mounted_routes_skip_routes_without_endpoint_or_nested_app() {
     };
     assert!(get_routes_for_mounted_app(&route).is_empty());
 }
+
+#[test]
+fn endpoint_name_error_is_logged_and_dropped() {
+    let name = super::safe_get_endpoint_name("broken endpoint", || {
+        Err(RouteInspectionError::EndpointName)
+    });
+    assert_eq!(name, None);
+}

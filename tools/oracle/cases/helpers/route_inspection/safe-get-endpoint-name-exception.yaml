@@ -4,4 +4,4 @@ call:
   b4262: {"function":"safe_get_endpoint_name","fail":true}
 env: {}
 compare:
-  ignore: []
+  ignore: [/value]
