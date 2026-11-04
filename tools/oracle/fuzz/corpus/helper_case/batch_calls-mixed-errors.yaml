@@ -1,0 +1,1 @@
+{"kind":"helper","name":"batch-calls-mixed-errors","call":{"batch_calls":{"mode":"messages","results":[{"value":"first"},{"error":"provider failed"}]}},"env":{},"compare":{"ignore":[]}}
