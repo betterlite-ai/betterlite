@@ -45,10 +45,7 @@ impl TryFrom<RequestMessageWire> for RequestMessage {
     fn try_from(wire: RequestMessageWire) -> Result<Self, Self::Error> {
         Ok(Self {
             role: wire.role,
-            content: wire
-                .content
-                .map(|raw| parse_mask_content(&raw))
-                .transpose()?,
+            content: parse_mask_content(wire.content)?,
         })
     }
 }
@@ -60,11 +57,14 @@ pub enum MaskContent {
     Parts(Vec<Box<RawValue>>),
 }
 
-fn parse_mask_content(raw: &RawValue) -> Result<MaskContent, serde_json::Error> {
+fn parse_mask_content(
+    content: Option<Box<RawValue>>,
+) -> Result<Option<MaskContent>, serde_json::Error> {
+    let Some(raw) = content else { return Ok(None) };
     if raw.get().trim_start().starts_with('[') {
-        Ok(MaskContent::Parts(serde_json::from_str(raw.get())?))
+        Ok(Some(MaskContent::Parts(serde_json::from_str(raw.get())?)))
     } else {
-        Ok(MaskContent::Text(serde_json::from_str(raw.get())?))
+        Ok(Some(MaskContent::Text(serde_json::from_str(raw.get())?)))
     }
 }
 
@@ -98,10 +98,7 @@ impl TryFrom<MaskedResponseMessageWire> for MaskedResponseMessage {
 
     fn try_from(wire: MaskedResponseMessageWire) -> Result<Self, Self::Error> {
         Ok(Self {
-            content: wire
-                .content
-                .map(|raw| parse_mask_content(&raw))
-                .transpose()?,
+            content: parse_mask_content(wire.content)?,
             tool_calls: wire.tool_calls,
             function_call: wire.function_call,
         })
