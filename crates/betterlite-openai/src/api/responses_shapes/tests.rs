@@ -9,11 +9,15 @@ use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::fs;
 
-use super::DeleteResponseResult;
 use super::builders::{
     InterpreterInput, WebSearchStatus, build_interpreter_logs, build_web_search_call,
 };
 use super::wire::{WireDecodeLimits, decode_responses_shapes};
+use super::{
+    CustomToolCallOutputItem, DeleteResponseResult, GenericResponseOutputItem, OutputAnnotation,
+    OutputCodeInterpreterCall, OutputCodeInterpreterCallLog, OutputFunctionToolCall,
+    OutputImageGenerationCall, OutputText,
+};
 
 #[test]
 fn web_search_sources() {
@@ -98,7 +102,7 @@ fn nullable_records() {
 
 #[test]
 fn custom_and_generic_output_items_keep_required_and_default_fields() {
-    let custom: super::CustomToolCallOutputItem = serde_json::from_str(
+    let custom: CustomToolCallOutputItem = serde_json::from_str(
         r#"{"type":"custom_tool_call","call_id":"c1","name":"apply_patch","input":"diff"}"#,
     )
     .unwrap();
@@ -106,11 +110,11 @@ fn custom_and_generic_output_items_keep_required_and_default_fields() {
         serde_json::to_value(custom).unwrap(),
         serde_json::to_value(serde_json::from_str::<Json>(r#"{"type":"custom_tool_call","call_id":"c1","id":null,"name":"apply_patch","input":"diff","status":null}"#).unwrap()).unwrap()
     );
-    serde_json::from_str::<super::CustomToolCallOutputItem>(
+    serde_json::from_str::<CustomToolCallOutputItem>(
         r#"{"type":"custom_tool_call","call_id":"c1","name":"apply_patch"}"#,
     )
     .unwrap_err();
-    let generic: super::GenericResponseOutputItem = serde_json::from_str(
+    let generic: GenericResponseOutputItem = serde_json::from_str(
         r#"{"type":"message","id":"m1","status":"completed","role":"assistant","content":[]}"#,
     )
     .unwrap();
@@ -126,18 +130,18 @@ fn custom_and_generic_output_items_keep_required_and_default_fields() {
 #[case::incomplete("incomplete")]
 #[case::failed("failed")]
 fn image_and_interpreter_call_status_values(#[case] status: &str) {
-    serde_json::from_str::<super::OutputImageGenerationCall>(
+    serde_json::from_str::<OutputImageGenerationCall>(
         &r#"{"type":"image_generation_call","id":"i","status":"$status","result":null}"#
             .replace("$status", status),
     )
     .unwrap();
-    serde_json::from_str::<super::OutputCodeInterpreterCall>(&r#"{"type":"code_interpreter_call","id":"i","status":"$status","code":null,"container_id":null,"outputs":null}"#.replace("$status", status)).unwrap();
+    serde_json::from_str::<OutputCodeInterpreterCall>(&r#"{"type":"code_interpreter_call","id":"i","status":"$status","code":null,"container_id":null,"outputs":null}"#.replace("$status", status)).unwrap();
 }
 
 #[test]
 fn phase_and_function_status_reject_unsupported_literals() {
-    serde_json::from_str::<super::GenericResponseOutputItem>(r#"{"type":"message","id":"m1","status":"completed","role":"assistant","content":[],"phase":"analysis"}"#).unwrap_err();
-    serde_json::from_str::<super::OutputFunctionToolCall>(r#"{"arguments":"{}","call_id":"c","name":"f","type":"function_call","id":"i","status":"failed"}"#).unwrap_err();
+    serde_json::from_str::<GenericResponseOutputItem>(r#"{"type":"message","id":"m1","status":"completed","role":"assistant","content":[],"phase":"analysis"}"#).unwrap_err();
+    serde_json::from_str::<OutputFunctionToolCall>(r#"{"arguments":"{}","call_id":"c","name":"f","type":"function_call","id":"i","status":"failed"}"#).unwrap_err();
 }
 
 #[test]
@@ -174,19 +178,19 @@ fn decoder_applies_byte_and_item_limits() {
         max_event_bytes: 100,
         max_items: 3,
     };
-    decode_responses_shapes::<super::OutputText>(
+    decode_responses_shapes::<OutputText>(
         br#"{"type":null,"text":null,"annotations":null}"#,
         limits,
     )
     .unwrap();
-    decode_responses_shapes::<super::OutputText>(br#"{"a":[1,2,3]}"#, limits).unwrap_err();
+    decode_responses_shapes::<OutputText>(br#"{"a":[1,2,3]}"#, limits).unwrap_err();
     let event_limited = WireDecodeLimits {
         max_json_bytes: 100,
         max_event_bytes: 1,
         max_items: 100,
     };
     assert!(matches!(
-        decode_responses_shapes::<super::OutputText>(b"{}", event_limited),
+        decode_responses_shapes::<OutputText>(b"{}", event_limited),
         Err(super::wire::ShapeDecodeError::JsonTooLarge)
     ));
     let json_limited = WireDecodeLimits {
@@ -195,7 +199,7 @@ fn decoder_applies_byte_and_item_limits() {
         max_items: 100,
     };
     assert!(matches!(
-        decode_responses_shapes::<super::OutputText>(b"{}", json_limited),
+        decode_responses_shapes::<OutputText>(b"{}", json_limited),
         Err(super::wire::ShapeDecodeError::JsonTooLarge)
     ));
 }
@@ -216,7 +220,7 @@ fn replays_corpus() {
     .for_each(|path| {
         let bytes = fs::read(path).unwrap();
         let _deletion = decode_responses_shapes::<DeleteResponseResult>(&bytes, limits);
-        let _decoded = decode_responses_shapes::<super::OutputText>(&bytes, limits);
+        let _decoded = decode_responses_shapes::<OutputText>(&bytes, limits);
     });
 }
 
@@ -227,20 +231,17 @@ fn decoder_rejects_missing_required_record_fields() {
         max_event_bytes: 1000,
         max_items: 100,
     };
-    decode_responses_shapes::<super::OutputText>(
-        br#"{"type":"output_text","text":"hello"}"#,
-        limits,
-    )
-    .unwrap_err();
+    decode_responses_shapes::<OutputText>(br#"{"type":"output_text","text":"hello"}"#, limits)
+        .unwrap_err();
 }
 
 #[rstest]
 #[case::commentary("commentary")]
 #[case::final_answer("final_answer")]
 fn phase_literals(#[case] phase: &str) {
-    let item: super::GenericResponseOutputItem = serde_json::from_str(&r#"{"type":"message","id":"m","status":"completed","role":"assistant","content":[],"phase":"$phase"}"#.replace("$phase", phase)).unwrap();
+    let item: GenericResponseOutputItem = serde_json::from_str(&r#"{"type":"message","id":"m","status":"completed","role":"assistant","content":[],"phase":"$phase"}"#.replace("$phase", phase)).unwrap();
     assert_eq!(serde_json::to_value(item).unwrap()["phase"], phase);
-    let call: super::OutputFunctionToolCall = serde_json::from_str(&r#"{"type":null,"id":null,"arguments":null,"call_id":null,"name":null,"status":"completed","phase":"$phase"}"#.replace("$phase", phase)).unwrap();
+    let call: OutputFunctionToolCall = serde_json::from_str(&r#"{"type":null,"id":null,"arguments":null,"call_id":null,"name":null,"status":"completed","phase":"$phase"}"#.replace("$phase", phase)).unwrap();
     assert_eq!(serde_json::to_value(call).unwrap()["phase"], phase);
 }
 
@@ -249,13 +250,13 @@ fn phase_literals(#[case] phase: &str) {
 #[case::completed("completed")]
 #[case::incomplete("incomplete")]
 fn function_and_custom_status(#[case] status: &str) {
-    let call: super::OutputFunctionToolCall = serde_json::from_str(&r#"{"type":null,"id":null,"arguments":null,"call_id":null,"name":null,"status":"$status"}"#.replace("$status", status))
+    let call: OutputFunctionToolCall = serde_json::from_str(&r#"{"type":null,"id":null,"arguments":null,"call_id":null,"name":null,"status":"$status"}"#.replace("$status", status))
     .unwrap();
     assert_eq!(
         serde_json::to_value(call).unwrap()["phase"],
         serde_json::to_value(serde_json::from_str::<Json>("null").unwrap()).unwrap()
     );
-    let custom: super::CustomToolCallOutputItem = serde_json::from_str(
+    let custom: CustomToolCallOutputItem = serde_json::from_str(
         &r#"{"type":"custom_tool_call","call_id":"c","name":"f","input":"","status":"$status"}"#
             .replace("$status", status),
     )
@@ -313,7 +314,7 @@ fn interpreter_stdout_only() {
 #[case::content("text")]
 #[case::annotations("annotations")]
 fn text_fields_are_required(#[case] field: &str) {
-    reject_missing::<super::OutputText>(r#"{"type":null,"text":null,"annotations":null}"#, field);
+    reject_missing::<OutputText>(r#"{"type":null,"text":null,"annotations":null}"#, field);
 }
 
 #[rstest]
@@ -324,12 +325,12 @@ fn text_fields_are_required(#[case] field: &str) {
 #[case::title("title")]
 fn annotations_are_required_nullable(#[case] field: &str) {
     let source = r#"{"type":null,"start_index":null,"end_index":null,"url":null,"title":null}"#;
-    let parsed: super::OutputAnnotation = serde_json::from_str(source).unwrap();
+    let parsed: OutputAnnotation = serde_json::from_str(source).unwrap();
     assert_eq!(
         serde_json::to_value(parsed).unwrap(),
         serde_json::to_value(serde_json::from_str::<Json>(source).unwrap()).unwrap()
     );
-    reject_missing::<super::OutputAnnotation>(source, field);
+    reject_missing::<OutputAnnotation>(source, field);
 }
 
 #[test]
@@ -366,7 +367,7 @@ fn decoder_counts_nested_and_duplicate_members() {
         ),
         Err(super::wire::ShapeDecodeError::TooManyItems)
     ));
-    decode_responses_shapes::<super::OutputText>(b"{", limits).unwrap_err();
+    decode_responses_shapes::<OutputText>(b"{", limits).unwrap_err();
 }
 
 #[test]
@@ -399,7 +400,7 @@ fn decoder_allows_exact_byte_limits_and_bounded_depth() {
 #[case::id("id")]
 #[case::status("status")]
 fn function_fields_are_required(#[case] field: &str) {
-    reject_missing::<super::OutputFunctionToolCall>(
+    reject_missing::<OutputFunctionToolCall>(
         r#"{"arguments":null,"call_id":null,"name":null,"type":null,"id":null,"status":"completed"}"#,
         field,
     );
@@ -431,11 +432,10 @@ fn private_values_are_never_deserialized_or_serialized() {
 #[test]
 fn populated_text_and_interpreter_outputs_round_trip() {
     let text = serde_json::to_value(serde_json::from_str::<Json>(r#"{"type":"output_text","text":"hello","annotations":[{"type":"url_citation","start_index":0,"end_index":5,"url":"https://a.test","title":"a"}]}"#).unwrap()).unwrap();
-    let output: super::OutputText = serde_json::from_value(text.clone()).unwrap();
+    let output: OutputText = serde_json::from_value(text.clone()).unwrap();
     assert_eq!(serde_json::to_value(output).unwrap(), text);
     let interpreter = serde_json::to_value(serde_json::from_str::<Json>(r#"{"type":"code_interpreter_call","id":"i","code":"print(1)","container_id":"c","status":"completed","outputs":[{"type":"logs","logs":"1"}]}"#).unwrap()).unwrap();
-    let call: super::OutputCodeInterpreterCall =
-        serde_json::from_value(interpreter.clone()).unwrap();
+    let call: OutputCodeInterpreterCall = serde_json::from_value(interpreter.clone()).unwrap();
     assert_eq!(serde_json::to_value(call).unwrap(), interpreter);
 }
 
@@ -446,7 +446,7 @@ fn populated_text_and_interpreter_outputs_round_trip() {
 #[case::role("role")]
 #[case::content("content")]
 fn generic_fields_are_required(#[case] field: &str) {
-    reject_missing::<super::GenericResponseOutputItem>(
+    reject_missing::<GenericResponseOutputItem>(
         r#"{"type":"message","id":"m","status":"completed","role":"assistant","content":[]}"#,
         field,
     );
@@ -457,7 +457,7 @@ fn generic_fields_are_required(#[case] field: &str) {
 #[case::container("container_id")]
 #[case::outputs("outputs")]
 fn interpreter_fields_are_required_nullable(#[case] field: &str) {
-    reject_missing::<super::OutputCodeInterpreterCall>(
+    reject_missing::<OutputCodeInterpreterCall>(
         r#"{"type":"code_interpreter_call","id":"i","status":"completed","code":null,"container_id":null,"outputs":null}"#,
         field,
     );
@@ -465,18 +465,16 @@ fn interpreter_fields_are_required_nullable(#[case] field: &str) {
 
 #[test]
 fn rejects_invalid_literals_and_missing_image_result() {
-    serde_json::from_str::<super::CustomToolCallOutputItem>(
+    serde_json::from_str::<CustomToolCallOutputItem>(
         r#"{"type":"custom_tool_call","call_id":"c","name":"f","input":"","status":"failed"}"#,
     )
     .unwrap_err();
-    serde_json::from_str::<super::OutputImageGenerationCall>(
+    serde_json::from_str::<OutputImageGenerationCall>(
         r#"{"type":"image_generation_call","id":"i","status":"completed"}"#,
     )
     .unwrap_err();
-    serde_json::from_str::<super::OutputCodeInterpreterCallLog>(
-        r#"{"type":"image","logs":"text"}"#,
-    )
-    .unwrap_err();
+    serde_json::from_str::<OutputCodeInterpreterCallLog>(r#"{"type":"image","logs":"text"}"#)
+        .unwrap_err();
 }
 
 #[rstest]
@@ -502,14 +500,14 @@ fn interpreter_array_is_not_dict() {
 }
 
 #[rstest]
-#[case::annotation(round_trip_extras::<crate::api::responses_shapes::OutputAnnotation>, r#"{"type":null,"start_index":null,"end_index":null,"url":null,"title":null,"provider":{"score":1}}"#)]
-#[case::text(round_trip_extras::<crate::api::responses_shapes::OutputText>, r#"{"type":"output_text","text":"hi","annotations":[],"logprobs":[]}"#)]
-#[case::function(round_trip_extras::<crate::api::responses_shapes::OutputFunctionToolCall>, r#"{"type":null,"id":null,"arguments":null,"call_id":null,"name":null,"status":"completed","phase":null,"provider":{"score":1}}"#)]
-#[case::generic(round_trip_extras::<crate::api::responses_shapes::GenericResponseOutputItem>, r#"{"type":"message","id":"m","status":"completed","role":"assistant","content":[],"phase":null,"provider":{"score":1}}"#)]
-#[case::custom(round_trip_extras::<crate::api::responses_shapes::CustomToolCallOutputItem>, r#"{"type":"custom_tool_call","call_id":"c","name":"f","input":"x","id":null,"status":null,"provider":{"score":1}}"#)]
-#[case::image(round_trip_extras::<crate::api::responses_shapes::OutputImageGenerationCall>, r#"{"type":"image_generation_call","id":"i","status":"failed","result":null,"provider":{"score":1}}"#)]
-#[case::log(round_trip_extras::<crate::api::responses_shapes::OutputCodeInterpreterCallLog>, r#"{"type":"logs","logs":"out","provider":{"score":1}}"#)]
-#[case::interpreter(round_trip_extras::<crate::api::responses_shapes::OutputCodeInterpreterCall>, r#"{"type":"code_interpreter_call","id":"i","status":"completed","code":null,"container_id":null,"outputs":null,"provider":{"score":1}}"#)]
+#[case::annotation(round_trip_extras::<OutputAnnotation>, r#"{"type":null,"start_index":null,"end_index":null,"url":null,"title":null,"provider":{"score":1}}"#)]
+#[case::text(round_trip_extras::<OutputText>, r#"{"type":"output_text","text":"hi","annotations":[],"logprobs":[]}"#)]
+#[case::function(round_trip_extras::<OutputFunctionToolCall>, r#"{"type":null,"id":null,"arguments":null,"call_id":null,"name":null,"status":"completed","phase":null,"provider":{"score":1}}"#)]
+#[case::generic(round_trip_extras::<GenericResponseOutputItem>, r#"{"type":"message","id":"m","status":"completed","role":"assistant","content":[],"phase":null,"provider":{"score":1}}"#)]
+#[case::custom(round_trip_extras::<CustomToolCallOutputItem>, r#"{"type":"custom_tool_call","call_id":"c","name":"f","input":"x","id":null,"status":null,"provider":{"score":1}}"#)]
+#[case::image(round_trip_extras::<OutputImageGenerationCall>, r#"{"type":"image_generation_call","id":"i","status":"failed","result":null,"provider":{"score":1}}"#)]
+#[case::log(round_trip_extras::<OutputCodeInterpreterCallLog>, r#"{"type":"logs","logs":"out","provider":{"score":1}}"#)]
+#[case::interpreter(round_trip_extras::<OutputCodeInterpreterCall>, r#"{"type":"code_interpreter_call","id":"i","status":"completed","code":null,"container_id":null,"outputs":null,"provider":{"score":1}}"#)]
 #[case::private_spelling(round_trip_extras::<DeleteResponseResult>, r#"{"id":null,"object":null,"deleted":null,"_hidden_params":{"private":"value"}}"#)]
 #[case::deletion(round_trip_extras::<DeleteResponseResult>, r#"{"id":null,"object":null,"deleted":null,"provider":{"score":1}}"#)]
 fn extra_members_survive(#[case] check: fn(&str), #[case] source: &str) {
