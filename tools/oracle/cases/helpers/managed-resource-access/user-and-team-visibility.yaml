@@ -1,0 +1,13 @@
+kind: helper
+name: managed-resource-access-user-and-team-visibility
+call:
+  managed_resource_access:
+    principal: {user_id: u, team_id: t, token: null, api_key: null, role: internal_user}
+    records:
+      - {id: own, created_by: u, team_id: x}
+      - {id: shared, created_by: v, team_id: t}
+      - {id: foreign, created_by: v, team_id: x}
+    has_more: false
+env: {}
+compare:
+  ignore: []

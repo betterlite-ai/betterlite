@@ -1,0 +1,11 @@
+kind: helper
+name: managed-resource-access-token-owner-precedence
+call:
+  managed_resource_access:
+    principal: {user_id: null, team_id: null, token: hash_a, api_key: hash_b, role: internal_user}
+    records:
+      - {id: token, created_by: key:hash_a, team_id: null}
+      - {id: api-key, created_by: key:hash_b, team_id: null}
+env: {}
+compare:
+  ignore: []

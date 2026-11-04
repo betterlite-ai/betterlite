@@ -1,0 +1,12 @@
+kind: helper
+name: managed-resource-access-list-page-boundaries
+call:
+  managed_resource_access:
+    principal: {user_id: null, team_id: null, token: null, api_key: null, role: internal_user}
+    records:
+      - {id: a, created_by: null, team_id: null}
+      - {id: b, created_by: null, team_id: null}
+    has_more: true
+env: {}
+compare:
+  ignore: []

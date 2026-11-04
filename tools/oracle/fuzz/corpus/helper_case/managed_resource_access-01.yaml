@@ -1,0 +1,9 @@
+kind: helper
+name: corpus-managed-resource-access
+call:
+  managed_resource_access:
+    principal: {user_id: null, team_id: null, token: null, api_key: null, role: internal_user}
+    records: []
+env: {}
+compare:
+  ignore: []
