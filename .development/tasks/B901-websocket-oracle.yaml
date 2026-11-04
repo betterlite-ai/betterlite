@@ -274,19 +274,7 @@ checks:
   - id: gateway-self-check
     why: The new gateway fixtures do not boot both proxies or omit one of the three realtime aliases.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/harness/websocket-oracle)" && grep -R -qE '/(openai/v1/realtime|v1/realtime|realtime)' tools/oracle/cases/harness/websocket-oracle
-oracle_cases:
-- tools/oracle/cases/harness/websocket-oracle/transcript-schema.yaml
-- tools/oracle/cases/harness/websocket-oracle/bounded-inputs.yaml
-- tools/oracle/cases/harness/websocket-oracle/direction-order.yaml
-- tools/oracle/cases/harness/websocket-oracle/barrier-gates-send.yaml
-- tools/oracle/cases/harness/websocket-oracle/preaccept-status.yaml
-- tools/oracle/cases/harness/websocket-oracle/route-aliases.yaml
-- tools/oracle/cases/harness/websocket-oracle/service-driver-isolation.yaml
-- tools/oracle/cases/harness/websocket-oracle/realtime-route-inputs.yaml
-- tools/oracle/cases/harness/websocket-oracle/provider-preparation.yaml
-- tools/oracle/cases/harness/websocket-oracle/websocket-auth.yaml
-- tools/oracle/cases/harness/websocket-oracle/upstream-refusal.yaml
-- tools/oracle/cases/harness/websocket-oracle/changed-peer.yaml
+oracle_cases: []
 deviations: []
 out_of_scope:
 - >-
@@ -315,6 +303,10 @@ out_of_scope:
   service adapters remain with B1004, B1125, B528, B756, B943, B945 and B1011 as applicable; B901 has no database or
   warning-and-drop behavior of its own.
 pitfalls:
+- >-
+  oracle_cases stays empty on purpose. The gate adds its oracle check for every listed case and runs it against a
+  built betterlite, and betterlite has no realtime route until B1125. legacy-self-check runs the twelve fixtures with
+  LiteLLM on both sides; the tasks that build the native side list the fixtures they make pass.
 - 'The oracle helper for this task is pre-registered as websocket_oracle in the oracle group. Replace the stub Op in tools/oracle/src/helpers/oracle/websocket_oracle.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/websocket_oracle.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit. There is no websocket_dispatch.py: the service child is that dispatch.py run, so add no second dispatcher. websocket_oracle.py imports its service halves only from tools/oracle/helpers/websocket_oracle/; realtime_connect_websocket and the core_ops helpers belong to other tasks.'
 - >-
   A preaccept refusal is reported by the HTTP handshake, so storing the route's attempted 1008 as an accepted client
