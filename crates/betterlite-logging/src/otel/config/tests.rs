@@ -2,9 +2,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use super::destination::{DestinationFields, OtelDestination, SpanScope};
 use super::{
-    CaptureMessageContent, ExporterOwner, OtelDestination, OtlpHttpTls, Settings, SpanScope,
-    cached_feature_flag, resolve_otlp_http_tls,
+    CaptureMessageContent, ExporterOwner, OtlpHttpTls, Settings, Signal, resolve_otlp_http_tls,
 };
 use betterlite_config::loader::ConfigLoader;
 
@@ -16,22 +16,22 @@ fn destination_headers_are_percent_encoded_and_cache_key_ignores_scope() {
         ("authorization".to_owned(), "Basic a,b==".to_owned()),
         ("x".to_owned(), "a=b".to_owned()),
     ]);
-    let first = OtelDestination::new(
-        "https://collector/v1".to_owned(),
-        headers.clone(),
-        BTreeMap::from([("service.name".to_owned(), "proxy".to_owned())]),
-        Some("langfuse_otel".to_owned()),
-        Some("grpc".to_owned()),
-        SpanScope::Full,
-    );
-    let second = OtelDestination::new(
-        "https://collector/v1".to_owned(),
+    let first = OtelDestination::from(DestinationFields {
+        endpoint: "https://collector/v1".to_owned(),
+        headers: headers.clone(),
+        resource_attributes: BTreeMap::from([("service.name".to_owned(), "proxy".to_owned())]),
+        callback_name: Some("langfuse_otel".to_owned()),
+        protocol: Some("grpc".to_owned()),
+        span_scope: SpanScope::Full,
+    });
+    let second = OtelDestination::from(DestinationFields {
+        endpoint: "https://collector/v1".to_owned(),
         headers,
-        BTreeMap::from([("service.name".to_owned(), "proxy".to_owned())]),
-        Some("langfuse_otel".to_owned()),
-        Some("grpc".to_owned()),
-        SpanScope::LlmOnly,
-    );
+        resource_attributes: BTreeMap::from([("service.name".to_owned(), "proxy".to_owned())]),
+        callback_name: Some("langfuse_otel".to_owned()),
+        protocol: Some("grpc".to_owned()),
+        span_scope: SpanScope::LlmOnly,
+    });
     assert_eq!(
         first.header_string(),
         "authorization=Basic%20a%2Cb%3D%3D,x=a%3Db"
@@ -70,7 +70,7 @@ fn resolves_tls_policy(#[case] values: &[(&str, &str)], #[case] expected: OtlpHt
     .load("")
     .expect("valid config");
     assert_eq!(
-        resolve_otlp_http_tls(&config, &environment).expect("valid TLS"),
+        resolve_otlp_http_tls(&config, &environment, Signal::Traces).expect("valid TLS"),
         expected
     );
 }
@@ -102,37 +102,6 @@ fn normalizes_supported_service_exclusion_spellings_and_drops_unknown_names() {
         settings.excluded_services,
         BTreeSet::from(["postgresql".to_owned(), "redis".to_owned()])
     );
-}
-
-#[rstest]
-#[case::unset(None, false)]
-#[case::empty(Some(""), false)]
-#[case::false_text(Some("false"), false)]
-#[case::zero(Some("0"), false)]
-#[case::off(Some("off"), false)]
-#[case::true_text(Some("true"), true)]
-#[case::one(Some("1"), true)]
-fn parses_feature_flag_values(#[case] value: Option<&str>, #[case] expected: bool) {
-    let cache = std::sync::OnceLock::new();
-    assert_eq!(
-        cached_feature_flag(&cache, || value.map(str::to_owned)),
-        expected
-    );
-}
-
-#[test]
-fn feature_flag_is_cached_after_first_read() {
-    let cache = std::sync::OnceLock::new();
-    let mut reads = 0;
-    assert!(cached_feature_flag(&cache, || {
-        reads += 1;
-        Some("true".to_owned())
-    }));
-    assert!(cached_feature_flag(&cache, || {
-        reads += 1;
-        Some("false".to_owned())
-    }));
-    assert_eq!(reads, 1);
 }
 
 #[rstest]
@@ -172,4 +141,36 @@ fn maps_exporter_owner_names(#[case] name: &str, #[case] expected: ExporterOwner
     .expect("valid config");
     let settings = Settings::from_config(&config).expect("valid OTel settings");
     assert_eq!(settings.exporters[0].owner, Some(expected));
+}
+
+#[rstest]
+#[case::global(
+    "OTEL_EXPORTER_OTLP_CERTIFICATE",
+    "/ca.pem",
+    OtlpHttpTls::DefaultVerified
+)]
+#[case::traces(
+    "OTEL_EXPORTER_OTLP_TRACES_CERTIFICATE",
+    "/ca.pem",
+    OtlpHttpTls::DefaultVerified
+)]
+#[case::empty("OTEL_EXPORTER_OTLP_CERTIFICATE", "", OtlpHttpTls::NoVerify)]
+fn exporter_certificate_precedence(
+    #[case] name: &str,
+    #[case] value: &str,
+    #[case] expected: OtlpHttpTls,
+) {
+    let environment = BTreeMap::from([
+        ("SSL_VERIFY".to_owned(), "false".to_owned()),
+        (name.to_owned(), value.to_owned()),
+    ]);
+    let config = ConfigLoader {
+        lookup: environment.clone(),
+    }
+    .load("")
+    .expect("config");
+    assert_eq!(
+        resolve_otlp_http_tls(&config, &environment, Signal::Traces).expect("TLS"),
+        expected
+    );
 }

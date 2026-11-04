@@ -1,27 +1,16 @@
-use serde::Deserialize;
+#![expect(
+    clippy::struct_excessive_bools,
+    reason = "OTel exposes independent feature switches"
+)]
+
+use crate::loader::{ConfigError, EnvironmentLookup};
+use serde::{Deserialize, de::IgnoredAny};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct Raw {
     callback_settings: Option<CallbackSettings>,
-    exporter: Option<String>,
-    endpoint: Option<String>,
-    traces_endpoint: Option<String>,
-    headers: Option<String>,
-    service_name: Option<String>,
-    deployment_environment: Option<String>,
-    enable_metrics: Option<bool>,
-    enable_events: Option<bool>,
-    capture_message_content: Option<String>,
-    legacy_compat: Option<bool>,
-    langfuse_span_scope: Option<String>,
-    excluded_services: Option<serde_json::Value>,
-    exporters: Option<Vec<ExporterSpec>>,
-    mapper_names: Option<ListSetting>,
-    resource_attributes: Option<std::collections::BTreeMap<String, String>>,
-    baggage_promoted_keys: Option<ListSetting>,
-    baggage_metadata_keys: Option<ListSetting>,
-    baggage_team_metadata_keys: Option<ListSetting>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -32,23 +21,41 @@ struct CallbackSettings {
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 struct RawOtel {
+    #[serde(alias = "OTEL_EXPORTER", alias = "OTEL_EXPORTER_OTLP_PROTOCOL")]
     exporter: Option<String>,
+    #[serde(alias = "OTEL_ENDPOINT", alias = "OTEL_EXPORTER_OTLP_ENDPOINT")]
     endpoint: Option<String>,
+    #[serde(
+        alias = "OTEL_TRACES_ENDPOINT",
+        alias = "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"
+    )]
     traces_endpoint: Option<String>,
+    #[serde(alias = "OTEL_HEADERS", alias = "OTEL_EXPORTER_OTLP_HEADERS")]
     headers: Option<String>,
+    #[serde(alias = "OTEL_SERVICE_NAME")]
     service_name: Option<String>,
+    #[serde(alias = "OTEL_ENVIRONMENT_NAME")]
     deployment_environment: Option<String>,
+    #[serde(alias = "LITELLM_OTEL_INTEGRATION_ENABLE_METRICS")]
     enable_metrics: Option<bool>,
+    #[serde(alias = "LITELLM_OTEL_INTEGRATION_ENABLE_EVENTS")]
     enable_events: Option<bool>,
+    #[serde(alias = "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT")]
     capture_message_content: Option<String>,
+    #[serde(alias = "LITELLM_OTEL_LEGACY_COMPAT")]
     legacy_compat: Option<bool>,
+    #[serde(alias = "LITELLM_OTEL_LANGFUSE_SPAN_SCOPE")]
     langfuse_span_scope: Option<String>,
-    excluded_services: Option<serde_json::Value>,
+    #[serde(alias = "LITELLM_OTEL_EXCLUDED_SERVICES")]
+    excluded_services: Option<ExclusionInput>,
     exporters: Option<Vec<ExporterSpec>>,
     mapper_names: Option<ListSetting>,
-    resource_attributes: Option<std::collections::BTreeMap<String, String>>,
+    resource_attributes: Option<BTreeMap<String, String>>,
+    #[serde(alias = "LITELLM_OTEL_BAGGAGE_PROMOTED_KEYS")]
     baggage_promoted_keys: Option<ListSetting>,
+    #[serde(alias = "LITELLM_OTEL_BAGGAGE_METADATA_KEYS")]
     baggage_metadata_keys: Option<ListSetting>,
+    #[serde(alias = "LITELLM_OTEL_BAGGAGE_TEAM_METADATA_KEYS")]
     baggage_team_metadata_keys: Option<ListSetting>,
 }
 
@@ -76,7 +83,7 @@ pub struct ExporterSpec {
     pub traces_endpoint: Option<String>,
     pub headers: Option<String>,
     pub owner: Option<String>,
-    pub options: Option<std::collections::BTreeMap<String, String>>,
+    pub options: Option<BTreeMap<String, String>>,
     pub use_simple_processor: Option<bool>,
     pub requires_headers: Option<bool>,
 }
@@ -97,7 +104,7 @@ pub struct Settings {
     pub excluded_services: Vec<String>,
     pub exporters: Vec<ExporterSpec>,
     pub mapper_names: Vec<String>,
-    pub resource_attributes: std::collections::BTreeMap<String, String>,
+    pub resource_attributes: BTreeMap<String, String>,
     pub baggage_promoted_keys: Vec<String>,
     pub baggage_metadata_keys: Vec<String>,
     pub baggage_team_metadata_keys: Vec<String>,
@@ -107,3 +114,33 @@ mod resolve;
 
 #[path = "otel_settings/tests.rs"]
 mod tests;
+
+#[derive(Default)]
+pub struct FeatureFlag {
+    enabled: Option<bool>,
+}
+
+impl FeatureFlag {
+    pub fn enabled<L>(&mut self, lookup: &L) -> Result<bool, ConfigError>
+    where
+        L: EnvironmentLookup,
+    {
+        if let Some(enabled) = self.enabled {
+            return Ok(enabled);
+        }
+        let value = lookup.lookup("LITELLM_OTEL_V2").unwrap_or_default();
+        let enabled = betterlite_env::flag("LITELLM_OTEL_V2", &value)
+            .map_err(|source| ConfigError::Environment { source })?
+            .unwrap_or(false);
+        self.enabled = Some(enabled);
+        Ok(enabled)
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+enum ExclusionInput {
+    Csv(String),
+    List(Vec<Self>),
+    Ignored(IgnoredAny),
+}

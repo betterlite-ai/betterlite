@@ -7,59 +7,42 @@ pub enum SpanScope {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OtelDestination {
-    endpoint: String,
-    headers: BTreeMap<String, String>,
-    resource_attributes: BTreeMap<String, String>,
-    callback_name: Option<String>,
-    protocol: Option<String>,
-    span_scope: SpanScope,
+pub struct DestinationFields {
+    pub endpoint: String,
+    pub headers: BTreeMap<String, String>,
+    pub resource_attributes: BTreeMap<String, String>,
+    pub callback_name: Option<String>,
+    pub protocol: Option<String>,
+    pub span_scope: SpanScope,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OtelDestination(DestinationFields);
+
+impl From<DestinationFields> for OtelDestination {
+    fn from(fields: DestinationFields) -> Self {
+        Self(fields)
+    }
+}
+
+impl AsRef<DestinationFields> for OtelDestination {
+    fn as_ref(&self) -> &DestinationFields {
+        &self.0
+    }
+}
+
+pub type CacheKey = (
+    String,
+    Vec<(String, String)>,
+    Vec<(String, String)>,
+    Option<String>,
+);
 
 impl OtelDestination {
     #[must_use]
-    pub fn new(
-        endpoint: String,
-        headers: BTreeMap<String, String>,
-        resource_attributes: BTreeMap<String, String>,
-        callback_name: Option<String>,
-        protocol: Option<String>,
-        span_scope: SpanScope,
-    ) -> Self {
-        Self {
-            endpoint,
-            headers,
-            resource_attributes,
-            callback_name,
-            protocol,
-            span_scope,
-        }
-    }
-
-    #[must_use]
-    pub fn fields(
-        &self,
-    ) -> (
-        &str,
-        &BTreeMap<String, String>,
-        &BTreeMap<String, String>,
-        Option<&str>,
-        Option<&str>,
-        SpanScope,
-    ) {
-        (
-            &self.endpoint,
-            &self.headers,
-            &self.resource_attributes,
-            self.callback_name.as_deref(),
-            self.protocol.as_deref(),
-            self.span_scope,
-        )
-    }
-
-    #[must_use]
     pub fn header_string(&self) -> String {
-        self.headers
+        self.0
+            .headers
             .iter()
             .map(|(key, value)| format!("{key}={}", quote(value)))
             .collect::<Vec<_>>()
@@ -67,25 +50,20 @@ impl OtelDestination {
     }
 
     #[must_use]
-    pub fn cache_key(
-        &self,
-    ) -> (
-        String,
-        Vec<(String, String)>,
-        Vec<(String, String)>,
-        Option<String>,
-    ) {
+    pub fn cache_key(&self) -> CacheKey {
         (
-            self.endpoint.clone(),
-            self.headers
+            self.0.endpoint.clone(),
+            self.0
+                .headers
                 .iter()
                 .map(|(key, value)| (key.clone(), value.clone()))
                 .collect(),
-            self.resource_attributes
+            self.0
+                .resource_attributes
                 .iter()
                 .map(|(key, value)| (key.clone(), value.clone()))
                 .collect(),
-            self.protocol.clone(),
+            self.0.protocol.clone(),
         )
     }
 }

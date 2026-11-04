@@ -1,18 +1,14 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::OnceLock;
 
-use betterlite_config::tls::{TlsPolicy, Verification};
+use betterlite_config::sections::otel_settings;
+use betterlite_config::tls::{TlsPolicy, TlsPolicyError, Verification};
 use betterlite_config::types::Config;
 use tracing::warn;
 
 use crate::otel::vocabulary::resolvers::db_system;
 
-mod destination;
-pub use destination::{OtelDestination, SpanScope};
-
-pub const OTEL_V2_ENV: &str = "LITELLM_OTEL_V2";
-
-static OTEL_V2_ENABLED: OnceLock<bool> = OnceLock::new();
+pub mod destination;
+use destination::SpanScope;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CaptureMessageContent {
@@ -46,6 +42,10 @@ pub struct ExporterSpec {
     pub requires_headers: bool,
 }
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "OTel exposes independent feature switches"
+)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
     pub exporters: Vec<ExporterSpec>,
@@ -80,26 +80,7 @@ pub enum OTelConfigError {
     #[error("unknown exporter owner {0}")]
     ExporterOwner(String),
     #[error(transparent)]
-    Tls(#[from] betterlite_config::tls::TlsPolicyError),
-}
-
-#[must_use]
-pub fn is_otel_v2_enabled() -> bool {
-    match OTEL_V2_ENABLED.get() {
-        Some(enabled) => *enabled,
-        None => cached_feature_flag(&OTEL_V2_ENABLED, || std::env::var(OTEL_V2_ENV).ok()),
-    }
-}
-
-fn cached_feature_flag<F>(cache: &OnceLock<bool>, read: F) -> bool
-where
-    F: FnOnce() -> Option<String>,
-{
-    *cache.get_or_init(|| {
-        read()
-            .and_then(|value| betterlite_env::flag(OTEL_V2_ENV, &value).ok().flatten())
-            .unwrap_or(false)
-    })
+    Tls(#[from] TlsPolicyError),
 }
 
 impl Settings {
@@ -173,7 +154,7 @@ fn excluded_services(services: &[String]) -> BTreeSet<String> {
 }
 
 fn exporter_specs(
-    raw_specs: &[betterlite_config::sections::otel_settings::ExporterSpec],
+    raw_specs: &[otel_settings::ExporterSpec],
 ) -> Result<Vec<ExporterSpec>, OTelConfigError> {
     raw_specs
         .iter()
@@ -192,10 +173,33 @@ fn exporter_specs(
         .collect()
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum Signal {
+    Traces,
+    Metrics,
+    Logs,
+}
+
 pub fn resolve_otlp_http_tls(
     config: &Config,
     environment: &BTreeMap<String, String>,
+    signal: Signal,
 ) -> Result<OtlpHttpTls, OTelConfigError> {
+    let signal_certificate = match signal {
+        Signal::Traces => "OTEL_EXPORTER_OTLP_TRACES_CERTIFICATE",
+        Signal::Metrics => "OTEL_EXPORTER_OTLP_METRICS_CERTIFICATE",
+        Signal::Logs => "OTEL_EXPORTER_OTLP_LOGS_CERTIFICATE",
+    };
+    if ["OTEL_EXPORTER_OTLP_CERTIFICATE", signal_certificate]
+        .iter()
+        .any(|name| {
+            environment
+                .get(*name)
+                .is_some_and(|value| !value.is_empty())
+        })
+    {
+        return Ok(OtlpHttpTls::DefaultVerified);
+    }
     let policy = TlsPolicy::resolve(config, environment, None)?;
     Ok(match policy.verification {
         Verification::Disabled => OtlpHttpTls::NoVerify,

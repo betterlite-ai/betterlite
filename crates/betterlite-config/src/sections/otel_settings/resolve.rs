@@ -1,4 +1,4 @@
-use super::{ExporterSpec, ListSetting, Raw, Settings};
+use super::{ExporterSpec, ListSetting, Raw, RawOtel, Settings};
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
 
@@ -9,7 +9,17 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let raw = merge_callback_settings(self);
+        let mut raw = self
+            .callback_settings
+            .and_then(|settings| settings.otel)
+            .unwrap_or_default();
+        references::resolve(&mut raw, lookup)?;
+        raw.exporters = structured_setting(lookup, "exporters", raw.exporters.take())?;
+        raw.resource_attributes = structured_setting(
+            lookup,
+            "resource_attributes",
+            raw.resource_attributes.take(),
+        )?;
         let core = CoreSettings::resolve(&raw, lookup)?;
         let exporters = resolve_exporters(&raw, &core);
         let mapper_names = resolve_mapper_names(&raw, lookup, core.legacy_compat);
@@ -38,41 +48,8 @@ impl Section for Raw {
     }
 }
 
-fn merge_callback_settings(mut raw: Raw) -> Raw {
-    if let Some(callback) = raw
-        .callback_settings
-        .take()
-        .and_then(|settings| settings.otel)
-    {
-        raw.exporter = raw.exporter.or(callback.exporter);
-        raw.endpoint = raw.endpoint.or(callback.endpoint);
-        raw.traces_endpoint = raw.traces_endpoint.or(callback.traces_endpoint);
-        raw.headers = raw.headers.or(callback.headers);
-        raw.service_name = raw.service_name.or(callback.service_name);
-        raw.deployment_environment = raw
-            .deployment_environment
-            .or(callback.deployment_environment);
-        raw.enable_metrics = raw.enable_metrics.or(callback.enable_metrics);
-        raw.enable_events = raw.enable_events.or(callback.enable_events);
-        raw.capture_message_content = raw
-            .capture_message_content
-            .or(callback.capture_message_content);
-        raw.legacy_compat = raw.legacy_compat.or(callback.legacy_compat);
-        raw.langfuse_span_scope = raw.langfuse_span_scope.or(callback.langfuse_span_scope);
-        raw.excluded_services = raw.excluded_services.or(callback.excluded_services);
-        raw.exporters = raw.exporters.or(callback.exporters);
-        raw.mapper_names = raw.mapper_names.or(callback.mapper_names);
-        raw.resource_attributes = raw.resource_attributes.or(callback.resource_attributes);
-        raw.baggage_promoted_keys = raw.baggage_promoted_keys.or(callback.baggage_promoted_keys);
-        raw.baggage_metadata_keys = raw.baggage_metadata_keys.or(callback.baggage_metadata_keys);
-        raw.baggage_team_metadata_keys = raw
-            .baggage_team_metadata_keys
-            .or(callback.baggage_team_metadata_keys);
-    }
-    raw
-}
-
 struct CoreSettings {
+    shorthand_explicit: bool,
     exporter: String,
     endpoint: Option<String>,
     traces_endpoint: Option<String>,
@@ -88,53 +65,19 @@ struct CoreSettings {
 }
 
 impl CoreSettings {
-    fn resolve<L: EnvironmentLookup>(raw: &Raw, lookup: &L) -> Result<Self, ConfigError> {
-        let exporter = environment_or(
-            lookup,
-            &["OTEL_EXPORTER", "OTEL_EXPORTER_OTLP_PROTOCOL"],
-            raw.exporter.clone(),
-            |value| value,
-        )
-        .unwrap_or_else(|| "console".to_owned());
-        let endpoint = environment_or(
-            lookup,
-            &["OTEL_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT"],
-            raw.endpoint.clone(),
-            |value| value,
-        );
-        let traces_endpoint = environment_or(
-            lookup,
-            &["OTEL_TRACES_ENDPOINT", "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"],
-            raw.traces_endpoint.clone(),
-            |value| value,
-        );
-        let headers = environment_or(
-            lookup,
-            &["OTEL_HEADERS", "OTEL_EXPORTER_OTLP_HEADERS"],
-            raw.headers.clone(),
-            |value| value,
-        );
-        let service_name = environment_or(
-            lookup,
-            &["OTEL_SERVICE_NAME"],
-            raw.service_name.clone(),
-            |value| value,
-        )
-        .unwrap_or_else(|| "litellm".to_owned());
-        let deployment_environment = environment_or(
-            lookup,
-            &["OTEL_ENVIRONMENT_NAME"],
-            raw.deployment_environment.clone(),
-            |value| value,
-        );
-        let excluded_services = normalized_exclusions(environment_or(
-            lookup,
-            &["LITELLM_OTEL_EXCLUDED_SERVICES"],
-            raw.excluded_services.clone(),
-            serde_json::Value::String,
-        ));
+    fn resolve<L>(raw: &RawOtel, lookup: &L) -> Result<Self, ConfigError>
+    where
+        L: EnvironmentLookup,
+    {
+        let [configured_exporter, endpoint, traces_endpoint, headers] = shorthand(raw, lookup);
+        let (service_name, deployment_environment) = service_identity(raw, lookup);
+        let excluded_services = resolve_exclusions(raw, lookup);
         let features = FeatureSettings::resolve(raw, lookup)?;
+        let shorthand_explicit =
+            configured_exporter.is_some() || endpoint.is_some() || headers.is_some();
+        let exporter = configured_exporter.unwrap_or_else(|| "console".to_owned());
         Ok(Self {
+            shorthand_explicit,
             exporter,
             endpoint,
             traces_endpoint,
@@ -160,7 +103,10 @@ struct FeatureSettings {
 }
 
 impl FeatureSettings {
-    fn resolve<L: EnvironmentLookup>(raw: &Raw, lookup: &L) -> Result<Self, ConfigError> {
+    fn resolve<L>(raw: &RawOtel, lookup: &L) -> Result<Self, ConfigError>
+    where
+        L: EnvironmentLookup,
+    {
         Ok(Self {
             enable_metrics: setting_bool(
                 lookup,
@@ -174,49 +120,64 @@ impl FeatureSettings {
                 raw.enable_events,
                 false,
             )?,
-            capture_message_content: lookup
-                .lookup("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT")
-                .or_else(|| raw.capture_message_content.clone())
-                .unwrap_or_else(|| "no_content".to_owned())
-                .to_lowercase(),
+            capture_message_content: environment_or(
+                lookup,
+                &["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"],
+                raw.capture_message_content.clone(),
+                |value| value,
+            )
+            .unwrap_or_else(|| "no_content".to_owned())
+            .to_lowercase(),
             legacy_compat: setting_bool(
                 lookup,
                 "LITELLM_OTEL_LEGACY_COMPAT",
                 raw.legacy_compat,
                 true,
             )?,
-            langfuse_span_scope: lookup
-                .lookup("LITELLM_OTEL_LANGFUSE_SPAN_SCOPE")
-                .or_else(|| raw.langfuse_span_scope.clone())
-                .unwrap_or_else(|| "full".to_owned())
-                .trim()
-                .to_lowercase(),
+            langfuse_span_scope: environment_or(
+                lookup,
+                &["langfuse_span_scope", "LITELLM_OTEL_LANGFUSE_SPAN_SCOPE"],
+                raw.langfuse_span_scope.clone(),
+                |value| value,
+            )
+            .unwrap_or_else(|| "full".to_owned())
+            .trim()
+            .to_lowercase(),
         })
     }
 }
 
-fn resolve_baggage<L: EnvironmentLookup>(
-    raw: &Raw,
-    lookup: &L,
-) -> (Vec<String>, Vec<String>, Vec<String>) {
+fn resolve_baggage<L>(raw: &RawOtel, lookup: &L) -> (Vec<String>, Vec<String>, Vec<String>)
+where
+    L: EnvironmentLookup,
+{
     (
         environment_or(
             lookup,
-            &["LITELLM_OTEL_BAGGAGE_PROMOTED_KEYS"],
+            &[
+                "baggage_promoted_keys",
+                "LITELLM_OTEL_BAGGAGE_PROMOTED_KEYS",
+            ],
             raw.baggage_promoted_keys.clone().map(ListSetting::values),
             |value| csv_values(&value),
         )
         .unwrap_or_else(|| default_baggage_keys(DEFAULT_BAGGAGE_PROMOTED_KEYS)),
         environment_or(
             lookup,
-            &["LITELLM_OTEL_BAGGAGE_METADATA_KEYS"],
+            &[
+                "baggage_metadata_keys",
+                "LITELLM_OTEL_BAGGAGE_METADATA_KEYS",
+            ],
             raw.baggage_metadata_keys.clone().map(ListSetting::values),
             |value| csv_values(&value),
         )
         .unwrap_or_else(|| default_baggage_keys(DEFAULT_BAGGAGE_METADATA_KEYS)),
         environment_or(
             lookup,
-            &["LITELLM_OTEL_BAGGAGE_TEAM_METADATA_KEYS"],
+            &[
+                "baggage_team_metadata_keys",
+                "LITELLM_OTEL_BAGGAGE_TEAM_METADATA_KEYS",
+            ],
             raw.baggage_team_metadata_keys
                 .clone()
                 .map(ListSetting::values),
@@ -226,21 +187,20 @@ fn resolve_baggage<L: EnvironmentLookup>(
     )
 }
 
-fn resolve_mapper_names<L: EnvironmentLookup>(
-    raw: &Raw,
-    lookup: &L,
-    legacy_compat: bool,
-) -> Vec<String> {
+fn resolve_mapper_names<L>(raw: &RawOtel, lookup: &L, legacy_compat: bool) -> Vec<String>
+where
+    L: EnvironmentLookup,
+{
     let mapper_names = environment_or(
         lookup,
-        &["LITELLM_OTEL_MAPPER_NAMES"],
+        &["mapper_names", "MAPPER_NAMES"],
         raw.mapper_names.clone().map(ListSetting::values),
         |value| csv_values(&value),
     )
     .unwrap_or_else(|| vec!["genai".to_owned()]);
     let mut names = vec!["genai".to_owned()];
     for name in mapper_names {
-        if name != "genai" && !names.contains(&name) {
+        if name != "genai" {
             names.push(name);
         }
     }
@@ -250,13 +210,16 @@ fn resolve_mapper_names<L: EnvironmentLookup>(
     names
 }
 
-fn resolve_exporters(raw: &Raw, core: &CoreSettings) -> Vec<ExporterSpec> {
+fn resolve_exporters(raw: &RawOtel, core: &CoreSettings) -> Vec<ExporterSpec> {
     if let Some(exporters) = raw
         .exporters
         .as_ref()
         .filter(|exporters| !exporters.is_empty())
     {
         return exporters.clone();
+    }
+    if !core.shorthand_explicit {
+        return vec![ExporterSpec::default()];
     }
     let kind = if core.exporter == "console"
         && (core.endpoint.is_some() || core.traces_endpoint.is_some())
@@ -281,5 +244,8 @@ mod helpers;
 pub(super) use helpers::csv_values;
 use helpers::{
     DEFAULT_BAGGAGE_METADATA_KEYS, DEFAULT_BAGGAGE_PROMOTED_KEYS, default_baggage_keys,
-    environment_or, normalized_exclusions, setting_bool,
+    environment_or, resolve_exclusions, service_identity, setting_bool, shorthand,
+    structured_setting,
 };
+
+mod references;
