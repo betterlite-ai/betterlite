@@ -8,7 +8,7 @@ This folder drives the agents that build betterlite, a Rust rewrite of LiteLLM's
 |---|---|---|---|
 | Architect | main Claude session with Max | backlog, specs, merges | numbered questions for Max |
 | Planner | Codex gpt-6-astra, xhigh effort | task files on a plan branch | report JSON |
-| Worker | Codex gpt-reserve, then gpt-6-astra, then one try on Claude Opus | code on its task branch | report JSON |
+| Worker | Codex gpt-6-luna, then gpt-6-astra, then Claude Haiku, then one more gpt-6-astra start | code on its task branch | report JSON |
 | Reviewer | Claude Sonnet (Opus for tasks with review_level security), or Codex gpt-6-astra when the worker was Claude | nothing | review JSON |
 | Parity reviewer | Claude Opus, or Codex gpt-6-astra at xhigh effort when the worker was Claude | nothing | review JSON |
 
@@ -103,6 +103,7 @@ Max's product decisions so far. A task that contradicts one of them is wrong, no
 - 2026-11-03: the tests job splits into three runners with nextest's `--partition hash:N/3`. Every shard builds the whole workspace from the one shared cache and runs a third of the tests, so main's whole suite takes 10 minutes instead of 13.5 ([run 41714676325](https://github.com/betterlite-ai/betterlite/actions/runs/41714676325) against [run 41711234085](https://github.com/betterlite-ai/betterlite/actions/runs/41711234085)). Standard runners are free on a public repo, so this stays inside the free plan. The split doesn't save disk, since every shard still builds everything (Max).
 - 2026-11-03: every job except lint empties the runner's Android SDK, about 14 GiB, before it builds, and prints the free disk before and after. The out-of-disk runs ([run 41704533587](https://github.com/betterlite-ai/betterlite/actions/runs/41704533587), tests-3 of [run 41712918645](https://github.com/betterlite-ai/betterlite/actions/runs/41712918645)) ran on runner image 20261018.96, and every passing run checked ran on 20261025.353 or 20261101.360. The free-disk-space action can't run in a container job, so the SDK folder comes in as a container volume. The test shards also sync LiteLLM without its dev tools (`UV_NO_DEV=1`), since only the lint hooks and task checks run ruff and basedpyright (Max).
 - 2026-11-04: a blocked report doesn't count while a gate command the worker started in that run never finished. The worker gets a fix turn that tells it to run the command again and wait for its last line, so the two-report stop sees only real blockers. B2203 went back to the architect twice on 11-04, both times after its worker quit while its preflight's hooks check, about 2 minutes long, was still running. A gate run that ends in an error writes error.txt next to where result.json would go, so it never reads as cut off.
+- 2026-11-04: the Claude worker rung runs Haiku 4.5 instead of Sonnet. Codex has about 20% of its limit left and runs out tonight, and then every worker try goes to that rung. A dispatch reads agents.yaml once when it starts, so the switch lands before the limit: a switch at the limit would leave every running dispatch on Sonnet. Reviewers and the planner stay as they are (Max).
 
 ## Writing a task
 
