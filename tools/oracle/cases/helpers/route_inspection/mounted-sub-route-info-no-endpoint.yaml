@@ -4,4 +4,4 @@ call:
   b4262: {"function":"mounted_sub_route_info","mount_path":"/v1","route":{"path":"/models"}}
 env: {}
 compare:
-  ignore: [/value]
+  ignore: [{pointer: /value, why: "Python None is omitted from the optional helper envelope"}]
