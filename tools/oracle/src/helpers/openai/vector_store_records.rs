@@ -1,11 +1,15 @@
-use betterlite_openai::api::vector_store_records::records::basic::VectorStoreToolParams;
+use betterlite_openai::api::vector_store_records::records::basic::{
+    GuardrailAction, VectorStoreIndexType, VectorStoreIntegration, VectorStoreSearchFailureMode,
+    VectorStoreStatus, VectorStoreToolParams,
+};
 use betterlite_openai::api::vector_store_records::records::vector::{
-    BaseVectorStoreAuthCredentials, LiteLlmVectorStoreConfig,
+    BaseVectorStoreAuthCredentials, LiteLlmVectorStoreConfig, VectorStoreFileCounts,
 };
 use betterlite_openai::api::vector_store_records::wire::{
     VectorStoreRecordKind, WireDecodeLimits, decode_vector_store_records,
 };
-use serde::Deserialize;
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
@@ -47,30 +51,71 @@ pub(crate) enum Input {
 
 pub(crate) struct Op;
 
-const MANAGEMENT: &[(&str, VectorStoreRecordKind)] = &[
-    ("update", VectorStoreRecordKind::UpdateRequest),
-    ("delete", VectorStoreRecordKind::DeleteRequest),
-    ("info", VectorStoreRecordKind::InfoRequest),
-    ("managed_index", VectorStoreRecordKind::ManagedIndex),
-    ("index_list", VectorStoreRecordKind::IndexListResponse),
-    ("index_create", VectorStoreRecordKind::IndexCreateRequest),
+use EntryKind::Record;
+
+enum EntryKind {
+    Record(VectorStoreRecordKind),
+    Config,
+    Auth,
+    Counts,
+    Statuses,
+    FailureModes,
+    Guardrail,
+    Integrations,
+    IndexTypes,
+}
+
+const MANAGEMENT: &[(&str, EntryKind)] = &[
+    ("update", Record(VectorStoreRecordKind::UpdateRequest)),
+    ("delete", Record(VectorStoreRecordKind::DeleteRequest)),
+    ("info", Record(VectorStoreRecordKind::InfoRequest)),
+    ("managed_index", Record(VectorStoreRecordKind::ManagedIndex)),
+    (
+        "index_list",
+        Record(VectorStoreRecordKind::IndexListResponse),
+    ),
+    (
+        "index_create",
+        Record(VectorStoreRecordKind::IndexCreateRequest),
+    ),
 ];
-const CREATE_AND_SEARCH: &[(&str, VectorStoreRecordKind)] = &[
-    ("create", VectorStoreRecordKind::CreateRequest),
-    ("auto_chunking", VectorStoreRecordKind::CreateRequest),
-    ("omitted_static", VectorStoreRecordKind::CreateRequest),
-    ("response", VectorStoreRecordKind::CreateResponse),
-    ("search", VectorStoreRecordKind::SearchResponse),
-    ("failure", VectorStoreRecordKind::SearchFailure),
+const CREATE_AND_SEARCH: &[(&str, EntryKind)] = &[
+    ("create", Record(VectorStoreRecordKind::CreateRequest)),
+    (
+        "auto_chunking",
+        Record(VectorStoreRecordKind::CreateRequest),
+    ),
+    (
+        "omitted_static",
+        Record(VectorStoreRecordKind::CreateRequest),
+    ),
+    ("response", Record(VectorStoreRecordKind::CreateResponse)),
+    ("search", Record(VectorStoreRecordKind::SearchResponse)),
+    ("failure", Record(VectorStoreRecordKind::SearchFailure)),
+    ("counts", EntryKind::Counts),
+    ("response_statuses", EntryKind::Statuses),
+    ("failure_modes", EntryKind::FailureModes),
 ];
-const KNOWLEDGE_BASE: &[(&str, VectorStoreRecordKind)] = &[
-    ("request", VectorStoreRecordKind::BedrockRequest),
-    ("response", VectorStoreRecordKind::BedrockResponse),
+const KNOWLEDGE_BASE: &[(&str, EntryKind)] = &[
+    ("request", Record(VectorStoreRecordKind::BedrockRequest)),
+    ("response", Record(VectorStoreRecordKind::BedrockResponse)),
+    (
+        "response_empty_nulls",
+        Record(VectorStoreRecordKind::BedrockResponse),
+    ),
+    ("response_guardrail", EntryKind::Guardrail),
 ];
-const VECTOR_RECORDS: &[(&str, VectorStoreRecordKind)] = &[
-    ("managed", VectorStoreRecordKind::ManagedStore),
-    ("managed_list", VectorStoreRecordKind::ManagedStoreList),
-    ("endpoints", VectorStoreRecordKind::IndexEndpoints),
+const VECTOR_RECORDS: &[(&str, EntryKind)] = &[
+    ("managed", Record(VectorStoreRecordKind::ManagedStore)),
+    (
+        "managed_list",
+        Record(VectorStoreRecordKind::ManagedStoreList),
+    ),
+    ("endpoints", Record(VectorStoreRecordKind::IndexEndpoints)),
+    ("config", EntryKind::Config),
+    ("auth", EntryKind::Auth),
+    ("integrations", EntryKind::Integrations),
+    ("index_types", EntryKind::IndexTypes),
 ];
 
 fn decode_model(kind: VectorStoreRecordKind, record: &Value) -> crate::helpers::HelperResult {
@@ -87,30 +132,40 @@ fn decode_model(kind: VectorStoreRecordKind, record: &Value) -> crate::helpers::
 
 fn decode_group(
     source: &BTreeMap<String, Value>,
-    fields: &[(&str, VectorStoreRecordKind)],
+    fields: &[(&str, EntryKind)],
 ) -> crate::helpers::HelperResult {
-    let mut output = source.clone();
-    for (name, kind) in fields {
-        if let Some(record) = source.get(*name) {
-            output.insert((*name).to_owned(), decode_model(*kind, record)?);
-        }
+    let mut output = BTreeMap::new();
+    for (name, value) in source {
+        let (_, kind) = fields
+            .iter()
+            .find(|(field, _)| *field == name.as_str())
+            .ok_or_else(|| helper_error(format!("unmapped case entry `{name}`")))?;
+        output.insert(name.clone(), decode_entry(kind, value)?);
     }
     serde_json::to_value(output).map_err(|error| helper_error(error.to_string()))
 }
 
-fn round_trip_records(source: &BTreeMap<String, Value>) -> crate::helpers::HelperResult {
-    let mut output = decode_group(source, VECTOR_RECORDS)?;
-    if let Some(record) = output.get_mut("config") {
-        let typed: LiteLlmVectorStoreConfig = serde_json::from_value(record.clone())
-            .map_err(|error| helper_error(error.to_string()))?;
-        *record = serde_json::to_value(typed).map_err(|error| helper_error(error.to_string()))?;
+fn decode_entry(kind: &EntryKind, value: &Value) -> crate::helpers::HelperResult {
+    match kind {
+        Record(record_kind) => decode_model(*record_kind, value),
+        EntryKind::Config => round_trip::<LiteLlmVectorStoreConfig>(value),
+        EntryKind::Auth => round_trip::<BaseVectorStoreAuthCredentials>(value),
+        EntryKind::Counts => round_trip::<VectorStoreFileCounts>(value),
+        EntryKind::Statuses => round_trip::<Vec<VectorStoreStatus>>(value),
+        EntryKind::FailureModes => round_trip::<Vec<VectorStoreSearchFailureMode>>(value),
+        EntryKind::Guardrail => round_trip::<GuardrailAction>(value),
+        EntryKind::Integrations => round_trip::<Vec<VectorStoreIntegration>>(value),
+        EntryKind::IndexTypes => round_trip::<Vec<VectorStoreIndexType>>(value),
     }
-    if let Some(record) = output.get_mut("auth") {
-        let typed: BaseVectorStoreAuthCredentials = serde_json::from_value(record.clone())
-            .map_err(|error| helper_error(error.to_string()))?;
-        *record = serde_json::to_value(typed).map_err(|error| helper_error(error.to_string()))?;
-    }
-    Ok(output)
+}
+
+fn round_trip<T>(value: &Value) -> crate::helpers::HelperResult
+where
+    T: DeserializeOwned + Serialize,
+{
+    let typed: T =
+        serde_json::from_value(value.clone()).map_err(|error| helper_error(error.to_string()))?;
+    serde_json::to_value(typed).map_err(|error| helper_error(error.to_string()))
 }
 
 impl crate::helpers::Helper for Op {
@@ -140,7 +195,7 @@ impl crate::helpers::Helper for Op {
             Input::ManagementRecordDefaults { records } => decode_group(records, MANAGEMENT),
             Input::CreateAndSearchRecords { record } => decode_group(record, CREATE_AND_SEARCH),
             Input::KnowledgeBaseRecords { record } => decode_group(record, KNOWLEDGE_BASE),
-            Input::VectorRecordsRoundTrip { record } => round_trip_records(record),
+            Input::VectorRecordsRoundTrip { record } => decode_group(record, VECTOR_RECORDS),
         }
     }
 }
@@ -155,3 +210,5 @@ fn helper_error(message: String) -> Box<crate::helpers::HelperError> {
         message,
     })
 }
+
+mod tests;

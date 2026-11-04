@@ -75,6 +75,6 @@ record!(BedrockKbRequest {
     user_context: BedrockKbUserContext => "userContext" [strict],
 });
 record!(BedrockKbResponse {
-    guardrail_action: String => "guardrailAction", next_token: String => "nextToken",
+    guardrail_action: super::basic::GuardrailAction => "guardrailAction", next_token: String => "nextToken",
     retrieval_results: Vec<BedrockKbRetrievalResult> => "retrievalResults" [strict],
 });

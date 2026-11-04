@@ -1,18 +1,19 @@
 #![cfg(test)]
 
 use super::records::basic::{
-    VectorStoreIndexType, VectorStoreIntegration, VectorStoreOpenAiParam,
-    VectorStoreSearchFailureMode, VectorStoreToolParams, WireRecord,
+    GuardrailAction, VectorStoreIndexType, VectorStoreIntegration, VectorStoreOpenAiParam,
+    VectorStoreSearchFailureMode, VectorStoreStatus, VectorStoreToolParams, WireRecord,
 };
 use super::records::bedrock::{BedrockKbRequest, BedrockKbResponse};
 use super::records::vector::{
     BaseVectorStoreAuthCredentials, LiteLlmManagedVectorStore, LiteLlmVectorStoreConfig,
-    ManagedVectorStoreList, VectorStoreChunkingStrategy, VectorStoreIndexEndpoints,
-    VectorStoreSearchRequest,
+    ManagedVectorStoreList, VectorStoreChunkingStrategy, VectorStoreCreateResponse,
+    VectorStoreFileCounts, VectorStoreIndexEndpoints, VectorStoreSearchRequest,
 };
 use super::wire::{VectorStoreRecordKind, WireDecodeLimits, decode_vector_store_records};
 use rstest::rstest;
 use serde_json::Value;
+use std::collections::BTreeMap;
 use std::error::Error as _;
 use std::fs;
 use std::path::Path;
@@ -236,35 +237,33 @@ fn managed_record_keeps_mistyped_and_extension_fields_raw() {
 
 #[test]
 fn vector_records_round_trip() {
-    let managed_input = br#"{"vector_store_id":"vs_a","custom_llm_provider":"openai","vector_store_name":"notes","vector_store_description":"d","vector_store_metadata":"raw","created_at":"2025-01-02T03:04:05Z","updated_at":"2025-01-02T03:04:05Z","litellm_credential_name":"c","litellm_params":{"api_base":"url"},"team_id":"t","user_id":"u","is_config":true}"#;
-    assert_wire_record(VectorStoreRecordKind::ManagedStore, managed_input);
-
     let auth_input = br#"{"headers":{"authorization":"secret"},"query_params":{"key":"value"}}"#;
     let auth: BaseVectorStoreAuthCredentials = serde_json::from_slice(auth_input).unwrap();
     assert_eq!(auth.headers.as_ref().unwrap()["authorization"], "secret");
+    assert_eq!(auth.query_params.as_ref().unwrap()["key"], "value");
+    assert!(auth.extra.is_empty());
     let endpoints: VectorStoreIndexEndpoints = serde_json::from_str(r#"{"read":[["GET","/index"],["POST","/index"]],"write":[["PUT","/index"],["DELETE","/index"],["PATCH","/index"]]}"#).unwrap();
     assert_eq!(endpoints.read.as_ref().unwrap().len(), 2);
     assert_eq!(endpoints.write.as_ref().unwrap().len(), 3);
     let config: LiteLlmVectorStoreConfig =
-        serde_json::from_str(r#"{"vector_store_name":"notes","litellm_params":null}"#).unwrap();
-    assert!(config.litellm_params.is_none());
-    assert!(config.extra["litellm_params"].is_null());
+        serde_json::from_str(r#"{"vector_store_name":"notes","litellm_params":{}}"#).unwrap();
+    assert_eq!(config.vector_store_name.as_deref(), Some("notes"));
+    assert_eq!(config.litellm_params, Some(serde_json::json!({})));
+    assert!(config.extra.is_empty());
     let list: ManagedVectorStoreList = serde_json::from_str(
         r#"{"object":"list","data":[],"total_count":1,"current_page":1,"total_pages":1}"#,
     )
     .unwrap();
+    assert_eq!(list.object.as_deref(), Some("list"));
+    assert!(list.data.as_ref().unwrap().is_empty());
     assert_eq!(list.total_count, Some(1));
+    assert_eq!(list.current_page, Some(1));
+    assert_eq!(list.total_pages, Some(1));
+    assert!(list.extra.is_empty());
     assert_wire_record(
         VectorStoreRecordKind::IndexEndpoints,
         br#"{"read":[["GET","/index"]],"write":[]}"#,
     );
-
-    let create_input = br#"{"name":null,"file_ids":["file_a"],"expires_after":{"anchor":"last_active_at","days":3},"chunking_strategy":{"type":"static","static":{"max_chunk_size_tokens":800,"chunk_overlap_tokens":400}},"metadata":{"tag":"x"}}"#;
-    assert_wire_record(VectorStoreRecordKind::CreateRequest, create_input);
-
-    let failure_input =
-        br#"{"vector_store_id":"vs_a","custom_llm_provider":null,"error":"failed"}"#;
-    assert_wire_record(VectorStoreRecordKind::SearchFailure, failure_input);
 }
 
 #[rstest]
@@ -620,20 +619,26 @@ fn search_query_variants(#[case] input: &[u8]) {
 }
 
 #[rstest]
-#[case::expired("expired")]
-#[case::in_progress("in_progress")]
-#[case::completed("completed")]
-fn create_status_variants(#[case] status: &str) {
+#[case::expired("expired", VectorStoreStatus::Expired)]
+#[case::in_progress("in_progress", VectorStoreStatus::InProgress)]
+#[case::completed("completed", VectorStoreStatus::Completed)]
+fn create_status_variants(#[case] status: &str, #[case] expected: VectorStoreStatus) {
     let input = format!(r#"{{"status":"{status}","bytes":-1}}"#);
     assert_wire_record(VectorStoreRecordKind::CreateResponse, input.as_bytes());
+    let typed: VectorStoreCreateResponse = serde_json::from_str(&input).unwrap();
+    assert_eq!(typed.status, Some(expected));
+    assert!(typed.extra.is_empty());
 }
 
 #[rstest]
-#[case::intervened("INTERVENED")]
-#[case::none("NONE")]
-fn guardrail_action_variants(#[case] action: &str) {
+#[case::intervened("INTERVENED", GuardrailAction::Intervened)]
+#[case::none("NONE", GuardrailAction::None)]
+fn guardrail_action_variants(#[case] action: &str, #[case] expected: GuardrailAction) {
     let input = format!(r#"{{"guardrailAction":"{action}"}}"#);
     assert_wire_record(VectorStoreRecordKind::BedrockResponse, input.as_bytes());
+    let typed: BedrockKbResponse = serde_json::from_str(&input).unwrap();
+    assert_eq!(typed.guardrail_action, Some(expected));
+    assert!(typed.extra.is_empty());
 }
 
 #[rstest]
@@ -824,4 +829,45 @@ fn malformed_json_has_no_provider_error_details() {
             location: None,
         }
     );
+}
+
+#[test]
+fn managed_create_failure_records() {
+    let managed_input = br#"{"vector_store_id":"vs_a","custom_llm_provider":"openai","vector_store_name":"notes","vector_store_description":"d","vector_store_metadata":"raw","created_at":"2025-01-02T03:04:05Z","updated_at":"2025-01-02T03:04:05Z","litellm_credential_name":"c","litellm_params":{"api_base":"url"},"team_id":"t","user_id":"u","is_config":true}"#;
+    assert_wire_record(VectorStoreRecordKind::ManagedStore, managed_input);
+
+    let create_input = br#"{"name":null,"file_ids":["file_a"],"expires_after":{"anchor":"last_active_at","days":3},"chunking_strategy":{"type":"static","static":{"max_chunk_size_tokens":800,"chunk_overlap_tokens":400}},"metadata":{"tag":"x"}}"#;
+    assert_wire_record(VectorStoreRecordKind::CreateRequest, create_input);
+
+    let failure_input =
+        br#"{"vector_store_id":"vs_a","custom_llm_provider":null,"error":"failed"}"#;
+    assert_wire_record(VectorStoreRecordKind::SearchFailure, failure_input);
+}
+
+#[test]
+fn config_null_keeps_presence() {
+    let input: Value =
+        serde_json::from_str(r#"{"vector_store_name":"notes","litellm_params":null}"#).unwrap();
+    let config: LiteLlmVectorStoreConfig = serde_json::from_value(input.clone()).unwrap();
+    assert_eq!(config.vector_store_name.as_deref(), Some("notes"));
+    assert!(config.litellm_params.is_none());
+    assert_eq!(
+        config.extra,
+        BTreeMap::from([(String::from("litellm_params"), Value::Null)])
+    );
+    assert_eq!(serde_json::to_value(config).unwrap(), input);
+}
+
+#[test]
+fn file_counts_fields_are_typed() {
+    let counts: VectorStoreFileCounts = serde_json::from_str(
+        r#"{"in_progress":1,"completed":2,"failed":3,"cancelled":4,"total":10}"#,
+    )
+    .unwrap();
+    assert_eq!(counts.in_progress, Some(1));
+    assert_eq!(counts.completed, Some(2));
+    assert_eq!(counts.failed, Some(3));
+    assert_eq!(counts.cancelled, Some(4));
+    assert_eq!(counts.total, Some(10));
+    assert!(counts.extra.is_empty());
 }

@@ -67,3 +67,18 @@ pub enum VectorStoreSearchFailureMode {
     Annotate,
     Error,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VectorStoreStatus {
+    Expired,
+    InProgress,
+    Completed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum GuardrailAction {
+    Intervened,
+    None,
+}

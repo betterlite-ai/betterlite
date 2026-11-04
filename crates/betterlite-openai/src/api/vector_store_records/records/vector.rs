@@ -106,7 +106,7 @@ pub struct VectorStoreCreateRequest {
 record!(VectorStoreCreateResponse {
     id: String => "id", object: String => "object", created_at: i64 => "created_at",
     name: String => "name", bytes: i64 => "bytes", file_counts: VectorStoreFileCounts => "file_counts",
-    status: String => "status", expires_after: VectorStoreExpirationPolicy => "expires_after",
+    status: super::basic::VectorStoreStatus => "status", expires_after: VectorStoreExpirationPolicy => "expires_after",
     expires_at: i64 => "expires_at", last_active_at: i64 => "last_active_at",
     metadata: BTreeMap<String, String> => "metadata",
 });
