@@ -126,20 +126,22 @@ impl Section for Raw {
             aws_region_name, aws_role_name, aws_session_name, aws_external_id,
             aws_profile_name, aws_sts_endpoint,
         );
-        settings.hosted_keys = resolution::names(raw.hosted_keys, "hosted_keys", lookup)?;
-        settings.replica_regions =
-            resolution::names(raw.replica_regions, "replica_regions", lookup)?;
-        settings.tags = resolution::tags(raw.tags, lookup)?;
-        settings.store_virtual_keys = resolution::boolean(raw.store_virtual_keys, lookup)?;
-        settings.access_mode = resolution::access(raw.access_mode, lookup)?;
-        if let Some(prefix) = resolution::text(
+        settings.hosted_keys = raw.hosted_keys;
+        settings.replica_regions = raw.replica_regions;
+        settings.tags = raw.tags;
+        resolution::collections(&mut settings, lookup)?;
+        resolution::defaults(
+            &mut settings,
+            raw.store_virtual_keys,
+            raw.access_mode,
             raw.prefix_for_stored_virtual_keys,
-            "general_settings.key_management_settings.prefix_for_stored_virtual_keys",
             lookup,
-        )? {
-            settings.prefix_for_stored_virtual_keys = prefix;
-        }
-        settings.aws_web_identity_token = resolution::token(raw.aws_web_identity_token, lookup)?;
+        )?;
+        settings.aws_web_identity_token = resolution::text(
+            raw.aws_web_identity_token,
+            "general_settings.key_management_settings.aws_web_identity_token",
+            lookup,
+        )?;
         if self.general_settings.key_management_system == Some(KeyManagementSystem::Custom)
             && settings
                 .custom_secret_manager

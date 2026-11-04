@@ -6,10 +6,10 @@ pub fn read_boolean_text(
     name: &str,
     value: Option<&str>,
 ) -> Result<Option<bool>, betterlite_env::EnvError> {
-    match value {
-        None => Ok(None),
-        Some(text) => betterlite_env::flag(name, text),
-    }
+    value
+        .map(|text| betterlite_env::flag(name, text))
+        .transpose()
+        .map(Option::flatten)
 }
 
 #[must_use]

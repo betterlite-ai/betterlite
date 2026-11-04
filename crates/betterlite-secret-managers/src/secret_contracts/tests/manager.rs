@@ -70,6 +70,21 @@ impl FakeManager {
         }
         Ok(())
     }
+
+    fn respond(
+        &self,
+        name: &str,
+        operation: Operation,
+        options: SecretOptions<'_, Params>,
+    ) -> SecretFuture<'static, &'static str, TestError> {
+        let response = match &operation {
+            Operation::Read => "read",
+            Operation::Write { .. } => "created",
+            Operation::Delete(_) => "deleted",
+        };
+        let result = self.record(name, operation, options).map(|()| response);
+        Box::pin(future::ready(result))
+    }
 }
 
 impl BaseSecretManager for FakeManager {
@@ -94,36 +109,27 @@ impl BaseSecretManager for FakeManager {
         Ok((self.missing != Some(secret_name)).then(|| SecretString::from("")))
     }
 
-    fn async_write_secret<'borrowed>(
-        &'borrowed self,
-        write: SecretWrite<'borrowed, Params>,
-    ) -> SecretFuture<'borrowed, &'static str, TestError> {
-        Box::pin(async move {
-            self.record(
-                write.secret_name,
-                Operation::Write {
-                    value: write.secret_value.clone(),
-                    description: write.description.map(str::to_owned),
-                    tags: write.tags.cloned(),
-                },
-                write.options,
-            )?;
-            Ok("created")
-        })
+    fn async_write_secret(
+        &self,
+        write: SecretWrite<'_, Params>,
+    ) -> SecretFuture<'_, &'static str, TestError> {
+        let operation = Operation::Write {
+            value: write.secret_value.clone(),
+            description: write.description.map(str::to_owned),
+            tags: write.tags.cloned(),
+        };
+        self.respond(write.secret_name, operation, write.options)
     }
 
-    fn async_delete_secret<'borrowed>(
-        &'borrowed self,
-        secret_name: &'borrowed str,
-        options: DeleteOptions<'borrowed, Params>,
-    ) -> SecretFuture<'borrowed, &'static str, TestError> {
-        let deleted = self
-            .record(
-                secret_name,
-                Operation::Delete(options.recovery_window_in_days),
-                options.operation,
-            )
-            .map(|()| "deleted");
-        Box::pin(future::ready(deleted))
+    fn async_delete_secret(
+        &self,
+        secret_name: &str,
+        options: DeleteOptions<'_, Params>,
+    ) -> SecretFuture<'_, &'static str, TestError> {
+        self.respond(
+            secret_name,
+            Operation::Delete(options.recovery_window_in_days),
+            options.operation,
+        )
     }
 }
