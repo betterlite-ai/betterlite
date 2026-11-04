@@ -15,10 +15,12 @@ use tokio_tungstenite::tungstenite::{
 };
 
 use super::{
-    DriverError,
+    Clock, DriverError,
     socket::{Peer, config},
 };
-use crate::websocket_oracle::{Close, Direction, Frame, WebSocketCase};
+use crate::websocket_oracle::{
+    AuthObservation, Close, Direction, Frame, OracleLimits, RouteObservation, WebSocketCase,
+};
 
 pub(crate) struct ProviderHandle {
     pub(crate) address: SocketAddr,
@@ -32,20 +34,31 @@ pub(crate) struct ProviderObservation {
     pub(crate) request_uri: String,
     pub(crate) frames: Vec<Frame>,
     pub(crate) close: Option<Close>,
+    pub(crate) route: RouteObservation,
+    pub(crate) auth: AuthObservation,
 }
 
-pub(crate) async fn start(case: WebSocketCase) -> Result<ProviderHandle, DriverError> {
+pub(crate) async fn start<C>(
+    case: WebSocketCase,
+    limits: OracleLimits,
+    clock: &C,
+) -> Result<ProviderHandle, DriverError>
+where
+    C: Clock + Clone + 'static,
+{
     let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
     let address = listener.local_addr()?;
     let mut tasks = JoinSet::new();
     let connections = Arc::new(AtomicUsize::new(0));
     let counter = Arc::clone(&connections);
+    let owned_clock = clock.clone();
     tasks.spawn(async move {
-        timeout(
-            Duration::from_secs(case.execution_seconds),
-            serve(listener, &case, &counter),
-        )
-        .await?
+        owned_clock
+            .timeout(
+                Duration::from_secs(case.execution_seconds),
+                serve(listener, &case, limits, &counter),
+            )
+            .await?
     });
     Ok(ProviderHandle {
         address,
@@ -121,6 +134,7 @@ impl Callback for Handshake<'_> {
 async fn serve(
     listener: TcpListener,
     case: &WebSocketCase,
+    limits: OracleLimits,
     connections: &AtomicUsize,
 ) -> Result<ProviderObservation, DriverError> {
     let (tcp, _) = listener.accept().await?;
@@ -130,17 +144,26 @@ async fn serve(
         request_uri: String::new(),
         frames: Vec::new(),
         close: None,
+        route: RouteObservation {
+            model: case.route_model.clone(),
+            guardrails: case.route_guardrails.clone(),
+        },
+        auth: AuthObservation {
+            detail: case.authentication_detail.clone(),
+            attempted_close_code: case.attempted_close_code,
+        },
     };
     let handshake = Handshake {
         uri: &mut observation.request_uri,
         case,
     };
-    match accept_hdr_async_with_config(tcp, handshake, Some(config())).await {
+    match accept_hdr_async_with_config(tcp, handshake, Some(config(&limits))).await {
         Ok(stream) => {
             let mut socket = Peer {
                 stream,
                 bytes: 0,
                 count: 0,
+                limits,
             };
             (observation.frames, observation.close) =
                 socket.play(case, Direction::ProviderToClient).await?;

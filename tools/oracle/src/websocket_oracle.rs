@@ -58,6 +58,55 @@ pub struct WebSocketCase {
     pub execution_seconds: u64,
     #[serde(default)]
     pub upstream_status: Option<u16>,
+    #[serde(default)]
+    pub route_model: Option<String>,
+    #[serde(default)]
+    pub route_guardrails: Vec<String>,
+    #[serde(default)]
+    pub authentication_detail: Option<String>,
+    #[serde(default)]
+    pub attempted_close_code: Option<u16>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct RouteObservation {
+    pub model: Option<String>,
+    pub guardrails: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct AuthObservation {
+    pub detail: Option<String>,
+    pub attempted_close_code: Option<u16>,
+}
+
+fn first_mismatch(checks: &[(bool, &str)]) -> Result<(), String> {
+    for &(equal, pointer) in checks {
+        if !equal {
+            return Err(pointer.to_owned());
+        }
+    }
+    Ok(())
+}
+
+pub fn route_auth_matches(
+    expected_route: &RouteObservation,
+    observed_route: &RouteObservation,
+    expected_auth: &AuthObservation,
+    observed_auth: &AuthObservation,
+) -> Result<(), String> {
+    first_mismatch(&[
+        (expected_route.model == observed_route.model, "/route/model"),
+        (
+            expected_route.guardrails == observed_route.guardrails,
+            "/route/guardrails",
+        ),
+        (expected_auth.detail == observed_auth.detail, "/auth/detail"),
+        (
+            expected_auth.attempted_close_code == observed_auth.attempted_close_code,
+            "/auth/attempted_close_code",
+        ),
+    ])
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -69,7 +118,7 @@ pub struct Frame {
     pub text: Option<String>,
     #[serde(default)]
     pub binary: Option<String>,
-    #[serde(skip)]
+    #[serde(default)]
     pub binary_data: Option<Vec<u8>>,
     #[serde(default)]
     pub barrier: Option<String>,
@@ -92,9 +141,26 @@ pub enum Action {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct Close {
-    pub initiator: String,
+    pub initiator: Initiator,
     pub code: u16,
     pub reason: String,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Initiator {
+    Client,
+    Provider,
+}
+
+impl Initiator {
+    #[must_use]
+    pub const fn for_direction(sending: Direction) -> Self {
+        match sending {
+            Direction::ClientToProvider => Self::Client,
+            Direction::ProviderToClient => Self::Provider,
+        }
+    }
 }
 
 pub fn direction_matches(expected: &[Frame], observed: &[Frame]) -> Result<(), String> {

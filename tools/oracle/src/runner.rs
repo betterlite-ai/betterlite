@@ -59,7 +59,7 @@ pub(crate) fn run_cases(
                     helper_outcome = helpers::HelperRun::Difference;
                 }
             }
-            LoadedCase::WebSocket(websocket_case) => websocket_cases.push(websocket_case),
+            LoadedCase::WebSocket(websocket_case) => websocket_cases.push(*websocket_case),
         }
     }
     let root = artifact_root()?;

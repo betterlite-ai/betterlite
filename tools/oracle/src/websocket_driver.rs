@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 use service::ServiceTag;
+use std::future::Future;
 use std::io;
-use tokio::{task::JoinError, time::error::Elapsed};
+use std::time::Duration;
+use tokio::{task::JoinError, time::error::Elapsed, time::timeout};
 use tokio_tungstenite::tungstenite::{
     Error,
     http::header::{InvalidHeaderName, InvalidHeaderValue, ToStrError},
@@ -29,6 +31,32 @@ pub struct TranscriptObservation {
     pub handshake: HandshakeObservation,
     pub frames: Vec<Frame>,
     pub close: Option<Close>,
+}
+
+pub trait Clock: Send + Sync {
+    fn timeout<F>(
+        &self,
+        duration: Duration,
+        future: F,
+    ) -> impl Future<Output = Result<F::Output, Elapsed>> + Send
+    where
+        F: Future + Send;
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TokioClock;
+
+impl Clock for TokioClock {
+    fn timeout<F>(
+        &self,
+        duration: Duration,
+        future: F,
+    ) -> impl Future<Output = Result<F::Output, Elapsed>> + Send
+    where
+        F: Future + Send,
+    {
+        timeout(duration, future)
+    }
 }
 
 pub fn compare_transcript(

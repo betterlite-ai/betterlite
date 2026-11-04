@@ -59,7 +59,7 @@ pub(crate) enum LoadedCase {
     Http(Case),
     Scenario(ScenarioCase),
     Helper(HelperCase),
-    WebSocket(WebSocketCase),
+    WebSocket(Box<WebSocketCase>),
 }
 
 pub(super) fn validate_scenario_case(path: &Path, case: &ScenarioCase) -> Result<(), OracleError> {

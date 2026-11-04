@@ -3,14 +3,15 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::runtime::{Builder, Runtime};
 
+use crate::compare::helper::HelperOutput;
 use crate::gateway::{GatewayInput, start as start_gateway};
 use crate::websocket_driver::{
-    DriverError, TranscriptObservation, compare_transcript,
-    gateway::exchange,
+    DriverError, TokioClock, TranscriptObservation, compare_transcript,
+    gateway::{TokioTransport, exchange},
     provider::{ProviderHandle, ProviderObservation, start},
-    service::ServiceInput,
+    service::{ServiceInput, ServiceTag},
 };
-use crate::websocket_oracle::{WebSocketCase, close_matches, direction_matches};
+use crate::websocket_oracle::{OracleLimits, WebSocketCase, close_matches, direction_matches};
 use crate::{
     OracleError,
     case::{
@@ -29,43 +30,102 @@ pub(super) fn run_cases(
 ) -> Result<Vec<bool>, OracleError> {
     let mut outcomes = Vec::new();
     for case in cases {
-        if let Some(service) = case.service {
-            let helper = HelperCase {
-                kind: HelperKind::Helper,
-                name: case.name.clone(),
-                env: case.env.clone(),
-                compare: HelperCompare::default(),
-                call: HelperCall {
-                    operation: "websocket_oracle".to_owned(),
-                    input: serde_json::to_value(ServiceInput {
-                        service,
-                        input: case.input.clone(),
-                    })
-                    .map_err(OracleError::Json)?,
-                },
-            };
-            outcomes.push(matches!(
-                helpers::run_case(&helper, options.self_check)?,
-                HelperRun::Difference
-            ));
-        } else {
-            let group = root.join("websocket").join(safe_name(&case.name));
-            fs::create_dir_all(&group).map_err(|source| OracleError::Filesystem {
-                path: group.clone(),
-                source,
-            })?;
-            let runtime = Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .map_err(|source| OracleError::Filesystem {
-                    path: group.clone(),
-                    source,
-                })?;
-            outcomes.push(attempt(options, &group, case, &runtime, true)?);
-            outcomes.push(attempt(options, &group, case, &runtime, false)?);
+        match case.service {
+            Some(service) => outcomes.push(run_service_case(options, case, service)?),
+            None => outcomes.extend(run_gateway_case(options, root, case)?),
         }
     }
     Ok(outcomes)
+}
+
+fn run_service_case(
+    options: &Options,
+    case: &WebSocketCase,
+    service: ServiceTag,
+) -> Result<bool, OracleError> {
+    let helper = HelperCase {
+        kind: HelperKind::Helper,
+        name: case.name.clone(),
+        env: case.env.clone(),
+        compare: HelperCompare::default(),
+        call: HelperCall {
+            operation: "websocket_oracle".to_owned(),
+            input: serde_json::to_value(ServiceInput {
+                service,
+                input: case.input.clone(),
+            })
+            .map_err(OracleError::Json)?,
+        },
+    };
+    verify_native_against_fixture(case, &helpers::invoke(&helper.call))?;
+    Ok(matches!(
+        helpers::run_case(&helper, options.self_check)?,
+        HelperRun::Difference
+    ))
+}
+
+fn prepare_gateway_group(
+    root: &Path,
+    case: &WebSocketCase,
+) -> Result<(PathBuf, Runtime), OracleError> {
+    let group = root.join("websocket").join(safe_name(&case.name));
+    fs::create_dir_all(&group).map_err(|source| OracleError::Filesystem {
+        path: group.clone(),
+        source,
+    })?;
+    let runtime = Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|source| OracleError::Filesystem {
+            path: group.clone(),
+            source,
+        })?;
+    Ok((group, runtime))
+}
+
+fn run_gateway_case(
+    options: &Options,
+    root: &Path,
+    case: &WebSocketCase,
+) -> Result<[bool; 2], OracleError> {
+    let (group, runtime) = prepare_gateway_group(root, case)?;
+    let both_directions = [true, false];
+    let mut outcomes = [false, false];
+    for (slot, first) in outcomes.iter_mut().zip(both_directions) {
+        *slot = attempt(options, &group, case, &runtime, first)?;
+    }
+    Ok(outcomes)
+}
+
+fn verify_native_against_fixture(
+    case: &WebSocketCase,
+    output: &HelperOutput,
+) -> Result<(), OracleError> {
+    if output.ok {
+        let Some(value) = &output.value else {
+            return Ok(());
+        };
+        let observed: TranscriptObservation =
+            serde_json::from_value(value.clone()).map_err(OracleError::Json)?;
+        if let Err(pointer) = compare_transcript(case, &observed) {
+            return Err(OracleError::ScenarioInvalid {
+                message: format!("{}: {pointer}", case.name),
+            });
+        }
+        return Ok(());
+    }
+    let is_adapter_missing = output.error.as_ref().is_some_and(|error| {
+        error.class == "ServiceError" && error.message.contains("is not registered")
+    });
+    if is_adapter_missing {
+        return Ok(());
+    }
+    Err(OracleError::ScenarioInvalid {
+        message: format!(
+            "{}: native service adapter failed: {:?}",
+            case.name, output.error
+        ),
+    })
 }
 
 fn config_path(
@@ -97,7 +157,8 @@ fn attempt(
     runtime: &Runtime,
     first: bool,
 ) -> Result<bool, OracleError> {
-    let provider = runtime.block_on(start(case.clone()))?;
+    let limits = OracleLimits::default();
+    let provider = runtime.block_on(start(case.clone(), limits, &TokioClock))?;
     let path = config_path(root, case, &provider)?;
     let input = GatewayInput {
         options,
@@ -106,7 +167,7 @@ fn attempt(
         case_env: &case.env,
     };
     let mut gateway = start_gateway(&input, first)?;
-    let result = runtime.block_on(capture(case, provider, &gateway.base_url));
+    let result = runtime.block_on(capture(case, provider, &gateway.base_url, &limits));
     let stopped = gateway.stop();
     let (observed, upstream) = result?;
     stopped?;
@@ -123,8 +184,9 @@ async fn capture(
     case: &WebSocketCase,
     provider: ProviderHandle,
     base: &str,
+    limits: &OracleLimits,
 ) -> Result<(TranscriptObservation, Option<ProviderObservation>), DriverError> {
-    let observed = match exchange(base, case).await {
+    let observed = match exchange(base, case, limits, &TokioClock, &TokioTransport).await {
         Ok(observation) => observation,
         Err(error) => {
             provider.cancel().await?;
