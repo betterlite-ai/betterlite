@@ -79,6 +79,7 @@ fn assert_callback_request_settles(request: Vec<u8>, status: &str, expected_code
 fn callback_answers_414_past_a_64_kib_request_line() {
     let request = vec![b'A'; 0x0001_0001];
     assert!(matches!(parse_request(&request), RequestRead::UriTooLong));
+    assert_rejected_then_valid_callback(request, "414");
 }
 
 #[test]
@@ -95,6 +96,43 @@ fn callback_answers_431_past_the_header_limits() {
     many.extend_from_slice(b"\r\n");
     assert!(matches!(parse_request(&long), RequestRead::HeadersTooLarge));
     assert!(matches!(parse_request(&many), RequestRead::HeadersTooLarge));
+    assert_rejected_then_valid_callback(long, "431");
+    assert_rejected_then_valid_callback(many, "431");
+}
+
+fn assert_rejected_then_valid_callback(request: Vec<u8>, expected_status: &str) {
+    let listener = TcpLoopbackListener::bind().expect("listener");
+    let mut server =
+        LoopbackServer::with_listener(listener, "s", CONNECTION_TIMEOUT).expect("server");
+    let address = server.address;
+    let (sender, receiver) = sync_channel(2);
+    let outcome = thread::scope(|scope| {
+        scope.spawn(move || {
+            let mut oversized = TcpStream::connect(address).expect("connect oversized");
+            oversized.write_all(&request).expect("write oversized");
+            let mut response = [0_u8; 64];
+            let size = oversized
+                .read(&mut response)
+                .expect("read oversized response");
+            sender
+                .send(response.get(..size).expect("response bytes").to_vec())
+                .expect("oversized response");
+            let mut valid = TcpStream::connect(address).expect("connect valid");
+            valid
+                .write_all(b"GET /callback?state=s&code=c HTTP/1.1\r\n\r\n")
+                .expect("write valid");
+        });
+        server
+            .wait(Duration::from_secs(2), &SystemClock)
+            .expect("valid callback")
+    });
+    let response =
+        String::from_utf8(receiver.recv().expect("oversized response")).expect("response text");
+    assert!(response.starts_with(&format!("HTTP/1.1 {expected_status}")));
+    let CallbackOutcome::Code(code) = outcome else {
+        panic!("expected code");
+    };
+    assert_eq!(code.code.expose_secret(), "c");
 }
 
 #[test]
