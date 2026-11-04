@@ -1,6 +1,6 @@
 use betterlite_models::decisions::Json;
 use betterlite_models::usage_sum::{
-    CachedTokensDetails, CompletionTokensDetails, PromptTokensDetails, Usage, UsageNumber,
+    CompletionTokensDetails, PromptTokensDetails, Usage, UsageNumber,
 };
 use betterlite_openai::api::responses_objects::sdk::response::CachedTokensDetails as ResponseCachedTokensDetails;
 use betterlite_openai::api::responses_objects::{
@@ -163,19 +163,17 @@ fn prompt_details(details: &PromptTokensDetails) -> InputTokensDetails {
     InputTokensDetails {
         audio_tokens: details.audio_tokens,
         cached_tokens: details.cached_tokens.unwrap_or(0),
-        cached_tokens_details: details.cached_tokens_details.as_ref().map(cached_details),
+        cached_tokens_details: details.cached_tokens_details.as_ref().map(|cached| {
+            ResponseCachedTokensDetails {
+                text_tokens: cached.text_tokens,
+                audio_tokens: cached.audio_tokens,
+                image_tokens: cached.image_tokens,
+            }
+        }),
         image_tokens: details.image_tokens,
         text_tokens: details.text_tokens,
         video_tokens: details.video_tokens,
         extra,
-    }
-}
-
-const fn cached_details(details: &CachedTokensDetails) -> ResponseCachedTokensDetails {
-    ResponseCachedTokensDetails {
-        text_tokens: details.text_tokens,
-        audio_tokens: details.audio_tokens,
-        image_tokens: details.image_tokens,
     }
 }
 

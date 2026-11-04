@@ -43,7 +43,16 @@ where
         .filter(|value| !value.is_null())
         .map(|value| serde_json::from_value(value.clone()))
         .transpose()
-        .map_err(|error| invalid_details(&error))
+        .map_err(|error: serde_json::Error| {
+            Box::new(crate::helpers::HelperError {
+                class: "InvalidInput".to_owned(),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+                message: error.to_string(),
+            })
+        })
 }
 
 fn projected_usage(
@@ -83,15 +92,4 @@ fn projected_usage(
         numeric_extras,
     };
     Ok(betterlite_core::api::responses_output_details::usage_details(Some(&typed_usage)))
-}
-
-fn invalid_details(error: &serde_json::Error) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
-        class: "InvalidInput".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: error.to_string(),
-    })
 }
