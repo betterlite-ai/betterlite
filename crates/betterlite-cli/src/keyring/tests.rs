@@ -82,7 +82,7 @@ fn scripted(calls: Vec<Call>) -> (KeyringVault, Arc<Script>) {
     let script = Arc::new(Script(Mutex::new(VecDeque::from(calls))));
     let shared = Arc::clone(&script);
     let api: Arc<dyn KeyringApi> = shared;
-    let vault = KeyringVault::with_api(Ok(api), Duration::from_secs(5), &BTreeMap::new());
+    let vault = KeyringVault::with_api(Ok(api), Duration::from_secs(5), &BTreeMap::new()).unwrap();
     (vault, script)
 }
 
@@ -115,7 +115,7 @@ fn read_exception_unreachable() {
 #[case::on("on")]
 fn read_import_missing_and_disabled(#[case] value: &str) {
     let environment = BTreeMap::from([(DISABLE_KEYRING_ENV_VAR.to_owned(), value.to_owned())]);
-    let mut vault = KeyringVault::new(&environment);
+    let mut vault = KeyringVault::new(&environment).unwrap();
     assert!(matches!(
         vault.read(),
         Err(KeyringUnusable::KeyringDisabled)
@@ -130,7 +130,7 @@ fn read_import_missing_and_disabled(#[case] value: &str) {
 #[test]
 fn unavailable_without_feature() {
     if !cfg!(feature = "os-keyring") {
-        let mut vault = KeyringVault::new(&BTreeMap::new());
+        let mut vault = KeyringVault::new(&BTreeMap::new()).unwrap();
         assert!(matches!(
             vault.read(),
             Err(KeyringUnusable::KeyringNotInstalled)
@@ -226,7 +226,7 @@ fn erase_missing_already_gone() {
 #[case::disabled(KeyringUnusable::KeyringDisabled)]
 #[case::unreachable(KeyringUnusable::KeyringUnreachable)]
 fn write_disabled_missing_and_cache(#[case] reason: KeyringUnusable) {
-    let mut vault = KeyringVault::with_api(Err(reason), Duration::ZERO, &BTreeMap::new());
+    let mut vault = KeyringVault::with_api(Err(reason), Duration::ZERO, &BTreeMap::new()).unwrap();
     assert!(matches!(vault.read(), Err(actual) if actual == reason));
     assert_eq!(vault.write(&SecretString::from("secret")), Err(reason));
     assert_eq!(vault.erase(), Err(reason));
@@ -301,10 +301,9 @@ fn read_and_delete_panics() {
 #[case::empty("")]
 #[case::false_value("false")]
 #[case::off("off")]
-#[case::unknown("enabled")]
 fn other_values_allow_keyring(#[case] value: &str) {
     let environment = BTreeMap::from([(DISABLE_KEYRING_ENV_VAR.to_owned(), value.to_owned())]);
-    let vault = KeyringVault::new(&environment);
+    let vault = KeyringVault::new(&environment).unwrap();
     assert!(!matches!(
         vault.backend,
         Err(KeyringUnusable::KeyringDisabled)
@@ -317,4 +316,28 @@ fn other_values_allow_keyring(#[case] value: &str) {
 fn backend_errors_redact_secret_bytes() {
     let error = KeyringApiError::Native(keyring_core::Error::BadEncoding(b"secret".to_vec()));
     assert_eq!(format!("{error:?}"), "keyring backend failed");
+}
+
+#[test]
+fn shared_env_keyring_disable() {
+    let enabled = BTreeMap::from([(DISABLE_KEYRING_ENV_VAR.to_owned(), " Yes ".to_owned())]);
+    assert!(matches!(
+        KeyringVault::new(&enabled).unwrap().backend,
+        Err(KeyringUnusable::KeyringDisabled)
+    ));
+    let empty = BTreeMap::from([(DISABLE_KEYRING_ENV_VAR.to_owned(), String::new())]);
+    assert!(!matches!(
+        KeyringVault::new(&empty).unwrap().backend,
+        Err(KeyringUnusable::KeyringDisabled)
+    ));
+    let invalid = BTreeMap::from([(
+        DISABLE_KEYRING_ENV_VAR.to_owned(),
+        "maybe-secret".to_owned(),
+    )]);
+    let Err(error) = KeyringVault::new(&invalid) else {
+        panic!("invalid keyring flag was accepted");
+    };
+    let message = error.to_string();
+    assert!(message.contains(DISABLE_KEYRING_ENV_VAR));
+    assert!(!message.contains("maybe-secret"));
 }

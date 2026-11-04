@@ -25,7 +25,6 @@ description: >-
   210 tests, 110 oracle and 90 parser/fuzz lines, maximum 800.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,error,gemini_embedding_records}.rs
     - crates/betterlite-vertex/src/gemini_embedding_records.rs
     - crates/betterlite-vertex/src/gemini_embedding_records/**
     - crates/betterlite-vertex/fuzz/Cargo.toml

@@ -32,7 +32,6 @@ description: >-
   within 725, including key isolation tests across two request contexts.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,error,studio_file_search}.rs
     - crates/betterlite-vertex/src/studio_file_search.rs
     - crates/betterlite-vertex/src/studio_file_search/**
     - crates/betterlite-vertex/fuzz/Cargo.toml

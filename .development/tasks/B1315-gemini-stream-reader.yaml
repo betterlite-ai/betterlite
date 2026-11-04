@@ -21,7 +21,6 @@ description: >-
   owners in Rust. Budget 330 decoder/assembly, 210 tests, 120 adapters and 100 fuzz/wiring lines.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,error,gemini_stream}.rs
     - crates/betterlite-vertex/src/gemini_stream.rs
     - crates/betterlite-vertex/src/gemini_stream/**
     - crates/betterlite-vertex/fuzz/Cargo.toml

@@ -10,8 +10,16 @@ description: >-
   Terminal initialization runs once at import time, checking platform and NO_COLOR; _supports_color() reads the result and checks stdout at call time. The _styled_input wrapper strips ANSI from the readline prompt in non-TTY, leaving the display clean. The _render_selector handles both first and subsequent renders by moving the cursor up and reprinting. The _select_interactive loop reads byte-by-byte via /dev/tty in raw mode and restores terminal state in a finally block.
 scope:
   paths:
-    - crates/betterlite/src/**
-    - crates/betterlite-config/src/**
+    - crates/betterlite/src/terminal_styling.rs
+    - crates/betterlite/src/terminal_styling/**
+    - crates/betterlite/src/styled_input.rs
+    - crates/betterlite/src/styled_input/**
+    - crates/betterlite/src/yaml_escape.rs
+    - crates/betterlite/src/yaml_escape/**
+    - crates/betterlite/src/provider_selection.rs
+    - crates/betterlite/src/provider_selection/**
+    - crates/betterlite/src/welcome.rs
+    - crates/betterlite/src/welcome/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/setup_wizard.py#L140-L195

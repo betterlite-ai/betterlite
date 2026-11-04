@@ -43,9 +43,6 @@ scope:
   - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
   - crates/betterlite-server/src/state/**
-  - crates/betterlite-server/src/error.rs
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/audio_routes.rs
   - crates/betterlite-core/src/api/audio_routes/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/audio-routes-*

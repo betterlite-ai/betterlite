@@ -1,0 +1,1 @@
+{"kind":"helper","name":"pattern-spans-fraction-gap","call":{"b3693":{"function":"spans","pattern":"\\d{3}","keyword":"id","allow_word_numbers":true,"text":"id ½ 123"}},"env":{},"compare":{"ignore":[]}}

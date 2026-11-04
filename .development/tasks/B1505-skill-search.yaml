@@ -25,8 +25,6 @@ description: >-
   145 service, 150 tests, 100 adapters and 45 wiring lines with a 450-line limit.
 scope:
   paths:
-    - crates/betterlite-core/src/skills.rs
-    - crates/betterlite-core/src/skills/**
     - crates/betterlite-core/src/skills/search.rs
     - crates/betterlite-core/src/skills/search/**
     - tools/oracle/src/helpers/core_ops/hosted_skill_search.rs

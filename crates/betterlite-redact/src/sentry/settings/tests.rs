@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use super::{SEND_DEFAULT_PII_ENV, SettingsError, build_sentry_init_options};
+use super::{SettingsError, build_sentry_init_options};
 use std::collections::BTreeMap;
 
 fn env(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -13,24 +13,19 @@ fn env(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
 #[test]
 fn sentry_scrubbing_behavior_tests_behavior() {
     assert!(
-        !env(&[])
-            .get(SEND_DEFAULT_PII_ENV)
-            .is_some_and(|value| value.trim().eq_ignore_ascii_case("true"))
+        !build_sentry_init_options(&env(&[]))
+            .unwrap()
+            .send_default_pii
     );
     assert!(
-        env(&[("SENTRY_SEND_DEFAULT_PII", " True ")])
-            .get(SEND_DEFAULT_PII_ENV)
-            .is_some_and(|value| value.trim().eq_ignore_ascii_case("true"))
+        build_sentry_init_options(&env(&[("SENTRY_SEND_DEFAULT_PII", " Yes ")]))
+            .unwrap()
+            .send_default_pii
     );
     assert!(
-        !env(&[("SENTRY_SEND_DEFAULT_PII", "yes")])
-            .get(SEND_DEFAULT_PII_ENV)
-            .is_some_and(|value| value.trim().eq_ignore_ascii_case("true"))
-    );
-    assert!(
-        !env(&[("SENTRY_SEND_DEFAULT_PII", "FALSE")])
-            .get(SEND_DEFAULT_PII_ENV)
-            .is_some_and(|value| value.trim().eq_ignore_ascii_case("true"))
+        !build_sentry_init_options(&env(&[("SENTRY_SEND_DEFAULT_PII", "OFF")]))
+            .unwrap()
+            .send_default_pii
     );
 }
 
@@ -65,18 +60,12 @@ fn malformed_key_lengths_fail_with_typed_errors() {
     let minimum_error =
         build_sentry_init_options(&env(&[("MINIMUM_CUSTOM_KEY_LENGTH", "not-a-number")]))
             .unwrap_err();
-    assert!(matches!(
-        minimum_error,
-        SettingsError::InvalidCustomKeyMinimum { .. }
-    ));
+    assert!(matches!(minimum_error, SettingsError::Environment { .. }));
 
     let generated_error =
         build_sentry_init_options(&env(&[("LENGTH_OF_LITELLM_GENERATED_KEY", "not-a-number")]))
             .unwrap_err();
-    assert!(matches!(
-        generated_error,
-        SettingsError::InvalidGeneratedKeyLength { .. }
-    ));
+    assert!(matches!(generated_error, SettingsError::Environment { .. }));
 }
 
 #[test]
@@ -100,17 +89,11 @@ fn configured_env_values_are_carried_through() {
 fn malformed_rate_values_fail_with_typed_errors() {
     let trace_error =
         build_sentry_init_options(&env(&[("SENTRY_API_TRACE_RATE", "not-a-float")])).unwrap_err();
-    assert!(matches!(
-        trace_error,
-        SettingsError::InvalidTraceRate { .. }
-    ));
+    assert!(matches!(trace_error, SettingsError::Environment { .. }));
 
     let sample_error =
         build_sentry_init_options(&env(&[("SENTRY_API_SAMPLE_RATE", "not-a-float")])).unwrap_err();
-    assert!(matches!(
-        sample_error,
-        SettingsError::InvalidSampleRate { .. }
-    ));
+    assert!(matches!(sample_error, SettingsError::Environment { .. }));
 }
 
 #[test]
@@ -132,4 +115,43 @@ fn event_scrubber_denylist_folds_in_pii_names_only_without_send_default_pii() {
             .iter()
             .all(|name| name == &name.to_lowercase())
     );
+}
+
+#[test]
+fn shared_env_sentry_settings() {
+    let values = env(&[
+        ("SENTRY_SEND_DEFAULT_PII", " Yes "),
+        ("SENTRY_API_TRACE_RATE", ""),
+    ]);
+    let options = build_sentry_init_options(&values).unwrap();
+    assert!(options.send_default_pii);
+    assert!((options.traces_sample_rate - 1.0).abs() < f64::EPSILON);
+    let invalid = build_sentry_init_options(&env(&[("SENTRY_SEND_DEFAULT_PII", "maybe-secret")]))
+        .unwrap_err()
+        .to_string();
+    assert!(invalid.contains("SENTRY_SEND_DEFAULT_PII"));
+    assert!(!invalid.contains("maybe-secret"));
+    let invalid_number = build_sentry_init_options(&env(&[("SENTRY_API_TRACE_RATE", "1_000")]))
+        .unwrap_err()
+        .to_string();
+    assert!(invalid_number.contains("SENTRY_API_TRACE_RATE"));
+    assert!(!invalid_number.contains("1_000"));
+}
+
+#[rstest::rstest]
+#[case::trace("SENTRY_API_TRACE_RATE")]
+#[case::sample("SENTRY_API_SAMPLE_RATE")]
+#[case::minimum("MINIMUM_CUSTOM_KEY_LENGTH")]
+#[case::generated("LENGTH_OF_LITELLM_GENERATED_KEY")]
+fn shared_env_sentry_settings_numbers(#[case] name: &str) {
+    let defaults = build_sentry_init_options(&env(&[])).unwrap();
+    assert_eq!(
+        build_sentry_init_options(&env(&[(name, " ")])).unwrap(),
+        defaults
+    );
+    let error = build_sentry_init_options(&env(&[(name, "1_000")]))
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains(name));
+    assert!(!error.contains("1_000"));
 }

@@ -1,0 +1,1 @@
+{"kind":"helper","name":"pattern-case-insensitive","call":{"b3693":{"function":"add","patterns":[{"pattern_type":"regex","action":"MASK","pattern":"secret"}],"text":"é SECRET secret"}},"env":{},"compare":{"ignore":[]}}

@@ -24,8 +24,6 @@ description: >-
   and 35 wiring, 670 changed lines.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/realtime_contracts.rs
   - crates/betterlite-core/src/api/realtime_contracts/**
   - crates/betterlite-core/fuzz/Cargo.toml

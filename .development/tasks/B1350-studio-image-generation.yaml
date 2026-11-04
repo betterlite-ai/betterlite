@@ -28,7 +28,6 @@ description: >-
   350 code, 190 tests and 160 oracle lines under 775.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,error,studio_image_generation}.rs
     - crates/betterlite-vertex/src/studio_image_generation.rs
     - crates/betterlite-vertex/src/studio_image_generation/**
     - tools/oracle/src/helpers/vertex/studio_images.rs

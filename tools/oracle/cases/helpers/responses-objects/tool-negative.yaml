@@ -1,0 +1,18 @@
+{
+  "kind": "helper",
+  "name": "responses-objects-tool-negative",
+  "call": {
+    "responses_objects": {
+      "operation": "tool_usage_count",
+      "tool_usage": {
+        "web_search": {
+          "num_requests": -1
+        }
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

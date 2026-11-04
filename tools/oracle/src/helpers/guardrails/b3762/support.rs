@@ -78,7 +78,8 @@ pub(super) fn configure(
                 | ConfigError::Unsupported { .. }
                 | ConfigError::InvalidFloat { .. }
                 | ConfigError::InvalidInteger { .. }
-                | ConfigError::InvalidScalar { .. } => "ConfigError",
+                | ConfigError::InvalidScalar { .. }
+                | ConfigError::Environment { .. } => "ConfigError",
             };
             (class, error.to_string())
         }

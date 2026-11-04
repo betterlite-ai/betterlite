@@ -3,6 +3,7 @@ pub mod catalog_guard;
 pub mod management_access;
 pub mod management_visibility;
 pub mod oauth_caches;
+pub mod openapi_registry;
 pub mod outbound_credentials;
 pub mod search_handlers;
 pub mod semantic_filter;

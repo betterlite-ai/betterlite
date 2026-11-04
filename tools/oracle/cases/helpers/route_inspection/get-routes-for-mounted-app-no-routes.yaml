@@ -1,0 +1,7 @@
+kind: helper
+name: get-routes-for-mounted-app-no-routes
+call:
+  b4262: {"function":"get_routes_for_mounted_app","route":{"path":"/v1"}}
+env: {}
+compare:
+  ignore: []

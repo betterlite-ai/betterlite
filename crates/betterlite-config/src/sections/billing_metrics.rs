@@ -2,7 +2,6 @@ use std::env;
 use std::fs::File;
 use std::path::PathBuf;
 
-use dec_from_char::DecimalExtended as _;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::loader::{ConfigError, EnvironmentLookup};
@@ -89,54 +88,13 @@ impl Section for Raw {
             client_cert: present(CLIENT_CERT_ENV),
             client_key: present(CLIENT_KEY_ENV).map(SecretString::from),
             ca_cert: present(CA_CERT_ENV),
-            export_interval_ms: export_interval_ms(lookup.lookup(EXPORT_INTERVAL_ENV)),
+            export_interval_ms: betterlite_env::number::<i64>(
+                EXPORT_INTERVAL_ENV,
+                &lookup.lookup(EXPORT_INTERVAL_ENV).unwrap_or_default(),
+            )?
+            .unwrap_or(DEFAULT_EXPORT_INTERVAL_MS),
             temp_root_candidates,
         })
-    }
-}
-
-fn export_interval_ms(raw: Option<String>) -> i64 {
-    let Some(value) = raw else {
-        return DEFAULT_EXPORT_INTERVAL_MS;
-    };
-    parse_python_int(&value).unwrap_or_else(|| {
-        tracing::warn!(
-            "Invalid {EXPORT_INTERVAL_ENV}={value:?}, falling back to {DEFAULT_EXPORT_INTERVAL_MS} ms"
-        );
-        DEFAULT_EXPORT_INTERVAL_MS
-    })
-}
-
-// Mirrors Python's int(str): Unicode whitespace, an optional sign, Unicode decimal digits, and underscores allowed only strictly between two digits (PEP 515).
-fn parse_python_int(raw: &str) -> Option<i64> {
-    let trimmed = raw.trim();
-    let (negative, digits) = trimmed.strip_prefix('-').map_or_else(
-        || (false, trimmed.strip_prefix('+').unwrap_or(trimmed)),
-        |rest| (true, rest),
-    );
-    let mut value: i64 = 0;
-    let mut previous_was_digit = false;
-    let mut saw_digit = false;
-    for character in digits.chars() {
-        if character == '_' {
-            if !previous_was_digit {
-                return None;
-            }
-            previous_was_digit = false;
-            continue;
-        }
-        let digit = i64::from(character.to_decimal_utf8()?);
-        value = value.checked_mul(10)?.checked_add(digit)?;
-        previous_was_digit = true;
-        saw_digit = true;
-    }
-    if !saw_digit || !previous_was_digit {
-        return None;
-    }
-    if negative {
-        value.checked_neg()
-    } else {
-        Some(value)
     }
 }
 

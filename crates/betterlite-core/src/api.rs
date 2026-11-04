@@ -177,6 +177,10 @@ pub mod request_setup_options;
 pub mod rerank_call;
 pub mod rerank_provider_plan;
 pub mod resource_sdk_settings;
+#[expect(
+    clippy::disallowed_types,
+    reason = "Chat content and tool choices are heterogeneous provider JSON that must retain unknown fields"
+)]
 pub mod response_chat_content;
 pub mod response_chat_dispatch;
 pub mod response_chat_history;
@@ -234,6 +238,10 @@ pub mod responses_tool_namespaces;
 pub mod responses_tool_repair;
 pub mod responses_tool_results;
 pub mod responses_transform;
+#[expect(
+    clippy::disallowed_types,
+    reason = "Responses usage must retain arbitrary provider extension fields and typed input mappings"
+)]
 pub mod responses_usage;
 pub mod responses_write_http;
 pub mod responses_ws_auth;

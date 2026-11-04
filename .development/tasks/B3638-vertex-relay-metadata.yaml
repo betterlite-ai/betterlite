@@ -11,7 +11,6 @@ description: >-
   surface as warnings with zero cost, leaving the spend row intact for downstream subscribers.
 scope:
   paths:
-  - crates/betterlite-vertex/src/{lib,vertex_relay_metadata}.rs
   - crates/betterlite-vertex/src/vertex_relay_metadata.rs
   - crates/betterlite-vertex/src/vertex_relay_metadata/**
   - crates/betterlite-models/src/passthrough/vertex.rs

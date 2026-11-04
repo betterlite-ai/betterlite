@@ -12,6 +12,7 @@ use url::Url;
 
 use crate::loader::ConfigLoader;
 use crate::proxy::{ProxyPolicy, ProxyRoute, ProxyWarning};
+use crate::types::ProxyTrust;
 
 const PROXY: &str = "http://proxy.local:3128";
 const DISABLED: &str = "litellm_settings: {disable_aiohttp_trust_env: true}";
@@ -44,7 +45,7 @@ fn render(policy: &ProxyPolicy, target: &str) -> String {
 #[case::trust_env_false_keeps_it_on("litellm_settings: {aiohttp_trust_env: false}", &[("HTTPS_PROXY", PROXY)], "https://api.example.com", "proxy.local:3128")]
 #[case::off_by_setting(DISABLED, &[("HTTPS_PROXY", PROXY)], "https://api.example.com", "direct")]
 #[case::off_by_environment("", &[("DISABLE_AIOHTTP_TRUST_ENV", " TRUE "), ("HTTPS_PROXY", PROXY)], "https://api.example.com", "direct")]
-#[case::unrecognized_disable_value("", &[("DISABLE_AIOHTTP_TRUST_ENV", "1"), ("HTTPS_PROXY", PROXY)], "https://api.example.com", "proxy.local:3128")]
+#[case::numeric_disable_value("", &[("DISABLE_AIOHTTP_TRUST_ENV", "1"), ("HTTPS_PROXY", PROXY)], "https://api.example.com", "direct")]
 #[case::lowercase_wins("", &[("HTTPS_PROXY", "http://upper.local:1"), ("https_proxy", "http://lower.local:2")], "https://api.example.com", "lower.local:2")]
 #[case::empty_lowercase_clears("", &[("HTTPS_PROXY", PROXY), ("https_proxy", "")], "https://api.example.com", "direct")]
 #[case::cgi_drops_uppercase_http("", &[("HTTP_PROXY", PROXY), ("REQUEST_METHOD", "GET")], "http://api.example.com", "direct")]
@@ -101,8 +102,37 @@ fn http_proxies_proxy_policy_tests_behavior(
     }
     .load(settings)
     .unwrap();
-    let policy = ProxyPolicy::resolve(&config.litellm_settings.proxy_trust, &environment);
+    let policy = ProxyPolicy::resolve(&config.litellm_settings.proxy_trust, &environment).unwrap();
     fs::remove_dir_all(&home).unwrap();
     assert_eq!(render(&policy, target), expected);
     assert!(!format!("{policy:?}").contains("secret"));
+}
+
+#[rstest]
+#[case::disable("DISABLE_AIOHTTP_TRUST_ENV")]
+#[case::enable("AIOHTTP_TRUST_ENV")]
+fn shared_env_proxy_trust(#[case] name: &str) {
+    let mut environment = BTreeMap::from([
+        (name.to_owned(), " Yes ".to_owned()),
+        (
+            "HTTP_PROXY".to_owned(),
+            "http://proxy.local:3128".to_owned(),
+        ),
+    ]);
+    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &environment).unwrap();
+    assert_eq!(
+        policy.primary.is_empty(),
+        name == "DISABLE_AIOHTTP_TRUST_ENV"
+    );
+    assert_eq!(policy.fallback.is_empty(), name != "AIOHTTP_TRUST_ENV");
+    environment.insert(name.to_owned(), String::new());
+    let defaults = ProxyPolicy::resolve(&ProxyTrust::default(), &environment).unwrap();
+    assert!(!defaults.primary.is_empty());
+    assert!(defaults.fallback.is_empty());
+    environment.insert(name.to_owned(), "maybe".to_owned());
+    let error = ProxyPolicy::resolve(&ProxyTrust::default(), &environment)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains(name));
+    assert!(!error.contains("maybe"));
 }

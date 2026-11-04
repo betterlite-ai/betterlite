@@ -29,7 +29,6 @@ description: >-
   80 config, 140 tests, 80 adapters and 90 fuzz/seed lines within 650.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,vertex_gcs_access}.rs
     - crates/betterlite-vertex/src/vertex_gcs_access.rs
     - crates/betterlite-vertex/src/vertex_gcs_access/**
     - crates/betterlite-vertex/fuzz/Cargo.toml

@@ -81,7 +81,7 @@ checks:
   commands:
     - id: version-conversion-tests
       why: version conversion behavior tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^version_conversion::/)'
+      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^version_convert::(.*::)?version_conversion::/)'
 oracle_cases: []
 deviations:
   - what: >-

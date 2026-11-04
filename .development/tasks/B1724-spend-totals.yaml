@@ -32,8 +32,6 @@ description: >-
   literal api_key and integer limit inputs and replay the corpus. All work fits 800 lines.
 scope:
   paths:
-    - crates/betterlite-server/src/spend.rs
-    - crates/betterlite-server/src/spend/**
     - crates/betterlite-server/src/spend/totals.rs
     - crates/betterlite-server/src/spend/totals/**
     - crates/betterlite-config/src/spend_storage.rs

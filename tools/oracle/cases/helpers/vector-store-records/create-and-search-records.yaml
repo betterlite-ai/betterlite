@@ -1,0 +1,17 @@
+kind: helper
+name: vector-store-create-and-search
+call:
+  vector_store_records:
+    operation: create_and_search_records
+    record:
+      create: {name: null, file_ids: [file_a], expires_after: {anchor: last_active_at, days: 3}, chunking_strategy: {type: static, static: {max_chunk_size_tokens: 800, chunk_overlap_tokens: 400}}, metadata: {tag: x}}
+      auto_chunking: {chunking_strategy: {type: auto}}
+      omitted_static: {chunking_strategy: {type: static}}
+      counts: {in_progress: 1, completed: 2, failed: 3, cancelled: 4, total: 10}
+      response: {id: vs_a, object: vector_store, created_at: 1, name: null, bytes: 2, file_counts: {in_progress: 1, completed: 2, failed: 3, cancelled: 4, total: 10}, status: expired, expires_after: null, expires_at: null, last_active_at: 1, metadata: {tag: x}}
+      response_statuses: [expired, in_progress, completed]
+      search: {object: vector_store.search_results.page, search_query: q, data: [{score: 0.125, content: [{type: text, text: hello}], file_id: file_a, filename: a, attributes: {x: 1}}]}
+      failure: {vector_store_id: vs_a, custom_llm_provider: null, error: failed}
+      failure_modes: [annotate, error]
+env: {}
+compare: {ignore: []}

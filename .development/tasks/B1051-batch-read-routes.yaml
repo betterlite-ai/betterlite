@@ -89,7 +89,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-server/Cargo.toml
-  - crates/betterlite-server/src/error.rs
   - crates/betterlite-server/src/api/batch_read_routes.rs
   - crates/betterlite-server/src/api/batch_read_routes/**
   - crates/betterlite-server/src/api.rs
@@ -101,8 +100,6 @@ scope:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/batch_read_routes.rs
   - crates/betterlite-core/src/api/batch_read_routes/**
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - crates/betterlite-config/Cargo.toml

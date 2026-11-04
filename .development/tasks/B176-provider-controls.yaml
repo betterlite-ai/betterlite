@@ -30,8 +30,8 @@ scope:
   - crates/betterlite-models/src/headers.rs
   - crates/betterlite-models/src/headers/**
   - crates/betterlite-models/fuzz/**
-  - crates/betterlite-config/**
-  - crates/betterlite-openai/**
+  - crates/betterlite-config/fuzz/corpus/config_yaml/provider_controls-*
+  - crates/betterlite-openai/fuzz/corpus/chat_request/provider_controls-*
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/models/provider_controls.rs
   - tools/oracle/src/helpers/models/provider_controls/**
