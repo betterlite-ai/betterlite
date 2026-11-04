@@ -12,10 +12,8 @@ use tokio_tungstenite::tungstenite::{
 use crate::websocket_oracle::decode::DecodeError;
 use crate::websocket_oracle::{Close, Frame, WebSocketCase, close_matches, direction_matches};
 
-mod close;
-mod encode;
+mod codec;
 pub mod gateway;
-mod payload;
 pub(crate) mod provider;
 pub mod service;
 mod socket;

@@ -10,8 +10,6 @@ Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Js
 __path__ = [str(Path(__file__).with_suffix(""))]
 
 SERVICE_MODULES = {
-    "native_responses_relay": "websocket_oracle.native_responses_relay",
-    "managed_responses_turns": "websocket_oracle.managed_responses_turns",
     "realtime_probe": "websocket_oracle.realtime_probe",
 }
 

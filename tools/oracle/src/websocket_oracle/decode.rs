@@ -1,7 +1,9 @@
 use std::fs::{self, File};
 use std::io::{self, Read as _};
-use std::path::{Component, Path, PathBuf};
+use std::path::PathBuf;
 use std::str::{self, Utf8Error};
+
+use betterlite_server::assets::paths::try_safe_join;
 
 use super::{
     Driver, Frame, MAX_CAPTURE_BYTES, MAX_EXECUTION_SECONDS, MAX_FRAME_BYTES, MAX_FRAMES,
@@ -35,14 +37,12 @@ fn ensure(ok: bool, message: &str) -> Result<(), DecodeError> {
 
 impl FixtureRepository for FilesystemFixtures {
     fn resolve(&self, path: &str, budget: usize) -> Result<Vec<u8>, DecodeError> {
-        let relative = Path::new(path);
-        validate_binary_fixture(relative)?;
-        let root = fs::canonicalize(&self.root)?;
-        let candidate = fs::canonicalize(root.join(relative))?;
-        ensure(
-            candidate.starts_with(&root),
-            "binary fixture resolves outside its root",
-        )?;
+        let candidate = (!path.is_empty())
+            .then(|| try_safe_join(&self.root, &[path]))
+            .flatten()
+            .ok_or_else(|| {
+                DecodeError::Invalid("binary fixture resolves outside its root".to_owned())
+            })?;
         let metadata = fs::metadata(&candidate)?;
         let cap = usize::try_from(metadata.len()).unwrap_or(usize::MAX);
         ensure(cap <= budget, "captured traffic exceeds limit")?;
@@ -135,14 +135,4 @@ fn resolve_frames(
         ensure(*traffic <= capture_cap, "captured traffic exceeds limit")?;
     }
     Ok(())
-}
-
-pub fn validate_binary_fixture(path: &Path) -> Result<(), DecodeError> {
-    ensure(
-        !path.as_os_str().is_empty()
-            && path
-                .components()
-                .all(|part| matches!(part, Component::Normal(_))),
-        "binary fixture path escapes its root",
-    )
 }

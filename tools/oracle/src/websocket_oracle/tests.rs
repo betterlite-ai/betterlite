@@ -11,7 +11,7 @@ use tokio::time::timeout;
 
 use secrecy::{ExposeSecret as _, SecretString};
 
-use super::decode::{FilesystemFixtures, decode_ws_case, validate_binary_fixture};
+use super::decode::{FilesystemFixtures, FixtureRepository as _, decode_ws_case};
 use super::{
     Action, AuthObservation, Close, Direction, Frame, Initiator, OracleLimits, RealtimeSettings,
     RouteObservation, WebSocketBounds, WebSocketCase, close_matches, direction_matches,
@@ -100,7 +100,9 @@ async fn bounded_inputs(
         decode_ws_case(input.as_bytes(), &OracleLimits::default(), &fixtures()).is_ok(),
         accepted
     );
-    validate_binary_fixture(Path::new("../outside.bin")).unwrap_err();
+    fixtures()
+        .resolve("../outside.bin", usize::MAX)
+        .unwrap_err();
     let smuggled = valid().replace(
         "text: setup",
         "text: setup\n    binary_data: [1, 2, 3, 4, 5]",
