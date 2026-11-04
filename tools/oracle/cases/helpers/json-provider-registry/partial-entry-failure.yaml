@@ -2,6 +2,6 @@ kind: helper
 name: json-provider-registry-partial-entry-failure
 call:
   json_provider_registry:
-    source: '{"publicai":{"base_url":"https://first.invalid","api_key_env":"A"},"helicone":{"base_url":1,"api_key_env":"B"}}'
+    source: '{"publicai":{"base_url":"https://first.invalid","api_key_env":"A"},"helicone":{"api_key_env":"B"}}'
 env: {}
 compare: {ignore: []}
