@@ -53,7 +53,12 @@ pub fn apply_policy(
     initial_builder: ClientBuilder,
     policy: &TlsPolicy,
 ) -> Result<ClientBuilder, TlsError> {
-    let config = client_config(policy)?;
+    let mut config = client_config(policy)?;
+    config.alpn_protocols = if policy.http2 {
+        vec![b"h2".to_vec(), b"http/1.1".to_vec()]
+    } else {
+        vec![b"http/1.1".to_vec()]
+    };
     let user_agent = HeaderValue::from_str(&policy.user_agent).map_err(TlsError::UserAgent)?;
     let mut builder = initial_builder
         .tls_backend_preconfigured(config)

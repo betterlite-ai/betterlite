@@ -33,6 +33,7 @@ const TIMEOUT: Duration = Duration::from_secs(5);
 #[case::untrusted_ca("untrusted", "localhost", false)]
 #[case::wrong_host("", "127.0.0.1", false)]
 #[case::verification_disabled("disabled", "127.0.0.1", true)]
+#[case::deployment_over_environment("deployment", "127.0.0.1", true)]
 #[case::disabled_with_curve("disabled_curve", "127.0.0.1", true)]
 #[case::trusted_with_curve("curve", "localhost", true)]
 #[case::certificate_does_not_enable_mtls("certificate", "localhost", true)]
@@ -61,14 +62,25 @@ fn http_policy_tests_behavior(#[case] mode: &str, #[case] host: &str, #[case] su
             );
             scope.spawn(move || tunnel(&proxy_listener, address))
         });
+        let yaml = if mode == "deployment" {
+            "model_list:\n  - model_name: test\n    litellm_params:\n      model: provider/model\n      ssl_verify: false\n"
+        } else {
+            ""
+        };
         let config = ConfigLoader {
             lookup: BTreeMap::new(),
         }
-        .load("")
+        .load(yaml)
         .unwrap();
         let policy = TlsPolicy::resolve(&config, &environment, None).unwrap();
         let routing = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &environment).unwrap());
-        let client = ProxiedClient::outbound_with_tls(&routing, &policy).unwrap();
+        let client = config.model_list.first().map_or_else(
+            || ProxiedClient::outbound_with_tls(&routing, &policy).unwrap(),
+            |deployment| {
+                ProxiedClient::outbound_for_deployment(&routing, &config, deployment, &environment)
+                    .unwrap()
+            },
+        );
         let runtime = Builder::new_current_thread().enable_all().build().unwrap();
         let _entered = runtime.enter();
         let response = runtime.block_on(
@@ -114,6 +126,7 @@ fn environment(mode: &str, ca_path: &str) -> BTreeMap<String, String> {
     }
     let additional = match mode {
         "certificate" => Some(("SSL_CERTIFICATE", "not-read-client.pem")),
+        "deployment" => Some(("SSL_VERIFY", "true")),
         "http2" | "http2_curve" => Some(("LITELLM_HTTP2", "true")),
         "empty_agent" => Some(("LITELLM_USER_AGENT", "")),
         "agent" => Some(("LITELLM_USER_AGENT", "agent/1")),
