@@ -169,6 +169,7 @@ fn responses_support_is_exact(#[case] endpoint: &str, #[case] expected: bool) {
 #[case::entries_over_boundary(br#"{"publicai":{}}"#, 100, 0, 2, false)]
 #[case::depth_at_boundary(br#"{"publicai":{"unknown":[1]}}"#, 100, 1, 3, true)]
 #[case::depth_over_boundary(br#"{"publicai":{"unknown":[1]}}"#, 100, 1, 2, false)]
+#[case::nested_arrays(br#"{"publicai":{"unknown":[[]]}}"#, 100, 1, 3, false)]
 #[case::object_depth(br#"{"publicai":{"unknown":{"inner":{}}}}"#, 100, 1, 3, false)]
 fn decoder_limit_boundaries(
     #[case] bytes: &[u8],
