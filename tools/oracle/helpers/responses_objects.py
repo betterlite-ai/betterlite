@@ -5,6 +5,7 @@ from litellm.types.llms.openai import (
     ResponsesAPIResponse,
     ResponsesToolUsage,
 )
+from pydantic import JsonValue, RootModel
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
@@ -23,8 +24,14 @@ def run(fields: dict[str, Json]) -> Json:
                 "output_text": response.output_text,
             },
         )
-    if operation == "reasoning_nulls":
-        response = ResponsesAPIResponse.model_validate(fields["response"])
+    if operation in ("reasoning_nulls", "reasoning_model"):
+        model_input = dict(cast(dict[str, object], fields["response"]))
+        if operation == "reasoning_model":
+            model_input["reasoning"] = RootModel[dict[str, JsonValue]].model_validate(
+                model_input["reasoning"]
+            )
+            model_input["usage"] = ResponseAPIUsage.model_validate(model_input["usage"])
+        response = ResponsesAPIResponse.model_validate(model_input)
         return cast(Json, response.model_dump(exclude_none=False))
     if operation == "output_text_join":
         response = ResponsesAPIResponse.model_validate(fields["response"])
