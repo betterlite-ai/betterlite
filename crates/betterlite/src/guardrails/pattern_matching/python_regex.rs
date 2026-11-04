@@ -78,10 +78,9 @@ impl Translator {
     ) -> Result<(), Error> {
         match character {
             '\\' => {
-                self.detected.ascii_backref |= self.flags.alphabet == Alphabet::Ascii
-                    && matches!(characters.peek(), Some('1'..='9'));
-                let (escaped, wide) = escapes::translate(characters, self.flags)?;
+                let (escaped, wide, backref) = escapes::translate(characters, self.flags)?;
                 self.detected.wide_class |= wide;
+                self.detected.ascii_backref |= backref;
                 self.output.push_str(&escaped);
             }
             '[' => {
@@ -99,12 +98,11 @@ impl Translator {
                 copy_until(&mut self.output, characters, '\n');
             }
             '$' => self.output.push_str(r"(?:$|(?=\n\z))"),
-            '.' => {
-                self.detected.wide_class = true;
-                self.output.push('.');
-            }
             value if value.is_alphabetic() => self.output.push_str(&self.flags.literal(value)),
-            other => self.output.push(other),
+            other => {
+                self.detected.wide_class |= other == '.';
+                self.output.push(other);
+            }
         }
         Ok(())
     }

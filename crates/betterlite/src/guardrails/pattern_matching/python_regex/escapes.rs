@@ -44,16 +44,16 @@ impl Flags {
 pub(super) fn translate(
     characters: &mut Peekable<Chars<'_>>,
     flags: Flags,
-) -> Result<(String, bool), Error> {
+) -> Result<(String, bool, bool), Error> {
     let character = characters
         .next()
         .ok_or(Error::ParseError(0, ParseError::TrailingBackslash))?;
     if let Some(value) = literal(character, characters, false)? {
-        return Ok((flags.literal(value), false));
+        return Ok((flags.literal(value), false, false));
     }
     let wide = flags.alphabet == Alphabet::Unicode;
     Ok(match character {
-        'w' | 'W' | 's' | 'S' | 'd' | 'D' => (flags.category(character), wide),
+        'w' | 'W' | 's' | 'S' | 'd' | 'D' => (flags.category(character), wide, false),
         'b' | 'B' => {
             let word = flags.category('w');
             let boundary = format!("(?:(?<={word})(?!{word})|(?<!{word})(?={word}))");
@@ -62,17 +62,17 @@ pub(super) fn translate(
             } else {
                 format!(r"(?!\A\z)(?!{boundary})")
             };
-            (translated, wide)
+            (translated, wide, false)
         }
-        'Z' => (r"\z".to_owned(), false),
+        'Z' => (r"\z".to_owned(), false, false),
         '1'..='9' => {
             let mut reference = format!(r"\{character}");
             if let Some(digit) = characters.next_if(char::is_ascii_digit) {
                 reference.push(digit);
             }
-            (reference, false)
+            (reference, false, flags.alphabet == Alphabet::Ascii)
         }
-        other => (format!(r"\{other}"), false),
+        other => (format!(r"\{other}"), false, false),
     })
 }
 
