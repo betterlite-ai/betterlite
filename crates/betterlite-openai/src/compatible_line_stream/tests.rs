@@ -1,7 +1,8 @@
 #![cfg(test)]
 use super::wire::Usage;
 use super::{
-    Mode, Outcome, ReceiveError, StreamError, decode_legacy_compatible_line, receive_failure,
+    CompatibleLineChunk, Mode, Outcome, ReceiveError, StreamError, decode_legacy_compatible_line,
+    receive_failure,
 };
 use rstest::rstest;
 use serde_json::Value;
@@ -80,6 +81,31 @@ fn model_validation_failure_is_an_empty_chunk(#[case] line: &str) {
     );
 }
 
+#[rstest]
+#[case::missing_first("[{}]")]
+#[case::null_first(r#"[{"function":null}]"#)]
+#[case::missing_second(r#"[{"function":{"arguments":"{}"}},{}]"#)]
+#[case::null_second(r#"[{"function":{"arguments":"{}"}},{"function":null}]"#)]
+fn missing_or_null_tool_function_empties_whole_chunk(
+    #[case] tool_calls: &str,
+    #[values(Mode::Sync, Mode::Async)] mode: Mode,
+) {
+    let line = format!(
+        r#"{{"choices":[{{"delta":{{"content":"hi","tool_calls":{tool_calls}}},"finish_reason":"stop"}}],"usage":{{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}}}"#
+    );
+    assert_eq!(
+        decode_legacy_compatible_line(&line, mode),
+        Outcome::Chunk(CompatibleLineChunk {
+            text: String::new(),
+            tool_use: None,
+            is_finished: false,
+            finish_reason: String::new(),
+            usage: None,
+            index: 0,
+        })
+    );
+}
+
 #[test]
 fn ordinary_usage_has_model_defaults() {
     let Outcome::Chunk(chunk) = decode_legacy_compatible_line(
@@ -102,6 +128,8 @@ fn ordinary_usage_has_model_defaults() {
 #[case::sync_done("data: [DONE]")]
 #[case::invalid_json("data: nope")]
 #[case::invalid_model(r#"{"id":42}"#)]
+#[case::missing_function(r#"{"choices":[{"delta":{"tool_calls":[{}]}}]}"#)]
+#[case::null_function(r#"{"choices":[{"delta":{"tool_calls":[{"function":null}]}}]}"#)]
 fn parse_fallback_emits_debug_diagnostic(#[case] line: &str) {
     let file = tempfile::NamedTempFile::new().unwrap();
     let subscriber = tracing_subscriber::fmt()

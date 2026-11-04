@@ -40,7 +40,7 @@ pub(super) struct Delta {
 #[derive(Debug, Deserialize)]
 pub(super) struct Call {
     pub id: Option<String>,
-    pub function: Option<Function>,
+    pub function: Function,
     #[serde(default)]
     #[serde_as(as = "DefaultOnNull")]
     pub index: i64,

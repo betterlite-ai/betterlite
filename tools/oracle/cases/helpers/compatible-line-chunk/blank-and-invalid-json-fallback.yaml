@@ -6,6 +6,8 @@ call:
     events:
       - {kind: line, line: 'data:   '}
       - {kind: line, line: 'data: not-json'}
+      - {kind: line, line: '{"choices":[{"delta":{"content":"hi","tool_calls":[{}]},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}'}
+      - {kind: line, line: '{"choices":[{"delta":{"content":"hi","tool_calls":[{"function":null}]},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}'}
       - {kind: line, line: 'data: [DONE]'}
       - {kind: line, line: 'data: data: {"choices":[{"delta":{"content":"must not strip twice"}}]}'}
       - {kind: line, line: '{"choices":[{"delta":null,"finish_reason":"stop"}]}'}

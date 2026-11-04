@@ -88,13 +88,11 @@ fn project(response: Response) -> CompatibleLineChunk {
         return chunk;
     };
     chunk.text = choice.delta.content.unwrap_or_default();
-    if let Some(call) = choice.delta.tool_calls.into_iter().next()
-        && let Some(function) = call.function
-    {
+    if let Some(call) = choice.delta.tool_calls.into_iter().next() {
         chunk.tool_use = Some(Tool {
             id: call.id,
             kind: "function".to_owned(),
-            function,
+            function: call.function,
             index: call.index,
         });
     }

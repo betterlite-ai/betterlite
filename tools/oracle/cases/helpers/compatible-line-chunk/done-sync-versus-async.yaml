@@ -4,6 +4,8 @@ call:
   compatible_line_chunk:
     mode: async
     events:
+      - {kind: line, line: '{"choices":[{"delta":{"content":"hi","tool_calls":[{}]},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}'}
+      - {kind: line, line: '{"choices":[{"delta":{"content":"hi","tool_calls":[{"function":null}]},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}'}
       - {kind: line, line: 'data: {"choices":[{"delta":{"content":"before"}}]}'}
       - {kind: line, line: 'data: [DONE]'}
       - {kind: line, line: 'data: {"choices":[{"delta":{"content":"after"}}]}'}
