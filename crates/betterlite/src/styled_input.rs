@@ -2,6 +2,12 @@ use std::io::{self, BufRead, Write};
 
 use regex::Regex;
 
+#[derive(Debug, thiserror::Error)]
+pub enum StyledInputError {
+    #[error(transparent)]
+    Io(#[from] io::Error),
+}
+
 const ANSI_PATTERN: &str = r"\x1b\[[^m]*m";
 
 fn render_ansi_for_terminal(prompt: &str, is_tty: bool) -> String {
@@ -20,12 +26,16 @@ pub fn styled_input(
     is_tty: bool,
     reader: &mut dyn BufRead,
     writer: &mut dyn Write,
-) -> io::Result<String> {
+) -> Result<String, StyledInputError> {
     let rendered_prompt = render_ansi_for_terminal(prompt, is_tty);
     write!(writer, "{rendered_prompt}")?;
     writer.flush()?;
     let mut line = String::new();
-    reader.read_line(&mut line)?;
+    if reader.read_line(&mut line)? == 0 {
+        return Err(StyledInputError::Io(io::Error::from(
+            io::ErrorKind::UnexpectedEof,
+        )));
+    }
     Ok(line.trim().to_owned())
 }
 

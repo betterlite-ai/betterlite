@@ -56,3 +56,13 @@ fn retries_after_an_out_of_range_number() {
     let output = String::from_utf8(writer).expect("writer output is valid utf8");
     assert!(output.contains("Enter numbers between 1 and 6."));
 }
+
+#[test]
+fn eof_returns_instead_of_reprompting_forever() {
+    let mut reader = Cursor::new(Vec::new());
+    let mut writer = Vec::new();
+    let error = select_fallback(&mut reader, &mut writer, false).expect_err("EOF cancels input");
+    assert!(
+        matches!(error, super::FallbackError::Io(ref source) if source.kind() == std::io::ErrorKind::UnexpectedEof)
+    );
+}

@@ -21,6 +21,7 @@ pub trait TermiosBackend {
     fn get_attrs(&mut self) -> Result<Self::Attrs, RawModeError>;
     fn set_attrs(&mut self, attrs: &Self::Attrs) -> Result<(), RawModeError>;
     fn make_raw(&self, attrs: &mut Self::Attrs);
+    fn preserve_output_processing(&self, _original: &Self::Attrs, _raw: &mut Self::Attrs) {}
     fn read_byte(&mut self) -> io::Result<u8>;
 }
 
@@ -43,6 +44,10 @@ impl TermiosBackend for TtyTermiosBackend {
         termios::cfmakeraw(attrs);
     }
 
+    fn preserve_output_processing(&self, original: &Termios, raw: &mut Termios) {
+        raw.output_flags = original.output_flags;
+    }
+
     fn read_byte(&mut self) -> io::Result<u8> {
         let mut buf = [0_u8; 1];
         self.tty.read_exact(&mut buf)?;
@@ -60,6 +65,7 @@ impl<B: TermiosBackend> RawModeGuard<B> {
         let original = backend.get_attrs()?;
         let mut raw = original.clone();
         backend.make_raw(&mut raw);
+        backend.preserve_output_processing(&original, &mut raw);
         backend.set_attrs(&raw)?;
         Ok(Self { backend, original })
     }

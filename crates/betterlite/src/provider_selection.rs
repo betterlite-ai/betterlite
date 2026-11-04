@@ -8,7 +8,7 @@ pub mod interactive;
 pub mod raw_mode;
 
 pub struct Provider {
-    pub id: &'static str,
+    pub id: ProviderId,
     pub name: &'static str,
     pub description: &'static str,
     pub env_key: Option<&'static str>,
@@ -23,9 +23,19 @@ pub struct Provider {
     pub api_base: Option<&'static str>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProviderId {
+    OpenAi,
+    Anthropic,
+    Gemini,
+    Azure,
+    Bedrock,
+    Ollama,
+}
+
 pub const PROVIDERS: [Provider; 6] = [
     Provider {
-        id: "openai",
+        id: ProviderId::OpenAi,
         name: "OpenAI",
         description: "GPT-4o, GPT-4o-mini, o3-mini",
         env_key: Some("OPENAI_API_KEY"),
@@ -40,7 +50,7 @@ pub const PROVIDERS: [Provider; 6] = [
         api_base: None,
     },
     Provider {
-        id: "anthropic",
+        id: ProviderId::Anthropic,
         name: "Anthropic",
         description: "Claude Fable 5.1, Fable 5, Opus 5.5, Opus 5, Opus 4.8, Opus 4.7, Opus 4.6, Sonnet 5.5, Sonnet 5, Sonnet 4.6, Haiku 4.5",
         env_key: Some("ANTHROPIC_API_KEY"),
@@ -67,7 +77,7 @@ pub const PROVIDERS: [Provider; 6] = [
         api_base: None,
     },
     Provider {
-        id: "gemini",
+        id: ProviderId::Gemini,
         name: "Google Gemini",
         description: "Gemini 2.0 Flash, Gemini 2.5 Pro",
         env_key: Some("GEMINI_API_KEY"),
@@ -82,7 +92,7 @@ pub const PROVIDERS: [Provider; 6] = [
         api_base: None,
     },
     Provider {
-        id: "azure",
+        id: ProviderId::Azure,
         name: "Azure OpenAI",
         description: "GPT-4o via Azure",
         env_key: Some("AZURE_AI_API_KEY"),
@@ -97,7 +107,7 @@ pub const PROVIDERS: [Provider; 6] = [
         api_base: None,
     },
     Provider {
-        id: "bedrock",
+        id: ProviderId::Bedrock,
         name: "AWS Bedrock",
         description: "Claude 3.5, Llama 3 via AWS",
         env_key: Some("AWS_ACCESS_KEY_ID"),
@@ -112,7 +122,7 @@ pub const PROVIDERS: [Provider; 6] = [
         api_base: None,
     },
     Provider {
-        id: "ollama",
+        id: ProviderId::Ollama,
         name: "Ollama",
         description: "Local models (llama3.2, mistral, etc.)",
         env_key: None,
@@ -166,9 +176,14 @@ where
             match interactive::select_interactive(&mut key_source, writer, supports) {
                 Ok(indices) => Ok(providers_at(&indices)),
                 Err(interactive::InteractiveError::Cancelled) => Err(SelectError::Cancelled),
-                Err(interactive::InteractiveError::Io(_)) => Ok(providers_at(
-                    &fallback::select_fallback(fallback_reader, writer, supports)?,
-                )),
+                Err(interactive::InteractiveError::Io(_)) => {
+                    drop(key_source);
+                    Ok(providers_at(&fallback::select_fallback(
+                        fallback_reader,
+                        writer,
+                        supports,
+                    )?))
+                }
             }
         }
         Err(_) => Ok(providers_at(&fallback::select_fallback(

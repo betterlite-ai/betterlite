@@ -40,3 +40,14 @@ fn trims_surrounding_whitespace_from_the_entered_line() {
 
     assert_eq!(line, "sk-abc123");
 }
+
+#[test]
+fn eof_is_reported_to_the_caller() {
+    let mut reader = Cursor::new(Vec::new());
+    let mut writer = Vec::new();
+    let error =
+        styled_input("Key: ", false, &mut reader, &mut writer).expect_err("EOF is reported");
+    assert!(
+        matches!(error, super::StyledInputError::Io(ref source) if source.kind() == std::io::ErrorKind::UnexpectedEof)
+    );
+}

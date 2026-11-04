@@ -118,7 +118,11 @@ pub fn select_fallback(
         )?;
         writer.flush()?;
         let mut line = String::new();
-        reader.read_line(&mut line)?;
+        if reader.read_line(&mut line)? == 0 {
+            return Err(FallbackError::Io(io::Error::from(
+                io::ErrorKind::UnexpectedEof,
+            )));
+        }
         let outcome = parse_selection(&line);
         if let ParseOutcome::Valid(indices) = outcome {
             return Ok(indices);
