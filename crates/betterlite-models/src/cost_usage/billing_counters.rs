@@ -46,7 +46,7 @@ fn fallback_counter(
         .numeric_extras
         .get(key)
         .filter(|value| value.is_sign_positive() && value.fract() == Decimal::ZERO)
-        .map(|value| value.to_i64().ok_or(CostUsageError::CounterOverflow))
+        .map(|value| ToPrimitive::to_i64(value).ok_or(CostUsageError::CounterOverflow))
         .transpose()
 }
 
