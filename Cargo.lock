@@ -1020,6 +1020,7 @@ dependencies = [
  "betterlite-env",
  "betterlite-models",
  "betterlite-rate-limit",
+ "betterlite-secret-managers",
  "betterlite-secrets",
  "fancy-regex",
  "indexmap 2.14.2",
@@ -1659,6 +1660,13 @@ version = "0.1.0"
 [[package]]
 name = "betterlite-secret-managers"
 version = "0.1.0"
+dependencies = [
+ "rstest",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+]
 
 [[package]]
 name = "betterlite-secrets"
