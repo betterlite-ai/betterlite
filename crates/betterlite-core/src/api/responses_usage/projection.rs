@@ -51,6 +51,11 @@ fn prompt_details_value(details: &PromptTokensDetails) -> Value {
     );
     insert_optional(
         &mut fields,
+        "cache_creation_tokens",
+        details.cache_creation_tokens,
+    );
+    insert_optional(
+        &mut fields,
         "web_search_requests",
         details.web_search_requests,
     );

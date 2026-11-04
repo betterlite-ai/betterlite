@@ -1,5 +1,6 @@
 use betterlite_models::modality_cost::error::ModalityCostError;
 use betterlite_models::usage_sum::{CompletionTokensDetails, PromptTokensDetails};
+use betterlite_openai::api::responses_objects::ResponseApiUsage;
 use rust_decimal::Decimal;
 use serde_json::{Map, Value};
 use thiserror::Error;
@@ -53,6 +54,7 @@ pub enum UsageInput<'usage> {
     Absent,
     Null,
     Existing(&'usage Usage),
+    Response(&'usage ResponseApiUsage),
     Mapping(&'usage Value),
 }
 
@@ -60,6 +62,7 @@ pub fn normalize_usage(input: UsageInput<'_>) -> Result<Usage, ResponsesUsageErr
     match input {
         UsageInput::Absent | UsageInput::Null => Ok(empty_usage()),
         UsageInput::Existing(usage) => Ok(usage.clone()),
+        UsageInput::Response(usage) => conversion::from_response_usage(usage),
         UsageInput::Mapping(value) => transform_response_api_usage(Some(value)),
     }
 }
@@ -80,17 +83,17 @@ pub fn transform_response_api_usage(usage: Option<&Value>) -> Result<Usage, Resp
         return Ok(empty_usage());
     }
     let Value::Object(fields) = input else {
-        return Ok(ordinary_usage(&Map::new()));
+        return ordinary_usage(&Map::new());
     };
     if !is_response_api_usage(fields) {
-        return Ok(ordinary_usage(fields));
+        return ordinary_usage(fields);
     }
-    conversion::from_response_usage(typed::parse(fields)?)
+    conversion::from_response_usage(&typed::parse(fields)?)
 }
 
-pub fn transform_value(usage: Option<&Value>) -> Result<Value, ResponsesUsageError> {
-    match transform_response_api_usage(usage) {
-        Ok(normalized) => Ok(projection::usage_value(&normalized)?),
+pub fn normalize_and_project(input: UsageInput<'_>) -> Result<Value, ResponsesUsageError> {
+    match normalize_usage(input) {
+        Ok(usage) => projection::usage_value(&usage).map_err(ResponsesUsageError::from),
         Err(error) => Err(error),
     }
 }
@@ -107,7 +110,7 @@ fn empty_usage() -> Usage {
     }
 }
 
-fn ordinary_usage(fields: &Map<String, Value>) -> Usage {
+fn ordinary_usage(fields: &Map<String, Value>) -> Result<Usage, ResponsesUsageError> {
     let prompt = fields
         .get("prompt_tokens")
         .and_then(Value::as_i64)
@@ -120,21 +123,25 @@ fn ordinary_usage(fields: &Map<String, Value>) -> Usage {
         .get("total_tokens")
         .and_then(Value::as_i64)
         .unwrap_or(0);
+    let prompt_tokens_details = conversion::ordinary_prompt_details(fields)?;
+    let completion_tokens_details = conversion::ordinary_completion_details(fields)?;
     let mut extensions = fields.clone();
     for field in CHAT_FIELDS {
         extensions.remove(field);
     }
+    extensions.remove("prompt_tokens_details");
+    extensions.remove("completion_tokens_details");
     let cost = fields.get("cost").and_then(decimal_from_value);
     extensions.remove("cost");
-    Usage {
+    Ok(Usage {
         prompt_tokens: prompt,
         completion_tokens: completion,
         total_tokens: total,
-        prompt_tokens_details: None,
-        completion_tokens_details: None,
+        prompt_tokens_details,
+        completion_tokens_details,
         cost,
         extensions,
-    }
+    })
 }
 
 #[path = "responses_usage/tests.rs"]

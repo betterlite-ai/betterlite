@@ -1,0 +1,7 @@
+kind: helper
+name: responses-usage-input-detail-lax-integers
+call:
+  responses_usage:
+    usage: {input_tokens: 2, output_tokens: 3, input_tokens_details: {cache_write_tokens: 2.0, web_search_requests: "2", google_maps_grounding_requests: true}}
+env: {}
+compare: {ignore: []}

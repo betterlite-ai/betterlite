@@ -2,7 +2,7 @@
 
 use super::{
     ResponsesUsageError, Usage, UsageInput, is_response_api_usage, normalize_usage,
-    transform_response_api_usage, transform_value,
+    transform_response_api_usage,
 };
 use betterlite_models::modality_cost::error::ModalityCostError;
 use rstest::rstest;
@@ -42,6 +42,32 @@ fn existing_chat_usage_keeps_its_inconsistent_total_and_extra() {
 }
 
 #[test]
+fn ordinary_usage_mapping_wraps_prompt_details() {
+    let input = value(
+        r#"{"prompt_tokens":2,"completion_tokens":3,"total_tokens":99,"custom":7,"prompt_tokens_details":{"cached_tokens":1}}"#,
+    );
+    let result = transform_value(Some(&input)).expect("ordinary Usage with details");
+    assert_eq!(result["total_tokens"], 99_i64);
+    assert_eq!(result["custom"], 7_i64);
+    assert_eq!(result["prompt_tokens_details"]["cached_tokens"], 1_i64);
+    assert_eq!(
+        result["prompt_tokens_details"]["cached_tokens_details"],
+        Value::Null
+    );
+    assert!(result.get("completion_tokens_details").is_none());
+}
+
+#[test]
+fn mapping_with_only_input_tokens_uses_ordinary_usage_construction() {
+    let input = value(r#"{"input_tokens":2}"#);
+    let result = transform_value(Some(&input)).expect("ordinary Usage mapping");
+    assert_eq!(result["prompt_tokens"], 0_i64);
+    assert_eq!(result["completion_tokens"], 0_i64);
+    assert_eq!(result["total_tokens"], 0_i64);
+    assert_eq!(result["input_tokens"], 2_i64);
+}
+
+#[test]
 fn responses_usage_recomputes_total_and_uses_realtime_detail_aliases() {
     let input = value(
         r#"{"input_tokens":2,"output_tokens":3,"total_tokens":99,"input_token_details":{"audio_tokens":2},"output_token_details":{"audio_tokens":3}}"#,
@@ -59,6 +85,20 @@ fn responses_usage_recomputes_total_and_uses_realtime_detail_aliases() {
     assert_eq!(result["completion_tokens_details"]["audio_tokens"], 3_i64);
     assert!(result.get("input_token_details").is_none());
     assert_eq!(input, before);
+}
+
+#[test]
+fn typed_response_usage_does_not_fill_realtime_aliases() {
+    let input = value(
+        r#"{"input_tokens":2,"output_tokens":3,"total_tokens":5,"input_token_details":{"audio_tokens":2},"output_token_details":{"audio_tokens":3}}"#,
+    );
+    let response = serde_json::from_value(input).expect("typed ResponseApiUsage");
+    let projected = super::normalize_and_project(UsageInput::Response(&response))
+        .expect("typed usage projection");
+    assert!(projected.get("prompt_tokens_details").is_none());
+    assert!(projected.get("completion_tokens_details").is_none());
+    assert!(projected.get("input_token_details").is_none());
+    assert!(projected.get("output_token_details").is_none());
 }
 
 #[test]
@@ -105,6 +145,36 @@ fn nested_reasoning_is_removed_only_when_text_includes_it() {
         result["completion_tokens_details"]["reasoning_tokens"],
         4_i64
     );
+    assert_eq!(
+        result["prompt_tokens_details"]["cache_creation_tokens"],
+        7_i64
+    );
+}
+
+#[test]
+fn prompt_detail_integer_strings_integral_numbers_and_bools_are_coerced() {
+    let input = value(
+        r#"{"input_tokens":2,"output_tokens":3,"input_tokens_details":{"cache_write_tokens":2.0,"web_search_requests":"3","google_maps_grounding_requests":true}}"#,
+    );
+    let result = transform_value(Some(&input)).expect("lax integer detail values");
+    let details = &result["prompt_tokens_details"];
+    assert_eq!(details["cache_write_tokens"], 2_i64);
+    assert_eq!(details["cache_creation_tokens"], 2_i64);
+    assert_eq!(details["web_search_requests"], 3_i64);
+    assert_eq!(details["google_maps_grounding_requests"], 1_i64);
+}
+
+#[rstest]
+#[case::decimal(r#"{"web_search_requests":2.5}"#)]
+#[case::mapping(r#"{"web_search_requests":{"count":2}}"#)]
+fn prompt_detail_integer_extras_reject_invalid_values(#[case] malformed: &str) {
+    let input = value(&format!(
+        r#"{{"input_tokens":2,"output_tokens":3,"input_tokens_details":{malformed}}}"#
+    ));
+    assert!(matches!(
+        transform_value(Some(&input)),
+        Err(ResponsesUsageError::Json { .. })
+    ));
 }
 
 #[test]
@@ -165,23 +235,28 @@ fn existing_usage_object_is_returned_without_conversion() {
 }
 
 #[rstest]
-#[case::string(r#""2""#)]
 #[case::decimal("2.5")]
 #[case::mapping(r#"{"tokens":2}"#)]
-fn output_token_detail_rejects_non_integer_attribute_values(#[case] malformed: &str) {
+fn output_detail_declared_fields_reject_invalid_integer_values(#[case] malformed: &str) {
     let mut details: Map<String, Value> = Map::new();
     details.insert("text_tokens".to_owned(), value(malformed));
     let mut fields = Map::new();
     fields.insert("input_tokens".to_owned(), Value::from(2_i64));
     fields.insert("output_tokens".to_owned(), Value::from(3_i64));
     fields.insert("output_tokens_details".to_owned(), Value::Object(details));
-    let result = transform_value(Some(&Value::Object(fields)))
-        .expect("valid usage with an ignored malformed detail");
-    assert!(
-        result["completion_tokens_details"]
-            .get("text_tokens")
-            .is_none()
+    assert!(matches!(
+        transform_value(Some(&Value::Object(fields))),
+        Err(ResponsesUsageError::Json { .. })
+    ));
+}
+
+#[test]
+fn output_detail_declared_fields_coerce_integer_strings() {
+    let input = value(
+        r#"{"input_tokens":2,"output_tokens":3,"output_tokens_details":{"text_tokens":"2"}}"#,
     );
+    let result = transform_value(Some(&input)).expect("numeric string is a lax integer");
+    assert_eq!(result["completion_tokens_details"]["text_tokens"], 2_i64);
 }
 
 #[rstest]
@@ -207,4 +282,9 @@ fn plural_input_detail_values_take_precedence_over_realtime_aliases() {
 
 fn value(source: &str) -> Value {
     serde_json::from_str(source).expect("valid test JSON")
+}
+
+fn transform_value(usage: Option<&Value>) -> Result<Value, ResponsesUsageError> {
+    let input = usage.map_or(UsageInput::Absent, UsageInput::Mapping);
+    super::normalize_and_project(input)
 }

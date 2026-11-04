@@ -10,7 +10,8 @@ if TYPE_CHECKING:
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 _PROMPT_FIELDS = (
     "cached_tokens", "audio_tokens", "text_tokens", "image_tokens", "video_tokens",
-    "cache_write_tokens", "web_search_requests", "google_maps_grounding_requests",
+    "cache_write_tokens", "cache_creation_tokens", "web_search_requests",
+    "google_maps_grounding_requests",
 )
 _COMPLETION_FIELDS = ("text_tokens", "reasoning_tokens", "audio_tokens", "image_tokens")
 

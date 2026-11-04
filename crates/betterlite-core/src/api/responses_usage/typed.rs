@@ -1,5 +1,8 @@
 use betterlite_openai::api::responses_objects::ResponseApiUsage;
+use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive as _;
 use serde_json::{Map, Value};
+use std::str::FromStr as _;
 
 pub(super) fn parse(fields: &Map<String, Value>) -> Result<ResponseApiUsage, serde_json::Error> {
     let mut normalized = fields.clone();
@@ -13,7 +16,7 @@ pub(super) fn parse(fields: &Map<String, Value>) -> Result<ResponseApiUsage, ser
         "output_tokens_details",
         "output_token_details",
     );
-    normalize_output_bools(&mut normalized);
+    normalize_output_ints(&mut normalized);
     fill_total_tokens(&mut normalized);
     serde_json::from_value(Value::Object(normalized))
 }
@@ -26,23 +29,46 @@ fn fill_detail_alias(fields: &mut Map<String, Value>, plural: &str, singular: &s
     }
 }
 
-fn normalize_output_bools(fields: &mut Map<String, Value>) {
+pub(super) fn lax_integer(value: &Value) -> Result<Option<i64>, serde_json::Error> {
+    match value {
+        Value::Null => return Ok(None),
+        Value::Bool(boolean) => return Ok(Some(i64::from(*boolean))),
+        Value::Number(number) => {
+            if let Some(integer) = number.as_i64() {
+                return Ok(Some(integer));
+            }
+            if let Some(unsigned) = number.as_u64() {
+                if let Ok(integer) = i64::try_from(unsigned) {
+                    return Ok(Some(integer));
+                }
+                return serde_json::from_value::<i64>(value.clone()).map(Some);
+            }
+            if let Ok(decimal) = Decimal::from_str(&number.to_string())
+                && decimal.fract().is_zero()
+                && let Some(integer) = decimal.to_i64()
+            {
+                return Ok(Some(integer));
+            }
+        }
+        Value::String(string) => {
+            if let Ok(integer) = string.trim().parse::<i64>() {
+                return Ok(Some(integer));
+            }
+        }
+        Value::Array(_) | Value::Object(_) => {}
+    }
+    serde_json::from_value::<i64>(value.clone()).map(Some)
+}
+
+fn normalize_output_ints(fields: &mut Map<String, Value>) {
     let Some(Value::Object(details)) = fields.get_mut("output_tokens_details") else {
         return;
     };
     for name in ["reasoning_tokens", "audio_tokens", "text_tokens"] {
-        let boolean = details.get(name).and_then(Value::as_bool);
-        let integer = details
-            .get(name)
-            .is_some_and(|value| value.as_i64().is_some());
-        match (boolean, integer, details.contains_key(name)) {
-            (Some(value), _, _) => {
-                details.insert(name.to_owned(), Value::from(i64::from(value)));
-            }
-            (None, false, true) => {
-                details.remove(name);
-            }
-            _ => {}
+        if let Some(value) = details.get(name)
+            && let Ok(Some(integer)) = lax_integer(value)
+        {
+            details.insert(name.to_owned(), Value::from(integer));
         }
     }
 }
