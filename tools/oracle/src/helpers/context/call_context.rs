@@ -1,8 +1,7 @@
-use betterlite_context::call_context::{CallContext, Phase};
+use betterlite_context::call_context::{BillingPolicy, CallContext, CallInputs, Phase};
+use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::json;
-use std::collections::BTreeMap;
-use std::fmt::Debug;
 use std::ptr::eq;
 use std::time::{Duration, UNIX_EPOCH};
 use uuid::Uuid;
@@ -22,22 +21,27 @@ pub(crate) struct Op;
 impl crate::helpers::Helper for Op {
     type Input = Input;
     fn run(input: &Input) -> crate::helpers::HelperResult {
-        let id = Uuid::from_u128(1);
-        let now = UNIX_EPOCH
-            .checked_add(Duration::from_secs(1_700_000_000))
-            .unwrap_or(UNIX_EPOCH);
-        let context = CallContext::with_id(id, now);
+        let context = CallContext::start(CallInputs {
+            id: || Uuid::from_u128(1),
+            now: || {
+                UNIX_EPOCH
+                    .checked_add(Duration::from_secs(1_700_000_000))
+                    .unwrap_or(UNIX_EPOCH)
+            },
+            deadline: None,
+            privacy: false,
+        });
         let value = match input {
             Input::PhaseNesting => {
-                let child = context.post_response();
-                json!({"phase":child.view().phase == Phase::PostResponse,"parent_phase":context.view().phase == Phase::PostResponse})
+                let child = context.post_response().post_response();
+                json!({"phase":child.view().state.phase == Phase::PostResponse,"parent_phase":context.view().state.phase == Phase::PostResponse})
             }
             Input::PinnedBillingTime => {
-                json!({"billing_time_unix":context.view().billing_time.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()})
+                json!({"billing_time_unix":context.view().state.billing_time.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()})
             }
             Input::ChildInheritance => {
                 let child = context.child(Uuid::from_u128(2));
-                json!({"parent_id":child.view().parent_id.map(|parent| parent.to_string()),"internal":child.view().billing == betterlite_context::call_context::BillingPolicy::Suppress,"billing_time_unix":child.view().billing_time.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()})
+                json!({"parent_id":child.view().state.parent_id.map(|parent| parent.to_string()),"internal":child.view().state.billing == BillingPolicy::Suppress,"parent_internal":context.view().state.billing == BillingPolicy::Suppress,"billing_time_unix":child.view().state.billing_time.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()})
             }
             Input::DispatchViews => dispatch_views(context),
             Input::ProviderItems => provider_items(context),
@@ -47,34 +51,28 @@ impl crate::helpers::Helper for Op {
 }
 
 fn dispatch_views(context: CallContext<'_>) -> serde_json::Value {
-    let marker: &dyn Debug = &"metadata-value";
-    let metadata: BTreeMap<String, Option<&dyn Debug>> =
-        BTreeMap::from([("marker".to_owned(), Some(marker))]);
-    let http: &dyn Debug = &"http-client";
-    let azure: &dyn Debug = &"azure-client";
-    let openai: &dyn Debug = &"openai-client";
-    let attached = context
-        .with_metadata(&metadata)
-        .with_http_client(http)
-        .with_azure_client(azure)
-        .with_openai_client(openai);
-    let view = attached.view();
+    let absent = context.view().metadata.is_none() && context.view().client.is_none();
+    let metadata = [("marker", 7_i32)];
+    let client = String::from("client");
+    let attached = context.with_dispatch(Some(&metadata), Some(&client));
+    let child = attached.child(Uuid::from_u128(2));
+    let view = child.view();
+    let same_client = view
+        .client
+        .is_some_and(|stored| eq(stored, &raw const client));
     json!({
+        "absent": absent,
         "metadata": view.metadata.is_some_and(|stored| eq(stored, &raw const metadata)),
-        "http": view.http_client.is_some_and(|stored| eq(stored, http)),
-        "azure": view.azure_client.is_some_and(|stored| eq(stored, azure)),
-        "openai": view.openai_client.is_some_and(|stored| eq(stored, openai))
+        "http": same_client, "azure": same_client, "openai": same_client
     })
 }
 
 fn provider_items(context: CallContext<'_>) -> serde_json::Value {
-    let values: BTreeMap<String, Option<&dyn Debug>> = BTreeMap::from([("none".to_owned(), None)]);
-    let attached = context.with_metadata(&values);
+    let values = IndexMap::from([("z", None), ("a", Some(7_i32))]);
+    let attached = context.with_dispatch(Some(&values), None::<&()>);
     let stored = attached.view().metadata;
     json!({
-        "count": stored.map_or(0, BTreeMap::len),
-        "is_none": stored.is_some_and(|items| {
-            items.contains_key("none") && items.get("none").is_some_and(Option::is_none)
-        })
+        "items": stored.map(|mapping| mapping.iter().collect::<Vec<_>>()),
+        "identity": stored.is_some_and(|items| eq(items, &raw const values))
     })
 }

@@ -1,7 +1,4 @@
-use std::collections::BTreeMap;
-use std::fmt::Debug;
 use std::time::SystemTime;
-
 use uuid::Uuid;
 
 mod tests;
@@ -18,24 +15,15 @@ pub enum BillingPolicy {
     Suppress,
 }
 
-#[must_use]
-#[derive(Debug, Clone)]
-pub struct CallContext<'context> {
-    id: Uuid,
-    deadline: Option<SystemTime>,
-    parent_id: Option<Uuid>,
-    internal: bool,
-    privacy: bool,
-    phase: Phase,
-    billing_time: SystemTime,
-    metadata: Option<&'context BTreeMap<String, Option<&'context dyn Debug>>>,
-    http_client: Option<&'context dyn Debug>,
-    azure_client: Option<&'context dyn Debug>,
-    openai_client: Option<&'context dyn Debug>,
+pub struct CallInputs<Clock, Id> {
+    pub now: Clock,
+    pub id: Id,
+    pub deadline: Option<SystemTime>,
+    pub privacy: bool,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct CallContextView<'context> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CallState {
     pub id: Uuid,
     pub deadline: Option<SystemTime>,
     pub parent_id: Option<Uuid>,
@@ -43,97 +31,88 @@ pub struct CallContextView<'context> {
     pub privacy: bool,
     pub phase: Phase,
     pub billing_time: SystemTime,
-    pub metadata: Option<&'context BTreeMap<String, Option<&'context dyn Debug>>>,
-    pub http_client: Option<&'context dyn Debug>,
-    pub azure_client: Option<&'context dyn Debug>,
-    pub openai_client: Option<&'context dyn Debug>,
 }
 
-impl<'context> CallContext<'context> {
-    #[must_use]
-    pub const fn billing_policy(&self) -> BillingPolicy {
-        if self.internal {
-            BillingPolicy::Suppress
-        } else {
-            BillingPolicy::Include
-        }
-    }
-    pub fn with_id(id: Uuid, now: SystemTime) -> Self {
+#[must_use]
+#[derive(Debug)]
+pub struct CallContext<'context, Metadata = (), Client = ()> {
+    state: CallState,
+    metadata: Option<&'context Metadata>,
+    client: Option<&'context Client>,
+}
+
+#[derive(Debug)]
+pub struct CallContextView<'context, Metadata, Client> {
+    pub state: &'context CallState,
+    pub metadata: Option<&'context Metadata>,
+    pub client: Option<&'context Client>,
+}
+
+impl CallContext<'static> {
+    pub fn start<Clock, Id>(inputs: CallInputs<Clock, Id>) -> Self
+    where
+        Clock: FnOnce() -> SystemTime,
+        Id: FnOnce() -> Uuid,
+    {
+        let id = (inputs.id)();
+        let billing_time = (inputs.now)();
         Self {
-            id,
-            deadline: None,
-            parent_id: None,
-            internal: false,
-            privacy: false,
-            phase: Phase::Request,
-            billing_time: now,
+            state: CallState {
+                id,
+                deadline: inputs.deadline,
+                parent_id: None,
+                billing: BillingPolicy::Include,
+                privacy: inputs.privacy,
+                phase: Phase::Request,
+                billing_time,
+            },
             metadata: None,
-            http_client: None,
-            azure_client: None,
-            openai_client: None,
+            client: None,
         }
     }
-    pub const fn with_deadline(mut self, deadline: SystemTime) -> Self {
-        self.deadline = Some(deadline);
-        self
-    }
-    pub const fn with_privacy(mut self, privacy: bool) -> Self {
-        self.privacy = privacy;
-        self
-    }
-    pub fn with_metadata(
-        mut self,
-        metadata: &'context BTreeMap<String, Option<&'context dyn Debug>>,
-    ) -> Self {
-        self.metadata = Some(metadata);
-        self
-    }
-    pub fn with_http_client(mut self, client: &'context dyn Debug) -> Self {
-        self.http_client = Some(client);
-        self
-    }
-    pub fn with_azure_client(mut self, client: &'context dyn Debug) -> Self {
-        self.azure_client = Some(client);
-        self
-    }
-    pub fn with_openai_client(mut self, client: &'context dyn Debug) -> Self {
-        self.openai_client = Some(client);
-        self
-    }
-    pub fn child(&self, id: Uuid) -> Self {
+}
+
+impl<Metadata, Client> CallContext<'_, Metadata, Client> {
+    pub const fn with_dispatch<'dispatch, NewMetadata, NewClient>(
+        self,
+        metadata: Option<&'dispatch NewMetadata>,
+        client: Option<&'dispatch NewClient>,
+    ) -> CallContext<'dispatch, NewMetadata, NewClient> {
         CallContext {
-            id,
-            deadline: self.deadline,
-            parent_id: Some(self.id),
-            internal: true,
-            privacy: self.privacy,
-            phase: self.phase,
-            billing_time: self.billing_time,
-            metadata: self.metadata,
-            http_client: self.http_client,
-            azure_client: self.azure_client,
-            openai_client: self.openai_client,
+            state: self.state,
+            metadata,
+            client,
         }
     }
-    pub fn post_response(&self) -> Self {
-        let mut child = self.clone();
-        child.phase = Phase::PostResponse;
-        child
-    }
-    #[must_use]
-    pub fn view(&self) -> CallContextView<'context> {
-        CallContextView {
-            id: self.id,
-            deadline: self.deadline,
-            parent_id: self.parent_id,
-            billing: self.billing_policy(),
-            privacy: self.privacy,
-            phase: self.phase,
-            billing_time: self.billing_time,
+
+    pub const fn child(&self, id: Uuid) -> Self {
+        let mut state = self.state;
+        state.id = id;
+        state.parent_id = Some(self.state.id);
+        state.billing = BillingPolicy::Suppress;
+        Self {
+            state,
             metadata: self.metadata,
-            http_client: self.http_client,
-            azure_client: self.azure_client,
-            openai_client: self.openai_client,
+            client: self.client,
+        }
+    }
+
+    pub const fn post_response(&self) -> Self {
+        let mut state = self.state;
+        state.phase = Phase::PostResponse;
+        Self {
+            state,
+            metadata: self.metadata,
+            client: self.client,
+        }
+    }
+
+    #[must_use]
+    pub const fn view(&self) -> CallContextView<'_, Metadata, Client> {
+        CallContextView {
+            state: &self.state,
+            metadata: self.metadata,
+            client: self.client,
         }
     }
 }

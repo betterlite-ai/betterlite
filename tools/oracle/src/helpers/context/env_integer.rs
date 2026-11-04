@@ -14,7 +14,7 @@ impl crate::helpers::Helper for Op {
     type Input = Input;
     fn run(input: &Input) -> crate::helpers::HelperResult {
         let value = input.value.as_deref();
-        let parsed = betterlite_config::env_integer::get_env_int("VALUE", value, input.default);
+        let parsed = betterlite_config::env_integer::get_env_int(value, input.default);
         let range = match (input.minimum, input.maximum) {
             (Some(min), Some(max)) => betterlite_config::env_integer::get_env_int_in_range(
                 "VALUE",

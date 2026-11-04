@@ -1,6 +1,18 @@
+use betterlite_config::env_integer::timeout::{RequestTimeout, TimeoutError};
+use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::types::Config;
+use thiserror::Error;
 
-pub const DEFAULT_TIMEOUT_SECONDS: f64 = 6000.0;
+mod tests;
+
+#[derive(Debug, Error)]
+pub enum SettingsError {
+    #[error(transparent)]
+    Timeout {
+        #[from]
+        source: TimeoutError,
+    },
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CoreSettings {
@@ -11,21 +23,20 @@ pub struct CoreSettings {
 }
 
 impl CoreSettings {
-    #[must_use]
-    pub fn from_config(config: &Config) -> Self {
-        let request_timeout_seconds = config
-            .litellm_settings
-            .request_timeout
-            .unwrap_or(DEFAULT_TIMEOUT_SECONDS);
-        Self {
-            request_timeout_seconds,
-            request_timeout_explicit: config.litellm_settings.request_timeout.is_some(),
+    pub fn load(
+        config: &Config,
+        environment: &dyn EnvironmentLookup,
+    ) -> Result<Self, SettingsError> {
+        let timeout = RequestTimeout::resolve(environment)?;
+        Ok(Self {
+            request_timeout_seconds: timeout.seconds,
+            request_timeout_explicit: timeout.explicitly_set,
             litellm_request_timeout: config.litellm_settings.request_timeout,
             model_timeout_overrides: config
                 .model_list
                 .iter()
                 .map(|model| model.litellm_params.timeout)
                 .collect(),
-        }
+        })
     }
 }

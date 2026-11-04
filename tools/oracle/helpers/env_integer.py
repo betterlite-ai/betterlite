@@ -18,9 +18,11 @@ class Input(TypedDict):
 
 def run(data: Input) -> dict[str, int | None]:
     value = data.get("value")
-    if value is None:
-        return {"int": data["default"], "range": data["default"], "optional": None}
-    with patch.dict(os.environ, {"VALUE": value}):
+    with patch.dict(os.environ):
+        if value is None:
+            _ = os.environ.pop("VALUE", None)
+        else:
+            os.environ["VALUE"] = value
         return {
             "int": get_env_int("VALUE", data["default"]),
             "range": get_env_int_in_range(

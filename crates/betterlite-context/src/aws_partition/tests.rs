@@ -1,41 +1,28 @@
 #![cfg(test)]
 
-use super::*;
+use super::{contains_aws_arn, contains_bedrock_arn, get_aws_partition, is_bedrock_arn};
+use rstest::rstest;
 
-#[test]
-fn call_context_tests_behavior() {
-    assert_region_partitions();
-    assert_bedrock_arns();
-    assert_aws_arns();
+#[rstest]
+#[case::absent(None, "aws", "amazonaws.com")]
+#[case::empty(Some(""), "aws", "amazonaws.com")]
+#[case::commercial(Some("us-east-1"), "aws", "amazonaws.com")]
+#[case::china(Some("cn-north-1"), "aws-cn", "amazonaws.com.cn")]
+#[case::government(Some("us-gov-west-1"), "aws-us-gov", "amazonaws.com")]
+#[case::iso_b(Some("us-isob-east-1"), "aws-iso-b", "sc2s.sgov.gov")]
+#[case::iso_f(Some("us-isof-east-1"), "aws-iso-f", "csp.hci.ic.gov")]
+#[case::iso(Some("us-iso-east-1"), "aws-iso", "c2s.ic.gov")]
+#[case::iso_e(Some("eu-isoe-west-1"), "aws-iso-e", "cloud.adc-e.uk")]
+#[case::case_sensitive(Some("CN-north-1"), "aws", "amazonaws.com")]
+fn call_context_tests_behavior(
+    #[case] region: Option<&str>,
+    #[case] partition: &str,
+    #[case] suffix: &str,
+) {
+    let actual = get_aws_partition(region);
+    assert_eq!(actual.partition, partition);
+    assert_eq!(actual.dns_suffix, suffix);
+    assert_eq!(actual.arn_prefix, format!("arn:{partition}:"));
 }
 
-fn assert_region_partitions() {
-    assert_eq!(get_aws_partition(Some("cn-north-1")).partition, "aws-cn");
-    assert_eq!(
-        get_aws_partition(Some("us-gov-west-1")).partition,
-        "aws-us-gov"
-    );
-    assert_eq!(
-        get_aws_partition(Some("eu-isoe-1")).dns_suffix,
-        "cloud.adc-e.uk"
-    );
-}
-
-fn assert_bedrock_arns() {
-    assert!(contains_bedrock_arn("x arn:aws-cn:bedrock:region:model/y"));
-    assert!(contains_bedrock_arn(
-        "arn:aws:bedrock-runtime:region:model/y"
-    ));
-    assert!(contains_bedrock_arn("arn:aws:bedrock-agent:region:model/y"));
-    assert!(!contains_bedrock_arn("no arn here"));
-    assert!(!is_bedrock_arn("x arn:aws:bedrock:region:model/y"));
-    assert!(is_bedrock_arn("arn:aws-iso-b:bedrock:region:model/y"));
-    assert!(!is_bedrock_arn("arn:aws-!:bedrock:region:model/y"));
-    assert!(!is_bedrock_arn("arn:aws-:bedrock:region:model/y"));
-}
-
-fn assert_aws_arns() {
-    assert!(contains_aws_arn("x arn:aws-cn:s3:region:x"));
-    assert!(!contains_aws_arn("not an ARN"));
-    assert!(contains_aws_arn("arn:aws-iso-b:s3:region:x"));
-}
+mod arns;

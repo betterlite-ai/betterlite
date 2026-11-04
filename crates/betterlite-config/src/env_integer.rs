@@ -1,18 +1,14 @@
+pub mod timeout;
+
 #[path = "env_integer/tests.rs"]
 mod tests;
 
-pub fn get_env_int(name: &str, value: Option<&str>, default: i64) -> i64 {
-    match get_env_int_or_none(value) {
-        Some(parsed) => parsed,
-        None if value.is_none() => default,
-        None => {
-            tracing::warn!(
-                environment_variable = name,
-                "invalid integer environment value; using default"
-            );
-            default
-        }
-    }
+#[must_use]
+pub fn get_env_int(value: Option<&str>, default: i64) -> i64 {
+    let Some(raw) = value else {
+        return default;
+    };
+    raw.trim().parse().unwrap_or(default)
 }
 
 pub fn get_env_int_in_range(
@@ -22,7 +18,7 @@ pub fn get_env_int_in_range(
     minimum: i64,
     maximum: i64,
 ) -> i64 {
-    let parsed = get_env_int(name, value, default);
+    let parsed = get_env_int(value, default);
     if (minimum..=maximum).contains(&parsed) {
         parsed
     } else {
