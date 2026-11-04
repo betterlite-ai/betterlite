@@ -25,21 +25,32 @@ pub fn image_and_file_fields(item: &Map<String, Value>) -> Result<Value, Content
 }
 
 fn image_url(item: &Map<String, Value>) -> Result<(&str, Option<&Value>), ContentError> {
-    let image_url = item.get("image_url").ok_or_else(|| invalid_url(item))?;
-    match image_url {
+    let image_source = item.get("image_url");
+    let Some(image_value) = image_source else {
+        return Err(invalid_url(image_source));
+    };
+    match image_value {
         Value::String(url) => Ok((url, None)),
-        Value::Object(fields) => fields
-            .get("url")
-            .and_then(Value::as_str)
-            .map(|url| (url, fields.get("detail")))
-            .ok_or_else(|| invalid_url(item)),
-        Value::Null | Value::Bool(_) | Value::Number(_) | Value::Array(_) => Err(invalid_url(item)),
+        Value::Object(fields) => match fields.get("url") {
+            Some(Value::String(url)) => Ok((url, fields.get("detail"))),
+            Some(
+                Value::Null
+                | Value::Bool(_)
+                | Value::Number(_)
+                | Value::Array(_)
+                | Value::Object(_),
+            )
+            | None => Err(invalid_url(Some(image_value))),
+        },
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::Array(_) => {
+            Err(invalid_url(Some(image_value)))
+        }
     }
 }
 
-fn invalid_url(item: &Map<String, Value>) -> ContentError {
+fn invalid_url(image_url: Option<&Value>) -> ContentError {
     ContentError::InvalidImageUrl {
-        value: item.get("image_url").map_or_else(
+        value: image_url.map_or_else(
             || "None".to_owned(),
             |value| match value {
                 Value::Null => "None".to_owned(),
