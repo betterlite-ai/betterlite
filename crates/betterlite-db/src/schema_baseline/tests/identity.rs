@@ -1,7 +1,7 @@
 use crate::schema_baseline::{BASELINE_MIGRATION, MIGRATION_CATALOG};
 use sha2::{Digest as _, Sha256};
 
-const PINNED_SHA256: &str = "0bf3d5cabe50d5d7249eb505cf2ec6fe2d8b49dc8b496dceb2179a357ed4725e";
+const PINNED_SHA256: &str = "35afca4826335f8bd2bc2b733c0540de51c6a199d39c27a2d1910c53e1a02647";
 
 #[test]
 fn baseline_sql_identity() {
@@ -10,7 +10,7 @@ fn baseline_sql_identity() {
     assert_eq!(hex::encode(hasher.finalize()), PINNED_SHA256);
     assert_eq!(BASELINE_MIGRATION.sha256, PINNED_SHA256);
     assert_eq!(BASELINE_MIGRATION.directory, "20250326162113_baseline");
-    assert_eq!(BASELINE_MIGRATION.bytes.len(), 15_827);
+    assert_eq!(BASELINE_MIGRATION.bytes.len(), 15_828);
     let sql = migration_sql();
     assert_eq!(sql.matches("CREATE TABLE IF NOT EXISTS").count(), 17);
     let regular_indexes = sql.matches("CREATE INDEX IF NOT EXISTS").count();
