@@ -142,3 +142,47 @@ fn shared_env_os_environ_number() {
     assert!(error.contains("REQUEST_TIMEOUT"));
     assert!(!error.contains("1_000"));
 }
+
+#[rstest]
+#[case::yaml(
+    ConfigError::Yaml { source: serde_saphyr::from_str::<i32>("[").unwrap_err() },
+    "yaml"
+)]
+#[case::unsupported(
+    ConfigError::Unsupported { paths: vec!["general_settings.unknown".to_owned()] },
+    "unsupported_key"
+)]
+#[case::missing_environment(
+    ConfigError::MissingEnvironment {
+        variable: "MISSING".to_owned(),
+        path: "model.api_key".to_owned(),
+    },
+    "missing_environment"
+)]
+#[case::invalid_float(
+    ConfigError::InvalidFloat {
+        path: "model.temperature".to_owned(),
+        source: "not-a-float".parse::<f64>().unwrap_err(),
+    },
+    "invalid_float"
+)]
+#[case::invalid_integer(
+    ConfigError::InvalidInteger {
+        path: "model.max_tokens".to_owned(),
+        source: "not-an-integer".parse::<i64>().unwrap_err(),
+    },
+    "invalid_integer"
+)]
+#[case::invalid_scalar(
+    ConfigError::InvalidScalar { path: "model.stream".to_owned(), value: true },
+    "invalid_scalar"
+)]
+#[case::environment(
+    ConfigError::Environment {
+        source: betterlite_env::EnvError::Bool { name: "DISABLE_AIOHTTP_TRUST_ENV".to_owned() },
+    },
+    "environment"
+)]
+fn category_names_every_config_error_variant(#[case] error: ConfigError, #[case] expected: &str) {
+    assert_eq!(error.category(), expected);
+}

@@ -60,6 +60,20 @@ pub enum ConfigError {
     #[error("invalid scalar at {path}")]
     InvalidScalar { path: String, value: bool },
 }
+impl ConfigError {
+    #[must_use]
+    pub const fn category(&self) -> &'static str {
+        match self {
+            Self::Yaml { .. } => "yaml",
+            Self::Unsupported { .. } => "unsupported_key",
+            Self::MissingEnvironment { .. } => "missing_environment",
+            Self::InvalidFloat { .. } => "invalid_float",
+            Self::InvalidInteger { .. } => "invalid_integer",
+            Self::InvalidScalar { .. } => "invalid_scalar",
+            Self::Environment { .. } => "environment",
+        }
+    }
+}
 pub struct ConfigLoader<L> {
     pub lookup: L,
 }
