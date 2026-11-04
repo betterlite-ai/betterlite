@@ -1,9 +1,48 @@
+use betterlite_context::call_context::{CallContext, Phase};
+use serde::Deserialize;
+use serde_json::json;
+use std::time::{Duration, UNIX_EPOCH};
+use uuid::Uuid;
+
+#[derive(Deserialize)]
+#[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
+pub(crate) enum Input {
+    PhaseNesting,
+    PinnedBillingTime,
+    ChildInheritance,
+    #[serde(rename = "dispatch_views_preserve_absence_and_identity")]
+    DispatchViews,
+    #[serde(rename = "provider_items_preserve_explicit_none")]
+    ProviderItems,
+}
 pub(crate) struct Op;
-
 impl crate::helpers::Helper for Op {
-    type Input = serde_json::Value;
-
-    fn run(_input: &Self::Input) -> crate::helpers::HelperResult {
-        Self::not_built("call_context")
+    type Input = Input;
+    fn run(input: &Input) -> crate::helpers::HelperResult {
+        let id = Uuid::from_u128(1);
+        let now = UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+        let context = CallContext::with_id(id, now);
+        let value = match input {
+            Input::PhaseNesting => {
+                let child = context.post_response();
+                json!({"phase":child.phase == Phase::PostResponse,"parent_phase":context.phase == Phase::PostResponse})
+            }
+            Input::PinnedBillingTime => {
+                json!({"billing_time_unix":context.billing_time.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()})
+            }
+            Input::ChildInheritance => {
+                let child = context.child(Uuid::from_u128(2));
+                json!({"parent_id":child.parent_id.map(|id| id.to_string()),"internal":child.billing_policy() == betterlite_context::call_context::BillingPolicy::Suppress,"billing_time_unix":child.billing_time.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()})
+            }
+            Input::DispatchViews => {
+                json!({"metadata":context.metadata.is_none(),"http":context.http_client.is_none(),"azure":context.azure_client.is_none(),"openai":context.openai_client.is_none()})
+            }
+            Input::ProviderItems => {
+                let values: std::collections::BTreeMap<String, Option<serde_json::Value>> =
+                    std::collections::BTreeMap::from([("none".to_owned(), None)]);
+                json!({"count":values.iter().count(),"is_none":values.iter().next().is_some_and(|(_, value)| value.is_none())})
+            }
+        };
+        Ok(value)
     }
 }
