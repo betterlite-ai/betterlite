@@ -4,8 +4,9 @@ use std::path::Path;
 use itertools::Itertools as _;
 
 use crate::builtins::globs::glob_set;
+use crate::dispatch::overlap::probes;
 use crate::ids::check_id_problem;
-use crate::spec::backlog::BacklogEntry;
+use crate::spec::backlog::{BacklogEntry, Status};
 use crate::spec::catalog::Catalog;
 use crate::spec::task::Task;
 use crate::validate::catalog;
@@ -201,6 +202,39 @@ pub(crate) fn scope_root_problems(root: &Path, catalog: &Catalog, task: &Task) -
         .collect()
 }
 
+pub(crate) fn crate_root_problems(root: &Path, entry: &BacklogEntry, task: &Task) -> Vec<String> {
+    if entry.status != Status::Todo {
+        return Vec::new();
+    }
+    let Ok(scope) = glob_set(&task.scope.paths) else {
+        return Vec::new();
+    };
+    let probes = probes(&task.scope.paths);
+    let crates: BTreeSet<&str> = probes
+        .iter()
+        .filter_map(|probe| probe.strip_prefix("crates/")?.split_once('/'))
+        .map(|(name, _)| name)
+        .collect();
+    crates
+        .into_iter()
+        .map(|name| {
+            let library = format!("crates/{name}/src/lib.rs");
+            if root.join(&library).is_file() {
+                library
+            } else {
+                format!("crates/{name}/src/main.rs")
+            }
+        })
+        .filter(|file| scope.is_match(file) && root.join(file).is_file())
+        .map(|file| {
+            format!(
+                "{}: the scope covers {file}; a todo task names its own module files, and the skeleton declares them",
+                task.id
+            )
+        })
+        .collect()
+}
+
 pub(crate) fn problems(
     root: &Path,
     catalog: &Catalog,
@@ -216,5 +250,6 @@ pub(crate) fn problems(
     problems.extend(proof_problems(catalog, task));
     problems.extend(command_problems(task));
     problems.extend(scope_root_problems(root, catalog, task));
+    problems.extend(crate_root_problems(root, entry, task));
     problems
 }
