@@ -29,12 +29,13 @@ fn logging_privacy_tests_behavior() {
         Some(&json!(true)),
         false
     ));
-    assert!(should_redact_message_logging(
+    assert!(!should_redact_message_logging(
         None,
         None,
         Some(&json!(false)),
         true
     ));
+    assert!(should_redact_message_logging(None, None, None, true));
     let payload = json!({"messages":[{"content":"secret"}],"api_key":"sk-abc","prompt":"prompt"});
     let snapshot = redacted_snapshot(&payload);
     assert_ne!(snapshot, payload);
