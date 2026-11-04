@@ -17,7 +17,7 @@ use tokio::sync::oneshot;
 use tokio::task::JoinSet;
 use tokio::time::timeout;
 
-use crate::routes::chat::chat_routes;
+use crate::routes::chat::chat_routes_with_call_id;
 use crate::server::chat_setup::chat_executor;
 
 const FIRST: &str = "data: {\"id\":\"c\",\"object\":\"chat.completion.chunk\",\"created\":7,\"model\":\"g\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"first\"}}]}\n\n";
@@ -41,9 +41,12 @@ async fn gateway(upstream: &TcpListener, tasks: &mut JoinSet<()>) -> (ProxiedCli
         listener.local_addr().unwrap()
     );
     tasks.spawn(async move {
-        axum::serve(listener, chat_routes(Arc::new(executor)))
-            .await
-            .unwrap();
+        axum::serve(
+            listener,
+            chat_routes_with_call_id(Arc::new(executor), false),
+        )
+        .await
+        .unwrap();
     });
     let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &environment).unwrap());
     (ProxiedClient::outbound(&policy).unwrap(), url)

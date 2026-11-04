@@ -1,7 +1,7 @@
 pub mod chat_setup;
 
 use crate::auth::auth_route_patterns::AuthSettings;
-use crate::routes::chat::chat_routes;
+use crate::routes::chat::chat_routes_with_call_id;
 use crate::routes::embeddings::embedding_routes;
 use crate::routes::router;
 use crate::shutdown::build_shutdown_signal;
@@ -91,7 +91,13 @@ fn application(config: &Config, chat: ChatExecutor, shutting_down: Arc<AtomicBoo
         },
         shutting_down,
         &config.model_list,
-        chat_routes(Arc::clone(&executor)),
+        chat_routes_with_call_id(
+            Arc::clone(&executor),
+            config
+                .sections
+                .error_body_call_id
+                .include_call_id_in_error_body,
+        ),
         embedding_routes(executor),
     )
 }

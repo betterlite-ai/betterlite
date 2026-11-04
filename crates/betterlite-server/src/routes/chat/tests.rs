@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use crate::routes::chat::chat_routes;
+use crate::routes::chat::chat_routes_with_call_id;
 use crate::server::chat_setup::chat_executor;
 use axum::body::{Body, to_bytes};
 use axum::http::{HeaderMap, Request};
@@ -99,7 +99,7 @@ async fn exchange(
     if !call_id.is_empty() {
         builder = builder.header("x-litellm-call-id", call_id);
     }
-    let call = chat_routes(Arc::new(executor))
+    let call = chat_routes_with_call_id(Arc::new(executor), false)
         .oneshot(builder.body(Body::from(request.to_owned())).unwrap());
     let (sent, answered) = tokio::join!(provider(listener, reply, delay), call);
     let response = answered.unwrap();
