@@ -136,7 +136,10 @@ oracle_cases:
   - tools/oracle/cases/guardrails/pattern-matching/keyword-pattern-escape.yaml
   - tools/oracle/cases/guardrails/pattern-matching/keyword-pattern-wildcard.yaml
   - tools/oracle/cases/guardrails/pattern-matching/pattern-case-insensitive.yaml
-deviations: []
+deviations:
+  - what: "A custom regex with a \\N{...} named Unicode escape fails to compile with the same error as any other invalid pattern, where Python re resolves the name."
+    why: "The only maintained Unicode name crate, unicode_names2, is licensed under Unicode-DFS-2016, which deny.toml does not allow, and a hand-written name table is out of proportion for guardrail patterns. B4350 made the same call for cache bodies."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L732-L770
 out_of_scope:
   - Category keyword scanning and conditional sentence matching (_check_category_keywords, _check_conditional_categories), handled by B3694.
   - Phrase pattern matching (_check_phrase_patterns), handled by B3694.
@@ -149,6 +152,7 @@ pitfalls:
   - Overlapping span merging must preserve order after sorting; masking applies redaction tags left-to-right without re-parsing redacted text.
   - Blocked-word YAML validation checks both the outer structure (blocked_words key) and per-entry presence (keyword/action); warnings on invalid entries do not stop the file load.
   - Keyword-to-regex pattern calls re.escape first, then replaces the escaped wildcard \* with .? (single-character match, not zero-or-more).
+  - Don't add unicode_names2 or a name table. Every \N{...} escape, inside a class too, is the deviation above, and the tests check that it fails to compile.
 review_level: standard
 budget:
   max_changed_lines: 1500
