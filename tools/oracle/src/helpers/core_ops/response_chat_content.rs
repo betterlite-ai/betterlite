@@ -62,31 +62,26 @@ impl crate::helpers::Helper for Op {
             }),
             Input::FlatToolChoice { choice } => Ok(flat_tool_choice(choice)),
             Input::AnnotationFallback { annotations } => {
-                let values = annotations
-                    .as_deref()
-                    .unwrap_or_default()
-                    .iter()
-                    .map(|annotation| match annotation {
-                        AnnotationInput::Dict { value } => AnnotationValue::Dict(value.clone()),
-                        AnnotationInput::ModelDump { value } => {
-                            AnnotationValue::ModelDump(value.clone())
-                        }
-                        AnnotationInput::ModelDumpAndDict { value } => {
-                            AnnotationValue::ModelDump(value.clone())
-                        }
-                        AnnotationInput::LegacyDict { value } => {
-                            AnnotationValue::LegacyDict(value.clone())
-                        }
-                        AnnotationInput::Unsupported { name } => {
-                            AnnotationValue::Unsupported(name.clone())
-                        }
-                        AnnotationInput::Raises { error } => AnnotationValue::Raises(error.clone()),
-                    })
-                    .collect::<Vec<_>>();
-                let projection =
-                    annotation_fallback(annotations.as_ref().map(|_| values.as_slice()));
-                Ok(json!({"value": projection.value, "diagnostics": projection.diagnostics}))
+                Ok(annotation_projection(annotations.as_deref()))
             }
         }
     }
+}
+
+fn annotation_projection(annotations: Option<&[AnnotationInput]>) -> Value {
+    let values = annotations
+        .unwrap_or_default()
+        .iter()
+        .map(|annotation| match annotation {
+            AnnotationInput::Dict { value } => AnnotationValue::Dict(value.clone()),
+            AnnotationInput::ModelDump { value } | AnnotationInput::ModelDumpAndDict { value } => {
+                AnnotationValue::ModelDump(value.clone())
+            }
+            AnnotationInput::LegacyDict { value } => AnnotationValue::LegacyDict(value.clone()),
+            AnnotationInput::Unsupported { name } => AnnotationValue::Unsupported(name.clone()),
+            AnnotationInput::Raises { error } => AnnotationValue::Raises(error.clone()),
+        })
+        .collect::<Vec<_>>();
+    let projection = annotation_fallback(annotations.map(|_| values.as_slice()));
+    json!({"value": projection.value, "diagnostics": projection.diagnostics})
 }
