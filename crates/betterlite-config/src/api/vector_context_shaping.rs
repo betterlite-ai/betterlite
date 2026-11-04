@@ -41,13 +41,19 @@ impl Default for Settings {
 impl Section for Raw {
     type Settings = Settings;
 
-    fn convert<L>(self, _lookup: &L) -> Result<Settings, ConfigError>
+    fn convert<L>(self, lookup: &L) -> Result<Settings, ConfigError>
     where
         L: EnvironmentLookup,
     {
-        Ok(Settings {
-            failure_mode: self.litellm_settings.failure_mode,
-        })
+        let failure_mode = match self.litellm_settings.failure_mode {
+            JsonValue::String(text) => JsonValue::String(crate::resolve::resolve_string(
+                text,
+                "litellm_settings.vector_store_search_failure_mode",
+                lookup,
+            )?),
+            value => value,
+        };
+        Ok(Settings { failure_mode })
     }
 }
 
