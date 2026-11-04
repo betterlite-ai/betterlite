@@ -4,7 +4,9 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 
+pub mod callback_settings;
 mod temp_root;
+use callback_settings::CallbackSettings;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -221,31 +223,16 @@ fn start_message(options: &LaunchOptions, workers: u32) -> String {
     }
 }
 
-#[must_use]
-pub fn prometheus_callback_configured(
-    settings: Option<&BTreeMap<String, serde_json::Value>>,
-) -> bool {
-    settings.is_some_and(|configured| {
-        ["callbacks", "success_callback", "failure_callback"]
-            .into_iter()
-            .filter_map(|key| configured.get(key))
-            .any(|setting| {
-                setting.as_str() == Some("prometheus")
-                    || setting.as_array().is_some_and(|items| {
-                        items.iter().any(|item| item.as_str() == Some("prometheus"))
-                    })
-            })
-    })
-}
-
 pub fn prometheus_directory(
     workers: u32,
-    settings: Option<&BTreeMap<String, serde_json::Value>>,
+    settings: Option<&CallbackSettings>,
     metrics_port: Option<u16>,
     environment: &BTreeMap<String, String>,
     mode: DirectoryMode,
 ) -> Result<Option<DirectoryPreparation>, DirectoryPreparationError> {
-    if metrics_port.is_none() && (workers <= 1 || !prometheus_callback_configured(settings)) {
+    if metrics_port.is_none()
+        && (workers <= 1 || !settings.is_some_and(CallbackSettings::is_configured))
+    {
         return Ok(None);
     }
     let configured = environment
@@ -256,19 +243,8 @@ pub fn prometheus_directory(
                 .get("prometheus_multiproc_dir")
                 .filter(|value| !value.is_empty())
         });
-    let path = configured.map_or_else(
-        || {
-            let root = temp_root::resolve(environment);
-            if root.as_os_str() == "." {
-                PathBuf::from("litellm_prometheus_multiproc")
-            } else {
-                root.join("litellm_prometheus_multiproc")
-            }
-        },
-        PathBuf::from,
-    );
     let preparation = DirectoryPreparation {
-        path,
+        path: temp_root::multiproc_directory(environment, configured),
         action: if configured.is_some() {
             "Using existing".to_owned()
         } else {

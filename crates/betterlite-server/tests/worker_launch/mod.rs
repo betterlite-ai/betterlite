@@ -1,7 +1,13 @@
+use betterlite_server::worker_options::callback_settings::CallbackSettings;
 use betterlite_server::worker_options::*;
 use rstest::rstest;
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::env;
+use std::path::{Path, PathBuf};
+
+fn path_string(path: &Path) -> String {
+    path.to_str().expect("test path is valid UTF-8").to_owned()
+}
 
 fn options(backend: Backend) -> LaunchOptions {
     LaunchOptions {
@@ -151,28 +157,23 @@ fn start_message_and_metrics_message_are_separate() {
 }
 
 #[rstest]
-#[case::string("callbacks", serde_json::json!("prometheus"), true)]
-#[case::list("success_callback", serde_json::json!(["other", 3, "prometheus"]), true)]
-#[case::failure_callback("failure_callback", serde_json::json!("prometheus"), true)]
-#[case::misspelled("callbacks", serde_json::json!(["prometheu"]), false)]
-#[case::null("callbacks", serde_json::Value::Null, false)]
-fn callback_detection_checks_all_settings(
-    #[case] key: &str,
-    #[case] value: serde_json::Value,
-    #[case] expected: bool,
-) {
-    let settings = BTreeMap::from([(key.to_owned(), value)]);
-    assert_eq!(prometheus_callback_configured(Some(&settings)), expected);
+#[case::string(r#"{"callbacks":"prometheus"}"#, true)]
+#[case::list(r#"{"success_callback":["other",3,"prometheus"]}"#, true)]
+#[case::failure_callback(r#"{"failure_callback":"prometheus"}"#, true)]
+#[case::misspelled(r#"{"callbacks":["prometheu"]}"#, false)]
+#[case::null(r#"{"callbacks":null}"#, false)]
+fn callback_detection_checks_all_settings(#[case] input: &str, #[case] expected: bool) {
+    let settings = serde_json::from_str::<CallbackSettings>(input).expect("settings map");
+    assert_eq!(settings.is_configured(), expected);
 }
 
 #[test]
 fn callback_detection_ignores_unrelated_settings() {
-    let settings = BTreeMap::from([
-        ("drop_params".to_owned(), serde_json::json!(true)),
-        ("callbacks".to_owned(), serde_json::json!(["prometheus"])),
-        ("num_retries".to_owned(), serde_json::json!(3)),
-    ]);
-    assert!(prometheus_callback_configured(Some(&settings)));
+    let settings = serde_json::from_str::<CallbackSettings>(
+        r#"{"drop_params":true,"callbacks":["prometheus"],"num_retries":3}"#,
+    )
+    .expect("settings map");
+    assert!(settings.is_configured());
 }
 
 #[test]
@@ -182,7 +183,7 @@ fn metrics_listener_requests_shared_samples_without_callback_configuration() {
     assert_eq!(
         result,
         Some(DirectoryPreparation {
-            path: std::env::current_dir()
+            path: env::current_dir()
                 .expect("current directory")
                 .join("litellm_prometheus_multiproc"),
             action: "Auto-created".to_owned(),
@@ -212,7 +213,7 @@ fn multiproc_directory_uses_lowercase_environment_variant() {
 fn multiproc_directory_checks_temp_root_environment(#[case] key: &str) {
     let temporary = tempfile::tempdir().expect("temporary directory");
     let path = temporary.path().to_path_buf();
-    let environment = BTreeMap::from([(key.to_owned(), path.to_string_lossy().into_owned())]);
+    let environment = BTreeMap::from([(key.to_owned(), path_string(&path))]);
     let result = prometheus_directory(1, None, Some(9000), &environment, DirectoryMode::Plan)
         .expect("directory plan");
     assert_eq!(
@@ -225,17 +226,11 @@ fn multiproc_directory_checks_temp_root_environment(#[case] key: &str) {
 fn multiproc_directory_prefers_tmpdir_then_temp_then_tmp() {
     let tmpdir = tempfile::tempdir().expect("TMPDIR");
     let temp = tempfile::tempdir().expect("TEMP");
-    let tmp = tempfile::tempdir().expect("TMP");
+    let third_root = tempfile::tempdir().expect("TMP");
     let environment = BTreeMap::from([
-        (
-            "TMPDIR".to_owned(),
-            tmpdir.path().to_string_lossy().into_owned(),
-        ),
-        (
-            "TEMP".to_owned(),
-            temp.path().to_string_lossy().into_owned(),
-        ),
-        ("TMP".to_owned(), tmp.path().to_string_lossy().into_owned()),
+        ("TMPDIR".to_owned(), path_string(tmpdir.path())),
+        ("TEMP".to_owned(), path_string(temp.path())),
+        ("TMP".to_owned(), path_string(third_root.path())),
     ]);
     let result = prometheus_directory(1, None, Some(9000), &environment, DirectoryMode::Plan)
         .expect("directory plan");
@@ -251,12 +246,9 @@ fn multiproc_directory_skips_missing_tmpdir_candidate() {
     let environment = BTreeMap::from([
         (
             "TMPDIR".to_owned(),
-            temp.path().join("missing").to_string_lossy().into_owned(),
+            path_string(&temp.path().join("missing")),
         ),
-        (
-            "TEMP".to_owned(),
-            temp.path().to_string_lossy().into_owned(),
-        ),
+        ("TEMP".to_owned(), path_string(temp.path())),
     ]);
     let result = prometheus_directory(1, None, Some(9000), &environment, DirectoryMode::Plan)
         .expect("directory plan");
@@ -271,10 +263,7 @@ fn empty_uppercase_multiproc_directory_uses_temp_root() {
     let temp = tempfile::tempdir().expect("temporary root");
     let environment = BTreeMap::from([
         ("PROMETHEUS_MULTIPROC_DIR".to_owned(), String::new()),
-        (
-            "TMPDIR".to_owned(),
-            temp.path().to_string_lossy().into_owned(),
-        ),
+        ("TMPDIR".to_owned(), path_string(temp.path())),
     ]);
     let result = prometheus_directory(2, None, Some(9000), &environment, DirectoryMode::Plan)
         .expect("directory plan")
@@ -293,7 +282,7 @@ fn empty_uppercase_multiproc_directory_falls_through_to_lowercase_value() {
         ("PROMETHEUS_MULTIPROC_DIR".to_owned(), String::new()),
         (
             "prometheus_multiproc_dir".to_owned(),
-            temporary.path().to_string_lossy().into_owned(),
+            path_string(temporary.path()),
         ),
     ]);
     let result = prometheus_directory(2, None, Some(9000), &environment, DirectoryMode::Plan)

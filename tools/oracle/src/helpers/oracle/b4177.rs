@@ -1,5 +1,6 @@
+use betterlite_server::worker_options::callback_settings::CallbackSettings;
 use betterlite_server::worker_options::{
-    DirectoryMode, LaunchOptions, launch_plan, prometheus_callback_configured, prometheus_directory,
+    DirectoryMode, LaunchOptions, launch_plan, prometheus_directory,
 };
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -11,7 +12,7 @@ pub(crate) struct Input {
     function: String,
     options: Option<LaunchOptions>,
     workers: Option<u32>,
-    settings: Option<BTreeMap<String, serde_json::Value>>,
+    settings: Option<CallbackSettings>,
     metrics_port: Option<u16>,
     #[serde(default)]
     environment: BTreeMap<String, String>,
@@ -32,7 +33,10 @@ impl crate::helpers::Helper for Op {
                 }
             }
             "callback_configured" => {
-                let result = prometheus_callback_configured(input.settings.as_ref());
+                let result = input
+                    .settings
+                    .as_ref()
+                    .is_some_and(CallbackSettings::is_configured);
                 Ok(serde_json::Value::Bool(result))
             }
             "prometheus_directory" => {
