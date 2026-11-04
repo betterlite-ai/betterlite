@@ -6,7 +6,7 @@ use std::fs::{self, File};
 use std::ops::ControlFlow;
 use std::path::Path;
 
-use crate::dispatch::attempt::remove_extra_targets;
+use crate::dispatch::attempt::{UNFINISHED_NOTE, remove_extra_targets};
 use crate::dispatch::progress::{NextRun, Panel, Progress, ReviewerPin, WorkerSession};
 use crate::dispatch::prompt::Brief;
 use crate::dispatch::review::{Bench, PARITY_RULES, review, reviewer_rungs};
@@ -228,6 +228,36 @@ fn a_blocked_worker_resumes_its_session_once_then_stops_on_its_rung() {
         (2, 1, 0, 1)
     );
     assert_eq!(progress.next, NextRun::Fresh);
+}
+
+#[test]
+fn a_blocked_answer_while_its_own_gate_run_is_unfinished_is_not_counted() {
+    let (mut agents, task) = fixtures();
+    claude_answers(
+        &mut agents,
+        r#"{"task":"B000","status":"blocked","summary":"The preflight still waits for a build slot after many polls.","blocker":"preflight still running","owned":[],"prior_art":[],"notes":[]}"#,
+    );
+    for runner in &mut agents.runners {
+        runner.args[1] = format!("mkdir -p '{{home}}/gate/runs/run-cut'; {}", runner.args[1]);
+    }
+    let folder = tempfile::tempdir().unwrap();
+    worktree(folder.path());
+    let first = &agents.roles.worker.ladder[0];
+    let mut progress = progress();
+    let error = climb_rung(
+        &agents,
+        &brief(&task),
+        &places(folder.path()),
+        first,
+        &mut progress,
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("2 blocked reports in a row"));
+    let resumed = fs::read_to_string(folder.path().join("resumed")).unwrap();
+    assert_eq!(resumed, "s1\ns1\n");
+    let prompts = fs::read_to_string(folder.path().join("prompts")).unwrap();
+    assert!(prompts.contains(UNFINISHED_NOTE), "{prompts}");
+    assert_eq!((progress.number, progress.used), (3, 1));
 }
 
 #[test]
