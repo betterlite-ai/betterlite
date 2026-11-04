@@ -140,7 +140,9 @@ impl crate::helpers::Helper for Op {
                 set_verbose,
                 logger_fails,
                 console_fails,
-            } => run_main(payload, set_verbose, (*logger_fails, *console_fails)),
+            } => run_logged(set_verbose, (*logger_fails, *console_fails), |hooks| {
+                hooks.main_print_verbose(payload.clone())
+            }),
             Input::Utils {
                 payload,
                 set_verbose,
@@ -148,12 +150,9 @@ impl crate::helpers::Helper for Op {
                 logger_only,
                 logger_fails,
                 console_fails,
-            } => run_utils(
-                payload,
-                set_verbose,
-                (log_level, logger_only),
-                (*logger_fails, *console_fails),
-            ),
+            } => run_logged(set_verbose, (*logger_fails, *console_fails), |hooks| {
+                hooks.utils_print_verbose(payload.clone(), log_level, logger_only)
+            }),
             Input::Active {
                 set_verbose,
                 logger_debug_enabled,
@@ -165,25 +164,18 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn run_main(
-    payload: &Payload,
+fn run_logged<F>(
     set_verbose: &Payload,
     sink_fails: (bool, bool),
-) -> crate::helpers::HelperResult {
+    operation: F,
+) -> crate::helpers::HelperResult
+where
+    F: FnOnce(
+        &VerboseHooks<FixtureLogger, FixtureConsole>,
+    ) -> betterlite_logging::verbose_hooks::HookResult,
+{
     let hooks = build_hooks(sink_fails, false, set_verbose)?;
-    let mut result = hooks.main_print_verbose(payload.clone());
-    result.logs = hooks.logger.records.take();
-    Ok(json!(result))
-}
-
-fn run_utils(
-    payload: &Payload,
-    set_verbose: &Payload,
-    settings: (&str, &Payload),
-    sink_fails: (bool, bool),
-) -> crate::helpers::HelperResult {
-    let hooks = build_hooks(sink_fails, false, set_verbose)?;
-    let mut result = hooks.utils_print_verbose(payload.clone(), settings.0, settings.1);
+    let mut result = operation(&hooks);
     result.logs = hooks.logger.records.take();
     Ok(json!(result))
 }
