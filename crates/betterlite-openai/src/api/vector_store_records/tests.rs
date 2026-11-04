@@ -308,6 +308,7 @@ fn managed_index_timestamp_calendar_and_clock_boundaries() {
         ("2024-09-30T00:00:00Z", true),
         ("2024-11-30T00:00:00Z", true),
         ("2024-02-28T00:00:00Z", true),
+        ("2023-02-28T00:00:00Z", true),
         ("2024-01-00T00:00:00Z", false),
         ("2024-01-01T24:00:00Z", false),
         ("2024-01-01T00:60:00Z", false),
