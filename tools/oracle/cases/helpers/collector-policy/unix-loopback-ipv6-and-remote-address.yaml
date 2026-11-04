@@ -1,0 +1,12 @@
+kind: helper
+name: collector-unix-address
+call:
+  collector_policy:
+    address: unix:///var/run/litellm/collector.sock
+    enabled: true
+    job_role: null
+    suppress: null
+    debug: false
+env: {}
+compare:
+  ignore: []

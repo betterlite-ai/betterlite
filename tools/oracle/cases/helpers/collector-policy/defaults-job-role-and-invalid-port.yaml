@@ -1,0 +1,12 @@
+kind: helper
+name: collector-loopback-address
+call:
+  collector_policy:
+    address: tcp://[::1]:4312
+    enabled: true
+    job_role: collector
+    suppress: 'false'
+    debug: false
+env: {}
+compare:
+  ignore: []

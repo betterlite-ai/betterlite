@@ -1,0 +1,1 @@
+{"enabled":false,"address":"unix:///var/run/litellm/collector.sock","buffer_size":1000,"on_unavailable":"fallback","drain_timeout_seconds":10.0,"connect_timeout_seconds":1.0,"job_role":null}

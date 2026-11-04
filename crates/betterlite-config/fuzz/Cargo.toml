@@ -9,6 +9,7 @@ cargo-fuzz = true
 
 [dependencies]
 betterlite-config = { path = ".." }
+betterlite-env = { path = "../../betterlite-env" }
 libfuzzer-sys = "0.4.9"
 serde_json = { version = "1.0.154", features = ["raw_value"] }
 tempfile = "3.27.0"
@@ -35,3 +36,10 @@ doc = false
 bench = false
 
 [workspace]
+
+[[bin]]
+name = "collector_settings"
+path = "fuzz_targets/collector_settings.rs"
+test = false
+doc = false
+bench = false

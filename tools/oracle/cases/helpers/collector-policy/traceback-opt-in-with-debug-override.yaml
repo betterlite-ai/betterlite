@@ -1,0 +1,12 @@
+kind: helper
+name: collector-remote-address
+call:
+  collector_policy:
+    address: tcp://collector.example:4312
+    enabled: true
+    job_role: worker
+    suppress: 'true'
+    debug: true
+env: {}
+compare:
+  ignore: []
