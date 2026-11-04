@@ -21,6 +21,10 @@ _FIELDS = (
     "max_retry_age_seconds",
     "max_adaptive_concurrency",
     "use_ssl",
+    "verify",
+    "credentials",
+    "log_prompts_only",
+    "partition_granularity",
     "use_team_prefix",
     "use_key_prefix",
     "strip_base64_files",
@@ -30,6 +34,16 @@ _FIELDS = (
     "batch_file_upload",
     "server_side_encryption",
     "sse_kms_key_id",
+)
+_CREDENTIAL_FIELDS = (
+    "aws_access_key_id",
+    "aws_secret_access_key",
+    "aws_session_token",
+    "aws_session_name",
+    "aws_profile_name",
+    "aws_role_name",
+    "aws_web_identity_token",
+    "aws_sts_endpoint",
 )
 
 
@@ -42,7 +56,19 @@ def run(input_value: dict[str, Json]) -> Json:
         litellm.s3_callback_params = cast(dict[str, Json], request.get("global", {}))
         constructor = cast(dict[str, Json], request.get("constructor", {}))
         initialize(params_source=request.get("audit"), **constructor)
-        return {field: cast(Json, getattr(logger, f"s3_{field}")) for field in _FIELDS}
+        omitted = {"credentials", "verify", "log_prompts_only", "partition_granularity"}
+        result = {
+            field: cast(Json, getattr(logger, f"s3_{field}"))
+            for field in _FIELDS
+            if field not in omitted
+        }
+        result["verify"] = cast(Json, logger.s3_verify)
+        result["log_prompts_only"] = cast(Json, logger.s3_log_prompts_only)
+        result["partition_granularity"] = cast(Json, logger.s3_partition_granularity)
+        result["credentials"] = {
+            field: cast(Json, getattr(logger, f"s3_{field}")) for field in _CREDENTIAL_FIELDS
+        }
+        return result
     initialize(params_source=request.get("source", {}))
     if operation == "partition":
         output: list[Json] = []

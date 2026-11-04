@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use crate::case::{HelperCase, parse_helper_case};
+use crate::case::{HelperCase, helper::validate_helper};
 use std::fs;
 use std::path::Path;
 
@@ -19,7 +19,12 @@ fn helper_seeds_select_local_ttl_cache() {
         .collect::<Vec<_>>();
     assert!(!seeds.is_empty());
     assert!(seeds.iter().all(|source| {
-        parse_helper_case(source).is_ok()
+        serde_saphyr::from_str(source)
+            .map_err(|error| error.to_string())
+            .and_then(|parsed| {
+                validate_helper(Path::new("<helper>"), &parsed).map_err(|error| error.to_string())
+            })
+            .is_ok()
             && serde_saphyr::from_str::<HelperCase>(source)
                 .unwrap()
                 .call

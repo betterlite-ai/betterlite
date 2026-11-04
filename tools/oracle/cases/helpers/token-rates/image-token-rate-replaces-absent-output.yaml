@@ -1,0 +1,13 @@
+kind: helper
+name: image-token-rate-replaces-absent-output
+call:
+  token_rates:
+    operation: base
+    model_info:
+      output_cost_per_image_token: "0.00004"
+    usage:
+      prompt_tokens: 1
+    service_tier: null
+    provider: null
+compare: {ignore: []}
+env: {}

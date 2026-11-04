@@ -4,7 +4,7 @@ use std::str::FromStr;
 
 use super::fixture;
 
-const SEND_DEFAULT_PII_ENV: &str = "SENTRY_SEND_DEFAULT_PII";
+pub const SEND_DEFAULT_PII_ENV: &str = "SENTRY_SEND_DEFAULT_PII";
 const MINIMUM_CUSTOM_KEY_LENGTH_ENV: &str = "MINIMUM_CUSTOM_KEY_LENGTH";
 const GENERATED_KEY_LENGTH_ENV: &str = "LENGTH_OF_LITELLM_GENERATED_KEY";
 
@@ -50,12 +50,6 @@ pub enum SettingsError {
     },
 }
 
-#[must_use]
-pub fn send_default_pii_from_env(env: &BTreeMap<String, String>) -> bool {
-    let raw = env.get(SEND_DEFAULT_PII_ENV);
-    raw.is_some_and(|value| value.trim().eq_ignore_ascii_case("true"))
-}
-
 fn parse_env_value<T, E>(
     env: &BTreeMap<String, String>,
     key: &str,
@@ -92,7 +86,9 @@ fn event_scrubber_denylist(send_default_pii: bool) -> Vec<String> {
 pub fn build_sentry_init_options(
     env: &BTreeMap<String, String>,
 ) -> Result<SentryInitOptions, SettingsError> {
-    let send_default_pii = send_default_pii_from_env(env);
+    let send_default_pii = env
+        .get(SEND_DEFAULT_PII_ENV)
+        .is_some_and(|value| value.trim().eq_ignore_ascii_case("true"));
     Ok(SentryInitOptions {
         dsn: env.get("SENTRY_DSN").cloned(),
         traces_sample_rate: parse_env_value(env, "SENTRY_API_TRACE_RATE", 1.0, |source| {

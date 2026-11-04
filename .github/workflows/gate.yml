@@ -10,6 +10,10 @@ on:
 
 permissions: {}
 
+env:
+  # three runners take main's whole suite from 13.5 to 10 minutes
+  TEST_SHARDS: 3
+
 concurrency:
   group: gate-${{ github.event.pull_request.number || github.event.merge_group.head_ref || github.ref }}
   cancel-in-progress: ${{ github.event_name != 'push' }}
@@ -59,7 +63,7 @@ jobs:
           if [[ $branch =~ ^task/(B[0-9]+)(-|$) ]]; then
             task=${BASH_REMATCH[1]}
           fi
-          parts='["lint","tests"]'
+          parts=$(jq -cn --argjson shards "$TEST_SHARDS" '["lint"] + [range(1; $shards + 1) | "tests-\(.)"]')
           if [[ $EVENT == pull_request ]]; then
             parts='["lint"]'
           elif [[ $EVENT == merge_group && -n $task ]]; then
@@ -82,6 +86,8 @@ jobs:
         part: ${{ fromJSON(needs.find.outputs.parts) }}
     container:
       image: rust:1.98.0-slim-trixie@sha256:17d1ba895198f9934c6314ec5346a0d5115372f3243390c3d731e242f35c2f27
+      volumes:
+        - /usr/local/lib/android:/runner-android
     services:
       postgres:
         image: postgres:16.6@sha256:557fea37a744d5f4c8faab304b0a90858b53ab119735a88c131fd19dab802f36
@@ -109,6 +115,14 @@ jobs:
       POSTGRES_TEST_URL: postgresql://betterlite:betterlite@postgres:5432/betterlite
       BETTERLITE_ORACLE_CACHE: ${{ github.event_name == 'push' && 'shared' || 'own' }}
     steps:
+      # a test build fills the runner's disk on some runner images, and the Android SDK holds about 14 GiB of it
+      - name: Free the runner's disk
+        if: matrix.part != 'lint'
+        run: |
+          df -h /
+          rm -rf /runner-android/*
+          df -h /
+
       # g++: libfuzzer-sys compiles libFuzzer from C++ even under cargo check
       - name: Install system packages
         run: apt-get update && apt-get install --yes --no-install-recommends ca-certificates curl git jq procps zstd g++
@@ -125,12 +139,12 @@ jobs:
       - name: Add Rust components
         run: rustup component add clippy rustfmt llvm-tools-preview
 
-      # clippy keeps check builds and the tests keep full builds, so each kind has its own cache
+      # clippy keeps check builds and the tests keep full builds, so each kind has its own cache, and only the first test shard saves it
       - name: Restore the cargo cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           shared-key: gate-${{ matrix.part == 'lint' && 'lint' || 'tests' }}
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.ref == 'refs/heads/main' && (matrix.part == 'lint' || matrix.part == 'tests-1') }}
           workspaces: |
             .development/gate -> target
             . -> target
@@ -213,10 +227,11 @@ jobs:
           selection=()
           case $PART in
             lint) for id in "${lint[@]}"; do selection+=(--only "$id"); done ;;
-            tests)
+            tests-*)
               packages=$(cargo gate affected) || exit 1
               if [[ -z $packages ]]; then echo "the change affects no package"; exit 0; fi
-              exec cargo nextest run --locked --no-tests=warn $packages ;;
+              # the tests use LiteLLM but not its dev tools, about 330 MB
+              UV_NO_DEV=1 exec cargo nextest run --locked --no-tests=warn --partition "hash:${PART#tests-}/$TEST_SHARDS" $packages ;;
             task) for id in "${lint[@]}" mutants coverage; do selection+=(--skip "$id"); done ;;
           esac
           if [[ $PART == task ]]; then
@@ -229,11 +244,11 @@ jobs:
           cargo gate run "${TASK:-B000}" "${selection[@]}"
 
       - name: Save LiteLLM's helper answers
-        if: github.ref == 'refs/heads/main' && matrix.part == 'tests'
+        if: github.ref == 'refs/heads/main' && startsWith(matrix.part, 'tests-')
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/betterlite-oracle
-          key: oracle-answers-${{ github.sha }}
+          key: oracle-answers-${{ github.sha }}-${{ matrix.part }}
 
       - name: Keep the gate logs
         if: always()

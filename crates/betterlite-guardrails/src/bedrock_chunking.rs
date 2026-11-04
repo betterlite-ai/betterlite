@@ -9,7 +9,7 @@ mod tests;
 
 pub const DEFAULT_CHUNK_BUDGET_CHARS: usize = 25_000;
 const INTERVENED: &str = "GUARDRAIL_INTERVENED";
-const TOO_LARGE: [&str; 6] = [
+pub const TOO_LARGE: [&str; 6] = [
     "text unit",
     "maximum input size",
     "content size",
@@ -41,18 +41,19 @@ pub fn uses_grounding(content: &[ContentItem]) -> bool {
     qualifiers.any(|values| !values.is_empty())
 }
 
-fn source_text(item: &ContentItem) -> &str {
-    let block = item.text.as_ref().and_then(|text| text.text.as_deref());
-    block.unwrap_or("")
-}
-
 #[must_use]
 pub fn bin_pack(content: &[ContentItem], budget: usize) -> Vec<Vec<ContentItem>> {
     let mut batches = Vec::new();
     let mut current = Vec::new();
     let mut used: usize = 0;
     for item in content {
-        let length = source_text(item).chars().count();
+        let length = item
+            .text
+            .as_ref()
+            .and_then(|text| text.text.as_deref())
+            .unwrap_or("")
+            .chars()
+            .count();
         if !current.is_empty() && used.saturating_add(length) > budget {
             batches.push(mem::take(&mut current));
             used = 0;
@@ -120,12 +121,6 @@ pub fn nearest_whitespace(text: &str) -> usize {
         .unwrap_or(midpoint)
 }
 
-#[must_use]
-pub fn is_input_too_large(detail: Option<&str>) -> bool {
-    let lowered = detail.map(str::to_lowercase).unwrap_or_default();
-    TOO_LARGE.iter().any(|pattern| lowered.contains(pattern))
-}
-
 fn chunk_outputs(chunk: &ChunkResult) -> &[Output] {
     let response = &chunk.response;
     let outputs = response
@@ -142,7 +137,15 @@ fn merge_group(group: &[ChunkResult]) -> (Vec<Output>, bool) {
             let masked_text = chunk_outputs(chunk)
                 .first()
                 .and_then(|output| output.text.clone());
-            masked_text.unwrap_or_else(|| chunk.content.first().map_or("", source_text).to_owned())
+            masked_text.unwrap_or_else(|| {
+                chunk
+                    .content
+                    .first()
+                    .and_then(|item| item.text.as_ref())
+                    .and_then(|text| text.text.as_deref())
+                    .unwrap_or("")
+                    .to_owned()
+            })
         };
         let text = Some(group.iter().map(fragment_text).collect());
         let extra = Extensions::new();
@@ -154,7 +157,13 @@ fn merge_group(group: &[ChunkResult]) -> (Vec<Output>, bool) {
     }
     let sources = group.iter().flat_map(|chunk| &chunk.content);
     let placeholders = sources.map(|item| Output {
-        text: Some(source_text(item).to_owned()),
+        text: Some(
+            item.text
+                .as_ref()
+                .and_then(|text| text.text.as_deref())
+                .unwrap_or("")
+                .to_owned(),
+        ),
         extra: Extensions::new(),
     });
     (placeholders.collect(), false)

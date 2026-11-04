@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::loader::{ConfigError, ConfigLoader};
-use betterlite_config::types::LiteLlmSettings;
 use betterlite_openai::base_helpers::{
     DUMMY_TOOLS, HiddenCarrier, HistoryMessage, ImageEditBase, ResponseKind, ResponsesBase,
     add_thinking_max_tokens, append_tools, assistant_has_thinking, has_tool_calls, hidden_params,
@@ -106,7 +105,16 @@ pub(crate) fn invoke(call: &BaseCall) -> Outcome {
         BaseCall::BaseError(parts) => serde_json::to_value(ProviderError::from(parts)),
         BaseCall::ClassConfig(members) => Ok(Value::Object(provider_config(&members.values)?)),
         BaseCall::Thinking(params) => serde_json::to_value(thinking_request(&params)),
-        BaseCall::ThinkingMaxTokens(input) => return input.run(),
+        BaseCall::ThinkingMaxTokens(mut input) => {
+            let default_max_tokens = ConfigLoader {
+                lookup: input.environment,
+            }
+            .load("")?
+            .litellm_settings
+            .default_max_tokens;
+            add_thinking_max_tokens(&input.requested, &mut input.options, default_max_tokens)?;
+            Ok(Value::Object(input.options))
+        }
         BaseCall::AppendTools(mut input) => {
             append_tools(&mut input.options, input.tools)?;
             Ok(Value::Object(input.options))
@@ -123,31 +131,14 @@ pub(crate) fn invoke(call: &BaseCall) -> Outcome {
         ]),
         BaseCall::DummyTool(()) => serde_json::to_value(DUMMY_TOOLS),
         BaseCall::ModifyParams(input) => return input.run(),
-        BaseCall::ResponsesInit(()) => serde_json::to_value(Vec::from_iter(
-            provider_config(&ResponsesBase)?
-                .into_iter()
-                .map(|(name, _)| name),
-        )),
-        BaseCall::ImageEditInit(()) => serde_json::to_value(Vec::from_iter(
-            provider_config(&ImageEditBase)?
-                .into_iter()
-                .map(|(name, _)| name),
-        )),
+        BaseCall::ResponsesInit(()) => {
+            serde_json::to_value(provider_config(&ResponsesBase)?.keys().collect::<Vec<_>>())
+        }
+        BaseCall::ImageEditInit(()) => {
+            serde_json::to_value(provider_config(&ImageEditBase)?.keys().collect::<Vec<_>>())
+        }
     };
     Ok(value.map_err(encode)?)
-}
-
-fn load_settings(lookup: Environment, source: &str) -> Result<LiteLlmSettings, ConfigError> {
-    let loaded = ConfigLoader { lookup }.load(source)?;
-    Ok(loaded.litellm_settings)
-}
-
-impl TokensCall {
-    fn run(mut self) -> Outcome {
-        let default_max_tokens = load_settings(self.environment, "")?.default_max_tokens;
-        add_thinking_max_tokens(&self.requested, &mut self.options, default_max_tokens)?;
-        Ok(Value::Object(self.options))
-    }
 }
 
 impl HiddenCall {
@@ -167,12 +158,17 @@ impl HiddenCall {
 
 impl ModifyCall {
     fn run(self) -> Outcome {
-        let source = self.configured.map_or_else(String::new, |value| {
-            format!("litellm_settings:\n  modify_params: {value}\n")
-        });
-        Ok(Value::Bool(
-            load_settings(self.environment, &source)?.modify_params,
-        ))
+        let source = match self.configured {
+            None => "",
+            Some(true) => "litellm_settings: {modify_params: true}",
+            Some(false) => "litellm_settings: {modify_params: false}",
+        };
+        let settings = ConfigLoader {
+            lookup: self.environment,
+        }
+        .load(source)?
+        .litellm_settings;
+        Ok(Value::Bool(settings.modify_params))
     }
 }
 

@@ -6,6 +6,8 @@ use super::{
     UnknownFields,
 };
 use crate::metadata::identity::Mode;
+use crate::token_rates::Usage;
+use crate::token_rates::batch::get_batch_cost_rates;
 use rstest::rstest;
 use std::sync::Arc;
 use std::{
@@ -14,6 +16,26 @@ use std::{
 };
 
 const WARNING_BOUNDARY_ENTRIES: usize = MAX_CATALOG_WARNINGS.div_euclid(2);
+
+#[rstest]
+#[case::below(199_999, Some("xai"), 1)]
+#[case::exclusive_boundary(200_000, Some("openai"), 1)]
+#[case::inclusive_boundary(200_000, Some("xai"), 2)]
+#[case::above(200_001, Some("openai"), 2)]
+fn catalog_batch_prices_retain_provider_specific_threshold_boundaries(
+    #[case] prompt_tokens: i64,
+    #[case] provider: Option<&str>,
+    #[case] expected: i64,
+) {
+    let catalog = ModelCatalog::parse(
+        br#"{"model":{"input_cost_per_token_batches":1,"input_cost_per_token_above_200k_tokens_batches":2}}"#,
+        UnknownFields::Reject,
+    ).unwrap();
+    let prices = &catalog.entries["model"].prices;
+    let record = serde_json::from_str(&serde_json::to_string(prices).unwrap()).unwrap();
+    let rates = get_batch_cost_rates(&record, Usage { prompt_tokens }, provider).unwrap();
+    assert_eq!(rates.input, Some(rust_decimal::Decimal::from(expected)));
+}
 
 #[derive(Clone, Copy, Debug)]
 enum Outcome {
@@ -34,6 +56,9 @@ enum Outcome {
     WarningBoundary(usize, usize),
     WarningOverflow,
     AliasOverflow,
+    GeneralizationRuleSkipped,
+    GeneralizationCapabilityKept(&'static str),
+    ProviderSpecificSchemaKept,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -88,7 +113,7 @@ enum Failure {
 #[case::trailing(b"{}x".to_vec(), UnknownFields::Warn, Outcome::Failure(Failure::Invalid))]
 #[case::price_unknown_warn(br#"{"model":{"litellm_provider":"openai","off_peak_pricing":{"input_cost_per_token":0.0000002,"new_field":true}}}"#.to_vec(), UnknownFields::Warn, Outcome::PriceWarn("model.off_peak_pricing.new_field"))]
 #[case::price_unknown_reject(br#"{"model":{"litellm_provider":"openai","off_peak_pricing":{"input_cost_per_token":0.0000002,"new_field":true}}}"#.to_vec(), UnknownFields::Reject, Outcome::PriceUnknown)]
-#[case::provider_specific_known(br#"{"model":{"litellm_provider":"bedrock","provider_specific_entry":{"bedrock_invocation_schema":"titan_v2"}}}"#.to_vec(), UnknownFields::Reject, Outcome::Count(1))]
+#[case::provider_specific_schema_kept(br#"{"model":{"litellm_provider":"bedrock","provider_specific_entry":{"bedrock_invocation_schema":"titan_v2"}}}"#.to_vec(), UnknownFields::Reject, Outcome::ProviderSpecificSchemaKept)]
 #[case::provider_specific_unknown_warn(br#"{"model":{"litellm_provider":"bedrock","provider_specific_entry":{"bedrock_invocation_schema":"titan_v2","new_field":true}}}"#.to_vec(), UnknownFields::Warn, Outcome::PriceFieldWarn("model.provider_specific_entry.new_field"))]
 #[case::provider_specific_null_reject(br#"{"model":{"provider_specific_entry":null}}"#.to_vec(), UnknownFields::Reject, Outcome::Failure(Failure::PriceType))]
 #[case::provider_specific_null_warn(br#"{"model":{"provider_specific_entry":null}}"#.to_vec(), UnknownFields::Warn, Outcome::Failure(Failure::PriceType))]
@@ -116,6 +141,10 @@ enum Failure {
     Outcome::Count(1)
 )]
 #[case::alias_limit(aliased_model(MAX_CATALOG_ALIASES + 1), UnknownFields::Reject, Outcome::AliasOverflow)]
+#[case::generalization_model_info_null_warn(br#"{"fallback_generalizations":{"rules":[{"name":"bad","pattern":"^x","model_info":null}]},"model":{"litellm_provider":"openai"}}"#.to_vec(), UnknownFields::Warn, Outcome::GeneralizationRuleSkipped)]
+#[case::generalization_model_info_null_reject(br#"{"fallback_generalizations":{"rules":[{"name":"bad","pattern":"^x","model_info":null}]},"model":{"litellm_provider":"openai"}}"#.to_vec(), UnknownFields::Reject, Outcome::GeneralizationRuleSkipped)]
+#[case::generalization_tiered_pricing_malformed_warn(br#"{"fallback_generalizations":{"rules":[{"name":"tiers","pattern":"^x","model_info":{"tiered_pricing":{}}}]},"model":{"litellm_provider":"openai"}}"#.to_vec(), UnknownFields::Warn, Outcome::GeneralizationCapabilityKept("tiered_pricing"))]
+#[case::generalization_off_peak_windows_malformed_reject(br#"{"fallback_generalizations":{"rules":[{"name":"windows","pattern":"^x","model_info":{"off_peak_pricing":{"windows":null}}}]},"model":{"litellm_provider":"openai"}}"#.to_vec(), UnknownFields::Reject, Outcome::GeneralizationCapabilityKept("off_peak_pricing"))]
 fn model_catalog_tests_behavior(
     #[case] bytes: Vec<u8>,
     #[case] mode: UnknownFields,
@@ -136,7 +165,9 @@ fn model_catalog_tests_behavior(
             let catalog = result.unwrap();
             check_lookup(&catalog, "model");
             let price = catalog
-                .lookup("model")
+                .lookup
+                .get("model")
+                .and_then(|canonical| catalog.entries.get(canonical.as_ref()))
                 .unwrap()
                 .prices
                 .values
@@ -174,7 +205,9 @@ fn model_catalog_tests_behavior(
             assert!(catalog.warnings.contains(&path.to_owned()));
             assert_eq!(
                 catalog
-                    .lookup("model")
+                    .lookup
+                    .get("model")
+                    .and_then(|canonical| catalog.entries.get(canonical.as_ref()))
                     .unwrap()
                     .prices
                     .off_peak
@@ -199,12 +232,24 @@ fn model_catalog_tests_behavior(
         Outcome::NoWarnings => {
             let catalog = result.unwrap();
             assert!(catalog.warnings.is_empty());
-            assert!(catalog.lookup("model").is_some());
+            assert!(
+                catalog
+                    .lookup
+                    .get("model")
+                    .and_then(|canonical| catalog.entries.get(canonical.as_ref()))
+                    .is_some()
+            );
         }
         Outcome::AliasInvalid => {
             let catalog = result.unwrap();
             assert_eq!(catalog.entries.len(), 1);
-            assert!(catalog.lookup("bad").is_none());
+            assert!(
+                catalog
+                    .lookup
+                    .get("bad")
+                    .and_then(|canonical| catalog.entries.get(canonical.as_ref()))
+                    .is_none()
+            );
             assert_eq!(catalog.warnings.len(), 1);
             assert!(catalog.warnings[0].contains("aliases"));
         }
@@ -230,7 +275,52 @@ fn model_catalog_tests_behavior(
             ));
         }
         Outcome::Failure(failure) => check_error(&result.unwrap_err(), failure),
+        Outcome::GeneralizationRuleSkipped => {
+            let catalog = result.unwrap();
+            assert_eq!(catalog.entries.len(), 1);
+            assert_eq!(
+                catalog.warnings,
+                [
+                    "LiteLLM: skipping malformed fallback generalization rule bad (needs string 'pattern' and dict 'model_info')."
+                ]
+            );
+            assert_eq!(catalog.generalizations.rules.len(), 1);
+            assert!(catalog.generalizations.match_routing("x").is_none());
+            assert!(catalog.generalizations.match_capabilities("x").is_none());
+        }
+        Outcome::GeneralizationCapabilityKept(key) => {
+            let catalog = result.unwrap();
+            assert_eq!(catalog.entries.len(), 1);
+            assert!(catalog.warnings.is_empty());
+            let capabilities = catalog.generalizations.match_capabilities("x").unwrap();
+            assert!(capabilities.contains_key(key));
+        }
+        Outcome::ProviderSpecificSchemaKept => {
+            let catalog = result.unwrap();
+            assert_eq!(
+                catalog.entries["model"]
+                    .prices
+                    .provider_specific
+                    .bedrock_invocation_schema,
+                Some("titan_v2".to_owned())
+            );
+        }
     }
+}
+
+#[rstest]
+#[case::root("fixtures/model_prices_and_context_window.json")]
+#[case::backup("fixtures/model_prices_and_context_window_backup.json")]
+fn pinned_catalog_keeps_invocation_schema(#[case] path: &str) {
+    let bytes = fs::read(path).unwrap();
+    let catalog = ModelCatalog::parse(&bytes, UnknownFields::Reject).unwrap();
+    assert_eq!(
+        catalog.entries["amazon.titan-embed-text-v2:0"]
+            .prices
+            .provider_specific
+            .bedrock_invocation_schema,
+        Some("titan_v2".to_owned())
+    );
 }
 
 #[test]
@@ -323,12 +413,22 @@ fn check_warning_bytes(error: &CatalogError) {
 }
 
 fn check_lookup(catalog: &ModelCatalog, name: &str) {
-    let entry = catalog.lookup(name).unwrap();
+    let entry = catalog
+        .lookup
+        .get(name)
+        .and_then(|canonical| catalog.entries.get(canonical.as_ref()))
+        .unwrap();
     let metadata = catalog.metadata(name).unwrap();
     assert_eq!(entry.name, "model");
     assert_eq!(metadata.model, "model");
     assert_eq!(metadata.provider, "openai");
-    assert!(catalog.lookup("missing").is_none());
+    assert!(
+        catalog
+            .lookup
+            .get("missing")
+            .and_then(|canonical| catalog.entries.get(canonical.as_ref()))
+            .is_none()
+    );
     assert!(catalog.metadata("missing").is_none());
     if catalog.entries.len() > 1 {
         assert_eq!(catalog.warnings.len(), 1);

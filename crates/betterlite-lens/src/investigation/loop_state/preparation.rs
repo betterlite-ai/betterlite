@@ -27,21 +27,25 @@ pub(super) fn prepare(
         })
         .cloned()
         .collect();
-    let observation_batches = partition_items(&observations, json_size, 16_000)?;
+    let observation_batches = partition_items(
+        &observations,
+        |value| serde_json::to_string(value).map_or(usize::MAX, |text| text.chars().count()),
+        16_000,
+    )?;
     let supporting = observation_batches
         .get(state.observation_page)
         .cloned()
         .unwrap_or_default();
-    let cited: Vec<(String, String)> = supporting
-        .iter()
-        .flat_map(|item| item.evidence.iter())
-        .map(|item| (item.execution_id.clone(), item.span_id.clone()))
-        .collect();
     let all_spans = unique_spans(relevant, &state.additional);
-    let evidence = evidence_page(&all_spans, &cited, state.navigation.as_ref())?;
+    let evidence = evidence_page(&all_spans, &supporting, state.navigation.as_ref())?;
     let catalog_items = catalog(context.candidate, context.examined, relevant);
-    let catalog_batches =
-        partition_items(&catalog_items, |item| json_size(&item.execution), 16_000)?;
+    let catalog_batches = partition_items(
+        &catalog_items,
+        |item| {
+            serde_json::to_string(&item.execution).map_or(usize::MAX, |text| text.chars().count())
+        },
+        16_000,
+    )?;
     Ok(Prepared {
         supporting,
         total_observations: observations.len(),
@@ -54,14 +58,6 @@ pub(super) fn prepare(
         evidence,
         all_spans,
     })
-}
-
-fn json_size<T>(value: &T) -> usize
-where
-    T: serde::Serialize,
-{
-    let encoded = serde_json::to_string(value);
-    encoded.map_or(usize::MAX, |text| text.chars().count())
 }
 
 fn catalog(candidate: &Candidate, examined: &[Examined], relevant: &[&Examined]) -> Vec<Examined> {
@@ -102,9 +98,14 @@ fn unique_spans(relevant: &[&Examined], additional: &[TracePart]) -> Vec<TracePa
 
 fn evidence_page(
     all_spans: &[TracePart],
-    cited: &[(String, String)],
+    supporting: &[Observation],
     navigation: Option<&ExecutionContent>,
 ) -> Result<Vec<TracePart>, AnalysisError> {
+    let cited: Vec<(String, String)> = supporting
+        .iter()
+        .flat_map(|item| item.evidence.iter())
+        .map(|item| (item.execution_id.clone(), item.span_id.clone()))
+        .collect();
     let recent = navigation.map_or(&[][..], |item| item.parts.as_slice());
     let mut parts = all_spans.to_vec();
     parts.sort_by_key(|part| {

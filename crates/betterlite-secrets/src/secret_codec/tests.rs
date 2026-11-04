@@ -18,7 +18,7 @@ use crate::error::SecretError;
 use crate::secret_codec::bearer::{decrypt_bearer_token, encrypt_bearer_token};
 use crate::secret_codec::diagnostics::{Level, SecretDiagnostics, SecretEvent, TracingDiagnostics};
 use crate::secret_codec::python_base64::{decode_lenient, decode_strict};
-use crate::secret_codec::sealing::{open, seal, seal_legacy};
+use crate::secret_codec::sealing::{open, seal};
 use crate::secret_codec::secret_map::{decode_secret_map, encrypt_secret_map};
 use crate::secret_codec::{
     Algorithm, CipherSettings, DecryptPolicy, FailureLog, FailureValue, MAX_ENCODED_BYTES,
@@ -209,7 +209,7 @@ fn passthrough(cipher: &Cipher) -> String {
 #[case::permissive_stray_bits(SALT, LEGACY, |cipher: &Cipher| loud(cipher, &LONG_STANDARD.replace("hno=", "hnp=")), Some("h\u{e9}llo w\u{f6}rld, a longer secret value!"), &[])]
 #[case::bearer_stray_bits(SALT, LEGACY, |cipher: &Cipher| open_bearer(cipher, &BEARER.replace("Vzw8", "Vzw9"), PREFIX), Some("payload"), &[])]
 #[case::empty_legacy_bytes(SALT, LEGACY, |cipher: &Cipher| loud(cipher, "*"), Some(""), &[])]
-#[case::legacy_box_seals_python_bytes(None, LEGACY, |_: &Cipher| seal_legacy(&SecretString::from("hello"), &SecretString::from("salt-one"), &CountingNonces).ok().map(|sealed| URL_SAFE.encode(sealed)), Some(LEGACY_HELLO), &[])]
+#[case::legacy_box_seals_python_bytes(None, LEGACY, |_: &Cipher| seal(Algorithm::XSalsa20Poly1305, &SecretString::from("salt-one"), &CountingNonces, SecretString::from("hello").expose_secret().as_bytes(), b"").ok().map(|sealed| URL_SAFE.encode(sealed)), Some(LEGACY_HELLO), &[])]
 #[case::legacy_box_opens_python_bytes(None, LEGACY, |_: &Cipher| exposed(open(Algorithm::XSalsa20Poly1305, &SecretString::from("salt-one"), &URL_SAFE.decode(LEGACY_HELLO).unwrap(), b"").ok()), Some("hello"), &[])]
 #[case::legacy_box_wrong_key(None, LEGACY, |_: &Cipher| exposed(open(Algorithm::XSalsa20Poly1305, &SecretString::from("other"), &URL_SAFE.decode(LEGACY_HELLO).unwrap(), b"").ok()), None, &[])]
 #[case::plaintext_debug_redacted(SALT, LEGACY, |cipher: &Cipher| Some(format!("{:?} {:?}", cipher.decrypt_value(StoredValue::<()>::Text(SecretString::from(LEGACY_HELLO)), "k", DecryptPolicy { log: FailureLog::Debug, value: FailureValue::Original }), decrypt_bearer_token(cipher, BEARER, PREFIX))), Some("Some(Text(SecretBox<str>([REDACTED]))) Some(SecretBox<str>([REDACTED]))"), &[])]

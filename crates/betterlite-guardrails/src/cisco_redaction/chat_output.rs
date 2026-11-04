@@ -20,7 +20,7 @@ pub fn redact_chat_output(
         return false;
     };
     if matches!(
-        Json::field(present_response, "object"),
+        Json::parse(present_response.get("object").map_or("null", |raw| raw.get())),
         Json::Text(object) if object == "text_completion"
     ) {
         return redact_list_field(
@@ -30,10 +30,24 @@ pub fn redact_chat_output(
             ListField::TextCompletion,
         );
     }
-    if matches!(Json::field(present_response, "choices"), Json::List(_)) {
+    if matches!(
+        Json::parse(
+            present_response
+                .get("choices")
+                .map_or("null", |raw| raw.get())
+        ),
+        Json::List(_)
+    ) {
         return redact_model_response(Some(present_response), sanitized_text, sanitized_messages);
     }
-    if matches!(Json::field(present_response, "output"), Json::List(_)) {
+    if matches!(
+        Json::parse(
+            present_response
+                .get("output")
+                .map_or("null", |raw| raw.get())
+        ),
+        Json::List(_)
+    ) {
         return redact_list_field(
             Some(present_response),
             sanitized_text,
@@ -53,7 +67,11 @@ pub fn redact_model_response(
     let Some(present_response) = response else {
         return false;
     };
-    let Json::List(raw_choices) = Json::field(present_response, "choices") else {
+    let Json::List(raw_choices) = Json::parse(
+        present_response
+            .get("choices")
+            .map_or("null", |raw| raw.get()),
+    ) else {
         return false;
     };
     if let Some(messages) = sanitized_messages.filter(|list| !list.is_empty()) {
@@ -80,21 +98,29 @@ fn redact_choices_with_messages(
         .unwrap_or("[REDACTED]");
     let mut message_iter = sanitized_messages.iter();
     map_items(raw_choices, |choice| {
-        let Json::Object(mut message) = Json::field(choice, "message") else {
+        let Json::Object(mut message) =
+            Json::parse(choice.get("message").map_or("null", |raw| raw.get()))
+        else {
             return false;
         };
         let mut replacement_text = default_text.to_owned();
         let mut applied = false;
         match message_iter.next() {
             Some(replacement_message) => {
-                let text = normalize_content(&Json::field(replacement_message, "content"));
+                let text = normalize_content(&Json::parse(
+                    replacement_message
+                        .get("content")
+                        .map_or("null", |raw| raw.get()),
+                ));
                 if !text.is_empty() {
                     replacement_text.clone_from(&text);
                     set_serializable_field(&mut message, "content", &text);
                     applied = true;
                 }
             }
-            None if Json::field(&message, "content").truthy() => {
+            None if Json::parse(message.get("content").map_or("null", |raw| raw.get()))
+                .truthy() =>
+            {
                 set_serializable_field(&mut message, "content", &replacement_text);
                 applied = true;
             }
@@ -114,7 +140,9 @@ fn redact_choices_with_text(
     text: &str,
 ) -> (Vec<Box<RawValue>>, bool) {
     map_items(raw_choices, |choice| {
-        let Json::Object(mut message) = Json::field(choice, "message") else {
+        let Json::Object(mut message) =
+            Json::parse(choice.get("message").map_or("null", |raw| raw.get()))
+        else {
             return false;
         };
         let content_applied = redact_field_when_present(&mut message, "content", text);

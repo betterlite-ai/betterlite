@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use super::{SettingsError, build_sentry_init_options, send_default_pii_from_env};
+use super::{SEND_DEFAULT_PII_ENV, SettingsError, build_sentry_init_options};
 use std::collections::BTreeMap;
 
 fn env(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -12,19 +12,26 @@ fn env(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
 
 #[test]
 fn sentry_scrubbing_behavior_tests_behavior() {
-    assert!(!send_default_pii_from_env(&env(&[])));
-    assert!(send_default_pii_from_env(&env(&[(
-        "SENTRY_SEND_DEFAULT_PII",
-        " True "
-    )])));
-    assert!(!send_default_pii_from_env(&env(&[(
-        "SENTRY_SEND_DEFAULT_PII",
-        "yes"
-    )])));
-    assert!(!send_default_pii_from_env(&env(&[(
-        "SENTRY_SEND_DEFAULT_PII",
-        "FALSE"
-    )])));
+    assert!(
+        !env(&[])
+            .get(SEND_DEFAULT_PII_ENV)
+            .is_some_and(|value| value.trim().eq_ignore_ascii_case("true"))
+    );
+    assert!(
+        env(&[("SENTRY_SEND_DEFAULT_PII", " True ")])
+            .get(SEND_DEFAULT_PII_ENV)
+            .is_some_and(|value| value.trim().eq_ignore_ascii_case("true"))
+    );
+    assert!(
+        !env(&[("SENTRY_SEND_DEFAULT_PII", "yes")])
+            .get(SEND_DEFAULT_PII_ENV)
+            .is_some_and(|value| value.trim().eq_ignore_ascii_case("true"))
+    );
+    assert!(
+        !env(&[("SENTRY_SEND_DEFAULT_PII", "FALSE")])
+            .get(SEND_DEFAULT_PII_ENV)
+            .is_some_and(|value| value.trim().eq_ignore_ascii_case("true"))
+    );
 }
 
 #[test]

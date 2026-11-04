@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 use std::fs;
+use std::io;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 use betterlite_logging::s3_transport::option_value::OptionValue;
 use betterlite_logging::s3_transport::options::PartitionGranularity;
@@ -14,24 +16,69 @@ use rstest::rstest;
 use secrecy::ExposeSecret as _;
 use serde::Deserialize;
 use serde_json::value::RawValue;
+use tracing::subscriber::with_default;
+
+#[derive(Clone, Default)]
+struct Captured(Arc<Mutex<Vec<u8>>>);
+
+impl io::Write for Captured {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .map_err(|poisoned| io::Error::other(poisoned.to_string()))?
+            .extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
 
 type Environment = BTreeMap<String, String>;
 
 #[rstest]
 #[case::malformed("not-an-integer")]
 #[case::negative("-1")]
+#[case::zero("0")]
 fn invalid_upload_default_uses_builtin_limit(#[case] configured: &str) {
     let environment = Environment::from([(
         "DEFAULT_S3_MAX_CONCURRENT_UPLOADS".to_owned(),
         configured.to_owned(),
     )]);
-    let parameters = resolve_s3_parameters(
-        &Source::<()>::default(),
-        &Source::default(),
-        None,
-        &environment,
-    );
+    let captured = Captured::default();
+    let writer = captured.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_writer(move || writer.clone())
+        .finish();
+    let parameters = with_default(subscriber, || {
+        resolve_s3_parameters(
+            &Source::<()>::default(),
+            &Source::default(),
+            None,
+            &environment,
+        )
+    });
     assert_eq!(parameters.max_concurrent_uploads, 16);
+    let output = String::from_utf8(captured.0.lock().unwrap().clone()).unwrap();
+    assert!(
+        output.contains("WARN") && output.contains("DEFAULT_S3_MAX_CONCURRENT_UPLOADS"),
+        "{output}"
+    );
+}
+
+#[rstest]
+#[case::flush_interval(
+    r#"{"s3_bucket_name":"qa-logs","s3_flush_interval":3}"#,
+    "s3_flush_interval"
+)]
+#[case::batch_size(r#"{"s3_bucket_name":"qa-logs","s3_batch_size":512}"#, "s3_batch_size")]
+fn unknown_source_keys_fail_to_load(#[case] input: &str, #[case] key: &str) {
+    let error = serde_json::from_str::<Source<()>>(input)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains(key), "{error}");
 }
 
 #[rstest]
@@ -491,7 +538,7 @@ fn strip_base64_appends_a_null_content_key_to_a_contentless_message() {
 #[test]
 fn constructor_flags_and_encryption_precedence() {
     let constructor: Source<()> = serde_json::from_str(r#"{"s3_use_team_prefix":true,"s3_log_prompts_only":false,"s3_partition_granularity":"hour","s3_aws_session_name":"session"}"#).unwrap();
-    let source = serde_json::from_str(r#"{"s3_use_team_prefix":false,"s3_use_key_prefix":"false","s3_sse_kms_key_id":"kms","s3_log_prompts_only":true}"#).unwrap();
+    let source = serde_json::from_str(r#"{"s3_use_team_prefix":false,"s3_use_key_prefix":"false","s3_sse_kms_key_id":"kms","s3_log_prompts_only":true,"s3_partition_granularity":"day"}"#).unwrap();
     let parameters = resolve_s3_parameters(&constructor, &source, None, &Environment::default());
     assert!(parameters.features.contains(&Feature::TeamPrefix));
     assert!(parameters.features.contains(&Feature::KeyPrefix));

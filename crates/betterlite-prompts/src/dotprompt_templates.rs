@@ -161,7 +161,14 @@ impl PromptManager {
             return Err(RenderError::NotFound {
                 prompt_id: prompt_id.to_owned(),
                 version_suffix,
-                available: render::format_available(self.prompts.keys()),
+                available: format!(
+                    "[{}]",
+                    self.prompts
+                        .keys()
+                        .map(|id| format!("'{id}'"))
+                        .collect::<Vec<String>>()
+                        .join(", ")
+                ),
             });
         };
 

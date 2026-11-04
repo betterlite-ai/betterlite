@@ -118,6 +118,13 @@ fn default_uploads(environment: &dyn EnvironmentLookup) -> usize {
             );
             DEFAULT_UPLOADS
         }
+        Some(Ok(0)) => {
+            tracing::warn!(
+                ?configured,
+                "s3 logging: DEFAULT_S3_MAX_CONCURRENT_UPLOADS must be positive, using 16"
+            );
+            DEFAULT_UPLOADS
+        }
         Some(Ok(limit)) => limit,
         Some(Err(_)) => {
             tracing::warn!(

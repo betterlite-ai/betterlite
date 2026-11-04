@@ -1,4 +1,3 @@
-use betterlite_guardrails::cisco_conversation::Fields;
 use betterlite_guardrails::cisco_conversation::json::Json;
 use betterlite_guardrails::cisco_verdict;
 use serde::Deserialize;
@@ -51,12 +50,14 @@ fn outcome(input: &Input) -> Value {
         Input::ExtractSanitizedMessages { response } => {
             cisco_verdict::extract_sanitized_messages(&Json::parse(&response.to_string()))
                 .map_or(Value::Null, |messages| {
-                    Value::Array(messages.iter().map(fields_to_value).collect())
+                    serde_json::to_value(messages).unwrap_or(Value::Null)
                 })
         }
         Input::ExtractSanitizedMcpArguments { response } => {
             cisco_verdict::extract_mcp_args(&Json::parse(&response.to_string()))
-                .map_or(Value::Null, |arguments| fields_to_value(&arguments))
+                .map_or(Value::Null, |arguments| {
+                    serde_json::to_value(arguments).unwrap_or(Value::Null)
+                })
         }
         Input::ExtractMaskedEntityCount { rules } => {
             cisco_verdict::extract_masked_entity_count(&Json::parse(&rules.to_string()))
@@ -77,11 +78,6 @@ fn to_value(value: &Json) -> Value {
                 .map(|item| serde_json::from_str(item.get()).unwrap_or(Value::Null))
                 .collect(),
         ),
-        Json::Object(fields) => fields_to_value(fields),
+        Json::Object(fields) => serde_json::to_value(fields).unwrap_or(Value::Null),
     }
-}
-
-fn fields_to_value(fields: &Fields) -> Value {
-    let text = serde_json::to_string(fields).unwrap_or_default();
-    serde_json::from_str(&text).unwrap_or(Value::Null)
 }

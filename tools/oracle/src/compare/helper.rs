@@ -1,5 +1,4 @@
 use secrecy::{ExposeSecret as _, SecretString};
-use serde::{Deserialize as _, Deserializer as WireDecoder};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -33,21 +32,8 @@ pub(crate) struct HelperEffect {
 pub(crate) struct ManagementEffectFields {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) name: Option<String>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        skip_serializing,
-        deserialize_with = "parse_secret"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none", skip_serializing)]
     pub(crate) credential: Option<SecretString>,
-}
-
-fn parse_secret<'de, D>(decoder: D) -> Result<Option<SecretString>, D::Error>
-where
-    D: WireDecoder<'de>,
-{
-    let value = Option::<String>::deserialize(decoder)?;
-    Ok(value.map(SecretString::from))
 }
 
 impl ManagementEffectFields {

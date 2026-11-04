@@ -1,6 +1,8 @@
 #![cfg(test)]
-use crate::case::{HelperCase, parse_helper_case};
+
+use crate::case::{HelperCase, helper::validate_helper};
 use std::fs;
+use std::path::Path;
 #[test]
 fn helper_seeds_select_cloud_storage() {
     let corpus = concat!(env!("CARGO_MANIFEST_DIR"), "/fuzz/corpus/helper_case");
@@ -15,7 +17,12 @@ fn helper_seeds_select_cloud_storage() {
     assert!(!seeds.is_empty());
     assert!(seeds.iter().all(|path| {
         let source = fs::read_to_string(path.path()).unwrap();
-        parse_helper_case(&source).unwrap();
+        serde_saphyr::from_str(&source)
+            .map_err(|error| error.to_string())
+            .and_then(|parsed| {
+                validate_helper(Path::new("<helper>"), &parsed).map_err(|error| error.to_string())
+            })
+            .unwrap();
         let case: HelperCase = serde_saphyr::from_str(&source).unwrap();
         assert_eq!(case.call.operation, "cloud_storage");
         let run = crate::helpers::run_case(&case, false).unwrap();

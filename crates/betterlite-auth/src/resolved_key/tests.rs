@@ -4,9 +4,9 @@ use std::collections::BTreeMap;
 
 use betterlite_db::budget_permission_rows::JsonData;
 use secrecy::ExposeSecret;
+use sha2::{Digest as _, Sha256};
 
 use super::auth::{AuthInput, UserAPIKeyAuth};
-use super::credential;
 use super::view::VerificationTokenView;
 
 fn object(text: &str) -> BTreeMap<String, JsonData> {
@@ -43,7 +43,7 @@ fn resolved_key_debug_redacts_credentials() {
     let auth =
         UserAPIKeyAuth::construct(AuthInput::Dict(object("{\"api_key\": \"sk-realsecret\"}")))
             .unwrap_or_else(|error| panic!("fixture should construct: {error}"));
-    let hashed = credential::hash_token("sk-realsecret");
+    let hashed = hex::encode(Sha256::digest(b"sk-realsecret"));
     let debug_text = format!("{auth:?}");
     assert!(!debug_text.contains("sk-realsecret"));
     assert!(!debug_text.contains(&hashed));

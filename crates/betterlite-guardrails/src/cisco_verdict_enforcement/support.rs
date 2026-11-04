@@ -9,7 +9,7 @@ use crate::cisco_conversation::json::Json;
 // Small serialization and labeling helpers shared by every function in this module.
 
 pub(crate) fn rule_name(rule: &Fields) -> Option<String> {
-    match Json::field(rule, "rule_name") {
+    match Json::parse(rule.get("rule_name").map_or("null", |raw| raw.get())) {
         Json::Text(name) => Some(name),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
     }

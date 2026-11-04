@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::sync::PoisonError;
+
 use super::ActiveRecorderRegistry;
 use crate::billable_category::BillableCategory;
 use crate::tests::{in_memory, logged};
@@ -7,12 +9,31 @@ use crate::tests::{in_memory, logged};
 #[test]
 fn pop_hands_back_the_recorder_once() {
     let registry = ActiveRecorderRegistry::default();
-    assert!(registry.pop().is_none());
+    assert!(
+        registry
+            .recorder
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
+            .is_none()
+    );
     let (recorder, exporter) = in_memory();
     let ((), output) = logged(|| registry.set(recorder));
     assert_eq!(output, "");
-    let popped = registry.pop().unwrap();
-    assert!(registry.pop().is_none());
+    let popped = registry
+        .recorder
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .take()
+        .unwrap();
+    assert!(
+        registry
+            .recorder
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
+            .is_none()
+    );
     popped.record(BillableCategory::Llm, "/v1/completions", 200, None);
     popped.shutdown();
     assert_eq!(exporter.get_finished_metrics().unwrap().len(), 1);
@@ -27,7 +48,12 @@ fn set_warns_when_it_replaces_an_active_recorder() {
     let ((), output) = logged(|| registry.set(second));
     assert!(output.contains("WARN"), "{output}");
     assert!(output.contains("replaced the active one"), "{output}");
-    let active = registry.pop().unwrap();
+    let active = registry
+        .recorder
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .take()
+        .unwrap();
     active.record(BillableCategory::Mcp, "/mcp", 200, None);
     active.shutdown();
     assert!(first_exporter.get_finished_metrics().unwrap().is_empty());
