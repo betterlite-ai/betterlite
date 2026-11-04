@@ -56,12 +56,11 @@ fn hydration_populates_arguments_and_server_name() {
     );
     hydrate_tool_context(&mut data);
     assert_eq!(
-        serde_json::from_str::<serde_json::Value>(data.get("mcp_arguments").unwrap().get())
-            .unwrap(),
+        serde_json::to_value(data.get("mcp_arguments").unwrap()).unwrap(),
         serde_json::json!({"q": "x"})
     );
     assert_eq!(
-        serde_json::from_str::<serde_json::Value>(data.get("arguments").unwrap().get()).unwrap(),
+        serde_json::to_value(data.get("arguments").unwrap()).unwrap(),
         serde_json::json!({"q": "x"})
     );
     assert_eq!(field_text(&data, "mcp_server_name").as_deref(), Some("srv"));

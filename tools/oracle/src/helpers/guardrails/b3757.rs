@@ -1,6 +1,5 @@
 use betterlite_guardrails::cisco_conversation::Fields;
 use betterlite_guardrails::cisco_conversation::json::Json;
-use betterlite_guardrails::cisco_mcp::redact;
 use betterlite_guardrails::cisco_redaction::chat_input::redact_chat_input;
 use betterlite_guardrails::cisco_redaction::chat_output::list_field::{
     ListField, redact_list_field,

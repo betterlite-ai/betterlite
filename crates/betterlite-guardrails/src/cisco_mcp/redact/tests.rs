@@ -4,6 +4,7 @@ use crate::cisco_conversation::json::Json;
 use crate::cisco_mcp::redact;
 use rstest::rstest;
 use serde_json::json;
+use serde_json::value::RawValue;
 
 #[test]
 fn set_text_mirrors_model_without_structured_content() {
@@ -166,6 +167,6 @@ fn set_text_preserves_shapes_and_mirror_rules(
     assert_eq!(update.replaced, replaced);
     assert_eq!(
         serde_json::to_value(update.response).unwrap(),
-        serde_json::from_str::<serde_json::Value>(expected).unwrap()
+        serde_json::to_value(RawValue::from_string(expected.to_owned()).unwrap()).unwrap()
     );
 }

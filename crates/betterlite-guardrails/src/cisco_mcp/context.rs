@@ -46,9 +46,7 @@ fn nested_tool_call_metadata(data: &Fields) -> Option<Fields> {
     } else {
         data.get("litellm_metadata").map_or("null", |raw| raw.get())
     };
-    let Some(nested) = object_metadata(Json::parse(selected)) else {
-        return None;
-    };
+    let nested = object_metadata(Json::parse(selected))?;
     let raw = nested
         .get("mcp_tool_call_metadata")
         .map_or("null", |value| value.get());

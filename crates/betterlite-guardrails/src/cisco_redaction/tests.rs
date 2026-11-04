@@ -723,6 +723,13 @@ fn apply_redaction_mcp_output_delegates_to_cisco_mcp_redact() {
     let update =
         apply_redaction_mcp_output(Some(&response), Some("redacted")).expect("delegated update");
     assert!(update.replaced);
+    assert_eq!(
+        serde_json::to_value(update.response).unwrap(),
+        serde_json::json!({
+            "content": [{"type": "text", "text": "redacted"}],
+            "structuredContent": {"result": "redacted"}
+        })
+    );
 }
 
 #[test]

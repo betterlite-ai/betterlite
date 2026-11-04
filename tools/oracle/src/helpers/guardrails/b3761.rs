@@ -122,7 +122,7 @@ fn blocking_response(detail: &Value) -> Value {
         serde_json::from_str::<Value>(&serde_json::to_string(&response).unwrap_or_default())
             .unwrap_or(Value::Null);
     if let Some(text) = output
-        .pointer_mut("/mcp_tool_call_response/0/text")
+        .pointer("/mcp_tool_call_response/0/text")
         .and_then(Value::as_str)
         .map(str::to_owned)
         && let Ok(payload) = serde_json::from_str(&text)
