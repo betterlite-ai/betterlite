@@ -1,0 +1,11 @@
+kind: helper
+name: blank_and_invalid_json_become_empty_chunks
+call:
+  compatible_line_chunk:
+    mode: sync
+    events:
+      - {kind: line, line: 'data:   '}
+      - {kind: line, line: 'data: not-json'}
+env: {}
+compare:
+  ignore: []

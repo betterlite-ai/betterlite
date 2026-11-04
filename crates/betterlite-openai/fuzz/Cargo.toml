@@ -34,6 +34,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "compatible_line"
+path = "fuzz_targets/compatible_line.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "embedding"
 path = "fuzz_targets/embedding.rs"
 test = false

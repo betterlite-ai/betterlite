@@ -1,0 +1,11 @@
+kind: helper
+name: usage_only_empty_choices
+call:
+  compatible_line_chunk:
+    mode: async
+    events:
+      - {kind: line, line: 'data: {"choices":[],"usage":{"prompt_tokens":0,"completion_tokens":2,"total_tokens":2},"id":"ignored"}'}
+      - {kind: line, line: 'data: [DONE]'}
+env: {}
+compare:
+  ignore: []

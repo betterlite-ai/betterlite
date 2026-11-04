@@ -1,5 +1,7 @@
 #![cfg(test)]
 use super::{Mode, Outcome, decode_legacy_compatible_line};
+use rstest::rstest;
+use std::path::PathBuf;
 
 #[test]
 fn compatible_line_sync_done_is_empty_and_async_done_ends() {
@@ -21,7 +23,7 @@ fn compatible_line_projects_first_choice_and_tool() {
     };
     assert_eq!(chunk.text, "hi");
     assert_eq!(chunk.index, 0);
-    assert!(chunk.is_finished);
+    assert!(!chunk.is_finished);
     assert_eq!(chunk.tool_use.unwrap()["id"], "t");
 }
 
@@ -44,5 +46,14 @@ fn compatible_line_blank_and_invalid_are_empty_chunks() {
     assert!(matches!(
         decode_legacy_compatible_line("no json", Mode::Sync),
         Outcome::Chunk(_)
+    ));
+}
+
+#[rstest]
+fn replays_the_compatible_line_corpus(#[files("fuzz/corpus/compatible_line/*")] path: PathBuf) {
+    let line = std::fs::read_to_string(path).unwrap();
+    assert!(matches!(
+        decode_legacy_compatible_line(&line, Mode::Async),
+        Outcome::Chunk(_) | Outcome::End
     ));
 }

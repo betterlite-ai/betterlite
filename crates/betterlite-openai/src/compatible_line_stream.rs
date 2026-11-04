@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -23,11 +23,68 @@ pub enum ReceiveError {
     Other(String),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum Outcome {
     Chunk(CompatibleLineChunk),
     End,
     Error(String),
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StreamInput {
+    pub mode: ModeInput,
+    pub events: Vec<StreamEvent>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModeInput {
+    Sync,
+    Async,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum StreamEvent {
+    Line { line: String },
+    ValueError { message: String },
+    ReceiveError { message: String },
+}
+
+impl ModeInput {
+    fn mode(self) -> Mode {
+        match self {
+            Self::Sync => Mode::Sync,
+            Self::Async => Mode::Async,
+        }
+    }
+}
+
+pub fn run_stream(input: &StreamInput) -> Vec<Outcome> {
+    let mode = input.mode.mode();
+    let mut output = Vec::new();
+    for event in &input.events {
+        let outcome = match event {
+            StreamEvent::Line { line } => decode_legacy_compatible_line(line, mode),
+            StreamEvent::ValueError { message } => {
+                receive_failure(ReceiveError::Value(message.clone()), mode)
+            }
+            StreamEvent::ReceiveError { message } => {
+                receive_failure(ReceiveError::Other(message.clone()), mode)
+            }
+        };
+        if outcome == Outcome::End || matches!(outcome, Outcome::Error(_)) {
+            output.push(outcome);
+            break;
+        }
+        output.push(outcome);
+    }
+    if !matches!(output.last(), Some(Outcome::End | Outcome::Error(_))) {
+        output.push(Outcome::End);
+    }
+    output
 }
 
 pub fn decode_legacy_compatible_line(line: &str, mode: Mode) -> Outcome {
@@ -41,7 +98,10 @@ pub fn decode_legacy_compatible_line(line: &str, mode: Mode) -> Outcome {
     }
     match serde_json::from_str::<Value>(content) {
         Ok(value) => Outcome::Chunk(project(value)),
-        Err(_) => Outcome::Chunk(empty_chunk()),
+        Err(error) => {
+            tracing::debug!(error = %error, line = content, "Error parsing chunk; defaulting to empty chunk");
+            Outcome::Chunk(empty_chunk())
+        }
     }
 }
 
@@ -53,7 +113,7 @@ pub fn receive_failure(error: ReceiveError, mode: Mode) -> Outcome {
         ReceiveError::Other(message) if mode == Mode::Async => {
             Outcome::Error(format!("Error receiving chunk from stream: {message}"))
         }
-        ReceiveError::Other(_) => Outcome::End,
+        ReceiveError::Other(message) => Outcome::Error(message),
     }
 }
 
@@ -74,19 +134,7 @@ fn project(value: Value) -> CompatibleLineChunk {
         let usage = value
             .get("usage")
             .filter(|item| !item.is_null())
-            .map(|item| {
-                let mut usage = item.clone();
-                for field in ["prompt_tokens", "completion_tokens", "total_tokens"] {
-                    if usage.get(field).is_none_or(Value::is_null)
-                        || usage[field] == json!(0)
-                        || usage[field] == json!(false)
-                        || usage[field] == json!("")
-                    {
-                        usage[field] = json!(0);
-                    }
-                }
-                usage
-            });
+            .map(|item| usage_projection(item, true));
         return CompatibleLineChunk {
             usage,
             ..empty_chunk()
@@ -103,8 +151,13 @@ fn project(value: Value) -> CompatibleLineChunk {
         if function.get("arguments")?.is_null() { return None; }
         Some(json!({"id": call.get("id"), "type":"function", "function":{"name":function.get("name"), "arguments":function.get("arguments")}, "index":call.get("index")}))
     });
-    let reason = first.get("finish_reason").filter(|item| !item.is_null());
-    let usage = value.get("usage").filter(|item| !item.is_null()).cloned();
+    let reason = first
+        .get("finish_reason")
+        .filter(|item| !item.is_null() && item.as_str() != Some(""));
+    let usage = value
+        .get("usage")
+        .filter(|item| !item.is_null())
+        .map(|item| usage_projection(item, false));
     CompatibleLineChunk {
         text,
         tool_use,
@@ -116,6 +169,26 @@ fn project(value: Value) -> CompatibleLineChunk {
         usage,
         index: 0,
     }
+}
+
+fn usage_projection(value: &Value, default_falsey: bool) -> Value {
+    let mut usage = serde_json::Map::new();
+    for field in ["prompt_tokens", "completion_tokens", "total_tokens"] {
+        let token_count = value.get(field).cloned().unwrap_or(Value::Null);
+        let is_falsey = token_count.is_null()
+            || token_count == json!(0)
+            || token_count == json!(false)
+            || token_count == json!("");
+        usage.insert(
+            field.to_owned(),
+            if default_falsey && is_falsey {
+                json!(0)
+            } else {
+                token_count
+            },
+        );
+    }
+    Value::Object(usage)
 }
 
 mod tests;
