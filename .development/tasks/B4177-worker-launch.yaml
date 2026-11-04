@@ -9,7 +9,10 @@ description: >-
   Multi-worker directory setup creates PROMETHEUS_MULTIPROC_DIR (environment or auto-created temp), recognizes case-insensitive env-var names, and prepares shared samples when separate metrics listener or multi-worker setup needs it.
 scope:
   paths:
-    - crates/betterlite-server/**
+    - crates/betterlite-server/src/worker_options.rs
+    - crates/betterlite-server/src/worker_options/**
+    - crates/betterlite-server/tests/worker_launch.rs
+    - crates/betterlite-server/tests/worker_launch/**
     - tools/oracle/cases/worker/**
     - tools/oracle/helpers/b4177.py
     - tools/oracle/helpers/b4177/**

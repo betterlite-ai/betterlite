@@ -120,46 +120,46 @@ checks:
   commands:
   - id: initialization-tests
     why: __init__ must read environment, create queue and launch periodic flush
-    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_bucket_logging::initialization_behaviors::tests::/) - test(/::replays_corpus$/)'
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_logger::(.*::)?gcs_bucket_logging::initialization_behaviors::tests::/) - test(/::replays_corpus$/)'
   - id: event-enqueue-tests
     why: Success and failure events must enqueue items and flush when queue is full
-    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_bucket_logging::event_enqueue_behaviors::tests::/) - test(/::replays_corpus$/)'
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_logger::(.*::)?gcs_bucket_logging::event_enqueue_behaviors::tests::/) - test(/::replays_corpus$/)'
   - id: drain-batch-tests
     why: Queue drain must respect batch_size limit and handle empty queue
-    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_bucket_logging::drain_batch_behaviors::tests::/) - test(/::replays_corpus$/)'
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_logger::(.*::)?gcs_bucket_logging::drain_batch_behaviors::tests::/) - test(/::replays_corpus$/)'
   - id: config-key-tests
     why: Config key extraction and sanitization must use dynamic params with fallbacks
-    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_bucket_logging::config_key_behaviors::tests::/) - test(/::replays_corpus$/)'
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_logger::(.*::)?gcs_bucket_logging::config_key_behaviors::tests::/) - test(/::replays_corpus$/)'
   - id: grouping-tests
     why: Items must be grouped by config key with correct partitioning
-    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_bucket_logging::grouping_behaviors::tests::/) - test(/::replays_corpus$/)'
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_logger::(.*::)?gcs_bucket_logging::grouping_behaviors::tests::/) - test(/::replays_corpus$/)'
   - id: ndjson-tests
     why: Payloads must be combined as newline-delimited JSON with default=str serialization
-    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_bucket_logging::ndjson_behaviors::tests::/) - test(/::replays_corpus$/)'
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_logger::(.*::)?gcs_bucket_logging::ndjson_behaviors::tests::/) - test(/::replays_corpus$/)'
   - id: grouped-batch-tests
     why: Grouped batches must use batched naming and call _log_json_data_on_gcs once per group
-    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_bucket_logging::grouped_batch_behaviors::tests::/) - test(/::replays_corpus$/)'
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_logger::(.*::)?gcs_bucket_logging::grouped_batch_behaviors::tests::/) - test(/::replays_corpus$/)'
   - id: individual-logs-tests
     why: Individual mode must send each item separately with per-item object names
-    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_bucket_logging::individual_logs_behaviors::tests::/) - test(/::replays_corpus$/)'
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_logger::(.*::)?gcs_bucket_logging::individual_logs_behaviors::tests::/) - test(/::replays_corpus$/)'
   - id: single-item-tests
     why: Single item sends must use individual object naming and handle exceptions
-    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_bucket_logging::single_item_behaviors::tests::/) - test(/::replays_corpus$/)'
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_logger::(.*::)?gcs_bucket_logging::single_item_behaviors::tests::/) - test(/::replays_corpus$/)'
   - id: async-send-tests
     why: async_send_batch must route between batched and individual modes
-    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_bucket_logging::async_send_behaviors::tests::/) - test(/::replays_corpus$/)'
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_logger::(.*::)?gcs_bucket_logging::async_send_behaviors::tests::/) - test(/::replays_corpus$/)'
   - id: object-naming-tests
     why: Object names must use response ID for success, UUID for failure, and custom gcs_log_id when present
-    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_bucket_logging::object_naming_behaviors::tests::/) - test(/::replays_corpus$/)'
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_logger::(.*::)?gcs_bucket_logging::object_naming_behaviors::tests::/) - test(/::replays_corpus$/)'
   - id: payload-retrieval-tests
     why: Payload retrieval must try three dates and return None when all fail
-    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_bucket_logging::payload_retrieval_behaviors::tests::/) - test(/::replays_corpus$/)'
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_logger::(.*::)?gcs_bucket_logging::payload_retrieval_behaviors::tests::/) - test(/::replays_corpus$/)'
   - id: naming-format-tests
     why: Object naming formats must match expected date/id patterns
-    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_bucket_logging::naming_format_behaviors::tests::/) - test(/::replays_corpus$/)'
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_logger::(.*::)?gcs_bucket_logging::naming_format_behaviors::tests::/) - test(/::replays_corpus$/)'
   - id: flush-tests
     why: Queue flushing and periodic flush must call async_send_batch and update timestamps
-    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_bucket_logging::flush_behaviors::tests::/) - test(/::replays_corpus$/)'
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_logger::(.*::)?gcs_bucket_logging::flush_behaviors::tests::/) - test(/::replays_corpus$/)'
 oracle_cases:
 - tools/oracle/cases/logging/gcs-bucket-logging/init-reads-batch-size-env.yaml
 - tools/oracle/cases/logging/gcs-bucket-logging/init-reads-flush-interval-env.yaml

@@ -91,8 +91,6 @@ scope:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/responses_id_security.rs
   - crates/betterlite-core/src/api/responses_id_security/**
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/fuzz/Cargo.toml
   - crates/betterlite-core/fuzz/fuzz_targets/owned_response_id.rs
   - crates/betterlite-core/fuzz/corpus/owned_response_id/**

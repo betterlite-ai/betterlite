@@ -24,12 +24,8 @@ description: >-
   125 tests,110 transcripts,85 adapters,55 config tests/seeds and 30 wiring =550 lines.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/realtime_connection_plan.rs
   - crates/betterlite-core/src/api/realtime_connection_plan/**
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/**
   - crates/betterlite-config/src/api/realtime_connection_plan.rs
   - crates/betterlite-config/src/api/realtime_connection_plan/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/realtime-probe-*

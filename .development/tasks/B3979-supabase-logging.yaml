@@ -73,7 +73,7 @@ checks:
   commands:
     - id: supabase-tests
       why: Supabase logging tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^supabase_logging::/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^supabase::(.*::)?supabase_logging::/)'
 
 oracle_cases: []
 

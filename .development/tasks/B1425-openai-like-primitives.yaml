@@ -49,14 +49,16 @@ description: >-
   220 tests, 140 adapters and 120 settings/fuzz/wiring lines, maximum 800.
 scope:
   paths:
-    - crates/betterlite-openai/src/{lib,error,compatible_wire,compatible_embedding,compatible_models}.rs
+    - crates/betterlite-openai/src/{compatible_wire,compatible_embedding,compatible_models}.rs
     - crates/betterlite-openai/src/{compatible_wire,compatible_embedding,compatible_models}/**
     - crates/betterlite-openai/Cargo.toml
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/compatible_reply.rs
     - crates/betterlite-openai/fuzz/corpus/compatible_reply/**
-    - crates/betterlite-config/src/{lib,settings,providers}.rs
-    - crates/betterlite-config/src/providers/{mod,openai_like}.rs
+    - crates/betterlite-config/src/sections/openai_like_settings.rs
+    - crates/betterlite-config/src/sections/openai_like_settings/**
+    - crates/betterlite-config/src/providers/openai_like.rs
+    - crates/betterlite-config/src/providers/openai_like/**
     - crates/betterlite-config/tests/openai_like_settings.rs
     - Cargo.lock
     - tools/oracle/src/helpers/openai/compatible_model_limits.rs

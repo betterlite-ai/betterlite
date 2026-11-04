@@ -26,7 +26,6 @@ description: >-
   180 behavior tests, 120 adapters and 55 wiring lines, capped at 650.
 scope:
   paths:
-    - crates/betterlite-openai/src/{lib,error,xai_responses}.rs
     - crates/betterlite-openai/src/xai_responses.rs
     - crates/betterlite-openai/src/xai_responses/**
     - tools/oracle/src/helpers/openai/xai_responses.rs

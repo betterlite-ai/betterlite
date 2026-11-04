@@ -27,9 +27,18 @@ description: >-
 scope:
   paths:
   - Cargo.toml
-  - crates/betterlite-http/**
-  - crates/betterlite-config/**
-  - crates/betterlite-openai/**
+  - crates/betterlite-http/src/proxy.rs
+  - crates/betterlite-http/src/proxy/**
+  - crates/betterlite-http/src/url_policy.rs
+  - crates/betterlite-http/src/url_policy/**
+  - crates/betterlite-http/fuzz/Cargo.toml
+  - crates/betterlite-http/fuzz/fuzz_targets/url_policy.rs
+  - crates/betterlite-http/fuzz/corpus/url_policy/**
+  - crates/betterlite-config/src/sections/provider_url_destination.rs
+  - crates/betterlite-config/src/sections/provider_url_destination/**
+  - "crates/betterlite-config/fuzz/corpus/config_yaml/provider-url-destination-*"
+  - crates/betterlite-openai/src/chat/execution.rs
+  - crates/betterlite-openai/src/chat/execution/**
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/http/url_origin.rs
   - tools/oracle/src/helpers/http/url_origin/**
@@ -141,6 +150,7 @@ out_of_scope:
 - B052 owns is_request_body_safe and the 400 Rejected Request envelope; B009 supplies only URL-policy helpers.
 - encode_url_path_segment/segments are B171; provider follow-up URL origin checks remain in B009.
 pitfalls:
+- 'Put the bounded parser, origin check, destination allowlist and the explicit redirect send loop in crates/betterlite-http/src/url_policy.rs and url_policy/**. Set reqwest redirect::Policy::none() in crates/betterlite-http/src/proxy.rs, where the shared client is built. The destination setting is its own config section at crates/betterlite-config/src/sections/provider_url_destination.rs. The adversarial request-body and redirect-credential tests belong next to the existing wired call site, crates/betterlite-openai/src/chat/execution.rs.'
 - 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/url_origin-<case>.yaml. The rest of that folder belongs to other tasks.'
 - 'The oracle helper for this task is pre-registered as url_origin and url_destination in the http group. Replace the stub Op in tools/oracle/src/helpers/http/url_origin.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/url_origin.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - An origin check compares parsed scheme, normalized host and effective port, never suffixes or string prefixes.

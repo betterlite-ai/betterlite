@@ -32,8 +32,6 @@ description: >-
   140 oracle lines under 650 changed lines.
 scope:
   paths:
-    - crates/betterlite-core/src/api/soniox.rs
-    - crates/betterlite-core/src/api/soniox/**
     - crates/betterlite-core/src/api/soniox/pipeline.rs
     - crates/betterlite-core/src/api/soniox/pipeline/**
     - tools/oracle/src/helpers/core_ops/soniox_pipeline.rs

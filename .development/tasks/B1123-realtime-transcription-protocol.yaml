@@ -21,8 +21,6 @@ description: >-
   85 adapters,65 fuzz/replay and 25 wiring, 600 lines.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/transcription_protocol.rs
   - crates/betterlite-core/src/api/transcription_protocol/**
   - crates/betterlite-core/fuzz/Cargo.toml

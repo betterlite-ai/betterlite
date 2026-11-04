@@ -25,7 +25,7 @@ description: >-
   request/response bodies, timing, HTTP metadata and kwargs through a standard interface.
   Cursor and Comprehend Medical preserve LiteLLM's warn-and-return fallback when pricing or
   parsing fails; TypeSafe silently defaults to zero cost on validation failure. Implement
-  these three handlers in separate domain modules under betterlite-core::api::passthrough_logging,
+  these three handlers in separate domain modules under betterlite-core::relay (cursor, typesafe, comprehend_medical),
   reusing wire format types and injected logging state.
 scope:
   paths:
@@ -82,7 +82,7 @@ checks:
       why: the required tests fail or the filter selects no tests
       run: >-
         cargo nextest run --locked -p betterlite-core --no-tests=fail
-        -E 'test(/^passthrough_logging::(cursor|typesafe|comprehend_medical)::/)'
+        -E 'test(/^relay::(cursor|typesafe|comprehend_medical)::/)'
 oracle_cases: []
 deviations:
   - what: >-

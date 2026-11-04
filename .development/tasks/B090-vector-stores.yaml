@@ -20,8 +20,6 @@ description: >-
   Python facade tasks mirror the public names without this task registering routes a second time.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/vector_stores.rs
   - crates/betterlite-core/src/api/vector_stores/**
   - crates/betterlite-core/src/dispatch.rs

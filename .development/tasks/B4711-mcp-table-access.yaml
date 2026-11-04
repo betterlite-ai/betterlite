@@ -205,13 +205,13 @@ checks:
       run: grep -qE 'struct McpIdentifierConflict|pub struct McpIdentifierConflict' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'field.*Literal|value.*String|server_id.*String' crates/betterlite-db/src/mcp/table_access.rs
     - id: table-access-tests
       why: Table access tests are missing or fail.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^mcp_table_access::tests::/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^mcp::table_access::(.*::)?mcp_table_access::tests::/) - test(/replays_the_/)'
     - id: conflict-where-clause
       why: _identifier_where does not filter correctly.
       run: grep -qE 'fn _identifier_where' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'case.*insensitive|mode.*insensitive' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'OR.*approval_status.*None|approval_status.*not.*draft' crates/betterlite-db/src/mcp/table_access.rs
     - id: conflict-alias-first
       why: Identifier conflict detection does not check alias before server_name.
-      run: grep -qE 'fn.*find.*identifier.*conflict|fn.*conflict.*check' crates/betterlite-db/src/mcp/table_access.rs && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^mcp_table_access::tests::.*alias.*first/)'
+      run: grep -qE 'fn.*find.*identifier.*conflict|fn.*conflict.*check' crates/betterlite-db/src/mcp/table_access.rs && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^mcp::table_access::(.*::)?mcp_table_access::tests::.*alias.*first/)'
     - id: lock-keys-sorted
       why: _mcp_identifier_lock_keys does not sort keys.
       run: grep -qE 'fn _mcp_identifier_lock_keys' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'sorted\(|sort\(' crates/betterlite-db/src/mcp/table_access.rs
@@ -223,19 +223,19 @@ checks:
       run: grep -qE 'fn.*write.*if.*identifier|fn.*write_if.*conflict' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'execute_raw|pg_advisory_xact_lock' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'McpIdentifierConflict' crates/betterlite-db/src/mcp/table_access.rs
     - id: update-not-found
       why: _db_update_mcp_server_row does not raise ValueError when server absent.
-      run: grep -qE 'fn _db_update_mcp_server_row' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'MCP server not found' crates/betterlite-db/src/mcp/table_access.rs && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^mcp_table_access::tests::.*update.*not_found/)'
+      run: grep -qE 'fn _db_update_mcp_server_row' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'MCP server not found' crates/betterlite-db/src/mcp/table_access.rs && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^mcp::table_access::(.*::)?mcp_table_access::tests::.*update.*not_found/)'
     - id: readable-secret-error
       why: _readable_mcp_servers does not warn and skip on SecretMapDecodeError.
       run: grep -qE 'fn _readable_mcp_servers' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'SecretMapDecodeError|Skipping MCP server' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'warning|warn' crates/betterlite-db/src/mcp/table_access.rs
     - id: get-all-drafts-excluded
       why: get_all_mcp_servers does not exclude drafts.
-      run: grep -qE 'fn get_all_mcp_servers' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'MCPApprovalStatus.*draft|not.*draft' crates/betterlite-db/src/mcp/table_access.rs && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^mcp_table_access::tests::.*get_all.*draft/)'
+      run: grep -qE 'fn get_all_mcp_servers' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'MCPApprovalStatus.*draft|not.*draft' crates/betterlite-db/src/mcp/table_access.rs && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^mcp::table_access::(.*::)?mcp_table_access::tests::.*get_all.*draft/)'
     - id: get-all-null-included
       why: get_all_mcp_servers does not include NULL approval_status.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^mcp_table_access::tests::.*get_all.*null/)'
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^mcp::table_access::(.*::)?mcp_table_access::tests::.*get_all.*null/)'
     - id: review-approve
       why: approve_mcp_server does not set approval_status or reviewed_at.
-      run: grep -qE 'fn approve_mcp_server' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'MCPApprovalStatus.*active|approval_status.*active' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'reviewed_at' crates/betterlite-db/src/mcp/table_access.rs && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^mcp_table_access::tests::.*approve/)'
+      run: grep -qE 'fn approve_mcp_server' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'MCPApprovalStatus.*active|approval_status.*active' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'reviewed_at' crates/betterlite-db/src/mcp/table_access.rs && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^mcp::table_access::(.*::)?mcp_table_access::tests::.*approve/)'
     - id: review-reject
       why: reject_mcp_server does not set approval_status or review_notes.
       run: grep -qE 'fn reject_mcp_server' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'MCPApprovalStatus.*rejected|approval_status.*rejected' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'review_notes' crates/betterlite-db/src/mcp/table_access.rs
@@ -250,7 +250,7 @@ checks:
       run: grep -qE 'fn set_mcp_server_pinned_tools' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'safe_dumps|model_dump' crates/betterlite-db/src/mcp/table_access.rs
     - id: active-submissions
       why: Active submission query does not filter by approval_status or handle empty user_id.
-      run: grep -qE 'fn.*active.*submissions|fn.*get.*active.*server' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'MCPApprovalStatus.*active' crates/betterlite-db/src/mcp/table_access.rs && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^mcp_table_access::tests::.*active.*submission/)'
+      run: grep -qE 'fn.*active.*submissions|fn.*get.*active.*server' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'MCPApprovalStatus.*active' crates/betterlite-db/src/mcp/table_access.rs && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^mcp::table_access::(.*::)?mcp_table_access::tests::.*active.*submission/)'
     - id: management-tests
       why: Management accessor tests are missing or fail.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::management_access::tests::/) - test(/replays_the_/)'

@@ -78,7 +78,7 @@ checks:
   commands:
     - id: humanloop-tests
       why: the humanloop tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^humanloop_prompts::/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^humanloop::(.*::)?humanloop_prompts::/) - test(/replays_the_/)'
 
 oracle_cases: []
 

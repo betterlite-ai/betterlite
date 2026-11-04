@@ -18,8 +18,6 @@ description: >-
   620 total within 660.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/vector_file_http_create_list.rs
   - crates/betterlite-core/src/api/vector_file_http_create_list/**
   - tools/oracle/src/sdk_http.rs

@@ -1,0 +1,5 @@
+task: B1131
+deviations:
+  - what: Provider scores outside exact decimal representation return 502, type bad_gateway, param score, code decimal_out_of_range; nonfinite scores are rejected at the same numeric boundary.
+    why: The repository forbids floats; reuse B204 exact decimal parsing instead of silently rounding provider scores.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L83-L91

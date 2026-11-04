@@ -18,7 +18,7 @@ scope:
   - crates/betterlite-prompts/src/messages/**
   - crates/betterlite-prompts/src/system.rs
   - crates/betterlite-prompts/src/system/**
-  - crates/betterlite-openai/**
+  - crates/betterlite-openai/fuzz/corpus/chat_request/message-normalization-*
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/prompts/message_normalization.rs
   - tools/oracle/src/helpers/prompts/message_normalization/**

@@ -1,7 +1,7 @@
 id: B4567
 title: Codex catalog projection and fallback instructions
 description: >-
-  Build the codex_catalog module for betterlite-management-cli, translating LiteLLM's
+  Build the codex_catalog module for betterlite-cli, translating LiteLLM's
   catalog projection to Rust. The module builds a Codex model_catalog_json that
   preserves installed metadata for known models, filters upgrade targets to served
   models only, and supplies fallback metadata plus base_instructions for unknown models.
@@ -17,9 +17,9 @@ description: >-
   Codex itself uses for unknown models.
 scope:
   paths:
-    - tools/management-cli/src/codex_catalog.rs
-    - tools/management-cli/src/codex_catalog/tests.rs
-    - tools/management-cli/src/codex_base_instructions.md
+    - crates/betterlite-cli/src/codex_catalog.rs
+    - crates/betterlite-cli/src/codex_catalog/tests.rs
+    - crates/betterlite-cli/src/codex_base_instructions.md
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L393-L507
@@ -93,40 +93,40 @@ checks:
   commands:
     - id: catalog-schemas
       why: CodexTruncationPolicy or CodexModel do not have correct defaults or fields
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^codex_catalog::tests::schema_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^codex_catalog::tests::schema_/)'
     - id: stock-schema-passthrough
       why: Stock model structs do not preserve unknown fields or schema matches LiteLLM
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^codex_catalog::tests::stock_schema_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^codex_catalog::tests::stock_schema_/)'
     - id: unknown-model-entry
       why: codex_catalog_entry does not create fallback entry for unknown models correctly
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^codex_catalog::tests::unknown_model_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^codex_catalog::tests::unknown_model_/)'
     - id: known-model-entry
       why: codex_catalog_entry does not copy and modify stock models correctly
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^codex_catalog::tests::known_model_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^codex_catalog::tests::known_model_/)'
     - id: upgrade-filtering
       why: Upgrade filtering does not check if upgrade target is in served models
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^codex_catalog::tests::upgrade_filter_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^codex_catalog::tests::upgrade_filter_/)'
     - id: empty-catalog-none
       why: codex_model_catalog does not return None for empty chat models
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^codex_catalog::tests::empty_catalog_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^codex_catalog::tests::empty_catalog_/)'
     - id: chat-filtering
       why: codex_model_catalog does not filter to chat-mode models correctly
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^codex_catalog::tests::chat_filter_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^codex_catalog::tests::chat_filter_/)'
     - id: served-set
       why: Served models set is not built correctly from chat model IDs
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^codex_catalog::tests::served_set_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^codex_catalog::tests::served_set_/)'
     - id: stock-lookup
       why: Stock models are not indexed by slug for efficient lookup
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^codex_catalog::tests::stock_lookup_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^codex_catalog::tests::stock_lookup_/)'
     - id: json-serialization
       why: Final catalog is not serialized to JSON correctly
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^codex_catalog::tests::json_serialize_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^codex_catalog::tests::json_serialize_/)'
     - id: priority-enumeration
       why: Priority is not assigned by enumeration index or order is not preserved
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^codex_catalog::tests::priority_enum_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^codex_catalog::tests::priority_enum_/)'
     - id: base-instructions-asset
       why: codex_base_instructions.md does not exist or is empty
-      run: test -f tools/management-cli/src/codex_base_instructions.md && test -s tools/management-cli/src/codex_base_instructions.md
+      run: test -f crates/betterlite-cli/src/codex_base_instructions.md && test -s crates/betterlite-cli/src/codex_base_instructions.md
 oracle_cases: []
 deviations: []
 out_of_scope:
