@@ -50,8 +50,6 @@ description: >-
   split roughly 380 production and 420 tests/adapters/config wiring.
 scope:
   paths:
-    - crates/betterlite-server/src/spend.rs
-    - crates/betterlite-server/src/spend/**
     - crates/betterlite-server/src/spend/payload.rs
     - crates/betterlite-server/src/spend/payload/**
     - crates/betterlite-logging/src/spend_metadata.rs

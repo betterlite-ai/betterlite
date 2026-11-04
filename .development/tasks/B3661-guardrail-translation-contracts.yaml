@@ -89,7 +89,7 @@ checks:
       run: grep -q "BedrockChecksContentFilterCategory" crates/betterlite-guardrails/src/*.rs && grep -q "BedrockChecksConfigModel" crates/betterlite-config/src/sections/*.rs && grep -q "_require_at_least_one_check" crates/betterlite-config/src/sections/*.rs
     - id: bedrock-validator-works
       why: The Bedrock validator does not enforce at least one check
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^guardrail_provider_options::.*bedrock.*validator/)' && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_guardrail_provider_options_corpus)'
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::guardrail_translation::(.*::)?guardrail_provider_options::.*bedrock.*validator/)' && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_guardrail_provider_options_corpus)'
     - id: provider-config-types-exist
       why: Provider config types are missing or incomplete
       run: grep -q "BedrockGuardrailConfigModel" crates/betterlite-config/src/sections/*.rs && grep -q "LakeraV2GuardrailConfigModel" crates/betterlite-config/src/sections/*.rs && grep -q "PillarGuardrailConfigModel" crates/betterlite-config/src/sections/*.rs && grep -q "NomaGuardrailConfigModel" crates/betterlite-config/src/sections/*.rs && grep -q "ZscalerAIGuardConfigModel" crates/betterlite-config/src/sections/*.rs && grep -q "JavelinGuardrailConfigModel" crates/betterlite-config/src/sections/*.rs
@@ -113,7 +113,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_translation::.*metadata_merge/)'
     - id: guardrail-provider-oracle
       why: The typed operation has no seed, the oracle helper fails or behavior tests are missing
-      run: test -f tools/oracle/helpers/b3661.py && test -f tools/oracle/src/helpers/guardrails/b3661.rs && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^guardrail_provider_options::|replays_the_helper_case_corpus/)' && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/guardrail-provider-options-*)"
+      run: test -f tools/oracle/helpers/b3661.py && test -f tools/oracle/src/helpers/guardrails/b3661.rs && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::guardrails::b3661::(.*::)?guardrail_provider_options::|replays_the_helper_case_corpus/)' && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/guardrail-provider-options-*)"
     - id: guardrail-provider-python
       why: The helper adapter is missing or strict Python checking fails
       run: test -f tools/oracle/helpers/b3661.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json

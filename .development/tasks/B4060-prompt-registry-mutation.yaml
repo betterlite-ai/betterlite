@@ -80,37 +80,37 @@ checks:
   commands:
     - id: initializer-discovery-tests
       why: get_prompt_initializer_from_integrations fails or returns incomplete initializers
-      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^prompt_registry_mutation::initializer_discovery::/)'
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^registry::mutation::(.*::)?prompt_registry_mutation::initializer_discovery::/)'
     - id: registry-population-tests
       why: prompt_initializer_registry is not populated at module load or missing
-      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^prompt_registry_mutation::registry_population::/)'
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^registry::mutation::(.*::)?prompt_registry_mutation::registry_population::/)'
     - id: initialize-prompt-tests
       why: initialize_prompt fails or does not exist
-      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^prompt_registry_mutation::initialize_prompt::/)'
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^registry::mutation::(.*::)?prompt_registry_mutation::initialize_prompt::/)'
     - id: initialize-idempotent-tests
       why: initialize_prompt is not idempotent on repeat calls with same registry key
-      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^prompt_registry_mutation::initialize_idempotent::/)'
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^registry::mutation::(.*::)?prompt_registry_mutation::initialize_idempotent::/)'
     - id: callback-build-tests
       why: _build_prompt_callback fails or does not exist
-      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^prompt_registry_mutation::build_prompt_callback::/)'
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^registry::mutation::(.*::)?prompt_registry_mutation::build_prompt_callback::/)'
     - id: reload-safety-tests
       why: reload_prompt does not construct new callback before removing stale one
-      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^prompt_registry_mutation::reload_safety::/)'
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^registry::mutation::(.*::)?prompt_registry_mutation::reload_safety::/)'
     - id: reload-order-tests
       why: reload_prompt does not maintain proper callback registration/unregistration order
-      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^prompt_registry_mutation::reload_order::/)'
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^registry::mutation::(.*::)?prompt_registry_mutation::reload_order::/)'
     - id: sync-equality-tests
       why: sync_prompt_from_db does not use value equality for comparison
-      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^prompt_registry_mutation::sync_equality::/)'
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^registry::mutation::(.*::)?prompt_registry_mutation::sync_equality::/)'
     - id: sync-init-and-reload-tests
       why: sync_prompt_from_db does not initialize new or reload changed prompts
-      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^prompt_registry_mutation::sync_init_reload::/)'
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^registry::mutation::(.*::)?prompt_registry_mutation::sync_init_reload::/)'
     - id: remove-prompt-tests
       why: remove_prompt fails or does not exist
-      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^prompt_registry_mutation::remove_prompt::/)'
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^registry::mutation::(.*::)?prompt_registry_mutation::remove_prompt::/)'
     - id: delete-by-base-id-tests
       why: delete_prompts_by_base_id fails or does not exist
-      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^prompt_registry_mutation::delete_by_base_id::/)'
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^registry::mutation::(.*::)?prompt_registry_mutation::delete_by_base_id::/)'
     - id: module-singleton-tests
       why: IN_MEMORY_PROMPT_REGISTRY singleton is not declared at module level
       run: grep -qE 'const|static.*IN_MEMORY_PROMPT_REGISTRY' crates/betterlite-prompts/src/registry/mutation.rs

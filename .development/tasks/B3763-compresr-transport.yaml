@@ -54,7 +54,7 @@ checks:
   commands:
     - id: compresr-transport-tests
       why: The transport and query-selection tests fail, do not exist, or do not cover the required cases
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^compresr_transport::/) or test(/^compresr_query_selection::/) or test(/^compresr_content_shape::/) or test(/^compresr_failure_handling::/)' --no-capture
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^compresr_transport::/) or test(/^compresr_transport::(.*::)?compresr_query_selection::/) or test(/^compresr_transport::(.*::)?compresr_content_shape::/) or test(/^compresr_transport::(.*::)?compresr_failure_handling::/)' --no-capture
     - id: helper-python
       why: The referenced helper adapter is missing or strict Python checking fails.
       run: test -f tools/oracle/helpers/compresr_transport.py && uv run --locked --project tools/oracle/litellm

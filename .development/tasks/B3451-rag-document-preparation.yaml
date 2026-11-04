@@ -132,28 +132,28 @@ checks:
   commands:
     - id: init-lifecycle
       why: BaseRAGIngestion.__init__ does not initialize fields or generate ingest_id
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^ingestion_state::.*init/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rag::ingestion::(.*::)?ingestion_state::.*init/)'
     - id: credential-load
       why: credential loading does not merge or remove fields correctly
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^ingestion_state::.*credential/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rag::ingestion::(.*::)?ingestion_state::.*credential/)'
     - id: upload-precedence
       why: upload does not respect file_data/url/id precedence or raises on missing source
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^ingestion_state::upload.*precedence/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rag::ingestion::(.*::)?ingestion_state::upload.*precedence/)'
     - id: upload-fetch
       why: upload does not fetch URL correctly or parse headers
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^ingestion_state::upload.*fetch/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rag::ingestion::(.*::)?ingestion_state::upload.*fetch/)'
     - id: ocr-dispatch
       why: OCR does not encode data URL, select model, or dispatch correctly
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^ingestion_state::ocr/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rag::ingestion::(.*::)?ingestion_state::ocr/)'
     - id: chunk-splitting
       why: chunk does not extract text or split correctly
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^ingestion_state::chunk/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rag::ingestion::(.*::)?ingestion_state::chunk/)'
     - id: chunk-validation
       why: chunk does not validate configuration or raises correct error type
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^ingestion_state::chunk_config/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rag::ingestion::(.*::)?ingestion_state::chunk_config/)'
     - id: store-contract
       why: store abstract method is missing or not a typed contract
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^ingestion_state::.*store/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rag::ingestion::(.*::)?ingestion_state::.*store/)'
 
 oracle_cases:
   - tools/oracle/cases/ingestion_state/init-options.yaml

@@ -1,0 +1,11 @@
+kind: helper
+name: prometheus-callback-null
+call:
+  b4177:
+    function: callback_configured
+    settings:
+      drop_params: true
+      callbacks: null
+env: {}
+compare:
+  ignore: []

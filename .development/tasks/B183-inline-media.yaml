@@ -42,7 +42,7 @@ scope:
   - crates/betterlite-prompts/src/media/**
   - crates/betterlite-prompts/fuzz/**
   - crates/betterlite-prompts/tests/fixtures/**
-  - crates/betterlite-openai/**
+  - crates/betterlite-openai/fuzz/corpus/chat_request/inline-media-*
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/prompts/inline_media.rs
   - tools/oracle/src/helpers/prompts/inline_media/**

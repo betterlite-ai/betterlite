@@ -7,7 +7,8 @@ description: >-
   The reset operation itself (zeroing and timestamp updates) stays distinct from cache invalidation to keep failure policy clear: the database write commits before any cache is dropped so a failed cache clear cannot leave a stale spending constraint in memory.
 scope:
   paths:
-    - crates/betterlite-db/**
+    - crates/betterlite-db/src/budget_reset_policy.rs
+    - crates/betterlite-db/src/budget_reset_policy/**
     - Cargo.toml
   lint_tables: true
 references:

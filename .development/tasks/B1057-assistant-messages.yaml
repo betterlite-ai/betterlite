@@ -17,8 +17,6 @@ description: >-
   55 corpus/wiring, 755 total. No new byte decoder; B520/B697 own response parsing.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/assistant_messages.rs
   - crates/betterlite-core/src/api/assistant_messages/**
   - tools/oracle/src/sdk_http.rs
