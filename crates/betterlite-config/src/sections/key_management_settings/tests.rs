@@ -46,10 +46,7 @@ fn assert_aws_fields(settings: &super::Settings) {
             .map(secrecy::ExposeSecret::expose_secret),
         Some("token-value")
     );
-    assert_eq!(
-        settings.replica_regions,
-        Some(vec![String::from("us-west-2")])
-    );
+    assert_eq!(settings.replica_regions, vec![String::from("us-west-2")]);
     assert_eq!(
         settings.aws_sts_endpoint.as_deref(),
         Some("https://sts.example")
@@ -115,17 +112,18 @@ fn config_secret_settings_has_litellm_defaults() {
     assert_eq!(settings.prefix_for_stored_virtual_keys, "litellm/");
     assert!(settings.hosted_keys.is_none());
     assert!(settings.tags.is_none());
-    assert!(settings.replica_regions.is_none());
+    assert!(settings.replica_regions.is_empty());
 }
 
 #[test]
 fn null_defaults_and_unknown_settings_are_accepted() {
     let settings = ConfigLoader { lookup: BTreeMap::new() }
-        .load("general_settings:\n  key_management_settings:\n    access_mode: null\n    prefix_for_stored_virtual_keys: null\n    store_virtual_keys: null\n    future_option: {nested: true}\n")
+        .load("general_settings:\n  key_management_settings:\n    access_mode: null\n    prefix_for_stored_virtual_keys: null\n    store_virtual_keys: null\n    replica_regions: null\n    future_option: {nested: true}\n")
         .unwrap().sections.key_management_settings;
     assert_eq!(settings.access_mode, SecretAccessMode::ReadOnly);
     assert_eq!(settings.prefix_for_stored_virtual_keys, "litellm/");
     assert!(!settings.store_virtual_keys);
+    assert!(settings.replica_regions.is_empty());
 }
 
 #[rstest::rstest]
@@ -165,7 +163,7 @@ fn injected_scalars_and_collections_resolve_without_process_environment() {
     assert_eq!(settings.access_mode, SecretAccessMode::WriteOnly);
     assert!(settings.store_virtual_keys);
     assert_eq!(settings.hosted_keys, Some(vec!["resolved".to_owned()]));
-    assert_eq!(settings.replica_regions, Some(vec!["resolved".to_owned()]));
+    assert_eq!(settings.replica_regions, vec!["resolved".to_owned()]);
     assert_eq!(
         settings.tags,
         Some(BTreeMap::from([(
@@ -198,7 +196,7 @@ fn explicit_empty_settings_and_optional_defaults_are_preserved() {
     assert_eq!(settings.hosted_keys, Some(Vec::new()));
     assert_eq!(settings.prefix_for_stored_virtual_keys, "");
     assert_eq!(settings.tags, Some(BTreeMap::new()));
-    assert_eq!(settings.replica_regions, Some(Vec::new()));
+    assert!(settings.replica_regions.is_empty());
     assert!(settings.custom_secret_manager.is_none());
     assert!(settings.primary_secret_name.is_none());
     assert!(settings.description.is_none());

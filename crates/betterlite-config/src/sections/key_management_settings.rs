@@ -54,7 +54,8 @@ pub struct RawSettings {
     pub ignored: IgnoredAny,
 }
 
-#[derive(Debug, Clone)]
+// The shared Sections snapshot requires Default; config defaults are resolved in convert.
+#[derive(Debug, Clone, Default)]
 pub struct Settings {
     pub hosted_keys: Option<Vec<String>>,
     pub store_virtual_keys: bool,
@@ -72,41 +73,7 @@ pub struct Settings {
     pub aws_profile_name: Option<String>,
     pub aws_web_identity_token: Option<SecretString>,
     pub aws_sts_endpoint: Option<String>,
-    pub replica_regions: Option<Vec<String>>,
-}
-
-impl Default for Settings {
-    fn default() -> Self {
-        Self {
-            hosted_keys: None,
-            store_virtual_keys: false,
-            prefix_for_stored_virtual_keys: "litellm/".to_owned(),
-            access_mode: SecretAccessMode::ReadOnly,
-            primary_secret_name: None,
-            description: None,
-            tags: None,
-            kms_key_id: None,
-            custom_secret_manager: None,
-            aws_region_name: None,
-            aws_role_name: None,
-            aws_session_name: None,
-            aws_external_id: None,
-            aws_profile_name: None,
-            aws_web_identity_token: None,
-            aws_sts_endpoint: None,
-            replica_regions: None,
-        }
-    }
-}
-
-macro_rules! resolve_fields {
-    ($settings:ident, $raw:ident, $lookup:ident; $($field:ident),+ $(,)?) => {
-        $(
-            $settings.$field = resolution::text(
-                $raw.$field, concat!("general_settings.key_management_settings.", stringify!($field)), $lookup,
-            )?;
-        )+
-    };
+    pub replica_regions: Vec<String>,
 }
 
 impl Section for Raw {
@@ -116,43 +83,41 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let raw = self
-            .general_settings
-            .key_management_settings
-            .unwrap_or_default();
-        let mut settings = Settings::default();
-        resolve_fields!(settings, raw, lookup;
-            primary_secret_name, description, kms_key_id, custom_secret_manager,
-            aws_region_name, aws_role_name, aws_session_name, aws_external_id,
-            aws_profile_name, aws_sts_endpoint,
-        );
-        settings.hosted_keys = raw.hosted_keys;
-        settings.replica_regions = raw.replica_regions;
-        settings.tags = raw.tags;
-        resolution::collections(&mut settings, lookup)?;
-        resolution::defaults(
-            &mut settings,
-            raw.store_virtual_keys,
-            raw.access_mode,
-            raw.prefix_for_stored_virtual_keys,
-            lookup,
-        )?;
-        settings.aws_web_identity_token = resolution::text(
-            raw.aws_web_identity_token,
-            "general_settings.key_management_settings.aws_web_identity_token",
-            lookup,
-        )?;
-        if self.general_settings.key_management_system == Some(KeyManagementSystem::Custom)
-            && settings
-                .custom_secret_manager
-                .as_ref()
-                .is_none_or(|path| path.trim().is_empty())
-        {
-            return Err(ConfigError::InvalidScalar {
-                path: "general_settings.key_management_settings.custom_secret_manager".to_owned(),
-                value: false,
-            });
-        }
-        Ok(settings)
+        let general = self.general_settings;
+        let raw = general.key_management_settings.unwrap_or_default();
+        let resolve = resolution::Resolver { lookup };
+        Ok(Settings {
+            hosted_keys: resolve.names(raw.hosted_keys, "hosted_keys")?,
+            store_virtual_keys: raw
+                .store_virtual_keys
+                .unwrap_or(Boolean::Literal(false))
+                .resolve(lookup)?,
+            prefix_for_stored_virtual_keys: resolve
+                .text(
+                    raw.prefix_for_stored_virtual_keys,
+                    "prefix_for_stored_virtual_keys",
+                )?
+                .unwrap_or_else(|| "litellm/".to_owned()),
+            access_mode: resolution::access(
+                resolve.text(raw.access_mode, "access_mode")?.as_deref(),
+            )?,
+            primary_secret_name: resolve.text(raw.primary_secret_name, "primary_secret_name")?,
+            description: resolve.text(raw.description, "description")?,
+            tags: resolve.tags(raw.tags)?,
+            kms_key_id: resolve.text(raw.kms_key_id, "kms_key_id")?,
+            custom_secret_manager: resolve
+                .custom(raw.custom_secret_manager, general.key_management_system)?,
+            aws_region_name: resolve.text(raw.aws_region_name, "aws_region_name")?,
+            aws_role_name: resolve.text(raw.aws_role_name, "aws_role_name")?,
+            aws_session_name: resolve.text(raw.aws_session_name, "aws_session_name")?,
+            aws_external_id: resolve.text(raw.aws_external_id, "aws_external_id")?,
+            aws_profile_name: resolve.text(raw.aws_profile_name, "aws_profile_name")?,
+            aws_web_identity_token: resolve
+                .text(raw.aws_web_identity_token, "aws_web_identity_token")?,
+            aws_sts_endpoint: resolve.text(raw.aws_sts_endpoint, "aws_sts_endpoint")?,
+            replica_regions: resolve
+                .names(raw.replica_regions, "replica_regions")?
+                .unwrap_or_default(),
+        })
     }
 }
