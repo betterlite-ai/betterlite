@@ -12,8 +12,9 @@ const COMMERCIAL: AwsPartition = AwsPartition {
     dns_suffix: "amazonaws.com",
 };
 
-pub fn get_aws_partition(region: Option<&str>) -> AwsPartition {
-    let Some(region) = region.filter(|region| !region.is_empty()) else {
+#[must_use]
+pub fn get_aws_partition(region_name: Option<&str>) -> AwsPartition {
+    let Some(region) = region_name.filter(|name| !name.is_empty()) else {
         return COMMERCIAL;
     };
     let (partition, dns_suffix) = if region.starts_with("cn-") {
@@ -37,13 +38,13 @@ pub fn get_aws_partition(region: Option<&str>) -> AwsPartition {
     }
 }
 
+#[must_use]
 pub fn contains_bedrock_arn(value: &str) -> bool {
-    value.match_indices("arn:aws").any(|(index, _)| {
-        value
-            .get(index..)
-            .is_some_and(|remaining| is_bedrock_arn(remaining))
-    })
+    value
+        .match_indices("arn:aws")
+        .any(|(index, _)| value.get(index..).is_some_and(is_bedrock_arn))
 }
+#[must_use]
 pub fn is_bedrock_arn(value: &str) -> bool {
     let Some(remainder) = value.strip_prefix("arn:aws") else {
         return false;
@@ -59,10 +60,11 @@ pub fn is_bedrock_arn(value: &str) -> bool {
     };
     valid_partition(partition) && service.starts_with("bedrock:")
 }
+#[must_use]
 pub fn contains_aws_arn(value: &str) -> bool {
     let mut remaining = value;
     while let Some(index) = remaining.find("arn:aws") {
-        let after_prefix = index + "arn:aws".len();
+        let after_prefix = index.saturating_add("arn:aws".len());
         let suffix = remaining.get(after_prefix..).unwrap_or_default();
         if suffix.starts_with(':') {
             return true;
