@@ -24,8 +24,9 @@ def run(fields: dict[str, Json]) -> Json:
         cast(dict[str, object], response)
     )
     text, citations, thinking, reasoning, calls, web, results, compact = result
-    message, calls, extra = config._resolve_json_mode_non_streaming(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-        cast(bool | None, fields.get("json_mode")), calls
+    unfiltered_calls = calls
+    message, projected_calls, extra = config._resolve_json_mode_non_streaming(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+        cast(bool | None, fields.get("json_mode")), unfiltered_calls
     )
     projected = config._build_provider_specific_fields(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]
         cast(dict[str, object], response),
@@ -34,7 +35,7 @@ def run(fields: dict[str, Json]) -> Json:
         web,
         results,
         compact,
-        calls,
+        unfiltered_calls,
     )
     provider_fields = to_json(projected)
     return cast(Json, {
@@ -42,7 +43,7 @@ def run(fields: dict[str, Json]) -> Json:
         "citations": citations,
         "thinking_blocks": thinking,
         "reasoning_content": reasoning,
-        "tool_calls": calls,
+        "tool_calls": projected_calls,
         "web_search_results": web,
         "tool_results": results,
         "compaction_blocks": compact,

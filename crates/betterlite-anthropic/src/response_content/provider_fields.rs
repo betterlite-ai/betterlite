@@ -16,6 +16,7 @@ use super::wire::{AnthropicCompletionResponse, JsonFields, get, json_text};
 pub(super) fn project(
     response: &AnthropicCompletionResponse,
     reply: &AnthropicContentReply,
+    unfiltered_tool_calls: &[super::wire::AnthropicToolCall],
 ) -> JsonFields {
     let mut fields = IndexMap::new();
     fields.insert(
@@ -28,7 +29,7 @@ pub(super) fn project(
     );
     copy_if_present(response, &mut fields, "context_management");
     project_web_search(response, reply, &mut fields);
-    project_interpreters(response, reply, &mut fields);
+    project_interpreters(response, reply, unfiltered_tool_calls, &mut fields);
     copy_if_present(response, &mut fields, "container");
     if let Some(blocks) = reply.compaction_blocks.as_ref() {
         fields.insert("compaction_blocks".to_owned(), Json::List(blocks.clone()));
@@ -93,7 +94,7 @@ fn latest_search_input<'response>(
             && get(block, "name").and_then(json_text) == Some("web_search")
             && get(block, "id").and_then(json_text) == Some(id)
         {
-            get(block, "input")
+            get(block, "input").filter(|input| matches!(input, Json::Object(_)))
         } else {
             None
         }
@@ -103,10 +104,11 @@ fn latest_search_input<'response>(
 fn project_interpreters(
     response: &AnthropicCompletionResponse,
     reply: &AnthropicContentReply,
+    unfiltered_tool_calls: &[super::wire::AnthropicToolCall],
     fields: &mut JsonFields,
 ) {
     if let Some(results) = reply.tool_results.as_ref() {
-        add_interpreter_fields(response, results, &reply.tool_calls, fields);
+        add_interpreter_fields(response, results, unfiltered_tool_calls, fields);
     }
 }
 

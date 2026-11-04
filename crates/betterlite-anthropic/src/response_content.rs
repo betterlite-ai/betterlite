@@ -24,6 +24,8 @@ pub struct AnthropicContentReply {
 
 #[derive(Debug, thiserror::Error)]
 pub enum ResponseContentError {
+    #[error("missing required Anthropic content field: {0}")]
+    MissingField(&'static str),
     #[error("invalid JSON tool arguments: {0}")]
     InvalidJson(#[from] serde_json::Error),
 }
@@ -52,8 +54,10 @@ pub fn project_response(
         provider_specific_fields: IndexMap::new(),
     };
     collect_content(response, &mut reply)?;
+    let unfiltered_tool_calls = reply.tool_calls.clone();
     resolve_json_mode(&mut reply, json_mode)?;
-    reply.provider_specific_fields = provider_fields::project(response, &reply);
+    reply.provider_specific_fields =
+        provider_fields::project(response, &reply, &unfiltered_tool_calls);
     Ok(reply)
 }
 
@@ -73,7 +77,7 @@ fn collect_block(
     reply: &mut AnthropicContentReply,
 ) -> Result<(), ResponseContentError> {
     match get(block, "type").and_then(json_text).unwrap_or_default() {
-        "text" => collect_text(block, reply),
+        "text" => collect_text(block, reply)?,
         "tool_use" | "server_tool_use" => {
             reply
                 .tool_calls
@@ -92,10 +96,15 @@ fn collect_block(
     Ok(())
 }
 
-fn collect_text(block: &Json, reply: &mut AnthropicContentReply) {
-    if let Some(text) = get(block, "text").and_then(json_text) {
-        reply.content.push_str(text);
-    }
+fn collect_text(
+    block: &Json,
+    reply: &mut AnthropicContentReply,
+) -> Result<(), ResponseContentError> {
+    let text = get(block, "text")
+        .and_then(json_text)
+        .ok_or(ResponseContentError::MissingField("text"))?;
+    reply.content.push_str(text);
+    Ok(())
 }
 
 fn collect_thinking(block: &Json, reply: &mut AnthropicContentReply) {
@@ -205,9 +214,9 @@ fn json_tool_content(arguments: &str) -> Result<String, ResponseContentError> {
             .get("values")
             .filter(|value| !matches!(value, Json::Null))
     {
-        return serde_json::to_string(value).map_err(ResponseContentError::from);
+        return wire::format_json_argument(value).map_err(ResponseContentError::from);
     }
-    serde_json::to_string(&parsed).map_err(ResponseContentError::from)
+    wire::format_json_argument(&parsed).map_err(ResponseContentError::from)
 }
 
 mod tests;

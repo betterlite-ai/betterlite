@@ -11,14 +11,19 @@ fn response(source: &str) -> AnthropicCompletionResponse {
 
 #[test]
 fn case_0_text_and_citations() {
-    let reply = project_response(&response(r#"{"content":[{"type":"text","text":"a"},{"type":"text","text":"b","citations":[]},{"type":"tool_search_tool_result","citations":[{"id":"skip"}]}]}"#), None).unwrap();
+    let reply = project_response(&response(r#"{"content":[{"type":"text","text":"a"},{"type":"text","text":"b","citations":[{"type":"char_location","supported_text":"old"}]},{"type":"tool_search_tool_result","citations":[{"id":"skip"}]}]}"#), None).unwrap();
     assert_eq!(reply.content, "ab");
-    assert_eq!(reply.citations, Some(vec![Json::List(Vec::new())]));
+    assert_eq!(
+        reply.citations,
+        Some(vec![
+            serde_json::from_str(r#"[{"type":"char_location","supported_text":"b"}]"#).unwrap()
+        ])
+    );
 }
 
 #[test]
 fn case_0_tool_use_index() {
-    let reply = project_response(&response(r#"{"content":[{"type":"text"},{"type":"tool_use","id":"i","name":"f","input":{"x":1},"caller":null}]}"#), None).unwrap();
+    let reply = project_response(&response(r#"{"content":[{"type":"text","text":""},{"type":"tool_use","id":"i","name":"f","input":{"x":1},"caller":null}]}"#), None).unwrap();
     assert_eq!(reply.tool_calls[0].index, 1);
     assert_eq!(reply.tool_calls[0].caller, Some(Json::Null));
 }
@@ -34,7 +39,7 @@ fn case_0_thinking_redacted_content() {
 fn case_0_json_tool_only() {
     let reply = project_response(
         &response(
-            r#"{"content":[{"type":"tool_use","name":"json_tool_call","input":{"values":false}}]}"#,
+            r#"{"content":[{"type":"tool_use","id":"j","name":"json_tool_call","input":{"values":false}}]}"#,
         ),
         Some(true),
     )
@@ -43,40 +48,68 @@ fn case_0_json_tool_only() {
     assert_eq!(reply.extra_content.as_deref(), Some("false"));
 }
 
+#[rstest]
+#[case::null_mode(None)]
+#[case::false_mode(Some(false))]
+fn json_tool_is_kept_when_mode_is_not_true(#[case] mode: Option<bool>) {
+    let reply = project_response(
+        &response(
+            r#"{"content":[{"type":"tool_use","id":"j","name":"json_tool_call","input":{}}]}"#,
+        ),
+        mode,
+    )
+    .unwrap();
+    assert_eq!(reply.tool_calls.len(), 1);
+    assert_eq!(reply.extra_content, None);
+}
+
 #[test]
 fn case_0_json_tool_with_real_tools() {
-    let reply = project_response(&response(r#"{"content":[{"type":"tool_use","name":"json_tool_call","input":{"values":0}},{"type":"tool_use","name":"run","input":{}}]}"#), Some(true)).unwrap();
+    let reply = project_response(&response(r#"{"content":[{"type":"tool_use","id":"j","name":"json_tool_call","input":{"values":0}},{"type":"tool_use","id":"r","name":"run","input":{}}]}"#), Some(true)).unwrap();
     assert_eq!(reply.tool_calls.len(), 1);
     assert_eq!(reply.extra_content.as_deref(), Some("0"));
     assert_eq!(reply.tool_calls[0].function.name.as_deref(), Some("run"));
 }
 
 #[test]
-fn json_tool_without_arguments_is_removed_from_mixed_calls() {
-    let reply = project_response(&response(r#"{"content":[{"type":"tool_use","id":"j","name":"json_tool_call"},{"type":"tool_use","id":"r","name":"run","input":{}}]}"#), Some(true)).unwrap();
-    assert_eq!(reply.tool_calls.len(), 1);
-    assert_eq!(reply.tool_calls[0].function.name.as_deref(), Some("run"));
-    assert_eq!(reply.extra_content, None);
-}
-
-#[test]
-fn json_tool_without_arguments_is_preserved_when_it_is_the_only_call() {
-    let reply = project_response(
+fn tool_use_missing_input_returns_error() {
+    let error = project_response(
         &response(r#"{"content":[{"type":"tool_use","id":"j","name":"json_tool_call"}]}"#),
         Some(true),
     )
-    .unwrap();
-    assert_eq!(reply.tool_calls.len(), 1);
-    assert_eq!(
-        reply.tool_calls[0].function.name.as_deref(),
-        Some("json_tool_call")
-    );
-    assert_eq!(reply.extra_content, None);
+    .unwrap_err();
+    assert!(error.to_string().contains("input"));
+}
+
+#[test]
+fn tool_use_missing_id_returns_error() {
+    let error = project_response(
+        &response(r#"{"content":[{"type":"tool_use","name":"run","input":{}}]}"#),
+        None,
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("id"));
+}
+
+#[test]
+fn tool_use_missing_name_returns_error() {
+    let error = project_response(
+        &response(r#"{"content":[{"type":"tool_use","id":"r","input":{}}]}"#),
+        None,
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("name"));
+}
+
+#[test]
+fn text_missing_string_returns_error() {
+    let error = project_response(&response(r#"{"content":[{"type":"text"}]}"#), None).unwrap_err();
+    assert!(error.to_string().contains("text"));
 }
 
 #[test]
 fn case_0_web_search_tool_results() {
-    let reply = project_response(&response(r#"{"content":[{"type":"server_tool_use","id":"s","name":"web_search","input":{"query":"cats"}},{"type":"tool_use","id":"s","name":"web_search","input":{"query":"wrong"}},{"type":"web_search_tool_result","tool_use_id":"s","content":[{"type":"web_search_result","url":"https://source.test"}]},{"type":"web_fetch_tool_result","tool_use_id":"s"}]}"#), None).unwrap();
+    let reply = project_response(&response(r#"{"content":[{"type":"server_tool_use","id":"s","name":"web_search","input":{"query":"first"}},{"type":"server_tool_use","id":"s","name":"web_search","input":{"query":"second"}},{"type":"server_tool_use","id":"s","name":"web_search","input":"invalid"},{"type":"tool_use","id":"s","name":"web_search","input":{"query":"wrong"}},{"type":"web_search_tool_result","tool_use_id":"s","content":[{"type":"web_search_result","url":"https://source.test"}]},{"type":"web_fetch_tool_result","tool_use_id":"s"}]}"#), None).unwrap();
     assert_eq!(reply.web_search_results.unwrap().len(), 2);
     let Json::List(calls) = &reply.provider_specific_fields["web_search_calls"] else {
         panic!("calls list expected");
@@ -88,7 +121,7 @@ fn case_0_web_search_tool_results() {
     let Json::Object(action) = &call["action"] else {
         panic!("web search action object expected");
     };
-    assert_eq!(action.get("query"), Some(&Json::Text("cats".to_owned())));
+    assert_eq!(action.get("query"), Some(&Json::Text("second".to_owned())));
     let Json::List(sources) = &action["sources"] else {
         panic!("web search sources list expected");
     };
@@ -107,6 +140,19 @@ fn case_0_code_interpreter_output() {
     };
     assert_eq!(call.get("code"), Some(&Json::Text("ls".to_owned())));
     assert_eq!(call.get("container_id"), Some(&Json::Text("c".to_owned())));
+}
+
+#[test]
+fn json_mode_filters_calls_after_code_interpreter_projection() {
+    let reply = project_response(&response(r#"{"content":[{"type":"tool_use","id":"t1","name":"json_tool_call","input":{"command":"ls"}},{"type":"bash_code_execution_tool_result","tool_use_id":"t1","content":{"stdout":"ok"}}]}"#), Some(true)).unwrap();
+    assert!(reply.tool_calls.is_empty());
+    let Json::List(calls) = &reply.provider_specific_fields["code_interpreter_results"] else {
+        panic!("calls list expected")
+    };
+    let Json::Object(call) = &calls[0] else {
+        panic!("call object expected")
+    };
+    assert_eq!(call.get("code"), Some(&Json::Text("ls".to_owned())));
 }
 
 #[test]

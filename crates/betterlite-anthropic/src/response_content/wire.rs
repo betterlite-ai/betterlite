@@ -45,22 +45,28 @@ pub(crate) fn json_text(value: &Json) -> Option<&str> {
 pub(crate) fn convert_tool_block(
     block: &Json,
     index: usize,
-) -> Result<AnthropicToolCall, serde_json::Error> {
-    let input = get(block, "input");
+) -> Result<AnthropicToolCall, super::ResponseContentError> {
+    let id = get(block, "id")
+        .and_then(json_text)
+        .ok_or(super::ResponseContentError::MissingField("id"))?;
+    let name = get(block, "name")
+        .and_then(json_text)
+        .ok_or(super::ResponseContentError::MissingField("name"))?;
+    let input = get(block, "input").ok_or(super::ResponseContentError::MissingField("input"))?;
     let caller = get(block, "caller").cloned();
     Ok(AnthropicToolCall {
-        id: get(block, "id").and_then(json_text).map(str::to_owned),
+        id: Some(id.to_owned()),
         r#type: "function".to_owned(),
         function: AnthropicToolFunction {
-            name: get(block, "name").and_then(json_text).map(str::to_owned),
-            arguments: input.map(format_json_argument).transpose()?,
+            name: Some(name.to_owned()),
+            arguments: Some(format_json_argument(input)?),
         },
         index,
         caller,
     })
 }
 
-fn format_json_argument(value: &Json) -> Result<String, serde_json::Error> {
+pub(crate) fn format_json_argument(value: &Json) -> Result<String, serde_json::Error> {
     match value {
         Json::List(values) => {
             let encoded_values = values

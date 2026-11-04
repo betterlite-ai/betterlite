@@ -2,7 +2,7 @@ kind: helper
 name: anthropic-response-content-web-search-tool-results
 call:
   anthropic_response_content:
-    response: {content: [{type: server_tool_use, id: s, name: web_search, input: {query: cats}}, {type: web_search_tool_result, tool_use_id: s, content: []}, {type: web_fetch_tool_result, tool_use_id: s}], context_management: {edits: []}, container: {id: container_1}}
+    response: {content: [{type: server_tool_use, id: s, name: web_search, input: {query: first}}, {type: server_tool_use, id: s, name: web_search, input: {query: second}}, {type: server_tool_use, id: s, name: web_search, input: invalid}, {type: web_search_tool_result, tool_use_id: s, content: []}, {type: web_fetch_tool_result, tool_use_id: s}], context_management: {edits: []}, container: {id: container_1}}
     json_mode: null
 env: {}
 compare: {ignore: []}
