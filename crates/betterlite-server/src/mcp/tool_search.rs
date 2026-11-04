@@ -250,10 +250,7 @@ pub fn search_tools(query: &str, tools: &[MCPTool], top_k: usize) -> Vec<ToolSea
         top_k,
     )
     .into_iter()
-    .map(|(score, tool)| MCPToolSearchHit {
-        tool,
-        score: Some(score),
-    })
+    .map(|(_, tool)| MCPToolSearchHit { tool, score: None })
     .collect();
     project_hits(hits)
 }

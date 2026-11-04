@@ -39,6 +39,12 @@ fn keyword_score_counts_case_insensitive_tokens() {
     let tool = tool("weather_forecast", "Get current weather and forecast");
     assert_eq!(keyword_score("WEATHER forecast", &tool), 2.0);
     assert_eq!(keyword_score("weath", &tool), 1.0);
+    assert_eq!(
+        search_tools("weather", &[tool], 5)
+            .first()
+            .and_then(|hit| hit.score),
+        None
+    );
 }
 
 #[test]

@@ -1,5 +1,5 @@
 kind: helper
 name: empty-query
-call: {"mcp_search_primitives": {"mode": "empty", "tools": [{"name": "weather", "description": "local forecast"}]}}
+call: {"mcp_search_primitives": {"mode": "empty", "tools": [{"name": "weather", "description": "local forecast", "inputSchema": {}}]}}
 env: {}
 compare: {ignore: []}

@@ -1,5 +1,5 @@
 kind: helper
 name: tool-identity
-call: {"mcp_search_primitives": {"mode": "identity", "server_id": "server-1", "tool": {"name": "get_weather", "description": "weather"}}}
+call: {"mcp_search_primitives": {"mode": "identity", "server_id": "server-1", "tool": {"name": "get_weather", "description": "weather", "inputSchema": {}}}}
 env: {}
 compare: {ignore: []}
