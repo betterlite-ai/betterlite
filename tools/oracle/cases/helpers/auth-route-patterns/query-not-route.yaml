@@ -1,0 +1,9 @@
+kind: helper
+name: auth-route-patterns-query-not-route
+env: {}
+compare: {ignore: []}
+call:
+  auth_route_patterns:
+    function: scope
+    requests:
+      - {"name": "query_not_route", "path": "/v1/models", "url_path": "/"}

@@ -4,7 +4,7 @@ use std::io::{Error as IoError, ErrorKind};
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use super::super::{
     Clock, Entropy, Http, HttpBody, HttpResponse, WallClock,
@@ -180,6 +180,10 @@ pub(super) struct RecordedConnection {
 }
 
 impl LoopbackConnection for RecordedConnection {
+    fn set_read_timeout(&mut self, _timeout: Duration) -> Result<(), IoError> {
+        Ok(())
+    }
+
     fn read(&mut self, buffer: &mut [u8]) -> Result<usize, IoError> {
         match self.reads.pop_front() {
             Some(Ok(bytes)) => {

@@ -28,6 +28,7 @@ pub struct RawUsageObject {
 #[serde(default)]
 pub struct RawPromptTokensDetails {
     pub cached_tokens: Option<Scalar>,
+    pub cache_creation_input_tokens: Option<Scalar>,
     pub cache_creation_tokens: Option<Scalar>,
     pub cache_write_tokens: Option<Scalar>,
     pub text_tokens: Option<Scalar>,
@@ -104,6 +105,11 @@ fn coerce_logged_usage(raw: &RawUsageObject) -> Result<LoggedUsage, SavingsEvide
         .as_ref()
         .map(coerce_prompt_tokens_details)
         .transpose()?;
+    if let Some(details) = &mut prompt_tokens_details {
+        let write = resolve_cache_write_tokens(raw)?;
+        details.cache_write_tokens = write;
+        details.cache_creation_tokens = write;
+    }
     apply_cache_overrides(raw, &mut prompt_tokens_details)?;
     let completion_tokens_details = raw
         .completion_tokens_details
@@ -119,6 +125,19 @@ fn coerce_logged_usage(raw: &RawUsageObject) -> Result<LoggedUsage, SavingsEvide
         prompt_tokens_details,
         completion_tokens_details,
     })
+}
+
+// Mirrors PromptTokensDetailsWrapper's __init__ fallback order: cache_write_tokens, cache_creation_tokens, then a nested cache_creation_input_tokens, else 0.
+fn resolve_cache_write_tokens(raw: &RawUsageObject) -> Result<i64, SavingsEvidenceError> {
+    let details = raw.prompt_tokens_details.as_ref();
+    let write =
+        integer_like_cache_count(details.and_then(|value| value.cache_write_tokens.as_ref()))?;
+    let creation =
+        integer_like_cache_count(details.and_then(|value| value.cache_creation_tokens.as_ref()))?;
+    let nested = integer_like_cache_count(
+        details.and_then(|value| value.cache_creation_input_tokens.as_ref()),
+    )?;
+    Ok(write.or(creation).or(nested).unwrap_or(0))
 }
 
 // Mirrors Usage.__init__: a top-level cache count always overwrites the matching detail, creating it first.
@@ -137,9 +156,9 @@ fn apply_cache_overrides(
             .cached_tokens = cached;
     }
     if let Some(write) = integer_like_cache_count(raw.cache_creation_input_tokens.as_ref())? {
-        details
-            .get_or_insert_with(PromptTokensDetails::default)
-            .cache_write_tokens = write;
+        let cache_details = details.get_or_insert_with(PromptTokensDetails::default);
+        cache_details.cache_write_tokens = write;
+        cache_details.cache_creation_tokens = write;
     }
     Ok(())
 }
