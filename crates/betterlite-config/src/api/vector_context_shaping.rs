@@ -2,6 +2,7 @@
 mod tests;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
+use crate::resolve::resolve_string;
 use crate::sections::Section;
 use crate::sections::settings::JsonValue;
 
@@ -46,12 +47,16 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         let failure_mode = match self.litellm_settings.failure_mode {
-            JsonValue::String(text) => JsonValue::String(crate::resolve::resolve_string(
+            JsonValue::String(text) => JsonValue::String(resolve_string(
                 text,
                 "litellm_settings.vector_store_search_failure_mode",
                 lookup,
             )?),
-            value => value,
+            value @ (JsonValue::Null
+            | JsonValue::Bool(_)
+            | JsonValue::Number(_)
+            | JsonValue::Array(_)
+            | JsonValue::Object(_)) => value,
         };
         Ok(Settings { failure_mode })
     }

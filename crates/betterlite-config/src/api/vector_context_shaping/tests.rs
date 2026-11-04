@@ -4,21 +4,8 @@ use std::collections::BTreeMap;
 
 use rstest::rstest;
 
-use super::{Raw, Settings};
-use crate::loader::{ConfigLoader, parse_view};
-use crate::sections::Section as _;
+use crate::loader::ConfigLoader;
 use crate::sections::settings::JsonValue;
-
-fn load(source: &str, lookup: BTreeMap<String, String>) -> Settings {
-    ConfigLoader {
-        lookup: lookup.clone(),
-    }
-    .load(source)
-    .expect("failure mode is a supported configuration key");
-    let (raw, _ignored): (Raw, _) = parse_view(source).expect("valid litellm_settings yaml");
-    raw.convert(&lookup)
-        .expect("convert never fails for this section")
-}
 
 #[rstest]
 #[case::absent("{}\n", "annotate", BTreeMap::new())]
@@ -42,8 +29,11 @@ fn loads_failure_mode(
     #[case] expected: &str,
     #[case] lookup: BTreeMap<String, String>,
 ) {
+    let config = ConfigLoader { lookup }
+        .load(source)
+        .expect("failure mode is a supported configuration key");
     assert_eq!(
-        load(source, lookup).failure_mode,
+        config.sections.vector_context_shaping.failure_mode,
         JsonValue::String(expected.to_owned())
     );
 }
