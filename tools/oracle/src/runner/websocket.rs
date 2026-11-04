@@ -69,17 +69,15 @@ fn prepare_gateway_group(
     case: &WebSocketCase,
 ) -> Result<(PathBuf, Runtime), OracleError> {
     let group = root.join("websocket").join(safe_name(&case.name));
-    fs::create_dir_all(&group).map_err(|source| OracleError::Filesystem {
+    let to_error = |source| OracleError::Filesystem {
         path: group.clone(),
         source,
-    })?;
+    };
+    fs::create_dir_all(&group).map_err(to_error)?;
     let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
-        .map_err(|source| OracleError::Filesystem {
-            path: group.clone(),
-            source,
-        })?;
+        .map_err(to_error)?;
     Ok((group, runtime))
 }
 
@@ -97,6 +95,12 @@ fn run_gateway_case(
     Ok(outcomes)
 }
 
+fn scenario_invalid(case: &WebSocketCase, detail: &str) -> OracleError {
+    OracleError::ScenarioInvalid {
+        message: format!("{}: {detail}", case.name),
+    }
+}
+
 fn verify_native_against_fixture(
     case: &WebSocketCase,
     output: &HelperOutput,
@@ -107,12 +111,8 @@ fn verify_native_against_fixture(
         };
         let observed: TranscriptObservation =
             serde_json::from_value(value.clone()).map_err(OracleError::Json)?;
-        if let Err(pointer) = compare_transcript(case, &observed) {
-            return Err(OracleError::ScenarioInvalid {
-                message: format!("{}: {pointer}", case.name),
-            });
-        }
-        return Ok(());
+        return compare_transcript(case, &observed)
+            .map_err(|pointer| scenario_invalid(case, &pointer));
     }
     let is_adapter_missing = output.error.as_ref().is_some_and(|error| {
         error.class == "ServiceError" && error.message.contains("is not registered")
@@ -120,12 +120,10 @@ fn verify_native_against_fixture(
     if is_adapter_missing {
         return Ok(());
     }
-    Err(OracleError::ScenarioInvalid {
-        message: format!(
-            "{}: native service adapter failed: {:?}",
-            case.name, output.error
-        ),
-    })
+    Err(scenario_invalid(
+        case,
+        &format!("native service adapter failed: {:?}", output.error),
+    ))
 }
 
 fn config_path(
@@ -171,12 +169,7 @@ fn attempt(
     let stopped = gateway.stop();
     let (observed, upstream) = result?;
     stopped?;
-    let mismatch = compare_transcript(case, &observed).err();
-    if let Some(pointer) = mismatch {
-        return Err(OracleError::ScenarioInvalid {
-            message: format!("{}: {pointer}", case.name),
-        });
-    }
+    compare_transcript(case, &observed).map_err(|pointer| scenario_invalid(case, &pointer))?;
     Ok(upstream.is_some_and(|record| upstream_differs(case, &record)))
 }
 

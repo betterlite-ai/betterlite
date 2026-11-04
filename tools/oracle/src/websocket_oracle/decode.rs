@@ -76,20 +76,9 @@ pub fn decode_ws_case(
     let frame_cap = limits.max_frame_bytes.min(MAX_FRAME_BYTES);
     let capture_cap = limits.max_capture_bytes.min(MAX_CAPTURE_BYTES);
     let mut traffic = 0_usize;
-    resolve_frames(
-        &mut case.frames,
-        frame_cap,
-        capture_cap,
-        fixtures,
-        &mut traffic,
-    )?;
-    resolve_frames(
-        &mut case.input.frames,
-        frame_cap,
-        capture_cap,
-        fixtures,
-        &mut traffic,
-    )?;
+    for frames in [&mut case.frames, &mut case.input.frames] {
+        resolve_frames(frames, frame_cap, capture_cap, fixtures, &mut traffic)?;
+    }
     Ok(case)
 }
 

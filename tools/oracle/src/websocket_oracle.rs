@@ -215,26 +215,20 @@ const fn peer_name(direction: Direction) -> &'static str {
 }
 
 pub fn close_matches(expected: Option<&Close>, observed: Option<&Close>) -> Result<(), String> {
-    let Some(expected_close) = expected else {
-        return if observed.is_none() {
-            Ok(())
-        } else {
-            Err("/close".to_owned())
-        };
+    let (Some(expected_close), Some(observed_close)) = (expected, observed) else {
+        return first_mismatch(&[(expected.is_none() == observed.is_none(), "/close")]);
     };
-    let Some(observed_close) = observed else {
-        return Err("/close".to_owned());
-    };
-    if expected_close.initiator != observed_close.initiator {
-        return Err("/close/initiator".to_owned());
-    }
-    if expected_close.code != observed_close.code {
-        return Err("/close/code".to_owned());
-    }
-    if expected_close.reason != observed_close.reason {
-        return Err("/close/reason".to_owned());
-    }
-    Ok(())
+    first_mismatch(&[
+        (
+            expected_close.initiator == observed_close.initiator,
+            "/close/initiator",
+        ),
+        (expected_close.code == observed_close.code, "/close/code"),
+        (
+            expected_close.reason == observed_close.reason,
+            "/close/reason",
+        ),
+    ])
 }
 
 pub mod decode;

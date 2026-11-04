@@ -5,15 +5,12 @@ use tokio_tungstenite::tungstenite::Message;
 impl TryFrom<&Frame> for Message {
     type Error = DriverError;
     fn try_from(frame: &Frame) -> Result<Self, Self::Error> {
-        frame.text.as_ref().map_or_else(
-            || {
-                frame
-                    .binary_data
-                    .as_ref()
-                    .map(|bytes| Self::binary(bytes.clone()))
-                    .ok_or_else(|| DriverError::Transport("binary fixture is missing".to_owned()))
-            },
-            |text| Ok(Self::text(text.clone())),
-        )
+        match (&frame.text, &frame.binary_data) {
+            (Some(text), _) => Ok(Self::text(text.clone())),
+            (None, Some(bytes)) => Ok(Self::binary(bytes.clone())),
+            (None, None) => Err(DriverError::Transport(
+                "binary fixture is missing".to_owned(),
+            )),
+        }
     }
 }
