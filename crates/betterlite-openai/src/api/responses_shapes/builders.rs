@@ -21,8 +21,9 @@ impl<T> Default for Field<T> {
 pub struct SearchInput {
     #[serde(default)]
     pub query: Field<String>,
+    // Flatten requires an object while discarding unrelated keys.
     #[serde(flatten)]
-    pub ignored: BTreeMap<String, IgnoredAny>,
+    pub ignored: IgnoredAny,
 }
 
 #[derive(Debug, Deserialize)]
@@ -30,7 +31,7 @@ pub struct SearchResult {
     #[serde(default)]
     pub content: SearchContent,
     #[serde(flatten)]
-    pub ignored: BTreeMap<String, IgnoredAny>,
+    pub ignored: IgnoredAny,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -50,7 +51,7 @@ pub struct SearchItem {
     pub r#type: String,
     pub url: Field<String>,
     #[serde(flatten)]
-    pub ignored: BTreeMap<String, IgnoredAny>,
+    pub ignored: IgnoredAny,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -154,7 +155,7 @@ pub struct InterpreterContent {
     #[serde(default)]
     pub stderr: Option<String>,
     #[serde(flatten)]
-    pub ignored: BTreeMap<String, IgnoredAny>,
+    pub ignored: IgnoredAny,
 }
 
 #[derive(Debug, Deserialize)]
