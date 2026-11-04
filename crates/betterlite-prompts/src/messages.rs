@@ -1,7 +1,7 @@
 use serde_json::{Value, json};
 
 const USER_CONTINUE: &str = "Please continue.";
-const ASSISTANT_CONTINUE: &str = "Continue.";
+const ASSISTANT_CONTINUE: &str = "Please continue.";
 
 // System messages do not establish a turn role.
 #[must_use]
@@ -46,47 +46,54 @@ pub fn insert_user_continue_message(
         .cloned()
         .unwrap_or_else(|| json!({"role": "user", "content": USER_CONTINUE}));
     let mut result = messages.to_vec();
-    if result
-        .first()
-        .and_then(|m| m.get("role"))
-        .and_then(Value::as_str)
-        == Some("assistant")
-    {
-        result.insert(0, placeholder.clone());
+    let mut insertion_points = Vec::new();
+    if first_role_is_assistant(messages) {
+        insertion_points.push(0);
     }
-    let mut index = 1;
-    while index < result.len() {
-        let current_assistant = result.get(index).is_some_and(|m| {
-            counts_for_alternation(m) && m.get("role").and_then(Value::as_str) == Some("assistant")
-        });
-        if current_assistant {
-            let previous_is_assistant = result
-                .get(index - 1)
-                .and_then(|m| m.get("role"))
-                .and_then(Value::as_str)
-                == Some("assistant");
-            let previous_counted_assistant = result[..index]
-                .iter()
-                .rev()
-                .find(|m| counts_for_alternation(m))
-                .is_some_and(|m| m.get("role").and_then(Value::as_str) == Some("assistant"));
-            if previous_is_assistant || previous_counted_assistant {
-                result.insert(index, placeholder.clone());
-                index += 1;
-            }
-        }
-        index += 1;
-    }
+    insertion_points
+        .extend((1..messages.len()).filter(|index| assistant_needs_user(messages, *index)));
     if ensure
-        && result
+        && messages
             .last()
             .and_then(|m| m.get("role"))
             .and_then(Value::as_str)
             == Some("assistant")
     {
-        result.push(placeholder);
+        insertion_points.push(messages.len());
+    }
+    for index in insertion_points.into_iter().rev() {
+        result.insert(index, placeholder.clone());
     }
     result
+}
+
+fn first_role_is_assistant(messages: &[Value]) -> bool {
+    messages
+        .first()
+        .and_then(|message| message.get("role"))
+        .and_then(Value::as_str)
+        == Some("assistant")
+}
+
+fn assistant_needs_user(messages: &[Value], index: usize) -> bool {
+    let Some(current) = messages.get(index) else {
+        return false;
+    };
+    if !counts_for_alternation(current)
+        || current.get("role").and_then(Value::as_str) != Some("assistant")
+    {
+        return false;
+    }
+    let previous = messages.iter().take(index).next_back();
+    let directly_after_assistant = previous
+        .is_some_and(|message| message.get("role").and_then(Value::as_str) == Some("assistant"));
+    let previous_counted_assistant = messages
+        .iter()
+        .take(index)
+        .rev()
+        .find(|message| counts_for_alternation(message))
+        .is_some_and(|message| message.get("role").and_then(Value::as_str) == Some("assistant"));
+    directly_after_assistant || previous_counted_assistant
 }
 
 // Assistant placeholders only belong between adjacent counted user turns.
