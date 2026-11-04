@@ -102,20 +102,26 @@ pub fn insert_assistant_continuation(
     let placeholder = custom
         .cloned()
         .unwrap_or_else(|| json!({"role": "assistant", "content": ASSISTANT_CONTINUE}));
-    let mut result = Vec::with_capacity(messages.len());
     let mut previous_counted_user = false;
-    for message in messages {
+    let mut insertions = Vec::new();
+    for (index, message) in messages.iter().enumerate() {
         let counted_user = counts_for_alternation(message)
             && message.get("role").and_then(Value::as_str) == Some("user");
         if counted_user && previous_counted_user {
-            result.push(placeholder.clone());
+            insertions.push(index);
         }
-        result.push(message.clone());
         if counts_for_alternation(message) {
             previous_counted_user = message.get("role").and_then(Value::as_str) == Some("user");
         }
     }
-    result
+    messages
+        .iter()
+        .enumerate()
+        .flat_map(|(index, message)| {
+            let inserted = insertions.contains(&index).then(|| placeholder.clone());
+            [inserted, Some(message.clone())].into_iter().flatten()
+        })
+        .collect()
 }
 
 // Compose user and assistant insertion in LiteLLM's specified order.
