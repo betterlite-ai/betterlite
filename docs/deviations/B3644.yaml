@@ -1,0 +1,17 @@
+task: B3644
+deviations:
+  - what: Transcribe cost rates and calculations use Decimal instead of LiteLLM's float values.
+    why: The money-is-decimal rule requires exact decimal billing arithmetic.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py#L149-L150
+  - what: Transcribe operation names come from committed static data rather than the installed botocore service model at runtime.
+    why: The task requires deterministic committed data with an explicit refresh script for SDK updates.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py#L139-L146
+  - what: The maximum fallback charge uses 3600 seconds rather than LiteLLM's TRANSCRIBE_MAX_MEDIA_DURATION_SECONDS value.
+    why: The task explicitly defines the fallback charge as 3600 seconds at the per-second rate.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1653
+  - what: Refusal detail messages use betterlite wording while preserving the task's HTTP status distinctions.
+    why: Betterlite errors must name betterlite and retain the same status and error codes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py#L223-L337
+  - what: Cost calculation returns a typed overflow error when Decimal cannot represent the result.
+    why: The Rust implementation must handle arithmetic overflow without panicking.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py#L339-L344

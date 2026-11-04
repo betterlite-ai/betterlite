@@ -130,6 +130,7 @@ scope:
   - tools/oracle/src/helpers/guardrails/b3762/support.rs
   - tools/oracle/src/helpers/guardrails/b3767.rs
   - tools/oracle/src/helpers/guardrails/b3778.rs
+  - tools/oracle/src/helpers/redis/b4321.rs
   - tools/oracle/Cargo.toml
   - tools/oracle/cases/helpers/providers/provider-base-helpers/modify-params-default-and-env.yaml
   - tools/oracle/cases/helpers/database-url-policy/str-to-bool-on.yaml
@@ -225,6 +226,7 @@ pitfalls:
 - The betterlite-http proxy_policy fuzz target now gets a Result; it skips an Err instead of unwrapping it, since the fuzzer feeds invalid trust values on purpose.
 - The fuzz crate under crates/betterlite-env/fuzz needs its own empty [workspace] table like betterlite-paths-fuzz; without it cargo treats it as an unlisted package inside the workspace and refuses to build it.
 - ChatSetupError in chat_setup.rs gains one variant for EnvError, next to its DeploymentError and HttpError variants.
+- RedisSettingsError gains an Environment variant, so the exhaustive match over it in tools/oracle/src/helpers/redis/b4321.rs adds that variant to its ValueError arm; LiteLLM's _coerce_redis_kwargs_types drops a bad cast without a word, so no case reaches it.
 review_level: standard
 budget:
   max_changed_lines: 1800

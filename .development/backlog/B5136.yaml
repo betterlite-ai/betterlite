@@ -1,13 +1,13 @@
 id: B5136
 milestone: M8 platform
 title: CLI PKCE request limits, per-connection deadline, fuzz build and missing tests
-status: todo
+status: done
 depends_on: [B4573]
 file: tasks/B5136-cli-pkce-audit-gaps.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 622

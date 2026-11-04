@@ -1,0 +1,8 @@
+name: auth-route-patterns-http-sibling-root-kept
+config: |
+  general_settings:
+    master_key: oracle-master
+env: {}
+request: {"method": "GET", "path": "/proxy-other/v1/models", "headers": {}, "body": null}
+upstream: []
+compare: {"headers": ["content-type"], "headers_present": [], "upstream_headers": [], "ignore": []}

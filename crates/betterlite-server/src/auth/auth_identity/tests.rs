@@ -12,7 +12,9 @@ use secrecy::SecretString;
 use tower::ServiceExt as _;
 
 use betterlite_auth::auth_identity::errors::AuthError;
+use betterlite_config::sections::auth_route_patterns::Settings;
 
+use crate::auth::auth_route_patterns::AuthSettings;
 use crate::routes;
 
 use super::{
@@ -59,7 +61,10 @@ fn protected_server(master_key: &str) -> Router {
 
 fn protected_server_with_chat(master_key: &str, chat: Router) -> Router {
     routes::router(
-        Some(SecretString::from(master_key.to_owned())),
+        AuthSettings {
+            master_key: Some(SecretString::from(master_key.to_owned())),
+            routes: Settings::default(),
+        },
         Arc::new(AtomicBool::new(false)),
         &[],
         chat,
