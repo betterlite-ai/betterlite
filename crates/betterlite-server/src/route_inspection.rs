@@ -24,7 +24,8 @@ pub struct RouteInfo {
 #[serde(default)]
 pub struct Route {
     pub path: Option<String>,
-    pub methods: Option<Vec<String>>,
+    #[serde(default, with = "serde_with::rust::double_option")]
+    pub methods: Option<Option<Vec<String>>>,
     pub name: Option<String>,
     pub endpoint: Option<String>,
     pub app: Option<Vec<Self>>,
@@ -37,7 +38,7 @@ where
 {
     vec![RouteInfo {
         path: route.path.clone(),
-        methods: route.methods.clone(),
+        methods: route.methods.clone().flatten(),
         name: route.name.clone(),
         endpoint: route.endpoint.as_ref().and_then(|_| {
             safe_get_endpoint_name("regular route endpoint", || endpoint_route.endpoint_name())
@@ -71,12 +72,10 @@ fn mounted_sub_route_info(mount_path: &str, sub_route: &Route) -> Option<RouteIn
     path.push_str(sub_route.path.as_deref().unwrap_or_default());
     Some(RouteInfo {
         path: Some(path),
-        methods: Some(
-            sub_route
-                .methods
-                .clone()
-                .unwrap_or_else(|| vec!["GET".to_owned(), "POST".to_owned()]),
-        ),
+        methods: sub_route
+            .methods
+            .clone()
+            .unwrap_or_else(|| Some(vec!["GET".to_owned(), "POST".to_owned()])),
         name: sub_route.name.clone(),
         endpoint: safe_get_endpoint_name(&endpoint, || Ok(Some(endpoint.as_str()))),
         mounted_app: Some(true),

@@ -17,7 +17,7 @@ impl NamedEndpoint for Endpoint {
 fn regular_route_keeps_nulls_and_endpoint_name() {
     let route = Route {
         path: Some("/chat".to_owned()),
-        methods: Some(vec!["POST".to_owned()]),
+        methods: Some(Some(vec!["POST".to_owned()])),
         name: Some("chat".to_owned()),
         endpoint: Some("present".to_owned()),
         app: None,
@@ -95,4 +95,22 @@ fn endpoint_name_error_is_logged_and_dropped() {
         Err(RouteInspectionError::EndpointName)
     });
     assert_eq!(name, None);
+}
+
+#[test]
+fn mounted_route_with_explicit_null_methods_keeps_null() {
+    let route = Route {
+        path: None,
+        methods: None,
+        name: None,
+        endpoint: None,
+        app: Some(vec![Route {
+            path: Some("/null-methods".to_owned()),
+            methods: Some(None),
+            name: None,
+            endpoint: Some("handler".to_owned()),
+            app: None,
+        }]),
+    };
+    assert_eq!(get_routes_for_mounted_app(&route)[0].methods, None);
 }
