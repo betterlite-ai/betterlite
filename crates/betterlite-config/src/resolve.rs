@@ -6,21 +6,6 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 type Lookup<'lookup> = &'lookup dyn EnvironmentLookup;
 
-impl ConfigError {
-    #[must_use]
-    pub const fn category(&self) -> &'static str {
-        match self {
-            Self::Yaml { .. } => "yaml",
-            Self::Unsupported { .. } => "unsupported_key",
-            Self::MissingEnvironment { .. } => "missing_environment",
-            Self::InvalidFloat { .. } => "invalid_float",
-            Self::InvalidInteger { .. } => "invalid_integer",
-            Self::InvalidScalar { .. } => "invalid_scalar",
-            Self::Environment { .. } => "environment",
-        }
-    }
-}
-
 pub(super) trait SecretText {
     fn secret_text(self) -> String;
 }

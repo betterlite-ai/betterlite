@@ -60,6 +60,22 @@ pub enum ConfigError {
     #[error("invalid scalar at {path}")]
     InvalidScalar { path: String, value: bool },
 }
+
+impl ConfigError {
+    #[must_use]
+    pub const fn category(&self) -> &'static str {
+        match self {
+            Self::Yaml { .. } => "yaml",
+            Self::Unsupported { .. } => "unsupported_key",
+            Self::MissingEnvironment { .. } => "missing_environment",
+            Self::InvalidFloat { .. } => "invalid_float",
+            Self::InvalidInteger { .. } => "invalid_integer",
+            Self::InvalidScalar { .. } => "invalid_scalar",
+            Self::Environment { .. } => "environment",
+        }
+    }
+}
+
 pub struct ConfigLoader<L> {
     pub lookup: L,
 }
@@ -119,10 +135,9 @@ pub(crate) fn unknown_paths(views: &[BTreeSet<String>]) -> Vec<String> {
         .collect()
 }
 
-fn convert<L>(raw: RawConfig, sections: Sections, lookup: &L) -> Result<Config, ConfigError>
-where
-    L: EnvironmentLookup,
-{
+type Lookup<'lookup> = &'lookup dyn EnvironmentLookup;
+
+fn convert(raw: RawConfig, sections: Sections, lookup: Lookup<'_>) -> Result<Config, ConfigError> {
     let mut model_list = Vec::with_capacity(raw.model_list.len());
     for (index, deployment) in raw.model_list.into_iter().enumerate() {
         model_list.push(convert_deployment(deployment, index, lookup)?);
@@ -137,14 +152,11 @@ where
     })
 }
 
-fn convert_deployment<L>(
+fn convert_deployment(
     raw: RawDeployment,
     index: usize,
-    lookup: &L,
-) -> Result<ModelDeployment, ConfigError>
-where
-    L: EnvironmentLookup,
-{
+    lookup: Lookup<'_>,
+) -> Result<ModelDeployment, ConfigError> {
     let litellm_params = convert_params(raw.litellm_params, index, lookup)?;
     let model_info = convert_info(raw.model_info, index, lookup)?;
     let model_name = resolve_string(
@@ -159,10 +171,11 @@ where
     })
 }
 
-fn convert_params<L>(raw: RawParams, index: usize, lookup: &L) -> Result<LiteLlmParams, ConfigError>
-where
-    L: EnvironmentLookup,
-{
+fn convert_params(
+    raw: RawParams,
+    index: usize,
+    lookup: Lookup<'_>,
+) -> Result<LiteLlmParams, ConfigError> {
     let prefix = format!("model_list.{index}.litellm_params");
     let optional = |value: Option<String>, path: &str| {
         value
@@ -195,10 +208,7 @@ where
     })
 }
 
-fn convert_info<L>(raw: RawInfo, index: usize, lookup: &L) -> Result<ModelInfo, ConfigError>
-where
-    L: EnvironmentLookup,
-{
+fn convert_info(raw: RawInfo, index: usize, lookup: Lookup<'_>) -> Result<ModelInfo, ConfigError> {
     let id = raw
         .id
         .map(|text| resolve_string(text, &format!("model_list.{index}.model_info.id"), lookup))
@@ -206,10 +216,7 @@ where
     Ok(ModelInfo { id })
 }
 
-fn convert_general<L>(raw: RawGeneral, lookup: &L) -> Result<GeneralSettings, ConfigError>
-where
-    L: EnvironmentLookup,
-{
+fn convert_general(raw: RawGeneral, lookup: Lookup<'_>) -> Result<GeneralSettings, ConfigError> {
     let master_key = resolve_secret(raw.master_key, "general_settings.master_key", lookup)?;
     Ok(general_settings(
         raw.encryption_algorithm,
@@ -218,10 +225,7 @@ where
     ))
 }
 
-fn convert_router<L>(raw: RawRouter, lookup: &L) -> Result<RouterSettings, ConfigError>
-where
-    L: EnvironmentLookup,
-{
+fn convert_router(raw: RawRouter, lookup: Lookup<'_>) -> Result<RouterSettings, ConfigError> {
     let integer = |value: Option<RawNumber>, path: &str| number(value, path, lookup, parse_integer);
     let float = |value: Option<RawNumber>, path: &str| number(value, path, lookup, parse_float);
     let num_retries = integer(raw.num_retries, "router_settings.num_retries")?;
@@ -238,10 +242,7 @@ where
     })
 }
 
-fn convert_litellm<L>(raw: RawLiteLlm, lookup: &L) -> Result<LiteLlmSettings, ConfigError>
-where
-    L: EnvironmentLookup,
-{
+fn convert_litellm(raw: RawLiteLlm, lookup: Lookup<'_>) -> Result<LiteLlmSettings, ConfigError> {
     let retries_path = "litellm_settings.num_retries";
     let timeout_path = "litellm_settings.request_timeout";
     let num_retries = number(raw.num_retries, retries_path, lookup, parse_integer)?;
@@ -261,10 +262,10 @@ where
     })
 }
 
-fn environment_defaults<L>(configured: Option<bool>, lookup: &L) -> Result<(bool, i64), ConfigError>
-where
-    L: EnvironmentLookup,
-{
+fn environment_defaults(
+    configured: Option<bool>,
+    lookup: Lookup<'_>,
+) -> Result<(bool, i64), ConfigError> {
     let modify_params = match configured {
         Some(value) => value,
         None => betterlite_env::flag(
@@ -281,13 +282,10 @@ where
     Ok((modify_params, default_max_tokens))
 }
 
-fn convert_environment<L>(
+fn convert_environment(
     values: BTreeMap<String, Option<String>>,
-    lookup: &L,
-) -> Result<BTreeMap<String, Option<SecretString>>, ConfigError>
-where
-    L: EnvironmentLookup,
-{
+    lookup: Lookup<'_>,
+) -> Result<BTreeMap<String, Option<SecretString>>, ConfigError> {
     let resolved = values
         .into_iter()
         .map(|(key, value)| {
