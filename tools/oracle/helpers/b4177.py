@@ -309,6 +309,7 @@ def run(input_value: dict[str, Json]) -> Json:
             patch.dict(sys.modules, {"litellm.proxy.prometheus_cleanup": cleanup}),
             patch.dict(os.environ, environment),
             patch("os.makedirs", skip_makedirs),
+            redirect_stdout(StringIO()),
         ):
             setup_directory = cast(
                 Callable[[int, dict[str, object] | None, int | None], str | None],
