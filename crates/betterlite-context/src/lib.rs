@@ -1,10 +1,13 @@
 pub mod a2a_text;
 pub mod agentic_followup_kwargs;
 pub mod anthropic_catalog_lookup;
+pub mod aws_partition;
 pub mod bedrock_config_selection;
 pub mod bedrock_model;
+pub mod call_context;
 pub mod chat_config_selection;
 pub mod cloud_storage;
+pub mod core_settings;
 pub mod dynamic_logging_cache;
 pub mod error;
 pub mod local_ttl_cache;

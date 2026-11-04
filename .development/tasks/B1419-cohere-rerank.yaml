@@ -36,14 +36,12 @@ description: >-
   and 100 configuration/export lines, maximum 800.
 scope:
   paths:
-    - crates/betterlite-openai/src/{lib,error,cohere_rerank}.rs
     - crates/betterlite-openai/src/cohere_rerank.rs
     - crates/betterlite-openai/src/cohere_rerank/**
-    - crates/betterlite-core/src/{lib,cohere_rerank_guardrail}.rs
     - crates/betterlite-core/src/cohere_rerank_guardrail.rs
     - crates/betterlite-core/src/cohere_rerank_guardrail/**
-    - crates/betterlite-config/src/{lib,settings,providers}.rs
-    - crates/betterlite-config/src/providers/{mod,cohere_rerank}.rs
+    - crates/betterlite-config/src/sections/cohere_rerank_settings.rs
+    - crates/betterlite-config/src/sections/cohere_rerank_settings/**
     - crates/betterlite-config/tests/cohere_rerank_settings.rs
     - tools/oracle/src/helpers/core_ops/cohere_rerank_plan.rs
     - tools/oracle/src/helpers/core_ops/cohere_rerank_plan/**

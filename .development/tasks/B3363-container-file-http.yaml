@@ -86,7 +86,7 @@ checks:
   commands:
     - id: behavior-tests
       why: required tests fail or the filter selects no tests
-      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^container_file_http::/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^containers::(.*::)?container_file_http::/) - test(/replays_the_/)'
 
 oracle_cases: []
 

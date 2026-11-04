@@ -149,7 +149,7 @@ checks:
         grep -q "CLICKHOUSE_MAX_BUFFERED_ROWS.*200.?000" ../betterlite-worktrees/litellm/litellm/constants.py
     - id: clickhouse-tests
       why: clickhouse tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^clickhouse_logging::/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^clickhouse::(.*::)?clickhouse_logging::/) - test(/replays_the_/)'
 oracle_cases: []
 deviations:
   - what: Spend values are float throughout the pipeline, matching LiteLLM's SpendLogRecord.spend type.

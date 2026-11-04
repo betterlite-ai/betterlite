@@ -25,7 +25,6 @@ description: >-
   90 fuzz lines within 750.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,error,studio_transcription}.rs
     - crates/betterlite-vertex/src/studio_transcription.rs
     - crates/betterlite-vertex/src/studio_transcription/**
     - crates/betterlite-vertex/fuzz/Cargo.toml

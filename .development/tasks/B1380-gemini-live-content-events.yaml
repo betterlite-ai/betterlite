@@ -32,7 +32,6 @@ description: >-
   within 750.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,gemini_live_content}.rs
     - crates/betterlite-vertex/src/gemini_live_content.rs
     - crates/betterlite-vertex/src/gemini_live_content/**
     - tools/oracle/src/helpers/vertex/gemini_live_content.rs

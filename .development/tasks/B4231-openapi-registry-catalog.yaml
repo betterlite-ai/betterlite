@@ -6,7 +6,9 @@ description: >-
   Include the Slack icon URL as-is rather than normalizing, and preserve each OAuth pkce boolean. Load the resource once on demand and cache it; on failure return an empty API list. The catalog is data, not a route, so do not register an endpoint here. The consumer task that owns /v1/mcp/openapi-registry depends on this resource.
 scope:
   paths:
-    - crates/betterlite-server/**
+    - crates/betterlite-server/src/mcp/openapi_registry.rs
+    - crates/betterlite-server/src/mcp/openapi_registry/**
+    - crates/betterlite-server/data/openapi_registry.json
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openapi_registry.json

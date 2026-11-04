@@ -62,6 +62,8 @@ pub mod literal_ai;
 pub mod logging_failure;
 pub mod logging_metadata;
 pub mod logging_pre_post;
+pub mod logging_privacy;
+pub mod logging_service_events;
 pub mod logging_state;
 pub mod logging_streams;
 pub mod logging_success;

@@ -30,7 +30,6 @@ description: >-
   implementation, 65 loader, 190 tests, 95 adapters and 100 fuzz lines, maximum 775.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,vertex_batch_download}.rs
     - crates/betterlite-vertex/src/vertex_batch_download.rs
     - crates/betterlite-vertex/src/vertex_batch_download/**
     - crates/betterlite-vertex/fuzz/Cargo.toml

@@ -22,8 +22,6 @@ description: >-
   and 35 wiring, 575 lines.
 scope:
   paths:
-  - crates/betterlite-provider/src/api.rs
-  - crates/betterlite-provider/src/api/**
   - crates/betterlite-provider/src/api/transcription_http.rs
   - crates/betterlite-provider/src/api/transcription_http/**
   - crates/betterlite-provider/src/operation.rs

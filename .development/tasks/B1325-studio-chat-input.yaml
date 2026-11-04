@@ -19,7 +19,6 @@ description: >-
   150 adapter policy, 150 tests, 95 oracle adapters and 100 settings/registration lines, cap 550.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,error,studio_chat}.rs
     - crates/betterlite-vertex/src/studio_chat.rs
     - crates/betterlite-vertex/src/studio_chat/**
     - crates/betterlite-config/src/providers/vertex.rs

@@ -23,7 +23,6 @@ description: >-
   175 tests, 120 oracle and 90 fuzz lines under 700.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,error,vertex_rerank}.rs
     - crates/betterlite-vertex/src/vertex_rerank.rs
     - crates/betterlite-vertex/src/vertex_rerank/**
     - crates/betterlite-vertex/fuzz/Cargo.toml

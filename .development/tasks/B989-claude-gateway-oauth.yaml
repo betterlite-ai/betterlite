@@ -95,7 +95,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-server/Cargo.toml
-  - crates/betterlite-server/src/error.rs
   - crates/betterlite-server/src/api/claude_gateway_oauth.rs
   - crates/betterlite-server/src/api/claude_gateway_oauth/**
   - crates/betterlite-server/src/api.rs
@@ -107,8 +106,6 @@ scope:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/claude_gateway_oauth.rs
   - crates/betterlite-core/src/api/claude_gateway_oauth/**
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - crates/betterlite-config/Cargo.toml

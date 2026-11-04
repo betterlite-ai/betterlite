@@ -103,13 +103,13 @@ checks:
   commands:
     - id: hiddenlayer-v1-tests
       why: HiddenlayerGuardrail v1 constructor, apply_guardrail or _call_hiddenlayer fail or do not exist
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^hiddenlayer_v1::|^hiddenlayer_evaluation_v1::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^hiddenlayer::(.*::)?hiddenlayer_v1::|^hiddenlayer_evaluation_v1::/)'
     - id: hiddenlayer-v2-tests
       why: HiddenlayerGuardrailV2 constructor, apply_guardrail or _call_hiddenlayer fail or do not exist
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^hiddenlayer_v2::|^hiddenlayer_evaluation_v2::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^hiddenlayer::(.*::)?hiddenlayer_v2::|^hiddenlayer_evaluation_v2::/)'
     - id: v1-v2-dispatch-test
       why: initialize_guardrail does not correctly dispatch to v1 or v2 based on version parameter
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^hiddenlayer_version_dispatch::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^hiddenlayer::(.*::)?hiddenlayer_version_dispatch::/)'
 oracle_cases:
   - tools/oracle/cases/guardrails/hiddenlayer/evaluation/v1-last-message-scan.yaml
   - tools/oracle/cases/guardrails/hiddenlayer/evaluation/v1-block-action-400.yaml

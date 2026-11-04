@@ -31,6 +31,7 @@ pub mod passthrough_guardrail;
 pub mod passthrough_stream;
 pub mod proxy;
 pub mod rag;
+pub mod rate_limit_window_store;
 pub mod rate_limiters;
 pub mod relay;
 pub mod routes;

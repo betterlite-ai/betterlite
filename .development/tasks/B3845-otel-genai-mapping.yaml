@@ -86,28 +86,28 @@ checks:
   commands:
     - id: mapper-protocol
       why: The AttributeMapper trait does not exist or lacks the required map method
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_mappers::base::tests::mapper_protocol(::|$)/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(otel::mappers::base|otel::mappers::genai|otel::mappers::legacy|otel::mappers::utils|otel::transforms)::(.*::)?otel_mappers::base::tests::mapper_protocol(::|$)/)'
     - id: genai-mapper
       why: GenAI mapper attributes, dispatch or tool collection fail
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_mappers::genai::tests::(::|$)/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(otel::mappers::base|otel::mappers::genai|otel::mappers::legacy|otel::mappers::utils|otel::transforms)::(.*::)?otel_mappers::genai::tests::(::|$)/) - test(/replays_the_/)'
     - id: legacy-mapper
       why: Legacy mapper attributes, dispatch or tool collection fail
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_mappers::legacy::tests::(::|$)/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(otel::mappers::base|otel::mappers::genai|otel::mappers::legacy|otel::mappers::utils|otel::transforms)::(.*::)?otel_mappers::legacy::tests::(::|$)/) - test(/replays_the_/)'
     - id: mapper-dispatch
       why: Mappers do not dispatch on span type or return incorrect results
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_mappers::dispatch_tests::(::|$)/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(otel::mappers::base|otel::mappers::genai|otel::mappers::legacy|otel::mappers::utils|otel::transforms)::(.*::)?otel_mappers::dispatch_tests::(::|$)/)'
     - id: tool-budget
       why: Tool attribute budget is not computed or is not split across mappers
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_mappers::utils::tests::tool_budget(::|$)/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(otel::mappers::base|otel::mappers::genai|otel::mappers::legacy|otel::mappers::utils|otel::transforms)::(.*::)?otel_mappers::utils::tests::tool_budget(::|$)/)'
     - id: message-serialization
       why: Message serialization, multimodal content extraction or fallback handling fails
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_transforms::message_tests::(::|$)/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(otel::mappers::base|otel::mappers::genai|otel::mappers::legacy|otel::mappers::utils|otel::transforms)::(.*::)?otel_transforms::message_tests::(::|$)/)'
     - id: legacy-transforms
       why: Message/choice/Responses transformation functions do not produce {role, parts} output
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_transforms::legacy_tests::(::|$)/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(otel::mappers::base|otel::mappers::genai|otel::mappers::legacy|otel::mappers::utils|otel::transforms)::(.*::)?otel_transforms::legacy_tests::(::|$)/)'
     - id: tool-functions
       why: set_tools_attributes or _tool_calls_kv_pair produce incorrect key prefixes or missing attributes
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_transforms::tool_functions_tests::(::|$)/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(otel::mappers::base|otel::mappers::genai|otel::mappers::legacy|otel::mappers::utils|otel::transforms)::(.*::)?otel_transforms::tool_functions_tests::(::|$)/)'
     - id: helper-python
       why: The independently invoked MIT helper semantics must match the production functions.
       run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::logging::b3845::/)'

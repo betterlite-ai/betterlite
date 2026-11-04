@@ -42,11 +42,10 @@ description: >-
   remain the byte boundary, so no new fuzz target belongs here.
 scope:
   paths:
-    - crates/betterlite-core/src/{lib,native_messages_hosts}.rs
     - crates/betterlite-core/src/native_messages_hosts.rs
     - crates/betterlite-core/src/native_messages_hosts/**
-    - crates/betterlite-config/src/{lib,settings,providers}.rs
-    - crates/betterlite-config/src/providers/{mod,native_messages_hosts}.rs
+    - crates/betterlite-config/src/sections/native_messages_hosts_settings.rs
+    - crates/betterlite-config/src/sections/native_messages_hosts_settings/**
     - crates/betterlite-config/tests/native_messages_hosts_settings.rs
     - tools/oracle/src/helpers/core_ops/native_messages_hosts.rs
     - tools/oracle/src/helpers/core_ops/native_messages_hosts/**

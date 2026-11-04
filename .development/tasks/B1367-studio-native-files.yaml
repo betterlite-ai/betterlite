@@ -30,7 +30,6 @@ scope:
   paths:
     - crates/betterlite-vertex/Cargo.toml
     - Cargo.lock
-    - crates/betterlite-vertex/src/{lib,error,studio_files}.rs
     - crates/betterlite-vertex/src/studio_files.rs
     - crates/betterlite-vertex/src/studio_files/**
     - crates/betterlite-vertex/fuzz/Cargo.toml

@@ -119,28 +119,28 @@ checks:
   commands:
     - id: status-code-extraction
       why: Status code must extract from multiple sources in priority order.
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_failure::extract_status_code::/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus::failure::(.*::)?prometheus_failure::extract_status_code::/)'
     - id: invalid-key-detection
       why: Invalid API key detection must recognize 401 and auth-error patterns.
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_failure::invalid_key::/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus::failure::(.*::)?prometheus_failure::invalid_key::/)'
     - id: deployment-failure-labels
       why: Deployment failure labels must cascade through metadata sources with nested getters.
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_failure::deployment_labels::/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus::failure::(.*::)?prometheus_failure::deployment_labels::/)'
     - id: exception-class-name
       why: Exception class name must honor legacy markers and preserve BudgetExceededError.
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_failure::exception_name::/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus::failure::(.*::)?prometheus_failure::exception_name::/)'
     - id: bounded-model-label
       why: Requested-model label must bound cardinality while allowing router_originated values.
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_failure::model_cardinality::/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus::failure::(.*::)?prometheus_failure::model_cardinality::/)'
     - id: rate-limit-labels
       why: Rate-limit labels must extract and validate category and type.
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_failure::rate_limit::/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus::failure::(.*::)?prometheus_failure::rate_limit::/)'
     - id: provider-attribution
       why: Provider attribution must cascade through sources and infer from model.
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_failure::provider::/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus::failure::(.*::)?prometheus_failure::provider::/)'
     - id: provider-from-exception
       why: Rate-limit exception provider extraction must handle unset, fallback and real providers.
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_failure::provider_from_exception::/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus::failure::(.*::)?prometheus_failure::provider_from_exception::/)'
     - id: provider-from-exception-oracle
       why: Oracle cases for provider-from-exception with unset/fallback/real llm_provider variants must replay through the helper.
       run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::logging::b3880::provider_from_exception/)'

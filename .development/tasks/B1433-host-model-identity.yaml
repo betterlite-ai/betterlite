@@ -43,14 +43,15 @@ description: >-
   65 fuzz/replay and 70 settings/wiring lines, capped at 725.
 scope:
   paths:
-    - crates/betterlite-openai/src/{lib,host_model_identity}.rs
     - crates/betterlite-openai/src/host_model_identity.rs
     - crates/betterlite-openai/src/host_model_identity/**
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/host_named_reply.rs
     - crates/betterlite-openai/fuzz/corpus/host_named_reply/**
-    - crates/betterlite-config/src/{lib,settings,providers}.rs
-    - crates/betterlite-config/src/providers/{mod,host_identity}.rs
+    - crates/betterlite-config/src/sections/host_identity_settings.rs
+    - crates/betterlite-config/src/sections/host_identity_settings/**
+    - crates/betterlite-config/src/providers/host_identity.rs
+    - crates/betterlite-config/src/providers/host_identity/**
     - crates/betterlite-config/tests/host_identity_settings.rs
     - tools/oracle/src/helpers/openai/host_model_identity.rs
     - tools/oracle/src/helpers/openai/host_model_identity/**

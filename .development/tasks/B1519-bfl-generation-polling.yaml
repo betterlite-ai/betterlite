@@ -30,8 +30,6 @@ description: >-
   implementation needs 290 lines, tests 240, adapters 120 and wiring 40, within 750.
 scope:
   paths:
-    - crates/betterlite-core/src/api/bfl.rs
-    - crates/betterlite-core/src/api/bfl/**
     - crates/betterlite-core/src/api/bfl/{generation_call,poll}.rs
     - crates/betterlite-core/src/api/bfl/generation_call.rs
     - crates/betterlite-core/src/api/bfl/generation_call/**

@@ -15,8 +15,6 @@ description: >-
   response parsing; B2487 owns settings loader checks. This wrapper adds no parser.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/assistant_records.rs
   - crates/betterlite-core/src/api/assistant_records/**
   - tools/oracle/src/sdk_http.rs

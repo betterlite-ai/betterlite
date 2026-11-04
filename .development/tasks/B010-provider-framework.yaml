@@ -28,9 +28,28 @@ scope:
   paths:
   - Cargo.toml
   - deny.toml
-  - crates/betterlite-provider/**
-  - crates/betterlite-server/**
-  - crates/betterlite-openai/**
+  - crates/betterlite-provider/Cargo.toml
+  - crates/betterlite-provider/src/provider.rs
+  - crates/betterlite-provider/src/provider/**
+  - crates/betterlite-provider/src/operation.rs
+  - crates/betterlite-provider/src/operation/**
+  - crates/betterlite-provider/src/prepared.rs
+  - crates/betterlite-provider/src/prepared/**
+  - crates/betterlite-provider/src/transform_retry.rs
+  - crates/betterlite-provider/src/transform_retry/**
+  - crates/betterlite-provider/src/aiohttp_openai_dispatch.rs
+  - crates/betterlite-provider/src/aiohttp_openai_dispatch/**
+  - crates/betterlite-server/src/routes/chat.rs
+  - crates/betterlite-server/src/routes/chat/tests.rs
+  - crates/betterlite-server/src/routes/chat/tests/stream.rs
+  - crates/betterlite-server/src/routes/chat/streaming.rs
+  - crates/betterlite-server/src/routes/chat/streaming/tests.rs
+  - crates/betterlite-server/src/routes/chat/headers.rs
+  - crates/betterlite-server/src/routes/chat/headers/tests.rs
+  - crates/betterlite-server/src/routes/embeddings.rs
+  - crates/betterlite-server/src/routes/embeddings/tests.rs
+  - crates/betterlite-server/src/server/chat_setup.rs
+  - crates/betterlite-server/src/server/chat_setup/**
   - tools/oracle/cases/provider-framework/**
   - tools/oracle/helpers/b010.py
   - tools/oracle/helpers/b010/**

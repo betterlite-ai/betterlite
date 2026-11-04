@@ -114,43 +114,43 @@ checks:
   commands:
     - id: compress-below-trigger
       why: Messages below compression_trigger must pass through unchanged
-      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^compress_behavior::below_trigger($|::)/)' -E 'test(/^compress_behavior::skipped_reason($|::)/)'
+      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^(compress|retrieval_tool|tests)::(.*::)?compress_behavior::below_trigger($|::)/)' -E 'test(/^(compress|retrieval_tool|tests)::(.*::)?compress_behavior::skipped_reason($|::)/)'
     - id: compress-target-default
       why: Default compression_target calculation must be correct
-      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^compress_behavior::default_target($|::)/)'
+      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^(compress|retrieval_tool|tests)::(.*::)?compress_behavior::default_target($|::)/)'
     - id: token-counting-tests
       why: Token counting per message and overall must match expected values
-      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^compress_behavior::token_counting($|::)/)' -E 'test(/^budget_selection::token_counting($|::)/)'
+      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^(compress|retrieval_tool|tests)::(.*::)?compress_behavior::token_counting($|::)/)' -E 'test(/^(compress|retrieval_tool|tests)::(.*::)?budget_selection::token_counting($|::)/)'
     - id: compression-ratio-tests
       why: Compression ratio must be calculated correctly and rounded to 4 places
-      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^compress_behavior::compression_ratio($|::)/)'
+      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^(compress|retrieval_tool|tests)::(.*::)?compress_behavior::compression_ratio($|::)/)'
     - id: protected-indices-tests
       why: Protected indices must never be compressed
-      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^compress_behavior::protected_indices($|::)/)' -E 'test(/^budget_selection::preserves_protected($|::)/)'
+      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^(compress|retrieval_tool|tests)::(.*::)?compress_behavior::protected_indices($|::)/)' -E 'test(/^(compress|retrieval_tool|tests)::(.*::)?budget_selection::preserves_protected($|::)/)'
     - id: tool-exchange-atomic-tests
       why: Anthropic tool exchanges must be kept or dropped atomically
-      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^tool_exchange_atomicity($|::)/)'
+      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^(compress|retrieval_tool|tests)::(.*::)?tool_exchange_atomicity($|::)/)'
     - id: invalid-tool-sequence-tests
       why: Invalid Anthropic sequences must be detected before truncation and return original messages
-      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^compress_behavior::invalid_anthropic($|::)/)'
+      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^(compress|retrieval_tool|tests)::(.*::)?compress_behavior::invalid_anthropic($|::)/)'
     - id: budget-selection-tests
       why: Budget selection must greedily fill from highest-scoring units
-      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^budget_selection($|::)/) - test(/^budget_selection::token_counting($|::)/)'
+      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^(compress|retrieval_tool|tests)::(.*::)?budget_selection($|::)/) - test(/^(compress|retrieval_tool|tests)::(.*::)?budget_selection::token_counting($|::)/)'
     - id: truncation-budget-tests
       why: Truncation must only occur with >= 100 tokens remaining and only for single messages
-      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^budget_selection::truncation($|::)/)'
+      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^(compress|retrieval_tool|tests)::(.*::)?budget_selection::truncation($|::)/)'
     - id: stub-vs-omit-tests
       why: Stubs must replace dropped messages; exchanges must be omitted
-      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^dropped_span_handling($|::)/)'
+      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^(compress|retrieval_tool|tests)::(.*::)?dropped_span_handling($|::)/)'
     - id: retrieval-tool-schema-tests
       why: Retrieval tool must be in correct schema for call type
-      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^retrieval_tool_schema($|::)/)'
+      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^(compress|retrieval_tool|tests)::(.*::)?retrieval_tool_schema($|::)/)'
     - id: cache-key-tests
       why: Cache keys must be stable and unique, mapped to full content
-      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^cache_key_extraction($|::)/)'
+      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^(compress|retrieval_tool|tests)::(.*::)?cache_key_extraction($|::)/)'
     - id: protected-target-override-tests
       why: Protected content alone can exceed the compression_target
-      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^compress_behavior::target_override($|::)/)'
+      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^(compress|retrieval_tool|tests)::(.*::)?compress_behavior::target_override($|::)/)'
 
 oracle_cases: []
 

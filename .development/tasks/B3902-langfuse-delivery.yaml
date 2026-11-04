@@ -24,7 +24,7 @@ description: >-
 scope:
   paths:
   - Cargo.toml
-  - crates/betterlite-http/**
+  - crates/betterlite-logging/Cargo.toml
   - crates/betterlite-logging/src/langfuse_exporter.rs
   - crates/betterlite-logging/src/langfuse_exporter/**
   - tools/oracle/Cargo.toml

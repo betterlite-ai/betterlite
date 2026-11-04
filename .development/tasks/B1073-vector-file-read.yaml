@@ -22,12 +22,8 @@ description: >-
   There is no new parser or gateway route in this task.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/vector_file_read.rs
   - crates/betterlite-core/src/api/vector_file_read/**
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/**
   - crates/betterlite-config/src/api/vector_file_read.rs
   - crates/betterlite-config/src/api/vector_file_read/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/vector-file-read-*

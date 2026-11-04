@@ -45,8 +45,6 @@ description: >-
   cron registration adds 34, allowing 250 implementation and 450 tests/startup wiring in 750.
 scope:
   paths:
-    - crates/betterlite-db/src/ptu.rs
-    - crates/betterlite-db/src/ptu/**
     - crates/betterlite-db/src/ptu/rollup.rs
     - crates/betterlite-db/src/ptu/rollup/**
     - crates/betterlite-server/Cargo.toml

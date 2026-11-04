@@ -93,19 +93,19 @@ checks:
   commands:
     - id: cache-backend-tests
       why: the backend initialization or env loading fails or is missing
-      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^backend_construction::/)'
+      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^configuration::(.*::)?backend_construction::/)'
 
     - id: cache-callback-tests
       why: callback registration fails or is missing
-      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^callback_registration::/)'
+      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^configuration::(.*::)?callback_registration::/)'
 
     - id: cache-lifecycle-tests
       why: lifecycle methods (ping, delete, disconnect, _supports_async) fail or are missing
-      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^cache_lifecycle::/)'
+      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^configuration::(.*::)?cache_lifecycle::/)'
 
     - id: cache-module-tests
       why: module functions (enable_cache, update_cache, disable_cache) fail or are missing
-      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^cache_module_functions::/)'
+      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^configuration::(.*::)?cache_module_functions::/)'
 
     - id: behavior-tests
       why: behavior tests fail or do not exist
