@@ -22,6 +22,7 @@ pub struct VoyageEmbeddingConfig {
     pub api_base: Option<String>,
 }
 
+// The short Rust name maps to LiteLLM's VoyageContextualEmbeddingConfig: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/voyage/embedding/transformation_contextual.py#L40
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VoyageContextConfig {
     pub api_base: Option<String>,
