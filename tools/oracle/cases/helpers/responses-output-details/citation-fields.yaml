@@ -1,0 +1,10 @@
+kind: helper
+name: responses-output-details-citation-fields
+call:
+  responses_output_details:
+    images: []
+    finish_reason: null
+    annotations: [{type: url_citation, url_citation: {start_index: 1, end_index: 4, url: 'https://a.test', title: A}}]
+    usage: null
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,10 @@
+kind: helper
+name: responses-output-details-usage-details
+call:
+  responses_output_details:
+    images: []
+    finish_reason: null
+    annotations: null
+    usage: {prompt_tokens: 2, completion_tokens: 3, total_tokens: 99, cost: 0.125}
+env: {}
+compare: {ignore: []}
