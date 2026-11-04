@@ -2,6 +2,7 @@
 
 use betterlite_models::decisions::Json;
 use rstest::rstest;
+use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::value::RawValue;
 use std::collections::BTreeMap;
@@ -269,7 +270,17 @@ fn function_and_custom_status(#[case] status: &str) {
     r#"{"content":[{"type":"web_search_tool_result_error"}]}"#,
     "completed"
 )]
-#[case::non_mapping("[]", "3", "completed")]
+#[case::non_mapping(r#"["cats"]"#, "3", "completed")]
+#[case::array_item(
+    "{}",
+    r#"{"content":[["web_search_result","https://a.test"]]}"#,
+    "completed"
+)]
+#[case::array_result(
+    "{}",
+    r#"[[{"type":"web_search_result","url":"https://a.test"}]]"#,
+    "completed"
+)]
 #[case::empty_query(r#"{"query":""}"#, r#"{"content":"text"}"#, "completed")]
 #[case::wrong_failure("{}", r#"{"content":{"type":"other"}}"#, "completed")]
 fn search_empty_sources(#[case] input: &str, #[case] result: &str, #[case] status: &str) {
@@ -396,15 +407,17 @@ fn function_fields_are_required(#[case] field: &str) {
 
 #[test]
 fn private_values_are_never_deserialized_or_serialized() {
-    let record: DeleteResponseResult = serde_json::from_str(
-        r#"{"id":"r","object":"response","deleted":true,"_hidden_params":{"private":"value"}}"#,
-    )
-    .unwrap();
+    let mut record: DeleteResponseResult =
+        serde_json::from_str(r#"{"id":"r","object":"response","deleted":true}"#).unwrap();
     let DeleteResponseResult {
         _hidden_params: hidden,
         ..
-    } = &record;
+    } = &mut record;
     assert!(hidden.is_empty());
+    hidden.insert(
+        "private".to_owned(),
+        RawValue::from_string("1".to_owned()).unwrap(),
+    );
     assert_eq!(
         serde_json::to_value(record).unwrap(),
         serde_json::to_value(
@@ -480,4 +493,42 @@ where
     let mut fields: BTreeMap<String, Json> = serde_json::from_str(source).unwrap();
     fields.remove(field).unwrap();
     serde_json::from_str::<T>(&serde_json::to_string(&fields).unwrap()).unwrap_err();
+}
+
+#[test]
+fn interpreter_array_is_not_dict() {
+    let content = serde_json::from_str(r#"["out","err"]"#).unwrap();
+    assert!(build_interpreter_logs(&content).is_none());
+}
+
+#[rstest]
+#[case::annotation(round_trip_extras::<crate::api::responses_shapes::OutputAnnotation>, r#"{"type":null,"start_index":null,"end_index":null,"url":null,"title":null,"provider":{"score":1}}"#)]
+#[case::text(round_trip_extras::<crate::api::responses_shapes::OutputText>, r#"{"type":"output_text","text":"hi","annotations":[],"logprobs":[]}"#)]
+#[case::function(round_trip_extras::<crate::api::responses_shapes::OutputFunctionToolCall>, r#"{"type":null,"id":null,"arguments":null,"call_id":null,"name":null,"status":"completed","phase":null,"provider":{"score":1}}"#)]
+#[case::generic(round_trip_extras::<crate::api::responses_shapes::GenericResponseOutputItem>, r#"{"type":"message","id":"m","status":"completed","role":"assistant","content":[],"phase":null,"provider":{"score":1}}"#)]
+#[case::custom(round_trip_extras::<crate::api::responses_shapes::CustomToolCallOutputItem>, r#"{"type":"custom_tool_call","call_id":"c","name":"f","input":"x","id":null,"status":null,"provider":{"score":1}}"#)]
+#[case::image(round_trip_extras::<crate::api::responses_shapes::OutputImageGenerationCall>, r#"{"type":"image_generation_call","id":"i","status":"failed","result":null,"provider":{"score":1}}"#)]
+#[case::log(round_trip_extras::<crate::api::responses_shapes::OutputCodeInterpreterCallLog>, r#"{"type":"logs","logs":"out","provider":{"score":1}}"#)]
+#[case::interpreter(round_trip_extras::<crate::api::responses_shapes::OutputCodeInterpreterCall>, r#"{"type":"code_interpreter_call","id":"i","status":"completed","code":null,"container_id":null,"outputs":null,"provider":{"score":1}}"#)]
+#[case::private_spelling(round_trip_extras::<DeleteResponseResult>, r#"{"id":null,"object":null,"deleted":null,"_hidden_params":{"private":"value"}}"#)]
+#[case::deletion(round_trip_extras::<DeleteResponseResult>, r#"{"id":null,"object":null,"deleted":null,"provider":{"score":1}}"#)]
+fn extra_members_survive(#[case] check: fn(&str), #[case] source: &str) {
+    check(source);
+}
+
+fn round_trip_extras<T>(source: &str)
+where
+    T: DeserializeOwned + Serialize,
+{
+    let limits = WireDecodeLimits {
+        max_json_bytes: 4096,
+        max_event_bytes: 4096,
+        max_items: 100,
+    };
+    let record = decode_responses_shapes::<T>(source.as_bytes(), limits).unwrap();
+    let encoded = serde_json::to_string(&record).unwrap();
+    assert_eq!(
+        serde_json::from_str::<Json>(&encoded).unwrap(),
+        serde_json::from_str::<Json>(source).unwrap()
+    );
 }

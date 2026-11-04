@@ -1,3 +1,4 @@
+use betterlite_models::decisions::Json;
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use std::collections::BTreeMap;
@@ -17,6 +18,8 @@ pub struct OutputAnnotation {
     pub url: Option<String>,
     #[serde(deserialize_with = "Option::deserialize")]
     pub title: Option<String>,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Json>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -27,6 +30,8 @@ pub struct OutputText {
     pub text: Option<String>,
     #[serde(deserialize_with = "Option::deserialize")]
     pub annotations: Option<Vec<OutputAnnotation>>,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Json>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -92,6 +97,8 @@ pub struct OutputFunctionToolCall {
     pub status: FunctionCallStatus,
     #[serde(default)]
     pub phase: Option<ResponsePhase>,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Json>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -103,6 +110,8 @@ pub struct GenericResponseOutputItem {
     pub content: Vec<OutputText>,
     #[serde(default)]
     pub phase: Option<ResponsePhase>,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Json>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -115,6 +124,8 @@ pub struct CustomToolCallOutputItem {
     pub input: String,
     #[serde(default)]
     pub status: Option<FunctionCallStatus>,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Json>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -124,12 +135,16 @@ pub struct OutputImageGenerationCall {
     pub status: OutputCallStatus,
     #[serde(deserialize_with = "Option::deserialize")]
     pub result: Option<String>,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Json>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OutputCodeInterpreterCallLog {
     pub r#type: CodeInterpreterLogType,
     pub logs: String,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Json>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -143,6 +158,8 @@ pub struct OutputCodeInterpreterCall {
     pub status: OutputCallStatus,
     #[serde(deserialize_with = "Option::deserialize")]
     pub outputs: Option<Vec<OutputCodeInterpreterCallLog>>,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Json>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -159,6 +176,8 @@ pub struct DeleteResponseResult {
     pub deleted: Option<bool>,
     #[serde(skip)]
     _hidden_params: BTreeMap<String, Box<RawValue>>,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Json>,
 }
 
 #[serde_with::serde_as]

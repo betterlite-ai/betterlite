@@ -1,5 +1,6 @@
 use serde::de::IgnoredAny;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 use super::{CodeInterpreterLogType, OutputCodeInterpreterCallLog};
 
@@ -20,12 +21,16 @@ impl<T> Default for Field<T> {
 pub struct SearchInput {
     #[serde(default)]
     pub query: Field<String>,
+    #[serde(flatten)]
+    pub ignored: BTreeMap<String, IgnoredAny>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct SearchResult {
     #[serde(default)]
     pub content: SearchContent,
+    #[serde(flatten)]
+    pub ignored: BTreeMap<String, IgnoredAny>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -44,6 +49,8 @@ pub enum SearchContent {
 pub struct SearchItem {
     pub r#type: String,
     pub url: Field<String>,
+    #[serde(flatten)]
+    pub ignored: BTreeMap<String, IgnoredAny>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -87,9 +94,11 @@ pub fn build_web_search_call(
     let query = match tool_input {
         Field::Known(SearchInput {
             query: Field::Known(text),
+            ..
         }) => text.clone(),
         Field::Known(SearchInput {
             query: Field::Other(_),
+            ..
         })
         | Field::Other(_) => String::new(),
     };
@@ -113,6 +122,7 @@ fn search_sources(result: &Field<SearchResult>) -> (Vec<WebSearchSource>, WebSea
     match result {
         Field::Known(SearchResult {
             content: SearchContent::Items(items),
+            ..
         }) => (
             items
                 .iter()
@@ -120,6 +130,7 @@ fn search_sources(result: &Field<SearchResult>) -> (Vec<WebSearchSource>, WebSea
                     Field::Known(SearchItem {
                         r#type,
                         url: Field::Known(url),
+                        ..
                     }) if r#type == "web_search_result" => {
                         Some(WebSearchSource { url: url.clone() })
                     }
@@ -130,6 +141,7 @@ fn search_sources(result: &Field<SearchResult>) -> (Vec<WebSearchSource>, WebSea
         ),
         Field::Known(SearchResult {
             content: SearchContent::Error { r#type },
+            ..
         }) if r#type == "web_search_tool_result_error" => (Vec::new(), WebSearchStatus::Failed),
         Field::Known(_) | Field::Other(_) => (Vec::new(), WebSearchStatus::Completed),
     }
@@ -141,6 +153,8 @@ pub struct InterpreterContent {
     pub stdout: Option<String>,
     #[serde(default)]
     pub stderr: Option<String>,
+    #[serde(flatten)]
+    pub ignored: BTreeMap<String, IgnoredAny>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -172,6 +186,7 @@ pub fn build_interpreter_logs(
         Some(vec![OutputCodeInterpreterCallLog {
             r#type: CodeInterpreterLogType::Logs,
             logs,
+            extra: BTreeMap::new(),
         }])
     }
 }
