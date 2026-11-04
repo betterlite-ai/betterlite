@@ -87,7 +87,7 @@ pub fn set_tool_response_text(response: &Json, text: &str) -> TextUpdate {
                 .map(|raw| serde_json::from_str(raw.get()))
                 .collect::<Result<Vec<(String, Box<RawValue>)>, _>>();
             let mut replaced = false;
-            let response = match pairs {
+            let rewritten = match pairs {
                 Ok(fields) if !fields.is_empty() => {
                     RewrittenResponse::Pairs(rewrite_pairs(fields, text, &mut replaced))
                 }
@@ -99,7 +99,10 @@ pub fn set_tool_response_text(response: &Json, text: &str) -> TextUpdate {
                     RewrittenResponse::Content(content)
                 }
             };
-            return TextUpdate { response, replaced };
+            return TextUpdate {
+                response: rewritten,
+                replaced,
+            };
         }
         Json::Null => RewrittenResponse::Null,
         Json::Bool(value) => RewrittenResponse::Bool(*value),
@@ -144,6 +147,7 @@ fn rewrite_object(mut fields: Fields, text: &str) -> TextUpdate {
     rewrite_mirror(fields, text)
 }
 
+#[derive(Clone, Copy)]
 enum Enclosure {
     Wrapper,
     Result,
