@@ -221,6 +221,83 @@ fn rejects_unknown_record_kind() {
 }
 
 #[test]
+fn every_record_kind_byte_selects_a_record() {
+    let kinds = [
+        VectorStoreRecordKind::ToolParams,
+        VectorStoreRecordKind::ManagedStore,
+        VectorStoreRecordKind::ManagedStoreList,
+        VectorStoreRecordKind::UpdateRequest,
+        VectorStoreRecordKind::DeleteRequest,
+        VectorStoreRecordKind::InfoRequest,
+        VectorStoreRecordKind::SearchRequest,
+        VectorStoreRecordKind::SearchResponse,
+        VectorStoreRecordKind::SearchFailure,
+        VectorStoreRecordKind::DiscoveryDataStore,
+        VectorStoreRecordKind::DiscoveryEngine,
+        VectorStoreRecordKind::CreateRequest,
+        VectorStoreRecordKind::CreateResponse,
+        VectorStoreRecordKind::IndexCreateRequest,
+        VectorStoreRecordKind::ManagedIndex,
+        VectorStoreRecordKind::IndexListResponse,
+        VectorStoreRecordKind::IndexEndpoints,
+        VectorStoreRecordKind::BedrockRequest,
+        VectorStoreRecordKind::BedrockResponse,
+        VectorStoreRecordKind::BedrockRow,
+    ];
+    kinds
+        .into_iter()
+        .zip(0_u8..20)
+        .for_each(|(expected, byte)| {
+            assert_eq!(VectorStoreRecordKind::try_from(byte).unwrap(), expected);
+        });
+}
+
+#[test]
+fn decoder_enforces_each_byte_and_item_limit() {
+    let input = br#"{"x":1}"#;
+    let mut exact = limits();
+    exact.max_json_bytes = input.len();
+    exact.max_event_bytes = input.len();
+    decode_vector_store_records(VectorStoreRecordKind::ToolParams, input, exact).unwrap();
+    let mut json_limit = exact;
+    json_limit.max_json_bytes -= 1;
+    decode_vector_store_records(VectorStoreRecordKind::ToolParams, input, json_limit).unwrap_err();
+    let mut event_limit = exact;
+    event_limit.max_event_bytes -= 1;
+    decode_vector_store_records(VectorStoreRecordKind::ToolParams, input, event_limit).unwrap_err();
+    let mut item_limit = exact;
+    item_limit.max_items = 0;
+    decode_vector_store_records(VectorStoreRecordKind::ToolParams, input, item_limit).unwrap_err();
+    decode_vector_store_records(VectorStoreRecordKind::ToolParams, b"[1]", item_limit).unwrap_err();
+}
+
+#[test]
+fn managed_index_timestamp_calendar_and_clock_boundaries() {
+    [
+        ("2024-02-29T23:59:59Z", true),
+        ("2000-02-29T00:00:00Z", true),
+        ("2100-02-29T00:00:00Z", false),
+        ("2023-02-29T00:00:00Z", false),
+        ("2024-04-31T00:00:00Z", false),
+        ("2024-01-00T00:00:00Z", false),
+        ("2024-01-01T24:00:00Z", false),
+        ("2024-01-01T00:60:00Z", false),
+        ("2024-01-01T00:00:60Z", false),
+    ]
+    .into_iter()
+    .for_each(|(timestamp, valid)| {
+        let input = format!(
+            "{{\"id\":\"i\",\"index_name\":\"n\",\"litellm_params\":{{\"vector_store_index\":\"n\",\"vector_store_name\":\"n\"}},\"created_at\":\"{timestamp}\"}}"
+        );
+        assert_eq!(
+            decode_vector_store_records(VectorStoreRecordKind::ManagedIndex, input.as_bytes(), limits()).is_ok(),
+            valid,
+            "{timestamp}"
+        );
+    });
+}
+
+#[test]
 fn replays_corpus() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/vector_store_records");
     fs::read_dir(corpus)
