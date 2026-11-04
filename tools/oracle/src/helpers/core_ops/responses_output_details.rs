@@ -1,5 +1,6 @@
 use betterlite_core::api::responses_output_details::ChatAnnotation;
-use betterlite_openai::api::responses_shapes::OutputAnnotation;
+use betterlite_core::api::responses_output_details::ImageItem;
+use serde::de::DeserializeOwned;
 
 pub(crate) struct Op;
 
@@ -7,8 +8,9 @@ impl crate::helpers::Helper for Op {
     type Input = serde_json::Value;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+        let images: Option<Vec<ImageItem>> = parse_records_at(input, "images")?;
         let result = betterlite_core::api::responses_output_details::image_results(
-            parsed_images(input)?.as_deref(),
+            images.as_deref(),
             input
                 .get("finish_reason")
                 .and_then(serde_json::Value::as_str),
@@ -19,7 +21,9 @@ impl crate::helpers::Helper for Op {
                 .get("finish_reason")
                 .and_then(serde_json::Value::as_str),
         );
-        let projected_annotations = parsed_annotations(input)?;
+        let annotations: Option<Vec<ChatAnnotation>> = parse_records_at(input, "annotations")?;
+        let projected_annotations =
+            betterlite_core::api::responses_output_details::citation_fields(annotations.as_deref());
         let projected_usage = projected_usage(input)?;
         Ok(
             serde_json::json!({"images":result,"status":status,"annotations":projected_annotations,"usage":projected_usage}),
@@ -27,29 +31,19 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn parsed_images(
+fn parse_records_at<T>(
     input: &serde_json::Value,
-) -> Result<
-    Option<Vec<betterlite_core::api::responses_output_details::ImageItem>>,
-    Box<crate::helpers::HelperError>,
-> {
+    field: &str,
+) -> Result<Option<T>, Box<crate::helpers::HelperError>>
+where
+    T: DeserializeOwned,
+{
     input
-        .get("images")
-        .map(|images| serde_json::from_value(images.clone()))
+        .get(field)
+        .filter(|value| !value.is_null())
+        .map(|value| serde_json::from_value(value.clone()))
         .transpose()
         .map_err(|error| invalid_details(&error))
-}
-
-fn parsed_annotations(
-    input: &serde_json::Value,
-) -> Result<Vec<OutputAnnotation>, Box<crate::helpers::HelperError>> {
-    let raw_annotations: Option<Vec<ChatAnnotation>> = input
-        .get("annotations")
-        .filter(|annotations| !annotations.is_null())
-        .map(|annotations| serde_json::from_value(annotations.clone()))
-        .transpose()
-        .map_err(|error| invalid_details(&error))?;
-    Ok(betterlite_core::api::responses_output_details::citation_fields(raw_annotations.as_deref()))
 }
 
 fn projected_usage(
