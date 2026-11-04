@@ -38,6 +38,25 @@ fn counts_for_alternation(message: &Message) -> bool {
     false
 }
 
+fn check_limit(
+    messages: &[Message],
+    too_long: MessageNormalizationError,
+) -> Result<(), MessageNormalizationError> {
+    if messages.len() > MAX_COMPLETION_MESSAGES {
+        return Err(too_long);
+    }
+    Ok(())
+}
+
+fn continuation_placeholder(custom: Option<&Message>, role: &str) -> Message {
+    custom.cloned().unwrap_or_else(|| Message {
+        role: role.to_owned(),
+        content: Some(Content::Text(CONTINUE_TEXT.to_owned())),
+        name: None,
+        provider_specific_fields: Object::new(),
+    })
+}
+
 const fn json_list_is_nonempty(value: &Json) -> bool {
     match value {
         Json::Null => false,
@@ -52,34 +71,12 @@ pub fn insert_user_continue_message(
     custom: Option<&Message>,
     ensure: bool,
 ) -> Result<Vec<Message>, MessageNormalizationError> {
-    if messages.len() > MAX_COMPLETION_MESSAGES {
-        return Err(MessageNormalizationError::InputTooLong {
-            limit: MAX_COMPLETION_MESSAGES,
-        });
-    }
+    let limit = MAX_COMPLETION_MESSAGES;
+    check_limit(messages, MessageNormalizationError::InputTooLong { limit })?;
     if messages.is_empty() {
         return Ok(Vec::new());
     }
-    let placeholder = custom.cloned().unwrap_or_else(|| Message {
-        role: "user".to_owned(),
-        content: Some(Content::Text(CONTINUE_TEXT.to_owned())),
-        name: None,
-        provider_specific_fields: Object::new(),
-    });
-    let result = user_continuation_pass(messages, &placeholder, ensure);
-    if result.len() > MAX_COMPLETION_MESSAGES {
-        return Err(MessageNormalizationError::OutputTooLong {
-            limit: MAX_COMPLETION_MESSAGES,
-        });
-    }
-    Ok(result)
-}
-
-fn user_continuation_pass(
-    messages: &[Message],
-    placeholder: &Message,
-    ensure: bool,
-) -> Vec<Message> {
+    let placeholder = continuation_placeholder(custom, "user");
     let mut result = Vec::with_capacity(messages.len().saturating_mul(2).saturating_add(1));
     let mut previous_counted_role = None;
     let mut previous_role = None;
@@ -105,9 +102,10 @@ fn user_continuation_pass(
             .last()
             .is_some_and(|message| message.role == "assistant")
     {
-        result.push(placeholder.clone());
+        result.push(placeholder);
     }
-    result
+    check_limit(&result, MessageNormalizationError::OutputTooLong { limit })?;
+    Ok(result)
 }
 
 fn assistant_needs_user(
@@ -126,20 +124,12 @@ pub fn insert_assistant_continuation(
     custom: Option<&Message>,
     ensure: bool,
 ) -> Result<Vec<Message>, MessageNormalizationError> {
-    if messages.len() > MAX_COMPLETION_MESSAGES {
-        return Err(MessageNormalizationError::InputTooLong {
-            limit: MAX_COMPLETION_MESSAGES,
-        });
-    }
+    let limit = MAX_COMPLETION_MESSAGES;
+    check_limit(messages, MessageNormalizationError::InputTooLong { limit })?;
     if !ensure || messages.len() <= 1 {
         return Ok(messages.to_vec());
     }
-    let placeholder = custom.cloned().unwrap_or_else(|| Message {
-        role: "assistant".to_owned(),
-        content: Some(Content::Text(CONTINUE_TEXT.to_owned())),
-        name: None,
-        provider_specific_fields: Object::new(),
-    });
+    let placeholder = continuation_placeholder(custom, "assistant");
     let mut previous_counted_user = false;
     let mut result = Vec::with_capacity(messages.len().saturating_mul(2));
     for message in messages {
@@ -152,11 +142,7 @@ pub fn insert_assistant_continuation(
             previous_counted_user = message.role == "user";
         }
     }
-    if result.len() > MAX_COMPLETION_MESSAGES {
-        return Err(MessageNormalizationError::OutputTooLong {
-            limit: MAX_COMPLETION_MESSAGES,
-        });
-    }
+    check_limit(&result, MessageNormalizationError::OutputTooLong { limit })?;
     Ok(result)
 }
 
@@ -168,11 +154,12 @@ pub fn get_completion_messages(
     ensure: bool,
 ) -> Result<Vec<Message>, MessageNormalizationError> {
     if !ensure {
-        if messages.len() > MAX_COMPLETION_MESSAGES {
-            return Err(MessageNormalizationError::InputTooLong {
+        check_limit(
+            messages,
+            MessageNormalizationError::InputTooLong {
                 limit: MAX_COMPLETION_MESSAGES,
-            });
-        }
+            },
+        )?;
         return Ok(messages.to_vec());
     }
     let with_users = insert_user_continue_message(messages, user, ensure)?;
