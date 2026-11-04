@@ -123,6 +123,7 @@ scope:
   - tools/oracle/src/helpers/oracle/websocket_oracle/**
   - tools/oracle/helpers/websocket_oracle.py
   - tools/oracle/helpers/websocket_oracle/**
+  - tools/oracle/src/helpers/server/b3693/tests.rs
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/realtime_api/README.md#L1-L8
@@ -323,6 +324,10 @@ pitfalls:
 - >-
   The refusal table's 503 entry is the default 1011 branch rather than an explicit dictionary entry; a status-only
   lookup that handles only the listed 401, 403 and 429 keys produces the wrong transcript.
+- >-
+  B3693's tools/oracle/src/helpers/server/b3693/tests.rs matches every LoadedCase variant, so the new WebSocket
+  variant needs its own arm there (next to Helper, Http and Scenario returning None) or the oracle tests stop
+  compiling. Change only that arm in that file.
 review_level: security
 budget:
   max_changed_lines: 1700
