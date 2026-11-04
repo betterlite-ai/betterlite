@@ -11,6 +11,7 @@ use uuid::Uuid;
 fn call_context_tests_behavior() {
     let now = UNIX_EPOCH + Duration::from_secs(100);
     let parent = CallContext::with_id(Uuid::from_u128(1), now);
+    assert_eq!(parent.view().id, Uuid::from_u128(1));
     let child = parent.child(Uuid::from_u128(2));
     assert_eq!(child.view().parent_id, Some(parent.view().id));
     assert_eq!(child.view().billing, BillingPolicy::Suppress);
