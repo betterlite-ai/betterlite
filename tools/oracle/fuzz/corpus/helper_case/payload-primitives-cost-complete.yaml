@@ -1,0 +1,26 @@
+{
+  "kind": "helper",
+  "name": "payload-primitives-cost-complete",
+  "call": {
+    "b3843": {
+      "function": "cost",
+      "value": {
+        "input_cost": 1,
+        "output_cost": 2,
+        "cache_read_cost": 3,
+        "cache_creation_cost": 4,
+        "tool_usage_cost": 5,
+        "original_cost": 6,
+        "discount_amount": 7,
+        "discount_percent": 8,
+        "margin_fixed_amount": 9,
+        "margin_percent": 10,
+        "margin_total_amount": 11
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

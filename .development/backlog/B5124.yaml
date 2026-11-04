@@ -1,13 +1,13 @@
 id: B5124
 milestone: M4 keys, spend and management
 title: Savings evidence rounding, cache write mirror, billed_at grammar and case checks
-status: todo
+status: done
 depends_on: [B1693]
 file: tasks/B5124-savings-evidence-gaps.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 624

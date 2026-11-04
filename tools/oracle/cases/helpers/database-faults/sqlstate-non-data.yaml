@@ -1,0 +1,11 @@
+kind: helper
+name: database-faults-sqlstate-non-data
+call:
+  database_faults:
+    errors:
+      - { error_type: prisma, meta_code: "23505", message: 'PostgresError { code: "40001"' }
+      - { error_type: client_not_connected, meta_code: "23505", message: 'PostgresError { code: "40001"' }
+      - { error_type: data, meta_code: "23505", message: 'PostgresError { code: "40001"' }
+env: {}
+compare:
+  ignore: []

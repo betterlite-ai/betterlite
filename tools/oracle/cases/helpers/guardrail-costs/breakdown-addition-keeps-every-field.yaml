@@ -1,0 +1,28 @@
+kind: helper
+name: breakdown-addition-keeps-every-field
+call:
+  guardrail_costs:
+    breakdown:
+      existing:
+        service_tier: default
+        data_residency: eu
+        vertex_location: us-central1
+        input_cost: 0.25
+        cache_read_cost: 0.5
+        cache_creation_cost: 0.25
+        output_cost: 0.5
+        reasoning_cost: 0.25
+        total_cost: 3.0
+        tool_usage_cost: 0.25
+        guardrail_cost: 0.25
+        additional_costs: {other: 0.25}
+        original_cost: 3.0
+        discount_percent: 0.25
+        discount_amount: 0.25
+        margin_percent: 0.25
+        margin_fixed_amount: 0.25
+        margin_total_amount: 0.25
+        vendor_extra: 0.25
+      guardrail_costs: [0.5]
+compare: {ignore: []}
+env: {}

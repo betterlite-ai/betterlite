@@ -11,3 +11,4 @@ CREATE TABLE IF NOT EXISTS "LiteLLM_ManagedVectorStoresTable" (
 
     CONSTRAINT "LiteLLM_ManagedVectorStoresTable_pkey" PRIMARY KEY ("vector_store_id")
 );
+

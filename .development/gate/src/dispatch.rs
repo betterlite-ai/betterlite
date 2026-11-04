@@ -40,12 +40,12 @@ pub(crate) struct Round {
     pub(crate) litellm: Vec<String>,
 }
 
-// Fix goes on with the same work in a fix turn, Retry starts fresh on the same rung, Climb moves up a rung
+// Fix goes on with the same work in a fix turn, Retry starts fresh on the same rung, Blocked goes back to the same session once
 pub(crate) enum Step {
     Reviewed(Round),
     Fix(Vec<String>),
     Retry(Vec<String>),
-    Climb(Vec<String>),
+    Blocked(Vec<String>),
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
@@ -137,6 +137,8 @@ fn ready_file<'backlog>(
         .ok_or_else(|| GateError::NoTaskFile(task_id.to_owned()))
 }
 
+const BLOCKED_NOTE: &str = "Unfinished work is not a blocker, so go on until the task's checks pass. A gate command that prints a 'gate: waiting for' line is queued behind other builds, so poll it until it ends and never answer while one runs. Answer blocked again only for a scope, budget or outside blocker, with its evidence: the command, output, file and line.";
+
 fn note_blocked(
     agents: &Agents,
     brief: &Brief<'_>,
@@ -152,7 +154,7 @@ fn note_blocked(
     progress.feedback = next;
     if progress.blocked_reports >= agents.policy.max_blocked_reports {
         let reason = format!(
-            "{} workers in a row reported blocked; last feedback: {}",
+            "{} blocked reports in a row; last feedback: {}",
             progress.blocked_reports,
             progress.feedback.join("; ")
         );
@@ -236,11 +238,13 @@ fn apply_step(
             progress.fix_turns = 0;
             progress.next = NextRun::Fresh;
         }
-        Step::Climb(next) => {
+        Step::Blocked(next) => {
+            // set before the count, so the architect's dispatch after a second report starts fresh
             progress.fix_turns = 0;
             progress.next = NextRun::Fresh;
             note_blocked(agents, brief, progress, next)?;
-            return Ok(ControlFlow::Break(None));
+            progress.feedback.push(BLOCKED_NOTE.to_owned());
+            progress.next = NextRun::Fix;
         }
     }
     Ok(ControlFlow::Continue(()))

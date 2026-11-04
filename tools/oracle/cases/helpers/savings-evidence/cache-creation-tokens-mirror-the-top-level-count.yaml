@@ -1,0 +1,16 @@
+kind: helper
+name: cache-creation-tokens-mirror-the-top-level-count
+call:
+  savings_evidence:
+    operation: baseline_usage
+    usage_object:
+      prompt_tokens: 100
+      cache_read_input_tokens: 20
+      cache_creation_input_tokens: 10
+      prompt_tokens_details:
+        cached_tokens: 20
+        cache_creation_tokens: 3
+        cache_creation_token_details: {}
+    baseline_info: null
+compare: {ignore: []}
+env: {}
