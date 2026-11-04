@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import TypeAlias, cast
 
 import litellm
@@ -38,7 +39,7 @@ def run(input_value: dict[str, Json]) -> Json:
 
 
 def tools_from(input_value: dict[str, Json]) -> list[Tool]:
-    tools_value = cast(list[dict[str, Json]], input_value.get("tools", []))
+    tools_value = cast(list[dict[str, Json]], json.loads(cast(str, input_value["tools"])))
     return [Tool.model_validate(tool) for tool in tools_value]
 
 
@@ -50,7 +51,7 @@ def keyword_search(input_value: dict[str, Json]) -> Json:
 
 
 def identity(input_value: dict[str, Json]) -> Json:
-    tool_value = cast(dict[str, Json], input_value["tool"])
+    tool_value = cast(dict[str, Json], json.loads(cast(str, input_value["tool"])))
     tool = Tool.model_validate(tool_value)
     server_id = cast(str, input_value["server_id"])
     identified = with_mcp_proxy_identity(tool, server_id)
