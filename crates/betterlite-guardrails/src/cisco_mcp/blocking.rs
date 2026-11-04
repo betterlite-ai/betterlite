@@ -196,7 +196,7 @@ fn replace_in_result(fields: &Fields, replacement: &[TextContent]) -> ReplacedRe
     }
 }
 
-// the real MCP SDK's CallToolResult model only exposes camelCase fields, so mirror into structuredContent.result
+// MCP 2.x exposes structured_content with structuredContent as its serialization alias.
 #[must_use]
 pub fn replacement_structured_content(replacement: &[TextContent]) -> Option<StructuredMirror> {
     let item = replacement.first()?;

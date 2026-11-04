@@ -29,26 +29,36 @@ pub fn hydrate_tool_context(data: &mut Fields) {
 }
 
 fn tool_call_metadata(data: &Fields) -> Option<Fields> {
-    if let Json::Object(metadata) = Json::parse(
-        data.get("mcp_tool_call_metadata")
-            .map_or("null", |raw| raw.get()),
-    ) {
-        return Some(metadata);
-    }
-    for key in ["metadata", "litellm_metadata"] {
-        let Json::Object(nested) = Json::parse(data.get(key).map_or("null", |raw| raw.get()))
-        else {
-            continue;
-        };
-        if let Json::Object(metadata) = Json::parse(
-            nested
-                .get("mcp_tool_call_metadata")
-                .map_or("null", |raw| raw.get()),
-        ) {
-            return Some(metadata);
+    if let Some(raw) = data.get("mcp_tool_call_metadata") {
+        let direct = Json::parse(raw.get());
+        if matches!(direct, Json::Null) {
+            return nested_tool_call_metadata(data);
         }
+        return object_metadata(direct);
     }
-    None
+    nested_tool_call_metadata(data)
+}
+
+fn nested_tool_call_metadata(data: &Fields) -> Option<Fields> {
+    let metadata = data.get("metadata").map_or("null", |raw| raw.get());
+    let selected = if Json::parse(metadata).truthy() {
+        metadata
+    } else {
+        data.get("litellm_metadata").map_or("null", |raw| raw.get())
+    };
+    let nested = object_metadata(Json::parse(selected))?;
+    let raw = nested
+        .get("mcp_tool_call_metadata")
+        .map_or("null", |value| value.get());
+    object_metadata(Json::parse(raw))
+}
+
+fn object_metadata(value: Json) -> Option<Fields> {
+    if let Json::Object(metadata) = value {
+        Some(metadata)
+    } else {
+        None
+    }
 }
 
 fn set_if<Keep>(
