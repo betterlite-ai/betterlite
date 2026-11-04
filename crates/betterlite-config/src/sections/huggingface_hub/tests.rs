@@ -98,6 +98,8 @@ fn configured_paths_follow_hub() {
 }
 
 fn staging_follows_hub() {
+    let default_staging = settings(&[("HUGGINGFACE_CO_STAGING", "true")]).unwrap();
+    assert_eq!(default_staging.endpoint, "https://hub-ci.huggingface.co");
     let staging = settings(&[
         ("HUGGINGFACE_CO_STAGING", "true"),
         ("HF_ENDPOINT", "https://custom"),
@@ -114,7 +116,7 @@ fn staging_follows_hub() {
     );
     assert_eq!(
         staging.stored_tokens_path,
-        PathBuf::from("/users/a/.cache/huggingface_staging/stored_tokens")
+        PathBuf::from("/normal/stored_tokens")
     );
 }
 

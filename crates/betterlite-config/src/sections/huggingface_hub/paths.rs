@@ -1,5 +1,5 @@
 use std::iter::Peekable;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::Chars;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
@@ -7,32 +7,46 @@ use crate::loader::{ConfigError, EnvironmentLookup};
 pub(super) fn resolve(
     lookup: &dyn EnvironmentLookup,
 ) -> Result<(PathBuf, PathBuf, PathBuf, PathBuf), ConfigError> {
+    let hf_home = resolve_hf_home(lookup);
+    let hub_cache = resolve_hub_cache(lookup, &hf_home);
+    let (token_path, stored_tokens_path) = resolve_token_paths(lookup, &hf_home)?;
+    Ok((hf_home, hub_cache, token_path, stored_tokens_path))
+}
+
+fn resolve_hf_home(lookup: &dyn EnvironmentLookup) -> PathBuf {
     let hf_home_setting = lookup.lookup("HF_HOME").unwrap_or_default();
     let xdg_cache_setting = lookup.lookup("XDG_CACHE_HOME").unwrap_or_default();
-    let hf_home = if !hf_home_setting.is_empty() {
+    if !hf_home_setting.is_empty() {
         expand_path(&hf_home_setting, lookup)
     } else if !xdg_cache_setting.is_empty() {
         expand_path(&xdg_cache_setting, lookup).join("huggingface")
     } else {
         expand_path("~/.cache/huggingface", lookup)
-    };
+    }
+}
+
+fn resolve_hub_cache(lookup: &dyn EnvironmentLookup, hf_home: &Path) -> PathBuf {
     let primary_cache = lookup.lookup("HF_HUB_CACHE").unwrap_or_default();
     let hub_cache_setting = if primary_cache.is_empty() {
         lookup.lookup("HUGGINGFACE_HUB_CACHE").unwrap_or_default()
     } else {
         primary_cache
     };
-    let hub_cache = if hub_cache_setting.is_empty() {
+    if hub_cache_setting.is_empty() {
         hf_home.join("hub")
     } else {
         expand_path(&hub_cache_setting, lookup)
-    };
+    }
+}
+
+fn resolve_token_paths(
+    lookup: &dyn EnvironmentLookup,
+    hf_home: &Path,
+) -> Result<(PathBuf, PathBuf), ConfigError> {
     let staging_setting = lookup.lookup("HUGGINGFACE_CO_STAGING").unwrap_or_default();
     let staging =
         betterlite_env::flag("HUGGINGFACE_CO_STAGING", &staging_setting)?.unwrap_or(false);
-    let token_path = if staging {
-        expand_path("~/.cache/huggingface_staging/token", lookup)
-    } else if lookup
+    let configured_token_path = if lookup
         .lookup("HF_TOKEN_PATH")
         .unwrap_or_default()
         .is_empty()
@@ -42,11 +56,16 @@ pub(super) fn resolve(
         let token_setting = lookup.lookup("HF_TOKEN_PATH").unwrap_or_default();
         expand_path(&token_setting, lookup)
     };
-    let stored_tokens_path = token_path
+    let stored_tokens_path = configured_token_path
         .parent()
-        .unwrap_or(&token_path)
+        .unwrap_or(&configured_token_path)
         .join("stored_tokens");
-    Ok((hf_home, hub_cache, token_path, stored_tokens_path))
+    let token_path = if staging {
+        expand_path("~/.cache/huggingface_staging/token", lookup)
+    } else {
+        configured_token_path
+    };
+    Ok((token_path, stored_tokens_path))
 }
 
 pub(super) fn expand_path(value: &str, lookup: &dyn EnvironmentLookup) -> PathBuf {
