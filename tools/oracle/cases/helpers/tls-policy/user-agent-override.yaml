@@ -2,8 +2,9 @@ kind: helper
 name: tls-user-agent
 call:
   tls_policy:
-    ssl_verify: null
-    http2: false
+    deployment_ssl_verify: null
+    config_ssl_verify: null
+    config_http2: false
     environment:
       LITELLM_USER_AGENT: betterlite/test
 env: {}

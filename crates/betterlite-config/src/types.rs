@@ -25,6 +25,7 @@ pub struct ModelDeployment {
 
 #[derive(Debug, Clone)]
 pub struct LiteLlmParams {
+    pub ssl_verify: Option<bool>,
     pub model: Option<String>,
     pub api_base: Option<String>,
     pub api_key: Option<SecretString>,

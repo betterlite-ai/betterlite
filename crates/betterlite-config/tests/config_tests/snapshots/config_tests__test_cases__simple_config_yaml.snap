@@ -8,6 +8,7 @@ Ok(
             ModelDeployment {
                 model_name: "gpt-5-mini",
                 litellm_params: LiteLlmParams {
+                    ssl_verify: None,
                     model: Some(
                         "gpt-5-mini",
                     ),

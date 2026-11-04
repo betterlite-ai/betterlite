@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::path::Path;
 
 use crate::types::Config;
 
@@ -43,6 +44,15 @@ impl TlsPolicy {
         if security_level.is_some() {
             return Err(TlsPolicyError::SecurityLevel);
         }
+        let verification = match (
+            verification,
+            environment
+                .get("SSL_CERT_FILE")
+                .filter(|path| Path::new(path).exists()),
+        ) {
+            (Verification::Enabled, Some(path)) => Verification::CaFile(path.clone()),
+            (selected, _) => selected,
+        };
         Ok(Self {
             verification,
             ca_file: environment.get("SSL_CERT_FILE").cloned(),
@@ -51,13 +61,11 @@ impl TlsPolicy {
                 .ssl_certificate
                 .clone()
                 .or_else(|| environment.get("SSL_CERTIFICATE").cloned()),
-            http2: config
-                .litellm_settings
-                .http2
-                .or(betterlite_env::flag(
+            http2: config.litellm_settings.http2 == Some(true)
+                || betterlite_env::flag(
                     "LITELLM_HTTP2",
                     environment.get("LITELLM_HTTP2").map_or("", String::as_str),
-                )?)
+                )?
                 .unwrap_or(false),
             ecdh_curve: config
                 .litellm_settings
@@ -80,13 +88,12 @@ fn resolve_verification(
 ) -> Result<Verification, TlsPolicyError> {
     let value = if let Some(value) = deployment_ssl_verify {
         Some(value)
-    } else if let Some(value) = config.litellm_settings.ssl_verify {
-        Some(value)
     } else {
-        betterlite_env::flag(
+        let environment_value = betterlite_env::flag(
             "SSL_VERIFY",
             environment.get("SSL_VERIFY").map_or("", String::as_str),
-        )?
+        )?;
+        environment_value.or(config.litellm_settings.ssl_verify)
     };
     Ok(match value {
         Some(true) | None => Verification::Enabled,

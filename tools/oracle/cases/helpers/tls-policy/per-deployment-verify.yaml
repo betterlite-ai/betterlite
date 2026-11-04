@@ -2,9 +2,12 @@ kind: helper
 name: tls-deployment-verify
 call:
   tls_policy:
-    ssl_verify: true
-    http2: false
+    deployment_ssl_verify: true
+    config_ssl_verify: null
+    config_http2: false
     environment: {}
 env: {}
 compare:
-  ignore: []
+  ignore:
+    - pointer: /value/user_agent
+      reason: the default User-Agent intentionally differs from LiteLLM

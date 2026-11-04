@@ -1,10 +1,16 @@
 use std::collections::BTreeMap;
 
+use betterlite_config::loader::ConfigLoader;
+use betterlite_config::tls::{TlsPolicy, Verification};
+use betterlite_http::tls::apply_policy;
+use reqwest::ClientBuilder;
+
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
-    pub(crate) ssl_verify: Option<serde_json::Value>,
-    pub(crate) http2: bool,
+    pub(crate) deployment_ssl_verify: Option<bool>,
+    pub(crate) config_ssl_verify: Option<bool>,
+    pub(crate) config_http2: Option<bool>,
     pub(crate) environment: BTreeMap<String, String>,
 }
 
@@ -14,29 +20,56 @@ impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let mut verification = input
-            .ssl_verify
-            .clone()
-            .unwrap_or(serde_json::Value::Bool(true));
-        if let Some(value) = verification.as_str() {
-            match value.to_ascii_lowercase().as_str() {
-                "true" => verification = serde_json::Value::Bool(true),
-                "false" => verification = serde_json::Value::Bool(false),
-                _ => {}
-            }
+        let config_yaml = config_yaml(input);
+        let config = ConfigLoader {
+            lookup: BTreeMap::new(),
         }
-        let http2 = input.http2
-            || input
-                .environment
-                .get("LITELLM_HTTP2")
-                .is_some_and(|value| value.eq_ignore_ascii_case("true"));
-        let user_agent = input
-            .environment
-            .get("LITELLM_USER_AGENT")
-            .cloned()
-            .unwrap_or_else(|| "litellm/1.105.1".to_owned());
-        Ok(
-            serde_json::json!({"ssl_verify": verification, "http2": http2, "headers": {"User-Agent": user_agent}}),
-        )
+        .load(&config_yaml)
+        .map_err(|error| crate::helpers::HelperError {
+            class: "ValueError".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: error.to_string(),
+        })?;
+        let policy = TlsPolicy::resolve(&config, &input.environment, input.deployment_ssl_verify)
+            .map_err(|error| crate::helpers::HelperError {
+            class: "ValueError".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: error.to_string(),
+        })?;
+        let _configured = apply_policy(ClientBuilder::new(), &policy);
+        let ssl_verify = match policy.verification {
+            Verification::Enabled => serde_json::Value::Bool(true),
+            Verification::Disabled => serde_json::Value::Bool(false),
+            Verification::CaFile(path) => serde_json::Value::String(path),
+        };
+        Ok(serde_json::json!({
+            "ssl_verify": ssl_verify,
+            "http2": policy.http2,
+            "user_agent": policy.user_agent,
+            "certificate": policy.certificate,
+            "ca_file": policy.ca_file,
+            "ecdh_curve": policy.ecdh_curve,
+        }))
+    }
+}
+
+fn config_yaml(input: &Input) -> String {
+    let mut settings = Vec::new();
+    if let Some(value) = input.config_ssl_verify {
+        settings.push(format!("  ssl_verify: {value}"));
+    }
+    if let Some(value) = input.config_http2 {
+        settings.push(format!("  http2: {value}"));
+    }
+    if settings.is_empty() {
+        String::new()
+    } else {
+        format!("litellm_settings:\n{}\n", settings.join("\n"))
     }
 }

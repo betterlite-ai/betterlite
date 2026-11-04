@@ -2,9 +2,13 @@ kind: helper
 name: tls-false-string
 call:
   tls_policy:
-    ssl_verify: "False"
-    http2: false
-    environment: {}
+    deployment_ssl_verify: null
+    config_ssl_verify: null
+    config_http2: false
+    environment:
+      SSL_VERIFY: "False"
 env: {}
 compare:
-  ignore: []
+  ignore:
+    - pointer: /value/user_agent
+      reason: the default User-Agent intentionally differs from LiteLLM

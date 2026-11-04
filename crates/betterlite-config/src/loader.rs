@@ -193,6 +193,7 @@ fn convert_params(
     let tpm = integer(raw.tpm, &format!("{prefix}.tpm"))?;
     let weight = integer(raw.weight, &format!("{prefix}.weight"))?;
     Ok(LiteLlmParams {
+        ssl_verify: raw.ssl_verify,
         model,
         api_base,
         api_key,

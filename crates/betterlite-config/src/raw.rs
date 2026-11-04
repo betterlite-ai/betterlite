@@ -32,6 +32,7 @@ pub(super) struct RawDeployment {
 
 #[derive(Debug, Deserialize, Default)]
 pub(super) struct RawParams {
+    pub(super) ssl_verify: Option<bool>,
     pub(super) model: Option<String>,
     pub(super) api_base: Option<String>,
     pub(super) api_key: Option<SecretString>,

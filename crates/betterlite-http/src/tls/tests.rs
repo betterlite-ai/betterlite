@@ -38,16 +38,19 @@ fn http_policy_tests_behavior(#[case] mode: &str, #[case] expected: Option<&str>
 #[rstest]
 fn replays_the_http_policy_corpus(#[files("fuzz/corpus/http_policy/*")] path: PathBuf) {
     let bytes = fs::read(path).unwrap();
-    let Ok(source) = String::from_utf8(bytes) else {
-        return;
-    };
-    let parsed = ConfigLoader {
+    let directory = tempfile::tempdir().unwrap();
+    let ca_path = directory.path().join("ca.pem");
+    fs::write(&ca_path, bytes).unwrap();
+    let path_text = ca_path.to_str().unwrap().to_owned();
+    let config = ConfigLoader {
         lookup: BTreeMap::new(),
     }
-    .load(&source);
-    if let Ok(config) = parsed {
-        let _policy = TlsPolicy::resolve(&config, &BTreeMap::new(), None);
-    }
+    .load("")
+    .unwrap();
+    let environment = BTreeMap::from([("SSL_CERT_FILE".to_owned(), path_text)]);
+    let policy = TlsPolicy::resolve(&config, &environment, None).unwrap();
+    let _result = apply_policy(ClientBuilder::new(), &policy);
 }
 
 mod ca_policy;
+mod curve_policy;
