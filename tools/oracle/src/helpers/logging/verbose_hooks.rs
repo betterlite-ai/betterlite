@@ -47,7 +47,7 @@ const fn default_logger_only() -> Payload {
 struct FixtureLogger {
     fails: bool,
     debug_enabled: bool,
-    records: Arc<Cell<Vec<betterlite_logging::verbose_hooks::LogRecord>>>,
+    records: Cell<Vec<betterlite_logging::verbose_hooks::LogRecord>>,
 }
 
 impl LoggerSink for FixtureLogger {
@@ -111,7 +111,6 @@ fn build_hooks(
     sink_fails: (bool, bool),
     logger_debug_enabled: bool,
     set_verbose: &Payload,
-    records: Arc<Cell<Vec<betterlite_logging::verbose_hooks::LogRecord>>>,
 ) -> Result<VerboseHooks<FixtureLogger, FixtureConsole>, Box<crate::helpers::HelperError>> {
     let (logger_fails, console_fails) = sink_fails;
     let redactor = redactor()?;
@@ -119,7 +118,7 @@ fn build_hooks(
         logger: FixtureLogger {
             fails: logger_fails,
             debug_enabled: logger_debug_enabled,
-            records,
+            records: Cell::new(Vec::new()),
         },
         console: FixtureConsole {
             fails: console_fails,
@@ -141,18 +140,7 @@ impl crate::helpers::Helper for Op {
                 set_verbose,
                 logger_fails,
                 console_fails,
-            } => {
-                let records = Arc::new(Cell::new(Vec::new()));
-                let hooks = build_hooks(
-                    (*logger_fails, *console_fails),
-                    false,
-                    set_verbose,
-                    Arc::clone(&records),
-                )?;
-                let mut result = hooks.main_print_verbose(payload.clone());
-                result.logs = records.take();
-                Ok(json!(result))
-            }
+            } => run_main(payload, set_verbose, (*logger_fails, *console_fails)),
             Input::Utils {
                 payload,
                 set_verbose,
@@ -160,32 +148,44 @@ impl crate::helpers::Helper for Op {
                 logger_only,
                 logger_fails,
                 console_fails,
-            } => {
-                let records = Arc::new(Cell::new(Vec::new()));
-                let hooks = build_hooks(
-                    (*logger_fails, *console_fails),
-                    false,
-                    set_verbose,
-                    Arc::clone(&records),
-                )?;
-                let mut result = hooks.utils_print_verbose(payload.clone(), log_level, logger_only);
-                result.logs = records.take();
-                Ok(json!(result))
-            }
+            } => run_utils(
+                payload,
+                set_verbose,
+                (log_level, logger_only),
+                (*logger_fails, *console_fails),
+            ),
             Input::Active {
                 set_verbose,
                 logger_debug_enabled,
             } => {
-                let hooks = build_hooks(
-                    (false, false),
-                    *logger_debug_enabled,
-                    set_verbose,
-                    Arc::new(Cell::new(Vec::new())),
-                )?;
+                let hooks = build_hooks((false, false), *logger_debug_enabled, set_verbose)?;
                 Ok(json!({ "logs": [], "console": [], "active": hooks.is_active() }))
             }
         }
     }
+}
+
+fn run_main(
+    payload: &Payload,
+    set_verbose: &Payload,
+    sink_fails: (bool, bool),
+) -> crate::helpers::HelperResult {
+    let hooks = build_hooks(sink_fails, false, set_verbose)?;
+    let mut result = hooks.main_print_verbose(payload.clone());
+    result.logs = hooks.logger.records.take();
+    Ok(json!(result))
+}
+
+fn run_utils(
+    payload: &Payload,
+    set_verbose: &Payload,
+    settings: (&str, &Payload),
+    sink_fails: (bool, bool),
+) -> crate::helpers::HelperResult {
+    let hooks = build_hooks(sink_fails, false, set_verbose)?;
+    let mut result = hooks.utils_print_verbose(payload.clone(), settings.0, settings.1);
+    result.logs = hooks.logger.records.take();
+    Ok(json!(result))
 }
 
 #[path = "verbose_hooks/tests.rs"]

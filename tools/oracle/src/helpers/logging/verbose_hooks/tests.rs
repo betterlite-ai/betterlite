@@ -3,41 +3,39 @@
 use std::cell::Cell;
 use std::fs;
 use std::path::Path;
-use std::sync::Arc;
 
-use betterlite_logging::verbose_hooks::LoggerSink;
+use betterlite_logging::verbose_hooks::LoggerSink as _;
 use betterlite_redact::structured::Payload;
 
 use super::FixtureLogger;
 
 #[test]
 fn fixture_logger_records_the_level_of_the_method_called() {
-    let records = Arc::new(Cell::new(Vec::new()));
     let logger = FixtureLogger {
         fails: false,
         debug_enabled: false,
-        records: Arc::clone(&records),
+        records: Cell::new(Vec::new()),
     };
     let payload = Payload::String("message".to_owned());
     assert!(logger.info(&payload));
     assert!(logger.error(&payload));
     assert!(logger.debug(&payload));
     assert_eq!(
-        records
+        logger
+            .records
             .take()
             .iter()
             .map(|record| record.level.as_str())
             .collect::<Vec<_>>(),
         ["INFO", "ERROR", "DEBUG"]
     );
-    let failed_records = Arc::new(Cell::new(Vec::new()));
     let failing = FixtureLogger {
         fails: true,
         debug_enabled: false,
-        records: Arc::clone(&failed_records),
+        records: Cell::new(Vec::new()),
     };
     assert!(!failing.error(&payload));
-    assert!(failed_records.take().is_empty());
+    assert!(failing.records.take().is_empty());
 }
 
 use crate::case::{HelperCase, helper::validate_helper};

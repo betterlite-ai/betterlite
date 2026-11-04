@@ -14,7 +14,7 @@ use super::{ConsoleSink, LoggerSink, VerboseHooks};
 struct FixtureLogger {
     fails: bool,
     debug_enabled: bool,
-    calls: Arc<Cell<Vec<&'static str>>>,
+    calls: Cell<Vec<&'static str>>,
 }
 
 impl LoggerSink for FixtureLogger {
@@ -145,36 +145,41 @@ struct Expected {
     Expected { logs: 1, console: 1, active: false, payload: redacted_payload(), calls: vec!["debug"] }
 )]
 fn verbose_hooks_cases(#[case] scenario: Scenario, #[case] expected: Expected) {
-    let calls = Arc::new(Cell::new(Vec::new()));
-    let result = match scenario {
+    let (result, calls) = match scenario {
         Scenario::Main {
             payload,
             set_verbose,
-        } => hooks(
-            FixtureLogger {
-                fails: false,
-                debug_enabled: false,
-                calls: Arc::clone(&calls),
-            },
-            FixtureConsole::default(),
-            set_verbose,
-        )
-        .main_print_verbose(payload),
+        } => {
+            let hooks = hooks(
+                FixtureLogger {
+                    fails: false,
+                    debug_enabled: false,
+                    calls: Cell::new(Vec::new()),
+                },
+                FixtureConsole::default(),
+                set_verbose,
+            );
+            let result = hooks.main_print_verbose(payload);
+            (result, hooks.logger.calls.take())
+        }
         Scenario::Utils {
             payload,
             set_verbose,
             log_level,
             logger_only,
-        } => hooks(
-            FixtureLogger {
-                fails: false,
-                debug_enabled: false,
-                calls: Arc::clone(&calls),
-            },
-            FixtureConsole::default(),
-            set_verbose,
-        )
-        .utils_print_verbose(payload, log_level, &logger_only),
+        } => {
+            let hooks = hooks(
+                FixtureLogger {
+                    fails: false,
+                    debug_enabled: false,
+                    calls: Cell::new(Vec::new()),
+                },
+                FixtureConsole::default(),
+                set_verbose,
+            );
+            let result = hooks.utils_print_verbose(payload, log_level, &logger_only);
+            (result, hooks.logger.calls.take())
+        }
         Scenario::Active {
             set_verbose,
             logger_debug_enabled,
@@ -183,12 +188,13 @@ fn verbose_hooks_cases(#[case] scenario: Scenario, #[case] expected: Expected) {
                 FixtureLogger {
                     fails: false,
                     debug_enabled: logger_debug_enabled,
-                    calls: Arc::clone(&calls),
+                    calls: Cell::new(Vec::new()),
                 },
                 FixtureConsole::default(),
                 set_verbose,
             );
             assert_eq!(hooks.is_active(), expected.active);
+            assert_eq!(hooks.logger.calls.take(), expected.calls);
             return;
         }
     };
@@ -196,7 +202,7 @@ fn verbose_hooks_cases(#[case] scenario: Scenario, #[case] expected: Expected) {
     assert_eq!(result.console.len(), expected.console);
     assert_eq!(result.logs[0].payload, expected.payload);
     assert_eq!(result.console[0], expected.payload);
-    assert_eq!(calls.take(), expected.calls);
+    assert_eq!(calls, expected.calls);
 }
 
 #[test]
@@ -342,7 +348,7 @@ fn logger_failure_suppresses_both_sinks() {
             FixtureLogger {
                 fails: true,
                 debug_enabled: false,
-                calls: Arc::new(Cell::new(Vec::new())),
+                calls: Cell::new(Vec::new()),
             },
             FixtureConsole::default(),
             json!(true),
@@ -408,7 +414,6 @@ fn utils_guard_requires_logger_only_to_be_identically_false_a_falsey_non_boolean
 }
 
 #[test]
-#[test]
 fn main_guard_treats_an_empty_string_set_verbose_as_falsey() {
     let result = healthy_hooks(json!("")).main_print_verbose(json!("body"));
     assert!(result.console.is_empty());
@@ -439,7 +444,7 @@ fn is_active_is_true_when_the_logger_is_already_enabled_at_debug_even_if_set_ver
         FixtureLogger {
             fails: false,
             debug_enabled: true,
-            calls: Arc::new(Cell::new(Vec::new())),
+            calls: Cell::new(Vec::new()),
         },
         FixtureConsole::default(),
         json!(0_i64),
@@ -478,7 +483,7 @@ fn utils_logger_failure(#[case] log_level: &str) {
         FixtureLogger {
             fails: true,
             debug_enabled: false,
-            calls: Arc::new(Cell::new(Vec::new())),
+            calls: Cell::new(Vec::new()),
         },
         FixtureConsole::default(),
         json!(true),
