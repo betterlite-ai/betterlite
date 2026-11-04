@@ -156,7 +156,10 @@ struct CaptureWriter(Arc<Mutex<String>>);
 impl io::Write for CaptureWriter {
     fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
         let text = String::from_utf8_lossy(buffer);
-        self.0.lock().map_err(io::Error::other)?.push_str(&text);
+        self.0
+            .lock()
+            .map_err(|_| io::Error::other("capture writer lock poisoned"))?
+            .push_str(&text);
         Ok(buffer.len())
     }
 

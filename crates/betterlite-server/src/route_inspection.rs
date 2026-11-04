@@ -1,3 +1,5 @@
+use std::iter;
+
 use serde::{Deserialize, Serialize};
 
 pub trait NamedEndpoint {
@@ -51,7 +53,7 @@ where
             .and_then(|context| safe_get_endpoint_name(context, endpoint_route)),
         mounted_app: None,
     };
-    std::iter::once(route_info).collect()
+    iter::once(route_info).collect()
 }
 
 #[must_use]
