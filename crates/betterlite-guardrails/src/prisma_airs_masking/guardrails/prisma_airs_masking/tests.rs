@@ -68,19 +68,27 @@ fn response_fixture() -> Response {
             ResponseChoice {
                 message: Some(MaskedResponseMessage {
                     content: Some(MaskContent::Text("secret".to_owned())),
-                    tool_calls: Some(vec![MaskedToolCall {
-                        function: Some(MaskedFunctionCall {
-                            arguments: Some("secret".to_owned()),
-                        }),
-                    }]),
+                    tool_calls: Some(vec![
+                        MaskedToolCall {
+                            function: Some(MaskedFunctionCall {
+                                arguments: Some("secret-1".to_owned()),
+                            }),
+                        },
+                        MaskedToolCall {
+                            function: Some(MaskedFunctionCall {
+                                arguments: Some("secret-2".to_owned()),
+                            }),
+                        },
+                    ]),
                     function_call: None,
                 }),
             },
             ResponseChoice {
                 message: Some(MaskedResponseMessage {
                     content: Some(MaskContent::Parts(vec![
-                        raw(r#"{"type":"text","text":"secret"}"#),
+                        raw(r#"{"type":"text","text":"secret-a"}"#),
                         raw(r#"{"type":"image"}"#),
+                        raw(r#"{"type":"text","text":"secret-b"}"#),
                     ])),
                     tool_calls: None,
                     function_call: Some(MaskedFunctionCall {
@@ -96,15 +104,18 @@ fn assert_masked_response(response: &Response) {
     let choices = response.choices.as_ref().expect("choices");
     let first = choices[0].message.as_ref().expect("first message");
     assert!(matches!(&first.content, Some(MaskContent::Text(text)) if text == "masked"));
-    assert_eq!(
-        first.tool_calls.as_ref().expect("tool calls")[0]
-            .function
-            .as_ref()
-            .expect("function")
-            .arguments
-            .as_deref(),
-        Some("masked")
-    );
+    let first_tool_calls = first.tool_calls.as_ref().expect("tool calls");
+    assert_eq!(first_tool_calls.len(), 2);
+    for call in first_tool_calls {
+        assert_eq!(
+            call.function
+                .as_ref()
+                .expect("function")
+                .arguments
+                .as_deref(),
+            Some("masked")
+        );
+    }
     let second = choices[1].message.as_ref().expect("second message");
     assert_eq!(
         second
@@ -118,8 +129,10 @@ fn assert_masked_response(response: &Response) {
     let Some(MaskContent::Parts(parts)) = second.content.as_ref() else {
         panic!("content remains a part list");
     };
+    assert_eq!(parts.len(), 3);
     assert_eq!(parts[0].get(), r#"{"type":"text","text":"masked"}"#);
     assert_eq!(parts[1].get(), r#"{"type":"image"}"#);
+    assert_eq!(parts[2].get(), r#"{"type":"text","text":"masked"}"#);
 }
 
 #[test]
@@ -358,6 +371,102 @@ fn replays_prisma_content_corpus() {
         }
         messages.is_ok() || response.is_ok() || scan.is_ok() || response_mask.is_ok()
     }));
+}
+
+#[test]
+fn mask_messages_rejects_a_replacement_budget_that_would_allocate_gigabytes() {
+    const SPEC_MAX_MASKED_OUTPUT_BYTES: usize = 0x0010_0000;
+    let masked_text = "x".repeat(SPEC_MAX_MASKED_OUTPUT_BYTES);
+    let mut messages = [RequestMessage {
+        role: Some("user".to_owned()),
+        content: Some(MaskContent::Parts(vec![
+            raw(r#"{"type":"text","text":"a"}"#),
+            raw(r#"{"type":"text","text":"b"}"#),
+        ])),
+    }];
+    let error = mask_messages(&mut messages, &masked_text).expect_err("budget exceeded");
+    assert!(matches!(
+        error,
+        MaskingError::ReplacementTooLarge { limit } if limit == SPEC_MAX_MASKED_OUTPUT_BYTES
+    ));
+    let Some(MaskContent::Parts(parts)) = messages[0].content.as_ref() else {
+        panic!("content remains a part list");
+    };
+    assert_eq!(parts[0].get(), r#"{"type":"text","text":"a"}"#);
+}
+
+#[test]
+fn mask_messages_allows_a_replacement_budget_exactly_at_the_cap() {
+    const SPEC_MAX_MASKED_OUTPUT_BYTES: usize = 0x0010_0000;
+    let masked_text = "x".repeat(SPEC_MAX_MASKED_OUTPUT_BYTES);
+    let mut messages = [RequestMessage {
+        role: Some("user".to_owned()),
+        content: Some(MaskContent::Text("secret".to_owned())),
+    }];
+    assert!(mask_messages(&mut messages, &masked_text).expect("mask"));
+    assert!(matches!(&messages[0].content, Some(MaskContent::Text(text)) if *text == masked_text));
+}
+
+#[test]
+fn mask_response_rejects_a_replacement_budget_spread_across_choices_and_tool_arguments() {
+    const SPEC_MAX_MASKED_OUTPUT_BYTES: usize = 0x0010_0000;
+    const OVER_HALF_THE_CAP_BYTES: usize = 0x0008_0001;
+    let masked_text = "x".repeat(OVER_HALF_THE_CAP_BYTES);
+    let mut response = budget_response_fixture();
+    let error = mask_response(&mut response, &masked_text).expect_err("budget exceeded");
+    assert!(matches!(
+        error,
+        MaskingError::ReplacementTooLarge { limit } if limit == SPEC_MAX_MASKED_OUTPUT_BYTES
+    ));
+    assert_budget_response_unchanged(&response);
+}
+
+fn budget_response_fixture() -> Response {
+    Response {
+        choices: Some(vec![
+            ResponseChoice {
+                message: Some(MaskedResponseMessage {
+                    content: Some(MaskContent::Text("secret".to_owned())),
+                    tool_calls: None,
+                    function_call: None,
+                }),
+            },
+            ResponseChoice {
+                message: Some(MaskedResponseMessage {
+                    content: None,
+                    tool_calls: Some(vec![MaskedToolCall {
+                        function: Some(MaskedFunctionCall {
+                            arguments: Some("secret".to_owned()),
+                        }),
+                    }]),
+                    function_call: None,
+                }),
+            },
+        ]),
+    }
+}
+
+fn assert_budget_response_unchanged(response: &Response) {
+    let choices = response.choices.as_ref().expect("choices");
+    assert!(matches!(
+        &choices[0].message.as_ref().expect("first message").content,
+        Some(MaskContent::Text(text)) if text == "secret"
+    ));
+    assert_eq!(
+        choices[1]
+            .message
+            .as_ref()
+            .expect("second message")
+            .tool_calls
+            .as_ref()
+            .expect("tool calls")[0]
+            .function
+            .as_ref()
+            .expect("function")
+            .arguments
+            .as_deref(),
+        Some("secret")
+    );
 }
 
 #[test]

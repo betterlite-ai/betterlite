@@ -32,6 +32,19 @@ fn extracts_all_response_content_and_tool_arguments_across_choices() {
     );
 }
 
+#[test]
+fn skips_trailing_assistant_and_system_messages() {
+    let messages: Vec<Message> = serde_json::from_str(
+        r#"[
+            {"role":"user", "content":"expected"},
+            {"role":"assistant", "content":"assistant-text"},
+            {"role":"system", "content":"system-text"}
+        ]"#,
+    )
+    .expect("messages");
+    assert_eq!(extract_text_from_messages(&messages), "expected");
+}
+
 #[rstest::rstest]
 #[case::empty_string(r#""""#, "older")]
 #[case::empty_parts("[]", "older")]

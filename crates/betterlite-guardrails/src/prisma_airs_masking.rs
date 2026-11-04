@@ -13,6 +13,49 @@ pub enum MaskingError {
     MissingMcpArguments,
     #[error("failed to encode masked content: {0}")]
     Encoding(#[source] serde_json::Error),
+    #[error("masked output would exceed {limit} bytes")]
+    ReplacementTooLarge { limit: usize },
+}
+
+const MAX_MASKED_OUTPUT_BYTES: usize = 1024 * 1024;
+
+fn enforce_replacement_budget(
+    replacement_count: usize,
+    masked_text: &str,
+) -> Result<(), MaskingError> {
+    let fits = replacement_count
+        .checked_mul(masked_text.len())
+        .is_some_and(|total_bytes| total_bytes <= MAX_MASKED_OUTPUT_BYTES);
+    if fits {
+        Ok(())
+    } else {
+        Err(MaskingError::ReplacementTooLarge {
+            limit: MAX_MASKED_OUTPUT_BYTES,
+        })
+    }
+}
+
+const fn content_replacement_count(content: &MaskContent) -> usize {
+    match content {
+        MaskContent::Text(_) => 1,
+        MaskContent::Parts(parts) => parts.len(),
+    }
+}
+
+fn message_replacement_count(message: &MaskedResponseMessage) -> usize {
+    let content = message
+        .content
+        .as_ref()
+        .map_or(0, content_replacement_count);
+    let tool_arguments = message
+        .tool_calls
+        .iter()
+        .flatten()
+        .filter_map(|call| call.function.as_ref())
+        .chain(message.function_call.as_ref())
+        .filter(|function| function.arguments.is_some())
+        .count();
+    content.saturating_add(tool_arguments)
 }
 
 #[derive(Debug, Deserialize)]
@@ -142,19 +185,28 @@ pub fn mask_messages(
     messages: &mut [RequestMessage],
     masked_text: &str,
 ) -> Result<bool, MaskingError> {
-    messages
+    let Some(content) = messages
         .iter_mut()
         .rfind(|message| message.role.as_deref() == Some("user"))
         .and_then(|message| message.content.as_mut())
-        .map_or(Ok(false), |content| {
-            mask_content(content, masked_text).map(|()| true)
-        })
+    else {
+        return Ok(false);
+    };
+    enforce_replacement_budget(content_replacement_count(content), masked_text)?;
+    mask_content(content, masked_text)?;
+    Ok(true)
 }
 
 pub fn mask_response(response: &mut Response, masked_text: &str) -> Result<(), MaskingError> {
     let Some(choices) = response.choices.as_mut() else {
         return Ok(());
     };
+    let total_replacements = choices
+        .iter()
+        .filter_map(|choice| choice.message.as_ref())
+        .map(message_replacement_count)
+        .sum();
+    enforce_replacement_budget(total_replacements, masked_text)?;
     choices.iter_mut().try_fold((), |(), choice| {
         choice.message.as_mut().map_or(Ok(()), |message| {
             mask_response_message(message, masked_text)
