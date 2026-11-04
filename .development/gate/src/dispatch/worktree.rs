@@ -101,6 +101,8 @@ fn configure(root: &Path, target: &Path) -> Result<(), GateError> {
             "+refs/heads/*:refs/remotes/origin/*",
         ],
     )?;
+    // commit and fetch start a detached gc, and its reflog expire holds HEAD.lock while the next git command needs it
+    git(target, &["config", "maintenance.auto", "false"])?;
     for key in [
         "user.name",
         "user.email",

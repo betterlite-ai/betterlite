@@ -16,19 +16,14 @@ description: >-
   1, t, y, yes, never fails) and token_auth_flag_enabled (1, on, t, true, y, yes and their opposites, else
   NotRecognized with the value in the message). redis's redis_connection_settings/coercion.rs coerce_int and
   coerce_float strip PEP 515 underscores, coerce_bool takes true, 1 and yes, and a bad value is dropped without a word.
-  There are also two copies of the EnvironmentLookup trait, one in config's loader.rs and one in redis's
-  redis_connection_settings/environment.rs.
 
 
   Add a leaf crate crates/betterlite-env with license.workspace = true, [lints] workspace = true and no betterlite
-  dependency. It holds the one EnvironmentLookup trait (fn lookup(&self, name: &str) -> Option<String>) and its
-  BTreeMap<String, String> impl, moved from config's loader.rs. config's loader.rs and redis's environment.rs replace
-  their trait with pub use betterlite_env::EnvironmentLookup, so every caller that names
-  betterlite_config::loader::EnvironmentLookup or the redis path keeps compiling unchanged. The crate also holds two
-  parsers. flag(name, text) -> Result<Option<bool>, EnvError> trims the text, returns Ok(None) for empty text, reads
-  the eight words above in any ASCII case, and returns EnvError for anything else. number::<T: FromStr>(name, text) ->
-  Result<Option<T>, EnvError> trims, returns Ok(None) for empty text, accepts only the characters 0-9, +, -, . and e or
-  E before handing the text to T::from_str, and returns EnvError for anything else, so inf, nan, 1_000 and 0x10 are all
+  dependency. It holds two parsers and no lookup trait: config, redis and models keep their own EnvironmentLookup
+  and pass the text they read to the parsers. flag(name, text) -> Result<Option<bool>, EnvError> trims the text,
+  returns Ok(None) for empty text, reads the eight words above in any ASCII case, and returns EnvError for
+  anything else. number::<T: FromStr>(name, text) -> Result<Option<T>, EnvError> trims, returns Ok(None) for empty
+  text, accepts only the characters 0-9, +, -, . and e or E before handing the text to T::from_str, and returns EnvError for anything else, so inf, nan, 1_000 and 0x10 are all
   errors. EnvError (thiserror) carries the name the caller passed and what it expected (a bool or a number), and its
   message names the variable and never the value, since an env value can be a secret. Each caller maps EnvError into
   its own error type.
@@ -36,9 +31,12 @@ description: >-
 
   Move every site above onto those two parsers. In config, environment_defaults reads LITELLM_MODIFY_PARAMS through
   flag (the configured value still wins, unset still means false) and DEFAULT_MAX_TOKENS through number::<i64>
-  (unset still means 4096), and ConfigError gains one variant that wraps EnvError. resolve.rs's resolve_number reads
-  the value of an os.environ/ reference through number, so an empty variable leaves the field unset (Ok(None)) and bad
-  text is that ConfigError variant; literal YAML text keeps today's parser. ProxyPolicy::resolve reads both trust
+  (unset still means 4096), and ConfigError gains one variant that wraps EnvError. Four files outside config match
+  ConfigError exhaustively and get an arm for it: crates/betterlite/src/main.rs gives it its own category in
+  config_error_category and logs it in log_config_error's generic arm, and the guardrail oracle helpers
+  b3762/support.rs, b3767.rs and b3778.rs add it to the arm that answers "ConfigError". resolve.rs's resolve_number
+  reads the value of an os.environ/ reference through number, so an empty variable leaves the field unset
+  (Ok(None)) and bad text is that ConfigError variant; literal YAML text keeps today's parser. ProxyPolicy::resolve reads both trust
   flags through flag and returns Result<Self, EnvError>; chat_setup.rs in betterlite-server propagates it, and the
   tests, the betterlite-http proxy_policy fuzz target and the oracle adapter take the Result. redis_credentials.rs's
   config_or_environment_flag reads ScalarBool::Text through flag, from the environment and from config alike, and
@@ -116,6 +114,7 @@ scope:
   - crates/betterlite-cli/src/keyring.rs
   - crates/betterlite-cli/src/keyring/tests.rs
   - crates/betterlite-server/src/server/chat_setup.rs
+  - crates/betterlite/src/main.rs
   - crates/betterlite-server/src/routes/chat/tests/stream/tests.rs
   - crates/betterlite-http/src/proxy/tests.rs
   - crates/betterlite-http/src/otlp_client/tests.rs
@@ -128,9 +127,13 @@ scope:
   - tools/oracle/src/helpers/http/proxy_policy.rs
   - tools/oracle/src/helpers/logging/datadog_tags.rs
   - tools/oracle/src/helpers/redact/sentry_scrubbing.rs
+  - tools/oracle/src/helpers/guardrails/b3762/support.rs
+  - tools/oracle/src/helpers/guardrails/b3767.rs
+  - tools/oracle/src/helpers/guardrails/b3778.rs
   - tools/oracle/Cargo.toml
   - tools/oracle/cases/helpers/providers/provider-base-helpers/modify-params-default-and-env.yaml
   - tools/oracle/cases/helpers/database-url-policy/str-to-bool-on.yaml
+  - tools/oracle/cases/helpers/database-url-policy/str-to-bool-padded-true.yaml
   - tools/oracle/cases/helpers/datadog/environment-tags.yaml
   - .ast-grep/rules/no-python-habits.yml
   lint_tables: false
@@ -158,9 +161,6 @@ dod:
 - text: betterlite-env has a cargo-fuzz target with a committed corpus, and a normal test replays every corpus file through flag and number.
   proof:
   - env-corpus
-- text: EnvironmentLookup is defined once, in betterlite-env, and config and redis re-export it.
-  proof:
-  - one-lookup-trait
 - text: >-
     Every env read listed in the description goes through flag or number: a padded mixed-case word reads as the bool,
     an empty value keeps the default, and bad text fails naming the variable without its value, in config, redis,
@@ -186,10 +186,6 @@ checks:
   - id: env-corpus
     why: the fuzz corpus is missing or no test replays it
     run: test -n "$(ls crates/betterlite-env/fuzz/corpus/env_values)" && test -f crates/betterlite-env/fuzz/fuzz_targets/env_values.rs && cargo nextest run --locked -p betterlite-env --no-tests=fail -E 'test(/replays_the_env_values_corpus/)'
-  - id: one-lookup-trait
-    why: a crate still defines its own EnvironmentLookup trait
-    run: |-
-      grep -rqE 'pub trait EnvironmentLookup' crates/betterlite-env/src && test -z "$(grep -rlE 'trait EnvironmentLookup' crates --include=*.rs | grep -v '^crates/betterlite-env/')"
   - id: shared-env-sites
     why: a migrated env read has no test showing the shared reading, the default for an empty value, and an error without the value
     run: |-
@@ -219,12 +215,13 @@ out_of_scope:
 - Rejecting YAML text for a field LiteLLM declares as a number; resolve_number keeps today's parser for literal YAML text.
 - String-valued os.environ/ references; an empty variable behind a string field keeps reading as an empty string.
 - Merging redis's os_environ.rs reference resolver with config's resolve_string.
+- Merging the three EnvironmentLookup traits (config's loader.rs, redis's redis_connection_settings/environment.rs and models' provider_defaults_b/environment.rs) into betterlite-env. Without re-exports that changes about 60 imports in eight crates.
 pitfalls:
-- Three oracle cases send values the old readings and LiteLLM agree on but the shared parser reads differently. modify-params-default-and-env.yaml sends "false" (LiteLLM's bool(os.getenv(...)) answers True); change both its env and environment to "true". str-to-bool-on.yaml sends "on" (LiteLLM's db str_to_bool answers False); change its value to "yes". environment-tags.yaml sends USE_DDPROFILER "1" (LiteLLM answers false); change it to "false" and keep USE_DDTRACE " TRUE ".
+- Four oracle cases send values the old readings and LiteLLM agree on but the shared parser reads differently. modify-params-default-and-env.yaml sends "false" (LiteLLM's bool(os.getenv(...)) answers True); change both its env and environment to "true". str-to-bool-on.yaml sends "on" (LiteLLM's db str_to_bool answers False); change its value to "yes". str-to-bool-padded-true.yaml sends " true " (the db str_to_bool doesn't trim, so LiteLLM answers False); change its value to " false ". environment-tags.yaml sends USE_DDPROFILER "1" (LiteLLM answers false); change it to "false" and keep USE_DDTRACE " TRUE ".
 - token-auth-flag-invalid.yaml stays as it is; B5091 stops comparing helper error messages, so the new message without the value still matches on status, type, param and code.
 - Unit tests pin the old readings and change with them, among them base_helpers/tests.rs modify_params_default_and_env (it asserts "false", "0" and " " turn modify_params on), the db tests that assert the python_repr message for 'maybe', and the redis and billing tests for PEP 515 underscores.
 - No one-line helpers or wrappers around flag and number; call them where the value is read.
-- worker.md forbids editing a crate's lib.rs unless the scope lists the whole crate. The new crate is listed whole; every other crate keeps its lib.rs, which is why config and redis re-export the trait from loader.rs and environment.rs.
+- worker.md forbids editing a crate's lib.rs unless the scope lists the whole crate. The new crate is listed whole; every other crate keeps its lib.rs. worker.md also forbids re-exports and clippy's restriction group denies pub_use, so nothing re-exports betterlite-env.
 - The betterlite-http proxy_policy fuzz target now gets a Result; it skips an Err instead of unwrapping it, since the fuzzer feeds invalid trust values on purpose.
 - The fuzz crate under crates/betterlite-env/fuzz needs its own empty [workspace] table like betterlite-paths-fuzz; without it cargo treats it as an unlisted package inside the workspace and refuses to build it.
 - ChatSetupError in chat_setup.rs gains one variant for EnvError, next to its DeploymentError and HttpError variants.

@@ -137,7 +137,7 @@ fn ready_file<'backlog>(
         .ok_or_else(|| GateError::NoTaskFile(task_id.to_owned()))
 }
 
-const BLOCKED_NOTE: &str = "Unfinished work is not a blocker, so go on until the task's checks pass. Answer blocked again only for a scope, budget or outside blocker, with its evidence: the command, output, file and line.";
+const BLOCKED_NOTE: &str = "Unfinished work is not a blocker, so go on until the task's checks pass. A gate command that prints a 'gate: waiting for' line is queued behind other builds, so poll it until it ends and never answer while one runs. Answer blocked again only for a scope, budget or outside blocker, with its evidence: the command, output, file and line.";
 
 fn note_blocked(
     agents: &Agents,
