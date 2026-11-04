@@ -20,10 +20,16 @@ fn valid() -> String {
     "kind: websocket\npath: /v1/realtime\nheaders: {}\nrequested_subprotocols: []\nexpected_http_status: 101\nnegotiated_subprotocol: null\nframes:\n  - direction: client_to_provider\n    action: send\n    text: setup\n  - direction: provider_to_client\n    action: expect\n    text: ready\n".to_owned()
 }
 
+#[rstest::rstest]
+#[case::headers("headers: {}\n")]
+#[case::protocols("requested_subprotocols: []\n")]
+#[case::negotiation("negotiated_subprotocol: null\n")]
 #[tokio::test]
-async fn transcript_schema() {
+async fn transcript_schema(#[case] required: &str) {
     let case = decode_ws_case(valid().as_bytes(), &OracleLimits::default()).unwrap();
     matching_peer(case).await;
+    let missing = valid().replace(required, "");
+    decode_ws_case(missing.as_bytes(), &OracleLimits::default()).unwrap_err();
     let extra = valid().replace("kind: websocket", "kind: websocket\nunknown: true");
     decode_ws_case(extra.as_bytes(), &OracleLimits::default()).unwrap_err();
     let duplicated = valid().replace("path: /v1/realtime", "path: /v1/realtime\npath: /other");

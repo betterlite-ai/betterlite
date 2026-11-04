@@ -1,5 +1,6 @@
 use crate::websocket_driver::service::{Arguments, ServiceTag};
 use serde::{Deserialize, Serialize};
+use serde_with::{As, Same};
 use std::collections::BTreeMap;
 
 pub const MAX_FRAMES: usize = 1024;
@@ -45,11 +46,10 @@ pub struct WebSocketCase {
     #[serde(default)]
     pub input: Arguments,
     pub path: String,
-    #[serde(default)]
     pub headers: BTreeMap<String, String>,
-    #[serde(default)]
     pub requested_subprotocols: Vec<String>,
     pub expected_http_status: u16,
+    #[serde(with = "As::<Option<Same>>")]
     pub negotiated_subprotocol: Option<String>,
     pub frames: Vec<Frame>,
     #[serde(default)]
