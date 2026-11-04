@@ -97,12 +97,12 @@ fn missing_owner_context() {
 }
 
 #[rstest]
-#[case::proxy_admin(Role::PlatformAdmin, true)]
-#[case::proxy_admin_viewer(Role::PlatformViewer, false)]
-#[case::internal_user(Role::TeamMember, false)]
-fn admin_role_boundary(#[case] role: Role, #[case] admin: bool) {
+#[case::proxy_admin(Some(Role::PlatformAdmin), true)]
+#[case::proxy_admin_viewer(Some(Role::PlatformViewer), false)]
+#[case::internal_user(None, false)]
+fn admin_role_boundary(#[case] role: Option<Role>, #[case] admin: bool) {
     let mut identity = principal();
-    identity.roles = vec![role];
+    identity.roles = role.into_iter().collect();
     assert_eq!(is_proxy_admin(Some(&identity)), admin);
     assert_eq!(user_can_access_resource_owner(None, Some(&identity)), admin);
     assert_eq!(
