@@ -10,7 +10,7 @@ use super::{
 #[test]
 fn logging_privacy_tests_behavior() {
     let headers = json!({"litellm-enable-message-redaction": true});
-    assert!(should_redact_message_logging(
+    assert!(!should_redact_message_logging(
         None,
         headers.as_object(),
         Some(&json!(false)),
@@ -28,6 +28,12 @@ fn logging_privacy_tests_behavior() {
         None,
         Some(&json!(true)),
         false
+    ));
+    assert!(should_redact_message_logging(
+        None,
+        None,
+        Some(&json!(false)),
+        true
     ));
     let payload = json!({"messages":[{"content":"secret"}],"api_key":"sk-abc","prompt":"prompt"});
     let snapshot = redacted_snapshot(&payload);

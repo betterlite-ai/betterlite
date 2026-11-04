@@ -57,7 +57,9 @@ def run(value: Json) -> Json:
         for name in ("litellm-enable-message-redaction", "x-litellm-enable-message-redaction")
     )
     dynamic = boolish(value.get("dynamic"))
-    should_redact = False if disabled else True if enabled else dynamic
+    should_redact = False if disabled else dynamic
+    if should_redact is None:
+        should_redact = True if enabled else None
     if should_redact is None:
         should_redact = value.get("global") is True
     key_info = value.get("key_info")

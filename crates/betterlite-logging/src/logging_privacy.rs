@@ -94,7 +94,12 @@ pub fn should_redact_message_logging(
     dynamic: Option<&Value>,
     global: bool,
 ) -> bool {
-    if let Some(headers) = headers {
+    let request_headers = headers.or_else(|| {
+        metadata
+            .and_then(|metadata| metadata.get("headers"))
+            .and_then(Value::as_object)
+    });
+    if let Some(headers) = request_headers {
         if headers
             .get("litellm-disable-message-redaction")
             .and_then(as_boolish)
@@ -102,7 +107,12 @@ pub fn should_redact_message_logging(
         {
             return false;
         }
-        if headers
+    }
+    if let Some(value) = dynamic.and_then(as_boolish) {
+        return value;
+    }
+    if request_headers.is_some_and(|headers| {
+        headers
             .get("litellm-enable-message-redaction")
             .and_then(as_boolish)
             .unwrap_or(false)
@@ -110,14 +120,9 @@ pub fn should_redact_message_logging(
                 .get("x-litellm-enable-message-redaction")
                 .and_then(as_boolish)
                 .unwrap_or(false)
-        {
-            return true;
-        }
+    }) {
+        return true;
     }
-    if let Some(value) = dynamic.and_then(as_boolish) {
-        return value;
-    }
-    let _ = metadata;
     global
 }
 
