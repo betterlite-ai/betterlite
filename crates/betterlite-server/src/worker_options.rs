@@ -255,7 +255,7 @@ pub fn prometheus_directory(
     let path = configured.map_or_else(
         || {
             let root = temp_root(environment);
-            if root == PathBuf::from(".") {
+            if root.as_os_str() == "." {
                 PathBuf::from("litellm_prometheus_multiproc")
             } else {
                 root.join("litellm_prometheus_multiproc")
