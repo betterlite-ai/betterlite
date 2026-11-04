@@ -73,6 +73,19 @@ use rstest::rstest;
     "\u{e9}\u{c9}",
     false
 )]
+#[case::wide_escape_keeps_backreference_folded(
+    "regex",
+    "\\w(?a:(\u{e9})\\1)",
+    "x\u{e9}\u{c9}",
+    true
+)]
+#[case::wide_class_escape_keeps_backreference_folded(
+    "regex",
+    "[\\w](?a:(\u{e9})\\1)",
+    "x\u{e9}\u{c9}",
+    true
+)]
+#[case::wide_dot_keeps_backreference_folded("regex", ".(?a:(\u{e9})\\1)", "x\u{e9}\u{c9}", true)]
 #[case::class_literal_open("regex", "[[]", "[", true)]
 #[case::word_not_folded("regex", r"\w", "\u{345}", false)]
 #[case::nonword_not_folded("regex", r"\W", "\u{345}", true)]
