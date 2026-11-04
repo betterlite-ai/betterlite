@@ -9,7 +9,11 @@ call:
     metrics_port: null
     environment:
       TMPDIR: /tmp
+      TEMP: /tmp/secondary-temp-root
+      TMP: /tmp/tertiary-temp-root
 env:
   TMPDIR: /tmp
+  TEMP: /tmp/secondary-temp-root
+  TMP: /tmp/tertiary-temp-root
 compare:
   ignore: []

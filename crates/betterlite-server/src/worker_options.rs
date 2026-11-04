@@ -1,11 +1,18 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::env;
 use std::fs;
 use std::io;
 use std::path::PathBuf;
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+const TEMP_ROOT_ENV: [&str; 3] = ["TMPDIR", "TEMP", "TMP"];
+#[cfg(unix)]
+const DEFAULT_TEMP_ROOT: &str = "/tmp";
+#[cfg(windows)]
+const DEFAULT_TEMP_ROOT: &str = r"C:\TEMP";
+#[cfg(not(any(unix, windows)))]
+const DEFAULT_TEMP_ROOT: &str = ".";
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Backend {
     Hypercorn,
@@ -94,87 +101,122 @@ pub enum WorkerLaunchError {
     UnsupportedRuntime,
 }
 
+struct BackendPlan {
+    workers: u32,
+    timeout_seconds: Option<u32>,
+    ciphers: Option<String>,
+    preload: bool,
+    child_exit_cleanup: bool,
+    runtime_threads: Option<u32>,
+    max_requests: Option<u32>,
+    max_requests_jitter: Option<u32>,
+    warnings: Vec<String>,
+}
+
 pub fn launch_plan(options: &LaunchOptions) -> Result<LaunchPlan, WorkerLaunchError> {
-    validate_tls(options)?;
-    if options.workers > 1 {
+    let backend_plan = backend_plan(options)?;
+    if backend_plan.workers > 1 {
         return Err(WorkerLaunchError::UnsupportedRuntime);
     }
-    let workers = if options.backend == Backend::Granian {
-        options.workers.max(1)
-    } else {
-        options.workers
-    };
     let tls_enabled = options.certfile.is_some() && options.keyfile.is_some();
     Ok(LaunchPlan {
-        backend: options.backend.clone(),
+        backend: options.backend,
         bind: format!("{}:{}", options.host, options.port),
-        workers,
-        timeout_seconds: (options.backend == Backend::Gunicorn).then_some(600),
+        workers: backend_plan.workers,
+        timeout_seconds: backend_plan.timeout_seconds,
         tls: TlsPlan {
             enabled: tls_enabled,
-            ciphers: (options.backend == Backend::Hypercorn && tls_enabled)
-                .then(|| options.ciphers.clone())
-                .flatten(),
+            ciphers: backend_plan.ciphers,
         },
         process: ProcessPlan {
-            preload: options.backend == Backend::Gunicorn,
-            child_exit_cleanup: options.backend == Backend::Gunicorn
-                && options.prometheus_dir.is_some(),
+            preload: backend_plan.preload,
+            child_exit_cleanup: backend_plan.child_exit_cleanup,
         },
-        runtime_threads: (options.backend == Backend::Granian)
-            .then_some(options.runtime_threads)
-            .flatten(),
-        max_requests: (options.backend == Backend::Gunicorn)
-            .then_some(options.max_requests)
-            .flatten(),
-        max_requests_jitter: (options.backend == Backend::Gunicorn
-            && options.max_requests.is_some())
-        .then_some(options.max_requests_jitter)
-        .flatten(),
-        start_message: start_message(options, workers),
-        warnings: launch_warnings(options),
+        runtime_threads: backend_plan.runtime_threads,
+        max_requests: backend_plan.max_requests,
+        max_requests_jitter: backend_plan.max_requests_jitter,
+        start_message: start_message(options, backend_plan.workers),
+        warnings: backend_plan.warnings,
     })
 }
 
-fn validate_tls(options: &LaunchOptions) -> Result<(), WorkerLaunchError> {
-    if options.backend == Backend::Granian
-        && options.certfile.is_some() != options.keyfile.is_some()
-    {
-        return Err(WorkerLaunchError::IncompleteGranianTls);
+fn backend_plan(options: &LaunchOptions) -> Result<BackendPlan, WorkerLaunchError> {
+    match options.backend {
+        Backend::Hypercorn => Ok(hypercorn_plan(options)),
+        Backend::Granian => granian_plan(options),
+        Backend::Gunicorn => Ok(gunicorn_plan(options)),
     }
-    Ok(())
 }
 
-fn launch_warnings(options: &LaunchOptions) -> Vec<String> {
-    let mut warnings = Vec::new();
-    if options.backend == Backend::Granian {
-        if options.max_requests.is_some() {
-            warnings.push("--max_requests_before_restart is not supported by Granian".to_owned());
-        }
-        if options.ciphers.is_some() {
-            warnings.push("--ciphers is not applied when using --run_granian".to_owned());
-        }
+fn hypercorn_plan(options: &LaunchOptions) -> BackendPlan {
+    let tls_enabled = options.certfile.is_some() && options.keyfile.is_some();
+    BackendPlan {
+        workers: options.workers,
+        timeout_seconds: None,
+        ciphers: tls_enabled.then(|| options.ciphers.clone()).flatten(),
+        preload: false,
+        child_exit_cleanup: false,
+        runtime_threads: None,
+        max_requests: None,
+        max_requests_jitter: None,
+        warnings: Vec::new(),
     }
-    if options.backend == Backend::Gunicorn
-        && options.max_requests_jitter.is_some()
-        && options.max_requests.is_none()
-    {
+}
+
+fn granian_plan(options: &LaunchOptions) -> Result<BackendPlan, WorkerLaunchError> {
+    if options.certfile.is_some() != options.keyfile.is_some() {
+        return Err(WorkerLaunchError::IncompleteGranianTls);
+    }
+    let mut warnings = Vec::new();
+    if options.max_requests.is_some() {
+        warnings.push("--max_requests_before_restart is not supported by Granian".to_owned());
+    }
+    if options.ciphers.is_some() {
+        warnings.push("--ciphers is not applied when using --run_granian".to_owned());
+    }
+    Ok(BackendPlan {
+        workers: options.workers.max(1),
+        timeout_seconds: None,
+        ciphers: None,
+        preload: false,
+        child_exit_cleanup: false,
+        runtime_threads: options.runtime_threads,
+        max_requests: None,
+        max_requests_jitter: None,
+        warnings,
+    })
+}
+
+fn gunicorn_plan(options: &LaunchOptions) -> BackendPlan {
+    let mut warnings = Vec::new();
+    if options.max_requests_jitter.is_some() && options.max_requests.is_none() {
         warnings.push(
             "--max_requests_before_restart_jitter has no effect without --max_requests_before_restart"
                 .to_owned(),
         );
     }
-    warnings
+    BackendPlan {
+        workers: options.workers,
+        timeout_seconds: Some(600),
+        ciphers: None,
+        preload: true,
+        child_exit_cleanup: options.prometheus_dir.is_some(),
+        runtime_threads: None,
+        max_requests: options.max_requests,
+        max_requests_jitter: options
+            .max_requests_jitter
+            .filter(|_| options.max_requests.is_some()),
+        warnings,
+    }
 }
 
 fn start_message(options: &LaunchOptions, workers: u32) -> String {
     let metrics_suffix = options
         .metrics_port
         .map_or_else(String::new, |port| format!("; metrics port {port}"));
-    let worker_suffix = if options.backend == Backend::Hypercorn {
-        String::new()
-    } else {
-        format!(" with {workers} workers")
+    let worker_suffix = match options.backend {
+        Backend::Hypercorn => String::new(),
+        Backend::Granian | Backend::Gunicorn => format!(" with {workers} workers"),
     };
     format!(
         "Starting server on {}:{}{} using {:?}{}",
@@ -211,12 +253,7 @@ pub fn prometheus_directory(
         .get("PROMETHEUS_MULTIPROC_DIR")
         .or_else(|| environment.get("prometheus_multiproc_dir"));
     let path = configured.map_or_else(
-        || {
-            environment
-                .get("TMPDIR")
-                .map_or_else(env::temp_dir, PathBuf::from)
-                .join("litellm_prometheus_multiproc")
-        },
+        || temp_root(environment).join("litellm_prometheus_multiproc"),
         PathBuf::from,
     );
     let preparation = DirectoryPreparation {
@@ -237,4 +274,12 @@ pub fn prometheus_directory(
         })?;
     }
     Ok(Some(preparation))
+}
+
+fn temp_root(environment: &BTreeMap<String, String>) -> PathBuf {
+    let configured = TEMP_ROOT_ENV
+        .into_iter()
+        .filter_map(|key| environment.get(key))
+        .find(|path| !path.is_empty());
+    configured.map_or_else(|| PathBuf::from(DEFAULT_TEMP_ROOT), PathBuf::from)
 }

@@ -1,7 +1,6 @@
 use betterlite_server::worker_options::*;
 use rstest::rstest;
 use std::collections::BTreeMap;
-use std::env;
 use std::path::PathBuf;
 
 fn options(backend: Backend) -> LaunchOptions {
@@ -141,7 +140,7 @@ fn metrics_listener_requests_shared_samples_without_callback_configuration() {
     assert_eq!(
         result,
         Some(DirectoryPreparation {
-            path: env::temp_dir().join("litellm_prometheus_multiproc"),
+            path: PathBuf::from("/tmp/litellm_prometheus_multiproc"),
             action: "Auto-created".to_owned(),
             should_prepare: true,
         })
@@ -159,6 +158,35 @@ fn multiproc_directory_uses_lowercase_environment_variant() {
     assert_eq!(
         result.map(|value| value.path),
         Some(PathBuf::from("/var/tmp/prom"))
+    );
+}
+
+#[rstest]
+#[case::tmpdir("TMPDIR", "/tmp/root-tmpdir")]
+#[case::temp("TEMP", "/tmp/root-temp")]
+#[case::tmp("TMP", "/tmp/root-tmp")]
+fn multiproc_directory_checks_temp_root_environment(#[case] key: &str, #[case] path: &str) {
+    let environment = BTreeMap::from([(key.to_owned(), path.to_owned())]);
+    let result = prometheus_directory(1, None, Some(9000), &environment, DirectoryMode::Plan)
+        .expect("directory plan");
+    assert_eq!(
+        result.map(|value| value.path),
+        Some(PathBuf::from(path).join("litellm_prometheus_multiproc"))
+    );
+}
+
+#[test]
+fn multiproc_directory_prefers_tmpdir_then_temp_then_tmp() {
+    let environment = BTreeMap::from([
+        ("TMPDIR".to_owned(), "/tmp/root-tmpdir".to_owned()),
+        ("TEMP".to_owned(), "/tmp/root-temp".to_owned()),
+        ("TMP".to_owned(), "/tmp/root-tmp".to_owned()),
+    ]);
+    let result = prometheus_directory(1, None, Some(9000), &environment, DirectoryMode::Plan)
+        .expect("directory plan");
+    assert_eq!(
+        result.map(|value| value.path),
+        Some(PathBuf::from("/tmp/root-tmpdir").join("litellm_prometheus_multiproc"))
     );
 }
 
