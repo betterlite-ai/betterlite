@@ -275,11 +275,47 @@ fn schema_projection_keeps_snake_case_identity() {
 #[case::object("{}", 5)]
 #[case::fraction_text("\"2.9\"", 5)]
 #[case::spaced("\" 3 \"", 3)]
+#[case::overflow_with_invalid_suffix("\"99999999999999999999x\"", 5)]
+#[case::negative_overflow_with_invalid_suffix("\"-99999999999999999999x\"", 5)]
+#[case::tiny_positive("1e-100", 0)]
+#[case::tiny_negative("-1e-100", 0)]
 fn coercion_preserves_legacy_integers(#[case] value: &str, #[case] expected: i64) {
     assert_eq!(
         coerce_top_k(&serde_json::from_str(value).unwrap(), 5),
         expected
     );
+}
+
+#[rstest::rstest]
+#[case::positive_integer("9223372036854775808", i64::MAX, 20)]
+#[case::negative_integer("-9223372036854775809", i64::MIN, 0)]
+#[case::positive_exponent("1e20", i64::MAX, 20)]
+#[case::negative_exponent("-1e20", i64::MIN, 0)]
+#[case::positive_beyond_decimal("1e100", i64::MAX, 20)]
+#[case::negative_beyond_decimal("-1e100", i64::MIN, 0)]
+#[case::positive_text("\"99999999999999999999\"", i64::MAX, 20)]
+#[case::negative_text("\"-99999999999999999999\"", i64::MIN, 0)]
+#[tokio::test]
+async fn oversized_top_k_preserves_rank_limits(
+    #[case] input: &str,
+    #[case] expected_limit: i64,
+    #[case] expected_hits: usize,
+) {
+    let tools: Vec<MCPTool> = (0_u8..25_u8)
+        .map(|index| tool(&format!("tool_{index}"), "query"))
+        .collect();
+    let settings = MCPToolSearchSettings {
+        embedding_model: None,
+        top_k: 20,
+        similarity_threshold: 0.0_f64,
+        core_tools: Vec::new(),
+    };
+    let limit = coerce_top_k(&serde_json::from_str(input).unwrap(), 5);
+    let hits = rank_mcp_tools("query", &tools, limit, &settings, None)
+        .await
+        .unwrap();
+    assert_eq!(hits.len(), expected_hits);
+    assert_eq!(limit, expected_limit);
 }
 
 #[rstest::rstest]

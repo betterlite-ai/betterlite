@@ -32,6 +32,7 @@ pub(crate) enum Input {
     },
     Empty {
         tools: Vec<MCPTool>,
+        core_tools: Vec<String>,
     },
     Settings {
         config: MCPToolSearchSettings,
@@ -72,10 +73,12 @@ impl crate::helpers::Helper for Op {
                 query,
                 tools,
                 top_k,
-            } => return keyword_results(query, tools, *top_k),
+            } => return keyword_results(query, tools, *top_k, &[]),
             Input::Identity { tool, server_id } => return identity(tool, server_id),
             Input::Core { tools, core_tools } => return core_names(tools, core_tools),
-            Input::Empty { tools } => return keyword_results("", tools, 5),
+            Input::Empty { tools, core_tools } => {
+                return keyword_results("", tools, 5, core_tools);
+            }
             Input::Settings { config } => serde_json::to_value(config),
             Input::Definitions => serde_json::to_value(
                 [
@@ -148,11 +151,17 @@ fn ranked(
     serde_json::to_value(names).map_err(helper_error)
 }
 
-fn keyword_results(query: &str, tools: &[MCPTool], top_k: i64) -> crate::helpers::HelperResult {
+fn keyword_results(
+    query: &str,
+    tools: &[MCPTool],
+    top_k: i64,
+    core_tools: &[String],
+) -> crate::helpers::HelperResult {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .build()
         .map_err(helper_error)?;
-    let settings = MCPToolSearchSettings::default();
+    let mut settings = MCPToolSearchSettings::default();
+    settings.core_tools.extend_from_slice(core_tools);
     let results = runtime
         .block_on(search_mcp_tools(query, tools, top_k, &settings, None))
         .map_err(helper_error)?;

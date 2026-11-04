@@ -74,10 +74,11 @@ def core_tools(input_value: dict[str, Json]) -> Json:
 
 
 def empty_search(input_value: dict[str, Json]) -> Json:
+    config = MCPToolSearchSettings(core_tools=tuple(cast(list[str], input_value["core_tools"])))
     return cast(
         Json,
         asyncio.run(
-            search_mcp_tools("", tools_from(input_value), 5, MCPToolSearchSettings(), None)
+            search_mcp_tools("", tools_from(input_value), 5, config, None)
         ),
     )
 

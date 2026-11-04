@@ -1,3 +1,5 @@
+use std::num::IntErrorKind;
+
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
 use serde::de::IgnoredAny;
@@ -87,8 +89,31 @@ pub fn coerce_top_k(value: &TopKValue, default: i64) -> i64 {
                 let decimal = number.to_string().parse::<Decimal>().ok()?;
                 decimal.to_i64()
             })
-            .unwrap_or(default),
-        TopKValue::Text(text) => text.trim().parse().unwrap_or(default),
+            .or_else(|| number.as_f64()?.to_i64())
+            .unwrap_or_else(|| {
+                if number.to_string().starts_with('-') {
+                    i64::MIN
+                } else {
+                    i64::MAX
+                }
+            }),
+        TopKValue::Text(text) => {
+            let trimmed = text.trim();
+            trimmed.parse::<i64>().unwrap_or_else(|error| {
+                // Parsing can report overflow before reaching an invalid trailing character.
+                let digits = trimmed.trim_start_matches(['-', '+']);
+                if !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+                    return default;
+                }
+                if error.kind() == &IntErrorKind::PosOverflow {
+                    i64::MAX
+                } else if error.kind() == &IntErrorKind::NegOverflow {
+                    i64::MIN
+                } else {
+                    default
+                }
+            })
+        }
         TopKValue::Bool(flag) => i64::from(*flag),
         TopKValue::Other(_) => default,
     }
