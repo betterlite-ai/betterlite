@@ -70,10 +70,7 @@ async fn exchange_bounded(
             .headers()
             .get("sec-websocket-protocol")
             .map(|value| value.to_str().map(str::to_owned))
-            .transpose()
-            .map_err(|source| {
-                DriverError::Transport(format!("invalid negotiated protocol: {source}"))
-            })?,
+            .transpose()?,
     };
     let mut socket = Peer {
         stream,

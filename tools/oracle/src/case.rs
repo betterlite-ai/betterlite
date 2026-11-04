@@ -150,9 +150,9 @@ pub(crate) fn parse_case(path: &Path, text: &str) -> Result<LoadedCase, OracleEr
     let probe: CaseKind = serde_saphyr::from_str(text).map_err(parse_error)?;
     if probe.kind.as_deref() == Some("websocket") {
         let case = decode_ws_case(text.as_bytes(), &OracleLimits::default()).map_err(|source| {
-            OracleError::CaseInvalid {
+            OracleError::WebSocketCase {
                 path: path.to_owned(),
-                message: source.to_string(),
+                source,
             }
         })?;
         return Ok(LoadedCase::WebSocket(case));

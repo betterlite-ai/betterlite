@@ -97,12 +97,7 @@ fn attempt(
     runtime: &Runtime,
     first: bool,
 ) -> Result<bool, OracleError> {
-    let provider =
-        runtime
-            .block_on(start(case.clone()))
-            .map_err(|source| OracleError::ScenarioInvalid {
-                message: source.to_string(),
-            })?;
+    let provider = runtime.block_on(start(case.clone()))?;
     let path = config_path(root, case, &provider)?;
     let input = GatewayInput {
         options,
@@ -113,9 +108,7 @@ fn attempt(
     let mut gateway = start_gateway(&input, first)?;
     let result = runtime.block_on(capture(case, provider, &gateway.base_url));
     let stopped = gateway.stop();
-    let (observed, upstream) = result.map_err(|source| OracleError::ScenarioInvalid {
-        message: source.to_string(),
-    })?;
+    let (observed, upstream) = result?;
     stopped?;
     let mismatch = compare_transcript(case, &observed).err();
     if let Some(pointer) = mismatch {

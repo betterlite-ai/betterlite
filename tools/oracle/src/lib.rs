@@ -42,9 +42,19 @@ use betterlite_postgres_fixture::error::FixtureError;
 use case::browser_flow::PlaceholderError;
 use http::browser_flow::BrowserFlowError;
 use thiserror::Error;
+use websocket_driver::DriverError;
+use websocket_oracle::decode::DecodeError;
 
 #[derive(Debug, Error)]
 pub enum OracleError {
+    #[error("WebSocket driver failed: {0}")]
+    WebSocket(#[from] DriverError),
+    #[error("invalid WebSocket case {path}: {source}")]
+    WebSocketCase {
+        path: PathBuf,
+        #[source]
+        source: DecodeError,
+    },
     #[error(transparent)]
     GatewayPort(#[from] paths::PortError),
     #[error(transparent)]

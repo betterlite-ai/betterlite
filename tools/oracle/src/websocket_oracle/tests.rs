@@ -218,8 +218,7 @@ fn service_driver_isolation(#[case] tag: ServiceTag, #[case] response: &str) {
 fn adapter(args: &Arguments, response: &str) -> Result<TranscriptObservation, DriverError> {
     let runtime = Builder::new_current_thread().enable_all().build()?;
     runtime.block_on(async {
-        let mut case = decode_ws_case(valid().as_bytes(), &OracleLimits::default())
-            .map_err(|error| DriverError::Transport(error.to_string()))?;
+        let mut case = decode_ws_case(valid().as_bytes(), &OracleLimits::default())?;
         case.frames = args.frames.clone();
         let mut script = case.clone();
         script.frames[1].text = Some(response.to_owned());

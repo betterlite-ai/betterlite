@@ -4,9 +4,10 @@ use std::io;
 use tokio::{task::JoinError, time::error::Elapsed};
 use tokio_tungstenite::tungstenite::{
     Error,
-    http::header::{InvalidHeaderName, InvalidHeaderValue},
+    http::header::{InvalidHeaderName, InvalidHeaderValue, ToStrError},
 };
 
+use crate::websocket_oracle::decode::DecodeError;
 use crate::websocket_oracle::{Close, Frame, WebSocketCase, close_matches, direction_matches};
 
 mod close;
@@ -46,6 +47,10 @@ pub fn compare_transcript(
 
 #[derive(Debug, thiserror::Error)]
 pub enum DriverError {
+    #[error("WebSocket fixture: {0}")]
+    Decode(#[from] DecodeError),
+    #[error("invalid header text: {0}")]
+    HeaderText(#[from] ToStrError),
     #[error("WebSocket transport: {0}")]
     Socket(#[source] Box<Error>),
     #[error("WebSocket I/O: {0}")]
