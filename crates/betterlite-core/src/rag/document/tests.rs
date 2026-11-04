@@ -446,6 +446,22 @@ fn pdf_line_move_t_star_uses_text_leading() {
     "BT /F1 12 Tf 0 1 -1 1 100 700 Tm (Hello) Tj 20 0 Td (World) Tj ET",
     "Hello\nWorld"
 )]
+#[case::orientation_changes_axis(
+    "BT /F1 12 Tf 100 700 Td (Hello) Tj 0 1 -1 0 100 700 Tm (World) Tj ET",
+    "HelloWorld"
+)]
+#[case::orientation_resets_span(
+    "BT /F1 12 Tf 100 700 Td (Hello) Tj 0 1 -1 0 109 700 Tm (World) Tj 0 1 -1 0 99 700 Tm (Again) Tj ET",
+    "HelloWorld\nAgain"
+)]
+#[case::newline_resets_span(
+    "BT /F1 12 Tf 100 700 Td (Hello) Tj 0 -20 Td 0 -5 Td (World) Tj 0 10 Td (Again) Tj ET",
+    "Hello\nWorld\nAgain"
+)]
+#[case::empty_text_resets_span(
+    "BT /F1 12 Tf 100 700 Td () Tj 0 -5 Td (Hello) Tj 0 10 Td (World) Tj ET",
+    "Hello\nWorld"
+)]
 #[case::threshold_boundary(
     "BT /F1 5 Tf 100 700 Td (Hello) Tj 0 -4 Td (World) Tj ET",
     "HelloWorld"
@@ -461,14 +477,18 @@ fn pdf_line_move_tracks_text_state(#[case] stream: &str, #[case] expected: &str)
     );
 }
 
-#[test]
-fn pdf_retains_lopdf_tj_spacing() {
+#[rstest]
+#[case::below_threshold("-101", "Hello World ")]
+#[case::at_threshold("-100", "HelloWorld ")]
+#[case::above_threshold("-99", "HelloWorld ")]
+#[case::zero("0", "HelloWorld ")]
+#[case::positive("99", "HelloWorld ")]
+#[case::real_offset("-101.5", "HelloWorld ")]
+fn pdf_retains_lopdf_tj_spacing(#[case] offset: &str, #[case] expected: &str) {
+    let stream = format!("BT /F1 12 Tf [(Hello) {offset} (World)] TJ ET");
     assert_eq!(
-        extract_text_from_pdf(&pdf_with_stream(
-            "BT /F1 12 Tf [(Hello) -101 (World)] TJ ET"
-        ))
-        .as_deref(),
-        Some("Hello World ")
+        extract_text_from_pdf(&pdf_with_stream(&stream)).as_deref(),
+        Some(expected)
     );
 }
 
