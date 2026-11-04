@@ -5,13 +5,13 @@ use std::path::Path;
 
 use crate::ids::{check_id_problem, task_id_problem};
 use crate::spec::agents::Agents;
-use crate::spec::backlog::{Backlog, BacklogEntry};
+use crate::spec::backlog::{Backlog, BacklogEntry, Status};
 use crate::spec::catalog::Catalog;
 use crate::spec::task::Task;
 use crate::validate::agents::runner_problems;
 use crate::validate::command_args::argument_problems;
 use crate::validate::needs::{self, needed_paths};
-use crate::validate::task::{banned_tooling, scope_root_problems};
+use crate::validate::task::{banned_tooling, crate_root_problems, scope_root_problems};
 use crate::validate::validate;
 use crate::yaml::read_yaml;
 
@@ -157,6 +157,47 @@ fn scope_paths_stay_under_the_scope_roots_or_existing_root_entries() {
             "{problem}"
         );
     }
+}
+
+#[test]
+fn todo_scopes_never_cover_an_existing_crate_root() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut task: Task =
+        read_yaml(&root.join(".development/tasks/B860-postgres-http.yaml")).unwrap();
+    let mut entry: BacklogEntry = serde_saphyr::from_str(
+        "{id: B860, milestone: M0, title: Probe, status: todo, depends_on: [], file: null, covers: [], parent: null, split_from: null, resolution: null, superseded_by: null, blocked_reason: null, pr: null}",
+    )
+    .unwrap();
+    for path in [
+        "crates/betterlite-config/**",
+        "crates/betterlite-config/src/**",
+        "crates/betterlite-config/src/lib.rs",
+        "crates/betterlite-core/src/{lib,dispatch}.rs",
+        "crates/betterlite/src/main.rs",
+    ] {
+        task.scope.paths = vec![path.to_owned()];
+        let problems = crate_root_problems(&root, &entry, &task);
+        assert_eq!(problems.len(), 1, "{path}: {problems:?}");
+    }
+    task.scope.paths = [
+        "crates/betterlite-config/src/sections/tls.rs",
+        "crates/betterlite-config/src/sections/tls/**",
+        "crates/betterlite-new/**",
+        "crates/betterlite-config/Cargo.toml",
+        "tools/oracle/src/lib.rs",
+    ]
+    .map(str::to_owned)
+    .to_vec();
+    assert_eq!(
+        crate_root_problems(&root, &entry, &task),
+        Vec::<String>::new()
+    );
+    task.scope.paths = vec!["crates/betterlite-config/**".to_owned()];
+    entry.status = Status::Done;
+    assert_eq!(
+        crate_root_problems(&root, &entry, &task),
+        Vec::<String>::new()
+    );
 }
 
 #[test]
