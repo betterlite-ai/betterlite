@@ -1,21 +1,6 @@
-use std::collections::BTreeMap;
-use std::path::PathBuf;
 use std::str::FromStr;
 
 use thiserror::Error;
-
-pub trait EnvironmentLookup {
-    fn lookup(&self, name: &str) -> Option<String>;
-    fn system_home(&self) -> Option<PathBuf> {
-        None
-    }
-}
-
-impl EnvironmentLookup for BTreeMap<String, String> {
-    fn lookup(&self, name: &str) -> Option<String> {
-        self.get(name).cloned()
-    }
-}
 
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
 pub enum EnvError {

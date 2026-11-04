@@ -1,12 +1,11 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 
 use rstest::rstest;
 
-use crate::{EnvironmentLookup, flag, number};
+use crate::{flag, number};
 
 #[rstest]
 #[case::true_word(" TRUE ", Some(true))]
@@ -26,10 +25,10 @@ fn reads_flags(#[case] text: &str, #[case] expected: Option<bool>) {
 #[rstest]
 #[case::empty("", None)]
 #[case::whitespace(" \t", None)]
-#[case::decimal(" -1.25e2 ", Some(-125.0))]
-#[case::positive("+3.5", Some(3.5))]
-#[case::exponent("1E3", Some(1000.0))]
-#[case::negative_zero("-0", Some(-0.0))]
+#[case::decimal(" -1.25e2 ", Some(-125.0_f64))]
+#[case::positive("+3.5", Some(3.5_f64))]
+#[case::exponent("1E3", Some(1_000.0_f64))]
+#[case::negative_zero("-0", Some(-0.0_f64))]
 fn reads_numbers(#[case] text: &str, #[case] expected: Option<f64>) {
     assert_eq!(number::<f64>("LIMIT", text).unwrap(), expected);
 }
@@ -63,19 +62,11 @@ fn rejects_invalid_values_without_disclosing_them(#[case] text: &str) {
 fn numbers_use_the_target_type() {
     assert_eq!(number::<i64>("SIGNED", " -42 ").unwrap(), Some(-42));
     assert_eq!(number::<u32>("UNSIGNED", " +42 ").unwrap(), Some(42));
-    assert!(number::<u32>("UNSIGNED", "-1").is_err());
-    assert!(number::<i64>("SIGNED", "1.5").is_err());
-    assert!(number::<i64>("SIGNED", "1e3").is_err());
-    assert!(number::<u32>("UNSIGNED", "4294967296").is_err());
+    number::<u32>("UNSIGNED", "-1").unwrap_err();
+    number::<i64>("SIGNED", "1.5").unwrap_err();
+    number::<i64>("SIGNED", "1e3").unwrap_err();
+    number::<u32>("UNSIGNED", "4294967296").unwrap_err();
     assert_eq!(number::<i64>("SIGNED", "").unwrap(), None);
-}
-
-#[test]
-fn map_lookup_distinguishes_missing_and_empty() {
-    let environment = BTreeMap::from([("EMPTY".to_owned(), String::new())]);
-    assert_eq!(environment.lookup("EMPTY"), Some(String::new()));
-    assert_eq!(environment.lookup("MISSING"), None);
-    assert_eq!(environment.system_home(), None);
 }
 
 #[rstest]

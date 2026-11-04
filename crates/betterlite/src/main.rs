@@ -130,6 +130,7 @@ const fn config_error_category(error: &ConfigError) -> &'static str {
         ConfigError::InvalidFloat { .. } => "invalid_float",
         ConfigError::InvalidInteger { .. } => "invalid_integer",
         ConfigError::InvalidScalar { .. } => "invalid_scalar",
+        ConfigError::Environment { .. } => "environment",
     }
 }
 fn log_config_error(error: &ConfigError, location: &Path) {
@@ -154,7 +155,8 @@ fn log_config_error(error: &ConfigError, location: &Path) {
         ConfigError::Yaml { .. }
         | ConfigError::InvalidFloat { .. }
         | ConfigError::InvalidInteger { .. }
-        | ConfigError::InvalidScalar { .. } => {
+        | ConfigError::InvalidScalar { .. }
+        | ConfigError::Environment { .. } => {
             tracing::error!(
                 category = config_error_category(error),
                 location = %location.display(),
