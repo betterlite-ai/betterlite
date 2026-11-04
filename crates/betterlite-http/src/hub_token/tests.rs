@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use secrecy::ExposeSecret as _;
 
 use super::{HubToken, HubTokenResolver};
