@@ -27,7 +27,7 @@ pub fn native_sqlstate<E>(error: &NativeDbError<E>) -> Option<SqlState> {
 
 #[must_use]
 pub fn classify_sqlstate(code: &SqlState) -> NativeFault {
-    if *code == SqlState::T_R_DEADLOCK_DETECTED {
+    if *code == SqlState::T_R_DEADLOCK_DETECTED || *code == SqlState::T_R_SERIALIZATION_FAILURE {
         NativeFault::Deadlock
     } else if *code == SqlState::READ_ONLY_SQL_TRANSACTION {
         NativeFault::ReadOnlyTransaction
