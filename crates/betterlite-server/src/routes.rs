@@ -21,17 +21,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tower::ServiceBuilder;
 use tower::timeout::TimeoutLayer;
-pub(crate) fn router<Auth>(
-    auth: Auth,
+pub(crate) fn router(
+    auth: AuthSettings,
     shutting_down: Arc<AtomicBool>,
     model_list: &[ModelDeployment],
     chat: Router,
     embeddings: Router,
-) -> Router
-where
-    AuthSettings: From<Auth>,
-{
-    let settings = AuthSettings::from(auth);
+) -> Router {
     let timeout_layers = ServiceBuilder::new()
         .layer(HandleErrorLayer::new(|_: tower::BoxError| async {
             json_error(
@@ -61,7 +57,7 @@ where
         .merge(embeddings);
     application
         .layer(middleware::from_fn_with_state(
-            settings,
+            auth,
             auth_route_patterns::stage,
         ))
         .layer(middleware::from_fn(stage))

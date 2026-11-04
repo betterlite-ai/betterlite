@@ -18,15 +18,6 @@ pub(crate) struct AuthSettings {
     pub routes: Settings,
 }
 
-impl From<Option<SecretString>> for AuthSettings {
-    fn from(master_key: Option<SecretString>) -> Self {
-        Self {
-            master_key,
-            routes: Settings::default(),
-        }
-    }
-}
-
 pub(crate) async fn stage(
     State(settings): State<AuthSettings>,
     request: Request,
