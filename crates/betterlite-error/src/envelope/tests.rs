@@ -143,3 +143,6 @@ fn error_normalization_tests_behavior(
     );
     assert!(!headers.contains_key("llm_provider-retry-after"));
 }
+
+#[path = "call_id/tests.rs"]
+mod call_id;
