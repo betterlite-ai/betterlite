@@ -2,6 +2,15 @@ use crate::arguments::json::{Json, Object};
 use crate::message_content::{Content, Message};
 
 const CONTINUE_TEXT: &str = "Please continue.";
+pub const MAX_COMPLETION_MESSAGES: usize = 1024;
+
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum MessageNormalizationError {
+    #[error("messages exceeds the maximum of {limit}")]
+    InputTooLong { limit: usize },
+    #[error("normalized messages exceeds the maximum of {limit}")]
+    OutputTooLong { limit: usize },
+}
 
 // System messages do not establish a turn role.
 #[must_use]
@@ -38,14 +47,18 @@ const fn json_list_is_nonempty(value: &Json) -> bool {
 }
 
 // Clone before insertion so provider transforms never mutate shared request input.
-#[must_use]
 pub fn insert_user_continue_message(
     messages: &[Message],
     custom: Option<&Message>,
     ensure: bool,
-) -> Vec<Message> {
+) -> Result<Vec<Message>, MessageNormalizationError> {
+    if messages.len() > MAX_COMPLETION_MESSAGES {
+        return Err(MessageNormalizationError::InputTooLong {
+            limit: MAX_COMPLETION_MESSAGES,
+        });
+    }
     if messages.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let placeholder = custom.cloned().unwrap_or_else(|| Message {
         role: "user".to_owned(),
@@ -53,56 +66,73 @@ pub fn insert_user_continue_message(
         name: None,
         provider_specific_fields: Object::new(),
     });
-    let mut result = messages.to_vec();
-    let mut insertion_points = Vec::new();
-    if messages
-        .first()
-        .is_some_and(|message| message.role == "assistant")
-    {
-        insertion_points.push(0);
+    let result = user_continuation_pass(messages, &placeholder, ensure);
+    if result.len() > MAX_COMPLETION_MESSAGES {
+        return Err(MessageNormalizationError::OutputTooLong {
+            limit: MAX_COMPLETION_MESSAGES,
+        });
     }
-    insertion_points
-        .extend((1..messages.len()).filter(|index| assistant_needs_user(messages, *index)));
+    Ok(result)
+}
+
+fn user_continuation_pass(
+    messages: &[Message],
+    placeholder: &Message,
+    ensure: bool,
+) -> Vec<Message> {
+    let mut result = Vec::with_capacity(messages.len().saturating_mul(2).saturating_add(1));
+    let mut previous_counted_role = None;
+    let mut previous_role = None;
+    for (index, message) in messages.iter().enumerate() {
+        let first_assistant = index == 0 && message.role == "assistant";
+        if first_assistant
+            || assistant_needs_user(
+                message,
+                previous_counted_role,
+                previous_role == Some("assistant"),
+            )
+        {
+            result.push(placeholder.clone());
+        }
+        result.push(message.clone());
+        if counts_for_alternation(message) {
+            previous_counted_role = Some(message.role.as_str());
+        }
+        previous_role = Some(message.role.as_str());
+    }
     if ensure
         && messages
             .last()
             .is_some_and(|message| message.role == "assistant")
     {
-        insertion_points.push(messages.len());
-    }
-    for index in insertion_points.into_iter().rev() {
-        result.insert(index, placeholder.clone());
+        result.push(placeholder.clone());
     }
     result
 }
 
-fn assistant_needs_user(messages: &[Message], index: usize) -> bool {
-    let Some(current) = messages.get(index) else {
-        return false;
-    };
-    if !counts_for_alternation(current) || current.role != "assistant" {
-        return false;
-    }
-    let previous = messages.iter().take(index).next_back();
-    let directly_after_assistant = previous.is_some_and(|message| message.role == "assistant");
-    let previous_counted_assistant = messages
-        .iter()
-        .take(index)
-        .rev()
-        .find(|message| counts_for_alternation(message))
-        .is_some_and(|message| message.role == "assistant");
-    directly_after_assistant || previous_counted_assistant
+fn assistant_needs_user(
+    message: &Message,
+    previous_counted_role: Option<&str>,
+    directly_after_assistant: bool,
+) -> bool {
+    counts_for_alternation(message)
+        && message.role == "assistant"
+        && (directly_after_assistant || previous_counted_role == Some("assistant"))
 }
 
 // Assistant placeholders only belong between adjacent counted user turns.
-#[must_use]
 pub fn insert_assistant_continuation(
     messages: &[Message],
     custom: Option<&Message>,
     ensure: bool,
-) -> Vec<Message> {
+) -> Result<Vec<Message>, MessageNormalizationError> {
+    if messages.len() > MAX_COMPLETION_MESSAGES {
+        return Err(MessageNormalizationError::InputTooLong {
+            limit: MAX_COMPLETION_MESSAGES,
+        });
+    }
     if !ensure || messages.len() <= 1 {
-        return messages.to_vec();
+        return Ok(messages.to_vec());
     }
     let placeholder = custom.cloned().unwrap_or_else(|| Message {
         role: "assistant".to_owned(),
@@ -111,38 +141,41 @@ pub fn insert_assistant_continuation(
         provider_specific_fields: Object::new(),
     });
     let mut previous_counted_user = false;
-    let mut insertions = Vec::new();
-    for (index, message) in messages.iter().enumerate() {
+    let mut result = Vec::with_capacity(messages.len().saturating_mul(2));
+    for message in messages {
         let counted_user = counts_for_alternation(message) && message.role == "user";
         if counted_user && previous_counted_user {
-            insertions.push(index);
+            result.push(placeholder.clone());
         }
+        result.push(message.clone());
         if counts_for_alternation(message) {
             previous_counted_user = message.role == "user";
         }
     }
-    messages
-        .iter()
-        .enumerate()
-        .flat_map(|(index, message)| {
-            let inserted = insertions.contains(&index).then(|| placeholder.clone());
-            [inserted, Some(message.clone())].into_iter().flatten()
-        })
-        .collect()
+    if result.len() > MAX_COMPLETION_MESSAGES {
+        return Err(MessageNormalizationError::OutputTooLong {
+            limit: MAX_COMPLETION_MESSAGES,
+        });
+    }
+    Ok(result)
 }
 
 // Compose user and assistant insertion in LiteLLM's specified order.
-#[must_use]
 pub fn get_completion_messages(
     messages: &[Message],
     assistant: Option<&Message>,
     user: Option<&Message>,
     ensure: bool,
-) -> Vec<Message> {
+) -> Result<Vec<Message>, MessageNormalizationError> {
     if !ensure {
-        return messages.to_vec();
+        if messages.len() > MAX_COMPLETION_MESSAGES {
+            return Err(MessageNormalizationError::InputTooLong {
+                limit: MAX_COMPLETION_MESSAGES,
+            });
+        }
+        return Ok(messages.to_vec());
     }
-    let with_users = insert_user_continue_message(messages, user, ensure);
+    let with_users = insert_user_continue_message(messages, user, ensure)?;
     insert_assistant_continuation(&with_users, assistant, ensure)
 }
 

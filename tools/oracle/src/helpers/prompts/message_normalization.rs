@@ -22,21 +22,23 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let result = match input.operation.as_str() {
-            "detect_first_expected_role" => to_value(detect_first_expected_role(&input.messages)),
-            "get_completion_messages" => to_value(get_completion_messages(
-                &input.messages,
-                input.assistant_continue_message.as_ref(),
-                input.user_continue_message.as_ref(),
-                input.ensure_alternating_roles.unwrap_or(true),
-            )),
-            operation => {
-                return Err(classified_error(format!(
-                    "unsupported operation {operation}"
-                )));
+        match input.operation.as_str() {
+            "detect_first_expected_role" => to_value(detect_first_expected_role(&input.messages))
+                .map_err(|error| classified_error(error.to_string())),
+            "get_completion_messages" => {
+                let messages = get_completion_messages(
+                    &input.messages,
+                    input.assistant_continue_message.as_ref(),
+                    input.user_continue_message.as_ref(),
+                    input.ensure_alternating_roles.unwrap_or(true),
+                )
+                .map_err(|error| classified_error(error.to_string()))?;
+                to_value(messages).map_err(|error| classified_error(error.to_string()))
             }
-        };
-        result.map_err(|error| classified_error(error.to_string()))
+            operation => Err(classified_error(format!(
+                "unsupported operation {operation}"
+            ))),
+        }
     }
 }
 

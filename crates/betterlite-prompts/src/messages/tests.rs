@@ -7,12 +7,16 @@ use super::{
 use crate::arguments::json::{Json, Object};
 use crate::message_content::{Content, Message};
 use rstest::rstest;
+use std::iter::repeat_n;
 
 enum Expected {
     Role(Option<&'static str>),
     Messages(Vec<Message>, bool),
     UserMessages(Vec<Message>, bool),
     AssistantMessages(Vec<Message>, bool),
+    CustomMessages(Vec<Message>),
+    InputLimit,
+    OutputLimit,
 }
 
 fn message(role: &str, content: Option<&str>, fields: Object) -> Message {
@@ -67,6 +71,9 @@ fn signed_assistant() -> Message {
 #[case::empty_tool_call_assistant_counts_across_tool_messages(vec![plain("assistant", Some("first")), plain("tool", None), empty_tool_call_assistant(), plain("tool", None), plain("assistant", Some("last"))], Expected::UserMessages(vec![plain("user", Some("Please continue.")), plain("assistant", Some("first")), plain("tool", None), plain("user", Some("Please continue.")), empty_tool_call_assistant(), plain("tool", None), plain("user", Some("Please continue.")), plain("assistant", Some("last"))], false))]
 #[case::assistant_continuation_for_consecutive_users(vec![plain("user", Some("first")), plain("user", Some("second"))], Expected::AssistantMessages(vec![plain("user", Some("first")), plain("assistant", Some("Please continue.")), plain("user", Some("second"))], true))]
 #[case::assistant_continuation_disabled(vec![plain("user", Some("first")), plain("user", Some("second"))], Expected::AssistantMessages(vec![plain("user", Some("first")), plain("user", Some("second"))], false))]
+#[case::custom_continuations(vec![plain("assistant", Some("start")), plain("user", Some("first")), plain("user", Some("second"))], Expected::CustomMessages(vec![plain("user", Some("go on")), plain("assistant", Some("start")), plain("user", Some("first")), plain("assistant", Some("go on")), plain("user", Some("second"))]))]
+#[case::input_limit_returns_named_error(vec![], Expected::InputLimit)]
+#[case::output_limit_returns_named_error(vec![], Expected::OutputLimit)]
 fn message_normalization_message_tests_behavior(
     #[case] input: Vec<Message>,
     #[case] expected: Expected,
@@ -77,21 +84,48 @@ fn message_normalization_message_tests_behavior(
         }
         Expected::Messages(expected_messages, ensure) => {
             let original = input.clone();
-            let actual = get_completion_messages(&input, None, None, ensure);
+            let actual = get_completion_messages(&input, None, None, ensure).unwrap();
             assert_eq!(actual, expected_messages);
             assert_eq!(input, original);
         }
         Expected::UserMessages(expected_messages, ensure) => {
             let original = input.clone();
-            let actual = insert_user_continue_message(&input, None, ensure);
+            let actual = insert_user_continue_message(&input, None, ensure).unwrap();
             assert_eq!(actual, expected_messages);
             assert_eq!(input, original);
         }
         Expected::AssistantMessages(expected_messages, ensure) => {
             let original = input.clone();
-            let actual = insert_assistant_continuation(&input, None, ensure);
+            let actual = insert_assistant_continuation(&input, None, ensure).unwrap();
             assert_eq!(actual, expected_messages);
             assert_eq!(input, original);
+        }
+        Expected::CustomMessages(expected_messages) => {
+            let user = plain("user", Some("go on"));
+            let assistant = plain("assistant", Some("go on"));
+            let actual =
+                get_completion_messages(&input, Some(&assistant), Some(&user), true).unwrap();
+            assert_eq!(actual, expected_messages);
+        }
+        Expected::InputLimit => {
+            let oversized = repeat_n(plain("user", None), super::MAX_COMPLETION_MESSAGES + 1)
+                .collect::<Vec<_>>();
+            assert_eq!(
+                get_completion_messages(&oversized, None, None, true).unwrap_err(),
+                super::MessageNormalizationError::InputTooLong {
+                    limit: super::MAX_COMPLETION_MESSAGES
+                }
+            );
+        }
+        Expected::OutputLimit => {
+            let oversized =
+                repeat_n(plain("user", None), super::MAX_COMPLETION_MESSAGES).collect::<Vec<_>>();
+            assert_eq!(
+                get_completion_messages(&oversized, None, None, true).unwrap_err(),
+                super::MessageNormalizationError::OutputTooLong {
+                    limit: super::MAX_COMPLETION_MESSAGES
+                }
+            );
         }
     }
 }
