@@ -1,5 +1,7 @@
 pub(crate) mod chat;
+pub(crate) mod completions;
 pub(crate) mod embeddings;
+pub(crate) mod moderations;
 pub(crate) mod prompts;
 
 use crate::auth::auth_route_patterns::{self, AuthSettings};

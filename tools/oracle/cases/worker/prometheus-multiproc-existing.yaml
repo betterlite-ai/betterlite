@@ -1,0 +1,14 @@
+kind: helper
+name: prometheus-multiproc-existing
+call:
+  b4177:
+    function: prometheus_directory
+    workers: 2
+    settings:
+      callbacks: prometheus
+    metrics_port: null
+    environment:
+      PROMETHEUS_MULTIPROC_DIR: /tmp/metrics-existing
+env: {}
+compare:
+  ignore: []

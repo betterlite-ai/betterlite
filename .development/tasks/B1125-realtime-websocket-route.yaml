@@ -61,8 +61,6 @@ scope:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/realtime_websocket_route.rs
   - crates/betterlite-core/src/api/realtime_websocket_route/**
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - tools/oracle/cases/websocket/realtime-websocket-route/**

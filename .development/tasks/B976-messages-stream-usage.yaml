@@ -17,8 +17,6 @@ description: >-
   720 total. Place tests under api::messages_stream_usage.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/messages_stream_usage.rs
   - crates/betterlite-core/src/api/messages_stream_usage/**
   - tools/oracle/src/helpers/core_ops/messages_stream_usage.rs

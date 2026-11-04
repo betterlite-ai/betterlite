@@ -16,8 +16,6 @@ description: >-
   120 adapters and 30 wiring, 510 total.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/messages_compaction.rs
   - crates/betterlite-core/src/api/messages_compaction/**
   - tools/oracle/src/helpers/core_ops/context_edit_dispatch.rs
