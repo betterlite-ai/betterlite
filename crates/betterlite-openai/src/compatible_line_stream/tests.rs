@@ -1,9 +1,10 @@
 #![cfg(test)]
+use super::wire::Usage;
 use super::{
     Mode, Outcome, ReceiveError, StreamError, decode_legacy_compatible_line, receive_failure,
 };
 use rstest::rstest;
-use serde_json::json;
+use serde_json::Value;
 use std::error::Error as _;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -88,8 +89,12 @@ fn ordinary_usage_has_model_defaults() {
         panic!("chunk")
     };
     assert_eq!(
-        serde_json::to_value(chunk.usage.unwrap()).unwrap(),
-        json!({"prompt_tokens":0_i64,"completion_tokens":3_i64,"total_tokens":0_i64})
+        chunk.usage.unwrap(),
+        Usage {
+            prompt_tokens: 0,
+            completion_tokens: 3,
+            total_tokens: 0,
+        }
     );
 }
 
@@ -170,13 +175,13 @@ fn projects_complete_tool_and_usage_without_provider_fields() {
         r#"data:{"choices":[{"index":9,"delta":{"content":"hi","role":"assistant","tool_calls":[{"id":"t","index":4,"function":{"name":"f","arguments":"{}"}},{"function":{"arguments":"ignored"}}]},"finish_reason":"stop"},{"delta":{"content":"ignored"}}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3,"extra":100}}"#,
         Mode::Async,
     );
-    assert_eq!(
-        serde_json::to_value(outcome).unwrap(),
-        json!({"kind":"chunk","value":{
-            "text":"hi","tool_use":{"id":"t","type":"function","function":{"name":"f","arguments":"{}"},"index":4_i64},
-            "is_finished":true,"finish_reason":"stop","usage":{"prompt_tokens":1_i64,"completion_tokens":2_i64,"total_tokens":3_i64},"index":0_u32
-        }})
-    );
+    let expected = serde_json::from_str::<Value>(
+        r#"{"kind":"chunk","value":{
+            "text":"hi","tool_use":{"id":"t","type":"function","function":{"name":"f","arguments":"{}"},"index":4},
+            "is_finished":true,"finish_reason":"stop","usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3},"index":0
+        }}"#,
+    ).unwrap();
+    assert_eq!(serde_json::to_value(outcome).unwrap(), expected);
 }
 
 #[test]
