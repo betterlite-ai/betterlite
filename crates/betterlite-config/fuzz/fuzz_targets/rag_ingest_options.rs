@@ -4,5 +4,5 @@ use betterlite_config::rag::document::ingest::RAGIngestOptions;
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
-    let _ = serde_json::from_slice::<RAGIngestOptions>(data);
+    let _outcome = serde_json::from_slice::<RAGIngestOptions>(data);
 });
