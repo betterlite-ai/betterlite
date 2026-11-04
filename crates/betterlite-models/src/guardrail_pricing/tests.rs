@@ -11,8 +11,17 @@ use super::{
 use crate::catalog::{ModelCatalog, UnknownFields};
 use rstest::rstest;
 use rust_decimal::Decimal;
+use serde_json::value::RawValue;
 use std::collections::BTreeMap;
 use std::str::FromStr as _;
+
+#[derive(serde::Serialize)]
+struct CatalogFixture<'price> {
+    litellm_provider: &'static str,
+    mode: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    guardrail_cost_per_unit: Option<&'price RawValue>,
+}
 
 fn decimal(text: &str) -> Decimal {
     Decimal::from_str(text).expect("a fixture decimal parses")
@@ -29,18 +38,22 @@ fn catalog(prices: &[(&str, &str)]) -> ModelCatalog {
     let entries = prices
         .iter()
         .map(|(name, cost)| {
-            let mut entry = serde_json::json!({
-                "litellm_provider": "bedrock",
-                "mode": "guardrail",
-            });
-            if *cost != "__missing" {
-                entry["guardrail_cost_per_unit"] =
-                    serde_json::from_str::<serde_json::Value>(cost).expect("price map parses");
-            }
-            ((*name).to_owned(), entry)
+            let guardrail_cost_per_unit = if *cost == "__missing" {
+                None
+            } else {
+                Some(serde_json::from_str(cost).expect("price map parses"))
+            };
+            (
+                *name,
+                CatalogFixture {
+                    litellm_provider: "bedrock",
+                    mode: "guardrail",
+                    guardrail_cost_per_unit,
+                },
+            )
         })
-        .collect::<serde_json::Map<String, serde_json::Value>>();
-    let source = serde_json::Value::Object(entries).to_string();
+        .collect::<BTreeMap<_, _>>();
+    let source = serde_json::to_string(&entries).expect("fixture catalog serializes");
     ModelCatalog::parse(source.as_bytes(), UnknownFields::Warn).expect("fixture catalog parses")
 }
 

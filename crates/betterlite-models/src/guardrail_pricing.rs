@@ -40,10 +40,10 @@ fn bedrock_guardrail_pricing(
         let Some(entry) = catalog.entries.get(canonical.as_ref()) else {
             continue;
         };
-        match entry.prices.guardrail_units.as_ref() {
-            Some(prices) => return Some(prices.clone()),
-            None => tracing::warn!(key, "ignoring malformed guardrail pricing entry"),
+        if let Some(prices) = entry.prices.guardrail_units.as_ref() {
+            return Some(prices.clone());
         }
+        tracing::warn!(key, "ignoring malformed guardrail pricing entry");
     }
     None
 }

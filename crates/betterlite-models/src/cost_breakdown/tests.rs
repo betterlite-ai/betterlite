@@ -191,6 +191,13 @@ fn cost_breakdown_with_guardrail_keeps_an_unknown_extension_field() {
 
 #[test]
 fn cost_breakdown_serializes_money_as_json_numbers() {
+    #[derive(serde::Deserialize)]
+    struct NumericBreakdown {
+        input_cost: serde_json::Number,
+        additional_costs: BTreeMap<String, serde_json::Number>,
+        vendor_extra: serde_json::Number,
+    }
+
     let breakdown = CostBreakdown {
         service_tier: None,
         data_residency: None,
@@ -213,10 +220,11 @@ fn cost_breakdown_serializes_money_as_json_numbers() {
         extra: BTreeMap::from([("vendor_extra".to_owned(), decimal("0.25"))]),
     };
     let text = serde_json::to_string(&breakdown).expect("the breakdown serializes");
-    let value: serde_json::Value = serde_json::from_str(&text).expect("the breakdown is JSON");
-    assert_eq!(value["input_cost"], serde_json::json!(1));
-    assert_eq!(value["additional_costs"]["other"], serde_json::json!(0.5));
-    assert_eq!(value["vendor_extra"], serde_json::json!(0.25));
+    let value: NumericBreakdown =
+        serde_json::from_str(&text).expect("the breakdown contains JSON numbers");
+    assert_eq!(value.input_cost.to_string(), "1");
+    assert_eq!(value.additional_costs["other"].to_string(), "0.5");
+    assert_eq!(value.vendor_extra.to_string(), "0.25");
 }
 
 #[test]

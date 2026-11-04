@@ -29,15 +29,16 @@ pub struct GuardrailEntryFields {
     in_spend: Option<Scalar>,
     #[serde(rename = "guardrail_cost_by_unit")]
     by_unit: Option<CounterMapField>,
-    #[serde(flatten)]
-    _ignored: BTreeMap<String, IgnoredAny>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum GuardrailInformationEntry {
     Number(serde_json::Number),
-    Object(GuardrailEntryFields),
+    Object {
+        #[serde(flatten)]
+        fields: GuardrailEntryFields,
+    },
     Other(IgnoredAny),
 }
 
@@ -73,7 +74,7 @@ fn parse_validated_field<F, T>(
 where
     F: FnOnce(&GuardrailEntryFields) -> Result<FieldOutcome<T>, GuardrailPricingError>,
 {
-    let GuardrailInformationEntry::Object(fields) = raw else {
+    let GuardrailInformationEntry::Object { fields } = raw else {
         tracing::warn!(field_kind, "ignoring malformed guardrail_information entry");
         return Ok(None);
     };

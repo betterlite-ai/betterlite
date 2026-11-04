@@ -27,7 +27,7 @@ pub enum CostBreakdownError {
 
 // extra keeps any key outside this vocabulary, such as a provider-specific cost a newer writer stamped.
 #[serde_as]
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CostBreakdown {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub service_tier: Option<String>,
