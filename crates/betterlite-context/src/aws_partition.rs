@@ -42,9 +42,12 @@ pub fn get_aws_partition(region_name: Option<&str>) -> AwsPartition {
 
 #[must_use]
 pub fn contains_bedrock_arn(value: &str) -> bool {
-    value.split("arn:").skip(1).any(|candidate| {
-        aws_service(candidate).is_some_and(|service| service.starts_with("bedrock"))
-    })
+    value
+        .match_indices("arn:")
+        .filter_map(|(offset, prefix)| value.get(offset..)?.strip_prefix(prefix))
+        .any(|candidate| {
+            aws_service(candidate).is_some_and(|service| service.starts_with("bedrock"))
+        })
 }
 
 #[must_use]
@@ -58,8 +61,8 @@ pub fn is_bedrock_arn(value: &str) -> bool {
 #[must_use]
 pub fn contains_aws_arn(value: &str) -> bool {
     value
-        .split("arn:")
-        .skip(1)
+        .match_indices("arn:")
+        .filter_map(|(offset, prefix)| value.get(offset..)?.strip_prefix(prefix))
         .any(|candidate| aws_service(candidate).is_some())
 }
 

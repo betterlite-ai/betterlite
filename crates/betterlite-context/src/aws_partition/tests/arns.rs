@@ -7,6 +7,8 @@ use rstest::rstest;
 #[case::none("none", [false, false, false])]
 #[case::commercial("arn:aws:bedrock:r", [true, true, true])]
 #[case::partition("arn:aws-iso-b:bedrock:r", [true, true, true])]
+#[case::arn_in_partition("arn:aws-barn:bedrock:x", [true, true, true])]
+#[case::arn_in_partition_s3("arn:aws-barn:s3:x", [false, false, true])]
 #[case::embedded("x arn:aws-cn:bedrock:r", [true, false, true])]
 #[case::runtime("arn:aws:bedrock-runtime:r", [true, false, true])]
 #[case::agent("arn:aws:bedrock-agent:r", [true, false, true])]
