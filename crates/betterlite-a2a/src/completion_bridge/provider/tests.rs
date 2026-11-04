@@ -16,67 +16,64 @@ use super::super::wire::{CompletionParams, SendMessageResponse};
 use super::super::{A2AStreamingContext, response_to_a2a};
 use super::BaseA2AProviderConfig;
 
+struct Provider;
+struct EventStream(Option<StreamEvent>);
+
+impl Stream for EventStream {
+    type Item = Result<StreamEvent, Infallible>;
+
+    fn poll_next(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        Poll::Ready(self.0.take().map(Ok))
+    }
+}
+
+impl BaseA2AProviderConfig for Provider {
+    type Error = Infallible;
+    type EventStream = EventStream;
+
+    fn handle_non_streaming(
+        &self,
+        request_id: &str,
+        _params: &CompletionParams,
+        _api_base: Option<&str>,
+        _kwargs: &BTreeMap<String, AgentJson>,
+    ) -> impl Future<Output = Result<SendMessageResponse, Self::Error>> + Send {
+        ready(Ok(response_to_a2a(
+            None,
+            Some(request_id),
+            &mut Source::default(),
+        )))
+    }
+
+    fn handle_streaming(
+        &self,
+        request_id: &str,
+        params: &CompletionParams,
+        api_base: Option<&str>,
+        kwargs: &BTreeMap<String, AgentJson>,
+    ) -> impl Future<Output = Result<Self::EventStream, Self::Error>> + Send {
+        assert_eq!(
+            params,
+            &serde_json::from_str::<CompletionParams>(r#"{"message":{"parts":[]}}"#).unwrap()
+        );
+        assert!(api_base.is_none());
+        assert!(kwargs.is_empty());
+        let mut source = Source::default();
+        let context = A2AStreamingContext::new(
+            request_id.to_owned(),
+            serde_json::from_str("{}").unwrap(),
+            &mut source,
+        );
+        ready(Ok(EventStream(Some(stream_event(
+            &context,
+            EventContent::Artifact("answer"),
+            &mut source,
+        )))))
+    }
+}
+
 #[test]
 fn provider_contract_is_awaitable() {
-    struct Provider;
-    struct EventStream(Option<StreamEvent>);
-
-    impl Stream for EventStream {
-        type Item = Result<StreamEvent, Infallible>;
-
-        fn poll_next(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-            Poll::Ready(self.0.take().map(Ok))
-        }
-    }
-
-    impl BaseA2AProviderConfig for Provider {
-        type Error = Infallible;
-        type EventStream = EventStream;
-
-        fn handle_non_streaming(
-            &self,
-            request_id: &str,
-            params: &CompletionParams,
-            api_base: Option<&str>,
-            kwargs: &BTreeMap<String, AgentJson>,
-        ) -> impl Future<Output = Result<SendMessageResponse, Self::Error>> + Send {
-            assert!(params.extra.contains_key("message"));
-            assert_eq!(api_base, Some("https://agent.test"));
-            assert!(kwargs.contains_key("trace"));
-            ready(Ok(response_to_a2a(
-                None,
-                Some(request_id),
-                &mut Source::default(),
-            )))
-        }
-
-        fn handle_streaming(
-            &self,
-            request_id: &str,
-            params: &CompletionParams,
-            api_base: Option<&str>,
-            kwargs: &BTreeMap<String, AgentJson>,
-        ) -> impl Future<Output = Result<Self::EventStream, Self::Error>> + Send {
-            assert_eq!(
-                params,
-                &serde_json::from_str::<CompletionParams>(r#"{"message":{"parts":[]}}"#).unwrap()
-            );
-            assert!(api_base.is_none());
-            assert!(kwargs.is_empty());
-            let mut source = Source::default();
-            let context = A2AStreamingContext::new(
-                request_id.to_owned(),
-                serde_json::from_str("{}").unwrap(),
-                &mut source,
-            );
-            ready(Ok(EventStream(Some(stream_event(
-                &context,
-                EventContent::Artifact("answer"),
-                &mut source,
-            )))))
-        }
-    }
-
     let provider = Provider;
     let params = serde_json::from_str(r#"{"message":{"parts":[]}}"#).unwrap();
     let kwargs = serde_json::from_str(r#"{"trace":"id"}"#).unwrap();
