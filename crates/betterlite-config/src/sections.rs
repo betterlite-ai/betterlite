@@ -383,6 +383,7 @@ use std::fmt;
 
 use serde::de::DeserializeOwned;
 
+use crate::api::vector_context_shaping;
 use crate::loader::{ConfigError, EnvironmentLookup, parse_view};
 
 pub trait Section: DeserializeOwned + Default {
@@ -545,7 +546,7 @@ sections! {
     tier_definitions, token_counting, tokenizer_engines, transcription_call, trusted_network,
     two_solver_classifier, ui_session_cleanup, usage_routing, usage_routing_v2,
     usage_v2_accounting, user_delete, user_fields, user_info, user_update, user_url_policy,
-    verbose_hooks, vertex_credential_sources, vertex_embedding_dispatch, vertex_schema_shaping,
-    virtual_key_auth, virtual_key_routes, voyage_credentials, websearch_request_hooks,
-    worker_options_reload, xai_identity, xai_oauth_settings,
+    vector_context_shaping, verbose_hooks, vertex_credential_sources, vertex_embedding_dispatch,
+    vertex_schema_shaping, virtual_key_auth, virtual_key_routes, voyage_credentials,
+    websearch_request_hooks, worker_options_reload, xai_identity, xai_oauth_settings,
 }
