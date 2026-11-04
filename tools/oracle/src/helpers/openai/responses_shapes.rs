@@ -8,7 +8,8 @@ use betterlite_openai::api::responses_shapes::builders::{
 use betterlite_openai::api::responses_shapes::websocket::WsRequestDefaults;
 use betterlite_openai::api::responses_shapes::{
     CustomToolCallOutputItem, DecodedResponseId, DeleteResponseResult, GenericResponseOutputItem,
-    OutputCodeInterpreterCall, OutputFunctionToolCall, OutputImageGenerationCall, OutputText,
+    OutputCodeInterpreterCall, OutputCodeInterpreterCallLog, OutputFunctionToolCall,
+    OutputImageGenerationCall, OutputText,
 };
 use serde::{Deserialize, Serialize};
 
@@ -44,6 +45,12 @@ pub(crate) struct Records {
     decoded_id: DecodedResponseId,
 }
 
+#[derive(Serialize)]
+struct InterpreterOutput {
+    // A named field keeps null distinct from an absent oracle result.
+    outputs: Option<Vec<OutputCodeInterpreterCallLog>>,
+}
+
 pub(crate) struct Op;
 
 impl crate::helpers::Helper for Op {
@@ -57,9 +64,9 @@ impl crate::helpers::Helper for Op {
                 result,
                 status,
             } => serde_json::to_value(build_web_search_call(tool_id, tool_input, result, *status)),
-            Input::InterpreterLogs { content } => {
-                serde_json::to_value(build_interpreter_logs(content))
-            }
+            Input::InterpreterLogs { content } => serde_json::to_value(InterpreterOutput {
+                outputs: build_interpreter_logs(content),
+            }),
             Input::WebsocketDefaults { defaults, request } => {
                 serde_json::to_value(defaults.merged_into(request))
             }

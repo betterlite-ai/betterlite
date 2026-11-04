@@ -33,7 +33,11 @@ def run(fields: dict[str, Json]) -> Json:
         return cast(Json, result.model_dump(exclude_none=False))
     if operation == "interpreter_logs":
         result = build_code_interpreter_log_outputs(fields["content"])
-        return None if result is None else cast(Json, [item.model_dump() for item in result])
+        return {
+            "outputs": None
+            if result is None
+            else cast(Json, [item.model_dump() for item in result])
+        }
     if operation == "nullable_records":
         record = DeleteResponseResult.model_validate(fields["record"])
         # Construct pinned records too, so missing required nullable fields remain validated.
