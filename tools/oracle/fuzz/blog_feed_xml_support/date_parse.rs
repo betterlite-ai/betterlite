@@ -1,6 +1,5 @@
-use std::mem;
-
 use chrono::{NaiveDate, NaiveTime};
+use std::mem;
 
 const MONTHNAMES: [&str; 24] = [
     "jan",

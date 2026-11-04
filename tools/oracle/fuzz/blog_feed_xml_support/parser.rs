@@ -1,11 +1,10 @@
-use std::str;
-
-use quick_xml::Reader;
 use quick_xml::encoding::EncodingError;
 use quick_xml::escape::{EscapeError, unescape};
 use quick_xml::events::{BytesEnd, BytesRef, BytesStart, Event};
+use quick_xml::{Error as XmlError, Reader};
 use thiserror::Error;
 
+use crate::utf8::lossy_utf8;
 use collector::{Collector, TagKind};
 
 #[path = "parser/collector.rs"]
@@ -23,7 +22,7 @@ pub(crate) struct BlogPost {
 #[derive(Debug, Error)]
 pub(super) enum ParseFailure {
     #[error("RSS XML is not well-formed")]
-    Xml(#[source] quick_xml::Error),
+    Xml(#[source] XmlError),
     #[error("RSS item text is not valid UTF-8")]
     Decode(#[source] EncodingError),
     #[error("RSS item text has an invalid entity or character reference")]
@@ -34,8 +33,6 @@ pub(super) enum ParseFailure {
     UnclosedElement,
     #[error("RSS XML has content outside its single root element")]
     OutsideRoot,
-    #[error("RSS tag name is not valid UTF-8")]
-    TagNotUtf8,
 }
 
 const TITLE: &str = "title";
@@ -62,7 +59,7 @@ fn run_events(reader: &mut Reader<&[u8]>, collector: &mut Collector) -> Result<(
     loop {
         match reader.read_event().map_err(ParseFailure::Xml)? {
             Event::Start(tag) => handle_start(&tag, collector)?,
-            Event::End(tag) => handle_end(&tag, collector)?,
+            Event::End(tag) => handle_end(&tag, collector),
             Event::Empty(tag) => handle_empty(&tag, collector)?,
             Event::Text(text) => {
                 let decoded = text.xml10_content().map_err(ParseFailure::Decode)?;
@@ -85,11 +82,7 @@ fn open_tag(
     collector: &mut Collector,
 ) -> Result<(String, TagKind), ParseFailure> {
     let (kind, default_namespace) = tag_info(collector, tag)?;
-    let tag_name = tag.name();
-    let Ok(raw_name) = str::from_utf8(tag_name.as_ref()) else {
-        return Err(ParseFailure::TagNotUtf8);
-    };
-    let name = raw_name.to_owned();
+    let name = lossy_utf8(tag.name().as_ref()).into_owned();
     collector.open(&name, kind, default_namespace);
     Ok((name, kind))
 }
@@ -99,19 +92,16 @@ fn handle_start(tag: &BytesStart<'_>, collector: &mut Collector) -> Result<(), P
     Ok(())
 }
 
-fn handle_end(tag: &BytesEnd<'_>, collector: &mut Collector) -> Result<(), ParseFailure> {
+fn handle_end(tag: &BytesEnd<'_>, collector: &mut Collector) {
     let tag_name = tag.name().as_ref().to_owned();
-    let Ok(name) = str::from_utf8(&tag_name) else {
-        return Err(ParseFailure::TagNotUtf8);
-    };
+    let name = lossy_utf8(&tag_name);
     let kind = if name.contains(':') || collector.default_namespace.last().copied().unwrap_or(false)
     {
         TagKind::Qualified
     } else {
         TagKind::Plain
     };
-    collector.close(name, kind);
-    Ok(())
+    collector.close(&name, kind);
 }
 
 fn handle_empty(tag: &BytesStart<'_>, collector: &mut Collector) -> Result<(), ParseFailure> {
@@ -132,12 +122,12 @@ fn handle_reference(
 
 fn tag_info(collector: &Collector, tag: &BytesStart<'_>) -> Result<(TagKind, bool), ParseFailure> {
     for attribute in tag.attributes() {
-        attribute.map_err(|error| ParseFailure::Xml(quick_xml::Error::from(error)))?;
+        attribute.map_err(|error| ParseFailure::Xml(XmlError::from(error)))?;
     }
     let inherited = collector.default_namespace.last().copied().unwrap_or(false);
     let declaration = tag
         .try_get_attribute(b"xmlns")
-        .map_err(|error| ParseFailure::Xml(quick_xml::Error::from(error)))?;
+        .map_err(|error| ParseFailure::Xml(XmlError::from(error)))?;
     let default_namespace = declaration
         .as_ref()
         .map_or(inherited, |attribute| !attribute.value.is_empty());

@@ -1,7 +1,9 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use std::str;
+
+#[path = "../blog_feed_xml_support/utf8.rs"]
+mod utf8;
 
 #[path = "../blog_feed_xml_support/date_parse.rs"]
 mod date_parse;
@@ -9,7 +11,6 @@ mod date_parse;
 mod parser;
 
 fuzz_target!(|bytes: &[u8]| {
-    if let Ok(xml) = str::from_utf8(bytes) {
-        let _result = parser::parse_rss_to_posts(xml, 1);
-    }
+    let xml = utf8::lossy_utf8(bytes);
+    let _result = parser::parse_rss_to_posts(&xml, 1);
 });
