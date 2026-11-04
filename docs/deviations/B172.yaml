@@ -3,7 +3,7 @@ deviations:
   - what: SSL_SECURITY_LEVEL fails startup by name.
     why: OpenSSL cipher-list expressions cannot be enforced by rustls.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L296-L304
-  - what: A recognized curve missing from the crypto provider fails startup by name.
+  - what: With verification enabled, a recognized curve missing from the crypto provider fails startup by name.
     why: An explicit recognized policy must not silently fall back to other groups.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L306-L326
   - what: The default User-Agent is betterlite/<package-version>.

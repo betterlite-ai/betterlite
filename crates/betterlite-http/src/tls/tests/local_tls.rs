@@ -13,10 +13,11 @@ use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::tls::TlsPolicy;
 use betterlite_config::types::ProxyTrust;
 use rstest::rstest;
+use rustls::crypto::aws_lc_rs;
 use rustls::pki_types::pem::PemObject as _;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
-use rustls::server::{Acceptor, WebPkiClientVerifier};
-use rustls::{RootCertStore, ServerConfig, StreamOwned};
+use rustls::server::{Acceptor, ClientHello, WebPkiClientVerifier};
+use rustls::{NamedGroup, RootCertStore, ServerConfig, ServerConnection, StreamOwned};
 use tokio::runtime::Builder;
 
 use crate::proxy::ProxiedClient;
@@ -29,12 +30,16 @@ const TEST_CA: &[u8] = include_bytes!("../../../../../tools/postgres-fixture/fix
 const TIMEOUT: Duration = Duration::from_secs(5);
 
 #[rstest]
+#[case::outbound_http1_default("legacy", "localhost", false)]
 #[case::trusted_ca("", "localhost", true)]
 #[case::untrusted_ca("untrusted", "localhost", false)]
 #[case::wrong_host("", "127.0.0.1", false)]
 #[case::verification_disabled("disabled", "127.0.0.1", true)]
 #[case::deployment_over_environment("deployment", "127.0.0.1", true)]
 #[case::disabled_with_curve("disabled_curve", "127.0.0.1", true)]
+#[case::disabled_unsupported_curve("disabled_unsupported", "127.0.0.1", true)]
+#[case::prime256v1("prime256v1", "localhost", true)]
+#[case::secp384r1("secp384r1", "localhost", true)]
 #[case::trusted_with_curve("curve", "localhost", true)]
 #[case::certificate_does_not_enable_mtls("certificate", "localhost", true)]
 #[case::http2_enabled("http2", "localhost", true)]
@@ -49,7 +54,7 @@ fn http_policy_tests_behavior(#[case] mode: &str, #[case] host: &str, #[case] su
         fs::write(ca_file.path(), TEST_CA).unwrap();
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
-        let server = scope.spawn(move || serve(&listener));
+        let server = scope.spawn(move || serve(&listener, mode));
         let mut environment = environment(mode, ca_file.path().to_str().unwrap());
         let proxy = (mode == "proxy").then(|| {
             let proxy_listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -75,7 +80,13 @@ fn http_policy_tests_behavior(#[case] mode: &str, #[case] host: &str, #[case] su
         let policy = TlsPolicy::resolve(&config, &environment, None).unwrap();
         let routing = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &environment).unwrap());
         let client = config.model_list.first().map_or_else(
-            || ProxiedClient::outbound_with_tls(&routing, &policy).unwrap(),
+            || {
+                if mode == "legacy" {
+                    ProxiedClient::outbound(&routing).unwrap()
+                } else {
+                    ProxiedClient::outbound_with_tls(&routing, &policy).unwrap()
+                }
+            },
             |deployment| {
                 ProxiedClient::outbound_for_deployment(&routing, &config, deployment, &environment)
                     .unwrap()
@@ -125,6 +136,9 @@ fn environment(mode: &str, ca_path: &str) -> BTreeMap<String, String> {
         variables.insert("SSL_ECDH_CURVE".to_owned(), "X25519".to_owned());
     }
     let additional = match mode {
+        "disabled_unsupported" => Some(("SSL_ECDH_CURVE", "secp521r1")),
+        "prime256v1" => Some(("SSL_ECDH_CURVE", "prime256v1")),
+        "secp384r1" => Some(("SSL_ECDH_CURVE", "secp384r1")),
         "certificate" => Some(("SSL_CERTIFICATE", "not-read-client.pem")),
         "deployment" => Some(("SSL_VERIFY", "true")),
         "http2" | "http2_curve" => Some(("LITELLM_HTTP2", "true")),
@@ -138,7 +152,7 @@ fn environment(mode: &str, ca_path: &str) -> BTreeMap<String, String> {
     variables
 }
 
-fn serve(listener: &TcpListener) -> Result<(String, bool, bool), IoError> {
+fn serve(listener: &TcpListener, mode: &str) -> Result<(String, bool, bool), IoError> {
     let mut stream = accept(listener);
     stream.set_read_timeout(Some(TIMEOUT))?;
     stream.set_write_timeout(Some(TIMEOUT))?;
@@ -154,13 +168,17 @@ fn serve(listener: &TcpListener) -> Result<(String, bool, bool), IoError> {
             break accepted;
         }
     };
+    assert_curve(&accepted.client_hello(), mode);
     let offered_h2 = accepted
         .client_hello()
         .alpn()
         .is_some_and(|mut protocols| protocols.any(|protocol| protocol == b"h2"));
     let connection = accepted
-        .into_connection(server_config())
+        .into_connection(server_config(mode))
         .map_err(|(error, _alert)| IoError::other(error))?;
+    if mode == "legacy" {
+        assert_http1(&connection);
+    }
     let mut tls_stream = StreamOwned::new(connection, stream);
     let mut request = Vec::new();
     while !request.ends_with(b"\r\n\r\n") && request.len() < 8192 {
@@ -175,7 +193,7 @@ fn serve(listener: &TcpListener) -> Result<(String, bool, bool), IoError> {
     Ok((request_text, offered_h2, sent_identity))
 }
 
-fn server_config() -> Arc<ServerConfig> {
+fn server_config(mode: &str) -> Arc<ServerConfig> {
     let certificates = CertificateDer::pem_slice_iter(SERVER_CERT)
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
@@ -188,10 +206,19 @@ fn server_config() -> Arc<ServerConfig> {
         .allow_unauthenticated()
         .build()
         .unwrap();
-    let config = ServerConfig::builder()
+    let mut provider = aws_lc_rs::default_provider();
+    if mode == "disabled_curve" {
+        provider.kx_groups = vec![aws_lc_rs::kx_group::SECP384R1];
+    }
+    let mut config = ServerConfig::builder_with_provider(Arc::new(provider))
+        .with_safe_default_protocol_versions()
+        .unwrap()
         .with_client_cert_verifier(verifier)
         .with_single_cert(certificates, private_key)
         .unwrap();
+    if mode == "legacy" {
+        config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+    }
     Arc::new(config)
 }
 
@@ -243,3 +270,25 @@ fn accept(listener: &TcpListener) -> TcpStream {
 }
 
 mod protocols;
+
+fn assert_curve(hello: &ClientHello<'_>, mode: &str) {
+    let expected_group = match mode {
+        "curve" | "http2_curve" => Some(NamedGroup::X25519),
+        "prime256v1" => Some(NamedGroup::secp256r1),
+        "secp384r1" => Some(NamedGroup::secp384r1),
+        _ => None,
+    };
+    if let Some(group) = expected_group {
+        assert_eq!(hello.named_groups(), Some([group].as_slice()));
+    }
+}
+
+fn assert_http1(connection: &ServerConnection) {
+    let negotiated = match connection.alpn_protocol() {
+        Some(b"h2") => reqwest::Version::HTTP_2,
+        Some(b"http/1.1") => reqwest::Version::HTTP_11,
+        other => panic!("unexpected ALPN: {other:?}"),
+    };
+    // The default client rejects the fixture CA after negotiating ALPN.
+    assert_eq!(negotiated, reqwest::Version::HTTP_11);
+}

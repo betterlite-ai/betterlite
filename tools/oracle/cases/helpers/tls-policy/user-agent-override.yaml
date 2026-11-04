@@ -5,6 +5,7 @@ call:
     ca_pem: null
     deployment_ssl_verify: null
     config_ssl_verify: null
+    config_ssl_certificate: null
     config_http2: false
     environment:
       LITELLM_USER_AGENT: betterlite/test

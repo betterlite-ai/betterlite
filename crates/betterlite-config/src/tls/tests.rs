@@ -11,7 +11,7 @@ use crate::tls::{TlsPolicy, Verification, resolve_ca_file};
 #[case::defaults("", BTreeMap::new(), None, Verification::Enabled)]
 #[case::environment_disables("", BTreeMap::from([("SSL_VERIFY".to_owned(), "false".to_owned())]), None, Verification::Disabled)]
 #[case::environment_over_config("litellm_settings:\n  ssl_verify: true\n", BTreeMap::from([("SSL_VERIFY".to_owned(), "false".to_owned())]), None, Verification::Disabled)]
-#[case::argument_wins("litellm_settings:\n  ssl_verify: false\n", BTreeMap::from([("SSL_VERIFY".to_owned(), "true".to_owned())]), Some(true), Verification::Enabled)]
+#[case::argument_wins("litellm_settings:\n  ssl_verify: false\n", BTreeMap::from([("SSL_VERIFY".to_owned(), "false".to_owned())]), Some(true), Verification::Enabled)]
 #[case::deployment_from_yaml(
     "model_list:\n  - model_name: test\n    litellm_params:\n      model: provider/model\n      ssl_verify: false\n",
     BTreeMap::new(),

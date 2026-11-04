@@ -44,6 +44,7 @@ impl ProxiedClient {
 
     pub fn outbound(policy: &Arc<ProxyPolicy>) -> Result<Self, HttpError> {
         let builder = ClientBuilder::new()
+            .http1_only()
             .tls_backend_rustls()
             .connect_timeout(CONNECT_TIMEOUT)
             .pool_idle_timeout(POOL_IDLE_TIMEOUT)

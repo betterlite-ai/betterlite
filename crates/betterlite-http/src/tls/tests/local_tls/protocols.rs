@@ -66,7 +66,7 @@ fn http_policy_tests_behavior(#[case] mode: &str, #[case] expected: Version) {
         "https://localhost:{}/policy",
         listener.local_addr().unwrap().port()
     );
-    let mut origin = server_config().as_ref().clone();
+    let mut origin = server_config("").as_ref().clone();
     origin.alpn_protocols = if mode == "fallback" {
         vec![b"http/1.1".to_vec()]
     } else {

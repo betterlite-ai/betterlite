@@ -100,28 +100,43 @@ pub fn parse_ca_pem(pem: &[u8]) -> Result<RootCertStore, TlsError> {
     Ok(roots)
 }
 
-fn named_group(name: &str) -> Option<NamedGroup> {
+fn named_group(name: &str) -> Result<Option<NamedGroup>, TlsError> {
     match name {
-        "X25519" => Some(NamedGroup::X25519),
-        "prime256v1" => Some(NamedGroup::secp256r1),
-        "secp384r1" => Some(NamedGroup::secp384r1),
-        "secp521r1" => Some(NamedGroup::secp521r1),
-        _ => None,
+        "X25519" => Ok(Some(NamedGroup::X25519)),
+        "prime256v1" => Ok(Some(NamedGroup::secp256r1)),
+        "secp384r1" => Ok(Some(NamedGroup::secp384r1)),
+        "secp521r1" => Ok(Some(NamedGroup::secp521r1)),
+        "X448" => Ok(Some(NamedGroup::X448)),
+        "sect163k1" | "sect163r1" | "sect163r2" | "sect193r1" | "sect193r2" | "sect233k1"
+        | "sect233r1" | "sect239k1" | "sect283k1" | "sect283r1" | "sect409k1" | "sect409r1"
+        | "sect571k1" | "sect571r1" | "secp160k1" | "secp160r1" | "secp160r2" | "secp192k1"
+        | "prime192v1" | "secp224k1" | "secp224r1" | "secp256k1" | "brainpoolP256r1"
+        | "brainpoolP384r1" | "brainpoolP512r1" => Err(TlsError::UnsupportedCurve(name.to_owned())),
+        _ => Ok(None),
     }
 }
 
-fn client_config(policy: &TlsPolicy) -> Result<ClientConfig, TlsError> {
+pub fn configure_curve(policy: &TlsPolicy) -> Result<(CryptoProvider, bool), TlsError> {
     let mut provider = aws_lc_rs::default_provider();
-    if let Some(curve) = &policy.ecdh_curve {
-        if let Some(group) = named_group(curve) {
-            provider.kx_groups = select_kx_groups(group, curve, &provider)?;
-        } else {
-            tracing::warn!(
-                curve,
-                "unrecognized SSL_ECDH_CURVE; using provider defaults"
-            );
-        }
+    if matches!(policy.verification, Verification::Disabled) {
+        return Ok((provider, false));
     }
+    let Some(curve) = &policy.ecdh_curve else {
+        return Ok((provider, false));
+    };
+    let Some(group) = named_group(curve)? else {
+        tracing::warn!(
+            curve,
+            "unrecognized SSL_ECDH_CURVE; using provider defaults"
+        );
+        return Ok((provider, true));
+    };
+    provider.kx_groups = select_kx_groups(group, curve, &provider)?;
+    Ok((provider, false))
+}
+
+fn client_config(policy: &TlsPolicy) -> Result<ClientConfig, TlsError> {
+    let (provider, _curve_fallback) = configure_curve(policy)?;
     let shared_provider = Arc::new(provider);
     let builder = ClientConfig::builder_with_provider(Arc::clone(&shared_provider))
         .with_safe_default_protocol_versions()

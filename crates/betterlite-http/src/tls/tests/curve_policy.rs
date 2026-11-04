@@ -10,8 +10,8 @@ use rustls::NamedGroup;
 use rustls::client::danger::ServerCertVerifier as _;
 use rustls::crypto::aws_lc_rs;
 
-use crate::tls::apply_policy;
 use crate::tls::{InsecureCertificateVerifier, TlsError, named_group, select_kx_groups};
+use crate::tls::{apply_policy, configure_curve};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::tls::TlsPolicy;
 use reqwest::ClientBuilder;
@@ -36,7 +36,7 @@ fn http_policy_tests_behavior(#[case] curve: &str) {
         "secp384r1" => Some(NamedGroup::secp384r1),
         _ => None,
     };
-    assert_eq!(named_group(curve), expected_group);
+    assert_eq!(named_group(curve).unwrap(), expected_group);
     if let Some(group) = expected_group {
         let provider = aws_lc_rs::default_provider();
         let groups = select_kx_groups(group, curve, &provider).unwrap();
@@ -54,6 +54,8 @@ fn http_policy_tests_behavior(#[case] curve: &str) {
     .unwrap();
     let environment = BTreeMap::from([("SSL_ECDH_CURVE".to_owned(), curve.to_owned())]);
     let policy = TlsPolicy::resolve(&config, &environment, None).unwrap();
+    let (_provider, fallback) = configure_curve(&policy).unwrap();
+    assert_eq!(fallback, curve == "invalid");
     let builder = apply_policy(ClientBuilder::new(), &policy).unwrap();
     let _client = builder.build().unwrap();
     let written = fs::read_to_string(log.path()).unwrap();
@@ -72,3 +74,5 @@ fn insecure_verifier_supports_provider_signature_schemes() {
     let verifier = InsecureCertificateVerifier { signatures };
     assert!(!verifier.supported_verify_schemes().is_empty());
 }
+
+mod defaults;
