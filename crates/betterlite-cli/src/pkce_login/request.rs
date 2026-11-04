@@ -2,8 +2,9 @@ use secrecy::SecretString;
 use std::str;
 use url::Url;
 
-// Bounds how many bytes a connection may send before its request is given up on, so a drip-fed or endless request cannot grow the buffer without limit.
-pub const MAX_REQUEST_BYTES: usize = 8192;
+pub const MAX_LINE_BYTES: usize = 0x0001_0000;
+pub const MAX_HEADER_LINES: usize = 99;
+pub const MAX_REQUEST_BYTES: usize = MAX_LINE_BYTES * (MAX_HEADER_LINES + 1) + 2;
 
 // secrecy::SecretString already carries a redacting Debug impl ("SecretBox<str>([REDACTED])"), so deriving Debug here is safe: it never prints `code`.
 #[derive(Debug, Clone)]
@@ -20,8 +21,8 @@ pub struct CallbackQuery {
 pub enum RequestRead {
     // The buffer holds no complete request line and headers yet; read more and try again.
     Incomplete,
-    // The buffer grew past MAX_REQUEST_BYTES without completing a request.
-    TooLarge,
+    UriTooLong,
+    HeadersTooLarge,
     // The request line or headers could not be parsed as HTTP/1.x.
     Malformed,
     // The request line named a method other than GET.
@@ -34,15 +35,35 @@ pub enum RequestRead {
 // Parses as much of an HTTP/1.x request as buffer holds. Callers feed it the bytes read so far after every read; it reports Incomplete until the request line and headers are fully buffered, so a request split across several TCP reads parses the same as one that arrives whole.
 #[must_use]
 pub fn parse_request(buffer: &[u8]) -> RequestRead {
-    if buffer.len() > MAX_REQUEST_BYTES {
-        return RequestRead::TooLarge;
+    if buffer.starts_with(b"\r\n") || buffer.starts_with(b"\n") {
+        return RequestRead::Malformed;
     }
-    let mut headers = [httparse::EMPTY_HEADER; 32];
+    if buffer.len() > MAX_REQUEST_BYTES {
+        return RequestRead::HeadersTooLarge;
+    }
+    let mut lines = buffer.split_inclusive(|byte| *byte == b'\n');
+    if let Some(line) = lines.next() {
+        let line_len = line.len();
+        if line_len > MAX_LINE_BYTES {
+            return RequestRead::UriTooLong;
+        }
+    }
+    let mut header_lines = 0_usize;
+    for line in lines {
+        if line == b"\n" || line == b"\r\n" || line == b"\r" {
+            break;
+        }
+        header_lines = header_lines.saturating_add(1);
+        if line.len() > MAX_LINE_BYTES || header_lines > MAX_HEADER_LINES {
+            return RequestRead::HeadersTooLarge;
+        }
+    }
+    let mut headers = [httparse::EMPTY_HEADER; MAX_HEADER_LINES + 1];
     let mut request = httparse::Request::new(&mut headers);
     match request.parse(buffer) {
         Ok(httparse::Status::Partial) => RequestRead::Incomplete,
         Ok(httparse::Status::Complete(_)) => parse_parsed_request(&request),
-        Err(httparse::Error::TooManyHeaders) => RequestRead::TooLarge,
+        Err(httparse::Error::TooManyHeaders) => RequestRead::HeadersTooLarge,
         Err(httparse::Error::Version) if is_http_two_request(buffer) => {
             RequestRead::UnsupportedVersion
         }

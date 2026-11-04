@@ -1,0 +1,5 @@
+kind: helper
+name: payload-primitives-cost-sparse-breakdown
+call: {b3843: {function: cost, value: {input_cost: 0.12, margin_percent: 0.1}}}
+env: {}
+compare: {ignore: []}

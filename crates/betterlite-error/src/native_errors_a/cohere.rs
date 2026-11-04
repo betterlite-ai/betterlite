@@ -17,11 +17,11 @@ enum Family {
     RateLimit,
 }
 
-// an unmatched status_code resolves the elif chain into NoMatch; a total miss falls to the dead-code-free Unclassified
+// an unmatched status_code resolves the elif chain into NoMatch; a total miss is answered by the outer APIConnectionError handler
 enum Outcome {
     Classified(Family, &'static str),
     NoMatch,
-    Unclassified,
+    OuterApiConnection,
 }
 
 // the four elif branches checked before status_code is ever consulted
@@ -94,7 +94,7 @@ fn classify(facts: &ProviderErrorFacts, error_str: &str, exception_type: &str) -
         .iter()
         .find(|(matched, _, _)| *matched)
         .map(|(_, family, reason)| (*family, *reason))
-        .map_or(Outcome::Unclassified, |(family, reason)| {
+        .map_or(Outcome::OuterApiConnection, |(family, reason)| {
             Outcome::Classified(family, reason)
         })
 }
@@ -133,11 +133,11 @@ pub fn map_cohere_exception(
 ) -> Option<ErrorClass> {
     match classify(facts, error_str, exception_type) {
         Outcome::NoMatch => None,
-        // re-raises the exception unchanged, so unlike every classified branch it carries no model/provider identity
-        Outcome::Unclassified => Some(ErrorClass::Unclassified(Box::new(ErrorContext {
+        // The outer handler answers the re-raised error with APIConnectionError(llm_provider="", model="").
+        Outcome::OuterApiConnection => Some(ErrorClass::ApiConnection(Box::new(ErrorContext {
             message: error_str.to_owned(),
-            model: None,
-            provider: None,
+            model: Some(String::new()),
+            provider: Some(String::new()),
             max_retries: None,
             num_retries: None,
             body_type: None,
