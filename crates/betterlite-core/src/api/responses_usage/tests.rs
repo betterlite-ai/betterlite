@@ -44,7 +44,7 @@ fn existing_chat_usage_keeps_its_inconsistent_total_and_extra() {
 #[test]
 fn ordinary_usage_mapping_wraps_prompt_details() {
     let input = value(
-        r#"{"prompt_tokens":2,"completion_tokens":3,"total_tokens":99,"custom":7,"prompt_tokens_details":{"cached_tokens":1}}"#,
+        r#"{"prompt_tokens":2,"completion_tokens":3,"total_tokens":99,"custom":7,"prompt_tokens_details":{"cached_tokens":"1.0"}}"#,
     );
     let result = transform_value(Some(&input)).expect("ordinary Usage with details");
     assert_eq!(result["total_tokens"], 99_i64);
@@ -261,6 +261,7 @@ fn existing_usage_object_is_returned_without_conversion() {
 
 #[rstest]
 #[case::decimal("2.5")]
+#[case::decimal_string(r#""2.5""#)]
 #[case::mapping(r#"{"tokens":2}"#)]
 fn output_detail_declared_fields_reject_invalid_integer_values(#[case] malformed: &str) {
     let mut details: Map<String, Value> = Map::new();
