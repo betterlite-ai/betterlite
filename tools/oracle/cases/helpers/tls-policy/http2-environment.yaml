@@ -11,4 +11,4 @@ env: {}
 compare:
   ignore:
     - pointer: /value/user_agent
-      reason: the default User-Agent intentionally differs from LiteLLM
+      why: the default User-Agent intentionally differs from LiteLLM
