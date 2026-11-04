@@ -131,6 +131,7 @@ scope:
   - tools/oracle/Cargo.toml
   - tools/oracle/cases/helpers/providers/provider-base-helpers/modify-params-default-and-env.yaml
   - tools/oracle/cases/helpers/database-url-policy/str-to-bool-on.yaml
+  - tools/oracle/cases/helpers/database-url-policy/str-to-bool-padded-true.yaml
   - tools/oracle/cases/helpers/datadog/environment-tags.yaml
   - .ast-grep/rules/no-python-habits.yml
   lint_tables: false
@@ -220,7 +221,7 @@ out_of_scope:
 - String-valued os.environ/ references; an empty variable behind a string field keeps reading as an empty string.
 - Merging redis's os_environ.rs reference resolver with config's resolve_string.
 pitfalls:
-- Three oracle cases send values the old readings and LiteLLM agree on but the shared parser reads differently. modify-params-default-and-env.yaml sends "false" (LiteLLM's bool(os.getenv(...)) answers True); change both its env and environment to "true". str-to-bool-on.yaml sends "on" (LiteLLM's db str_to_bool answers False); change its value to "yes". environment-tags.yaml sends USE_DDPROFILER "1" (LiteLLM answers false); change it to "false" and keep USE_DDTRACE " TRUE ".
+- Four oracle cases send values the old readings and LiteLLM agree on but the shared parser reads differently. modify-params-default-and-env.yaml sends "false" (LiteLLM's bool(os.getenv(...)) answers True); change both its env and environment to "true". str-to-bool-on.yaml sends "on" (LiteLLM's db str_to_bool answers False); change its value to "yes". str-to-bool-padded-true.yaml sends " true " (the db str_to_bool doesn't trim, so LiteLLM answers False); change its value to " false ". environment-tags.yaml sends USE_DDPROFILER "1" (LiteLLM answers false); change it to "false" and keep USE_DDTRACE " TRUE ".
 - token-auth-flag-invalid.yaml stays as it is; B5091 stops comparing helper error messages, so the new message without the value still matches on status, type, param and code.
 - Unit tests pin the old readings and change with them, among them base_helpers/tests.rs modify_params_default_and_env (it asserts "false", "0" and " " turn modify_params on), the db tests that assert the python_repr message for 'maybe', and the redis and billing tests for PEP 515 underscores.
 - No one-line helpers or wrappers around flag and number; call them where the value is read.
