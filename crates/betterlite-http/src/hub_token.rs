@@ -32,8 +32,8 @@ pub enum HubTokenError {
 }
 
 pub struct HubTokenResolver {
-    settings: Settings,
-    file_reader: Arc<dyn HubTokenFileReader>,
+    pub settings: Settings,
+    pub file_reader: Arc<dyn HubTokenFileReader>,
 }
 
 #[async_trait::async_trait]
@@ -54,14 +54,6 @@ impl HubTokenFileReader for TokioHubTokenFileReader {
 mod tests;
 
 impl HubTokenResolver {
-    #[must_use]
-    pub fn new(settings: Settings, file_reader: Arc<dyn HubTokenFileReader>) -> Self {
-        Self {
-            settings,
-            file_reader,
-        }
-    }
-
     pub async fn resolve(&self, token: &HubToken) -> Result<Option<SecretString>, HubTokenError> {
         match token {
             HubToken::Explicit(value) => {

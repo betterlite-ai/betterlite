@@ -16,8 +16,8 @@ use super::{
 };
 
 fn resolver(token_path: PathBuf, env_token: Option<&str>, disabled: bool) -> HubTokenResolver {
-    HubTokenResolver::new(
-        Settings {
+    HubTokenResolver {
+        settings: Settings {
             endpoint: "https://huggingface.co".to_owned(),
             offline: OfflineSetting::Online,
             etag_timeout: 10,
@@ -30,8 +30,8 @@ fn resolver(token_path: PathBuf, env_token: Option<&str>, disabled: bool) -> Hub
             stored_tokens_path: PathBuf::new(),
             transfer: TransferSetting::Standard,
         },
-        Arc::new(TokioHubTokenFileReader),
-    )
+        file_reader: Arc::new(TokioHubTokenFileReader),
+    }
 }
 
 #[tokio::test]
@@ -164,12 +164,12 @@ async fn injected_reader_is_used() {
         stored_tokens_path: PathBuf::new(),
         transfer: TransferSetting::Standard,
     };
-    let resolver = HubTokenResolver::new(
+    let resolver = HubTokenResolver {
         settings,
-        Arc::new(FixedReader {
+        file_reader: Arc::new(FixedReader {
             bytes: b"injected-token".to_vec(),
         }),
-    );
+    };
     assert_eq!(
         resolver
             .resolve(&HubToken::Implicit)
