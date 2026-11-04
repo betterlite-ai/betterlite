@@ -7,38 +7,44 @@ use crate::loader::{ConfigError, EnvironmentLookup};
 pub(super) fn resolve(
     lookup: &dyn EnvironmentLookup,
 ) -> Result<(PathBuf, PathBuf, PathBuf, PathBuf), ConfigError> {
-    let (hf_home, hub_cache) = resolve_cache_paths(lookup)?;
+    let hf_home = resolve_hf_home(lookup)?;
+    let hub_cache = resolve_hub_cache(lookup, &hf_home)?;
     let (token_path, stored_tokens_path) = resolve_token_paths(lookup, &hf_home)?;
     Ok((hf_home, hub_cache, token_path, stored_tokens_path))
 }
 
-fn resolve_cache_paths(lookup: &dyn EnvironmentLookup) -> Result<(PathBuf, PathBuf), ConfigError> {
-    let hf_home_setting = lookup.lookup("HF_HOME").unwrap_or_default();
-    let xdg_cache_setting = lookup.lookup("XDG_CACHE_HOME").unwrap_or_default();
-    let hf_home = if !hf_home_setting.is_empty() {
-        expand_path(&hf_home_setting, "HF_HOME", lookup)?
-    } else if !xdg_cache_setting.is_empty() {
-        expand_path(&xdg_cache_setting, "XDG_CACHE_HOME", lookup)?.join("huggingface")
-    } else {
-        expand_path("~/.cache/huggingface", "HF_HOME", lookup)?
+fn resolve_hf_home(lookup: &dyn EnvironmentLookup) -> Result<PathBuf, ConfigError> {
+    let configured = lookup.lookup("HF_HOME").filter(|value| !value.is_empty());
+    if let Some(value) = configured {
+        return expand_path(&value, "HF_HOME", lookup);
+    }
+    let xdg = lookup
+        .lookup("XDG_CACHE_HOME")
+        .filter(|value| !value.is_empty());
+    match xdg {
+        Some(value) => Ok(expand_path(&value, "XDG_CACHE_HOME", lookup)?.join("huggingface")),
+        None => expand_path("~/.cache/huggingface", "HF_HOME", lookup),
+    }
+}
+
+fn resolve_hub_cache(
+    lookup: &dyn EnvironmentLookup,
+    hf_home: &Path,
+) -> Result<PathBuf, ConfigError> {
+    let configured = lookup
+        .lookup("HF_HUB_CACHE")
+        .filter(|value| !value.is_empty());
+    let (setting_name, setting) = match configured {
+        Some(value) => ("HF_HUB_CACHE", value),
+        None => match lookup
+            .lookup("HUGGINGFACE_HUB_CACHE")
+            .filter(|value| !value.is_empty())
+        {
+            Some(value) => ("HUGGINGFACE_HUB_CACHE", value),
+            None => return Ok(hf_home.join("hub")),
+        },
     };
-    let primary_cache = lookup.lookup("HF_HUB_CACHE").unwrap_or_default();
-    let hub_cache_setting = if primary_cache.is_empty() {
-        lookup.lookup("HUGGINGFACE_HUB_CACHE").unwrap_or_default()
-    } else {
-        primary_cache
-    };
-    let hub_cache = if hub_cache_setting.is_empty() {
-        hf_home.join("hub")
-    } else {
-        let name = if lookup.lookup("HF_HUB_CACHE").unwrap_or_default().is_empty() {
-            "HUGGINGFACE_HUB_CACHE"
-        } else {
-            "HF_HUB_CACHE"
-        };
-        expand_path(&hub_cache_setting, name, lookup)?
-    };
-    Ok((hf_home, hub_cache))
+    expand_path(&setting, setting_name, lookup)
 }
 
 fn resolve_token_paths(
@@ -48,15 +54,12 @@ fn resolve_token_paths(
     let staging_setting = lookup.lookup("HUGGINGFACE_CO_STAGING").unwrap_or_default();
     let staging =
         betterlite_env::flag("HUGGINGFACE_CO_STAGING", &staging_setting)?.unwrap_or(false);
-    let configured_token_path = if lookup
+    let configured_token_path = match lookup
         .lookup("HF_TOKEN_PATH")
-        .unwrap_or_default()
-        .is_empty()
+        .filter(|setting| !setting.is_empty())
     {
-        hf_home.join("token")
-    } else {
-        let token_setting = lookup.lookup("HF_TOKEN_PATH").unwrap_or_default();
-        expand_path(&token_setting, "HF_TOKEN_PATH", lookup)?
+        Some(setting) => expand_path(&setting, "HF_TOKEN_PATH", lookup)?,
+        None => hf_home.join("token"),
     };
     let stored_tokens_path = configured_token_path
         .parent()
