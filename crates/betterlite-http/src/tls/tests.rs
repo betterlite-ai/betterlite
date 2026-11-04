@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use rstest::{files, rstest};
+use rstest::rstest;
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::tls::TlsPolicy;
@@ -23,7 +23,7 @@ fn http_policy_tests_behavior(#[case] mode: &str, #[case] expected: Option<&str>
         BTreeMap::from([(mode.to_owned(), expected.unwrap_or_default().to_owned())])
     };
     let policy = TlsPolicy::resolve(&config, &environment, None).unwrap();
-    let builder = apply_policy(reqwest::Client::builder(), &policy).unwrap();
+    let builder = crate::tls::apply_policy(reqwest::Client::builder(), &policy).unwrap();
     assert!(builder.build().is_ok());
     if let Some(value) = expected {
         assert_eq!(policy.user_agent, value);
