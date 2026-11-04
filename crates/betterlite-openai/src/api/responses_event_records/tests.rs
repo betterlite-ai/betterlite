@@ -110,6 +110,91 @@ fn event_byte_limit_is_enforced() {
 }
 
 #[test]
+fn json_byte_limit_rejects_only_oversized_records() {
+    let input = br#"{"type":"vendor.future"}"#;
+    let too_small = WireDecodeLimits {
+        max_json_bytes: input.len().saturating_sub(1),
+        max_event_bytes: input.len().saturating_add(1),
+        max_items: 100,
+    };
+    assert!(matches!(
+        decode_responses_event_record(input, too_small),
+        Err(super::wire::ResponsesEventDecodeError::JsonTooLarge)
+    ));
+    let exact = WireDecodeLimits {
+        max_json_bytes: input.len(),
+        max_event_bytes: input.len().saturating_add(1),
+        max_items: 100,
+    };
+    decode_responses_event_record(input, exact).unwrap();
+}
+
+#[test]
+fn event_byte_limit_rejects_only_oversized_records() {
+    let input = br#"{"type":"vendor.future"}"#;
+    let too_small = WireDecodeLimits {
+        max_json_bytes: input.len().saturating_add(1),
+        max_event_bytes: input.len().saturating_sub(1),
+        max_items: 100,
+    };
+    assert!(matches!(
+        decode_responses_event_record(input, too_small),
+        Err(super::wire::ResponsesEventDecodeError::JsonTooLarge)
+    ));
+    let exact = WireDecodeLimits {
+        max_json_bytes: input.len().saturating_add(1),
+        max_event_bytes: input.len(),
+        max_items: 100,
+    };
+    decode_responses_event_record(input, exact).unwrap();
+}
+
+#[test]
+fn missing_required_field_is_rejected() {
+    let input = br#"{"type":"response.mcp_call.completed","sequence_number":4,"item_id":"tool_a"}"#;
+    let error = decode_responses_event_record(input, limits()).unwrap_err();
+    assert!(matches!(
+        error,
+        super::wire::ResponsesEventDecodeError::MissingField(field) if field == "output_index"
+    ));
+}
+
+#[test]
+fn error_event_param_defaults_to_null_and_keeps_explicit_value() {
+    let input = br#"{"type":"error","sequence_number":9,"error":{"type":"invalid_request_error","code":"context_length_exceeded","message":"too long"}}"#;
+    let decoded = decode_responses_event_record(input, limits()).unwrap();
+    let default_fields = match decoded {
+        ResponsesAPIStreamingResponse::Known { fields, .. }
+        | ResponsesAPIStreamingResponse::Generic { fields, .. } => fields,
+    };
+    let value = serde_json::to_value(default_fields).unwrap();
+    assert_eq!(value.pointer("/error/param"), Some(&Value::Null));
+    let explicit = br#"{"type":"error","sequence_number":9,"error":{"type":"invalid_request_error","code":"context_length_exceeded","message":"too long","param":"input"}}"#;
+    let explicit_decoded = decode_responses_event_record(explicit, limits()).unwrap();
+    let explicit_fields = match explicit_decoded {
+        ResponsesAPIStreamingResponse::Known { fields, .. }
+        | ResponsesAPIStreamingResponse::Generic { fields, .. } => fields,
+    };
+    let explicit_value = serde_json::to_value(explicit_fields).unwrap();
+    assert_eq!(
+        explicit_value.pointer("/error/param"),
+        Some(&Value::String(String::from("input")))
+    );
+}
+
+#[test]
+fn custom_tool_event_uses_generic_record_path() {
+    let input =
+        br#"{"type":"response.custom_tool_call_input.delta","item_id":"i","delta":"patch"}"#;
+    let decoded = decode_responses_event_record(input, limits()).unwrap();
+    assert!(matches!(
+        decoded,
+        ResponsesAPIStreamingResponse::Generic { event_type, .. }
+            if event_type == "response.custom_tool_call_input.delta"
+    ));
+}
+
+#[test]
 fn completed_event_hidden_params_are_not_serialized() {
     let input = br#"{"type":"response.completed","response":{"id":"resp_a","created_at":1,"output":[],"usage":{"input_tokens":2,"output_tokens":1,"total_tokens":3}}}"#;
     let decoded = decode_responses_event_record(input, limits()).unwrap();
