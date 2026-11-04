@@ -37,6 +37,7 @@ fn settings(entries: &[(&str, &str)]) -> Result<Settings, ConfigError> {
 #[test]
 fn settings_follow_huggingface_hub() {
     defaults_follow_hub();
+    tilde_and_empty_braces_stay_literal();
     configured_paths_follow_hub();
     staging_follows_hub();
     fallback_values_follow_hub();
@@ -58,7 +59,7 @@ fn defaults_follow_hub() {
     assert_eq!(defaults.token_path, defaults.hf_home.join("token"));
 }
 
-fn configured_paths_follow_hub() {
+fn tilde_and_empty_braces_stay_literal() {
     assert_eq!(
         settings(&[("HF_HOME", "~other/cache"), ("HOME", "/home/test")])
             .unwrap()
@@ -71,6 +72,9 @@ fn configured_paths_follow_hub() {
             .hf_home,
         PathBuf::from("${}")
     );
+}
+
+fn configured_paths_follow_hub() {
     let configured = settings(&[
         ("HF_ENDPOINT", "https://hub.example///"),
         ("HF_HOME", "~/hf-$SUFFIX/${MISSING}"),
