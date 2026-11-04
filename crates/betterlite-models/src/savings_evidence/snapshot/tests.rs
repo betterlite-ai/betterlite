@@ -49,8 +49,34 @@ fn rejects_an_unknown_field() {
 #[case::bool_actual_token_cost(r#""actual_token_cost": true"#)]
 #[case::negative_classifier_cost(r#""classifier_cost": -1.0"#)]
 #[case::bool_classifier_cost(r#""classifier_cost": false"#)]
+#[case::tiny_negative_actual_spend(r#""actual_spend": -1e-30"#)]
 fn rejects_boolean_nonnumeric_and_negative_amounts(#[case] extra: &str) {
     snapshot(extra).unwrap_err();
+}
+
+#[rstest]
+#[case::actual_spend(
+    r#"{"model": "claude-3-haiku", "provider": "anthropic", "prices": null, "actual_spend": 5.551115123125783e-17}"#,
+    "actual_spend",
+    "0.0000000000000000555111512313"
+)]
+#[case::classifier_cost(
+    r#"{"model": "claude-3-haiku", "provider": "anthropic", "prices": null, "actual_spend": 0.5, "classifier_cost": 0.000000000000000055511151231257830}"#,
+    "classifier_cost",
+    "0.0000000000000000555111512313"
+)]
+fn rounds_amounts_past_28_places(
+    #[case] document: &str,
+    #[case] field: &str,
+    #[case] expected: &str,
+) {
+    let snapshot: BaselineCostSnapshot =
+        serde_json::from_str(document).expect("a residue amount rounds instead of rejecting");
+    let actual = match field {
+        "actual_spend" => snapshot.actual_spend,
+        _ => snapshot.classifier_cost,
+    };
+    assert_eq!(actual, decimal(expected));
 }
 
 #[test]
@@ -115,6 +141,19 @@ fn recorded_token_cost_sums_input_and_output_only() {
 fn recorded_token_cost_accepts_boolean_components() {
     let value = cost_breakdown(r#"{"input_cost": true, "output_cost": false}"#);
     assert_eq!(recorded_token_cost(Some(&value)), Some(Decimal::ONE));
+}
+
+#[rstest]
+#[case::input_cost_residue(
+    r#"{"input_cost": 2.7755575615628914e-17, "output_cost": 0}"#,
+    "0.0000000000000000277555756156"
+)]
+fn recorded_token_cost_rounds_a_component_past_28_places(
+    #[case] text: &str,
+    #[case] expected: &str,
+) {
+    let value = cost_breakdown(text);
+    assert_eq!(recorded_token_cost(Some(&value)), Some(decimal(expected)));
 }
 
 #[rstest]

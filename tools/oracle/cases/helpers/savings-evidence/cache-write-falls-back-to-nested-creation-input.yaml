@@ -1,0 +1,15 @@
+kind: helper
+name: cache-write-falls-back-to-nested-creation-input
+call:
+  savings_evidence:
+    operation: baseline_usage
+    usage_object:
+      prompt_tokens: 40
+      prompt_tokens_details:
+        cached_tokens: 4
+        cache_creation_input_tokens: 6
+    baseline_info:
+      cache_read_input_token_cost: 0
+      cache_creation_input_token_cost: 1
+compare: {ignore: []}
+env: {}
