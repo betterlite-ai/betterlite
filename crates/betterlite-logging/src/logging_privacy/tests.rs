@@ -42,6 +42,11 @@ use super::{CallbackMetadataError, PrivacyContext, callback_metadata};
     r#"{"request":{"turn_off_message_logging":"true"}}"#,
     "true"
 )]
+#[case::dynamic_false_string(
+    test_policy,
+    r#"{"global":true,"request":{"turn_off_message_logging":" FaLsE "}}"#,
+    "false"
+)]
 #[case::disable_header(test_policy, r#"{"global":true,"request":{"turn_off_message_logging":true,"metadata":{"headers":{"litellm-disable-message-redaction":true}}}}"#, "false")]
 #[case::enable_header(
     test_policy,
@@ -135,6 +140,56 @@ use super::{CallbackMetadataError, PrivacyContext, callback_metadata};
     r#"{"turn_off_message_logging":"os.environ/PRIVATE"}"#,
     ""
 )]
+#[case::dynamic_callback_values(test_dynamic_params, r#"{"langsmith_project":"direct","turn_off_message_logging":false,"metadata":{"langsmith_project":"nested","turn_off_message_logging":true,"langfuse_prompt_version":2,"dd_site":"ignored"}}"#, r#"{"langsmith_project":"direct","langfuse_prompt_version":2,"turn_off_message_logging":false}"#)]
+#[case::dynamic_nested_values(test_dynamic_params, r#"{"litellm_params":{"metadata":{"langsmith_project":"params"}},"litellm_metadata":{"langsmith_project":"preferred","langfuse_environment":"production"},"metadata":{"langsmith_project":"fallback","turn_off_message_logging":"true"}}"#, r#"{"langsmith_project":"params","langfuse_environment":"production","turn_off_message_logging":true}"#)]
+#[case::dynamic_environment_error(
+    test_dynamic_error,
+    r#"{"metadata":{"langsmith_project":"os.environ/PRIVATE"}}"#,
+    "langsmith_project"
+)]
+#[case::dynamic_flag_environment(
+    test_dynamic_error,
+    r#"{"turn_off_message_logging":"os.environ/PRIVATE"}"#,
+    "turn_off_message_logging"
+)]
+#[case::callback_environment_valid(
+    test_callback_environment,
+    r#"{"langfuse_environment":"production"}"#,
+    "valid"
+)]
+#[case::callback_environment_invalid(
+    test_callback_environment,
+    r#"{"langfuse_environment":"Production"}"#,
+    "invalid"
+)]
+#[case::wrapped_chat_result(
+    test_wrapped_result,
+    r#"{"choices":[{"message":{"content":"private"}}],"id":"chat"}"#,
+    r#"{"choices":[{"message":{"content":"redacted-by-litellm"}}],"id":"chat"}"#
+)]
+#[case::wrapped_output_result(
+    test_wrapped_result,
+    r#"{"output":[],"id":"output"}"#,
+    r#"{"output":[],"id":"output"}"#
+)]
+#[case::wrapped_embedding_result(
+    test_wrapped_result,
+    r#"{"object":"list","data":[{"embedding":[1]}],"model":"m"}"#,
+    r#"{"object":"list","data":[],"model":"m"}"#
+)]
+#[case::wrapped_unknown_object(
+    test_wrapped_result,
+    r#"{"object":"unknown","private":"value"}"#,
+    r#"{"text":"redacted-by-litellm"}"#
+)]
+#[case::non_embedding_data(
+    test_snapshot_shape,
+    r#"{"object":"other","data":[1]}"#,
+    r#"{"object":"other","data":[1]}"#
+)]
+#[case::embedding_without_data(test_snapshot_shape, r#"{"object":"list"}"#, r#"{"object":"list"}"#)]
+#[case::credential_depth_boundary(test_depth_boundary, "100", "public")]
+#[case::credential_depth_exceeded(test_depth_boundary, "101", "REDACTED")]
 fn logging_privacy_tests_behavior(
     #[case] check: fn(&str, &str),
     #[case] input: &str,
@@ -514,4 +569,76 @@ fn test_key_policy(input: &str, expected: &str) {
         .decide(settings, PrivacyContext::default(), true)
         .unwrap();
     assert!(decision.key_info);
+}
+
+fn test_dynamic_params(input: &str, expected: &str) {
+    let request: PrivacyRequest = serde_json::from_str(input).unwrap();
+    let params = request.dynamic_params().unwrap();
+    assert_eq!(
+        Json::Object(params),
+        serde_json::from_str::<Json>(expected).unwrap()
+    );
+}
+
+fn test_dynamic_error(input: &str, expected: &str) {
+    let request: PrivacyRequest = serde_json::from_str(input).unwrap();
+    let error = request.dynamic_params().unwrap_err();
+    let CallbackMetadataError::EnvironmentReference { field } = error else {
+        panic!("expected environment reference rejection")
+    };
+    assert_eq!(field, expected);
+}
+
+fn test_callback_environment(input: &str, expected: &str) {
+    let payload: Json = serde_json::from_str(input).unwrap();
+    let result = callback_metadata(&payload);
+    if expected == "valid" {
+        assert_eq!(Json::Object(result.unwrap().fields), payload);
+    } else {
+        let CallbackMetadataError::InvalidField { field } = result.unwrap_err() else {
+            panic!("expected invalid environment")
+        };
+        assert_eq!(field, "langfuse_environment");
+    }
+}
+
+fn test_wrapped_result(input: &str, expected: &str) {
+    let payload = format!(r#"{{"response":{input}}}"#);
+    let snapshot = format!(
+        r#"{{"messages":[{{"role":"user","content":"redacted-by-litellm"}}],"prompt":"","input":"","response":{expected}}}"#
+    );
+    test_snapshot_shape(&payload, &snapshot);
+}
+
+fn test_snapshot_shape(input: &str, expected: &str) {
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
+    let safe = super::callback_snapshot(
+        serde_json::from_str(input).unwrap(),
+        Decision {
+            content: true,
+            key_info: false,
+        },
+        &redactor,
+    );
+    assert_eq!(safe, serde_json::from_str::<Json>(expected).unwrap());
+}
+
+fn test_depth_boundary(input: &str, expected: &str) {
+    let depth: usize = input.parse().unwrap();
+    let payload = (0..depth).fold(Json::Text("public".to_owned()), |child, _depth| {
+        Json::List(vec![child])
+    });
+    let expected_payload = (0..depth).fold(Json::Text(expected.to_owned()), |child, _depth| {
+        Json::List(vec![child])
+    });
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
+    let safe = super::callback_snapshot(
+        payload,
+        Decision {
+            content: false,
+            key_info: false,
+        },
+        &redactor,
+    );
+    assert_eq!(safe, expected_payload);
 }
