@@ -11,7 +11,18 @@ pub fn text_by_role(content: &Value, role: &str) -> Value {
         Value::Array(items) => Value::Array(
             items
                 .iter()
-                .filter_map(|item| text_item(item, role))
+                .filter_map(|item| {
+                    if let Some(text) = item.as_str() {
+                        return Some(text_block(text, role).0);
+                    }
+                    let fields = item.as_object()?;
+                    let text = if fields.get("type").and_then(Value::as_str) == Some("text") {
+                        fields.get("text").and_then(Value::as_str).unwrap_or("")
+                    } else {
+                        fields.get("text")?.as_str()?
+                    };
+                    Some(text_block(text, role).0)
+                })
                 .collect(),
         ),
         Value::Object(fields) => Value::Array(vec![
@@ -22,26 +33,6 @@ pub fn text_by_role(content: &Value, role: &str) -> Value {
             .0,
         ]),
         _ => Value::Array(vec![text_block(&display_text_value(content), role).0]),
-    }
-}
-
-fn text_item(item: &Value, role: &str) -> Option<Value> {
-    match item {
-        Value::String(text) => Some(text_block(text, role).0),
-        Value::Object(fields) if fields.get("type").and_then(Value::as_str) == Some("text") => {
-            Some(
-                text_block(
-                    fields.get("text").and_then(Value::as_str).unwrap_or(""),
-                    role,
-                )
-                .0,
-            )
-        }
-        Value::Object(fields) => fields
-            .get("text")
-            .and_then(Value::as_str)
-            .map(|text| text_block(text, role).0),
-        _ => None,
     }
 }
 
@@ -57,7 +48,19 @@ pub fn content_passthrough(items: &[Value], role: &str) -> Projection {
             );
             continue;
         }
-        if let Some((value, repr, diagnostic)) = project_item(item, role) {
+        let converted = if let Some(text) = item.as_str() {
+            let (value, repr) = text_block(text, role);
+            Some((
+                value,
+                repr.clone(),
+                Some(format!("Chat provider:   -> {repr}")),
+            ))
+        } else if let Some(fields) = item.as_object() {
+            Some(project_object(item, fields, role))
+        } else {
+            None
+        };
+        if let Some((value, repr, diagnostic)) = converted {
             if let Some(message) = diagnostic {
                 diagnostics.push(message);
             }
@@ -75,28 +78,13 @@ pub fn content_passthrough(items: &[Value], role: &str) -> Projection {
     }
 }
 
-fn project_item(item: &Value, role: &str) -> Option<(Value, String, Option<String>)> {
-    match item {
-        Value::String(text) => {
-            let (value, repr) = text_block(text, role);
-            Some((
-                value,
-                repr.clone(),
-                Some(format!("Chat provider:   -> {repr}")),
-            ))
-        }
-        Value::Object(fields) => Some(project_object(item, fields, role)),
-        _ => None,
-    }
-}
-
 fn project_object(
     item: &Value,
     fields: &Map<String, Value>,
     role: &str,
 ) -> (Value, String, Option<String>) {
     let Some(kind) = fields.get("type").and_then(Value::as_str) else {
-        return passthrough(item);
+        return diagnostic_result(item.clone(), "passthrough");
     };
     match kind {
         "text" => {
@@ -109,25 +97,25 @@ fn project_object(
             )
         }
         "image" => image_item(fields),
-        "file" => file_item(fields),
-        "tool_reference" => passthrough(item),
+        "file" => diagnostic_result(input_file(fields.get("file")), "file"),
+        "tool_reference" => diagnostic_result(item.clone(), "passthrough"),
         "input_text"
         | "input_image"
         | "output_text"
         | "refusal"
         | "input_file"
         | "computer_screenshot"
-        | "summary_text" => passthrough(item),
+        | "summary_text" => diagnostic_result(item.clone(), "passthrough"),
         _ => unknown_item(item, fields, kind, role),
     }
 }
 
-fn passthrough(item: &Value) -> (Value, String, Option<String>) {
-    let repr = format_diagnostic_value(item);
+fn diagnostic_result(value: Value, label: &str) -> (Value, String, Option<String>) {
+    let repr = format_diagnostic_value(&value);
     (
-        item.clone(),
+        value,
         repr.clone(),
-        Some(format!("Chat provider:   passthrough -> {repr}")),
+        Some(format!("Chat provider:   {label} -> {repr}")),
     )
 }
 
@@ -144,16 +132,6 @@ fn image_item(fields: &Map<String, Value>) -> (Value, String, Option<String>) {
     )
 }
 
-fn file_item(fields: &Map<String, Value>) -> (Value, String, Option<String>) {
-    let value = input_file(fields.get("file"));
-    let repr = format_diagnostic_value(&value);
-    (
-        value,
-        repr.clone(),
-        Some(format!("Chat provider:   file -> {repr}")),
-    )
-}
-
 fn unknown_item(
     item: &Value,
     fields: &Map<String, Value>,
@@ -162,7 +140,7 @@ fn unknown_item(
 ) -> (Value, String, Option<String>) {
     let unknown = ChatContent::Unknown(item.clone());
     let ChatContent::Unknown(value) = unknown else {
-        return passthrough(item);
+        return diagnostic_result(item.clone(), "passthrough");
     };
     let text = fields
         .get("text")
