@@ -1,0 +1,1 @@
+{"kind":"helper","name":"iteration-lazy","call":{"b3693":{"function":"add","patterns":[{"pattern_type":"regex","pattern":".*?","action":"MASK"}],"text":"ab"}},"env":{},"compare":{"ignore":[]}}

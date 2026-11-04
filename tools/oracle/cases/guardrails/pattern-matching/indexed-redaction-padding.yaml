@@ -1,0 +1,1 @@
+{"kind":"helper","name":"indexed-redaction-padding","call":{"b3693":{"function":"tag","format":"[{pattern_name[0]:>3}]","name":"email"}},"env":{},"compare":{"ignore":[]}}

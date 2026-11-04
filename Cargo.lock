@@ -834,14 +834,20 @@ dependencies = [
  "betterlite-server",
  "chrono",
  "clap",
+ "fancy-regex",
  "rand 0.10.3",
  "rstest",
  "serde",
+ "serde-saphyr",
  "serde_json",
  "sha2 0.11.1",
+ "strfmt",
+ "tempfile",
+ "thiserror",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "unicode-general-category",
  "uuid",
  "whoami",
 ]
@@ -1419,6 +1425,7 @@ dependencies = [
  "aws-credential-types",
  "axum",
  "base64 0.23.1",
+ "betterlite",
  "betterlite-anthropic",
  "betterlite-auth",
  "betterlite-azure",
@@ -5799,6 +5806,12 @@ checksum = "bf6cc3b19bfb128a8ad11026086e31d3ce9ad23f8ea37354b31383a187c44cf3"
 dependencies = [
  "fallible-streaming-iterator",
 ]
+
+[[package]]
+name = "strfmt"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "046d549b88a663d317cd04d39696fca5f77db4db44e1db65bfb9dee7f9e680bd"
 
 [[package]]
 name = "stringprep"
