@@ -28,6 +28,18 @@ fn v1_prefers_text_to_finish_and_forwards_citations() {
 }
 
 #[test]
+fn v1_finish_record_without_text_uses_finish_reason() {
+    let chunk = decode_cohere_line(
+        CohereStreamVersion::V1,
+        br#"{"is_finished":true,"finish_reason":"COMPLETE"}"#,
+        false,
+    )
+    .unwrap();
+    assert!(chunk.is_finished);
+    assert_eq!(chunk.finish_reason, "COMPLETE");
+}
+
+#[test]
 fn v2_type_takes_precedence_over_message_end() {
     let chunk = decode_cohere_line(CohereStreamVersion::V2, br#"{"type":"content-delta","event":"message-end","delta":{"message":{"content":{"text":"x"}}}}"#, false).unwrap();
     assert_eq!(chunk.text, "x");
