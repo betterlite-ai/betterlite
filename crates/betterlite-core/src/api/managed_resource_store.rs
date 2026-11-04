@@ -33,7 +33,7 @@ pub fn get_resource_owner_scopes(principal: Option<&Principal>) -> Vec<OwnerScop
         ("key:", identity.credential_ref.token_id.as_deref()),
     ];
     for (prefix, value) in candidates {
-        if let Some(nonempty) = value.filter(|value| !value.is_empty()) {
+        if let Some(nonempty) = value.filter(|candidate| !candidate.is_empty()) {
             let scope = OwnerScope(format!("{prefix}{nonempty}"));
             if !scopes.contains(&scope) {
                 scopes.push(scope);
@@ -58,7 +58,7 @@ pub fn get_primary_owner_scope(principal: Option<&Principal>) -> Option<OwnerSco
     ];
     candidates.into_iter().find_map(|(prefix, value)| {
         value
-            .filter(|value| !value.is_empty())
+            .filter(|candidate| !candidate.is_empty())
             .map(|nonempty| OwnerScope(format!("{prefix}{nonempty}")))
     })
 }
