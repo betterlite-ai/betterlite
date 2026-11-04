@@ -1,4 +1,4 @@
-use std::{iter, str};
+use std::str;
 
 use secrecy::ExposeSecret as _;
 
@@ -66,12 +66,8 @@ fn request_error(source: reqwest::Error) -> DeepKeepError {
 }
 
 fn redact_message(guardrail: &DeepKeepGuardrail, message: &str) -> String {
-    let contains_secret = iter::once(&guardrail.settings.api_key)
-        .chain(guardrail.settings.extra_headers.values())
-        .any(|secret| {
-            let exposed = secret.expose_secret();
-            !exposed.is_empty() && message.contains(exposed)
-        });
+    let exposed = guardrail.settings.api_key.expose_secret();
+    let contains_secret = !exposed.is_empty() && message.contains(exposed);
     if contains_secret {
         "[REDACTED]".to_owned()
     } else {

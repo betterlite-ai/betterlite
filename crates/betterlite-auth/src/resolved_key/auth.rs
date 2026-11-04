@@ -200,6 +200,27 @@ impl UserAPIKeyAuth {
         self.managed_delegation_verified = false;
         verified
     }
+
+    #[must_use]
+    pub fn allowed_cache_controls(&self) -> Option<Vec<&str>> {
+        let controls = self.view.token.allowed_cache_controls.0.as_deref()?;
+        if controls.is_empty() {
+            return None;
+        }
+        Some(
+            controls
+                .iter()
+                .filter_map(|control| match control {
+                    JsonData::String(value) => Some(value.as_str()),
+                    JsonData::Null
+                    | JsonData::Bool(_)
+                    | JsonData::Number(_)
+                    | JsonData::Array(_)
+                    | JsonData::Object(_) => None,
+                })
+                .collect(),
+        )
+    }
 }
 
 fn strip_server_only_fields(fields: &mut BTreeMap<String, JsonData>) {

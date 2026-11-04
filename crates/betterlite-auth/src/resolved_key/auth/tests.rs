@@ -134,16 +134,18 @@ fn allowed_region_eu_us_only(#[case] region: &str, #[case] accepted: bool) {
     assert_eq!(outcome.is_ok(), accepted);
 }
 
-#[test]
-fn per_model_limits_integer_values() {
-    let auth = construct("{\"rpm_limit_per_model\": {\"gpt-4\": 5}}");
+#[rstest]
+#[case::rpm_limit_per_model("rpm_limit_per_model")]
+#[case::tpm_limit_per_model("tpm_limit_per_model")]
+fn per_model_limits_integer_values(#[case] field_name: &str) {
+    let auth = construct(&format!("{{\"{field_name}\": {{\"gpt-4\": 5}}}}"));
     assert_eq!(
-        field(&serialized(&auth), "rpm_limit_per_model"),
+        field(&serialized(&auth), field_name),
         parse("{\"gpt-4\": 5}")
     );
-    let error = UserAPIKeyAuth::construct(AuthInput::Dict(object(
-        "{\"rpm_limit_per_model\": {\"gpt-4\": 1.5}}",
-    )))
+    let error = UserAPIKeyAuth::construct(AuthInput::Dict(object(&format!(
+        "{{\"{field_name}\": {{\"gpt-4\": 1.5}}}}"
+    ))))
     .unwrap_err();
     assert!(matches!(error, AuthError::Json(_)));
 }
@@ -242,11 +244,53 @@ fn server_markers_survive_trusted_assignment() {
     assert!(!serialized(&auth).contains_key("via_virtual_key"));
 }
 
-#[test]
-fn excluded_but_not_stripped_fields_accepted() {
-    let auth = construct("{\"budget_reservation\": {\"k\": \"v\"}}");
-    assert!(auth.extra.budget_reservation.is_some());
-    assert!(!serialized(&auth).contains_key("budget_reservation"));
+type ExcludedFieldCheck = fn(&UserAPIKeyAuth) -> bool;
+
+const EXCLUDED_FIELD_CHECKS: [(&str, ExcludedFieldCheck); 6] = [
+    ("budget_reservation", |auth| {
+        auth.extra.budget_reservation.is_some()
+    }),
+    ("team_budget_snapshot", |auth| {
+        auth.extra.team_budget_snapshot.is_some()
+    }),
+    ("user_budget_snapshot", |auth| {
+        auth.extra.user_budget_snapshot.is_some()
+    }),
+    ("org_budget_snapshot", |auth| {
+        auth.extra.org_budget_snapshot.is_some()
+    }),
+    ("matched_model_access_groups", |auth| {
+        auth.extra.matched_model_access_groups.is_some()
+    }),
+    ("budget_throttle_pct", |auth| {
+        auth.extra.budget_throttle_pct.is_some()
+    }),
+];
+
+#[rstest]
+#[case::budget_reservation("budget_reservation", "{\"k\": \"v\"}")]
+#[case::team_budget_snapshot(
+    "team_budget_snapshot",
+    "{\"user_api_key_team_budget_reset_at\": null, \"user_api_key_team_table_max_budget\": 1.5}"
+)]
+#[case::user_budget_snapshot(
+    "user_budget_snapshot",
+    "{\"user_api_key_user_budget_reset_at\": null, \"user_api_key_user_table_max_budget\": null, \"user_api_key_user_alias\": \"u\"}"
+)]
+#[case::org_budget_snapshot(
+    "org_budget_snapshot",
+    "{\"user_api_key_org_spend\": 1.0, \"user_api_key_org_max_budget\": null}"
+)]
+#[case::matched_model_access_groups("matched_model_access_groups", "[\"a\"]")]
+#[case::budget_throttle_pct("budget_throttle_pct", "0.5")]
+fn excluded_but_not_stripped_fields_accepted(#[case] field_name: &str, #[case] value: &str) {
+    let auth = construct(&format!("{{\"{field_name}\": {value}}}"));
+    let check = EXCLUDED_FIELD_CHECKS
+        .iter()
+        .find_map(|(name, check)| (*name == field_name).then_some(*check))
+        .unwrap_or_else(|| panic!("unexpected excluded field {field_name}"));
+    assert!(check(&auth), "{field_name} must be parsed and retained");
+    assert!(!serialized(&auth).contains_key(field_name));
 }
 
 #[rstest]
@@ -343,6 +387,16 @@ fn serialized_span_requires_caller_cleanup() {
 }
 
 #[test]
+fn cache_control_accessor_reads_allowlist_with_opaque_span() {
+    let mut auth = construct(
+        r#"{"allowed_cache_controls": ["no-cache", 123], "parent_otel_span": {"trace_id": "abc"}}"#,
+    );
+    auth.extra.parent_otel_span = Some(ParentOtelSpan::Opaque);
+
+    assert_eq!(auth.allowed_cache_controls(), Some(vec!["no-cache"]));
+}
+
+#[test]
 fn unknown_auth_extras_ignored() {
     let auth = construct("{\"something_brand_new\": \"x\"}");
     assert!(!serialized(&auth).contains_key("something_brand_new"));
@@ -366,6 +420,14 @@ fn unknown_auth_extras_ignored() {
     "{\"user_id\": null, \"team_id\": \"t1\", \"metadata\": {\"service_account_id\": \"svc\"}}",
     true
 )]
+#[case::empty_team_id(
+    "{\"user_id\": null, \"team_id\": \"\", \"metadata\": {\"service_account_id\": \"svc\"}}",
+    true
+)]
+#[case::empty_service_account_id(
+    "{\"user_id\": null, \"team_id\": \"t1\", \"metadata\": {\"service_account_id\": \"\"}}",
+    true
+)]
 fn service_account_none_vs_empty_fields(#[case] fields: &str, #[case] expected: bool) {
     assert_eq!(is_team_service_account(&construct(fields)), expected);
 }
@@ -380,6 +442,7 @@ fn service_account_false_value_is_present() {
 #[rstest]
 #[case::proxy_admin("proxy_admin", true)]
 #[case::proxy_admin_viewer("proxy_admin_viewer", true)]
+#[case::internal_user_viewer("internal_user_viewer", false)]
 #[case::org_admin("org_admin", false)]
 #[case::internal_user("internal_user", false)]
 #[case::team("team", false)]

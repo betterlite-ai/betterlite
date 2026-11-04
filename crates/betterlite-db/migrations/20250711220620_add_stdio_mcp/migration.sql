@@ -7,3 +7,4 @@ ALTER COLUMN "url" DROP NOT NULL;
 
 -- AlterTable
 ALTER TABLE "LiteLLM_ObjectPermissionTable" ADD COLUMN IF NOT EXISTS "mcp_access_groups" TEXT[] DEFAULT ARRAY[]::TEXT[];
+

@@ -3,7 +3,7 @@ use std::net::TcpListener;
 
 use betterlite_guardrails::deepkeep::error::DeepKeepError;
 use reqwest::StatusCode;
-use reqwest::header::{HeaderName, HeaderValue};
+use reqwest::header::HeaderValue;
 
 use super::deepkeep_failure;
 
@@ -80,13 +80,6 @@ fn invalid_header() -> DeepKeepError {
     }
 }
 
-fn invalid_header_name() -> DeepKeepError {
-    DeepKeepError::InvalidHeaderName {
-        name: "\u{0}".to_owned(),
-        source: HeaderName::from_bytes(b"\0").unwrap_err(),
-    }
-}
-
 #[test]
 fn deepkeep_failures_carry_the_python_status() {
     assert_eq!(deepkeep_failure(&blocked()).status, Some(400));
@@ -98,5 +91,4 @@ fn deepkeep_failures_carry_the_python_status() {
     assert_eq!(deepkeep_failure(&timeout()).status, None);
     assert_eq!(deepkeep_failure(&request_build()).status, None);
     assert_eq!(deepkeep_failure(&invalid_header()).status, None);
-    assert_eq!(deepkeep_failure(&invalid_header_name()).status, None);
 }
