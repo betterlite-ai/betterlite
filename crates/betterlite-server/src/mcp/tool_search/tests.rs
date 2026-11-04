@@ -10,28 +10,39 @@ use super::virtual_tools::{
 };
 use super::{
     MCPToolSearchHit, SemanticToolRanker, keyword_score, rank_mcp_tools, search_mcp_tools,
-    search_tools, split_core_tools, tool_text, top_hits,
+    split_core_tools, tool_text, top_hits,
 };
 use crate::mcp::catalog_guard::types::MCPTool;
 use betterlite_db::mcp_stored_contracts::JsonValue;
 use betterlite_semantic::{Embedder, SemanticTextIndex};
 use std::collections::BTreeMap;
 
-struct StaticEmbedder;
+enum TestEmbedder {
+    Vectors,
+    Http,
+    Broken,
+}
 
 #[async_trait::async_trait]
-impl Embedder for StaticEmbedder {
+impl Embedder for TestEmbedder {
     async fn embed(
         &self,
         texts: &[String],
     ) -> Result<Vec<betterlite_semantic::Vector>, betterlite_semantic::EmbedError> {
-        Ok(texts
-            .iter()
-            .map(|text| match text.as_str() {
-                "query" | "matched\nquery" => vec![1.0_f64, 0.0_f64],
-                _ => vec![0.0_f64, 1.0_f64],
-            })
-            .collect())
+        match self {
+            Self::Http => Err(betterlite_semantic::EmbedError::Http {
+                status_code: 429,
+                detail: "retry later".to_owned(),
+            }),
+            Self::Broken => Err(betterlite_semantic::EmbedError::Other("broken".to_owned())),
+            Self::Vectors => Ok(texts
+                .iter()
+                .map(|text| match text.as_str() {
+                    "query" | "matched\nquery" => vec![1.0_f64, 0.0_f64],
+                    _ => vec![0.0_f64, 1.0_f64],
+                })
+                .collect()),
+        }
     }
 }
 
@@ -49,8 +60,8 @@ fn tool(name: &str, description: &str) -> MCPTool {
     }
 }
 
-#[test]
-fn keyword_score_counts_case_insensitive_tokens() {
+#[tokio::test]
+async fn keyword_score_counts_case_insensitive_tokens() {
     let source = tool("weather_forecast", "Get current weather and forecast");
     assert_eq!(
         keyword_score("WEATHER forecast", &source).to_bits(),
@@ -58,10 +69,17 @@ fn keyword_score_counts_case_insensitive_tokens() {
     );
     assert_eq!(keyword_score("weath", &source).to_bits(), 1.0_f64.to_bits());
     assert_eq!(
-        search_tools("weather", &[source], 5)
-            .unwrap()
-            .first()
-            .and_then(|hit| hit.score),
+        search_mcp_tools(
+            "weather",
+            &[source],
+            5,
+            &MCPToolSearchSettings::default(),
+            None
+        )
+        .await
+        .unwrap()
+        .first()
+        .and_then(|hit| hit.score),
         None
     );
 }
@@ -190,7 +208,7 @@ fn top_k_coercion_uses_the_legacy_fallback() {
 #[tokio::test]
 async fn semantic_ranking_uses_threshold_and_preserves_stable_hits() {
     let tools = vec![tool("matched", "query"), tool("unmatched", "other")];
-    let embedder = StaticEmbedder;
+    let embedder = TestEmbedder::Vectors;
     let mut index = SemanticTextIndex::default();
     let mut ranker = SemanticToolRanker {
         embed: &embedder,
@@ -279,26 +297,11 @@ fn empty_name_does_not_add_a_leading_newline() {
     assert_eq!(tool_text(&tool("", "description")), "description");
 }
 
-struct FailingEmbedder;
-
-#[async_trait::async_trait]
-impl Embedder for FailingEmbedder {
-    async fn embed(
-        &self,
-        _texts: &[String],
-    ) -> Result<Vec<betterlite_semantic::Vector>, betterlite_semantic::EmbedError> {
-        Err(betterlite_semantic::EmbedError::Http {
-            status_code: 429,
-            detail: "retry later".to_owned(),
-        })
-    }
-}
-
 #[tokio::test]
 async fn semantic_http_errors_keep_their_status() {
     let mut index = SemanticTextIndex::default();
     let mut ranker = SemanticToolRanker {
-        embed: &FailingEmbedder,
+        embed: &TestEmbedder::Http,
         embedding_model: "model",
         index: &mut index,
     };
@@ -457,7 +460,7 @@ async fn empty_query_skips_even_a_failing_embedder() {
     };
     let mut index = SemanticTextIndex::default();
     let mut ranker = SemanticToolRanker {
-        embed: &FailingEmbedder,
+        embed: &TestEmbedder::Http,
         embedding_model: "model",
         index: &mut index,
     };
@@ -494,23 +497,11 @@ fn text_result_has_exact_wire_shape(#[case] is_error: bool, #[case] expected: &s
     assert_json(&result, expected);
 }
 
-struct BrokenEmbedder;
-
-#[async_trait::async_trait]
-impl Embedder for BrokenEmbedder {
-    async fn embed(
-        &self,
-        _texts: &[String],
-    ) -> Result<Vec<betterlite_semantic::Vector>, betterlite_semantic::EmbedError> {
-        Err(betterlite_semantic::EmbedError::Other("broken".to_owned()))
-    }
-}
-
 #[tokio::test]
 async fn embedding_failure_is_preserved_without_keyword_fallback() {
     let mut index = SemanticTextIndex::default();
     let mut ranker = SemanticToolRanker {
-        embed: &BrokenEmbedder,
+        embed: &TestEmbedder::Broken,
         embedding_model: "model",
         index: &mut index,
     };
@@ -532,7 +523,7 @@ async fn embedding_failure_is_preserved_without_keyword_fallback() {
 async fn semantic_projection_includes_zero_score_at_threshold() {
     let mut index = SemanticTextIndex::default();
     let mut ranker = SemanticToolRanker {
-        embed: &StaticEmbedder,
+        embed: &TestEmbedder::Vectors,
         embedding_model: "model",
         index: &mut index,
     };

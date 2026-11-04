@@ -8,7 +8,7 @@ use betterlite_server::mcp::tool_search::virtual_tools::{
     MCP_PROXY_TOOL_DEFINITIONS, VIRTUAL_TOOL_DEFINITIONS,
 };
 use betterlite_server::mcp::tool_search::{
-    MCPToolSearchHit, search_tools, split_core_tools, top_hits,
+    MCPToolSearchHit, search_mcp_tools, split_core_tools, top_hits,
 };
 use serde::{Deserialize, Serialize};
 
@@ -78,12 +78,10 @@ impl crate::helpers::Helper for Op {
                 query,
                 tools,
                 top_k,
-            } => serde_json::to_value(search_tools(query, tools, *top_k).map_err(helper_error)?),
+            } => return keyword_results(query, tools, *top_k),
             Input::Identity { tool, server_id } => return identity(tool, server_id),
             Input::Core { tools, core_tools } => return core_names(tools, core_tools),
-            Input::Empty { tools } => {
-                serde_json::to_value(search_tools("", tools, 5).map_err(helper_error)?)
-            }
+            Input::Empty { tools } => return keyword_results("", tools, 5),
             Input::Settings { config } => serde_json::to_value(config),
             Input::Definitions => serde_json::to_value(
                 [
@@ -154,4 +152,15 @@ fn ranked(
         })
         .collect();
     serde_json::to_value(names).map_err(helper_error)
+}
+
+fn keyword_results(query: &str, tools: &[MCPTool], top_k: i64) -> crate::helpers::HelperResult {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .map_err(helper_error)?;
+    let settings = MCPToolSearchSettings::default();
+    let results = runtime
+        .block_on(search_mcp_tools(query, tools, top_k, &settings, None))
+        .map_err(helper_error)?;
+    serde_json::to_value(results).map_err(helper_error)
 }

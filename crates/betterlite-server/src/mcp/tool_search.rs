@@ -159,7 +159,10 @@ pub async fn rank_mcp_tools(
     }
     let limit = top_k.min(settings.top_k);
     let semantic = ranker.is_some();
-    let scores = score_tools(query, &rest, ranker).await?;
+    let scores = match ranker {
+        Some(state) => state.scores(query, &rest).await?,
+        None => rest.iter().map(|tool| keyword_score(query, tool)).collect(),
+    };
     let minimum = if semantic {
         settings.similarity_threshold
     } else {
@@ -176,29 +179,6 @@ pub async fn rank_mcp_tools(
     Ok(hits)
 }
 
-pub fn search_tools(
-    query: &str,
-    tools: &[MCPTool],
-    top_k: i64,
-) -> Result<Vec<ToolSearchResult>, SearchError> {
-    if query.is_empty() {
-        return Ok(Vec::new());
-    }
-    let hits: Vec<MCPToolSearchHit> = top_hits(
-        tools,
-        &tools
-            .iter()
-            .map(|tool| keyword_score(query, tool))
-            .collect::<Vec<_>>(),
-        1.0,
-        top_k,
-    )?
-    .into_iter()
-    .map(|(_, tool)| MCPToolSearchHit { tool, score: None })
-    .collect();
-    Ok(project_hits(&hits))
-}
-
 pub async fn search_mcp_tools(
     query: &str,
     tools: &[MCPTool],
@@ -206,38 +186,23 @@ pub async fn search_mcp_tools(
     settings: &MCPToolSearchSettings,
     ranker: Option<&mut SemanticToolRanker<'_>>,
 ) -> Result<Vec<ToolSearchResult>, SearchError> {
-    Ok(project_hits(
-        &rank_mcp_tools(query, tools, top_k, settings, ranker).await?,
-    ))
+    let hits = rank_mcp_tools(query, tools, top_k, settings, ranker).await?;
+    Ok(hits
+        .into_iter()
+        .map(|hit| ToolSearchResult {
+            name: hit.tool.name,
+            description: hit.tool.description.unwrap_or_default(),
+            input_schema: hit.tool.input_schema,
+            score: hit.score,
+        })
+        .collect())
 }
 
-fn project_hits(hits: &[MCPToolSearchHit]) -> Vec<ToolSearchResult> {
-    hits.iter()
-        .map(|hit| tool_result(&hit.tool, hit.score))
-        .collect()
-}
-
-async fn score_tools(
-    query: &str,
-    tools: &[MCPTool],
-    ranker: Option<&mut SemanticToolRanker<'_>>,
-) -> Result<Vec<f64>, SemanticError> {
-    match ranker {
-        Some(semantic_ranker) => {
-            let texts: Vec<String> = tools.iter().map(tool_text).collect();
-            semantic_ranker
-                .index
-                .scores(
-                    query,
-                    &texts,
-                    semantic_ranker.embed,
-                    semantic_ranker.embedding_model,
-                )
-                .await
-        }
-        None => Ok(tools
-            .iter()
-            .map(|tool| keyword_score(query, tool))
-            .collect()),
+impl SemanticToolRanker<'_> {
+    async fn scores(&mut self, query: &str, tools: &[MCPTool]) -> Result<Vec<f64>, SemanticError> {
+        let texts: Vec<String> = tools.iter().map(tool_text).collect();
+        self.index
+            .scores(query, &texts, self.embed, self.embedding_model)
+            .await
     }
 }
