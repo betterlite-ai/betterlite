@@ -30,6 +30,12 @@ fn policy_cases() {
         Some(&Json::Bool(false)),
         false
     ));
+    assert!(should_redact_message_logging(
+        None,
+        Some(enable_headers),
+        None,
+        false
+    ));
     let disable_header = json(r#"{"litellm-disable-message-redaction":true}"#);
     let Json::Object(disable_headers) = &disable_header else {
         panic!("header fixture is an object");
@@ -53,20 +59,29 @@ fn policy_cases() {
         true
     ));
     assert!(should_redact_message_logging(None, None, None, true));
+    let metadata = json(r#"{"headers":{"litellm-disable-message-redaction":true}}"#);
+    assert!(!should_redact_message_logging(
+        Some(&metadata),
+        None,
+        Some(&Json::Bool(true)),
+        true
+    ));
 }
 
 fn snapshot_cases() {
-    let payload =
-        json(r#"{"messages":[{"content":"secret"}],"api_key":"sk-abc","prompt":"prompt"}"#);
+    let payload = json(
+        r#"{"messages":[{"content":"secret"}],"prompt":"prompt","input":"input","api_key":"sk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","response":{"choices":[{"message":{"content":"answer","reasoning_content":"reason","tool_calls":[{"function":{"arguments":"args"}}],"thinking_blocks":["private"],"audio":{"data":"private"}}}]},"nullable":{"content":null}}"#,
+    );
     let snapshot = redacted_snapshot(&payload).expect("redaction patterns compile");
     assert_ne!(snapshot, payload);
-    let original_messages = json(r#"[{"content":"secret"}]"#);
-    assert_eq!(
-        payload_field(&payload, "messages"),
-        Some(&original_messages)
+    let expected = json(
+        r#"{"messages":[{"role":"user","content":"[REDACTED]"}],"prompt":"","input":"","api_key":"REDACTED","response":{"choices":[{"message":{"content":"[REDACTED]","reasoning_content":"[REDACTED]","tool_calls":[{"function":{"arguments":"[REDACTED]"}}],"thinking_blocks":null,"audio":null}}]},"nullable":{"content":null}}"#,
     );
-    let content = message_content(&snapshot);
-    assert_eq!(content, Some(&Json::Text("[REDACTED]".to_owned())));
+    assert_eq!(snapshot, expected);
+    assert_eq!(
+        payload_field(&payload, "prompt"),
+        Some(&Json::Text("prompt".to_owned()))
+    );
     let metadata = json(r#"{"user_api_key_hash":"hash","team":"team"}"#);
     assert_eq!(
         redact_user_api_key_info(&metadata, true),
@@ -112,17 +127,4 @@ fn payload_field<'payload>(value: &'payload Json, name: &str) -> Option<&'payloa
         Json::Object(fields) => fields.get(name),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
     }
-}
-
-fn message_content(value: &Json) -> Option<&Json> {
-    let Json::Object(fields) = value else {
-        return None;
-    };
-    let Some(Json::List(items)) = fields.get("messages") else {
-        return None;
-    };
-    let Some(Json::Object(message)) = items.first() else {
-        return None;
-    };
-    message.get("content")
 }
