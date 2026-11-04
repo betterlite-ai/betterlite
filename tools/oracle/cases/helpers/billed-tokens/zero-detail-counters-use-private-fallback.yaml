@@ -1,0 +1,8 @@
+kind: helper
+name: zero-detail-counters-use-private-fallback
+call:
+  billed_tokens:
+    operation: counts
+    usage: {detail_reasoning: 0, top_level_reasoning: 7, detail_cache_read: 0, top_level_cache_read: 8, detail_cache_creation: 0, top_level_cache_creation: 9, detail_cached_audio: 2, detail_cache_creation_1h: 3}
+compare: {ignore: []}
+env: {}
