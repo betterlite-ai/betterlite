@@ -5,6 +5,7 @@ use std::str::FromStr;
 use super::error::RedisSettingsError;
 use super::model::scalars::{BoolOrText, CoercionKind, PassthroughValue, Scalar};
 use super::model::settings::Target;
+use super::os_environ::ReferenceNames;
 
 pub fn coerce_number<T>(
     name: &str,
@@ -31,17 +32,21 @@ pub fn coerce_bool(
     }
 }
 
-// Unknown passthrough values remain text; recognized fields use the shared parsers.
+// A value whose text came from an "os.environ/<name>" reference blames that name instead of the REDIS_* variable the field normally reads from.
 pub fn coerce_passthrough(
     name: &str,
     value: &mut PassthroughValue,
     target: Target,
+    names: &ReferenceNames,
 ) -> Result<bool, RedisSettingsError> {
     let (Some(kind), PassthroughValue::Text(text)) = (coercion_kind(name, target), &*value) else {
         return Ok(true);
     };
-    let variable = format!("REDIS_{}", name.to_uppercase());
-    coerce_passthrough_value(kind, &variable, text)?.map_or(Ok(false), |coerced| {
+    let canonical = format!("REDIS_{}", name.to_uppercase());
+    let variable = names
+        .get(&canonical)
+        .map_or(canonical.as_str(), String::as_str);
+    coerce_passthrough_value(kind, variable, text)?.map_or(Ok(false), |coerced| {
         *value = coerced;
         Ok(true)
     })

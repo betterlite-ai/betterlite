@@ -176,6 +176,36 @@ fn shared_env_redis_coercion_rejects_invalid_settings(#[case] name: &str, #[case
 }
 
 #[test]
+fn shared_env_redis_coercion_blames_an_invalid_numeric_reference() {
+    let overrides = RedisOverrides {
+        host: Some("cache.internal".to_owned()),
+        port: Some(IntOrText::Text("os.environ/CACHE_PORT".to_owned())),
+        ..blank_overrides()
+    };
+    let environment = env(&[("CACHE_PORT", "1_000")]);
+    let error = resolve_redis_kwargs(overrides, ClientKind::Sync, &environment)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("CACHE_PORT"));
+    assert!(!error.contains("REDIS_PORT"));
+}
+
+#[test]
+fn shared_env_redis_coercion_blames_an_invalid_boolean_reference() {
+    let overrides = RedisOverrides {
+        host: Some("cache.internal".to_owned()),
+        ssl: Some(BoolOrText::Text("os.environ/CACHE_SSL".to_owned())),
+        ..blank_overrides()
+    };
+    let environment = env(&[("CACHE_SSL", "maybe")]);
+    let error = resolve_redis_kwargs(overrides, ClientKind::Sync, &environment)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("CACHE_SSL"));
+    assert!(!error.contains("REDIS_SSL"));
+}
+
+#[test]
 fn shared_env_redis_coercion_resolves_defaults_and_flags() {
     let environment = env(&[
         ("REDIS_HOST", "cache.internal"),

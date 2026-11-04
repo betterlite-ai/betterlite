@@ -5,7 +5,9 @@ use std::collections::BTreeMap;
 use secrecy::{ExposeSecret, SecretString};
 
 use super::resolve_overrides_os_environ;
-use crate::redis_connection_settings::model::scalars::{FloatOrText, IntOrText, PassthroughValue};
+use crate::redis_connection_settings::model::scalars::{
+    BoolOrText, FloatOrText, IntOrText, PassthroughValue,
+};
 use crate::redis_connection_settings::model::settings::{ClientKind, RedisOverrides};
 use crate::redis_connection_settings::resolve::resolve_redis_kwargs;
 
@@ -56,7 +58,7 @@ fn an_os_environ_reference_resolves_before_any_other_field_is_touched() {
     };
     let env = env_with("MY_REDIS_HOST", "cache.internal");
 
-    let resolved = resolve_overrides_os_environ(overrides, &env);
+    let (resolved, _names) = resolve_overrides_os_environ(overrides, &env);
     assert_eq!(resolved.host, Some("cache.internal".to_owned()));
 }
 
@@ -82,7 +84,7 @@ fn a_plain_string_is_left_untouched() {
         ..blank_overrides()
     };
 
-    let resolved = resolve_overrides_os_environ(overrides, &BTreeMap::new());
+    let (resolved, _names) = resolve_overrides_os_environ(overrides, &BTreeMap::new());
     assert_eq!(resolved.host, Some("cache.internal".to_owned()));
 }
 
@@ -93,7 +95,7 @@ fn an_unresolved_reference_clears_the_field() {
         ..blank_overrides()
     };
 
-    let resolved = resolve_overrides_os_environ(overrides, &BTreeMap::new());
+    let (resolved, _names) = resolve_overrides_os_environ(overrides, &BTreeMap::new());
     assert!(resolved.host.is_none());
 }
 
@@ -107,7 +109,7 @@ fn a_secret_field_resolves_through_the_reference_too() {
     };
     let env = env_with("MY_REDIS_PASSWORD", "s3cret");
 
-    let resolved = resolve_overrides_os_environ(overrides, &env);
+    let (resolved, _names) = resolve_overrides_os_environ(overrides, &env);
     assert_eq!(
         resolved
             .password
@@ -125,7 +127,7 @@ fn an_explicit_null_url_stays_null_after_resolution() {
         ..blank_overrides()
     };
 
-    let resolved = resolve_overrides_os_environ(overrides, &BTreeMap::new());
+    let (resolved, _names) = resolve_overrides_os_environ(overrides, &BTreeMap::new());
     assert!(matches!(resolved.url, Some(None)));
 }
 
@@ -139,7 +141,7 @@ fn a_present_url_resolves_through_the_reference() {
     };
     let env = env_with("MY_REDIS_URL", "redis://cache:6379");
 
-    let resolved = resolve_overrides_os_environ(overrides, &env);
+    let (resolved, _names) = resolve_overrides_os_environ(overrides, &env);
     assert_eq!(
         resolved
             .url
@@ -158,7 +160,7 @@ fn an_int_field_resolves_through_the_reference() {
     };
     let env = env_with("MY_REDIS_PORT", "6380");
 
-    let resolved = resolve_overrides_os_environ(overrides, &env);
+    let (resolved, _names) = resolve_overrides_os_environ(overrides, &env);
     assert_eq!(resolved.port, Some(IntOrText::Text("6380".to_owned())));
 }
 
@@ -170,7 +172,7 @@ fn a_float_field_resolves_through_the_reference() {
     };
     let env = env_with("MY_SOCKET_TIMEOUT", "2.5");
 
-    let resolved = resolve_overrides_os_environ(overrides, &env);
+    let (resolved, _names) = resolve_overrides_os_environ(overrides, &env);
     assert_eq!(
         resolved.socket_timeout,
         Some(FloatOrText::Text("2.5".to_owned()))
@@ -184,7 +186,7 @@ fn a_real_int_is_left_untouched() {
         ..blank_overrides()
     };
 
-    let resolved = resolve_overrides_os_environ(overrides, &BTreeMap::new());
+    let (resolved, _names) = resolve_overrides_os_environ(overrides, &BTreeMap::new());
     assert_eq!(resolved.port, Some(IntOrText::Value(6380)));
 }
 
@@ -197,7 +199,7 @@ fn a_passthrough_value_resolves_through_the_reference() {
     );
     let env = env_with("MY_CLIENT_NAME", "betterlite");
 
-    let resolved = resolve_overrides_os_environ(overrides, &env);
+    let (resolved, _names) = resolve_overrides_os_environ(overrides, &env);
     assert_eq!(
         resolved.passthrough.get("client_name"),
         Some(&PassthroughValue::Text("betterlite".to_owned()))
@@ -212,6 +214,63 @@ fn an_unresolved_passthrough_reference_drops_the_key() {
         PassthroughValue::Text("os.environ/MISSING_VAR".to_owned()),
     );
 
-    let resolved = resolve_overrides_os_environ(overrides, &BTreeMap::new());
+    let (resolved, _names) = resolve_overrides_os_environ(overrides, &BTreeMap::new());
     assert!(!resolved.passthrough.contains_key("client_name"));
+}
+
+#[test]
+fn a_numeric_reference_blames_the_referenced_variable() {
+    let overrides = RedisOverrides {
+        port: Some(IntOrText::Text("os.environ/CACHE_PORT".to_owned())),
+        ..blank_overrides()
+    };
+    let env = env_with("CACHE_PORT", "1_000");
+
+    let (_resolved, names) = resolve_overrides_os_environ(overrides, &env);
+    assert_eq!(
+        names.get("REDIS_PORT").map(String::as_str),
+        Some("CACHE_PORT")
+    );
+}
+
+#[test]
+fn a_boolean_reference_blames_the_referenced_variable() {
+    let overrides = RedisOverrides {
+        ssl: Some(BoolOrText::Text("os.environ/CACHE_SSL".to_owned())),
+        ..blank_overrides()
+    };
+    let env = env_with("CACHE_SSL", "maybe");
+
+    let (_resolved, names) = resolve_overrides_os_environ(overrides, &env);
+    assert_eq!(
+        names.get("REDIS_SSL").map(String::as_str),
+        Some("CACHE_SSL")
+    );
+}
+
+#[test]
+fn a_passthrough_reference_blames_the_referenced_variable() {
+    let mut overrides = RedisOverrides::default();
+    overrides.passthrough.insert(
+        "health_check_interval".to_owned(),
+        PassthroughValue::Text("os.environ/CACHE_HEALTH_CHECK_INTERVAL".to_owned()),
+    );
+    let env = env_with("CACHE_HEALTH_CHECK_INTERVAL", "1_000");
+
+    let (_resolved, names) = resolve_overrides_os_environ(overrides, &env);
+    assert_eq!(
+        names.get("REDIS_HEALTH_CHECK_INTERVAL").map(String::as_str),
+        Some("CACHE_HEALTH_CHECK_INTERVAL")
+    );
+}
+
+#[test]
+fn a_field_resolved_without_a_reference_is_not_blamed() {
+    let overrides = RedisOverrides {
+        port: Some(IntOrText::Value(6380)),
+        ..blank_overrides()
+    };
+
+    let (_resolved, names) = resolve_overrides_os_environ(overrides, &BTreeMap::new());
+    assert!(!names.contains_key("REDIS_PORT"));
 }

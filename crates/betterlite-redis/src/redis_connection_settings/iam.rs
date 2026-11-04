@@ -7,6 +7,7 @@ use super::environment::EnvironmentLookup;
 use super::error::RedisSettingsError;
 use super::model::scalars::{BoolOrText, PassthroughValue};
 use super::model::settings::{CredentialProviderSettings, RedisConnectionSettings, RedisOverrides};
+use super::os_environ::ReferenceNames;
 use super::url_parts::uses_tls;
 
 // litellm._redis._get_redis_client_logic resolves GCP IAM, then Azure AD, then AWS ElastiCache IAM, each only when a higher-precedence provider did not already resolve and the caller did not already set an explicit credential_provider.
@@ -14,6 +15,7 @@ pub fn apply_iam_precedence<E>(
     overrides: &RedisOverrides,
     settings: &mut RedisConnectionSettings,
     env: &E,
+    names: &ReferenceNames,
 ) -> Result<(), RedisSettingsError>
 where
     E: EnvironmentLookup,
@@ -48,7 +50,9 @@ where
     }
 
     let aws_iam_enabled = coerce_bool(
-        "REDIS_AWS_IAM_AUTH",
+        names
+            .get("REDIS_AWS_IAM_AUTH")
+            .map_or("REDIS_AWS_IAM_AUTH", String::as_str),
         overrides
             .aws_iam_auth
             .clone()
@@ -56,7 +60,7 @@ where
     )?
     .unwrap_or(false);
     if aws_iam_enabled {
-        apply_aws(overrides, settings, env)?;
+        apply_aws(overrides, settings, env, names)?;
     }
     Ok(())
 }
@@ -123,6 +127,7 @@ fn apply_aws<E>(
     overrides: &RedisOverrides,
     settings: &mut RedisConnectionSettings,
     env: &E,
+    names: &ReferenceNames,
 ) -> Result<(), RedisSettingsError>
 where
     E: EnvironmentLookup,
@@ -135,7 +140,7 @@ where
         return Err(RedisSettingsError::AwsIamRequiresTls);
     }
 
-    settings.credential_provider_settings = Some(aws_provider(overrides, env)?);
+    settings.credential_provider_settings = Some(aws_provider(overrides, env, names)?);
     settings.credential_provider = true;
     Ok(())
 }
@@ -143,6 +148,7 @@ where
 fn aws_provider<E>(
     overrides: &RedisOverrides,
     env: &E,
+    names: &ReferenceNames,
 ) -> Result<CredentialProviderSettings, RedisSettingsError>
 where
     E: EnvironmentLookup,
@@ -171,7 +177,9 @@ where
         cache_name: cache,
         region: location,
         serverless: coerce_bool(
-            "REDIS_AWS_IAM_SERVERLESS",
+            names
+                .get("REDIS_AWS_IAM_SERVERLESS")
+                .map_or("REDIS_AWS_IAM_SERVERLESS", String::as_str),
             overrides
                 .aws_iam_serverless
                 .clone()

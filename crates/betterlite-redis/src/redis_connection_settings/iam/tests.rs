@@ -26,8 +26,13 @@ fn gcp_outranks_azure_and_aws_when_all_three_are_configured() {
     overrides.aws_iam_auth = Some(BoolOrText::Value(true));
     let mut settings = blank_settings();
 
-    apply_iam_precedence(&overrides, &mut settings, &BTreeMap::new())
-        .expect("gcp wins, so aws's tls requirement never fires");
+    apply_iam_precedence(
+        &overrides,
+        &mut settings,
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+    )
+    .expect("gcp wins, so aws's tls requirement never fires");
 
     assert!(!settings.credential_provider);
 }
@@ -39,8 +44,13 @@ fn azure_outranks_aws_when_both_are_configured() {
     overrides.aws_iam_auth = Some(BoolOrText::Value(true));
     let mut settings = blank_settings();
 
-    apply_iam_precedence(&overrides, &mut settings, &BTreeMap::new())
-        .expect("azure wins, so aws's tls requirement never fires");
+    apply_iam_precedence(
+        &overrides,
+        &mut settings,
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+    )
+    .expect("azure wins, so aws's tls requirement never fires");
 
     assert!(!settings.credential_provider);
 }
@@ -52,8 +62,13 @@ fn aws_iam_without_tls_is_rejected() {
     let mut settings = blank_settings();
     settings.ssl = Some(false);
 
-    let error = apply_iam_precedence(&overrides, &mut settings, &BTreeMap::new())
-        .expect_err("aws iam over a plaintext connection must be rejected");
+    let error = apply_iam_precedence(
+        &overrides,
+        &mut settings,
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+    )
+    .expect_err("aws iam over a plaintext connection must be rejected");
     assert!(error.to_string().contains("requires TLS"));
 }
 
@@ -64,8 +79,13 @@ fn aws_iam_missing_settings_are_named() {
     let mut settings = blank_settings();
     settings.ssl = Some(true);
 
-    let error = apply_iam_precedence(&overrides, &mut settings, &BTreeMap::new())
-        .expect_err("aws iam without user_name/cache_name/region must be rejected");
+    let error = apply_iam_precedence(
+        &overrides,
+        &mut settings,
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+    )
+    .expect_err("aws iam without user_name/cache_name/region must be rejected");
     let message = error.to_string();
     assert!(message.contains("aws_iam_user_name"));
     assert!(message.contains("aws_iam_cache_name"));
@@ -86,8 +106,13 @@ fn aws_iam_with_tls_and_every_setting_enables_the_credential_provider() {
     settings.username = overrides.username.clone();
     settings.password = overrides.password.clone().flatten();
 
-    apply_iam_precedence(&overrides, &mut settings, &BTreeMap::new())
-        .expect("every required aws iam setting is present");
+    apply_iam_precedence(
+        &overrides,
+        &mut settings,
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+    )
+    .expect("every required aws iam setting is present");
 
     assert!(settings.credential_provider);
 }
@@ -104,7 +129,7 @@ fn aws_iam_region_falls_back_to_the_aws_sdk_environment_variables() {
     let mut env = BTreeMap::new();
     env.insert("AWS_DEFAULT_REGION".to_owned(), "eu-west-1".to_owned());
 
-    apply_iam_precedence(&overrides, &mut settings, &env)
+    apply_iam_precedence(&overrides, &mut settings, &env, &BTreeMap::new())
         .expect("aws_iam_region falls back to AWS_DEFAULT_REGION");
     assert!(settings.credential_provider);
 }
@@ -117,8 +142,13 @@ fn gcp_adds_ssl_ca_certs_to_passthrough_only_when_ssl_is_enabled() {
     let mut settings = blank_settings();
     settings.ssl = Some(true);
 
-    apply_iam_precedence(&overrides, &mut settings, &BTreeMap::new())
-        .expect("gcp with ssl enabled never errors");
+    apply_iam_precedence(
+        &overrides,
+        &mut settings,
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+    )
+    .expect("gcp with ssl enabled never errors");
 
     assert_eq!(
         settings.passthrough.get("ssl_ca_certs"),
@@ -135,8 +165,13 @@ fn credential_provider_already_set_short_circuits_iam_precedence() {
     settings.ssl = Some(false);
     settings.credential_provider = true;
 
-    apply_iam_precedence(&overrides, &mut settings, &BTreeMap::new())
-        .expect("an explicit credential_provider skips every iam branch, tls included");
+    apply_iam_precedence(
+        &overrides,
+        &mut settings,
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+    )
+    .expect("an explicit credential_provider skips every iam branch, tls included");
     assert!(settings.credential_provider);
 }
 
@@ -153,7 +188,7 @@ fn explicit_fields_outrank_environment_fallbacks() {
     let mut env = BTreeMap::new();
     env.insert("REDIS_AWS_IAM_REGION".to_owned(), "env-region".to_owned());
 
-    apply_iam_precedence(&overrides, &mut settings, &env)
+    apply_iam_precedence(&overrides, &mut settings, &env, &BTreeMap::new())
         .expect("every required aws iam setting is present");
     assert!(settings.credential_provider);
 }
@@ -173,7 +208,7 @@ fn aws_iam_settings_resolve_from_the_environment_when_explicit_fields_are_absent
     );
     env.insert("REDIS_AWS_IAM_REGION".to_owned(), "env-region".to_owned());
 
-    apply_iam_precedence(&overrides, &mut settings, &env)
+    apply_iam_precedence(&overrides, &mut settings, &env, &BTreeMap::new())
         .expect("every required aws iam setting is present through the environment");
     assert!(settings.credential_provider);
 }
@@ -184,8 +219,13 @@ fn password_round_trips_through_expose_secret_when_aws_iam_does_not_apply() {
     let mut settings = blank_settings();
     settings.password = Some(SecretString::from("kept".to_owned()));
 
-    apply_iam_precedence(&overrides, &mut settings, &BTreeMap::new())
-        .expect("no iam provider is configured");
+    apply_iam_precedence(
+        &overrides,
+        &mut settings,
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+    )
+    .expect("no iam provider is configured");
 
     assert_eq!(
         settings.password.as_ref().map(ExposeSecret::expose_secret),
@@ -199,7 +239,13 @@ fn redis_credential_retains_gcp_callback_settings() {
         serde_json::from_str(r#"{"gcp_service_account":"account","gcp_ssl_ca_certs":"ca.pem"}"#)
             .unwrap();
     let mut settings = blank_settings();
-    apply_iam_precedence(&overrides, &mut settings, &BTreeMap::new()).unwrap();
+    apply_iam_precedence(
+        &overrides,
+        &mut settings,
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+    )
+    .unwrap();
     assert!(!settings.credential_provider);
     assert!(!settings.passthrough.contains_key("ssl_ca_certs"));
     let Some(CredentialProviderSettings::Gcp {
@@ -220,7 +266,13 @@ fn redis_credential_retains_aws_signing_settings() {
     ).unwrap();
     let mut settings = blank_settings();
     settings.ssl = Some(true);
-    apply_iam_precedence(&overrides, &mut settings, &BTreeMap::new()).unwrap();
+    apply_iam_precedence(
+        &overrides,
+        &mut settings,
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+    )
+    .unwrap();
     assert!(settings.credential_provider);
     let Some(CredentialProviderSettings::Aws {
         user_name,
@@ -265,7 +317,7 @@ fn redis_credential_retains_azure_callback_settings(
         ]);
     }
     let mut settings = blank_settings();
-    apply_iam_precedence(&overrides, &mut settings, &env).unwrap();
+    apply_iam_precedence(&overrides, &mut settings, &env, &BTreeMap::new()).unwrap();
     assert!(!settings.credential_provider);
     let Some(CredentialProviderSettings::Azure {
         client_id,

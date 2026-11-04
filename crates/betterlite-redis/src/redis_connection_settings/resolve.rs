@@ -16,7 +16,7 @@ use super::model::scalars::Scalar;
 use super::model::settings::{
     ClientKind, CredentialProviderSettings, RedisConnectionSettings, RedisOverrides, Target,
 };
-use super::os_environ::resolve_overrides_os_environ;
+use super::os_environ::{ReferenceNames, resolve_overrides_os_environ};
 use super::target::resolve_target;
 use super::url_parts::strip_userinfo;
 
@@ -29,7 +29,7 @@ pub fn resolve_redis_kwargs<E>(
 where
     E: EnvironmentLookup,
 {
-    let resolved_overrides = resolve_overrides_os_environ(overrides, env);
+    let (resolved_overrides, reference_names) = resolve_overrides_os_environ(overrides, env);
 
     let startup_nodes = resolve_nodes(
         resolved_overrides.startup_nodes.clone(),
@@ -46,9 +46,10 @@ where
         env,
         startup_nodes,
         sentinel_nodes,
+        &reference_names,
     )?;
 
-    apply_iam_precedence(&resolved_overrides, &mut settings, env)?;
+    apply_iam_precedence(&resolved_overrides, &mut settings, env, &reference_names)?;
 
     let target = resolve_target(
         settings.startup_nodes.as_deref(),
@@ -63,7 +64,7 @@ where
         settings.db = None;
         settings.password = None;
     }
-    coerce_settings_passthrough(&mut settings, target, client)?;
+    coerce_settings_passthrough(&mut settings, target, client, &reference_names)?;
     Ok(settings)
 }
 
@@ -71,17 +72,18 @@ fn coerce_settings_passthrough(
     settings: &mut RedisConnectionSettings,
     target: Target,
     client: ClientKind,
+    names: &ReferenceNames,
 ) -> Result<(), RedisSettingsError> {
     let passthrough = mem::take(&mut settings.passthrough);
     settings.passthrough = passthrough
         .into_iter()
-        .filter_map(
-            |(name, mut value)| match coerce_passthrough(&name, &mut value, target) {
+        .filter_map(|(name, mut value)| {
+            match coerce_passthrough(&name, &mut value, target, names) {
                 Ok(true) => Some(Ok((name, value))),
                 Ok(false) => None,
                 Err(error) => Some(Err(error)),
-            },
-        )
+            }
+        })
         .collect::<Result<_, _>>()?;
     filter_passthrough_for_target(target, client, &mut settings.passthrough)?;
     Ok(())
@@ -92,12 +94,13 @@ fn merge_settings<E>(
     env: &E,
     startup_nodes: Option<Vec<ClusterNodeConfig>>,
     sentinel_nodes: Option<Vec<(String, i64)>>,
+    names: &ReferenceNames,
 ) -> Result<RedisConnectionSettings, RedisSettingsError>
 where
     E: EnvironmentLookup,
 {
     let mut settings = RedisConnectionSettings::default();
-    resolve_network_limits(&mut settings, &mut overrides, env)?;
+    resolve_network_limits(&mut settings, &mut overrides, env, names)?;
     let url = match overrides.url.clone() {
         Some(explicit) => explicit,
         None if overrides.host.is_some()
@@ -183,6 +186,7 @@ fn resolve_network_limits<E>(
     settings: &mut RedisConnectionSettings,
     overrides: &mut RedisOverrides,
     env: &E,
+    names: &ReferenceNames,
 ) -> Result<(), RedisSettingsError>
 where
     E: EnvironmentLookup,
@@ -196,16 +200,12 @@ where
             "REDIS_HEALTH_CHECK_INTERVAL",
         ),
     ]
-    .map(|(value, name)| {
-        Coerce::coerce(name, value.or_else(|| env.lookup(name).map(Scalar::Text)))
-    });
+    .map(|(value, name)| coerce_named(name, value, env, names));
     let [ssl, socket_keepalive] = [
         (overrides.ssl.take(), "REDIS_SSL"),
         (overrides.socket_keepalive.take(), "REDIS_SOCKET_KEEPALIVE"),
     ]
-    .map(|(value, name)| {
-        Coerce::coerce(name, value.or_else(|| env.lookup(name).map(Scalar::Text)))
-    });
+    .map(|(value, name)| coerce_named(name, value, env, names));
     let [socket_timeout, socket_connect_timeout] = [
         (overrides.socket_timeout.take(), "REDIS_SOCKET_TIMEOUT"),
         (
@@ -213,9 +213,7 @@ where
             "REDIS_SOCKET_CONNECT_TIMEOUT",
         ),
     ]
-    .map(|(value, name)| {
-        Coerce::coerce(name, value.or_else(|| env.lookup(name).map(Scalar::Text)))
-    });
+    .map(|(value, name)| coerce_named(name, value, env, names));
     settings.port = port?;
     settings.db = db?;
     settings.ssl = ssl?;
@@ -225,4 +223,21 @@ where
     settings.max_connections = max_connections?;
     settings.health_check_interval = health_check_interval?;
     Ok(())
+}
+
+// Coerces a REDIS_* field, blaming the referenced env var name instead of the canonical one when the override's value came from an "os.environ/<name>" reference.
+fn coerce_named<T, E>(
+    name: &str,
+    value: Option<Scalar<T>>,
+    env: &E,
+    names: &ReferenceNames,
+) -> Result<Option<T>, RedisSettingsError>
+where
+    T: Coerce,
+    E: EnvironmentLookup,
+{
+    Coerce::coerce(
+        names.get(name).map_or(name, String::as_str),
+        value.or_else(|| env.lookup(name).map(Scalar::Text)),
+    )
 }
