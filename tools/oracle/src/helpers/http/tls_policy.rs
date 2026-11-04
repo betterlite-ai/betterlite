@@ -19,10 +19,10 @@ impl crate::helpers::Helper for Op {
             .clone()
             .unwrap_or(serde_json::Value::Bool(true));
         if let Some(value) = verification.as_str() {
-            if value.eq_ignore_ascii_case("true") {
-                verification = serde_json::Value::Bool(true);
-            } else if value.eq_ignore_ascii_case("false") {
-                verification = serde_json::Value::Bool(false);
+            match value.to_ascii_lowercase().as_str() {
+                "true" => verification = serde_json::Value::Bool(true),
+                "false" => verification = serde_json::Value::Bool(false),
+                _ => {}
             }
         }
         let http2 = input.http2

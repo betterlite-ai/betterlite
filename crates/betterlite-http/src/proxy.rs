@@ -11,6 +11,7 @@ use reqwest::{Client, ClientBuilder, Proxy, Request, Response, Url};
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::error::HttpError;
+use crate::tls::{TlsError, apply_policy};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
@@ -32,17 +33,16 @@ impl ProxiedClient {
         Self::build(builder, policy)
     }
 
-    pub fn outbound_with_tls(
-        policy: &Arc<ProxyPolicy>,
-        tls: &TlsPolicy,
-    ) -> Result<Self, crate::tls::TlsError> {
-        let builder = ClientBuilder::new()
-            .tls_backend_rustls()
-            .connect_timeout(CONNECT_TIMEOUT)
-            .pool_idle_timeout(POOL_IDLE_TIMEOUT)
-            .pool_max_idle_per_host(POOL_MAX_IDLE_PER_HOST);
-        let builder = crate::tls::apply_policy(builder, tls)?;
-        Self::build(builder, policy).map_err(crate::tls::TlsError::Http)
+    pub fn outbound_with_tls(policy: &Arc<ProxyPolicy>, tls: &TlsPolicy) -> Result<Self, TlsError> {
+        let configured = apply_policy(
+            ClientBuilder::new()
+                .tls_backend_rustls()
+                .connect_timeout(CONNECT_TIMEOUT)
+                .pool_idle_timeout(POOL_IDLE_TIMEOUT)
+                .pool_max_idle_per_host(POOL_MAX_IDLE_PER_HOST),
+            tls,
+        )?;
+        Self::build(configured, policy).map_err(TlsError::Http)
     }
 
     pub fn build(builder: ClientBuilder, policy: &Arc<ProxyPolicy>) -> Result<Self, HttpError> {
