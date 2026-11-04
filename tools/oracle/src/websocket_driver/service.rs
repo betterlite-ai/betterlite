@@ -40,7 +40,7 @@ impl ServiceInput {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Arguments {
+pub struct Arguments<F = Frame> {
     #[serde(default = "default_model")]
     pub model: String,
     #[serde(default = "default_api_base")]
@@ -51,8 +51,8 @@ pub struct Arguments {
     pub query_params: Option<IndexMap<String, String>>,
     #[serde(default)]
     pub openai_beta_realtime: bool,
-    #[serde(default)]
-    pub frames: Vec<Frame>,
+    #[serde(default = "Vec::new")]
+    pub frames: Vec<F>,
 }
 
 #[derive(Serialize)]
@@ -85,7 +85,7 @@ fn default_model() -> String {
 fn default_api_base() -> String {
     "https://api.openai.com/".to_owned()
 }
-impl Default for Arguments {
+impl<F> Default for Arguments<F> {
     fn default() -> Self {
         Self {
             model: default_model(),

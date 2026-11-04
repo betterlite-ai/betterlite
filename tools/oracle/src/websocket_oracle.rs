@@ -1,7 +1,9 @@
 use crate::websocket_driver::service::{Arguments, ServiceTag};
 use serde::{Deserialize, Serialize};
-use serde_with::{As, Same};
+use serde_with::{As, FromInto, Same};
 use std::collections::BTreeMap;
+
+use fixture::FixtureFrame;
 
 pub const MAX_FRAMES: usize = 1024;
 pub const MAX_FRAME_BYTES: usize = 0x0010_0000;
@@ -65,7 +67,10 @@ pub struct WebSocketCase {
     pub service: Option<ServiceTag>,
     #[serde(default)]
     pub driver: Driver,
-    #[serde(default)]
+    #[serde(
+        default,
+        deserialize_with = "As::<FromInto<Arguments<FixtureFrame>>>::deserialize"
+    )]
     pub input: Arguments,
     pub path: String,
     pub headers: BTreeMap<String, String>,
@@ -73,6 +78,7 @@ pub struct WebSocketCase {
     pub expected_http_status: u16,
     #[serde(with = "As::<Option<Same>>")]
     pub negotiated_subprotocol: Option<String>,
+    #[serde(deserialize_with = "As::<Vec<FromInto<FixtureFrame>>>::deserialize")]
     pub frames: Vec<Frame>,
     #[serde(default)]
     pub close: Option<Close>,
@@ -140,7 +146,7 @@ pub struct Frame {
     pub text: Option<String>,
     #[serde(default)]
     pub binary: Option<String>,
-    #[serde(skip_deserializing)]
+    #[serde(default)]
     pub binary_data: Option<Vec<u8>>,
     #[serde(default)]
     pub barrier: Option<String>,
@@ -254,6 +260,7 @@ pub fn close_matches(expected: Option<&Close>, observed: Option<&Close>) -> Resu
 }
 
 pub mod decode;
+mod fixture;
 mod tests;
 
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
