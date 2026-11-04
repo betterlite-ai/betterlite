@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::ops::{Div, Mul};
 
 use async_trait::async_trait;
 use thiserror::Error;
@@ -19,7 +20,7 @@ pub enum EmbedError {
     Other(String),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EmbeddingFailed {
     pub reason: String,
 }
@@ -37,6 +38,7 @@ pub struct SemanticTextIndex {
 }
 
 impl SemanticTextIndex {
+    #[must_use]
     pub fn new(max_entries: usize) -> Self {
         Self {
             max_entries,
@@ -56,73 +58,94 @@ impl SemanticTextIndex {
             return Ok(Vec::new());
         }
         let unique: Vec<String> = texts.iter().cloned().collect::<IndexSet>().0;
-        let missing: Vec<String> = unique
-            .iter()
-            .filter(|text| {
-                !self.vectors.contains_key(&CacheKey {
-                    model: model.to_owned(),
-                    text: (*text).clone(),
-                })
-            })
-            .cloned()
-            .collect();
-        let mut batch = vec![query.to_owned()];
-        batch.extend(missing.iter().cloned());
-        let embedded = embed_all(embedder, &batch).await?;
-        let mut query_vector = embedded[0].clone();
-        let mut resolved: HashMap<String, Vector> = self
-            .vectors
-            .iter()
-            .filter(|(key, _)| key.model == model)
-            .map(|(key, vector)| (key.text.clone(), vector.clone()))
-            .collect();
-        resolved.extend(missing.iter().cloned().zip(embedded.into_iter().skip(1)));
-        if unique
-            .iter()
-            .any(|text| resolved[text].len() != query_vector.len())
-        {
-            let mut retry = vec![query.to_owned()];
-            retry.extend(unique.iter().cloned());
-            let vectors = embed_all(embedder, &retry).await?;
-            query_vector = vectors[0].clone();
-            resolved = unique
-                .iter()
-                .cloned()
-                .zip(vectors.into_iter().skip(1))
-                .collect();
-        }
-        if unique
-            .iter()
-            .any(|text| resolved[text].len() != query_vector.len())
-        {
+        let (query_vector, resolved) = self
+            .resolve_vectors(query, &unique, embedder, model)
+            .await?;
+        if has_dimension_mismatch(&unique, &resolved, query_vector.len()) {
             return Err(EmbeddingFailed {
                 reason: format!("embedding model {model} returned vectors of mixed dimensions"),
             });
         }
-        let touched: HashSet<String> = unique.iter().cloned().collect();
+        self.cache_vectors(&unique, &resolved, model, query_vector.len())?;
+        texts
+            .iter()
+            .map(|text| {
+                resolved
+                    .get(text)
+                    .map(|vector| cosine_similarity(&query_vector, vector))
+                    .ok_or_else(|| EmbeddingFailed {
+                        reason: format!(
+                            "embedding model {model} omitted a vector for a requested text"
+                        ),
+                    })
+            })
+            .collect()
+    }
+
+    async fn resolve_vectors(
+        &self,
+        query: &str,
+        unique: &[String],
+        embedder: &dyn Embedder,
+        model: &str,
+    ) -> Result<(Vector, HashMap<String, Vector>), EmbeddingFailed> {
+        let cached = self.cached_vectors(model);
+        let missing = missing_texts(unique, &cached);
+        let mut first_batch = vec![query.to_owned()];
+        first_batch.extend(missing.iter().cloned());
+        let mut batch_vectors = embed_all(embedder, &first_batch).await?;
+        let query_vector = take_query_vector(&mut batch_vectors, model)?;
+        let mut resolved = cached;
+        resolved.extend(missing.into_iter().zip(batch_vectors));
+        if has_dimension_mismatch(unique, &resolved, query_vector.len()) {
+            let mut retry_batch = vec![query.to_owned()];
+            retry_batch.extend(unique.iter().cloned());
+            let mut retry_vectors = embed_all(embedder, &retry_batch).await?;
+            let retry_query = take_query_vector(&mut retry_vectors, model)?;
+            resolved = unique.iter().cloned().zip(retry_vectors).collect();
+            return Ok((retry_query, resolved));
+        }
+        Ok((query_vector, resolved))
+    }
+
+    fn cached_vectors(&self, model: &str) -> HashMap<String, Vector> {
+        self.vectors
+            .iter()
+            .filter(|(key, _)| key.model == model)
+            .map(|(key, vector)| (key.text.clone(), vector.clone()))
+            .collect()
+    }
+    fn cache_vectors(
+        &mut self,
+        texts: &[String],
+        vectors: &HashMap<String, Vector>,
+        model: &str,
+        dimension: usize,
+    ) -> Result<(), EmbeddingFailed> {
+        let touched: HashSet<String> = texts.iter().cloned().collect();
         self.vectors.retain(|key, vector| {
-            key.model != model || touched.contains(&key.text) || vector.len() == query_vector.len()
+            key.model != model || touched.contains(&key.text) || vector.len() == dimension
         });
-        for text in &unique {
+        for text in texts {
             let key = CacheKey {
                 model: model.to_owned(),
                 text: text.clone(),
             };
-            self.vectors.insert(key.clone(), resolved[text].clone());
+            let vector = vectors.get(text).ok_or_else(|| EmbeddingFailed {
+                reason: format!("embedding model {model} omitted a vector for a requested text"),
+            })?;
+            self.vectors.insert(key.clone(), vector.clone());
             self.usage.retain(|entry| entry != &key);
             self.usage.push(key);
         }
         while self.vectors.len() > self.max_entries {
-            if self.usage.is_empty() {
+            let Some(oldest) = self.usage.first().cloned() else {
                 break;
-            }
-            let oldest = self.usage.remove(0);
+            };
+            self.usage.remove(0);
             self.vectors.remove(&oldest);
         }
-        Ok(texts
-            .iter()
-            .map(|text| cosine_similarity(&query_vector, &resolved[text]))
-            .collect())
+        Ok(())
     }
 }
 
@@ -136,7 +159,10 @@ mod tests;
 
 struct IndexSet(Vec<String>);
 impl FromIterator<String> for IndexSet {
-    fn from_iter<T: IntoIterator<Item = String>>(iter: T) -> Self {
+    fn from_iter<T>(iter: T) -> Self
+    where
+        T: IntoIterator<Item = String>,
+    {
         let mut seen = HashSet::new();
         Self(
             iter.into_iter()
@@ -144,6 +170,35 @@ impl FromIterator<String> for IndexSet {
                 .collect(),
         )
     }
+}
+
+fn missing_texts(unique: &[String], cached: &HashMap<String, Vector>) -> Vec<String> {
+    unique
+        .iter()
+        .filter(|text| !cached.contains_key(text.as_str()))
+        .cloned()
+        .collect()
+}
+
+fn take_query_vector(vectors: &mut Vec<Vector>, model: &str) -> Result<Vector, EmbeddingFailed> {
+    if vectors.is_empty() {
+        return Err(EmbeddingFailed {
+            reason: format!("embedding model {model} returned no query vector"),
+        });
+    }
+    Ok(vectors.remove(0))
+}
+
+fn has_dimension_mismatch(
+    texts: &[String],
+    vectors: &HashMap<String, Vector>,
+    dimension: usize,
+) -> bool {
+    texts.iter().any(|text| {
+        vectors
+            .get(text)
+            .is_none_or(|vector| vector.len() != dimension)
+    })
 }
 async fn embed_all(
     embedder: &dyn Embedder,
@@ -165,14 +220,20 @@ async fn embed_all(
     }
 }
 
+#[must_use]
 pub fn cosine_similarity(left: &[f64], right: &[f64]) -> f64 {
-    let dot: f64 = left.iter().zip(right).map(|(a, b)| a * b).sum();
-    let left_norm: f64 = left.iter().map(|value| value * value).sum::<f64>().sqrt();
-    let right_norm: f64 = right.iter().map(|value| value * value).sum::<f64>().sqrt();
-    let denominator = left_norm * right_norm;
+    let dot = left
+        .iter()
+        .zip(right)
+        .fold(0.0_f64, |sum, (left_value, right_value)| {
+            left_value.mul_add(*right_value, sum)
+        });
+    let left_norm = left.iter().map(|value| value.powi(2)).sum::<f64>().sqrt();
+    let right_norm = right.iter().map(|value| value.powi(2)).sum::<f64>().sqrt();
+    let denominator = Mul::mul(left_norm, right_norm);
     if denominator == 0.0 {
         0.0
     } else {
-        dot / denominator
+        Div::div(dot, denominator)
     }
 }

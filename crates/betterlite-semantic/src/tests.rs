@@ -14,18 +14,19 @@ impl Embedder for FixedEmbedder {
         let mut calls = self.calls.lock().expect("calls lock");
         let first_call = calls.is_empty();
         calls.push(texts.to_vec());
+        drop(calls);
         Ok(texts
             .iter()
             .enumerate()
             .map(|(index, text)| {
                 if self.mixed && first_call && index == 1 {
-                    vec![1.0]
+                    vec![1.0_f64]
                 } else if text == "zero" {
-                    vec![0.0, 0.0]
+                    vec![0.0_f64, 0.0_f64]
                 } else if text == "orthogonal" {
-                    vec![0.0, 1.0]
+                    vec![0.0_f64, 1.0_f64]
                 } else {
-                    vec![1.0, 0.0]
+                    vec![1.0_f64, 0.0_f64]
                 }
             })
             .collect())
@@ -37,9 +38,12 @@ fn texts(items: &[&str]) -> Vec<String> {
 
 #[test]
 fn semantic_similarity_vectors() {
-    assert_eq!(cosine_similarity(&[1.0, 0.0], &[1.0, 0.0]), 1.0);
-    assert_eq!(cosine_similarity(&[1.0, 0.0], &[0.0, 1.0]), 0.0);
-    assert_eq!(cosine_similarity(&[0.0, 0.0], &[1.0, 1.0]), 0.0);
+    assert!(
+        (cosine_similarity(&[1.0_f64, 0.0_f64], &[1.0_f64, 0.0_f64]) - 1.0_f64).abs()
+            < f64::EPSILON
+    );
+    assert!(cosine_similarity(&[1.0_f64, 0.0_f64], &[0.0_f64, 1.0_f64]).abs() < f64::EPSILON);
+    assert!(cosine_similarity(&[0.0_f64, 0.0_f64], &[1.0_f64, 1.0_f64]).abs() < f64::EPSILON);
 }
 #[tokio::test]
 async fn semantic_empty_and_order() {
@@ -60,7 +64,7 @@ async fn semantic_empty_and_order() {
             .scores("q", &texts(&["orthogonal", "parallel"]), &embedder, "m")
             .await
             .expect("scores"),
-        vec![0.0, 1.0]
+        vec![0.0_f64, 1.0_f64]
     );
 }
 #[tokio::test]
@@ -75,7 +79,7 @@ async fn semantic_dedup() {
             .scores("q", &texts(&["parallel", "parallel"]), &embedder, "m")
             .await
             .expect("scores"),
-        vec![1.0, 1.0]
+        vec![1.0_f64, 1.0_f64]
     );
     assert_eq!(embedder.calls.lock().expect("calls")[0].len(), 2);
 }
