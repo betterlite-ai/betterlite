@@ -36,6 +36,7 @@ fn http_policy_tests_behavior(
         .or(deployment);
     let policy = TlsPolicy::resolve(&config, &environment, deployment_ssl_verify).unwrap();
     assert_eq!(policy.verification, expected);
+    assert!(!policy.http2);
     let http2_config = ConfigLoader {
         lookup: BTreeMap::new(),
     }

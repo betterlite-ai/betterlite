@@ -2,7 +2,7 @@ use super::{BTreeMap, ConfigLoader, TlsPolicy, Verification};
 use rstest::rstest;
 
 #[rstest]
-#[case::config_path("ssl_verify: ca.pem", &[], Verification::CaFile("ca.pem".to_owned()))]
+#[case::config_path("ssl_verify: ca.pem", &[("SSL_CERT_FILE", "other.pem")], Verification::CaFile("ca.pem".to_owned()))]
 #[case::environment_path("ssl_verify: false", &[("SSL_VERIFY", "ca.pem")], Verification::CaFile("ca.pem".to_owned()))]
 #[case::ca_override("ssl_verify: true", &[("SSL_CERT_FILE", "ca.pem")], Verification::CaFile("ca.pem".to_owned()))]
 #[case::disabled_ignores_ca("ssl_verify: false", &[("SSL_CERT_FILE", "missing")], Verification::Disabled)]

@@ -40,11 +40,16 @@ impl TlsPolicy {
         environment: &BTreeMap<String, String>,
         deployment_ssl_verify: Option<bool>,
     ) -> Result<Self, TlsPolicyError> {
-        let verification = resolve_verification(config, environment, deployment_ssl_verify);
+        let settings = &config.litellm_settings;
+        let verification = resolve_verification(
+            settings.ssl_verify.as_ref(),
+            environment.get("SSL_VERIFY"),
+            deployment_ssl_verify,
+        );
         let security_level = string_setting(
             environment,
             "SSL_SECURITY_LEVEL",
-            config.litellm_settings.ssl_security_level.as_ref(),
+            settings.ssl_security_level.as_ref(),
         );
         if security_level.is_some() {
             return Err(TlsPolicyError::SecurityLevel);
@@ -60,18 +65,13 @@ impl TlsPolicy {
             certificate: string_setting(
                 environment,
                 "SSL_CERTIFICATE",
-                config.litellm_settings.ssl_certificate.as_ref(),
+                settings.ssl_certificate.as_ref(),
             ),
-            http2: config.litellm_settings.http2 == Some(true)
-                || betterlite_env::flag(
-                    "LITELLM_HTTP2",
-                    environment.get("LITELLM_HTTP2").map_or("", String::as_str),
-                )?
-                .unwrap_or(false),
+            http2: http2_enabled(settings.http2, environment.get("LITELLM_HTTP2"))?,
             ecdh_curve: string_setting(
                 environment,
                 "SSL_ECDH_CURVE",
-                config.litellm_settings.ssl_ecdh_curve.as_ref(),
+                settings.ssl_ecdh_curve.as_ref(),
             ),
             user_agent: environment
                 .get("LITELLM_USER_AGENT")
@@ -79,6 +79,15 @@ impl TlsPolicy {
                 .unwrap_or_else(|| format!("betterlite/{}", env!("CARGO_PKG_VERSION"))),
         })
     }
+}
+
+fn http2_enabled(
+    configured: Option<bool>,
+    environment: Option<&String>,
+) -> Result<bool, TlsPolicyError> {
+    Ok(configured == Some(true)
+        || betterlite_env::flag("LITELLM_HTTP2", environment.map_or("", String::as_str))?
+            .unwrap_or(false))
 }
 
 fn string_setting(
@@ -103,8 +112,8 @@ fn resolve_ca_file(verification: Verification, configured_path: Option<&String>)
 }
 
 fn resolve_verification(
-    config: &Config,
-    environment: &BTreeMap<String, String>,
+    configured: Option<&VerifySetting>,
+    environment: Option<&String>,
     deployment_ssl_verify: Option<bool>,
 ) -> Verification {
     if let Some(value) = deployment_ssl_verify {
@@ -115,10 +124,9 @@ fn resolve_verification(
         };
     }
     let value = environment
-        .get("SSL_VERIFY")
         .filter(|value| !value.is_empty())
         .map(|value| VerifySetting::Path(value.clone()))
-        .or_else(|| config.litellm_settings.ssl_verify.clone());
+        .or_else(|| configured.cloned());
     match value {
         Some(VerifySetting::Bool(true)) | None => Verification::Enabled,
         Some(VerifySetting::Bool(false)) => Verification::Disabled,
