@@ -5,11 +5,23 @@ use super::{
     get_routes_for_mounted_app,
 };
 
-struct Endpoint(Option<&'static str>);
+struct Endpoint {
+    name: Option<&'static str>,
+    class_name: Option<&'static str>,
+    fail: bool,
+}
 
 impl NamedEndpoint for Endpoint {
     fn endpoint_name(&self) -> Result<Option<&str>, RouteInspectionError> {
-        Ok(self.0)
+        if self.fail {
+            Err(RouteInspectionError::EndpointName)
+        } else {
+            Ok(self.name)
+        }
+    }
+
+    fn class_name(&self) -> Result<Option<&str>, RouteInspectionError> {
+        Ok(self.class_name)
     }
 }
 
@@ -22,14 +34,28 @@ fn regular_route_keeps_nulls_and_endpoint_name() {
         endpoint: Some("present".to_owned()),
         app: None,
     };
-    let info = get_app_routes(&route, &Endpoint(Some("handler")));
+    let info = get_app_routes(
+        &route,
+        &Endpoint {
+            name: Some("handler"),
+            class_name: None,
+            fail: false,
+        },
+    );
     assert_eq!(info[0].endpoint.as_deref(), Some("handler"));
     assert_eq!(info[0].mounted_app, None);
 }
 
 #[test]
 fn regular_route_without_endpoint_keeps_null_fields() {
-    let info = get_app_routes(&Route::default(), &Endpoint(Some("handler")));
+    let info = get_app_routes(
+        &Route::default(),
+        &Endpoint {
+            name: Some("handler"),
+            class_name: None,
+            fail: false,
+        },
+    );
     assert_eq!(
         info,
         vec![RouteInfo {
@@ -91,10 +117,28 @@ fn mounted_routes_skip_routes_without_endpoint_or_nested_app() {
 
 #[test]
 fn endpoint_name_error_is_logged_and_dropped() {
-    let name = super::safe_get_endpoint_name("broken endpoint", || {
-        Err(RouteInspectionError::EndpointName)
-    });
+    let name = super::safe_get_endpoint_name(
+        "broken endpoint",
+        &Endpoint {
+            name: None,
+            class_name: None,
+            fail: true,
+        },
+    );
     assert_eq!(name, None);
+}
+
+#[test]
+fn endpoint_name_falls_back_to_its_class_name() {
+    let name = super::safe_get_endpoint_name(
+        "class endpoint",
+        &Endpoint {
+            name: None,
+            class_name: Some("Handler"),
+            fail: false,
+        },
+    );
+    assert_eq!(name.as_deref(), Some("Handler"));
 }
 
 #[test]
