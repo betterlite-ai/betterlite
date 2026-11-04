@@ -14,13 +14,16 @@ use super::{
     Clock, DriverError, HandshakeObservation, TranscriptObservation,
     socket::{Peer, config},
 };
-use crate::websocket_oracle::{Direction, OracleLimits, WebSocketCase};
+use crate::websocket_oracle::{
+    Direction, OracleLimits, RealtimeSettings, WebSocketBounds, WebSocketCase,
+};
 
 pub trait Transport: Send + Sync {
     fn connect(
         &self,
         request: Request,
         limits: &OracleLimits,
+        settings: &RealtimeSettings,
     ) -> impl Future<Output = Result<(WebSocketStream<MaybeTlsStream<TcpStream>>, Response), Error>> + Send;
 }
 
@@ -32,15 +35,16 @@ impl Transport for TokioTransport {
         &self,
         request: Request,
         limits: &OracleLimits,
+        settings: &RealtimeSettings,
     ) -> Result<(WebSocketStream<MaybeTlsStream<TcpStream>>, Response), Error> {
-        connect_async_with_config(request, Some(config(limits)), false).await
+        connect_async_with_config(request, Some(config(limits, settings)), false).await
     }
 }
 
 pub async fn exchange<C, T>(
     base_url: &str,
     case: &WebSocketCase,
-    limits: &OracleLimits,
+    bounds: &WebSocketBounds,
     clock: &C,
     transport: &T,
 ) -> Result<TranscriptObservation, DriverError>
@@ -51,7 +55,7 @@ where
     clock
         .timeout(
             Duration::from_secs(case.execution_seconds),
-            exchange_bounded(base_url, case, limits, transport),
+            exchange_bounded(base_url, case, &bounds.limits, &bounds.settings, transport),
         )
         .await?
 }
@@ -92,12 +96,16 @@ async fn exchange_bounded<T>(
     base_url: &str,
     case: &WebSocketCase,
     limits: &OracleLimits,
+    settings: &RealtimeSettings,
     transport: &T,
 ) -> Result<TranscriptObservation, DriverError>
 where
     T: Transport,
 {
-    let (stream, response) = match transport.connect(request(base_url, case)?, limits).await {
+    let (stream, response) = match transport
+        .connect(request(base_url, case)?, limits, settings)
+        .await
+    {
         Ok(connection) => connection,
         Err(Error::Http(response)) => {
             return Ok(TranscriptObservation {

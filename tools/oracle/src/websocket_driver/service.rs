@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, btree_map::Entry};
 
 use indexmap::IndexMap;
+use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 use serde_with::{As, PickFirst, Same};
 
@@ -15,14 +16,29 @@ pub enum ServiceTag {
     RealtimeProbe,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ServiceInput {
     pub service: ServiceTag,
     pub input: Arguments,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Serialize)]
+pub(crate) struct ServiceInputWire<'wire> {
+    pub service: ServiceTag,
+    pub input: ArgumentsWire<'wire>,
+}
+
+impl ServiceInput {
+    pub(crate) fn to_wire(&self) -> ServiceInputWire<'_> {
+        ServiceInputWire {
+            service: self.service,
+            input: self.input.to_wire(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Arguments {
     #[serde(default = "default_model")]
@@ -30,13 +46,37 @@ pub struct Arguments {
     #[serde(default = "default_api_base")]
     pub api_base: String,
     #[serde(default)]
-    pub api_key: Option<String>,
+    pub api_key: Option<SecretString>,
     #[serde(default, with = "As::<Option<PickFirst<(Vec<(Same, Same)>, Same)>>>")]
     pub query_params: Option<IndexMap<String, String>>,
     #[serde(default)]
     pub openai_beta_realtime: bool,
     #[serde(default)]
     pub frames: Vec<Frame>,
+}
+
+#[derive(Serialize)]
+pub(crate) struct ArgumentsWire<'wire> {
+    model: &'wire str,
+    api_base: &'wire str,
+    api_key: Option<&'wire str>,
+    #[serde(with = "As::<Option<PickFirst<(Vec<(Same, Same)>, Same)>>>")]
+    query_params: Option<IndexMap<String, String>>,
+    openai_beta_realtime: bool,
+    frames: Vec<Frame>,
+}
+
+impl Arguments {
+    pub(crate) fn to_wire(&self) -> ArgumentsWire<'_> {
+        ArgumentsWire {
+            model: &self.model,
+            api_base: &self.api_base,
+            api_key: self.api_key.as_ref().map(ExposeSecret::expose_secret),
+            query_params: self.query_params.clone(),
+            openai_beta_realtime: self.openai_beta_realtime,
+            frames: self.frames.clone(),
+        }
+    }
 }
 
 fn default_model() -> String {

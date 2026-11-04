@@ -17,7 +17,8 @@ use super::{
     socket::{Peer, config},
 };
 use crate::websocket_oracle::{
-    AuthObservation, Close, Direction, Frame, OracleLimits, RouteObservation, WebSocketCase,
+    AuthObservation, Close, Direction, Frame, OracleLimits, RealtimeSettings, RouteObservation,
+    WebSocketCase,
 };
 
 pub(crate) struct ProviderHandle {
@@ -39,6 +40,7 @@ pub(crate) struct ProviderObservation {
 pub(crate) async fn start<C>(
     case: WebSocketCase,
     limits: OracleLimits,
+    settings: RealtimeSettings,
     clock: &C,
 ) -> Result<ProviderHandle, DriverError>
 where
@@ -54,7 +56,7 @@ where
         owned_clock
             .timeout(
                 Duration::from_secs(case.execution_seconds),
-                serve(listener, &case, limits, &counter),
+                serve(listener, &case, limits, settings, &counter),
             )
             .await?
     });
@@ -130,6 +132,7 @@ async fn serve(
     listener: TcpListener,
     case: &WebSocketCase,
     limits: OracleLimits,
+    settings: RealtimeSettings,
     connections: &AtomicUsize,
 ) -> Result<ProviderObservation, DriverError> {
     let (tcp, _) = listener.accept().await?;
@@ -152,7 +155,7 @@ async fn serve(
         uri: &mut observation.request_uri,
         case,
     };
-    match accept_hdr_async_with_config(tcp, handshake, Some(config(&limits))).await {
+    match accept_hdr_async_with_config(tcp, handshake, Some(config(&limits, &settings))).await {
         Ok(stream) => {
             let mut socket = Peer {
                 stream,

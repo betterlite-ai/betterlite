@@ -11,7 +11,10 @@ use crate::websocket_driver::{
     provider::{ProviderHandle, ProviderObservation, start},
     service::{ServiceInput, ServiceTag},
 };
-use crate::websocket_oracle::{OracleLimits, WebSocketCase, close_matches, direction_matches};
+use crate::websocket_oracle::{
+    AuthObservation, RouteObservation, WebSocketBounds, WebSocketCase, close_matches,
+    direction_matches, route_auth_matches,
+};
 use crate::{
     OracleError,
     case::{
@@ -43,6 +46,10 @@ fn run_service_case(
     case: &WebSocketCase,
     service: ServiceTag,
 ) -> Result<bool, OracleError> {
+    let service_input = ServiceInput {
+        service,
+        input: case.input.clone(),
+    };
     let helper = HelperCase {
         kind: HelperKind::Helper,
         name: case.name.clone(),
@@ -50,14 +57,10 @@ fn run_service_case(
         compare: HelperCompare::default(),
         call: HelperCall {
             operation: "websocket_oracle".to_owned(),
-            input: serde_json::to_value(ServiceInput {
-                service,
-                input: case.input.clone(),
-            })
-            .map_err(OracleError::Json)?,
+            input: serde_json::to_value(service_input.to_wire()).map_err(OracleError::Json)?,
         },
     };
-    verify_native_against_fixture(case, &helpers::invoke(&helper.call))?;
+    verify_native_against_fixture(case, service, &helpers::invoke(&helper.call))?;
     Ok(matches!(
         helpers::run_case(&helper, options.self_check)?,
         HelperRun::Difference
@@ -103,6 +106,7 @@ fn scenario_invalid(case: &WebSocketCase, detail: &str) -> OracleError {
 
 fn verify_native_against_fixture(
     case: &WebSocketCase,
+    service: ServiceTag,
     output: &HelperOutput,
 ) -> Result<(), OracleError> {
     if output.ok {
@@ -114,9 +118,11 @@ fn verify_native_against_fixture(
         return compare_transcript(case, &observed)
             .map_err(|pointer| scenario_invalid(case, &pointer));
     }
-    let is_adapter_missing = output.error.as_ref().is_some_and(|error| {
-        error.class == "ServiceError" && error.message.contains("is not registered")
-    });
+    let expected_missing = DriverError::AdapterMissing(service).to_string();
+    let is_adapter_missing = output
+        .error
+        .as_ref()
+        .is_some_and(|error| error.class == "ServiceError" && error.message == expected_missing);
     if is_adapter_missing {
         return Ok(());
     }
@@ -155,8 +161,13 @@ fn attempt(
     runtime: &Runtime,
     first: bool,
 ) -> Result<bool, OracleError> {
-    let limits = OracleLimits::default();
-    let provider = runtime.block_on(start(case.clone(), limits, &TokioClock))?;
+    let bounds = WebSocketBounds::default();
+    let provider = runtime.block_on(start(
+        case.clone(),
+        bounds.limits,
+        bounds.settings,
+        &TokioClock,
+    ))?;
     let path = config_path(root, case, &provider)?;
     let input = GatewayInput {
         options,
@@ -165,11 +176,26 @@ fn attempt(
         case_env: &case.env,
     };
     let mut gateway = start_gateway(&input, first)?;
-    let result = runtime.block_on(capture(case, provider, &gateway.base_url, &limits));
+    let result = runtime.block_on(capture(case, provider, &gateway.base_url, &bounds));
     let stopped = gateway.stop();
     let (observed, upstream) = result?;
     stopped?;
     compare_transcript(case, &observed).map_err(|pointer| scenario_invalid(case, &pointer))?;
+    if let Some(record) = &upstream {
+        route_auth_matches(
+            &RouteObservation {
+                model: case.route_model.clone(),
+                guardrails: case.route_guardrails.clone(),
+            },
+            &record.route,
+            &AuthObservation {
+                detail: case.authentication_detail.clone(),
+                attempted_close_code: case.attempted_close_code,
+            },
+            &record.auth,
+        )
+        .map_err(|pointer| scenario_invalid(case, &pointer))?;
+    }
     Ok(upstream.is_some_and(|record| upstream_differs(case, &record)))
 }
 
@@ -177,9 +203,9 @@ async fn capture(
     case: &WebSocketCase,
     provider: ProviderHandle,
     base: &str,
-    limits: &OracleLimits,
+    bounds: &WebSocketBounds,
 ) -> Result<(TranscriptObservation, Option<ProviderObservation>), DriverError> {
-    let observed = match exchange(base, case, limits, &TokioClock, &TokioTransport).await {
+    let observed = match exchange(base, case, bounds, &TokioClock, &TokioTransport).await {
         Ok(observation) => observation,
         Err(error) => {
             provider.cancel().await?;

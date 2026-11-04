@@ -1,6 +1,5 @@
 use futures_util::{SinkExt as _, StreamExt as _};
 use std::collections::VecDeque;
-use std::ptr;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::{
@@ -11,7 +10,7 @@ use tokio_tungstenite::tungstenite::{
 use super::DriverError;
 use crate::websocket_oracle::{
     Close, Direction, Frame, Initiator, MAX_CAPTURE_BYTES, MAX_FRAME_BYTES, MAX_FRAMES,
-    OracleLimits, WebSocketCase,
+    OracleLimits, RealtimeSettings, WebSocketCase,
 };
 
 pub(super) struct Peer<S> {
@@ -21,8 +20,21 @@ pub(super) struct Peer<S> {
     pub(super) limits: OracleLimits,
 }
 
-pub(super) fn config(limits: &OracleLimits) -> WebSocketConfig {
-    let frame_bytes = limits.max_frame_bytes.min(MAX_FRAME_BYTES);
+fn gated(frame: &Frame, observed: &[Frame]) -> bool {
+    frame.direction == Direction::ClientToProvider
+        && frame.barrier.as_deref().is_some_and(|barrier| {
+            !observed.iter().any(|seen| {
+                seen.direction == Direction::ProviderToClient
+                    && seen.barrier.as_deref() == Some(barrier)
+            })
+        })
+}
+
+pub(super) fn config(limits: &OracleLimits, settings: &RealtimeSettings) -> WebSocketConfig {
+    let frame_bytes = limits
+        .max_frame_bytes
+        .min(settings.max_message_size_bytes.unwrap_or(usize::MAX))
+        .min(MAX_FRAME_BYTES);
     WebSocketConfig::default()
         .max_message_size(Some(frame_bytes))
         .max_frame_size(Some(frame_bytes))
@@ -59,21 +71,16 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Peer<S> {
         }
     }
 
-    async fn receive_until(
+    async fn receive_one(
         &mut self,
         pending: &mut VecDeque<&Frame>,
         observed: &mut Vec<Frame>,
-        barrier: Option<&str>,
     ) -> Result<(), DriverError> {
-        while let Some(expected) = pending.pop_front() {
-            observed.push(Frame::try_from((self.receive().await?, expected))?);
-            if barrier.is_none() || expected.barrier.as_deref() == barrier {
-                return Ok(());
-            }
-        }
-        Err(DriverError::Transport(
-            "unresolved barrier or exhausted script".to_owned(),
-        ))
+        let expected = pending.pop_front().ok_or_else(|| {
+            DriverError::Transport("unresolved barrier or exhausted script".to_owned())
+        })?;
+        observed.push(Frame::try_from((self.receive().await?, expected))?);
+        Ok(())
     }
 
     pub(super) async fn play(
@@ -81,22 +88,27 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Peer<S> {
         case: &WebSocketCase,
         sending: Direction,
     ) -> Result<(Vec<Frame>, Option<Close>), DriverError> {
+        let mut own: VecDeque<_> = case
+            .frames
+            .iter()
+            .filter(|frame| frame.direction == sending)
+            .collect();
         let mut pending: VecDeque<_> = case
             .frames
             .iter()
             .filter(|frame| frame.direction != sending)
             .collect();
         let mut observations = Vec::new();
-        for frame in &case.frames {
-            if frame.direction == sending {
-                self.send_frame(frame, &mut pending, &mut observations)
-                    .await?;
-            } else if pending.front().is_some_and(|next| ptr::eq(*next, frame)) {
-                self.receive_until(&mut pending, &mut observations, None)
-                    .await?;
+        while let Some(&frame) = own.front() {
+            if gated(frame, &observations) {
+                self.receive_one(&mut pending, &mut observations).await?;
             } else {
-                // A barrier already consumed this observation.
+                own.pop_front();
+                self.send_frame(frame, &mut observations).await?;
             }
+        }
+        while !pending.is_empty() {
+            self.receive_one(&mut pending, &mut observations).await?;
         }
         let close = self.finish_close(case.close.as_ref(), sending).await?;
         Ok((observations, close))
@@ -105,18 +117,8 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Peer<S> {
     async fn send_frame(
         &mut self,
         frame: &Frame,
-        pending: &mut VecDeque<&Frame>,
         observed: &mut Vec<Frame>,
     ) -> Result<(), DriverError> {
-        if frame.direction == Direction::ClientToProvider
-            && let Some(barrier) = frame.barrier.as_deref()
-            && !observed.iter().any(|seen| {
-                seen.direction == Direction::ProviderToClient
-                    && seen.barrier.as_deref() == Some(barrier)
-            })
-        {
-            self.receive_until(pending, observed, Some(barrier)).await?;
-        }
         let message = Message::try_from(frame)?;
         self.account(&message)?;
         self.stream.send(message).await?;

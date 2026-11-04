@@ -27,7 +27,29 @@ impl Default for OracleLimits {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+// Resolved by B1011/B528; B901 reads neither environment variable itself.
+#[derive(Debug, Clone, Copy)]
+pub struct RealtimeSettings {
+    pub credential_timeout_seconds: f64,
+    pub max_message_size_bytes: Option<usize>,
+}
+
+impl Default for RealtimeSettings {
+    fn default() -> Self {
+        Self {
+            credential_timeout_seconds: 20.0,
+            max_message_size_bytes: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct WebSocketBounds {
+    pub limits: OracleLimits,
+    pub settings: RealtimeSettings,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WebSocketCase {
     pub kind: String,
@@ -118,7 +140,7 @@ pub struct Frame {
     pub text: Option<String>,
     #[serde(default)]
     pub binary: Option<String>,
-    #[serde(default)]
+    #[serde(skip_deserializing)]
     pub binary_data: Option<Vec<u8>>,
     #[serde(default)]
     pub barrier: Option<String>,
