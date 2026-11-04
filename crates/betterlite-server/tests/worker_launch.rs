@@ -91,7 +91,9 @@ mod worker_launch {
 
     #[test]
     fn metrics_listener_requests_shared_samples_without_callback_configuration() {
-        let result = prometheus_directory_plan(1, None, Some(9000), &BTreeMap::new());
+        let result =
+            prometheus_directory(1, None, Some(9000), &BTreeMap::new(), DirectoryMode::Plan)
+                .expect("directory plan");
         assert_eq!(
             result,
             Some(DirectoryPreparation {
@@ -108,7 +110,8 @@ mod worker_launch {
             "prometheus_multiproc_dir".to_owned(),
             "/var/tmp/prom".to_owned(),
         )]);
-        let result = prometheus_directory_plan(2, None, Some(9000), &environment);
+        let result = prometheus_directory(2, None, Some(9000), &environment, DirectoryMode::Plan)
+            .expect("directory plan");
         assert_eq!(
             result.map(|value| value.path),
             Some(PathBuf::from("/var/tmp/prom"))
@@ -123,7 +126,8 @@ mod worker_launch {
             "PROMETHEUS_MULTIPROC_DIR".to_owned(),
             metrics_path.to_string_lossy().into_owned(),
         )]);
-        prometheus_directory(2, None, Some(9000), &environment).expect("directory preparation");
+        prometheus_directory(2, None, Some(9000), &environment, DirectoryMode::Prepare)
+            .expect("directory preparation");
         assert!(metrics_path.is_dir());
     }
 }

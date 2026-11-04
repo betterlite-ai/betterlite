@@ -70,6 +70,12 @@ pub struct DirectoryPreparation {
     pub should_prepare: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DirectoryMode {
+    Plan,
+    Prepare,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum DirectoryPreparationError {
     #[error("failed to prepare Prometheus multiprocess directory {path}: {source}")]
@@ -191,15 +197,15 @@ pub fn prometheus_callback_configured(
     })
 }
 
-#[must_use]
-pub fn prometheus_directory_plan(
+pub fn prometheus_directory(
     workers: u32,
     settings: Option<&BTreeMap<String, CallbackSetting>>,
     metrics_port: Option<u16>,
     environment: &BTreeMap<String, String>,
-) -> Option<DirectoryPreparation> {
+    mode: DirectoryMode,
+) -> Result<Option<DirectoryPreparation>, DirectoryPreparationError> {
     if metrics_port.is_none() && (workers <= 1 || !prometheus_callback_configured(settings)) {
-        return None;
+        return Ok(None);
     }
     let configured = environment
         .get("PROMETHEUS_MULTIPROC_DIR")
@@ -208,7 +214,7 @@ pub fn prometheus_directory_plan(
         || env::temp_dir().join("litellm_prometheus_multiproc"),
         PathBuf::from,
     );
-    Some(DirectoryPreparation {
+    let preparation = DirectoryPreparation {
         path,
         action: if configured.is_some() {
             "Using existing".to_owned()
@@ -216,22 +222,14 @@ pub fn prometheus_directory_plan(
             "Auto-created".to_owned()
         },
         should_prepare: true,
-    })
-}
-
-pub fn prometheus_directory(
-    workers: u32,
-    settings: Option<&BTreeMap<String, CallbackSetting>>,
-    metrics_port: Option<u16>,
-    environment: &BTreeMap<String, String>,
-) -> Result<Option<DirectoryPreparation>, DirectoryPreparationError> {
-    let Some(preparation) = prometheus_directory_plan(workers, settings, metrics_port, environment)
-    else {
-        return Ok(None);
     };
-    fs::create_dir_all(&preparation.path).map_err(|source| DirectoryPreparationError::Create {
-        path: preparation.path.clone(),
-        source,
-    })?;
+    if mode == DirectoryMode::Prepare {
+        fs::create_dir_all(&preparation.path).map_err(|source| {
+            DirectoryPreparationError::Create {
+                path: preparation.path.clone(),
+                source,
+            }
+        })?;
+    }
     Ok(Some(preparation))
 }

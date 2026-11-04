@@ -1,6 +1,6 @@
 use betterlite_server::worker_options::{
-    CallbackSetting, LaunchOptions, launch_plan, prometheus_callback_configured,
-    prometheus_directory_plan,
+    CallbackSetting, DirectoryMode, LaunchOptions, launch_plan, prometheus_callback_configured,
+    prometheus_directory,
 };
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -38,13 +38,15 @@ impl crate::helpers::Helper for Op {
             }
             "prometheus_directory" => {
                 let workers = input.workers.unwrap_or(1);
-                serde_json::to_value(prometheus_directory_plan(
+                let directory = prometheus_directory(
                     workers,
                     input.settings.as_ref(),
                     input.metrics_port,
                     &input.environment,
-                ))
-                .map_err(failure)
+                    DirectoryMode::Plan,
+                )
+                .map_err(failure)?;
+                serde_json::to_value(directory).map_err(failure)
             }
             _ => Err(failure("unknown B4177 function")),
         }
