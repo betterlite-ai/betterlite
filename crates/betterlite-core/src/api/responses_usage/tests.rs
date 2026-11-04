@@ -1,11 +1,13 @@
 #![cfg(test)]
 
 use super::{
-    Usage, UsageInput, is_response_api_usage, normalize_usage, transform_response_api_usage,
-    transform_value,
+    ResponsesUsageError, Usage, UsageInput, is_response_api_usage, normalize_usage,
+    transform_response_api_usage, transform_value,
 };
+use betterlite_models::modality_cost::error::ModalityCostError;
 use rstest::rstest;
 use serde_json::{Map, Value};
+use std::error::Error;
 
 #[test]
 fn null_usage_becomes_zero_usage() {
@@ -103,6 +105,26 @@ fn nested_reasoning_is_removed_only_when_text_includes_it() {
         result["completion_tokens_details"]["reasoning_tokens"],
         4_i64
     );
+}
+
+#[test]
+fn nested_reasoning_overflow_is_reported_with_its_source() {
+    let input = value(
+        r#"{"input_tokens":0,"output_tokens":0,"output_tokens_details":{"text_tokens":9223372036854775807,"reasoning_tokens":9223372036854775807}}"#,
+    );
+    let conversion_error =
+        transform_response_api_usage(Some(&input)).expect_err("overflow is rejected");
+    match conversion_error {
+        ResponsesUsageError::ModalityCost { source } => {
+            assert!(matches!(
+                &source,
+                ModalityCostError::ReasoningRemovalOverflow
+            ));
+            let error = ResponsesUsageError::ModalityCost { source };
+            assert!(Error::source(&error).is_some());
+        }
+        ResponsesUsageError::Json { .. } => panic!("expected modality cost overflow"),
+    }
 }
 
 #[test]

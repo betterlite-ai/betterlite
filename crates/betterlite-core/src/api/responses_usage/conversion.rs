@@ -1,4 +1,7 @@
 use betterlite_models::decisions::Json as WireJson;
+use betterlite_models::modality_cost::{
+    completion::text_without_nested_reasoning, error::ModalityCostError,
+};
 use betterlite_models::usage_sum::{
     CachedTokensDetails, CompletionTokensDetails, PromptTokensDetails,
 };
@@ -8,7 +11,7 @@ use betterlite_openai::api::responses_objects::{
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 
-use super::Usage;
+use super::{ResponsesUsageError, Usage};
 
 const EXCLUDED: [&str; 11] = [
     "input_tokens",
@@ -24,14 +27,15 @@ const EXCLUDED: [&str; 11] = [
     "completion_tokens_details",
 ];
 
-pub(super) fn from_response_usage(typed: ResponseApiUsage) -> Result<Usage, serde_json::Error> {
+pub(super) fn from_response_usage(typed: ResponseApiUsage) -> Result<Usage, ResponsesUsageError> {
     let prompt_tokens = typed.input_tokens;
     let completion_tokens = typed.output_tokens;
     let prompt_details = typed.input_tokens_details.as_ref().map(prompt_details);
     let completion_details = typed
         .output_tokens_details
         .as_ref()
-        .map(|details| completion_details(details, completion_tokens));
+        .map(|details| completion_details(details, completion_tokens))
+        .transpose()?;
     let extensions = extension_fields(typed.extra)?;
     Ok(Usage {
         prompt_tokens,
@@ -74,19 +78,25 @@ fn prompt_details(details: &InputTokensDetails) -> PromptTokensDetails {
     }
 }
 
-fn completion_details(details: &OutputTokensDetails, completion: i64) -> CompletionTokensDetails {
+fn completion_details(
+    details: &OutputTokensDetails,
+    completion: i64,
+) -> Result<CompletionTokensDetails, ModalityCostError> {
     let reasoning = details.reasoning_tokens;
     let audio = details.audio_tokens;
     let image = detail_integer(&details.extra, "image_tokens");
-    let text = details.text_tokens.map(|reported| {
-        text_tokens_without_reasoning(
-            completion,
-            reported,
-            reasoning.unwrap_or(0),
-            audio.unwrap_or(0).saturating_add(image.unwrap_or(0)),
-        )
-    });
-    CompletionTokensDetails {
+    let text = details
+        .text_tokens
+        .map(|reported| {
+            text_without_nested_reasoning(
+                completion,
+                reported,
+                reasoning.unwrap_or(0),
+                audio.unwrap_or(0).saturating_add(image.unwrap_or(0)),
+            )
+        })
+        .transpose()?;
+    Ok(CompletionTokensDetails {
         text_tokens: text,
         audio_tokens: audio,
         image_tokens: image,
@@ -94,7 +104,7 @@ fn completion_details(details: &OutputTokensDetails, completion: i64) -> Complet
         reasoning_tokens: reasoning,
         accepted_prediction_tokens: None,
         rejected_prediction_tokens: None,
-    }
+    })
 }
 
 fn detail_integer(details: &BTreeMap<String, WireJson>, field: &str) -> Option<i64> {
@@ -103,14 +113,6 @@ fn detail_integer(details: &BTreeMap<String, WireJson>, field: &str) -> Option<i
         WireJson::Number(value) => value.as_i64(),
         WireJson::Null | WireJson::Text(_) | WireJson::List(_) | WireJson::Object(_) => None,
     }
-}
-
-fn text_tokens_without_reasoning(completion: i64, text: i64, reasoning: i64, other: i64) -> i64 {
-    let reported = text.saturating_add(reasoning).saturating_add(other);
-    let nested = reasoning
-        .min(text)
-        .min(reported.saturating_sub(completion).max(0));
-    text.saturating_sub(nested)
 }
 
 fn extension_fields(

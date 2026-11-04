@@ -1,11 +1,39 @@
+use betterlite_models::modality_cost::error::ModalityCostError;
 use betterlite_models::usage_sum::{CompletionTokensDetails, PromptTokensDetails};
 use rust_decimal::Decimal;
 use serde_json::{Map, Value};
+use thiserror::Error;
 
 mod conversion;
 mod projection;
 mod typed;
 use projection::decimal_from_value;
+
+#[derive(Debug, Error)]
+pub enum ResponsesUsageError {
+    #[error("usage JSON conversion failed: {source}")]
+    Json {
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("usage modality-cost conversion failed: {source}")]
+    ModalityCost {
+        #[source]
+        source: ModalityCostError,
+    },
+}
+
+impl From<serde_json::Error> for ResponsesUsageError {
+    fn from(source: serde_json::Error) -> Self {
+        Self::Json { source }
+    }
+}
+
+impl From<ModalityCostError> for ResponsesUsageError {
+    fn from(source: ModalityCostError) -> Self {
+        Self::ModalityCost { source }
+    }
+}
 
 const CHAT_FIELDS: [&str; 3] = ["prompt_tokens", "completion_tokens", "total_tokens"];
 
@@ -28,7 +56,7 @@ pub enum UsageInput<'usage> {
     Mapping(&'usage Value),
 }
 
-pub fn normalize_usage(input: UsageInput<'_>) -> Result<Usage, serde_json::Error> {
+pub fn normalize_usage(input: UsageInput<'_>) -> Result<Usage, ResponsesUsageError> {
     match input {
         UsageInput::Absent | UsageInput::Null => Ok(empty_usage()),
         UsageInput::Existing(usage) => Ok(usage.clone()),
@@ -44,7 +72,7 @@ pub fn is_response_api_usage(usage: &Map<String, Value>) -> bool {
     usage.contains_key("output_tokens")
 }
 
-pub fn transform_response_api_usage(usage: Option<&Value>) -> Result<Usage, serde_json::Error> {
+pub fn transform_response_api_usage(usage: Option<&Value>) -> Result<Usage, ResponsesUsageError> {
     let Some(input) = usage else {
         return Ok(empty_usage());
     };
@@ -60,9 +88,9 @@ pub fn transform_response_api_usage(usage: Option<&Value>) -> Result<Usage, serd
     conversion::from_response_usage(typed::parse(fields)?)
 }
 
-pub fn transform_value(usage: Option<&Value>) -> Result<Value, serde_json::Error> {
+pub fn transform_value(usage: Option<&Value>) -> Result<Value, ResponsesUsageError> {
     match transform_response_api_usage(usage) {
-        Ok(normalized) => projection::usage_value(&normalized),
+        Ok(normalized) => Ok(projection::usage_value(&normalized)?),
         Err(error) => Err(error),
     }
 }
