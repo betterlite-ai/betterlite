@@ -37,24 +37,6 @@ const fn json_list_is_nonempty(value: &Json) -> bool {
     }
 }
 
-fn user_continue() -> Message {
-    Message {
-        role: "user".to_owned(),
-        content: Some(Content::Text(CONTINUE_TEXT.to_owned())),
-        name: None,
-        provider_specific_fields: Object::new(),
-    }
-}
-
-fn assistant_continue() -> Message {
-    Message {
-        role: "assistant".to_owned(),
-        content: Some(Content::Text(CONTINUE_TEXT.to_owned())),
-        name: None,
-        provider_specific_fields: Object::new(),
-    }
-}
-
 // Clone before insertion so provider transforms never mutate shared request input.
 #[must_use]
 pub fn insert_user_continue_message(
@@ -65,7 +47,12 @@ pub fn insert_user_continue_message(
     if messages.is_empty() {
         return Vec::new();
     }
-    let placeholder = custom.cloned().unwrap_or_else(user_continue);
+    let placeholder = custom.cloned().unwrap_or_else(|| Message {
+        role: "user".to_owned(),
+        content: Some(Content::Text(CONTINUE_TEXT.to_owned())),
+        name: None,
+        provider_specific_fields: Object::new(),
+    });
     let mut result = messages.to_vec();
     let mut insertion_points = Vec::new();
     if messages
@@ -117,7 +104,12 @@ pub fn insert_assistant_continuation(
     if !ensure || messages.len() <= 1 {
         return messages.to_vec();
     }
-    let placeholder = custom.cloned().unwrap_or_else(assistant_continue);
+    let placeholder = custom.cloned().unwrap_or_else(|| Message {
+        role: "assistant".to_owned(),
+        content: Some(Content::Text(CONTINUE_TEXT.to_owned())),
+        name: None,
+        provider_specific_fields: Object::new(),
+    });
     let mut previous_counted_user = false;
     let mut insertions = Vec::new();
     for (index, message) in messages.iter().enumerate() {
