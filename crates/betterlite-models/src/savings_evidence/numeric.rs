@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::str::FromStr as _;
 
 use rust_decimal::Decimal;
 use serde::Deserialize;
@@ -33,16 +33,29 @@ pub fn round_decimal_lexeme(lexeme: &str) -> Result<Decimal, DecimalLexemeError>
         ),
         None => (lexeme, 0),
     };
+    let expanded = expanded_decimal(coefficient, exponent)?;
+    Ok(Decimal::from_str(&expanded)?.normalize())
+}
+
+fn expanded_decimal(coefficient: &str, exponent: i64) -> Result<String, DecimalLexemeError> {
     let (is_negative, integer_part, fraction_part) = split_coefficient(coefficient);
     let digits = format!("{integer_part}{fraction_part}");
     if digits.bytes().all(|byte| byte == b'0') {
-        return Ok(Decimal::ZERO);
+        return Ok("0".to_owned());
     }
     let integer_len = i64::try_from(integer_part.len())
         .map_err(|source| DecimalLexemeError::ScaleOverflow { source })?;
     let decimal_position = integer_len
         .checked_add(exponent)
         .ok_or(DecimalLexemeError::ScaleShiftOverflow)?;
+    shifted_decimal(&digits, decimal_position, is_negative)
+}
+
+fn shifted_decimal(
+    digits: &str,
+    decimal_position: i64,
+    is_negative: bool,
+) -> Result<String, DecimalLexemeError> {
     let leading_zeroes = i64::try_from(digits.bytes().take_while(|byte| *byte == b'0').count())
         .map_err(|source| DecimalLexemeError::ScaleOverflow { source })?;
     let first_significant_place = decimal_position
@@ -50,7 +63,7 @@ pub fn round_decimal_lexeme(lexeme: &str) -> Result<Decimal, DecimalLexemeError>
         .and_then(|position| position.checked_sub(1))
         .ok_or(DecimalLexemeError::ScaleShiftOverflow)?;
     if first_significant_place < -29 {
-        return Ok(Decimal::ZERO);
+        return Ok("0".to_owned());
     }
     let integer_digits = decimal_position
         .checked_sub(leading_zeroes)
@@ -60,28 +73,35 @@ pub fn round_decimal_lexeme(lexeme: &str) -> Result<Decimal, DecimalLexemeError>
             rust_decimal::Error::ExceedsMaximumPossibleValue,
         ));
     }
-    let digit_len = i64::try_from(digits.len())
-        .map_err(|source| DecimalLexemeError::ScaleOverflow { source })?;
-    let unsigned = if decimal_position <= 0 {
-        let zeros = usize::try_from(decimal_position.unsigned_abs())
-            .map_err(|source| DecimalLexemeError::ScaleOverflow { source })?;
-        format!("0.{}{digits}", "0".repeat(zeros))
-    } else if decimal_position >= digit_len {
-        let zeros = usize::try_from(decimal_position - digit_len)
-            .map_err(|source| DecimalLexemeError::ScaleOverflow { source })?;
-        format!("{digits}{}", "0".repeat(zeros))
-    } else {
-        let split = usize::try_from(decimal_position)
-            .map_err(|source| DecimalLexemeError::ScaleOverflow { source })?;
-        let (whole, fraction) = digits.split_at(split);
-        format!("{whole}.{fraction}")
-    };
+    let unsigned = place_decimal(digits, decimal_position)?;
     let expanded = if is_negative {
         format!("-{unsigned}")
     } else {
         unsigned
     };
-    Ok(Decimal::from_str(&expanded)?.normalize())
+    Ok(expanded)
+}
+
+fn place_decimal(digits: &str, decimal_position: i64) -> Result<String, DecimalLexemeError> {
+    let digit_len = i64::try_from(digits.len())
+        .map_err(|source| DecimalLexemeError::ScaleOverflow { source })?;
+    if decimal_position <= 0 {
+        let zeros = usize::try_from(decimal_position.unsigned_abs())
+            .map_err(|source| DecimalLexemeError::ScaleOverflow { source })?;
+        Ok(format!("0.{}{digits}", "0".repeat(zeros)))
+    } else if decimal_position >= digit_len {
+        let zero_count = decimal_position
+            .checked_sub(digit_len)
+            .ok_or(DecimalLexemeError::ScaleShiftOverflow)?;
+        let zeros = usize::try_from(zero_count)
+            .map_err(|source| DecimalLexemeError::ScaleOverflow { source })?;
+        Ok(format!("{digits}{}", "0".repeat(zeros)))
+    } else {
+        let split = usize::try_from(decimal_position)
+            .map_err(|source| DecimalLexemeError::ScaleOverflow { source })?;
+        let (whole, fraction) = digits.split_at(split);
+        Ok(format!("{whole}.{fraction}"))
+    }
 }
 
 fn split_coefficient(coefficient: &str) -> (bool, &str, &str) {

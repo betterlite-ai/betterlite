@@ -1,4 +1,6 @@
-use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, Utc, Weekday};
+use chrono::{
+    DateTime, Datelike as _, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, Utc, Weekday,
+};
 
 const FRACTION_WIDTH: usize = 6;
 const FRACTION_SCALE: [u32; 7] = [0, 100_000, 10_000, 1_000, 100, 10, 1];
