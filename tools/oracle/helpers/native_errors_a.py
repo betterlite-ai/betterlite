@@ -112,20 +112,6 @@ def _classified(
     return {"family": family, **context}
 
 
-def _unclassified() -> JsonValue:
-    return {
-        "family": "unclassified",
-        "message": "ignored",
-        "model": None,
-        "provider": None,
-        "max_retries": None,
-        "num_retries": None,
-        "body_type": None,
-        "body_param": None,
-        "body_code": None,
-    }
-
-
 _CLOUDFLARE_FAMILIES: dict[str, str] = {
     "AuthenticationError": "authentication",
     "BadRequestError": "bad_request",
@@ -205,7 +191,8 @@ def _run_cohere(input_value: CohereInput) -> JsonValue:
         status = cast(LitellmApiError, error).status_code
         return {"result": _classified(family, model, "cohere", status)}
     except _ProviderCauseError:
-        return {"result": _unclassified()}
+        # The outer exception handler turns this re-raise into APIConnectionError.
+        return {"result": _classified("api_connection", "", "")}
     return {"result": None}
 
 
