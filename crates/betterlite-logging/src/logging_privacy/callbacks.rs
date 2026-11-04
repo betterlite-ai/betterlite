@@ -107,3 +107,5 @@ pub fn validate_environment(value: &str) -> Result<(), CallbackMetadataError> {
         Ok(())
     }
 }
+
+mod tests;
