@@ -45,7 +45,7 @@ fn render(policy: &ProxyPolicy, target: &str) -> String {
 #[case::trust_env_false_keeps_it_on("litellm_settings: {aiohttp_trust_env: false}", &[("HTTPS_PROXY", PROXY)], "https://api.example.com", "proxy.local:3128")]
 #[case::off_by_setting(DISABLED, &[("HTTPS_PROXY", PROXY)], "https://api.example.com", "direct")]
 #[case::off_by_environment("", &[("DISABLE_AIOHTTP_TRUST_ENV", " TRUE "), ("HTTPS_PROXY", PROXY)], "https://api.example.com", "direct")]
-#[case::unrecognized_disable_value("", &[("DISABLE_AIOHTTP_TRUST_ENV", "1"), ("HTTPS_PROXY", PROXY)], "https://api.example.com", "proxy.local:3128")]
+#[case::numeric_disable_value("", &[("DISABLE_AIOHTTP_TRUST_ENV", "1"), ("HTTPS_PROXY", PROXY)], "https://api.example.com", "direct")]
 #[case::lowercase_wins("", &[("HTTPS_PROXY", "http://upper.local:1"), ("https_proxy", "http://lower.local:2")], "https://api.example.com", "lower.local:2")]
 #[case::empty_lowercase_clears("", &[("HTTPS_PROXY", PROXY), ("https_proxy", "")], "https://api.example.com", "direct")]
 #[case::cgi_drops_uppercase_http("", &[("HTTP_PROXY", PROXY), ("REQUEST_METHOD", "GET")], "http://api.example.com", "direct")]
