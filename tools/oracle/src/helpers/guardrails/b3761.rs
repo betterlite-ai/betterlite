@@ -37,6 +37,18 @@ pub(crate) enum Input {
         response: Value,
         text: String,
     },
+    RewriteModelText {
+        response: Value,
+        text: String,
+    },
+    RewriteFieldTuplesText {
+        response: Value,
+        text: String,
+    },
+    RewriteWrappedText {
+        response: Value,
+        text: String,
+    },
 }
 
 pub(crate) struct Op;
@@ -68,7 +80,10 @@ fn outcome(input: &Input) -> Value {
         }
         Input::NormalizeFieldTuples { pairs } => normalize_response(pairs),
         Input::BlockingResponse { detail } => blocking_response(detail),
-        Input::RewriteText { response, text } => rewrite_text(response, text),
+        Input::RewriteText { response, text }
+        | Input::RewriteModelText { response, text }
+        | Input::RewriteFieldTuplesText { response, text }
+        | Input::RewriteWrappedText { response, text } => rewrite_text(response, text),
     }
 }
 
@@ -103,8 +118,19 @@ fn blocking_response(detail: &Value) -> Value {
         Some("cisco-ai-defense"),
         None,
     );
-    serde_json::from_str(&serde_json::to_string(&response).unwrap_or_default())
-        .unwrap_or(Value::Null)
+    let mut output =
+        serde_json::from_str::<Value>(&serde_json::to_string(&response).unwrap_or_default())
+            .unwrap_or(Value::Null);
+    if let Some(text) = output
+        .pointer("/mcp_tool_call_response/0/text")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        && let Ok(payload) = serde_json::from_str(&text)
+        && let Some(slot) = output.pointer_mut("/mcp_tool_call_response/0/text")
+    {
+        *slot = payload;
+    }
+    output
 }
 
 fn normalized_to_value(normalized: &normalize::NormalizedResponse) -> Value {
@@ -138,22 +164,5 @@ fn normalized_to_value(normalized: &normalize::NormalizedResponse) -> Value {
 fn rewrite_text(response: &Value, text: &str) -> Value {
     let parsed = Json::parse(&response.to_string());
     let update = redact::set_tool_response_text(&parsed, text);
-    let mut rewritten = response.clone();
-    if let Some(items) = &update.content
-        && let Value::Array(_) = &rewritten
-    {
-        rewritten = serde_json::from_str(&serde_json::to_string(items).unwrap_or_default())
-            .unwrap_or(Value::Null);
-    }
-    if update.structured_content.is_some()
-        && let Value::Object(fields) = &mut rewritten
-    {
-        let key = if fields.contains_key("structured_content") {
-            "structured_content"
-        } else {
-            "structuredContent"
-        };
-        fields.insert(key.to_owned(), json!({"result": text}));
-    }
-    json!({"replaced": update.replaced, "response": rewritten})
+    json!({"replaced": update.replaced, "response": update.response})
 }

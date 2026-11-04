@@ -58,25 +58,25 @@ checks:
         grep -q '"openai"' crates/betterlite/src/*.rs && grep -q 'gpt-4o' crates/betterlite/src/*.rs && grep -q 'ANTHROPIC_API_KEY' crates/betterlite/src/*.rs && grep -q 'claude-haiku' crates/betterlite/src/*.rs && grep -q 'AZURE_AI_API_KEY' crates/betterlite/src/*.rs && grep -q 'AWS_ACCESS_KEY_ID' crates/betterlite/src/*.rs && grep -q 'ollama' crates/betterlite/src/*.rs && grep -q 'localhost:11434' crates/betterlite/src/*.rs
     - id: color-support-tests
       why: "color support checks fail or do not exist"
-      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^terminal_styling::/)' || cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(.*color.*)'
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^terminal_styling::/)' || cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/color/)'
     - id: styled-input-tests
       why: "styled_input readline wrapping tests fail or do not exist"
-      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^styled_input::/)' || cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(.*styled_input.*)'
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^styled_input::/)' || cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/styled_input/)'
     - id: yaml-escape-tests
       why: "YAML escape tests fail or do not exist"
-      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^yaml_escape::/)' || cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(.*yaml.*escape.*)'
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^yaml_escape::/)' || cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/yaml.*escape/)'
     - id: interactive-select-tests
       why: "interactive provider selector tests fail or do not exist"
-      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^provider_selection::interactive.*/)' || cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(.*interactive.*select.*)'
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^provider_selection::interactive.*/)' || cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/interactive.*select/)'
     - id: raw-mode-tests
       why: "raw terminal mode restoration tests fail or do not exist"
-      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^provider_selection::.*raw/)' || cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(.*raw.*mode.*)'
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^provider_selection::.*raw/)' || cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/raw.*mode/)'
     - id: fallback-select-tests
       why: "numeric fallback selector tests fail or do not exist"
-      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^provider_selection::fallback/)' || cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(.*fallback.*select.*)'
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^provider_selection::fallback/)' || cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/fallback.*select/)'
     - id: welcome-tests
       why: "welcome message tests fail or do not exist"
-      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^welcome/)' || cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(.*print_welcome.*)'
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^welcome/)' || cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/print_welcome/)'
 oracle_cases: []
 deviations:
   - what: "The six-provider catalog and ANSI styling are built as Rust code, not referenced from LiteLLM at runtime."
