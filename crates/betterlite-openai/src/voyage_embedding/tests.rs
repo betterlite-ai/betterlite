@@ -3,8 +3,8 @@
 use serde_json::{Map, Value, json};
 
 use super::{
-    VoyageContextConfig, VoyageEmbeddingConfig, VoyageEmbeddingVariant,
-    decode_voyage_embedding_reply, is_contextual_model, voyage_credentials, voyage_headers,
+    VoyageEmbeddingConfig, VoyageEmbeddingVariant, decode_voyage_embedding_reply,
+    is_contextual_model, voyage_credentials, voyage_headers,
 };
 
 #[test]
