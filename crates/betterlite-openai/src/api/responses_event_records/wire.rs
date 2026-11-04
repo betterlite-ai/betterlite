@@ -117,7 +117,14 @@ pub fn decode_responses_event_record(
 }
 
 fn decode_event(value: Value) -> Result<ResponsesAPIStreamingResponse, ResponsesEventDecodeError> {
-    let event_type = event_type(&value)?;
+    let event_type = value
+        .as_object()
+        .ok_or(ResponsesEventDecodeError::MissingType)?
+        .get("type")
+        .ok_or(ResponsesEventDecodeError::MissingType)?
+        .as_str()
+        .ok_or(ResponsesEventDecodeError::InvalidType)?
+        .to_owned();
     let parsed_event =
         serde_json::from_value::<ResponsesAPIStreamEvents>(Value::String(event_type));
     match parsed_event {
@@ -131,17 +138,6 @@ fn decode_event(value: Value) -> Result<ResponsesAPIStreamingResponse, Responses
             serde_json::from_value(value)?,
         )),
     }
-}
-
-fn event_type(value: &Value) -> Result<String, ResponsesEventDecodeError> {
-    value
-        .as_object()
-        .ok_or(ResponsesEventDecodeError::MissingType)?
-        .get("type")
-        .ok_or(ResponsesEventDecodeError::MissingType)?
-        .as_str()
-        .map(str::to_owned)
-        .ok_or(ResponsesEventDecodeError::InvalidType)
 }
 
 const fn is_generic_event(event: ResponsesAPIStreamEvents) -> bool {
