@@ -38,7 +38,7 @@ description: >-
   and 125 configuration/fuzz/export lines within 800.
 scope:
   paths:
-    - crates/betterlite-openai/src/{lib,error,jina_embedding,infinity_embedding}.rs
+    - crates/betterlite-openai/src/{jina_embedding,infinity_embedding}.rs
     - crates/betterlite-openai/src/{jina_embedding,infinity_embedding}/**
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/infinity_embedding.rs

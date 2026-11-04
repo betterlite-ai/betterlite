@@ -43,10 +43,8 @@ description: >-
   production, 210 tests, 135 adapters and 90 configuration/export lines, maximum 750.
 scope:
   paths:
-    - crates/betterlite-openai/src/{lib,hosted_chat_options}.rs
     - crates/betterlite-openai/src/hosted_chat_options.rs
     - crates/betterlite-openai/src/hosted_chat_options/**
-    - crates/betterlite-models/src/{lib,baseten_endpoint}.rs
     - crates/betterlite-models/src/baseten_endpoint.rs
     - crates/betterlite-models/src/baseten_endpoint/**
     - crates/betterlite-config/src/{lib,settings,providers}.rs

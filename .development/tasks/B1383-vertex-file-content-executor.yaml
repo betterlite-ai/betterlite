@@ -28,7 +28,6 @@ description: >-
   80 config, 160 execution/settings tests and 90 adapter/seed lines within 625.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,error,vertex_file_content}.rs
     - crates/betterlite-vertex/src/vertex_file_content.rs
     - crates/betterlite-vertex/src/vertex_file_content/**
     - crates/betterlite-config/src/{config,settings,env,providers,tests}.rs

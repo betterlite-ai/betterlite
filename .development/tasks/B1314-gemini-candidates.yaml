@@ -20,7 +20,6 @@ description: >-
   Reserve 310 code, 190 tests and 150 adapter lines, staying below 700 changed lines.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,gemini_candidates}.rs
     - crates/betterlite-vertex/src/gemini_candidates.rs
     - crates/betterlite-vertex/src/gemini_candidates/**
     - tools/oracle/src/helpers/vertex/gemini_candidates.rs

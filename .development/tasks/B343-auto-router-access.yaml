@@ -17,7 +17,6 @@ scope:
   paths:
   - crates/betterlite-server/src/auto_router_access.rs
   - crates/betterlite-server/src/auto_router_access/**
-  - crates/betterlite-server/src/error.rs
   - crates/betterlite-server/src/routes.rs
   - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs

@@ -20,7 +20,6 @@ description: >-
   and 130 runtime/cancellation integration lines, capped at 575.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,gemini_call}.rs
     - crates/betterlite-vertex/src/gemini_call.rs
     - crates/betterlite-vertex/src/gemini_call/**
   lint_tables: false

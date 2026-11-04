@@ -44,7 +44,6 @@ description: >-
   production, 220 tests, 145 adapters and 85 settings/export lines, maximum 775.
 scope:
   paths:
-    - crates/betterlite-openai/src/{lib,deepseek_chat}.rs
     - crates/betterlite-openai/src/deepseek_chat.rs
     - crates/betterlite-openai/src/deepseek_chat/**
     - crates/betterlite-config/src/{lib,settings,providers}.rs

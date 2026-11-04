@@ -24,7 +24,6 @@ description: >-
   Reserve 300 implementation, 190 tests, 120 adapters and 100 fuzz lines within 775.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,error,vertex_imagen_edit}.rs
     - crates/betterlite-vertex/src/vertex_imagen_edit.rs
     - crates/betterlite-vertex/src/vertex_imagen_edit/**
     - crates/betterlite-vertex/fuzz/Cargo.toml

@@ -36,7 +36,6 @@ description: >-
   lines, capped at 775. API-key lookup and version dispatch stay in B037.
 scope:
   paths:
-    - crates/betterlite-openai/src/{lib,error,cohere_chat_v2}.rs
     - crates/betterlite-openai/src/cohere_chat_v2.rs
     - crates/betterlite-openai/src/cohere_chat_v2/**
     - crates/betterlite-openai/fuzz/Cargo.toml

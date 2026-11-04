@@ -47,7 +47,6 @@ description: >-
   and 85 settings/exports, maximum 600.
 scope:
   paths:
-    - crates/betterlite-openai/src/{lib,gdc_policy}.rs
     - crates/betterlite-openai/src/gdc_policy.rs
     - crates/betterlite-openai/src/gdc_policy/**
     - crates/betterlite-config/src/{lib,settings,providers}.rs

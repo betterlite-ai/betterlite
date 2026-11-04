@@ -45,7 +45,6 @@ description: >-
   70 decoder fuzz/replay and 75 configuration/export lines, capped at 800.
 scope:
   paths:
-    - crates/betterlite-openai/src/{lib,compatible_image_hosts}.rs
     - crates/betterlite-openai/src/compatible_image_hosts.rs
     - crates/betterlite-openai/src/compatible_image_hosts/**
     - crates/betterlite-openai/fuzz/Cargo.toml

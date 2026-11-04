@@ -152,6 +152,7 @@ pub mod dynamoai_moderation;
 pub mod end_user_identity;
 pub mod end_user_registry;
 pub mod enkryptai_detection;
+pub mod error_body_call_id;
 pub mod executed_batch_runner;
 pub mod fallback_plans;
 pub mod file_upload_options;
@@ -201,6 +202,7 @@ pub mod key_context;
 pub mod key_create;
 pub mod key_event_sinks;
 pub mod key_limit_policy;
+pub mod key_management_settings;
 pub mod key_persistence;
 pub mod key_policy_fields;
 pub mod key_rotation;
@@ -213,6 +215,7 @@ pub mod least_busy;
 pub mod lemonade_model_metadata;
 pub mod llm_classifier;
 pub mod local_ttl_cache;
+pub mod logging_privacy;
 pub mod login_form;
 pub mod login_return;
 pub mod login_routes;
@@ -336,6 +339,7 @@ pub mod vertex_embedding_dispatch;
 pub mod vertex_schema_shaping;
 pub mod virtual_key_auth;
 pub mod virtual_key_routes;
+pub mod voyage_credentials;
 pub mod websearch_request_hooks;
 pub mod worker_options_reload;
 
@@ -461,6 +465,7 @@ sections! {
     database_tokens, database_urls, deepkeep_firewall, default_user_teams, deployment_affinity,
     deployment_catalog, deployment_clients, deployment_identity, dynamic_rate_limit_policy,
     dynamoai_moderation, end_user_identity, end_user_registry, enkryptai_detection,
+    error_body_call_id,
     executed_batch_runner, fallback_plans, file_upload_options, file_upload_routing,
     file_upload_validation, focus_export_schedule, foundry_credentials, foundry_image_edits,
     foundry_vector_stores, full_model_metadata, gemini_cache_create, gemini_cache_prefix,
@@ -471,10 +476,12 @@ sections! {
     io_token_reservations, jev_classifier, jina_infinity_rerank, jwt_auth, jwt_claims,
     jwt_db_teams, jwt_key_resolution, jwt_keys, jwt_permissions, jwt_provisioning,
     jwt_role_claims, jwt_settings, jwt_team_authorization, jwt_team_selection, jwt_verification,
-    key_access, key_context, key_create, key_event_sinks, key_limit_policy, key_persistence,
+    key_access, key_context, key_create, key_event_sinks, key_limit_policy,
+    key_management_settings, key_persistence,
     key_policy_fields, key_rotation, key_rotation_write, lar1_routing, lasso_classification,
     latency_observations, latency_routing, least_busy, lemonade_model_metadata, llm_classifier,
-    local_ttl_cache, login_form, login_return, login_routes, login_throttle, management_rbac,
+    local_ttl_cache, logging_privacy, login_form, login_return, login_routes, login_throttle,
+    management_rbac,
     mcp_bearer_credentials, mcp_tool_helpers, mcp_toolset_storage, member_row_write,
     messages_advisor, messages_dispatch, messages_mcp, messages_native_call,
     messages_native_stream, messages_response_call, messages_responses_output,
@@ -502,5 +509,6 @@ sections! {
     ui_session_cleanup, usage_routing, usage_routing_v2, usage_v2_accounting, user_delete,
     user_fields, user_info, user_update, user_url_policy, verbose_hooks,
     vertex_credential_sources, vertex_embedding_dispatch, vertex_schema_shaping,
-    virtual_key_auth, virtual_key_routes, websearch_request_hooks, worker_options_reload,
+    virtual_key_auth, virtual_key_routes, voyage_credentials, websearch_request_hooks,
+    worker_options_reload,
 }

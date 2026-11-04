@@ -31,7 +31,6 @@ description: >-
   within 700.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,error,studio_agents}.rs
     - crates/betterlite-vertex/src/studio_agents.rs
     - crates/betterlite-vertex/src/studio_agents/**
     - crates/betterlite-vertex/fuzz/Cargo.toml

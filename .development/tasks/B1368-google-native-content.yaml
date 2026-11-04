@@ -29,7 +29,6 @@ description: >-
   145 oracle and 80 fuzz lines, cap 800.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,error,google_native_content}.rs
     - crates/betterlite-vertex/src/google_native_content.rs
     - crates/betterlite-vertex/src/google_native_content/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
