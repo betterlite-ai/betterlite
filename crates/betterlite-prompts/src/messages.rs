@@ -119,7 +119,7 @@ pub fn insert_assistant_continuation(
 ) -> Result<Vec<Message>, MessageNormalizationError> {
     let limit = MAX_COMPLETION_MESSAGES;
     check_limit(messages, MessageNormalizationError::InputTooLong { limit })?;
-    let result = if ensure && messages.len() > 1 {
+    let result = if ensure {
         let placeholder = continuation_placeholder(custom, "assistant");
         let mut previous_counted_user = false;
         let mut inserted = Vec::with_capacity(messages.len().saturating_mul(2));
