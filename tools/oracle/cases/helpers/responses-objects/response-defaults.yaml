@@ -1,0 +1,9 @@
+kind: helper
+name: responses-objects-response-defaults
+call:
+  responses_objects:
+    operation: response_defaults
+    response: {id: resp_a, created_at: 1, output: [], status: future_status, truncation: auto, reasoning: {effort: xhigh, detail: 1}}
+env: {}
+compare:
+  ignore: []
