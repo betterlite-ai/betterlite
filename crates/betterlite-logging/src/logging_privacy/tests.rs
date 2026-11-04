@@ -20,6 +20,12 @@ fn logging_privacy_tests_behavior() {
 }
 
 fn policy_cases() {
+    header_cases();
+    dynamic_global_cases();
+    metadata_header_case();
+}
+
+fn header_cases() {
     let enable_header = json(r#"{"litellm-enable-message-redaction":true}"#);
     let Json::Object(enable_headers) = &enable_header else {
         panic!("header fixture is an object");
@@ -46,6 +52,9 @@ fn policy_cases() {
         Some(&Json::Bool(true)),
         true
     ));
+}
+
+fn dynamic_global_cases() {
     assert!(should_redact_message_logging(
         None,
         None,
@@ -59,6 +68,9 @@ fn policy_cases() {
         true
     ));
     assert!(should_redact_message_logging(None, None, None, true));
+}
+
+fn metadata_header_case() {
     let metadata = json(r#"{"headers":{"litellm-disable-message-redaction":true}}"#);
     assert!(!should_redact_message_logging(
         Some(&metadata),

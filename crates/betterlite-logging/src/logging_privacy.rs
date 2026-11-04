@@ -168,6 +168,14 @@ fn redact_tree(value: &mut Json) {
     match value {
         Json::Object(fields) => {
             for (key, child) in fields.iter_mut() {
+                if matches!(child, Json::Null)
+                    && matches!(
+                        key.as_str(),
+                        "content" | "reasoning_content" | "text" | "refusal" | "arguments"
+                    )
+                {
+                    continue;
+                }
                 match key.as_str() {
                     "messages" => {
                         *child = Json::List(vec![Json::Object(IndexMap::from([
@@ -176,12 +184,9 @@ fn redact_tree(value: &mut Json) {
                         ]))]);
                     }
                     "prompt" | "input" => *child = Json::Text(String::new()),
-                    "content" | "reasoning_content" | "text" | "refusal" | "arguments"
-                        if !matches!(child, Json::Null) =>
-                    {
+                    "content" | "reasoning_content" | "text" | "refusal" | "arguments" => {
                         *child = Json::Text(REDACTED.to_owned());
                     }
-                    "content" | "reasoning_content" | "text" | "refusal" | "arguments" => {}
                     "thinking_blocks" | "audio" => *child = Json::Null,
                     _ => redact_tree(child),
                 }
