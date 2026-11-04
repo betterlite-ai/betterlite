@@ -59,6 +59,18 @@ fn defaults_follow_hub() {
 }
 
 fn configured_paths_follow_hub() {
+    assert_eq!(
+        settings(&[("HF_HOME", "~other/cache"), ("HOME", "/home/test")])
+            .unwrap()
+            .hf_home,
+        PathBuf::from("~other/cache")
+    );
+    assert_eq!(
+        settings(&[("HF_HOME", "${}"), ("", "/unexpected")])
+            .unwrap()
+            .hf_home,
+        PathBuf::from("${}")
+    );
     let configured = settings(&[
         ("HF_ENDPOINT", "https://hub.example///"),
         ("HF_HOME", "~/hf-$SUFFIX/${MISSING}"),
