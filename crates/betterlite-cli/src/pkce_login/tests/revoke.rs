@@ -1,4 +1,7 @@
-use super::*;
+use super::{
+    HttpResponse, RevocationUnavailableOrFailure, ScriptedHttp, contract, form_fields,
+    revoke_credential,
+};
 use secrecy::SecretString;
 
 #[test]

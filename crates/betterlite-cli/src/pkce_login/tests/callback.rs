@@ -1,6 +1,15 @@
-use super::*;
+use super::{
+    CONNECTION_TIMEOUT, CallbackOutcome, LoopbackServer, RequestRead, SystemClock,
+    TcpLoopbackListener, parse_request,
+};
+use secrecy::ExposeSecret as _;
+use std::io::{Read as _, Write as _};
 use std::iter;
 use std::net::SocketAddr;
+use std::net::TcpStream;
+use std::sync::mpsc::sync_channel;
+use std::thread;
+use std::time::Duration;
 
 fn send_callback_request(address: SocketAddr, request: &str, expected_status: &str) -> bool {
     let mut stream = TcpStream::connect(address).expect("connect");
@@ -18,6 +27,7 @@ fn callback_settles_with_a_16_kib_cookie_header() {
     request.extend(iter::repeat_n(b'x', 16 * 1024));
     request.extend_from_slice(b"\r\n\r\n");
     assert!(matches!(parse_request(&request), RequestRead::Complete(_)));
+    assert_callback_request_settles(request, "200", "c");
 }
 
 #[test]
@@ -30,6 +40,39 @@ fn callback_settles_with_99_header_lines() {
     );
     request.extend_from_slice(b"\r\n");
     assert!(matches!(parse_request(&request), RequestRead::Complete(_)));
+    assert_callback_request_settles(request, "200", "c");
+}
+
+fn assert_callback_request_settles(request: Vec<u8>, status: &str, expected_code: &str) {
+    let listener = TcpLoopbackListener::bind().expect("listener");
+    let mut server =
+        LoopbackServer::with_listener(listener, "s", CONNECTION_TIMEOUT).expect("server");
+    let address = server.address;
+    let (sender, receiver) = sync_channel(1);
+    let outcome = thread::scope(|scope| {
+        scope.spawn(move || {
+            let mut stream = TcpStream::connect(address).expect("connect");
+            stream.write_all(&request).expect("write request");
+            let mut response = Vec::new();
+            stream.read_to_end(&mut response).expect("read response");
+            sender
+                .send(String::from_utf8(response).expect("response text"))
+                .expect("response");
+        });
+        server
+            .wait(Duration::from_secs(2), &SystemClock)
+            .expect("callback")
+    });
+    assert!(
+        receiver
+            .recv()
+            .expect("response")
+            .starts_with(&format!("HTTP/1.1 {status}"))
+    );
+    let CallbackOutcome::Code(code) = outcome else {
+        panic!("expected code");
+    };
+    assert_eq!(code.code.expose_secret(), expected_code);
 }
 
 #[test]
@@ -66,6 +109,22 @@ fn callback_request_limits_match_http_server() {
     header.extend(iter::repeat_n(b'x', 0xFFFB));
     header.extend_from_slice(b"\r\n\r\n");
     assert!(matches!(parse_request(&header), RequestRead::Complete(_)));
+}
+
+#[test]
+fn callback_request_rejects_repeated_leading_blank_lines_and_later_oversized_lines() {
+    let mut blank_then_long = b"\r\n\r\n".to_vec();
+    blank_then_long.extend(iter::repeat_n(b'A', 0x0001_0001));
+    assert!(matches!(
+        parse_request(&blank_then_long),
+        RequestRead::Malformed
+    ));
+    let mut blank_lines = Vec::new();
+    blank_lines.extend(iter::repeat_n(b"\r\n".as_slice(), 4096).flatten().copied());
+    assert!(matches!(
+        parse_request(&blank_lines),
+        RequestRead::Malformed
+    ));
 }
 
 #[test]

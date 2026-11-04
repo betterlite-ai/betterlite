@@ -1,4 +1,4 @@
-use super::*;
+use super::{HttpResponse, ScriptedHttp, contract, discover_cli_auth};
 
 #[test]
 fn discover_rejects_an_issuer_on_another_path() {

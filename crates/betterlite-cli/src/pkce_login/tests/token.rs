@@ -1,4 +1,8 @@
-use super::*;
+use super::{
+    FixedWallClock, HttpResponse, RefreshCredentialRequest, ScriptedHttp, contract, redeem_code,
+    redemption, refresh_credential,
+};
+use secrecy::{ExposeSecret as _, SecretString};
 
 fn token_client() -> ScriptedHttp {
     ScriptedHttp::new(HttpResponse { status: 200, headers: Vec::new(), body: br#"{"access_token":"sk-cli-new","refresh_token":"llm_srefresh_new","expires_in":3600,"user_id":"u1","team_id":"team-b"}"#.to_vec() })

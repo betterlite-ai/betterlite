@@ -4,6 +4,7 @@ use url::Url;
 
 pub const MAX_LINE_BYTES: usize = 0x0001_0000;
 pub const MAX_HEADER_LINES: usize = 99;
+pub const MAX_REQUEST_BYTES: usize = MAX_LINE_BYTES * (MAX_HEADER_LINES + 1);
 
 // secrecy::SecretString already carries a redacting Debug impl ("SecretBox<str>([REDACTED])"), so deriving Debug here is safe: it never prints `code`.
 #[derive(Debug, Clone)]
@@ -34,6 +35,12 @@ pub enum RequestRead {
 // Parses as much of an HTTP/1.x request as buffer holds. Callers feed it the bytes read so far after every read; it reports Incomplete until the request line and headers are fully buffered, so a request split across several TCP reads parses the same as one that arrives whole.
 #[must_use]
 pub fn parse_request(buffer: &[u8]) -> RequestRead {
+    if buffer.starts_with(b"\r\n") || buffer.starts_with(b"\n") {
+        return RequestRead::Malformed;
+    }
+    if buffer.len() > MAX_REQUEST_BYTES {
+        return RequestRead::HeadersTooLarge;
+    }
     let mut lines = buffer.split(|byte| *byte == b'\n');
     if let Some(line) = lines.next() {
         let line_len = line.len().saturating_add(1);

@@ -1,6 +1,15 @@
-use super::*;
+use super::{
+    CONNECTION_TIMEOUT, CallbackOutcome, LoopbackServer, PkceFailure, SystemClock,
+    TcpLoopbackListener,
+};
+use secrecy::ExposeSecret as _;
+use std::io::Write as _;
 use std::net::Ipv4Addr;
+use std::net::TcpStream;
 use std::sync::mpsc::RecvTimeoutError;
+use std::sync::mpsc::sync_channel;
+use std::thread;
+use std::time::Duration;
 
 // Blocks the current thread for `duration` without calling the disallowed `std::thread::sleep`: nothing ever sends on this channel, so `recv_timeout` always times out.
 fn block_for(duration: Duration) {
