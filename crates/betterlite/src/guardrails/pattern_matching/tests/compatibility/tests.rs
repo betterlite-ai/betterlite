@@ -40,6 +40,7 @@ use rstest::rstest;
 #[case::ascii_escaped_i("regex", r"(?a:\x69)", "\u{130}", false)]
 #[case::escaped_metacharacter("regex", r"\x2e", "a", false)]
 #[case::hex_control("regex", r"\x1c", "\u{1c}", true)]
+#[case::ascii_scope_keeps_verbose_off("regex", "(?a)#\\s\n", "#\u{2003}\n", false)]
 #[case::unicode_flags("regex", "(?ui)secret", "SECRET", true)]
 #[case::ascii_scope("regex", r"(?a:\w+)", "SECRET", true)]
 #[case::ascii_word_excludes_unicode("regex", r"(?a:\w+)", "\u{e9}", false)]
