@@ -21,7 +21,11 @@ struct AdvancingClock {
 
 impl Clock for AdvancingClock {
     fn now(&self) -> Instant {
-        self.base + Duration::from_secs(self.seconds.fetch_add(1, Ordering::SeqCst))
+        self.base
+            .checked_add(Duration::from_secs(
+                self.seconds.fetch_add(1, Ordering::SeqCst),
+            ))
+            .expect("test clock overflow")
     }
 }
 

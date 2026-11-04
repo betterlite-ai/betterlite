@@ -87,7 +87,7 @@ fn callback_answers_414_past_a_64_kib_request_line() {
 #[test]
 fn callback_answers_431_past_the_header_limits() {
     let mut long = b"GET /callback HTTP/1.1\r\nX: ".to_vec();
-    long.extend(iter::repeat_n(b'x', 65_534));
+    long.extend(iter::repeat_n(b'x', 0xFFFE));
     let mut many = b"GET /callback HTTP/1.1\r\n".to_vec();
     many.extend(
         iter::repeat_n(b"X: y\r\n".as_slice(), 100)
@@ -102,9 +102,9 @@ fn callback_answers_431_past_the_header_limits() {
 }
 
 #[rstest::rstest]
-#[case::below_limit(65_535)]
-#[case::at_limit(65_536)]
-#[case::over_limit(65_537)]
+#[case::below_limit(0xFFFF)]
+#[case::at_limit(0x0001_0000)]
+#[case::over_limit(0x0001_0001)]
 fn callback_request_limits_match_http_server(#[case] line_bytes: usize) {
     let mut request = b"GET /callback?state=s&code=c&padding=".to_vec();
     request.resize(
@@ -120,7 +120,7 @@ fn callback_request_limits_match_http_server(#[case] line_bytes: usize) {
     let mut with_header = b"GET /callback HTTP/1.1\r\n".to_vec();
     with_header.extend_from_slice(&header);
     with_header.extend_from_slice(b"\r\n");
-    if line_bytes > 65_536 {
+    if line_bytes > 0x0001_0000 {
         assert!(matches!(parse_request(&request), RequestRead::UriTooLong));
         assert!(matches!(
             parse_request(&with_header),
@@ -138,20 +138,20 @@ fn callback_request_limits_match_http_server(#[case] line_bytes: usize) {
 #[test]
 fn callback_request_waits_for_newline_at_the_line_limit() {
     let mut request = b"GET /callback?padding=".to_vec();
-    request.resize(65_536, b'x');
+    request.resize(0x0001_0000, b'x');
     assert!(matches!(parse_request(&request), RequestRead::Incomplete));
     let mut header = b"GET /callback HTTP/1.1\r\nX: ".to_vec();
-    header.extend(iter::repeat_n(b'x', 65_533));
+    header.extend(iter::repeat_n(b'x', 0xFFFD));
     assert!(matches!(parse_request(&header), RequestRead::Incomplete));
 }
 
 #[test]
 fn callback_request_accepts_all_lines_at_the_limit() {
     let mut request = b"GET /callback?padding=".to_vec();
-    request.resize(65_525, b'x');
+    request.resize(0xFFF5, b'x');
     request.extend_from_slice(b" HTTP/1.1\r\n");
     let mut header = b"X: ".to_vec();
-    header.resize(65_534, b'x');
+    header.resize(0xFFFE, b'x');
     header.extend_from_slice(b"\r\n");
     request.extend(iter::repeat_n(header.as_slice(), 99).flatten().copied());
     request.extend_from_slice(b"\r\n");
