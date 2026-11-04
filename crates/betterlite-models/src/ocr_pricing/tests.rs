@@ -541,7 +541,7 @@ fn ocr_cost_reads_effective_model_info_never_the_raw_entry() {
         ]),
         raw_calls: Cell::new(0),
     };
-    let billing = billing(usage(None, Some(4), 1));
+    let billing = billing(usage(Some(3), Some(4), 1));
 
     let cost = ocr_cost("model", None, &billing, None, &lookup).unwrap();
 
