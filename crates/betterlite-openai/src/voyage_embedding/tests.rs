@@ -104,3 +104,30 @@ fn explicit_empty_credential_is_not_resolved_again() {
 fn detects_context_anywhere_after_lowercasing(#[case] model: &str, #[case] expected: bool) {
     assert_eq!(is_contextual_model(model), expected);
 }
+
+#[rstest::rstest]
+#[case::text(VoyageEmbeddingVariant::Text, "https://api.voyageai.com/v1/embeddings")]
+#[case::contextual(
+    VoyageEmbeddingVariant::Contextual,
+    "https://api.voyageai.com/v1/contextualizedembeddings"
+)]
+fn malformed_reply_keeps_status_and_variant_url(
+    #[case] variant: VoyageEmbeddingVariant,
+    #[case] expected_url: &str,
+) {
+    let error = decode_voyage_embedding_reply(b"not-json", 503, variant).unwrap_err();
+    match error {
+        super::VoyageEmbeddingError::Decode { status, url, .. } => {
+            assert_eq!(status, 503);
+            assert_eq!(url, expected_url);
+        }
+    }
+}
+
+#[test]
+fn reply_projection_defaults_missing_usage_to_zero() {
+    let decoded = decode_voyage_embedding_reply(b"{}", 200, VoyageEmbeddingVariant::Text)
+        .expect("empty valid response projects");
+    assert_eq!(decoded["usage"]["prompt_tokens"], 0);
+    assert_eq!(decoded["usage"]["total_tokens"], 0);
+}
