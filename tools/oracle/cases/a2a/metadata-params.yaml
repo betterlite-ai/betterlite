@@ -1,0 +1,5 @@
+kind: helper
+name: a2a-metadata-params
+call: {"b4803": {"operation": "metadata", "params": {"metadata": {"a": 1}}}}
+env: {}
+compare: {ignore: []}

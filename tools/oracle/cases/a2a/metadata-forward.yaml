@@ -1,0 +1,5 @@
+kind: helper
+name: a2a-metadata-forward
+call: {b4803: {operation: metadata, message: {metadata: {message: true, same: message}}, params: {metadata: {params: true, same: params}}, completion_params: {extra_body: {custom: 1, metadata: {same: configured}}}}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,5 @@
+kind: helper
+name: a2a-parts-null-kind
+call: {"b4803": {"operation": "extract", "parts": [{"kind": null, "text": "a"}, {"kind": "", "text": "b"}, null, {}, []]}}
+env: {}
+compare: {ignore: []}
