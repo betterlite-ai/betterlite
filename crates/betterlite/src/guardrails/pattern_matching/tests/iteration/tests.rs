@@ -32,3 +32,23 @@ fn pattern_matching_behavior(
     assert_eq!(spans, expected);
     assert_eq!(mask_spans(text, &spans, "[X]").unwrap(), masked);
 }
+
+#[rstest]
+#[case::unsupported_variable_lookbehind("(?<=a*)b|(?=c)", "ac")]
+fn retry_propagates_unsupported_compile_errors(#[case] source: &str, #[case] text: &str) {
+    // The retry rebuilds the whole pattern with find_not_empty, where this lookbehind becomes unsupported.
+    let pattern = compile(&ContentFilterPattern {
+        pattern_type: "regex".to_owned(),
+        pattern_name: None,
+        pattern: Some(source.to_owned()),
+        name: None,
+        action: ContentFilterAction::Mask,
+    })
+    .unwrap();
+    assert_eq!(
+        pattern.find_spans(text).unwrap_err().to_string(),
+        "invalid regex or matching failed: Error compiling regex: \
+         Regex uses currently unimplemented feature: \
+         Variable length lookbehinds with fancy features"
+    );
+}
