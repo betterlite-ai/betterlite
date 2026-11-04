@@ -50,8 +50,6 @@ scope:
     - crates/betterlite-models/fuzz/Cargo.toml
     - crates/betterlite-models/fuzz/fuzz_targets/json_provider_registry.rs
     - crates/betterlite-models/fuzz/corpus/json_provider_registry/**
-    - crates/betterlite-config/src/{lib,settings,providers}.rs
-    - crates/betterlite-config/src/providers/{mod,json_providers}.rs
     - crates/betterlite-config/tests/json_provider_settings.rs
     - tools/oracle/src/helpers/models/json_provider_registry.rs
     - tools/oracle/src/helpers/models/json_provider_registry/**
