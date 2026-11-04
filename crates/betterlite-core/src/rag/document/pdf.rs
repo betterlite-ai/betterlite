@@ -98,54 +98,42 @@ struct PageText<'doc> {
 impl PageText<'_> {
     fn apply(&mut self, operation: &Operation) -> Option<()> {
         match operation.operator.as_str() {
-            "Tf" => self.select_font(&operation.operands),
-            "TL" => self.set_leading(&operation.operands),
-            "Td" => self.move_by(&operation.operands, false),
-            "TD" => self.move_by(&operation.operands, true),
-            "Tm" => self.set_text_matrix(&operation.operands),
+            "Tf" => self.select_font(&operation.operands)?,
+            "TL" => self.set_leading(&operation.operands)?,
+            "Td" => self.move_by(&operation.operands, false)?,
+            "TD" => self.move_by(&operation.operands, true)?,
+            "Tm" => self.set_text_matrix(&operation.operands)?,
             "T*" => {
                 self.position.text.translate(0.0, self.leading.neg());
                 self.position.check(&mut self.text, self.font_size);
-                Some(())
             }
-            "Tj" => self.show_text(operation.operands.first()?),
-            "TJ" => self.show_text_array(operation.operands.first()?),
-            "'" => self.show_next_line_text(operation.operands.first()?),
-            "\"" => self.show_next_line_text(operation.operands.get(2)?),
-            _ => self.apply_graphics(operation),
-        }
-    }
-
-    fn apply_graphics(&mut self, operation: &Operation) -> Option<()> {
-        match operation.operator.as_str() {
-            "BT" => {
-                self.position.text = IDENTITY;
-                Some(())
-            }
+            "Tj" => self.show_text(operation.operands.first()?)?,
+            "TJ" => self.show_text_array(operation.operands.first()?)?,
+            "'" => self.show_next_line_text(operation.operands.first()?)?,
+            "\"" => self.show_next_line_text(operation.operands.get(2)?)?,
+            "BT" => self.position.text = IDENTITY,
             "cm" => {
                 self.position.graphics =
-                    Matrix::read(&operation.operands)?.combine(self.position.graphics);
-                Some(())
+                    Matrix::read(&operation.operands)?.combine(self.position.graphics)
             }
-            "q" => {
-                self.saved.push((
-                    self.position.graphics,
-                    self.active_font,
-                    self.font_size,
-                    self.leading,
-                ));
-                Some(())
-            }
-            "Q" => {
-                if let Some((matrix, font, size, leading)) = self.saved.pop() {
-                    self.position.graphics = matrix;
-                    self.active_font = font;
-                    self.font_size = size;
-                    self.leading = leading;
-                }
-                Some(())
-            }
-            _ => Some(()),
+            "q" => self.saved.push((
+                self.position.graphics,
+                self.active_font,
+                self.font_size,
+                self.leading,
+            )),
+            "Q" => self.restore_graphics(),
+            _ => {}
+        }
+        Some(())
+    }
+
+    fn restore_graphics(&mut self) {
+        if let Some((matrix, font, size, leading)) = self.saved.pop() {
+            self.position.graphics = matrix;
+            self.active_font = font;
+            self.font_size = size;
+            self.leading = leading;
         }
     }
 
@@ -190,18 +178,7 @@ impl PageText<'_> {
     }
 
     fn show_text(&mut self, object: &Object) -> Option<()> {
-        let bytes = match object {
-            Object::String(bytes, _) => bytes,
-            Object::Null
-            | Object::Boolean(_)
-            | Object::Integer(_)
-            | Object::Real(_)
-            | Object::Name(_)
-            | Object::Array(_)
-            | Object::Dictionary(_)
-            | Object::Stream(_)
-            | Object::Reference(_) => return None,
-        };
+        let bytes = object.as_str().ok()?;
         let encoding_index = self.active_font?;
         let encoding = &self.encodings.get(encoding_index)?.1;
         let decoded = Document::decode_text(encoding, bytes).ok()?;
@@ -214,27 +191,20 @@ impl PageText<'_> {
     fn show_text_array(&mut self, object: &Object) -> Option<()> {
         let values = object.as_array().ok()?;
         for value in values {
-            self.show_text_array_value(value)?;
+            match value {
+                Object::String(_, _) => self.show_text(value)?,
+                Object::Integer(offset) if *offset < -100 => self.text.push(' '),
+                Object::Integer(_) | Object::Real(_) => {}
+                Object::Boolean(_)
+                | Object::Name(_)
+                | Object::Array(_)
+                | Object::Dictionary(_)
+                | Object::Stream(_)
+                | Object::Null
+                | Object::Reference(_) => return None,
+            }
         }
         self.text.push(' ');
         Some(())
-    }
-
-    fn show_text_array_value(&mut self, value: &Object) -> Option<()> {
-        match value {
-            Object::String(_, _) => self.show_text(value),
-            Object::Integer(offset) if *offset < -100 => {
-                self.text.push(' ');
-                Some(())
-            }
-            Object::Integer(_) | Object::Real(_) => Some(()),
-            Object::Boolean(_)
-            | Object::Name(_)
-            | Object::Array(_)
-            | Object::Dictionary(_)
-            | Object::Stream(_)
-            | Object::Null
-            | Object::Reference(_) => None,
-        }
     }
 }

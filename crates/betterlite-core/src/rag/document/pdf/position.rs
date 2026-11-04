@@ -149,16 +149,9 @@ impl Position {
 }
 
 pub(super) fn number(object: &Object) -> Option<f64> {
-    match object {
-        Object::Integer(value) => value.to_string().parse::<f64>().ok(),
-        Object::Real(value) => Some(f64::from(*value)),
-        Object::Boolean(_)
-        | Object::Name(_)
-        | Object::String(_, _)
-        | Object::Array(_)
-        | Object::Dictionary(_)
-        | Object::Stream(_)
-        | Object::Null
-        | Object::Reference(_) => None,
+    if let Ok(integer) = object.as_i64() {
+        integer.to_string().parse::<f64>().ok()
+    } else {
+        object.as_f32().ok().map(f64::from)
     }
 }
