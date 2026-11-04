@@ -14,3 +14,4 @@ CREATE TABLE IF NOT EXISTS "LiteLLM_AgentsTable" (
 
 -- CreateIndex
 CREATE UNIQUE INDEX IF NOT EXISTS "LiteLLM_AgentsTable_agent_name_key" ON "LiteLLM_AgentsTable"("agent_name");
+

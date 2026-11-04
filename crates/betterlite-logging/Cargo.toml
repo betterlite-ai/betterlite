@@ -23,7 +23,7 @@ rust_decimal.workspace = true
 ryu = "1.0.23"
 secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
-serde_json = { version = "1.0.154", features = ["raw_value"] }
+serde_json = { version = "1.0.154", features = ["arbitrary_precision", "raw_value"] }
 serde_path_to_error = "0.1.20"
 serde_with = { version = "3.24.0", default-features = false, features = ["alloc"] }
 sha2.workspace = true
@@ -31,13 +31,14 @@ strum = { version = "0.28.0", features = ["derive"] }
 thiserror.workspace = true
 tracing.workspace = true
 unicode-properties = { version = "0.1.4", default-features = false, features = ["general-category"] }
+url = "2.5.8"
 uuid.workspace = true
 
 [dev-dependencies]
 insta = { version = "1.49.0", default-features = false, features = ["yaml"] }
 rstest = "=0.27.0"
 serde-saphyr.workspace = true
-serde_json = { version = "1.0.154", features = ["raw_value"] }
+serde_json = { version = "1.0.154", features = ["arbitrary_precision", "raw_value"] }
 tracing-subscriber.workspace = true
 
 [[test]]

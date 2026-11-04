@@ -1,13 +1,13 @@
 id: B5132
 milestone: M6 guardrails
 title: Close the B3767 DeepKeep audit gaps
-status: todo
+status: done
 depends_on: [B3767, B5094]
 file: tasks/B5132-deepkeep-audit-gaps.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 609

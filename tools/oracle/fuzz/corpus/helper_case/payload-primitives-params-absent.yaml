@@ -1,0 +1,14 @@
+{
+  "kind": "helper",
+  "name": "payload-primitives-params-absent",
+  "call": {
+    "b3843": {
+      "function": "request_params",
+      "value": {}
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

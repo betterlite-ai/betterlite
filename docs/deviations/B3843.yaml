@@ -1,0 +1,5 @@
+task: B3843
+deviations:
+  - what: Malformed api_base ports and IPv6 hosts produce no ServerInfo instead of raising an exception.
+    why: Invalid telemetry context must not interrupt logging; LiteLLM raises an unhandled ValueError for these inputs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/payloads.py#L236-L239

@@ -1,7 +1,7 @@
 id: B1018
 milestone: M5 api families
 title: MIT resource owner compatibility
-status: todo
+status: done
 depends_on: [B732, B171]
 file: tasks/B1018-managed-resource-store.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/proxy/common_utils/resource_ownership.py"
 parent: B087
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 616
