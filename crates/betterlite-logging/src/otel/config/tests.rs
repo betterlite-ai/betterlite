@@ -14,7 +14,7 @@ use rstest::rstest;
 fn destination_headers_are_percent_encoded_and_cache_key_ignores_scope() {
     let headers = BTreeMap::from([
         ("authorization".to_owned(), "Basic a,b==".to_owned()),
-        ("x".to_owned(), "a=b".to_owned()),
+        ("x".to_owned(), "a=b-_.~/é".to_owned()),
     ]);
     let first = OtelDestination::from(DestinationFields {
         endpoint: "https://collector/v1".to_owned(),
@@ -34,9 +34,22 @@ fn destination_headers_are_percent_encoded_and_cache_key_ignores_scope() {
     });
     assert_eq!(
         first.header_string(),
-        "authorization=Basic%20a%2Cb%3D%3D,x=a%3Db"
+        "authorization=Basic%20a%2Cb%3D%3D,x=a%3Db-_.~%2F%C3%A9"
     );
     assert_eq!(first.cache_key(), second.cache_key());
+    assert_eq!(
+        first.cache_key(),
+        (
+            "https://collector/v1".to_owned(),
+            vec![
+                ("authorization".to_owned(), "Basic a,b==".to_owned()),
+                ("x".to_owned(), "a=b-_.~/é".to_owned())
+            ],
+            vec![("service.name".to_owned(), "proxy".to_owned())],
+            Some("grpc".to_owned()),
+        )
+    );
+    assert_eq!(second.as_ref().span_scope, SpanScope::LlmOnly);
 }
 
 #[rstest]
