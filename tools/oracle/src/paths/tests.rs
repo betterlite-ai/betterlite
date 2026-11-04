@@ -40,11 +40,11 @@ fn invalid_ranges_never_fall_back(#[case] range: &str, #[case] diagnostic: &str)
 
 #[test]
 fn no_port_in_range_binds() {
-    let p = port_in_range("11000 60999", 0).unwrap();
-    let _listener = TcpListener::bind(("127.0.0.1", p)).unwrap();
-    let error = port_in_range(&format!("{} 60999", p + 1), 0).unwrap_err();
+    let port = port_in_range("11000 60999", 0).unwrap();
+    let _listener = TcpListener::bind(("127.0.0.1", port)).unwrap();
+    let error = port_in_range(&format!("{} 60999", port + 1), 0).unwrap_err();
     assert_eq!(
         error.to_string(),
-        format!("no free gateway port on 127.0.0.1 in 10000..{}", p + 1)
+        format!("no free gateway port on 127.0.0.1 in 10000..{}", port + 1)
     );
 }
