@@ -6,9 +6,7 @@ use secrecy::ExposeSecret as _;
 use secrecy::SecretString;
 use tokio::fs;
 
-use betterlite_config::sections::huggingface_hub::{
-    OfflineSetting, Settings, TokenSettings, TransferSetting,
-};
+use betterlite_config::sections::huggingface_hub::{OfflineSetting, Settings, TransferSetting};
 
 use super::{HubToken, HubTokenError, HubTokenResolver};
 
@@ -19,10 +17,8 @@ fn resolver(token_path: PathBuf, env_token: Option<&str>, disabled: bool) -> Hub
             offline: OfflineSetting::Online,
             etag_timeout: 10,
             download_timeout: 10,
-            token: TokenSettings {
-                disable_implicit: disabled,
-                env_token: env_token.map(SecretString::from),
-            },
+            disable_implicit_token: disabled,
+            env_token: env_token.map(SecretString::from),
             hf_home: PathBuf::new(),
             hub_cache: PathBuf::new(),
             token_path,

@@ -20,7 +20,8 @@ pub struct Settings {
     pub offline: OfflineSetting,
     pub etag_timeout: u64,
     pub download_timeout: u64,
-    pub token: TokenSettings,
+    pub disable_implicit_token: bool,
+    pub env_token: Option<SecretString>,
     pub hf_home: PathBuf,
     pub hub_cache: PathBuf,
     pub token_path: PathBuf,
@@ -33,12 +34,6 @@ pub enum OfflineSetting {
     #[default]
     Online,
     Offline,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct TokenSettings {
-    pub disable_implicit: bool,
-    pub env_token: Option<SecretString>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -55,7 +50,8 @@ impl Default for Settings {
             offline: OfflineSetting::Online,
             etag_timeout: 10,
             download_timeout: 10,
-            token: TokenSettings::default(),
+            disable_implicit_token: false,
+            env_token: None,
             hf_home: PathBuf::new(),
             hub_cache: PathBuf::new(),
             token_path: PathBuf::new(),
@@ -76,7 +72,7 @@ impl Section for Raw {
         let endpoint = environment.endpoint()?;
         let offline = environment.offline()?;
         let (hf_home, hub_cache, token_path, stored_tokens_path) = paths::resolve(lookup)?;
-        let token = resolve_token_settings(lookup, &environment)?;
+        let (disable_implicit_token, env_token) = resolve_token_settings(lookup, &environment)?;
         let transfer = resolve_transfer_setting(lookup)?;
         let etag_timeout_value = lookup.lookup("HF_HUB_ETAG_TIMEOUT").unwrap_or_default();
         let download_timeout_value = lookup.lookup("HF_HUB_DOWNLOAD_TIMEOUT").unwrap_or_default();
@@ -93,7 +89,8 @@ impl Section for Raw {
                 &download_timeout_value,
             )?
             .unwrap_or(10),
-            token,
+            disable_implicit_token,
+            env_token,
             hf_home,
             hub_cache,
             token_path,
@@ -162,7 +159,7 @@ impl HubEnvironment<'_> {
 fn resolve_token_settings(
     lookup: &dyn EnvironmentLookup,
     environment: &HubEnvironment<'_>,
-) -> Result<TokenSettings, ConfigError> {
+) -> Result<(bool, Option<SecretString>), ConfigError> {
     let raw_token = environment.preferred("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN");
     let cleaned_token = raw_token.replace(['\r', '\n'], "").trim().to_owned();
     let env_token = (!cleaned_token.is_empty()).then(|| SecretString::from(cleaned_token));
@@ -171,10 +168,7 @@ fn resolve_token_settings(
         .unwrap_or_default();
     let disable_implicit =
         betterlite_env::flag("HF_HUB_DISABLE_IMPLICIT_TOKEN", &value)?.unwrap_or(false);
-    Ok(TokenSettings {
-        disable_implicit,
-        env_token,
-    })
+    Ok((disable_implicit, env_token))
 }
 
 fn resolve_transfer_setting(

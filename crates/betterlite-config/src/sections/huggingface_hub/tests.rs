@@ -49,7 +49,7 @@ fn defaults_follow_hub() {
     assert_eq!(defaults.offline, OfflineSetting::Online);
     assert_eq!(defaults.etag_timeout, 10);
     assert_eq!(defaults.download_timeout, 10);
-    assert!(!defaults.token.disable_implicit);
+    assert!(!defaults.disable_implicit_token);
     assert_eq!(
         defaults.hf_home,
         PathBuf::from("/system/home/.cache/huggingface")
@@ -89,9 +89,9 @@ fn configured_paths_follow_hub() {
     );
     assert_eq!(configured.etag_timeout, 0);
     assert_eq!(configured.download_timeout, 21);
-    assert!(configured.token.disable_implicit);
+    assert!(configured.disable_implicit_token);
     assert_eq!(
-        configured.token.env_token.as_ref().unwrap().expose_secret(),
+        configured.env_token.as_ref().unwrap().expose_secret(),
         "abcd"
     );
     assert_eq!(configured.transfer, TransferSetting::DeprecatedTransfer);
@@ -134,7 +134,6 @@ fn fallback_values_follow_hub() {
     assert_eq!(
         settings(&[("HF_TOKEN", ""), ("HUGGING_FACE_HUB_TOKEN", "fallback")])
             .unwrap()
-            .token
             .env_token
             .unwrap()
             .expose_secret(),

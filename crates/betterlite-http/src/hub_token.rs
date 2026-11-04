@@ -41,9 +41,9 @@ impl HubTokenResolver {
             HubToken::Explicit(value) => {
                 Ok(Some(SecretString::from(value.expose_secret().to_owned())))
             }
-            HubToken::Implicit if self.settings.token.disable_implicit => Ok(None),
+            HubToken::Implicit if self.settings.disable_implicit_token => Ok(None),
             HubToken::Implicit => {
-                if let Some(environment_token) = &self.settings.token.env_token {
+                if let Some(environment_token) = &self.settings.env_token {
                     return Ok(Some(SecretString::from(
                         environment_token.expose_secret().to_owned(),
                     )));
