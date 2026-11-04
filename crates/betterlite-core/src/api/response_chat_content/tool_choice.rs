@@ -1,5 +1,6 @@
-use serde_json::Value;
+use serde_json::{Map, Value};
 
+#[must_use]
 pub fn flat_tool_choice(choice: &Value) -> Value {
     let Value::Object(fields) = choice else {
         return choice.clone();
@@ -13,7 +14,7 @@ pub fn flat_tool_choice(choice: &Value) -> Value {
     if !matches!(kind, "function" | "custom") {
         return choice.clone();
     }
-    let name = fields
+    let selected_name = fields
         .get("name")
         .and_then(Value::as_str)
         .filter(|name| !name.is_empty())
@@ -25,8 +26,11 @@ pub fn flat_tool_choice(choice: &Value) -> Value {
                 .and_then(Value::as_str)
                 .filter(|name| !name.is_empty())
         });
-    name.map_or_else(
-        || choice.clone(),
-        |name| serde_json::json!({"type": kind, "name": name}),
-    )
+    let Some(tool_name) = selected_name else {
+        return choice.clone();
+    };
+    let mut normalized = Map::new();
+    normalized.insert("type".to_owned(), Value::String(kind.to_owned()));
+    normalized.insert("name".to_owned(), Value::String(tool_name.to_owned()));
+    Value::Object(normalized)
 }

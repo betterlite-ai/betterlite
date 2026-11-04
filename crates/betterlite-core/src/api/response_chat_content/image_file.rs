@@ -20,42 +20,53 @@ pub fn image_and_file_fields(item: &Map<String, Value>) -> Result<Value, Content
     if item.get("type").and_then(Value::as_str) == Some("file") {
         return Ok(input_file(item.get("file")));
     }
-    let image_url = item
-        .get("image_url")
-        .and_then(|value| match value {
-            Value::String(url) => Some((url.as_str(), None)),
-            Value::Object(fields) => fields
-                .get("url")
-                .and_then(Value::as_str)
-                .map(|url| (url, fields.get("detail"))),
-            _ => None,
-        })
-        .ok_or_else(|| ContentError::InvalidImageUrl {
-            value: item.get("image_url").map_or_else(
-                || "None".to_owned(),
-                |value| match value {
-                    Value::Null => "None".to_owned(),
-                    Value::Object(_) => format_diagnostic_value(value),
-                    other => display_text_value(other),
-                },
-            ),
-        })?;
+    let (url, detail) = image_url(item)?;
+    Ok(image_block(url, detail))
+}
+
+fn image_url(item: &Map<String, Value>) -> Result<(&str, Option<&Value>), ContentError> {
+    let image_url = item.get("image_url").ok_or_else(|| invalid_url(item))?;
+    match image_url {
+        Value::String(url) => Ok((url, None)),
+        Value::Object(fields) => fields
+            .get("url")
+            .and_then(Value::as_str)
+            .map(|url| (url, fields.get("detail")))
+            .ok_or_else(|| invalid_url(item)),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::Array(_) => Err(invalid_url(item)),
+    }
+}
+
+fn invalid_url(item: &Map<String, Value>) -> ContentError {
+    ContentError::InvalidImageUrl {
+        value: item.get("image_url").map_or_else(
+            || "None".to_owned(),
+            |value| match value {
+                Value::Null => "None".to_owned(),
+                Value::Object(_) => format_diagnostic_value(value),
+                other
+                @ (Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_)) => {
+                    display_text_value(other)
+                }
+            },
+        ),
+    }
+}
+
+fn image_block(url: &str, detail: Option<&Value>) -> Value {
     let mut result = Map::new();
     result.insert("type".to_owned(), Value::String("input_image".to_owned()));
-    result.insert(
-        "image_url".to_owned(),
-        Value::String(image_url.0.to_owned()),
-    );
-    let detail = image_url.1.filter(|detail| match detail {
+    result.insert("image_url".to_owned(), Value::String(url.to_owned()));
+    let selected_detail = detail.filter(|detail_value| match detail_value {
         Value::Null => false,
         Value::String(text) => !text.is_empty(),
-        _ => true,
+        Value::Bool(_) | Value::Number(_) | Value::Array(_) | Value::Object(_) => true,
     });
     result.insert(
         "detail".to_owned(),
-        detail
+        selected_detail
             .cloned()
             .unwrap_or_else(|| Value::String("auto".to_owned())),
     );
-    Ok(Value::Object(result))
+    Value::Object(result)
 }

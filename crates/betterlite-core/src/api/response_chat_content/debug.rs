@@ -1,4 +1,4 @@
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 pub(super) fn text_block(text: &str, role: &str) -> (Value, String) {
     let kind = if matches!(role, "user" | "system" | "developer" | "tool") {
@@ -6,7 +6,10 @@ pub(super) fn text_block(text: &str, role: &str) -> (Value, String) {
     } else {
         "output_text"
     };
-    let value = serde_json::json!({"type": kind, "text": text});
+    let mut fields = Map::new();
+    fields.insert("type".to_owned(), Value::String(kind.to_owned()));
+    fields.insert("text".to_owned(), Value::String(text.to_owned()));
+    let value = Value::Object(fields);
     let diagnostic = format!(
         "{{'type': '{}', 'text': {}}}",
         kind,
@@ -21,7 +24,7 @@ pub(super) fn display_text_value(value: &Value) -> String {
         Value::Null => "None".to_owned(),
         Value::Bool(true) => "True".to_owned(),
         Value::Bool(false) => "False".to_owned(),
-        other => other.to_string(),
+        Value::Array(_) | Value::Object(_) | Value::Number(_) => value.to_string(),
     }
 }
 

@@ -1,4 +1,12 @@
 #![cfg(test)]
+#![cfg_attr(
+    test,
+    expect(
+        clippy::disallowed_methods,
+        clippy::default_numeric_fallback,
+        reason = "json! fixtures make expected heterogeneous content explicit"
+    )
+)]
 
 use super::annotations::{AnnotationValue, annotation_fallback};
 use super::content::{content_passthrough, text_by_role};

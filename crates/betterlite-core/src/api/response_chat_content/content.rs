@@ -4,6 +4,7 @@ use super::debug::{display_text_value, format_diagnostic_value, text_block};
 use super::image_file::input_file;
 use super::{ChatContent, Projection};
 
+#[must_use]
 pub fn text_by_role(content: &Value, role: &str) -> Value {
     match content {
         Value::Null => Value::Array(vec![text_block("", role).0]),
@@ -32,10 +33,13 @@ pub fn text_by_role(content: &Value, role: &str) -> Value {
             )
             .0,
         ]),
-        _ => Value::Array(vec![text_block(&display_text_value(content), role).0]),
+        Value::Bool(_) | Value::Number(_) => {
+            Value::Array(vec![text_block(&display_text_value(content), role).0])
+        }
     }
 }
 
+#[must_use]
 pub fn content_passthrough(items: &[Value], role: &str) -> Projection {
     let mut result = Vec::new();
     let mut result_reprs = Vec::new();
@@ -48,22 +52,22 @@ pub fn content_passthrough(items: &[Value], role: &str) -> Projection {
             );
             continue;
         }
-        let converted = if let Some(text) = item.as_str() {
-            let (value, repr) = text_block(text, role);
-            Some((
-                value,
-                repr.clone(),
-                Some(format!("Chat provider:   -> {repr}")),
-            ))
-        } else if let Some(fields) = item.as_object() {
-            Some(project_object(item, fields, role))
-        } else {
-            None
-        };
+        let converted = item.as_str().map_or_else(
+            || {
+                item.as_object()
+                    .map(|fields| project_object(item, fields, role))
+            },
+            |text| {
+                let (value, repr) = text_block(text, role);
+                Some((
+                    value,
+                    repr.clone(),
+                    Some(format!("Chat provider:   -> {repr}")),
+                ))
+            },
+        );
         if let Some((value, repr, diagnostic)) = converted {
-            if let Some(message) = diagnostic {
-                diagnostics.push(message);
-            }
+            diagnostics.extend(diagnostic);
             result.push(value);
             result_reprs.push(repr);
         }
@@ -98,14 +102,14 @@ fn project_object(
         }
         "image" => image_item(fields),
         "file" => diagnostic_result(input_file(fields.get("file")), "file"),
-        "tool_reference" => diagnostic_result(item.clone(), "passthrough"),
         "input_text"
         | "input_image"
         | "output_text"
         | "refusal"
         | "input_file"
         | "computer_screenshot"
-        | "summary_text" => diagnostic_result(item.clone(), "passthrough"),
+        | "summary_text"
+        | "tool_reference" => diagnostic_result(item.clone(), "passthrough"),
         _ => unknown_item(item, fields, kind, role),
     }
 }

@@ -11,6 +11,7 @@ pub enum AnnotationValue {
     Raises(String),
 }
 
+#[must_use]
 pub fn annotation_fallback(annotations: Option<&[AnnotationValue]>) -> Projection {
     let mut results = Vec::new();
     let mut diagnostics = Vec::new();
