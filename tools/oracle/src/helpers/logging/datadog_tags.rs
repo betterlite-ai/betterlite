@@ -95,57 +95,53 @@ impl Tracer for InputTracer<'_> {
 
 pub(crate) struct Op;
 
-struct ValueError(String);
-
-impl From<ValueError> for Box<crate::helpers::HelperError> {
-    fn from(error: ValueError) -> Self {
-        Self::new(crate::helpers::HelperError {
+fn environment_tags(case: &EnvironmentInput) -> crate::helpers::HelperResult {
+    let environment = Environment::from_lookup(&case.env).map_err(|error| {
+        Box::new(crate::helpers::HelperError {
             class: "ValueError".to_owned(),
             status: None,
             error_type: None,
             param: None,
             code: None,
-            message: error.0,
+            message: error.to_string(),
         })
-    }
+    })?;
+    Ok(json!({
+        "source": environment.source,
+        "base_url": environment.base_url,
+        "flags": [environment.use_tracer, environment.use_profiler],
+        "tags": tagging::tags(
+            &environment,
+            &case.request_tags.iter().map(RequestTagValue::from).collect::<Vec<_>>(),
+            &case.metadata,
+        ),
+    }))
+}
+
+fn span_tags(case: &SpansInput) -> serde_json::Value {
+    let tracer = InputTracer(case.current.as_ref(), case.root.as_ref());
+    apm::tag_call_id(&tracer, case.call_id.as_deref());
+    let (alias, hash) = (case.key_alias.as_deref(), case.key_hash.as_deref());
+    apm::tag_request(&tracer, alias, hash, case.requested_model.as_deref());
+    let recorded = |span: Option<&SpanInput>| Some(json!(*span?.tags.lock().ok()?));
+    json!({
+        "payload": TraceContext::active(&tracer),
+        "current_tags": recorded(tracer.0),
+        "root_tags": recorded(tracer.1),
+    })
 }
 
 impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let output = match input {
-            Input::Normalize { values } => values
+        match input {
+            Input::Normalize { values } => Ok(values
                 .iter()
                 .map(|value| tagging::normalize_value(value))
-                .collect(),
-            Input::Environment(case) => {
-                let environment = Environment::from_lookup(&case.env)
-                    .map_err(|error| ValueError(error.to_string()))?;
-                json!({
-                    "source": environment.source,
-                    "base_url": environment.base_url,
-                    "flags": [environment.use_tracer, environment.use_profiler],
-                    "tags": tagging::tags(
-                        &environment,
-                        &case.request_tags.iter().map(RequestTagValue::from).collect::<Vec<_>>(),
-                        &case.metadata,
-                    ),
-                })
-            }
-            Input::Spans(case) => {
-                let tracer = InputTracer(case.current.as_ref(), case.root.as_ref());
-                apm::tag_call_id(&tracer, case.call_id.as_deref());
-                let (alias, hash) = (case.key_alias.as_deref(), case.key_hash.as_deref());
-                apm::tag_request(&tracer, alias, hash, case.requested_model.as_deref());
-                let recorded = |span: Option<&SpanInput>| Some(json!(*span?.tags.lock().ok()?));
-                json!({
-                    "payload": TraceContext::active(&tracer),
-                    "current_tags": recorded(tracer.0),
-                    "root_tags": recorded(tracer.1),
-                })
-            }
-        };
-        Ok(output)
+                .collect()),
+            Input::Environment(case) => environment_tags(case),
+            Input::Spans(case) => Ok(span_tags(case)),
+        }
     }
 }

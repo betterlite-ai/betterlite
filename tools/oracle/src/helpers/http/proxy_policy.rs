@@ -14,21 +14,6 @@ pub(crate) struct ProxyPolicyInput {
     pub(crate) disable_aiohttp_trust_env: bool,
 }
 
-struct ValueError(String);
-
-impl From<ValueError> for Box<crate::helpers::HelperError> {
-    fn from(error: ValueError) -> Self {
-        Self::new(crate::helpers::HelperError {
-            class: "ValueError".to_owned(),
-            status: None,
-            error_type: None,
-            param: None,
-            code: None,
-            message: error.0,
-        })
-    }
-}
-
 pub(crate) fn invoke(
     input: &ProxyPolicyInput,
 ) -> Result<serde_json::Value, Box<crate::helpers::HelperError>> {
@@ -36,30 +21,38 @@ pub(crate) fn invoke(
         aiohttp_trust_env: input.aiohttp_trust_env,
         disable_aiohttp_trust_env: input.disable_aiohttp_trust_env,
     };
-    let policy = ProxyPolicy::resolve(&trust, &input.environment)
-        .map_err(|error| ValueError(error.to_string()))?;
-    let message = match Url::parse(&input.url).map(|url| policy.route(&url)) {
+    let message = match ProxyPolicy::resolve(&trust, &input.environment) {
         Err(error) => error.to_string(),
-        Ok(None) => return Ok(serde_json::json!({"proxy": null})),
-        Ok(Some(ProxyRoute::Forward(server))) => {
-            let credentials = server
-                .credentials
-                .as_ref()
-                .map(|found| format!("{}:{}", found.username, found.password.expose_secret()));
-            let proxy = serde_json::json!({
-                "scheme": "http",
-                "host": server.host,
-                "port": server.port,
-                "credentials": credentials,
-            });
-            return Ok(serde_json::json!({ "proxy": proxy }));
-        }
-        Ok(Some(ProxyRoute::Unsupported { scheme })) => {
-            format!("{scheme} proxies are not supported")
-        }
-        Ok(Some(ProxyRoute::Invalid { name })) => format!("the {name} proxy URL is not valid"),
+        Ok(policy) => match Url::parse(&input.url).map(|url| policy.route(&url)) {
+            Err(error) => error.to_string(),
+            Ok(None) => return Ok(serde_json::json!({"proxy": null})),
+            Ok(Some(ProxyRoute::Forward(server))) => {
+                let credentials = server
+                    .credentials
+                    .as_ref()
+                    .map(|found| format!("{}:{}", found.username, found.password.expose_secret()));
+                let proxy = serde_json::json!({
+                    "scheme": "http",
+                    "host": server.host,
+                    "port": server.port,
+                    "credentials": credentials,
+                });
+                return Ok(serde_json::json!({ "proxy": proxy }));
+            }
+            Ok(Some(ProxyRoute::Unsupported { scheme })) => {
+                format!("{scheme} proxies are not supported")
+            }
+            Ok(Some(ProxyRoute::Invalid { name })) => format!("the {name} proxy URL is not valid"),
+        },
     };
-    Err(Box::from(ValueError(message)))
+    Err(Box::new(crate::helpers::HelperError {
+        class: "ValueError".to_owned(),
+        status: None,
+        error_type: None,
+        param: None,
+        code: None,
+        message,
+    }))
 }
 
 pub(crate) struct Op;
