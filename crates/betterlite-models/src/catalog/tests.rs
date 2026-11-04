@@ -56,6 +56,9 @@ enum Outcome {
     WarningBoundary(usize, usize),
     WarningOverflow,
     AliasOverflow,
+    GeneralizationRuleSkipped,
+    GeneralizationCapabilityKept(&'static str),
+    ProviderSpecificSchemaKept,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -110,7 +113,7 @@ enum Failure {
 #[case::trailing(b"{}x".to_vec(), UnknownFields::Warn, Outcome::Failure(Failure::Invalid))]
 #[case::price_unknown_warn(br#"{"model":{"litellm_provider":"openai","off_peak_pricing":{"input_cost_per_token":0.0000002,"new_field":true}}}"#.to_vec(), UnknownFields::Warn, Outcome::PriceWarn("model.off_peak_pricing.new_field"))]
 #[case::price_unknown_reject(br#"{"model":{"litellm_provider":"openai","off_peak_pricing":{"input_cost_per_token":0.0000002,"new_field":true}}}"#.to_vec(), UnknownFields::Reject, Outcome::PriceUnknown)]
-#[case::provider_specific_known(br#"{"model":{"litellm_provider":"bedrock","provider_specific_entry":{"bedrock_invocation_schema":"titan_v2"}}}"#.to_vec(), UnknownFields::Reject, Outcome::Count(1))]
+#[case::provider_specific_schema_kept(br#"{"model":{"litellm_provider":"bedrock","provider_specific_entry":{"bedrock_invocation_schema":"titan_v2"}}}"#.to_vec(), UnknownFields::Reject, Outcome::ProviderSpecificSchemaKept)]
 #[case::provider_specific_unknown_warn(br#"{"model":{"litellm_provider":"bedrock","provider_specific_entry":{"bedrock_invocation_schema":"titan_v2","new_field":true}}}"#.to_vec(), UnknownFields::Warn, Outcome::PriceFieldWarn("model.provider_specific_entry.new_field"))]
 #[case::provider_specific_null_reject(br#"{"model":{"provider_specific_entry":null}}"#.to_vec(), UnknownFields::Reject, Outcome::Failure(Failure::PriceType))]
 #[case::provider_specific_null_warn(br#"{"model":{"provider_specific_entry":null}}"#.to_vec(), UnknownFields::Warn, Outcome::Failure(Failure::PriceType))]
@@ -138,6 +141,10 @@ enum Failure {
     Outcome::Count(1)
 )]
 #[case::alias_limit(aliased_model(MAX_CATALOG_ALIASES + 1), UnknownFields::Reject, Outcome::AliasOverflow)]
+#[case::generalization_model_info_null_warn(br#"{"fallback_generalizations":{"rules":[{"name":"bad","pattern":"^x","model_info":null}]},"model":{"litellm_provider":"openai"}}"#.to_vec(), UnknownFields::Warn, Outcome::GeneralizationRuleSkipped)]
+#[case::generalization_model_info_null_reject(br#"{"fallback_generalizations":{"rules":[{"name":"bad","pattern":"^x","model_info":null}]},"model":{"litellm_provider":"openai"}}"#.to_vec(), UnknownFields::Reject, Outcome::GeneralizationRuleSkipped)]
+#[case::generalization_tiered_pricing_malformed_warn(br#"{"fallback_generalizations":{"rules":[{"name":"tiers","pattern":"^x","model_info":{"tiered_pricing":{}}}]},"model":{"litellm_provider":"openai"}}"#.to_vec(), UnknownFields::Warn, Outcome::GeneralizationCapabilityKept("tiered_pricing"))]
+#[case::generalization_off_peak_windows_malformed_reject(br#"{"fallback_generalizations":{"rules":[{"name":"windows","pattern":"^x","model_info":{"off_peak_pricing":{"windows":null}}}]},"model":{"litellm_provider":"openai"}}"#.to_vec(), UnknownFields::Reject, Outcome::GeneralizationCapabilityKept("off_peak_pricing"))]
 fn model_catalog_tests_behavior(
     #[case] bytes: Vec<u8>,
     #[case] mode: UnknownFields,
@@ -268,7 +275,52 @@ fn model_catalog_tests_behavior(
             ));
         }
         Outcome::Failure(failure) => check_error(&result.unwrap_err(), failure),
+        Outcome::GeneralizationRuleSkipped => {
+            let catalog = result.unwrap();
+            assert_eq!(catalog.entries.len(), 1);
+            assert_eq!(
+                catalog.warnings,
+                [
+                    "LiteLLM: skipping malformed fallback generalization rule bad (needs string 'pattern' and dict 'model_info')."
+                ]
+            );
+            assert_eq!(catalog.generalizations.rules.len(), 1);
+            assert!(catalog.generalizations.match_routing("x").is_none());
+            assert!(catalog.generalizations.match_capabilities("x").is_none());
+        }
+        Outcome::GeneralizationCapabilityKept(key) => {
+            let catalog = result.unwrap();
+            assert_eq!(catalog.entries.len(), 1);
+            assert!(catalog.warnings.is_empty());
+            let capabilities = catalog.generalizations.match_capabilities("x").unwrap();
+            assert!(capabilities.contains_key(key));
+        }
+        Outcome::ProviderSpecificSchemaKept => {
+            let catalog = result.unwrap();
+            assert_eq!(
+                catalog.entries["model"]
+                    .prices
+                    .provider_specific
+                    .bedrock_invocation_schema,
+                Some("titan_v2".to_owned())
+            );
+        }
     }
+}
+
+#[rstest]
+#[case::root("fixtures/model_prices_and_context_window.json")]
+#[case::backup("fixtures/model_prices_and_context_window_backup.json")]
+fn pinned_catalog_keeps_invocation_schema(#[case] path: &str) {
+    let bytes = fs::read(path).unwrap();
+    let catalog = ModelCatalog::parse(&bytes, UnknownFields::Reject).unwrap();
+    assert_eq!(
+        catalog.entries["amazon.titan-embed-text-v2:0"]
+            .prices
+            .provider_specific
+            .bedrock_invocation_schema,
+        Some("titan_v2".to_owned())
+    );
 }
 
 #[test]
