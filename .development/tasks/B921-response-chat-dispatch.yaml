@@ -17,8 +17,6 @@ description: >-
   155 HTTP fixtures, 115 adapters and 30 wiring: 790 lines.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/response_chat_dispatch.rs
   - crates/betterlite-core/src/api/response_chat_dispatch/**
   - tools/oracle/src/sdk_http.rs

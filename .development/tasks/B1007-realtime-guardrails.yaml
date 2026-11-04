@@ -22,8 +22,6 @@ description: >-
   and 30 wiring, 500 changed lines. B1004 owns all message decoding.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/realtime_guardrails.rs
   - crates/betterlite-core/src/api/realtime_guardrails/**
   - tools/oracle/src/websocket_driver.rs

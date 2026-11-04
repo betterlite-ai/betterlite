@@ -33,8 +33,6 @@ description: >-
   adapters 120 and wiring 35, within 750 lines.
 scope:
   paths:
-    - crates/betterlite-core/src/api/fal.rs
-    - crates/betterlite-core/src/api/fal/**
     - crates/betterlite-core/src/api/fal/{imagen,nano_banana,bytedance}.rs
     - crates/betterlite-core/src/api/fal/imagen.rs
     - crates/betterlite-core/src/api/fal/imagen/**

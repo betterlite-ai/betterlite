@@ -17,8 +17,6 @@ description: >-
   140 HTTP cases,110 adapters and 25 wiring: 755 total. No helper case or new parser is added.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/responses_stream_driver.rs
   - crates/betterlite-core/src/api/responses_stream_driver/**
   - tools/oracle/src/sdk_http.rs

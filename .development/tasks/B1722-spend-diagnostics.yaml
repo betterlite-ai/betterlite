@@ -33,8 +33,6 @@ description: >-
   cap the implementation, integration tests and fuzz wiring at 800 changed lines.
 scope:
   paths:
-    - crates/betterlite-server/src/spend.rs
-    - crates/betterlite-server/src/spend/**
     - crates/betterlite-server/src/spend/diagnostics.rs
     - crates/betterlite-server/src/spend/diagnostics/**
     - crates/betterlite-server/fuzz/Cargo.toml

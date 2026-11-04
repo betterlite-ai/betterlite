@@ -75,7 +75,7 @@ checks:
       run: grep -q "prompt_manager\|DotpromptManager" crates/betterlite-server/src/routes/prompts/read.rs
     - id: oracle-cases-prompts-read
       why: "the oracle cases for these routes fail, are missing, or booted-proxy tests fail"
-      run: test -d tools/oracle/cases/prompts/read && test "$(find tools/oracle/cases/prompts/read -name '*.yaml' | wc -l)" -ge 4 && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^oracle::prompts::read::/)'
+      run: test -d tools/oracle/cases/prompts/read && test "$(find tools/oracle/cases/prompts/read -name '*.yaml' | wc -l)" -ge 4 && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::server::b4061::(.*::)?oracle::prompts::read::/)'
 pitfalls:
   - "List allows both `.v` and `_v` version suffixes in base-ID stripping without validating the suffix itself; the route shows base IDs without suffix to users regardless."
   - "Metadata-scoped prompts have an exact-ID allowlist check before returning 400, but the 400 for missing info happens after admin-view is confirmed, not first; order matters for error priority."

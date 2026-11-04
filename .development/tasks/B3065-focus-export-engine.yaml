@@ -71,46 +71,46 @@ checks:
   commands:
     - id: factory-dispatch
       why: FocusDestinationFactory does not dispatch to the correct destination class for each provider
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_export::|^focus_destination_factory::dispatch/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(finops::focus|finops::focus::destinations|finops::focus::destinations::factory|finops::focus::engine)::(.*::)?focus_export::|^focus_destination_factory::dispatch/)'
     - id: factory-config-precedence
       why: configuration resolution does not check overrides before environment variables
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_destination_factory::config/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(finops::focus|finops::focus::destinations|finops::focus::destinations::factory|finops::focus::engine)::(.*::)?focus_destination_factory::config/)'
     - id: factory-validation
       why: factory does not validate required fields or raises wrong error messages
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_destination_factory::validation/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(finops::focus|finops::focus::destinations|finops::focus::destinations::factory|finops::focus::engine)::(.*::)?focus_destination_factory::validation/)'
     - id: engine-init-tests
       why: FocusExportEngine does not initialize correctly with format and destination config
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_export_engine::init/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(finops::focus|finops::focus::destinations|finops::focus::destinations::factory|finops::focus::engine)::(.*::)?focus_export_engine::init/)'
     - id: engine-serializer-tests
       why: "_init_serializer does not return correct serializer or does not handle unsupported formats"
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_export_engine::serializer/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(finops::focus|finops::focus::destinations|finops::focus::destinations::factory|finops::focus::engine)::(.*::)?focus_export_engine::serializer/)'
     - id: export-all-empty
       why: "export_all does not skip when data or normalized data is empty"
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_export_engine::export_all/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(finops::focus|finops::focus::destinations|finops::focus::destinations::factory|finops::focus::engine)::(.*::)?focus_export_engine::export_all/)'
     - id: export-all-window-format
       why: "export_all does not build correct window with current timestamp"
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_export_engine::export_all_window/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(finops::focus|finops::focus::destinations|finops::focus::destinations::factory|finops::focus::engine)::(.*::)?focus_export_engine::export_all_window/)'
     - id: export-window-bounds
       why: "export_window does not apply inclusive start_time and end_time bounds to database query"
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_export_engine::export_window_bounds/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(finops::focus|finops::focus::destinations|finops::focus::destinations::factory|finops::focus::engine)::(.*::)?focus_export_engine::export_window_bounds/)'
     - id: export-window-empty
       why: "export_window does not skip when data or normalized data is empty"
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_export_engine::export_window_empty/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(finops::focus|finops::focus::destinations|finops::focus::destinations::factory|finops::focus::engine)::(.*::)?focus_export_engine::export_window_empty/)'
     - id: serialize-upload-empty
       why: "_serialize_and_upload does not skip when serializer returns empty bytes"
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_export_engine::serialize_and_upload/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(finops::focus|finops::focus::destinations|finops::focus::destinations::factory|finops::focus::engine)::(.*::)?focus_export_engine::serialize_and_upload/)'
     - id: filename-format
       why: "_build_filename does not construct correct UTC timestamp format or structure"
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_export_engine::filename_format/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(finops::focus|finops::focus::destinations|finops::focus::destinations::factory|finops::focus::engine)::(.*::)?focus_export_engine::filename_format/)'
     - id: filename-error
       why: "_build_filename does not raise ValueError when serializer.extension is missing"
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_export_engine::filename_error/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(finops::focus|finops::focus::destinations|finops::focus::destinations::factory|finops::focus::engine)::(.*::)?focus_export_engine::filename_error/)'
     - id: sum-column-cases
       why: "_sum_column does not handle missing columns, empty frames, or None values correctly"
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_export_engine::sum_column/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(finops::focus|finops::focus::destinations|finops::focus::destinations::factory|finops::focus::engine)::(.*::)?focus_export_engine::sum_column/)'
     - id: unique-count-cases
       why: "_count_unique does not handle missing columns, empty frames, or None values correctly"
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_export_engine::count_unique/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(finops::focus|finops::focus::destinations|finops::focus::destinations::factory|finops::focus::engine)::(.*::)?focus_export_engine::count_unique/)'
 oracle_cases: []
 deviations:
   - what: "Configuration resolution is injected through betterlite-config (B002) instead of reading environment variables directly."

@@ -17,8 +17,6 @@ description: >-
   implementation, 180 tests, 135 HTTP cases, 100 adapters and 25 wiring: 770 total.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/chat_response_stream.rs
   - crates/betterlite-core/src/api/chat_response_stream/**
   - tools/oracle/src/sdk_http.rs
