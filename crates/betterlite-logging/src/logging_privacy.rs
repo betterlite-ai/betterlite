@@ -153,30 +153,31 @@ fn redact_tree(value: &mut Value) {
                         }
                     }
                     "thinking_blocks" | "audio" => *child = Value::Null,
-                    "output" => redact_output(child),
+                    "output" => {
+                        if let Some(items) = child.as_array_mut() {
+                            for item in items {
+                                if item.get("type").and_then(Value::as_str) == Some("reasoning") {
+                                    if let Some(summary) =
+                                        item.get_mut("summary").and_then(Value::as_array_mut)
+                                    {
+                                        for entry in summary {
+                                            if entry.get("text").is_some_and(|text| !text.is_null())
+                                            {
+                                                entry["text"] = Value::String(REDACTED.to_owned());
+                                            }
+                                        }
+                                    }
+                                }
+                                redact_tree(item);
+                            }
+                        }
+                    }
                     _ => redact_tree(child),
                 }
             }
         }
         Value::Array(items) => items.iter_mut().for_each(redact_tree),
         _ => {}
-    }
-}
-
-fn redact_output(value: &mut Value) {
-    if let Some(items) = value.as_array_mut() {
-        for item in items {
-            if item.get("type").and_then(Value::as_str) == Some("reasoning") {
-                if let Some(summary) = item.get_mut("summary").and_then(Value::as_array_mut) {
-                    for entry in summary {
-                        if entry.get("text").is_some_and(|text| !text.is_null()) {
-                            entry["text"] = Value::String(REDACTED.to_owned());
-                        }
-                    }
-                }
-            }
-            redact_tree(item);
-        }
     }
 }
 
