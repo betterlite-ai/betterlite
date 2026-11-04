@@ -53,6 +53,7 @@ fn text_by_role_projects_standard_assistant_content_parts() {
                 {"type":"image_url","image_url":{"url":"u"}},
                 {"type":"input_text","text":"x"},
                 {"type":"file","file":{"file_id":"f"}},
+                {"type":"tool_reference"},
                 {"type":"other"}
             ]),
             "assistant"

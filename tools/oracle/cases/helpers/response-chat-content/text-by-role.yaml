@@ -3,7 +3,7 @@ name: text-by-role
 call:
   response_chat_content:
     operation: text_by_role
-    content: ["hi", {type: text}, 7, {type: other, text: hello}, {type: image_url, image_url: {url: u}}, {type: input_text, text: x}, {type: file, file: {file_id: f}}, {type: other}]
+    content: ["hi", {type: text}, 7, {type: other, text: hello}, {type: image_url, image_url: {url: u}}, {type: input_text, text: x}, {type: file, file: {file_id: f}}, {type: tool_reference}, {type: other}]
     role: assistant
 env: {}
 compare: {ignore: []}
