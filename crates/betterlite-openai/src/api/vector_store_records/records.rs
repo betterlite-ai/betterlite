@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use crate::api::responses_objects::sdk::record;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -70,20 +71,127 @@ pub enum VectorStoreSearchFailureMode {
     Error,
 }
 
-macro_rules! wire_record {
-    ($record:ident) => {
-        #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-        #[serde(transparent)]
-        pub struct $record(pub WireRecord);
-    };
+record!(LiteLlmVectorStoreConfig {
+    vector_store_name: String => "vector_store_name",
+    litellm_params: Value => "litellm_params",
+});
+record!(LiteLlmManagedVectorStore {
+    vector_store_id: String => "vector_store_id",
+    custom_llm_provider: String => "custom_llm_provider",
+    vector_store_name: String => "vector_store_name",
+    vector_store_description: String => "vector_store_description",
+    vector_store_metadata: Value => "vector_store_metadata",
+    created_at: String => "created_at",
+    updated_at: String => "updated_at",
+    litellm_credential_name: String => "litellm_credential_name",
+    litellm_params: Value => "litellm_params",
+    team_id: String => "team_id",
+    user_id: String => "user_id",
+    is_config: bool => "is_config",
+});
+record!(ManagedVectorStoreList {
+    object: String => "object",
+    data: Vec<LiteLlmManagedVectorStore> => "data",
+    total_count: i64 => "total_count",
+    current_page: i64 => "current_page",
+    total_pages: i64 => "total_pages",
+});
+record!(VectorStoreResultContent {
+    text: String => "text",
+    type_name: String => "type",
+});
+record!(VectorStoreSearchRequest {
+    query: Value => "query", filters: Value => "filters", max_num_results: i64 => "max_num_results",
+    ranking_options: Value => "ranking_options", rewrite_query: bool => "rewrite_query",
+});
+pub type SearchOptionalParams = VectorStoreSearchRequest;
+record!(VectorStoreSearchResult {
+    score: serde_json::Number => "score",
+    content: Vec<VectorStoreResultContent> => "content",
+    file_id: String => "file_id",
+    filename: String => "filename",
+    attributes: Value => "attributes",
+});
+record!(VectorStoreSearchResponse {
+    object: String => "object",
+    search_query: String => "search_query",
+    data: Vec<VectorStoreSearchResult> => "data",
+});
+record!(VectorStoreSearchFailure {
+    vector_store_id: String => "vector_store_id",
+    custom_llm_provider: String => "custom_llm_provider",
+    error: String => "error",
+});
+record!(VertexSearchDataStoreExtraBody {
+    query: String => "query", page_size: i64 => "pageSize", page_token: String => "pageToken",
+    offset: i64 => "offset", one_box_page_size: i64 => "oneBoxPageSize",
+    page_categories: Vec<Value> => "pageCategories", image_query: Value => "imageQuery",
+    filter: String => "filter", canonical_filter: String => "canonicalFilter", order_by: String => "orderBy",
+    user_info: Value => "userInfo", language_code: String => "languageCode",
+    facet_specs: Vec<Value> => "facetSpecs", boost_spec: Value => "boostSpec", params: Value => "params",
+    query_expansion_spec: Value => "queryExpansionSpec", spell_correction_spec: Value => "spellCorrectionSpec",
+    user_pseudo_id: String => "userPseudoId", content_search_spec: Value => "contentSearchSpec",
+    ranking_expression: String => "rankingExpression", ranking_expression_backend: String => "rankingExpressionBackend",
+    safe_search: bool => "safeSearch", user_labels: BTreeMap<String, String> => "userLabels",
+    natural_query_understanding: Value => "naturalLanguageQueryUnderstandingSpec",
+    search_as_you_type_spec: Value => "searchAsYouTypeSpec", display_spec: Value => "displaySpec",
+    crowding_specs: Vec<Value> => "crowdingSpecs", relevance_threshold: String => "relevanceThreshold",
+    relevance_score_spec: Value => "relevanceScoreSpec", custom_ranking_params: Value => "customRankingParams",
+});
+record!(VertexSearchEngineExtraBody {
+    query: String => "query", page_size: i64 => "pageSize", page_token: String => "pageToken",
+    offset: i64 => "offset", one_box_page_size: i64 => "oneBoxPageSize",
+    page_categories: Vec<Value> => "pageCategories", image_query: Value => "imageQuery",
+    filter: String => "filter", canonical_filter: String => "canonicalFilter", order_by: String => "orderBy",
+    user_info: Value => "userInfo", language_code: String => "languageCode",
+    facet_specs: Vec<Value> => "facetSpecs", boost_spec: Value => "boostSpec", params: Value => "params",
+    query_expansion_spec: Value => "queryExpansionSpec", spell_correction_spec: Value => "spellCorrectionSpec",
+    user_pseudo_id: String => "userPseudoId", content_search_spec: Value => "contentSearchSpec",
+    ranking_expression: String => "rankingExpression", ranking_expression_backend: String => "rankingExpressionBackend",
+    safe_search: bool => "safeSearch", user_labels: BTreeMap<String, String> => "userLabels",
+    natural_query_understanding: Value => "naturalLanguageQueryUnderstandingSpec",
+    search_as_you_type_spec: Value => "searchAsYouTypeSpec", display_spec: Value => "displaySpec",
+    crowding_specs: Vec<Value> => "crowdingSpecs", relevance_threshold: String => "relevanceThreshold",
+    relevance_score_spec: Value => "relevanceScoreSpec", custom_ranking_params: Value => "customRankingParams",
+    data_store_specs: Vec<Value> => "dataStoreSpecs", num_results_per_data_store: i64 => "numResultsPerDataStore",
+});
+record!(CreateOptionalParams {
+    name: String => "name", file_ids: Vec<String> => "file_ids",
+    expires_after: VectorStoreExpirationPolicy => "expires_after",
+    chunking_strategy: VectorStoreChunkingStrategy => "chunking_strategy",
+    metadata: BTreeMap<String, String> => "metadata",
+});
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct VectorStoreCreateRequest {
+    #[serde(flatten)]
+    pub optional: CreateOptionalParams,
 }
-
-wire_record!(LiteLlmVectorStoreConfig);
-wire_record!(LiteLlmManagedVectorStore);
-wire_record!(ManagedVectorStoreList);
-wire_record!(VectorStoreResultContent);
-wire_record!(SearchOptionalParams);
-wire_record!(VectorStoreSearchRequest);
+record!(VectorStoreCreateResponse {
+    id: String => "id", object: String => "object", created_at: i64 => "created_at",
+    name: String => "name", bytes: i64 => "bytes", file_counts: VectorStoreFileCounts => "file_counts",
+    status: String => "status", expires_after: VectorStoreExpirationPolicy => "expires_after",
+    expires_at: i64 => "expires_at", last_active_at: i64 => "last_active_at",
+    metadata: BTreeMap<String, String> => "metadata",
+});
+record!(VectorStoreExpirationPolicy {
+    anchor: String => "anchor", days: i64 => "days",
+});
+record!(VectorStoreChunkingStrategy {
+    type_name: String => "type", static_config: StaticChunkingConfig => "static",
+});
+pub type AutoChunkingStrategy = VectorStoreChunkingStrategy;
+pub type StaticChunkingStrategy = VectorStoreChunkingStrategy;
+record!(StaticChunkingConfig {
+    max_chunk_size_tokens: i64 => "max_chunk_size_tokens",
+    chunk_overlap_tokens: i64 => "chunk_overlap_tokens",
+});
+record!(VectorStoreFileCounts {
+    in_progress: i64 => "in_progress", completed: i64 => "completed", failed: i64 => "failed",
+    cancelled: i64 => "cancelled", total: i64 => "total",
+});
+record!(BaseVectorStoreAuthCredentials {
+    headers: BTreeMap<String, Value> => "headers", query_params: BTreeMap<String, Value> => "query_params",
+});
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VectorStoreUpdateRequest {
     pub vector_store_id: String,
@@ -102,21 +210,6 @@ pub struct VectorStoreDeleteRequest {
 pub struct VectorStoreInfoRequest {
     pub vector_store_id: String,
 }
-wire_record!(VectorStoreSearchResult);
-wire_record!(VectorStoreSearchResponse);
-wire_record!(VectorStoreSearchFailure);
-wire_record!(VertexSearchDataStoreExtraBody);
-wire_record!(VertexSearchEngineExtraBody);
-wire_record!(VectorStoreCreateRequest);
-wire_record!(VectorStoreCreateResponse);
-wire_record!(VectorStoreExpirationPolicy);
-wire_record!(AutoChunkingStrategy);
-wire_record!(StaticChunkingConfig);
-wire_record!(StaticChunkingStrategy);
-wire_record!(VectorStoreChunkingStrategy);
-wire_record!(VectorStoreFileCounts);
-wire_record!(CreateOptionalParams);
-wire_record!(BaseVectorStoreAuthCredentials);
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IndexCreateLiteLlmParams {
     pub vector_store_index: String,
@@ -155,25 +248,70 @@ pub struct IndexListResponse {
     pub object: IndexListObject,
     pub data: Vec<LiteLlmManagedVectorStoreIndex>,
 }
-wire_record!(IndexEndpoints);
-wire_record!(VectorStoreIndexEndpoints);
-wire_record!(BedrockKbLocation);
-wire_record!(BedrockKbContent);
-wire_record!(BedrockKbRetrievalResult);
-wire_record!(BedrockKbMetadataAttribute);
-wire_record!(KbImplicitFilterConfig);
-wire_record!(KbSelectiveModeConfig);
-wire_record!(BedrockKbMetadataConfiguration);
-wire_record!(BedrockKbModelConfiguration);
-wire_record!(KbRerankingConfig);
-wire_record!(KbVectorSearchConfig);
-wire_record!(KbRetrievalConfig);
-wire_record!(BedrockKbRetrievalQuery);
-wire_record!(KbGuardrailConfig);
-wire_record!(BedrockKbUserContext);
-wire_record!(BedrockKbRequest);
-wire_record!(BedrockKbResponse);
-wire_record!(BedrockKbRowValue);
+record!(VectorStoreIndexEndpoints {
+    read: Vec<(String, String)> => "read", write: Vec<(String, String)> => "write",
+});
+pub type IndexEndpoints = VectorStoreIndexEndpoints;
+record!(BedrockKbLocation {
+    type_name: String => "type", s3_location: Value => "s3Location", web_location: Value => "webLocation",
+    kendra_document_location: Value => "kendraDocumentLocation", salesforce_location: Value => "salesforceLocation",
+    share_point_location: Value => "sharePointLocation", confluence_location: Value => "confluenceLocation",
+    custom_document_location: Value => "customDocumentLocation", sql_location: Value => "sqlLocation",
+});
+record!(BedrockKbRowValue {
+    column_name: String => "columnName", column_value: String => "columnValue", type_name: String => "type",
+});
+record!(BedrockKbContent {
+    type_name: String => "type", text: String => "text", byte_content: String => "byteContent",
+    row: Vec<BedrockKbRowValue> => "row",
+});
+record!(BedrockKbRetrievalResult {
+    content: BedrockKbContent => "content", location: BedrockKbLocation => "location",
+    score: serde_json::Number => "score", metadata: BTreeMap<String, Value> => "metadata",
+});
+record!(BedrockKbMetadataAttribute {
+    description: String => "description", key: String => "key", type_name: String => "type",
+});
+record!(KbImplicitFilterConfig {
+    metadata_attributes: Vec<BedrockKbMetadataAttribute> => "metadataAttributes", model_arn: String => "modelArn",
+});
+record!(KbSelectiveModeConfig {});
+record!(BedrockKbMetadataConfiguration {
+    selection_mode: String => "selectionMode", selective_mode_configuration: KbSelectiveModeConfig => "selectiveModeConfiguration",
+});
+record!(BedrockKbModelConfiguration {
+    model_request_fields: Value => "additionalModelRequestFields", model_arn: String => "modelArn",
+});
+record!(KbRerankingModelConfig {
+    model_configuration: BedrockKbModelConfiguration => "modelConfiguration",
+    metadata_configuration: BedrockKbMetadataConfiguration => "metadataConfiguration",
+});
+record!(KbRerankingConfig {
+    bedrock_rerank_config: KbRerankingModelConfig => "bedrockRerankingConfiguration",
+    type_name: String => "type",
+});
+record!(KbVectorSearchConfig {
+    filter: Value => "filter", implicit_filter_configuration: KbImplicitFilterConfig => "implicitFilterConfiguration",
+    number_of_results: i64 => "numberOfResults", override_search_type: String => "overrideSearchType",
+    reranking_configuration: KbRerankingConfig => "rerankingConfiguration",
+});
+record!(KbRetrievalConfig {
+    vector_search_configuration: KbVectorSearchConfig => "vectorSearchConfiguration",
+});
+record!(BedrockKbRetrievalQuery { text: String => "text" });
+record!(KbGuardrailConfig {
+    guardrail_id: String => "guardrailId", guardrail_version: String => "guardrailVersion",
+});
+record!(BedrockKbUserContext { user_id: String => "userId" });
+record!(BedrockKbRequest {
+    guardrail_configuration: KbGuardrailConfig => "guardrailConfiguration", next_token: String => "nextToken",
+    retrieval_configuration: KbRetrievalConfig => "retrievalConfiguration",
+    retrieval_query: BedrockKbRetrievalQuery => "retrievalQuery", user_context: BedrockKbUserContext => "userContext",
+});
+record!(BedrockKbResponse {
+    guardrail_action: String => "guardrailAction", next_token: String => "nextToken",
+    retrieval_results: Vec<BedrockKbRetrievalResult> => "retrievalResults",
+});
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]

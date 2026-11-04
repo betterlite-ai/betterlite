@@ -1,8 +1,9 @@
 #![cfg(test)]
 
 use super::records::{
+    BedrockKbRequest, BedrockKbResponse, LiteLlmManagedVectorStore, VectorStoreChunkingStrategy,
     VectorStoreIndexType, VectorStoreIntegration, VectorStoreSearchFailureMode,
-    VectorStoreToolParams, WireRecord,
+    VectorStoreSearchRequest, VectorStoreToolParams, WireRecord,
 };
 use super::wire::{VectorStoreRecordKind, WireDecodeLimits, decode_vector_store_records};
 use rstest::rstest;
@@ -119,6 +120,43 @@ fn typed_dict_records_preserve_absent_null_and_extensions() {
     let expected = serde_json::from_slice::<Value>(input).unwrap();
     assert_eq!(output, expected);
     assert!(!output.as_object().unwrap().contains_key("ranking_options"));
+
+    let typed: LiteLlmManagedVectorStore = serde_json::from_str(
+        r#"{"vector_store_id":"vs_a","vector_store_name":null,"provider_field":{"enabled":true}}"#,
+    )
+    .unwrap();
+    assert_eq!(typed.vector_store_id.as_deref(), Some("vs_a"));
+    assert!(typed.vector_store_name.is_none());
+    assert!(typed.extra["vector_store_name"].is_null());
+    assert_eq!(typed.extra["provider_field"]["enabled"], true);
+    assert!(typed.created_at.is_none());
+    assert!(!typed.extra.contains_key("created_at"));
+}
+
+#[test]
+fn search_records_keep_absent_and_explicit_null_distinct() {
+    let explicit_null: VectorStoreSearchRequest =
+        serde_json::from_str(r#"{"query":null,"filters":null}"#).unwrap();
+    assert!(explicit_null.query.is_none());
+    assert!(explicit_null.extra["query"].is_null());
+    assert!(explicit_null.extra["filters"].is_null());
+    assert_eq!(
+        serde_json::to_value(explicit_null).unwrap(),
+        serde_json::from_str::<Value>(r#"{"query":null,"filters":null}"#).unwrap()
+    );
+    let absent: VectorStoreSearchRequest = serde_json::from_str("{}").unwrap();
+    assert_eq!(
+        serde_json::to_value(absent).unwrap(),
+        serde_json::from_str::<Value>("{}").unwrap()
+    );
+}
+
+#[test]
+fn managed_record_keeps_mistyped_and_extension_fields_raw() {
+    let mistyped: LiteLlmManagedVectorStore =
+        serde_json::from_str(r#"{"vector_store_id":42}"#).unwrap();
+    assert!(mistyped.vector_store_id.is_none());
+    assert_eq!(mistyped.extra["vector_store_id"], 42_i32);
 }
 
 #[test]
@@ -171,6 +209,61 @@ fn discovery_and_knowledge_base_records_keep_nested_fields() {
         "bedrock_response",
         VectorStoreRecordKind::BedrockResponse,
     );
+}
+
+#[test]
+fn bedrock_parent_records_decode_typed_nested_fields() {
+    let fixture: Value =
+        serde_json::from_slice(include_bytes!("tests/fixtures/wire-records.json")).unwrap();
+    let request: BedrockKbRequest =
+        serde_json::from_value(fixture["bedrock_request"].clone()).unwrap();
+    let retrieval = request.retrieval_configuration.unwrap();
+    let vector_search = retrieval.vector_search_configuration.unwrap();
+    let reranking = vector_search.reranking_configuration.unwrap();
+    let model = reranking.bedrock_rerank_config.unwrap();
+    assert_eq!(
+        model.model_configuration.unwrap().model_arn.as_deref(),
+        Some("a")
+    );
+    assert_eq!(
+        model
+            .metadata_configuration
+            .unwrap()
+            .selection_mode
+            .as_deref(),
+        Some("SELECTIVE")
+    );
+    let response: BedrockKbResponse =
+        serde_json::from_value(fixture["bedrock_response"].clone()).unwrap();
+    let result = &response.retrieval_results.as_ref().unwrap()[0];
+    assert_eq!(
+        result
+            .score
+            .as_ref()
+            .map(serde_json::Number::to_string)
+            .as_deref(),
+        Some("0.5")
+    );
+    assert_eq!(
+        result.content.as_ref().unwrap().row.as_ref().unwrap()[0]
+            .column_name
+            .as_deref(),
+        Some("c")
+    );
+}
+
+#[test]
+fn chunking_strategy_decodes_into_named_variants() {
+    let auto: VectorStoreChunkingStrategy = serde_json::from_str(r#"{"type":"auto"}"#).unwrap();
+    assert_eq!(auto.type_name.as_deref(), Some("auto"));
+    let fixed: VectorStoreChunkingStrategy = serde_json::from_str(
+        r#"{"type":"static","static":{"max_chunk_size_tokens":800,"chunk_overlap_tokens":400}}"#,
+    )
+    .unwrap();
+    let static_chunk_size = fixed
+        .static_config
+        .and_then(|config| config.max_chunk_size_tokens);
+    assert_eq!(static_chunk_size, Some(800));
 }
 
 #[rstest]

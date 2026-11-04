@@ -13,7 +13,36 @@ macro_rules! record {
             pub extra: std::collections::BTreeMap<String, betterlite_models::decisions::Json>,
         }
     };
+    ($name:ident { $($field:ident: $kind:ty => $wire:literal),* $(,)? }) => {
+        #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, Default)]
+        pub struct $name {
+            $(#[serde(rename = $wire, skip_serializing_if = "Option::is_none")] pub $field: Option<$kind>,)*
+            #[serde(flatten)]
+            pub extra: std::collections::BTreeMap<String, serde_json::Value>,
+        }
+        impl<'de> serde::Deserialize<'de> for $name {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where D: serde::Deserializer<'de> {
+                let mut fields = std::collections::BTreeMap::<String, serde_json::Value>::deserialize(deserializer)?;
+                let mut record = Self::default();
+                $(if let Some(value) = fields.remove($wire) {
+                    if value.is_null() {
+                        record.extra.insert($wire.to_owned(), value);
+                    } else {
+                        match serde_json::from_value(value.clone()) {
+                            Ok(typed) => record.$field = Some(typed),
+                            Err(_) => { record.extra.insert($wire.to_owned(), value); }
+                        }
+                    }
+                })*
+                record.extra.extend(fields);
+                Ok(record)
+            }
+        }
+    };
 }
+
+pub(crate) use record;
 
 macro_rules! strings {
     ($name:ident { $($variant:ident = $wire:literal),* $(,)? }) => {
