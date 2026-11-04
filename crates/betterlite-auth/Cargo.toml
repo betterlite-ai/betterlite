@@ -9,6 +9,7 @@ publish.workspace = true
 betterlite-db = { path = "../betterlite-db" }
 chrono = { version = "0.4.45", default-features = false, features = ["serde"] }
 hex.workspace = true
+lru = "0.18.4"
 pcre2 = "0.2.11"
 regex.workspace = true
 regex-syntax = "0.8.11"

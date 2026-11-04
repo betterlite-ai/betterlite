@@ -881,6 +881,7 @@ dependencies = [
  "betterlite-db",
  "chrono",
  "hex",
+ "lru",
  "pcre2",
  "regex",
  "regex-syntax",

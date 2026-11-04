@@ -1,6 +1,7 @@
-use std::collections::VecDeque;
+use std::num::NonZeroUsize;
 use std::sync::{Mutex, PoisonError};
 
+use lru::LruCache;
 use regex::Regex;
 
 const CACHE_CAPACITY: usize = 256;
@@ -98,7 +99,7 @@ const MODELS: &[(&str, &str)] = &[("^(__ROOT__/models)/([^/]+)$", "$1/{model}")]
 
 pub struct RouteNormalizer {
     patterns: Vec<(Regex, String)>,
-    pub(super) cache: Mutex<VecDeque<(String, String)>>,
+    pub(super) cache: Mutex<LruCache<String, String>>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -138,19 +139,17 @@ impl RouteNormalizer {
         )?;
         Ok(Self {
             patterns,
-            cache: Mutex::new(VecDeque::new()),
+            cache: Mutex::new(LruCache::new(
+                NonZeroUsize::new(CACHE_CAPACITY).unwrap_or(NonZeroUsize::MIN),
+            )),
         })
     }
 
     #[must_use]
     pub fn normalize_request_route(&self, route: &str) -> String {
         let mut entries = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
-        if let Some(position) = entries.iter().position(|(key, _)| key == route)
-            && let Some(entry) = entries.remove(position)
-        {
-            let value = entry.1.clone();
-            entries.push_front(entry);
-            return value;
+        if let Some(value) = entries.get(route) {
+            return value.clone();
         }
         let normalized = self
             .patterns
@@ -160,8 +159,7 @@ impl RouteNormalizer {
                 (value != route).then_some(value)
             })
             .unwrap_or_else(|| route.to_owned());
-        entries.push_front((route.to_owned(), normalized.clone()));
-        entries.truncate(CACHE_CAPACITY);
+        entries.put(route.to_owned(), normalized.clone());
         normalized
     }
 }
