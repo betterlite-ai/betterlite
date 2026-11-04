@@ -30,7 +30,7 @@ def run(input_value: Input) -> object:
     handler = cast(Realtime, cast(object, OpenAIRealtime()))
     model = input_value.get("model", "realtime-a")
     base = input_value.get("api_base", "https://api.openai.com/")
-    key = input_value.get("api_key", "sk-test")
+    key = input_value.get("api_key")
     if key is None:
         asyncio.run(handler.async_realtime(model, None, None, api_base=base, api_key=None))
         raise ValueError("missing-key call unexpectedly succeeded")
