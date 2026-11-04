@@ -2,7 +2,7 @@ id: B4580
 milestone: M8 platform
 title: CLI credential, team, user and model-group commands
 status: todo
-depends_on: [B4560, B4576]
+depends_on: [B172, B4560, B4576]
 file: tasks/B4580-cli-management-commands.yaml
 covers:
   - "litellm/proxy/client/cli/commands/{credentials,teams,users,model_groups}.py"

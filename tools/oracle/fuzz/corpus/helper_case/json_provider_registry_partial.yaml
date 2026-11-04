@@ -1,0 +1,8 @@
+kind: helper
+name: json-provider-registry-partial-entry-failure
+call:
+  json_provider_registry:
+    source: '{"publicai":{"base_url":"https://first.invalid","api_key_env":"A"},"helicone":{"api_key_env":"B"},"sarvam":{"base_url":"https://third.invalid","api_key_env":"C"}}'
+    retry: '{"helicone":{"base_url":"later","api_key_env":"B"}}'
+env: {}
+compare: {ignore: []}
