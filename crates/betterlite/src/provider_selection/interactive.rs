@@ -131,20 +131,26 @@ where
     let mut cursor = 0_usize;
     let mut selected: BTreeSet<usize> = BTreeSet::new();
     let mut first_render = true;
+    let mut dirty = true;
     loop {
-        let render_state = RenderState {
-            first_render,
-            supports_color,
-        };
-        write!(
-            guard.writer,
-            "{}",
-            render_selector(cursor, &selected, &render_state)
-        )?;
-        guard.writer.flush()?;
-        first_render = false;
-        match handle_key(key_source.next_key()?, &mut cursor, &mut selected) {
-            LoopOutcome::Continue => {}
+        if dirty {
+            let render_state = RenderState {
+                first_render,
+                supports_color,
+            };
+            write!(
+                guard.writer,
+                "{}",
+                render_selector(cursor, &selected, &render_state)
+            )?;
+            guard.writer.flush()?;
+            first_render = false;
+        }
+        let key = key_source.next_key()?;
+        match handle_key(key, &mut cursor, &mut selected) {
+            LoopOutcome::Continue => {
+                dirty = matches!(key, Key::Up | Key::Down | Key::Space);
+            }
             LoopOutcome::Finished(result) => return Ok(result),
             LoopOutcome::Cancelled => return Err(InteractiveError::Cancelled),
         }
@@ -158,7 +164,7 @@ struct RenderState {
 
 fn render_selector(cursor: usize, selected: &BTreeSet<usize>, state: &RenderState) -> String {
     let supports_color = state.supports_color;
-    let header = format!("\n  {}\n", bold("Add your first model", supports_color));
+    let header = format!("\n\n  {}\n\n", bold("Add your first model", supports_color));
     let mut content = header;
     content.push_str(&grey(
         "  \u{2191}\u{2193} to navigate \u{b7} Space to select \u{b7} Enter to confirm",

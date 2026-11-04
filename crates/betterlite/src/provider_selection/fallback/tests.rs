@@ -17,6 +17,12 @@ use super::{ParseOutcome, parse_selection, select_fallback};
 #[case::empty_input("\n", ParseOutcome::Empty)]
 #[case::blank_input("   \n", ParseOutcome::Empty)]
 #[case::zero_is_out_of_range("0\n", ParseOutcome::OutOfRange)]
+#[case::negative_is_out_of_range("-1\n", ParseOutcome::OutOfRange)]
+#[case::mixed_valid_and_negative_keeps_valid("2,-1\n", ParseOutcome::Valid(BTreeSet::from([1])))]
+#[case::arbitrarily_large_integer_is_out_of_range(
+    "99999999999999999999\n",
+    ParseOutcome::OutOfRange
+)]
 #[case::number_above_the_catalog_is_out_of_range("99\n", ParseOutcome::OutOfRange)]
 #[case::non_numeric_is_invalid("abc\n", ParseOutcome::Invalid)]
 fn parses_numeric_selections(#[case] input: &str, #[case] expected: ParseOutcome) {
@@ -65,4 +71,15 @@ fn eof_returns_instead_of_reprompting_forever() {
     assert!(
         matches!(&error, super::FallbackError::Io(source) if source.kind() == ErrorKind::UnexpectedEof)
     );
+}
+
+#[test]
+fn blue_arrow_is_used_in_the_colored_fallback_prompt() {
+    let mut reader = Cursor::new(b"1\n".to_vec());
+    let mut writer = Vec::new();
+
+    select_fallback(&mut reader, &mut writer, true).expect("selection succeeds");
+
+    let output = String::from_utf8(writer).expect("writer output is valid utf8");
+    assert!(output.contains("\x1b[38;2;177;185;249m\u{276f}\x1b[0m Provider(s): "));
 }

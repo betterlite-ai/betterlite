@@ -1,12 +1,21 @@
 #![cfg(test)]
 
 use rstest::rstest;
+use std::collections::BTreeMap;
+use std::io::{self, IsTerminal as _};
 
 use super::{blue, bold, color, dim, green, grey, orange, supports_color};
 
 #[test]
 fn no_color_present_disables_styling_regardless_of_terminal() {
-    assert!(!supports_color(true));
+    let environment = BTreeMap::from([(String::from("NO_COLOR"), String::new())]);
+    assert!(!supports_color(&environment));
+}
+
+#[test]
+fn absent_no_color_uses_terminal_capability() {
+    let environment = BTreeMap::new();
+    assert_eq!(supports_color(&environment), io::stdout().is_terminal());
 }
 
 #[rstest]

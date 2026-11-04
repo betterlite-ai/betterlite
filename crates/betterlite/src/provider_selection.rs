@@ -1,6 +1,8 @@
 use std::collections::BTreeSet;
 use std::io::{BufRead, Write};
 
+use betterlite_config::loader::EnvironmentLookup;
+
 use crate::terminal_styling::supports_color;
 
 pub mod fallback;
@@ -161,11 +163,11 @@ pub enum SelectError {
 }
 
 pub fn select_providers(
-    no_color: bool,
+    environment: &dyn EnvironmentLookup,
     fallback_reader: &mut dyn BufRead,
     writer: &mut dyn Write,
 ) -> Result<Vec<&'static Provider>, SelectError> {
-    let supports = supports_color(no_color);
+    let supports = supports_color(environment);
     dispatch_selection(
         raw_mode::TtyRawMode::open,
         fallback_reader,

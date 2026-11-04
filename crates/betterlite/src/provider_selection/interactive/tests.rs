@@ -3,7 +3,10 @@
 use std::collections::{BTreeSet, VecDeque};
 use std::io;
 
-use super::{ByteSource, InteractiveError, Key, KeySource, TtyKeySource, select_interactive};
+use super::{
+    ByteSource, InteractiveError, Key, KeySource, RenderState, TtyKeySource, render_selector,
+    select_interactive,
+};
 
 struct ScriptedKeySource {
     keys: VecDeque<Key>,
@@ -148,4 +151,66 @@ fn does_not_touch_cursor_visibility_when_color_is_unsupported() {
     let output = String::from_utf8(writer).expect("writer output is valid utf8");
     assert!(!output.contains("\x1b[?25l"));
     assert!(!output.contains("\x1b[?25h"));
+}
+
+#[test]
+fn other_keys_do_not_redraw_the_selector_without_color() {
+    let mut keys = ScriptedKeySource::new(&[Key::Other, Key::Enter]);
+    let mut writer = Vec::new();
+
+    select_interactive(&mut keys, &mut writer, false).expect("selection succeeds");
+
+    let output = String::from_utf8(writer).expect("writer output is valid utf8");
+    assert_eq!(output.matches("Add your first model").count(), 1);
+}
+
+#[test]
+fn first_selector_render_has_no_cursor_move_up() {
+    let output = render_selector(
+        0,
+        &BTreeSet::from([0]),
+        &RenderState {
+            first_render: true,
+            supports_color: true,
+        },
+    );
+
+    assert!(!output.starts_with("\x1b["));
+    assert!(
+        output.contains(
+            "\u{2191}\u{2193} to navigate \u{b7} Space to select \u{b7} Enter to confirm"
+        )
+    );
+    assert!(output.contains("\x1b[38;2;177;185;249m\u{276f}\x1b[0m"));
+    assert!(output.contains("\x1b[38;2;78;186;101m\u{25c9}\x1b[0m"));
+    assert!(output.contains("\x1b[1mOpenAI\x1b[0m"));
+}
+
+#[test]
+fn colored_redraw_moves_up_thirteen_lines() {
+    let output = render_selector(
+        1,
+        &BTreeSet::new(),
+        &RenderState {
+            first_render: false,
+            supports_color: true,
+        },
+    );
+
+    assert!(output.starts_with("\x1b[13A"));
+}
+
+#[test]
+fn uncolored_selector_renders_exact_cursor_and_selection_lines() {
+    let output = render_selector(
+        0,
+        &BTreeSet::from([0]),
+        &RenderState {
+            first_render: true,
+            supports_color: false,
+        },
+    );
+
+    assert!(output.contains("  \u{276f} \u{25c9} OpenAI  GPT-4o, GPT-4o-mini, o3-mini\n"));
+    assert!(output.contains("    \u{25cb} Anthropic  Claude Fable"));
 }

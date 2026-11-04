@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use std::io::{self, BufRead, Write};
 
-use crate::terminal_styling::{bold, grey};
+use crate::terminal_styling::{blue, bold, grey};
 
 use super::PROVIDERS;
 
@@ -30,15 +30,28 @@ pub fn parse_selection(input: &str) -> ParseOutcome {
         if part.is_empty() {
             continue;
         }
-        let Ok(value) = part.parse::<usize>() else {
-            return ParseOutcome::Invalid;
+        let value = match part.parse::<i128>() {
+            Ok(value) => value,
+            Err(_)
+                if !part.strip_prefix(['-', '+']).unwrap_or(part).is_empty()
+                    && part
+                        .strip_prefix(['-', '+'])
+                        .unwrap_or(part)
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit()) =>
+            {
+                i128::MIN
+            }
+            Err(_) => return ParseOutcome::Invalid,
         };
         numbers.push(value);
     }
     let valid: BTreeSet<usize> = numbers
         .into_iter()
-        .filter(|value| *value >= 1 && *value <= PROVIDERS.len())
-        .filter_map(|value| value.checked_sub(1))
+        .filter_map(|value| {
+            let index = usize::try_from(value.checked_sub(1)?).ok()?;
+            (index < PROVIDERS.len()).then_some(index)
+        })
         .collect();
     if valid.is_empty() {
         ParseOutcome::OutOfRange
@@ -114,7 +127,7 @@ pub fn select_fallback(
         write!(
             writer,
             "  {} Provider(s): ",
-            bold("\u{276f}", supports_color)
+            blue("\u{276f}", supports_color)
         )?;
         writer.flush()?;
         let mut line = String::new();

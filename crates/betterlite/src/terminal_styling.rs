@@ -1,5 +1,7 @@
 use std::io::{self, IsTerminal as _};
 
+use betterlite_config::loader::EnvironmentLookup;
+
 const ORANGE: &str = "\x1b[38;2;215;119;87m";
 const DIM: &str = "\x1b[2m";
 const BOLD: &str = "\x1b[1m";
@@ -9,8 +11,8 @@ const GREY: &str = "\x1b[38;2;153;153;153m";
 const RESET: &str = "\x1b[0m";
 
 #[must_use]
-pub fn supports_color(no_color: bool) -> bool {
-    if no_color {
+pub fn supports_color(environment: &dyn EnvironmentLookup) -> bool {
+    if environment.lookup("NO_COLOR").is_some() {
         false
     } else {
         io::stdout().is_terminal()
