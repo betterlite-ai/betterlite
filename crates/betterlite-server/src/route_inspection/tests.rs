@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::io;
+use std::str;
 use std::sync::{Arc, Mutex};
 
 use tracing::subscriber::with_default;
@@ -154,13 +155,15 @@ fn endpoint_name_error_is_logged_and_dropped() {
 struct CaptureWriter(Arc<Mutex<String>>);
 
 impl io::Write for CaptureWriter {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
-        let text = String::from_utf8_lossy(buffer);
-        self.0
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let text = str::from_utf8(buf)
+            .map_err(|source| io::Error::new(io::ErrorKind::InvalidData, source))?;
+        let mut captured = self
+            .0
             .lock()
-            .map_err(|_| io::Error::other("capture writer lock poisoned"))?
-            .push_str(&text);
-        Ok(buffer.len())
+            .map_err(|source| io::Error::other(source.to_string()))?;
+        captured.push_str(text);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {

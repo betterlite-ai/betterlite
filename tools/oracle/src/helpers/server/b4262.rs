@@ -68,35 +68,43 @@ impl Helper for Op {
             )),
             Input::GetRoutesForMountedApp { route } => json!(get_routes_for_mounted_app(route)),
             Input::MountedSubRouteInfo { mount_path, route } => {
-                let mount = Route {
-                    path: Some(mount_path.clone()),
-                    methods: None,
-                    name: None,
-                    endpoint: None,
-                    app_name: None,
-                    app: Some(vec![route.clone()]),
-                };
-                let result = get_routes_for_mounted_app(&mount)
-                    .into_iter()
-                    .next()
-                    .map_or(Value::Null, |info| json!(info));
-                json!({"result": result})
+                mounted_sub_route_output(mount_path, route)
             }
             Input::SafeGetEndpointName {
                 endpoint_name,
                 class_name,
                 fail,
-            } => json!({
-                "result": safe_get_endpoint_name(
-                    "oracle endpoint",
-                    &Endpoint {
-                        name: endpoint_name.clone(),
-                        class_name: class_name.clone(),
-                        fail: *fail,
-                    },
-                )
-            }),
+            } => safe_endpoint_output(endpoint_name, class_name, *fail),
         };
         Ok(output)
     }
+}
+
+fn mounted_sub_route_output(mount_path: &str, route: &Route) -> Value {
+    let mount = Route {
+        path: Some(mount_path.to_owned()),
+        methods: None,
+        name: None,
+        endpoint: None,
+        app_name: None,
+        app: Some(vec![route.clone()]),
+    };
+    let result = get_routes_for_mounted_app(&mount)
+        .into_iter()
+        .next()
+        .map_or(Value::Null, |info| json!(info));
+    json!({"result": result})
+}
+
+fn safe_endpoint_output(
+    endpoint_name: &Option<String>,
+    class_name: &Option<String>,
+    fail: bool,
+) -> Value {
+    let endpoint = Endpoint {
+        name: endpoint_name.clone(),
+        class_name: class_name.clone(),
+        fail,
+    };
+    json!({"result": safe_get_endpoint_name("oracle endpoint", &endpoint)})
 }
