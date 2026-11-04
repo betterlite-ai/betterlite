@@ -1,5 +1,6 @@
 import os
 import sys
+import tempfile
 from collections.abc import Callable
 from contextlib import redirect_stdout
 from io import StringIO
@@ -44,14 +45,7 @@ def _module(name: str) -> ModuleType:
 
 
 def _worker_environment(values: dict[str, str]) -> dict[str, str]:
-    inherited = {
-        key: value
-        for key, value in os.environ.items()
-        if key.casefold()
-        not in {"prometheus_multiproc_dir", "prometheus-multiproc-dir"}
-    }
-    inherited.update(values)
-    return inherited
+    return values
 
 
 def _capture_hypercorn(options: LaunchOptions) -> tuple[dict[str, Json], str]:
@@ -320,6 +314,7 @@ def run(input_value: dict[str, Json]) -> Json:
             patch.dict(sys.modules, {"litellm.proxy.prometheus_cleanup": cleanup}),
             patch.dict(os.environ, _worker_environment(environment), clear=True),
             patch("os.makedirs", skip_makedirs),
+            patch.object(tempfile, "gettempdir", lambda: environment.get("TMPDIR", "")),
             redirect_stdout(StringIO()),
         ):
             setup_directory = cast(

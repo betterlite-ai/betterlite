@@ -5,9 +5,11 @@ call:
     function: prometheus_directory
     workers: 2
     settings: null
-    metrics_port: null
+    metrics_port: 9000
     environment:
+      TMPDIR: /tmp
       prometheus_multiproc_dir: /tmp/metrics-lower
-env: {}
+env:
+  TMPDIR: /tmp
 compare:
   ignore: []

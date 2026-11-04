@@ -7,7 +7,9 @@ call:
     settings:
       callbacks: prometheus
     metrics_port: null
-    environment: {}
-env: {}
+    environment:
+      TMPDIR: /tmp
+env:
+  TMPDIR: /tmp
 compare:
   ignore: []
