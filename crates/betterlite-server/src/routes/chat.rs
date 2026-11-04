@@ -13,9 +13,9 @@ use betterlite_error::envelope::{EnvelopeError, error_body_call_id};
 use betterlite_error::normalize::class::Class;
 use betterlite_error::normalize::provider::provider_facts;
 use betterlite_error::normalize::{ErrorFacts, Normalizer};
-use betterlite_openai::chat::ChatRequest;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
+use betterlite_openai::chat::{ChatRequest, RequestError};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use serde::Serialize;
 use std::sync::Arc;
@@ -104,14 +104,19 @@ async fn chat_completion(
         .and_then(|value| value.to_str().ok())
         .filter(|value| (1..=MAX_CALL_ID_LENGTH).contains(&value.len()))
         .map_or_else(|| Uuid::new_v4().to_string(), str::to_owned);
-    let call = CallContext {
+    let mut call = CallContext {
         id: &call_id,
         include_in_body: state.include_call_id,
         errors: &state.errors,
     };
     let request = match ChatRequest::parse(&body) {
         Ok(request) => request,
-        Err(source) => return failure(&ChatError::from(source), call, None),
+        Err(source) => {
+            if let RequestError::Body { source: json } = &source {
+                call.include_in_body &= !(json.is_syntax() || json.is_eof());
+            }
+            return failure(&ChatError::from(source), call, None);
+        }
     };
     let deployment = match picked_deployment(&state, &request, path_model) {
         Ok(deployment) => deployment,
@@ -163,10 +168,8 @@ fn failure(
 ) -> Response {
     let failure = error.failure();
     let status = StatusCode::from_u16(failure.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-    let message = call
-        .errors
-        .redactor
-        .redact_internal_details(&error.to_string());
+    let redactor = &call.errors.redactor;
+    let message = redactor.redact_internal_details(&error.to_string());
     log_normalized_error(error, &message, status.as_u16(), call.errors);
     let provider_specific_fields =
         matches!(error, ChatError::UnknownModel { .. }).then(|| RouterErrorFields {
@@ -175,13 +178,10 @@ fn failure(
     let body = ErrorBody {
         error: ErrorObject {
             message,
-            error_type: call
-                .errors
-                .redactor
-                .redact_internal_details(&failure.error_type),
+            error_type: redactor.redact_internal_details(&failure.error_type),
             param: failure
                 .param
-                .map(|param| call.errors.redactor.redact_internal_details(&param)),
+                .map(|param| redactor.redact_internal_details(&param)),
             code: status.as_u16().to_string(),
             provider_specific_fields,
             litellm_call_id: error_body_call_id(call.include_in_body, Some(call.id))

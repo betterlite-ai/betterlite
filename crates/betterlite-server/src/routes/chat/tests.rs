@@ -474,26 +474,30 @@ async fn normalization_gateway(enabled: bool) -> (ProxiedClient, String, JoinSet
 }
 
 #[rstest]
-#[case::disabled(false, "client-id", r#"{"model":"g","messages":[]}"#, 429)]
-#[case::client_id(true, "exact-client-id", r#"{"model":"g","messages":[]}"#, 429)]
-#[case::generated(true, "", r#"{"model":"g","messages":[]}"#, 429)]
-#[case::too_long(true, &"x".repeat(257), r#"{"model":"g","messages":[]}"#, 429)]
-#[case::maximum_length(true, &"x".repeat(256), r#"{"model":"g","messages":[]}"#, 429)]
-#[case::stream_error(true, "stream-id", r#"{"model":"g","messages":[],"stream":true}"#, 429)]
-#[case::parse_error(true, "parse-id", "{", 400)]
+#[case::disabled(false, "client-id", r#"{"model":"g","messages":[]}"#, (429, false))]
+#[case::client_id(true, "exact-client-id", r#"{"model":"g","messages":[]}"#, (429, true))]
+#[case::generated(true, "", r#"{"model":"g","messages":[]}"#, (429, true))]
+#[case::too_long(true, &"x".repeat(257), r#"{"model":"g","messages":[]}"#, (429, true))]
+#[case::maximum_length(true, &"x".repeat(256), r#"{"model":"g","messages":[]}"#, (429, true))]
+#[case::stream_error(true, "stream-id", r#"{"model":"g","messages":[],"stream":true}"#, (429, true))]
+#[case::parse_error(true, "parse-id", "{", (400, false))]
+#[case::syntax_error(true, "syntax-id", "!", (400, false))]
+#[case::schema_error(true, "schema-id", r#"{"model":"g"}"#, (400, true))]
+#[case::unsupported_parameter(true, "unsupported-id", r#"{"model":"g","messages":[],"mock_response":"blocked"}"#, (400, true))]
 #[case::unknown_model(
     true,
     "router-id",
     r#"{"model":"Bearer sk-secretsecretsecretsecret","messages":[]}"#,
-    400
+    (400, true)
 )]
 #[tokio::test]
 async fn error_normalization_tests_behavior(
     #[case] enabled: bool,
     #[case] id: &str,
     #[case] request: &str,
-    #[case] status: u16,
+    #[case] expected: (u16, bool),
 ) {
+    let (status, include_id) = expected;
     let (client, url, mut tasks) = normalization_gateway(enabled).await;
     let response = client
         .client
@@ -516,7 +520,7 @@ async fn error_normalization_tests_behavior(
     let body = serde_json::from_slice::<CallIdReply>(&bytes).unwrap();
     assert_eq!(
         body.error.litellm_call_id.as_deref(),
-        enabled.then_some(actual_id)
+        include_id.then_some(actual_id)
     );
     assert!(body.error.normalized_error.is_none());
     let text = String::from_utf8(bytes.to_vec()).unwrap();
