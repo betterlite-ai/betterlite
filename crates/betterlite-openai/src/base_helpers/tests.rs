@@ -309,9 +309,10 @@ fn modify_params_default_and_env() {
     let modify = |source: &str, environment: &[(&str, &str)]| load_settings(source, environment).0;
     assert!(!modify("", &[]));
     assert!(!modify("", &[("LITELLM_MODIFY_PARAMS", "")]));
-    assert!(modify("", &[("LITELLM_MODIFY_PARAMS", "false")]));
-    assert!(modify("", &[("LITELLM_MODIFY_PARAMS", "0")]));
-    assert!(modify("", &[("LITELLM_MODIFY_PARAMS", " ")]));
+    assert!(!modify("", &[("LITELLM_MODIFY_PARAMS", "false")]));
+    assert!(!modify("", &[("LITELLM_MODIFY_PARAMS", "0")]));
+    assert!(!modify("", &[("LITELLM_MODIFY_PARAMS", " ")]));
+    assert!(modify("", &[("LITELLM_MODIFY_PARAMS", " Yes ")]));
     let configured_off = "litellm_settings:\n  modify_params: false\n";
     assert!(!modify(
         configured_off,

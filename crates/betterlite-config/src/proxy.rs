@@ -4,6 +4,7 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use betterlite_env::EnvError;
 use netrc_rs::Netrc;
 use percent_encoding::percent_decode_str;
 use secrecy::SecretString;
@@ -46,13 +47,18 @@ pub enum ProxyWarning {
 }
 
 impl ProxyPolicy {
-    #[must_use]
-    pub fn resolve(trust: &ProxyTrust, environment: &BTreeMap<String, String>) -> Self {
-        let is_true = |name: &str| {
-            environment
-                .get(name)
-                .is_some_and(|value| value.trim().eq_ignore_ascii_case("true"))
-        };
+    pub fn resolve(
+        trust: &ProxyTrust,
+        environment: &BTreeMap<String, String>,
+    ) -> Result<Self, EnvError> {
+        let text = |name| environment.get(name).map_or("", String::as_str);
+        let disable = betterlite_env::flag(
+            "DISABLE_AIOHTTP_TRUST_ENV",
+            text("DISABLE_AIOHTTP_TRUST_ENV"),
+        )?
+        .unwrap_or(false);
+        let enabled =
+            betterlite_env::flag("AIOHTTP_TRUST_ENV", text("AIOHTTP_TRUST_ENV"))?.unwrap_or(false);
         let mut proxies = environment_proxies(environment);
         let no_proxy = proxies.remove("no").unwrap_or_default();
         let mut primary = BTreeMap::new();
@@ -61,21 +67,21 @@ impl ProxyPolicy {
             let route = parse_route(name, &format!("{prefix}{value}"), None);
             primary.insert(name.clone(), route);
         }
-        if trust.disable_aiohttp_trust_env || is_true("DISABLE_AIOHTTP_TRUST_ENV") {
+        if trust.disable_aiohttp_trust_env || disable {
             primary.clear();
         }
         let mut warnings = Vec::new();
-        let fallback = if trust.aiohttp_trust_env || is_true("AIOHTTP_TRUST_ENV") {
+        let fallback = if trust.aiohttp_trust_env || enabled {
             fallback_routes(&proxies, environment, &mut warnings)
         } else {
             BTreeMap::new()
         };
-        Self {
+        Ok(Self {
             no_proxy,
             primary,
             fallback,
             warnings,
-        }
+        })
     }
 
     #[must_use]

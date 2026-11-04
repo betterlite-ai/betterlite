@@ -1,4 +1,4 @@
-use betterlite_db::database_url_policy::flag::{FlagValue, str_to_bool, token_auth_flag_enabled};
+use betterlite_db::database_url_policy::flag::{FlagValue, token_auth_flag_enabled};
 use betterlite_db::database_url_policy::policy::{
     ConfiguredSeconds, DatabaseTimeoutSettings, PoolTimeouts, TimeoutError,
     build_db_connection_url_params, pg_options_with_timeouts, unsupported_db_scheme,
@@ -47,7 +47,10 @@ impl crate::helpers::Helper for Op {
                     .map_err(|error| helper_error("ValueError", error.to_string()))
             }
             Input::StrToBool { value } => {
-                Ok(serde_json::Value::Bool(str_to_bool(value.as_deref())))
+                let enabled = betterlite_env::flag("value", value.as_deref().unwrap_or_default())
+                    .map_err(|error| helper_error("ValueError", error.to_string()))?
+                    .unwrap_or(false);
+                Ok(serde_json::Value::Bool(enabled))
             }
         }
     }

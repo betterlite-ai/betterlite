@@ -73,7 +73,7 @@ async fn http_proxies_proxy_policy_tests_behavior(
         .finish();
     let _guard = set_default(subscriber);
     let trust = ProxyTrust::default();
-    let policy = Arc::new(ProxyPolicy::resolve(&trust, &environment));
+    let policy = Arc::new(ProxyPolicy::resolve(&trust, &environment).unwrap());
     let client = ProxiedClient::build(ClientBuilder::new(), &policy).unwrap();
     let url = Url::parse(&target.replace("LISTENER", &address)).unwrap();
     let request = Request::new(Method::GET, url);
@@ -123,10 +123,7 @@ async fn posts_json_with_a_bearer_key_and_bounded_answer(
 ) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
-    let policy = Arc::new(ProxyPolicy::resolve(
-        &ProxyTrust::default(),
-        &BTreeMap::new(),
-    ));
+    let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap());
     let client = ProxiedClient::outbound(&policy).unwrap();
     let key = SecretString::from("sk-test");
     let post = JsonPost {
@@ -159,10 +156,7 @@ async fn posts_json_with_a_bearer_key_and_bounded_answer(
 
 #[tokio::test]
 async fn reports_a_refused_connection_as_a_failed_request() {
-    let policy = Arc::new(ProxyPolicy::resolve(
-        &ProxyTrust::default(),
-        &BTreeMap::new(),
-    ));
+    let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap());
     let client = ProxiedClient::outbound(&policy).unwrap();
     let key = SecretString::from("sk-test");
     let post = JsonPost {
@@ -186,7 +180,7 @@ fn replays_the_proxy_policy_corpus(#[files("fuzz/corpus/proxy_policy/*")] path: 
         ("NO_PROXY".to_owned(), no_proxy.to_owned()),
     ]);
     let trust = ProxyTrust::default();
-    let policy = Arc::new(ProxyPolicy::resolve(&trust, &environment));
+    let policy = Arc::new(ProxyPolicy::resolve(&trust, &environment).unwrap());
     let _route = policy.route(&Url::parse("https://api.example.com/v1").unwrap());
     ProxiedClient::build(ClientBuilder::new(), &policy).unwrap();
 }

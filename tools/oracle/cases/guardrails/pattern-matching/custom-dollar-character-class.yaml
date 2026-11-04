@@ -1,0 +1,1 @@
+{"kind":"helper","name":"custom-dollar-character-class","call":{"b3693":{"function":"add","patterns":[{"pattern_type":"regex","pattern":"secret[$]","action":"MASK"}],"text":"secret$"}},"env":{},"compare":{"ignore":[]}}

@@ -1,0 +1,5 @@
+task: B5085
+deviations:
+  - what: A path setting starting with `~name` fails with a config error naming its environment variable instead of expanding a known user's home directory or preserving an unknown username.
+    why: Looking up another user's home needs getpwnam. The forbidden-unsafe rule keeps it out of reach, and no pinned crate offers it safely. Failing loudly avoids writing to a relative folder named `~name` under the working directory.
+    link: https://github.com/python/cpython/blob/v3.13.16/Lib/posixpath.py#L229-L280

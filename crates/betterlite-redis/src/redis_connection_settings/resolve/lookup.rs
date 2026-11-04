@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use serde::de::{DeserializeOwned, Error as _};
 
 use super::super::allowlists::{DIRECT_COMMON, DIRECT_SYNC_ONLY};
-use super::super::coercion::{coerce_bool, coerce_float, coerce_int};
+use super::super::coercion::{coerce_bool, coerce_number};
 use super::super::environment::EnvironmentLookup;
 use super::super::error::RedisSettingsError;
 use super::super::model::nodes::{NodeInput, NodesInput};
@@ -48,7 +48,7 @@ where
         .into_iter()
         .map(|node| {
             let (host, raw_port) = node.into_parts();
-            let port = coerce_int(Some(raw_port))
+            let port = coerce_number("REDIS_PORT", Some(raw_port))?
                 .ok_or_else(|| on_error(serde_json::Error::custom("invalid node port")))?;
             Ok(T::from_parts(host, port))
         })
@@ -57,23 +57,23 @@ where
 }
 
 pub(super) trait Coerce: Sized {
-    fn coerce(value: Option<Scalar<Self>>) -> Option<Self>;
+    fn coerce(name: &str, value: Option<Scalar<Self>>) -> Result<Option<Self>, RedisSettingsError>;
 }
 
 impl Coerce for i64 {
-    fn coerce(value: Option<Scalar<Self>>) -> Option<Self> {
-        coerce_int(value)
+    fn coerce(name: &str, value: Option<Scalar<Self>>) -> Result<Option<Self>, RedisSettingsError> {
+        coerce_number(name, value)
     }
 }
 
 impl Coerce for f64 {
-    fn coerce(value: Option<Scalar<Self>>) -> Option<Self> {
-        coerce_float(value)
+    fn coerce(name: &str, value: Option<Scalar<Self>>) -> Result<Option<Self>, RedisSettingsError> {
+        coerce_number(name, value)
     }
 }
 
 impl Coerce for bool {
-    fn coerce(value: Option<Scalar<Self>>) -> Option<Self> {
-        coerce_bool(value)
+    fn coerce(name: &str, value: Option<Scalar<Self>>) -> Result<Option<Self>, RedisSettingsError> {
+        coerce_bool(name, value)
     }
 }

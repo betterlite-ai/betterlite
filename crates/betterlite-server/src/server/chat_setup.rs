@@ -13,6 +13,11 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum ChatSetupError {
     #[error(transparent)]
+    Environment {
+        #[from]
+        source: betterlite_env::EnvError,
+    },
+    #[error(transparent)]
     Deployment {
         #[from]
         source: DeploymentError,
@@ -56,7 +61,7 @@ pub fn chat_executor(
     let policy = Arc::new(ProxyPolicy::resolve(
         &config.litellm_settings.proxy_trust,
         environment,
-    ));
+    )?);
     Ok(ChatExecutor {
         client: ProxiedClient::outbound(&policy)?,
         deployments,

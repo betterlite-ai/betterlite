@@ -1,0 +1,1 @@
+{"kind":"helper","name":"flags-ascii","call":{"b3693":{"function":"add","patterns":[{"pattern_type":"regex","pattern":"(?a:\\w+)","action":"MASK"}],"text":"SECRET"}},"env":{},"compare":{"ignore":[]}}

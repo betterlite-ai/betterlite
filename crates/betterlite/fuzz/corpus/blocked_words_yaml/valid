@@ -1,0 +1,2 @@
+blocked_words:
+- {keyword: SECRET, action: MASK, description: hidden}

@@ -40,10 +40,7 @@ fn executor(entries: &str, seed: u64) -> ChatExecutor {
         .iter()
         .map(|deployment| ChatDeployment::resolve(deployment, &defaults).unwrap())
         .collect();
-    let policy = Arc::new(ProxyPolicy::resolve(
-        &ProxyTrust::default(),
-        &BTreeMap::new(),
-    ));
+    let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap());
     ChatExecutor {
         client: ProxiedClient::outbound(&policy).unwrap(),
         deployments,

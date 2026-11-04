@@ -1,0 +1,1 @@
+{"kind":"helper","name":"custom-strict-end","call":{"b3693":{"function":"add","patterns":[{"pattern_type":"regex","pattern":"secret\\Z","action":"MASK"}],"text":"secret\n"}},"env":{},"compare":{"ignore":[]}}

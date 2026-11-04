@@ -1,0 +1,13 @@
+kind: helper
+name: responses-output-details-image-results
+call:
+  responses_output_details:
+    images: [{image_url: {url: 'data:image/png;base64,YQ=='}}]
+    finish_reason: stop
+    annotations: null
+    usage: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/images/0/id
+      why: The image generation id is a random UUID.

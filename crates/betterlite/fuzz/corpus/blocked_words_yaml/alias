@@ -1,0 +1,1 @@
+blocked_words: [&word {keyword: x, action: BLOCK}, *word]

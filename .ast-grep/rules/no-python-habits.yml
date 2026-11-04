@@ -17,11 +17,7 @@ ignores:
   - crates/betterlite-bedrock/src/image_models/response.rs
   - crates/betterlite-bedrock/src/image_models/sizing.rs
   - crates/betterlite-bedrock/src/message_usage.rs
-  - crates/betterlite-cli/src/keyring.rs
-  - crates/betterlite-config/src/proxy.rs
-  - crates/betterlite-config/src/sections/billing_metrics.rs
   - crates/betterlite-config/src/sections/redis_credentials/provider.rs
-  - crates/betterlite-config/src/sections/redis_credentials.rs
   - crates/betterlite-config/src/sections/scheduled_job_stagger.rs
   - crates/betterlite-config/src/sections/settings/settings_resolution.rs
   - crates/betterlite-context/src/a2a_text.rs
@@ -29,7 +25,6 @@ ignores:
   - crates/betterlite-core/src/agents/provider/request_id.rs
   - crates/betterlite-core/src/api/codex_history_tools.rs
   - crates/betterlite-core/src/api/responses_input_content.rs
-  - crates/betterlite-db/src/database_url_policy/flag.rs
   - crates/betterlite-db/src/database_url_policy/python_repr.rs
   - crates/betterlite-db/src/identity_rows.rs
   - crates/betterlite-error/src/parse.rs
@@ -42,7 +37,6 @@ ignores:
   - crates/betterlite-harness/src/providers/opencode/wire.rs
   - crates/betterlite-lens/src/sources/execution_id.rs
   - crates/betterlite-lens/src/sources/row_decode.rs
-  - crates/betterlite-logging/src/datadog/tagging.rs
   - crates/betterlite-logging/src/otel/model/vocabulary/span_names.rs
   - crates/betterlite-logging/src/python_json.rs
   - crates/betterlite-logging/src/s3_transport/option_value.rs
@@ -55,8 +49,6 @@ ignores:
   - crates/betterlite-prompts/src/schema/regex_walk.rs
   - crates/betterlite-prompts/src/schema.rs
   - crates/betterlite-redact/src/secret/pattern.rs
-  - crates/betterlite-redact/src/sentry/settings.rs
-  - crates/betterlite-redis/src/redis_connection_settings/coercion.rs
   - crates/betterlite-redis/src/redis_connection_settings/iam.rs
   - crates/betterlite-redis/src/redis_connection_settings/model/nodes.rs
   - crates/betterlite-router/src/routing_decision_headers/python_text.rs

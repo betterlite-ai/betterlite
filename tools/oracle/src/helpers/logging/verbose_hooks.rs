@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::sync::Arc;
 
 use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink, VerboseHooks};
@@ -46,23 +47,39 @@ const fn default_logger_only() -> Payload {
 struct FixtureLogger {
     fails: bool,
     debug_enabled: bool,
+    records: Cell<Vec<betterlite_logging::verbose_hooks::LogRecord>>,
 }
 
 impl LoggerSink for FixtureLogger {
-    fn debug(&self, _payload: &Payload) -> bool {
-        !self.fails
+    fn debug(&self, payload: &Payload) -> bool {
+        self.record("DEBUG", payload)
     }
 
-    fn info(&self, _payload: &Payload) -> bool {
-        !self.fails
+    fn info(&self, payload: &Payload) -> bool {
+        self.record("INFO", payload)
     }
 
-    fn error(&self, _payload: &Payload) -> bool {
-        !self.fails
+    fn error(&self, payload: &Payload) -> bool {
+        self.record("ERROR", payload)
     }
 
     fn debug_enabled(&self) -> bool {
         self.debug_enabled
+    }
+}
+
+impl FixtureLogger {
+    fn record(&self, level: &str, payload: &Payload) -> bool {
+        if self.fails {
+            return false;
+        }
+        let mut records = self.records.take();
+        records.push(betterlite_logging::verbose_hooks::LogRecord {
+            level: level.to_owned(),
+            payload: payload.clone(),
+        });
+        self.records.set(records);
+        true
     }
 }
 
@@ -101,6 +118,7 @@ fn build_hooks(
         logger: FixtureLogger {
             fails: logger_fails,
             debug_enabled: logger_debug_enabled,
+            records: Cell::new(Vec::new()),
         },
         console: FixtureConsole {
             fails: console_fails,
@@ -122,10 +140,9 @@ impl crate::helpers::Helper for Op {
                 set_verbose,
                 logger_fails,
                 console_fails,
-            } => {
-                let hooks = build_hooks((*logger_fails, *console_fails), false, set_verbose)?;
-                Ok(json!(hooks.main_print_verbose(payload.clone())))
-            }
+            } => run_logged(set_verbose, (*logger_fails, *console_fails), |hooks| {
+                hooks.main_print_verbose(payload.clone())
+            }),
             Input::Utils {
                 payload,
                 set_verbose,
@@ -133,14 +150,9 @@ impl crate::helpers::Helper for Op {
                 logger_only,
                 logger_fails,
                 console_fails,
-            } => {
-                let hooks = build_hooks((*logger_fails, *console_fails), false, set_verbose)?;
-                Ok(json!(hooks.utils_print_verbose(
-                    payload.clone(),
-                    log_level,
-                    logger_only
-                )))
-            }
+            } => run_logged(set_verbose, (*logger_fails, *console_fails), |hooks| {
+                hooks.utils_print_verbose(payload.clone(), log_level, logger_only)
+            }),
             Input::Active {
                 set_verbose,
                 logger_debug_enabled,
@@ -150,6 +162,22 @@ impl crate::helpers::Helper for Op {
             }
         }
     }
+}
+
+fn run_logged<F>(
+    set_verbose: &Payload,
+    sink_fails: (bool, bool),
+    operation: F,
+) -> crate::helpers::HelperResult
+where
+    F: FnOnce(
+        &VerboseHooks<FixtureLogger, FixtureConsole>,
+    ) -> betterlite_logging::verbose_hooks::HookResult,
+{
+    let hooks = build_hooks(sink_fails, false, set_verbose)?;
+    let mut result = operation(&hooks);
+    result.logs = hooks.logger.records.take();
+    Ok(json!(result))
 }
 
 #[path = "verbose_hooks/tests.rs"]

@@ -1,0 +1,1 @@
+{"kind":"helper","name":"pattern-spans-digit-gap","call":{"b3693":{"function":"spans","pattern":"\\d{3}","keyword":"id","allow_word_numbers":true,"text":"id 2 123"}},"env":{},"compare":{"ignore":[]}}

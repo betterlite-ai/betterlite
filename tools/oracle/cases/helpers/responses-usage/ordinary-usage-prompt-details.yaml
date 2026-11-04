@@ -1,0 +1,7 @@
+kind: helper
+name: responses-usage-ordinary-usage-prompt-details
+call:
+  responses_usage:
+    usage: {prompt_tokens: 2, completion_tokens: 3, total_tokens: 5, prompt_tokens_details: {cached_tokens: "1.0"}}
+env: {}
+compare: {ignore: []}

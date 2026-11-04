@@ -45,7 +45,7 @@ async fn gateway(upstream: &TcpListener, tasks: &mut JoinSet<()>) -> (ProxiedCli
             .await
             .unwrap();
     });
-    let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &environment));
+    let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &environment).unwrap());
     (ProxiedClient::outbound(&policy).unwrap(), url)
 }
 

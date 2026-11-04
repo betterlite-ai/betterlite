@@ -669,3 +669,34 @@ fn azure_ad_provider_reuses_the_same_fetcher_across_calls() {
     assert_eq!(fetcher.call_count(), 2);
     assert_eq!(Arc::strong_count(&fetcher), 2);
 }
+
+#[test]
+fn shared_env_redis_credential_flag() {
+    let source = "litellm_settings:\n  cache_params:\n    aws_iam_user_name: app\n    aws_iam_cache_name: cache\n    aws_iam_region: eu-west-1\n    ssl: true\n";
+    let enabled = BTreeMap::from([("REDIS_AWS_IAM_AUTH".to_owned(), " Yes ".to_owned())]);
+    assert!(matches!(
+        load(source, enabled).provider,
+        Some(Provider::Aws(_))
+    ));
+    let empty = BTreeMap::from([("REDIS_AWS_IAM_AUTH".to_owned(), String::new())]);
+    assert!(load(source, empty).provider.is_none());
+    let invalid = BTreeMap::from([("REDIS_AWS_IAM_AUTH".to_owned(), "maybe-secret".to_owned())]);
+    let error = ConfigLoader { lookup: invalid }
+        .load(source)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("REDIS_AWS_IAM_AUTH"));
+    assert!(!error.contains("maybe-secret"));
+}
+
+#[test]
+fn shared_env_redis_credential_flag_names_reference() {
+    let source = "litellm_settings: {cache_params: {aws_iam_auth: os.environ/CACHE_AUTH_FLAG}}";
+    let lookup = BTreeMap::from([("CACHE_AUTH_FLAG".to_owned(), "maybe".to_owned())]);
+    let error = ConfigLoader { lookup }
+        .load(source)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("CACHE_AUTH_FLAG"), "{error}");
+    assert!(!error.contains("maybe"));
+}

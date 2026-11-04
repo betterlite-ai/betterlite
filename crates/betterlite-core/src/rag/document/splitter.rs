@@ -1,9 +1,12 @@
+pub mod output;
+
+use std::collections::VecDeque;
 use std::num::TryFromIntError;
 
+use output::{SplitError, SplitOutput, push_joined};
 use thiserror::Error;
 
 pub const DEFAULT_MAX_RECURSE_DEPTH: u32 = 100;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub enum ChunkConfigError {
     #[error("chunk_size must be greater than zero, got {chunk_size}")]
@@ -27,7 +30,14 @@ pub enum ChunkConfigError {
 }
 
 pub trait TextSplitter {
-    fn split_text(&self, text: &str) -> Vec<String>;
+    fn split_text(&self, text: &str) -> Result<Vec<String>, SplitError>;
+}
+
+#[derive(Clone, Copy)]
+struct SeparatorPlan<'plan> {
+    selected: &'plan str,
+    remaining: &'plan [String],
+    depth: u32,
 }
 
 #[derive(Debug)]
@@ -38,8 +48,10 @@ pub struct RecursiveCharacterTextSplitter {
 }
 
 impl TextSplitter for RecursiveCharacterTextSplitter {
-    fn split_text(&self, text: &str) -> Vec<String> {
-        self.split_recursive(text, &self.separators, 0)
+    fn split_text(&self, text: &str) -> Result<Vec<String>, SplitError> {
+        let mut output = SplitOutput::default();
+        self.split_recursive(text, &self.separators, 0, &mut output)?;
+        Ok(output.chunks)
     }
 }
 
@@ -89,9 +101,10 @@ impl RecursiveCharacterTextSplitter {
         text: &str,
         separators: &[String],
         depth: u32,
-    ) -> Vec<String> {
+        output: &mut SplitOutput,
+    ) -> Result<(), SplitError> {
         if depth > DEFAULT_MAX_RECURSE_DEPTH {
-            return chunk_by_chars(text, self.chunk_size);
+            return chunk_by_chars(text, self.chunk_size, output);
         }
 
         let (separator, new_separators) = select_separator(text, separators);
@@ -101,44 +114,51 @@ impl RecursiveCharacterTextSplitter {
             text.split(separator).collect()
         };
 
-        self.assemble_chunks(&splits, separator, new_separators, depth)
+        let plan = SeparatorPlan {
+            selected: separator,
+            remaining: new_separators,
+            depth,
+        };
+        self.assemble_chunks(&splits, plan, output)
     }
 
     fn assemble_chunks(
         &self,
         splits: &[&str],
-        separator: &str,
-        new_separators: &[String],
-        depth: u32,
-    ) -> Vec<String> {
-        let mut final_chunks: Vec<String> = Vec::new();
-        let mut good_splits: Vec<&str> = Vec::new();
+        plan: SeparatorPlan<'_>,
+        output: &mut SplitOutput,
+    ) -> Result<(), SplitError> {
+        let mut good_splits: VecDeque<&str> = VecDeque::new();
         for &split in splits {
             if split.chars().count() < self.chunk_size {
-                good_splits.push(split);
+                good_splits.push_back(split);
                 continue;
             }
             if !good_splits.is_empty() {
-                final_chunks.extend(self.merge_splits(&good_splits, separator));
+                self.merge_splits(&good_splits, plan.selected, output)?;
                 good_splits.clear();
             }
-            if new_separators.is_empty() {
-                final_chunks.extend(self.force_split(split));
+            if plan.remaining.is_empty() {
+                self.force_split(split, output)?;
             } else {
-                let next_depth = depth.saturating_add(1);
-                final_chunks.extend(self.split_recursive(split, new_separators, next_depth));
+                let next_depth = plan.depth.saturating_add(1);
+                self.split_recursive(split, plan.remaining, next_depth, output)?;
             }
         }
         if !good_splits.is_empty() {
-            final_chunks.extend(self.merge_splits(&good_splits, separator));
+            self.merge_splits(&good_splits, plan.selected, output)?;
         }
-        final_chunks
+        Ok(())
     }
 
-    fn merge_splits(&self, splits: &[&str], separator: &str) -> Vec<String> {
+    fn merge_splits(
+        &self,
+        splits: &VecDeque<&str>,
+        separator: &str,
+        output: &mut SplitOutput,
+    ) -> Result<(), SplitError> {
         let separator_len = separator.chars().count();
-        let mut chunks: Vec<String> = Vec::new();
-        let mut current_chunk: Vec<&str> = Vec::new();
+        let mut current_chunk: VecDeque<&str> = VecDeque::new();
         let mut current_length: usize = 0;
 
         for &split in splits {
@@ -152,41 +172,40 @@ impl RecursiveCharacterTextSplitter {
                 .saturating_add(split_len)
                 .saturating_add(sep_len);
             if projected_length > self.chunk_size && !current_chunk.is_empty() {
-                push_joined(&mut chunks, &current_chunk, separator);
+                push_joined(output, &current_chunk, separator)?;
                 current_length =
                     self.evict_overlap(&mut current_chunk, current_length, separator_len);
             }
-            current_chunk.push(split);
+            current_chunk.push_back(split);
             current_length = current_length
                 .saturating_add(split_len)
                 .saturating_add(sep_len);
         }
 
         if !current_chunk.is_empty() {
-            push_joined(&mut chunks, &current_chunk, separator);
+            push_joined(output, &current_chunk, separator)?;
         }
-        chunks
+        Ok(())
     }
 
     fn evict_overlap(
         &self,
-        current_chunk: &mut Vec<&str>,
+        current_chunk: &mut VecDeque<&str>,
         current_length: usize,
         separator_len: usize,
     ) -> usize {
         let mut remaining = current_length;
         while remaining > self.chunk_overlap && current_chunk.len() > 1 {
-            let removed = current_chunk.remove(0);
+            let removed = current_chunk.pop_front().unwrap_or_default();
             remaining =
                 remaining.saturating_sub(removed.chars().count().saturating_add(separator_len));
         }
         remaining
     }
 
-    fn force_split(&self, text: &str) -> Vec<String> {
+    fn force_split(&self, text: &str, output: &mut SplitOutput) -> Result<(), SplitError> {
         let chars: Vec<char> = text.chars().collect();
         let total = chars.len();
-        let mut chunks = Vec::new();
         let mut start = 0_usize;
         let mut done = total == 0;
         while !done {
@@ -199,7 +218,7 @@ impl RecursiveCharacterTextSplitter {
                 .collect::<String>();
             let trimmed = chunk.trim_matches(is_strip_whitespace);
             if !trimmed.is_empty() {
-                chunks.push(trimmed.to_owned());
+                output.push(trimmed.to_owned())?;
             }
             if end < total {
                 start = end.saturating_sub(self.chunk_overlap);
@@ -207,7 +226,7 @@ impl RecursiveCharacterTextSplitter {
                 done = true;
             }
         }
-        chunks
+        Ok(())
     }
 }
 
@@ -224,14 +243,6 @@ fn select_separator<'sep>(text: &str, separators: &'sep [String]) -> (&'sep str,
     (separators.last().map_or("", String::as_str), &[])
 }
 
-fn push_joined(chunks: &mut Vec<String>, current_chunk: &[&str], separator: &str) {
-    let joined = current_chunk.join(separator);
-    let trimmed = joined.trim_matches(is_strip_whitespace);
-    if !trimmed.is_empty() {
-        chunks.push(trimmed.to_owned());
-    }
-}
-
 fn char_slices(text: &str) -> Vec<&str> {
     let mut result = Vec::new();
     for (start, ch) in text.char_indices() {
@@ -243,16 +254,26 @@ fn char_slices(text: &str) -> Vec<&str> {
     result
 }
 
-fn chunk_by_chars(text: &str, chunk_size: usize) -> Vec<String> {
-    let chars: Vec<char> = text.chars().collect();
-    let mut result = Vec::new();
-    let mut index = 0_usize;
-    while index < chars.len() {
-        let end = index.saturating_add(chunk_size).min(chars.len());
-        result.push(chars.get(index..end).unwrap_or_default().iter().collect());
-        index = index.saturating_add(chunk_size);
+fn chunk_by_chars(
+    text: &str,
+    chunk_size: usize,
+    output: &mut SplitOutput,
+) -> Result<(), SplitError> {
+    let mut chunk = String::new();
+    let mut chunk_chars = 0_usize;
+    for character in text.chars() {
+        chunk.push(character);
+        chunk_chars = chunk_chars.saturating_add(1);
+        if chunk_chars == chunk_size {
+            output.push(chunk)?;
+            chunk = String::new();
+            chunk_chars = 0;
+        }
     }
-    result
+    if !chunk.is_empty() {
+        output.push(chunk)?;
+    }
+    Ok(())
 }
 
 // str.strip()'s whitespace set also covers U+001C-U+001F; Rust's is_whitespace() does not.

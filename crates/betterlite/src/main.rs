@@ -122,16 +122,6 @@ fn load_config(location: &Path, environment: BTreeMap<String, String>) -> Option
         }
     }
 }
-const fn config_error_category(error: &ConfigError) -> &'static str {
-    match error {
-        ConfigError::Yaml { .. } => "yaml",
-        ConfigError::Unsupported { .. } => "unsupported_key",
-        ConfigError::MissingEnvironment { .. } => "missing_environment",
-        ConfigError::InvalidFloat { .. } => "invalid_float",
-        ConfigError::InvalidInteger { .. } => "invalid_integer",
-        ConfigError::InvalidScalar { .. } => "invalid_scalar",
-    }
-}
 fn log_config_error(error: &ConfigError, location: &Path) {
     match error {
         ConfigError::Unsupported { paths } => {
@@ -154,9 +144,10 @@ fn log_config_error(error: &ConfigError, location: &Path) {
         ConfigError::Yaml { .. }
         | ConfigError::InvalidFloat { .. }
         | ConfigError::InvalidInteger { .. }
-        | ConfigError::InvalidScalar { .. } => {
+        | ConfigError::InvalidScalar { .. }
+        | ConfigError::Environment { .. } => {
             tracing::error!(
-                category = config_error_category(error),
+                category = error.category(),
                 location = %location.display(),
                 "failed to load configuration"
             );

@@ -23,7 +23,7 @@ fn client(variables: &[(&str, &str)]) -> OtlpClient {
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
         .collect();
-    let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &environment));
+    let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &environment).unwrap());
     let tls = ClientConfig::builder_with_provider(Arc::new(aws_lc_rs::default_provider()))
         .with_safe_default_protocol_versions()
         .unwrap()

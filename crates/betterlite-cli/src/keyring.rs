@@ -6,6 +6,7 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use betterlite_config::loader::EnvironmentLookup;
+use betterlite_env::EnvError;
 use secrecy::{ExposeSecret as _, SecretString};
 use subtle::ConstantTimeEq as _;
 use thiserror::Error;
@@ -79,7 +80,7 @@ pub struct KeyringVault {
 }
 
 impl KeyringVault {
-    pub fn new(environment: &dyn EnvironmentLookup) -> Self {
+    pub fn new(environment: &dyn EnvironmentLookup) -> Result<Self, EnvError> {
         #[cfg(feature = "os-keyring")]
         let backend: Result<Arc<dyn KeyringApi>, KeyringUnusable> = Ok(Arc::new(native::Api));
         #[cfg(not(feature = "os-keyring"))]
@@ -91,16 +92,15 @@ impl KeyringVault {
         backend: Result<Arc<dyn KeyringApi>, KeyringUnusable>,
         preflight_timeout: Duration,
         environment: &dyn EnvironmentLookup,
-    ) -> Self {
-        let disabled = environment
-            .lookup(DISABLE_KEYRING_ENV_VAR)
-            .is_some_and(|value| {
-                matches!(
-                    value.trim().to_ascii_lowercase().as_str(),
-                    "1" | "true" | "yes" | "on"
-                )
-            });
-        Self {
+    ) -> Result<Self, EnvError> {
+        let disabled = betterlite_env::flag(
+            DISABLE_KEYRING_ENV_VAR,
+            &environment
+                .lookup(DISABLE_KEYRING_ENV_VAR)
+                .unwrap_or_default(),
+        )?
+        .unwrap_or(false);
+        Ok(Self {
             backend: if disabled {
                 Err(KeyringUnusable::KeyringDisabled)
             } else {
@@ -108,7 +108,7 @@ impl KeyringVault {
             },
             preflight_timeout,
             probe: None,
-        }
+        })
     }
 
     fn preflight(&mut self, api: Arc<dyn KeyringApi>) -> Result<(), KeyringUnusable> {

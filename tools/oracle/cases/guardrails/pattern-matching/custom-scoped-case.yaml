@@ -1,0 +1,1 @@
+{"kind":"helper","name":"custom-scoped-case","call":{"b3693":{"function":"add","patterns":[{"pattern_type":"regex","pattern":"(?-i:i)i$","action":"MASK"}],"text":"i\u0130\n"}},"env":{},"compare":{"ignore":[]}}
