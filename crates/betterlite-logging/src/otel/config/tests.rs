@@ -3,7 +3,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::{
-    CaptureMessageContent, OtelDestination, OtlpHttpTls, Settings, SpanScope, resolve_otlp_http_tls,
+    CaptureMessageContent, ExporterOwner, OtelDestination, OtlpHttpTls, Settings, SpanScope,
+    cached_feature_flag, resolve_otlp_http_tls,
 };
 use betterlite_config::loader::ConfigLoader;
 
@@ -101,4 +102,74 @@ fn normalizes_supported_service_exclusion_spellings_and_drops_unknown_names() {
         settings.excluded_services,
         BTreeSet::from(["postgresql".to_owned(), "redis".to_owned()])
     );
+}
+
+#[rstest]
+#[case::unset(None, false)]
+#[case::empty(Some(""), false)]
+#[case::false_text(Some("false"), false)]
+#[case::zero(Some("0"), false)]
+#[case::off(Some("off"), false)]
+#[case::true_text(Some("true"), true)]
+#[case::one(Some("1"), true)]
+fn parses_feature_flag_values(#[case] value: Option<&str>, #[case] expected: bool) {
+    let cache = std::sync::OnceLock::new();
+    assert_eq!(
+        cached_feature_flag(&cache, || value.map(str::to_owned)),
+        expected
+    );
+}
+
+#[test]
+fn feature_flag_is_cached_after_first_read() {
+    let cache = std::sync::OnceLock::new();
+    let mut reads = 0;
+    assert!(cached_feature_flag(&cache, || {
+        reads += 1;
+        Some("true".to_owned())
+    }));
+    assert!(cached_feature_flag(&cache, || {
+        reads += 1;
+        Some("false".to_owned())
+    }));
+    assert_eq!(reads, 1);
+}
+
+#[rstest]
+#[case::full("full", SpanScope::Full)]
+#[case::llm_only("llm_only", SpanScope::LlmOnly)]
+fn maps_span_scope(#[case] value: &str, #[case] expected: SpanScope) {
+    let yaml = format!("callback_settings:\n  otel:\n    langfuse_span_scope: {value}\n");
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(&yaml)
+    .expect("valid config");
+    assert_eq!(
+        Settings::from_config(&config)
+            .expect("valid OTel settings")
+            .langfuse_span_scope,
+        expected
+    );
+}
+
+#[rstest]
+#[case::arize("arize", ExporterOwner::ArizeAx)]
+#[case::arize_phoenix("arize_phoenix", ExporterOwner::ArizePhoenix)]
+#[case::langfuse("langfuse_otel", ExporterOwner::LangfuseOtel)]
+#[case::weave("weave_otel", ExporterOwner::WeaveOtel)]
+#[case::levo("levo", ExporterOwner::Levo)]
+#[case::agentops("agentops", ExporterOwner::Agentops)]
+#[case::newrelic("newrelic", ExporterOwner::Newrelic)]
+#[case::signoz("signoz", ExporterOwner::Signoz)]
+fn maps_exporter_owner_names(#[case] name: &str, #[case] expected: ExporterOwner) {
+    let yaml =
+        format!("callback_settings:\n  otel:\n    exporters: [{{kind: custom, owner: {name}}}]\n");
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(&yaml)
+    .expect("valid config");
+    let settings = Settings::from_config(&config).expect("valid OTel settings");
+    assert_eq!(settings.exporters[0].owner, Some(expected));
 }

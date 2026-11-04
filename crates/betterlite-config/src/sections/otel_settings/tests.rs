@@ -48,7 +48,7 @@ fn reads_callback_otel_settings_and_environment_csv() {
 #[test]
 fn applies_defaults_and_normalizes_capture_mode_and_mapper_names() {
     let config = load(
-        "callback_settings:\n  otel:\n    capture_message_content: SPAN_AND_EVENT\n    mapper_names: [langfuse, genai]\n    legacy_compat: true\n",
+        "callback_settings:\n  otel:\n    capture_message_content: SPAN_AND_EVENT\n    mapper_names: [langfuse, genai, langfuse]\n    legacy_compat: true\n",
         &[],
     );
     let settings = &config.sections.otel_settings;
@@ -185,4 +185,65 @@ fn drops_malformed_service_exclusion_value() {
         &[],
     );
     assert!(config.sections.otel_settings.excluded_services.is_empty());
+}
+
+#[test]
+fn loads_exporter_factory_fields() {
+    let config = load(
+        "callback_settings:\n  otel:\n    exporters:\n      - kind: custom\n        endpoint: https://collector/base\n        traces_endpoint: https://collector/traces\n        headers: api-key=secret\n        owner: langfuse_otel\n        options: {region: eu}\n        use_simple_processor: false\n        requires_headers: true\n",
+        &[],
+    );
+    let spec = &config.sections.otel_settings.exporters[0];
+    assert_eq!(spec.endpoint.as_deref(), Some("https://collector/base"));
+    assert_eq!(
+        spec.traces_endpoint.as_deref(),
+        Some("https://collector/traces")
+    );
+    assert_eq!(spec.headers.as_deref(), Some("api-key=secret"));
+    assert_eq!(spec.owner.as_deref(), Some("langfuse_otel"));
+    assert_eq!(
+        spec.options
+            .as_ref()
+            .and_then(|options| options.get("region"))
+            .map(String::as_str),
+        Some("eu")
+    );
+    assert_eq!(spec.use_simple_processor, Some(false));
+    assert_eq!(spec.requires_headers, Some(true));
+}
+
+#[test]
+fn simple_processor_defaults_to_automatic() {
+    let config = load(
+        "callback_settings:\n  otel:\n    exporters: [{kind: otlp_http}]\n",
+        &[],
+    );
+    assert_eq!(
+        config.sections.otel_settings.exporters[0].use_simple_processor,
+        None
+    );
+}
+
+#[test]
+fn simple_processor_can_be_enabled() {
+    let config = load(
+        "callback_settings:\n  otel:\n    exporters: [{kind: console, use_simple_processor: true}]\n",
+        &[],
+    );
+    assert_eq!(
+        config.sections.otel_settings.exporters[0].use_simple_processor,
+        Some(true)
+    );
+}
+
+#[test]
+fn legacy_mapper_is_not_added_when_legacy_compatibility_is_disabled() {
+    let config = load(
+        "callback_settings:\n  otel:\n    mapper_names: [langfuse]\n    legacy_compat: false\n",
+        &[],
+    );
+    assert_eq!(
+        config.sections.otel_settings.mapper_names,
+        ["genai", "langfuse"]
+    );
 }

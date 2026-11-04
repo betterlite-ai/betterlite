@@ -85,10 +85,19 @@ pub enum OTelConfigError {
 
 #[must_use]
 pub fn is_otel_v2_enabled() -> bool {
-    *OTEL_V2_ENABLED.get_or_init(|| {
-        let value = std::env::var(OTEL_V2_ENV).unwrap_or_default();
-        betterlite_env::flag(OTEL_V2_ENV, &value)
-            .unwrap_or_default()
+    match OTEL_V2_ENABLED.get() {
+        Some(enabled) => *enabled,
+        None => cached_feature_flag(&OTEL_V2_ENABLED, || std::env::var(OTEL_V2_ENV).ok()),
+    }
+}
+
+fn cached_feature_flag<F>(cache: &OnceLock<bool>, read: F) -> bool
+where
+    F: FnOnce() -> Option<String>,
+{
+    *cache.get_or_init(|| {
+        read()
+            .and_then(|value| betterlite_env::flag(OTEL_V2_ENV, &value).ok().flatten())
             .unwrap_or(false)
     })
 }
