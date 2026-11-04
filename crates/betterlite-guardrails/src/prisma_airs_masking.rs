@@ -35,11 +35,16 @@ fn enforce_replacement_budget(
     }
 }
 
-const fn content_replacement_count(content: &MaskContent) -> usize {
+fn content_replacement_count(content: &MaskContent) -> usize {
     match content {
         MaskContent::Text(_) => 1,
-        MaskContent::Parts(parts) => parts.len(),
+        MaskContent::Parts(parts) => parts.iter().filter(|part| is_text_part(part)).count(),
     }
+}
+
+fn is_text_part(part: &RawValue) -> bool {
+    serde_json::from_str::<TextPart>(part.get())
+        .is_ok_and(|text_part| text_part.kind.as_deref() == Some("text"))
 }
 
 fn message_replacement_count(message: &MaskedResponseMessage) -> usize {
@@ -246,9 +251,7 @@ fn mask_content(content: &mut MaskContent, masked_text: &str) -> Result<(), Mask
 fn mask_parts(parts: &mut Vec<Box<RawValue>>, masked_text: &str) -> Result<(), MaskingError> {
     let mut masked = Vec::with_capacity(parts.len());
     for part in parts.drain(..) {
-        if serde_json::from_str::<TextPart>(part.get())
-            .is_ok_and(|text_part| text_part.kind.as_deref() == Some("text"))
-        {
+        if is_text_part(&part) {
             masked.push(
                 to_raw_value(&MaskedTextPart {
                     kind: "text",

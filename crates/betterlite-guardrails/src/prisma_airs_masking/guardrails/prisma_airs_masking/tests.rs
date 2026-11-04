@@ -425,6 +425,59 @@ fn mask_response_rejects_a_replacement_budget_spread_across_choices_and_tool_arg
 }
 
 #[test]
+fn mask_messages_does_not_charge_the_budget_for_a_preserved_non_text_part() {
+    const MASKED_TEXT_BYTES: usize = 614_400;
+    let masked_text = "x".repeat(MASKED_TEXT_BYTES);
+    let mut messages = [RequestMessage {
+        role: Some("user".to_owned()),
+        content: Some(MaskContent::Parts(vec![
+            raw(r#"{"type":"text","text":"secret"}"#),
+            raw(r#"{"type":"image","url":"image"}"#),
+        ])),
+    }];
+    assert!(mask_messages(&mut messages, &masked_text).expect("mask"));
+    let Some(MaskContent::Parts(parts)) = messages[0].content.as_ref() else {
+        panic!("content remains a part list");
+    };
+    assert_eq!(
+        parts[0].get(),
+        format!(r#"{{"type":"text","text":"{masked_text}"}}"#)
+    );
+    assert_eq!(parts[1].get(), r#"{"type":"image","url":"image"}"#);
+}
+
+#[test]
+fn mask_response_does_not_charge_the_budget_for_a_preserved_non_text_part() {
+    const MASKED_TEXT_BYTES: usize = 614_400;
+    let masked_text = "x".repeat(MASKED_TEXT_BYTES);
+    let mut response = Response {
+        choices: Some(vec![ResponseChoice {
+            message: Some(MaskedResponseMessage {
+                content: Some(MaskContent::Parts(vec![
+                    raw(r#"{"type":"text","text":"secret"}"#),
+                    raw(r#"{"type":"image"}"#),
+                ])),
+                tool_calls: None,
+                function_call: None,
+            }),
+        }]),
+    };
+    mask_response(&mut response, &masked_text).expect("mask");
+    let message = response.choices.as_ref().expect("choices")[0]
+        .message
+        .as_ref()
+        .expect("message");
+    let Some(MaskContent::Parts(parts)) = message.content.as_ref() else {
+        panic!("content remains a part list");
+    };
+    assert_eq!(
+        parts[0].get(),
+        format!(r#"{{"type":"text","text":"{masked_text}"}}"#)
+    );
+    assert_eq!(parts[1].get(), r#"{"type":"image"}"#);
+}
+
+#[test]
 fn deserializes_multimodal_content_before_masking() {
     let mut messages: Vec<RequestMessage> = serde_json::from_str(r#"[{"role":"user","content":[{"type":"text","text":"secret"},{"type":"image_url","image_url":{"url":"image"}}]}]"#).expect("wire messages");
     assert!(mask_messages(&mut messages, "safe").expect("mask"));
