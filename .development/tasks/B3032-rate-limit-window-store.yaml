@@ -13,7 +13,8 @@ description: >-
 
 scope:
   paths:
-    - crates/betterlite-core/**
+    - crates/betterlite-core/src/rate_limit_window_store.rs
+    - crates/betterlite-core/src/rate_limit_window_store/**
     - Cargo.toml
   lint_tables: false
 

@@ -12,8 +12,8 @@ description: >-
   one chunk even for text longer than the limit, and preserves whitespace within chunks.
 scope:
   paths:
-    - crates/betterlite-guardrails/src/azure_*.rs
-    - crates/betterlite-guardrails/src/azure_*/**
+    - crates/betterlite-guardrails/src/azure_content_safety.rs
+    - crates/betterlite-guardrails/src/azure_content_safety/**
     - tools/oracle/cases/guardrails/azure/**
   lint_tables: false
 references:
@@ -65,34 +65,34 @@ checks:
   commands:
     - id: split-text-cases
       why: split_text_by_words does not implement lossless word-boundary splitting or tests are missing
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_text_splitting::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_content_safety::(.*::)?azure_text_splitting::/)'
     - id: api-version-cases
       why: resolve_content_safety_api_version does not resolve versions correctly or tests are missing
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_api_version::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_content_safety::(.*::)?azure_api_version::/)'
     - id: base-init-cases
       why: AzureGuardrailBase initialization tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_base_initialization::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_content_safety::(.*::)?azure_base_initialization::/)'
     - id: post-transport-cases
       why: _post_to_content_safety HTTP transport tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_transport::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_content_safety::(.*::)?azure_transport::/)'
     - id: user-prompt-cases
       why: get_user_prompt_from_request text extraction tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_user_prompt::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_content_safety::(.*::)?azure_user_prompt::/)'
     - id: legacy-init-cases
       why: Legacy _PROXY_AzureContentSafety initialization tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_legacy_initialization::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_content_safety::(.*::)?azure_legacy_initialization::/)'
     - id: threshold-cases
       why: _configure_thresholds with default severity four tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_threshold_configuration::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_content_safety::(.*::)?azure_threshold_configuration::/)'
     - id: violation-cases
       why: test_violation severity checking tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_violation_detection::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_content_safety::(.*::)?azure_violation_detection::/)'
     - id: legacy-pre-call-cases
       why: Legacy pre-call hook tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_legacy_pre_call::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_content_safety::(.*::)?azure_legacy_pre_call::/)'
     - id: legacy-post-call-cases
       why: Legacy post-call hook tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_legacy_post_call::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_content_safety::(.*::)?azure_legacy_post_call::/)'
 oracle_cases: []
 deviations:
   - what: The legacy _PROXY_AzureContentSafety hook configures a default severity threshold of four per category, while the modern AzureGuardrailBase does not configure thresholds (B3730 owns threshold logic).

@@ -32,10 +32,16 @@ scope:
   paths:
   - Cargo.toml
   - deny.toml
-  - crates/betterlite-http/**
-  - crates/betterlite-openai/**
-  - crates/betterlite-server/**
-  - crates/betterlite-config/**
+  - crates/betterlite-http/src/proxy.rs
+  - crates/betterlite-http/src/proxy/**
+  - crates/betterlite-openai/src/chat/execution.rs
+  - crates/betterlite-openai/src/chat/execution/**
+  - crates/betterlite-server/src/server.rs
+  - crates/betterlite-server/src/server/**
+  - crates/betterlite-server/src/shutdown.rs
+  - crates/betterlite-server/src/shutdown/**
+  - crates/betterlite-config/src/sections/aiohttp_transport_toggle.rs
+  - crates/betterlite-config/src/sections/aiohttp_transport_toggle/**
   - tools/oracle/helpers/b173.py
   - tools/oracle/helpers/b173/**
   - tools/oracle/src/helpers/oracle/b173.rs
@@ -120,6 +126,10 @@ pitfalls:
 - Reqwest retries protocol NACKs by default; disabling router retries alone is insufficient.
 - Reqwest redirect policy cannot mutate headers and its built-in stripping does not cover provider API-key headers;
   B009 owns explicit redirect replay.
+- This refines files B004 already built rather than adding new modules. The pool lives in
+  crates/betterlite-http/src/proxy.rs and proxy/**, the OpenAI wiring is crates/betterlite-openai/src/chat/execution.rs,
+  the server wiring is crates/betterlite-server/src/server.rs, server/chat_setup.rs and shutdown.rs, and the no-op
+  setting gets its own crates/betterlite-config/src/sections/aiohttp_transport_toggle.rs section.
 review_level: standard
 budget:
   max_changed_lines: 1500

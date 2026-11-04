@@ -33,8 +33,6 @@ description: >-
   database/race tests and 150 helper adapters/seeds, within 800 lines.
 scope:
   paths:
-    - crates/betterlite-server/src/spend.rs
-    - crates/betterlite-server/src/spend/**
     - crates/betterlite-server/src/spend/visibility.rs
     - crates/betterlite-server/src/spend/visibility/**
     - tools/oracle/src/helpers/server/spend_visibility.rs

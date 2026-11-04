@@ -91,7 +91,7 @@ checks:
       why: oracle cases are missing or oracle tests fail
       run: >-
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/cases/helpers/datadog-llm-metrics/**")"
-        && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^datadog_llm_metrics::/)'
+        && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::logging::b3937::(.*::)?datadog_llm_metrics::/)'
 oracle_cases:
   - tools/oracle/cases/helpers/datadog-llm-metrics/span-kind-llm-solo.yaml
   - tools/oracle/cases/helpers/datadog-llm-metrics/span-kind-llm-parent.yaml

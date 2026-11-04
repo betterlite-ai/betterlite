@@ -36,8 +36,8 @@ description: >-
   and pi settings synchronization both reference it without a reverse data dependency.
 scope:
   paths:
-    - tools/management-cli/src/agent_launch.rs
-    - tools/management-cli/src/agent_launch/tests.rs
+    - crates/betterlite-cli/src/agent_launch.rs
+    - crates/betterlite-cli/src/agent_launch/tests.rs
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L79-L88
@@ -85,7 +85,7 @@ dod:
       process handoff and terminal reattachment without network calls or subprocess invocation during setup.
     proof: [behavior-tests]
   - text: >-
-      The Rust implementation in tools/management-cli/src/agent_launch.rs preserves LiteLLM's env-var precedence
+      The Rust implementation in crates/betterlite-cli/src/agent_launch.rs preserves LiteLLM's env-var precedence
       (ENABLE_TOOL_SEARCH and CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY left untouched when already set,
       including empty strings), provider config structure (codex_proxy_provider returns immutable metadata with
       correct field values), error classification (401/403 rejected vs other HTTP errors tolerated in verify_proxy_key),
@@ -97,7 +97,7 @@ checks:
   commands:
     - id: behavior-tests
       why: The environment routing, key verification, quoting and terminal reattachment behavior is absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^agent_launch::tests::/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^agent_launch::tests::/)'
 oracle_cases: []
 deviations: []
 out_of_scope:

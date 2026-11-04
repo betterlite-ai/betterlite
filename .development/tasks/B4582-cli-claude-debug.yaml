@@ -1,0 +1,181 @@
+id: B4582
+title: Claude session debug reports and slash-command installation
+description: >-
+  Build `lite debug claude` and `lite debug install-claude-command` in crates/betterlite-cli/src/commands/debug.rs
+  and its error, session, wire, fetch, render, report_file and slash_command submodules. debug.rs is the parent
+  module: it declares every submodule, holds the `DebugCommand` clap enum (`claude` and `install-claude-command`)
+  and the one `run` function the CLI root calls, and resolves the two paths every submodule needs, `~/.claude`
+  and `~/.litellm/debug`, through betterlite-config's EnvironmentLookup (`system_home()`), never through
+  `std::env::home_dir()` or an unwrapped `Path::home()` equivalent, so a test can point both at a temporary
+  folder. A home directory that does not resolve is a typed error, never a panic.
+
+  session.rs resolves the session id: the `CLAUDE_CODE_SESSION_ID` environment variable, read through the same
+  EnvironmentLookup (`lookup`), wins when it is set and non-empty; otherwise it reads `~/.claude/projects/*/*.jsonl`
+  (two plain directory listings, not a glob dependency), keeps the files whose stem is a lowercase, full 8-4-4-4-12
+  hex UUID, and returns the most recently modified one's stem. No match returns nothing; this task does not
+  decide what the CLI prints for that case beyond surfacing a typed "no session detected" outcome.
+
+  wire.rs models the two response shapes fetch.rs decodes: SpendLogRow (request_id required; start_time and
+  end_time aliased from startTime/endTime; model, model_group, custom_llm_provider, api_base, call_type and
+  status optional; spend a rust_decimal::Decimal that defaults to zero and parses the same way
+  betterlite_models::price_fields::decimal_lexeme::parse_decimal_lexeme does, never through Decimal's own
+  float-based deserialization; prompt_tokens, completion_tokens and total_tokens non-negative integers
+  defaulting to zero; metadata a SpendLogMetadata that defaults to empty and that decodes the same way whether
+  the wire sends it as a JSON object, a JSON string holding encoded JSON, or null), SpendLogMetadata (status,
+  error_information), ErrorInformation (error_code, error_class, error_message, llm_provider, all optional) and
+  SessionLogsPage (data, total, total_pages). A SpendLogRow is failed when its own status, or its metadata's
+  status when its own is absent or empty, equals "failure"; empty counts the same as absent, matching the
+  reference's truthiness. RequestResponsePayload carries proxy_server_request, response and messages as one
+  passthrough JSON type this task defines once with a single #[expect(clippy::disallowed_types, ...)], reused
+  for the three fields, since this task never inspects their shape, only re-renders it; the payload for a given
+  request id is itself optional (the endpoint can answer null, meaning no body was stored).
+
+  fetch.rs sends every request through the shared client and base URL commands.rs (B4580) builds from the CLI
+  context: GET /spend/logs/session/ui with session_id, page and a page size of 100 for session_rows (fetch page
+  1, then pages 2..=total_pages in order, concatenate and stable-sort every row by start_time with an absent
+  start_time sorting as the empty string), and GET /spend/logs/ui/{request_id} for one payload. A failure is
+  typed as either the request or an unsuccessful status (the response's text, truncated to 500 Unicode
+  characters, never bytes, carried alongside) or an unexpected response shape; session_rows and the payload
+  fetch loop may stop at the first page or id, in page or sorted-id order, that fails, since a later one's
+  outcome never changes which failure gets reported.
+
+  render.rs builds the markdown report as a plain string (build_report, render_report, the per-row section, the
+  JSON truncation and the backtick-fence sizing) with no I/O of its own. It takes the already-fetched rows and a
+  map from request id to an optional payload (failed rows plus the most recent N rows, N configurable, want
+  bodies; a row absent from that map or present with no payload renders the same empty body section). The
+  report's summary line names a UTC timestamp read through a small Clock trait this module defines (`fn now(&self)
+  -> chrono::DateTime<chrono::Utc>`, with a SystemClock production impl) and formats it with a literal "+00:00"
+  offset, not "Z", matching the reference's isoformat output; total spend sums every row's Decimal and prints it,
+  and every per-row spend, with exactly six digits after the decimal point. The summary's lines join with single
+  newlines, the row sections join with exactly one blank line between consecutive sections, there is exactly one
+  newline (no blank line) between the summary's last line and the first section, and the whole report ends with
+  exactly one trailing newline. A build with no rows is its own typed failure naming the session id and base URL;
+  it never reaches render_report.
+
+  report_file.rs writes the finished report to `~/.litellm/debug/claude-{session_id}.md`, creating the directory
+  first, by opening it through B4575's settings_backup::secure_create (mode 0600 on open and on the open file
+  before any byte, the call write_backup uses for its own file), not a write-then-chmod that leaves the file briefly at the process umask. slash_command.rs writes
+  the static `/debug-lite` command body to `~/.claude/commands/debug-lite.md` unconditionally (creating the
+  directory first) with ordinary create semantics and no permission tightening, since that file is a boilerplate
+  template with nothing secret in it; the two files deliberately end up with different permissions and this task
+  must not blur that.
+
+  The `claude` subcommand takes an optional --session-id, --recent-bodies (default 3, rejects negative), --max-
+  body-chars (default 20000, rejects anything under 100) and a --no-save flag; it always prints the report to
+  stdout, then writes the file and prints where, to stderr, unless --no-save is given, and it exits with a typed
+  error when no session id can be resolved. `install-claude-command` takes no flags, writes the slash command and
+  prints the installed path and a restart hint.
+scope:
+  paths:
+    - crates/betterlite-cli/Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-cli/src/commands/debug.rs
+    - crates/betterlite-cli/src/commands/debug/tests.rs
+    - crates/betterlite-cli/src/commands/debug/error.rs
+    - crates/betterlite-cli/src/commands/debug/error/**
+    - crates/betterlite-cli/src/commands/debug/session.rs
+    - crates/betterlite-cli/src/commands/debug/session/**
+    - crates/betterlite-cli/src/commands/debug/wire.rs
+    - crates/betterlite-cli/src/commands/debug/wire/**
+    - crates/betterlite-cli/src/commands/debug/fetch.rs
+    - crates/betterlite-cli/src/commands/debug/fetch/**
+    - crates/betterlite-cli/src/commands/debug/render.rs
+    - crates/betterlite-cli/src/commands/debug/render/**
+    - crates/betterlite-cli/src/commands/debug/report_file.rs
+    - crates/betterlite-cli/src/commands/debug/report_file/**
+    - crates/betterlite-cli/src/commands/debug/slash_command.rs
+    - crates/betterlite-cli/src/commands/debug/slash_command/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/debug.py#L1-L39
+    why: The module's path constants, the session-id environment variable name and the static slash-command body this task ports verbatim.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/debug.py#L47-L117
+    why: The wire types wire.rs models, including the metadata field's string-or-object-or-null coercion and the failed/error derived values.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/debug.py#L119-L140
+    why: Session-id detection from the environment or the newest matching transcript file, and the transport-failure body snippet this task's fetch error carries.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/debug.py#L143-L184
+    why: Pagination (page size 100, concatenate and sort by start_time) and the two GET endpoints fetch.rs sends through B4580's shared client.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/debug.py#L187-L234
+    why: JSON truncation, the backtick-fence length rule and one turn's rendered section.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/debug.py#L237-L264
+    why: The report's summary header and the exact line-joining between the summary and the row sections.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/debug.py#L267-L299
+    why: The wanted-payload selection (failed rows plus the N most recent), the no-logs-found failure and the report file's path; see the deviation entry for its permission ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/debug.py#L302-L372
+    why: The slash-command install target and the two subcommands' flags, defaults and exit behavior.
+dod:
+  - text: An explicit, non-empty CLAUDE_CODE_SESSION_ID wins over any transcript scan; otherwise the newest file under projects/*/*.jsonl whose stem is a lowercase, fully-matched 8-4-4-4-12 hex UUID is returned by its stem, and no match returns nothing.
+    proof: [debug-session-detection]
+  - text: SpendLogRow's spend parses as a Decimal the way parse_decimal_lexeme does, metadata decodes the same from an object, a JSON-encoded string or null, and failed treats an empty status the same as an absent one before falling back to metadata.status.
+    proof: [debug-wire-types]
+  - text: session_rows fetches every page with page_size 100, concatenates and stably sorts by start_time (absent sorts as empty), and a page's HTTP failure or unexpected shape is reported without requiring every later page to have been fetched; payload fetches the same way for one request id.
+    proof: [debug-fetch]
+  - text: build_report selects bodies for every failed row plus the most recent N rows (N = 0 selects none), fails by name when there are no rows at all, and never lets one wanted id's own failure merge with another's.
+    proof: [debug-fetch]
+  - text: render_report's summary carries the proxy URL, a Clock-sourced UTC timestamp formatted with a literal +00:00 offset, turn and failure counts, total spend to six decimal places and the sorted distinct model list (or "n/a" for none); the fence around a body is always at least one backtick longer than the longest backtick run already in that body.
+    proof: [debug-render]
+  - text: The summary's lines join with single newlines, consecutive row sections are separated by exactly one blank line, there is no blank line between the summary and the first section, and the report ends with exactly one trailing newline.
+    proof: [debug-render]
+  - text: write_report creates ~/.litellm/debug and claude-{session_id}.md with mode 0600 set before any byte is written, by opening it through B4575's settings_backup::secure_create, never a write followed by a chmod.
+    proof: [debug-report-file]
+  - text: install_slash_command creates ~/.claude/commands and writes debug-lite.md with the static body verbatim and ordinary (non-tightened) permissions, overwriting any existing file at that path.
+    proof: [debug-slash-command]
+  - text: >-
+      DebugError carries a source for every failure path above (an unresolved home directory, a failed or
+      non-success request with its truncated body, an unexpected response shape, no session rows found, no
+      session id resolved, and a failed report or slash-command write) and nothing is ever unwrapped or panics.
+    proof: [debug-error]
+  - text: debug claude accepts --session-id, --recent-bodies (default 3, rejects a negative value), --max-body-chars (default 20000, rejects a value under 100) and --no-save; it always prints the report to stdout, writes and reports the saved path on stderr unless --no-save is given, and exits with a typed error when no session id resolves. debug install-claude-command takes no flags and prints the installed path and a restart hint.
+    proof: [debug-cli-dispatch]
+checks:
+  optional: []
+  commands:
+    - id: debug-session-detection
+      why: detect_claude_session_id does not prefer the environment variable, does not pick the newest matching transcript, or accepts a stem that is not a full lowercase UUID.
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^commands::debug::.*tests::session_id_/)'
+    - id: debug-wire-types
+      why: spend does not parse as an exact Decimal, metadata does not accept all three wire shapes, or failed/error do not match the reference's fallback.
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^commands::debug::.*tests::spend_row_/)'
+    - id: debug-fetch
+      why: pagination, sorting, the wanted-id selection or the failure-reporting order are wrong.
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^commands::debug::.*tests::fetch_/)'
+    - id: debug-render
+      why: the summary line, the fence sizing or the exact joining between the summary and the row sections are wrong.
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^commands::debug::.*tests::render_/)'
+    - id: debug-report-file
+      why: the report file's directory, name or permission ordering are wrong.
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^commands::debug::.*tests::write_report_/)'
+    - id: debug-slash-command
+      why: the slash-command file's path, body or permissions are wrong.
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^commands::debug::.*tests::install_slash_command_/)'
+    - id: debug-error
+      why: DebugError drops a source or a failure path above has no typed variant.
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^commands::debug::.*tests::debug_error_/)'
+    - id: debug-cli-dispatch
+      why: a flag's default, its bound or the save/no-save and exit behavior are wrong.
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^commands::debug::.*tests::(debug_claude|debug_install_claude_command)_/)'
+oracle_cases: []
+deviations:
+  - what: write_report opens the report file for create and truncate at mode 0600 and sets that mode on the open file before writing any byte, instead of writing the file first and chmod-ing it afterward.
+    why: The reference's write-then-chmod leaves the report, which can embed request and response bodies, briefly at the process umask before the chmod call tightens it; this task opens the report through B4575's settings_backup::secure_create, which never opens that window.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/debug.py#L294-L299
+out_of_scope:
+  - The shared client (betterlite-http's ProxiedClient), its base URL and the shared HTTP error printing. B4580 owns commands.rs and every command in this crate, this one included, sends its requests through that client.
+  - The CLI root and command registration. B134 owns main.rs; this task only exposes DebugCommand and run for it to wire.
+  - The statusline subcommand. B4586 owns crates/betterlite-cli/src/statusline.rs; nothing here calls it.
+  - Claude settings.json reading, writing or merging. B4562 and B4563 own claude_settings.rs; this task never reads or writes settings.json, only the slash-command file and session transcripts under ~/.claude.
+  - HTTPClient as an importable Python class and the rest of its generic request method. That stays B169's reference; this task builds only the two GET requests debug.py itself sends.
+  - Credential storage, token refresh and keyring access. B4574, B4590, B4591 and B4592 own those; this task only uses the API key the CLI context and B4580's shared client already resolved.
+pitfalls:
+  - The reference's failed check treats an empty status string the same as an absent one, so a row whose own status is empty still falls back to metadata.status, not to that empty string.
+  - Both truncations (the 500-character transport-failure body snippet and the --max-body-chars body truncation) count Unicode scalar values, never bytes; a byte-index slice can land inside a multi-byte character.
+  - A payload fetched for a wanted request id can legitimately come back absent (the proxy simply stored none); that is not a failure and renders the same empty body section as an id that was never fetched.
+  - recent_bodies = 0 must select no extra rows at all, not every row; an unsigned "N most recent" computed as "skip len - N" rather than a signed negative-index slice avoids the reference's own negative-index special case entirely.
+  - The fence around a body must stay longer than the longest run of backticks already inside that body, including an embedded JSON string that itself contains backticks, or the rendered code block closes early.
+  - write_report and install_slash_command end up with different permissions on purpose (0600 against the default); reusing the same secure-create helper for both would tighten a file the reference never tightens.
+  - The home directory comes from EnvironmentLookup::system_home(), never a direct std::env or Path::home() call, so a test can run against a temporary folder; treat a missing home directory as a typed error, not an unwrap.
+  - session_rows and the payload loop are allowed to stop at the first page or id, in page or sorted-id order, that fails; this sends fewer requests than the reference's own eager loop but reports the exact same failure, since the reference only ever surfaces the first one in that same order too.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

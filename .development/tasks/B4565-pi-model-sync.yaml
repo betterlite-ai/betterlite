@@ -1,7 +1,7 @@
 id: B4565
 title: Proxy model discovery and pi settings synchronization
 description: >-
-  Build the pi module for betterlite-management-cli, translating LiteLLM's typed model
+  Build the pi module for betterlite-cli, translating LiteLLM's typed model
   discovery and pi provider synchronization. Discover available models and optional limits
   from the proxy's /v1/models and /model_group/info endpoints, then replace only the litellm
   provider entry in pi's models.json file. Store the proxy API key as a $LITELLM_PROXY_API_KEY
@@ -13,8 +13,8 @@ description: >-
   launch; it lives in the pi module and raises AgentRunError from B4564's error handling.
 scope:
   paths:
-    - tools/management-cli/src/pi.rs
-    - tools/management-cli/src/pi/**
+    - crates/betterlite-cli/src/pi.rs
+    - crates/betterlite-cli/src/pi/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/pi.py#L1-L259
@@ -33,9 +33,9 @@ references:
     why: prepare_pi orchestration, model ID fetch, limit discovery and agent launch arguments; moved into the pi module for Rust.
 dod:
   - text: >-
-      Model listing fetches GET /v1/models with Authorization Bearer header, parses a JSON response
-      with data array of {id, source_model?}, validates unique mappings, and returns a tuple of
-      deduped ListedModel objects or PiSyncError with status code and ListingFailure kind.
+      Model listing fetches GET /v1/models with an Authorization Bearer header, parses a JSON response
+      with a data array of {id, source_model?}, validates unique mappings, and returns a deduped vec
+      of ListedModel or a PiSyncError with status code and ListingFailure kind.
     proof: [fetch-models]
   - text: >-
       Listing failures classify as unreachable (no response), rejected (401/403), bad_body (parse error),
@@ -50,44 +50,44 @@ dod:
       and a models array with id, contextWindow and maxTokens from limits; the key is referenced, not stored.
     proof: [provider-block]
   - text: >-
-      sync_models_json atomically writes via a temporary file in the same directory and os.replace,
-      cleans up the temp file on write failure, and leaves the file intact if reading fails.
+      sync_models_json atomically writes via a temporary file in the same directory and an atomic
+      rename, cleans up the temp file on write failure, and leaves the file intact if reading fails.
     proof: [atomic-write]
   - text: >-
       prepare_pi fetches model IDs and limits, syncs models.json, returns (--model, provider/first-id) arguments,
       and raises AgentRunError on empty listing or write failure.
     proof: [prepare-pi]
   - text: >-
-      Duplicate model IDs mapping to different source models are rejected with ValueError; a model without
-      source_model uses its id as the mapping target.
+      Duplicate model IDs mapping to different source models are rejected with a validation error; a
+      model without source_model uses its id as the mapping target.
     proof: [unique-mappings]
 checks:
   optional: []
   commands:
     - id: pi-module-tests
       why: pi module tests do not exist or fail
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^pi::tests::/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^pi::tests::/)'
     - id: fetch-models
       why: model listing does not fetch /v1/models with Bearer auth or validate unique mappings
-      run: grep -qF '/v1/models' tools/management-cli/src/pi.rs && grep -qF 'Authorization' tools/management-cli/src/pi.rs && grep -qF 'unique_id_mappings' tools/management-cli/src/pi.rs
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^pi::tests::fetch_listing_/)'
     - id: failure-classification
       why: ListingFailure does not distinguish unreachable, rejected, bad_body, empty and other
-      run: grep -qE 'Unreachable|Rejected|BadBody|Empty|Other' tools/management-cli/src/pi.rs && grep -qF 'fetch_model_limits' tools/management-cli/src/pi.rs
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^pi::tests::failure_classification_/)'
     - id: json-path
       why: models_json_path does not resolve PI_CODING_AGENT_DIR or ~/.pi/agent, or sync does not validate file structure
-      run: grep -qF 'PI_CODING_AGENT_DIR' tools/management-cli/src/pi.rs && grep -qF '.pi/agent' tools/management-cli/src/pi.rs && grep -qF 'models.json' tools/management-cli/src/pi.rs
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^pi::tests::json_path_/)'
     - id: provider-block
       why: provider block does not include baseUrl, openai-completions API, $LITELLM_PROXY_API_KEY reference, or model limits
-      run: grep -qF 'baseUrl' tools/management-cli/src/pi.rs && grep -qF 'openai-completions' tools/management-cli/src/pi.rs && grep -qF 'LITELLM_PROXY_API_KEY_ENV' tools/management-cli/src/pi.rs
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^pi::tests::provider_block_/)'
     - id: atomic-write
-      why: sync does not use tempfile and atomic operations for writes or does not clean up on failure
-      run: grep -qF 'tempfile' tools/management-cli/src/pi.rs && grep -qE 'fs::rename|std::fs::rename' tools/management-cli/src/pi.rs
+      why: sync does not use a temporary file and an atomic rename for writes, or does not clean up on failure
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^pi::tests::atomic_write_/)'
     - id: prepare-pi
       why: prepare_pi does not fetch IDs and limits, sync models.json, return model arguments or raise AgentRunError
-      run: grep -qF 'fn prepare_pi' tools/management-cli/src/pi.rs && grep -qF 'fetch_model_ids' tools/management-cli/src/pi.rs && grep -qF 'AgentRunError' tools/management-cli/src/pi.rs
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^pi::tests::prepare_pi_/)'
     - id: unique-mappings
       why: unique_id_mappings validator does not reject duplicate IDs with different source models
-      run: grep -qF 'unique_id_mappings' tools/management-cli/src/pi.rs
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^pi::tests::unique_mappings_/)'
 oracle_cases: []
 deviations: []
 out_of_scope:

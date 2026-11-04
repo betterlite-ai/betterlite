@@ -32,12 +32,8 @@ description: >-
   90 config tests/seeds and 35 wiring =800 changed lines.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/rerank_provider_plan.rs
   - crates/betterlite-core/src/api/rerank_provider_plan/**
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/**
   - crates/betterlite-config/src/api/rerank_provider_plan.rs
   - crates/betterlite-config/src/api/rerank_provider_plan/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/rerank-provider-plan-*

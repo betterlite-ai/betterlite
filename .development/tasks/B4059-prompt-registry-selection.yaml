@@ -81,13 +81,13 @@ checks:
   commands:
     - id: registry-helpers-tests
       why: version/environment helper functions fail or do not exist
-      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^prompt_registry_helpers::/)'
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^(registry|tests)::(.*::)?prompt_registry_helpers::/)'
     - id: registry-tests
       why: InMemoryPromptRegistry or selection tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^prompt_registry::/)'
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^(registry|tests)::(.*::)?prompt_registry::/)'
     - id: endpoint-tests
       why: endpoint request/response records or database conversion tests fail
-      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^prompt_endpoint_contracts::/)'
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^(registry|tests)::(.*::)?prompt_endpoint_contracts::/)'
 oracle_cases: []
 deviations:
   - what: InMemoryPromptRegistry is an in-memory lookup only. Prompt persistence, initialization from database, and callback registration are outside this task's scope.

@@ -16,7 +16,8 @@ description: >-
   unchanged for persistence; do not redact. Convert Prisma timestamps to ISO format in every returned dict.
 scope:
   paths:
-    - crates/betterlite-db/**
+    - crates/betterlite-db/src/search_tools.rs
+    - crates/betterlite-db/src/search_tools/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/search_tool_registry.py#L17-L48

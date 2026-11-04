@@ -105,10 +105,10 @@ checks:
   commands:
     - id: headroom-retrieval-tests
       why: retrieval hook, agentic loop detection, or hash validation fail or do not exist
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^headroom_retrieval::|^headroom_agentic_loop::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^(headroom|hiddenlayer)::(.*::)?headroom_retrieval::|^headroom_agentic_loop::/)'
     - id: hiddenlayer-auth-tests
       why: JWT initialization, token refresh or SaaS detection fail or do not exist
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^hiddenlayer_authentication::|^hiddenlayer_jwt_refresh::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^(headroom|hiddenlayer)::(.*::)?hiddenlayer_authentication::|^hiddenlayer_jwt_refresh::/)'
 oracle_cases:
   - tools/oracle/cases/guardrails/headroom/retrieval/agentic-loop-detects-retrieve-calls.yaml
   - tools/oracle/cases/guardrails/headroom/retrieval/agentic-loop-skips-no-retrieve-calls.yaml

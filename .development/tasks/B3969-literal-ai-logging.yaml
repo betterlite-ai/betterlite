@@ -93,7 +93,7 @@ checks:
   commands:
     - id: literal-ai-tests
       why: the literal ai tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^literal_ai_logging::/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^literal_ai::(.*::)?literal_ai_logging::/) - test(/replays_the_/)'
 
 oracle_cases: []
 

@@ -46,10 +46,10 @@ checks:
   commands:
     - id: provider-init-tests
       why: provider assembly and initialization tests fail, do not exist, or have snapshots that were not accepted
-      run: INSTA_UPDATE=no cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_provider_assembly::/) or test(/^legacy_otel_init::/) or test(/^tracer_provider_assembly::/)' --
+      run: INSTA_UPDATE=no cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_provider_assembly::/) or test(/^otel_provider_assembly::(.*::)?legacy_otel_init::/) or test(/^otel_provider_assembly::(.*::)?tracer_provider_assembly::/)' --
     - id: provider-init-behavior
       why: the legacy logger does not reuse global providers correctly
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^opentelemetry_legacy_provider::/)' --
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_provider_assembly::(.*::)?opentelemetry_legacy_provider::/)' --
 oracle_cases: []
 deviations:
   - what: OTel provider assembly uses static resource configuration, not environment auto-discovery at every initialization call.

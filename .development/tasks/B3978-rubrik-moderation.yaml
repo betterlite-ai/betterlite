@@ -98,7 +98,7 @@ checks:
   commands:
     - id: rubrik-hook-tests
       why: moderation hook tests are absent, fail or do not test dispatch/error handling
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^rubrik_moderation_hooks::/)
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^rubrik_moderation::(.*::)?rubrik_moderation_hooks::/)
         - test(/replays_the_.*_corpus/)'
     - id: probe-python
       why: the new adapter is missing, unchanged, untyped or fails lint
