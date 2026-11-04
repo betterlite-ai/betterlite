@@ -242,6 +242,6 @@ fn mounted_nested_app_uses_its_class_name() {
 
 #[test]
 fn nested_app_requires_a_name() {
-    let invalid = serde_json::json!({"app": {"routes": []}});
-    assert!(serde_json::from_value::<Route>(invalid).is_err());
+    let error = serde_json::from_str::<Route>(r#"{"app":{"routes":[]}}"#).unwrap_err();
+    assert!(error.to_string().contains("missing field `name`"));
 }
