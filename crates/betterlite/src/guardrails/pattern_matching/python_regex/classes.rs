@@ -8,19 +8,20 @@ use super::{Alphabet, Flags, escapes};
 pub(super) fn translate(
     characters: &mut Peekable<Chars<'_>>,
     flags: Flags,
-) -> Result<String, Error> {
+) -> Result<(String, bool), Error> {
     let negated = characters.next_if_eq(&'^').is_some();
     let mut literals = String::new();
     let mut alternatives = Vec::new();
+    let mut wide = negated;
     if characters.next_if_eq(&']').is_some() {
         literals.push_str(r"\]");
     }
     while let Some(character) = characters.next() {
         if character == ']' {
-            return finish(literals, alternatives, flags, negated);
+            return finish(literals, alternatives, flags, negated).map(|value| (value, wide));
         }
         match character {
-            '\\' => escaped(characters, &mut literals, &mut alternatives, flags)?,
+            '\\' => wide |= escaped(characters, &mut literals, &mut alternatives, flags)?,
             '[' | '^' | '&' | '~' => {
                 literals.push('\\');
                 literals.push(character);
@@ -54,12 +55,15 @@ fn escaped(
     literals: &mut String,
     alternatives: &mut Vec<String>,
     flags: Flags,
-) -> Result<(), Error> {
+) -> Result<bool, Error> {
     let character = characters
         .next()
         .ok_or(Error::ParseError(0, ParseError::InvalidClass))?;
     match character {
-        'w' | 'W' | 's' | 'S' | 'd' | 'D' => alternatives.push(flags.category(character)),
+        'w' | 'W' | 's' | 'S' | 'd' | 'D' => {
+            alternatives.push(flags.category(character));
+            return Ok(flags.alphabet == Alphabet::Unicode);
+        }
         'b' => literals.push_str(r"\x08"),
         'A' | 'B' | 'Z' => return Err(Error::ParseError(0, ParseError::InvalidClass)),
         other => {
@@ -72,7 +76,7 @@ fn escaped(
             }
         }
     }
-    Ok(())
+    Ok(false)
 }
 
 fn fold(mut literals: String, flags: Flags) -> Result<String, Error> {

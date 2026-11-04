@@ -1,7 +1,7 @@
 use std::iter::{Peekable, from_fn};
 use std::str::Chars;
 
-use fancy_regex::{Error, ParseError, Regex};
+use fancy_regex::{Error, ParseError, Regex, RegexBuilder};
 
 mod classes;
 mod escapes;
@@ -19,13 +19,36 @@ struct Flags {
     alphabet: Alphabet,
 }
 
+#[derive(Default)]
+struct Detected {
+    ascii_backref: bool,
+    wide_class: bool,
+}
+
 struct Translator {
     output: String,
     flags: Flags,
     scopes: Vec<Flags>,
+    detected: Detected,
+    target_unicode: bool,
 }
 
 pub(super) fn compile(source: &str) -> Result<Regex, Error> {
+    let translated = translate(source, true)?;
+    if translated.detected.ascii_backref && !translated.detected.wide_class {
+        let ascii = translate(source, false)?;
+        return RegexBuilder::new(&ascii.output).unicode_mode(false).build();
+    }
+    Regex::new(&translated.output)
+}
+
+struct Translation {
+    output: String,
+    detected: Detected,
+}
+
+// Run twice when an ascii backreference is found: detect, then retranslate for the chosen mode.
+fn translate(source: &str, target_unicode: bool) -> Result<Translation, Error> {
     let mut translator = Translator {
         output: "(?i)".to_owned(),
         flags: Flags {
@@ -34,12 +57,17 @@ pub(super) fn compile(source: &str) -> Result<Regex, Error> {
             alphabet: Alphabet::Unicode,
         },
         scopes: Vec::new(),
+        detected: Detected::default(),
+        target_unicode,
     };
     let mut characters = source.chars().peekable();
     while let Some(character) = characters.next() {
         translator.token(character, &mut characters)?;
     }
-    Regex::new(&translator.output)
+    Ok(Translation {
+        output: translator.output,
+        detected: translator.detected,
+    })
 }
 
 impl Translator {
@@ -50,12 +78,17 @@ impl Translator {
     ) -> Result<(), Error> {
         match character {
             '\\' => {
-                let escaped = escapes::translate(characters, self.flags)?;
+                self.detected.ascii_backref |= self.flags.alphabet == Alphabet::Ascii
+                    && matches!(characters.peek(), Some('1'..='9'));
+                let (escaped, wide) = escapes::translate(characters, self.flags)?;
+                self.detected.wide_class |= wide;
                 self.output.push_str(&escaped);
             }
-            '[' => self
-                .output
-                .push_str(&classes::translate(characters, self.flags)?),
+            '[' => {
+                let (translated, wide) = classes::translate(characters, self.flags)?;
+                self.detected.wide_class |= wide;
+                self.output.push_str(&translated);
+            }
             '(' => self.group(characters)?,
             ')' => {
                 self.flags = self.scopes.pop().unwrap_or(self.flags);
@@ -66,6 +99,10 @@ impl Translator {
                 copy_until(&mut self.output, characters, '\n');
             }
             '$' => self.output.push_str(r"(?:$|(?=\n\z))"),
+            '.' => {
+                self.detected.wide_class = true;
+                self.output.push('.');
+            }
             value if value.is_alphabetic() => self.output.push_str(&self.flags.literal(value)),
             other => self.output.push(other),
         }
@@ -96,6 +133,7 @@ impl Translator {
                 copy_until(&mut self.output, characters, end);
                 if end == ')' {
                     self.scopes.pop();
+                    self.detected.ascii_backref |= self.flags.alphabet == Alphabet::Ascii;
                 }
             }
             Some('(') => self.output.push_str(&condition_header(characters)),
@@ -121,7 +159,8 @@ impl Translator {
         if enabled.contains('u') {
             self.flags.alphabet = Alphabet::Unicode;
         }
-        self.output.push_str(&header.replace('a', "u"));
+        self.output
+            .push_str(&self.unicode_header(enabled, disabled));
         let delimiter = characters
             .next()
             .ok_or(Error::ParseError(0, ParseError::UnclosedOpenParen))?;
@@ -130,6 +169,28 @@ impl Translator {
             self.scopes.pop();
         }
         Ok(())
+    }
+
+    // fancy-regex rejects an inline flag that flips its one engine-wide unicode setting.
+    fn unicode_header(&self, enabled: &str, disabled: &str) -> String {
+        let alphabet = enabled.contains('a') || enabled.contains('u');
+        let mut enabled_out: String = enabled
+            .chars()
+            .filter(|value| !matches!(value, 'a' | 'u'))
+            .collect();
+        let mut disabled_out = disabled.to_owned();
+        if alphabet {
+            if self.target_unicode {
+                enabled_out.push('u');
+            } else {
+                disabled_out.push('u');
+            }
+        }
+        if disabled_out.is_empty() {
+            enabled_out
+        } else {
+            format!("{enabled_out}-{disabled_out}")
+        }
     }
 }
 

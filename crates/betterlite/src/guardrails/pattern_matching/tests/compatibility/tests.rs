@@ -60,6 +60,19 @@ use rstest::rstest;
 #[case::class_octal("regex", r"[\141]", "A", true)]
 #[case::class_hex_i("regex", r"[\x69]", "\u{130}", true)]
 #[case::numeric_backreference("regex", r"(a)\1", "aa", true)]
+#[case::ascii_backreference_folds_ascii("regex", r"(?a:(a)\1)", "aA", true)]
+#[case::ascii_backreference_excludes_unicode_fold(
+    "regex",
+    "(?a:(\u{e9})\\1)",
+    "\u{e9}\u{c9}",
+    false
+)]
+#[case::ascii_named_backreference_excludes_unicode_fold(
+    "regex",
+    "(?a:(?P<id>\u{e9})(?P=id))",
+    "\u{e9}\u{c9}",
+    false
+)]
 #[case::class_literal_open("regex", "[[]", "[", true)]
 #[case::word_not_folded("regex", r"\w", "\u{345}", false)]
 #[case::nonword_not_folded("regex", r"\W", "\u{345}", true)]
