@@ -17,3 +17,4 @@ name = "cursors"
 path = "fuzz_targets/cursors.rs"
 test = false
 doc = false
+bench = false
