@@ -1685,7 +1685,6 @@ name = "betterlite-semantic"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "rstest",
  "thiserror",
  "tokio",
 ]
