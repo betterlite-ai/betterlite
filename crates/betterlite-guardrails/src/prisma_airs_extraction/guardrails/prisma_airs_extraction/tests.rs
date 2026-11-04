@@ -31,3 +31,16 @@ fn extracts_all_response_content_and_tool_arguments_across_choices() {
         "answer {\"x\":1} next legacy"
     );
 }
+
+#[rstest::rstest]
+#[case::empty_string(r#""""#, "older")]
+#[case::empty_parts("[]", "older")]
+#[case::image_only(r#"[{"type":"image_url","image_url":{"url":"image"}}]"#, "")]
+#[case::absent("null", "older")]
+fn falsy_latest_content_falls_back_to_an_older_turn(#[case] content: &str, #[case] expected: &str) {
+    let input = format!(
+        r#"[{{"role":"user","content":"older"}},{{"role":"developer","content":{content}}}]"#
+    );
+    let messages: Vec<Message> = serde_json::from_str(&input).expect("messages");
+    assert_eq!(extract_text_from_messages(&messages), expected);
+}

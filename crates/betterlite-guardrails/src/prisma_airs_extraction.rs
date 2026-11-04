@@ -49,28 +49,37 @@ pub struct FunctionCall {
     pub arguments: Option<String>,
 }
 
+#[must_use]
 pub fn extract_text_from_messages(messages: &[Message]) -> String {
     for message in messages.iter().rev() {
         if !matches!(message.role.as_deref(), Some("user" | "developer")) {
             continue;
         }
-        if let Some(content) = message.content.as_ref().and_then(content_text) {
-            return content;
+        match message.content.as_ref() {
+            Some(MessageContent::Text(text)) if !text.is_empty() => return text.clone(),
+            Some(MessageContent::Parts(parts)) if !parts.is_empty() => {
+                return flatten_text_parts(parts);
+            }
+            _ => {}
         }
     }
     String::new()
 }
 
+fn flatten_text_parts(parts: &[ContentPart]) -> String {
+    parts
+        .iter()
+        .filter(|part| part.kind.as_deref() == Some("text"))
+        .filter_map(|part| part.text.as_deref())
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn content_text(content: &MessageContent) -> Option<String> {
     let text = match content {
         MessageContent::Text(text) => text.clone(),
-        MessageContent::Parts(parts) => parts
-            .iter()
-            .filter(|part| part.kind.as_deref() == Some("text"))
-            .filter_map(|part| part.text.as_deref())
-            .filter(|text| !text.is_empty())
-            .collect::<Vec<_>>()
-            .join(" "),
+        MessageContent::Parts(parts) => flatten_text_parts(parts),
     };
     if text.is_empty() {
         return None;
