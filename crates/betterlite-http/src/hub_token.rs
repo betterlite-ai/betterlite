@@ -1,7 +1,9 @@
 use std::path::PathBuf;
+use std::{io, string};
 
 use secrecy::SecretString;
 use thiserror::Error;
+use tokio::fs;
 
 use betterlite_config::sections::huggingface_hub::Settings;
 
@@ -17,13 +19,13 @@ pub enum HubTokenError {
     Read {
         path: PathBuf,
         #[source]
-        source: std::io::Error,
+        source: io::Error,
     },
     #[error("Hugging Face token at {path} is not UTF-8: {source}")]
     Utf8 {
         path: PathBuf,
         #[source]
-        source: std::string::FromUtf8Error,
+        source: string::FromUtf8Error,
     },
 }
 
@@ -39,12 +41,14 @@ impl HubTokenResolver {
             HubToken::Explicit(value) => {
                 Ok(Some(SecretString::from(value.expose_secret().to_owned())))
             }
-            HubToken::Implicit if self.settings.disable_implicit_token => Ok(None),
+            HubToken::Implicit if self.settings.token.disable_implicit => Ok(None),
             HubToken::Implicit => {
-                if let Some(token) = &self.settings.env_token {
-                    return Ok(Some(SecretString::from(token.expose_secret().to_owned())));
+                if let Some(environment_token) = &self.settings.token.env_token {
+                    return Ok(Some(SecretString::from(
+                        environment_token.expose_secret().to_owned(),
+                    )));
                 }
-                match tokio::fs::read(&self.settings.token_path).await {
+                match fs::read(&self.settings.token_path).await {
                     Ok(bytes) => {
                         let text =
                             String::from_utf8(bytes).map_err(|source| HubTokenError::Utf8 {
@@ -54,7 +58,7 @@ impl HubTokenResolver {
                         let cleaned = text.replace(['\r', '\n'], "").trim().to_owned();
                         Ok((!cleaned.is_empty()).then(|| SecretString::from(cleaned)))
                     }
-                    Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(None),
+                    Err(source) if source.kind() == io::ErrorKind::NotFound => Ok(None),
                     Err(source) => Err(HubTokenError::Read {
                         path: self.settings.token_path.clone(),
                         source,
