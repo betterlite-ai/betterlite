@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import TypeAlias, cast
 
@@ -13,9 +14,10 @@ from litellm.proxy._experimental.mcp_server.tool_search import (
     get_mcp_proxy_tool_definitions,
     get_virtual_tool_definitions,
     mcp_tool_search_settings,
-    search_tools,
+    search_mcp_tools,
     with_mcp_proxy_identity,
 )
+from litellm.types.mcp import MCPToolSearchSettings
 from mcp.types import Tool
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
@@ -46,7 +48,9 @@ def tools_from(input_value: dict[str, Json]) -> list[Tool]:
 def keyword_search(input_value: dict[str, Json]) -> Json:
     query = cast(str, input_value.get("query", ""))
     top_k = cast(int, input_value.get("top_k", 5))
-    results = search_tools(query, tools_from(input_value), top_k)
+    results = asyncio.run(
+        search_mcp_tools(query, tools_from(input_value), top_k, MCPToolSearchSettings(), None)
+    )
     return cast(Json, results)
 
 
@@ -71,7 +75,12 @@ def core_tools(input_value: dict[str, Json]) -> Json:
 
 
 def empty_search(input_value: dict[str, Json]) -> Json:
-    return cast(Json, search_tools("", tools_from(input_value), 5))
+    return cast(
+        Json,
+        asyncio.run(
+            search_mcp_tools("", tools_from(input_value), 5, MCPToolSearchSettings(), None)
+        ),
+    )
 
 
 def settings(input_value: dict[str, Json]) -> Json:
