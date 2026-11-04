@@ -387,6 +387,16 @@ fn serialized_span_requires_caller_cleanup() {
 }
 
 #[test]
+fn cache_control_accessor_reads_allowlist_with_opaque_span() {
+    let mut auth = construct(
+        r#"{"allowed_cache_controls": ["no-cache", 123], "parent_otel_span": {"trace_id": "abc"}}"#,
+    );
+    auth.extra.parent_otel_span = Some(ParentOtelSpan::Opaque);
+
+    assert_eq!(auth.allowed_cache_controls(), Some(vec!["no-cache"]));
+}
+
+#[test]
 fn unknown_auth_extras_ignored() {
     let auth = construct("{\"something_brand_new\": \"x\"}");
     assert!(!serialized(&auth).contains_key("something_brand_new"));
