@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_config::proxy::{ProxyPolicy, ProxyRoute};
+use betterlite_config::tls::TlsPolicy;
 use futures_util::StreamExt as _;
 use futures_util::stream::BoxStream;
 use reqwest::header::{ACCEPT, CONTENT_TYPE, HeaderMap};
@@ -28,6 +29,19 @@ impl ProxiedClient {
             .connect_timeout(CONNECT_TIMEOUT)
             .pool_idle_timeout(POOL_IDLE_TIMEOUT)
             .pool_max_idle_per_host(POOL_MAX_IDLE_PER_HOST);
+        Self::build(builder, policy)
+    }
+
+    pub fn outbound_with_tls(
+        policy: &Arc<ProxyPolicy>,
+        tls: &TlsPolicy,
+    ) -> Result<Self, HttpError> {
+        let builder = ClientBuilder::new()
+            .tls_backend_rustls()
+            .connect_timeout(CONNECT_TIMEOUT)
+            .pool_idle_timeout(POOL_IDLE_TIMEOUT)
+            .pool_max_idle_per_host(POOL_MAX_IDLE_PER_HOST);
+        let builder = crate::tls::apply_policy(builder, tls)?;
         Self::build(builder, policy)
     }
 

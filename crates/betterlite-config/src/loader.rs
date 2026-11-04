@@ -250,6 +250,10 @@ fn convert_litellm(raw: RawLiteLlm, lookup: Lookup<'_>) -> Result<LiteLlmSetting
     let (modify_params, default_max_tokens) = environment_defaults(raw.modify_params, lookup)?;
     Ok(LiteLlmSettings {
         ssl_verify: raw.ssl_verify,
+        ssl_certificate: raw.ssl_certificate,
+        http2: raw.http2,
+        ssl_ecdh_curve: raw.ssl_ecdh_curve,
+        ssl_security_level: raw.ssl_security_level,
         num_retries,
         request_timeout,
         drop_params: raw.drop_params,

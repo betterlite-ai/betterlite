@@ -10,5 +10,6 @@ pub mod otlp_client;
 pub mod passthrough;
 pub mod proxy;
 pub mod skill_archive;
+pub mod tls;
 pub mod url_path;
 pub mod user_url;
