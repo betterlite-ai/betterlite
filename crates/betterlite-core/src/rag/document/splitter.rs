@@ -1,4 +1,5 @@
 mod helpers;
+mod tests;
 
 use std::collections::VecDeque;
 use std::num::TryFromIntError;

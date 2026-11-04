@@ -1,4 +1,5 @@
 mod position;
+mod tests;
 
 use std::ops::Neg as _;
 use std::panic::{AssertUnwindSafe, catch_unwind};
