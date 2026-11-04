@@ -4,7 +4,6 @@ use serde_json::value::RawValue;
 use crate::cisco_conversation::Fields;
 use crate::cisco_conversation::json::Json;
 use crate::cisco_mcp::blocking::StructuredMirror;
-use crate::cisco_mcp::normalize::is_pair_list;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct TextUpdate {
@@ -82,7 +81,26 @@ pub enum PairValue {
 pub fn set_tool_response_text(response: &Json, text: &str) -> TextUpdate {
     let preserved = match response {
         Json::Object(fields) => return rewrite_object(fields.clone(), text),
-        Json::List(items) => return rewrite_list(items, text),
+        Json::List(items) => {
+            let pairs = items
+                .iter()
+                .map(|raw| serde_json::from_str(raw.get()))
+                .collect::<Result<Vec<(String, Box<RawValue>)>, _>>();
+            let mut replaced = false;
+            let response = match pairs {
+                Ok(fields) if !fields.is_empty() => {
+                    RewrittenResponse::Pairs(rewrite_pairs(fields, text, &mut replaced))
+                }
+                Ok(_) | Err(_) => {
+                    let content = rewrite_items(items, text);
+                    replaced = content
+                        .iter()
+                        .any(|item| matches!(item, ContentItem::Text { .. }));
+                    RewrittenResponse::Content(content)
+                }
+            };
+            return TextUpdate { response, replaced };
+        }
         Json::Null => RewrittenResponse::Null,
         Json::Bool(value) => RewrittenResponse::Bool(*value),
         Json::Number(value) => {
@@ -103,18 +121,11 @@ fn rewrite_object(mut fields: Fields, text: &str) -> TextUpdate {
         let inner = Json::parse(raw.get());
         if !matches!(inner, Json::Null) {
             let update = set_tool_response_text(&inner, text);
-            fields.shift_remove("mcp_tool_call_response");
-            return TextUpdate {
-                response: RewrittenResponse::Wrapper {
-                    rest: fields,
-                    mcp_tool_call_response: Box::new(update.response),
-                },
-                replaced: update.replaced,
-            };
+            return enclose(fields, Enclosure::Wrapper, update);
         }
     }
     if let Json::List(items) = Json::parse(fields.get("content").map_or("null", |raw| raw.get())) {
-        let (content, _) = rewrite_items(&items, text);
+        let content = rewrite_items(&items, text);
         fields.shift_remove("content");
         let mirror = take_mirror(&mut fields, text);
         return TextUpdate {
@@ -126,23 +137,36 @@ fn rewrite_object(mut fields: Fields, text: &str) -> TextUpdate {
             replaced: true,
         };
     }
-    rewrite_dictionary(fields, text)
-}
-
-fn rewrite_dictionary(mut fields: Fields, text: &str) -> TextUpdate {
     if let Json::Object(result) = Json::parse(fields.get("result").map_or("null", |raw| raw.get()))
     {
-        let update = rewrite_mirror(result, text);
-        fields.shift_remove("result");
-        return TextUpdate {
-            response: RewrittenResponse::Result {
-                rest: fields,
-                result: Box::new(update.response),
-            },
-            replaced: update.replaced,
-        };
+        return enclose(fields, Enclosure::Result, rewrite_mirror(result, text));
     }
     rewrite_mirror(fields, text)
+}
+
+enum Enclosure {
+    Wrapper,
+    Result,
+}
+
+fn enclose(mut fields: Fields, enclosure: Enclosure, mut update: TextUpdate) -> TextUpdate {
+    let key = match enclosure {
+        Enclosure::Wrapper => "mcp_tool_call_response",
+        Enclosure::Result => "result",
+    };
+    fields.shift_remove(key);
+    let inner = Box::new(update.response);
+    update.response = match enclosure {
+        Enclosure::Wrapper => RewrittenResponse::Wrapper {
+            rest: fields,
+            mcp_tool_call_response: inner,
+        },
+        Enclosure::Result => RewrittenResponse::Result {
+            rest: fields,
+            result: inner,
+        },
+    };
+    update
 }
 
 fn rewrite_mirror(mut fields: Fields, text: &str) -> TextUpdate {
@@ -175,40 +199,28 @@ fn take_mirror(fields: &mut Fields, text: &str) -> MirrorField {
     }
 }
 
-fn rewrite_list(items: &[Box<RawValue>], text: &str) -> TextUpdate {
-    if is_pair_list(items) {
-        let pairs = items
-            .iter()
-            .map(|raw| serde_json::from_str(raw.get()))
-            .collect::<Result<Vec<(String, Box<RawValue>)>, _>>();
-        if let Ok(fields) = pairs {
-            return rewrite_pairs(fields, text);
-        }
-    }
-    let (content, replaced) = rewrite_items(items, text);
-    TextUpdate {
-        response: RewrittenResponse::Content(content),
-        replaced,
-    }
-}
-
-fn rewrite_pairs(pairs: Vec<(String, Box<RawValue>)>, text: &str) -> TextUpdate {
+fn rewrite_pairs(
+    pairs: Vec<(String, Box<RawValue>)>,
+    text: &str,
+    replaced: &mut bool,
+) -> Vec<(String, PairValue)> {
     // LiteLLM converts pairs to a dict to find content, but rewrites every mirror pair.
     let content_index = pairs.iter().rposition(|(key, _)| key == "content");
-    let mut replaced = false;
-    let fields = pairs
+    pairs
         .into_iter()
         .enumerate()
         .map(|(index, (key, value))| {
             let updated = if matches!(key.as_str(), "structuredContent" | "structured_content") {
-                replaced = true;
+                *replaced = true;
                 PairValue::Mirror(StructuredMirror {
                     result: text.to_owned(),
                 })
             } else if Some(index) == content_index {
                 if let Json::List(items) = Json::parse(value.get()) {
-                    let (content, changed) = rewrite_items(&items, text);
-                    replaced |= changed;
+                    let content = rewrite_items(&items, text);
+                    *replaced |= content
+                        .iter()
+                        .any(|item| matches!(item, ContentItem::Text { .. }));
                     PairValue::Content(content)
                 } else {
                     PairValue::Unchanged(value)
@@ -218,27 +230,20 @@ fn rewrite_pairs(pairs: Vec<(String, Box<RawValue>)>, text: &str) -> TextUpdate 
             };
             (key, updated)
         })
-        .collect();
-    TextUpdate {
-        response: RewrittenResponse::Pairs(fields),
-        replaced,
-    }
+        .collect()
 }
 
-fn rewrite_items(items: &[Box<RawValue>], text: &str) -> (Vec<ContentItem>, bool) {
-    let mut replaced = false;
-    let content = items.iter().map(|raw| {
+fn rewrite_items(items: &[Box<RawValue>], text: &str) -> Vec<ContentItem> {
+    items.iter().map(|raw| {
         if let Json::Object(mut fields) = Json::parse(raw.get())
             && matches!(Json::parse(fields.get("type").map_or("null", |kind| kind.get())), Json::Text(kind) if kind == "text")
         {
             fields.shift_remove("text");
-            replaced = true;
             ContentItem::Text { rest: fields, text: text.to_owned() }
         } else {
             ContentItem::Unchanged(raw.clone())
         }
-    }).collect();
-    (content, replaced)
+    }).collect()
 }
 
 mod tests;
