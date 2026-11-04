@@ -150,3 +150,5 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Peer<S> {
         }
     }
 }
+
+mod tests;
