@@ -2,12 +2,10 @@
 mod tests;
 
 pub fn get_env_int(name: &str, value: Option<&str>, default: i64) -> i64 {
-    let Some(value) = value else {
-        return default;
-    };
-    match value.trim().parse::<i64>() {
-        Ok(value) => value,
-        Err(_) => {
+    match get_env_int_or_none(value) {
+        Some(parsed) => parsed,
+        None if value.is_none() => default,
+        None => {
             tracing::warn!(
                 environment_variable = name,
                 "invalid integer environment value; using default"
@@ -44,8 +42,5 @@ pub fn get_env_int_or_none(value: Option<&str>) -> Option<i64> {
     let Some(value) = value else {
         return None;
     };
-    match value.trim().parse::<i64>() {
-        Ok(value) => Some(value),
-        Err(_) => None,
-    }
+    value.trim().parse().ok()
 }

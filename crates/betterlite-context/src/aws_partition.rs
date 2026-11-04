@@ -41,7 +41,7 @@ pub fn contains_bedrock_arn(value: &str) -> bool {
     value.match_indices("arn:aws").any(|(index, _)| {
         value
             .get(index..)
-            .is_some_and(|remaining| has_arn_service(remaining, "bedrock:"))
+            .is_some_and(|remaining| is_bedrock_arn(remaining))
     })
 }
 pub fn is_bedrock_arn(value: &str) -> bool {
@@ -64,20 +64,6 @@ pub fn contains_aws_arn(value: &str) -> bool {
                         .find(':')
                         .is_some_and(|end| valid_partition(&tail[..end])))
         })
-    })
-}
-
-fn has_arn_service(value: &str, service: &str) -> bool {
-    value.strip_prefix("arn:aws").is_some_and(|tail| {
-        if let Some(rest) = tail.strip_prefix(':') {
-            rest.starts_with(service)
-        } else if let Some(rest) = tail.strip_prefix('-') {
-            rest.find(':').is_some_and(|end| {
-                valid_partition(&rest[..end]) && rest[end + 1..].starts_with(service)
-            })
-        } else {
-            false
-        }
     })
 }
 
