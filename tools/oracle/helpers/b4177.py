@@ -43,6 +43,17 @@ def _module(name: str) -> ModuleType:
     return ModuleType(name)
 
 
+def _worker_environment(values: dict[str, str]) -> dict[str, str]:
+    inherited = {
+        key: value
+        for key, value in os.environ.items()
+        if key.casefold()
+        not in {"prometheus_multiproc_dir", "prometheus-multiproc-dir"}
+    }
+    inherited.update(values)
+    return inherited
+
+
 def _capture_hypercorn(options: LaunchOptions) -> tuple[dict[str, Json], str]:
     captured: dict[str, Json] = {}
     config_module = _module("hypercorn.config")
@@ -165,7 +176,7 @@ def _capture_gunicorn(
     stdout = StringIO()
     with (
         patch.dict(sys.modules, modules),
-        patch.dict(os.environ, environment, clear=True),
+        patch.dict(os.environ, _worker_environment(environment), clear=True),
         patch.object(proxy_cli, "start_query_engine_reaper", lambda: None),
         redirect_stdout(stdout),
     ):
@@ -307,7 +318,7 @@ def run(input_value: dict[str, Json]) -> Json:
 
         with (
             patch.dict(sys.modules, {"litellm.proxy.prometheus_cleanup": cleanup}),
-            patch.dict(os.environ, environment, clear=True),
+            patch.dict(os.environ, _worker_environment(environment), clear=True),
             patch("os.makedirs", skip_makedirs),
             redirect_stdout(StringIO()),
         ):
