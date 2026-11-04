@@ -255,14 +255,21 @@ fn bedrock_parent_records_decode_typed_nested_fields() {
 #[test]
 fn chunking_strategy_decodes_into_named_variants() {
     let auto: VectorStoreChunkingStrategy = serde_json::from_str(r#"{"type":"auto"}"#).unwrap();
-    assert_eq!(auto.type_name.as_deref(), Some("auto"));
+    let auto_type = match auto {
+        VectorStoreChunkingStrategy::Auto(value) => value.type_name,
+        VectorStoreChunkingStrategy::Static(_) | VectorStoreChunkingStrategy::Other(_) => None,
+    };
+    assert_eq!(auto_type.as_deref(), Some("auto"));
     let fixed: VectorStoreChunkingStrategy = serde_json::from_str(
         r#"{"type":"static","static":{"max_chunk_size_tokens":800,"chunk_overlap_tokens":400}}"#,
     )
     .unwrap();
-    let static_chunk_size = fixed
-        .static_config
-        .and_then(|config| config.max_chunk_size_tokens);
+    let static_chunk_size = match fixed {
+        VectorStoreChunkingStrategy::Static(value) => value
+            .static_config
+            .and_then(|config| config.max_chunk_size_tokens),
+        VectorStoreChunkingStrategy::Auto(_) | VectorStoreChunkingStrategy::Other(_) => None,
+    };
     assert_eq!(static_chunk_size, Some(800));
 }
 

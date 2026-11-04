@@ -100,11 +100,11 @@ record!(VectorStoreResultContent {
     text: String => "text",
     type_name: String => "type",
 });
-record!(VectorStoreSearchRequest {
+record!(SearchOptionalParams {
     query: Value => "query", filters: Value => "filters", max_num_results: i64 => "max_num_results",
     ranking_options: Value => "ranking_options", rewrite_query: bool => "rewrite_query",
 });
-pub type SearchOptionalParams = VectorStoreSearchRequest;
+pub type VectorStoreSearchRequest = SearchOptionalParams;
 record!(VectorStoreSearchResult {
     score: serde_json::Number => "score",
     content: Vec<VectorStoreResultContent> => "content",
@@ -176,14 +176,17 @@ record!(VectorStoreCreateResponse {
 record!(VectorStoreExpirationPolicy {
     anchor: String => "anchor", days: i64 => "days",
 });
-record!(VectorStoreChunkingStrategy {
-    type_name: String => "type", static_config: StaticChunkingConfig => "static",
-});
-pub type AutoChunkingStrategy = VectorStoreChunkingStrategy;
-pub type StaticChunkingStrategy = VectorStoreChunkingStrategy;
 record!(StaticChunkingConfig {
     max_chunk_size_tokens: i64 => "max_chunk_size_tokens",
     chunk_overlap_tokens: i64 => "chunk_overlap_tokens",
+});
+record!(AutoChunkingStrategy { type_name: String => "type" });
+record!(StaticChunkingStrategy {
+    type_name: String => "type", static_config: StaticChunkingConfig => "static",
+});
+record!(union VectorStoreChunkingStrategy [tag = "type"] {
+    "auto" => Auto(AutoChunkingStrategy),
+    "static" => Static(StaticChunkingStrategy),
 });
 record!(VectorStoreFileCounts {
     in_progress: i64 => "in_progress", completed: i64 => "completed", failed: i64 => "failed",
