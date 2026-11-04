@@ -1,7 +1,7 @@
 id: B4575
 title: CLI session commands and temporary settings backup
 description: >-
-  Build the session commands and the Claude Code settings backup of betterlite-management-cli in Rust, ported from LiteLLM's litellm/proxy/client/cli/commands/auth.py (logout, auth print-token, whoami and _configure_claude_code) and up.py (BackupRecord, secure_create, write_backup, read_backup, restore_claude_settings, _restore_and_report, down and the three login probes _usable_login, _key_resolved_on_the_way_in and _stored_login_is_pkce). The session code lives in tools/management-cli/src/session.rs and session/**, the backup code in tools/management-cli/src/settings_backup.rs and settings_backup/**. The auth group is a clap Subcommand enum holding print-token, and logout, whoami and down are command functions with LiteLLM's names and help texts, so the CLI root can mount them. Each command takes B4560's context values (base_url, base_url_explicit, api_key and api_key_from_token_file, the last two absent meaning None and false), B4590's SecretVault, B4573's HTTP transport, a clock and two injected writers for stdout and stderr, and returns Ok or its module's own error enum. The root prints an error's text as one line on stderr and exits 1, where LiteLLM raised click.ClickException or called sys.exit(1).
+  Build the session commands and the Claude Code settings backup of betterlite-cli in Rust, ported from LiteLLM's litellm/proxy/client/cli/commands/auth.py (logout, auth print-token, whoami and _configure_claude_code) and up.py (BackupRecord, secure_create, write_backup, read_backup, restore_claude_settings, _restore_and_report, down and the three login probes _usable_login, _key_resolved_on_the_way_in and _stored_login_is_pkce). The session code lives in crates/betterlite-cli/src/session.rs and session/**, the backup code in crates/betterlite-cli/src/settings_backup.rs and settings_backup/**. The auth group is a clap Subcommand enum holding print-token, and logout, whoami and down are command functions with LiteLLM's names and help texts, so the CLI root can mount them. Each command takes B4560's context values (base_url, base_url_explicit, api_key and api_key_from_token_file, the last two absent meaning None and false), B4590's SecretVault, B4573's HTTP transport, a clock and two injected writers for stdout and stderr, and returns Ok or its module's own error enum. The root prints an error's text as one line on stderr and exits 1, where LiteLLM raised click.ClickException or called sys.exit(1).
 
   docs/compatibility.md decides what is ported. Command names, the order of the checks, what each command sends, clears and writes, the lines printed on stdout, the exit codes and the streams stay LiteLLM's. The stored credential comes typed from B4591's loader, the Rust form of CliTokenRecord (cli_token_utils.py L86-L104): base_url, user_id, user_email and user_role are strings that default to "", timestamp a number that defaults to 0, key, expires_at and refresh_token optional, team_id an optional string (CliTokenData L80). A field of another type is that loader's error, so this task has no runtime type checks and no isinstance fallbacks. Text on stderr and in errors is betterlite's own words, as rule errors-match-litellm says, and each one still names the command that fixes it (lite login, lite login --pkce or lite logout).
 
@@ -13,15 +13,15 @@ description: >-
 
   _configure_claude_code(base_url, api_key) resolves the settings path with B4562's claude_settings_path from the process environment and calls B4563's configure_claude_settings with StaticToken(api_key), KeepModel, that path, configure_state_path(path) and settings_file_owners(path). A ClaudeSettingsError returns an error that says the login worked but Claude Code could not be configured, with the cause. On success it prints LiteLLM's two blocks (auth.py L804-L808) with base_url's trailing slashes stripped and B4562's STARTING_MODEL_ROLE. No apiKeyHelper is written. B4585's login calls it.
 
-  Backup. BackupRecord holds existed (bool) and content (a JSON object or None). The secure create opens a path for writing with create and truncate and mode 0o600 (std::os::unix::fs::OpenOptionsExt::mode), then sets 0o600 on the open file before writing a byte (File::set_permissions), so an existing file with wider permissions is tightened too. write_backup calls B192's ensure_private_dir on the parent and writes {"existed": ..., "content": ...} as standard JSON through the secure create. read_backup returns None when the file doesn't exist; otherwise it reads it as a JSON object with existed a JSON bool and content an object or null, both required, other keys ignored. Invalid JSON, a missing field or a value of another type is an error that names the path and says it cannot be restored safely, and a read failure is an error that names the path. restore_claude_settings reads the backup and returns None when there is none. When existed is true and content is an object it creates the settings file's parent directories and writes content through B4562's write_claude_settings; otherwise it removes the settings file if it exists. Only then does it remove the backup, and it returns the record. Both paths default to B4562's CLAUDE_SETTINGS_PATH (~/.claude/settings.json) and BACKUP_PATH (~/.litellm/claude_settings_backup.json), not the CLAUDE_CONFIG_DIR-aware claude_settings_path (claude_settings.py L76-L78). The restore report prints "Nothing to restore.", "Restored {path} to its original contents." or "Removed {path} (it did not exist before `lite up`)." on stdout, and down runs it and returns its error. The login probes: usable_login is false for a None key and otherwise true when a stored credential exists and B4591 calls it fresh; key_resolved_on_the_way_in returns the context api_key when api_key_from_token_file is true and otherwise B4574's get_stored_api_key for the given base URL; stored_login_is_pkce is true when a stored credential has a refresh_token. B4577's ensure_fresh_login and up use them.
+  Backup. BackupRecord holds existed (bool) and content (a JSON object or None). The secure create opens a path for writing with create and truncate and mode 0o600 (std::os::unix::fs::OpenOptionsExt::mode), then sets 0o600 on the open file before writing a byte (File::set_permissions), so an existing file with wider permissions is tightened too. It is settings_backup::secure_create, pub(crate), since B4582's debug report file opens through it as well. write_backup calls B192's ensure_private_dir on the parent and writes {"existed": ..., "content": ...} as standard JSON through the secure create. read_backup returns None when the file doesn't exist; otherwise it reads it as a JSON object with existed a JSON bool and content an object or null, both required, other keys ignored. Invalid JSON, a missing field or a value of another type is an error that names the path and says it cannot be restored safely, and a read failure is an error that names the path. restore_claude_settings reads the backup and returns None when there is none. When existed is true and content is an object it creates the settings file's parent directories and writes content through B4562's write_claude_settings; otherwise it removes the settings file if it exists. Only then does it remove the backup, and it returns the record. Both paths default to B4562's CLAUDE_SETTINGS_PATH (~/.claude/settings.json) and BACKUP_PATH (~/.litellm/claude_settings_backup.json), not the CLAUDE_CONFIG_DIR-aware claude_settings_path (claude_settings.py L76-L78). The restore report prints "Nothing to restore.", "Restored {path} to its original contents." or "Removed {path} (it did not exist before `lite up`)." on stdout, and down runs it and returns its error. The login probes: usable_login is false for a None key and otherwise true when a stored credential exists and B4591 calls it fresh; key_resolved_on_the_way_in returns the context api_key when api_key_from_token_file is true and otherwise B4574's get_stored_api_key for the given base URL; stored_login_is_pkce is true when a stored credential has a refresh_token. B4577's ensure_fresh_login and up use them.
 
   Tests. Test functions live in tests.rs files under session/ and settings_backup/ with the name prefixes the checks select: logout_, print_token_, whoami_ and configure_claude_ under session, and backup_, restore_, down_ and login_probe_ under settings_backup. They use a fake SecretVault, a fake transport that records revocation and refresh calls and answers canned outcomes, a fixed clock and paths in a temp directory, so no test touches the real home directory or keychain. They compare the exact stdout bytes for the lines LiteLLM prints, assert that print-token writes nothing to stdout on every error, and assert the returned error variant for betterlite's own texts.
 scope:
   paths:
-    - tools/management-cli/src/session.rs
-    - tools/management-cli/src/session/**
-    - tools/management-cli/src/settings_backup.rs
-    - tools/management-cli/src/settings_backup/**
+    - crates/betterlite-cli/src/session.rs
+    - crates/betterlite-cli/src/session/**
+    - crates/betterlite-cli/src/settings_backup.rs
+    - crates/betterlite-cli/src/settings_backup/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L64-L95
@@ -94,28 +94,28 @@ checks:
   commands:
     - id: session-logout
       why: the logout tests are missing or the revocation order, the stop on RevocationUnavailable or a clear outcome's lines differ from the description
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^session::.*tests::logout_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^session::.*tests::logout_/)'
     - id: session-print-token
       why: the print-token tests are missing or a check, its order, the key choice or the stdout-only rule differs from the description
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^session::.*tests::print_token_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^session::.*tests::print_token_/)'
     - id: session-whoami
       why: the whoami tests are missing or a line, its order or the expiry and warning rules differ from the description
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^session::.*tests::whoami_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^session::.*tests::whoami_/)'
     - id: session-configure-claude
       why: the Claude Code wiring tests are missing or the configure call, its error or the printed blocks differ from the description
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^session::.*tests::configure_claude_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^session::.*tests::configure_claude_/)'
     - id: backup-files
       why: the backup file tests are missing or the file mode, the written JSON or the read rules differ from the description
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^settings_backup::.*tests::backup_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^settings_backup::.*tests::backup_/)'
     - id: backup-restore
       why: the restore tests are missing or the restore branches or the order of the backup removal differ from the description
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^settings_backup::.*tests::restore_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^settings_backup::.*tests::restore_/)'
     - id: backup-down
       why: the down tests are missing or its lines or error differ from the description
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^settings_backup::.*tests::down_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^settings_backup::.*tests::down_/)'
     - id: backup-login-probes
       why: the login probe tests are missing or a probe answers differently from LiteLLM's
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^settings_backup::.*tests::login_probe_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^settings_backup::.*tests::login_probe_/)'
 oracle_cases: []
 deviations: []
 out_of_scope:
