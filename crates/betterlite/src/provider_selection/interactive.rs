@@ -74,25 +74,6 @@ impl Drop for CursorVisibilityGuard<'_> {
     }
 }
 
-pub fn select_interactive<K>(
-    key_source: &mut K,
-    writer: &mut dyn Write,
-    supports_color: bool,
-) -> Result<BTreeSet<usize>, InteractiveError>
-where
-    K: KeySource,
-{
-    if supports_color {
-        write!(writer, "{CURSOR_HIDE}")?;
-        writer.flush()?;
-    }
-    let guard = CursorVisibilityGuard {
-        writer,
-        active: supports_color,
-    };
-    run_selection_loop(key_source, guard.writer, supports_color)
-}
-
 enum LoopOutcome {
     Continue,
     Finished(BTreeSet<usize>),
@@ -131,7 +112,7 @@ fn handle_key(key: Key, cursor: &mut usize, selected: &mut BTreeSet<usize>) -> L
     }
 }
 
-fn run_selection_loop<K>(
+pub fn select_interactive<K>(
     key_source: &mut K,
     writer: &mut dyn Write,
     supports_color: bool,
@@ -139,6 +120,14 @@ fn run_selection_loop<K>(
 where
     K: KeySource,
 {
+    if supports_color {
+        write!(writer, "{CURSOR_HIDE}")?;
+        writer.flush()?;
+    }
+    let guard = CursorVisibilityGuard {
+        writer,
+        active: supports_color,
+    };
     let mut cursor = 0_usize;
     let mut selected: BTreeSet<usize> = BTreeSet::new();
     let mut first_render = true;
@@ -148,11 +137,11 @@ where
             supports_color,
         };
         write!(
-            writer,
+            guard.writer,
             "{}",
             render_selector(cursor, &selected, &render_state)
         )?;
-        writer.flush()?;
+        guard.writer.flush()?;
         first_render = false;
         match handle_key(key_source.next_key()?, &mut cursor, &mut selected) {
             LoopOutcome::Continue => {}
