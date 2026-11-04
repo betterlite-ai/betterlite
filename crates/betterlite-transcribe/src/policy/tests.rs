@@ -12,9 +12,7 @@ use crate::policy::cost::{
 use crate::policy::eligibility::{
     requested_media_format, transcribe_admin_only_refusal, unpriceable_request_reason,
 };
-use crate::policy::ownership::{
-    job_access_refusal, transcribe_job_access_refusal, transcribe_owned_start_request,
-};
+use crate::policy::ownership::{transcribe_job_access_refusal, transcribe_owned_start_request};
 use crate::policy::storage::{transcribe_media_buckets, transcribe_storage_refusal};
 use crate::records::{GetTranscriptionJobRequest, JobLookup, JobLookupError, JobLookupFuture};
 use crate::start_request::OwnedStartRequest;
@@ -180,15 +178,17 @@ fn rounds_seconds_for_transcription_job_cost() {
     None
 )]
 #[case::first_owner(r#"{"TranscriptionJob":{"Tags":[{"Key":"litellm-owner","Value":"other"},{"Key":"litellm-owner","Value":"user-1"}]}}"#, Some(404))]
-fn job_access_refusal_hides_foreign_jobs_as_not_found(
+#[tokio::test]
+async fn job_access_refusal_hides_foreign_jobs_as_not_found(
     principal: Principal,
-    #[case] input: &str,
+    #[case] input: &'static str,
     #[case] expected: Option<u16>,
 ) {
-    assert_eq!(
-        job_access_refusal(input, Some(&principal)).map(|error| error.status_code),
-        expected
-    );
+    let lookup = TestJobLookup {
+        response: Some(input),
+    };
+    let refusal = transcribe_job_access_refusal(r#""job-1""#, Some(&principal), &lookup).await;
+    assert_eq!(refusal.map(|error| error.status_code), expected);
 }
 
 #[rstest]
@@ -320,7 +320,7 @@ fn owned_start_request_preserves_passthrough_fields(principal: Principal, #[case
 }
 
 struct TestJobLookup {
-    fail: bool,
+    response: Option<&'static str>,
 }
 
 impl JobLookup for TestJobLookup {
@@ -330,26 +330,23 @@ impl JobLookup for TestJobLookup {
     ) -> JobLookupFuture<'lookup> {
         Box::pin(async move {
             assert_eq!(request.transcription_job_name, "job-1");
-            if self.fail {
-                return Err(JobLookupError::Unavailable);
-            }
-            Ok(serde_json::from_str(
-                r#"{"TranscriptionJob":{"Tags":[{"Key":"litellm-owner","Value":"foreign"}]}}"#,
-            )
-            .unwrap())
+            let payload = self.response.ok_or(JobLookupError::Unavailable)?;
+            serde_json::from_str(payload).map_err(JobLookupError::InvalidResponse)
         })
     }
 }
 
 #[rstest]
-#[case::lookup_failure(true)]
-#[case::foreign(false)]
+#[case::lookup_failure(None)]
+#[case::foreign(Some(
+    r#"{"TranscriptionJob":{"Tags":[{"Key":"litellm-owner","Value":"foreign"}]}}"#
+))]
 #[tokio::test]
 async fn transcribe_job_access_refusal_returns_404_for_lookup_failure_and_foreign_job(
     principal: Principal,
-    #[case] fail: bool,
+    #[case] response: Option<&'static str>,
 ) {
-    let lookup = TestJobLookup { fail };
+    let lookup = TestJobLookup { response };
     assert_eq!(
         transcribe_job_access_refusal(r#""job-1""#, Some(&principal), &lookup)
             .await
@@ -380,10 +377,13 @@ async fn admin_only_refusal_storage_refusal_and_job_access_refusal_bypass_admin(
         transcribe_storage_refusal("invalid", None, Some(&principal)),
         None
     );
-    assert_eq!(job_access_refusal("invalid", Some(&principal)), None);
     assert_eq!(
-        transcribe_job_access_refusal("invalid", Some(&principal), &TestJobLookup { fail: true })
-            .await,
+        transcribe_job_access_refusal(
+            "invalid",
+            Some(&principal),
+            &TestJobLookup { response: None }
+        )
+        .await,
         None
     );
 }

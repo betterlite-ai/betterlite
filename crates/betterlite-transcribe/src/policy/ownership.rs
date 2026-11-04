@@ -51,26 +51,6 @@ fn validate_tag(tag: &StartTag) -> Result<(), TranscribeRefusal> {
     Ok(())
 }
 
-#[must_use]
-pub fn job_access_refusal(
-    job_response: &str,
-    principal: Option<&Principal>,
-) -> Option<TranscribeRefusal> {
-    if is_proxy_admin(principal) {
-        return None;
-    }
-    let response = serde_json::from_str(job_response);
-    response.map_or_else(
-        |_| {
-            Some(TranscribeRefusal {
-                status_code: 404,
-                detail: "No accessible transcription job was found".to_owned(),
-            })
-        },
-        |parsed| job_response_access_refusal(&parsed, principal),
-    )
-}
-
 fn job_response_access_refusal(
     response: &TranscriptionJobResponse,
     principal: Option<&Principal>,

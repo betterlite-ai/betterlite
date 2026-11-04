@@ -60,6 +60,8 @@ pub trait JobLookup: Send + Sync {
 pub enum JobLookupError {
     #[error("Transcribe job lookup failed")]
     Unavailable,
+    #[error("Transcribe job response is invalid")]
+    InvalidResponse(#[source] serde_json::Error),
 }
 
 mod tests;
