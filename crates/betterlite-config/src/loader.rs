@@ -134,7 +134,6 @@ pub(crate) fn unknown_paths(views: &[BTreeSet<String>]) -> Vec<String> {
         .map(|path| (*path).to_owned())
         .collect()
 }
-
 type Lookup<'lookup> = &'lookup dyn EnvironmentLookup;
 
 fn convert(raw: RawConfig, sections: Sections, lookup: Lookup<'_>) -> Result<Config, ConfigError> {
@@ -151,7 +150,6 @@ fn convert(raw: RawConfig, sections: Sections, lookup: Lookup<'_>) -> Result<Con
         sections,
     })
 }
-
 fn convert_deployment(
     raw: RawDeployment,
     index: usize,
