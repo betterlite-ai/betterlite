@@ -37,3 +37,10 @@ path = "fuzz_targets/agent_provider.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "route_pattern"
+path = "fuzz_targets/route_pattern.rs"
+test = false
+doc = false
+bench = false
