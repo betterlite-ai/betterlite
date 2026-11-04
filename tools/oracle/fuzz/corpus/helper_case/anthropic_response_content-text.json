@@ -1,0 +1,9 @@
+kind: helper
+name: anthropic-response-content-text
+call:
+  anthropic_response_content:
+    response: {content: [{type: text, text: hi}]}
+    json_mode: null
+env: {}
+compare:
+  ignore: []
