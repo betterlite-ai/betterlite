@@ -10,7 +10,7 @@ pub struct Raw {
     #[serde(default)]
     model_list: Vec<Deployment>,
     #[serde(default)]
-    litellm_settings: GlobalSettings,
+    litellm_settings: Params,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -20,28 +20,18 @@ struct Deployment {
 }
 
 #[derive(Debug, Default, Deserialize)]
-struct GlobalSettings {
-    #[serde(default)]
-    s3_access_key_id: Option<String>,
-    #[serde(default)]
-    s3_secret_access_key: Option<SecretString>,
-}
-
-#[derive(Debug, Default, Deserialize)]
 struct Params {
-    #[serde(default)]
-    s3_access_key_id: Option<String>,
-    #[serde(default)]
+    s3_access_key_id: Option<SecretString>,
     s3_secret_access_key: Option<SecretString>,
 }
 
-#[derive(Clone, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct AwsS3Settings {
-    pub access_key_id: Option<String>,
+    pub access_key_id: Option<SecretString>,
     pub secret_access_key: Option<SecretString>,
 }
 
-#[derive(Clone, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct Settings {
     pub deployments: Vec<AwsS3Settings>,
     pub global: AwsS3Settings,
@@ -50,51 +40,19 @@ pub struct Settings {
 impl Section for Raw {
     type Settings = Settings;
 
-    fn convert<L: EnvironmentLookup>(self, lookup: &L) -> Result<Settings, ConfigError> {
+    fn convert<L>(self, lookup: &L) -> Result<Settings, ConfigError>
+    where
+        L: EnvironmentLookup,
+    {
+        let global = self.litellm_settings.resolve("litellm_settings", lookup)?;
         let mut deployments = Vec::with_capacity(self.model_list.len());
         for (index, deployment) in self.model_list.into_iter().enumerate() {
-            let path = format!("model_list.{index}.litellm_params");
-            deployments.push(AwsS3Settings {
-                access_key_id: resolve(
-                    deployment.litellm_params.s3_access_key_id,
-                    &path,
-                    "s3_access_key_id",
-                    lookup,
-                )?,
-                secret_access_key: deployment
+            deployments.push(
+                deployment
                     .litellm_params
-                    .s3_secret_access_key
-                    .map(|value| {
-                        resolve_string(
-                            value.expose_secret().to_owned(),
-                            &format!("{path}.s3_secret_access_key"),
-                            lookup,
-                        )
-                        .map(SecretString::from)
-                    })
-                    .transpose()?,
-            });
+                    .resolve(&format!("model_list.{index}.litellm_params"), lookup)?,
+            );
         }
-        let global = AwsS3Settings {
-            access_key_id: resolve(
-                self.litellm_settings.s3_access_key_id,
-                "litellm_settings",
-                "s3_access_key_id",
-                lookup,
-            )?,
-            secret_access_key: self
-                .litellm_settings
-                .s3_secret_access_key
-                .map(|value| {
-                    resolve_string(
-                        value.expose_secret().to_owned(),
-                        "litellm_settings.s3_secret_access_key",
-                        lookup,
-                    )
-                    .map(SecretString::from)
-                })
-                .transpose()?,
-        };
         Ok(Settings {
             deployments,
             global,
@@ -102,17 +60,28 @@ impl Section for Raw {
     }
 }
 
-fn resolve<L: EnvironmentLookup>(
-    value: Option<String>,
-    path: &str,
-    key: &str,
-    lookup: &L,
-) -> Result<Option<String>, ConfigError> {
-    let full_path = format!("{path}.{key}");
-    value.map_or_else(
-        || Ok(None),
-        |value| resolve_string(value, &full_path, lookup).map(Some),
-    )
+impl Params {
+    fn resolve<L>(self, path: &str, lookup: &L) -> Result<AwsS3Settings, ConfigError>
+    where
+        L: EnvironmentLookup,
+    {
+        let resolve = |value: Option<SecretString>, key: &str| {
+            value
+                .map(|secret| {
+                    resolve_string(
+                        secret.expose_secret().to_owned(),
+                        &format!("{path}.{key}"),
+                        lookup,
+                    )
+                    .map(SecretString::from)
+                })
+                .transpose()
+        };
+        Ok(AwsS3Settings {
+            access_key_id: resolve(self.s3_access_key_id, "s3_access_key_id")?,
+            secret_access_key: resolve(self.s3_secret_access_key, "s3_secret_access_key")?,
+        })
+    }
 }
 
 mod tests;

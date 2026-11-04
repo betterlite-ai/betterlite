@@ -1,8 +1,30 @@
-kind: helper
-name: session-tags-canonical
-call:
-  bedrock_aws_settings:
-    operation: canonical_tags
-    params: {'tags': [{'Key': 'b', 'Value': '2', 'Extra': 'ignored'}, {'Key': 'a', 'Value': '1'}]}
-env: {}
-compare: {ignore: []}
+{
+  "kind": "helper",
+  "name": "session-tags-canonical",
+  "call": {
+    "bedrock_aws_settings": {
+      "operation": "canonical_tags",
+      "params": {
+        "tags": [
+          {
+            "Key": "a",
+            "Value": "first",
+            "extra": "ignored"
+          },
+          {
+            "Key": "",
+            "Value": ""
+          },
+          {
+            "Key": "a",
+            "Value": "second"
+          }
+        ]
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

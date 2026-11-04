@@ -1,8 +1,20 @@
-kind: helper
-name: auth-parameters-popped-before-validation
-call:
-  bedrock_aws_settings:
-    operation: pop_auth
-    params: {'aws_access_key_id': 'id', 'aws_session_tags': null, 'aws_bedrock_runtime_endpoint': 'https://bedrock.example'}
-env: {}
-compare: {ignore: []}
+{
+  "kind": "helper",
+  "name": "auth-parameters-popped-before-validation",
+  "call": {
+    "bedrock_aws_settings": {
+      "operation": "pop_auth",
+      "params": {
+        "aws_access_key_id": 42,
+        "aws_secret_access_key": "secret",
+        "aws_session_tags": "invalid",
+        "aws_region_name": "west",
+        "aws_bedrock_runtime_endpoint": "https://bedrock.example"
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

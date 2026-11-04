@@ -1,8 +1,27 @@
-kind: helper
-name: session-token-triple
-call:
-  bedrock_aws_settings:
-    operation: session_auth
-    params: {'aws_access_key_id': 'access', 'aws_secret_access_key': 'secret', 'aws_session_token': 'token'}
-env: {}
-compare: {ignore: []}
+{
+  "kind": "helper",
+  "name": "session-token-triple",
+  "call": {
+    "bedrock_aws_settings": {
+      "operation": "local",
+      "params": {
+        "settings": {
+          "aws_access_key_id": "access",
+          "aws_secret_access_key": "secret",
+          "aws_session_token": "token"
+        },
+        "environment": {},
+        "files": {},
+        "fixture": [
+          "access",
+          "secret",
+          "token"
+        ]
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

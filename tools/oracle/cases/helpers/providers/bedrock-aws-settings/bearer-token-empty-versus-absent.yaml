@@ -1,8 +1,19 @@
-kind: helper
-name: bearer-token-empty-versus-absent
-call:
-  bedrock_aws_settings:
-    operation: bearer
-    params: {'api_key': ''}
-env: {}
-compare: {ignore: []}
+{
+  "kind": "helper",
+  "name": "bearer-token-empty-versus-absent",
+  "call": {
+    "bedrock_aws_settings": {
+      "operation": "bearer",
+      "params": {
+        "api_key": "",
+        "configured_token": "configured"
+      }
+    }
+  },
+  "env": {
+    "AWS_BEARER_TOKEN_BEDROCK": "configured"
+  },
+  "compare": {
+    "ignore": []
+  }
+}

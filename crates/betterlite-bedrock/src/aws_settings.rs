@@ -1,15 +1,45 @@
-use secrecy::SecretString;
+use std::collections::BTreeMap;
+
+use betterlite_config::sections::bedrock_aws_settings::AwsS3Settings;
+use betterlite_config::sections::bedrock_settings::SessionTagValue;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::value::RawValue;
 
-mod credential_cache;
-mod sources;
+pub mod credential_cache;
+pub mod error;
+pub mod policy;
+pub mod sources;
+pub mod tls;
 
-pub use credential_cache::{CachedCredentials, cache_key, get_or_fetch};
-pub use sources::{
-    LocalCredentialInputs, LocalCredentialProvider, ResolvedCredentials, auth_selector_presence,
-    resolve_local_credentials,
-};
+pub const AUTHENTICATION_PARAMS: [&str; 12] = [
+    "aws_access_key_id",
+    "aws_secret_access_key",
+    "aws_session_token",
+    "aws_region_name",
+    "aws_session_name",
+    "aws_profile_name",
+    "aws_role_name",
+    "aws_web_identity_token",
+    "aws_sts_endpoint",
+    "aws_bedrock_runtime_endpoint",
+    "aws_external_id",
+    "aws_session_tags",
+];
+
+#[derive(Debug, thiserror::Error)]
+pub enum AuthError {
+    #[error("invalid aws_session_tags: expected string Key and Value fields")]
+    SessionTags,
+    #[error("invalid AWS authentication field {field}")]
+    Field {
+        field: &'static str,
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("invalid AWS authentication parameters")]
+    Parameters(#[from] serde_json::Error),
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AwsSessionTag {
@@ -19,190 +49,127 @@ pub struct AwsSessionTag {
     pub value: String,
 }
 
-pub fn canonical_session_tags(tags: Option<Vec<AwsSessionTag>>) -> Option<Vec<AwsSessionTag>> {
-    tags.map(|mut tags| {
-        tags.sort_by(|left, right| left.key.cmp(&right.key));
-        tags
-    })
-}
-
-pub fn s3_static_key_pair(parameters: &Value) -> Option<(String, String)> {
-    let access = parameters.get("s3_access_key_id")?.as_str()?;
-    let secret = parameters.get("s3_secret_access_key")?.as_str()?;
-    if access.is_empty() || secret.is_empty() {
-        return None;
-    }
-    Some((access.to_owned(), secret.to_owned()))
-}
-
-pub fn bedrock_bearer_token(
-    api_key: Option<&str>,
-    configured_token: Option<&SecretString>,
-) -> Option<SecretString> {
-    let selected = api_key.map(str::to_owned).or_else(|| {
-        configured_token.map(|token| {
-            use secrecy::ExposeSecret as _;
-            token.expose_secret().to_owned()
-        })
-    })?;
-    if selected.is_empty() {
-        None
-    } else {
-        Some(SecretString::from(selected))
-    }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum AuthError {
-    #[error("invalid aws_session_tags: expected string Key and Value fields")]
-    SessionTags,
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct AuthParams {
+    pub aws_access_key_id: Option<SecretString>,
+    pub aws_secret_access_key: Option<SecretString>,
+    pub aws_session_token: Option<SecretString>,
+    pub aws_session_name: Option<String>,
+    pub aws_profile_name: Option<String>,
+    pub aws_role_name: Option<String>,
+    pub aws_web_identity_token: Option<SecretString>,
+    pub aws_sts_endpoint: Option<String>,
+    pub aws_external_id: Option<String>,
+    #[serde(skip)]
+    pub aws_session_tags: Option<Vec<AwsSessionTag>>,
 }
 
 pub fn canonicalize_tags(
-    tags: Option<Vec<Value>>,
+    raw: Option<SessionTagValue>,
 ) -> Result<Option<Vec<AwsSessionTag>>, AuthError> {
-    tags.map(|values| {
-        let mut tags = values
-            .into_iter()
-            .map(|value| {
-                let key = value.get("Key").and_then(Value::as_str);
-                let value_text = value.get("Value").and_then(Value::as_str);
-                match (key, value_text) {
-                    (Some(key), Some(value)) => Ok(AwsSessionTag {
-                        key: key.to_owned(),
-                        value: value.to_owned(),
-                    }),
-                    _ => Err(AuthError::SessionTags),
-                }
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        tags.sort_by(|left, right| left.key.cmp(&right.key));
-        Ok(tags)
-    })
-    .transpose()
+    let Some(nonnull) = raw.filter(|value| !matches!(value, SessionTagValue::Null)) else {
+        return Ok(None);
+    };
+    let SessionTagValue::List(values) = nonnull else {
+        return Err(AuthError::SessionTags);
+    };
+    let mut tags = Vec::with_capacity(values.len());
+    for entry in values {
+        let SessionTagValue::Mapping(mut fields) = entry else {
+            return Err(AuthError::SessionTags);
+        };
+        let (Some(SessionTagValue::Text(key)), Some(SessionTagValue::Text(value))) =
+            (fields.shift_remove("Key"), fields.shift_remove("Value"))
+        else {
+            return Err(AuthError::SessionTags);
+        };
+        tags.push(AwsSessionTag { key, value });
+    }
+    tags.sort_by(|left, right| left.key.cmp(&right.key));
+    Ok(Some(tags))
 }
 
+#[derive(Deserialize)]
+struct RawAuth {
+    #[serde(flatten)]
+    fields: AuthParams,
+    aws_session_tags: Option<SessionTagValue>,
+}
+
+pub fn pop_aws_auth_params(
+    parameters: &mut BTreeMap<String, Box<RawValue>>,
+) -> Result<AuthParams, AuthError> {
+    let mut popped = BTreeMap::new();
+    for key in AUTHENTICATION_PARAMS {
+        if matches!(key, "aws_region_name" | "aws_bedrock_runtime_endpoint") {
+            continue;
+        }
+        if let Some(value) = parameters.remove(key) {
+            popped.insert(key, value);
+        }
+    }
+    for (field, value) in &popped {
+        if *field != "aws_session_tags" {
+            drop(
+                serde_json::from_str::<Option<SecretString>>(value.get())
+                    .map_err(|source| AuthError::Field { field, source })?,
+            );
+        }
+    }
+    let bytes = serde_json::to_vec(&popped)?;
+    let raw: RawAuth = serde_json::from_slice(&bytes)?;
+    let mut fields = raw.fields;
+    fields.aws_session_tags = canonicalize_tags(raw.aws_session_tags)?;
+    Ok(fields)
+}
+
+#[must_use]
+pub fn s3_static_key_pair(settings: &AwsS3Settings) -> Option<(SecretString, SecretString)> {
+    let access = settings.access_key_id.as_ref()?;
+    let secret = settings.secret_access_key.as_ref()?;
+    if access.expose_secret().is_empty() || secret.expose_secret().is_empty() {
+        return None;
+    }
+    Some((access.clone(), secret.clone()))
+}
+
+#[must_use]
+pub fn bedrock_bearer_token(
+    api_key: Option<&SecretString>,
+    configured: Option<&SecretString>,
+) -> Option<SecretString> {
+    let selected = api_key.or(configured)?;
+    if selected.expose_secret().is_empty() {
+        None
+    } else {
+        Some(selected.clone())
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct AssumeRoleParams {
+    pub role_arn: String,
+    pub role_session_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub external_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<AwsSessionTag>>,
+}
+
+#[must_use]
 pub fn assume_role_parameters(
     role_arn: String,
     role_session_name: String,
     external_id: Option<String>,
     tags: Option<Vec<AwsSessionTag>>,
-) -> Value {
-    let mut parameters = serde_json::Map::from_iter([
-        ("RoleArn".to_owned(), Value::String(role_arn)),
-        (
-            "RoleSessionName".to_owned(),
-            Value::String(role_session_name),
-        ),
-    ]);
-    if let Some(external_id) = external_id {
-        parameters.insert("ExternalId".to_owned(), Value::String(external_id));
-    }
-    if let Some(tags) = tags.filter(|tags| !tags.is_empty()) {
-        parameters.insert("Tags".to_owned(), json!(tags));
-    }
-    Value::Object(parameters)
-}
-
-pub fn web_identity_policy() -> Value {
-    let statements = [
-        (
-            "BedrockLiteLLM",
-            vec![
-                "bedrock:InvokeModel",
-                "bedrock:InvokeModelWithResponseStream",
-                "bedrock:CountTokens",
-                "bedrock:Rerank",
-                "bedrock:Retrieve",
-                "bedrock:ListKnowledgeBases",
-                "bedrock:InvokeAgent",
-                "bedrock:ApplyGuardrail",
-                "bedrock:GetGuardrail",
-                "bedrock:ListGuardrails",
-            ],
-        ),
-        (
-            "BedrockAgentCoreLiteLLM",
-            vec![
-                "bedrock-agentcore:InvokeAgentRuntime",
-                "bedrock-agentcore:InvokeAgentRuntimeForUser",
-                "bedrock-agentcore:InvokeGateway",
-            ],
-        ),
-        (
-            "ClaudePlatformLiteLLM",
-            vec![
-                "aws-external-anthropic:CreateInference",
-                "aws-external-anthropic:CreateBatchInference",
-                "aws-external-anthropic:CancelBatchInference",
-                "aws-external-anthropic:DeleteBatchInference",
-                "aws-external-anthropic:CountTokens",
-                "aws-external-anthropic:Get*",
-                "aws-external-anthropic:List*",
-            ],
-        ),
-        (
-            "BedrockMantleLiteLLM",
-            vec!["bedrock-mantle:CreateInference"],
-        ),
-    ];
-    let statements = statements
-        .into_iter()
-        .map(|(sid, actions)| {
-            json!({
-                "Sid": sid,
-                "Effect": "Allow",
-                "Action": actions,
-                "Resource": "*",
-                "Condition": {"Bool": {"aws:SecureTransport": "true"}}
-            })
-        })
-        .collect::<Vec<_>>();
-    json!({"Version": "2012-10-17", "Statement": statements})
-}
-
-pub fn pop_aws_auth_params(parameters: &mut Value) -> serde_json::Map<String, Value> {
-    let mut popped = serde_json::Map::new();
-    if let Some(object) = parameters.as_object_mut() {
-        for key in [
-            "aws_access_key_id",
-            "aws_secret_access_key",
-            "aws_session_token",
-            "aws_session_name",
-            "aws_profile_name",
-            "aws_role_name",
-            "aws_web_identity_token",
-            "aws_sts_endpoint",
-            "aws_external_id",
-            "aws_session_tags",
-        ] {
-            popped.insert(key.to_owned(), object.remove(key).unwrap_or(Value::Null));
-        }
-    }
-    popped
-}
-
-#[derive(Debug, serde::Serialize)]
-pub struct AwsAuthError {
-    pub status: u16,
-    pub message: String,
-    pub request: betterlite_openai::error::ErrorRequest,
-    pub response: betterlite_openai::error::ErrorResponse,
-}
-
-pub fn aws_auth_error_projection(status: u16, message: String) -> AwsAuthError {
-    let request = betterlite_openai::error::ErrorRequest {
-        method: "POST".to_owned(),
-        url: "https://us-west-2.console.aws.amazon.com/bedrock".to_owned(),
-    };
-    AwsAuthError {
-        status,
-        message,
-        response: betterlite_openai::error::ErrorResponse {
-            status_code: status,
-            request: request.clone(),
-        },
-        request,
+) -> AssumeRoleParams {
+    let nonempty_tags = tags.filter(|values| !values.is_empty());
+    AssumeRoleParams {
+        role_arn,
+        role_session_name,
+        external_id,
+        tags: nonempty_tags,
     }
 }
 

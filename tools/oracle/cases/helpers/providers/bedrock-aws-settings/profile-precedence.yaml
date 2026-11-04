@@ -1,8 +1,33 @@
-kind: helper
-name: profile-precedence
-call:
-  bedrock_aws_settings:
-    operation: auth_selector
-    params: {'aws_profile_name': 'profile', 'aws_access_key_id': 'id', 'aws_secret_access_key': 'secret'}
-env: {}
-compare: {ignore: []}
+{
+  "kind": "helper",
+  "name": "profile-precedence",
+  "call": {
+    "bedrock_aws_settings": {
+      "operation": "local",
+      "params": {
+        "settings": {
+          "aws_profile_name": "named",
+          "aws_access_key_id": "ignored",
+          "aws_secret_access_key": "ignored",
+          "aws_session_token": "ignored"
+        },
+        "environment": {
+          "AWS_SHARED_CREDENTIALS_FILE": "/credentials",
+          "AWS_EC2_METADATA_DISABLED": "true"
+        },
+        "files": {
+          "/credentials": "[named]\naws_access_key_id = profile\naws_secret_access_key = private\n"
+        },
+        "fixture": [
+          "profile",
+          "private",
+          null
+        ]
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

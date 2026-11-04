@@ -1,84 +1,138 @@
+use std::collections::{BTreeMap, HashMap};
+use std::fmt;
 use std::time::Duration;
 
-use secrecy::{ExposeSecret as _, SecretString};
+use aws_config::{BehaviorVersion, ConfigLoader, retry::RetryConfig, timeout::TimeoutConfig};
+use aws_credential_types::provider::{ProvideCredentials as _, error::CredentialsError};
+use aws_smithy_async::{rt::sleep::SharedAsyncSleep, time::SharedTimeSource};
+use aws_smithy_runtime_api::client::http::SharedHttpClient;
+use aws_types::{
+    os_shim_internal::{Env, Fs},
+    region::Region,
+};
+use betterlite_config::sections::bedrock_settings::AwsSettings;
+use secrecy::SecretString;
 
-use super::credential_cache::CachedCredentials;
-
-const STATIC_CREDENTIAL_TTL: Duration = Duration::from_secs(3540);
-
-#[derive(Default)]
-pub struct LocalCredentialInputs {
-    pub profile_name: Option<String>,
-    pub role_name: Option<String>,
-    pub web_identity_token: Option<SecretString>,
-    pub session_name: Option<String>,
-    pub access_key_id: Option<SecretString>,
-    pub secret_access_key: Option<SecretString>,
-    pub session_token: Option<SecretString>,
-    pub region_name: Option<String>,
+#[derive(thiserror::Error)]
+pub enum SourceError {
+    #[error("AWS credential source failed")]
+    Provider(#[source] CredentialsError),
+    #[error("AWS credential provider is unavailable")]
+    MissingProvider,
 }
 
+impl fmt::Debug for SourceError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, f)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Credentials {
+    pub access_key_id: SecretString,
+    pub secret_access_key: SecretString,
+    pub session_token: Option<SecretString>,
+}
+
+#[derive(Debug, Clone)]
 pub struct ResolvedCredentials {
-    pub credentials: CachedCredentials,
+    pub credentials: Option<Credentials>,
     pub cache_ttl: Option<Duration>,
 }
 
-pub trait LocalCredentialProvider {
-    type Error;
-
-    fn profile(&self, profile_name: &str) -> Result<CachedCredentials, Self::Error>;
-    fn static_session(&self, region: &str) -> Result<CachedCredentials, Self::Error>;
-    fn ambient_session(&self) -> Result<CachedCredentials, Self::Error>;
+pub struct NativeSources {
+    pub environment: BTreeMap<String, String>,
+    pub filesystem: Fs,
+    pub client: SharedHttpClient,
+    pub clock: SharedTimeSource,
+    pub sleep: SharedAsyncSleep,
+    pub timeout: Duration,
 }
 
-pub fn resolve_local_credentials<P: LocalCredentialProvider>(
-    inputs: &LocalCredentialInputs,
-    provider: &P,
-) -> Result<ResolvedCredentials, P::Error> {
-    if let Some(profile_name) = inputs.profile_name.as_deref() {
-        return provider
-            .profile(profile_name)
-            .map(|credentials| ResolvedCredentials {
-                credentials,
-                cache_ttl: None,
-            });
+impl NativeSources {
+    fn loader(&self, settings: &AwsSettings) -> ConfigLoader {
+        let mut environment = HashMap::from_iter(self.environment.clone());
+        if settings.profile_name.is_some() {
+            for name in [
+                "AWS_ACCESS_KEY_ID",
+                "AWS_SECRET_ACCESS_KEY",
+                "AWS_SESSION_TOKEN",
+            ] {
+                environment.remove(name);
+            }
+        }
+        let loader = aws_config::defaults(BehaviorVersion::latest())
+            .env(Env::from(environment))
+            .fs(self.filesystem.clone())
+            .http_client(self.client.clone())
+            .time_source(self.clock.clone())
+            .sleep_impl(self.sleep.clone())
+            .retry_config(RetryConfig::disabled())
+            .timeout_config(
+                TimeoutConfig::builder()
+                    .operation_timeout(self.timeout)
+                    .build(),
+            )
+            .region(settings.region_name.clone().map(Region::new));
+        match &settings.profile_name {
+            Some(profile) => loader.profile_name(profile),
+            None => loader,
+        }
     }
-    if let (Some(access_key_id), Some(secret_access_key), Some(session_token)) = (
-        inputs.access_key_id.as_ref(),
-        inputs.secret_access_key.as_ref(),
-        inputs.session_token.as_ref(),
-    ) {
+
+    pub async fn load(&self, settings: &AwsSettings) -> Result<Credentials, SourceError> {
+        let configured = self.loader(settings).load().await;
+        let provider = configured
+            .credentials_provider()
+            .ok_or(SourceError::MissingProvider)?;
+        let supplied = provider
+            .provide_credentials()
+            .await
+            .map_err(SourceError::Provider)?;
+        Ok(Credentials {
+            access_key_id: SecretString::from(supplied.access_key_id().to_owned()),
+            secret_access_key: SecretString::from(supplied.secret_access_key().to_owned()),
+            session_token: supplied
+                .session_token()
+                .map(|token| SecretString::from(token.to_owned())),
+        })
+    }
+}
+
+pub async fn resolve_local_credentials(
+    settings: &AwsSettings,
+    native: &NativeSources,
+) -> Result<ResolvedCredentials, SourceError> {
+    if settings.profile_name.is_some() {
         return Ok(ResolvedCredentials {
-            credentials: CachedCredentials {
-                access_key_id: SecretString::from(access_key_id.expose_secret().to_owned()),
-                secret_access_key: SecretString::from(secret_access_key.expose_secret().to_owned()),
-                session_token: Some(SecretString::from(session_token.expose_secret().to_owned())),
-            },
+            credentials: Some(native.load(settings).await?),
             cache_ttl: None,
         });
     }
-    if let (Some(_), Some(_), Some(region)) = (
-        inputs.access_key_id.as_ref(),
-        inputs.secret_access_key.as_ref(),
-        inputs.region_name.as_deref(),
-    ) {
-        return provider
-            .static_session(region)
-            .map(|credentials| ResolvedCredentials {
-                credentials,
-                cache_ttl: Some(STATIC_CREDENTIAL_TTL),
-            });
+    if let (Some(access), Some(secret)) = (&settings.access_key_id, &settings.secret_access_key)
+        && (settings.session_token.is_some() || settings.region_name.is_some())
+    {
+        return Ok(ResolvedCredentials {
+            credentials: Some(Credentials {
+                access_key_id: access.clone(),
+                secret_access_key: secret.clone(),
+                session_token: settings.session_token.clone(),
+            }),
+            cache_ttl: settings
+                .session_token
+                .is_none()
+                .then_some(Duration::from_mins(59)),
+        });
     }
-    provider
-        .ambient_session()
-        .map(|credentials| ResolvedCredentials {
-            credentials,
-            cache_ttl: None,
-        })
+    Ok(ResolvedCredentials {
+        credentials: Some(native.load(settings).await?),
+        cache_ttl: None,
+    })
 }
 
-pub fn auth_selector_presence(inputs: &LocalCredentialInputs) -> (bool, bool, bool, bool, bool) {
-    (
+#[must_use]
+pub const fn auth_selector_presence(inputs: &AwsSettings) -> [bool; 5] {
+    [
         inputs.web_identity_token.is_some()
             && inputs.role_name.is_some()
             && inputs.session_name.is_some(),
@@ -90,5 +144,5 @@ pub fn auth_selector_presence(inputs: &LocalCredentialInputs) -> (bool, bool, bo
         inputs.access_key_id.is_some()
             && inputs.secret_access_key.is_some()
             && inputs.region_name.is_some(),
-    )
+    ]
 }

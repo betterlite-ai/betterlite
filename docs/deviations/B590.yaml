@@ -3,3 +3,6 @@ deviations:
   - what: Invalid session tags are rejected without including the supplied value in the error.
     why: LiteLLM echoes the complete invalid value, which can expose secrets.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L66-L69
+  - what: AWS credential_process and other subprocess credential sources are disabled.
+    why: Gateway code never executes subprocess providers; native injected environment, profiles and metadata remain supported.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L1393-L1402

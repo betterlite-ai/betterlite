@@ -3,6 +3,6 @@ name: web-identity-policy
 call:
   bedrock_aws_settings:
     operation: web_policy
-    params: {}
+    params: null
 env: {}
 compare: {ignore: []}

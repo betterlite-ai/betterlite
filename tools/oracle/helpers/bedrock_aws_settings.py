@@ -1,7 +1,11 @@
 from collections.abc import Callable, Mapping, MutableMapping
 from typing import TypeAlias, cast
+from unittest.mock import patch
 
 import litellm
+from botocore.credentials import Credentials
+from litellm.caching.dual_cache import DualCache
+from litellm.caching.in_memory_cache import InMemoryCache
 from litellm.llms.bedrock.base_aws_llm import (
     AwsAuthError,
     BaseAWSLLM,
@@ -12,16 +16,16 @@ from litellm.llms.bedrock.base_aws_llm import (
     pop_aws_auth_params,
 )  # pyright: ignore[reportPrivateUsage]
 from litellm.llms.bedrock.common_utils import s3_static_key_pair
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, JsonValue
 
-Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
+Json: TypeAlias = JsonValue
 Params: TypeAlias = dict[str, Json]
 
 
 class Input(BaseModel):
     model_config = ConfigDict(extra="forbid")
     operation: str
-    params: Params
+    params: Params | None = None
 
 
 def static_pair(params: Params) -> Json:
@@ -55,13 +59,18 @@ def bearer(params: Params) -> Json:
 
 def pop_auth(params: Params) -> Json:
     remaining: MutableMapping[str, object] = cast(MutableMapping[str, object], dict(params))
-    removed = pop_aws_auth_params(remaining)
-    return cast(Json, {"remaining": remaining, "removed": removed.model_dump()})
+    try:
+        _ = pop_aws_auth_params(remaining)
+    except ValueError:
+        return cast(Json, {"remaining": remaining, "valid": False})
+    return cast(Json, {"remaining": remaining, "valid": True})
 
 
 def cache_key(params: Params) -> Json:
-    key = BaseAWSLLM().get_cache_key(cast(Mapping[str, str | bool | None], params))
-    return cast(Json, {"value": key})
+    instance = BaseAWSLLM()
+    left = instance.get_cache_key(cast(Mapping[str, str | bool | None], params["left"]))
+    right = instance.get_cache_key(cast(Mapping[str, str | bool | None], params["right"]))
+    return {"length": len(left), "equal": left == right}
 
 
 def selector(params: Params) -> Json:
@@ -90,30 +99,100 @@ def selector(params: Params) -> Json:
     return cast(Json, result)
 
 
-def session_auth(params: Params) -> Json:
-    credentials, _ttl = BaseAWSLLM()._auth_with_aws_session_token(  # noqa: SLF001 # pyright: ignore[reportPrivateUsage]
-        str(params.get("aws_access_key_id", "")),
-        str(params.get("aws_secret_access_key", "")),
-        str(params.get("aws_session_token", "")),
-    )
-    return cast(Json, {
-        "access_key_id": credentials.access_key,
-        "secret_access_key": credentials.secret_key,
-        "token": credentials.token,
-    })
-
-
 def auth_error(params: Params) -> Json:
-    status_value = params.get("status", 500)
-    message = params.get("message", "")
-    status = status_value if isinstance(status_value, int) else 500
-    error = AwsAuthError(status, str(message))
-    return cast(Json, {
-        "status": error.status_code,
-        "message": error.message,
-        "request": {"method": error.request.method, "url": str(error.request.url)},
-        "response": {"status": error.response.status_code},
-    })
+    status = cast(int, params["status"])
+    error = AwsAuthError(status, str(params["message"]))
+    request = {"method": error.request.method, "url": str(error.request.url)}
+    with patch("os.path.exists", return_value=False):
+        verification = BaseAWSLLM()._get_ssl_verify(  # noqa: SLF001 # pyright: ignore[reportPrivateUsage]
+            cast(bool | str | None, params.get("ssl_verify"))
+        )
+    return cast(
+        Json,
+        {
+            "error": {
+                "status": error.status_code,
+                "message": error.message,
+                "request": request,
+                "response": {"status_code": error.response.status_code, "request": request},
+            },
+            "ssl_verify": verification,
+        },
+    )
+
+
+class FixtureSession:
+    def __init__(self, credentials: Credentials) -> None:
+        self.credentials = credentials
+
+    def get_credentials(self) -> Credentials:
+        return self.credentials
+
+
+def local(params: Params) -> Json:
+
+    settings = cast(Params, params["settings"])
+    fixture = cast(list[str | None], params["fixture"])
+    instance = BaseAWSLLM()
+    supplied = Credentials(fixture[0], fixture[1], fixture[2])
+    with patch("boto3.Session", return_value=FixtureSession(supplied)) as session:
+        profile = cast(str | None, settings.get("aws_profile_name"))
+        access = cast(str | None, settings.get("aws_access_key_id"))
+        secret = cast(str | None, settings.get("aws_secret_access_key"))
+        token = cast(str | None, settings.get("aws_session_token"))
+        region = cast(str | None, settings.get("aws_region_name"))
+        if profile is not None:
+            credentials, ttl = instance._auth_with_aws_profile(profile)  # noqa: SLF001 # pyright: ignore[reportPrivateUsage]
+            session.assert_called_once_with(profile_name=profile)
+        elif access is not None and secret is not None and token is not None:
+            credentials, ttl = instance._auth_with_aws_session_token(access, secret, token)  # noqa: SLF001 # pyright: ignore[reportPrivateUsage]
+        elif access is not None and secret is not None and region is not None:
+            credentials, ttl = instance._auth_with_access_key_and_secret_key(access, secret, region)  # noqa: SLF001 # pyright: ignore[reportPrivateUsage]
+            session.assert_called_once_with(
+                aws_access_key_id=access, aws_secret_access_key=secret, region_name=region
+            )
+        else:
+            credentials, ttl = instance._auth_with_env_vars()  # noqa: SLF001 # pyright: ignore[reportPrivateUsage]
+            session.assert_called_once_with()
+    return cast(
+        Json,
+        {
+            "credentials": [credentials.access_key, credentials.secret_key, credentials.token],
+            "ttl": ttl,
+        },
+    )
+
+
+def cache(params: Params) -> Json:
+
+    instance = BaseAWSLLM()
+    instance.iam_cache = DualCache(in_memory_cache=InMemoryCache(max_size_in_memory=1000))
+    arguments = cast(Mapping[str, str | bool | None], params["parameters"])
+    fetches = 0
+    results: list[Json] = []
+    for step in cast(list[Params], params["steps"]):
+
+        def fetch(step: Params = step) -> tuple[Credentials, int | None]:
+            nonlocal fetches
+            fetches += 1
+            if step.get("fail"):
+                raise ValueError("fixture failure")
+            access = cast(str | None, step["access"])
+            credentials = Credentials(access, "fixture") if access is not None else None
+            return cast(Credentials, credentials), cast(int | None, step["ttl"])
+
+        with patch("time.time", return_value=step["now"]):
+            try:
+                value = cast(
+                    Credentials | None,
+                    instance._get_or_set_cached_credentials(arguments, fetch),  # noqa: SLF001 # pyright: ignore[reportPrivateUsage]
+                )
+                results.append(
+                    {"access": cast(str, value.access_key) if value is not None else None}
+                )
+            except ValueError:
+                results.append({"error": True})
+    return {"fetches": fetches, "results": results}
 
 
 HANDLERS: dict[str, Callable[[Params], Json]] = {
@@ -125,7 +204,8 @@ HANDLERS: dict[str, Callable[[Params], Json]] = {
     "pop_auth": pop_auth,
     "cache_key": cache_key,
     "auth_selector": selector,
-    "session_auth": session_auth,
+    "local": local,
+    "cache": cache,
     "auth_error": auth_error,
 }
 
@@ -136,4 +216,4 @@ def run(argument: Json) -> Json:
     if handler is None:
         raise ValueError(f"unknown operation: {supplied.operation}")
     _ = litellm
-    return handler(supplied.params)
+    return handler({} if supplied.params is None else supplied.params)

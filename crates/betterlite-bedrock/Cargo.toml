@@ -6,8 +6,16 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+aws-config = { version = "=1.12.0", default-features = false, features = ["rt-tokio", "test-util"] }
+aws-credential-types = "=1.3.1"
+aws-smithy-async = "=1.3.1"
+aws-smithy-runtime-api = { version = "=1.19.2", features = ["client"] }
+aws-types = "=1.6.0"
+betterlite-config = { path = "../betterlite-config" }
+betterlite-context = { path = "../betterlite-context" }
 betterlite-openai = { path = "../betterlite-openai" }
 encoding_rs = "0.8.42"
+hex.workspace = true
 indexmap = { version = "2.14.2", features = ["serde"] }
 mime = "0.3.17"
 percent-encoding.workspace = true
@@ -16,9 +24,11 @@ serde.workspace = true
 serde_json = { version = "1.0.154", features = ["raw_value"] }
 sha2.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
 
 [dev-dependencies]
-betterlite-config = { path = "../betterlite-config" }
+aws-smithy-types = "=1.9.1"
+betterlite-redact = { path = "../betterlite-redact" }
 futures-util = { version = "0.3.34", default-features = false }
 rstest = "=0.27.0"
 
