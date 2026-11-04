@@ -28,24 +28,24 @@ pub struct FilesystemFixtures {
     pub root: PathBuf,
 }
 
+fn ensure(ok: bool, message: &str) -> Result<(), DecodeError> {
+    ok.then_some(())
+        .ok_or_else(|| DecodeError::Invalid(message.to_owned()))
+}
+
 impl FixtureRepository for FilesystemFixtures {
     fn resolve(&self, path: &str, budget: usize) -> Result<Vec<u8>, DecodeError> {
         let relative = Path::new(path);
         validate_binary_fixture(relative)?;
         let root = fs::canonicalize(&self.root)?;
         let candidate = fs::canonicalize(root.join(relative))?;
-        if !candidate.starts_with(&root) {
-            return Err(DecodeError::Invalid(
-                "binary fixture resolves outside its root".to_owned(),
-            ));
-        }
+        ensure(
+            candidate.starts_with(&root),
+            "binary fixture resolves outside its root",
+        )?;
         let metadata = fs::metadata(&candidate)?;
         let cap = usize::try_from(metadata.len()).unwrap_or(usize::MAX);
-        if cap > budget {
-            return Err(DecodeError::Invalid(
-                "captured traffic exceeds limit".to_owned(),
-            ));
-        }
+        ensure(cap <= budget, "captured traffic exceeds limit")?;
         let file = File::open(candidate)?;
         let mut bytes = Vec::new();
         file.take(u64::try_from(budget).unwrap_or(u64::MAX).saturating_add(1))
@@ -59,16 +59,14 @@ pub fn decode_ws_case(
     limits: &OracleLimits,
     fixtures: &dyn FixtureRepository,
 ) -> Result<WebSocketCase, DecodeError> {
-    if bytes.len()
-        > limits
-            .max_capture_bytes
-            .min(MAX_CAPTURE_BYTES)
-            .saturating_add(0x0020_0000)
-    {
-        return Err(DecodeError::Invalid(
-            "transcript input exceeds safety limit".to_owned(),
-        ));
-    }
+    ensure(
+        bytes.len()
+            <= limits
+                .max_capture_bytes
+                .min(MAX_CAPTURE_BYTES)
+                .saturating_add(0x0020_0000),
+        "transcript input exceeds safety limit",
+    )?;
     let text = str::from_utf8(bytes)?;
     let mut case: WebSocketCase =
         serde_saphyr::from_str(text).map_err(|source| DecodeError::Parse(Box::new(source)))?;
@@ -83,34 +81,27 @@ pub fn decode_ws_case(
 }
 
 fn validate_case(case: &WebSocketCase, limits: &OracleLimits) -> Result<(), DecodeError> {
-    if case.kind != "websocket"
-        || !case.path.starts_with('/')
-        || !(100..=599).contains(&case.expected_http_status)
-    {
-        return Err(DecodeError::Invalid(
-            "invalid discriminator, path or handshake status".to_owned(),
-        ));
-    }
     let max_frames = limits.max_frames.min(MAX_FRAMES);
-    if case.frames.len() > max_frames
-        || case.input.frames.len() > max_frames
-        || case.execution_seconds > limits.max_execution_seconds.min(MAX_EXECUTION_SECONDS)
-    {
-        return Err(DecodeError::Invalid(
-            "frame count or execution exceeds limit".to_owned(),
-        ));
-    }
-    if (case.driver == Driver::Gateway) == case.service.is_some() {
-        return Err(DecodeError::Invalid(
-            "driver and service selection disagree".to_owned(),
-        ));
-    }
-    if case.close.is_some() && case.expected_http_status != 101 {
-        return Err(DecodeError::Invalid(
-            "invalid close initiator or pre-upgrade close".to_owned(),
-        ));
-    }
-    Ok(())
+    ensure(
+        case.kind == "websocket"
+            && case.path.starts_with('/')
+            && (100..=599).contains(&case.expected_http_status),
+        "invalid discriminator, path or handshake status",
+    )?;
+    ensure(
+        case.frames.len() <= max_frames
+            && case.input.frames.len() <= max_frames
+            && case.execution_seconds <= limits.max_execution_seconds.min(MAX_EXECUTION_SECONDS),
+        "frame count or execution exceeds limit",
+    )?;
+    ensure(
+        (case.driver == Driver::Gateway) != case.service.is_some(),
+        "driver and service selection disagree",
+    )?;
+    ensure(
+        case.close.is_none() || case.expected_http_status == 101,
+        "invalid close initiator or pre-upgrade close",
+    )
 }
 
 fn resolve_frames(
@@ -139,28 +130,19 @@ fn resolve_frames(
                 ));
             }
         };
-        if size > frame_cap {
-            return Err(DecodeError::Invalid("frame exceeds size limit".to_owned()));
-        }
+        ensure(size <= frame_cap, "frame exceeds size limit")?;
         *traffic = traffic.saturating_add(size);
-        if *traffic > capture_cap {
-            return Err(DecodeError::Invalid(
-                "captured traffic exceeds limit".to_owned(),
-            ));
-        }
+        ensure(*traffic <= capture_cap, "captured traffic exceeds limit")?;
     }
     Ok(())
 }
 
 pub fn validate_binary_fixture(path: &Path) -> Result<(), DecodeError> {
-    if path.as_os_str().is_empty()
-        || path
-            .components()
-            .any(|part| !matches!(part, Component::Normal(_)))
-    {
-        return Err(DecodeError::Invalid(
-            "binary fixture path escapes its root".to_owned(),
-        ));
-    }
-    Ok(())
+    ensure(
+        !path.as_os_str().is_empty()
+            && path
+                .components()
+                .all(|part| matches!(part, Component::Normal(_))),
+        "binary fixture path escapes its root",
+    )
 }

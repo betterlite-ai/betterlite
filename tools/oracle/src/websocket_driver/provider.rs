@@ -109,13 +109,10 @@ impl Callback for Handshake<'_> {
             && status != 101
         {
             let mut refusal = ErrorResponse::new(Some("upstream refused".to_owned()));
-            match StatusCode::from_u16(status) {
-                Ok(code) => *refusal.status_mut() = code,
-                Err(source) => {
-                    *refusal.body_mut() = Some(source.to_string());
-                    *refusal.status_mut() = StatusCode::BAD_REQUEST;
-                }
-            }
+            *refusal.status_mut() = StatusCode::from_u16(status).unwrap_or_else(|source| {
+                *refusal.body_mut() = Some(source.to_string());
+                StatusCode::BAD_REQUEST
+            });
             return Err(refusal);
         }
         if let Some(protocol) = &self.case.negotiated_subprotocol
