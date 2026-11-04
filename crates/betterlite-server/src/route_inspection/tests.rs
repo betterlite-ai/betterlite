@@ -158,11 +158,10 @@ impl io::Write for CaptureWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let text = str::from_utf8(buf)
             .map_err(|source| io::Error::new(io::ErrorKind::InvalidData, source))?;
-        let mut captured = self
-            .0
+        self.0
             .lock()
-            .map_err(|source| io::Error::other(source.to_string()))?;
-        captured.push_str(text);
+            .map_err(|source| io::Error::other(source.to_string()))?
+            .push_str(text);
         Ok(buf.len())
     }
 
