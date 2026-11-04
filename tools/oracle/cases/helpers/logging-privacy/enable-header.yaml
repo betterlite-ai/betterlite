@@ -1,0 +1,22 @@
+kind: helper
+name: logging-privacy-enable-header
+call:
+  logging_privacy:
+    global: true
+    dynamic: null
+    headers: {}
+    payload:
+      messages:
+        - role: user
+          content: hidden
+      prompt: hidden
+      response:
+        choices:
+          - message:
+              content: hidden
+    key_info:
+      user_api_key_hash: hidden
+      team: team-a
+    redact_key_info: true
+env: {}
+compare: {ignore: []}

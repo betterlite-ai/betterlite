@@ -1,0 +1,12 @@
+kind: helper
+name: logging_privacy-global
+call:
+  logging_privacy:
+    global: true
+    dynamic: null
+    headers: {}
+    payload: {messages: [{role: user, content: hidden}]}
+    key_info: {user_api_key_hash: hidden, team: team-a}
+    redact_key_info: true
+env: {}
+compare: {ignore: []}
