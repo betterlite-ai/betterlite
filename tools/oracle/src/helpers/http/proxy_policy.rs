@@ -14,6 +14,21 @@ pub(crate) struct ProxyPolicyInput {
     pub(crate) disable_aiohttp_trust_env: bool,
 }
 
+struct ValueError(String);
+
+impl From<ValueError> for Box<crate::helpers::HelperError> {
+    fn from(error: ValueError) -> Self {
+        Self::new(crate::helpers::HelperError {
+            class: "ValueError".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: error.0,
+        })
+    }
+}
+
 pub(crate) fn invoke(
     input: &ProxyPolicyInput,
 ) -> Result<serde_json::Value, Box<crate::helpers::HelperError>> {
@@ -22,7 +37,7 @@ pub(crate) fn invoke(
         disable_aiohttp_trust_env: input.disable_aiohttp_trust_env,
     };
     let policy = ProxyPolicy::resolve(&trust, &input.environment)
-        .map_err(|error| helper_error("ValueError", error.to_string()))?;
+        .map_err(|error| ValueError(error.to_string()))?;
     let message = match Url::parse(&input.url).map(|url| policy.route(&url)) {
         Err(error) => error.to_string(),
         Ok(None) => return Ok(serde_json::json!({"proxy": null})),
@@ -44,28 +59,10 @@ pub(crate) fn invoke(
         }
         Ok(Some(ProxyRoute::Invalid { name })) => format!("the {name} proxy URL is not valid"),
     };
-    Err(Box::new(crate::helpers::HelperError {
-        class: "ValueError".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
-    }))
+    Err(Box::from(ValueError(message)))
 }
 
 pub(crate) struct Op;
-
-fn helper_error(class: &str, message: String) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
-        class: class.to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
-    })
-}
 
 impl crate::helpers::Helper for Op {
     type Input = ProxyPolicyInput;

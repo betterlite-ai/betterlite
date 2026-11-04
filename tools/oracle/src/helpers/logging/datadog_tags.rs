@@ -95,15 +95,19 @@ impl Tracer for InputTracer<'_> {
 
 pub(crate) struct Op;
 
-fn helper_error(class: &str, message: String) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
-        class: class.to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
-    })
+struct ValueError(String);
+
+impl From<ValueError> for Box<crate::helpers::HelperError> {
+    fn from(error: ValueError) -> Self {
+        Self::new(crate::helpers::HelperError {
+            class: "ValueError".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: error.0,
+        })
+    }
 }
 
 impl crate::helpers::Helper for Op {
@@ -117,7 +121,7 @@ impl crate::helpers::Helper for Op {
                 .collect(),
             Input::Environment(case) => {
                 let environment = Environment::from_lookup(&case.env)
-                    .map_err(|error| helper_error("ValueError", error.to_string()))?;
+                    .map_err(|error| ValueError(error.to_string()))?;
                 json!({
                     "source": environment.source,
                     "base_url": environment.base_url,
