@@ -1681,6 +1681,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-semantic"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "rstest",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "betterlite-server"
 version = "0.1.0"
 dependencies = [
