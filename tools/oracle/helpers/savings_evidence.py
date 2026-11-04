@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from datetime import UTC
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, TypeAlias, cast
 
@@ -62,7 +62,13 @@ def _run_baseline_usage(input_value: dict[str, Json]) -> Json:
     normalized = _baseline_usage(usage, baseline_info)
     dump = normalized.model_dump()
     details = normalized.prompt_tokens_details
-    cache_creation_tokens = None if details is None else details.cache_creation_tokens
+    cache_creation_tokens = None
+    cached_tokens = None
+    cache_write_tokens = None
+    if details is not None:
+        cache_creation_tokens = getattr(details, "cache_creation_tokens", None) or 0
+        cached_tokens = getattr(details, "cached_tokens", None) or 0
+        cache_write_tokens = getattr(details, "cache_write_tokens", None) or 0
     return {
         "available": True,
         "prompt_tokens": normalized.prompt_tokens,
@@ -70,8 +76,8 @@ def _run_baseline_usage(input_value: dict[str, Json]) -> Json:
         "total_tokens": dump.get("total_tokens", 0),
         "cache_read_input_tokens": dump.get("cache_read_input_tokens", 0),
         "cache_creation_input_tokens": dump.get("cache_creation_input_tokens", 0),
-        "cached_tokens": None if details is None else details.cached_tokens,
-        "cache_write_tokens": None if details is None else details.cache_write_tokens,
+        "cached_tokens": cached_tokens,
+        "cache_write_tokens": cache_write_tokens,
         "cache_creation_tokens": cache_creation_tokens,
         "text_tokens": None if details is None else (details.text_tokens or 0),
         "has_cache_creation_token_details": details is not None
@@ -112,7 +118,9 @@ def _run_billed_at(input_value: dict[str, Json]) -> Json:
     if decoded is not None and decoded.tzinfo is None:
         decoded = decoded.replace(tzinfo=UTC)
     return {
-        "decoded_unix_micros": None if decoded is None else round(decoded.timestamp() * 1_000_000),
+        "decoded_unix_micros": None
+        if decoded is None
+        else (decoded - datetime(1970, 1, 1, tzinfo=UTC)) // timedelta(microseconds=1),
     }
 
 

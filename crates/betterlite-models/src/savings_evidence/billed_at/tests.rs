@@ -74,6 +74,7 @@ fn coerce_billed_at_decodes_a_text_value() {
 #[case::leap_second_reads_null("2024-03-01T23:59:60Z", None)]
 #[case::one_digit_fields_read_null("2024-3-1", None)]
 #[case::year_zero("0000-01-01", None)]
+#[case::week_date_out_of_range("9999-W52-6", None)]
 #[case::offset_at_24_hours("2024-03-01T10:00:00+24:00", None)]
 #[case::inconsistent_time_separator("2024-03-01T10:0000", None)]
 #[case::microseconds_truncate_past_six_digits(

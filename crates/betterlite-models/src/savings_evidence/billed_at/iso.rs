@@ -1,4 +1,4 @@
-use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, Utc, Weekday};
+use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, Utc, Weekday};
 
 const FRACTION_WIDTH: usize = 6;
 const FRACTION_SCALE: [u32; 7] = [0, 100_000, 10_000, 1_000, 100, 10, 1];
@@ -15,7 +15,6 @@ struct ClockFields {
     micro: u32,
 }
 
-// Reads `width` ASCII digits starting at `position` and returns the value with the position just past them.
 fn take_digits(chars: &[char], position: usize, width: usize) -> Option<(u32, usize)> {
     let end = position.saturating_add(width);
     let slice = chars.get(position..end)?;
@@ -119,7 +118,6 @@ fn parse_date(chars: &[char]) -> Option<NaiveDate> {
     parse_month_day_date(chars, after_year, year, has_sep)
 }
 
-// Reads a dash-gated numeric component: the dash at `position` must match `has_sep` exactly once, then `width` digits follow it.
 fn read_separated_component(
     chars: &[char],
     position: usize,
@@ -136,11 +134,13 @@ fn read_separated_component(
 fn parse_week_date(chars: &[char], position: usize, year: i32, has_sep: bool) -> Option<NaiveDate> {
     let (week, after_week) = take_digits(chars, position, 2)?;
     if chars.get(after_week).is_none() {
-        return NaiveDate::from_isoywd_opt(year, week, Weekday::Mon);
+        let date = NaiveDate::from_isoywd_opt(year, week, Weekday::Mon)?;
+        return (1..=9999).contains(&date.year()).then_some(date);
     }
     let (day, _) = read_separated_component(chars, after_week, has_sep, 1)?;
     let weekday = Weekday::try_from(u8::try_from(day.checked_sub(1)?).ok()?).ok()?;
-    NaiveDate::from_isoywd_opt(year, week, weekday)
+    let date = NaiveDate::from_isoywd_opt(year, week, weekday)?;
+    (1..=9999).contains(&date.year()).then_some(date)
 }
 
 fn parse_month_day_date(

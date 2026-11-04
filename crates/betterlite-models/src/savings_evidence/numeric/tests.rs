@@ -38,6 +38,7 @@ fn numeric_savings_accepts_finite_signed_numbers_only(
     "0.000000000000000055511151231257830",
     Some("0.0000000000000000555111512313")
 )]
+#[case::excess_precision_after_integer("8.00000000000000000000000000001", Some("8"))]
 #[case::below_resolution("1e-30", Some("0"))]
 #[case::huge_negative_exponent("1e-99999999999", Some("0"))]
 #[case::overflow("1e30", None)]

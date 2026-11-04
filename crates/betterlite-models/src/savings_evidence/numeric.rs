@@ -1,10 +1,10 @@
-use std::str;
+use std::str::FromStr;
 
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
 use super::metadata::Metadata;
-use crate::price_fields::decimal_lexeme::{DecimalLexemeError, parse_decimal_lexeme};
+use crate::price_fields::decimal_lexeme::DecimalLexemeError;
 use crate::tiered_pricing::Scalar;
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -34,53 +34,54 @@ pub fn round_decimal_lexeme(lexeme: &str) -> Result<Decimal, DecimalLexemeError>
         None => (lexeme, 0),
     };
     let (is_negative, integer_part, fraction_part) = split_coefficient(coefficient);
-    let frac_len = i64::try_from(fraction_part.len()).unwrap_or(i64::MAX);
-    let Some(final_scale) = frac_len.checked_sub(exponent) else {
-        return Ok(Decimal::ZERO);
-    };
-    if final_scale <= i64::from(Decimal::MAX_SCALE) {
-        return parse_decimal_lexeme(lexeme);
-    }
     let digits = format!("{integer_part}{fraction_part}");
-    let excess_scale = final_scale.saturating_sub(i64::from(Decimal::MAX_SCALE));
-    let drop = usize::try_from(excess_scale).unwrap_or(usize::MAX);
-    let mantissa = rounded_mantissa(digits.as_bytes(), drop);
-    if mantissa == 0 {
-        return Ok(signed_zero(is_negative));
+    if digits.bytes().all(|byte| byte == b'0') {
+        return Ok(Decimal::ZERO);
     }
-    let mut decimal = Decimal::try_from_i128_with_scale(mantissa, Decimal::MAX_SCALE)?;
-    decimal.set_sign_negative(is_negative);
-    Ok(decimal.normalize())
-}
-
-// The first dropped digit decides half-away-from-zero rounding; a drop that reaches past every digit leaves nothing to round, so the magnitude is zero.
-fn rounded_mantissa(digit_bytes: &[u8], drop: usize) -> i128 {
-    if drop > digit_bytes.len() {
-        return 0;
+    let integer_len = i64::try_from(integer_part.len())
+        .map_err(|source| DecimalLexemeError::ScaleOverflow { source })?;
+    let decimal_position = integer_len
+        .checked_add(exponent)
+        .ok_or(DecimalLexemeError::ScaleShiftOverflow)?;
+    let leading_zeroes = i64::try_from(digits.bytes().take_while(|byte| *byte == b'0').count())
+        .map_err(|source| DecimalLexemeError::ScaleOverflow { source })?;
+    let first_significant_place = decimal_position
+        .checked_sub(leading_zeroes)
+        .and_then(|position| position.checked_sub(1))
+        .ok_or(DecimalLexemeError::ScaleShiftOverflow)?;
+    if first_significant_place < -29 {
+        return Ok(Decimal::ZERO);
     }
-    let kept_len = digit_bytes.len().saturating_sub(drop);
-    let kept_bytes = digit_bytes.get(..kept_len).unwrap_or_default();
-    let mantissa: i128 = if kept_bytes.is_empty() {
-        0
+    let integer_digits = decimal_position
+        .checked_sub(leading_zeroes)
+        .ok_or(DecimalLexemeError::ScaleShiftOverflow)?;
+    if integer_digits > 29 {
+        return Err(DecimalLexemeError::Decimal(
+            rust_decimal::Error::ExceedsMaximumPossibleValue,
+        ));
+    }
+    let digit_len = i64::try_from(digits.len())
+        .map_err(|source| DecimalLexemeError::ScaleOverflow { source })?;
+    let unsigned = if decimal_position <= 0 {
+        let zeros = usize::try_from(decimal_position.unsigned_abs())
+            .map_err(|source| DecimalLexemeError::ScaleOverflow { source })?;
+        format!("0.{}{digits}", "0".repeat(zeros))
+    } else if decimal_position >= digit_len {
+        let zeros = usize::try_from(decimal_position - digit_len)
+            .map_err(|source| DecimalLexemeError::ScaleOverflow { source })?;
+        format!("{digits}{}", "0".repeat(zeros))
     } else {
-        str::from_utf8(kept_bytes)
-            .ok()
-            .and_then(|text| text.parse().ok())
-            .unwrap_or(i128::MAX)
+        let split = usize::try_from(decimal_position)
+            .map_err(|source| DecimalLexemeError::ScaleOverflow { source })?;
+        let (whole, fraction) = digits.split_at(split);
+        format!("{whole}.{fraction}")
     };
-    let rounds_up = digit_bytes.get(kept_len).is_some_and(|&byte| byte >= b'5');
-    if rounds_up {
-        mantissa.saturating_add(1)
+    let expanded = if is_negative {
+        format!("-{unsigned}")
     } else {
-        mantissa
-    }
-}
-
-// A magnitude of zero loses its sign through try_from_i128_with_scale, since -0_i128 is 0_i128, so the sign is set explicitly here and every later print or compare normalizes the result, turning -0 back into 0.
-fn signed_zero(is_negative: bool) -> Decimal {
-    let mut zero = Decimal::ZERO;
-    zero.set_sign_negative(is_negative);
-    zero
+        unsigned
+    };
+    Ok(Decimal::from_str(&expanded)?.normalize())
 }
 
 fn split_coefficient(coefficient: &str) -> (bool, &str, &str) {
