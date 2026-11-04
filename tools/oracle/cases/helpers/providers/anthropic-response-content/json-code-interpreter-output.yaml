@@ -1,0 +1,8 @@
+kind: helper
+name: anthropic-response-content-json-code-interpreter-output
+call:
+  anthropic_response_content:
+    response: {content: [{type: tool_use, id: t1, name: json_tool_call, input: {command: ls}}, {type: bash_code_execution_tool_result, tool_use_id: t1, content: {stdout: ok}}]}
+    json_mode: true
+env: {}
+compare: {ignore: []}

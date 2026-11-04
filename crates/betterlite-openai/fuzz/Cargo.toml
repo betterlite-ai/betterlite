@@ -48,6 +48,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "responses_objects"
+path = "fuzz_targets/responses_objects.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "sse_events"
 path = "fuzz_targets/sse_events.rs"
 test = false

@@ -1,0 +1,8 @@
+kind: helper
+name: anthropic-response-content-tool-use-index
+call:
+  anthropic_response_content:
+    response: {content: [{type: text, text: x}, {type: tool_use, id: id1, name: run, input: {command: pwd}, caller: null}], context_management: {edits: []}, container: {id: container_1}}
+    json_mode: null
+env: {}
+compare: {ignore: []}

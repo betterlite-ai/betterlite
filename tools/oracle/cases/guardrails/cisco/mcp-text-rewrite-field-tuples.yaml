@@ -1,0 +1,5 @@
+kind: helper
+name: mcp-text-rewrite-field-tuples
+call: {b3761: {function: rewrite_field_tuples_text, response: [[content, [{type: text, text: old}]], [structuredContent, {result: old}], [isError, false]], text: new}}
+env: {}
+compare: {ignore: []}

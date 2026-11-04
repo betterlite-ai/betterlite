@@ -10,6 +10,7 @@ cargo-fuzz = true
 [dependencies]
 betterlite-config = { path = ".." }
 libfuzzer-sys = "0.4.9"
+serde_json = { version = "1.0.154", features = ["raw_value"] }
 tempfile = "3.27.0"
 
 [[bin]]
@@ -22,6 +23,13 @@ bench = false
 [[bin]]
 name = "config_includes"
 path = "fuzz_targets/config_includes.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rag_ingest_options"
+path = "fuzz_targets/rag_ingest_options.rs"
 test = false
 doc = false
 bench = false

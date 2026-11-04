@@ -1,0 +1,8 @@
+kind: helper
+name: anthropic-response-content-thinking-redacted-content
+call:
+  anthropic_response_content:
+    response: {content: [{type: thinking, thinking: secret}, {type: redacted_thinking, data: opaque}], context_management: {edits: []}, container: {id: container_1}}
+    json_mode: null
+env: {}
+compare: {ignore: []}
