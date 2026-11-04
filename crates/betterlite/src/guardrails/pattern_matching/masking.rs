@@ -91,10 +91,9 @@ fn indexed_name<'name>(key: &str, uppercase: &'name str) -> Result<&'name str, s
             .ok_or_else(|| strfmt::FmtError::KeyError(key.to_owned()))?;
         let position =
             decimal_index(index).ok_or_else(|| strfmt::FmtError::KeyError(key.to_owned()))?;
-        let (start, character) = value
-            .char_indices()
-            .nth(position)
-            .ok_or_else(|| strfmt::FmtError::KeyError(key.to_owned()))?;
+        let Some((start, character)) = value.char_indices().nth(position) else {
+            return Err(strfmt::FmtError::KeyError(key.to_owned()));
+        };
         value = value
             .get(start..)
             .and_then(|tail| tail.get(..character.len_utf8()))

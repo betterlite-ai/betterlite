@@ -91,10 +91,9 @@ pub(super) fn literal(
     };
     let mut value = 0_u32;
     for _ in 0..digits {
-        let digit = characters
-            .next()
-            .and_then(|item| item.to_digit(16))
-            .ok_or(Error::ParseError(0, ParseError::InvalidHex))?;
+        let Some(digit) = characters.next().and_then(|item| item.to_digit(16)) else {
+            return Err(Error::ParseError(0, ParseError::InvalidHex));
+        };
         value = value
             .checked_mul(16)
             .and_then(|number| number.checked_add(digit))

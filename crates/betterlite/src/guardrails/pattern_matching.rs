@@ -43,10 +43,9 @@ pub fn compile(config: &ContentFilterPattern) -> Result<CompiledPattern, Pattern
     match config.pattern_type.as_str() {
         "prebuilt" => compile_prebuilt(config),
         "regex" => {
-            let source = config
-                .pattern
-                .as_ref()
-                .ok_or(PatternError::MissingPattern)?;
+            let Some(source) = config.pattern.as_deref() else {
+                return Err(PatternError::MissingPattern);
+            };
             if source.len() > spans::MAX_TEXT_BYTES {
                 return Err(PatternError::TooLarge);
             }
@@ -66,17 +65,16 @@ pub fn compile(config: &ContentFilterPattern) -> Result<CompiledPattern, Pattern
 }
 
 fn compile_prebuilt(config: &ContentFilterPattern) -> Result<CompiledPattern, PatternError> {
-    let name = config
-        .pattern_name
-        .as_ref()
-        .ok_or(PatternError::MissingName)?;
+    let Some(name) = config.pattern_name.as_deref() else {
+        return Err(PatternError::MissingName);
+    };
     let regex = get_compiled_pattern(name)?;
     let extras = pattern_extra_config()?;
     let extra = extras.get(name);
     let keyword = extra.and_then(|value| value.keyword_pattern.as_deref());
     Ok(CompiledPattern {
         regex,
-        pattern_name: name.clone(),
+        pattern_name: name.to_owned(),
         action: config.action,
         keyword_regex: keyword.map(python_regex::compile).transpose()?,
         allow_word_numbers: extra

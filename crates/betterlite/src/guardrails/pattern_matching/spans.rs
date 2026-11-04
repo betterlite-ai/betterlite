@@ -173,12 +173,7 @@ pub fn gap_allowed(text: &str) -> bool {
 fn near_keyword(text: &str, value: &Range<usize>, keywords: &[Range<usize>]) -> bool {
     // A farther keyword cannot have a smaller gap than the closest one on either side.
     let after = keywords.partition_point(|keyword| keyword.end <= value.start);
-    let nearest = [
-        after
-            .checked_sub(1)
-            .and_then(|position| keywords.get(position)),
-        keywords.get(after),
-    ];
+    let nearest = [keywords.get(after.wrapping_sub(1)), keywords.get(after)];
     nearest.into_iter().flatten().any(|keyword| {
         let gap = if value.start >= keyword.end {
             keyword.end..value.start
