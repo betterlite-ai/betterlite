@@ -1,0 +1,5 @@
+kind: helper
+name: semantic-ranking
+call: {"mcp_search_primitives": {"mode": "semantic", "threshold": 0.5, "top_k": 2, "scores": [0.5, 0.9, 0.4], "tools": [{"name": "first", "description": "one"}, {"name": "second", "description": "two"}, {"name": "third", "description": "three"}]}}
+env: {}
+compare: {ignore: []}

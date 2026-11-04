@@ -1,0 +1,5 @@
+kind: helper
+name: keyword-ranking
+call: {"mcp_search_primitives": {"mode": "keyword", "query": "weather forecast", "top_k": 2, "tools": [{"name": "weather", "description": "Get local forecast", "inputSchema": {"type": "object"}}, {"name": "forecast", "description": "Weather report", "inputSchema": {"type": "object"}}, {"name": "billing", "description": "Invoice status", "inputSchema": {"type": "object"}}]}}
+env: {}
+compare: {ignore: []}
