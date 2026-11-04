@@ -98,7 +98,7 @@ impl PageText<'_> {
         match operation.operator.as_str() {
             "Tf" => self.select_font(&operation.operands)?,
             "Tj" => self.show_text(operation.operands.first())?,
-            "TJ" => self.show_text_array(operation.operands.first()?)?,
+            "TJ" => self.show_text_array(operation.operands.first())?,
             "'" => self.show_next_line_text(operation.operands.first())?,
             "\"" if operation.operands.len() >= 3 => {
                 self.show_next_line_text(operation.operands.get(2))?;
@@ -156,20 +156,23 @@ impl PageText<'_> {
         Some(())
     }
 
-    fn show_text_array(&mut self, object: &Object) -> Option<()> {
-        let values = object.as_array().ok()?;
+    fn show_text_array(&mut self, object: Option<&Object>) -> Option<()> {
+        let Some(values) = object.and_then(|value| value.as_array().ok()) else {
+            return Some(());
+        };
         for value in values {
             match value {
                 Object::String(_, _) => self.show_text(Some(value))?,
                 Object::Integer(offset) if *offset < -100 => self.text.push(' '),
-                Object::Integer(_) | Object::Real(_) => {}
-                Object::Boolean(_)
+                Object::Integer(_)
+                | Object::Real(_)
+                | Object::Boolean(_)
                 | Object::Name(_)
                 | Object::Array(_)
                 | Object::Dictionary(_)
                 | Object::Stream(_)
                 | Object::Null
-                | Object::Reference(_) => return None,
+                | Object::Reference(_) => {}
             }
         }
         self.text.push(' ');

@@ -534,6 +534,12 @@ fn pdf_line_move_t_star_uses_text_leading() {
     "1 0 0 1 0 100 cm BT /F1 12 Tf 100 700 Td (Hello) Tj cm 0 0 Td (World) Tj ET",
     "Hello\nWorld"
 )]
+#[case::tj_array_missing("BT /F1 12 Tf 100 700 Td (Hello) Tj TJ (World) Tj ET", "HelloWorld")]
+#[case::tj_array_non_array("BT /F1 12 Tf 100 700 Td (Hello) Tj 42 TJ (World) Tj ET", "HelloWorld")]
+#[case::tf_bad_size_keeps_previous(
+    "BT /F1 12 Tf 100 700 Td (Hello) Tj /F1 /bad Tf 0 -5 Td (World) Tj ET",
+    "HelloWorld"
+)]
 fn pdf_line_move_tracks_text_state(#[case] stream: &str, #[case] expected: &str) {
     assert_eq!(
         extract_text_from_pdf(&pdf_with_stream(stream)).as_deref(),
@@ -548,6 +554,7 @@ fn pdf_line_move_tracks_text_state(#[case] stream: &str, #[case] expected: &str)
 #[case::zero("0", "HelloWorld ")]
 #[case::positive("99", "HelloWorld ")]
 #[case::real_offset("-101.5", "HelloWorld ")]
+#[case::non_numeric_offsets("/bad true null [] <<>>", "HelloWorld ")]
 fn pdf_retains_lopdf_tj_spacing(#[case] offset: &str, #[case] expected: &str) {
     let stream = format!("BT /F1 12 Tf [(Hello) {offset} (World)] TJ ET");
     assert_eq!(
