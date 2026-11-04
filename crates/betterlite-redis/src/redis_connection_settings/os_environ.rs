@@ -25,73 +25,25 @@ where
     let mut names = ReferenceNames::new();
     resolve_passthrough_references(&mut overrides, env, &mut names);
     resolve_string_references(&mut overrides, env);
-    resolve_coercible_fields(&mut overrides, env, &mut names);
+    // Every one of these is a plain struct field resolved the same way, so the macro spells that resolve-and-reassign step once for the whole list instead of repeating it ten times with only the field and its REDIS_* name changing.
+    macro_rules! resolve_coercible_field {
+        ($field:ident => $canonical:literal) => {
+            overrides.$field = resolve_blamed($canonical, overrides.$field.take(), env, &mut names);
+        };
+    }
+    resolve_coercible_field!(port => "REDIS_PORT");
+    resolve_coercible_field!(db => "REDIS_DB");
+    resolve_coercible_field!(max_connections => "REDIS_MAX_CONNECTIONS");
+    resolve_coercible_field!(health_check_interval => "REDIS_HEALTH_CHECK_INTERVAL");
+    resolve_coercible_field!(ssl => "REDIS_SSL");
+    resolve_coercible_field!(socket_keepalive => "REDIS_SOCKET_KEEPALIVE");
+    resolve_coercible_field!(aws_iam_auth => "REDIS_AWS_IAM_AUTH");
+    resolve_coercible_field!(aws_iam_serverless => "REDIS_AWS_IAM_SERVERLESS");
+    resolve_coercible_field!(socket_timeout => "REDIS_SOCKET_TIMEOUT");
+    resolve_coercible_field!(socket_connect_timeout => "REDIS_SOCKET_CONNECT_TIMEOUT");
     overrides.startup_nodes = resolve_textual(overrides.startup_nodes.take(), env).0;
     overrides.sentinel_nodes = resolve_textual(overrides.sentinel_nodes.take(), env).0;
     (overrides, names)
-}
-
-// IntOrText, BoolOrText and FloatOrText each resolve through resolve_textual, but a caller holding three typed Option<Scalar<T>> fields needs one loop over all of them, not a separate monomorphized call per type.
-enum CoercibleField<'field> {
-    Int(&'field mut Option<Scalar<i64>>),
-    Bool(&'field mut Option<Scalar<bool>>),
-    Float(&'field mut Option<Scalar<f64>>),
-}
-
-impl CoercibleField<'_> {
-    fn resolve<E>(self, canonical: &str, env: &E, names: &mut ReferenceNames)
-    where
-        E: EnvironmentLookup,
-    {
-        match self {
-            Self::Int(field) => *field = resolve_blamed(canonical, field.take(), env, names),
-            Self::Bool(field) => *field = resolve_blamed(canonical, field.take(), env, names),
-            Self::Float(field) => *field = resolve_blamed(canonical, field.take(), env, names),
-        }
-    }
-}
-
-// Resolves every numeric and boolean field that coercion.rs and resolve.rs later parse with betterlite_env, so a reference's name is recorded before its canonical REDIS_* name is the only one left.
-fn resolve_coercible_fields<E>(overrides: &mut RedisOverrides, env: &E, names: &mut ReferenceNames)
-where
-    E: EnvironmentLookup,
-{
-    let fields = [
-        (CoercibleField::Int(&mut overrides.port), "REDIS_PORT"),
-        (CoercibleField::Int(&mut overrides.db), "REDIS_DB"),
-        (
-            CoercibleField::Int(&mut overrides.max_connections),
-            "REDIS_MAX_CONNECTIONS",
-        ),
-        (
-            CoercibleField::Int(&mut overrides.health_check_interval),
-            "REDIS_HEALTH_CHECK_INTERVAL",
-        ),
-        (CoercibleField::Bool(&mut overrides.ssl), "REDIS_SSL"),
-        (
-            CoercibleField::Bool(&mut overrides.socket_keepalive),
-            "REDIS_SOCKET_KEEPALIVE",
-        ),
-        (
-            CoercibleField::Bool(&mut overrides.aws_iam_auth),
-            "REDIS_AWS_IAM_AUTH",
-        ),
-        (
-            CoercibleField::Bool(&mut overrides.aws_iam_serverless),
-            "REDIS_AWS_IAM_SERVERLESS",
-        ),
-        (
-            CoercibleField::Float(&mut overrides.socket_timeout),
-            "REDIS_SOCKET_TIMEOUT",
-        ),
-        (
-            CoercibleField::Float(&mut overrides.socket_connect_timeout),
-            "REDIS_SOCKET_CONNECT_TIMEOUT",
-        ),
-    ];
-    for (field, canonical) in fields {
-        field.resolve(canonical, env, names);
-    }
 }
 
 fn resolve_passthrough_references<E>(
