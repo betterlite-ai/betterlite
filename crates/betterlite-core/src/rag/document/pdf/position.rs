@@ -4,6 +4,8 @@
     reason = "pypdf compares float text-space coordinates; affine products combine different axes"
 )]
 
+mod tests;
+
 use lopdf::Object;
 use lopdf::content::Operation;
 

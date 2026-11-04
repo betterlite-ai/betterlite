@@ -540,6 +540,14 @@ fn pdf_line_move_t_star_uses_text_leading() {
     "BT /F1 12 Tf 100 700 Td (Hello) Tj /F1 /bad Tf 0 -5 Td (World) Tj ET",
     "HelloWorld"
 )]
+#[case::scaled_height_between_sum_and_product(
+    "BT /F1 12 Tf 2 0 0 2 100 700 Tm (Hello) Tj 0 -7.5 Td (World) Tj ET",
+    "HelloWorld"
+)]
+#[case::td_and_t_star_keep_baseline_direction(
+    "BT /F1 12 Tf 100 700 Td (Hello) Tj 0 -5 TD T* 0 10 Td (World) Tj ET",
+    "HelloWorld"
+)]
 fn pdf_line_move_tracks_text_state(#[case] stream: &str, #[case] expected: &str) {
     assert_eq!(
         extract_text_from_pdf(&pdf_with_stream(stream)).as_deref(),
