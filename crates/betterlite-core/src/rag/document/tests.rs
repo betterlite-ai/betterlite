@@ -334,10 +334,10 @@ fn pdf_line_move_td_starts_a_new_line() {
 fn pdf_line_move_td_leading_starts_a_new_line() {
     assert_eq!(
         extract_text_from_pdf(&pdf_with_stream(
-            "BT /F1 12 Tf 14 TL 100 700 Td (Hello) Tj 0 -14 TD (World) Tj ET"
+            "BT /F1 12 Tf 100 700 Td (Hello) Tj 0 -14 TD (World) Tj T* (Again) Tj ET"
         ))
         .as_deref(),
-        Some("Hello\nWorld")
+        Some("Hello\nWorld\nAgain")
     );
 }
 
@@ -378,10 +378,10 @@ fn pdf_line_move_scaled_tm_uses_font_scale() {
 fn pdf_line_move_tj_uses_vertical_baseline() {
     assert_eq!(
         extract_text_from_pdf(&pdf_with_stream(
-            "BT /F1 12 Tf 100 700 Td (Hello) Tj 0 -20 Td (World) Tj ET"
+            "BT /F1 12 Tf 100 700 Td (Hello) Tj 1 0 0 1 0 -20 cm (World) Tj ET"
         ))
         .as_deref(),
-        Some("Hello\nWorld")
+        Some("HelloWorld\n")
     );
 }
 
