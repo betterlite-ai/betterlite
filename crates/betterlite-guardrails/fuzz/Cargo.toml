@@ -48,3 +48,10 @@ doc = false
 bench = false
 
 [workspace]
+
+[[bin]]
+name = "prisma_content"
+path = "fuzz_targets/prisma_content.rs"
+test = false
+doc = false
+bench = false
