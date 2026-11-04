@@ -69,9 +69,8 @@ pub fn decode_legacy_compatible_line(line: &str, mode: Mode) -> Outcome {
 
 pub fn receive_failure<E>(error: ReceiveError<E>, mode: Mode) -> StreamError<E> {
     match (error, mode) {
-        (ReceiveError::Value(source), _) | (ReceiveError::Other(source), Mode::Async) => {
-            StreamError::Runtime { source }
-        }
+        (ReceiveError::Value(source), Mode::Sync | Mode::Async)
+        | (ReceiveError::Other(source), Mode::Async) => StreamError::Runtime { source },
         (ReceiveError::Other(source), Mode::Sync) => StreamError::Other { source },
     }
 }
