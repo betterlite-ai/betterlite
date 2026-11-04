@@ -118,13 +118,7 @@ where
     let mask_request_content = params.mask_request_content.unwrap_or(false) || mask_on_block;
     let mask_response_content = params.mask_response_content.unwrap_or(false) || mask_on_block;
     let fallback_on_error = params.fallback_on_error.unwrap_or(FallbackAction::Block);
-    let timeout = resolve_number(
-        params.timeout,
-        &format!("{prefix}.timeout"),
-        lookup,
-        parse_float,
-    )?
-    .unwrap_or(10.0);
+    let timeout = resolve_timeout(params.timeout, &prefix, lookup)?;
     Ok(Configured {
         guardrail_name: entry
             .guardrail_name
@@ -148,6 +142,20 @@ where
         default_on: params.default_on.unwrap_or(true),
         latest_role_message_only: params.latest_role_message_only,
     })
+}
+
+fn resolve_timeout<L>(
+    timeout: Option<RawNumber>,
+    prefix: &str,
+    lookup: &L,
+) -> Result<f64, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    Ok(
+        resolve_number(timeout, &format!("{prefix}.timeout"), lookup, parse_float)?
+            .unwrap_or(10.0_f64),
+    )
 }
 
 fn resolve_api_key<L>(

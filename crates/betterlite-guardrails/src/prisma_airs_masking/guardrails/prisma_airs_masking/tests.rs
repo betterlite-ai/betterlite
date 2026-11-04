@@ -240,6 +240,27 @@ fn rewrites_each_mcp_argument_shape(
 }
 
 #[test]
+fn parse_mcp_request_rejects_duplicate_known_fields() {
+    let error = parse_mcp_request(br#"{"server_name":"a","server_name":"b"}"#)
+        .expect_err("duplicate field");
+    assert!(error.to_string().contains("server_name"), "{error}");
+}
+
+#[test]
+fn parse_mcp_request_distinguishes_missing_from_null_arguments() {
+    let absent = parse_mcp_request(b"{}").expect("request");
+    assert!(absent.arguments.is_none());
+    assert!(absent.mcp_arguments.is_none());
+
+    let present_null = parse_mcp_request(br#"{"arguments":null}"#).expect("request");
+    assert_eq!(
+        present_null.arguments.as_ref().expect("present").get(),
+        "null"
+    );
+    assert!(present_null.mcp_arguments.is_none());
+}
+
+#[test]
 fn missing_mcp_fields_are_rejected_without_inventing_arguments() {
     let mut request = parse_mcp_request(b"{}").expect("request");
     assert!(matches!(

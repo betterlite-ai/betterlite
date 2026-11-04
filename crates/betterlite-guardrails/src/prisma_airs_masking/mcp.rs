@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::Deserialize;
 use serde_json::value::{RawValue, to_raw_value};
+use serde_with::rust::double_option;
 
 use super::MaskingError;
 
@@ -14,24 +15,32 @@ pub struct McpRequest {
     pub mcp_arguments: Option<Box<RawValue>>,
 }
 
-pub fn parse_mcp_request(bytes: &[u8]) -> Result<McpRequest, serde_json::Error> {
-    let fields: BTreeMap<String, Box<RawValue>> = serde_json::from_slice(bytes)?;
-    Ok(McpRequest {
-        mcp_server_name: optional_string(&fields, "mcp_server_name")?,
-        server_name: optional_string(&fields, "server_name")?,
-        server_id: optional_string(&fields, "server_id")?,
-        arguments: fields.get("arguments").cloned(),
-        mcp_arguments: fields.get("mcp_arguments").cloned(),
-    })
+type PresentOrNull = Option<Box<RawValue>>;
+
+#[derive(Debug, Deserialize)]
+struct McpRequestWire {
+    mcp_server_name: Option<String>,
+    server_name: Option<String>,
+    server_id: Option<String>,
+    #[serde(default, with = "double_option")]
+    arguments: Option<PresentOrNull>,
+    #[serde(default, with = "double_option")]
+    mcp_arguments: Option<PresentOrNull>,
 }
 
-fn optional_string(
-    fields: &BTreeMap<String, Box<RawValue>>,
-    key: &str,
-) -> Result<Option<String>, serde_json::Error> {
-    fields
-        .get(key)
-        .map_or(Ok(None), |raw| serde_json::from_str(raw.get()))
+pub fn parse_mcp_request(bytes: &[u8]) -> Result<McpRequest, serde_json::Error> {
+    let wire: McpRequestWire = serde_json::from_slice(bytes)?;
+    Ok(McpRequest {
+        mcp_server_name: wire.mcp_server_name,
+        server_name: wire.server_name,
+        server_id: wire.server_id,
+        arguments: wire
+            .arguments
+            .map(|value| value.unwrap_or_else(|| RawValue::NULL.to_owned())),
+        mcp_arguments: wire
+            .mcp_arguments
+            .map(|value| value.unwrap_or_else(|| RawValue::NULL.to_owned())),
+    })
 }
 
 #[derive(Debug, Deserialize)]
