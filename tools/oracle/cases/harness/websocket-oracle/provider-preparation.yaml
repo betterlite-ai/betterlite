@@ -1,0 +1,10 @@
+kind: websocket
+name: provider-preparation
+path: /v1/realtime
+headers: {}
+requested_subprotocols: []
+expected_http_status: 101
+negotiated_subprotocol: null
+service: realtime_probe
+input: {query_params: null, api_base: https://api.openai.com/}
+frames: []

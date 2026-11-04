@@ -1,0 +1,16 @@
+kind: websocket
+name: barrier-gates-send
+path: /v1/realtime
+headers: {}
+requested_subprotocols: []
+expected_http_status: 101
+negotiated_subprotocol: null
+frames:
+  - direction: provider_to_client
+    action: expect
+    text: ready
+    barrier: after_provider_ready
+  - direction: client_to_provider
+    action: send
+    text: followup
+    barrier: after_provider_ready

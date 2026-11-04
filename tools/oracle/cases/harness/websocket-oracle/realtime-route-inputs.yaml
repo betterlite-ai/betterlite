@@ -1,0 +1,12 @@
+kind: websocket
+name: realtime-route-inputs
+path: /realtime?model=realtime-a&intent=transcription
+headers: {}
+requested_subprotocols: [realtime, second]
+expected_http_status: 101
+negotiated_subprotocol: realtime
+expected_upstream_query: model=realtime-a&intent=transcription
+frames:
+  - direction: client_to_provider
+    action: send
+    text: setup

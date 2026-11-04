@@ -1,0 +1,9 @@
+kind: websocket
+name: upstream-refusal
+path: /v1/realtime
+headers: {}
+requested_subprotocols: []
+expected_http_status: 101
+negotiated_subprotocol: null
+upstream_status: 503
+frames: []

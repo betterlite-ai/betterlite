@@ -1,0 +1,20 @@
+kind: websocket
+name: direction-order
+path: /v1/realtime
+headers: {}
+requested_subprotocols: []
+expected_http_status: 101
+negotiated_subprotocol: null
+frames:
+  - direction: client_to_provider
+    action: send
+    text: setup
+  - direction: provider_to_client
+    action: expect
+    text: ready
+  - direction: provider_to_client
+    action: expect
+    text: delta
+  - direction: client_to_provider
+    action: send
+    text: followup

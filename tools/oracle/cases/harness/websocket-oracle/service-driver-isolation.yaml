@@ -1,0 +1,10 @@
+kind: websocket
+name: service-driver-isolation
+path: /v1/realtime
+headers: {}
+requested_subprotocols: []
+expected_http_status: 101
+negotiated_subprotocol: null
+service: realtime_probe
+input: {frames: []}
+frames: []

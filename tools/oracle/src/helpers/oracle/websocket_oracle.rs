@@ -1,7 +1,8 @@
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
-    status: u16,
+    service: crate::websocket_driver::ServiceTag,
+    input: serde_json::Value,
 }
 
 pub(crate) struct Op;
@@ -10,19 +11,15 @@ impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let message = format!(
-            "Upstream realtime handshake rejected with HTTP {}",
-            input.status
-        );
-        let close_code = match input.status {
-            401 | 403 => 1008,
-            429 => 1013,
-            _ => 1011,
-        };
-        Ok(serde_json::json!({
-            "event": {"type": "error", "error": {"type": "server_error", "message": message}},
-            "close_code": close_code,
-            "close_reason": message,
-        }))
+        crate::websocket_driver::run_service(input.service, &input.input).map_err(|error| {
+            Box::new(crate::helpers::HelperError {
+                class: "ServiceError".to_owned(),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+                message: error.to_string(),
+            })
+        })
     }
 }

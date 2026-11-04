@@ -1,0 +1,11 @@
+kind: websocket
+name: bounded-inputs
+path: /v1/realtime
+headers: {}
+requested_subprotocols: []
+expected_http_status: 101
+negotiated_subprotocol: null
+frames:
+  - direction: client_to_provider
+    action: send
+    text: bounded

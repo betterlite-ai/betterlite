@@ -42,6 +42,7 @@ fn barrier_gates_send() {
         action: Action::Send,
         text: Some("followup".to_owned()),
         binary: None,
+        binary_data: None,
         barrier: Some("after_provider_ready".to_owned()),
     };
     assert!(!barrier_is_released(&frame, &[]));
@@ -75,15 +76,16 @@ fn route_aliases(#[case] path: &str) {
 
 #[test]
 fn service_driver_isolation() {
-    use crate::websocket_driver::{DriverError, ServiceInput, ServiceOperation, ServiceRegistry};
-    let registry = ServiceRegistry::default();
-    let unknown = ServiceInput {
-        operation: ServiceOperation::RealtimeProbe,
-        input: serde_json::Value::Null,
-    };
+    let unknown = serde_json::json!({"service": "unknown", "input": null});
+    assert!(serde_json::from_value::<crate::websocket_driver::ServiceInput>(unknown).is_err());
     assert_eq!(
-        registry.dispatch(&unknown),
-        Err(DriverError::AdapterMissing(ServiceOperation::RealtimeProbe))
+        crate::websocket_driver::run_service(
+            crate::websocket_driver::ServiceTag::RealtimeProbe,
+            &serde_json::Value::Null,
+        ),
+        Err(crate::websocket_driver::DriverError::AdapterMissing(
+            crate::websocket_driver::ServiceTag::RealtimeProbe
+        ))
     );
     assert!(decode_ws_case(valid().as_bytes(), &OracleLimits::default()).is_ok());
 }

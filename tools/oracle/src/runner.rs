@@ -2,8 +2,10 @@ use betterlite_postgres_fixture::connection::{DatabaseNameGenerator, RandomDatab
 use reqwest::blocking::Client;
 use secrecy::SecretString;
 use std::collections::BTreeMap;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::time::Duration;
 
 pub(crate) use self::compare_cases::compare_group;
 use super::gateway::{GatewayInput, start as start_gateway};
@@ -17,6 +19,8 @@ use crate::mock::{MockProvider, ProviderRequest};
 use crate::paths::artifact_root;
 use crate::process::Gateway;
 use crate::routing_mock_scripts::MockScript;
+use crate::websocket_driver::{compare_transcript, exchange_gateway, start_provider};
+use crate::websocket_oracle::{MAX_EXECUTION_SECONDS, WebSocketCase};
 
 pub(crate) mod browser_flow_group;
 pub(crate) mod compare_cases;
@@ -40,6 +44,7 @@ pub(crate) fn run_cases(
     }
     let mut groups = BTreeMap::<String, Vec<Case>>::new();
     let mut scenarios = Vec::new();
+    let mut websocket_cases = Vec::new();
     let mut helper_outcome = helpers::HelperRun::Match;
     for loaded_case in cases {
         match loaded_case {
@@ -57,6 +62,7 @@ pub(crate) fn run_cases(
                     helper_outcome = helpers::HelperRun::Difference;
                 }
             }
+            LoadedCase::WebSocket(websocket_case) => websocket_cases.push(websocket_case),
         }
     }
     let root = artifact_root()?;
@@ -68,10 +74,166 @@ pub(crate) fn run_cases(
     for scenario_case in &scenarios {
         outcomes.push(scenario::run_scenario_case(options, &root, scenario_case)?);
     }
+    for websocket_case in &websocket_cases {
+        if let Some(service) = &websocket_case.service {
+            let helper_case = crate::case::HelperCase {
+                kind: crate::case::helper::HelperKind::Helper,
+                name: websocket_case.name.clone(),
+                call: helpers::HelperCall {
+                    operation: "websocket_oracle".to_owned(),
+                    input: serde_json::json!({"service": service, "input": websocket_case.input}),
+                },
+                env: websocket_case.env.clone(),
+                compare: crate::case::helper::HelperCompare::default(),
+            };
+            let result = helpers::run_case(&helper_case, options.self_check)?;
+            if matches!(result, helpers::HelperRun::Difference) {
+                helper_outcome = helpers::HelperRun::Difference;
+            }
+        } else {
+            outcomes.extend(run_websocket_gateway_case(options, &root, websocket_case)?);
+        }
+    }
     if matches!(helper_outcome, helpers::HelperRun::Difference) {
         return Ok(exit_status(true));
     }
     Ok(exit_status(outcomes.contains(&true)))
+}
+
+struct WebSocketGatewayAttempt<'input> {
+    options: &'input Options,
+    root: &'input Path,
+    case: &'input WebSocketCase,
+    runtime: &'input tokio::runtime::Runtime,
+    first: bool,
+}
+
+fn run_websocket_gateway_case(
+    options: &Options,
+    root: &Path,
+    case: &WebSocketCase,
+) -> Result<Vec<bool>, OracleError> {
+    let group_dir = root
+        .join("websocket")
+        .join(crate::paths::safe_name(&case.name));
+    fs::create_dir_all(&group_dir).map_err(|source| OracleError::Filesystem {
+        path: group_dir.clone(),
+        source,
+    })?;
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|source| OracleError::ScenarioInvalid {
+            message: source.to_string(),
+        })?;
+    let first = run_websocket_gateway_attempt(WebSocketGatewayAttempt {
+        options,
+        root,
+        case,
+        runtime: &runtime,
+        first: true,
+    })?;
+    let second = run_websocket_gateway_attempt(WebSocketGatewayAttempt {
+        options,
+        root,
+        case,
+        runtime: &runtime,
+        first: false,
+    })?;
+    Ok(vec![first, second])
+}
+
+fn run_websocket_gateway_attempt(
+    attempt: WebSocketGatewayAttempt<'_>,
+) -> Result<bool, OracleError> {
+    let WebSocketGatewayAttempt {
+        options,
+        root,
+        case,
+        runtime,
+        first,
+    } = attempt;
+    let provider = runtime
+        .block_on(start_provider(case.clone()))
+        .map_err(|error| OracleError::ScenarioInvalid {
+            message: error.to_string(),
+        })?;
+    let provider_url = format!("ws://{}", provider.address);
+    let default_config = "model_list:\n  - model_name: realtime-a\n    litellm_params:\n      model: openai/realtime-a\n      api_base: __WEBSOCKET_PROVIDER__\n      api_key: sk-provider\n  - model_name: gpt-realtime-whisper\n    litellm_params:\n      model: openai/gpt-realtime-whisper\n      api_base: __WEBSOCKET_PROVIDER__\n      api_key: sk-provider\n";
+    let template = if case.config.is_empty() {
+        default_config
+    } else {
+        &case.config
+    };
+    let config = template.replace("__WEBSOCKET_PROVIDER__", &provider_url);
+    let config_path = root.join("websocket").join(format!(
+        "{}-{}.yaml",
+        crate::paths::safe_name(&case.name),
+        first
+    ));
+    if let Err(source) = fs::write(&config_path, config) {
+        let _cancelled = runtime.block_on(provider.cancel());
+        return Err(OracleError::Filesystem {
+            path: config_path,
+            source,
+        });
+    }
+    let input = GatewayInput {
+        options,
+        group_dir: root,
+        config_path: &config_path,
+        case_env: &case.env,
+    };
+    let mut gateway = match start_gateway(&input, first) {
+        Ok(gateway) => gateway,
+        Err(error) => {
+            let _cancelled = runtime.block_on(provider.cancel());
+            return Err(error);
+        }
+    };
+    let captured = runtime.block_on(exchange_gateway(&gateway.base_url, case));
+    let stop_result = gateway.stop();
+    let observed = match captured {
+        Ok(observed) => observed,
+        Err(error) => {
+            let _cancelled = runtime.block_on(provider.cancel());
+            stop_result?;
+            return Err(OracleError::ScenarioInvalid {
+                message: error.to_string(),
+            });
+        }
+    };
+    stop_result?;
+    let provider_observation = if observed.handshake.status == 101 {
+        Some(
+            runtime
+                .block_on(provider.finish(Duration::from_secs(MAX_EXECUTION_SECONDS)))
+                .map_err(|error| OracleError::ScenarioInvalid {
+                    message: error.to_string(),
+                })?,
+        )
+    } else {
+        runtime
+            .block_on(provider.cancel())
+            .map_err(|error| OracleError::ScenarioInvalid {
+                message: error.to_string(),
+            })?;
+        None
+    };
+    let mut difference = compare_transcript(case, &observed).is_err();
+    if let Some(provider_observation) = provider_observation {
+        difference |= provider_observation.connection_count != 1;
+        difference |= provider_observation
+            .request_uri
+            .split_once('?')
+            .map(|(_, query)| query)
+            .unwrap_or("")
+            != case.expected_upstream_query.as_deref().unwrap_or("");
+        difference |=
+            crate::websocket_oracle::direction_matches(&case.frames, &provider_observation.frames)
+                .is_err();
+    }
+    Ok(difference)
 }
 
 pub(crate) fn exit_status(different: bool) -> ExitCode {

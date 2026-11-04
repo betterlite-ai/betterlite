@@ -1,0 +1,8 @@
+kind: websocket
+name: preaccept-status
+path: /realtime
+headers: {}
+requested_subprotocols: []
+expected_http_status: 403
+negotiated_subprotocol: null
+frames: []

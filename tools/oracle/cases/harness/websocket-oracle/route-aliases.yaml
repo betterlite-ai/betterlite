@@ -1,0 +1,11 @@
+kind: websocket
+name: route-aliases
+path: /openai/v1/realtime
+headers: {}
+requested_subprotocols: [realtime, second]
+expected_http_status: 101
+negotiated_subprotocol: realtime
+frames:
+  - direction: client_to_provider
+    action: send
+    text: setup

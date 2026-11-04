@@ -1,0 +1,14 @@
+kind: websocket
+name: changed-peer
+path: /v1/realtime
+headers: {}
+requested_subprotocols: []
+expected_http_status: 101
+negotiated_subprotocol: null
+frames:
+  - direction: client_to_provider
+    action: send
+    text: original
+  - direction: provider_to_client
+    action: expect
+    text: response
