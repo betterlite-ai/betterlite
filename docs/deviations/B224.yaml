@@ -1,0 +1,19 @@
+task: B224
+deviations:
+  - what: >-
+      Tool-history repair skips only source result rows that it has reinserted, preserving intervening messages.
+      LiteLLM advances by the number of matching results from the assistant row, which can skip an intervening user
+      message and then process an already-reinserted result a second time.
+    why: >-
+      The skip count is not tied to source indices; on malformed history with an intervening message it loses user
+      content. Index-based consumption preserves source messages and avoids duplicate tool results.
+    litellm: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L2278-L2283
+  - what: >-
+      The pure Rust transforms do not emit LiteLLM's debug messages for text normalization, missing results and
+      orphan results, or the warning for duplicate results.
+    why: >-
+      Logging is a side effect and conflicts with the task's requirement that these transforms remain pure; the
+      repaired values and dropped rows are covered by behavior tests.
+    litellm: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L2011-L2320
