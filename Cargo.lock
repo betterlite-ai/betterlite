@@ -1285,6 +1285,7 @@ dependencies = [
  "betterlite-config",
  "betterlite-env",
  "betterlite-models",
+ "betterlite-openai",
  "betterlite-prometheus",
  "betterlite-redact",
  "chrono",

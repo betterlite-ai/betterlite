@@ -1,89 +1,105 @@
+use betterlite_config::sections::logging_privacy::Settings;
+use betterlite_logging::logging_privacy::request::{Flag, PrivacyRequest};
+use betterlite_logging::logging_privacy::{
+    PrivacyContext, callback_snapshot, redact_user_api_key_info,
+};
 use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
+use serde::Deserialize;
 
 pub(crate) struct Op;
 
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum Action {
+    #[default]
+    Snapshot,
+    Metadata,
+    Copies,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub(crate) struct Input {
+    action: Action,
+    global: bool,
+    dynamic: Option<Flag>,
+    headers: IndexMap<String, Flag>,
+    request: PrivacyRequest,
+    inherited: bool,
+    payload: Option<Json>,
+    key_info: Option<Json>,
+    redact_key_info: bool,
+}
+
 impl crate::helpers::Helper for Op {
-    type Input = serde_json::Value;
+    type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let fields = input_fields(input)?;
-        let headers = header_fields(&fields);
-        let dynamic = fields.get("dynamic");
-        let global = matches!(fields.get("global"), Some(Json::Bool(true)));
-        let should_redact = betterlite_logging::logging_privacy::should_redact_message_logging(
-            fields.get("metadata"),
-            headers,
-            dynamic,
-            global,
+        if matches!(input.action, Action::Metadata) {
+            let mut params = input.request.dynamic_params().map_err(failure)?;
+            if input.inherited {
+                params.insert("turn_off_message_logging".to_owned(), Json::Bool(true));
+            }
+            return Ok(serde_json::json!(params));
+        }
+        let mut request = PrivacyRequest::default();
+        request.direct.turn_off_message_logging = input.dynamic.clone();
+        request.direct.headers = input.headers.clone();
+        let decision = request
+            .decide(
+                Settings {
+                    turn_off_message_logging: input.global,
+                    redact_user_api_key_info: input.redact_key_info,
+                },
+                PrivacyContext {
+                    message_logging_disabled: input.inherited,
+                },
+                true,
+            )
+            .map_err(failure)?;
+        let redactor = betterlite_redact::secret::Redactor::new(
+            betterlite_redact::secret::MINIMUM_CUSTOM_KEY_LENGTH,
+        )
+        .map_err(|source| {
+            failure(betterlite_logging::logging_privacy::CallbackMetadataError::Redactor { source })
+        })?;
+        let snapshot = callback_snapshot(
+            input.payload.clone().unwrap_or(Json::Null),
+            decision,
+            &redactor,
         );
-        let snapshot = result_snapshot(fields.get("payload"), should_redact)?;
-        let key_info = fields.get("key_info").map_or_else(
-            || Json::Null,
-            |value| {
-                betterlite_logging::logging_privacy::redact_user_api_key_info(
-                    value,
-                    matches!(fields.get("redact_key_info"), Some(Json::Bool(true))),
-                )
-            },
-        );
+        if matches!(input.action, Action::Copies) {
+            let public = callback_snapshot(
+                input.payload.clone().unwrap_or(Json::Null),
+                betterlite_logging::logging_privacy::request::Decision {
+                    content: false,
+                    key_info: false,
+                },
+                &redactor,
+            );
+            return Ok(
+                serde_json::json!({"private":snapshot,"public":public,"source":input.payload}),
+            );
+        }
+        let key_info = input.key_info.as_ref().map_or(Json::Null, |metadata| {
+            redact_user_api_key_info(metadata, decision.key_info)
+        });
         Ok(
-            serde_json::json!({"should_redact":should_redact,"snapshot":snapshot,"key_info":key_info}),
+            serde_json::json!({"should_redact":decision.content,"snapshot":snapshot,"key_info":key_info}),
         )
     }
 }
 
-fn input_fields(
-    input: &serde_json::Value,
-) -> Result<indexmap::IndexMap<String, Json>, Box<crate::compare::helper::HelperError>> {
-    let typed_input: Json =
-        serde_json::from_value(input.clone()).map_err(|error| invalid_input(error.to_string()))?;
-    match typed_input {
-        Json::Object(fields) => Ok(fields),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-            Err(invalid_input("input must be an object".to_owned()))
-        }
-    }
-}
-
-fn invalid_input(message: String) -> Box<crate::compare::helper::HelperError> {
+fn failure(
+    error: betterlite_logging::logging_privacy::CallbackMetadataError,
+) -> Box<crate::compare::helper::HelperError> {
     Box::new(crate::compare::helper::HelperError {
-        class: "InvalidInput".to_owned(),
+        class: "PrivacyError".to_owned(),
         status: None,
         error_type: None,
         param: None,
         code: None,
-        message,
+        message: error.to_string(),
     })
-}
-
-fn header_fields(
-    fields: &indexmap::IndexMap<String, Json>,
-) -> Option<&indexmap::IndexMap<String, Json>> {
-    match fields.get("headers") {
-        Some(Json::Object(header_fields)) => Some(header_fields),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
-        | None => None,
-    }
-}
-
-fn result_snapshot(
-    payload_option: Option<&Json>,
-    should_redact: bool,
-) -> Result<Json, Box<crate::compare::helper::HelperError>> {
-    match (payload_option, should_redact) {
-        (Some(payload_json), true) => {
-            betterlite_logging::logging_privacy::redacted_snapshot(payload_json).map_err(|error| {
-                Box::new(crate::compare::helper::HelperError {
-                    class: "RedactionError".to_owned(),
-                    status: None,
-                    error_type: None,
-                    param: None,
-                    code: None,
-                    message: error.to_string(),
-                })
-            })
-        }
-        (Some(payload_json), false) => Ok(payload_json.clone()),
-        (None, _) => Ok(Json::Null),
-    }
 }

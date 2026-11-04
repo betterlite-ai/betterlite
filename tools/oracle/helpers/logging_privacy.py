@@ -1,71 +1,62 @@
 from __future__ import annotations
 
-from typing import TypeAlias
+import json
+from collections.abc import Callable
+from typing import TypeAlias, cast
 
 import litellm
+from litellm import EmbeddingResponse
+from litellm.litellm_core_utils import redact_messages
+from litellm.litellm_core_utils.initialize_dynamic_callback_params import (
+    inherit_message_logging_privacy,
+    initialize_standard_callback_dynamic_params,
+)
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
-REDACTED = "[REDACTED]"
 
 
-def boolish(value: Json) -> bool | None:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        lowered = value.lower()
-        if lowered in {"true", "1", "yes", "on"}:
-            return True
-        if lowered in {"false", "0", "no", "off"}:
-            return False
-    return None
-
-
-def redact(value: Json) -> Json:
-    if isinstance(value, list):
-        return [redact(item) for item in value]
-    if not isinstance(value, dict):
-        return value
-    result: dict[str, Json] = {}
-    for key, child in value.items():
-        if key == "messages":
-            result[key] = [{"role": "user", "content": REDACTED}]
-        elif key in {"prompt", "input"}:
-            result[key] = ""
-        elif (
-            key in {"content", "reasoning_content", "text", "refusal", "arguments"}
-            and child is not None
-        ):
-            result[key] = REDACTED
-        elif key in {"thinking_blocks", "audio"}:
-            result[key] = None
-        else:
-            result[key] = redact(child)
-    return result
-
-
-def run(value: Json) -> Json:
-    if not isinstance(value, dict):
-        raise ValueError("input must be an object")
-    # Keep the import explicit: this adapter is checked against the pinned LiteLLM package.
-    _ = litellm.turn_off_message_logging
-    headers = value.get("headers")
-    disabled = isinstance(headers, dict) and (
-        boolish(headers.get("litellm-disable-message-redaction")) is True
-    )
-    enabled = isinstance(headers, dict) and any(
-        boolish(headers.get(name)) is True
-        for name in ("litellm-enable-message-redaction", "x-litellm-enable-message-redaction")
-    )
-    dynamic = boolish(value.get("dynamic"))
-    should_redact = False if disabled else dynamic
-    if should_redact is None:
-        should_redact = True if enabled else None
-    if should_redact is None:
-        should_redact = value.get("global") is True
-    key_info = value.get("key_info")
-    if value.get("redact_key_info") is True and isinstance(key_info, dict):
-        key_info = {
-            key: item for key, item in key_info.items() if not key.startswith("user_api_key")
+def run(value: dict[str, Json]) -> Json:
+    previous = litellm.turn_off_message_logging, litellm.redact_user_api_key_info
+    try:
+        litellm.turn_off_message_logging = value.get("global") is True
+        litellm.redact_user_api_key_info = value.get("redact_key_info") is True
+        request = value.get("request")
+        kwargs: dict[str, object] = dict(request) if isinstance(request, dict) else {}
+        with inherit_message_logging_privacy(value.get("inherited") is True):
+            dynamic = initialize_standard_callback_dynamic_params(kwargs)
+        if value.get("action") == "metadata":
+            return cast(Json, dict(dynamic))
+        if "dynamic" in value and value["dynamic"] is not None:
+            dynamic["turn_off_message_logging"] = cast(bool, value["dynamic"])
+        details: dict[str, object] = {
+            "litellm_params": {"metadata": {"headers": value.get("headers", {})}},
+            "standard_callback_dynamic_params": dynamic,
         }
-    payload = redact(value.get("payload")) if should_redact else value.get("payload")
-    return {"should_redact": should_redact, "snapshot": payload, "key_info": key_info}
+        private = cast(
+            Callable[[dict[str, object]], bool], redact_messages.should_redact_message_logging
+        )(details)
+        payload = value.get("payload")
+        snapshot: Json = payload
+        if private and isinstance(payload, dict):
+            call_details: dict[str, object] = dict(payload)
+            response = payload.get("response")
+            result: object = response
+            if isinstance(response, dict) and response.get("object") == "list":
+                result = EmbeddingResponse.model_validate(response)
+            redacted = cast(
+                Callable[[dict[str, object], object], object], redact_messages.perform_redaction
+            )(call_details, result)
+            if isinstance(redacted, EmbeddingResponse):
+                redacted = redacted.model_dump(exclude_none=True)
+            call_details["response"] = redacted
+            snapshot = cast(Json, json.loads(json.dumps(call_details)))
+        if value.get("action") == "copies":
+            return {"private": snapshot, "public": payload, "source": payload}
+        key_info = value.get("key_info")
+        if isinstance(key_info, dict):
+            key_info = cast(
+                Callable[[dict[str, Json]], Json], redact_messages.redact_user_api_key_info
+            )(key_info)
+        return {"should_redact": private, "snapshot": snapshot, "key_info": key_info}
+    finally:
+        litellm.turn_off_message_logging, litellm.redact_user_api_key_info = previous

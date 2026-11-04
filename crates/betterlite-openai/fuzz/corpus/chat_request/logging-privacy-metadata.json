@@ -1,1 +1,1 @@
-{"model":"m","messages":[{"role":"user","content":"private"}],"metadata":{"turn_off_message_logging":true,"litellm_metadata":{"headers":{"litellm-disable-message-redaction":false}}}}
+{"model":"m","messages":[{"role":"user","content":"private"}],"metadata":{"turn_off_message_logging":true,"redact_user_api_key_info":true,"headers":{"litellm-disable-message-redaction":false}}}

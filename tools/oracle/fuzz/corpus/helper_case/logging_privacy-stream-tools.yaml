@@ -1,12 +1,6 @@
 kind: helper
-name: logging_privacy-stream-tools
+name: logging-privacy-stream-tools
 call:
-  logging_privacy:
-    global: true
-    dynamic: null
-    headers: {}
-    payload: {messages: [{role: user, content: hidden}]}
-    key_info: {user_api_key_hash: hidden, team: team-a}
-    redact_key_info: true
+  logging_privacy: {"global": true, "payload": {"messages": [], "prompt": "", "input": "", "response": {"choices": [{"delta": {"content": null, "reasoning_content": "private", "thinking_blocks": ["private"], "audio": {"data": "private"}, "tool_calls": [{"function": {"name": "tool", "arguments": "private"}}], "function_call": {"name": "legacy", "arguments": "private"}}}]}}, "key_info": {"user_api_key_hash": "hash", "team": "a"}, "redact_key_info": true}
 env: {}
 compare: {ignore: []}

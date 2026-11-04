@@ -1,0 +1,17 @@
+task: B188
+deviations:
+  - what: Inherited privacy and callback opt-out cannot be undone by a disable-redaction header.
+    why: A nested request must not expose a parent's private content; LiteLLM checks the disable header before inherited dynamic settings.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/redact_messages.py#L351-L353
+  - what: Dynamic exporter hosts, URLs and endpoints cannot replace configured destinations.
+    why: Request-controlled destinations can exfiltrate callback content and configured credentials. Blocked fields are warned about and skipped.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/initialize_dynamic_callback_params.py#L85-L121
+  - what: Credential scrubbing applies even when message logging is enabled; request internal-origin and trusted-vars impersonation is rejected.
+    why: Content logging preferences cannot authorize secret disclosure or trusted internal metadata forgery.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/redact_messages.py#L380-L388
+  - what: Private snapshots also clear audio, annotations and logprobs and redact refusal text.
+    why: These fields can disclose prompt-derived content even when the ordinary message text is redacted.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/redact_messages.py#L100-L120
+  - what: Nested dynamic environment references are rejected recursively.
+    why: The security boundary must hold for structured callback values as well as strings, without ever looking up request-supplied environment names.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/initialize_dynamic_callback_params.py#L39-L40

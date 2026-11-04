@@ -11,8 +11,8 @@ pub struct Raw {
 
 #[derive(Debug, Default, Deserialize)]
 struct RawSettings {
-    turn_off_message_logging: Option<bool>,
-    redact_user_api_key_info: Option<bool>,
+    turn_off_message_logging: Option<Flag>,
+    redact_user_api_key_info: Option<Flag>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -24,22 +24,47 @@ pub struct Settings {
 impl Section for Raw {
     type Settings = Settings;
 
-    fn convert<L>(self, _lookup: &L) -> Result<Settings, ConfigError>
+    fn convert<L>(self, lookup: &L) -> Result<Settings, ConfigError>
     where
         L: EnvironmentLookup,
     {
         Ok(Settings {
-            turn_off_message_logging: self
-                .litellm_settings
-                .turn_off_message_logging
-                .unwrap_or(false),
-            redact_user_api_key_info: self
-                .litellm_settings
-                .redact_user_api_key_info
-                .unwrap_or(false),
+            turn_off_message_logging: resolve(
+                self.litellm_settings.turn_off_message_logging,
+                "turn_off_message_logging",
+                lookup,
+            )?,
+            redact_user_api_key_info: resolve(
+                self.litellm_settings.redact_user_api_key_info,
+                "redact_user_api_key_info",
+                lookup,
+            )?,
         })
     }
 }
 
 #[path = "logging_privacy/tests.rs"]
 mod tests;
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum Flag {
+    Boolean(bool),
+    Environment(String),
+}
+
+fn resolve<L: EnvironmentLookup>(
+    value: Option<Flag>,
+    name: &str,
+    lookup: &L,
+) -> Result<bool, ConfigError> {
+    match value {
+        None => Ok(false),
+        Some(Flag::Boolean(flag)) => Ok(flag),
+        Some(Flag::Environment(reference)) => {
+            let path = format!("litellm_settings.{name}");
+            let text = crate::resolve::resolve_string(reference, &path, lookup)?;
+            Ok(betterlite_env::flag(&path, &text)?.unwrap_or(false))
+        }
+    }
+}

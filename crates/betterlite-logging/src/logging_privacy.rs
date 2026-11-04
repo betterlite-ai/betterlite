@@ -1,10 +1,16 @@
+pub mod callbacks;
+mod credentials;
+pub mod internal;
+pub mod request;
+pub mod snapshot;
+
 use indexmap::IndexMap;
 
 use betterlite_models::decisions::Json;
 use betterlite_redact::error::RedactionError;
-use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use betterlite_redact::secret::Redactor;
 
-const REDACTED: &str = "[REDACTED]";
+const REDACTED: &str = "redacted-by-litellm";
 const BLOCKED_EXPORT_FIELDS: [&str; 10] = [
     "gcs_bucket_name",
     "gcs_path_service_account",
@@ -18,7 +24,7 @@ const BLOCKED_EXPORT_FIELDS: [&str; 10] = [
     "signoz_ingestion_key",
 ];
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct CallbackMetadata {
     pub fields: IndexMap<String, Json>,
     pub skipped_fields: Vec<String>,
@@ -26,6 +32,18 @@ pub struct CallbackMetadata {
 
 #[derive(Debug, thiserror::Error)]
 pub enum CallbackMetadataError {
+    #[error("invalid callback field {field}")]
+    InvalidField { field: String },
+    #[error("invalid privacy metadata: {source}")]
+    Json {
+        #[from]
+        source: serde_json::Error,
+    },
+    #[error(transparent)]
+    Flag {
+        #[from]
+        source: betterlite_env::EnvError,
+    },
     #[error("callback param '{field}' contains an os.environ/ reference")]
     EnvironmentReference { field: String },
     #[error("request metadata cannot set trusted internal field '{field}'")]
@@ -61,21 +79,18 @@ pub fn callback_metadata(metadata: &Json) -> Result<CallbackMetadata, CallbackMe
         });
     };
     for (field, field_value) in input {
-        if matches!(
-            field.as_str(),
-            "trusted_callback_vars" | "internal_call_metadata" | "is_internal_call"
-        ) {
-            return Err(CallbackMetadataError::TrustedField {
-                field: field.clone(),
-            });
+        if !callbacks::SUPPORTED.contains(&field.as_str())
+            && !BLOCKED_EXPORT_FIELDS.contains(&field.as_str())
+            && !callbacks::TRUSTED_FIELDS.contains(&field.as_str())
+        {
+            continue;
         }
-        if BLOCKED_EXPORT_FIELDS.contains(&field.as_str()) {
+        validate_request_field(field, field_value)?;
+        if BLOCKED_EXPORT_FIELDS.contains(&field.as_str())
+            || callbacks::DESTINATIONS.contains(&field.as_str())
+        {
             tracing::warn!(field = %field, "request-supplied callback field ignored for export");
             skipped_fields.push(field.clone());
-        } else if contains_environment_reference(field_value) {
-            return Err(CallbackMetadataError::EnvironmentReference {
-                field: field.clone(),
-            });
         } else {
             fields.insert(field.clone(), field_value.clone());
         }
@@ -84,6 +99,31 @@ pub fn callback_metadata(metadata: &Json) -> Result<CallbackMetadata, CallbackMe
         fields,
         skipped_fields,
     })
+}
+
+fn validate_request_field(field: &str, value: &Json) -> Result<(), CallbackMetadataError> {
+    if callbacks::TRUSTED_FIELDS.contains(&field) {
+        return Err(CallbackMetadataError::TrustedField {
+            field: field.to_owned(),
+        });
+    }
+    if BLOCKED_EXPORT_FIELDS.contains(&field) || callbacks::DESTINATIONS.contains(&field) {
+        return Ok(());
+    }
+    if contains_environment_reference(value) {
+        return Err(CallbackMetadataError::EnvironmentReference {
+            field: field.to_owned(),
+        });
+    }
+    if field == "langfuse_environment" {
+        let Json::Text(environment) = value else {
+            return Err(CallbackMetadataError::InvalidField {
+                field: field.to_owned(),
+            });
+        };
+        callbacks::validate_environment(environment)?;
+    }
+    Ok(())
 }
 
 fn contains_environment_reference(value: &Json) -> bool {
@@ -95,99 +135,37 @@ fn contains_environment_reference(value: &Json) -> bool {
     }
 }
 
-#[must_use]
-pub fn should_redact_message_logging(
-    metadata: Option<&Json>,
-    headers: Option<&IndexMap<String, Json>>,
-    dynamic: Option<&Json>,
-    global: bool,
-) -> bool {
-    let request_headers = headers.or_else(|| {
-        let data = metadata?;
-        object_field(data, "headers")
-    });
-    if request_headers.is_some_and(|header_fields| {
-        header_fields
-            .get("litellm-disable-message-redaction")
-            .and_then(boolean_value)
-            .unwrap_or(false)
-    }) {
-        return false;
+pub fn callback_snapshot(
+    mut value: Json,
+    decision: request::Decision,
+    redactor: &Redactor,
+) -> Json {
+    if decision.content {
+        redact_tree(&mut value);
     }
-    if dynamic.and_then(boolean_value).is_some_and(|value| value) {
-        return true;
-    }
-    if dynamic.and_then(boolean_value).is_some_and(|value| !value) {
-        return false;
-    }
-    request_headers.is_some_and(|header_fields| {
-        header_fields
-            .get("litellm-enable-message-redaction")
-            .and_then(boolean_value)
-            .unwrap_or(false)
-            || header_fields
-                .get("x-litellm-enable-message-redaction")
-                .and_then(boolean_value)
-                .unwrap_or(false)
-    }) || global
-}
-
-fn object_field<'source>(
-    source: &'source Json,
-    name: &str,
-) -> Option<&'source IndexMap<String, Json>> {
-    match source {
-        Json::Object(fields) => match fields.get(name) {
-            Some(Json::Object(object)) => Some(object),
-            _ => None,
-        },
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
-    }
-}
-
-fn boolean_value(json: &Json) -> Option<bool> {
-    match json {
-        Json::Bool(flag) => Some(*flag),
-        Json::Text(text) => betterlite_env::flag("turn_off_message_logging", text)
-            .ok()
-            .flatten(),
-        Json::Null | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
-    }
-}
-
-pub fn redacted_snapshot(value: &Json) -> Result<Json, CallbackMetadataError> {
-    let mut snapshot = value.clone();
-    redact_tree(&mut snapshot);
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
-        .map_err(|source| CallbackMetadataError::Redactor { source })?;
-    redact_credentials(&mut snapshot, None, &redactor);
-    Ok(snapshot)
+    credentials::scrub(&mut value, redactor);
+    value
 }
 
 fn redact_tree(value: &mut Json) {
     match value {
         Json::Object(fields) => {
+            scrub_provider_metadata(fields);
             for (key, child) in fields.iter_mut() {
-                if matches!(child, Json::Null)
-                    && matches!(
-                        key.as_str(),
-                        "content" | "reasoning_content" | "text" | "refusal" | "arguments"
-                    )
-                {
-                    continue;
-                }
                 match key.as_str() {
                     "messages" => {
                         *child = Json::List(vec![Json::Object(IndexMap::from([
                             ("role".to_owned(), Json::Text("user".to_owned())),
                             ("content".to_owned(), Json::Text(REDACTED.to_owned())),
-                        ]))]);
+                        ]))])
                     }
                     "prompt" | "input" => *child = Json::Text(String::new()),
-                    "content" | "reasoning_content" | "text" | "refusal" | "arguments" => {
-                        *child = Json::Text(REDACTED.to_owned());
+                    "content" | "reasoning_content" | "text" | "refusal" | "arguments"
+                        if !matches!(child, Json::Null) =>
+                    {
+                        *child = Json::Text(REDACTED.to_owned())
                     }
-                    "thinking_blocks" | "audio" => *child = Json::Null,
+                    "thinking_blocks" | "audio" | "logprobs" | "annotations" => *child = Json::Null,
                     _ => redact_tree(child),
                 }
             }
@@ -197,18 +175,32 @@ fn redact_tree(value: &mut Json) {
     }
 }
 
-fn redact_credentials(value: &mut Json, key: Option<&str>, redactor: &Redactor) {
-    match value {
-        Json::Object(fields) => {
-            for (field, child) in fields {
-                redact_credentials(child, Some(field), redactor);
+fn scrub_provider_metadata(fields: &mut IndexMap<String, Json>) {
+    if fields.get("object") == Some(&Json::Text("list".to_owned())) && fields.contains_key("data") {
+        fields.insert("data".to_owned(), Json::List(Vec::new()));
+    }
+    for field in [
+        "served_output_texts",
+        "classifier_input",
+        "originating_request_masked",
+    ] {
+        fields.shift_remove(field);
+    }
+    for field in [
+        "vertex_ai_grounding_metadata",
+        "vertex_ai_url_context_metadata",
+        "vertex_ai_safety_ratings",
+        "vertex_ai_safety_results",
+        "vertex_ai_citation_metadata",
+    ] {
+        if let Some(value) = fields.get_mut(field) {
+            *value = Json::List(Vec::new());
+        }
+        for hidden in ["_hidden_params", "hidden_params"] {
+            if let Some(Json::Object(params)) = fields.get_mut(hidden) {
+                params.shift_remove(field);
             }
         }
-        Json::List(values) => values
-            .iter_mut()
-            .for_each(|item| redact_credentials(item, key, redactor)),
-        Json::Text(text) => *text = redactor.redact_structured_value(key, text),
-        Json::Null | Json::Bool(_) | Json::Number(_) => {}
     }
 }
 
@@ -233,3 +225,13 @@ pub fn redact_user_api_key_info(metadata: &Json, enabled: bool) -> Json {
 
 #[path = "logging_privacy/tests.rs"]
 mod tests;
+
+impl std::fmt::Debug for CallbackMetadata {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("CallbackMetadata")
+            .field("fields", &self.fields.keys().collect::<Vec<_>>())
+            .field("skipped_fields", &self.skipped_fields)
+            .finish()
+    }
+}

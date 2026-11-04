@@ -1,12 +1,6 @@
 kind: helper
-name: logging_privacy-enable-header
+name: logging-privacy-enable-header
 call:
-  logging_privacy:
-    global: true
-    dynamic: null
-    headers: {}
-    payload: {messages: [{role: user, content: hidden}]}
-    key_info: {user_api_key_hash: hidden, team: team-a}
-    redact_key_info: true
+  logging_privacy: {"global": false, "payload": {"messages": [{"role": "user", "content": "hidden"}], "prompt": "hidden", "input": "hidden", "response": {"choices": [{"message": {"content": "hidden"}}]}}, "key_info": {"user_api_key_hash": "hash", "team": "a"}, "redact_key_info": true, "headers": {"x-litellm-enable-message-redaction": true}}
 env: {}
 compare: {ignore: []}

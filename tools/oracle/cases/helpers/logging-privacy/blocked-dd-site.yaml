@@ -1,22 +1,6 @@
 kind: helper
 name: logging-privacy-blocked-dd-site
 call:
-  logging_privacy:
-    global: true
-    dynamic: null
-    headers: {}
-    payload:
-      messages:
-        - role: user
-          content: hidden
-      prompt: hidden
-      response:
-        choices:
-          - message:
-              content: hidden
-    key_info:
-      user_api_key_hash: hidden
-      team: team-a
-    redact_key_info: true
+  logging_privacy: {"action": "metadata", "request": {"dd_site": "os.environ/PRIVATE", "langsmith_project": "project"}}
 env: {}
 compare: {ignore: []}
