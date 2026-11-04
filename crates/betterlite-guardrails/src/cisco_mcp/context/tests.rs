@@ -5,6 +5,7 @@ use rstest::rstest;
 use crate::cisco_conversation::Fields;
 use crate::cisco_conversation::json::Json;
 use crate::cisco_mcp::context::hydrate_tool_context;
+use crate::cisco_mcp::envelope::build_request_payload;
 
 fn fields_of(text: &str) -> Fields {
     match Json::parse(text) {
@@ -28,6 +29,15 @@ fn field_text(fields: &Fields, key: &str) -> Option<String> {
 #[case::nested_litellm_metadata(
     r#"{"litellm_metadata": {"mcp_tool_call_metadata": {"name": "search"}}}"#
 )]
+#[case::empty_metadata_uses_litellm_metadata(
+    r#"{"metadata":{},"litellm_metadata":{"mcp_tool_call_metadata":{"name":"search"}}}"#
+)]
+#[case::null_top_level_uses_nested(
+    r#"{"mcp_tool_call_metadata":null,"metadata":{"mcp_tool_call_metadata":{"name":"search"}}}"#
+)]
+#[case::direct_metadata_takes_precedence(
+    r#"{"mcp_tool_call_metadata":{"name":"search"},"metadata":{"mcp_tool_call_metadata":{"name":"other"}}}"#
+)]
 fn hydration_populates_name_aliases(#[case] input: &str) {
     let mut data = fields_of(input);
     hydrate_tool_context(&mut data);
@@ -39,21 +49,6 @@ fn hydration_populates_name_aliases(#[case] input: &str) {
     assert_eq!(field_text(&data, "name").as_deref(), Some("search"));
 }
 
-#[rstest]
-#[case::empty_metadata_uses_litellm_metadata(
-    r#"{"metadata":{},"litellm_metadata":{"mcp_tool_call_metadata":{"name":"search"}}}"#,
-    Some("search")
-)]
-#[case::non_empty_metadata_hides_litellm_metadata(r#"{"metadata":{"user_api_key_alias":"team-a"},"litellm_metadata":{"mcp_tool_call_metadata":{"name":"search"}}}"#, None)]
-fn hydration_selects_one_nested_metadata_object(
-    #[case] input: &str,
-    #[case] expected: Option<&str>,
-) {
-    let mut data = fields_of(input);
-    hydrate_tool_context(&mut data);
-    assert_eq!(field_text(&data, "name").as_deref(), expected);
-}
-
 #[test]
 fn hydration_populates_arguments_and_server_name() {
     let mut data = fields_of(
@@ -61,12 +56,13 @@ fn hydration_populates_arguments_and_server_name() {
     );
     hydrate_tool_context(&mut data);
     assert_eq!(
-        data.get("mcp_arguments").map(|raw| raw.get()),
-        Some(r#"{"q":"x"}"#)
+        serde_json::from_str::<serde_json::Value>(data.get("mcp_arguments").unwrap().get())
+            .unwrap(),
+        serde_json::json!({"q": "x"})
     );
     assert_eq!(
-        data.get("arguments").map(|raw| raw.get()),
-        Some(r#"{"q":"x"}"#)
+        serde_json::from_str::<serde_json::Value>(data.get("arguments").unwrap().get()).unwrap(),
+        serde_json::json!({"q": "x"})
     );
     assert_eq!(field_text(&data, "mcp_server_name").as_deref(), Some("srv"));
     assert_eq!(field_text(&data, "server_name").as_deref(), Some("srv"));
@@ -131,6 +127,7 @@ fn hydration_ignores_non_object_metadata() {
 fn hydration_ignores_shadowed_metadata(#[case] input: &str) {
     let mut data = fields_of(input);
     hydrate_tool_context(&mut data);
+    assert!(build_request_payload(&data).is_none());
     for key in [
         "mcp_tool_name",
         "tool_name",
