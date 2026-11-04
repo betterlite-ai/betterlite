@@ -102,6 +102,23 @@ fn is_flat(input: &Value) -> bool {
     }
 }
 
+pub fn voyage_headers<F>(
+    headers: Map<String, Value>,
+    api_key: Option<&str>,
+    lookup: F,
+) -> Map<String, Value>
+where
+    F: Fn(&str) -> Option<String>,
+{
+    let mut replacement = Map::new();
+    replacement.insert(
+        "Authorization".to_owned(),
+        Value::String(voyage_credentials(api_key, lookup)),
+    );
+    drop(headers);
+    replacement
+}
+
 pub fn voyage_credentials<F>(api_key: Option<&str>, lookup: F) -> String
 where
     F: Fn(&str) -> Option<String>,

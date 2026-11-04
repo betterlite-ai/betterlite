@@ -4,7 +4,7 @@ use serde_json::{Map, Value, json};
 
 use super::{
     VoyageContextConfig, VoyageEmbeddingConfig, VoyageEmbeddingVariant,
-    decode_voyage_embedding_reply, voyage_credentials,
+    decode_voyage_embedding_reply, voyage_credentials, voyage_headers,
 };
 
 #[test]
@@ -81,4 +81,18 @@ fn replays_the_voyage_embedding_reply_corpus(
 ) {
     let bytes = std::fs::read(path).expect("corpus file");
     let _unused = decode_voyage_embedding_reply(&bytes, 502, VoyageEmbeddingVariant::Text);
+}
+
+#[test]
+fn headers_are_replaced_and_missing_credentials_keep_none_text() {
+    let supplied = serde_json::from_value(json!({"X-Caller": "discard"})).unwrap();
+    let headers = voyage_headers(supplied, None, |_| None);
+    assert_eq!(headers.len(), 1);
+    assert_eq!(headers["Authorization"], "Bearer None");
+}
+
+#[test]
+fn explicit_empty_credential_is_not_resolved_again() {
+    let value = voyage_credentials(Some(""), |_| Some("fallback".to_owned()));
+    assert_eq!(value, "Bearer ");
 }
