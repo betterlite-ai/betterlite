@@ -59,16 +59,16 @@ fn default_roots() -> Vec<PathBuf> {
 }
 
 fn usable_root(candidate: &Path) -> Option<PathBuf> {
-    let candidate = if candidate.as_os_str() == "." {
+    let root = if candidate.as_os_str() == "." {
         candidate.to_path_buf()
     } else {
         absolute_lexical_path(candidate)?
     };
-    if !candidate.is_dir() {
+    if !root.is_dir() {
         return None;
     }
     let probe_id = TEMP_ROOT_PROBE_ID.fetch_add(1, Ordering::Relaxed);
-    let probe = candidate.join(format!(
+    let probe = root.join(format!(
         ".betterlite-temp-probe-{}-{probe_id}",
         process::id()
     ));
@@ -82,7 +82,7 @@ fn usable_root(candidate: &Path) -> Option<PathBuf> {
     let removed = fs::remove_file(probe);
     result.ok()?;
     removed.ok()?;
-    Some(candidate)
+    Some(root)
 }
 
 fn absolute_lexical_path(candidate: &Path) -> Option<PathBuf> {
