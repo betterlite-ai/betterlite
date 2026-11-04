@@ -4,7 +4,7 @@ use std::sync::{Mutex, PoisonError};
 use lru::LruCache;
 use regex::Regex;
 
-const CACHE_CAPACITY: usize = 256;
+const CACHE_CAPACITY: NonZeroUsize = NonZeroUsize::new(256).unwrap();
 const ROOT_TOKEN: &str = "__ROOT__";
 const RESPONSE: &[(&str, &str)] = &[
     (
@@ -139,9 +139,7 @@ impl RouteNormalizer {
         )?;
         Ok(Self {
             patterns,
-            cache: Mutex::new(LruCache::new(
-                NonZeroUsize::new(CACHE_CAPACITY).unwrap_or(NonZeroUsize::MIN),
-            )),
+            cache: Mutex::new(LruCache::new(CACHE_CAPACITY)),
         })
     }
 
