@@ -56,15 +56,17 @@ pub fn is_bedrock_arn(value: &str) -> bool {
     }
 }
 pub fn contains_aws_arn(value: &str) -> bool {
-    value.match_indices("arn:aws").any(|(i, _)| {
-        value.get(i + 7..).is_some_and(|tail| {
-            tail.starts_with(':')
-                || (tail.starts_with('-')
-                    && tail
-                        .find(':')
-                        .is_some_and(|end| valid_partition(&tail[..end])))
+    value
+        .split("arn:")
+        .skip(1)
+        .any(|suffix| match suffix.strip_prefix("aws") {
+            Some(":") | Some(":s3") => true,
+            Some(rest) if rest.starts_with(':') => true,
+            Some(rest) if rest.starts_with('-') => rest
+                .split_once(':')
+                .is_some_and(|(partition, _)| valid_partition(partition)),
+            _ => false,
         })
-    })
 }
 
 fn valid_partition(value: &str) -> bool {
