@@ -18,6 +18,7 @@ use rstest::rstest;
 #[case::ascii_disabled_case("regex", "(?a-i:i)", "I", false)]
 #[case::ascii_upper_class("regex", "(?a:[A])", "a", true)]
 #[case::ascii_class_nonmember("regex", "(?a:[A])", "b", false)]
+#[case::ascii_class_no_unicode_fold("regex", "(?a:[\u{212a}])", "k", false)]
 #[case::ascii_negated_class("regex", "(?a:[^a-z])", "\u{130}", true)]
 #[case::case_disabled_range("regex", "(?-i:[a-z])", "A", false)]
 #[case::unicode_digit("regex", r"\d", "\u{661}", true)]

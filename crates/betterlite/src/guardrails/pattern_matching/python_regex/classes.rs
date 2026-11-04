@@ -76,7 +76,7 @@ fn escaped(
 }
 
 fn fold(mut literals: String, flags: Flags) -> Result<String, Error> {
-    let prefix = if flags.alphabet == Alphabet::Ascii || !flags.case_insensitive {
+    let prefix = if flags.alphabet == Alphabet::Ascii {
         ""
     } else {
         "(?i)"
