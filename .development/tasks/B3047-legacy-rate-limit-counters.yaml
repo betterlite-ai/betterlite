@@ -63,31 +63,31 @@ checks:
   commands:
     - id: constructor-tests
       why: Constructor is missing or does not store internal_usage_cache
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^legacy_rate_limit_counters::constructor/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rate_limiters::(.*::)?legacy_rate_limit_counters::constructor/)'
     - id: verbose-logging-tests
       why: Verbose logging does not log to logger or does not check litellm.set_verbose
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^legacy_rate_limit_counters::verbose/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rate_limiters::(.*::)?legacy_rate_limit_counters::verbose/)'
     - id: retry-interval-tests
       why: time_to_next_minute returns incorrect interval or does not align to minute boundary
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^legacy_rate_limit_counters::retry_interval/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rate_limiters::(.*::)?legacy_rate_limit_counters::retry_interval/)'
     - id: error-raising-tests
       why: raise_rate_limit_error does not raise ProxyRateLimitError, missing retry-after, or wrong status/type
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^legacy_rate_limit_counters::error_raising/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rate_limiters::(.*::)?legacy_rate_limit_counters::error_raising/)'
     - id: error-provider-tests
       why: raise_rate_limit_error does not resolve provider or model, or does not use B3030's resolve function
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^legacy_rate_limit_counters::error_provider/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rate_limiters::(.*::)?legacy_rate_limit_counters::error_provider/)'
     - id: dimension-precedence-tests
       why: Dimension precedence is wrong (should be max_parallel_requests, tpm, rpm) or current values not compared correctly
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^legacy_rate_limit_counters::dimension_precedence/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rate_limiters::(.*::)?legacy_rate_limit_counters::dimension_precedence/)'
     - id: all-zero-tests
       why: All-zero case does not raise error with correct rate_limit_type or precedence is wrong
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^legacy_rate_limit_counters::all_zero/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rate_limiters::(.*::)?legacy_rate_limit_counters::all_zero/)'
     - id: cache-update-tests
       why: Cache updates are not appended to values_to_update_in_cache, new_val missing keys, or format incorrect
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^legacy_rate_limit_counters::cache_updates/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rate_limiters::(.*::)?legacy_rate_limit_counters::cache_updates/)'
     - id: batch-object-tests
       why: get_all_cache_objects does not return CacheObject, handles None incorrectly, or field mapping is wrong
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^legacy_rate_limit_counters::batch_object/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rate_limiters::(.*::)?legacy_rate_limit_counters::batch_object/)'
 
 oracle_cases: []
 

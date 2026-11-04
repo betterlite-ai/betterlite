@@ -33,8 +33,6 @@ description: >-
   betterlite-server. Reuse operation parsers and their fuzz corpora; cap the complete change at 550.
 scope:
   paths:
-    - crates/betterlite-core/src/api.rs
-    - crates/betterlite-core/src/api/**
     - crates/betterlite-core/src/api/subscription_dispatch.rs
     - crates/betterlite-core/src/api/subscription_dispatch/**
     - crates/betterlite-provider/src/provider.rs

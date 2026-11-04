@@ -71,7 +71,7 @@ checks:
   commands:
     - id: embedding-cache-behavior
       why: embedding cache write behavior is missing or incorrect
-      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^embedding_cache::/)'
+      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^embedding::(.*::)?embedding_cache::/)'
 
 oracle_cases:
   - tools/oracle/cases/embedding/convert-embedding-dict-response.yaml

@@ -76,8 +76,6 @@ scope:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/messages_native_call.rs
   - crates/betterlite-core/src/api/messages_native_call/**
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - crates/betterlite-config/Cargo.toml

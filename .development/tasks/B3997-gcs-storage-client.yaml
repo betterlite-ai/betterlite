@@ -105,31 +105,31 @@ checks:
   commands:
     - id: initialization-tests
       why: __init__ must read environment, setup mocks, and call parent constructor
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_storage_auth::initialization_behaviors::tests::/) - test(/::replays_corpus$/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(gcs_client|types)::(.*::)?gcs_storage_auth::initialization_behaviors::tests::/) - test(/::replays_corpus$/)'
     - id: header-construction-tests
       why: Both async and sync header construction must produce Bearer token and Content-Type headers
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_storage_auth::header_construction_behaviors::tests::/) - test(/::replays_corpus$/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(gcs_client|types)::(.*::)?gcs_storage_auth::header_construction_behaviors::tests::/) - test(/::replays_corpus$/)'
     - id: bucket-folder-handling-tests
       why: Folder paths in bucket names must be split and prepended to object names
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_storage_auth::bucket_folder_behaviors::tests::/) - test(/::replays_corpus$/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(gcs_client|types)::(.*::)?gcs_storage_auth::bucket_folder_behaviors::tests::/) - test(/::replays_corpus$/)'
     - id: config-resolution-tests
       why: Config must resolve from dynamic params, fall back to defaults, and validate bucket_name
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_storage_auth::config_resolution_behaviors::tests::/) - test(/::replays_corpus$/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(gcs_client|types)::(.*::)?gcs_storage_auth::config_resolution_behaviors::tests::/) - test(/::replays_corpus$/)'
     - id: vertex-caching-tests
       why: Vertex instances must be created once per credential and reused on subsequent calls
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_storage_auth::vertex_caching_behaviors::tests::/) - test(/::replays_corpus$/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(gcs_client|types)::(.*::)?gcs_storage_auth::vertex_caching_behaviors::tests::/) - test(/::replays_corpus$/)'
     - id: caching-key-tests
       why: Cache keys must use credential string or literal "IAM_AUTH" for None credentials
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_storage_auth::caching_key_behaviors::tests::/) - test(/::replays_corpus$/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(gcs_client|types)::(.*::)?gcs_storage_auth::caching_key_behaviors::tests::/) - test(/::replays_corpus$/)'
     - id: download-tests
       why: Downloads must encode URLs correctly, handle folders, and return bytes on 200 only
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_storage_auth::download_behaviors::tests::/) - test(/::replays_corpus$/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(gcs_client|types)::(.*::)?gcs_storage_auth::download_behaviors::tests::/) - test(/::replays_corpus$/)'
     - id: upload-tests
       why: Uploads must serialize payloads, encode URLs, handle folders, and return parsed response
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_storage_auth::upload_behaviors::tests::/) - test(/::replays_corpus$/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(gcs_client|types)::(.*::)?gcs_storage_auth::upload_behaviors::tests::/) - test(/::replays_corpus$/)'
     - id: type-definition-tests
       why: Type definitions must match LiteLLM schema with correct field names and types
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_storage_auth::type_definitions::tests::/) - test(/::replays_corpus$/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(gcs_client|types)::(.*::)?gcs_storage_auth::type_definitions::tests::/) - test(/::replays_corpus$/)'
 oracle_cases:
   - tools/oracle/cases/logging/gcs-storage-auth/init-reads-bucket-name-env.yaml
   - tools/oracle/cases/logging/gcs-storage-auth/init-reads-service-account-env.yaml

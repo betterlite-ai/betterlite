@@ -1,0 +1,22 @@
+kind: helper
+name: granian-ssl-both
+call:
+  b4177:
+    function: launch_plan
+    options:
+      backend: granian
+      host: 127.0.0.1
+      port: 4000
+      workers: 1
+      runtime_threads: null
+      certfile: cert.pem
+      keyfile: key.pem
+      ciphers: DEFAULT
+      max_requests: null
+      max_requests_jitter: null
+      metrics_port: null
+      prometheus_dir: null
+    environment: {}
+env: {}
+compare:
+  ignore: []

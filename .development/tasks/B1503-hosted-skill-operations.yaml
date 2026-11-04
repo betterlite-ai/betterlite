@@ -27,8 +27,6 @@ description: >-
   native operations, 205 tests, 115 adapters and 40 module/case wiring lines, capped at 600.
 scope:
   paths:
-    - crates/betterlite-core/src/skills.rs
-    - crates/betterlite-core/src/skills/**
     - crates/betterlite-core/src/skills/operations.rs
     - crates/betterlite-core/src/skills/operations/**
     - crates/betterlite-core/Cargo.toml

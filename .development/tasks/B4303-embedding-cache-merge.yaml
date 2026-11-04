@@ -96,7 +96,7 @@ checks:
   commands:
   - id: embedding-merge-tests
     why: the embedding merge functions do not exist, tests fail, or the module path is wrong
-    run: cargo nextest run --locked -p betterlite-cache -p betterlite-core --no-tests=fail -E 'test(/^embedding_merge::/) or test(/^combine_usage::/) or test(/^merge_prompt_tokens::/) or test(/^merge_embedding_response::/) or test(/^prompt_tokens_mapping::/)'
+    run: cargo nextest run --locked -p betterlite-cache -p betterlite-core --no-tests=fail -E 'test(/^embedding_merge::/) or test(/^embedding_merge::(.*::)?combine_usage::/) or test(/^embedding_merge::(.*::)?merge_prompt_tokens::/) or test(/^embedding_merge::(.*::)?merge_embedding_response::/) or test(/^embedding_merge::(.*::)?prompt_tokens_mapping::/)'
 oracle_cases: []
 deviations: []
 out_of_scope:

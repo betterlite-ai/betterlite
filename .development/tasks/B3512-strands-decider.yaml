@@ -57,34 +57,34 @@ checks:
   commands:
     - id: strands-arn-parsing
       why: The ARN regex is missing, accepts invalid ARNs, or rejects valid ones like arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/my-runtime
-      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^strands_parsing::test_arn/)'
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^providers::strands_decider::(.*::)?strands_parsing::test_arn/)'
     - id: strands-url-building
       why: The invocations URL builder is missing or does not produce the correct bedrock-agentcore endpoint
-      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^strands_url::/)'
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^providers::strands_decider::(.*::)?strands_url::/)'
     - id: strands-session-id
       why: The default session ID is not deterministic or does not use sha256 of the ARN
-      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^strands_session::test_default_session_id/)'
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^providers::strands_decider::(.*::)?strands_session::test_default_session_id/)'
     - id: strands-session-id-override
       why: The agentcore_runtime_session_id setting in litellm_params does not override the default session ID or is not used in the session header
-      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^strands_session::test_override_session_id/)'
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^providers::strands_decider::(.*::)?strands_session::test_override_session_id/)'
     - id: strands-http-fallback
       why: Non-ARN API bases do not fall through to parent behavior
-      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^strands_http::test_direct_http_fallback/)'
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^providers::strands_decider::(.*::)?strands_http::test_direct_http_fallback/)'
     - id: strands-header-filtering
       why: Reserved headers are not dropped, not warned about, or are dropped from non-reserved headers
-      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^strands_headers::/)'
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^providers::strands_decider::(.*::)?strands_headers::/)'
     - id: strands-aws-signing
       why: AWS signing is not applied when signing_with_aws is true, or bearer tokens do not bypass it
-      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^strands_signing::test_(?:aws_signing|bearer_bypass)/)'
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^providers::strands_decider::(.*::)?strands_signing::test_(?:aws_signing|bearer_bypass)/)'
     - id: strands-error-mapping
       why: Runtime error codes bad_request, invalid_request, loading do not map to 400, 400, 503, or unknown codes do not default to 500
-      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^strands_errors::test_error_status_mapping/)'
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^providers::strands_decider::(.*::)?strands_errors::test_error_status_mapping/)'
     - id: strands-error-response
       why: A runtime error does not raise BaseLLMException with the code and message
-      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^strands_errors::test_runtime_error_response/)'
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^providers::strands_decider::(.*::)?strands_errors::test_runtime_error_response/)'
     - id: strands-non-runtime
       why: Non-runtime responses do not fall through to parent transform_decisions_response
-      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^strands_response::test_non_runtime_fallthrough/)'
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^providers::strands_decider::(.*::)?strands_response::test_non_runtime_fallthrough/)'
 
 oracle_cases:
   - tools/oracle/cases/decisions/strands-arn.yaml

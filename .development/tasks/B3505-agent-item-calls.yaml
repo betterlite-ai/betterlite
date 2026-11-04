@@ -88,7 +88,7 @@ checks:
   commands:
     - id: behavior-tests
       why: Get/delete/list_versions operations fail to delegate, handle exceptions or match LiteLLM behavior
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^agent_item_calls(::|$)/) - test(/replays_the_.*_corpus/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::agents::item::(.*::)?agent_item_calls(::|$)/) - test(/replays_the_.*_corpus/)'
 
 oracle_cases:
   - tools/oracle/cases/agents/item-get-basic.yaml

@@ -1,0 +1,11 @@
+kind: helper
+name: prometheus-no-callback
+call:
+  b4177:
+    function: callback_configured
+    settings:
+      callbacks:
+      - other
+env: {}
+compare:
+  ignore: []

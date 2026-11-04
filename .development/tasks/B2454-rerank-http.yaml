@@ -20,8 +20,6 @@ description: >-
   budget 115 implementation,110 tests,95 fixtures,80 adapters and 30 wiring, 430 lines.
 scope:
   paths:
-  - crates/betterlite-provider/src/api.rs
-  - crates/betterlite-provider/src/api/**
   - crates/betterlite-provider/src/api/rerank_http.rs
   - crates/betterlite-provider/src/api/rerank_http/**
   - crates/betterlite-provider/src/operation.rs
