@@ -38,7 +38,7 @@ fn counts_for_alternation(message: &Message) -> bool {
     false
 }
 
-fn check_limit(
+const fn check_limit(
     messages: &[Message],
     too_long: MessageNormalizationError,
 ) -> Result<(), MessageNormalizationError> {
