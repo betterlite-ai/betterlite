@@ -5,11 +5,16 @@ use std::collections::BTreeMap;
 use rstest::rstest;
 
 use super::{Raw, Settings};
-use crate::loader::parse_view;
+use crate::loader::{ConfigLoader, parse_view};
 use crate::sections::Section as _;
 use crate::sections::settings::JsonValue;
 
 fn load(source: &str, lookup: BTreeMap<String, String>) -> Settings {
+    ConfigLoader {
+        lookup: lookup.clone(),
+    }
+    .load(source)
+    .expect("failure mode is a supported configuration key");
     let (raw, _ignored): (Raw, _) = parse_view(source).expect("valid litellm_settings yaml");
     raw.convert(&lookup)
         .expect("convert never fails for this section")
