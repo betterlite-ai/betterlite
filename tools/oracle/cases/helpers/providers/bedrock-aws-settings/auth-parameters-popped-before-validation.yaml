@@ -1,0 +1,8 @@
+kind: helper
+name: auth-parameters-popped-before-validation
+call:
+  bedrock_aws_settings:
+    operation: pop_auth
+    params: {'aws_access_key_id': 'id', 'aws_session_tags': null, 'aws_bedrock_runtime_endpoint': 'https://bedrock.example'}
+env: {}
+compare: {ignore: []}

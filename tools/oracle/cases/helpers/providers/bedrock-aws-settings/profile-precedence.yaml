@@ -1,0 +1,8 @@
+kind: helper
+name: profile-precedence
+call:
+  bedrock_aws_settings:
+    operation: auth_selector
+    params: {'aws_profile_name': 'profile', 'aws_access_key_id': 'id', 'aws_secret_access_key': 'secret'}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,8 @@
+kind: helper
+name: web-identity-policy
+call:
+  bedrock_aws_settings:
+    operation: web_policy
+    params: {}
+env: {}
+compare: {ignore: []}
