@@ -75,6 +75,8 @@ fn mounted_sub_route_info(mount_path: &str, sub_route: &Route) -> Option<RouteIn
         .or_else(|| sub_route.app.as_ref().map(|_| "NestedApp".to_owned()))?;
     let mut path = mount_path.to_owned();
     path.push_str(sub_route.path.as_deref().unwrap_or_default());
+    let route_endpoint = RouteEndpoint(&endpoint);
+    let endpoint_name = safe_get_endpoint_name(&endpoint, &route_endpoint);
     Some(RouteInfo {
         path: Some(path),
         methods: sub_route
@@ -82,12 +84,15 @@ fn mounted_sub_route_info(mount_path: &str, sub_route: &Route) -> Option<RouteIn
             .clone()
             .unwrap_or_else(|| Some(vec!["GET".to_owned(), "POST".to_owned()])),
         name: sub_route.name.clone(),
-        endpoint: safe_get_endpoint_name(&endpoint, &RouteEndpoint(Some(endpoint))),
+        endpoint: endpoint_name,
         mounted_app: Some(true),
     })
 }
 
-fn safe_get_endpoint_name<E: NamedEndpoint>(context: &str, endpoint: &E) -> Option<String> {
+fn safe_get_endpoint_name<E>(context: &str, endpoint: &E) -> Option<String>
+where
+    E: NamedEndpoint,
+{
     match endpoint.endpoint_name() {
         Ok(Some(name)) => Some(name.to_owned()),
         Ok(None) => match endpoint.class_name() {
@@ -104,11 +109,11 @@ fn safe_get_endpoint_name<E: NamedEndpoint>(context: &str, endpoint: &E) -> Opti
     }
 }
 
-struct RouteEndpoint(Option<String>);
+struct RouteEndpoint<'endpoint>(&'endpoint str);
 
-impl NamedEndpoint for RouteEndpoint {
+impl NamedEndpoint for RouteEndpoint<'_> {
     fn endpoint_name(&self) -> Result<Option<&str>, RouteInspectionError> {
-        Ok(self.0.as_deref())
+        Ok(Some(self.0))
     }
 }
 
