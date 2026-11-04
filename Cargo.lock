@@ -1750,8 +1750,12 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
+ "tempfile",
  "thiserror",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "url",
 ]
 
 [[package]]

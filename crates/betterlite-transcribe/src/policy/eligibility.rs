@@ -1,10 +1,8 @@
-use betterlite_auth::auth_identity::records::Principal;
-use betterlite_core::api::managed_resource_store::is_proxy_admin;
 use rust_decimal::Decimal;
+use url::Url;
 
 use super::inputs::EligibilityInput;
 use crate::field::Field;
-use crate::records::TranscribeRefusal;
 
 const PRICED_OPERATION: &str = "StartTranscriptionJob";
 const PRICED_MODEL: &str = "transcribe/StartTranscriptionJob";
@@ -14,7 +12,6 @@ const UNPRICED_OPERATIONS: [&str; 3] = [
     "StartMedicalScribeJob",
     "StartMedicalTranscriptionJob",
 ];
-const OWNED_JOB_OPERATIONS: [&str; 2] = ["GetTranscriptionJob", "DeleteTranscriptionJob"];
 
 #[must_use]
 pub fn unpriceable_request_reason(
@@ -94,37 +91,11 @@ pub fn requested_media_format(request_body: &str) -> Option<String> {
     let Field::Present(Some(uri)) = &media.media_file_uri else {
         return None;
     };
-    let path = if let Some((_, resource)) = uri.rsplit_once("://") {
-        resource.split_once('/')?.1
-    } else {
-        uri
-    };
-    let clean_path = path.split(['?', '#']).next()?;
-    Some(
-        clean_path
-            .rsplit('/')
-            .next()?
-            .rsplit_once('.')?
-            .1
-            .to_lowercase(),
-    )
-}
-
-#[must_use]
-pub fn transcribe_admin_only_refusal(
-    operation: &str,
-    principal: Option<&Principal>,
-) -> Option<TranscribeRefusal> {
-    if operation == PRICED_OPERATION
-        || OWNED_JOB_OPERATIONS.contains(&operation)
-        || is_proxy_admin(principal)
-    {
-        return None;
-    }
-    Some(TranscribeRefusal {
-        status_code: 403,
-        detail: format!(
-            "{operation} can access every Transcribe resource in the AWS account; only a proxy admin may call it"
-        ),
-    })
+    let parsed = uri
+        .contains("://")
+        .then(|| Url::parse(uri))
+        .transpose()
+        .ok()?;
+    let path = parsed.as_ref().map_or(uri.as_str(), Url::path);
+    Some(path.rsplit_once('.')?.1.to_lowercase())
 }

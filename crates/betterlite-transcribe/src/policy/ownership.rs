@@ -85,11 +85,15 @@ pub async fn transcribe_job_access_refusal(
     let request = GetTranscriptionJobRequest {
         transcription_job_name: name,
     };
-    let Ok(response) = lookup.get_transcription_job(&request).await else {
-        return Some(TranscribeRefusal {
-            status_code: 404,
-            detail: "No accessible transcription job was found".to_owned(),
-        });
+    let response = match lookup.get_transcription_job(&request).await {
+        Ok(job) => job,
+        Err(error) => {
+            tracing::warn!(job_name = %request.transcription_job_name, error = %error, "Transcribe ownership lookup failed");
+            return Some(TranscribeRefusal {
+                status_code: 404,
+                detail: "No accessible transcription job was found".to_owned(),
+            });
+        }
     };
     job_response_access_refusal(&response, principal)
 }

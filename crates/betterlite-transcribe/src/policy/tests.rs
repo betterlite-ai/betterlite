@@ -5,13 +5,12 @@ use rstest::{fixture, rstest};
 use rust_decimal::Decimal;
 
 use crate::field::Field;
+use crate::policy::admin_gate::transcribe_admin_only_refusal;
 use crate::policy::cost::{
     TranscribeCostError, started_transcription_job, transcribe_cost_per_second,
     transcribe_max_job_cost, transcription_job_cost,
 };
-use crate::policy::eligibility::{
-    requested_media_format, transcribe_admin_only_refusal, unpriceable_request_reason,
-};
+use crate::policy::eligibility::{requested_media_format, unpriceable_request_reason};
 use crate::policy::ownership::{transcribe_job_access_refusal, transcribe_owned_start_request};
 use crate::policy::storage::{transcribe_media_buckets, transcribe_storage_refusal};
 use crate::records::{GetTranscriptionJobRequest, JobLookup, JobLookupError, JobLookupFuture};
@@ -113,6 +112,10 @@ fn unpriceable_request_reason_checks_rate_surcharge_and_media_format(
 
 #[rstest]
 #[case::priced("StartTranscriptionJob", r#"{"MediaFormat":"wav"}"#)]
+#[case::nested_url(
+    "StartTranscriptionJob",
+    r#"{"Media":{"MediaFileUri":"https://s3.example/bucket/file.wav?next=https://cdn.example/x"}}"#
+)]
 #[case::unbilled("GetTranscriptionJob", "{}")]
 fn unpriceable_request_reason_allows_supported_requests(
     #[case] operation: &str,
@@ -132,6 +135,14 @@ fn unpriceable_request_reason_allows_supported_requests(
 #[case::extension(r#"{"Media":{"MediaFileUri":"s3://bucket/file.MP3"}}"#, Some("mp3"))]
 #[case::query(
     r#"{"Media":{"MediaFileUri":"https://s3.example/bucket/file.WAV?q=.mp3"}}"#,
+    Some("wav")
+)]
+#[case::nested_query_url(
+    r#"{"Media":{"MediaFileUri":"https://s3.example/bucket/file.wav?next=https://cdn.example/x"}}"#,
+    Some("wav")
+)]
+#[case::nested_fragment_url(
+    r#"{"Media":{"MediaFileUri":"https://s3.example/bucket/file.wav#https://cdn.example/x"}}"#,
     Some("wav")
 )]
 #[case::empty_explicit(
@@ -402,4 +413,30 @@ fn transcription_cost_overflow_returns_typed_error() {
 fn owned_start_request_defaults_tags(principal: Principal, #[case] input: &str) {
     let owned = transcribe_owned_start_request(input, Some(&principal)).unwrap();
     assert_eq!(owned.tags.len(), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn job_access_refusal_warns_on_lookup_failure(principal: Principal) {
+    use std::fs;
+    use std::sync::Arc;
+    use tempfile::NamedTempFile;
+    use tracing::instrument::WithSubscriber as _;
+
+    let log = NamedTempFile::new().unwrap();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .without_time()
+        .with_writer(Arc::new(log.reopen().unwrap()))
+        .finish();
+    let lookup = TestJobLookup { response: None };
+    let refusal = transcribe_job_access_refusal(r#""job-1""#, Some(&principal), &lookup)
+        .with_subscriber(subscriber)
+        .await
+        .unwrap();
+    assert_eq!(refusal.status_code, 404);
+    let message = fs::read_to_string(log.path()).unwrap();
+    assert!(message.contains("WARN"));
+    assert!(message.contains("job-1"));
+    assert!(message.contains("Transcribe job lookup failed"));
 }
