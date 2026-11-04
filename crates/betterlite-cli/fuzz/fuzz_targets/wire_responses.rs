@@ -37,8 +37,12 @@ impl Http for FuzzHttp<'_> {
     }
 }
 
-fn fixed_contract() -> CliAuthContract {
-    CliAuthContract {
+fuzz_target!(|bytes: &[u8]| {
+    let http = FuzzHttp { body: bytes };
+    let _token = parse_token(bytes);
+    let _detail = error_detail(bytes);
+    let _discovered = discover_cli_auth(BASE_URL, &http);
+    let contract = CliAuthContract {
         contract_version: 1,
         issuer: BASE_URL.to_owned(),
         authorization_endpoint: format!("{BASE_URL}/oauth/authorize"),
@@ -47,14 +51,6 @@ fn fixed_contract() -> CliAuthContract {
         revocation_endpoint: format!("{BASE_URL}/oauth/revoke"),
         resource: BASE_URL.to_owned(),
         supported_methods: vec!["S256".to_owned()],
-    }
-}
-
-fuzz_target!(|bytes: &[u8]| {
-    let http = FuzzHttp { body: bytes };
-    let _token = parse_token(bytes);
-    let _detail = error_detail(bytes);
-    let _discovered = discover_cli_auth(BASE_URL, &http);
-    let contract = fixed_contract();
+    };
     let _registered = register_client(&contract, "http://127.0.0.1:0/callback", &http);
 });
