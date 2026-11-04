@@ -16,7 +16,7 @@ fn helper_runs_the_compatible_line_stream() {
     assert_eq!(
         Op::decode_and_run(&input).unwrap(),
         json!([
-            {"kind":"chunk","value":{"text":"","tool_use":null,"is_finished":false,"finish_reason":"","usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0},"index":0}},
+            {"kind":"chunk","value":{"text":"","tool_use":null,"is_finished":false,"finish_reason":"","usage":{"prompt_tokens":0_i32,"completion_tokens":0_i32,"total_tokens":0_i32},"index":0_u32}},
             {"kind":"end"}
         ])
     );

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct CompatibleLineChunk {
     pub text: String,
     pub tool_use: Option<Value>,
@@ -23,7 +23,7 @@ pub enum ReceiveError {
     Other(String),
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum Outcome {
     Chunk(CompatibleLineChunk),
@@ -54,7 +54,7 @@ pub enum StreamEvent {
 }
 
 impl ModeInput {
-    fn mode(self) -> Mode {
+    const fn mode(self) -> Mode {
         match self {
             Self::Sync => Mode::Sync,
             Self::Async => Mode::Async,
@@ -62,6 +62,7 @@ impl ModeInput {
     }
 }
 
+#[must_use]
 pub fn run_stream(input: &StreamInput) -> Vec<Outcome> {
     let mode = input.mode.mode();
     let mut output = Vec::new();
@@ -97,7 +98,7 @@ pub fn decode_legacy_compatible_line(line: &str, mode: Mode) -> Outcome {
         return Outcome::Chunk(empty_chunk());
     }
     match serde_json::from_str::<Value>(content) {
-        Ok(value) => Outcome::Chunk(project(value)),
+        Ok(value) => Outcome::Chunk(project(&value)),
         Err(error) => {
             tracing::debug!(error = %error, line = content, "Error parsing chunk; defaulting to empty chunk");
             Outcome::Chunk(empty_chunk())
@@ -105,6 +106,7 @@ pub fn decode_legacy_compatible_line(line: &str, mode: Mode) -> Outcome {
     }
 }
 
+#[must_use]
 pub fn receive_failure(error: ReceiveError, mode: Mode) -> Outcome {
     match error {
         ReceiveError::Value(message) => {
@@ -117,7 +119,7 @@ pub fn receive_failure(error: ReceiveError, mode: Mode) -> Outcome {
     }
 }
 
-fn empty_chunk() -> CompatibleLineChunk {
+const fn empty_chunk() -> CompatibleLineChunk {
     CompatibleLineChunk {
         text: String::new(),
         tool_use: None,
@@ -128,29 +130,33 @@ fn empty_chunk() -> CompatibleLineChunk {
     }
 }
 
-fn project(value: Value) -> CompatibleLineChunk {
+fn project(value: &Value) -> CompatibleLineChunk {
     let choices = value.get("choices").and_then(Value::as_array);
     let Some(first) = choices.and_then(|items| items.first()) else {
-        let usage = value
-            .get("usage")
-            .filter(|item| !item.is_null())
-            .map(|item| usage_projection(item, true));
-        return CompatibleLineChunk {
-            usage,
-            ..empty_chunk()
-        };
+        return usage_only_chunk(value);
     };
+    project_choice(value, first)
+}
+
+fn usage_only_chunk(value: &Value) -> CompatibleLineChunk {
+    let usage = value
+        .get("usage")
+        .filter(|item| !item.is_null())
+        .map(|item| usage_projection(item, true));
+    CompatibleLineChunk {
+        usage,
+        ..empty_chunk()
+    }
+}
+
+fn project_choice(value: &Value, first: &Value) -> CompatibleLineChunk {
     let delta = first.get("delta");
     let text = delta
         .and_then(|item| item.get("content"))
         .and_then(Value::as_str)
         .unwrap_or_default()
         .to_owned();
-    let tool_use = delta.and_then(|item| item.get("tool_calls")).and_then(Value::as_array).and_then(|calls| calls.first()).and_then(|call| {
-        let function = call.get("function")?;
-        if function.get("arguments")?.is_null() { return None; }
-        Some(json!({"id": call.get("id"), "type":"function", "function":{"name":function.get("name"), "arguments":function.get("arguments")}, "index":call.get("index")}))
-    });
+    let tool_use = delta.and_then(first_tool_use);
     let reason = first
         .get("finish_reason")
         .filter(|item| !item.is_null() && item.as_str() != Some(""));
@@ -171,18 +177,48 @@ fn project(value: Value) -> CompatibleLineChunk {
     }
 }
 
+fn first_tool_use(delta: &Value) -> Option<Value> {
+    let call = delta.get("tool_calls")?.as_array()?.first()?;
+    let function = call.get("function")?;
+    let arguments = function.get("arguments")?;
+    if arguments.is_null() {
+        return None;
+    }
+    let mut projected_function = Map::new();
+    projected_function.insert(
+        String::from("name"),
+        function.get("name").cloned().unwrap_or(Value::Null),
+    );
+    projected_function.insert(String::from("arguments"), arguments.clone());
+    let mut projected_tool = Map::new();
+    projected_tool.insert(
+        String::from("id"),
+        call.get("id").cloned().unwrap_or(Value::Null),
+    );
+    projected_tool.insert(
+        String::from("type"),
+        Value::String(String::from("function")),
+    );
+    projected_tool.insert(String::from("function"), Value::Object(projected_function));
+    projected_tool.insert(
+        String::from("index"),
+        call.get("index").cloned().unwrap_or(Value::Null),
+    );
+    Some(Value::Object(projected_tool))
+}
+
 fn usage_projection(value: &Value, default_falsey: bool) -> Value {
-    let mut usage = serde_json::Map::new();
+    let mut usage = Map::new();
     for field in ["prompt_tokens", "completion_tokens", "total_tokens"] {
         let token_count = value.get(field).cloned().unwrap_or(Value::Null);
         let is_falsey = token_count.is_null()
-            || token_count == json!(0)
+            || token_count == json!(0_i32)
             || token_count == json!(false)
             || token_count == json!("");
         usage.insert(
             field.to_owned(),
             if default_falsey && is_falsey {
-                json!(0)
+                json!(0_i32)
             } else {
                 token_count
             },

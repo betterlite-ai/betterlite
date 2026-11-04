@@ -1,6 +1,7 @@
 #![cfg(test)]
 use super::{Mode, Outcome, decode_legacy_compatible_line};
 use rstest::rstest;
+use std::fs;
 use std::path::PathBuf;
 
 #[test]
@@ -34,7 +35,7 @@ fn compatible_line_usage_empty_choices_stays_unfinished() {
         panic!("chunk")
     };
     assert!(!chunk.is_finished);
-    assert_eq!(chunk.usage.unwrap()["prompt_tokens"], 0);
+    assert_eq!(chunk.usage.unwrap()["prompt_tokens"], 0_i32);
 }
 
 #[test]
@@ -51,7 +52,7 @@ fn compatible_line_blank_and_invalid_are_empty_chunks() {
 
 #[rstest]
 fn replays_the_compatible_line_corpus(#[files("fuzz/corpus/compatible_line/*")] path: PathBuf) {
-    let line = std::fs::read_to_string(path).unwrap();
+    let line = fs::read_to_string(path).unwrap();
     assert!(matches!(
         decode_legacy_compatible_line(&line, Mode::Async),
         Outcome::Chunk(_) | Outcome::End
