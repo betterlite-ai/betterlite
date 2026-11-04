@@ -118,9 +118,11 @@ impl Translator {
         if next == Some('#') {
             copy_until(&mut self.output, characters, ')');
             self.scopes.pop();
-        } else if next == Some('P') {
+        }
+        if next == Some('P') {
             self.named_group(characters);
-        } else if next == Some('(') {
+        }
+        if next == Some('(') {
             self.output.push_str(&condition_header(characters));
         }
         Ok(())
