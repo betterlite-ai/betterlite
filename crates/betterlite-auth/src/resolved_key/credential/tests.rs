@@ -54,6 +54,19 @@ fn jwt_empty_segments_count(#[case] value: &str) {
     );
 }
 
+#[rstest]
+#[case::two_segments("a.b")]
+#[case::four_segments("a.b.c.d")]
+fn non_jwt_segment_counts_pass_through(#[case] value: &str) {
+    assert!(!is_jwt(Some(value)));
+    assert_eq!(safe_hash_api_key(value), value);
+}
+
+#[test]
+fn double_bearer_prefix_stripped_once() {
+    assert_eq!(safe_hash_api_key("Bearer bearer sk-x"), "bearer sk-x");
+}
+
 #[test]
 fn jwt_none_false() {
     assert!(!is_jwt(None));
