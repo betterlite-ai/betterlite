@@ -295,36 +295,39 @@ fn decoder_enforces_nesting_depth_boundary() {
     ));
 }
 
-#[test]
-fn managed_index_timestamp_calendar_and_clock_boundaries() {
-    [
-        ("2024-02-29T23:59:59Z", true),
-        ("2000-02-29T00:00:00Z", true),
-        ("2100-02-29T00:00:00Z", false),
-        ("2023-02-29T00:00:00Z", false),
-        ("2024-04-31T00:00:00Z", false),
-        ("2024-04-30T00:00:00Z", true),
-        ("2024-06-30T00:00:00Z", true),
-        ("2024-09-30T00:00:00Z", true),
-        ("2024-11-30T00:00:00Z", true),
-        ("2024-02-28T00:00:00Z", true),
-        ("2023-02-28T00:00:00Z", true),
-        ("2024-01-00T00:00:00Z", false),
-        ("2024-01-01T24:00:00Z", false),
-        ("2024-01-01T00:60:00Z", false),
-        ("2024-01-01T00:00:60Z", false),
-    ]
-    .into_iter()
-    .for_each(|(timestamp, valid)| {
-        let input = format!(
-            "{{\"id\":\"i\",\"index_name\":\"n\",\"litellm_params\":{{\"vector_store_index\":\"n\",\"vector_store_name\":\"n\"}},\"created_at\":\"{timestamp}\"}}"
-        );
-        assert_eq!(
-            decode_vector_store_records(VectorStoreRecordKind::ManagedIndex, input.as_bytes(), limits()).is_ok(),
-            valid,
-            "{timestamp}"
-        );
-    });
+#[rstest]
+#[case::leap_day("2024-02-29T23:59:59Z", true)]
+#[case::century_leap_day("2000-02-29T00:00:00Z", true)]
+#[case::non_leap_century("2100-02-29T00:00:00Z", false)]
+#[case::non_leap_day("2023-02-29T00:00:00Z", false)]
+#[case::thirty_day_overflow("2024-04-31T00:00:00Z", false)]
+#[case::thirty_day_end_april("2024-04-30T00:00:00Z", true)]
+#[case::thirty_day_end_june("2024-06-30T00:00:00Z", true)]
+#[case::thirty_day_end_september("2024-09-30T00:00:00Z", true)]
+#[case::thirty_day_end_november("2024-11-30T00:00:00Z", true)]
+#[case::leap_february_end("2024-02-28T00:00:00Z", true)]
+#[case::common_february_end("2023-02-28T00:00:00Z", true)]
+#[case::zero_day("2024-01-00T00:00:00Z", false)]
+#[case::hour_overflow("2024-01-01T24:00:00Z", false)]
+#[case::minute_overflow("2024-01-01T00:60:00Z", false)]
+#[case::second_overflow("2024-01-01T00:00:60Z", false)]
+fn managed_index_timestamp_calendar_and_clock_boundaries(
+    #[case] timestamp: &str,
+    #[case] valid: bool,
+) {
+    let input = format!(
+        "{{\"id\":\"i\",\"index_name\":\"n\",\"litellm_params\":{{\"vector_store_index\":\"n\",\"vector_store_name\":\"n\"}},\"created_at\":\"{timestamp}\"}}"
+    );
+    assert_eq!(
+        decode_vector_store_records(
+            VectorStoreRecordKind::ManagedIndex,
+            input.as_bytes(),
+            limits()
+        )
+        .is_ok(),
+        valid,
+        "{timestamp}"
+    );
 }
 
 #[test]
