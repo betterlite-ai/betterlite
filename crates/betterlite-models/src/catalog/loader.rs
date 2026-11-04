@@ -183,7 +183,10 @@ fn validate_model_info(
         ) => Err(error),
         Ok(_) | Err(CatalogError::Fields { .. }) => {
             let prices = parse_prices(&path, fields.as_ref(), unknown, warnings);
-            if matches!(&prices, Err(CatalogError::Prices { .. })) {
+            if matches!(
+                &prices,
+                Err(CatalogError::Prices { .. } | CatalogError::Json(_))
+            ) {
                 Ok(())
             } else {
                 prices.map(|_| ())

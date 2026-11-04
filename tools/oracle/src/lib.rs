@@ -19,7 +19,7 @@ mod helpers;
 pub mod http;
 pub mod mock;
 pub mod multipart_oracle;
-mod paths;
+pub mod paths;
 pub mod process;
 pub mod routing_mock_scripts;
 pub mod routing_probe_ipc;
@@ -43,6 +43,8 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum OracleError {
+    #[error(transparent)]
+    GatewayPort(#[from] paths::PortError),
     #[error(transparent)]
     Cli(#[from] clap::Error),
     #[error("cannot read case {path}: {source}")]
