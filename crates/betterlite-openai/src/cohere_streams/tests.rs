@@ -1,9 +1,9 @@
 #![cfg(test)]
 
-use std::{collections::BTreeMap, fs, path::PathBuf};
+use std::{collections::BTreeMap, fs, io::Error as IoError, path::PathBuf};
 
 use rstest::rstest;
-use serde_json::json;
+use serde_json::Value;
 
 use super::{
     CohereIteratorError, CohereStreamVersion, decode_cohere_item, decode_cohere_line,
@@ -23,7 +23,7 @@ fn v1_prefers_text_to_finish_and_forwards_citations() {
     assert_eq!(chunk.index, 2);
     assert_eq!(
         chunk.provider_specific_fields,
-        Some(json!({"citations":[]}))
+        Some(serde_json::from_str::<Value>(r#"{"citations":[]}"#).unwrap())
     );
 }
 
@@ -36,7 +36,8 @@ fn v2_type_takes_precedence_over_message_end() {
 
 #[test]
 fn byte_sse_prefix_is_retained_before_json_decode() {
-    assert!(decode_cohere_line(CohereStreamVersion::V1, b"data: {\"text\":\"x\"}", true).is_err());
+    let _error =
+        decode_cohere_line(CohereStreamVersion::V1, b"data: {\"text\":\"x\"}", true).unwrap_err();
 }
 
 #[test]
@@ -64,7 +65,12 @@ fn v2_tool_delta_uses_only_first_direct_tool_and_wins_over_plan_event() {
     let chunk = decode_cohere_line(CohereStreamVersion::V2, br#"{"type":"tool-call-delta","event":"tool-plan-delta","delta":{"tool_calls":[{"id":"a","name":"first","arguments":"{}"},{"id":"b","name":"second"}]},"data":{"delta":{"message":{"tool_plan":"plan"}}}}"#, false).unwrap();
     assert_eq!(
         chunk.tool_use,
-        Some(json!({"id":"a","type":"function","function":{"name":"first","arguments":"{}"}}))
+        Some(
+            serde_json::from_str::<Value>(
+                r#"{"id":"a","type":"function","function":{"name":"first","arguments":"{}"}}"#
+            )
+            .unwrap()
+        )
     );
     assert_eq!(chunk.provider_specific_fields, None);
 }
@@ -79,7 +85,7 @@ fn v2_event_plan_and_citation_defaults_are_provider_fields() {
     .unwrap();
     assert_eq!(
         plan.provider_specific_fields,
-        Some(json!({"tool_plan":"use search"}))
+        Some(serde_json::from_str::<Value>(r#"{"tool_plan":"use search"}"#).unwrap())
     );
     let citation = decode_cohere_line(
         CohereStreamVersion::V2,
@@ -90,7 +96,7 @@ fn v2_event_plan_and_citation_defaults_are_provider_fields() {
     assert_eq!(
         citation.provider_specific_fields,
         Some(
-            json!({"citations":[{"start":0,"end":0,"text":"ref","sources":[],"type":"TEXT_CONTENT"}]})
+            serde_json::from_str::<Value>(r#"{"citations":[{"start":0,"end":0,"text":"ref","sources":[],"type":"TEXT_CONTENT"}]}"#).unwrap()
         )
     );
 }
@@ -106,7 +112,7 @@ fn v2_message_end_uses_token_usage_and_top_level_empty_citations_override() {
     );
     assert_eq!(
         chunk.provider_specific_fields,
-        Some(json!({"citations":[]}))
+        Some(serde_json::from_str::<Value>(r#"{"citations":[]}"#).unwrap())
     );
 }
 
@@ -134,7 +140,7 @@ fn v2_string_content_and_invalid_utf8_are_handled() {
     )
     .unwrap();
     assert_eq!(content.text, "plain");
-    assert!(decode_cohere_line(CohereStreamVersion::V2, &[0xff], true).is_err());
+    let _error = decode_cohere_line(CohereStreamVersion::V2, &[0xff], true).unwrap_err();
 }
 
 #[test]
@@ -142,11 +148,8 @@ fn iterator_item_keeps_eof_and_distinguishes_receive_from_parse_errors() {
     assert!(
         decode_cohere_item(CohereStreamVersion::V1, Ok(None)).is_ok_and(|chunk| chunk.is_none())
     );
-    let receive_error = decode_cohere_item(
-        CohereStreamVersion::V1,
-        Err(std::io::Error::other("transport")),
-    )
-    .unwrap_err();
+    let receive_error =
+        decode_cohere_item(CohereStreamVersion::V1, Err(IoError::other("transport"))).unwrap_err();
     assert!(matches!(
         receive_error,
         CohereIteratorError::Receiving { .. }
