@@ -8,7 +8,11 @@ pub(super) fn matches(regex: &Regex, text: &str) -> Result<Vec<Range<usize>>, Pa
     let mut spans = Vec::new();
     let mut position = 0;
     let mut consuming = None;
-    while let Some(found) = regex.find_from_pos(text, position)? {
+    // Position strictly advances each pass, so no more than text.len() + 1 passes ever run.
+    for _ in 0..=text.len() {
+        let Some(found) = regex.find_from_pos(text, position)? else {
+            break;
+        };
         spans.push(found.start()..found.end());
         position = found.end();
         if found.start() != found.end() {

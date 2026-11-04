@@ -9,6 +9,12 @@ use super::{redaction_tag, rstest};
 #[case::zero_pad_precision("{pattern_name:08.3}", "email", "EMA00000")]
 #[case::zero_pad_index("{pattern_name[0]:03}", "email", "E00")]
 #[case::literal_zero_spec("{{pattern_name:08}}", "email", "{pattern_name:08}")]
+#[case::reopened_field_resets_padding_state(
+    "{pattern_name}{{pattern_name:08}}",
+    "email",
+    "EMAIL{pattern_name:08}"
+)]
+#[case::explicit_alignment_after_zero_untouched("{pattern_name:0<5}", "email", "EMAIL")]
 #[case::multidigit_unicode("{pattern_name[\u{ff11}\u{ff12}]}", "abcdefghijklmn", "M")]
 #[case::fullwidth_index("[{pattern_name[\u{ff10}]}]", "email", "[E]")]
 #[case::arabic_index("{pattern_name[\u{661}]}", "email", "M")]
