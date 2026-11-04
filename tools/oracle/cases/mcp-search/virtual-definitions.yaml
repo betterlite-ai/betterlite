@@ -1,5 +1,5 @@
 kind: helper
 name: virtual-definitions
-call: {"mcp_search_primitives": {"mode": "definitions"}}
+call: {"mcp_search_primitives": {"definitions": null}}
 env: {}
 compare: {ignore: []}

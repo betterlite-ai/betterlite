@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from typing import TypeAlias, cast
 
 import litellm
@@ -24,7 +23,7 @@ Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Js
 
 
 def run(input_value: dict[str, Json]) -> Json:
-    mode = input_value.get("mode")
+    mode, arguments = next(iter(input_value.items()))
     handlers = {
         "keyword": keyword_search,
         "identity": identity,
@@ -34,14 +33,14 @@ def run(input_value: dict[str, Json]) -> Json:
         "semantic": semantic_search,
         "definitions": definitions,
     }
-    handler = handlers.get(cast(str, mode))
+    handler = handlers.get(mode)
     if handler is None:
         return None
-    return handler(input_value)
+    return handler({} if arguments is None else cast(dict[str, Json], arguments))
 
 
 def tools_from(input_value: dict[str, Json]) -> list[Tool]:
-    tools_value = cast(list[dict[str, Json]], json.loads(cast(str, input_value["tools"])))
+    tools_value = cast(list[dict[str, Json]], input_value["tools"])
     return [Tool.model_validate(tool) for tool in tools_value]
 
 
@@ -55,7 +54,7 @@ def keyword_search(input_value: dict[str, Json]) -> Json:
 
 
 def identity(input_value: dict[str, Json]) -> Json:
-    tool_value = cast(dict[str, Json], json.loads(cast(str, input_value["tool"])))
+    tool_value = cast(dict[str, Json], input_value["tool"])
     tool = Tool.model_validate(tool_value)
     server_id = cast(str, input_value["server_id"])
     identified = with_mcp_proxy_identity(tool, server_id)

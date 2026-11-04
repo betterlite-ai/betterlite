@@ -1,5 +1,5 @@
 kind: helper
 name: semantic-ranking
-call: {"mcp_search_primitives": {"mode": "semantic", "threshold": 0.5, "top_k": 2, "scores": [0.5, 0.9, 0.4], "tools": "[{\"name\": \"first\", \"description\": \"one\", \"inputSchema\": {}}, {\"name\": \"second\", \"description\": \"two\", \"inputSchema\": {}}, {\"name\": \"third\", \"description\": \"three\", \"inputSchema\": {}}]"}}
+call: {"mcp_search_primitives": {"semantic": {"threshold": 0.5, "top_k": 2, "scores": [0.5, 0.9, 0.4], "tools": [{"name": "first", "description": "one", "inputSchema": {}}, {"name": "second", "description": "two", "inputSchema": {}}, {"name": "third", "description": "three", "inputSchema": {}}]}}}
 env: {}
 compare: {ignore: []}

@@ -14,28 +14,23 @@ use serde::{Deserialize, Serialize};
 
 pub(crate) struct Op;
 
-#[serde_with::serde_as]
 #[derive(Deserialize)]
-#[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Input {
     Keyword {
         query: String,
-        #[serde_as(as = "serde_with::json::JsonString")]
         tools: Vec<MCPTool>,
         top_k: i64,
     },
     Identity {
-        #[serde_as(as = "serde_with::json::JsonString")]
         tool: Box<MCPTool>,
         server_id: String,
     },
     Core {
-        #[serde_as(as = "serde_with::json::JsonString")]
         tools: Vec<MCPTool>,
         core_tools: Vec<String>,
     },
     Empty {
-        #[serde_as(as = "serde_with::json::JsonString")]
         tools: Vec<MCPTool>,
     },
     Settings {
@@ -43,7 +38,6 @@ pub(crate) enum Input {
     },
     Definitions,
     Semantic {
-        #[serde_as(as = "serde_with::json::JsonString")]
         tools: Vec<MCPTool>,
         scores: Vec<f64>,
         threshold: f64,
