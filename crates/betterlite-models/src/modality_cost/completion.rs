@@ -11,7 +11,7 @@ pub struct CompletionTokensDetailsResult {
 }
 
 // Subtracts the minimum of reasoning, text, and the reported total's excess over completion_tokens.
-fn text_without_nested_reasoning(
+pub fn text_without_nested_reasoning(
     completion_tokens: i64,
     text_tokens: i64,
     reasoning_tokens: i64,
