@@ -18,15 +18,15 @@ use serde_json::{Value, json};
 #[test]
 fn text_by_role_defaults_null_and_unknown_content() {
     assert_eq!(
-        text_by_role(&Value::Null, "user"),
+        text_by_role(&Value::Null, "user").unwrap(),
         json!([{"type":"input_text","text":""}])
     );
     assert_eq!(
-        text_by_role(&json!(7), "other"),
+        text_by_role(&json!(7), "other").unwrap(),
         json!([{"type":"output_text","text":"7"}])
     );
     assert_eq!(
-        text_by_role(&json!([{"type":"text"}, 7, "hi"]), "assistant"),
+        text_by_role(&json!([{"type":"text"}, 7, "hi"]), "assistant").unwrap(),
         json!([{"type":"output_text","text":""},{"type":"output_text","text":"hi"}])
     );
 }
@@ -40,8 +40,40 @@ fn text_by_role_defaults_null_and_unknown_content() {
 #[case::unknown("new_role", "output_text")]
 fn role_selects_text_block_kind(#[case] role: &str, #[case] kind: &str) {
     assert_eq!(
-        text_by_role(&json!("hi"), role),
+        text_by_role(&json!("hi"), role).unwrap(),
         json!([{"type":kind,"text":"hi"}])
+    );
+}
+
+#[test]
+fn text_by_role_projects_standard_assistant_content_parts() {
+    assert_eq!(
+        text_by_role(
+            &json!([
+                {"type":"image_url","image_url":{"url":"u"}},
+                {"type":"input_text","text":"x"},
+                {"type":"file","file":{"file_id":"f"}},
+                {"type":"other"}
+            ]),
+            "assistant"
+        )
+        .unwrap(),
+        json!([
+            {"type":"input_image","image_url":"u","detail":"auto"},
+            {"type":"input_text","text":"x"},
+            {"type":"input_file","file_id":"f"},
+            {"type":"output_text","text":"{'type': 'other'}"}
+        ])
+    );
+}
+
+#[test]
+fn text_by_role_propagates_invalid_image_url() {
+    assert_eq!(
+        text_by_role(&json!([{"type":"image_url"}]), "assistant")
+            .unwrap_err()
+            .to_string(),
+        "Invalid image URL: None"
     );
 }
 
@@ -131,16 +163,32 @@ fn image_and_file_projection_preserves_present_file_fields_only() {
     );
 }
 
+#[rstest]
+#[case::missing_file(json!({"type":"file"}))]
+#[case::non_dict_file(json!({"type":"file","file":"x"}))]
+fn image_and_file_projection_defaults_missing_or_non_dict_file(#[case] input: Value) {
+    let item = serde_json::from_value(input).expect("map");
+    assert_eq!(
+        image_and_file_fields(&item).unwrap(),
+        json!({"type":"input_file"})
+    );
+}
+
 #[test]
 fn image_and_file_projection_defaults_empty_detail_and_reports_missing_url() {
+    let missing = serde_json::from_value(json!({})).expect("map");
+    assert_eq!(
+        image_and_file_fields(&missing).unwrap_err().to_string(),
+        "Invalid image URL: None"
+    );
     let image = serde_json::from_value(json!({"image_url":{"url":"","detail":""}})).expect("map");
     assert_eq!(
         image_and_file_fields(&image).expect("empty URL is accepted"),
         json!({"type":"input_image","image_url":"","detail":"auto"})
     );
-    let missing = serde_json::from_value(json!({"image_url":{"url":null}})).expect("map");
+    let null_url = serde_json::from_value(json!({"image_url":{"url":null}})).expect("map");
     assert_eq!(
-        image_and_file_fields(&missing)
+        image_and_file_fields(&null_url)
             .expect_err("null URL is invalid")
             .to_string(),
         "Invalid image URL: {'url': None}"
@@ -159,6 +207,15 @@ fn flat_choice_prefers_top_level_name_and_preserves_invalid() {
         flat_tool_choice(&json!({"type":"function","name":""})),
         json!({"type":"function","name":""})
     );
+}
+
+#[rstest]
+#[case::unknown_type(json!({"type":"allowed_tools","name":"x","extra":1}))]
+#[case::missing_type(json!({"name":"x"}))]
+#[case::non_string_type(json!({"type":7,"name":"x"}))]
+#[case::non_object(json!("auto"))]
+fn flat_choice_passes_through_unrecognized_choice(#[case] choice: Value) {
+    assert_eq!(flat_tool_choice(&choice), choice);
 }
 
 #[rstest]
@@ -181,6 +238,18 @@ fn flat_custom_choice_uses_nested_name_and_keeps_invalid_name() {
     assert_eq!(
         flat_tool_choice(&json!({"type":"custom","name":7,"custom":{"name":""}})),
         json!({"type":"custom","name":7,"custom":{"name":""}})
+    );
+}
+
+#[test]
+fn flat_choice_flattens_function_nested_name_and_custom_top_level_name() {
+    assert_eq!(
+        flat_tool_choice(&json!({"type":"function","function":{"name":"n"}})),
+        json!({"type":"function","name":"n"})
+    );
+    assert_eq!(
+        flat_tool_choice(&json!({"type":"custom","name":"t","custom":{"name":"n"}})),
+        json!({"type":"custom","name":"t"})
     );
 }
 

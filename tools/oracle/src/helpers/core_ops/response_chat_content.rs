@@ -46,7 +46,8 @@ impl crate::helpers::Helper for Op {
     type Input = Input;
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         match input {
-            Input::TextByRole { content, role } => Ok(text_by_role(content, role)),
+            Input::TextByRole { content, role } => text_by_role(content, role)
+                .map_err(|error| image_projection_error(&error)),
             Input::ContentPassthrough { items, role } => {
                 content_passthrough(items, role)
                     .map(|projection| {

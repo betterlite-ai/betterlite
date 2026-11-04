@@ -7,38 +7,30 @@ use super::{ContentError, Projection};
 type ItemProjection = (Value, String, Option<String>);
 type ItemResult = Option<Result<ItemProjection, ContentError>>;
 
-#[must_use]
-pub fn text_by_role(content: &Value, role: &str) -> Value {
+pub fn text_by_role(content: &Value, role: &str) -> Result<Value, ContentError> {
     match content {
-        Value::Null => Value::Array(vec![text_block("", role).0]),
-        Value::String(text) => Value::Array(vec![text_block(text, role).0]),
-        Value::Array(items) => Value::Array(
-            items
-                .iter()
-                .filter_map(|item| {
-                    if let Some(text) = item.as_str() {
-                        return Some(text_block(text, role).0);
-                    }
-                    let fields = item.as_object()?;
-                    let text = if fields.get("type").and_then(Value::as_str) == Some("text") {
-                        fields.get("text").and_then(Value::as_str).unwrap_or("")
-                    } else {
-                        fields.get("text")?.as_str()?
-                    };
-                    Some(text_block(text, role).0)
-                })
-                .collect(),
-        ),
-        Value::Object(fields) => Value::Array(vec![
+        Value::Null => Ok(Value::Array(vec![text_block("", role).0])),
+        Value::String(text) => Ok(Value::Array(vec![text_block(text, role).0])),
+        Value::Array(items) => items
+            .iter()
+            .filter_map(|item| {
+                if item.get("type").and_then(Value::as_str) == Some("tool_reference") {
+                    return None;
+                }
+                project_item(item, role).map(|projection| projection.map(|(value, _, _)| value))
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map(Value::Array),
+        Value::Object(fields) => Ok(Value::Array(vec![
             text_block(
                 &display_text_value(fields.get("text").unwrap_or(content)),
                 role,
             )
             .0,
-        ]),
-        Value::Bool(_) | Value::Number(_) => {
-            Value::Array(vec![text_block(&display_text_value(content), role).0])
-        }
+        ])),
+        Value::Bool(_) | Value::Number(_) => Ok(Value::Array(vec![
+            text_block(&display_text_value(content), role).0,
+        ])),
     }
 }
 
@@ -168,9 +160,15 @@ fn unknown_item(
     role: &str,
 ) -> ItemProjection {
     let value = item.clone();
-    let text = fields
-        .get("text")
-        .map_or_else(|| display_text_value(&value), display_text_value);
+    let text = fields.get("text").map_or_else(
+        || format_diagnostic_value(&value),
+        |text_value| match text_value {
+            Value::Object(_) | Value::Array(_) => format_diagnostic_value(text_value),
+            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {
+                display_text_value(text_value)
+            }
+        },
+    );
     let (converted, repr) = text_block(&text, role);
     (
         converted,
