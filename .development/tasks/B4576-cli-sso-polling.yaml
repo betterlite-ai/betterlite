@@ -1,7 +1,7 @@
 id: B4576
 title: CLI SSO polling and team selection
 description: >-
-  Add crates/betterlite-cli/src/sso_polling.rs with polling orchestration and team selection for betterlite-management-cli.
+  Add crates/betterlite-cli/src/sso_polling.rs with polling orchestration and team selection for betterlite-cli.
   Build the polling SSO session that awaits ready status with exponential backoff and team-selection interfaces.
   Implement _PollRequest TypedDict with url, headers, timeouts and status callbacks; CliAuthData to carry polling response shapes
   (status, key, user_id, teams, team_details, requires_team_selection, team_id); and Outcome enum (PollingStartError, PollingTimeout,
