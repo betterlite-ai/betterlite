@@ -1,6 +1,15 @@
 kind: helper
 name: vector-store-records-round-trip
 call:
-  vector_store_records: {operation: vector_records_round_trip, record: {vector_store_id: vs_a, vector_store_metadata: raw}}
+  vector_store_records:
+    operation: vector_records_round_trip
+    record:
+      config: {vector_store_name: notes, litellm_params: null}
+      managed: {vector_store_id: vs_a, custom_llm_provider: openai, vector_store_name: notes, vector_store_description: d, vector_store_metadata: raw, created_at: "2025-01-02T03:04:05Z", updated_at: "2025-01-02T03:04:05Z", litellm_credential_name: c, litellm_params: {api_base: url}, team_id: t, user_id: u, is_config: true}
+      managed_list: {object: list, data: [{vector_store_id: vs_a, vector_store_metadata: {tag: x}}], total_count: 1, current_page: 1, total_pages: 1}
+      integrations: [bedrock, ragflow]
+      index_types: [read, write]
+      endpoints: {read: [[GET, /index], [POST, /index]], write: [[PUT, /index], [DELETE, /index], [PATCH, /index]]}
+      auth: {headers: {Authorization: secret}, query_params: {key: value}}
 env: {}
 compare: {ignore: []}

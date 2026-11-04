@@ -1,6 +1,6 @@
 #![no_main]
 
-use betterlite_openai::api::vector_store_records::{
+use betterlite_openai::api::vector_store_records::wire::{
     VectorStoreRecordKind, WireDecodeLimits, decode_vector_store_records,
 };
 use libfuzzer_sys::fuzz_target;

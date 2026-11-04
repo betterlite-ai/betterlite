@@ -1,6 +1,14 @@
 kind: helper
 name: vector-store-management-record-defaults
 call:
-  vector_store_records: {operation: management_record_defaults, record: {vector_store_id: vs_a, unknown: 1}}
+  vector_store_records:
+    operation: management_record_defaults
+    records:
+      update: {vector_store_id: vs_a, unknown: 1}
+      delete: {vector_store_id: vs_a}
+      info: {vector_store_id: vs_a}
+      managed_index: {id: idx_a, index_name: notes, litellm_params: {vector_store_index: notes, vector_store_name: Notes}}
+      index_list: {data: [{id: idx_a, index_name: notes, litellm_params: {vector_store_index: notes, vector_store_name: Notes}}]}
+      index_create: {index_name: notes, litellm_params: {vector_store_index: notes, vector_store_name: Notes}}
 env: {}
 compare: {ignore: []}

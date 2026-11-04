@@ -1,7 +1,16 @@
 from collections.abc import Mapping
 from typing import Protocol, TypeAlias, cast
 
-from litellm.types.vector_stores import VectorStoreToolParams
+from litellm.types.vector_stores import (
+    IndexCreateRequest,
+    IndexListResponse,
+    LiteLLM_ManagedVectorStoreIndex,
+    VectorStoreDeleteRequest,
+    VectorStoreInfoRequest,
+    VectorStoreToolParams,
+    VectorStoreUpdateRequest,
+)
+from pydantic import ValidationError
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
@@ -19,4 +28,26 @@ def run(fields: dict[str, Json]) -> Json:
             ranking_options=cast(dict[str, object] | None, fields.get("ranking_options")),
         )
         return cast(Json, dict(cast(SupportsToDict, params).to_dict()))
-    return cast(Json, {key: value for key, value in fields.items() if key != "operation"})
+    if operation == "management_record_defaults":
+        records = cast(dict[str, Json], fields["records"])
+        validated: dict[str, Json] = {}
+        models = {
+            "update": VectorStoreUpdateRequest,
+            "delete": VectorStoreDeleteRequest,
+            "info": VectorStoreInfoRequest,
+            "managed_index": LiteLLM_ManagedVectorStoreIndex,
+            "index_list": IndexListResponse,
+            "index_create": IndexCreateRequest,
+        }
+        for name, model in models.items():
+            try:
+                instance = model.model_validate(records[name])
+            except ValidationError as error:
+                return cast(Json, {"error": str(error), "class": "ValidationError"})
+            validated[name] = cast(Json, instance.model_dump(mode="json", exclude_none=False))
+        return cast(Json, validated)
+    if operation == "invalid_index_list_literal":
+        index_list = IndexListResponse.model_validate(fields["record"])
+        return cast(Json, index_list.model_dump(mode="json"))
+    record_name = "extra_body" if operation == "discovery_extra_body_fields" else "record"
+    return fields[record_name]
