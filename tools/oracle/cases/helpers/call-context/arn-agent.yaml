@@ -1,0 +1,5 @@
+kind: helper
+name: arn-agent
+call: {aws_partition: {region: us-east-1, value: 'arn:aws:bedrock-agent:x'}}
+env: {}
+compare: {ignore: []}
