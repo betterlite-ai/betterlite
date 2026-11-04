@@ -67,7 +67,6 @@ impl Default for BaseClass {
 pub struct DecodeLimits {
     pub bytes: usize,
     pub entries: usize,
-    pub depth: usize,
 }
 
 impl Default for DecodeLimits {
@@ -75,7 +74,6 @@ impl Default for DecodeLimits {
         Self {
             bytes: 256 * 1024,
             entries: 128,
-            depth: 32,
         }
     }
 }
@@ -86,8 +84,6 @@ pub enum RegistryError {
     TooLarge { limit: usize },
     #[error("JSON provider registry exceeds {limit} entries")]
     TooManyEntries { limit: usize },
-    #[error("JSON provider registry nesting exceeds {limit}")]
-    TooDeep { limit: usize },
     #[error("JSON provider registry JSON: {0}")]
     Json(#[from] serde_json::Error),
     #[error("provider slug {slug} is not registered")]
@@ -183,9 +179,6 @@ pub fn decode_json_provider_registry(
             limit: limits.entries,
         });
     }
-    for value in providers.values() {
-        check_depth(value.get(), 1, limits.depth.min(128))?;
-    }
     let mut registry = JSONProviderRegistry {
         providers: IndexMap::new(),
         loaded: true,
@@ -213,26 +206,6 @@ fn descriptor(slug: &str, raw: &str) -> Result<ProviderDescriptor, RegistryError
         })?;
     let config = serde_json::from_str(raw)?;
     Ok(ProviderDescriptor { provider, config })
-}
-
-fn check_depth(value: &str, depth: usize, limit: usize) -> Result<(), RegistryError> {
-    let first = value.as_bytes().first().copied();
-    if matches!(first, Some(b'{' | b'[')) && depth >= limit {
-        return Err(RegistryError::TooDeep { limit });
-    }
-    if first == Some(b'{') {
-        let fields: IndexMap<String, Box<RawValue>> = serde_json::from_str(value)?;
-        for child in fields.values() {
-            check_depth(child.get(), depth.saturating_add(1), limit)?;
-        }
-    }
-    if first == Some(b'[') {
-        let elements: Vec<Box<RawValue>> = serde_json::from_str(value)?;
-        for child in elements {
-            check_depth(child.get(), depth.saturating_add(1), limit)?;
-        }
-    }
-    Ok(())
 }
 
 mod tests;

@@ -94,8 +94,7 @@ fn decoder_preserves_order_and_enforces_limits() {
             b"{}",
             DecodeLimits {
                 bytes: 1,
-                entries: 2,
-                depth: 4
+                entries: 2
             }
         ),
         Err(super::RegistryError::TooLarge { limit: 1 })
@@ -163,19 +162,14 @@ fn responses_support_is_exact(#[case] endpoint: &str, #[case] expected: bool) {
 }
 
 #[rstest]
-#[case::bytes_at_boundary(b"{}".as_slice(), 2, 0, 0, true)]
-#[case::bytes_over_boundary(b"{}".as_slice(), 1, 0, 0, false)]
-#[case::entries_at_boundary(br#"{"publicai":{}}"#, 100, 1, 2, true)]
-#[case::entries_over_boundary(br#"{"publicai":{}}"#, 100, 0, 2, false)]
-#[case::depth_at_boundary(br#"{"publicai":{"unknown":[1]}}"#, 100, 1, 3, true)]
-#[case::depth_over_boundary(br#"{"publicai":{"unknown":[1]}}"#, 100, 1, 2, false)]
-#[case::nested_arrays(br#"{"publicai":{"unknown":[[]]}}"#, 100, 1, 3, false)]
-#[case::object_depth(br#"{"publicai":{"unknown":{"inner":{}}}}"#, 100, 1, 3, false)]
+#[case::bytes_at_boundary(b"{}".as_slice(), 2, 0, true)]
+#[case::bytes_over_boundary(b"{}".as_slice(), 1, 0, false)]
+#[case::entries_at_boundary(br#"{"publicai":{}}"#, 100, 1, true)]
+#[case::entries_over_boundary(br#"{"publicai":{}}"#, 100, 0, false)]
 fn decoder_limit_boundaries(
     #[case] bytes: &[u8],
     #[case] maximum: usize,
     #[case] entries: usize,
-    #[case] depth: usize,
     #[case] valid: bool,
 ) {
     assert_eq!(
@@ -183,8 +177,7 @@ fn decoder_limit_boundaries(
             bytes,
             DecodeLimits {
                 bytes: maximum,
-                entries,
-                depth
+                entries
             }
         )
         .is_ok(),
@@ -309,4 +302,18 @@ fn explicit_optional_fields_are_retained() {
         Some(&false)
     );
     assert_eq!(config.supported_endpoints, ["/v1/messages"]);
+}
+
+#[test]
+fn deeply_nested_descriptor_does_not_overflow() {
+    let source = format!(
+        r#"{{"publicai":{{"base_url":"base","api_key_env":"KEY","unknown":{}null{}}}}}"#,
+        "[".repeat(10_000),
+        "]".repeat(10_000)
+    );
+    let registry =
+        decode_json_provider_registry(source.as_bytes(), DecodeLimits::default()).unwrap();
+    assert!(registry.loaded);
+    assert_eq!(registry.providers.len(), 1);
+    assert_eq!(registry.get("publicai").unwrap().config.base_url, "base");
 }
