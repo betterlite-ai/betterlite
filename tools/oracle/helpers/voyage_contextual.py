@@ -46,8 +46,13 @@ def run(value: dict[str, Json]) -> Json:
     contextual_model = cast(str, contextual["model"])
     text_base = cast(str | None, text["base"])
     contextual_base = cast(str | None, contextual["base"])
+    text_params = {
+        key: item
+        for key, item in text_options.items()
+        if key not in {"dimensions", "encoding_format"}
+    }
     text_params = text_config.map_openai_params(
-        text_options, dict(text_options), text_model, drop_params=False
+        text_options, text_params, text_model, drop_params=False
     )
     text_request = cast(
         dict[str, object],
@@ -55,8 +60,13 @@ def run(value: dict[str, Json]) -> Json:
             text_model, text_input, text_params, {}
         ),
     )
+    contextual_params = {
+        key: item
+        for key, item in contextual_options.items()
+        if key not in {"dimensions", "encoding_format"}
+    }
     contextual_params = contextual_config.map_openai_params(
-        contextual_options, dict(contextual_options), contextual_model, drop_params=False
+        contextual_options, contextual_params, contextual_model, drop_params=False
     )
     contextual_request = cast(
         dict[str, object],
