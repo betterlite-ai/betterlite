@@ -1,21 +1,20 @@
 use std::time::Duration;
 
-use futures_util::{SinkExt, StreamExt};
-use tokio::net::TcpStream;
+use futures_util::SinkExt;
 use tokio::time::timeout;
+use tokio_tungstenite::connect_async_with_config;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::http::{HeaderName, HeaderValue};
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use tokio_tungstenite::tungstenite::protocol::frame::CloseFrame;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
-use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async_with_config};
 
-use crate::websocket_oracle::{Action, Direction, Frame, MAX_FRAME_BYTES, WebSocketCase};
+use crate::websocket_oracle::{Action, Close, Direction, Frame, MAX_FRAME_BYTES, WebSocketCase};
 
 use super::{DriverError, HandshakeObservation, TranscriptObservation};
 
-type GatewaySocket = WebSocketStream<MaybeTlsStream<TcpStream>>;
+use super::socket::Peer;
 
 pub async fn exchange(
     base_url: &str,
@@ -62,8 +61,7 @@ async fn exchange_bounded(
     config.max_write_buffer_size = MAX_FRAME_BYTES
         .checked_add(config.write_buffer_size)
         .ok_or_else(|| DriverError::Transport("write buffer limit overflow".to_owned()))?;
-    let (mut socket, response) = match connect_async_with_config(request, Some(config), false).await
-    {
+    let (stream, response) = match connect_async_with_config(request, Some(config), false).await {
         Ok(connection) => connection,
         Err(tokio_tungstenite::tungstenite::Error::Http(response)) => {
             return Ok(TranscriptObservation {
@@ -77,6 +75,7 @@ async fn exchange_bounded(
         }
         Err(error) => return Err(DriverError::Transport(error.to_string())),
     };
+    let mut socket = Peer { stream };
     let handshake = HandshakeObservation {
         status: response.status().as_u16(),
         negotiated_subprotocol: response
@@ -110,7 +109,7 @@ async fn exchange_bounded(
                         let expected = provider_frames.get(provider_count).ok_or_else(|| {
                             DriverError::Transport("provider frame sequence ended".to_owned())
                         })?;
-                        let observed = receive_provider_frame(&mut socket, expected).await?;
+                        let observed = Frame::try_from((socket.receive().await?, *expected))?;
                         if let Some(name) = &expected.barrier {
                             provider_observations.push(name.clone());
                         }
@@ -128,7 +127,11 @@ async fn exchange_bounded(
                         )));
                     }
                 }
-                send_client_frame(&mut socket, frame).await?;
+                socket
+                    .stream
+                    .send(Message::try_from(frame)?)
+                    .await
+                    .map_err(|error| DriverError::Transport(error.to_string()))?;
                 frames.push(frame.clone());
             }
             (Direction::ProviderToClient, Action::Expect) => {
@@ -150,7 +153,7 @@ async fn exchange_bounded(
                     let expected = provider_frames.get(provider_count).ok_or_else(|| {
                         DriverError::Transport("provider frame sequence ended".to_owned())
                     })?;
-                    let observed = receive_provider_frame(&mut socket, expected).await?;
+                    let observed = Frame::try_from((socket.receive().await?, *expected))?;
                     if let Some(name) = &expected.barrier {
                         provider_observations.push(name.clone());
                     }
@@ -175,13 +178,14 @@ async fn exchange_bounded(
                 reason: std::borrow::Cow::Owned(expected.reason.clone()),
             };
             socket
+                .stream
                 .send(Message::Close(Some(frame)))
                 .await
                 .map_err(|error| DriverError::Transport(error.to_string()))?;
             Some(expected.clone())
         }
         Some(expected) if expected.initiator == "provider" => {
-            Some(receive_close(&mut socket).await?)
+            Some(Close::try_from((socket.receive().await?, "provider"))?)
         }
         Some(_) => return Err(DriverError::Transport("invalid close initiator".to_owned())),
         None => None,
@@ -191,82 +195,4 @@ async fn exchange_bounded(
         frames,
         close,
     })
-}
-
-async fn send_client_frame(socket: &mut GatewaySocket, frame: &Frame) -> Result<(), DriverError> {
-    let message =
-        match &frame.text {
-            Some(text) => Message::Text(text.clone()),
-            None => Message::Binary(frame.binary_data.clone().ok_or_else(|| {
-                DriverError::Transport("binary frame fixture is missing".to_owned())
-            })?),
-        };
-    socket
-        .send(message)
-        .await
-        .map_err(|error| DriverError::Transport(error.to_string()))
-}
-
-async fn receive_provider_frame(
-    socket: &mut GatewaySocket,
-    expected: &Frame,
-) -> Result<Frame, DriverError> {
-    loop {
-        let message = socket
-            .next()
-            .await
-            .ok_or_else(|| DriverError::Transport("provider socket ended".to_owned()))?
-            .map_err(|error| DriverError::Transport(error.to_string()))?;
-        match message {
-            Message::Text(text) => {
-                return Ok(Frame {
-                    direction: Direction::ProviderToClient,
-                    action: Action::Expect,
-                    text: Some(text),
-                    binary: None,
-                    binary_data: None,
-                    barrier: expected.barrier.clone(),
-                });
-            }
-            Message::Binary(bytes) => {
-                return Ok(Frame {
-                    direction: Direction::ProviderToClient,
-                    action: Action::Expect,
-                    text: None,
-                    binary: expected.binary.clone(),
-                    binary_data: Some(bytes),
-                    barrier: expected.barrier.clone(),
-                });
-            }
-            Message::Ping(payload) => socket
-                .send(Message::Pong(payload))
-                .await
-                .map_err(|error| DriverError::Transport(error.to_string()))?,
-            Message::Pong(_) | Message::Frame(_) => {}
-            Message::Close(_) => {
-                return Err(DriverError::Transport(
-                    "provider closed before expected frame".to_owned(),
-                ));
-            }
-        }
-    }
-}
-
-async fn receive_close(
-    socket: &mut GatewaySocket,
-) -> Result<crate::websocket_oracle::Close, DriverError> {
-    loop {
-        let message = socket
-            .next()
-            .await
-            .ok_or_else(|| DriverError::Transport("provider socket ended before close".to_owned()))?
-            .map_err(|error| DriverError::Transport(error.to_string()))?;
-        if let Message::Close(Some(frame)) = message {
-            return Ok(crate::websocket_oracle::Close {
-                initiator: "provider".to_owned(),
-                code: u16::from(frame.code),
-                reason: frame.reason.into_owned(),
-            });
-        }
-    }
 }

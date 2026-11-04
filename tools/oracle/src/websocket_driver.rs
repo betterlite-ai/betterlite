@@ -6,10 +6,14 @@ use serde_json::Value;
 
 use crate::websocket_oracle::{Close, Frame, WebSocketCase, close_matches, direction_matches};
 
+mod close;
+mod encode;
 mod gateway;
-mod provider;
+mod payload;
+pub(crate) mod provider;
+mod socket;
 pub use gateway::exchange as exchange_gateway;
-pub(crate) use provider::{ProviderHandle, ProviderObservation, start as start_provider};
+pub(crate) use provider::start as start_provider;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]

@@ -1,57 +1,61 @@
 use std::net::SocketAddr;
 
-use futures_util::{SinkExt, StreamExt};
+use futures_util::SinkExt;
 use tokio::net::TcpListener;
-use tokio::task::JoinHandle;
+use tokio::task::JoinSet;
 use tokio::time::timeout;
+use tokio_tungstenite::accept_hdr_async_with_config;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::handshake::server::{ErrorResponse, Request, Response};
 use tokio_tungstenite::tungstenite::http::StatusCode;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use tokio_tungstenite::tungstenite::protocol::frame::CloseFrame;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
-use tokio_tungstenite::{WebSocketStream, accept_hdr_async_with_config};
 
 use crate::websocket_oracle::{Action, Close, Direction, Frame, MAX_FRAME_BYTES, WebSocketCase};
 
 use super::DriverError;
+use super::socket::Peer;
 
-pub struct ProviderHandle {
-    pub address: SocketAddr,
-    task: JoinHandle<Result<ProviderObservation, String>>,
+pub(crate) struct ProviderHandle {
+    pub(crate) address: SocketAddr,
+    tasks: JoinSet<Result<ProviderObservation, String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProviderObservation {
-    pub connection_count: usize,
-    pub request_uri: String,
-    pub frames: Vec<Frame>,
-    pub close: Option<Close>,
+pub(crate) struct ProviderObservation {
+    pub(crate) connection_count: usize,
+    pub(crate) request_uri: String,
+    pub(crate) frames: Vec<Frame>,
+    pub(crate) close: Option<Close>,
 }
 
-pub async fn start(case: WebSocketCase) -> Result<ProviderHandle, DriverError> {
+pub(crate) async fn start(case: WebSocketCase) -> Result<ProviderHandle, DriverError> {
     let listener = TcpListener::bind(("127.0.0.1", 0))
         .await
         .map_err(|error| DriverError::Transport(error.to_string()))?;
     let address = listener
         .local_addr()
         .map_err(|error| DriverError::Transport(error.to_string()))?;
-    let task = tokio::spawn(async move { serve(listener, case).await });
-    Ok(ProviderHandle { address, task })
+    let mut tasks = JoinSet::new();
+    tasks.spawn(async move { serve(listener, case).await });
+    Ok(ProviderHandle { address, tasks })
 }
 
 impl ProviderHandle {
-    pub async fn finish(
+    pub(crate) async fn finish(
         mut self,
         deadline: std::time::Duration,
     ) -> Result<ProviderObservation, DriverError> {
-        match timeout(deadline, &mut self.task).await {
-            Ok(Ok(Ok(observation))) => Ok(observation),
-            Ok(Ok(Err(error))) => Err(DriverError::Transport(error)),
-            Ok(Err(error)) => Err(DriverError::Transport(error.to_string())),
+        match timeout(deadline, self.tasks.join_next()).await {
+            Ok(Some(Ok(Ok(observation)))) => Ok(observation),
+            Ok(Some(Ok(Err(error)))) => Err(DriverError::Transport(error)),
+            Ok(Some(Err(error))) => Err(DriverError::Transport(error.to_string())),
+            Ok(None) => Err(DriverError::Transport(
+                "provider task is missing".to_owned(),
+            )),
             Err(_) => {
-                self.task.abort();
-                let _result = self.task.await;
+                self.tasks.shutdown().await;
                 Err(DriverError::Transport(
                     "provider transcript timed out".to_owned(),
                 ))
@@ -59,14 +63,18 @@ impl ProviderHandle {
         }
     }
 
-    pub async fn cancel(self) -> Result<(), DriverError> {
-        self.task.abort();
-        match self.task.await {
-            Ok(Ok(_)) => Ok(()),
-            Ok(Err(error)) => Err(DriverError::Transport(error)),
-            Err(error) if error.is_cancelled() => Ok(()),
-            Err(error) => Err(DriverError::Transport(error.to_string())),
+    pub(crate) async fn cancel(mut self) -> Result<(), DriverError> {
+        self.tasks.abort_all();
+        while let Some(result) = self.tasks.join_next().await {
+            match result {
+                Ok(outcome) => {
+                    outcome.map_err(DriverError::Transport)?;
+                }
+                Err(error) if error.is_cancelled() => {}
+                Err(error) => return Err(DriverError::Transport(error.to_string())),
+            }
         }
+        Ok(())
     }
 }
 
@@ -92,7 +100,7 @@ async fn serve(listener: TcpListener, case: WebSocketCase) -> Result<ProviderObs
     let mut config = WebSocketConfig::default();
     config.max_message_size = Some(MAX_FRAME_BYTES);
     config.max_frame_size = Some(MAX_FRAME_BYTES);
-    let mut socket = match accept_hdr_async_with_config(stream, callback, Some(config)).await {
+    let stream = match accept_hdr_async_with_config(stream, callback, Some(config)).await {
         Ok(socket) => socket,
         Err(tokio_tungstenite::tungstenite::Error::Http(_)) => {
             return Ok(ProviderObservation {
@@ -107,15 +115,24 @@ async fn serve(listener: TcpListener, case: WebSocketCase) -> Result<ProviderObs
         }
         Err(error) => return Err(error.to_string()),
     };
+    let mut socket = Peer { stream };
     let mut observed_frames = Vec::new();
     for frame in &case.frames {
         match (frame.direction, frame.action) {
             (Direction::ClientToProvider, Action::Send) => {
-                let observed = receive_client_frame(&mut socket, frame).await?;
+                let observed = Frame::try_from((
+                    socket.receive().await.map_err(|error| error.to_string())?,
+                    frame,
+                ))
+                .map_err(|error| error.to_string())?;
                 observed_frames.push(observed);
             }
             (Direction::ProviderToClient, Action::Expect) => {
-                send_provider_frame(&mut socket, frame).await?;
+                socket
+                    .stream
+                    .send(Message::try_from(frame).map_err(|error| error.to_string())?)
+                    .await
+                    .map_err(|error| error.to_string())?;
                 observed_frames.push(frame.clone());
             }
             (Direction::ClientToProvider, Action::Expect)
@@ -129,12 +146,19 @@ async fn serve(listener: TcpListener, case: WebSocketCase) -> Result<ProviderObs
                 reason: std::borrow::Cow::Owned(expected.reason.clone()),
             };
             socket
+                .stream
                 .send(Message::Close(Some(close)))
                 .await
                 .map_err(|error| error.to_string())?;
             Some(expected.clone())
         }
-        Some(expected) if expected.initiator == "client" => Some(receive_close(&mut socket).await?),
+        Some(expected) if expected.initiator == "client" => Some(
+            Close::try_from((
+                socket.receive().await.map_err(|error| error.to_string())?,
+                "client",
+            ))
+            .map_err(|error| error.to_string())?,
+        ),
         Some(_) => return Err("invalid close initiator".to_owned()),
         None => None,
     };
@@ -148,90 +172,4 @@ async fn serve(listener: TcpListener, case: WebSocketCase) -> Result<ProviderObs
         frames: observed_frames,
         close,
     })
-}
-
-async fn receive_client_frame<S>(
-    socket: &mut WebSocketStream<S>,
-    expected: &Frame,
-) -> Result<Frame, String>
-where
-    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
-{
-    loop {
-        let message = socket
-            .next()
-            .await
-            .ok_or_else(|| "client socket ended before expected frame".to_owned())?
-            .map_err(|error| error.to_string())?;
-        match message {
-            Message::Text(text) => {
-                return Ok(Frame {
-                    direction: Direction::ClientToProvider,
-                    action: Action::Send,
-                    text: Some(text),
-                    binary: None,
-                    binary_data: None,
-                    barrier: expected.barrier.clone(),
-                });
-            }
-            Message::Binary(bytes) => {
-                return Ok(Frame {
-                    direction: Direction::ClientToProvider,
-                    action: Action::Send,
-                    text: None,
-                    binary: expected.binary.clone(),
-                    binary_data: Some(bytes),
-                    barrier: expected.barrier.clone(),
-                });
-            }
-            Message::Ping(payload) => socket
-                .send(Message::Pong(payload))
-                .await
-                .map_err(|error| error.to_string())?,
-            Message::Pong(_) | Message::Frame(_) => {}
-            Message::Close(_) => return Err("client closed before expected frame".to_owned()),
-        }
-    }
-}
-
-async fn send_provider_frame<S>(
-    socket: &mut WebSocketStream<S>,
-    frame: &Frame,
-) -> Result<(), String>
-where
-    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
-{
-    let message = match &frame.text {
-        Some(text) => Message::Text(text.clone()),
-        None => Message::Binary(
-            frame
-                .binary_data
-                .clone()
-                .ok_or_else(|| "provider binary fixture is missing".to_owned())?,
-        ),
-    };
-    socket
-        .send(message)
-        .await
-        .map_err(|error| error.to_string())
-}
-
-async fn receive_close<S>(socket: &mut WebSocketStream<S>) -> Result<Close, String>
-where
-    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
-{
-    loop {
-        let message = socket
-            .next()
-            .await
-            .ok_or_else(|| "client socket ended before close".to_owned())?
-            .map_err(|error| error.to_string())?;
-        if let Message::Close(Some(frame)) = message {
-            return Ok(Close {
-                initiator: "client".to_owned(),
-                code: u16::from(frame.code),
-                reason: frame.reason.into_owned(),
-            });
-        }
-    }
 }
