@@ -73,8 +73,6 @@ pub enum OtlpHttpTls {
 
 #[derive(Debug, thiserror::Error)]
 pub enum OTelConfigError {
-    #[error("unknown capture_message_content value {0}")]
-    CaptureMode(String),
     #[error("unknown langfuse_span_scope value {0}")]
     SpanScope(String),
     #[error("unknown exporter owner {0}")]
@@ -86,7 +84,7 @@ pub enum OTelConfigError {
 impl Settings {
     pub fn from_config(config: &Config) -> Result<Self, OTelConfigError> {
         let raw = &config.sections.otel_settings;
-        let capture_message_content = capture_mode(&raw.capture_message_content)?;
+        let capture_message_content = capture_mode(&raw.capture_message_content);
         let langfuse_span_scope = span_scope(&raw.langfuse_span_scope)?;
         let excluded_services = excluded_services(&raw.excluded_services);
         let exporters = exporter_specs(&raw.exporters)?;
@@ -117,13 +115,12 @@ impl Settings {
     }
 }
 
-fn capture_mode(value: &str) -> Result<CaptureMessageContent, OTelConfigError> {
+fn capture_mode(value: &str) -> CaptureMessageContent {
     match value {
-        "no_content" => Ok(CaptureMessageContent::NoContent),
-        "span_only" => Ok(CaptureMessageContent::SpanOnly),
-        "event_only" => Ok(CaptureMessageContent::EventOnly),
-        "span_and_event" => Ok(CaptureMessageContent::SpanAndEvent),
-        unknown => Err(OTelConfigError::CaptureMode(unknown.to_owned())),
+        "span_only" => CaptureMessageContent::SpanOnly,
+        "event_only" => CaptureMessageContent::EventOnly,
+        "span_and_event" => CaptureMessageContent::SpanAndEvent,
+        _ => CaptureMessageContent::NoContent,
     }
 }
 

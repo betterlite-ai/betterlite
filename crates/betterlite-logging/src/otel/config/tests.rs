@@ -104,6 +104,21 @@ fn capture_mode_conversion_is_typed() {
 }
 
 #[test]
+fn unrecognized_capture_mode_falls_back_to_no_content_instead_of_erroring() {
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load("callback_settings:\n  otel:\n    capture_message_content: banana\n")
+    .expect("valid config");
+    let settings = Settings::from_config(&config).expect("capture_message_content is a plain str in LiteLLM, so an unrecognized value loads rather than failing config");
+    assert_eq!(
+        settings.capture_message_content,
+        CaptureMessageContent::NoContent
+    );
+    assert!(!settings.capture_span_content());
+}
+
+#[test]
 fn normalizes_supported_service_exclusion_spellings_and_drops_unknown_names() {
     let config = ConfigLoader {
         lookup: BTreeMap::new(),
