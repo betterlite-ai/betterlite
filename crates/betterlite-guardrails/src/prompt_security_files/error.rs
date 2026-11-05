@@ -67,23 +67,15 @@ impl FileSanitizationError {
     // LiteLLM raises these as HTTPException, so the item processors let them through and wrap every other error as a 500.
     #[must_use]
     pub const fn is_http_exception(&self) -> bool {
-        match self {
+        matches!(
+            self,
             Self::MissingJobId
-            | Self::UnexpectedStatus { .. }
-            | Self::Timeout
-            | Self::Blocked { .. }
-            | Self::ImageFailed { .. }
-            | Self::DocumentFailed { .. }
-            | Self::InvalidField { .. } => true,
-            Self::MissingSecrets
-            | Self::DataUrlSeparator
-            | Self::Base64 { .. }
-            | Self::RequestTimeout { .. }
-            | Self::Request { .. }
-            | Self::HttpStatus { .. }
-            | Self::ResponseTooLarge { .. }
-            | Self::ResponseJson { .. }
-            | Self::UploadMime { .. } => false,
-        }
+                | Self::UnexpectedStatus { .. }
+                | Self::Timeout
+                | Self::Blocked { .. }
+                | Self::ImageFailed { .. }
+                | Self::DocumentFailed { .. }
+                | Self::InvalidField { .. }
+        )
     }
 }
