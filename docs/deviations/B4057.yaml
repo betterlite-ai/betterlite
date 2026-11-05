@@ -1,0 +1,14 @@
+task: B4057
+deviations:
+  - what: Prompt API requests go through an injected PromptApiTransport trait instead of a module-level httpx client, so the models crate carries no HTTP dependency.
+    why: betterlite-models has no HTTP client; the gateway wires a real transport when it builds the manager.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/generic_prompt_management/generic_prompt_manager.py#L96-L132
+  - what: Fetch and compile failures return typed errors (transport, status, parse, variables) that name the prompt id, instead of a ValueError wrapping a string.
+    why: Rust callers match on the cause; the prompt id and the underlying error are kept in the message and as the source.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/generic_prompt_management/generic_prompt_manager.py#L253-L307
+  - what: A timeout in litellm_params that is not a whole number of seconds is rejected by prompt_initializer with a typed error.
+    why: The declared field is an integer number of seconds; Python would pass any value to httpx and fail at request time.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/generic_prompt_management/__init__.py#L34-L66
+  - what: A query parameter whose value is an object or a nested list is rejected before the request with an error naming the key.
+    why: httpx cannot encode such a value and fails; betterlite fails earlier and says which key.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/generic_prompt_management/generic_prompt_manager.py#L96-L132
