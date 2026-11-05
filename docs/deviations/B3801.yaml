@@ -1,0 +1,14 @@
+task: B3801
+deviations:
+  - what: json_schema_valid checks only type, required and properties (nesting depth 50). It does not run the full jsonschema library, so keywords such as enum, pattern, minimum, items and anyOf are ignored.
+    why: The jsonschema crate pulls in borrow-or-share, which is MIT-0, and deny.toml does not allow that license. deny.toml is outside this task's scope. LiteLLM falls back to the same basic validator when the library is missing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/primitives.py#L237-L316
+  - what: http_request, http_get and http_post send through an OutboundHttp trait instead of calling validate_url, async_safe_get and the pooled client directly.
+    why: The SSRF validator and the pooled client are not merged yet, so the trait is the seam they plug into. GET always goes through safe_get and other methods call validate_url first when user URL validation is on, as in LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/primitives.py#L393-L637
+  - what: A primitive called with the wrong argument count, a duplicate argument or an argument of the wrong type returns a typed error naming the primitive and the field.
+    why: LiteLLM raises a Python TypeError from the call signature. Rust has no call signature to reflect on, so the registry carries each parameter list and binds positional and named arguments against it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/primitives.py#L840-L895
+  - what: The registry holds the ten safe builtins (len, str, int, float, bool, list, dict, True, False, None) as names only.
+    why: The Starlark runtime that runs custom code provides these natively, so there is no Rust function to register.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/primitives.py#L840-L895
