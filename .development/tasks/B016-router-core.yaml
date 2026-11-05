@@ -28,16 +28,14 @@ description: >-
   Shared provider base helper implementations are B2202: use its owned primitives directly when called by these
   ranges. Do not reintroduce a dependency on B010/B016 for these small helpers.
 
-  Register every entry in the router-stubs check list up front, so no later router task edits strategy.rs,
-  context.rs, routes.rs or state.rs. A strategy entry is a Strategy variant in crates/betterlite-router/src/strategy.rs
-  and a module crates/betterlite-router/src/strategy/<module>.rs. Its stub select answers a NotBuilt variant of
-  this task's typed routing error, naming the entry, when routing_strategy picks it. A context entry is a RouteStage
-  variant in crates/betterlite-router/src/context.rs and a module crates/betterlite-router/src/context/<module>.rs.
-  Its stub reports the stage as not configured, so the pipeline skips it, and a direct call answers NotBuilt
-  naming the entry. The state entry is a field in crates/betterlite-server/src/state.rs typed from
-  crates/betterlite-server/src/state/<module>.rs, started at startup and drained at shutdown. Its stub reports
-  not configured, and a direct call answers NotBuilt. Each stub module has an adjacent tests.rs whose
-  router_core_boundaries case asserts that answer. Every match on Strategy or RouteStage has one arm per entry
+  Register every entry in the router-stubs check list up front, so no later router task edits strategy.rs or
+  context.rs. B1100 registers the server routes and state slots the same way, B341's state slot included. A
+  strategy entry is a Strategy variant in crates/betterlite-router/src/strategy.rs and a module
+  crates/betterlite-router/src/strategy/<module>.rs. Its stub select answers a NotBuilt variant of this task's
+  typed routing error, naming the entry, when routing_strategy picks it. A context entry is a RouteStage variant
+  in crates/betterlite-router/src/context.rs and a module crates/betterlite-router/src/context/<module>.rs. Its
+  stub reports the stage as not configured, so the pipeline skips it, and a direct call answers NotBuilt naming
+  the entry. Each stub module has an adjacent tests.rs whose router_core_boundaries case asserts that answer. Every match on Strategy or RouteStage has one arm per entry
   that only calls into that entry's module, with no wildcard arm. The owner named in the list then replaces only
   its own stub and stub test. B302, B303, B364, B395 and B396 build only in their own modules; this task wires
   them into RouteContext. The stubs, their tests and their registry lines add about 600 lines outside the 800-line
@@ -90,8 +88,8 @@ dod:
   - router-core-behaviors
   - router-core-boundaries
 - text: >-
-    Every entry in the router-stubs list has its Strategy or RouteStage variant or its server state field, its stub
-    module and a router_core_boundaries case that asserts NotBuilt.
+    Every entry in the router-stubs list has its Strategy or RouteStage variant, its stub module and a router_core_boundaries case that
+    asserts NotBuilt.
   proof:
   - router-stubs
   - router-core-boundaries
@@ -122,15 +120,14 @@ checks:
     run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::router_core_behaviors(::|$)/) - test(/replays_the_.*_corpus/)'
   - id: router-core-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router -p betterlite-server --no-tests=fail -E 'test(/::router_core_boundaries(::|$)/) - test(/replays_the_.*_corpus/)'
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::router_core_boundaries(::|$)/) - test(/replays_the_.*_corpus/)'
   - id: router-stubs
-    why: a planned strategy, pipeline stage or server state entry has no variant or stub module, so its task would have to edit strategy.rs, context.rs or state.rs
+    why: a planned strategy or pipeline stage has no variant or stub module, so its task would have to edit strategy.rs or context.rs
     run: |-
       while read -r registry variant module owner; do
         case "$registry" in
           strategy) dir=crates/betterlite-router/src/strategy; list=crates/betterlite-router/src/strategy.rs ;;
           context) dir=crates/betterlite-router/src/context; list=crates/betterlite-router/src/context.rs ;;
-          *) dir=crates/betterlite-server/src/state; list=crates/betterlite-server/src/state.rs ;;
         esac
         test -f "$dir/$module.rs" && test -f "$dir/$module/tests.rs" && grep -qw "$variant" "$list" && grep -qE "^(pub(\([a-z]+\))? )?mod $module;" "$list" || { echo "$registry entry $variant ($module) for $owner is not registered"; exit 1; }
       done <<'EOF'
@@ -155,7 +152,6 @@ checks:
       context RequestScheduler request_scheduler B346
       context RoutingPlugins routing_plugins B363
       context ResponsesStreamFallback responses_stream_fallback B370
-      state AdaptivePersistence adaptive_persistence B341
       EOF
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint

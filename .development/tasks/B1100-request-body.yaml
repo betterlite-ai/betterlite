@@ -412,6 +412,7 @@ checks:
       state ptu_rollup
       state current_spend
       state master_database_auth
+      state adaptive_persistence
       EOF
 oracle_cases:
 - tools/oracle/cases/helpers/request-body/cached-body-single-read.yaml
@@ -439,7 +440,7 @@ pitfalls:
 - http_parsing_utils.py:327 emits the diagnostic 'Unexpected error reading request query params - %s'; retain its
   level and fallback instead of turning it into a hard error.
 - >-
-  The 560-line estimate covers the request body work only. The 109 route stubs, the 57 state slots, their registry
+  The 560-line estimate covers the request body work only. The 109 route stubs, the 58 state slots, their registry
   lines and the ServerState wiring add about 1900 lines outside it.
 - >-
   A stub routes function or Slot constructor has a one-line body because it is a placeholder its owner replaces,
