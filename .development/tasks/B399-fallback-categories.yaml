@@ -4,9 +4,7 @@ description: 'Implement FallbackFailure and FallbackSuccessor over B309 plan int
   content-policy and ordinary failures, selected/alias lookup precedence, resource constraints and stop/continue
   decisions. Define typed input/output contracts first; B309 supplies the plan resolver later. No retry
   loop or provider calls are added. Implement the owned native service in crates/betterlite-router/src/fallback_categories.rs.
-  Add ProbeOperation::FallbackCategories in tools/oracle/src/router_probes/mod.rs and the corresponding B399 entry in
-  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
-  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  B301 registers ProbeOperation::FallbackCategories and its Python entry as stubs, so fill only tools/oracle/src/router_probes/fallback_categories.rs and tools/oracle/litellm/probes/fallback_categories.py and leave mod.rs and registry.py as they are; the adapters only call production services. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
   fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
   of copying their algorithms. Function coverage in litellm/router.py: Router.async_function_with_fallbacks_common_utils
@@ -31,9 +29,6 @@ scope:
   - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/fallback_categories.rs
   - tools/oracle/src/router_probes/fallback_categories/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/fallback_categories.py
   - tools/oracle/cases/routing/fallback-categories/**
   - tools/oracle/helpers/b399.py

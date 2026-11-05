@@ -8,9 +8,8 @@ description: 'Implement typed FeedbackSignals and bounded transcript feature ext
   in this task budget. Money, prices, spend and budgets stay rust_decimal::Decimal, including database
   and wire boundaries. Reject nonfinite statistical input. Assert selected model/tier exactly; any opt-in
   tolerance is for diagnostic scores only, never a different selection. Implement the owned native service
-  in crates/betterlite-router/src/feedback_signals.rs. Add ProbeOperation::FeedbackSignals in tools/oracle/src/router_probes/mod.rs
-  and the corresponding B376 entry in tools/oracle/litellm/probes/registry.py; the adapters only call
-  production services. Shared exports and dispatch files are explicitly in scope. Budget allocation: at
+  in crates/betterlite-router/src/feedback_signals.rs. B301 registers ProbeOperation::FeedbackSignals and its Python entry as stubs, so fill only tools/oracle/src/router_probes/feedback_signals.rs and tools/oracle/litellm/probes/feedback_signals.py and leave mod.rs and registry.py as they are; the adapters only call
+  production services. Budget allocation: at
   most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration
   lines (800 total); fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor
   services instead of copying their algorithms. Function coverage in litellm/router_strategy/adaptive_router/signals.py:
@@ -40,9 +39,6 @@ scope:
   - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/feedback_signals.rs
   - tools/oracle/src/router_probes/feedback_signals/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/feedback_signals.py
   - tools/oracle/cases/routing/feedback-signals/**
   - crates/betterlite-router/src/signal_math.rs

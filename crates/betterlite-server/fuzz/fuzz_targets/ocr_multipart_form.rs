@@ -10,5 +10,5 @@ fuzz_target!(|body: &[u8]| {
         header_req_format: None,
         cached_form: None,
     };
-    let _ = parse_ocr_request(&raw);
+    let _outcome = parse_ocr_request(&raw);
 });

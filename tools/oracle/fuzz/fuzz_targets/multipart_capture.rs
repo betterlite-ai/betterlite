@@ -5,6 +5,6 @@ use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|bytes: &[u8]| {
     if let Ok((content_type, body)) = split_capture_input(bytes) {
-        let _ = decode_multipart_capture(content_type, body);
+        let _outcome = decode_multipart_capture(content_type, body);
     }
 });

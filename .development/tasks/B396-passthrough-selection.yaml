@@ -3,9 +3,8 @@ title: Pass-through deployment selection
 description: 'Implement pass-through selection over B302 catalog and B364 eligibility using B395 strategy
   dispatch. Preserve call-type/provider compatibility, configured pass-through-only eligibility, selected
   identity and no-candidate errors. No new provider endpoint or URL construction is added. Implement the
-  owned native service in crates/betterlite-router/src/passthrough_selection.rs. Add ProbeOperation::PassthroughSelection
-  in tools/oracle/src/router_probes/mod.rs and the corresponding B396 entry in tools/oracle/litellm/probes/registry.py;
-  the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
+  owned native service in crates/betterlite-router/src/passthrough_selection.rs. B301 registers ProbeOperation::PassthroughSelection and its Python entry as stubs, so fill only tools/oracle/src/router_probes/passthrough_selection.rs and tools/oracle/litellm/probes/passthrough_selection.py and leave mod.rs and registry.py as they are;
+  the adapters only call production services.
   Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
   lines and 80 parser/fuzz/integration lines (800 total); fixture/corpus files use only the existing checks.yaml
   exclusions. Reuse predecessor services instead of copying their algorithms. Function coverage in litellm/router.py:
@@ -28,9 +27,6 @@ scope:
   - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/passthrough_selection.rs
   - tools/oracle/src/router_probes/passthrough_selection/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/passthrough_selection.py
   - tools/oracle/cases/routing/passthrough-selection/**
   - tools/oracle/helpers/b396.py

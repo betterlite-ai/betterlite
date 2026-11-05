@@ -8,3 +8,4 @@ pub mod outbound_credentials;
 pub mod search_handlers;
 pub mod semantic_filter;
 pub mod server_writes;
+pub mod tool_search;

@@ -6,9 +6,8 @@ description: 'Implement UsageV2Accounting with pre-call RPM increments and succe
   boundary keys introduced or consumed here: ttl. Pinned declaration defaults: ttl=60. Resolve env values
   once in betterlite-config, never in router code. Usage v2 routing_strategy_args.ttl defaults to 60 seconds
   and its batched-write sync interval is explicitly 0.1 seconds, overriding the generic DEFAULT_REDIS_SYNC_INTERVAL.
-  Implement the owned native service in crates/betterlite-router/src/usage_v2_accounting.rs. Add ProbeOperation::UsageV2Accounting
-  in tools/oracle/src/router_probes/mod.rs and the corresponding B371 entry in tools/oracle/litellm/probes/registry.py;
-  the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
+  Implement the owned native service in crates/betterlite-router/src/usage_v2_accounting.rs. B301 registers ProbeOperation::UsageV2Accounting and its Python entry as stubs, so fill only tools/oracle/src/router_probes/usage_v2_accounting.rs and tools/oracle/litellm/probes/usage_v2_accounting.py and leave mod.rs and registry.py as they are;
+  the adapters only call production services.
   Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
   lines and 80 parser/fuzz/integration lines (800 total); fixture/corpus files use only the existing checks.yaml
   exclusions. Reuse predecessor services instead of copying their algorithms. Function coverage in litellm/router_strategy/lowest_tpm_rpm_v2.py:
@@ -33,9 +32,6 @@ scope:
   - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/usage_v2_accounting.rs
   - tools/oracle/src/router_probes/usage_v2_accounting/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/usage_v2_accounting.py
   - tools/oracle/cases/routing/usage-v2-accounting/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/usage-v2-accounting-*

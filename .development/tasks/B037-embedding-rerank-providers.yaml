@@ -56,9 +56,12 @@ description: >-
   assert call.embedding_family_selection. Source count is 115 main.py lines plus 40
   utility selection lines; estimate 250 bindings, 230 tests, 105 adapters and 100
   settings/shared exports, maximum 750.
+
+  B010 registers Provider::EmbeddingRerank and the EmbeddingRerank variants of OperationRequest, OperationResult
+  and PreparedRequest as stubs in crates/betterlite-provider/src/embedding_rerank_providers.rs. Fill them there
+  and leave provider.rs, operation.rs and prepared.rs as they are.
 scope:
   paths:
-    - crates/betterlite-provider/src/{provider,operation,prepared}.rs
     - crates/betterlite-provider/src/embedding_rerank_providers.rs
     - crates/betterlite-provider/src/embedding_rerank_providers/**
     - crates/betterlite-provider/Cargo.toml
