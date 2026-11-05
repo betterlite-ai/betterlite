@@ -15,3 +15,6 @@ deviations:
   - what: Batches require item, serialized-byte, concurrency and total-deadline limits.
     why: The task requires bounded in-process fan-out; LiteLLM queues all items and has no total batch deadline.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batch_completion/main.py#L102-L113
+  - what: Models prefixed with vllm/ use the bounded per-item executor rather than vllm_handler.batch_completions with get_optional_params.
+    why: betterlite does not load the vllm library in-process; the injected single-call executor handles these models like other batch items.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batch_completion/main.py#L66-L87

@@ -3,7 +3,13 @@
 use super::execution::{Batch, BatchLimits, Item, Mode};
 use betterlite_context::call_context::{CallContext, CallInputs};
 use std::{
-    sync::Arc,
+    future::{Future, poll_fn},
+    pin::pin,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    task::{Context, Wake, Waker},
     time::{Duration, SystemTime},
 };
 use tokio::{
@@ -11,13 +17,51 @@ use tokio::{
     task::JoinSet,
 };
 
-struct Finished(Option<oneshot::Sender<()>>);
+struct Finished(Option<oneshot::Sender<()>>, Arc<AtomicBool>);
 impl Drop for Finished {
     fn drop(&mut self) {
+        self.1.store(true, Ordering::Release);
         if let Some(sender) = self.0.take() {
             let _sent = sender.send(());
         }
     }
+}
+
+struct CleanupWake {
+    dropped: Arc<AtomicBool>,
+    early: Arc<AtomicBool>,
+    parent: Waker,
+}
+
+impl Wake for CleanupWake {
+    fn wake(self: Arc<Self>) {
+        if !self.dropped.load(Ordering::Acquire) {
+            self.early.store(true, Ordering::Release);
+        }
+        self.parent.wake_by_ref();
+    }
+}
+
+async fn after_cleanup<Call>(call: Call, dropped: Arc<AtomicBool>) -> Call::Output
+where
+    Call: Future,
+{
+    let early = Arc::new(AtomicBool::new(false));
+    let mut pinned = pin!(call);
+    let output = poll_fn(|context| {
+        let waker = Waker::from(Arc::new(CleanupWake {
+            dropped: Arc::clone(&dropped),
+            early: Arc::clone(&early),
+            parent: context.waker().clone(),
+        }));
+        pinned.as_mut().poll(&mut Context::from_waker(&waker))
+    })
+    .await;
+    assert!(
+        !early.load(Ordering::Acquire),
+        "completion woke its owner before child cleanup"
+    );
+    output
 }
 
 fn batch(values: Vec<u8>, mode: Mode) -> Batch<u8, CallContext<'static>> {
@@ -108,3 +152,5 @@ mod merging;
 
 mod serialization;
 mod timing;
+
+mod vllm;

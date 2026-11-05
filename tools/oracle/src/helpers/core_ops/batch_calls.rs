@@ -39,7 +39,7 @@ struct Outcome {
 
 #[derive(Debug, Error)]
 enum ProbeError {
-    #[error("probe completion failed: {0}")]
+    #[error("{0}")]
     Completion(String),
     #[error("completion gate closed")]
     Gate(#[source] watch::error::RecvError),
@@ -51,6 +51,13 @@ enum ProbeError {
 struct Selection {
     // The helper envelope treats top-level null as an absent value.
     selected: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+enum MessageResult {
+    Value(Option<String>),
+    Failure { error: String },
 }
 
 pub(crate) struct Op;
@@ -169,10 +176,18 @@ fn encode(
     results: Vec<Result<Option<String>, ProbeError>>,
 ) -> crate::helpers::HelperResult {
     match mode {
-        Operation::Messages => {
-            serde_json::to_value(results.into_iter().map(Result::ok).collect::<Vec<_>>())
-                .map_err(failure)
-        }
+        Operation::Messages => serde_json::to_value(
+            results
+                .into_iter()
+                .map(|outcome| match outcome {
+                    Ok(value) => MessageResult::Value(value),
+                    Err(error) => MessageResult::Failure {
+                        error: error.to_string(),
+                    },
+                })
+                .collect::<Vec<_>>(),
+        )
+        .map_err(failure),
         Operation::Models | Operation::Deployments => serde_json::to_value(Selection {
             selected: first_ordered_model_result(results).map_err(failure)?,
         })

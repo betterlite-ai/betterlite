@@ -1,9 +1,9 @@
 #![cfg(test)]
 use crate::batch::execution::Mode;
-use crate::batch::tests::{Finished, batch};
+use crate::batch::tests::{Finished, after_cleanup, batch};
 use std::{
     future::pending,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, atomic::AtomicBool},
 };
 use tokio::{
     sync::{Notify, oneshot},
@@ -16,13 +16,16 @@ use tokio::{
 #[tokio::test]
 async fn batch_calls_batch_call_tests_behavior(#[case] value: Option<u8>) {
     let mut owners = JoinSet::new();
-    let (finished, observed) = oneshot::channel();
+    let dropped = Arc::new(AtomicBool::new(false));
+    let child_dropped = Arc::clone(&dropped);
+    let (finished, mut observed) = oneshot::channel();
     let finish = Mutex::new(Some(finished));
     let gate = Arc::new(Notify::new());
     let receiver = batch(vec![0, 1], Mode::Race)
         .start(
             move |index, _| {
                 let ready = Arc::clone(&gate);
+                let finished_flag = Arc::clone(&child_dropped);
                 let signal = if index == 0 {
                     finish.lock().unwrap().take()
                 } else {
@@ -30,7 +33,7 @@ async fn batch_calls_batch_call_tests_behavior(#[case] value: Option<u8>) {
                 };
                 async move {
                     if index == 0 {
-                        let _guard = Finished(signal);
+                        let _guard = Finished(signal, finished_flag);
                         ready.notify_one();
                         pending::<()>().await;
                     } else {
@@ -42,8 +45,15 @@ async fn batch_calls_batch_call_tests_behavior(#[case] value: Option<u8>) {
             &mut owners,
         )
         .unwrap();
-    assert_eq!(receiver.await.unwrap().unwrap().results, vec![Ok(value)]);
-    observed.await.unwrap();
+    assert_eq!(
+        after_cleanup(receiver, dropped)
+            .await
+            .unwrap()
+            .unwrap()
+            .results,
+        vec![Ok(value)]
+    );
+    observed.try_recv().unwrap();
     while let Some(joined) = owners.join_next().await {
         joined.unwrap();
     }

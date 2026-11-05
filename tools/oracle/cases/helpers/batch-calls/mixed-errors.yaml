@@ -3,6 +3,7 @@ name: batch-calls-mixed-errors
 call:
   batch_calls:
     mode: messages
-    results: [{value: first}, {error: provider failed}, {value: third}]
+    completion_order: [3, 1, 2, 0]
+    results: [{value: first}, {error: provider failed}, {value: null}, {value: third}]
 env: {}
 compare: {ignore: []}

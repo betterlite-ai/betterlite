@@ -76,7 +76,10 @@ def run(input_value: dict[str, Json]) -> Json:
         if mode == "messages":
             call = cast(Callable[..., list[object]], batch_main.batch_completion)
             values = call(model="mock", messages=messages)
-            return [None if isinstance(value, Exception) else cast(Json, value) for value in values]
+            return [
+                {"error": str(value)} if isinstance(value, Exception) else cast(Json, value)
+                for value in values
+            ]
         if mode == "all_responses":
             call_all = cast(Callable[..., Json], batch_main.batch_completion_models_all_responses)
             return call_all(models=models)
