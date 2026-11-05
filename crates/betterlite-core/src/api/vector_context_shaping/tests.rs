@@ -48,6 +48,13 @@ fn search_response(source: &str) -> VectorStoreSearchResponse {
     ]}]"#,
     Some("")
 )]
+#[case::non_text_with_text_field(
+    r#"[{"role":"user","content":[
+        {"type":"image_url","image_url":{"url":"u"},"text":"skip"},
+        {"type":"text","text":"a"}
+    ]}]"#,
+    Some("a")
+)]
 fn query_uses_last_message(#[case] source: &str, #[case] expected: Option<&str>) {
     assert_eq!(
         extract_query_from_messages(&messages(source)),
