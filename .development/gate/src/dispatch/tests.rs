@@ -18,7 +18,7 @@ use crate::dispatch::{
 };
 use crate::error::GateError;
 use crate::git::git;
-use crate::spec::agents::{Agents, OutputMode};
+use crate::spec::agents::{Agents, OutputMode, Rung};
 use crate::spec::review::ReviewVerdict;
 use crate::spec::rules::Rules;
 use crate::spec::task::{ReviewLevel, Task};
@@ -26,10 +26,10 @@ use crate::yaml::read_yaml;
 
 fn fixtures() -> (Agents, Task) {
     let development = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-    (
-        read_yaml(&development.join("agents.yaml")).unwrap(),
-        read_yaml(&development.join("tasks/B000-workspace.yaml")).unwrap(),
-    )
+    let mut agents: Agents = read_yaml(&development.join("agents.yaml")).unwrap();
+    let task: Task = read_yaml(&development.join("tasks/B000-workspace.yaml")).unwrap();
+    agents.roles.worker.keep_rungs_for(&task.id);
+    (agents, task)
 }
 
 fn progress() -> Progress {
@@ -152,6 +152,31 @@ fn a_worker_made_cargo_target_is_deleted_and_named() {
             .unwrap()
             .is_empty()
     );
+}
+
+fn trial_rung() -> Rung {
+    Rung {
+        runner: "claude-worker".to_owned(),
+        model: "trial".to_owned(),
+        effort: "high".to_owned(),
+        attempts: 1,
+        timeout_minutes: 1,
+        tasks: Some(vec!["B9".to_owned()]),
+    }
+}
+
+#[test]
+fn a_rung_for_named_tasks_is_left_out_of_every_other_ladder() {
+    let (mut trial, _) = fixtures();
+    let (mut other, _) = fixtures();
+    let general = other.roles.worker.ladder.len();
+    trial.roles.worker.ladder.insert(0, trial_rung());
+    other.roles.worker.ladder.insert(0, trial_rung());
+    trial.roles.worker.keep_rungs_for("B9");
+    other.roles.worker.keep_rungs_for("B000");
+    assert_eq!(trial.roles.worker.ladder[0].model, "trial");
+    assert_eq!(trial.roles.worker.ladder.len(), general.saturating_add(1));
+    assert_eq!(other.roles.worker.ladder.len(), general);
 }
 
 #[test]

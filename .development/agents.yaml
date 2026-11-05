@@ -7,6 +7,10 @@ vendors:
     limit_markers: ["You've hit your", "Not logged in", "Can't reach the API server"]
     max_parallel: 16
     max_writers: 12
+  - id: deepseek
+    limit_markers: ["Insufficient Balance", "Authentication Fails", "Rate Limit Reached", "Server Overloaded", "Can't reach the API server"]
+    max_parallel: 5
+    max_writers: 5
 runners:
   - id: codex-worker
     vendor: openai
@@ -25,6 +29,13 @@ runners:
     args: [-p, --model, "{model}", --effort, "{effort}", --append-system-prompt-file, "{instructions}", --permission-mode, acceptEdits, --settings, "{sandbox_settings}", --allowedTools, Read, Edit, Write, Glob, Grep, WebSearch, WebFetch, --disallowedTools, Agent, --output-format, json, --json-schema, "{schema_text}", --strict-mcp-config]
     resume: [-p, --resume, "{session}", --model, "{model}", --effort, "{effort}", --append-system-prompt-file, "{instructions}", --permission-mode, acceptEdits, --settings, "{sandbox_settings}", --allowedTools, Read, Edit, Write, Glob, Grep, WebSearch, WebFetch, --disallowedTools, Agent, --output-format, json, --json-schema, "{schema_text}", --strict-mcp-config]
     output: claude-json
+  - id: deepseek-worker
+    vendor: deepseek
+    program: claude
+    args: [-p, --model, "{model}", --effort, "{effort}", --append-system-prompt-file, "{instructions}", --permission-mode, acceptEdits, --settings, "{sandbox_settings}", --allowedTools, Read, Edit, Write, Glob, Grep, WebSearch, WebFetch, --disallowedTools, Agent, --output-format, json, --json-schema, "{schema_text}", --strict-mcp-config]
+    resume: [-p, --resume, "{session}", --model, "{model}", --effort, "{effort}", --append-system-prompt-file, "{instructions}", --permission-mode, acceptEdits, --settings, "{sandbox_settings}", --allowedTools, Read, Edit, Write, Glob, Grep, WebSearch, WebFetch, --disallowedTools, Agent, --output-format, json, --json-schema, "{schema_text}", --strict-mcp-config]
+    output: claude-json
+    env_file: "{home}/.config/betterlite/deepseek.env"
   - id: claude-reviewer
     vendor: anthropic
     program: claude
@@ -34,6 +45,12 @@ roles:
   worker:
     instructions: roles/worker.md
     ladder:
+      - runner: deepseek-worker
+        model: deepseek-flash[1m]
+        effort: max
+        attempts: 2
+        timeout_minutes: 180
+        tasks: [B3798, B3800, B3961, B598, B3064]
       - runner: codex-worker
         model: gpt-6-luna
         effort: medium
