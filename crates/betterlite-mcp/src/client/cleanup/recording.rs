@@ -14,18 +14,11 @@ pub trait ResponseBody: Send {
 pub type ErrorRecorder<Source> = Arc<dyn Fn(&Arc<Source>) + Send + Sync>;
 
 pub struct RecordingBody<Body: ResponseBody> {
-    inner: Body,
-    record_error: ErrorRecorder<Body::Error>,
+    pub inner: Body,
+    pub record_error: ErrorRecorder<Body::Error>,
 }
 
 impl<Body: ResponseBody> RecordingBody<Body> {
-    pub fn new(inner: Body, record_error: ErrorRecorder<Body::Error>) -> Self {
-        Self {
-            inner,
-            record_error,
-        }
-    }
-
     fn record<Output>(
         &self,
         result: Result<Output, Body::Error>,

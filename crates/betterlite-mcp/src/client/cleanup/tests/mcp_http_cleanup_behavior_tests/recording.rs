@@ -8,10 +8,12 @@ type Log = Arc<Mutex<Vec<Arc<FakeError>>>>;
 
 fn recorded_into(log: &Log, body: FakeBody) -> RecordingBody<FakeBody> {
     let shared = Arc::clone(log);
-    RecordingBody::new(
-        body,
-        Arc::new(move |error: &Arc<FakeError>| shared.lock().unwrap().push(Arc::clone(error))),
-    )
+    RecordingBody {
+        inner: body,
+        record_error: Arc::new(move |error: &Arc<FakeError>| {
+            shared.lock().unwrap().push(Arc::clone(error));
+        }),
+    }
 }
 
 #[tokio::test]

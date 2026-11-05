@@ -1,5 +1,6 @@
 use std::error::Error;
 use std::future::Future;
+use std::mem::take;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use http::Method;
@@ -61,7 +62,10 @@ impl<Body: ResponseBody> ClientBody<Body> {
         let state = Arc::clone(shared);
         let record_error: ErrorRecorder<Body::Error> =
             Arc::new(move |error| record_cleanup_error(&state, error));
-        Self::Recorded(RecordingBody::new(body, record_error))
+        Self::Recorded(RecordingBody {
+            inner: body,
+            record_error,
+        })
     }
 }
 
@@ -123,11 +127,11 @@ impl<Client: Transport> McpHttpClient<Client> {
         outer
     }
 
-    // Closes the scope and hands back every error recorded while it was open
+    // Closes the scope and hands back, then forgets, every error recorded while it was open
     pub fn leave_cleanup(&self) -> Vec<Arc<Client::Error>> {
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         state.scope = None;
-        state.errors.clone()
+        take(&mut state.errors)
     }
 
     pub async fn send(

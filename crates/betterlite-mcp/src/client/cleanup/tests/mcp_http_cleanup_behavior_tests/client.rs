@@ -198,16 +198,19 @@ async fn send_failures_are_recorded_only_in_a_shielded_scope(
 }
 
 #[tokio::test]
-async fn recorded_errors_persist_after_the_scope_ends_and_across_sends() {
+async fn each_scope_starts_with_no_recorded_errors() {
     let failing = || Reply {
         delay: Duration::ZERO,
         outcome: Err(FakeError::Boom("connect")),
     };
-    let (client, _) = client(vec![failing(), failing(), failing()]);
+    let (client, _) = client(vec![failing(), failing(), failing(), failing()]);
     client.enter_cleanup(scope(true, 5));
     client.send(Method::POST, false).await.err().unwrap();
     client.send(Method::POST, false).await.err().unwrap();
     assert_eq!(client.leave_cleanup().len(), 2);
     client.send(Method::POST, false).await.err().unwrap();
-    assert_eq!(client.leave_cleanup().len(), 2);
+    client.enter_cleanup(scope(true, 5));
+    client.send(Method::POST, false).await.err().unwrap();
+    assert_eq!(client.leave_cleanup().len(), 1);
+    assert!(client.leave_cleanup().is_empty());
 }
