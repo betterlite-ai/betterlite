@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use fancy_regex::{Error, Regex, RegexBuilder};
 
 use error::PatternError;
@@ -12,7 +14,7 @@ const MULTILINE: i64 = 8;
 const DOT_ALL: i64 = 16;
 const VERBOSE: i64 = 64;
 
-fn compile(pattern: &str, flags: i64) -> Result<Regex, Error> {
+pub fn compile(pattern: &str, flags: i64) -> Result<Regex, Error> {
     RegexBuilder::new(pattern)
         .case_insensitive(flags & IGNORE_CASE != 0)
         .multi_line(flags & MULTILINE != 0)
@@ -21,50 +23,33 @@ fn compile(pattern: &str, flags: i64) -> Result<Regex, Error> {
         .build()
 }
 
-pub fn regex_match(text: &str, pattern: &str, flags: i64) -> bool {
-    match compile(pattern, flags).and_then(|regex| regex.is_match(text)) {
-        Ok(matched) => matched,
+// A bad pattern never fails custom code: log it and answer with the fallback.
+pub fn or_warn<Outcome, Failure>(
+    outcome: Result<Outcome, Failure>,
+    fallback: Outcome,
+    primitive: &str,
+) -> Outcome
+where
+    Failure: Display,
+{
+    match outcome {
+        Ok(value) => value,
         Err(error) => {
-            tracing::warn!(%error, "custom code regex_match error");
-            false
+            tracing::warn!(%error, "custom code {primitive} error");
+            fallback
         }
     }
 }
 
+#[must_use]
 pub fn regex_match_all(text: &str, pattern: &str, flags: i64) -> bool {
     let outcome = compile(pattern, flags)
         .and_then(|_| compile(&format!("\\A(?:{pattern})\\z"), flags))
         .and_then(|regex| regex.is_match(text));
-    match outcome {
-        Ok(matched) => matched,
-        Err(error) => {
-            tracing::warn!(%error, "custom code regex_match_all error");
-            false
-        }
-    }
+    or_warn(outcome, false, "regex_match_all")
 }
 
-pub fn regex_replace(text: &str, pattern: &str, replacement: &str, flags: i64) -> String {
-    match replace_all(text, pattern, replacement, flags) {
-        Ok(replaced) => replaced,
-        Err(error) => {
-            tracing::warn!(%error, "custom code regex_replace error");
-            text.to_owned()
-        }
-    }
-}
-
-pub fn regex_find_all(text: &str, pattern: &str, flags: i64) -> Vec<JsonValue> {
-    match find_all(text, pattern, flags) {
-        Ok(found) => found,
-        Err(error) => {
-            tracing::warn!(%error, "custom code regex_find_all error");
-            Vec::new()
-        }
-    }
-}
-
-fn replace_all(
+pub fn replace_all(
     text: &str,
     pattern: &str,
     replacement: &str,
@@ -85,7 +70,7 @@ fn replace_all(
     Ok(replaced)
 }
 
-fn find_all(text: &str, pattern: &str, flags: i64) -> Result<Vec<JsonValue>, Error> {
+pub fn find_all(text: &str, pattern: &str, flags: i64) -> Result<Vec<JsonValue>, Error> {
     let regex = compile(pattern, flags)?;
     let groups = regex.captures_len().saturating_sub(1);
     let mut found = Vec::new();
