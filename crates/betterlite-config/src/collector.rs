@@ -16,7 +16,7 @@ pub enum UnavailablePolicy {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(from = "RawSettings")]
+#[serde(default, deny_unknown_fields)]
 pub struct CollectorSettings {
     pub enabled: bool,
     pub address: String,
@@ -25,36 +25,6 @@ pub struct CollectorSettings {
     pub drain_timeout_seconds: Decimal,
     pub connect_timeout_seconds: Decimal,
     pub job_role: Option<String>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RawSettings {
-    enabled: Option<bool>,
-    address: Option<String>,
-    buffer_size: Option<usize>,
-    on_unavailable: Option<UnavailablePolicy>,
-    drain_timeout_seconds: Option<Decimal>,
-    connect_timeout_seconds: Option<Decimal>,
-    job_role: Option<String>,
-}
-impl From<RawSettings> for CollectorSettings {
-    fn from(raw: RawSettings) -> Self {
-        let defaults = Self::default();
-        Self {
-            enabled: raw.enabled.unwrap_or(defaults.enabled),
-            address: raw.address.unwrap_or(defaults.address),
-            buffer_size: raw.buffer_size.unwrap_or(defaults.buffer_size),
-            on_unavailable: raw.on_unavailable.unwrap_or(defaults.on_unavailable),
-            drain_timeout_seconds: raw
-                .drain_timeout_seconds
-                .unwrap_or(defaults.drain_timeout_seconds),
-            connect_timeout_seconds: raw
-                .connect_timeout_seconds
-                .unwrap_or(defaults.connect_timeout_seconds),
-            job_role: raw.job_role,
-        }
-    }
 }
 
 impl Default for CollectorSettings {
@@ -216,7 +186,16 @@ pub enum AddressError {
     Invalid,
 }
 
-pub fn parse_collector_address(address: &str) -> Result<CollectorAddress, AddressError> {
+fn strip_url_whitespace(address: &str) -> String {
+    address
+        .trim_start_matches(|character: char| character <= ' ')
+        .chars()
+        .filter(|character| !matches!(character, '\t' | '\r' | '\n'))
+        .collect()
+}
+
+pub fn parse_collector_address(raw_address: &str) -> Result<CollectorAddress, AddressError> {
+    let address = &strip_url_whitespace(raw_address);
     let Some((scheme, rest)) = address.split_once(':') else {
         return Err(AddressError::Invalid);
     };

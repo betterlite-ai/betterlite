@@ -143,6 +143,8 @@ fn rejects_an_invalid_spend_traceback_value() {
 #[case::ipv4("tcp://127.5.4.3:65535", CollectorAddress::Tcp {host: "127.5.4.3".to_owned(), port: u16::MAX})]
 #[case::unix_path("unix://ignored/a/../b%20c", CollectorAddress::Unix {path: "/a/../b%20c".to_owned()})]
 #[case::relative_unix("unix:relative?query", CollectorAddress::Unix {path: "relative".to_owned()})]
+#[case::unix_trailing_newline("unix:///a.sock\n", CollectorAddress::Unix {path: "/a.sock".to_owned()})]
+#[case::unix_leading_space(" unix:///a.sock", CollectorAddress::Unix {path: "/a.sock".to_owned()})]
 fn preserves_ipv6_and_unix_path_spelling(
     #[case] address: &str,
     #[case] expected: CollectorAddress,
@@ -211,13 +213,20 @@ fn empty_environment_values_take_defaults() {
 
 #[rstest::rstest]
 #[case::absent(br#"{"kind":"settings","config":{}}"#)]
-#[case::null(br#"{"kind":"settings","config":{"enabled":null,"address":null,"buffer_size":null,"on_unavailable":null,"drain_timeout_seconds":null,"connect_timeout_seconds":null,"job_role":null}}"#)]
-fn null_and_absent_settings_take_defaults(#[case] bytes: &[u8]) {
+#[case::null_job_role(br#"{"kind":"settings","config":{"job_role":null}}"#)]
+fn absent_settings_take_defaults(#[case] bytes: &[u8]) {
     let CollectorConfigInput::Settings { config } = decode_collector_settings(bytes).unwrap()
     else {
         panic!("expected settings");
     };
     assert_eq!(config, CollectorSettings::default());
+}
+
+#[rstest::rstest]
+#[case::enabled(br#"{"kind":"settings","config":{"enabled":null}}"#)]
+#[case::buffer_size(br#"{"kind":"settings","config":{"buffer_size":null}}"#)]
+fn null_is_rejected_for_a_field_that_always_holds_a_value(#[case] bytes: &[u8]) {
+    decode_collector_settings(bytes).unwrap_err();
 }
 
 #[test]
