@@ -11,4 +11,3 @@ compare:
   ignore:
     - pointer: /value
       why: a null lookup round-trips through JSON on the Python side, so serde collapses it to a missing value; the native side keeps it as an explicit null
-
