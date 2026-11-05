@@ -8,44 +8,10 @@ use super::transport::{ConjurRequest, ConjurResponse, ConjurTransport, HttpMetho
 
 mod tests;
 
-const TOKEN_KEY: &str = "cyberark_auth_token";
+pub(super) const TOKEN_KEY: &str = "cyberark_auth_token";
 
-pub(super) async fn authorization<T>(
-    manager: &CyberArkSecretManager<T>,
-) -> Result<SecretString, CyberArkError<T::Error>>
-where
-    T: ConjurTransport,
-{
-    if let Some(header) = manager.tokens.get(TOKEN_KEY) {
-        return Ok(header);
-    }
+pub(super) fn begin_login<T>(manager: &CyberArkSecretManager<T>) -> String {
     tracing::debug!("Authenticating with CyberArk Conjur...");
-    let url = authentication_url(manager);
-    let reply = manager
-        .transport
-        .send(authentication_request(manager, &url))
-        .await;
-    finish_authentication(manager, reply)
-}
-
-pub(super) fn authorization_blocking<T>(
-    manager: &CyberArkSecretManager<T>,
-) -> Result<SecretString, CyberArkError<T::Error>>
-where
-    T: ConjurTransport,
-{
-    if let Some(header) = manager.tokens.get(TOKEN_KEY) {
-        return Ok(header);
-    }
-    tracing::debug!("Authenticating with CyberArk Conjur...");
-    let url = authentication_url(manager);
-    let reply = manager
-        .transport
-        .send_blocking(authentication_request(manager, &url));
-    finish_authentication(manager, reply)
-}
-
-fn authentication_url<T>(manager: &CyberArkSecretManager<T>) -> String {
     let settings = &manager.settings;
     format!(
         "{}/authn/{}/{}/authenticate",
@@ -53,7 +19,7 @@ fn authentication_url<T>(manager: &CyberArkSecretManager<T>) -> String {
     )
 }
 
-const fn authentication_request<'borrowed, T>(
+pub(super) const fn login_request<'borrowed, T>(
     manager: &'borrowed CyberArkSecretManager<T>,
     url: &'borrowed str,
 ) -> ConjurRequest<'borrowed> {
@@ -68,7 +34,7 @@ const fn authentication_request<'borrowed, T>(
     }
 }
 
-fn finish_authentication<T>(
+pub(super) fn finish_login<T>(
     manager: &CyberArkSecretManager<T>,
     reply: Result<ConjurResponse, T::Error>,
 ) -> Result<SecretString, CyberArkError<T::Error>>

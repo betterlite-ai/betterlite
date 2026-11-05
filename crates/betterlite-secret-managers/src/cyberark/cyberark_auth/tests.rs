@@ -6,8 +6,6 @@ use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::time::advance;
 
-use super::authorization_blocking;
-use crate::cyberark::cyberark_read::read;
 use crate::cyberark::cyberark_write::write;
 use crate::cyberark::error::CyberArkInitError;
 use crate::cyberark::fake_transport::{
@@ -148,7 +146,7 @@ fn disabled_verification_warns_once_at_construction() {
 #[tokio::test(start_paused = true)]
 async fn api_key_login_posts_the_key_and_base64_encodes_the_token() {
     let (manager, transport) = keyed(&[(SECRET_ROUTE, vec![Reply::Status(200, "v")])]);
-    read(&manager, "db").await.unwrap();
+    manager.read("db").await.unwrap();
     let seen = transport.recorded();
     let login = seen.first().unwrap();
     assert_eq!(login.route, AUTH_ROUTE);
@@ -169,7 +167,7 @@ async fn certificate_login_sends_the_pair_and_an_empty_body() {
         ],
         &[(AUTH_ROUTE, vec![Reply::Status(200, TOKEN_JSON)])],
     );
-    read(&manager, "db").await;
+    manager.read("db").await;
     let login = transport.recorded().into_iter().next().unwrap();
     assert_eq!(login.body.as_deref(), Some(""));
     assert!(!login.verify_tls);
@@ -191,13 +189,13 @@ async fn the_token_is_cached_for_the_refresh_interval() {
         ],
         &[(AUTH_ROUTE, vec![Reply::Status(200, TOKEN_JSON)])],
     );
-    read(&manager, "one").await;
-    read(&manager, "two").await;
+    manager.read("one").await;
+    manager.read("two").await;
     advance(Duration::from_secs(10)).await;
-    read(&manager, "three").await;
+    manager.read("three").await;
     assert_eq!(count_logins(&transport), 1);
     advance(Duration::from_millis(1)).await;
-    read(&manager, "four").await;
+    manager.read("four").await;
     assert_eq!(count_logins(&transport), 2);
 }
 
@@ -232,7 +230,7 @@ async fn a_login_transport_failure_is_reported() {
 #[test]
 fn blocking_login_uses_the_blocking_transport() {
     let (manager, transport) = keyed(&[(SECRET_ROUTE, vec![Reply::Status(200, "v")])]);
-    authorization_blocking(&manager).unwrap();
+    manager.authorization_blocking().unwrap();
     assert!(transport.recorded().iter().all(|seen| seen.blocking));
 }
 

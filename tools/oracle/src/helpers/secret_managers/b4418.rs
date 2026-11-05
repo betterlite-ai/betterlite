@@ -110,19 +110,7 @@ async fn run_step(manager: &CyberArkSecretManager<Script>, step: &Step) -> Value
             let Ok(value) = manager.sync_read_secret(name, SecretOptions::default());
             json!({"value": value.map(|secret| secret.expose_secret().to_owned())})
         }
-        Step::Write { name, value } => {
-            let secret_value = SecretString::from(value.as_str());
-            let Ok(written) = manager
-                .async_write_secret(SecretWrite {
-                    secret_name: name,
-                    secret_value: &secret_value,
-                    description: None,
-                    options: SecretOptions::default(),
-                    tags: None,
-                })
-                .await;
-            operation(&written)
-        }
+        Step::Write { name, value } => write(manager, name, value).await,
         Step::Delete { name } => {
             let Ok(deleted) = manager
                 .async_delete_secret(name, DeleteOptions::default())
@@ -139,6 +127,20 @@ async fn run_step(manager: &CyberArkSecretManager<Script>, step: &Step) -> Value
             Value::Null
         }
     }
+}
+
+async fn write(manager: &CyberArkSecretManager<Script>, name: &str, value: &str) -> Value {
+    let secret_value = SecretString::from(value);
+    let Ok(written) = manager
+        .async_write_secret(SecretWrite {
+            secret_name: name,
+            secret_value: &secret_value,
+            description: None,
+            options: SecretOptions::default(),
+            tags: None,
+        })
+        .await;
+    operation(&written)
 }
 
 async fn rotate(
@@ -166,6 +168,8 @@ async fn rotate(
 fn operation(outcome: &SecretOperation) -> Value {
     match outcome.status {
         OperationStatus::Error => json!({"status": outcome.status, "message": null}),
-        _ => json!({"status": outcome.status, "message": outcome.message}),
+        OperationStatus::Success | OperationStatus::NotSupported => {
+            json!({"status": outcome.status, "message": outcome.message})
+        }
     }
 }

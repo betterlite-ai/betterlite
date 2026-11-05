@@ -74,9 +74,7 @@ impl FakeTransport {
     }
 
     pub(super) fn routes_hit(&self) -> Vec<String> {
-        self.requests
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
+        self.recorded()
             .iter()
             .map(|seen| seen.route.clone())
             .collect()
@@ -148,24 +146,18 @@ pub(super) fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
         .collect()
 }
 
-pub(super) fn scripted(
-    pairs: &[(&str, &str)],
-    routes: &[(&str, Vec<Reply>)],
-) -> (
+pub(super) type Scripted = (
     CyberArkSecretManager<Arc<FakeTransport>>,
     Arc<FakeTransport>,
-) {
+);
+
+pub(super) fn scripted(pairs: &[(&str, &str)], routes: &[(&str, Vec<Reply>)]) -> Scripted {
     let transport = FakeTransport::new(routes);
     let manager = CyberArkSecretManager::new(&environment(pairs), Arc::clone(&transport)).unwrap();
     (manager, transport)
 }
 
-pub(super) fn keyed(
-    routes: &[(&str, Vec<Reply>)],
-) -> (
-    CyberArkSecretManager<Arc<FakeTransport>>,
-    Arc<FakeTransport>,
-) {
+pub(super) fn keyed(routes: &[(&str, Vec<Reply>)]) -> Scripted {
     let mut routes_with_login = vec![(AUTH_ROUTE, vec![Reply::Status(200, TOKEN_JSON)])];
     routes_with_login.extend(routes.iter().cloned());
     scripted(&[("CYBERARK_API_KEY", "key")], &routes_with_login)

@@ -4,7 +4,6 @@ use secrecy::SecretString;
 use tokio::time::sleep;
 
 use super::CyberArkSecretManager;
-use super::cyberark_auth::authorization;
 use super::cyberark_read::secret_url;
 use super::error::CyberArkError;
 use super::operation::{OperationStatus, SecretOperation};
@@ -16,6 +15,7 @@ mod tests;
 
 const POLICY_LOAD_ATTEMPTS: u32 = 5;
 const POLICY_RETRY_DELAY: Duration = Duration::from_millis(200);
+const POLICY_CONTENT_TYPE: &str = "application/x-yaml";
 const CONFLICT: u16 = 409;
 const UNPROCESSABLE: u16 = 422;
 
@@ -50,44 +50,24 @@ async fn store<T>(
 where
     T: ConjurTransport,
 {
-    ensure_variable_exists(manager, secret_name).await?;
-    let header = authorization(manager).await?;
+    raise_if_unsafe_secret_name(secret_name)?;
+    ensure_variable_exists(manager, secret_name).await;
     let url = secret_url(manager, secret_name);
-    let request = ConjurRequest {
-        method: HttpMethod::Post,
-        url: &url,
-        authorization: Some(&header),
-        content_type: None,
-        body: Some(secret_value),
-        verify_tls: manager.settings.verify_tls,
-        client_certificate: None,
-    };
-    manager
-        .transport
-        .send(request)
+    post(manager, &url, None, secret_value)
         .await
-        .map_err(CyberArkError::Transport)
         .and_then(ConjurResponse::require_success)?;
     manager.values.set(secret_name, secret_value.clone());
     Ok(())
 }
 
-async fn ensure_variable_exists<T>(
-    manager: &CyberArkSecretManager<T>,
-    secret_name: &str,
-) -> Result<(), CyberArkError<T::Error>>
+async fn ensure_variable_exists<T>(manager: &CyberArkSecretManager<T>, secret_name: &str)
 where
     T: ConjurTransport,
 {
-    raise_if_unsafe_secret_name(secret_name)?;
-    let policy_url = format!(
-        "{}/policies/{}/policy/root",
-        manager.settings.api_base, manager.settings.account
-    );
     let policy = SecretString::from(format!("- !variable {}\n", double_quoted(secret_name)));
     let outcome = {
         let _serialized = manager.policy_load_lock.lock().await;
-        load_variable_policy(manager, &policy_url, &policy).await
+        load_variable_policy(manager, &policy).await
     };
     match outcome {
         Err(error) => tracing::warn!("Error ensuring variable exists: {error}"),
@@ -101,44 +81,47 @@ where
             tracing::warn!("Could not ensure variable exists: {}", response.status);
         }
     }
-    Ok(())
 }
 
 async fn load_variable_policy<T>(
     manager: &CyberArkSecretManager<T>,
-    policy_url: &str,
     policy: &SecretString,
 ) -> Result<ConjurResponse, CyberArkError<T::Error>>
 where
     T: ConjurTransport,
 {
+    let url = format!(
+        "{}/policies/{}/policy/root",
+        manager.settings.api_base, manager.settings.account
+    );
     let mut delay = POLICY_RETRY_DELAY;
     for _ in 1..POLICY_LOAD_ATTEMPTS {
-        let response = post_policy(manager, policy_url, policy).await?;
+        let response = post(manager, &url, Some(POLICY_CONTENT_TYPE), policy).await?;
         if response.status != CONFLICT {
             return Ok(response);
         }
         sleep(delay).await;
         delay = delay.saturating_mul(2);
     }
-    post_policy(manager, policy_url, policy).await
+    post(manager, &url, Some(POLICY_CONTENT_TYPE), policy).await
 }
 
-async fn post_policy<T>(
+async fn post<T>(
     manager: &CyberArkSecretManager<T>,
-    policy_url: &str,
-    policy: &SecretString,
+    url: &str,
+    content_type: Option<&'static str>,
+    body: &SecretString,
 ) -> Result<ConjurResponse, CyberArkError<T::Error>>
 where
     T: ConjurTransport,
 {
-    let header = authorization(manager).await?;
+    let header = manager.authorization().await?;
     let request = ConjurRequest {
         method: HttpMethod::Post,
-        url: policy_url,
+        url,
         authorization: Some(&header),
-        content_type: Some("application/x-yaml"),
-        body: Some(policy),
+        content_type,
+        body: Some(body),
         verify_tls: manager.settings.verify_tls,
         client_certificate: None,
     };

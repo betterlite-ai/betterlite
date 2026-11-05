@@ -6,7 +6,6 @@ use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::write;
-use crate::cyberark::cyberark_read::read;
 use crate::cyberark::fake_transport::{POLICY_ROUTE, Reply, TOKEN_HEADER, capture_logs, keyed};
 use crate::cyberark::operation::OperationStatus;
 use crate::cyberark::yaml_scalar::double_quoted;
@@ -56,10 +55,7 @@ async fn a_write_creates_the_policy_then_stores_and_caches_the_value() {
     let value = &seen[2];
     assert_eq!(value.body.as_deref(), Some("s3cret"));
     assert_eq!(value.content_type, None);
-    assert_eq!(
-        read(&manager, "db").await.unwrap().expose_secret(),
-        "s3cret"
-    );
+    assert_eq!(manager.read("db").await.unwrap().expose_secret(), "s3cret");
     assert_eq!(transport.recorded().len(), 3);
 }
 
@@ -137,7 +133,7 @@ async fn the_policy_outcome_sets_the_log_level_and_the_value_is_still_written(
 #[tokio::test(start_paused = true)]
 async fn an_unsafe_name_is_rejected_before_any_request() {
     let (manager, transport) = keyed(&[]);
-    let outcome = write(&manager, "bad name", &SecretString::from("v")).await;
+    let outcome = write(&manager, "bad\u{1}name", &SecretString::from("v")).await;
     assert_eq!(outcome.status, OperationStatus::Error);
     assert!(outcome.message.contains("invalid secret name"));
     assert!(transport.recorded().is_empty());
@@ -159,7 +155,7 @@ async fn a_failed_value_write_is_an_error_status_and_leaves_the_cache_alone(#[ca
         logs.text()
             .contains("ERROR Error writing secret to CyberArk Conjur")
     );
-    assert!(read(&manager, "db").await.is_none());
+    assert!(manager.read("db").await.is_none());
 }
 
 #[tokio::test(start_paused = true)]

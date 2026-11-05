@@ -3,7 +3,6 @@
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::{delete, rotate};
-use crate::cyberark::cyberark_read::read;
 use crate::cyberark::fake_transport::{POLICY_ROUTE, Reply, capture_logs, keyed};
 use crate::cyberark::operation::OperationStatus;
 use crate::secret_contracts::options::{DeleteOptions, SecretOptions, SecretRotation, SecretWrite};
@@ -18,7 +17,7 @@ const OLD_WRITE: &str = "POST http://127.0.0.1:8080/secrets/default/variable/old
 async fn delete_is_not_supported_and_clears_the_cached_value() {
     let (logs, _guard) = capture_logs();
     let (manager, transport) = keyed(&[(OLD_READ, vec![Reply::Status(200, "v")])]);
-    assert!(read(&manager, "old").await.is_some());
+    assert!(manager.read("old").await.is_some());
     let before = transport.recorded().len();
     let outcome = delete(&manager, "old");
     assert_eq!(outcome.status, OperationStatus::NotSupported);
@@ -31,7 +30,7 @@ async fn delete_is_not_supported_and_clears_the_cached_value() {
         logs.text()
             .contains("WARN CyberArk Conjur does not support direct secret deletion.")
     );
-    read(&manager, "old").await;
+    manager.read("old").await;
     assert_eq!(transport.recorded().len(), before + 1);
 }
 
@@ -58,12 +57,9 @@ async fn rotation_writes_the_new_secret_verifies_it_from_the_cache_and_forgets_t
     assert_eq!(outcome.message, "Secret new written successfully");
     let routes = transport.routes_hit();
     assert_eq!(routes[1..], [OLD_READ, POLICY_ROUTE, NEW_WRITE]);
-    assert_eq!(
-        read(&manager, "new").await.unwrap().expose_secret(),
-        "after"
-    );
+    assert_eq!(manager.read("new").await.unwrap().expose_secret(), "after");
     assert_eq!(transport.routes_hit().len(), routes.len());
-    read(&manager, "old").await;
+    manager.read("old").await;
     assert_eq!(
         transport.routes_hit().last().map(String::as_str),
         Some(OLD_READ)
@@ -92,7 +88,7 @@ async fn rotating_a_secret_onto_its_own_name_rewrites_and_clears_the_cache() {
     assert_eq!(outcome.status, OperationStatus::Success);
     let routes = transport.routes_hit();
     assert_eq!(routes[1..], [OLD_READ, POLICY_ROUTE, OLD_WRITE]);
-    read(&manager, "old").await;
+    manager.read("old").await;
     assert_eq!(
         transport.routes_hit().last().map(String::as_str),
         Some(OLD_READ)
@@ -139,10 +135,7 @@ async fn rotation_fails_when_the_new_secret_cannot_be_verified() {
     .await
     .unwrap_err();
     assert!(matches!(error, RotationError::NewSecretNotVerified));
-    assert_eq!(
-        read(&manager, "old").await.unwrap().expose_secret(),
-        "before"
-    );
+    assert_eq!(manager.read("old").await.unwrap().expose_secret(), "before");
 }
 
 #[tokio::test(start_paused = true)]

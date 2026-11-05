@@ -8,9 +8,11 @@ use tokio::sync::Mutex;
 use crate::secret_contracts::options::{DeleteOptions, SecretOptions, SecretRotation, SecretWrite};
 use crate::secret_contracts::{BaseSecretManager, RotationError, SecretFuture};
 use crate::secret_helpers::read_boolean_text;
-use error::CyberArkInitError;
+use cyberark_auth::{TOKEN_KEY, begin_login, finish_login, login_request};
+use cyberark_read::{finish_read, read_request, secret_url};
+use error::{CyberArkError, CyberArkInitError};
 use operation::SecretOperation;
-use transport::{ClientCertificate, ConjurTransport};
+use transport::{ClientCertificate, ConjurResponse, ConjurTransport};
 use ttl_cache::TtlCache;
 
 mod cyberark_auth;
@@ -103,6 +105,57 @@ impl<T: ConjurTransport> CyberArkSecretManager<T> {
             transport,
         })
     }
+
+    async fn authorization(&self) -> Result<SecretString, CyberArkError<T::Error>> {
+        if let Some(header) = self.tokens.get(TOKEN_KEY) {
+            return Ok(header);
+        }
+        let url = begin_login(self);
+        finish_login(self, self.transport.send(login_request(self, &url)).await)
+    }
+
+    fn authorization_blocking(&self) -> Result<SecretString, CyberArkError<T::Error>> {
+        if let Some(header) = self.tokens.get(TOKEN_KEY) {
+            return Ok(header);
+        }
+        let url = begin_login(self);
+        finish_login(
+            self,
+            self.transport.send_blocking(login_request(self, &url)),
+        )
+    }
+
+    async fn read(&self, secret_name: &str) -> Option<SecretString> {
+        if let Some(cached) = self.values.get(secret_name) {
+            return Some(cached);
+        }
+        let outcome = self.fetch(secret_name).await;
+        finish_read(self, secret_name, outcome)
+    }
+
+    fn read_blocking(&self, secret_name: &str) -> Option<SecretString> {
+        if let Some(cached) = self.values.get(secret_name) {
+            return Some(cached);
+        }
+        let outcome = self.fetch_blocking(secret_name);
+        finish_read(self, secret_name, outcome)
+    }
+
+    async fn fetch(&self, secret_name: &str) -> Result<ConjurResponse, CyberArkError<T::Error>> {
+        let header = self.authorization().await?;
+        let url = secret_url(self, secret_name);
+        let reply = self.transport.send(read_request(self, &url, &header)).await;
+        reply.map_err(CyberArkError::Transport)?.require_success()
+    }
+
+    fn fetch_blocking(&self, secret_name: &str) -> Result<ConjurResponse, CyberArkError<T::Error>> {
+        let header = self.authorization_blocking()?;
+        let url = secret_url(self, secret_name);
+        let reply = self
+            .transport
+            .send_blocking(read_request(self, &url, &header));
+        reply.map_err(CyberArkError::Transport)?.require_success()
+    }
 }
 
 impl<T: ConjurTransport> BaseSecretManager for CyberArkSecretManager<T> {
@@ -115,7 +168,7 @@ impl<T: ConjurTransport> BaseSecretManager for CyberArkSecretManager<T> {
         secret_name: &'borrowed str,
         _options: SecretOptions<'borrowed, Self::Params>,
     ) -> SecretFuture<'borrowed, Option<SecretString>, Self::Error> {
-        Box::pin(async move { Ok(cyberark_read::read(self, secret_name).await) })
+        Box::pin(async move { Ok(self.read(secret_name).await) })
     }
 
     fn sync_read_secret(
@@ -123,7 +176,7 @@ impl<T: ConjurTransport> BaseSecretManager for CyberArkSecretManager<T> {
         secret_name: &str,
         _options: SecretOptions<'_, Self::Params>,
     ) -> Result<Option<SecretString>, Self::Error> {
-        Ok(cyberark_read::read_blocking(self, secret_name))
+        Ok(self.read_blocking(secret_name))
     }
 
     fn async_write_secret<'borrowed>(

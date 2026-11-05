@@ -1,7 +1,6 @@
 use std::convert::Infallible;
 
 use super::CyberArkSecretManager;
-use super::cyberark_read::read;
 use super::cyberark_write::write;
 use super::operation::{OperationStatus, SecretOperation};
 use super::transport::ConjurTransport;
@@ -30,11 +29,13 @@ pub(super) async fn rotate<T>(
 where
     T: ConjurTransport,
 {
-    read(manager, rotation.current_secret_name)
+    manager
+        .read(rotation.current_secret_name)
         .await
         .ok_or(RotationError::CurrentSecretNotFound)?;
     let response = write(manager, rotation.new_secret_name, rotation.new_secret_value).await;
-    read(manager, rotation.new_secret_name)
+    manager
+        .read(rotation.new_secret_name)
         .await
         .ok_or(RotationError::NewSecretNotVerified)?;
     delete(manager, rotation.current_secret_name);

@@ -6,8 +6,7 @@ use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::time::advance;
 
-use super::{read, read_blocking, secret_url};
-use crate::cyberark::cyberark_auth::authorization;
+use super::secret_url;
 use crate::cyberark::fake_transport::{AUTH_ROUTE, Reply, capture_logs, keyed};
 use crate::cyberark::ttl_cache::TtlCache;
 
@@ -31,7 +30,7 @@ fn names_are_percent_encoded_in_the_url(#[case] name: &str, #[case] encoded: &st
 #[tokio::test(start_paused = true)]
 async fn a_read_sends_the_token_and_returns_the_text() {
     let (manager, transport) = keyed(&[(SECRET_ROUTE, vec![Reply::Status(200, "s3cret")])]);
-    let value = read(&manager, "db").await.unwrap();
+    let value = manager.read("db").await.unwrap();
     assert_eq!(value.expose_secret(), "s3cret");
     let read = transport.recorded().into_iter().nth(1).unwrap();
     assert_eq!(read.route, SECRET_ROUTE);
@@ -43,20 +42,20 @@ async fn a_read_sends_the_token_and_returns_the_text() {
 #[tokio::test(start_paused = true)]
 async fn values_are_cached_for_the_refresh_interval() {
     let (manager, transport) = keyed(&[(SECRET_ROUTE, vec![Reply::Status(200, "v")])]);
-    read(&manager, "db").await;
+    manager.read("db").await;
     advance(Duration::from_secs(300)).await;
-    read(&manager, "db").await;
+    manager.read("db").await;
     assert_eq!(transport.routes_hit().len(), 2);
     advance(Duration::from_millis(1)).await;
-    read(&manager, "db").await;
+    manager.read("db").await;
     assert_eq!(transport.routes_hit().len(), 4);
 }
 
 #[tokio::test(start_paused = true)]
 async fn an_empty_value_is_still_a_cache_hit() {
     let (manager, transport) = keyed(&[(SECRET_ROUTE, vec![Reply::Status(200, "")])]);
-    assert!(read(&manager, "db").await.is_some());
-    assert!(read(&manager, "db").await.is_some());
+    assert!(manager.read("db").await.is_some());
+    assert!(manager.read("db").await.is_some());
     assert_eq!(transport.routes_hit().len(), 2);
 }
 
@@ -64,7 +63,7 @@ async fn an_empty_value_is_still_a_cache_hit() {
 async fn not_found_is_none_and_logged_at_debug() {
     let (logs, _guard) = capture_logs();
     let (manager, _transport) = keyed(&[(SECRET_ROUTE, vec![Reply::Status(404, "")])]);
-    assert!(read(&manager, "db").await.is_none());
+    assert!(manager.read("db").await.is_none());
     let text = logs.text();
     assert!(text.contains("DEBUG Secret db not found in CyberArk Conjur"));
     assert!(!text.contains("ERROR"));
@@ -79,19 +78,19 @@ async fn not_found_is_none_and_logged_at_debug() {
 async fn other_failures_are_none_and_logged_as_errors(#[case] reply: Reply) {
     let (logs, _guard) = capture_logs();
     let (manager, _transport) = keyed(&[(SECRET_ROUTE, vec![reply])]);
-    assert!(read(&manager, "db").await.is_none());
+    assert!(manager.read("db").await.is_none());
     assert!(
         logs.text()
             .contains("ERROR Error reading secret from CyberArk Conjur")
     );
-    assert!(read(&manager, "db").await.is_none());
+    assert!(manager.read("db").await.is_none());
 }
 
 #[tokio::test(start_paused = true)]
 async fn a_failed_login_makes_the_read_none_with_an_error_log() {
     let (logs, _guard) = capture_logs();
     let (manager, _transport) = keyed(&[(AUTH_ROUTE, vec![Reply::Status(401, "")])]);
-    assert!(read(&manager, "db").await.is_none());
+    assert!(manager.read("db").await.is_none());
     assert!(
         logs.text()
             .contains("ERROR Error reading secret from CyberArk Conjur: Could not authenticate")
@@ -102,14 +101,14 @@ async fn a_failed_login_makes_the_read_none_with_an_error_log() {
 async fn reads_do_not_check_the_name_for_unsafe_characters() {
     let route = "GET http://127.0.0.1:8080/secrets/default/variable/bad%20name";
     let (manager, _transport) = keyed(&[(route, vec![Reply::Status(200, "v")])]);
-    assert!(read(&manager, "bad name").await.is_some());
+    assert!(manager.read("bad name").await.is_some());
 }
 
 #[test]
 fn the_sync_read_uses_the_blocking_transport_and_shares_the_cache() {
     let (manager, transport) = keyed(&[(SECRET_ROUTE, vec![Reply::Status(200, "v")])]);
-    let first = read_blocking(&manager, "db").unwrap();
-    let second = read_blocking(&manager, "db").unwrap();
+    let first = manager.read_blocking("db").unwrap();
+    let second = manager.read_blocking("db").unwrap();
     assert_eq!(first.expose_secret(), second.expose_secret());
     let seen = transport.recorded();
     assert_eq!(seen.len(), 2);
@@ -119,15 +118,15 @@ fn the_sync_read_uses_the_blocking_transport_and_shares_the_cache() {
 #[test]
 fn the_sync_read_returns_none_for_a_missing_secret() {
     let (manager, _transport) = keyed(&[(SECRET_ROUTE, vec![Reply::Status(404, "")])]);
-    assert!(read_blocking(&manager, "db").is_none());
+    assert!(manager.read_blocking("db").is_none());
 }
 
 #[tokio::test(start_paused = true)]
 async fn a_secret_named_like_the_token_key_never_returns_the_token() {
     let route = "GET http://127.0.0.1:8080/secrets/default/variable/cyberark_auth_token";
     let (manager, transport) = keyed(&[(route, vec![Reply::Status(404, "")])]);
-    authorization(&manager).await.unwrap();
-    assert!(read(&manager, "cyberark_auth_token").await.is_none());
+    manager.authorization().await.unwrap();
+    assert!(manager.read("cyberark_auth_token").await.is_none());
     assert_eq!(
         transport.routes_hit().last().map(String::as_str),
         Some(route)
