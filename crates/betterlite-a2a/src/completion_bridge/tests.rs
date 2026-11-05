@@ -226,7 +226,7 @@ fn initializes_context_and_task_history() {
 
 #[rstest]
 #[case::working("working", false, Some("thinking"), true)]
-#[case::empty("working", false, Some(""), true)]
+#[case::empty("working", false, Some(""), false)]
 #[case::no_message("working", false, None, false)]
 #[case::completed("completed", true, Some("ignored"), false)]
 #[case::other("failed", true, Some("ignored"), false)]

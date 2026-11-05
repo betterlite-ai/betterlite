@@ -88,17 +88,19 @@ where
     S: EventSource,
 {
     let message = if state == "working" {
-        message_text.map(|text| StatusMessage {
-            context_id: ctx.context_id.clone(),
-            kind: "message".to_owned(),
-            message_id: source.next_uuid().to_string(),
-            parts: vec![TextPart {
-                kind: "text".to_owned(),
-                text: text.to_owned(),
-            }],
-            role: "agent".to_owned(),
-            task_id: ctx.task_id.clone(),
-        })
+        message_text
+            .filter(|text| !text.is_empty())
+            .map(|text| StatusMessage {
+                context_id: ctx.context_id.clone(),
+                kind: "message".to_owned(),
+                message_id: source.next_uuid().to_string(),
+                parts: vec![TextPart {
+                    kind: "text".to_owned(),
+                    text: text.to_owned(),
+                }],
+                role: "agent".to_owned(),
+                task_id: ctx.task_id.clone(),
+            })
     } else {
         None
     };

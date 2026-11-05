@@ -46,6 +46,8 @@ pub(crate) struct Input {
     completion_params: CompletionParams,
     #[serde(default)]
     response: ModelResponse,
+    #[serde(default)]
+    message_text: Option<String>,
 }
 
 struct Source {
@@ -84,11 +86,7 @@ impl Helper for Op {
         let mut source = Source { ids: 1..=10 };
         match input.operation {
             Operation::Extract => output(&extract_text(&input.parts)),
-            Operation::Metadata => {
-                let mut completion = input.completion_params.clone();
-                apply_forward_metadata(&mut completion, &input.message, input.params.as_ref());
-                output(&completion)
-            }
+            Operation::Metadata => metadata(input),
             Operation::Roles => output(&to_openai_messages(&input.message)),
             Operation::Response => output(&response_to_a2a(
                 Some(&input.response),
@@ -101,7 +99,7 @@ impl Helper for Op {
                 EventContent::Status {
                     state: "working",
                     final_event: false,
-                    message: Some("thinking"),
+                    message: Some(input.message_text.as_deref().unwrap_or("thinking")),
                 },
                 &mut source,
             ),
@@ -117,6 +115,12 @@ impl Helper for Op {
             Operation::Artifact => run_event(input, EventContent::Artifact("answer"), &mut source),
         }
     }
+}
+
+fn metadata(input: &Input) -> HelperResult {
+    let mut completion = input.completion_params.clone();
+    apply_forward_metadata(&mut completion, &input.message, input.params.as_ref());
+    output(&completion)
 }
 
 fn run_event(input: &Input, event: EventContent<'_>, source: &mut Source) -> HelperResult {

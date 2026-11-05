@@ -12,6 +12,7 @@ use std::path::Path;
 #[case::response("openai-to-a2a-response")]
 #[case::task("task-event")]
 #[case::working("status-working-event")]
+#[case::working_empty("status-working-empty-message")]
 #[case::completed("status-completed-event")]
 #[case::artifact("artifact-event")]
 #[case::parts_empty("parts-empty")]

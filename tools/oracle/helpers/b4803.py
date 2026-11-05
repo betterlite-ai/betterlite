@@ -60,6 +60,7 @@ def transform(input_value: dict[str, Json]) -> Json:
     request_id = cast(str, input_value.get("request_id", "request"))
     message = cast(Mapping[str, Json], input_value.get("message", {}))
     params = cast(Mapping[str, Json], input_value.get("params", {}))
+    message_text = cast(str, input_value.get("message_text", "thinking"))
     if operation == "extract":
         parts = cast(list[Json], input_value.get("parts", []))
         return _EXTRACT(parts)
@@ -74,14 +75,14 @@ def transform(input_value: dict[str, Json]) -> Json:
     if operation == "response":
         response = ModelResponse(**cast(dict[str, object], input_value.get("response", {})))
         return cast(Json, _TO_A2A(response, cast(str, input_value.get("request_id"))))
-    return event(operation, _CONTEXT(request_id, message))
+    return event(operation, _CONTEXT(request_id, message), message_text)
 
 
-def event(operation: Json, context: object) -> Json:
+def event(operation: Json, context: object, message_text: str) -> Json:
     if operation == "task":
         return cast(Json, _TASK_EVENT(context))
     if operation == "working":
-        return cast(Json, _STATUS_EVENT(context, "working", message_text="thinking"))
+        return cast(Json, _STATUS_EVENT(context, "working", message_text=message_text))
     if operation == "completed":
         return cast(Json, _STATUS_EVENT(context, "completed", final=True))
     if operation == "artifact":
