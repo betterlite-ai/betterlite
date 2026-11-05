@@ -1,0 +1,17 @@
+task: B3070
+deviations:
+  - what: The status lines LiteLLM prints to a Rich console (no data, batch counts, per-batch success, network and HTTP errors) are not printed. Skipped timestamps and an unknown timezone name are logged as tracing warnings, and a failed POST is returned as a DeliveryError.
+    why: betterlite logs through tracing and returns errors to the caller instead of printing to stdout.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cz_stream_api.py#L51-L67
+  - what: The clock is injected and supplies the fallback time for an empty or unparsable time/usage_start inside a record, instead of calling datetime.now() inline.
+    why: Tests and callers control the clock.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cz_stream_api.py#L242-L252
+  - what: The fallback timestamp for an empty time/usage_start ends in Z like the unparsable case, where LiteLLM leaves a +00:00 suffix on the empty case.
+    why: CloudZero documents one UTC format, and the two LiteLLM branches are the same intent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cz_stream_api.py#L242-L246
+  - what: Converting a typed CBF record to the API format cannot fail, so there is no skip-with-warning path for a record and no POST with an empty data list.
+    why: LiteLLM's except branch only catches Python errors from untyped values, and a CbfValue is always text, an integer, a decimal or a datetime.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cz_stream_api.py#L212-L240
+  - what: send_batched is async and posts through an injected BillingTransport, where LiteLLM builds an httpx.Client with a 30-second timeout inside the method.
+    why: The logging crate holds no HTTP client, and pooled clients come from the HTTP crate. The transport receives the 30-second timeout, the endpoint URL and the Bearer header as secrets.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cz_stream_api.py#L155-L189

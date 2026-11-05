@@ -15,6 +15,7 @@ chrono.workspace = true
 flate2 = "1.1.5"
 hex.workspace = true
 indexmap = { version = "2.14.2", features = ["serde"] }
+jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 parquet-format-safe = "0.2.4"
 parquet2 = { version = "0.17.2", default-features = false, features = ["snappy"] }
 pep440_rs = "0.7.3"

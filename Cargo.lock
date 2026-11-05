@@ -1577,6 +1577,7 @@ dependencies = [
  "hex",
  "indexmap 2.14.2",
  "insta",
+ "jiff",
  "parquet-format-safe",
  "parquet2",
  "pep440_rs",
